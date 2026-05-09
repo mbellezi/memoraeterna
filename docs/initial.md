@@ -1,4 +1,4 @@
-# Memora Eterna - Descricao Inicial do Projeto
+# Memor Aeterna - Descricao Inicial do Projeto
 
 ## Visao Geral
 
