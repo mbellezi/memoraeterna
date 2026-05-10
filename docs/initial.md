@@ -271,8 +271,12 @@ Configuracoes iniciais:
 - provedores de IA;
 - API keys e credenciais de provedores;
 - modelo de IA usado para processamento;
+- perfis de configuracao de IA por tarefa;
+- perfil de IA padrao ativo;
 - modelo de embedding usado para indexacao e matching;
 - modelos locais baixados;
+- caminho do vault Obsidian usado para projecao e sincronizacao Markdown;
+- pasta opcional para copias dos arquivos subidos;
 - parametros de chunking, resumo, geracao de notas atomicas e matching;
 - clientes externos autorizados;
 - preferencias de privacidade e uso local/remoto.
@@ -281,7 +285,7 @@ Textos dessa area tambem devem seguir a regra de i18n obrigatorio.
 
 ## Configuracoes de IA
 
-A aplicacao deve permitir selecionar o modelo de IA usado pelo pipeline de processamento, incluindo catalogacao, conversao assistida quando aplicavel, resumo, extracao de entidades, extracao de claims, geracao de notas atomicas e reranking.
+A aplicacao deve permitir selecionar o modelo de IA usado pelo pipeline de processamento, incluindo catalogacao, busca de metadados, conversao assistida quando aplicavel, resumo, OCR, parsing de imagens, extracao de entidades, extracao de claims, geracao de notas atomicas e reranking.
 
 Provedores iniciais:
 
@@ -301,6 +305,47 @@ Cada provedor remoto deve permitir:
 - registro de modelo usado em cada artefato gerado;
 - tratamento de erro localizavel via i18n.
 
+## Perfis de IA por Tarefa
+
+As configuracoes de IA devem ser agrupadas em perfis reutilizaveis. Um perfil define qual provedor/modelo/configuracao sera usado para cada tarefa do pipeline. O usuario pode manter varios perfis, alternar o perfil padrao ativo e testar combinacoes diferentes sem redefinir cada tarefa manualmente.
+
+Exemplos de perfis:
+
+```txt
+Perfil rapido local
+Perfil qualidade maxima
+Perfil baixo custo
+Perfil privado/offline
+Perfil experimental
+```
+
+Cada perfil deve conter selecoes por tarefa:
+
+- busca de metadados sobre conteudo;
+- catalogacao;
+- resumo;
+- extracao de entidades;
+- extracao de claims;
+- geracao de notas atomicas;
+- matching/reranking;
+- OCR;
+- parsing de imagens;
+- transcricao;
+- interpretacao de video;
+- embeddings de chunks;
+- embeddings de notas atomicas;
+- assistencia de escrita.
+
+Regras:
+
+- apenas um perfil deve estar ativo como padrao por vez;
+- a aplicacao deve permitir clonar um perfil existente;
+- a aplicacao deve permitir comparar perfis por cobertura de capabilities, custo estimado, uso local/remoto e privacidade;
+- cada entrada do perfil deve validar se o modelo escolhido possui as capabilities necessarias para a tarefa;
+- uma tarefa sem modelo configurado deve seguir politica explicita: bloquear, pedir escolha ao usuario ou usar fallback permitido;
+- cada artefato gerado deve registrar o perfil, a tarefa, o modelo, o provedor, o runtime e os parametros usados;
+- mudancas no perfil ativo so devem afetar novas execucoes, nao alterar historico de artefatos ja gerados.
+
 Seguranca de credenciais:
 
 - API keys nao devem ser armazenadas em texto puro no PGlite;
@@ -311,8 +356,12 @@ Seguranca de credenciais:
 Selecao por tarefa:
 
 ```txt
+busca de metadados
 catalogacao
 resumo
+OCR
+parsing de imagens
+transcricao
 extracao de entidades
 extracao de claims
 geracao de notas atomicas
@@ -636,12 +685,129 @@ Responsabilidades iniciais:
 
 - enviar notas, selecoes e metadados do vault para o desktop;
 - receber eventos, resultados ou referencias vindas do desktop;
+- monitorar arquivos Markdown gerenciados pela aplicacao dentro do vault;
+- enviar eventos de criacao, alteracao, renomeacao, movimentacao e remocao;
+- preservar o vinculo entre arquivo Markdown, registro no banco e fonte geradora;
 - expor comandos e superficies de UI dentro do Obsidian;
 - usar contratos de `@app/integration-contracts`;
 - manter isolamento em relacao ao banco e aos servicos internos do desktop;
 - preservar limites e convencoes do ambiente de plugins do Obsidian.
 
 O plugin podera evoluir para fluxos mais ricos, como inserir backlinks, criar notas derivadas, consultar entidades relacionadas ou anexar evidencias vindas da base de conhecimento. Esses fluxos devem ser tratados como comandos/eventos versionados no contrato de integracao.
+
+## Vault Obsidian e Projecao Markdown
+
+Cada conteudo convertido para Markdown deve poder gerar um arquivo `.md` no vault Obsidian configurado. Isso inclui fontes inseridas manualmente, paginas web, arquivos convertidos, transcricoes, notas atomicas, MOCs, Wikis e outras notas dinamicas futuras.
+
+O banco continua sendo a fonte canonica da aplicacao. O vault Obsidian deve ser tratado como uma projecao sincronizada e editavel, com identidade estavel em frontmatter.
+
+Configuracoes relacionadas:
+
+- caminho absoluto do vault Obsidian;
+- pasta raiz dentro do vault para os arquivos gerenciados pela aplicacao, inicialmente `Memora`;
+- habilitar ou pausar sincronizacao Obsidian;
+- politica de delecao entre Obsidian e banco;
+- politica de conflito quando banco e arquivo mudarem ao mesmo tempo.
+
+Frontmatter minimo:
+
+```yaml
+---
+memora_id: "an_01JABCDEF123456789"
+memora_type: "atomic_note"
+memora_source_id: "src_01JBOOKCHAPTER123"
+memora_document_id: "doc_01JXYZ123"
+memora_managed: true
+memora_sync_version: 7
+memora_content_hash: "sha256:..."
+---
+```
+
+O `memora_id` e a identidade estavel. O caminho e o nome do arquivo sao editaveis e devem ser reconciliados pelo plugin.
+
+Estrutura inicial sugerida no vault:
+
+```txt
+Memora/
+  Sources/
+    Web/
+      2026/
+        05/
+          domain.com/
+            titulo-do-artigo.md
+    Books/
+      nome-do-livro/
+        book.md
+        Chapters/
+          capitulo-01-introducao.md
+    Journals/
+      nome-do-periodico/
+        2026/
+          vol-12-issue-03/
+            titulo-do-artigo.md
+    Magazines/
+      nome-da-revista/
+        2026-05/
+          titulo-do-artigo.md
+    Videos/
+      2026/
+        05/
+          titulo-do-video.md
+  Atomic/
+    2026/
+      05/
+        10/
+          ideia-atomica.md
+  MOCs/
+  Wikis/
+  Entities/
+```
+
+Regra de nomes:
+
+- o nome padrao deve ser humano e legivel, derivado de titulo/slug;
+- nao adicionar id curto por padrao;
+- quando houver colisao no mesmo diretorio, adicionar sufixo curto;
+- a primeira estrategia de sufixo pode usar data curta, por exemplo `titulo--20260510.md`;
+- se a colisao persistir no mesmo dia, usar contador ou fallback deterministico, por exemplo `titulo--20260510-02.md` ou `titulo--01JABC.md`;
+- a identidade real nunca deve depender do nome do arquivo, apenas do frontmatter e do banco.
+
+Sincronizacao:
+
+- arquivo criado no banco deve criar ou atualizar `.md` no vault;
+- arquivo alterado no Obsidian deve enviar evento ao desktop e atualizar o banco;
+- rename/move deve atualizar o path relativo no banco, sem mudar `memora_id`;
+- remocao no Obsidian deve remover o registro correspondente no banco conforme politica configurada;
+- remocao no banco deve remover ou mover para lixeira o arquivo gerenciado no Obsidian conforme politica configurada;
+- para seguranca e auditoria, a implementacao pode registrar tombstone antes de remover fisicamente dados ou arquivos;
+- conflitos devem ser explicitos, nunca resolvidos por sobrescrita silenciosa.
+
+Notas atomicas geradas devem viver fora da pasta da fonte que as originou. A relacao com a fonte deve estar no banco e no frontmatter, permitindo que a nota atomica seja reorganizada futuramente por MOCs e Wikis sem perder proveniencia.
+
+## Copias de Arquivos Subidos
+
+A aplicacao pode permitir configurar uma pasta opcional para manter copias dos arquivos originais subidos pelo usuario. Essa pasta e diferente do vault Obsidian e serve para preservar originais para consulta futura.
+
+Se a pasta nao for configurada, a aplicacao deve usar apenas seu armazenamento interno gerenciado. Se a pasta for configurada, cada asset copiado deve ter seu caminho relativo registrado no banco.
+
+Estrutura recomendada:
+
+```txt
+UploadedFiles/
+  sha256/
+    ab/
+      cd/
+        abcdef1234567890.pdf
+```
+
+Regras:
+
+- organizar por hash para evitar colisao e escalar para muitos arquivos;
+- preservar `original_file_name` no banco, nao necessariamente no path;
+- registrar `sha256`, MIME type, tamanho, storage base e path relativo;
+- deduplicar arquivos identicos quando possivel;
+- nao depender do nome original para identidade;
+- se o usuario mover ou apagar arquivos nessa pasta manualmente, a aplicacao deve detectar inconsistencia e oferecer reparo, recopia ou desvinculo.
 
 ## Pacote `@app/domain`
 
@@ -741,6 +907,7 @@ Responsabilidades:
 - definir interfaces comuns para provedores de embedding;
 - definir interfaces comuns para adaptadores de modelo;
 - manter registro de modelos, capacidades e disponibilidade;
+- manter perfis de IA por tarefa e o perfil padrao ativo;
 - negociar o modelo adequado para cada tarefa a partir de capabilities;
 - definir adaptador local para `node-llama-cpp`;
 - listar modelos disponiveis por provedor quando a API permitir;
@@ -841,6 +1008,48 @@ Tipos iniciais de itens de acervo:
 - `Image`: imagem avulsa com metadados, descricao, OCR ou analise visual.
 - `GenericDocument`: PDF, DOCX, TXT, Markdown, EPUB ou arquivo ainda nao classificado.
 - `Archive`: ZIP, pasta ou conjunto de documentos importados em lote.
+
+## Insercao Manual de Conteudo
+
+A aplicacao deve permitir inserir conteudo manualmente por formulario, sem captura web e sem upload de arquivo. Esse fluxo sera usado quando o usuario digitar, colar ou transcrever conteudo diretamente.
+
+Fluxo esperado:
+
+```txt
+Novo conteudo manual
+  -> escolher tipo de SourceItem
+  -> carregar campos especificos do tipo escolhido
+  -> buscar fontes relacionadas existentes enquanto o usuario digita
+  -> permitir selecionar fonte existente para evitar duplicacao
+  -> preencher conteudo em Markdown ou texto simples
+  -> validar metadados obrigatorios
+  -> criar ou vincular SourceItem/BibliographicWork/BibliographicInstance
+  -> normalizar Markdown
+  -> seguir pipeline de resumo, chunks, entidades e notas atomicas
+```
+
+O formulario deve ser progressivo: apos o usuario escolher o tipo de conteudo, a interface deve pedir apenas os campos relevantes para aquele tipo.
+
+Exemplos:
+
+- `PersonalNote`: titulo opcional, data, tags e conteudo.
+- `DailyNote`: data, titulo opcional e conteudo.
+- `BookChapter`: livro relacionado, titulo do capitulo, autores quando houver, paginas e conteudo.
+- `MagazineArticle`: revista/edicao relacionada, titulo, autores, paginas e conteudo.
+- `JournalArticle`: periodico, volume/issue, titulo, autores, paginas, DOI quando houver e conteudo.
+- `StandaloneArticle`: titulo, autores, paginas, data e conteudo.
+- `Manual`: titulo, versao, produto/organizacao relacionada e conteudo.
+
+Busca de fontes existentes:
+
+- ao digitar o nome de livro, revista, periodico, autor, organizacao ou obra relacionada, a aplicacao deve sugerir itens existentes com nomes iguais ou parcialmente semelhantes;
+- a busca deve considerar aliases, titulo canonico, subtitulo, ISBN, ISSN, DOI, URL e outros identificadores quando disponiveis;
+- o usuario deve poder selecionar um item existente ou criar um novo quando a fonte ainda nao existir;
+- a UI deve deixar claro quando o usuario esta vinculando a uma fonte existente versus criando uma nova;
+- em caso de possivel duplicata, a aplicacao deve alertar e pedir confirmacao antes de criar novo item;
+- as sugestoes devem usar busca textual inicialmente e podem evoluir para busca hibrida com embeddings e grafo.
+
+Esse fluxo e especialmente importante para capitulos de livros, artigos de revistas e artigos de periodicos, pois esses itens normalmente dependem de uma fonte maior ja cadastrada.
 
 Os tipos bibliograficos devem permitir modelar hierarquias:
 
@@ -1036,6 +1245,8 @@ Estrutura conceitual:
       integration-clients.ts
       ai-settings.ts
       local-models.ts
+      obsidian-sync.ts
+      storage-settings.ts
       settings.ts
     repositories/
       source-item-repository.ts
@@ -1048,6 +1259,9 @@ Estrutura conceitual:
       graph-repository.ts
       ai-settings-repository.ts
       local-model-repository.ts
+      obsidian-sync-repository.ts
+      document-asset-repository.ts
+      storage-settings-repository.ts
       job-repository.ts
       settings-repository.ts
     queries/
@@ -1099,10 +1313,42 @@ document_assets
   source_item_id
   document_id
   file_path
+  storage_base
+  relative_path
+  original_file_name
+  sha256
   mime_type
   size_bytes
   role
   created_at
+
+obsidian_sync_files
+  id
+  memora_id
+  entity_type
+  entity_id
+  source_item_id
+  document_id
+  vault_relative_path
+  frontmatter_hash
+  content_hash
+  sync_version
+  sync_status
+  last_seen_at
+  deleted_at
+  created_at
+  updated_at
+
+storage_settings
+  id
+  obsidian_vault_path
+  obsidian_root_folder
+  obsidian_sync_enabled
+  obsidian_delete_policy
+  uploaded_files_path
+  copy_uploaded_files_enabled
+  created_at
+  updated_at
 
 source_spans
   id
@@ -1288,12 +1534,27 @@ ai_provider_configs
   created_at
   updated_at
 
-ai_model_preferences
+ai_profile_sets
   id
+  name
+  description
+  is_default
+  privacy_mode
+  status
+  created_at
+  updated_at
+
+ai_profile_tasks
+  id
+  profile_id
   task
   provider_config_id
   model_id
+  runtime
+  required_capabilities
   parameters
+  fallback_policy
+  status
   created_at
   updated_at
 
@@ -1338,6 +1599,7 @@ ai_model_capabilities
 
 ai_task_runs
   id
+  profile_id
   task_type
   provider
   model_id
@@ -1383,7 +1645,7 @@ O campo `source_origin` devera contemplar origens como importacao manual, captur
 
 `atomic_note_relations` e a tabela canonica de ligacoes entre notas atomicas. Essas relacoes podem ser descobertas por busca vetorial, grafo e reranking, mas devem ser persistidas em SQL para auditoria, consulta e evolucao do Zettelkasten.
 
-`ai_provider_configs`, `ai_model_preferences`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, referencias, capacidades e metadados de execucao. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
+`ai_provider_configs`, `ai_profile_sets`, `ai_profile_tasks`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, perfis, referencias, capacidades e metadados de execucao. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
 
 ## Vetores
 
@@ -1442,15 +1704,19 @@ Fluxo inicial:
 Receber conteudo
   -> desktop, Chrome Extension ou Obsidian Plugin
   -> validar contrato de entrada
+  -> quando for insercao manual, validar tipo escolhido e campos progressivos
+  -> buscar e vincular fontes existentes quando aplicavel
   -> extrair pagina web com Defuddle quando a fonte for URL/pagina
   -> converter arquivos com markitdown-ts quando a fonte for arquivo local/anexo
   -> aplicar fluxo proprio para YouTube e videos web quando aplicavel
   -> classificar tipo de SourceItem
   -> extrair metadados de catalogacao
   -> salvar asset bruto
+  -> copiar asset original para pasta configurada quando habilitado
   -> criar SourceItem
   -> converter conteudo para Markdown normalizado
   -> criar Document com Markdown normalizado
+  -> projetar arquivo Markdown no vault Obsidian quando sincronizacao estiver habilitada
   -> vincular obra, instancia, volume, issue ou item relacionado quando aplicavel
   -> criar IngestionJob
   -> carregar modelos configurados para cada tarefa
@@ -1494,6 +1760,8 @@ atomic-note-generation.worker.ts
 atomic-note-linking.worker.ts
 atomic-note-reranking.worker.ts
 graph-projection.worker.ts
+obsidian-sync.worker.ts
+asset-storage.worker.ts
 ```
 
 A fila inicial pode ser implementada no proprio PGlite. Isso permite retomar trabalhos interrompidos quando a aplicacao for fechada e aberta novamente.
@@ -1613,6 +1881,9 @@ apps/
         src/
           app/
           features/
+            ai-profiles/
+            manual-ingestion/
+            source-picker/
           components/
           i18n/
 
@@ -1708,6 +1979,9 @@ packages/
       client.ts
       schema/
       repositories/
+        ai-config-repository.ts
+        source-lookup-repository.ts
+        duplicate-detection-repository.ts
       queries/
       migrations/
 
@@ -1734,6 +2008,7 @@ Regras iniciais:
 - `@app/ai` nao deve ser importado pela extensao Chrome nem pelo plugin Obsidian no fluxo padrao.
 - `@app/conversion` nao deve ser importado por clientes externos quando incluir adaptadores dependentes de Node ou acesso a filesystem.
 - Defuddle pode ser usado na extensao Chrome e no desktop, mas os resultados devem ser enviados ao pipeline por contratos de integracao.
+- o plugin Obsidian pode monitorar arquivos e frontmatter no vault, mas nao deve acessar PGlite diretamente.
 - codigo do main process do Electron nao deve ser importado pela extensao Chrome nem pelo plugin Obsidian.
 - contratos externos devem viver em `@app/integration-contracts`, nao espalhados dentro de cada app.
 - detalhes de transporte devem ficar em adaptadores locais de cada app.
@@ -1820,6 +2095,10 @@ Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornar
 - pareamento, autorizacao e revogacao de clientes externos;
 - comunicacao da extensao Chrome com a aplicacao desktop;
 - comunicacao bidirecional do plugin Obsidian com a aplicacao desktop;
+- confiabilidade do monitoramento de arquivos no vault Obsidian;
+- politica de delecao entre banco e Obsidian, incluindo tombstones e recuperacao;
+- escalabilidade da estrutura de pastas do vault para milhares de arquivos Markdown;
+- escalabilidade da pasta opcional de arquivos subidos organizada por hash;
 - estrategia de versionamento dos contratos de integracao;
 - empacotamento e distribuicao dos tres elementos;
 - taxonomia inicial de itens de acervo e entidades;
@@ -1841,11 +2120,15 @@ Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornar
 - download, verificacao, atualizacao e remocao de modelos locais;
 - comparacao entre embedding remoto e local;
 - benchmark de indice rapido com 256 dimensoes versus dimensao nativa/maior para reranking;
+- UX de perfis de IA por tarefa, clonagem de perfis e troca do perfil padrao ativo;
+- validacao de capabilities nos perfis de IA antes de executar jobs;
+- qualidade das sugestoes de fontes existentes no formulario de insercao manual;
+- regras de deduplicacao para livros, revistas, periodicos, autores, obras e publicacoes;
 - estrategia futura para MOCs e wikis como camada de navegacao humana.
 
 ## MVP Tecnico Sugerido
 
-O primeiro MVP tecnico deve provar a espinha dorsal do sistema:
+O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE profundo, OCR sofisticado, multimodal local, MOCs automaticos, wikis elaboradas e transcricao robusta permanecem na direcao do produto, mas ficam fora da implementacao inicial.
 
 1. Aplicacao Electron com React via `electron-vite`.
 2. Renderer com React 19, Tailwind CSS 4 e `shadcn/ui`.
@@ -1858,37 +2141,60 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema:
 9. Drizzle com schema, migrations basicas e fluxo `npm run db:generate`.
 10. Verificacao pos-migration no banco real.
 11. Area de configuracoes inicial.
-12. Cadastro seguro de provedor de IA e API key.
-13. Listagem dinamica de modelos quando suportada pelo provedor.
-14. Selecao de modelo de processamento por tarefa.
-15. Selecao de modelo de embedding remoto ou local.
-16. `AiModelAdapter` e registry de modelos com capabilities.
-17. Negociacao de modelo por tarefa a partir de capabilities.
-18. Runtime local com `node-llama-cpp` integrado ao main process.
-19. Registro de modelos locais GGUF em `local_models`.
-20. Taxonomia inicial de `SourceItem` e `GraphEntity`.
-21. Importacao de documento textual simples.
-22. Captura externa simulada via contrato de integracao.
-23. Criacao de item de acervo com metadados basicos.
-24. Extracao de pagina web com Defuddle.
-25. Importacao de arquivo local com `markitdown-ts`.
-26. Conversao para Markdown normalizado.
-27. Fluxo inicial de YouTube/video web com `youtubei.js` para metadados e transcricao.
-28. Geracao de resumo para fonte longa.
-29. Chunking com `SourceSpan`.
-30. Busca textual.
-31. Geracao de embeddings para chunks e notas atomicas.
-32. Busca vetorial via `pgvector`.
-33. Geracao inicial de notas atomicas Zettelkasten.
-34. Relacao das notas atomicas com fonte, chunks e entidades.
-35. Matching inicial entre notas atomicas usando busca hibrida.
-36. Persistencia de relacoes entre notas atomicas no SQL.
-37. Busca hibrida com resultados rastreaveis.
-38. Jobs persistidos e executados em `worker_threads`.
-39. i18n funcional em `en` e `pt-BR`, com estrutura pronta para `it`, `fr` e `es`.
-40. Testes de regressao automatizados para contratos, dominio e fluxos criticos.
+12. Configuracao de vault Obsidian e pasta raiz gerenciada.
+13. Configuracao opcional de pasta para copias de arquivos subidos.
+14. Cadastro seguro de provedor de IA e API key.
+15. Listagem dinamica de modelos quando suportada pelo provedor.
+16. Perfis de IA por tarefa, com um perfil padrao ativo.
+17. Selecao de modelo de processamento por tarefa dentro de perfis.
+18. Selecao de modelo de embedding remoto ou local dentro de perfis.
+19. `AiModelAdapter` e registry de modelos com capabilities.
+20. Negociacao de modelo por tarefa a partir de capabilities.
+21. Preparacao da interface para runtime local com `node-llama-cpp`, sem exigir execucao multimodal local no MVP.
+22. Registro de modelos locais em `local_models` quando configurados.
+23. Taxonomia inicial de `SourceItem` e `GraphEntity`.
+24. Insercao manual com escolha de tipo e formulario progressivo.
+25. Busca de fontes existentes para evitar duplicacao na insercao manual.
+26. Importacao de documento textual simples.
+27. Captura real pela extensao Chrome de paginas web, selecoes e metadados.
+28. Captura real pela extensao Chrome de paginas de YouTube, com URL, metadados e transcricao quando disponivel.
+29. Fluxos bidirecionais essenciais com o plugin Obsidian.
+30. Criacao de item de acervo com metadados basicos.
+31. Extracao de pagina web com Defuddle.
+32. Importacao de arquivo local com `markitdown-ts`.
+33. Conversao para Markdown normalizado.
+34. Projecao inicial de Markdown no vault Obsidian.
+35. Sincronizacao Obsidian <-> banco para criacao, edicao, rename/move e remocao de arquivos gerenciados.
+36. Fluxo inicial de YouTube/video web com `youtubei.js` para metadados e transcricao quando disponivel, sem transcricao robusta no MVP.
+37. Geracao de resumo para fonte longa.
+38. Chunking com `SourceSpan`.
+39. Busca textual.
+40. Geracao de embeddings para chunks e notas atomicas.
+41. Busca vetorial via `pgvector`.
+42. Geracao inicial de notas atomicas Zettelkasten.
+43. Relacao das notas atomicas com fonte, chunks e entidades.
+44. Matching inicial entre notas atomicas usando busca hibrida.
+45. Persistencia de relacoes entre notas atomicas no SQL.
+46. Busca hibrida com resultados rastreaveis.
+47. Jobs persistidos e executados em `worker_threads`.
+48. i18n funcional em `en` e `pt-BR`, com estrutura pronta para `it`, `fr` e `es`.
+49. Testes de regressao automatizados para contratos, dominio e fluxos criticos.
 
-Depois desse MVP, o projeto pode evoluir para AGE mais profundo, grafo visual, OCR, transcricao, extracao avancada de entidades, relacoes, automacoes, captura real pela extensao Chrome, fluxos bidirecionais ricos com o plugin Obsidian, MOCs e wikis.
+Escopo explicitamente fora do MVP inicial:
+
+- AGE profundo e travessias complexas de grafo;
+- grafo visual elaborado;
+- OCR sofisticado;
+- multimodal local em producao;
+- transcricao robusta de audio/video;
+- MOCs automaticos;
+- wikis elaboradas;
+- extracao avancada de entidades e relacoes;
+- automacoes;
+- features avancadas da extensao alem da captura de paginas web e YouTube;
+- features avancadas do plugin Obsidian alem da sincronizacao bidirecional essencial.
+
+Depois desse MVP, o projeto pode evoluir para esses itens de forma incremental, sem perder as decisoes arquiteturais ja documentadas.
 
 ## Decisao Arquitetural Atual
 
