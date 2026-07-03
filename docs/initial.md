@@ -36,12 +36,14 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - Notas atomicas devem ser relacionadas as fontes, aos elementos catalograficos, as entidades e a outras notas atomicas.
 - Fontes longas, como artigos, capitulos, livros, manuais, videos e podcasts, devem receber resumo gerado durante a importacao.
 - A aplicacao deve incluir uma area de configuracoes para provedores de IA, modelos de processamento, embeddings, chaves e modelos locais.
-- Provedores de IA iniciais: OpenAI, Google, Anthropic, OpenRouter e local/OpenAI-compatible.
+- Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram na fase seguinte como novos adaptadores.
 - Modelos locais via GGUF devem ser executados inicialmente com `node-llama-cpp` embutido na aplicacao Electron.
-- Provedores de embedding iniciais: OpenAI, Google e modelos locais baixaveis.
-- Drizzle ORM com PGlite.
-- PGlite com `pgvector` para busca vetorial.
-- PGlite com Apache AGE para consultas e projecoes de grafo.
+- Provedores de embedding no MVP: Google (Gemini) e endpoints OpenAI-compatible; modelos locais baixaveis na sequencia.
+- PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com base em `postgres-vector-embedded` (binarios por plataforma com `pgvector` incluido).
+- Main process gerencia o ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao de crash.
+- Drizzle ORM sobre `node-postgres`.
+- `pgvector` para busca vetorial, incluido nos binarios do sidecar.
+- Apache AGE para consultas e projecoes de grafo, compilado por plataforma e injetado no bundle do sidecar; inicialmente apenas macOS.
 - Zod para contratos tipados entre renderer, preload, main process e workers.
 - `worker_threads` para ingestao, chunking, OCR, transcricao, embeddings e extracao de conhecimento.
 - Pacote interno `@app/domain` para tipos canonicos e schemas compartilhados.
@@ -54,6 +56,13 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - Migrations devem ser verificadas no banco real apos aplicacao.
 - Nao fazer commit final automaticamente; informar quando estiver pronto para o commit.
 - Idiomas iniciais: `en` como padrao, `pt-BR`, `it`, `fr` e `es`.
+- Integration Gateway com servidor HTTP local em loopback no main process e WebSocket para eventos; Native Messaging nao sera usado.
+- Busca textual com configuracao `simple`, `unaccent` e `pg_trgm`.
+- Ingestao orquestrada como maquina de estados persistida (`ingestion_runs`) com etapas e checkpoints retomaveis.
+- Chunks sempre gerados a partir do documento fonte normalizado, nunca do resumo.
+- Notas atomicas geradas automaticamente nascem com status `pending_review` e passam por fila de revisao.
+- Taxonomia de `SourceItem` reduzida a 8 tipos no MVP; demais tipos documentados ficam para fase seguinte.
+- Segredos via Electron `safeStorage`; nunca em texto puro no banco.
 
 ## Arquitetura Geral
 
@@ -124,7 +133,7 @@ packages/
     metadados de conversao
 
   @app/db
-    cliente PGlite
+    cliente Postgres (node-postgres)
     schema Drizzle
     migrations
     repositorios
@@ -144,14 +153,14 @@ Chrome Extension
   -> Integration Gateway
   -> Application Service
   -> Repository / Worker / Filesystem
-  -> PGlite
+  -> PostgreSQL (sidecar)
 
 Obsidian Plugin
   <-> Integration Client
   <-> Integration Gateway
   <-> Application Service / Event Bus
   <-> Repository / Worker / Filesystem
-  <-> PGlite
+  <-> PostgreSQL (sidecar)
 ```
 
 O renderer nao devera acessar o banco diretamente. Toda comunicacao entre interface e backend local passara por uma API segura exposta no preload e implementada no main process.
@@ -164,7 +173,7 @@ React Renderer
   -> Zod parse
   -> Application Service
   -> Repository / Worker / Filesystem
-  -> PGlite
+  -> PostgreSQL (sidecar)
 ```
 
 ## Main Process
@@ -172,7 +181,7 @@ React Renderer
 O main process sera o backend local da aplicacao. Ele sera responsavel por:
 
 - inicializar a aplicacao Electron;
-- inicializar o banco PGlite;
+- gerenciar o ciclo de vida do Postgres sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao apos crash;
 - executar migrations;
 - registrar handlers IPC;
 - inicializar o Integration Gateway;
@@ -205,13 +214,17 @@ Responsabilidades iniciais:
 - encaminhar comandos para servicos de aplicacao;
 - manter compatibilidade por versao de contrato.
 
-O transporte exato ainda deve ser validado. Candidatos iniciais:
+Transporte decidido: servidor local em loopback no main process, com HTTP para requisicoes e WebSocket para eventos. Native Messaging nao sera usado; a extensao Chrome e o plugin Obsidian falam diretamente com o servidor local.
 
-- servidor local em loopback com HTTP para requisicoes e WebSocket para eventos;
-- Native Messaging para a extensao Chrome;
-- adaptador especifico para o plugin Obsidian quando necessario.
+Pontos de atencao do transporte:
 
-A arquitetura deve tratar o transporte como detalhe de adaptador. A regra principal e que Chrome Extension e Obsidian Plugin falem com o desktop por contratos versionados, nao por importacao direta de codigo interno.
+- a extensao Chrome precisa de `host_permissions` para o endereco local no manifest;
+- service workers MV3 hibernam apos inatividade; o cliente da extensao deve reconectar e reestabelecer estado ao acordar;
+- porta padrao configuravel, com deteccao de conflito;
+- pareamento por token exibido no desktop e informado no cliente externo;
+- o desktop precisa estar aberto para receber capturas; clientes devem tratar desconexao com feedback claro e, se util, fila local simples de reenvio.
+
+A arquitetura deve continuar tratando o transporte como detalhe de adaptador. A regra principal e que Chrome Extension e Obsidian Plugin falem com o desktop por contratos versionados, nao por importacao direta de codigo interno.
 
 ## Preload
 
@@ -287,14 +300,17 @@ Textos dessa area tambem devem seguir a regra de i18n obrigatorio.
 
 A aplicacao deve permitir selecionar o modelo de IA usado pelo pipeline de processamento, incluindo catalogacao, busca de metadados, conversao assistida quando aplicavel, resumo, OCR, parsing de imagens, extracao de entidades, extracao de claims, geracao de notas atomicas e reranking.
 
-Provedores iniciais:
+Provedores no MVP:
+
+- Google (Gemini);
+- Generic OpenAI-compatible endpoint.
+
+Fase seguinte (arquitetura ja preparada por adaptadores):
 
 - OpenAI;
-- Google;
 - Anthropic;
 - OpenRouter;
-- Local embutido via `node-llama-cpp`;
-- Generic OpenAI-compatible endpoint.
+- Local embutido via `node-llama-cpp` (interface preparada no MVP, sem dependencia funcional).
 
 Cada provedor remoto deve permitir:
 
@@ -348,9 +364,9 @@ Regras:
 
 Seguranca de credenciais:
 
-- API keys nao devem ser armazenadas em texto puro no PGlite;
+- API keys nao devem ser armazenadas em texto puro no banco local;
 - o banco deve guardar apenas referencias, metadados nao sensiveis e status;
-- segredos devem usar armazenamento seguro do sistema operacional ou mecanismo equivalente;
+- segredos devem usar Electron `safeStorage` (armazenamento seguro do SO; no Linux depende de keyring disponivel);
 - logs nunca devem incluir chaves, tokens ou payloads sensiveis.
 
 Selecao por tarefa:
@@ -774,6 +790,7 @@ Regra de nomes:
 
 Sincronizacao:
 
+- o banco deve armazenar last modified (mtime) e hash de cada arquivo gerenciado; ao abrir a aplicacao ou reconectar o plugin, executar scan de reconciliacao procurando arquivos criados, modificados, movidos ou removidos enquanto o desktop esteve fechado;
 - arquivo criado no banco deve criar ou atualizar `.md` no vault;
 - arquivo alterado no Obsidian deve enviar evento ao desktop e atualizar o banco;
 - rename/move deve atualizar o path relativo no banco, sem mudar `memora_id`;
@@ -867,7 +884,7 @@ Esse pacote deve definir o vocabulario estavel do sistema. Mudancas nele devem s
 
 O pacote `@app/integration-contracts` sera a fronteira compartilhada entre a aplicacao desktop, a extensao Chrome e o plugin Obsidian.
 
-Ele deve conter apenas contratos, schemas, tipos de eventos e utilitarios seguros para ambientes externos. Nao deve importar Electron, PGlite, Drizzle, Node APIs privilegiadas ou codigo de servicos internos.
+Ele deve conter apenas contratos, schemas, tipos de eventos e utilitarios seguros para ambientes externos. Nao deve importar Electron, `node-postgres`, Drizzle, Node APIs privilegiadas ou codigo de servicos internos.
 
 Responsabilidades:
 
@@ -917,22 +934,33 @@ Responsabilidades:
 - suportar modelos locais baixaveis;
 - padronizar erros de provedor para mensagens localizadas.
 
-Provedores de processamento inicial:
+Provedores de processamento no MVP:
 
 ```txt
-OpenAI
-Google
-Anthropic
-OpenRouter
-Local embedded node-llama-cpp runtime
+Google (Gemini)
 Generic OpenAI-compatible endpoint
 ```
 
-Provedores de embedding inicial:
+Fase seguinte:
 
 ```txt
 OpenAI
-Google
+Anthropic
+OpenRouter
+Local embedded node-llama-cpp runtime (interface preparada no MVP)
+```
+
+Provedores de embedding no MVP:
+
+```txt
+Google (Gemini)
+Generic OpenAI-compatible endpoint
+```
+
+Fase seguinte:
+
+```txt
+OpenAI
 Local embedding models
 ```
 
@@ -975,7 +1003,9 @@ GraphEntity
 
 ## Itens de Acervo
 
-Tipos iniciais de itens de acervo:
+No MVP, apenas 8 tipos serao implementados: `PersonalNote`, `DailyNote`, `WebArticle`, `Book`, `BookChapter`, `StandaloneArticle`, `Video` e `GenericDocument`. Os demais tipos abaixo permanecem documentados como direcao de produto e entram em fases seguintes.
+
+Tipos de itens de acervo:
 
 - `PersonalNote`: nota avulsa pessoal.
 - `DailyNote`: nota diaria.
@@ -1029,6 +1059,8 @@ Novo conteudo manual
 ```
 
 O formulario deve ser progressivo: apos o usuario escolher o tipo de conteudo, a interface deve pedir apenas os campos relevantes para aquele tipo.
+
+No MVP, o formulario cobre apenas os 8 tipos da taxonomia inicial; tipos bibliograficos adicionais (revista, periodico, curso etc.) entram com seus formularios na fase seguinte.
 
 Exemplos:
 
@@ -1134,6 +1166,8 @@ A aplicacao deve gerenciar um sistema de notas atomicas no estilo Zettelkasten. 
 
 Uma nota atomica deve representar uma ideia especifica, formulada de maneira independente, com referencia clara a sua fonte e as evidencias usadas para cria-la.
 
+Notas atomicas geradas automaticamente nascem com status `pending_review` e passam por uma fila de revisao humana antes de serem consideradas estabelecidas. O matching pode considerar notas pendentes, mas a UI deve distinguir claramente notas revisadas de notas pendentes.
+
 Fluxo conceitual:
 
 ```txt
@@ -1211,7 +1245,7 @@ O pacote `@app/db` sera responsavel pela persistencia e pelas consultas.
 
 Responsabilidades:
 
-- criar e configurar o cliente PGlite;
+- criar e configurar o cliente Postgres (`node-postgres`) e o pool de conexoes;
 - declarar schemas Drizzle;
 - manter migrations;
 - criar extensoes necessarias, como `pgvector` e Apache AGE;
@@ -1272,9 +1306,26 @@ Estrutura conceitual:
       graph-traversal.ts
 ```
 
+## Postgres Sidecar Embarcado
+
+O banco local sera um PostgreSQL nativo completo, embarcado na aplicacao desktop como processo sidecar. A base de empacotamento sera `postgres-vector-embedded`, que fornece binarios de Postgres + `pgvector` por plataforma para aplicacoes Node/Electron. O Apache AGE sera compilado por plataforma contra o mesmo major do Postgres e injetado no bundle de binarios; o primeiro alvo e macOS.
+
+Regras de ciclo de vida:
+
+- o main process e o unico dono do sidecar: initdb no primeiro uso, spawn como processo filho, shutdown limpo ao encerrar o app;
+- data dir no `userData` da aplicacao, nunca dentro do bundle;
+- conexao por loopback com porta dinamica livre e senha gerada por instalacao (scram), guardada via Electron `safeStorage`; unix socket pode ser usado quando disponivel; nunca `trust` em TCP;
+- detectar e tratar `postmaster.pid` obsoleto e processos orfaos apos crash;
+- impedir duas instancias da aplicacao disputando o mesmo data dir;
+- upgrade de major do Postgres e mudanca planejada, com estrategia explicita de migracao de dados (`pg_upgrade` ou dump/restore);
+- binarios do Postgres e extensoes entram no fluxo de assinatura/notarizacao do empacotamento por plataforma;
+- em plataformas sem build do AGE, consultas de grafo degradam para CTEs recursivas sobre as tabelas relacionais; o app nunca deve quebrar pela ausencia do AGE.
+
+Com Postgres completo, multiplas conexoes sao suportadas: workers podem abrir conexoes proprias com o banco, respeitando limites de pool configurados.
+
 ## Banco de Dados
 
-PGlite sera a fonte de verdade local da aplicacao desktop. O banco devera armazenar itens de acervo, documentos em Markdown, assets, chunks, embeddings, metadados bibliograficos, entidades, mencoes, relacoes, claims, questions, notas atomicas, relacoes entre notas atomicas, resumos, jobs, configuracoes, configuracoes nao sensiveis de IA, clientes externos autorizados e metadados.
+O PostgreSQL embarcado (sidecar) sera a fonte de verdade local da aplicacao desktop. O banco devera armazenar itens de acervo, documentos em Markdown, assets, chunks, embeddings, metadados bibliograficos, entidades, mencoes, relacoes, claims, questions, notas atomicas, relacoes entre notas atomicas, resumos, jobs, configuracoes, configuracoes nao sensiveis de IA, clientes externos autorizados e metadados.
 
 Modelo conceitual inicial:
 
@@ -1332,6 +1383,7 @@ obsidian_sync_files
   vault_relative_path
   frontmatter_hash
   content_hash
+  file_mtime
   sync_version
   sync_status
   last_seen_at
@@ -1607,10 +1659,26 @@ ai_task_runs
   capabilities_used
   input_hash
   output_hash
+  input_tokens
+  output_tokens
+  cost_estimate
+  duration_ms
   status
   error
   started_at
   finished_at
+
+ingestion_runs
+  id
+  source_item_id
+  status
+  current_stage
+  stages_checkpoint
+  error
+  started_at
+  finished_at
+  created_at
+  updated_at
 
 jobs
   id
@@ -1640,6 +1708,8 @@ O campo `source_origin` devera contemplar origens como importacao manual, captur
 `documents` pode continuar existindo como tabela concreta para conteudos textuais normalizados ou como detalhe de implementacao. A entidade de produto mais ampla deve ser `source_items`.
 
 `summary` em `source_items` deve ser preenchido para fontes longas durante a importacao. A tabela `source_summaries` permite manter historico, modelo, idioma e novas versoes de resumo quando o pipeline for reexecutado.
+
+Os chunks sao sempre gerados a partir do documento fonte normalizado, nunca do resumo. O resumo e um artefato derivado para leitura e catalogacao; quando a fonte exceder o contexto do modelo, o resumo pode ser produzido por map-reduce sobre os chunks.
 
 `markdown_content` em `documents` representa o conteudo textual normalizado usado pelo pipeline. Assets originais, capas, PDFs, imagens, transcricoes brutas e outros arquivos continuam preservados em `document_assets`.
 
@@ -1675,11 +1745,11 @@ semantic reranking
 
 Essa regra deve ser orientada por capacidade real do modelo e benchmarks. `google/embeddinggemma-300m` suporta 768 dimensoes e opcoes menores como 512, 256 e 128 via Matryoshka Representation Learning. `intfloat/multilingual-e5-base` tem dimensao nativa de 768.
 
-Dimensoes diferentes nao devem ser misturadas no mesmo indice vetorial. Se o sistema mantiver embeddings de 256 e 768 dimensoes, a persistencia deve separar claramente modelo, dimensao, uso e indice correspondente.
+Dimensoes diferentes nao devem ser misturadas no mesmo indice vetorial. Se o sistema mantiver embeddings de 256 e 768 dimensoes, a persistencia deve separar claramente modelo, dimensao, uso e indice correspondente. Na implementacao, usar tabelas (ou colunas) separadas por dimensao — por exemplo `embeddings_256` e `embeddings_768` — pois indices pgvector exigem dimensao fixa por coluna.
 
 ## Grafo
 
-Apache AGE sera usado para consultas e projecoes de grafo. A recomendacao inicial e manter as tabelas relacionais `entities`, `entity_mentions` e `relations` como fonte canonica, usando AGE como uma camada de consulta/projecao.
+Apache AGE, compilado por plataforma e carregado no Postgres sidecar, sera usado para consultas e projecoes de grafo. Inicialmente o AGE sera compilado apenas para macOS; enquanto uma plataforma nao tiver build do AGE, as consultas de grafo devem degradar para CTEs recursivas sobre as tabelas relacionais. A recomendacao inicial e manter as tabelas relacionais `entities`, `entity_mentions` e `relations` como fonte canonica, usando AGE como uma camada de consulta/projecao.
 
 ```txt
 entities / relations
@@ -1697,6 +1767,10 @@ Essa separacao reduz o acoplamento ao motor de grafo e preserva a possibilidade 
 ## Pipeline de Ingestao
 
 A ingestao devera ser assincrona e baseada em jobs persistidos.
+
+A orquestracao deve ser uma maquina de estados persistida por importacao (`ingestion_runs`): cada execucao registra a etapa atual e checkpoints por etapa concluida, permitindo continuar do ponto em que parou apos erro, cancelamento ou reinicio da aplicacao, sem refazer etapas ja concluidas.
+
+Capturas e importacoes repetidas devem ser deduplicadas por `original_uri` e `content_hash` antes de criar nova fonte, com politica explicita: atualizar, versionar ou ignorar, conforme configuracao.
 
 Fluxo inicial:
 
@@ -1764,11 +1838,13 @@ obsidian-sync.worker.ts
 asset-storage.worker.ts
 ```
 
-A fila inicial pode ser implementada no proprio PGlite. Isso permite retomar trabalhos interrompidos quando a aplicacao for fechada e aberta novamente.
+A fila inicial pode ser implementada no proprio Postgres, usando `SELECT ... FOR UPDATE SKIP LOCKED` para permitir multiplos consumidores concorrentes. Isso permite retomar trabalhos interrompidos quando a aplicacao for fechada e aberta novamente.
 
 ## Busca
 
 A busca devera ser hibrida desde a fundacao e devera servir tanto a recuperacao de fontes quanto a descoberta de relacoes entre notas atomicas.
+
+A busca textual usara configuracao `simple` combinada com `unaccent` e `pg_trgm`, evitando dependencia de dicionario por idioma no MVP. O idioma de cada documento continua registrado, permitindo evoluir para dicionarios especificos e stemming por idioma no futuro.
 
 Fluxo conceitual:
 
@@ -2008,7 +2084,7 @@ Regras iniciais:
 - `@app/ai` nao deve ser importado pela extensao Chrome nem pelo plugin Obsidian no fluxo padrao.
 - `@app/conversion` nao deve ser importado por clientes externos quando incluir adaptadores dependentes de Node ou acesso a filesystem.
 - Defuddle pode ser usado na extensao Chrome e no desktop, mas os resultados devem ser enviados ao pipeline por contratos de integracao.
-- o plugin Obsidian pode monitorar arquivos e frontmatter no vault, mas nao deve acessar PGlite diretamente.
+- o plugin Obsidian pode monitorar arquivos e frontmatter no vault, mas nao deve acessar o banco local diretamente.
 - codigo do main process do Electron nao deve ser importado pela extensao Chrome nem pelo plugin Obsidian.
 - contratos externos devem viver em `@app/integration-contracts`, nao espalhados dentro de cada app.
 - detalhes de transporte devem ficar em adaptadores locais de cada app.
@@ -2061,6 +2137,8 @@ O fluxo padrao e nao fazer o commit final automaticamente. Ao concluir uma taref
 - O sistema deve diferenciar itens de acervo, entidades do grafo, obras abstratas, instancias bibliograficas e assets fisicos/digitais.
 - A importacao deve produzir conhecimento navegavel, nao apenas arquivos indexados.
 - Notas atomicas Zettelkasten devem representar ideias especificas, com proveniencia e conexoes justificaveis.
+- Notas atomicas geradas automaticamente passam por revisao humana antes de serem consideradas estabelecidas.
+- Chamadas remotas de IA devem ser transparentes em custo: cada execucao registra tokens e custo estimado, e importacoes em lote respeitam configuracao de confirmacao.
 - Relacoes entre notas atomicas devem ser persistidas no SQL e manter os sinais usados na decisao.
 - Fontes longas devem receber resumo gerado durante a importacao.
 - Modelos e provedores de IA devem ser configuraveis por tarefa.
@@ -2079,9 +2157,13 @@ O fluxo padrao e nao fazer o commit final automaticamente. Ao concluir uma taref
 
 Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornarem compromissos rigidos:
 
-- performance do PGlite com centenas de milhares e milhoes de chunks;
+- performance do Postgres embarcado com centenas de milhares e milhoes de chunks;
 - performance de `pgvector` dentro do ambiente desktop;
-- comportamento de Apache AGE dentro do PGlite para consultas reais;
+- build reproduzivel do Apache AGE por plataforma, comecando por macOS; Windows e Linux pendentes;
+- comportamento de Apache AGE no sidecar para consultas reais;
+- ciclo de vida do sidecar: initdb no primeiro uso, shutdown limpo, crash, processos orfaos e `postmaster.pid` obsoleto;
+- estrategia de upgrade de major do Postgres com dados existentes;
+- assinatura e notarizacao dos binarios do Postgres e extensoes no empacotamento por plataforma;
 - custo de cold start com banco grande;
 - tamanho em disco de embeddings;
 - velocidade de ingestao e reindexacao;
@@ -2137,7 +2219,7 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE 
 5. Estrutura isolada para `apps/obsidian-plugin`.
 6. `@app/integration-contracts` com contratos iniciais.
 7. Integration Gateway minimo no desktop.
-8. PGlite inicializado no main process.
+8. Postgres sidecar inicializado e gerenciado pelo main process (initdb, start, shutdown, recuperacao).
 9. Drizzle com schema, migrations basicas e fluxo `npm run db:generate`.
 10. Verificacao pos-migration no banco real.
 11. Area de configuracoes inicial.
@@ -2152,7 +2234,7 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE 
 20. Negociacao de modelo por tarefa a partir de capabilities.
 21. Preparacao da interface para runtime local com `node-llama-cpp`, sem exigir execucao multimodal local no MVP.
 22. Registro de modelos locais em `local_models` quando configurados.
-23. Taxonomia inicial de `SourceItem` e `GraphEntity`.
+23. Taxonomia inicial reduzida de `SourceItem` (8 tipos) e `GraphEntity`.
 24. Insercao manual com escolha de tipo e formulario progressivo.
 25. Busca de fontes existentes para evitar duplicacao na insercao manual.
 26. Importacao de documento textual simples.
@@ -2201,7 +2283,7 @@ Depois desse MVP, o projeto pode evoluir para esses itens de forma incremental, 
 A direcao atual do projeto e:
 
 ```txt
-PGlite + Drizzle
+Postgres embarcado (sidecar) + Drizzle
   -> fonte de verdade local
 
 Electron Desktop
@@ -2213,8 +2295,8 @@ React 19 + Tailwind CSS 4 + shadcn/ui
 Area de Configuracoes
   -> provedores, modelos, embeddings, integracoes e preferencias
 
-OpenAI / Google / Anthropic / OpenRouter / Local
-  -> provedores configuraveis de IA
+Google (Gemini) / Generic OpenAI-compatible
+  -> provedores de IA do MVP; OpenAI, Anthropic, OpenRouter e local na fase seguinte
 
 node-llama-cpp
   -> runtime local embutido para modelos GGUF no Electron
@@ -2244,7 +2326,7 @@ pgvector
   -> busca semantica
 
 Apache AGE
-  -> consultas e projecoes de grafo
+  -> consultas e projecoes de grafo (build por plataforma; macOS primeiro)
 
 Zod
   -> contratos entre processos e pacotes
