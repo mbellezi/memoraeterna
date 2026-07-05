@@ -18,6 +18,7 @@ O projeto sera local-first, TypeScript-first e orientado por uma arquitetura em 
 
 As seguintes decisoes foram adotadas como base inicial do projeto:
 
+- Versoes canonicas da stack em `docs/stack-versions.md`; manifests, lockfiles, binarios sidecar e scripts de build devem seguir essa matriz.
 - `electron-vite` como fundacao da aplicacao desktop.
 - React 19 no renderer.
 - Tailwind CSS 4 para estilos.
@@ -39,11 +40,11 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram na fase seguinte como novos adaptadores.
 - Modelos locais via GGUF devem ser executados inicialmente com `node-llama-cpp` embutido na aplicacao Electron.
 - Provedores de embedding no MVP: Google (Gemini) e endpoints OpenAI-compatible; modelos locais baixaveis na sequencia.
-- PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com base em `postgres-vector-embedded` (binarios por plataforma com `pgvector` incluido).
+- PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - Main process gerencia o ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao de crash.
 - Drizzle ORM sobre `node-postgres`.
 - `pgvector` para busca vetorial, incluido nos binarios do sidecar.
-- Apache AGE para consultas e projecoes de grafo, compilado por plataforma e injetado no bundle do sidecar; inicialmente apenas macOS.
+- Apache AGE `PG18/v1.7.0-rc0` para consultas e projecoes de grafo, compilado por plataforma e injetado no bundle do sidecar apos validacao; inicialmente apenas macOS.
 - Zod para contratos tipados entre renderer, preload, main process e workers.
 - `worker_threads` para ingestao, chunking, OCR, transcricao, embeddings e extracao de conhecimento.
 - Pacote interno `@app/domain` para tipos canonicos e schemas compartilhados.
@@ -265,8 +266,8 @@ O renderer nao deve conter regras de persistencia, acesso direto ao banco ou log
 
 A stack inicial de frontend sera:
 
-- React 19;
-- Tailwind CSS 4;
+- React 19, conforme `docs/stack-versions.md`;
+- Tailwind CSS 4, conforme `docs/stack-versions.md`;
 - `shadcn/ui`;
 - i18n obrigatorio para todo texto de produto.
 
@@ -1308,7 +1309,7 @@ Estrutura conceitual:
 
 ## Postgres Sidecar Embarcado
 
-O banco local sera um PostgreSQL nativo completo, embarcado na aplicacao desktop como processo sidecar. A base de empacotamento sera `postgres-vector-embedded`, que fornece binarios de Postgres + `pgvector` por plataforma para aplicacoes Node/Electron. O Apache AGE sera compilado por plataforma contra o mesmo major do Postgres e injetado no bundle de binarios; o primeiro alvo e macOS.
+O banco local sera um PostgreSQL nativo completo, embarcado na aplicacao desktop como processo sidecar. A versao alvo de Postgres, `pgvector`, AGE e bibliotecas Node fica em `docs/stack-versions.md`. O artefato sidecar deve fornecer binarios de Postgres + `pgvector` por plataforma para aplicacoes Node/Electron. O Apache AGE `PG18/v1.7.0-rc0` sera compilado por plataforma contra PostgreSQL 18 e injetado no bundle de binarios apos validacao; o primeiro alvo e macOS.
 
 Regras de ciclo de vida:
 
@@ -2213,7 +2214,7 @@ Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornar
 O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE profundo, OCR sofisticado, multimodal local, MOCs automaticos, wikis elaboradas e transcricao robusta permanecem na direcao do produto, mas ficam fora da implementacao inicial.
 
 1. Aplicacao Electron com React via `electron-vite`.
-2. Renderer com React 19, Tailwind CSS 4 e `shadcn/ui`.
+2. Renderer com React 19, Tailwind CSS 4 e `shadcn/ui`, nas versoes de `docs/stack-versions.md`.
 3. IPC tipado com Zod entre renderer, preload e main.
 4. Estrutura isolada para `apps/chrome-extension`.
 5. Estrutura isolada para `apps/obsidian-plugin`.
@@ -2290,7 +2291,7 @@ Electron Desktop
   -> nucleo operacional da plataforma
 
 React 19 + Tailwind CSS 4 + shadcn/ui
-  -> stack de frontend
+  -> stack de frontend, conforme docs/stack-versions.md
 
 Area de Configuracoes
   -> provedores, modelos, embeddings, integracoes e preferencias

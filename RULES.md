@@ -23,15 +23,17 @@ Se houver conflito entre este arquivo e uma etapa de algum comand dado ao agente
 
 ## Stack Obrigatoria
 
+As versoes canonicas ficam em `docs/stack-versions.md`. Antes de criar ou atualizar `package.json`, lockfiles, imagens, binarios sidecar ou scripts de build, siga essa matriz. Quando a ultima versao publicada conflitar com compatibilidade real, prevalece a versao estavel compativel documentada ali.
+
 - Desktop: Electron com `electron-vite`.
 - Renderer: React 19.
 - CSS/UI: Tailwind CSS 4 e `shadcn/ui`.
 - Icones: preferir `lucide-react`.
-- Backend local: Node.js no main process do Electron.
-- Banco: PostgreSQL nativo embarcado como sidecar da aplicacao, com base em `postgres-vector-embedded` (binarios por plataforma com `pgvector` incluido).
+- Backend local: Node.js no main process do Electron, alinhado ao baseline LTS de `docs/stack-versions.md`.
+- Banco: PostgreSQL nativo embarcado como sidecar da aplicacao, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - ORM/migrations: Drizzle ORM sobre `node-postgres`.
 - Vetores: `pgvector`, incluido nos binarios do sidecar.
-- Grafo: Apache AGE, compilado por plataforma e injetado no bundle do sidecar; inicialmente apenas macOS, e apenas como camada simples de projecao/consulta.
+- Grafo: Apache AGE `PG18/v1.7.0-rc0` como alvo do spike macOS, compilado por plataforma e injetado no bundle do sidecar apos validacao; apenas como camada simples de projecao/consulta.
 - Contratos: Zod.
 - Workers: `worker_threads`.
 - Web extraction: Defuddle.
@@ -373,4 +375,3 @@ Ao terminar uma etapa, informe:
 - se esta pronto para commit.
 
 Nao faca commit automaticamente.
-

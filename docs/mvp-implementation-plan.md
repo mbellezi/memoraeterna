@@ -43,6 +43,7 @@ Estas ideias continuam no projeto, mas nao fazem parte da implementacao inicial:
 ## Regras Globais
 
 - Nao escrever textos de produto hardcoded no codigo. Usar i18n.
+- Criar e atualizar manifests, lockfiles, binarios sidecar e scripts de build conforme `docs/stack-versions.md`.
 - Manter TypeScript-first em todos os pacotes.
 - Renderer nao acessa banco, filesystem privilegiado ou `node-llama-cpp` diretamente.
 - `node-llama-cpp` deve rodar apenas no main process ou em workers controlados pelo main process.
@@ -98,7 +99,7 @@ Objetivo: criar a base de monorepo e ferramentas comuns.
 Implementar:
 
 - configurar workspaces para `apps/*` e `packages/*`;
-- definir package manager e scripts raiz;
+- definir package manager `npm@11.16.0`, `engines` e scripts raiz conforme `docs/stack-versions.md`;
 - configurar TypeScript compartilhado;
 - configurar Vitest para pacotes e apps;
 - configurar lint/format se ainda nao existir;
@@ -134,9 +135,9 @@ Objetivo: provar o banco sidecar antes de construir qualquer coisa sobre ele.
 
 Implementar:
 
-- validar `postgres-vector-embedded` no macOS: initdb em diretorio temporario, start e stop controlados via Node;
-- confirmar a versao major do Postgres fornecida pelos binarios;
-- compilar Apache AGE para macOS contra essa versao major;
+- validar o artefato sidecar de Postgres no macOS: initdb em diretorio temporario, start e stop controlados via Node;
+- confirmar a versao major/minor do Postgres e `pgvector` conforme `docs/stack-versions.md`;
+- compilar Apache AGE `PG18/v1.7.0-rc0` para macOS contra PostgreSQL 18;
 - injetar os artefatos do AGE (biblioteca, arquivos `control` e `sql`) no diretorio de binarios do sidecar;
 - `CREATE EXTENSION vector` e `CREATE EXTENSION age` em banco de teste;
 - executar uma query Cypher trivial via AGE e uma busca vetorial trivial via pgvector;
@@ -151,7 +152,7 @@ Testes e validacao:
 
 Criterio de pronto:
 
-- sidecar sobe e desce de forma confiavel no macOS com pgvector e AGE disponiveis;
+- sidecar sobe e desce de forma confiavel no macOS com pgvector e AGE `PG18/v1.7.0-rc0` disponiveis;
 - processo de build do AGE documentado;
 - riscos remanescentes registrados (builds de Windows e Linux ficam como pendencia explicita).
 
@@ -238,8 +239,8 @@ Objetivo: criar aplicacao Electron minima com renderer React, preload seguro e i
 Implementar:
 
 - `apps/desktop` com `electron-vite`;
-- React 19 no renderer;
-- Tailwind CSS 4;
+- React 19 no renderer, nas versoes de `docs/stack-versions.md`;
+- Tailwind CSS 4, nas versoes de `docs/stack-versions.md`;
 - base para `shadcn/ui`;
 - preload expondo API pequena:
   - `app.system.getInfo`;
