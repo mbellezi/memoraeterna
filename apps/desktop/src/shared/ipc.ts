@@ -4,6 +4,8 @@ export const ipcChannels = {
   systemGetInfo: "app:system:get-info",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
+  appSettingsGet: "app:settings:app:get",
+  appSettingsUpdate: "app:settings:app:update",
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update"
 } as const;
@@ -34,6 +36,20 @@ export const databaseStatusSchema = z.object({
 });
 
 export const deletionPolicySchema = z.enum(["tombstone", "archive", "delete"]);
+export const themeModeSchema = z.enum(["dark", "light"]);
+export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
+export const languageCodeSchema = z.enum(appLanguageCodes);
+
+export const appSettingsSchema = z.object({
+  language: languageCodeSchema,
+  themeMode: themeModeSchema,
+  updatedAt: z.string().datetime()
+});
+
+export const appSettingsUpdateSchema = appSettingsSchema
+  .omit({ updatedAt: true })
+  .partial()
+  .strict();
 
 export const storageSettingsSchema = z.object({
   obsidianVaultPath: z.string().nullable(),
@@ -66,9 +82,16 @@ export type DeletionPolicy = z.infer<typeof deletionPolicySchema>;
 export type DatabaseLifecycleState = z.infer<typeof databaseLifecycleStateSchema>;
 export type DatabaseStatus = z.infer<typeof databaseStatusSchema>;
 export type DatabaseStatusMessageKey = z.infer<typeof databaseStatusMessageKeySchema>;
+export type ThemeMode = z.infer<typeof themeModeSchema>;
+export type AppSettings = z.infer<typeof appSettingsSchema>;
+export type AppSettingsUpdate = z.infer<typeof appSettingsUpdateSchema>;
 export type StorageSettings = z.infer<typeof storageSettingsSchema>;
 export type StorageSettingsUpdate = z.infer<typeof storageSettingsUpdateSchema>;
 export type SystemInfo = z.infer<typeof systemInfoSchema>;
+
+export const defaultAppSettings = {
+  themeMode: "dark"
+} satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {
   obsidianVaultPath: null,
@@ -89,6 +112,8 @@ export interface DesktopApi {
     start: () => Promise<DatabaseStatus>;
   };
   settings: {
+    getApp: () => Promise<AppSettings>;
+    updateApp: (settings: AppSettingsUpdate) => Promise<AppSettings>;
     get: () => Promise<StorageSettings>;
     update: (settings: StorageSettingsUpdate) => Promise<StorageSettings>;
   };

@@ -71,7 +71,10 @@ Renderer
 
 - O main process e o unico responsavel pelo ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao apos crash.
 - Data dir fica no diretorio de dados do usuario da aplicacao (`userData`), nunca dentro do bundle.
-- Conexao por loopback com porta dinamica e senha gerada por instalacao, ou unix socket quando disponivel.
+- Conexao por loopback: usar `MEMORA_DATABASE_PORT` quando configurada; se a
+  porta estiver invalida ou indisponivel, registrar warning e fazer fallback
+  para porta dinamica livre. A senha deve ser gerada por instalacao, ou usar
+  unix socket quando disponivel.
 - A senha local do banco deve ser guardada via armazenamento seguro do SO (Electron `safeStorage`), nunca em texto puro.
 - Detectar e tratar `postmaster.pid` obsoleto e processos orfaos ao iniciar.
 - Nao usar `trust` em TCP.

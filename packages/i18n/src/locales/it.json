@@ -16,6 +16,7 @@
       "cancel": "Annulla",
       "close": "Chiudi",
       "retry": "Riprova",
+      "toggleTheme": "Cambia tema",
       "connect": "Connetti",
       "disconnect": "Disconnetti"
     },
@@ -88,7 +89,22 @@
     "title": "Impostazioni",
     "language": {
       "title": "Lingua",
-      "uiLocale": "Lingua dell'interfaccia"
+      "uiLocale": "Lingua dell'interfaccia",
+      "languages": {
+        "en": "Inglese",
+        "pt-BR": "Portoghese (Brasile)",
+        "it": "Italiano",
+        "fr": "Francese",
+        "es": "Spagnolo"
+      }
+    },
+    "appearance": {
+      "title": "Aspetto",
+      "themeMode": "Tema",
+      "themeModes": {
+        "dark": "Scuro",
+        "light": "Chiaro"
+      }
     },
     "storage": {
       "title": "Archiviazione",

@@ -65,7 +65,8 @@ void app.whenReady().then(() => {
   });
   settingsService = new SettingsService(app.getPath("userData"), {
     getDatabasePool: () => databaseService?.getPool() ?? null,
-    requireDatabase: true
+    requireDatabase: true,
+    desktopLocale: app.getLocale()
   });
   registerIpcHandlers(ipcMain, settingsService, databaseService);
   createMainWindow();

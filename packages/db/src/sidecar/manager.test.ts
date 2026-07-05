@@ -24,6 +24,7 @@ class FakeChild extends EventEmitter {
 class FakeRunner implements SidecarCommandRunner {
   readonly calls: Array<{ file: string; args: readonly string[]; options?: SidecarExecOptions }> = [];
   readonly spawned: Array<{ file: string; args: readonly string[] }> = [];
+  readonly failSpawnPorts = new Set<number>();
 
   async execFile(file: string, args: readonly string[], options?: SidecarExecOptions): Promise<SidecarExecResult> {
     this.calls.push({ file, args, options });
@@ -36,8 +37,17 @@ class FakeRunner implements SidecarCommandRunner {
 
   spawn(file: string, args: readonly string[], _options?: SidecarExecOptions): ChildProcess {
     this.spawned.push({ file, args });
+    const port = readPortArg(args);
+    if (port !== null && this.failSpawnPorts.delete(port)) {
+      throw new Error(`Port ${port} failed`);
+    }
     return new FakeChild() as unknown as ChildProcess;
   }
+}
+
+interface FakeLogger {
+  readonly warnings: string[];
+  readonly logger: Pick<Console, "debug" | "info" | "warn" | "error">;
 }
 
 const tempDirs: string[] = [];
@@ -58,7 +68,8 @@ describe("PostgresSidecarManager", () => {
       user: "memora",
       password: "secret",
       port: 55432,
-      runner
+      runner,
+      ...createFakePortTools()
     });
 
     const connection = await manager.start();
@@ -94,7 +105,8 @@ describe("PostgresSidecarManager", () => {
       user: "memora",
       password: "secret",
       port: 55433,
-      runner
+      runner,
+      ...createFakePortTools()
     });
 
     await manager.start();
@@ -102,7 +114,93 @@ describe("PostgresSidecarManager", () => {
     const pidRead = readFile(join(dataDir, "postmaster.pid"), "utf8");
     await expect(pidRead).rejects.toThrow();
   });
+
+  it("falls back to a dynamic port when the configured port fails", async () => {
+    const { binDir, dataDir } = await createSidecarDirs();
+    const runner = new FakeRunner();
+    runner.failSpawnPorts.add(55432);
+    const { logger, warnings } = createFakeLogger();
+    const manager = new PostgresSidecarManager({
+      binDir,
+      dataDir,
+      database: "memora",
+      user: "memora",
+      password: "secret",
+      port: 55432,
+      runner,
+      logger,
+      ...createFakePortTools()
+    });
+
+    const connection = await manager.start();
+
+    expect(runner.spawned).toHaveLength(2);
+    expect(runner.spawned[0]?.args).toContain("port=55432");
+    expect(runner.spawned[1]?.args).not.toContain("port=55432");
+    expect(connection.port).not.toBe(55432);
+    expect(warnings.some((warning) => warning.includes("falling back to a dynamic port"))).toBe(true);
+  });
+
+  it("falls back to a dynamic port when the configured port is unavailable", async () => {
+    const { binDir, dataDir } = await createSidecarDirs();
+    const runner = new FakeRunner();
+    const { logger, warnings } = createFakeLogger();
+    const manager = new PostgresSidecarManager({
+      binDir,
+      dataDir,
+      database: "memora",
+      user: "memora",
+      password: "secret",
+      port: 55432,
+      runner,
+      logger,
+      dynamicPortResolver: async () => 55434,
+      portAvailabilityChecker: async () => false
+    });
+
+    const connection = await manager.start();
+
+    expect(runner.spawned).toHaveLength(1);
+    expect(runner.spawned[0]?.args).toContain("port=55434");
+    expect(connection.port).toBe(55434);
+    expect(warnings.some((warning) => warning.includes("configured port 55432 is unavailable"))).toBe(true);
+  });
 });
+
+function readPortArg(args: readonly string[]): number | null {
+  const portArg = args.find((arg) => arg.startsWith("port="));
+  if (!portArg) {
+    return null;
+  }
+
+  const port = Number(portArg.replace("port=", ""));
+  return Number.isInteger(port) ? port : null;
+}
+
+function createFakeLogger(): FakeLogger {
+  const warnings: string[] = [];
+  return {
+    warnings,
+    logger: {
+      debug: () => undefined,
+      info: () => undefined,
+      warn: (message?: unknown) => {
+        warnings.push(String(message));
+      },
+      error: () => undefined
+    }
+  };
+}
+
+function createFakePortTools(): {
+  readonly dynamicPortResolver: () => Promise<number>;
+  readonly portAvailabilityChecker: () => Promise<boolean>;
+} {
+  return {
+    dynamicPortResolver: async () => 55434,
+    portAvailabilityChecker: async () => true
+  };
+}
 
 async function createSidecarDirs(): Promise<{ binDir: string; dataDir: string }> {
   const root = await mkdtemp(join(tmpdir(), "memora-sidecar-test-"));

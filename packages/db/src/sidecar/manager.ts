@@ -29,6 +29,8 @@ export class PostgresSidecarManager {
   private readonly extraServerOptions: readonly string[];
   private readonly runner: SidecarCommandRunner;
   private readonly logger: Pick<Console, "debug" | "info" | "warn" | "error"> | undefined;
+  private readonly dynamicPortResolver: (host: string) => Promise<number>;
+  private readonly portAvailabilityChecker: (host: string, port: number) => Promise<boolean>;
   private child: ChildProcess | null = null;
   private currentConnection: PostgresSidecarConnection | null = null;
   private state: PostgresSidecarState = "stopped";
@@ -46,6 +48,8 @@ export class PostgresSidecarManager {
     this.extraServerOptions = config.extraServerOptions ?? [];
     this.runner = config.runner ?? new NodeSidecarCommandRunner();
     this.logger = config.logger;
+    this.dynamicPortResolver = config.dynamicPortResolver ?? findAvailablePort;
+    this.portAvailabilityChecker = config.portAvailabilityChecker ?? isPortAvailable;
   }
 
   getState(): PostgresSidecarState {
@@ -104,56 +108,27 @@ export class PostgresSidecarManager {
     try {
       await this.initdb();
       await this.recoverPostmasterPid();
-      const port = this.configuredPort ?? (await findAvailablePort(this.host));
-      const args = [
-        "-D",
-        this.dataDir,
-        "-c",
-        `listen_addresses=${this.host}`,
-        "-c",
-        `port=${port}`,
-        "-c",
-        "password_encryption=scram-sha-256",
-        ...this.extraServerOptions
-      ];
-      const env = this.envWithPassword();
-      this.child = this.runner.spawn(this.bin("postgres"), args, { env });
-      this.child.once("exit", () => {
-        if (this.state !== "stopping") {
-          this.logger?.warn("Postgres sidecar exited outside a managed shutdown.");
-        }
-        this.child = null;
-        this.currentConnection = null;
-        if (this.state !== "stopping") {
-          this.state = "stopped";
-        }
-      });
 
-      await this.waitUntilReady(port);
-      await this.ensureDatabase(port);
-      this.currentConnection = {
-        host: this.host,
-        port,
-        database: this.database,
-        user: this.user,
-        password: this.password,
-        connectionString: buildConnectionString({
-          host: this.host,
-          port,
-          database: this.database,
-          user: this.user,
-          password: this.password
-        })
-      };
-      this.state = "running";
-      return this.currentConnection;
-    } catch (error) {
-      this.state = "stopped";
-      this.currentConnection = null;
-      if (this.child) {
-        this.child.kill("SIGTERM");
-        this.child = null;
+      if (this.configuredPort !== undefined) {
+        if (await this.portAvailabilityChecker(this.host, this.configuredPort)) {
+          try {
+            return await this.startOnPort(this.configuredPort);
+          } catch (error) {
+            await this.cleanupFailedStart("starting");
+            this.logger?.warn(
+              `Postgres sidecar failed to start on configured port ${this.configuredPort}; falling back to a dynamic port. ${String(error)}`
+            );
+          }
+        } else {
+          this.logger?.warn(
+            `Postgres sidecar configured port ${this.configuredPort} is unavailable; falling back to a dynamic port.`
+          );
+        }
       }
+
+      return await this.startOnPort(await this.dynamicPortResolver(this.host));
+    } catch (error) {
+      await this.cleanupFailedStart("stopped");
       throw error;
     }
   }
@@ -184,6 +159,64 @@ export class PostgresSidecarManager {
   async restart(): Promise<PostgresSidecarConnection> {
     await this.stop();
     return this.start();
+  }
+
+  private async startOnPort(port: number): Promise<PostgresSidecarConnection> {
+    const args = [
+      "-D",
+      this.dataDir,
+      "-c",
+      `listen_addresses=${this.host}`,
+      "-c",
+      `port=${port}`,
+      "-c",
+      "password_encryption=scram-sha-256",
+      ...this.extraServerOptions
+    ];
+    const env = this.envWithPassword();
+    this.child = this.runner.spawn(this.bin("postgres"), args, { env });
+    this.child.once("exit", () => {
+      if (this.state !== "stopping") {
+        this.logger?.warn("Postgres sidecar exited outside a managed shutdown.");
+      }
+      this.child = null;
+      this.currentConnection = null;
+      if (this.state !== "stopping") {
+        this.state = "stopped";
+      }
+    });
+
+    await this.waitUntilReady(port);
+    await this.ensureDatabase(port);
+    this.currentConnection = {
+      host: this.host,
+      port,
+      database: this.database,
+      user: this.user,
+      password: this.password,
+      connectionString: buildConnectionString({
+        host: this.host,
+        port,
+        database: this.database,
+        user: this.user,
+        password: this.password
+      })
+    };
+    this.state = "running";
+    return this.currentConnection;
+  }
+
+  private async cleanupFailedStart(nextState: PostgresSidecarState): Promise<void> {
+    const child = this.child;
+    this.child = null;
+    this.currentConnection = null;
+
+    if (child) {
+      this.state = "stopping";
+      await terminateChild(child, this.shutdownTimeoutMs);
+    }
+
+    this.state = nextState;
   }
 
   private async ensureBinaries(): Promise<void> {
@@ -312,6 +345,20 @@ async function findAvailablePort(host: string): Promise<number> {
       const port = address.port;
       server.close(() => resolvePort(port));
     });
+  });
+}
+
+async function isPortAvailable(host: string, port: number): Promise<boolean> {
+  return new Promise((resolveAvailable) => {
+    const server = createServer();
+    server.once("error", () => resolveAvailable(false));
+    try {
+      server.listen(port, host, () => {
+        server.close(() => resolveAvailable(true));
+      });
+    } catch {
+      resolveAvailable(false);
+    }
   });
 }
 

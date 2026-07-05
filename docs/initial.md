@@ -245,6 +245,8 @@ window.app.documents.get(...)
 window.app.search.query(...)
 window.app.graph.expand(...)
 window.app.jobs.subscribe(...)
+window.app.settings.getApp(...)
+window.app.settings.updateApp(...)
 window.app.settings.get(...)
 window.app.settings.update(...)
 ```
@@ -263,7 +265,7 @@ Responsabilidades principais:
 - busca textual, semantica e hibrida;
 - exploracao de entidades e relacoes;
 - acompanhamento de jobs;
-- configuracoes de idioma, modelos e indexacao;
+- configuracoes de idioma, tema, modelos e indexacao;
 - exibicao de mensagens localizadas.
 
 O renderer nao deve conter regras de persistencia, acesso direto ao banco ou logica pesada de processamento.
@@ -288,6 +290,7 @@ A aplicacao desktop devera incluir uma area de configuracoes para preferencias d
 Configuracoes iniciais:
 
 - idioma da interface;
+- tema da interface, com `dark` como padrao e alternancia para `light`;
 - provedores de IA;
 - API keys e credenciais de provedores;
 - modelo de IA usado para processamento;
@@ -1326,7 +1329,10 @@ Regras de ciclo de vida:
 - o main process e o unico dono do sidecar: initdb no primeiro uso, spawn como processo filho, shutdown limpo ao encerrar o app;
 - a janela pode abrir antes do banco ficar pronto, mas deve mostrar um estado de bootstrap e so liberar a shell quando o sidecar estiver pronto e o fluxo de baseline/migrations tiver rodado;
 - data dir no `userData` da aplicacao, nunca dentro do bundle;
-- conexao por loopback com porta dinamica livre e senha gerada por instalacao (scram), guardada via Electron `safeStorage`; unix socket pode ser usado quando disponivel; nunca `trust` em TCP;
+- conexao por loopback tentando `MEMORA_DATABASE_PORT` primeiro e fazendo
+  fallback com warning para porta dinamica livre; senha gerada por instalacao
+  (scram), guardada via Electron `safeStorage`; unix socket pode ser usado
+  quando disponivel; nunca `trust` em TCP;
 - detectar e tratar `postmaster.pid` obsoleto e processos orfaos apos crash;
 - impedir duas instancias da aplicacao disputando o mesmo data dir;
 - upgrade de major do Postgres e mudanca planejada, com estrategia explicita de migracao de dados (`pg_upgrade` ou dump/restore);

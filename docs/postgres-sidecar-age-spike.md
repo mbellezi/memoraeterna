@@ -49,7 +49,8 @@ The Electron main process owns the runtime database lifecycle:
 
 - credentials are generated per installation and stored under Electron `safeStorage`;
 - the data directory lives under `app.getPath("userData")/database/postgres-data`;
-- the sidecar starts on loopback with a dynamic port when the desktop app starts;
+- the sidecar starts on loopback, trying `MEMORA_DATABASE_PORT` first and falling
+  back with a warning to a free dynamic port when needed;
 - the renderer only receives validated lifecycle status through preload IPC;
 - the first renderer screen waits with a bootstrap spinner until the database status is `ready`;
 - Drizzle migrations run after PostgreSQL is ready and before the shell is released;

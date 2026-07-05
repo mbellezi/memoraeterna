@@ -61,8 +61,18 @@ export function isSupportedLanguageCode(languageCode: string): languageCode is L
 }
 
 export function normalizeLanguageCode(languageCode: string | null | undefined): LanguageCode {
-  if (languageCode && isSupportedLanguageCode(languageCode)) {
-    return languageCode;
+  const normalized = languageCode?.replace("_", "-");
+  if (normalized && isSupportedLanguageCode(normalized)) {
+    return normalized;
+  }
+
+  const baseLanguage = normalized?.split("-")[0];
+  if (baseLanguage === "pt") {
+    return "pt-BR";
+  }
+
+  if (baseLanguage && isSupportedLanguageCode(baseLanguage)) {
+    return baseLanguage;
   }
 
   return defaultLanguageCode;

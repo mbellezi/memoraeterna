@@ -97,8 +97,10 @@ resources/
 ```
 
 No runtime Electron, o banco sobe junto com a aplicacao. A janela abre com uma
-tela de bootstrap, o main process inicia o sidecar em loopback com porta
-dinamica, prepara o banco e so libera a shell quando ele esta pronto. Em banco
+tela de bootstrap, o main process inicia o sidecar em loopback usando
+`MEMORA_DATABASE_PORT` quando disponivel; se a porta estiver invalida ou
+indisponivel, registra warning e cai para uma porta dinamica livre. Depois,
+prepara o banco e so libera a shell quando ele esta pronto. Em banco
 Postgres totalmente vazio, o bootstrap aplica o seed/baseline versionado,
 registra no historico Drizzle as migrations cobertas por esse baseline e entao
 roda migrations pendentes. Em banco existente, o bootstrap roda apenas
@@ -161,6 +163,11 @@ npm run dev -w @app/desktop
 Durante o boot, a UI mostra o estado do banco local. Se o sidecar ainda estiver
 subindo ou aplicando migrations, a shell principal permanece bloqueada com
 spinner.
+
+Preferencias de interface ficam nos settings locais. Antes de existir uma
+preferencia salva, o idioma inicial vem do desktop com fallback para ingles, e
+o tema inicial e escuro. O cabecalho do menu lateral tem um botao de alternancia
+rapida entre tema escuro e claro.
 
 ## Banco e Migrations
 

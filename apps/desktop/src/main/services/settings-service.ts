@@ -3,18 +3,32 @@ import { dirname, join } from "node:path";
 import {
   closePgPool,
   createPgPool,
+  createSettingsRepository,
   createStorageSettingsRepository,
   type Queryable
 } from "@app/db";
-import type { StorageSettings, StorageSettingsUpdate } from "../../shared/ipc";
+import { normalizeLanguageCode } from "@app/i18n";
+import type {
+  AppSettings,
+  AppSettingsUpdate,
+  StorageSettings,
+  StorageSettingsUpdate
+} from "../../shared/ipc";
 import {
+  appSettingsSchema,
+  appSettingsUpdateSchema,
+  defaultAppSettings,
   defaultStorageSettings,
   storageSettingsSchema,
   storageSettingsUpdateSchema
 } from "../../shared/ipc";
 import { validateAbsolutePath, validateManagedRoot } from "./path-validation";
 
+const appSettingsKey = "app.preferences";
+
 export interface SettingsRepository {
+  getAppSettings: () => Promise<AppSettings | null>;
+  saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   getStorageSettings: () => Promise<StorageSettings | null>;
   saveStorageSettings: (settings: StorageSettings) => Promise<StorageSettings>;
   dispose?: () => Promise<void>;
@@ -23,9 +37,26 @@ export interface SettingsRepository {
 export interface SettingsServiceOptions {
   readonly getDatabasePool?: () => Queryable | null;
   readonly requireDatabase?: boolean;
+  readonly desktopLocale?: string;
 }
 
-function withTimestamp(settings: StorageSettingsUpdate): StorageSettings {
+function createDefaultAppSettings(locale: string | null | undefined): AppSettings {
+  return withAppTimestamp({
+    ...defaultAppSettings,
+    language: normalizeLanguageCode(locale)
+  });
+}
+
+function withAppTimestamp(settings: AppSettingsUpdate): AppSettings {
+  return appSettingsSchema.parse({
+    ...defaultAppSettings,
+    ...settings,
+    language: normalizeLanguageCode(settings.language),
+    updatedAt: new Date().toISOString()
+  });
+}
+
+function withStorageTimestamp(settings: StorageSettingsUpdate): StorageSettings {
   return storageSettingsSchema.parse({
     ...defaultStorageSettings,
     ...settings,
@@ -59,8 +90,22 @@ function validateStorageSettings(settings: StorageSettingsUpdate): void {
 
 function createFileSettingsRepository(userDataPath: string): SettingsRepository {
   const settingsPath = join(userDataPath, "storage-settings.json");
+  const appSettingsPath = join(userDataPath, "app-settings.json");
 
   return {
+    async getAppSettings() {
+      try {
+        const raw = await readFile(appSettingsPath, "utf8");
+        return appSettingsSchema.parse(JSON.parse(raw));
+      } catch {
+        return null;
+      }
+    },
+    async saveAppSettings(settings) {
+      await mkdir(dirname(appSettingsPath), { recursive: true });
+      await writeFile(appSettingsPath, JSON.stringify(settings, null, 2), "utf8");
+      return settings;
+    },
     async getStorageSettings() {
       try {
         const raw = await readFile(settingsPath, "utf8");
@@ -78,11 +123,20 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
 }
 
 function createDbSettingsRepository(pool: Queryable, dispose?: () => Promise<void>): SettingsRepository {
-  const repository = createStorageSettingsRepository(pool);
+  const appRepository = createSettingsRepository(pool);
+  const storageRepository = createStorageSettingsRepository(pool);
 
   return {
+    async getAppSettings() {
+      const value = await appRepository.get(appSettingsKey);
+      return value ? appSettingsSchema.parse(value) : null;
+    },
+    async saveAppSettings(settings) {
+      await appRepository.set(appSettingsKey, settings);
+      return settings;
+    },
     async getStorageSettings() {
-      const record = await repository.get();
+      const record = await storageRepository.get();
       if (!record) {
         return null;
       }
@@ -98,7 +152,7 @@ function createDbSettingsRepository(pool: Queryable, dispose?: () => Promise<voi
       });
     },
     async saveStorageSettings(settings) {
-      const record = await repository.upsert({
+      const record = await storageRepository.upsert({
         obsidianVaultPath: settings.obsidianVaultPath,
         obsidianManagedRoot: settings.managedRoot,
         obsidianSyncEnabled: settings.obsidianSyncEnabled,
@@ -134,15 +188,34 @@ async function createEnvDbSettingsRepository(): Promise<SettingsRepository | nul
 
 export class SettingsService {
   private repository: SettingsRepository | null = null;
+  private readonly defaultLocale: string | undefined;
 
   public constructor(
     private readonly userDataPath: string,
     private readonly options: SettingsServiceOptions = {}
-  ) {}
+  ) {
+    this.defaultLocale = options.desktopLocale;
+  }
+
+  public async getApp(): Promise<AppSettings> {
+    const repository = await this.getRepository();
+    return (await repository.getAppSettings()) ?? createDefaultAppSettings(this.defaultLocale);
+  }
+
+  public async updateApp(update: AppSettingsUpdate): Promise<AppSettings> {
+    const current = await this.getApp();
+    const parsedUpdate = appSettingsUpdateSchema.parse(update);
+    const next = withAppTimestamp({
+      ...current,
+      ...parsedUpdate
+    });
+
+    return this.getRepository().then((repository) => repository.saveAppSettings(next));
+  }
 
   public async get(): Promise<StorageSettings> {
     const repository = await this.getRepository();
-    return (await repository.getStorageSettings()) ?? withTimestamp(defaultStorageSettings);
+    return (await repository.getStorageSettings()) ?? withStorageTimestamp(defaultStorageSettings);
   }
 
   public async update(update: StorageSettingsUpdate): Promise<StorageSettings> {
@@ -155,7 +228,7 @@ export class SettingsService {
 
     validateStorageSettings(nextInput);
 
-    const next = withTimestamp(nextInput);
+    const next = withStorageTimestamp(nextInput);
     return this.getRepository().then((repository) => repository.saveStorageSettings(next));
   }
 

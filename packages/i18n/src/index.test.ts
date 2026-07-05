@@ -17,6 +17,13 @@ describe("@app/i18n", () => {
     expect(translator("app.title")).toBe(messages.en.app.title);
   });
 
+  it("normalizes desktop locales with regions", () => {
+    expect(createTranslator("fr-FR").locale).toBe("fr");
+    expect(createTranslator("es_MX").locale).toBe("es");
+    expect(createTranslator("pt-PT").locale).toBe("pt-BR");
+    expect(createTranslator("en-US").locale).toBe("en");
+  });
+
   it("interpolates simple values", () => {
     expect(
       translate("en", "jobs.progress.processingSource", {

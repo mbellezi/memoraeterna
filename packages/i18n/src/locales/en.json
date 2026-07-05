@@ -16,6 +16,7 @@
       "cancel": "Cancel",
       "close": "Close",
       "retry": "Retry",
+      "toggleTheme": "Toggle theme",
       "connect": "Connect",
       "disconnect": "Disconnect"
     },
@@ -88,7 +89,22 @@
     "title": "Settings",
     "language": {
       "title": "Language",
-      "uiLocale": "Interface language"
+      "uiLocale": "Interface language",
+      "languages": {
+        "en": "English",
+        "pt-BR": "Portuguese (Brazil)",
+        "it": "Italian",
+        "fr": "French",
+        "es": "Spanish"
+      }
+    },
+    "appearance": {
+      "title": "Appearance",
+      "themeMode": "Theme",
+      "themeModes": {
+        "dark": "Dark",
+        "light": "Light"
+      }
     },
     "storage": {
       "title": "Storage",

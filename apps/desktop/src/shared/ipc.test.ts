@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  appSettingsSchema,
+  appSettingsUpdateSchema,
   databaseStatusSchema,
+  defaultAppSettings,
   defaultStorageSettings,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
@@ -50,6 +53,24 @@ describe("desktop IPC contracts", () => {
     });
 
     expect(() => storageSettingsUpdateSchema.parse({ unknown: true })).toThrow();
+  });
+
+  it("parses app appearance and language settings", () => {
+    expect(
+      appSettingsSchema.parse({
+        ...defaultAppSettings,
+        language: "pt-BR",
+        updatedAt: new Date(0).toISOString()
+      })
+    ).toMatchObject({
+      language: "pt-BR",
+      themeMode: "dark"
+    });
+
+    expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
+      themeMode: "light"
+    });
+    expect(() => appSettingsUpdateSchema.parse({ language: "de" })).toThrow();
   });
 
   it("parses persisted storage settings", () => {

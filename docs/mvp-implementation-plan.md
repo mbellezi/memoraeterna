@@ -255,6 +255,8 @@ Implementar:
   - `app.system.getInfo`;
   - `app.database.getStatus`;
   - `app.database.start`;
+  - `app.settings.getApp`;
+  - `app.settings.updateApp`;
   - `app.settings.get`;
   - `app.settings.update`;
 - IPC main/preload/renderer com Zod;
@@ -290,7 +292,9 @@ Implementar:
 
 - lifecycle do sidecar no main process: initdb no primeiro uso, start, shutdown limpo, deteccao de `postmaster.pid` obsoleto e de processos orfaos;
 - data dir no `userData` da aplicacao;
-- senha local gerada por instalacao e guardada via `safeStorage`; conexao por loopback em porta dinamica;
+- senha local gerada por instalacao e guardada via `safeStorage`; conexao por
+  loopback tentando `MEMORA_DATABASE_PORT` primeiro e fazendo fallback com
+  warning para porta dinamica livre;
 - janela Electron abre cedo com spinner de bootstrap, mas fluxos dependentes do banco so aparecem apos status `ready`;
 - migrations Drizzle rodam automaticamente apos o sidecar subir e antes de liberar a UI;
 - seed/baseline versionado para banco Postgres totalmente vazio:
@@ -364,6 +368,10 @@ Objetivo: permitir configurar vault Obsidian e pasta opcional de arquivos subido
 Implementar:
 
 - UI em Settings para:
+  - idioma da interface, assumindo idioma do desktop com fallback para `en`
+    ate existir preferencia salva;
+  - tema `dark` por padrao, alternancia para `light` e botao rapido no
+    cabecalho do menu lateral;
   - caminho do vault Obsidian;
   - pasta raiz gerenciada dentro do vault, default `Memora`;
   - habilitar/pausar sync Obsidian;

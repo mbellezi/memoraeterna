@@ -4,6 +4,7 @@ import { createTranslator } from "@app/i18n";
 import {
   databaseStatusSchema,
   ipcChannels,
+  appSettingsUpdateSchema,
   storageSettingsUpdateSchema,
   type DatabaseStatus
 } from "../shared/ipc";
@@ -35,6 +36,13 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.databaseGetStatus, () => databaseStatusSchema.parse(databaseService.getStatus()));
 
   ipcMain.handle(ipcChannels.databaseStart, async () => databaseStatusSchema.parse(await databaseService.start()));
+
+  ipcMain.handle(ipcChannels.appSettingsGet, () => settingsService.getApp());
+
+  ipcMain.handle(ipcChannels.appSettingsUpdate, (_event, payload: unknown) => {
+    const settings = appSettingsUpdateSchema.parse(payload);
+    return settingsService.updateApp(settings);
+  });
 
   ipcMain.handle(ipcChannels.settingsGet, () => settingsService.get());
 

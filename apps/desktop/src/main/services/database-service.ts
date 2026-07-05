@@ -160,6 +160,7 @@ export class DatabaseService {
         resourcesPath: this.options.resourcesPath,
         workspaceRoot
       });
+      const configuredPort = resolveConfiguredDatabasePort(this.env, this.logger);
 
       this.manager = new PostgresSidecarManager({
         binDir: sidecarPaths.binDir,
@@ -169,6 +170,7 @@ export class DatabaseService {
         password: credentials.password,
         startupTimeoutMs: 30_000,
         shutdownTimeoutMs: 10_000,
+        ...(configuredPort !== undefined ? { port: configuredPort } : {}),
         ...(this.logger ? { logger: this.logger } : {})
       });
 
@@ -363,6 +365,24 @@ function resolveSeedFolder(input: {
   }
 
   return resolve(input.workspaceRoot, "packages/db/seed");
+}
+
+function resolveConfiguredDatabasePort(
+  env: NodeJS.ProcessEnv,
+  logger: Pick<Console, "warn"> | undefined
+): number | undefined {
+  const rawPort = env.MEMORA_DATABASE_PORT?.trim();
+  if (!rawPort) {
+    return undefined;
+  }
+
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    logger?.warn(`Ignoring invalid MEMORA_DATABASE_PORT "${rawPort}"; falling back to a dynamic port.`);
+    return undefined;
+  }
+
+  return port;
 }
 
 function redactError(error: unknown): string {

@@ -1,7 +1,12 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { App } from "./App";
-import { defaultStorageSettings, storageSettingsSchema } from "../shared/ipc";
+import {
+  appSettingsSchema,
+  defaultAppSettings,
+  defaultStorageSettings,
+  storageSettingsSchema
+} from "../shared/ipc";
 
 describe("App", () => {
   it("renders the database startup screen before the shell", () => {
@@ -23,11 +28,17 @@ describe("App", () => {
           ...defaultStorageSettings,
           updatedAt: new Date(0).toISOString()
         })}
+        initialAppSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
         initialSystemInfo={null}
       />
     );
 
     expect(html).toContain("Memora Eterna");
+    expect(html).toContain("dark");
     expect(html).toContain("Library");
     expect(html).toContain("Settings");
   });

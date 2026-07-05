@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopApi, StorageSettingsUpdate } from "../shared/ipc";
+import type { AppSettingsUpdate, DesktopApi, StorageSettingsUpdate } from "../shared/ipc";
 import {
+  appSettingsSchema,
+  appSettingsUpdateSchema,
   databaseStatusSchema,
   ipcChannels,
   storageSettingsSchema,
@@ -26,6 +28,15 @@ const api: DesktopApi = {
     }
   },
   settings: {
+    async getApp() {
+      const result = await ipcRenderer.invoke(ipcChannels.appSettingsGet);
+      return appSettingsSchema.parse(result);
+    },
+    async updateApp(settings: AppSettingsUpdate) {
+      const payload = appSettingsUpdateSchema.parse(settings);
+      const result = await ipcRenderer.invoke(ipcChannels.appSettingsUpdate, payload);
+      return appSettingsSchema.parse(result);
+    },
     async get() {
       const result = await ipcRenderer.invoke(ipcChannels.settingsGet);
       return storageSettingsSchema.parse(result);

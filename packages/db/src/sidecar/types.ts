@@ -29,6 +29,8 @@ export interface PostgresSidecarConfig {
   extraServerOptions?: readonly string[];
   runner?: SidecarCommandRunner;
   logger?: Pick<Console, "debug" | "info" | "warn" | "error">;
+  dynamicPortResolver?: (host: string) => Promise<number>;
+  portAvailabilityChecker?: (host: string, port: number) => Promise<boolean>;
 }
 
 export interface PostgresSidecarConnection {

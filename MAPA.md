@@ -29,9 +29,13 @@ Implementado ate aqui:
 - sidecar DEV de PostgreSQL 18.4 com pgvector 0.8.4 e Apache AGE
   `PG18/v1.7.0-rc0`;
 - runtime do banco no main process do desktop: safeStorage, data dir em
-  `userData`, porta dinamica, migrations no boot e shutdown controlado;
+  `userData`, `MEMORA_DATABASE_PORT` com fallback dinamico, migrations no boot
+  e shutdown controlado;
 - UI de bootstrap que espera o banco local ficar pronto antes de liberar a
   shell principal;
+- preferencias de UI persistidas via settings: idioma inicial vindo do desktop
+  com fallback para `en`, e tema `dark` por padrao com alternancia para
+  `light`;
 - scripts de bootstrap DEV, validacao de sidecar, build, typecheck e testes;
 - README raiz com instrucoes de desenvolvimento.
 
@@ -91,7 +95,7 @@ Arquivos principais:
 - `src/main/services/database-service.ts`: lifecycle runtime do PostgreSQL
   sidecar no desktop.
 - `src/main/services/settings-service.ts`: settings de storage usando o banco
-  quando o runtime esta pronto.
+  quando o runtime esta pronto, alem de preferencias de UI em `settings`.
 - `src/main/services/path-validation.ts`: validacao de paths e nomes gerenciados.
 - `src/preload/index.ts`: API segura exposta em `window.app`.
 - `src/shared/ipc.ts`: canais, schemas Zod e tipos compartilhados do IPC.
@@ -225,7 +229,9 @@ No runtime Electron:
 app.getPath("userData")/database/postgres-data
 ```
 
-4. O sidecar sobe em `127.0.0.1` com porta dinamica.
+4. O sidecar sobe em `127.0.0.1`, tentando `MEMORA_DATABASE_PORT` primeiro e
+   fazendo fallback com warning para porta dinamica livre quando a porta
+   configurada estiver invalida ou indisponivel.
 5. Drizzle migrations rodam antes da shell principal ser liberada.
    - Em banco totalmente vazio, o runtime aplica antes o seed/baseline
      versionado, registra as migrations cobertas em
@@ -233,7 +239,10 @@ app.getPath("userData")/database/postgres-data
    - Em banco existente, o runtime nao aplica seed/baseline e roda apenas
      migrations pendentes.
 6. O renderer observa status via `window.app.database`.
-7. Ao encerrar, o main fecha settings, pool e sidecar.
+7. Preferencias de UI usam `window.app.settings.getApp/updateApp`; quando ainda
+   nao ha idioma salvo, o default vem de `app.getLocale()` normalizado com
+   fallback para `en`. O tema default e `dark`.
+8. Ao encerrar, o main fecha settings, pool e sidecar.
 
 Estados IPC do banco:
 

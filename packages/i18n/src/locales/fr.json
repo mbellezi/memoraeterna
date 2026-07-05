@@ -16,6 +16,7 @@
       "cancel": "Annuler",
       "close": "Fermer",
       "retry": "Reessayer",
+      "toggleTheme": "Changer de theme",
       "connect": "Connecter",
       "disconnect": "Deconnecter"
     },
@@ -88,7 +89,22 @@
     "title": "Parametres",
     "language": {
       "title": "Langue",
-      "uiLocale": "Langue de l'interface"
+      "uiLocale": "Langue de l'interface",
+      "languages": {
+        "en": "Anglais",
+        "pt-BR": "Portugais (Bresil)",
+        "it": "Italien",
+        "fr": "Francais",
+        "es": "Espagnol"
+      }
+    },
+    "appearance": {
+      "title": "Apparence",
+      "themeMode": "Theme",
+      "themeModes": {
+        "dark": "Sombre",
+        "light": "Clair"
+      }
     },
     "storage": {
       "title": "Stockage",
