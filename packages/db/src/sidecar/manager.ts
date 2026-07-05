@@ -14,6 +14,7 @@ import type {
 } from "./types.js";
 
 const defaultHost = "127.0.0.1";
+const defaultCommandTimeoutMs = 10_000;
 
 export class PostgresSidecarManager {
   private readonly binDir: string;
@@ -230,9 +231,23 @@ export class PostgresSidecarManager {
 
   private async ensureDatabase(port: number): Promise<void> {
     try {
-      await this.runner.execFile(this.bin("createdb"), ["-h", this.host, "-p", String(port), "-U", this.user, this.database], {
-        env: this.envWithPassword()
-      });
+      await this.runner.execFile(
+        this.bin("createdb"),
+        [
+          "-h",
+          this.host,
+          "-p",
+          String(port),
+          "-U",
+          this.user,
+          "--maintenance-db=postgres",
+          this.database
+        ],
+        {
+          env: this.envWithPassword(),
+          timeoutMs: defaultCommandTimeoutMs
+        }
+      );
     } catch (error) {
       const message = String(error);
       if (!message.includes("already exists")) {
@@ -244,6 +259,7 @@ export class PostgresSidecarManager {
   private envWithPassword(): NodeJS.ProcessEnv {
     return {
       ...process.env,
+      PGCONNECT_TIMEOUT: "5",
       PGPASSWORD: this.password
     };
   }

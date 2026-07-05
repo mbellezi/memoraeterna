@@ -37,6 +37,9 @@ const emptyViews: Record<Exclude<ViewId, "settings">, { title: MessageKey; empty
   jobs: { title: "jobs.title", empty: "shell.states.empty" }
 };
 
+const databasePollIntervalMs = 300;
+const databaseStartupTimeoutMs = 60_000;
+
 function createDefaultSettings(): StorageSettings {
   return storageSettingsSchema.parse({
     ...defaultStorageSettings,
@@ -92,7 +95,8 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
       updatedAt: new Date().toISOString()
     }));
 
-    const nextDatabaseStatus = await window.app.database.start();
+    void window.app.database.start().catch(() => undefined);
+    const nextDatabaseStatus = await waitForDatabaseReady();
     setDatabaseStatus(nextDatabaseStatus);
 
     if (nextDatabaseStatus.state !== "ready") {
@@ -105,30 +109,8 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
 
   useEffect(() => {
     let isMounted = true;
-    let pollingId: ReturnType<typeof setInterval> | null = null;
-
-    async function pollDatabaseStatus() {
-      try {
-        const nextStatus = await window.app.database.getStatus();
-        if (isMounted) {
-          setDatabaseStatus(nextStatus);
-        }
-      } catch {
-        if (isMounted) {
-          setDatabaseStatus({
-            state: "failed",
-            messageKey: "database.status.failed",
-            updatedAt: new Date().toISOString()
-          });
-        }
-      }
-    }
 
     async function load() {
-      pollingId = setInterval(() => {
-        void pollDatabaseStatus();
-      }, 300);
-
       try {
         await bootstrap();
       } catch {
@@ -140,10 +122,6 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
             updatedAt: new Date().toISOString()
           });
         }
-      } finally {
-        if (pollingId) {
-          clearInterval(pollingId);
-        }
       }
     }
 
@@ -153,9 +131,6 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
 
     return () => {
       isMounted = false;
-      if (pollingId) {
-        clearInterval(pollingId);
-      }
     };
   }, [hasLoadedAppData]);
 
@@ -181,6 +156,37 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function waitForDatabaseReady(): Promise<DatabaseStatus> {
+    const startedAt = Date.now();
+    await delay(100);
+
+    while (Date.now() - startedAt < databaseStartupTimeoutMs) {
+      try {
+        const nextStatus = await window.app.database.getStatus();
+        setDatabaseStatus(nextStatus);
+
+        if (nextStatus.state === "ready" || nextStatus.state === "failed") {
+          return nextStatus;
+        }
+      } catch {
+        return {
+          state: "failed",
+          messageKey: "database.status.failed",
+          updatedAt: new Date().toISOString()
+        };
+      }
+
+      await delay(databasePollIntervalMs);
+    }
+
+    return {
+      state: "failed",
+      messageKey: "database.status.failed",
+      updatedAt: new Date().toISOString(),
+      error: "Database startup timed out."
+    };
   }
 
   const pageTitle = activeView === "settings" ? "settings.title" : emptyViews[activeView].title;
@@ -220,7 +226,13 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
               type="button"
               className="inline-flex h-10 items-center gap-2 rounded-md bg-cyan-700 px-4 text-sm font-medium text-white transition-colors hover:bg-cyan-800"
               onClick={() => {
-                void bootstrap();
+                void bootstrap().catch(() => {
+                  setDatabaseStatus({
+                    state: "failed",
+                    messageKey: "database.status.failed",
+                    updatedAt: new Date().toISOString()
+                  });
+                });
               }}
             >
               <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -286,4 +298,10 @@ export function App({ initialDatabaseStatus, initialSettings, initialSystemInfo 
       </main>
     </div>
   );
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

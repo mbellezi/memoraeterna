@@ -50,6 +50,15 @@ Estas ideias continuam no projeto, mas nao fazem parte da implementacao inicial:
 - Extensao Chrome e plugin Obsidian nao acessam o banco local diretamente.
 - Todas as entradas/saidas entre processos e apps devem usar contratos Zod.
 - Toda alteracao em schema Drizzle exige `npm run db:generate`.
+- O banco deve ter seed/baseline versionado para Postgres totalmente vazio:
+  aplicar o baseline, registrar as migrations cobertas no historico Drizzle e
+  depois rodar migrations pendentes. Bancos existentes rodam apenas migrations
+  pendentes.
+- Seeds/baselines devem ser mantidos atualizados junto com migrations; o seed
+  inicial pode conter apenas estrutura.
+- Cada nova migration coberta pelo baseline deve atualizar
+  `packages/db/seed/baseline.sql` e `packages/db/seed/manifest.json` na mesma
+  mudanca, seguida de `npm run db:seed:verify`.
 - Depois de aplicar migration, verificar no banco real o historico e a estrutura alterada.
 - Criar testes de regressao quando pertinente.
 - Nao fazer commit final automaticamente.
@@ -284,6 +293,13 @@ Implementar:
 - senha local gerada por instalacao e guardada via `safeStorage`; conexao por loopback em porta dinamica;
 - janela Electron abre cedo com spinner de bootstrap, mas fluxos dependentes do banco so aparecem apos status `ready`;
 - migrations Drizzle rodam automaticamente apos o sidecar subir e antes de liberar a UI;
+- seed/baseline versionado para banco Postgres totalmente vazio:
+  - detectar banco realmente vazio antes de aplicar seed;
+  - aplicar o baseline inicial;
+  - registrar em `drizzle.__drizzle_migrations` as migrations cobertas pelo
+    baseline;
+  - rodar migrations pendentes depois do baseline;
+  - em banco existente, pular o seed e rodar apenas migrations pendentes;
 - cliente `node-postgres` com pool de conexoes no pacote `@app/db`;
 - pacote `@app/db`;
 - schema Drizzle inicial para:
@@ -309,6 +325,7 @@ Implementar:
   - `obsidianSyncRepository`.
 - scripts:
   - `db:generate`;
+  - `db:seed:verify`;
   - `db:migrate`;
   - `db:verify`.
 
@@ -318,7 +335,12 @@ Testes e validacao:
 - teste de contrato IPC para status do banco;
 - teste de render do estado de bootstrap e do estado pronto;
 - gerar migration com `npm run db:generate`;
+- atualizar `packages/db/seed/baseline.sql` e `packages/db/seed/manifest.json`;
+- verificar sincronizacao com `npm run db:seed:verify`;
 - aplicar migration;
+- validar bootstrap em banco vazio via seed/baseline e depois migrations
+  pendentes;
+- validar bootstrap em banco existente sem reaplicar seed/baseline;
 - verificar `drizzle.__drizzle_migrations`;
 - verificar tabelas/colunas via `information_schema` ou consulta equivalente;
 - testes de repositorio com banco temporario.
@@ -329,6 +351,8 @@ Criterio de pronto:
 - app espera o banco local ficar pronto antes de expor a shell principal;
 - shutdown do app aguarda fechamento do pool e parada do sidecar;
 - migrations sao reproduziveis;
+- seed/baseline e historico Drizzle ficam coerentes para banco vazio e banco
+  existente;
 - repositorios basicos funcionam.
 
 ---
@@ -1210,7 +1234,9 @@ Implementar:
 - revisar i18n;
 - revisar erros de jobs;
 - melhorar mensagens de falha;
-- garantir que migrations sobem de banco vazio;
+- garantir que banco vazio sobe via seed/baseline versionado, registra as
+  migrations cobertas e aplica migrations pendentes;
+- garantir que bancos existentes seguem apenas por migrations pendentes;
 - validar reabertura da aplicacao com jobs e ingestion runs existentes;
 - validar backup basico dos arquivos configurados e do banco (`pg_dump`);
 - revisar limites de tamanho de importacao;

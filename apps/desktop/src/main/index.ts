@@ -14,7 +14,7 @@ function createMainWindow(): BrowserWindow {
     show: false,
     title: createTranslator(app.getLocale())("app.title"),
     webPreferences: {
-      preload: join(__dirname, "../preload/index.js"),
+      preload: join(__dirname, "../preload/index.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -28,6 +28,16 @@ function createMainWindow(): BrowserWindow {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("preload-error", (_event, preloadPath, error) => {
+    console.error(`Preload failed: ${preloadPath}: ${error.message}`);
+  });
+
+  mainWindow.webContents.on("console-message", (_event, level, message) => {
+    if (level >= 2) {
+      console.warn(`Renderer console: ${message}`);
+    }
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

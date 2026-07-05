@@ -22,11 +22,11 @@ class FakeChild extends EventEmitter {
 }
 
 class FakeRunner implements SidecarCommandRunner {
-  readonly calls: Array<{ file: string; args: readonly string[] }> = [];
+  readonly calls: Array<{ file: string; args: readonly string[]; options?: SidecarExecOptions }> = [];
   readonly spawned: Array<{ file: string; args: readonly string[] }> = [];
 
-  async execFile(file: string, args: readonly string[], _options?: SidecarExecOptions): Promise<SidecarExecResult> {
-    this.calls.push({ file, args });
+  async execFile(file: string, args: readonly string[], options?: SidecarExecOptions): Promise<SidecarExecResult> {
+    this.calls.push({ file, args, options });
     if (file.endsWith("initdb")) {
       const dataDir = args[args.indexOf("-D") + 1];
       await writeFile(join(String(dataDir), "PG_VERSION"), "18\n");
@@ -71,6 +71,10 @@ describe("PostgresSidecarManager", () => {
     expect(passwordFileArg).toBeDefined();
     expect(passwordFileArg?.replace("--pwfile=", "").startsWith(`${dataDir}/`)).toBe(false);
     expect(runner.calls.some((call) => call.file.endsWith("createdb"))).toBe(true);
+    const createdbCall = runner.calls.find((call) => call.file.endsWith("createdb"));
+    expect(createdbCall?.args).toContain("--maintenance-db=postgres");
+    expect(createdbCall?.options?.timeoutMs).toBe(10_000);
+    expect(createdbCall?.options?.env?.PGCONNECT_TIMEOUT).toBe("5");
     expect(runner.calls.some((call) => call.file.endsWith("pg_ctl") && call.args.includes("stop"))).toBe(true);
 
     const hba = await readFile(join(dataDir, "pg_hba.conf"), "utf8");

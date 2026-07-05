@@ -43,6 +43,12 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - Main process gerencia o ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao de crash.
 - Drizzle ORM sobre `node-postgres`.
+- Banco Postgres totalmente vazio deve ser inicializado por seed/baseline
+  versionado, registrar no historico Drizzle as migrations cobertas e entao
+  rodar migrations pendentes; bancos existentes rodam apenas migrations
+  pendentes.
+- Seeds/baselines devem ser atualizados junto com as migrations que cobrem. O
+  seed inicial pode conter apenas estrutura.
 - `pgvector` para busca vetorial, incluido nos binarios do sidecar.
 - Apache AGE `PG18/v1.7.0-rc0` para consultas e projecoes de grafo, compilado por plataforma e injetado no bundle do sidecar apos validacao; inicialmente apenas macOS.
 - Zod para contratos tipados entre renderer, preload, main process e workers.
@@ -1249,6 +1255,10 @@ Responsabilidades:
 - criar e configurar o cliente Postgres (`node-postgres`) e o pool de conexoes;
 - declarar schemas Drizzle;
 - manter migrations;
+- manter seed/baseline versionado para inicializacao de banco Postgres
+  totalmente vazio;
+- manter `packages/db/seed/baseline.sql` e `packages/db/seed/manifest.json`
+  sincronizados sempre que novas migrations forem criadas;
 - criar extensoes necessarias, como `pgvector` e Apache AGE;
 - implementar repositorios;
 - concentrar queries especializadas;
@@ -1314,7 +1324,7 @@ O banco local sera um PostgreSQL nativo completo, embarcado na aplicacao desktop
 Regras de ciclo de vida:
 
 - o main process e o unico dono do sidecar: initdb no primeiro uso, spawn como processo filho, shutdown limpo ao encerrar o app;
-- a janela pode abrir antes do banco ficar pronto, mas deve mostrar um estado de bootstrap e so liberar a shell quando o sidecar estiver pronto e as migrations tiverem rodado;
+- a janela pode abrir antes do banco ficar pronto, mas deve mostrar um estado de bootstrap e so liberar a shell quando o sidecar estiver pronto e o fluxo de baseline/migrations tiver rodado;
 - data dir no `userData` da aplicacao, nunca dentro do bundle;
 - conexao por loopback com porta dinamica livre e senha gerada por instalacao (scram), guardada via Electron `safeStorage`; unix socket pode ser usado quando disponivel; nunca `trust` em TCP;
 - detectar e tratar `postmaster.pid` obsoleto e processos orfaos apos crash;
@@ -2120,11 +2130,31 @@ npm run db:generate
 
 Depois de gerar a migration, a migration deve ser aplicada pelo fluxo padrao do projeto. A task nao deve ser considerada concluida apenas porque o comando de migration terminou sem erro.
 
+O projeto mantem um seed/baseline versionado para o caso especifico de banco
+Postgres totalmente vazio. Nesse fluxo, o bootstrap aplica o baseline, registra
+em `drizzle.__drizzle_migrations` as migrations cobertas pelo baseline e entao
+executa migrations pendentes normalmente. Em bancos existentes, seja por ja
+terem historico Drizzle ou dados da aplicacao, o seed/baseline nao deve ser
+aplicado; o fluxo correto e executar apenas migrations pendentes.
+
+O seed/baseline deve acompanhar as migrations. Quando uma migration estrutural
+passar a estar coberta pelo baseline, atualize tambem o baseline e o registro de
+migrations cobertas. O seed inicial pode conter apenas estrutura e extensoes
+necessarias, sem dados de dominio.
+
+Ao criar nova migration, a mesma mudanca deve atualizar
+`packages/db/seed/baseline.sql`, atualizar `packages/db/seed/manifest.json` com
+a lista `includedMigrations` na ordem de `packages/db/drizzle/meta/_journal.json`
+e passar em `npm run db:seed:verify`.
+
 Verificacao obrigatoria pos-migration:
 
 - confirmar no banco real que a migration foi registrada em `drizzle.__drizzle_migrations`;
 - confirmar a estrutura alterada em `information_schema` ou por consulta direta na tabela afetada;
 - quando aplicavel, validar indices, constraints, colunas, tipos, extensoes e dados migrados;
+- confirmar sincronizacao do seed/baseline com `npm run db:seed:verify`;
+- quando houver seed/baseline, validar tanto banco totalmente vazio quanto banco
+  existente para garantir que o seed nao e reaplicado indevidamente;
 - registrar no resumo da tarefa quais consultas ou verificacoes foram usadas.
 
 Essa regra vale especialmente para tabelas ligadas a `source_items`, `atomic_notes`, relacoes entre notas, entidades, relacoes, embeddings, configuracoes de IA, modelos locais, jobs, integration clients e qualquer schema compartilhado por workers ou clientes externos.

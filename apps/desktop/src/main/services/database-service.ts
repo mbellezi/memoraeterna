@@ -154,6 +154,12 @@ export class DatabaseService {
         resourcesPath: this.options.resourcesPath,
         workspaceRoot
       });
+      const seedFolder = resolveSeedFolder({
+        env: this.env,
+        isPackaged: this.options.isPackaged,
+        resourcesPath: this.options.resourcesPath,
+        workspaceRoot
+      });
 
       this.manager = new PostgresSidecarManager({
         binDir: sidecarPaths.binDir,
@@ -166,7 +172,7 @@ export class DatabaseService {
         ...(this.logger ? { logger: this.logger } : {})
       });
 
-      this.connection = await this.manager.start();
+      this.connection = await withTimeout(this.manager.start(), 45_000, "Postgres sidecar start timed out.");
       this.setStatus("migrating");
       this.pool = createPgPool({
         connectionString: this.connection.connectionString,
@@ -174,7 +180,11 @@ export class DatabaseService {
         idleTimeoutMillis: 30_000,
         connectionTimeoutMillis: 5_000
       });
-      await runMigrations(this.pool, migrationsFolder);
+      await withTimeout(
+        runMigrations(this.pool, migrationsFolder, { seedFolder }),
+        30_000,
+        "Database migrations timed out."
+      );
       this.setStatus("ready");
     } catch (error) {
       await this.closePool();
@@ -257,6 +267,7 @@ export class DatabaseService {
 
   private setStatus(state: DatabaseLifecycleState, error?: string): void {
     this.status = createStatus(state, error);
+    this.logger?.info(`Database status: ${state}${error ? ` (${error})` : ""}`);
   }
 }
 
@@ -337,9 +348,43 @@ function resolveMigrationsFolder(input: {
   return resolve(input.workspaceRoot, "packages/db/drizzle");
 }
 
+function resolveSeedFolder(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly isPackaged: boolean;
+  readonly resourcesPath: string;
+  readonly workspaceRoot: string;
+}): string {
+  if (input.env.MEMORA_DB_SEED_DIR) {
+    return resolve(input.env.MEMORA_DB_SEED_DIR);
+  }
+
+  if (input.isPackaged) {
+    return resolve(input.resourcesPath, "db-seed");
+  }
+
+  return resolve(input.workspaceRoot, "packages/db/seed");
+}
+
 function redactError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(/postgres(?:ql)?:\/\/([^:\s/@]+):([^@\s]+)@/gi, "postgresql://$1:[redacted]@")
     .replace(/PGPASSWORD=([^\s]+)/g, "PGPASSWORD=[redacted]");
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }

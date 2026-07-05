@@ -98,8 +98,11 @@ resources/
 
 No runtime Electron, o banco sobe junto com a aplicacao. A janela abre com uma
 tela de bootstrap, o main process inicia o sidecar em loopback com porta
-dinamica, roda as migrations Drizzle e so libera a shell quando o banco esta
-pronto. O shutdown do app aguarda o pool e o sidecar encerrarem.
+dinamica, prepara o banco e so libera a shell quando ele esta pronto. Em banco
+Postgres totalmente vazio, o bootstrap aplica o seed/baseline versionado,
+registra no historico Drizzle as migrations cobertas por esse baseline e entao
+roda migrations pendentes. Em banco existente, o bootstrap roda apenas
+migrations pendentes. O shutdown do app aguarda o pool e o sidecar encerrarem.
 
 As credenciais dos `.env` sao para scripts e fluxos DEV. O runtime do desktop
 gera credenciais por instalacao e guarda a senha via Electron `safeStorage`.
@@ -167,6 +170,19 @@ Gerar migration depois de alterar schema Drizzle:
 npm run db:generate
 ```
 
+Depois de gerar uma migration nova, mantenha o baseline sincronizado na mesma
+mudanca:
+
+- atualize `packages/db/seed/baseline.sql` com o SQL coberto pelo baseline, na
+  ordem de `packages/db/drizzle/meta/_journal.json`;
+- atualize `packages/db/seed/manifest.json` incluindo a nova migration em
+  `includedMigrations`;
+- valide a sincronizacao:
+
+```bash
+npm run db:seed:verify
+```
+
 Aplicar migration usando `MEMORA_DATABASE_URL` do `.env`:
 
 ```bash
@@ -183,13 +199,21 @@ Toda mudanca de schema deve ser validada no banco real, incluindo historico em
 `drizzle.__drizzle_migrations` e estrutura esperada em `information_schema` ou
 consulta equivalente.
 
+O seed/baseline versionado existe apenas para acelerar e padronizar a criacao
+de bancos Postgres totalmente vazios. Ele deve acompanhar as migrations que
+cobre: ao alterar uma migration estrutural incluida no baseline, atualize tambem
+o baseline e a lista/historico de migrations cobertas. Bancos existentes nunca
+devem receber o seed por cima; seguem somente pelo fluxo de migrations
+pendentes. Inicialmente o seed pode conter apenas estrutura, sem dados de
+dominio.
+
 ## Notas Importantes
 
 - Nao commitar `.env`, `apps/*/.env`, `.cache/` ou `vendor/sidecars/`.
 - O renderer nunca acessa banco, filesystem privilegiado ou segredos
   diretamente; tudo passa por preload seguro e IPC validado por Zod.
-- `MAPA.md` e citado pelas instrucoes de agentes, mas ainda nao existe neste
-  workspace.
-- O empacotamento final para macOS ainda precisa copiar `resources/sidecars/...`
-  e `resources/drizzle/`, alem de cuidar de assinatura/notarizacao dos binarios
-  nativos.
+- `MAPA.md` mantem o mapa operacional inicial para agentes e deve ser
+  atualizado quando a estrutura ou fluxos centrais mudarem.
+- O empacotamento final para macOS ainda precisa copiar `resources/sidecars/...`,
+  `resources/drizzle/` e `resources/db-seed/`, alem de cuidar de
+  assinatura/notarizacao dos binarios nativos.

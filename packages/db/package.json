@@ -25,7 +25,8 @@
     "test": "vitest run src",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/scripts/migrate.ts",
-    "db:verify": "tsx src/scripts/verify.ts"
+    "db:verify": "tsx src/scripts/verify.ts",
+    "db:seed:verify": "tsx src/scripts/verify-seed.ts"
   },
   "dependencies": {
     "@types/pg": "8.20.0",

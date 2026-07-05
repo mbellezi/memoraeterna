@@ -26,7 +26,15 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["zod"] })],
+    build: {
+      rollupOptions: {
+        output: {
+          entryFileNames: "[name].cjs",
+          format: "cjs"
+        }
+      }
+    },
     resolve: {
       alias: {
         "@app/i18n": i18nPackage,

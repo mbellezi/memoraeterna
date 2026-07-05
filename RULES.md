@@ -150,11 +150,31 @@ npm run db:generate
 ```
 
 - Apos gerar migration, aplique pelo fluxo padrao do projeto.
+- O projeto deve manter um seed/baseline versionado para inicializar bancos
+  Postgres totalmente vazios. O baseline nao substitui migrations em bancos
+  existentes.
+- Em banco totalmente vazio, o bootstrap deve aplicar o seed/baseline,
+  registrar em `drizzle.__drizzle_migrations` as migrations cobertas por esse
+  baseline e entao executar migrations pendentes normalmente.
+- Em banco existente, com historico Drizzle ou dados da aplicacao, o bootstrap
+  nao deve aplicar seed/baseline; deve rodar apenas migrations pendentes.
+- Seeds/baselines devem ser mantidos atualizados junto com migrations: qualquer
+  migration estrutural coberta pelo baseline exige atualizar o baseline e a
+  lista/historico de migrations cobertas. Inicialmente o seed pode conter apenas
+  estrutura, sem dados de dominio.
+- Ao criar nova migration Drizzle, atualize na mesma mudanca:
+  - `packages/db/seed/baseline.sql`, mantendo o SQL das migrations cobertas pelo
+    baseline na mesma ordem do journal Drizzle;
+  - `packages/db/seed/manifest.json`, incluindo a nova migration em
+    `includedMigrations` na mesma ordem de `packages/db/drizzle/meta/_journal.json`.
+- Nenhuma migration nova deve ser considerada pronta enquanto
+  `npm run db:seed:verify` nao passar.
 - Nao considere a task concluida apenas porque `db:migrate` terminou sem erro.
 - Verifique explicitamente no banco real:
   - historico em `drizzle.__drizzle_migrations`;
   - estrutura alterada em `information_schema` ou consulta direta na tabela afetada;
   - indices, constraints, tipos e extensoes quando aplicavel.
+  - sincronizacao entre baseline seed e migrations com `npm run db:seed:verify`.
 - Inclua no resumo final quais verificacoes foram feitas.
 - Use repositorios do `@app/db`; nao espalhe SQL ad hoc pela UI ou services.
 - Dimensoes de embeddings diferentes devem ficar em tabelas/indices separados; indices pgvector exigem dimensao fixa por coluna.
