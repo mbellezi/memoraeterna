@@ -1,7 +1,11 @@
 {
   "app": {
     "title": "Memora Eterna",
-    "tagline": "Memoria local-first per fonti, note ed evidenze."
+    "tagline": "Memoria local-first per fonti, note ed evidenze.",
+    "tray": {
+      "open": "Apri Memora Eterna",
+      "quit": "Chiudi Memora Eterna"
+    }
   },
   "shell": {
     "navigation": {

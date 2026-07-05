@@ -1,9 +1,12 @@
 import { join } from "node:path";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
 import { SettingsService } from "./services/settings-service";
+
+const trayIconDataUrl =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
 
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -18,6 +21,21 @@ function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
+    }
+  });
+
+  mainWindow.on("close", (event) => {
+    if (isQuittingAfterShutdown) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
+  mainWindow.on("closed", () => {
+    if (mainWindow === activeMainWindow) {
+      activeMainWindow = null;
     }
   });
 
@@ -51,6 +69,8 @@ function createMainWindow(): BrowserWindow {
 
 let settingsService: SettingsService | null = null;
 let databaseService: DatabaseService | null = null;
+let activeMainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let shutdownPromise: Promise<void> | null = null;
 let isQuittingAfterShutdown = false;
 
@@ -69,20 +89,17 @@ void app.whenReady().then(() => {
     desktopLocale: app.getLocale()
   });
   registerIpcHandlers(ipcMain, settingsService, databaseService);
-  createMainWindow();
+  createApplicationTray();
+  activeMainWindow = createMainWindow();
   void databaseService.start();
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
+    showMainWindow();
   });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  // Keep the app resident in the tray until the explicit quit action runs.
 });
 
 app.on("before-quit", (event) => {
@@ -102,6 +119,53 @@ async function shutdownServices(): Promise<void> {
   settingsService = null;
   await databaseService?.stop();
   databaseService = null;
+}
+
+function createApplicationTray(): void {
+  if (tray !== null) {
+    return;
+  }
+
+  const translate = createTranslator(app.getLocale());
+  tray = new Tray(createTrayIcon());
+  tray.setToolTip(translate("app.title"));
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: translate("app.tray.open"),
+        click: () => showMainWindow()
+      },
+      { type: "separator" },
+      {
+        label: translate("app.tray.quit"),
+        click: () => app.quit()
+      }
+    ])
+  );
+  tray.on("click", () => showMainWindow());
+  tray.on("double-click", () => showMainWindow());
+}
+
+function createTrayIcon() {
+  const image = nativeImage.createFromDataURL(trayIconDataUrl);
+  if (process.platform === "darwin") {
+    image.setTemplateImage(true);
+  }
+
+  return image;
+}
+
+function showMainWindow(): void {
+  if (activeMainWindow === null || activeMainWindow.isDestroyed()) {
+    activeMainWindow = createMainWindow();
+  }
+
+  if (activeMainWindow.isMinimized()) {
+    activeMainWindow.restore();
+  }
+
+  activeMainWindow.show();
+  activeMainWindow.focus();
 }
 
 function getResourcesPath(): string {
