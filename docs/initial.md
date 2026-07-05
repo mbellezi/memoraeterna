@@ -1314,6 +1314,7 @@ O banco local sera um PostgreSQL nativo completo, embarcado na aplicacao desktop
 Regras de ciclo de vida:
 
 - o main process e o unico dono do sidecar: initdb no primeiro uso, spawn como processo filho, shutdown limpo ao encerrar o app;
+- a janela pode abrir antes do banco ficar pronto, mas deve mostrar um estado de bootstrap e so liberar a shell quando o sidecar estiver pronto e as migrations tiverem rodado;
 - data dir no `userData` da aplicacao, nunca dentro do bundle;
 - conexao por loopback com porta dinamica livre e senha gerada por instalacao (scram), guardada via Electron `safeStorage`; unix socket pode ser usado quando disponivel; nunca `trust` em TCP;
 - detectar e tratar `postmaster.pid` obsoleto e processos orfaos apos crash;
@@ -2220,7 +2221,7 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE 
 5. Estrutura isolada para `apps/obsidian-plugin`.
 6. `@app/integration-contracts` com contratos iniciais.
 7. Integration Gateway minimo no desktop.
-8. Postgres sidecar inicializado e gerenciado pelo main process (initdb, start, shutdown, recuperacao).
+8. Postgres sidecar inicializado e gerenciado pelo main process (initdb, start, spinner de bootstrap, migrations no boot, shutdown, recuperacao).
 9. Drizzle com schema, migrations basicas e fluxo `npm run db:generate`.
 10. Verificacao pos-migration no banco real.
 11. Area de configuracoes inicial.

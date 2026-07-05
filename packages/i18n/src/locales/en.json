@@ -1,0 +1,131 @@
+{
+  "app": {
+    "title": "Memora Eterna",
+    "tagline": "Local-first memory for sources, notes, and evidence."
+  },
+  "shell": {
+    "navigation": {
+      "library": "Library",
+      "import": "Import",
+      "search": "Search",
+      "jobs": "Jobs",
+      "settings": "Settings"
+    },
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "close": "Close",
+      "retry": "Retry",
+      "connect": "Connect",
+      "disconnect": "Disconnect"
+    },
+    "states": {
+      "ready": "Ready",
+      "loading": "Loading...",
+      "empty": "Nothing here yet.",
+      "saved": "Saved."
+    }
+  },
+  "database": {
+    "startup": {
+      "title": "Starting Memora Eterna",
+      "failedTitle": "Local database did not start"
+    },
+    "status": {
+      "starting": "Starting the local database...",
+      "migrating": "Preparing the local database...",
+      "ready": "Local database ready.",
+      "failed": "The local database could not be started.",
+      "stopping": "Stopping the local database...",
+      "stopped": "Local database stopped."
+    }
+  },
+  "errors": {
+    "common": {
+      "unknown": "Something went wrong.",
+      "network": "The network request failed.",
+      "offline": "This action needs a connection.",
+      "permissionDenied": "Permission denied.",
+      "notFound": "The requested item was not found.",
+      "validationFailed": "Some information is invalid.",
+      "unauthorized": "Authorization is required.",
+      "timeout": "The operation timed out.",
+      "conflict": "The item changed elsewhere.",
+      "fileTooLarge": "The file is too large.",
+      "unsupportedFile": "This file type is not supported.",
+      "missingConfiguration": "A required setting is missing."
+    },
+    "database": {
+      "notReady": "The local database is not ready yet."
+    }
+  },
+  "jobs": {
+    "title": "Jobs",
+    "status": {
+      "queued": "Queued",
+      "running": "Running",
+      "succeeded": "Completed",
+      "failed": "Failed",
+      "canceled": "Canceled",
+      "retrying": "Retrying"
+    },
+    "types": {
+      "ingestion": "Ingestion",
+      "conversion": "Conversion",
+      "chunking": "Chunking",
+      "embedding": "Embedding",
+      "summarization": "Summarization",
+      "atomicNoteGeneration": "Atomic note generation",
+      "obsidianSync": "Obsidian sync",
+      "assetStorage": "Asset storage"
+    },
+    "progress": {
+      "processingSource": "Processing {title}",
+      "percentComplete": "{percent}% complete"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "language": {
+      "title": "Language",
+      "uiLocale": "Interface language"
+    },
+    "storage": {
+      "title": "Storage",
+      "obsidianVaultPath": "Obsidian vault path",
+      "obsidianRootFolder": "Managed folder",
+      "obsidianSyncEnabled": "Sync with Obsidian",
+      "obsidianSyncPaused": "Pause Obsidian sync",
+      "obsidianDeletePolicy": "Delete policy",
+      "deletePolicies": {
+        "tombstone": "Tombstone",
+        "archive": "Archive",
+        "delete": "Delete"
+      },
+      "uploadedFilesPath": "Uploaded files folder",
+      "copyUploadedFilesEnabled": "Keep copies of uploaded files"
+    },
+    "integrations": {
+      "title": "Integrations",
+      "authorizedClients": "Authorized clients"
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "chromeExtension": "Chrome extension",
+    "obsidianPlugin": "Obsidian plugin",
+    "desktopGateway": "Desktop gateway",
+    "states": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "paired": "Paired",
+      "unpaired": "Not paired"
+    },
+    "messages": {
+      "desktopUnavailable": "Memora Eterna desktop is not available.",
+      "pairingCode": "Pairing code: {code}",
+      "clientAuthorized": "{client} is authorized.",
+      "clientRevoked": "{client} was revoked."
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "memora-eterna",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Local-first desktop knowledge base for long-term memory.",
+  "type": "module",
+  "packageManager": "npm@11.16.0",
+  "engines": {
+    "node": ">=24.18.0 <25",
+    "npm": ">=11.16.0 <12"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run",
+    "lint": "npm run typecheck",
+    "format:check": "node scripts/check-format.mjs",
+    "setup:env": "node scripts/setup-dev-env.mjs",
+    "setup:dev": "node scripts/setup-dev-env.mjs && node scripts/install-postgres-sidecar.mjs",
+    "sidecar:install:postgres": "node scripts/install-postgres-sidecar.mjs",
+    "db:generate": "npm run db:generate -w @app/db",
+    "db:migrate": "npm run db:migrate -w @app/db",
+    "db:verify": "npm run db:verify -w @app/db",
+    "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.2",
+    "tsx": "4.23.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.9"
+  }
+}

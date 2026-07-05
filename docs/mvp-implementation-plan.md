@@ -244,10 +244,13 @@ Implementar:
 - base para `shadcn/ui`;
 - preload expondo API pequena:
   - `app.system.getInfo`;
+  - `app.database.getStatus`;
+  - `app.database.start`;
   - `app.settings.get`;
   - `app.settings.update`;
 - IPC main/preload/renderer com Zod;
 - i18n no renderer e main;
+- tela de bootstrap que aguarda o banco local ficar pronto antes de liberar a shell;
 - tela inicial simples com navegacao:
   - Library;
   - Import;
@@ -279,6 +282,8 @@ Implementar:
 - lifecycle do sidecar no main process: initdb no primeiro uso, start, shutdown limpo, deteccao de `postmaster.pid` obsoleto e de processos orfaos;
 - data dir no `userData` da aplicacao;
 - senha local gerada por instalacao e guardada via `safeStorage`; conexao por loopback em porta dinamica;
+- janela Electron abre cedo com spinner de bootstrap, mas fluxos dependentes do banco so aparecem apos status `ready`;
+- migrations Drizzle rodam automaticamente apos o sidecar subir e antes de liberar a UI;
 - cliente `node-postgres` com pool de conexoes no pacote `@app/db`;
 - pacote `@app/db`;
 - schema Drizzle inicial para:
@@ -310,6 +315,8 @@ Implementar:
 Testes e validacao:
 
 - teste de start/stop/restart do sidecar com data dir temporario;
+- teste de contrato IPC para status do banco;
+- teste de render do estado de bootstrap e do estado pronto;
 - gerar migration com `npm run db:generate`;
 - aplicar migration;
 - verificar `drizzle.__drizzle_migrations`;
@@ -319,6 +326,8 @@ Testes e validacao:
 Criterio de pronto:
 
 - sidecar inicializa, encerra e reinicia de forma confiavel no desktop;
+- app espera o banco local ficar pronto antes de expor a shell principal;
+- shutdown do app aguarda fechamento do pool e parada do sidecar;
 - migrations sao reproduziveis;
 - repositorios basicos funcionam.
 

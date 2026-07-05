@@ -1,0 +1,16 @@
+{
+  "name": "@app/obsidian-plugin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@app/integration-contracts": "0.0.0"
+  }
+}

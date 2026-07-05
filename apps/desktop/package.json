@@ -1,0 +1,33 @@
+{
+  "name": "@app/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Memora Eterna desktop application.",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -b --pretty false",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@app/db": "0.0.0",
+    "@app/i18n": "0.0.0",
+    "lucide-react": "1.23.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@swc/core": "1.15.43",
+    "@tailwindcss/vite": "4.3.2",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.0.0",
+    "electron-vite": "5.0.0",
+    "tailwindcss": "4.3.2",
+    "vite": "7.3.6"
+  }
+}

@@ -1,1 +1,195 @@
-# memoraeterna
+# Memora Eterna
+
+Memora Eterna e uma aplicacao desktop local-first para organizar fontes,
+documentos, notas, evidencias e memoria de longo prazo. A aplicacao desktop e a
+fonte de verdade local: ela gerencia o banco PostgreSQL embarcado, o pipeline de
+ingestao/indexacao e as integracoes com Chrome e Obsidian.
+
+O MVP usa um monorepo TypeScript com Electron, React, Tailwind, Drizzle e
+PostgreSQL nativo como sidecar.
+
+## Estrutura
+
+```txt
+apps/
+  desktop/             Aplicacao Electron com renderer React e preload seguro
+  chrome-extension/    Extensao Chrome isolada
+  obsidian-plugin/     Plugin Obsidian isolado
+packages/
+  ai/                  Adaptadores e contratos internos de IA
+  conversion/          Conversao e normalizacao de conteudo
+  db/                  Schema, migrations, repositorios e sidecar Postgres
+  domain/              Tipos canonicos e schemas Zod
+  i18n/                Locales e helpers de traducao
+  integration-contracts/
+```
+
+## Prerequisitos
+
+- Node.js `24.18.0` LTS.
+- npm `11.16.0`.
+- macOS com Xcode Command Line Tools para instalar/buildar o sidecar:
+
+```bash
+xcode-select --install
+```
+
+As versoes canonicas ficam em `docs/stack-versions.md`. O `package.json` raiz
+tambem declara os engines esperados.
+
+## Bootstrap DEV Inicial
+
+Instale dependencias do monorepo:
+
+```bash
+npm install
+```
+
+Crie os `.env` locais e instale o sidecar PostgreSQL para desenvolvimento:
+
+```bash
+npm run setup:dev
+```
+
+Esse comando executa:
+
+- `scripts/setup-dev-env.mjs`, que cria `.env` e `apps/desktop/.env` com
+  variaveis aleatorias de banco quando ainda nao existem;
+- `scripts/install-postgres-sidecar.mjs`, que instala o PostgreSQL sidecar em
+  `vendor/sidecars/...`.
+
+Para regenerar credenciais DEV:
+
+```bash
+npm run setup:env -- --force
+```
+
+Para instalar apenas o sidecar, preservando os `.env` existentes:
+
+```bash
+npm run sidecar:install:postgres
+```
+
+## Sidecars
+
+O sidecar DEV instala:
+
+- PostgreSQL `18.4`;
+- pgvector `0.8.4`;
+- Apache AGE `PG18/v1.7.0-rc0`.
+
+Em desenvolvimento, os binarios ficam em:
+
+```txt
+vendor/sidecars/postgres/darwin-{arch}/postgresql-18.4/
+```
+
+Essa pasta e ignorada pelo Git. Em producao, o app empacotado deve copiar os
+artefatos para:
+
+```txt
+resources/
+  sidecars/
+    postgres/
+      darwin-arm64/
+        postgresql-18.4/
+  drizzle/
+```
+
+No runtime Electron, o banco sobe junto com a aplicacao. A janela abre com uma
+tela de bootstrap, o main process inicia o sidecar em loopback com porta
+dinamica, roda as migrations Drizzle e so libera a shell quando o banco esta
+pronto. O shutdown do app aguarda o pool e o sidecar encerrarem.
+
+As credenciais dos `.env` sao para scripts e fluxos DEV. O runtime do desktop
+gera credenciais por instalacao e guarda a senha via Electron `safeStorage`.
+
+Valide o sidecar instalado:
+
+```bash
+npm run sidecar:spike
+```
+
+O spike cria um data dir temporario, sobe o Postgres, habilita `vector` e `age`,
+executa consultas triviais e encerra o processo.
+
+## Compilar e Validar
+
+Typecheck:
+
+```bash
+npm run typecheck
+```
+
+Testes:
+
+```bash
+npm test
+```
+
+Build:
+
+```bash
+npm run build
+```
+
+Format check:
+
+```bash
+npm run format:check
+```
+
+Fluxo completo recomendado depois do bootstrap:
+
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run format:check
+npm run sidecar:spike
+```
+
+## Rodar o Desktop em DEV
+
+```bash
+npm run dev -w @app/desktop
+```
+
+Durante o boot, a UI mostra o estado do banco local. Se o sidecar ainda estiver
+subindo ou aplicando migrations, a shell principal permanece bloqueada com
+spinner.
+
+## Banco e Migrations
+
+Gerar migration depois de alterar schema Drizzle:
+
+```bash
+npm run db:generate
+```
+
+Aplicar migration usando `MEMORA_DATABASE_URL` do `.env`:
+
+```bash
+npm run db:migrate
+```
+
+Verificar migration no banco real:
+
+```bash
+npm run db:verify
+```
+
+Toda mudanca de schema deve ser validada no banco real, incluindo historico em
+`drizzle.__drizzle_migrations` e estrutura esperada em `information_schema` ou
+consulta equivalente.
+
+## Notas Importantes
+
+- Nao commitar `.env`, `apps/*/.env`, `.cache/` ou `vendor/sidecars/`.
+- O renderer nunca acessa banco, filesystem privilegiado ou segredos
+  diretamente; tudo passa por preload seguro e IPC validado por Zod.
+- `MAPA.md` e citado pelas instrucoes de agentes, mas ainda nao existe neste
+  workspace.
+- O empacotamento final para macOS ainda precisa copiar `resources/sidecars/...`
+  e `resources/drizzle/`, alem de cuidar de assinatura/notarizacao dos binarios
+  nativos.

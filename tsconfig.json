@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/domain" },
+    { "path": "./packages/i18n" },
+    { "path": "./packages/integration-contracts" },
+    { "path": "./packages/db" },
+    { "path": "./packages/ai" },
+    { "path": "./packages/conversion" },
+    { "path": "./apps/desktop" },
+    { "path": "./apps/chrome-extension" },
+    { "path": "./apps/obsidian-plugin" }
+  ]
+}

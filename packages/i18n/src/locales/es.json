@@ -1,0 +1,131 @@
+{
+  "app": {
+    "title": "Memora Eterna",
+    "tagline": "Memoria local-first para fuentes, notas y evidencias."
+  },
+  "shell": {
+    "navigation": {
+      "library": "Biblioteca",
+      "import": "Importar",
+      "search": "Buscar",
+      "jobs": "Tareas",
+      "settings": "Ajustes"
+    },
+    "actions": {
+      "save": "Guardar",
+      "cancel": "Cancelar",
+      "close": "Cerrar",
+      "retry": "Reintentar",
+      "connect": "Conectar",
+      "disconnect": "Desconectar"
+    },
+    "states": {
+      "ready": "Listo",
+      "loading": "Cargando...",
+      "empty": "Todavia no hay nada aqui.",
+      "saved": "Guardado."
+    }
+  },
+  "database": {
+    "startup": {
+      "title": "Iniciando Memora Eterna",
+      "failedTitle": "La base de datos local no se inicio"
+    },
+    "status": {
+      "starting": "Iniciando la base de datos local...",
+      "migrating": "Preparando la base de datos local...",
+      "ready": "Base de datos local lista.",
+      "failed": "No se pudo iniciar la base de datos local.",
+      "stopping": "Deteniendo la base de datos local...",
+      "stopped": "Base de datos local detenida."
+    }
+  },
+  "errors": {
+    "common": {
+      "unknown": "Algo salio mal.",
+      "network": "La solicitud de red fallo.",
+      "offline": "Esta accion necesita conexion.",
+      "permissionDenied": "Permiso denegado.",
+      "notFound": "No se encontro el elemento solicitado.",
+      "validationFailed": "Algunos datos no son validos.",
+      "unauthorized": "Se requiere autorizacion.",
+      "timeout": "La operacion agoto el tiempo de espera.",
+      "conflict": "El elemento cambio en otro lugar.",
+      "fileTooLarge": "El archivo es demasiado grande.",
+      "unsupportedFile": "Este tipo de archivo no es compatible.",
+      "missingConfiguration": "Falta un ajuste obligatorio."
+    },
+    "database": {
+      "notReady": "La base de datos local aun no esta lista."
+    }
+  },
+  "jobs": {
+    "title": "Tareas",
+    "status": {
+      "queued": "En cola",
+      "running": "En ejecucion",
+      "succeeded": "Completada",
+      "failed": "Fallida",
+      "canceled": "Cancelada",
+      "retrying": "Reintentando"
+    },
+    "types": {
+      "ingestion": "Ingestion",
+      "conversion": "Conversion",
+      "chunking": "Division en fragmentos",
+      "embedding": "Embedding",
+      "summarization": "Resumen",
+      "atomicNoteGeneration": "Generacion de nota atomica",
+      "obsidianSync": "Sincronizacion con Obsidian",
+      "assetStorage": "Almacenamiento de assets"
+    },
+    "progress": {
+      "processingSource": "Procesando {title}",
+      "percentComplete": "{percent}% completado"
+    }
+  },
+  "settings": {
+    "title": "Ajustes",
+    "language": {
+      "title": "Idioma",
+      "uiLocale": "Idioma de la interfaz"
+    },
+    "storage": {
+      "title": "Almacenamiento",
+      "obsidianVaultPath": "Ruta del vault de Obsidian",
+      "obsidianRootFolder": "Carpeta gestionada",
+      "obsidianSyncEnabled": "Sincronizar con Obsidian",
+      "obsidianSyncPaused": "Pausar sincronizacion con Obsidian",
+      "obsidianDeletePolicy": "Politica de eliminacion",
+      "deletePolicies": {
+        "tombstone": "Tombstone",
+        "archive": "Archivar",
+        "delete": "Eliminar"
+      },
+      "uploadedFilesPath": "Carpeta de archivos cargados",
+      "copyUploadedFilesEnabled": "Conservar copias de archivos cargados"
+    },
+    "integrations": {
+      "title": "Integraciones",
+      "authorizedClients": "Clientes autorizados"
+    }
+  },
+  "integrations": {
+    "title": "Integraciones",
+    "chromeExtension": "Extension de Chrome",
+    "obsidianPlugin": "Plugin de Obsidian",
+    "desktopGateway": "Gateway de escritorio",
+    "states": {
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "paired": "Emparejado",
+      "unpaired": "No emparejado"
+    },
+    "messages": {
+      "desktopUnavailable": "El escritorio de Memora Eterna no esta disponible.",
+      "pairingCode": "Codigo de emparejamiento: {code}",
+      "clientAuthorized": "{client} esta autorizado.",
+      "clientRevoked": "{client} fue revocado."
+    }
+  }
+}

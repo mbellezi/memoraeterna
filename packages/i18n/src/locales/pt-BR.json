@@ -1,0 +1,131 @@
+{
+  "app": {
+    "title": "Memora Eterna",
+    "tagline": "Memoria local-first para fontes, notas e evidencias."
+  },
+  "shell": {
+    "navigation": {
+      "library": "Biblioteca",
+      "import": "Importar",
+      "search": "Buscar",
+      "jobs": "Tarefas",
+      "settings": "Configuracoes"
+    },
+    "actions": {
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "close": "Fechar",
+      "retry": "Tentar novamente",
+      "connect": "Conectar",
+      "disconnect": "Desconectar"
+    },
+    "states": {
+      "ready": "Pronto",
+      "loading": "Carregando...",
+      "empty": "Nada por aqui ainda.",
+      "saved": "Salvo."
+    }
+  },
+  "database": {
+    "startup": {
+      "title": "Iniciando o Memora Eterna",
+      "failedTitle": "O banco local nao iniciou"
+    },
+    "status": {
+      "starting": "Iniciando o banco local...",
+      "migrating": "Preparando o banco local...",
+      "ready": "Banco local pronto.",
+      "failed": "Nao foi possivel iniciar o banco local.",
+      "stopping": "Parando o banco local...",
+      "stopped": "Banco local parado."
+    }
+  },
+  "errors": {
+    "common": {
+      "unknown": "Algo deu errado.",
+      "network": "A requisicao de rede falhou.",
+      "offline": "Esta acao precisa de conexao.",
+      "permissionDenied": "Permissao negada.",
+      "notFound": "O item solicitado nao foi encontrado.",
+      "validationFailed": "Algumas informacoes sao invalidas.",
+      "unauthorized": "Autorizacao obrigatoria.",
+      "timeout": "A operacao excedeu o tempo limite.",
+      "conflict": "O item foi alterado em outro lugar.",
+      "fileTooLarge": "O arquivo e grande demais.",
+      "unsupportedFile": "Este tipo de arquivo nao e suportado.",
+      "missingConfiguration": "Uma configuracao obrigatoria esta ausente."
+    },
+    "database": {
+      "notReady": "O banco local ainda nao esta pronto."
+    }
+  },
+  "jobs": {
+    "title": "Tarefas",
+    "status": {
+      "queued": "Na fila",
+      "running": "Em execucao",
+      "succeeded": "Concluida",
+      "failed": "Falhou",
+      "canceled": "Cancelada",
+      "retrying": "Tentando novamente"
+    },
+    "types": {
+      "ingestion": "Ingestao",
+      "conversion": "Conversao",
+      "chunking": "Divisao em trechos",
+      "embedding": "Embedding",
+      "summarization": "Resumo",
+      "atomicNoteGeneration": "Geracao de nota atomica",
+      "obsidianSync": "Sincronizacao com Obsidian",
+      "assetStorage": "Armazenamento de assets"
+    },
+    "progress": {
+      "processingSource": "Processando {title}",
+      "percentComplete": "{percent}% concluido"
+    }
+  },
+  "settings": {
+    "title": "Configuracoes",
+    "language": {
+      "title": "Idioma",
+      "uiLocale": "Idioma da interface"
+    },
+    "storage": {
+      "title": "Armazenamento",
+      "obsidianVaultPath": "Caminho do vault Obsidian",
+      "obsidianRootFolder": "Pasta gerenciada",
+      "obsidianSyncEnabled": "Sincronizar com Obsidian",
+      "obsidianSyncPaused": "Pausar sincronizacao com Obsidian",
+      "obsidianDeletePolicy": "Politica de exclusao",
+      "deletePolicies": {
+        "tombstone": "Tombstone",
+        "archive": "Arquivar",
+        "delete": "Excluir"
+      },
+      "uploadedFilesPath": "Pasta de arquivos enviados",
+      "copyUploadedFilesEnabled": "Manter copias de arquivos enviados"
+    },
+    "integrations": {
+      "title": "Integracoes",
+      "authorizedClients": "Clientes autorizados"
+    }
+  },
+  "integrations": {
+    "title": "Integracoes",
+    "chromeExtension": "Extensao do Chrome",
+    "obsidianPlugin": "Plugin do Obsidian",
+    "desktopGateway": "Gateway do desktop",
+    "states": {
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "paired": "Pareado",
+      "unpaired": "Nao pareado"
+    },
+    "messages": {
+      "desktopUnavailable": "O desktop Memora Eterna nao esta disponivel.",
+      "pairingCode": "Codigo de pareamento: {code}",
+      "clientAuthorized": "{client} esta autorizado.",
+      "clientRevoked": "{client} foi revogado."
+    }
+  }
+}

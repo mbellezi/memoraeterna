@@ -1,0 +1,131 @@
+{
+  "app": {
+    "title": "Memora Eterna",
+    "tagline": "Memoire local-first pour les sources, les notes et les preuves."
+  },
+  "shell": {
+    "navigation": {
+      "library": "Bibliotheque",
+      "import": "Importer",
+      "search": "Rechercher",
+      "jobs": "Taches",
+      "settings": "Parametres"
+    },
+    "actions": {
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "close": "Fermer",
+      "retry": "Reessayer",
+      "connect": "Connecter",
+      "disconnect": "Deconnecter"
+    },
+    "states": {
+      "ready": "Pret",
+      "loading": "Chargement...",
+      "empty": "Rien ici pour le moment.",
+      "saved": "Enregistre."
+    }
+  },
+  "database": {
+    "startup": {
+      "title": "Demarrage de Memora Eterna",
+      "failedTitle": "La base locale n'a pas demarre"
+    },
+    "status": {
+      "starting": "Demarrage de la base locale...",
+      "migrating": "Preparation de la base locale...",
+      "ready": "Base locale prete.",
+      "failed": "Impossible de demarrer la base locale.",
+      "stopping": "Arret de la base locale...",
+      "stopped": "Base locale arretee."
+    }
+  },
+  "errors": {
+    "common": {
+      "unknown": "Une erreur est survenue.",
+      "network": "La requete reseau a echoue.",
+      "offline": "Cette action necessite une connexion.",
+      "permissionDenied": "Permission refusee.",
+      "notFound": "L'element demande est introuvable.",
+      "validationFailed": "Certaines informations ne sont pas valides.",
+      "unauthorized": "Autorisation requise.",
+      "timeout": "L'operation a expire.",
+      "conflict": "L'element a ete modifie ailleurs.",
+      "fileTooLarge": "Le fichier est trop volumineux.",
+      "unsupportedFile": "Ce type de fichier n'est pas pris en charge.",
+      "missingConfiguration": "Un parametre obligatoire est manquant."
+    },
+    "database": {
+      "notReady": "La base locale n'est pas encore prete."
+    }
+  },
+  "jobs": {
+    "title": "Taches",
+    "status": {
+      "queued": "En attente",
+      "running": "En cours",
+      "succeeded": "Termine",
+      "failed": "Echec",
+      "canceled": "Annule",
+      "retrying": "Nouvelle tentative"
+    },
+    "types": {
+      "ingestion": "Ingestion",
+      "conversion": "Conversion",
+      "chunking": "Decoupage",
+      "embedding": "Embedding",
+      "summarization": "Resume",
+      "atomicNoteGeneration": "Generation de note atomique",
+      "obsidianSync": "Synchronisation Obsidian",
+      "assetStorage": "Stockage des assets"
+    },
+    "progress": {
+      "processingSource": "Traitement de {title}",
+      "percentComplete": "{percent}% termine"
+    }
+  },
+  "settings": {
+    "title": "Parametres",
+    "language": {
+      "title": "Langue",
+      "uiLocale": "Langue de l'interface"
+    },
+    "storage": {
+      "title": "Stockage",
+      "obsidianVaultPath": "Chemin du vault Obsidian",
+      "obsidianRootFolder": "Dossier gere",
+      "obsidianSyncEnabled": "Synchroniser avec Obsidian",
+      "obsidianSyncPaused": "Mettre en pause la synchronisation Obsidian",
+      "obsidianDeletePolicy": "Politique de suppression",
+      "deletePolicies": {
+        "tombstone": "Tombstone",
+        "archive": "Archiver",
+        "delete": "Supprimer"
+      },
+      "uploadedFilesPath": "Dossier des fichiers importes",
+      "copyUploadedFilesEnabled": "Conserver des copies des fichiers importes"
+    },
+    "integrations": {
+      "title": "Integrations",
+      "authorizedClients": "Clients autorises"
+    }
+  },
+  "integrations": {
+    "title": "Integrations",
+    "chromeExtension": "Extension Chrome",
+    "obsidianPlugin": "Plugin Obsidian",
+    "desktopGateway": "Gateway desktop",
+    "states": {
+      "connected": "Connecte",
+      "disconnected": "Deconnecte",
+      "paired": "Associe",
+      "unpaired": "Non associe"
+    },
+    "messages": {
+      "desktopUnavailable": "Le desktop Memora Eterna n'est pas disponible.",
+      "pairingCode": "Code d'association : {code}",
+      "clientAuthorized": "{client} est autorise.",
+      "clientRevoked": "{client} a ete revoque."
+    }
+  }
+}
