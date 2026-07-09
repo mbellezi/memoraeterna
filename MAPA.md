@@ -207,6 +207,11 @@ fora das apps externas quando incluir runtime ou segredos.
 Base inicial para conversao/normalizacao. Nao deve acessar banco diretamente;
 services de aplicacao persistem resultados via `@app/db`.
 
+Decisao para a Fase 2: formatos textuais simples usam conversores TypeScript
+nativos; PDF e documentos complexos usam Docling em sidecar CPython local,
+controlado pelo main process ou pelo worker de conversao. O resultado preserva
+Markdown, blocos e proveniencia estruturada quando disponivel.
+
 ## Fluxo do Banco no Desktop
 
 No desenvolvimento:

@@ -29,7 +29,7 @@ As versoes canonicas ficam em `docs/stack-versions.md`. Antes de criar ou atuali
 - Renderer: React 19.
 - CSS/UI: Tailwind CSS 4 e `shadcn/ui`.
 - Icones: preferir `lucide-react`.
-- Backend local: Node.js no main process do Electron, alinhado ao baseline LTS de `docs/stack-versions.md`.
+- Backend local: Node.js no main process do Electron, alinhado ao baseline LTS de `docs/stack-versions.md`; Python fica restrito ao sidecar local de conversao Docling, controlado pelo main process ou por workers.
 - Banco: PostgreSQL nativo embarcado como sidecar da aplicacao, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - ORM/migrations: Drizzle ORM sobre `node-postgres`.
 - Vetores: `pgvector`, incluido nos binarios do sidecar.
@@ -37,7 +37,8 @@ As versoes canonicas ficam em `docs/stack-versions.md`. Antes de criar ou atuali
 - Contratos: Zod.
 - Workers: `worker_threads`.
 - Web extraction: Defuddle.
-- Arquivos para Markdown: `markitdown-ts`.
+- Documentos complexos para Markdown e JSON estruturado: Docling em sidecar Python local.
+- Formatos textuais simples para Markdown: conversores TypeScript nativos em `@app/conversion`.
 - YouTube: `youtubei.js`.
 - Runtime local GGUF: `node-llama-cpp`, apenas no main process ou em workers controlados pelo main process.
 
@@ -305,20 +306,37 @@ Capabilities iniciais incluem:
 - O MVP prepara a interface local GGUF, mas nao exige multimodal local em producao.
 - Trate multimodal local como validacao futura, salvo pedido explicito.
 
+## Sidecar Python e Docling
+
+- Python existe apenas como runtime isolado do sidecar Docling; nao importar bibliotecas Python no renderer, extensao Chrome ou plugin Obsidian.
+- O main process ou um `worker_thread` controlado por ele deve gerenciar start, execucao, cancelamento, timeout e shutdown do sidecar.
+- Nao depender do Python instalado no sistema e nao executar `pip install` em runtime.
+- Empacotar runtime, wheels e modelos por plataforma com versoes, origem, licencas, checksums e SBOM registrados.
+- A comunicacao com o sidecar deve usar stdin/stdout com mensagens JSON versionadas e validadas por Zod; nao expor porta de rede para conversao.
+- O sidecar deve operar offline por padrao. Downloads de runtime ou modelos exigem fluxo explicito, verificacao de hash e consentimento do usuario.
+- Arquivos temporarios devem ficar em diretorio controlado pela aplicacao e ser removidos apos sucesso, falha ou cancelamento.
+- O JSON estruturado produzido pelo Docling deve ser preservado como asset derivado quando houver informacao de layout/proveniencia util.
+
 ## Conversion Pipeline
 
 - Paginas web: Defuddle como caminho primario.
-- Arquivos locais/anexos: `markitdown-ts` como caminho primario.
+- PDF, DOCX, PPTX, XLSX, EPUB, formatos OpenDocument e imagens que exijam parsing/OCR: Docling como caminho primario.
+- TXT, Markdown, CSV, JSON, XML, RSS, Atom e IPYNB: conversores TypeScript nativos como caminho primario.
+- ZIP e outros containers: extracao segura e roteamento de cada entrada para o conversor apropriado.
 - YouTube: `youtubei.js` para metadados e transcricao quando disponivel.
 - Todo conteudo inserido deve virar Markdown normalizado.
+- O dialeto normalizado aceita GFM, HTML inline para tabelas que Markdown nao representa sem perda, LaTeX para formulas e referencias relativas para assets.
 - Preservar assets originais quando aplicavel.
 - Registrar:
   - engine;
   - engine version;
+  - perfil/opcoes de conversao;
   - warnings;
   - hashes;
+  - qualidade/confianca quando fornecida;
   - metadados extraidos.
-- PDF escaneado, imagem sem texto, audio e video complexo nao devem bloquear o MVP. Registrar como pendencia/processamento futuro quando necessario.
+- Resultados de documentos complexos devem preservar blocos, ordem de leitura, pagina, bounding box, charspan e mapeamento para offsets no Markdown quando disponiveis.
+- Docling pode aplicar OCR basico automatico em paginas sem texto pesquisavel. OCR customizado, VLM avancado, manuscritos e casos de baixa confianca nao devem bloquear o MVP; marcar `requires_ocr` ou registrar pendencia recuperavel.
 
 ## Jobs e Workers
 

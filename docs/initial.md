@@ -31,7 +31,8 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - Contratos compartilhados e versionados para comunicacao entre desktop, extensao Chrome e plugin Obsidian.
 - Toda fonte de conteudo importada deve ser convertida para Markdown normalizado.
 - Defuddle sera o motor primario para extracao de conteudo principal de paginas web para Markdown limpo.
-- `markitdown-ts` sera o motor primario para converter arquivos locais/anexos para Markdown.
+- Docling sera o motor primario para converter PDF e documentos complexos em Markdown e JSON estruturado, executado em sidecar Python local.
+- Conversores TypeScript nativos serao o caminho primario para TXT, Markdown, CSV, JSON, XML, RSS, Atom, IPYNB e HTML local simples.
 - `youtubei.js` sera o caminho inicial para metadados e transcricoes de YouTube.
 - A importacao deve gerar notas atomicas no estilo Zettelkasten a partir das ideias presentes no conteudo.
 - Notas atomicas devem ser relacionadas as fontes, aos elementos catalograficos, as entidades e a outras notas atomicas.
@@ -52,7 +53,7 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - `pgvector` para busca vetorial, incluido nos binarios do sidecar.
 - Apache AGE `PG18/v1.7.0-rc0` para consultas e projecoes de grafo, compilado por plataforma e injetado no bundle do sidecar apos validacao; inicialmente apenas macOS.
 - Zod para contratos tipados entre renderer, preload, main process e workers.
-- `worker_threads` para ingestao, chunking, OCR, transcricao, embeddings e extracao de conhecimento.
+- `worker_threads` para ingestao, conversao, chunking, OCR, transcricao, embeddings e extracao de conhecimento; o worker de conversao controla o sidecar Docling quando necessario.
 - Pacote interno `@app/domain` para tipos canonicos e schemas compartilhados.
 - Pacote interno `@app/db` para schema, migrations, repositorios e queries.
 - Pacote interno `@app/integration-contracts` para contratos externos, eventos e schemas de integracao.
@@ -134,10 +135,11 @@ packages/
     suporte a modelos locais
 
   @app/conversion
-    contratos de conversao para Markdown
-    adaptadores para Defuddle, markitdown-ts e youtubei.js
+    contratos de conversao para Markdown e representacao estruturada
+    router por formato/politica/perfil de qualidade
+    adaptadores para Defuddle, Docling, conversores TypeScript e youtubei.js
     normalizacao de Markdown
-    metadados de conversao
+    metadados, qualidade e proveniencia de conversao
 
   @app/db
     cliente Postgres (node-postgres)
@@ -599,38 +601,83 @@ Fallbacks previstos:
 
 ## Importacao de Arquivos para Markdown
 
-`markitdown-ts` sera o motor primario para converter arquivos locais, anexos e arquivos recebidos de integracoes para Markdown normalizado.
+O pipeline usara um `ConversionRouter` para escolher o conversor por MIME/magic bytes, extensao, politica de privacidade e perfil de qualidade.
 
-Ele deve ser executado no desktop, preferencialmente em `worker_threads`, sem expor acesso direto a arquivos para o renderer, extensao Chrome ou plugin Obsidian.
+Docling sera o motor primario para PDF, DOCX, PPTX, XLSX, EPUB, formatos OpenDocument e imagens que exijam parsing ou OCR. Ele sera executado em sidecar CPython local, iniciado e supervisionado pelo main process ou pelo worker de conversao. O sidecar deve usar runtime, wheels e modelos proprios por plataforma, comunicar-se por stdin/stdout JSON validado por Zod, operar offline por padrao e nunca depender do Python do sistema ou executar `pip install` em runtime.
+
+TXT, Markdown, CSV, JSON, XML, RSS, Atom, Jupyter Notebook e HTML local simples devem usar conversores TypeScript nativos em `@app/conversion`. Defuddle continua sendo o caminho primario para paginas web, inclusive quando HTML tambem for suportado como arquivo local.
 
 Uso esperado:
 
 ```txt
 arquivo local, anexo ou buffer importado
   -> salvar asset bruto
-  -> detectar MIME, extensao e tamanho
-  -> converter com markitdown-ts quando suportado
+  -> detectar MIME/magic bytes, extensao e tamanho
+  -> ConversionRouter
+     -> conversor TypeScript para formato textual simples
+     -> sidecar Docling para documento complexo
   -> normalizar Markdown
-  -> extrair metadados tecnicos
+  -> preservar blocos, assets e proveniencia estruturada
   -> criar SourceItem + Document + DocumentAsset
   -> gerar resumo, chunks, embeddings e notas atomicas
 ```
 
-Formatos iniciais a validar com `markitdown-ts`:
+Formatos iniciais dos conversores TypeScript:
+
+- TXT e Markdown;
+- CSV;
+- JSON;
+- XML, RSS e Atom;
+- Jupyter Notebook `.ipynb`;
+- HTML local simples.
+
+Formatos iniciais do Docling:
 
 - PDF textual;
+- PDF multicoluna, com tabelas e misto;
+- PDF escaneado com OCR basico automatico somente nas paginas necessarias;
 - Word `.docx`;
 - Excel `.xlsx`;
-- HTML;
-- texto simples, Markdown, CSV, XML, RSS e Atom;
-- Jupyter Notebook `.ipynb`;
-- imagens, inicialmente para metadados EXIF e descricao assistida quando habilitada;
-- ZIP, com iteracao recursiva e limites de seguranca;
-- PowerPoint/PPTX e EPUB devem ser tratados como formatos a validar antes de compromisso firme.
+- PowerPoint `.pptx`;
+- EPUB;
+- ODT, ODS e ODP;
+- imagens quando OCR ou parsing visual basico estiver habilitado.
 
-Casos que nao devem depender apenas de `markitdown-ts`:
+ZIP e outros containers devem ser extraidos com limites de tamanho, profundidade e quantidade; cada entrada deve voltar ao `ConversionRouter`.
 
-- PDF escaneado ou imagem sem texto pesquisavel deve seguir para OCR;
+O resultado comum de conversao deve conter:
+
+```txt
+markdown
+blocks[]
+  id
+  type
+  text
+  page
+  bounding_box
+  source_charspan
+  markdown_start
+  markdown_end
+  confidence
+assets[]
+engine
+engine_version
+profile_and_options
+warnings
+quality
+raw_structured_result
+```
+
+O `DoclingDocument` JSON deve ser preservado como `DocumentAsset` derivado quando contiver layout ou proveniencia util. O dialeto normalizado aceita GFM, HTML inline para tabelas com merges/multiplos headers, LaTeX para formulas e referencias relativas para assets.
+
+Perfis iniciais:
+
+- `standard`: parsing de layout, ordem de leitura e tabelas;
+- `ocr`: acionado automaticamente somente em paginas sem texto pesquisavel ou com texto inutilizavel.
+
+Casos de excecao:
+
+- OCR customizado, VLM avancado, manuscritos e resultados de baixa confianca devem gerar `requires_ocr` ou warning recuperavel, sem sucesso silencioso;
 - audio e video devem seguir para pipeline de transcricao;
 - imagem que exige leitura visual deve seguir para OCR ou analise visual configurada;
 - arquivos compactados devem ter limites de tamanho, profundidade, quantidade de arquivos e tipos permitidos;
@@ -646,13 +693,15 @@ file_size_bytes
 source_file_hash
 conversion_engine
 conversion_engine_version
+conversion_profile_and_options
 conversion_started_at
 conversion_finished_at
 conversion_warnings
+conversion_quality
 extracted_metadata
 ```
 
-O suporte de `markitdown-ts` para URLs e YouTube nao deve substituir as decisoes ja tomadas: Defuddle continua sendo o caminho primario para paginas web, e `youtubei.js` continua sendo o caminho inicial para YouTube.
+O suporte do Docling a HTML, audio ou video nao substitui as decisoes ja tomadas: Defuddle continua sendo o caminho primario para paginas web, `youtubei.js` continua sendo o caminho inicial para YouTube e audio/video continuam em pipelines proprios.
 
 ## YouTube e Videos Web
 
@@ -982,14 +1031,19 @@ Responsabilidades:
 
 - definir contratos de conversao de entrada e saida;
 - padronizar metadados de conversao, avisos e erros;
-- encapsular `markitdown-ts` para arquivos locais, anexos e buffers;
+- rotear entradas por MIME/magic bytes, extensao, politica de privacidade e perfil de qualidade;
+- encapsular conversores TypeScript nativos para formatos textuais simples;
+- encapsular o protocolo do sidecar Docling para PDF e documentos complexos;
 - encapsular Defuddle para paginas web e DOM renderizado;
 - encapsular normalizadores para transcricoes obtidas via `youtubei.js`;
 - aplicar pos-processamento de Markdown normalizado;
-- registrar motor, versao, opcoes e qualidade estimada da conversao;
+- preservar blocos, pagina, bounding box, charspan, offsets Markdown, assets e JSON estruturado quando disponiveis;
+- registrar motor, versao, perfil, opcoes e qualidade estimada da conversao;
 - expor erros recuperaveis e mensagens localizaveis via i18n.
 
 `@app/conversion` nao deve acessar banco diretamente. Ele deve receber entradas ja autorizadas e retornar resultados estruturados para os servicos de aplicacao persistirem via `@app/db`.
+
+O sidecar Docling e uma excecao isolada ao TypeScript-first: nenhuma regra de dominio ou aplicacao deve ser implementada em Python. Runtime, wheels e modelos devem ser versionados por plataforma, verificados por checksum e operados offline por padrao. O main process ou um worker controlado por ele e o unico responsavel por start, cancelamento, timeout, recuperacao de crash e shutdown.
 
 ## Taxonomia de Conteudo e Entidades
 
@@ -1799,7 +1853,7 @@ Receber conteudo
   -> quando for insercao manual, validar tipo escolhido e campos progressivos
   -> buscar e vincular fontes existentes quando aplicavel
   -> extrair pagina web com Defuddle quando a fonte for URL/pagina
-  -> converter arquivos com markitdown-ts quando a fonte for arquivo local/anexo
+  -> rotear arquivo local/anexo para conversor TypeScript ou sidecar Docling
   -> aplicar fluxo proprio para YouTube e videos web quando aplicavel
   -> classificar tipo de SourceItem
   -> extrair metadados de catalogacao
@@ -2062,8 +2116,16 @@ packages/
     src/
       converters/
         defuddle.ts
-        markitdown.ts
+        docling.ts
+        plain-text.ts
+        csv.ts
+        json.ts
+        xml-feed.ts
+        ipynb.ts
+        local-html.ts
         youtube-transcript.ts
+      conversion-router.ts
+      sidecar-contracts.ts
       markdown-normalizer.ts
       metadata.ts
       types.ts
@@ -2226,9 +2288,12 @@ Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornar
 - reconciliacao de pessoas, organizacoes, obras e publicacoes duplicadas;
 - qualidade da conversao de diferentes fontes para Markdown normalizado;
 - qualidade do Defuddle em diferentes tipos de pagina web;
-- qualidade do `markitdown-ts` para PDF, DOCX, XLSX, HTML, CSV, XML, IPYNB, ZIP e outros arquivos;
+- qualidade do Docling para PDF textual, multicoluna, tabelas, scans, DOCX, XLSX, PPTX, EPUB e formatos OpenDocument;
+- qualidade dos conversores TypeScript para TXT, Markdown, CSV, JSON, XML, feeds, IPYNB e HTML local;
+- tamanho, cold start, memoria, compatibilidade e assinatura do runtime CPython, wheels e modelos Docling por plataforma;
+- preservacao de pagina, bounding box, charspan, ordem de leitura e offsets Markdown no resultado estruturado;
 - estrategia de fallback quando Defuddle falhar ou extrair conteudo insuficiente;
-- estrategia de fallback quando `markitdown-ts` falhar, produzir Markdown fraco ou encontrar arquivo escaneado;
+- estrategia de warning, `requires_ocr` e retry quando Docling falhar, produzir resultado fraco ou encontrar caso fora do OCR basico;
 - confiabilidade de `youtubei.js` para metadados e transcricoes em paginas de video, especialmente YouTube;
 - qualidade da geracao de resumos para fontes longas;
 - qualidade da geracao de notas atomicas por ideia;
@@ -2248,7 +2313,7 @@ Alguns pontos devem ser validados com prototipos e benchmarks antes de se tornar
 
 ## MVP Tecnico Sugerido
 
-O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE profundo, OCR sofisticado, multimodal local, MOCs automaticos, wikis elaboradas e transcricao robusta permanecem na direcao do produto, mas ficam fora da implementacao inicial.
+O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE profundo, OCR customizado/avancado alem do OCR basico automatico do Docling, multimodal local, MOCs automaticos, wikis elaboradas e transcricao robusta permanecem na direcao do produto, mas ficam fora da implementacao inicial.
 
 1. Aplicacao Electron com React via `electron-vite`.
 2. Renderer com React 19, Tailwind CSS 4 e `shadcn/ui`, nas versoes de `docs/stack-versions.md`.
@@ -2281,7 +2346,7 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE 
 29. Fluxos bidirecionais essenciais com o plugin Obsidian.
 30. Criacao de item de acervo com metadados basicos.
 31. Extracao de pagina web com Defuddle.
-32. Importacao de arquivo local com `markitdown-ts`.
+32. Importacao de arquivo local via `ConversionRouter`, com TypeScript para formatos simples e Docling para documentos complexos.
 33. Conversao para Markdown normalizado.
 34. Projecao inicial de Markdown no vault Obsidian.
 35. Sincronizacao Obsidian <-> banco para criacao, edicao, rename/move e remocao de arquivos gerenciados.
@@ -2304,7 +2369,7 @@ Escopo explicitamente fora do MVP inicial:
 
 - AGE profundo e travessias complexas de grafo;
 - grafo visual elaborado;
-- OCR sofisticado;
+- OCR customizado/avancado alem do OCR basico automatico do Docling;
 - multimodal local em producao;
 - transcricao robusta de audio/video;
 - MOCs automaticos;
@@ -2345,8 +2410,11 @@ Embeddings remotos e locais
 Defuddle
   -> extracao primaria de paginas web para Markdown limpo
 
-markitdown-ts
-  -> conversao primaria de arquivos locais e anexos para Markdown
+Docling em sidecar CPython local
+  -> conversao primaria de PDF e documentos complexos para Markdown e JSON estruturado
+
+Conversores TypeScript nativos
+  -> conversao primaria de formatos textuais simples para Markdown
 
 YouTube/video web pipeline com youtubei.js
   -> metadados estruturados, transcricao e Markdown normalizado

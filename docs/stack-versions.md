@@ -1,6 +1,6 @@
 # Memora Eterna - Versoes da Stack
 
-Auditoria: 2026-07-05.
+Auditoria: 2026-07-10.
 
 Este arquivo e a fonte canonica de versoes para criar ou atualizar manifests, lockfiles, imagens, binarios sidecar e scripts de build. Quando a ultima versao publicada conflitar com compatibilidade real da stack, prevalece a versao estavel compativel indicada aqui.
 
@@ -17,6 +17,7 @@ Este arquivo e a fonte canonica de versoes para criar ou atualizar manifests, lo
 | Componente | Versao alvo | Observacoes |
 | --- | --- | --- |
 | Node.js | `24.18.0` LTS `Krypton` | Baseline do repo. Atende ao requisito de TypeScript nativo por type stripping estavel e fica alinhado ao Electron 43, que embute Node `24.17.0`. Node `26.4.0` e a linha Current, mas nao e o baseline enquanto Electron/dependencias nativas estiverem em Node 24. |
+| CPython sidecar | `3.13.13` | Runtime isolado apenas para Docling. Nao usar o Python do sistema nem instalar pacotes em runtime; o spike de conversao deve fixar a origem dos binarios por plataforma e seus checksums. |
 | npm | `11.16.0` | Versao empacotada com Node `24.18.0`. |
 | TypeScript | `6.0.3` | Usar `tsc` para typecheck/build. Para scripts executados diretamente pelo Node, limitar a sintaxe a TypeScript erasable. |
 | `@types/node` | `24.13.2` | Fixar na linha 24 para refletir o runtime alvo e o Node embutido no Electron. |
@@ -86,7 +87,8 @@ Next.js nao faz parte da stack obrigatoria do MVP desktop. Se um app web separad
 | Componente | Versao alvo | Observacoes |
 | --- | --- | --- |
 | Defuddle | `0.19.1` | Extracao primaria de paginas web. |
-| `markitdown-ts` | `0.0.10` | Conversao primaria de arquivos locais/anexos. |
+| Docling | `2.111.0` | Conversao primaria de PDF e documentos complexos em sidecar Python local, com Markdown e JSON estruturado. Modelos e wheels devem ser fixados e verificados no spike da Etapa 7. |
+| Conversores TypeScript nativos | interno | TXT, Markdown, CSV, JSON, XML, RSS, Atom e IPYNB; sem framework generico obrigatorio. |
 | `youtubei.js` | `17.2.0` | Metadados e transcricoes de YouTube quando disponiveis. |
 | `node-llama-cpp` | `3.19.0` | Apenas main process ou workers controlados pelo main process. |
 
@@ -94,6 +96,8 @@ Next.js nao faz parte da stack obrigatoria do MVP desktop. Se um app web separad
 
 - Node.js releases e suporte TypeScript nativo: `https://nodejs.org/dist/index.json`, `https://nodejs.org/api/typescript.html`, `https://nodejs.org/en/blog/release/v24.18.0`.
 - Electron release `43.0.0`: `https://releases.electronjs.org/release/v43.0.0`.
+- Python releases: `https://www.python.org/downloads/`.
+- Docling: `https://pypi.org/project/docling/`, `https://github.com/docling-project/docling/releases`.
 - PostgreSQL versioning: `https://www.postgresql.org/support/versioning/`.
 - `pgvector` tags: `https://api.github.com/repos/pgvector/pgvector/tags`.
 - Apache AGE releases/tags: `https://api.github.com/repos/apache/age/releases/latest`, `https://api.github.com/repos/apache/age/tags`.

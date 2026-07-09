@@ -27,7 +27,7 @@ Estas ideias continuam no projeto, mas nao fazem parte da implementacao inicial:
 
 - AGE profundo e travessias complexas de grafo;
 - grafo visual elaborado;
-- OCR sofisticado;
+- OCR customizado/avancado alem do OCR basico automatico do Docling;
 - multimodal local em producao;
 - transcricao robusta de audio/video;
 - MOCs automaticos;
@@ -44,11 +44,13 @@ Estas ideias continuam no projeto, mas nao fazem parte da implementacao inicial:
 
 - Nao escrever textos de produto hardcoded no codigo. Usar i18n.
 - Criar e atualizar manifests, lockfiles, binarios sidecar e scripts de build conforme `docs/stack-versions.md`.
-- Manter TypeScript-first em todos os pacotes.
+- Manter TypeScript-first em todos os pacotes; Python fica restrito ao sidecar local Docling, sem contaminar contratos ou logica de aplicacao.
+- Executar Docling em runtime CPython proprio, versionado e empacotado por plataforma; nunca depender do Python do sistema nem instalar pacotes em runtime.
 - Renderer nao acessa banco, filesystem privilegiado ou `node-llama-cpp` diretamente.
 - `node-llama-cpp` deve rodar apenas no main process ou em workers controlados pelo main process.
 - Extensao Chrome e plugin Obsidian nao acessam o banco local diretamente.
 - Todas as entradas/saidas entre processos e apps devem usar contratos Zod.
+- A comunicacao com o sidecar Docling deve usar mensagens JSON versionadas e validadas por Zod via stdin/stdout, sem servidor de rede.
 - Toda alteracao em schema Drizzle exige `npm run db:generate`.
 - O banco deve ter seed/baseline versionado para Postgres totalmente vazio:
   aplicar o baseline, registrar as migrations cobertas no historico Drizzle e
@@ -412,6 +414,7 @@ Implementar:
 - fila simples no Postgres com `SELECT ... FOR UPDATE SKIP LOCKED`;
 - workers via `worker_threads`, com conexoes proprias ao banco quando necessario;
 - worker supervisor no main process;
+- worker supervisor preparado para processos sidecar com timeout, cancelamento, recuperacao de crash e shutdown limpo; o lifecycle concreto do Docling entra na Etapa 7;
 - cancelamento;
 - progresso;
 - retry simples;
@@ -448,29 +451,69 @@ Objetivo: implementar `@app/conversion`.
 Implementar:
 
 - adaptador Defuddle para paginas web/DOM;
-- adaptador `markitdown-ts` para arquivos locais;
+- `ConversionRouter` por MIME/magic bytes, extensao, politica de privacidade e perfil de qualidade;
+- conversores TypeScript nativos para:
+  - TXT e Markdown;
+  - CSV;
+  - JSON;
+  - XML, RSS e Atom;
+  - Jupyter Notebook `.ipynb`;
+  - HTML local, sem substituir Defuddle no fluxo de paginas web;
+- adaptador Docling para PDF, DOCX, PPTX, XLSX, EPUB, formatos OpenDocument e imagens que exijam parsing/OCR;
+- sidecar Docling com:
+  - CPython e wheels fixados conforme `docs/stack-versions.md`;
+  - runtime e modelos locais por plataforma, com origem, licencas, checksums e SBOM;
+  - stdin/stdout JSON, sem porta de rede;
+  - operacao offline por padrao e sem `pip install` em runtime;
+  - timeout, cancelamento, limite de concorrencia, limpeza de temporarios e recuperacao apos crash;
+- contratos Zod de entrada/saida para resultado estruturado, incluindo:
+  - Markdown;
+  - blocos em ordem de leitura;
+  - tipo e texto de cada bloco;
+  - pagina, bounding box e charspan quando disponiveis;
+  - offsets correspondentes no Markdown normalizado;
+  - assets/imagens extraidos;
+  - engine, versao, perfil/opcoes, warnings e qualidade/confianca;
+- preservar o JSON `DoclingDocument` como `DocumentAsset` derivado quando contiver layout/proveniencia util;
+- perfis iniciais de conversao:
+  - `standard`, com layout e tabelas;
+  - `ocr`, acionado automaticamente apenas quando a pagina nao tiver texto pesquisavel ou o texto estiver inutilizavel;
+- deteccao de resultado vazio, texto corrompido, baixa cobertura e baixa confianca, produzindo warning recuperavel ou status `requires_ocr` em vez de sucesso silencioso;
 - normalizador de Markdown;
+- dialeto normalizado: GFM, HTML inline para tabelas com estrutura nao representavel sem perda, LaTeX para formulas e referencias relativas para assets;
 - metadados de conversao;
 - warnings de conversao;
 - hashing de conteudo;
-- fallback simples para texto puro/Markdown bruto;
-- testes com fixtures pequenas:
-  - HTML;
-  - Markdown;
-  - TXT;
-  - DOCX/PDF apenas se fixtures forem viaveis no repo.
+- fallback simples para texto puro/Markdown bruto somente nos formatos textuais simples;
+- extracao segura de ZIP/containers, com limites de tamanho, quantidade, profundidade e roteamento de cada entrada;
+- corpus versionado de fixtures e golden outputs, incluindo:
+  - TXT, Markdown, HTML, CSV, JSON, XML e IPYNB;
+  - PDF textual simples, multicoluna, com tabela, escaneado, misto e multilingue;
+  - DOCX com headings, listas, tabela e imagem;
+  - XLSX com multiplas sheets, formulas e celulas mescladas;
+  - PPTX com notas, tabela, grafico e imagem;
+  - EPUB, ODT, ODS, ODP e imagem com texto em fixtures pequenas;
+  - arquivo corrompido, protegido e formato ambiguo.
 
 Testes e validacao:
 
 - teste de conversao HTML -> Markdown;
-- teste de arquivo texto -> Markdown;
+- testes de todos os conversores TypeScript;
+- testes de PDF, DOCX, XLSX e PPTX com golden assertions de conteudo, ordem, headings, tabelas e proveniencia;
+- teste de OCR automatico apenas nas paginas necessarias;
+- teste de mapeamento bloco -> pagina/bounding box -> offsets Markdown;
 - teste de erro recuperavel;
-- teste de hash estavel.
+- teste de timeout, cancelamento e crash do sidecar;
+- teste de execucao sem Python do sistema, sem rede e sem instalacao dinamica;
+- teste de hash estavel;
+- benchmark registrado de cold start, tempo por pagina, memoria, tamanho do runtime/modelos e qualidade por classe de fixture.
 
 Criterio de pronto:
 
 - pipeline consegue receber conteudo e gerar Markdown normalizado;
-- resultados carregam metadados de conversao.
+- resultados carregam metadados, blocos e proveniencia suficientes para `SourceSpan`;
+- formatos complexos nao sao considerados suportados sem fixture obrigatoria;
+- Docling funciona localmente pelo sidecar reproduzivel e falhas nao bloqueiam a fila de jobs.
 
 ---
 
@@ -622,7 +665,7 @@ Implementar:
 - UI de importacao de arquivo;
 - selecao de arquivo via dialog do main process;
 - salvar asset bruto;
-- converter com `markitdown-ts`;
+- detectar MIME/magic bytes e converter via `ConversionRouter`, usando TypeScript para formatos simples e Docling para documentos complexos;
 - criar `SourceItem`, `Document` e `DocumentAsset`;
 - iniciar ingestion run (conversao, chunking e etapas seguintes conforme disponiveis);
 - preservar arquivo original na pasta opcional quando habilitado.
@@ -630,7 +673,9 @@ Implementar:
 Testes e validacao:
 
 - teste de import de TXT/MD;
-- teste de import de HTML ou fixture suportada;
+- teste de import de HTML/CSV/JSON;
+- teste de import de PDF, DOCX, XLSX e PPTX pelas fixtures da Etapa 7;
+- teste de documento que retorna `requires_ocr` ou baixa confianca;
 - teste de erro de arquivo invalido;
 - teste de asset registrado.
 
@@ -650,7 +695,9 @@ Implementar:
 - chunks sempre gerados a partir do documento fonte normalizado, nunca do resumo;
 - criacao de `chunks`;
 - criacao de `SourceSpan`;
+- estender `SourceSpan` com `sourceBlockId` e `boundingBox` opcionais no dominio (`source_block_id` e `bounding_box` no banco); usar `selector` para o JSON pointer/charspan do resultado estruturado;
 - estrategia basica por headings e tamanho;
+- mapear offsets dos chunks para os blocos do conversor, preservando pagina, bounding box e referencia ao `DoclingDocument` quando disponiveis;
 - associar chunks a `source_item` e `document`;
 - reprocessamento idempotente.
 
@@ -658,11 +705,13 @@ Testes e validacao:
 
 - teste de chunking por headings;
 - teste de offsets/spans;
+- teste de proveniencia de PDF por pagina/bloco/bounding box;
+- gerar/aplicar/verificar migration e atualizar seed/baseline para os novos campos de `SourceSpan`;
 - teste de reprocessamento sem duplicar chunks.
 
 Criterio de pronto:
 
-- cada documento tem chunks rastreaveis ate o Markdown original.
+- cada documento tem chunks rastreaveis ate o Markdown original e, quando disponivel, ate pagina/bloco/bounding box do asset de origem.
 
 ---
 
@@ -885,6 +934,7 @@ Testes e validacao:
 - teste de retomada da ingestion run apos falha simulada no meio do fluxo;
 - smoke test manual com nota colada;
 - smoke test manual com arquivo simples;
+- smoke test manual com PDF multicoluna/tabela e verificacao da evidencia na pagina de origem;
 - verificar busca por trecho.
 
 Criterio de pronto:
@@ -1248,8 +1298,11 @@ Implementar:
 - validar reabertura da aplicacao com jobs e ingestion runs existentes;
 - validar backup basico dos arquivos configurados e do banco (`pg_dump`);
 - revisar limites de tamanho de importacao;
+- revisar limites de paginas, memoria, tempo e concorrencia do Docling;
 - revisar transparencia de custo de IA (tokens/custo em `ai_task_runs`, confirmacao para lotes);
-- preparar build desktop (incluindo binarios do sidecar e AGE para macOS);
+- preparar build desktop, incluindo sidecars Postgres/AGE e CPython/Docling, wheels, modelos, manifests, checksums e SBOM;
+- validar instalacao limpa e execucao offline do Docling sem Python do sistema;
+- definir fluxo explicito e verificavel para download/atualizacao/remocao de modelos opcionais de conversao;
 - preparar build extensao;
 - preparar build plugin Obsidian;
 - atualizar README com instrucoes de desenvolvimento.
