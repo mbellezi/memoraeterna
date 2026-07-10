@@ -1255,30 +1255,139 @@ Criterio de pronto:
 
 # Fase 5 - Fechamento
 
-## Etapa 29 - Preparacao de Runtime Local GGUF
+## Etapa 29 - Runtimes Locais GGUF e MLX com Gerenciamento de Modelos
 
-Objetivo: preparar suporte local sem exigir multimodal local no MVP.
+Objetivo: oferecer modelos locais como opcao real dos perfis de IA, mantendo
+GGUF para compatibilidade multiplataforma e adicionando MLX como caminho
+otimizado para Macs com Apple Silicon.
 
 Implementar:
 
-- adapter `node-llama-cpp` no `@app/ai`;
-- garantir que so roda no main process ou worker controlado;
-- registro de modelos locais em `local_models`;
-- UI para cadastrar modelo local existente ou baixado futuramente;
-- capabilities para modelo local;
-- smoke test de carregamento quando arquivo GGUF for configurado;
-- nao implementar multimodal local como requisito.
+- manter o adapter `node-llama-cpp` no `@app/ai` para modelos GGUF;
+- criar um adapter MLX no `@app/ai`, disponivel somente em macOS `arm64`, com
+  deteccao explicita de Apple Silicon e memoria disponivel;
+- executar GGUF e MLX apenas no main process ou em workers/helpers controlados
+  pelo main process; renderer, extensao Chrome e plugin Obsidian nunca carregam
+  runtimes ou pesos diretamente;
+- implementar o runtime MLX como helper nativo empacotado, preferencialmente
+  em Swift sobre `mlx-swift`/`mlx-swift-lm`, com versoes fixadas em
+  `docs/stack-versions.md`, protocolo versionado e validado por Zod, lifecycle,
+  timeout, progresso, cancelamento e shutdown controlados;
+- nao usar Python do sistema, `pip install` em runtime ou o sidecar Docling para
+  inferencia MLX; Python continua restrito ao sidecar de conversao Docling;
+- manter catalogo versionado de modelos locais com:
+  - id interno estavel;
+  - nome exibido;
+  - familia e variante;
+  - runtime (`gguf` ou `mlx`);
+  - repositorio de origem;
+  - revision/commit imutavel;
+  - lista de arquivos e checksums;
+  - tamanho total esperado;
+  - quantizacao;
+  - capabilities;
+  - requisitos minimos/recomendados de memoria;
+  - licenca e eventual aceite obrigatorio;
+- incluir inicialmente no catalogo MLX, apos auditoria de revision, arquivos,
+  checksums e licencas no momento da implementacao:
+  - Gemma 4 E4B Instruct 4-bit, usando como candidato inicial
+    `mlx-community/gemma-4-e4b-it-4bit`;
+  - Gemma 4 12B Instruct 4-bit, usando como candidato inicial
+    `mlx-community/gemma-4-12B-it-4bit`;
+  - Qwen3 4B Instruct, usando como candidato inicial
+    `mlx-community/Qwen3-4B-Instruct-2507-4bit`;
+- tratar os repositorios acima como descritores auditaveis, nao como aliases
+  flutuantes: o download deve usar revision fixada e manifest verificado;
+- exigir aceite explicito da licenca quando o repositorio/modelo exigir e
+  guardar tokens opcionais de repositorio via `safeStorage`, nunca em logs ou
+  texto puro no banco;
+- implementar download direto para pasta gerenciada da aplicacao, sem depender
+  de `huggingface-cli` instalado no sistema, com:
+  - preflight de plataforma, memoria e espaco em disco;
+  - arquivos temporarios `.partial`;
+  - retomada por range quando suportada pelo servidor;
+  - progresso por arquivo e total em bytes;
+  - velocidade e estimativa de tempo;
+  - cancelamento, retry e retomada apos reinicio;
+  - verificacao de tamanho e SHA-256 antes da promocao atomica;
+  - limpeza segura de downloads incompletos;
+  - possibilidade de configurar chave (token) da huggingface para downloads
+    privados;
+- persistir downloads como jobs e checkpoints retomaveis; adicionar
+  `local_model_downloads`/`local_model_files` quando necessario, alem de
+  completar o registro de `local_models` com repositorio, revision, runtime,
+  formato, quantizacao, path gerenciado, tamanho, checksum, capabilities e
+  status (`not_downloaded`, `downloading`, `verifying`, `ready`, `failed`,
+  `removing`);
+- gerar/aplicar/verificar as migrations e atualizar seed/baseline;
+- criar UI em Settings > Models com views de catalogo, downloads e modelos
+  instalados, permitindo:
+  - filtrar por runtime, familia e compatibilidade com a maquina;
+  - iniciar download e aceitar licenca quando necessario;
+  - acompanhar progresso, arquivo atual, bytes, velocidade, ETA e erro;
+  - cancelar, retomar ou tentar novamente;
+  - testar carregamento/inferencia;
+  - remover pesos e arquivos auxiliares da maquina com confirmacao;
+  - exibir espaco ocupado, revision, quantizacao, runtime e capabilities;
+- a remocao deve atuar somente dentro da pasta gerenciada, rejeitar path
+  traversal e impedir exclusao enquanto o modelo estiver carregado, em uso por
+  job ou selecionado por perfil sem substituto; a UI deve informar os perfis
+  afetados;
+- registrar modelos MLX e GGUF no `AiModelRegistry` para que aparecam nos
+  seletores de provider/modelo dos perfis ao lado das opcoes remotas
+  OpenAI-compatible (incluindo OpenAI quando configurado) e Google Gemini;
+- permitir selecionar um modelo local por tarefa conforme suas capabilities e
+  politica de privacidade, com execucao offline e sem API key;
+- registrar em `ai_task_runs` o perfil, adapter, runtime, repositorio, revision,
+  quantizacao, parametros, tokens e duracao de cada execucao local;
+- validar inicialmente geracao de texto, structured output, resumo e geracao de
+  notas atomicas quando o modelo declarar essas capabilities;
+- registrar capabilities multimodais dos modelos Gemma somente depois de
+  validacao real do adapter; multimodal local completo continua nao sendo
+  requisito de pronto desta etapa.
 
 Testes e validacao:
 
-- teste de fronteira para impedir import no renderer;
-- teste com mock de adapter local;
-- smoke test opcional com GGUF pequeno se disponivel no ambiente.
+- teste de fronteira para impedir imports de `node-llama-cpp` e MLX no
+  renderer, extensao Chrome e plugin Obsidian;
+- teste de deteccao Apple Silicon e degradacao limpa em macOS Intel,
+  Windows/Linux ou maquina sem memoria suficiente;
+- testes do catalogo para revision fixada, manifest, licenca, capabilities e
+  compatibilidade;
+- testes de download com servidor mock para progresso, range/resume,
+  cancelamento, retry, reinicio, falta de espaco, tamanho incorreto e checksum
+  invalido;
+- teste de que credenciais, URLs assinadas e headers de autorizacao nao aparecem
+  em logs;
+- testes de remocao, path traversal, modelo em uso e perfil dependente;
+- gerar/aplicar/verificar migrations em banco real e validar seed/baseline;
+- testes com adapters GGUF e MLX mockados;
+- teste de UI para iniciar, acompanhar, cancelar, retomar e remover download;
+- teste de negociacao de capabilities e selecao de modelo local dentro de um
+  perfil junto das opcoes OpenAI-compatible e Gemini;
+- teste de execucao offline sem Python do sistema, sem `pip install` e sem rede
+  depois que o modelo estiver instalado;
+- smoke test opcional com GGUF pequeno quando disponivel;
+- smoke test em Apple Silicon com pelo menos um modelo MLX do catalogo, mediante
+  consentimento explicito para o download e espaco em disco suficiente.
 
 Criterio de pronto:
 
-- arquitetura suporta modelo local GGUF;
-- MVP nao depende de modelo local para funcionar.
+- em Apple Silicon, o usuario consegue baixar um modelo MLX pelo app, acompanhar
+  o progresso, retomar uma interrupcao, verificar a instalacao e remover o
+  modelo com seguranca;
+- um modelo MLX instalado aparece nos perfis de IA e consegue executar ao menos
+  uma tarefa de resumo ou geracao de texto totalmente offline;
+- modelos GGUF continuam disponiveis pelo adapter `node-llama-cpp` nas
+  plataformas suportadas;
+- OpenAI-compatible/OpenAI e Google Gemini continuam disponiveis como opcoes
+  remotas nos mesmos perfis;
+- plataformas sem MLX degradam de forma explicita e nao exibem modelos MLX como
+  instalaveis;
+- downloads, arquivos, licencas, revisions, checksums e execucoes ficam
+  rastreaveis;
+- o MVP nao depende de modelo local para funcionar e nao exige multimodal local
+  completo.
 
 ---
 
