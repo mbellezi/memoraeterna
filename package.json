@@ -27,6 +27,8 @@
     "db:verify": "npm run db:verify -w @app/db",
     "db:phase2:verify": "npm run db:phase2:verify -w @app/db",
     "db:phase3:verify": "npm run db:phase3:verify -w @app/db",
+    "db:phase4:verify": "npm run db:phase4:verify -w @app/db",
+    "phase4:e2e": "npm run phase4:e2e -w @app/desktop",
     "db:seed:verify": "npm run db:seed:verify -w @app/db",
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
     "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts"

@@ -29,6 +29,13 @@
       "when": 1783643621046,
       "tag": "0003_small_wrecking_crew",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783646007251,
+      "tag": "0004_condemned_the_anarchist",
+      "breakpoints": true
     }
   ]
 }

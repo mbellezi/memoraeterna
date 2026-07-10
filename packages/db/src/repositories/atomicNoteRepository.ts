@@ -260,6 +260,16 @@ export function createAtomicNoteRepository(db: Queryable) {
       }
     },
 
+    async setStatus(id: string, status: AtomicNoteStatus): Promise<AtomicNoteRecord | null> {
+      const result = await db.query<AtomicNoteRow>(
+        `update atomic_notes set status = $2, updated_at = now()
+         where id = $1 returning ${returning}`,
+        [id, status]
+      );
+      const row = result.rows[0];
+      return row ? mapNote(row) : null;
+    },
+
     async findMatchingCandidates(input: {
       noteId: string;
       embedding?: number[];

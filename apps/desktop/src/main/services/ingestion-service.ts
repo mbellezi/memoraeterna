@@ -21,6 +21,12 @@ import {
   type MarkdownConversionResult
 } from "@app/conversion";
 import type {
+  CaptureSelectionRequest,
+  CaptureWebPageRequest,
+  CaptureYouTubeVideoRequest,
+  ImportObsidianNoteRequest
+} from "@app/integration-contracts";
+import type {
   FileImportInput,
   IngestionResult,
   ManualIngestionInput,
@@ -28,6 +34,7 @@ import type {
 } from "../../shared/ipc.js";
 
 import { AssetStorageService } from "./asset-storage-service.js";
+import { YouTubeService } from "./youtube-service.js";
 
 export interface IngestionServiceOptions {
   getPool: () => PgPool | null;
@@ -36,13 +43,16 @@ export interface IngestionServiceOptions {
   resourcesPath: string;
   workspaceRoot: string;
   isPackaged: boolean;
+  youtubeService?: YouTubeService;
 }
 
 export class IngestionService {
   private readonly assetStorage = new AssetStorageService();
   private readonly router: ConversionRouter;
+  private readonly youtube: YouTubeService;
 
   public constructor(private readonly options: IngestionServiceOptions) {
+    this.youtube = options.youtubeService ?? new YouTubeService();
     const docling = resolveDoclingRuntime(options);
     this.router = new ConversionRouter({
       ...(docling ? { doclingClient: new DoclingClient(docling) } : {}),
@@ -98,6 +108,81 @@ export class IngestionService {
       metadata: { originalFileName: fileName, mimeType },
       conversion,
       originalAsset: { data, fileName, mimeType }
+    });
+  }
+
+  public async captureWebPage(input: CaptureWebPageRequest): Promise<IngestionResult> {
+    const conversion = input.markdown
+      ? markdownResult(input.markdown, "chrome-defuddle")
+      : input.html
+        ? await this.router.convert({
+            data: new TextEncoder().encode(input.html),
+            fileName: "capture.html",
+            mimeType: "text/html",
+            sourceUrl: input.url,
+            profile: "standard"
+          })
+        : markdownResult(input.textContent ?? "", "chrome-text");
+    return this.persist({
+      sourceType: "WebArticle",
+      title: input.title,
+      sourceOrigin: "web_capture",
+      sourceUri: input.url,
+      language: readMetadataLanguage(input.metadata),
+      duplicatePolicy: "ignore",
+      metadata: { ...input.metadata, capturedAt: input.capturedAt, captureRequestId: input.requestId },
+      conversion
+    });
+  }
+
+  public async captureSelection(input: CaptureSelectionRequest): Promise<IngestionResult> {
+    const markdown = [
+      `# ${input.title}`,
+      `> ${input.selection.replace(/\n/g, "\n> ")}`,
+      input.surroundingText ? `## Context\n\n${input.surroundingText}` : "",
+      `[Source](${input.url})`
+    ].filter(Boolean).join("\n\n");
+    return this.persist({
+      sourceType: "WebArticle",
+      title: input.title,
+      sourceOrigin: "web_capture",
+      sourceUri: `${input.url}#selection=${input.requestId}`,
+      language: readMetadataLanguage(input.metadata),
+      duplicatePolicy: "ignore",
+      metadata: { ...input.metadata, capturedAt: input.capturedAt, selectionCapture: true },
+      conversion: markdownResult(markdown, "chrome-selection")
+    });
+  }
+
+  public async captureYouTube(input: CaptureYouTubeVideoRequest): Promise<IngestionResult> {
+    const captured = await this.youtube.capture(input.videoId, input.title);
+    return this.persist({
+      sourceType: "Video",
+      title: captured.title,
+      sourceOrigin: "youtube",
+      sourceUri: input.url,
+      language: captured.language,
+      duplicatePolicy: "ignore",
+      metadata: {
+        ...input.visibleMetadata,
+        ...captured.metadata,
+        capturedAt: input.capturedAt,
+        captureRequestId: input.requestId
+      },
+      conversion: markdownResult(captured.markdown, "youtubei.js")
+    });
+  }
+
+  public async importObsidianNote(input: ImportObsidianNoteRequest): Promise<IngestionResult> {
+    return this.persist({
+      sourceType: "PersonalNote",
+      title: input.title ?? basename(input.relativePath, extname(input.relativePath)),
+      sourceOrigin: "obsidian",
+      sourceUri: `obsidian://${input.relativePath}`,
+      language: "und",
+      duplicatePolicy: "ignore",
+      metadata: { obsidianRelativePath: input.relativePath, obsidianMtimeMs: input.mtimeMs },
+      conversion: markdownResult(input.markdown, "obsidian")
     });
   }
 
@@ -292,6 +377,29 @@ function conversionMetadata(result: MarkdownConversionResult): Record<string, un
     profile: result.profile, options: result.options, warnings: result.warnings,
     quality: result.quality, metadata: result.metadata
   };
+}
+
+function markdownResult(markdownInput: string, engine: string): MarkdownConversionResult {
+  const markdown = normalizeMarkdown(markdownInput);
+  return {
+    status: "converted",
+    markdown,
+    contentHash: sha256(markdown),
+    blocks: createTextBlocks(markdown),
+    assets: [],
+    engine,
+    engineVersion: "1",
+    profile: "standard",
+    options: {},
+    warnings: [],
+    quality: { textCoverage: markdown ? 1 : 0 },
+    metadata: {}
+  };
+}
+
+function readMetadataLanguage(metadata: Record<string, unknown>): string {
+  const language = metadata.language;
+  return typeof language === "string" && language.length >= 2 && language.length <= 16 ? language : "und";
 }
 
 function resolveDoclingRuntime(options: IngestionServiceOptions) {

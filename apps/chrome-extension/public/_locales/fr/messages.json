@@ -1,0 +1,15 @@
+{
+  "extensionName": { "message": "Capture Memora Eterna" },
+  "extensionDescription": { "message": "Capturez des pages, des selections et des videos YouTube dans Memora Eterna." },
+  "gatewayAddress": { "message": "Passerelle desktop" },
+  "clientId": { "message": "ID client" },
+  "pairingToken": { "message": "Jeton d'association" },
+  "saveConnection": { "message": "Enregistrer et connecter" },
+  "capturePage": { "message": "Capturer la page" },
+  "captureSelection": { "message": "Capturer la selection" },
+  "statusWorking": { "message": "Traitement…" },
+  "statusConnected": { "message": "Connecte au desktop." },
+  "statusCaptured": { "message": "Capture envoyee a Memora Eterna." },
+  "statusPairingRequired": { "message": "Associez d'abord l'extension dans les reglages desktop." },
+  "statusDesktopUnavailable": { "message": "Le desktop Memora Eterna est indisponible." }
+}

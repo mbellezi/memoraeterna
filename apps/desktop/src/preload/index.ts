@@ -9,7 +9,8 @@ import type {
   FileImportInput,
   ManualIngestionInput,
   SearchInput,
-  StorageSettingsUpdate
+  StorageSettingsUpdate,
+  IntegrationPairingInput
 } from "../shared/ipc";
 import type { SourceItemType } from "@app/domain";
 import {
@@ -36,7 +37,11 @@ import {
   sourceSuggestionSchema,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
-  systemInfoSchema
+  systemInfoSchema,
+  integrationClientSchema,
+  integrationGatewayStatusSchema,
+  integrationPairingInputSchema,
+  integrationPairingResultSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
@@ -155,6 +160,22 @@ const api: DesktopApi = {
     },
     async setProfileTask(input: AiProfileTaskInput) {
       await ipcRenderer.invoke(ipcChannels.aiProfileTaskSet, aiProfileTaskInputSchema.parse(input));
+    }
+  },
+  integrations: {
+    async getGatewayStatus() {
+      return integrationGatewayStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.integrationGatewayStatus));
+    },
+    async listClients() {
+      return integrationClientSchema.array().parse(await ipcRenderer.invoke(ipcChannels.integrationClientsList));
+    },
+    async createPairing(input: IntegrationPairingInput) {
+      return integrationPairingResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.integrationPairingCreate, integrationPairingInputSchema.parse(input))
+      );
+    },
+    async revokeClient(clientId: string) {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.integrationClientRevoke, clientId));
     }
   }
 };

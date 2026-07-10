@@ -23,6 +23,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
+import { IntegrationGatewaySettings } from "./IntegrationGatewaySettings";
 
 interface SettingsViewProps {
   appSettings: AppSettings;
@@ -125,6 +126,8 @@ export function SettingsView({
           </div>
         </div>
       </section>
+
+      <IntegrationGatewaySettings t={t} />
 
       <section className="grid gap-4 border-b border-slate-200 pb-6 dark:border-slate-800">
         <div className="flex items-center gap-2">

@@ -14,7 +14,9 @@ Leia tambem, antes de editar codigo:
 
 ## Estado Atual
 
-Fase atual: Fase 3 - Camada de Conhecimento.
+Fase atual: Fase 4 - Integracoes Externas concluida em codigo e testes
+automatizados; smoke tests manuais nos hosts Chrome e Obsidian continuam
+dependentes da instalacao local dos artefatos.
 
 Implementado ate aqui:
 
@@ -68,6 +70,28 @@ Implementado ate aqui:
 - pipeline retomavel completo ate resumo, notas atomicas e matching;
 - UI funcional de Library, detalhe da fonte, arquivos originais, checkpoints
   dos jobs e fila de revisao com aprovar, editar e descartar.
+- contratos de integracao `1.x` completos e validados por Zod para handshake,
+  captura web/selecao/YouTube, eventos Obsidian, reconciliacao, progresso e
+  erros normalizados;
+- Integration Gateway HTTP/WebSocket em `127.0.0.1`, com porta configuravel,
+  fallback em conflito, pareamento por token armazenado somente como hash,
+  sessao efemera e autorizacao por capability;
+- UI de Settings para criar pareamento, consultar/revogar clientes e copiar o
+  client id/token exibido uma unica vez;
+- extensao Chrome MV3 instalavel em `apps/chrome-extension/dist`, com popup,
+  content script, service worker, captura de pagina/selecao/YouTube e
+  reconexao ao despertar;
+- pipeline YouTube via `youtubei.js`, com metadados e transcricao quando
+  disponivel, normalizados para Markdown;
+- plugin Obsidian instalavel em `apps/obsidian-plugin/dist`, com settings,
+  comandos, status, monitoramento create/modify/rename/delete e scan de
+  reconciliacao;
+- projecao de fontes e notas atomicas em Markdown com frontmatter de identidade,
+  paths humanos, tratamento de colisao e escrita atomica por worker;
+- sync Obsidian bidirecional com `file_mtime`, hash, versao, tombstone,
+  conflitos explicitos e reprocessamento do documento alterado;
+- verificacao real da Fase 4 para migration, baseline, indices e repositorios
+  de clientes/sync em PostgreSQL temporario.
 
 Pendencias conhecidas:
 
@@ -83,6 +107,8 @@ Pendencias conhecidas:
   dependem desse bundle externo;
 - o corpus golden e os benchmarks completos dos formatos Docling continuam
   pendentes ate o runtime/modelos serem disponibilizados.
+- smoke tests manuais da extensao carregada no Chrome e do plugin instalado no
+  Obsidian ainda exigem os aplicativos host no ambiente local.
 
 ## Estrutura Raiz
 
@@ -146,6 +172,13 @@ Arquivos principais:
   biblioteca, detalhe de fonte e revisao.
 - `src/main/services/knowledge-processing.ts`: prompts versionados, map-reduce,
   parsing estruturado e scoring puro/testavel.
+- `src/main/services/integration-gateway.ts`: HTTP/WebSocket loopback,
+  autenticacao, pareamento, capabilities e roteamento externo.
+- `src/main/services/obsidian-sync-service.ts`: projecao, reconciliacao e sync
+  bidirecional do vault.
+- `src/main/services/obsidian-projection.ts`: frontmatter, paths e naming.
+- `src/main/services/youtube-service.ts`: metadados e transcricao via
+  `youtubei.js`.
 - `src/main/workers/*`: entradas e contratos dos workers da fila.
 - `src/preload/index.ts`: API segura exposta em `window.app`.
 - `src/shared/ipc.ts`: canais, schemas Zod e tipos compartilhados do IPC.
@@ -171,14 +204,15 @@ O renderer nao deve importar `@app/db`, `node:fs`, `electron` ou segredos.
 
 ### `apps/chrome-extension`
 
-Estrutura isolada da extensao Chrome. Deve depender apenas de contratos seguros,
-principalmente `@app/integration-contracts`. Nao pode acessar o banco nem codigo
-do main process.
+Extensao Chrome MV3 isolada. `vite build` gera manifest, locales, popup,
+background e content script em `dist/`. O service worker usa somente o gateway
+e `@app/integration-contracts`; nunca acessa banco ou codigo do main process.
 
 ### `apps/obsidian-plugin`
 
-Estrutura isolada do plugin Obsidian. Deve se comunicar com o desktop por
-contratos versionados. Nao pode acessar diretamente o banco local.
+Plugin Obsidian desktop isolado. `vite build` gera `main.js` e `manifest.json`
+em `dist/`. Monitora somente arquivos Markdown gerenciados por frontmatter e se
+comunica com o desktop pelos contratos versionados; nao acessa o banco local.
 
 ## Pacotes
 
@@ -211,8 +245,8 @@ Inclui os 8 tipos de fonte do MVP:
 
 ### `packages/integration-contracts`
 
-Contratos externos seguros para extensao Chrome, plugin Obsidian e desktop
-gateway futuro. Deve conter apenas schemas, eventos e tipos seguros.
+Contratos externos seguros e versionados para extensao Chrome, plugin Obsidian
+e desktop gateway. Contem apenas schemas, eventos e tipos seguros.
 
 ### `packages/db`
 
@@ -232,6 +266,8 @@ Arquivos principais:
 - `src/scripts/verify-seed.ts`: verificacao de sincronizacao seed/migrations.
 - `src/scripts/verify-phase3.ts`: verificacao real da migration, baseline,
   resumos, notas, matching, relacoes e revisao da Fase 3.
+- `src/scripts/verify-phase4.ts`: verificacao real de migration/baseline,
+  clientes autorizados e identidade de arquivos Obsidian.
 - `src/sidecar/manager.ts`: initdb/start/stop/restart do Postgres sidecar.
 - `src/sidecar/paths.ts`: resolucao de paths DEV/prod/env.
 - `src/sidecar/nodeRunner.ts`: runner Node para comandos do sidecar.
@@ -345,7 +381,9 @@ npm run db:migrate
 npm run db:verify
 npm run db:phase2:verify
 npm run db:phase3:verify
+npm run db:phase4:verify
 npm run db:seed:sync
+npm run phase4:e2e
 ```
 
 Validacao:

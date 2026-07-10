@@ -1,0 +1,9 @@
+{
+  "id": "memora-eterna",
+  "name": "Memora Eterna",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Bidirectional sync between an Obsidian vault and the Memora Eterna desktop.",
+  "author": "Memora Eterna",
+  "isDesktopOnly": true
+}

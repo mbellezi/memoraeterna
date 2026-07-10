@@ -15,6 +15,7 @@ import {
   manualIngestionInputSchema,
   searchInputSchema,
   storageSettingsUpdateSchema,
+  integrationPairingInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
 import { SourceItemTypeSchema } from "@app/domain";
@@ -24,6 +25,7 @@ import type { IngestionService } from "./services/ingestion-service.js";
 import type { JobSupervisor } from "./services/job-supervisor.js";
 import type { SearchService } from "./services/search-service.js";
 import type { KnowledgeService } from "./services/knowledge-service.js";
+import type { IntegrationGateway } from "./services/integration-gateway.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -38,7 +40,8 @@ export function registerIpcHandlers(
   jobSupervisor: JobSupervisor,
   searchService: SearchService,
   aiService: AiService,
-  knowledgeService: KnowledgeService
+  knowledgeService: KnowledgeService,
+  integrationGateway: IntegrationGateway
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -136,6 +139,15 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(ipcChannels.aiProfileTaskSet, (_event, payload: unknown) =>
     aiService.setProfileTask(aiProfileTaskInputSchema.parse(payload))
+  );
+
+  ipcMain.handle(ipcChannels.integrationGatewayStatus, () => integrationGateway.getStatus());
+  ipcMain.handle(ipcChannels.integrationClientsList, () => integrationGateway.listClients());
+  ipcMain.handle(ipcChannels.integrationPairingCreate, (_event, payload: unknown) =>
+    integrationGateway.createPairing(integrationPairingInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.integrationClientRevoke, (_event, payload: unknown) =>
+    integrationGateway.revokeClient(z.string().uuid().parse(payload))
   );
 }
 

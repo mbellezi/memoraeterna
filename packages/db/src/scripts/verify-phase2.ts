@@ -42,7 +42,7 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 3) {
+  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 5) {
     throw new Error("Empty database did not apply the complete phase 2 baseline.");
   }
 
@@ -51,7 +51,7 @@ try {
   if (secondRun.seed.applied) throw new Error("Existing database reapplied the baseline.");
 
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 3) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 5) throw new Error("Unexpected Drizzle migration history.");
   const extensions = await pool.query<{ extname: string }>(
     "select extname from pg_extension where extname in ('vector', 'unaccent', 'pg_trgm') order by extname"
   );

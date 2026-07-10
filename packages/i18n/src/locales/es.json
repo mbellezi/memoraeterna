@@ -204,7 +204,19 @@
     },
     "integrations": {
       "title": "Integraciones",
-      "authorizedClients": "Clientes autorizados"
+      "authorizedClients": "Clientes autorizados",
+      "gateway": "Gateway de integracion local",
+      "gatewayStatus": "Estado del gateway",
+      "clientType": "Tipo de cliente",
+      "displayName": "Nombre para mostrar",
+      "createPairing": "Crear emparejamiento",
+      "pairingToken": "Token de emparejamiento",
+      "pairingTokenWarning": "Copia este token ahora. Solo se muestra una vez.",
+      "revoke": "Revocar",
+      "noClients": "No hay clientes externos emparejados.",
+      "chromeExtension": "Extension de Chrome",
+      "obsidianPlugin": "Plugin de Obsidian",
+      "states": { "stopped": "Detenido", "starting": "Iniciando", "ready": "Listo", "failed": "Error" }
     },
     "ai": {
       "title": "Proveedores y perfiles de IA", "provider": "Proveedor", "google": "Google Gemini",
@@ -219,6 +231,10 @@
     "chromeExtension": "Extension de Chrome",
     "obsidianPlugin": "Plugin de Obsidian",
     "desktopGateway": "Gateway de escritorio",
+    "gatewayAddress": "Direccion del gateway",
+    "clientId": "ID del cliente",
+    "pairingToken": "Token de emparejamiento",
+    "commands": { "importCurrentNote": "Enviar nota actual a Memora Eterna", "reconnect": "Reconectar con Memora Eterna", "reconcile": "Reconciliar notas gestionadas" },
     "states": {
       "connected": "Conectado",
       "disconnected": "Desconectado",
@@ -229,7 +245,18 @@
       "desktopUnavailable": "El escritorio de Memora Eterna no esta disponible.",
       "pairingCode": "Codigo de emparejamiento: {code}",
       "clientAuthorized": "{client} esta autorizado.",
-      "clientRevoked": "{client} fue revocado."
+      "clientRevoked": "{client} fue revocado.",
+      "noteSent": "La nota fue enviada a Memora Eterna.",
+      "reconciliationComplete": "Las notas gestionadas fueron reconciliadas."
+    },
+    "errors": {
+      "invalidRequest": "La solicitud de integracion no es valida.",
+      "incompatibleContract": "La version del contrato del cliente es incompatible.",
+      "unauthorized": "El cliente de integracion no esta autorizado.",
+      "forbidden": "El cliente de integracion no puede realizar esta accion.",
+      "notFound": "No se encontro el endpoint de integracion.",
+      "payloadTooLarge": "El contenido capturado es demasiado grande.",
+      "internal": "La aplicacion no pudo completar la solicitud de integracion."
     }
   }
 }

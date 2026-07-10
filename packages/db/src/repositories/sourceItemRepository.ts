@@ -144,6 +144,11 @@ export function createSourceItemRepository(db: Queryable) {
       return rows.map(mapSourceItem);
     },
 
+    async remove(id: string): Promise<boolean> {
+      const result = await db.query(`delete from source_items where id = $1`, [id]);
+      return (result.rowCount ?? 0) > 0;
+    },
+
     async findDuplicate(input: { sourceUri?: string | null; contentHash?: string | null }): Promise<SourceItemRecord | null> {
       if (!input.sourceUri && !input.contentHash) {
         return null;

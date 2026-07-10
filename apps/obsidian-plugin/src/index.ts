@@ -1,6 +1,3 @@
-import { integrationContractVersion } from "@app/integration-contracts";
-
-export const obsidianPluginClient = {
-  kind: "obsidian-plugin",
-  contractVersion: integrationContractVersion
-} as const;
+export { default } from "./main.js";
+export * from "./frontmatter.js";
+export * from "./integration-client.js";

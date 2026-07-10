@@ -6,11 +6,15 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc -b",
+    "build": "vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"
   },
   "dependencies": {
     "@app/integration-contracts": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.2.2",
+    "vite": "7.3.6"
   }
 }

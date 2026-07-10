@@ -8,10 +8,9 @@ ingestao/indexacao e as integracoes com Chrome e Obsidian.
 O MVP usa um monorepo TypeScript com Electron, React, Tailwind, Drizzle e
 PostgreSQL nativo como sidecar.
 
-A espinha dorsal implementada permite inserir conteudo manual, importar
-formatos textuais, acompanhar jobs retomaveis, preservar assets, gerar chunks
-com proveniencia e buscar evidencias por texto ou por combinacao textual e
-vetorial quando um perfil de embedding esta configurado.
+A implementacao atual tambem inclui o Integration Gateway local, captura por
+extensao Chrome, YouTube via `youtubei.js`, projecao Markdown e sincronizacao
+bidirecional essencial com o plugin Obsidian.
 
 ## Estrutura
 
@@ -174,6 +173,43 @@ preferencia salva, o idioma inicial vem do desktop com fallback para ingles, e
 o tema inicial e escuro. O cabecalho do menu lateral tem um botao de alternancia
 rapida entre tema escuro e claro.
 
+## Integracoes Chrome e Obsidian
+
+O desktop inicia um gateway HTTP/WebSocket apenas em `127.0.0.1`. A porta
+padrao e `47831`; `MEMORA_INTEGRATION_GATEWAY_PORT` permite configurar outra
+porta e, em conflito, o app escolhe uma porta livre e mostra o endereco real em
+Settings.
+
+Compile os clientes externos:
+
+```bash
+npm run build -w @app/chrome-extension
+npm run build -w @app/obsidian-plugin
+```
+
+Para Chrome, abra `chrome://extensions`, habilite o modo de desenvolvedor e
+carregue `apps/chrome-extension/dist` como extensao sem compactacao.
+
+Para Obsidian, copie o conteudo de `apps/obsidian-plugin/dist` para:
+
+```txt
+<vault>/.obsidian/plugins/memora-eterna/
+```
+
+Depois habilite o plugin nas configuracoes de Community plugins.
+
+O pareamento dos dois clientes segue o mesmo fluxo:
+
+1. abra `Settings > Local integration gateway` no desktop;
+2. escolha o tipo do cliente e crie o pareamento;
+3. copie o Client ID e o token exibido uma unica vez;
+4. informe o endereco do gateway, Client ID e token no popup da extensao ou
+   nas configuracoes do plugin.
+
+O banco guarda somente o hash do token. Revogar o cliente no desktop bloqueia
+novos handshakes. O plugin reconcilia arquivos gerenciados na conexao; conflitos
+de hash/versao ficam explicitos e nao sao sobrescritos silenciosamente.
+
 ## Banco e Migrations
 
 Gerar migration depois de alterar schema Drizzle:
@@ -207,7 +243,7 @@ Verificar migration no banco real:
 npm run db:verify
 ```
 
-Sincronizar mecanicamente o baseline com o journal e validar as Fases 2 e 3 em
+Sincronizar mecanicamente o baseline com o journal e validar as Fases 2, 3 e 4 em
 um sidecar temporario real:
 
 ```bash
@@ -215,6 +251,8 @@ npm run db:seed:sync
 npm run db:seed:verify
 npm run db:phase2:verify
 npm run db:phase3:verify
+npm run db:phase4:verify
+npm run phase4:e2e
 ```
 
 Toda mudanca de schema deve ser validada no banco real, incluindo historico em

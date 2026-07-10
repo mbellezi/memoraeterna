@@ -204,7 +204,19 @@
     },
     "integrations": {
       "title": "Integrations",
-      "authorizedClients": "Clients autorises"
+      "authorizedClients": "Clients autorises",
+      "gateway": "Passerelle d'integration locale",
+      "gatewayStatus": "Etat de la passerelle",
+      "clientType": "Type de client",
+      "displayName": "Nom affiche",
+      "createPairing": "Creer l'association",
+      "pairingToken": "Jeton d'association",
+      "pairingTokenWarning": "Copiez ce jeton maintenant. Il ne sera affiche qu'une fois.",
+      "revoke": "Revoquer",
+      "noClients": "Aucun client externe n'est associe.",
+      "chromeExtension": "Extension Chrome",
+      "obsidianPlugin": "Plugin Obsidian",
+      "states": { "stopped": "Arretee", "starting": "Demarrage", "ready": "Prete", "failed": "Echec" }
     },
     "ai": {
       "title": "Fournisseurs et profils IA", "provider": "Fournisseur", "google": "Google Gemini",
@@ -219,6 +231,10 @@
     "chromeExtension": "Extension Chrome",
     "obsidianPlugin": "Plugin Obsidian",
     "desktopGateway": "Gateway desktop",
+    "gatewayAddress": "Adresse de la passerelle",
+    "clientId": "ID client",
+    "pairingToken": "Jeton d'association",
+    "commands": { "importCurrentNote": "Envoyer la note actuelle a Memora Eterna", "reconnect": "Reconnecter a Memora Eterna", "reconcile": "Reconcilier les notes gerees" },
     "states": {
       "connected": "Connecte",
       "disconnected": "Deconnecte",
@@ -229,7 +245,18 @@
       "desktopUnavailable": "Le desktop Memora Eterna n'est pas disponible.",
       "pairingCode": "Code d'association : {code}",
       "clientAuthorized": "{client} est autorise.",
-      "clientRevoked": "{client} a ete revoque."
+      "clientRevoked": "{client} a ete revoque.",
+      "noteSent": "La note a ete envoyee a Memora Eterna.",
+      "reconciliationComplete": "Les notes gerees ont ete reconciliees."
+    },
+    "errors": {
+      "invalidRequest": "La requete d'integration est invalide.",
+      "incompatibleContract": "La version du contrat du client est incompatible.",
+      "unauthorized": "Le client d'integration n'est pas autorise.",
+      "forbidden": "Le client d'integration ne peut pas effectuer cette action.",
+      "notFound": "Le point d'acces d'integration est introuvable.",
+      "payloadTooLarge": "Le contenu capture est trop volumineux.",
+      "internal": "L'application n'a pas pu terminer la requete d'integration."
     }
   }
 }

@@ -283,6 +283,8 @@ export const integrationClients = pgTable(
     displayName: text("display_name").notNull(),
     tokenHash: text("token_hash").notNull(),
     scopes: jsonb("scopes").notNull().default(sql`'[]'::jsonb`),
+    capabilities: jsonb("capabilities").notNull().default(sql`'[]'::jsonb`),
+    contractVersion: text("contract_version").notNull().default("1.0.0"),
     status: integrationClientStatus("status").notNull().default("paired"),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     ...timestamps
@@ -297,10 +299,14 @@ export const obsidianSyncFiles = pgTable(
   "obsidian_sync_files",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    memoraId: uuid("memora_id").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: uuid("entity_id").notNull(),
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
     documentId: uuid("document_id").references(() => documents.id, { onDelete: "set null" }),
     memoraType: text("memora_type").notNull(),
     relativePath: text("relative_path").notNull(),
+    frontmatterHash: text("frontmatter_hash").notNull(),
     contentHash: text("content_hash").notNull(),
     mtimeMs: bigint("mtime_ms", { mode: "number" }).notNull(),
     syncVersion: integer("sync_version").notNull().default(1),
@@ -311,6 +317,7 @@ export const obsidianSyncFiles = pgTable(
     ...timestamps
   },
   (table) => ({
+    memoraIdUidx: uniqueIndex("obsidian_sync_files_memora_id_uidx").on(table.memoraId),
     relativePathUidx: uniqueIndex("obsidian_sync_files_relative_path_uidx").on(table.relativePath),
     sourceItemIdx: index("obsidian_sync_files_source_item_id_idx").on(table.sourceItemId),
     documentIdx: index("obsidian_sync_files_document_id_idx").on(table.documentId),

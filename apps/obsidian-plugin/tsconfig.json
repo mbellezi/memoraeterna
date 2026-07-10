@@ -7,5 +7,8 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../../packages/integration-contracts" }]
+  "references": [
+    { "path": "../../packages/integration-contracts" },
+    { "path": "../../packages/i18n" }
+  ]
 }

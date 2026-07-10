@@ -12,6 +12,7 @@ import {
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import type { KnowledgeService } from "./knowledge-service.js";
+import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
@@ -25,6 +26,7 @@ export interface JobSupervisorOptions {
     runtime: string;
   } | null>;
   knowledgeService?: KnowledgeService;
+  obsidianSyncService?: Pick<ObsidianSyncService, "projectSource">;
 }
 
 const supportedJobTypes = new Set<WorkerTask["type"]>([
@@ -246,6 +248,19 @@ export class JobSupervisor {
       await runs.completeStage(ingestionRunId, "atomicNoteMatching", matching);
     }
     throwIfAborted(signal);
+    await createJobRepository(pool).reportProgress(job.id, 0.94);
+    const projectionCheckpoint = run.stagesCheckpoint.obsidianProjection as JsonObject | undefined;
+    if (projectionCheckpoint?.status !== "completed") {
+      await runs.beginStage(ingestionRunId, "obsidianProjection");
+      const projection = this.options.obsidianSyncService
+        ? await this.runInlineStageJob(
+            "obsidian-sync",
+            { ingestionRunId, sourceItemId, documentId },
+            () => this.options.obsidianSyncService!.projectSource(sourceItemId)
+          )
+        : { projected: 0 };
+      await runs.completeStage(ingestionRunId, "obsidianProjection", projection);
+    }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
     await runs.complete(ingestionRunId);
     return { ingestionRunId, documentId, sourceItemId };

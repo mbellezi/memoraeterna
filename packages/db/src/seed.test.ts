@@ -46,7 +46,8 @@ describe("baseline seed", () => {
       "0000_sour_dust",
       "0001_sleepy_the_hunter",
       "0002_flat_captain_cross",
-      "0003_small_wrecking_crew"
+      "0003_small_wrecking_crew",
+      "0004_condemned_the_anarchist"
     ]);
   });
 
@@ -68,7 +69,8 @@ describe("baseline seed", () => {
         "0000_sour_dust",
         "0001_sleepy_the_hunter",
         "0002_flat_captain_cross",
-        "0003_small_wrecking_crew"
+        "0003_small_wrecking_crew",
+        "0004_condemned_the_anarchist"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -43,7 +43,7 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 4) {
+  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 5) {
     throw new Error("Empty database did not apply the complete phase 3 baseline.");
   }
   const secondRun = await runMigrations(pool, migrationsFolder, { seedFolder });
@@ -52,7 +52,7 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 4) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 5) throw new Error("Unexpected Drizzle migration history.");
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables
      where table_schema = 'public' and table_name in (

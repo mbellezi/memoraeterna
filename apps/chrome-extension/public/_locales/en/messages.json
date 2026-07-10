@@ -1,0 +1,15 @@
+{
+  "extensionName": { "message": "Memora Eterna Capture" },
+  "extensionDescription": { "message": "Capture web pages, selections, and YouTube videos in Memora Eterna." },
+  "gatewayAddress": { "message": "Desktop gateway" },
+  "clientId": { "message": "Client ID" },
+  "pairingToken": { "message": "Pairing token" },
+  "saveConnection": { "message": "Save and connect" },
+  "capturePage": { "message": "Capture page" },
+  "captureSelection": { "message": "Capture selection" },
+  "statusWorking": { "message": "Working…" },
+  "statusConnected": { "message": "Connected to the desktop." },
+  "statusCaptured": { "message": "Capture sent to Memora Eterna." },
+  "statusPairingRequired": { "message": "Pair the extension in desktop Settings first." },
+  "statusDesktopUnavailable": { "message": "The Memora Eterna desktop is unavailable." }
+}

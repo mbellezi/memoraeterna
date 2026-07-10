@@ -1,0 +1,15 @@
+{
+  "extensionName": { "message": "Captura Memora Eterna" },
+  "extensionDescription": { "message": "Captura paginas, selecciones y videos de YouTube en Memora Eterna." },
+  "gatewayAddress": { "message": "Gateway de escritorio" },
+  "clientId": { "message": "ID del cliente" },
+  "pairingToken": { "message": "Token de emparejamiento" },
+  "saveConnection": { "message": "Guardar y conectar" },
+  "capturePage": { "message": "Capturar pagina" },
+  "captureSelection": { "message": "Capturar seleccion" },
+  "statusWorking": { "message": "Procesando…" },
+  "statusConnected": { "message": "Conectado al escritorio." },
+  "statusCaptured": { "message": "Captura enviada a Memora Eterna." },
+  "statusPairingRequired": { "message": "Primero empareja la extension en Configuracion del escritorio." },
+  "statusDesktopUnavailable": { "message": "El escritorio Memora Eterna no esta disponible." }
+}

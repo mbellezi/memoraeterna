@@ -245,7 +245,24 @@
     },
     "integrations": {
       "title": "Integrations",
-      "authorizedClients": "Authorized clients"
+      "authorizedClients": "Authorized clients",
+      "gateway": "Local integration gateway",
+      "gatewayStatus": "Gateway status",
+      "clientType": "Client type",
+      "displayName": "Display name",
+      "createPairing": "Create pairing",
+      "pairingToken": "Pairing token",
+      "pairingTokenWarning": "Copy this token now. It is shown only once.",
+      "revoke": "Revoke",
+      "noClients": "No external clients are paired.",
+      "chromeExtension": "Chrome extension",
+      "obsidianPlugin": "Obsidian plugin",
+      "states": {
+        "stopped": "Stopped",
+        "starting": "Starting",
+        "ready": "Ready",
+        "failed": "Failed"
+      }
     },
     "ai": {
       "title": "AI providers and profiles", "provider": "Provider", "google": "Google Gemini",
@@ -260,6 +277,10 @@
     "chromeExtension": "Chrome extension",
     "obsidianPlugin": "Obsidian plugin",
     "desktopGateway": "Desktop gateway",
+    "gatewayAddress": "Gateway address",
+    "clientId": "Client ID",
+    "pairingToken": "Pairing token",
+    "commands": { "importCurrentNote": "Send current note to Memora Eterna", "reconnect": "Reconnect to Memora Eterna", "reconcile": "Reconcile managed notes" },
     "states": {
       "connected": "Connected",
       "disconnected": "Disconnected",
@@ -270,7 +291,18 @@
       "desktopUnavailable": "Memora Eterna desktop is not available.",
       "pairingCode": "Pairing code: {code}",
       "clientAuthorized": "{client} is authorized.",
-      "clientRevoked": "{client} was revoked."
+      "clientRevoked": "{client} was revoked.",
+      "noteSent": "The note was sent to Memora Eterna.",
+      "reconciliationComplete": "Managed notes were reconciled."
+    },
+    "errors": {
+      "invalidRequest": "The integration request is invalid.",
+      "incompatibleContract": "The client contract version is incompatible.",
+      "unauthorized": "The integration client is not authorized.",
+      "forbidden": "The integration client cannot perform this action.",
+      "notFound": "The integration endpoint was not found.",
+      "payloadTooLarge": "The captured content is too large.",
+      "internal": "The desktop could not complete the integration request."
     }
   }
 }

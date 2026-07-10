@@ -13,10 +13,14 @@ import type { JsonObject, ObsidianSyncFileRecord, ObsidianSyncStatus, Queryable 
 
 interface ObsidianSyncFileRow extends QueryResultRow {
   id: string;
+  memoraId: string;
+  entityType: string;
+  entityId: string;
   sourceItemId: string | null;
   documentId: string | null;
   memoraType: string;
   relativePath: string;
+  frontmatterHash: string;
   contentHash: string;
   mtimeMs: number;
   syncVersion: number;
@@ -29,10 +33,14 @@ interface ObsidianSyncFileRow extends QueryResultRow {
 }
 
 export interface CreateObsidianSyncFileInput {
+  memoraId: string;
+  entityType: string;
+  entityId: string;
   sourceItemId?: string | null;
   documentId?: string | null;
   memoraType: string;
   relativePath: string;
+  frontmatterHash: string;
   contentHash: string;
   mtimeMs: number;
   syncVersion?: number;
@@ -42,10 +50,14 @@ export interface CreateObsidianSyncFileInput {
 }
 
 export interface UpdateObsidianSyncFileInput {
+  memoraId?: string;
+  entityType?: string;
+  entityId?: string;
   sourceItemId?: string | null;
   documentId?: string | null;
   memoraType?: string;
   relativePath?: string;
+  frontmatterHash?: string;
   contentHash?: string;
   mtimeMs?: number;
   syncVersion?: number;
@@ -57,10 +69,14 @@ export interface UpdateObsidianSyncFileInput {
 
 const returning = [
   "id",
+  "memora_id as \"memoraId\"",
+  "entity_type as \"entityType\"",
+  "entity_id as \"entityId\"",
   "source_item_id as \"sourceItemId\"",
   "document_id as \"documentId\"",
   "memora_type as \"memoraType\"",
   "relative_path as \"relativePath\"",
+  "frontmatter_hash as \"frontmatterHash\"",
   "content_hash as \"contentHash\"",
   "mtime_ms as \"mtimeMs\"",
   "sync_version as \"syncVersion\"",
@@ -75,10 +91,14 @@ const returning = [
 function mapObsidianSyncFile(row: ObsidianSyncFileRow): ObsidianSyncFileRecord {
   return {
     id: row.id,
+    memoraId: row.memoraId,
+    entityType: row.entityType,
+    entityId: row.entityId,
     sourceItemId: row.sourceItemId,
     documentId: row.documentId,
     memoraType: row.memoraType,
     relativePath: row.relativePath,
+    frontmatterHash: row.frontmatterHash,
     contentHash: row.contentHash,
     mtimeMs: Number(row.mtimeMs),
     syncVersion: Number(row.syncVersion),
@@ -98,10 +118,14 @@ export function createObsidianSyncRepository(db: Queryable) {
         db,
         "obsidian_sync_files",
         {
+          memora_id: input.memoraId,
+          entity_type: input.entityType,
+          entity_id: input.entityId,
           source_item_id: input.sourceItemId ?? null,
           document_id: input.documentId ?? null,
           memora_type: input.memoraType,
           relative_path: input.relativePath,
+          frontmatter_hash: input.frontmatterHash,
           content_hash: input.contentHash,
           mtime_ms: input.mtimeMs,
           sync_version: input.syncVersion ?? 1,
@@ -128,16 +152,29 @@ export function createObsidianSyncRepository(db: Queryable) {
       return row ? mapObsidianSyncFile(row) : null;
     },
 
+    async findByMemoraId(memoraId: string): Promise<ObsidianSyncFileRecord | null> {
+      const result = await db.query<ObsidianSyncFileRow>(
+        `select ${returning} from obsidian_sync_files where memora_id = $1`,
+        [memoraId]
+      );
+      const row = result.rows[0] ?? null;
+      return row ? mapObsidianSyncFile(row) : null;
+    },
+
     async update(id: string, input: UpdateObsidianSyncFileInput): Promise<ObsidianSyncFileRecord | null> {
       const row = await updateRow<ObsidianSyncFileRow>(
         db,
         "obsidian_sync_files",
         id,
         {
+          memora_id: input.memoraId,
+          entity_type: input.entityType,
+          entity_id: input.entityId,
           source_item_id: input.sourceItemId,
           document_id: input.documentId,
           memora_type: input.memoraType,
           relative_path: input.relativePath,
+          frontmatter_hash: input.frontmatterHash,
           content_hash: input.contentHash,
           mtime_ms: input.mtimeMs,
           sync_version: input.syncVersion,

@@ -33,7 +33,11 @@ export const ipcChannels = {
   aiProfilesList: "app:ai:profiles:list",
   aiProfilesCreate: "app:ai:profiles:create",
   aiProfilesClone: "app:ai:profiles:clone",
-  aiProfileTaskSet: "app:ai:profiles:task:set"
+  aiProfileTaskSet: "app:ai:profiles:task:set",
+  integrationGatewayStatus: "app:integration:gateway:status",
+  integrationClientsList: "app:integration:clients:list",
+  integrationPairingCreate: "app:integration:pairing:create",
+  integrationClientRevoke: "app:integration:client:revoke"
 } as const;
 
 export const databaseLifecycleStateSchema = z.enum([
@@ -318,6 +322,36 @@ export const aiProfileTaskInputSchema = z.object({
   requiredCapabilities: z.array(AiCapabilitySchema).default([])
 }).strict();
 
+export const integrationGatewayStatusSchema = z.object({
+  state: z.enum(["stopped", "starting", "ready", "failed"]),
+  host: z.literal("127.0.0.1"),
+  port: z.number().int().positive().nullable(),
+  baseUrl: z.string().url().nullable()
+}).strict();
+
+export const integrationPairingInputSchema = z.object({
+  clientType: z.enum(["chrome-extension", "obsidian-plugin"]),
+  displayName: z.string().trim().min(1).max(120)
+}).strict();
+
+export const integrationPairingResultSchema = z.object({
+  clientId: z.string().uuid(),
+  token: z.string().min(32)
+}).strict();
+
+export const integrationClientSchema = z.object({
+  id: z.string().uuid(),
+  clientType: z.string().min(1),
+  displayName: z.string().min(1),
+  scopes: z.array(z.string()),
+  capabilities: z.array(z.string()),
+  contractVersion: z.string().min(1),
+  status: z.enum(["paired", "revoked", "disabled"]),
+  lastSeenAt: z.date().nullable(),
+  createdAt: z.date(),
+  updatedAt: z.date()
+}).strict();
+
 export type DeletionPolicy = z.infer<typeof deletionPolicySchema>;
 export type DatabaseLifecycleState = z.infer<typeof databaseLifecycleStateSchema>;
 export type DatabaseStatus = z.infer<typeof databaseStatusSchema>;
@@ -345,6 +379,10 @@ export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
 export type AiProfile = z.infer<typeof aiProfileSchema>;
 export type AiProfileCreate = z.infer<typeof aiProfileCreateSchema>;
 export type AiProfileTaskInput = z.infer<typeof aiProfileTaskInputSchema>;
+export type IntegrationGatewayStatus = z.infer<typeof integrationGatewayStatusSchema>;
+export type IntegrationPairingInput = z.infer<typeof integrationPairingInputSchema>;
+export type IntegrationPairingResult = z.infer<typeof integrationPairingResultSchema>;
+export type IntegrationClient = z.infer<typeof integrationClientSchema>;
 
 export const defaultAppSettings = {
   themeMode: "dark"
@@ -403,5 +441,11 @@ export interface DesktopApi {
     createProfile: (input: AiProfileCreate) => Promise<AiProfile>;
     cloneProfile: (profileId: string, name: string) => Promise<AiProfile>;
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
+  };
+  integrations: {
+    getGatewayStatus: () => Promise<IntegrationGatewayStatus>;
+    listClients: () => Promise<IntegrationClient[]>;
+    createPairing: (input: IntegrationPairingInput) => Promise<IntegrationPairingResult>;
+    revokeClient: (clientId: string) => Promise<boolean>;
   };
 }

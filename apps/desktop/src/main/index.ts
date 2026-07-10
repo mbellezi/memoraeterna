@@ -9,6 +9,8 @@ import { IngestionService } from "./services/ingestion-service.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
 import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
+import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
+import { IntegrationGateway } from "./services/integration-gateway.js";
 
 const trayIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
@@ -79,6 +81,8 @@ let ingestionService: IngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
+let obsidianSyncService: ObsidianSyncService | null = null;
+let integrationGateway: IntegrationGateway | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let shutdownPromise: Promise<void> | null = null;
@@ -116,10 +120,15 @@ void app.whenReady().then(() => {
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
+  obsidianSyncService = new ObsidianSyncService({
+    getPool: () => databaseService?.getPool() ?? null,
+    getStorageSettings: () => settingsService!.get()
+  });
   jobSupervisor = new JobSupervisor({
     getPool: () => databaseService?.getPool() ?? null,
     logger: console,
     knowledgeService,
+    obsidianSyncService,
     generateEmbedding: async (text) => {
       const result = await aiService?.runDefaultTask("embedding", text);
       if (!result || !Array.isArray(result.output)) return null;
@@ -131,6 +140,15 @@ void app.whenReady().then(() => {
       };
     }
   });
+  const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
+  integrationGateway = new IntegrationGateway({
+    getPool: () => databaseService?.getPool() ?? null,
+    ingestionService,
+    obsidianSyncService,
+    jobSupervisor,
+    ...(gatewayPort !== undefined ? { preferredPort: gatewayPort } : {}),
+    logger: console
+  });
   registerIpcHandlers(
     ipcMain,
     settingsService,
@@ -139,12 +157,19 @@ void app.whenReady().then(() => {
     jobSupervisor,
     searchService,
     aiService,
-    knowledgeService
+    knowledgeService,
+    integrationGateway
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
   void databaseService.start().then((status) => {
-    if (status.state === "ready") return jobSupervisor?.start();
+    if (status.state === "ready") {
+      return Promise.all([
+        jobSupervisor?.start(),
+        integrationGateway?.start(),
+        obsidianSyncService?.reconcileVault()
+      ]);
+    }
     return undefined;
   });
 
@@ -170,10 +195,14 @@ app.on("before-quit", (event) => {
 });
 
 async function shutdownServices(): Promise<void> {
+  await integrationGateway?.stop();
+  integrationGateway = null;
   await jobSupervisor?.stop();
   jobSupervisor = null;
   searchService = null;
   knowledgeService = null;
+  await obsidianSyncService?.shutdown();
+  obsidianSyncService = null;
   ingestionService = null;
   aiService = null;
   await settingsService?.dispose();
@@ -237,4 +266,10 @@ function readRelationThreshold(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
+}
+
+function readGatewayPort(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 65535 ? parsed : undefined;
 }

@@ -233,10 +233,14 @@ export interface StorageSettingsRecord {
 
 export interface ObsidianSyncFileRecord {
   id: string;
+  memoraId: string;
+  entityType: string;
+  entityId: string;
   sourceItemId: string | null;
   documentId: string | null;
   memoraType: string;
   relativePath: string;
+  frontmatterHash: string;
   contentHash: string;
   mtimeMs: number;
   syncVersion: number;
@@ -244,6 +248,22 @@ export interface ObsidianSyncFileRecord {
   lastSyncedAt: Date | null;
   deletedAt: Date | null;
   metadata: JsonObject;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export type IntegrationClientStatus = "paired" | "revoked" | "disabled";
+
+export interface IntegrationClientRecord {
+  id: string;
+  clientType: string;
+  displayName: string;
+  tokenHash: string;
+  scopes: string[];
+  capabilities: string[];
+  contractVersion: string;
+  status: IntegrationClientStatus;
+  lastSeenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
