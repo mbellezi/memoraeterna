@@ -1,6 +1,6 @@
 import type { AiCapability, AiTaskType } from "@app/domain";
 
-import type { AiModelAdapter, AiModelDescriptor, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
 
 export interface OpenAiCompatibleAdapterOptions {
   baseUrl: string;
@@ -104,6 +104,55 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     };
   }
 
+  public async runStreaming(
+    request: AiTaskRequest,
+    signal: AbortSignal | undefined,
+    onProgress: AiProgressListener
+  ): Promise<AiTaskResult> {
+    if (request.taskType === "embedding") return this.run(request, signal);
+    const startedAt = performance.now();
+    const response = await this.request("/chat/completions", {
+      method: "POST",
+      ...(signal ? { signal } : {}),
+      body: JSON.stringify({
+        model: request.modelId ?? this.options.modelId,
+        messages: [{ role: "user", content: readText(request.input) }],
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
+          ? { response_format: { type: "json_object" } }
+          : {}),
+        ...openAiGenerationParameters(request.parameters)
+      })
+    });
+    let output = "";
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    await readServerSentEvents(response, (data) => {
+      if (data === "[DONE]") return;
+      const event = JSON.parse(data) as {
+        choices?: Array<{ delta?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      output += event.choices?.[0]?.delta?.content ?? "";
+      inputTokens = event.usage?.prompt_tokens ?? inputTokens;
+      outputTokens = event.usage?.completion_tokens ?? outputTokens;
+      onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+    });
+    if (output.length === 0) throw new Error("AI generation response did not contain content.");
+    onProgress({ progress: 1 });
+    return {
+      taskType: request.taskType,
+      output,
+      providerId: "openai-compatible",
+      modelId: request.modelId ?? this.options.modelId,
+      runtime: "remote",
+      durationMs: Math.round(performance.now() - startedAt),
+      ...(inputTokens !== undefined ? { inputTokens } : {}),
+      ...(outputTokens !== undefined ? { outputTokens } : {})
+    };
+  }
+
   private request(path: string, init: RequestInit): Promise<Response> {
     return this.fetchImplementation(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
       ...init,
@@ -133,4 +182,36 @@ export function readText(input: unknown): string {
 export async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
   return await response.json() as T;
+}
+
+export async function readServerSentEvents(response: Response, onData: (data: string) => void): Promise<void> {
+  if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
+  if (!response.body) throw new Error("AI provider streaming response did not contain a body.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+    for (const event of events) {
+      const data = event.split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trimStart())
+        .join("\n");
+      if (data.length > 0) onData(data);
+    }
+    if (done) break;
+  }
+  const trailing = buffer.split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trimStart())
+    .join("\n");
+  if (trailing.length > 0) onData(trailing);
+}
+
+export function streamedProgress(outputCharacters: number, configuredMaxTokens: unknown): number {
+  const maxTokens = typeof configuredMaxTokens === "number" && configuredMaxTokens > 0 ? configuredMaxTokens : 1_024;
+  return Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4)));
 }

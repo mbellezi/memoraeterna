@@ -89,6 +89,23 @@
   },
   "jobs": {
     "title": "Attivita",
+    "dashboard": {
+      "eyebrow": "Centro di elaborazione",
+      "title": "Ogni file, un unico flusso continuo",
+      "description": "Segui in tempo reale dalla conversione al grafo della conoscenza, con checkpoint, tentativi ed errori riuniti."
+    },
+    "summary": { "active": "Attive ora", "completed": "Completate", "attention": "Da controllare" },
+    "filters": { "label": "Filtra attivita", "all": "Tutte", "active": "Attive", "completed": "Completate", "attention": "Da controllare" },
+    "liveUpdates": "Aggiornamenti in tempo reale connessi",
+    "streaming": "Elaborazione del modello in tempo reale",
+    "updatedAt": "Aggiornata {date}",
+    "details": "Attivita di elaborazione ({count})",
+    "errorCount": "{count} errori",
+    "activity": { "title": "Attivita di elaborazione" },
+    "errors": { "title": "Cronologia errori", "empty": "Nessun errore registrato per questo flusso.", "unknownEvidence": "Il modello ha citato una prova esterna al lotto. Il checkpoint valido e stato conservato e il lotto verra riprovato.", "invalidModelOutput": "Il modello ha restituito un grafo non valido. Il checkpoint valido e stato conservato per un nuovo tentativo." },
+    "loadError": "Impossibile aggiornare le attivita.",
+    "emptyState": { "title": "Il centro di elaborazione e pronto", "description": "Importa un file o aggiungi contenuto. L'intero percorso apparira qui in un'unica scheda live." },
+    "filteredEmpty": { "title": "Nessuna attivita in questa vista", "description": "Scegli un altro filtro per vedere gli altri flussi." },
     "status": {
       "queued": "In coda",
       "running": "In esecuzione",

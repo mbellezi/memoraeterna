@@ -46,6 +46,8 @@ export interface AiProgressEvent {
   messageKey?: string;
 }
 
+export type AiProgressListener = (event: AiProgressEvent) => void;
+
 export interface AiTaskHandle {
   id: string;
   result: Promise<AiTaskResult>;
@@ -57,6 +59,7 @@ export interface AiModelAdapter {
   describe(): AiModelDescriptor;
   canHandle(request: AiTaskRequest): boolean;
   run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult>;
+  runStreaming?(request: AiTaskRequest, signal: AbortSignal | undefined, onProgress: AiProgressListener): Promise<AiTaskResult>;
   listModels?(signal?: AbortSignal): Promise<AiModelDescriptor[]>;
   testConnection?(signal?: AbortSignal): Promise<void>;
   dispose?(): Promise<void>;
@@ -67,7 +70,13 @@ export function createTaskHandle(adapter: AiModelAdapter, request: AiTaskRequest
   const listeners = new Set<(event: AiProgressEvent) => void>();
   const result = (async () => {
     for (const listener of listeners) listener({ progress: 0 });
-    const output = await adapter.run(aiTaskRequestSchema.parse(request), controller.signal);
+    const parsed = aiTaskRequestSchema.parse(request);
+    const capabilities = adapter.describe().capabilities;
+    const output = adapter.runStreaming && (capabilities.includes("streaming") || capabilities.includes("supports-progress-events"))
+      ? await adapter.runStreaming(parsed, controller.signal, (event) => {
+          for (const listener of listeners) listener(event);
+        })
+      : await adapter.run(parsed, controller.signal);
     for (const listener of listeners) listener({ progress: 1 });
     return aiTaskResultSchema.parse(output);
   })();

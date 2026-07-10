@@ -5,6 +5,7 @@ import type { AiCapability } from "@app/domain";
 
 import {
   aiTaskRequestSchema,
+  type AiProgressListener,
   type AiModelAdapter,
   type AiModelDescriptor,
   type AiTaskRequest,
@@ -39,12 +40,12 @@ export interface LocalExecutionResult {
 
 export class NodeLlamaCppAdapter implements AiModelAdapter {
   private readonly runtime: NodeLlamaRuntime | null;
-  private readonly execute: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>;
+  private readonly execute: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal; onProgress?: AiProgressListener }) => Promise<LocalExecutionResult>;
   private readonly executeEmbedding: (input: { modelPath: string; text: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>;
 
   public constructor(
     private readonly options: LocalAdapterOptions,
-    execute?: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>,
+    execute?: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal; onProgress?: AiProgressListener }) => Promise<LocalExecutionResult>,
     executeEmbedding?: (input: { modelPath: string; text: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>
   ) {
     this.runtime = execute || executeEmbedding ? null : new NodeLlamaRuntime(options.modelPath);
@@ -83,6 +84,24 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
     } finally {
       signal?.removeEventListener("abort", abort);
     }
+  }
+
+  public async runStreaming(
+    request: AiTaskRequest,
+    signal: AbortSignal | undefined,
+    onProgress: AiProgressListener
+  ): Promise<AiTaskResult> {
+    const input = aiTaskRequestSchema.parse(request);
+    if (input.taskType === "embedding") return this.run(input, signal);
+    const result = await this.execute({
+      modelPath: this.options.modelPath,
+      prompt: promptFromInput(input.input),
+      parameters: input.parameters,
+      ...(signal ? { signal } : {}),
+      onProgress
+    });
+    onProgress({ progress: 1 });
+    return taskResult(input, "local-gguf", this.options.modelId, result);
   }
 
   public async dispose(): Promise<void> {
@@ -275,7 +294,12 @@ class NodeLlamaRuntime {
 
   public constructor(private readonly modelPath: string) {}
 
-  public async generate(input: { prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal }): Promise<LocalExecutionResult> {
+  public async generate(input: {
+    prompt: string;
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+    onProgress?: AiProgressListener;
+  }): Promise<LocalExecutionResult> {
     const startedAt = Date.now();
     await this.load(input.signal);
     const model = this.model!;
@@ -286,12 +310,20 @@ class NodeLlamaRuntime {
     const session = new this.module!.LlamaChatSession({ contextSequence: context.getSequence() });
     try {
       const inputTokens = model.tokenize(input.prompt).length;
+      let outputCharacters = 0;
+      const maxTokens = numberParameter(input.parameters.maxTokens, 1_024);
       const output = await session.prompt(input.prompt, {
         maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
         temperature: numberParameter(input.parameters.temperature, 0.2),
         ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
         ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {}),
-        ...(input.signal ? { signal: input.signal } : {})
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.onProgress ? {
+          onTextChunk: (chunk: string) => {
+            outputCharacters += chunk.length;
+            input.onProgress?.({ progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4))) });
+          }
+        } : {})
       });
       return {
         output,

@@ -84,6 +84,36 @@ describe("AI adapters", () => {
     });
   });
 
+  it("streams remote generation progress without exposing partial output in events", async () => {
+    let requestBody: Record<string, unknown> = {};
+    const encoder = new TextEncoder();
+    const adapter = new OpenAiCompatibleAdapter({
+      baseUrl: "https://example.test/v1", apiKey: "secret", modelId: "streaming-model",
+      capabilities: ["text-generation", "streaming"],
+      fetch: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const body = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hello "}}]}\n\n'));
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"world"}}],"usage":{"prompt_tokens":2,"completion_tokens":2}}\n\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          }
+        });
+        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }
+    });
+    const progress: number[] = [];
+    const result = await adapter.runStreaming!({
+      taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
+      parameters: { maxTokens: 64 }, metadata: {}
+    }, undefined, (event) => progress.push(event.progress));
+    expect(requestBody).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+    expect(result.output).toBe("hello world");
+    expect(result.outputTokens).toBe(2);
+    expect(progress.at(-1)).toBe(1);
+  });
+
   it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
     expect(localModelCatalog).toHaveLength(5);
     const embeddingModels = localModelCatalog.filter((entry) => entry.capabilities.includes("embedding"));

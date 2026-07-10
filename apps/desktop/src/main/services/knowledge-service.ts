@@ -55,10 +55,12 @@ export interface KnowledgeServiceOptions {
 export interface AtomicNoteGenerationLogContext {
   jobId?: string;
   ingestionRunId?: string;
+  onProgress?: (progress: number) => void;
 }
 
 export interface KnowledgeGraphGenerationContext {
   completedBatches?: unknown;
+  onProgress?: (progress: number) => void;
   onBatchCompleted?: (input: {
     completed: number;
     total: number;
@@ -183,7 +185,12 @@ export class KnowledgeService {
     return absolutePath;
   }
 
-  public async summarizeSource(sourceItemId: string, documentId: string, signal?: AbortSignal) {
+  public async summarizeSource(
+    sourceItemId: string,
+    documentId: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: number) => void
+  ) {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
@@ -193,7 +200,12 @@ export class KnowledgeService {
       chunks.length > 0
         ? chunks.map((chunk) => ({ id: chunk.id, content: chunk.content }))
         : [{ id: document.id, content: document.canonicalMarkdown }],
-      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask("summarization", prompt, {}, signal)),
+      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+        "summarization",
+        prompt,
+        { onProgress: (event) => onProgress?.(event.progress) },
+        signal
+      )),
       this.summaryMaxInputCharacters
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
@@ -235,6 +247,7 @@ export class KnowledgeService {
     logContext: AtomicNoteGenerationLogContext = {},
     signal?: AbortSignal
   ) {
+    const { onProgress, ...structuredLogContext } = logContext;
     const pool = this.requirePool();
     let stage = "source_loading";
     let execution: KnowledgeAiExecution | null = null;
@@ -252,7 +265,13 @@ export class KnowledgeService {
           execution = toKnowledgeExecution(await this.options.aiService.runDefaultTask(
             "atomic-note-generation",
             prompt,
-            { ...logContext, sourceItemId, documentId, stage: "ai_execution" },
+            {
+              ...structuredLogContext,
+              sourceItemId,
+              documentId,
+              stage: "ai_execution",
+              onProgress: (event) => onProgress?.(event.progress)
+            },
             signal
           ));
           stage = "output_validation";
@@ -305,7 +324,7 @@ export class KnowledgeService {
       return { configured: true, generatedCount: noteIds.length, noteIds };
     } catch (error) {
       logStructuredError(this.options.logger, "atomic_note_generation_failed", {
-        ...logContext,
+        ...structuredLogContext,
         sourceItemId,
         documentId,
         stage,
@@ -340,7 +359,12 @@ export class KnowledgeService {
       async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "knowledge-graph-generation",
         prompt,
-        { sourceItemId, documentId, stage: "knowledge_graph_generation" },
+        {
+          sourceItemId,
+          documentId,
+          stage: "knowledge_graph_generation",
+          onProgress: (event) => context.onProgress?.(event.progress)
+        },
         signal
       )),
       this.knowledgeGraphMaxInputCharacters,
@@ -397,15 +421,18 @@ export class KnowledgeService {
     };
   }
 
-  public async matchAtomicNotes(noteIds: string[], signal?: AbortSignal) {
+  public async matchAtomicNotes(noteIds: string[], signal?: AbortSignal, onProgress?: (progress: number) => void) {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
     const relationThreshold = clamp(await this.options.getRelationThreshold?.() ?? this.relationThreshold);
     let persistedCount = 0;
-    for (const noteId of noteIds) {
+    for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
-      if (!note) continue;
+      if (!note) {
+        onProgress?.((noteIndex + 1) / noteIds.length);
+        continue;
+      }
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
         `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
@@ -555,6 +582,7 @@ export class KnowledgeService {
         sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
         results: debugResults
       });
+      onProgress?.((noteIndex + 1) / noteIds.length);
     }
     return { persistedCount, threshold: relationThreshold };
   }

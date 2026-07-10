@@ -5,6 +5,7 @@ import {
   createEmbeddingRepository,
   createIngestionRunRepository,
   createJobRepository,
+  createSourceItemRepository,
   type JobRecord,
   type JsonObject,
   type PgPool
@@ -45,6 +46,7 @@ export class JobSupervisor {
   private stopping = false;
   private drainPromise: Promise<void> | null = null;
   private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
+  private readonly listeners = new Set<() => void>();
   private readonly workerId = `${hostname()}:${process.pid}`;
 
   public constructor(private readonly options: JobSupervisorOptions) {}
@@ -75,6 +77,7 @@ export class JobSupervisor {
     const repository = createJobRepository(this.requirePool());
     const job = await repository.claimNext(this.workerId, [...supportedJobTypes]);
     if (!job) return null;
+    this.notify();
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
     try {
@@ -85,7 +88,7 @@ export class JobSupervisor {
             signal: controller.signal,
             onProgress: (progress) => this.trackProgress(repository.reportProgress(job.id, progress))
           });
-      return await repository.update(job.id, {
+      const updated = await repository.update(job.id, {
         status: controller.signal.aborted ? "canceled" : "succeeded",
         progress: controller.signal.aborted ? job.progress : 1,
         result,
@@ -94,6 +97,8 @@ export class JobSupervisor {
         lockedBy: null,
         finishedAt: new Date()
       });
+      this.notify();
+      return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
       const shouldRetry = !wasCanceled && job.attempts < job.maxAttempts;
@@ -105,14 +110,23 @@ export class JobSupervisor {
           await runs.fail(job.payload.ingestionRunId, normalizeWorkerError(error));
         }
       }
-      return await repository.update(job.id, {
+      const normalizedError = normalizeWorkerError(error);
+      const updated = await repository.update(job.id, {
         status: wasCanceled ? "canceled" : shouldRetry ? "queued" : "failed",
-        error: wasCanceled ? null : normalizeWorkerError(error),
+        error: wasCanceled ? null : normalizedError,
+        payload: wasCanceled ? job.payload : appendErrorHistory(job.payload, {
+          message: normalizedError,
+          stage: job.type,
+          attempt: job.attempts,
+          occurredAt: new Date().toISOString()
+        }),
         runAfter: shouldRetry ? new Date(Date.now() + Math.min(30_000, 1_000 * 2 ** job.attempts)) : job.runAfter,
         lockedAt: null,
         lockedBy: null,
         finishedAt: shouldRetry ? null : new Date()
       });
+      this.notify();
+      return updated;
     } finally {
       this.controllers.delete(job.id);
     }
@@ -121,6 +135,7 @@ export class JobSupervisor {
   public async requestCancel(jobId: string): Promise<JobRecord | null> {
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
+    this.notify();
     return job;
   }
 
@@ -136,6 +151,7 @@ export class JobSupervisor {
     if (!canManuallyRetryJob(current, ingestionRun)) return null;
     const job = await repository.retry(jobId);
     if (job) this.schedule(0);
+    if (job) this.notify();
     return job;
   }
 
@@ -144,18 +160,27 @@ export class JobSupervisor {
   }
 
   public async clearCompletedOrFailed(): Promise<number> {
-    return createJobRepository(this.requirePool()).clearCompletedOrFailed();
+    const deleted = await createJobRepository(this.requirePool()).clearCompletedOrFailed();
+    if (deleted > 0) this.notify();
+    return deleted;
+  }
+
+  public subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   public async listWithRuns(limit = 100) {
     const pool = this.requirePool();
-    const [jobs, runs] = await Promise.all([
+    const [jobs, runs, sources] = await Promise.all([
       createJobRepository(pool).list(limit),
-      createIngestionRunRepository(pool).list(limit)
+      createIngestionRunRepository(pool).list(limit),
+      createSourceItemRepository(pool).list(limit)
     ]);
     return jobs.map((job) => ({
       job,
-      ingestionRun: runs.find((run) => run.jobId === job.id || run.id === job.payload.ingestionRunId) ?? null
+      ingestionRun: runs.find((run) => run.jobId === job.id || run.id === job.payload.ingestionRunId) ?? null,
+      source: sources.find((source) => source.id === job.payload.sourceItemId) ?? null
     }));
   }
 
@@ -184,6 +209,7 @@ export class JobSupervisor {
     let persistedChunks;
     if (checkpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "chunking");
+      this.notify();
       const chunkResult = await this.workers.execute("chunking", {
         markdown,
         blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
@@ -200,12 +226,14 @@ export class JobSupervisor {
         chunks.map((raw) => parseWorkerChunk(raw))
       );
       await runs.completeStage(ingestionRunId, "chunking", { chunkCount: chunks.length });
+      this.notify();
     } else {
       persistedChunks = await createChunkRepository(pool).listByDocument(documentId);
     }
     const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
     if (embeddingCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "embedding");
+      this.notify();
       let embeddedCount = 0;
       if (this.options.generateEmbedding) {
         for (const chunk of persistedChunks) {
@@ -226,21 +254,29 @@ export class JobSupervisor {
         embeddedCount,
         configured: Boolean(this.options.generateEmbedding)
       });
+      this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.5);
     throwIfAborted(signal);
     const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
     if (summaryCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "summarization");
+      this.notify();
       const summary = this.options.knowledgeService
         ? await this.runInlineStageJob(
             "summarization",
             { ingestionRunId, sourceItemId, documentId },
-            () => this.options.knowledgeService!.summarizeSource(sourceItemId, documentId, signal),
+            (stageJobId) => this.options.knowledgeService!.summarizeSource(
+              sourceItemId,
+              documentId,
+              signal,
+              (progress) => this.reportInlineProgress(stageJobId, progress)
+            ),
             controller
           )
         : { configured: false, generated: false };
       await runs.completeStage(ingestionRunId, "summarization", summary);
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.68);
@@ -248,6 +284,7 @@ export class JobSupervisor {
     let noteIds = readStringArray((atomicCheckpoint?.metadata as JsonObject | undefined)?.noteIds);
     if (atomicCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "atomicNotes");
+      this.notify();
       const generated = this.options.knowledgeService
         ? await this.runInlineStageJob(
             "atomic-note-generation",
@@ -255,7 +292,7 @@ export class JobSupervisor {
             (jobId) => this.options.knowledgeService!.generateAtomicNotes(
               sourceItemId,
               documentId,
-              { jobId, ingestionRunId },
+              { jobId, ingestionRunId, onProgress: (progress) => this.reportInlineProgress(jobId, progress) },
               signal
             ),
             controller
@@ -263,6 +300,7 @@ export class JobSupervisor {
         : { configured: false, generatedCount: 0, noteIds: [] };
       noteIds = readStringArray(generated.noteIds);
       await runs.completeStage(ingestionRunId, "atomicNotes", generated);
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.84);
@@ -270,6 +308,7 @@ export class JobSupervisor {
     if (graphCheckpoint?.status !== "completed") {
       const graphMetadata = graphCheckpoint?.metadata as JsonObject | undefined;
       await runs.beginStage(ingestionRunId, "knowledgeGraph");
+      this.notify();
       const graph = this.options.knowledgeService
         ? await this.runInlineStageJob(
             "knowledge-graph-generation",
@@ -279,6 +318,7 @@ export class JobSupervisor {
               documentId,
               {
                 completedBatches: graphMetadata?.completedBatches,
+                onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
                 onBatchCompleted: async ({ completed, total, checkpoints }) => {
                   const progress = total > 0 ? completed / total : 1;
                   await Promise.all([
@@ -298,27 +338,35 @@ export class JobSupervisor {
           )
         : { configured: false, generated: false, projected: false };
       await runs.completeStage(ingestionRunId, "knowledgeGraph", graph);
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.89);
     const matchingCheckpoint = run.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined;
     if (matchingCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "atomicNoteMatching");
+      this.notify();
       const matching = this.options.knowledgeService && noteIds.length > 0
         ? await this.runInlineStageJob(
             "atomic-note-matching",
             { ingestionRunId, sourceItemId, documentId, noteIds },
-            () => this.options.knowledgeService!.matchAtomicNotes(noteIds, signal),
+            (stageJobId) => this.options.knowledgeService!.matchAtomicNotes(
+              noteIds,
+              signal,
+              (progress) => this.reportInlineProgress(stageJobId, progress)
+            ),
             controller
           )
         : { persistedCount: 0 };
       await runs.completeStage(ingestionRunId, "atomicNoteMatching", matching);
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.95);
     const projectionCheckpoint = run.stagesCheckpoint.obsidianProjection as JsonObject | undefined;
     if (projectionCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "obsidianProjection");
+      this.notify();
       const projection = this.options.obsidianSyncService
         ? await this.runInlineStageJob(
             "obsidian-sync",
@@ -327,9 +375,11 @@ export class JobSupervisor {
           )
         : { projected: 0 };
       await runs.completeStage(ingestionRunId, "obsidianProjection", projection);
+      this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
     await runs.complete(ingestionRunId);
+    this.notify();
     return { ingestionRunId, documentId, sourceItemId };
   }
 
@@ -347,6 +397,7 @@ export class JobSupervisor {
       lockedAt: new Date(),
       lockedBy: this.workerId
     });
+    this.notify();
     if (controller) this.controllers.set(job.id, controller);
     try {
       const result = await run(job.id);
@@ -359,6 +410,7 @@ export class JobSupervisor {
         lockedBy: null,
         finishedAt: new Date()
       });
+      this.notify();
       return result;
     } catch (error) {
       logStructuredError(this.options.logger, "job_failed", {
@@ -370,13 +422,21 @@ export class JobSupervisor {
         stage: type
       }, error, "job_failed");
       const canceled = controller?.signal.aborted ?? false;
+      const normalizedError = normalizeWorkerError(error);
       await repository.update(job.id, {
         status: canceled ? "canceled" : "failed",
-        error: canceled ? null : normalizeWorkerError(error),
+        error: canceled ? null : normalizedError,
+        payload: canceled ? payload : appendErrorHistory(payload, {
+          message: normalizedError,
+          stage: type,
+          attempt: 1,
+          occurredAt: new Date().toISOString()
+        }),
         lockedAt: null,
         lockedBy: null,
         finishedAt: new Date()
       });
+      this.notify();
       throw error;
     } finally {
       if (controller) this.controllers.delete(job.id);
@@ -394,7 +454,18 @@ export class JobSupervisor {
     this.pendingProgressUpdates.add(promise);
     void promise
       .catch((error: unknown) => this.options.logger?.warn(normalizeWorkerError(error)))
-      .finally(() => this.pendingProgressUpdates.delete(promise));
+      .finally(() => {
+        this.pendingProgressUpdates.delete(promise);
+        this.notify();
+      });
+  }
+
+  private reportInlineProgress(jobId: string, progress: number): void {
+    this.trackProgress(createJobRepository(this.requirePool()).reportProgress(jobId, progress));
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
   }
 
   private requirePool(): PgPool {
@@ -446,6 +517,14 @@ function readStringArray(value: unknown): string[] {
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function appendErrorHistory(
+  payload: JsonObject,
+  event: { message: string; stage: string; attempt: number; occurredAt: string }
+): JsonObject {
+  const existing = Array.isArray(payload.errorHistory) ? payload.errorHistory : [];
+  return { ...payload, errorHistory: [...existing, event].slice(-20) };
 }
 
 function throwIfAborted(signal: AbortSignal): void {

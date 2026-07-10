@@ -1,7 +1,7 @@
 import type { AiCapability, AiTaskType } from "@app/domain";
 
-import type { AiModelAdapter, AiModelDescriptor, AiTaskRequest, AiTaskResult } from "./contracts.js";
-import { parseResponse, readText } from "./openai-compatible.js";
+import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import { parseResponse, readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
 
 export interface GoogleGeminiAdapterOptions {
   apiKey: string;
@@ -101,6 +101,52 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
       durationMs: Math.round(performance.now() - startedAt),
       ...(payload.usageMetadata?.promptTokenCount !== undefined ? { inputTokens: payload.usageMetadata.promptTokenCount } : {}),
       ...(payload.usageMetadata?.candidatesTokenCount !== undefined ? { outputTokens: payload.usageMetadata.candidatesTokenCount } : {})
+    };
+  }
+
+  public async runStreaming(
+    request: AiTaskRequest,
+    signal: AbortSignal | undefined,
+    onProgress: AiProgressListener
+  ): Promise<AiTaskResult> {
+    if (request.taskType === "embedding") return this.run(request, signal);
+    const startedAt = performance.now();
+    const modelId = request.modelId ?? this.options.modelId;
+    const response = await this.fetchImplementation(
+      `${this.baseUrl}/models/${encodeURIComponent(modelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.options.apiKey)}`,
+      {
+        method: "POST", ...(signal ? { signal } : {}), headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
+          generationConfig: {
+            ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
+              ? { responseMimeType: "application/json" }
+              : {}),
+            ...googleGenerationParameters(request.parameters, modelId)
+          }
+        })
+      }
+    );
+    let output = "";
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    await readServerSentEvents(response, (data) => {
+      const event = JSON.parse(data) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      };
+      output += event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+      inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
+      outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
+      onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+    });
+    if (output.length === 0) throw new Error("AI generation response did not contain content.");
+    onProgress({ progress: 1 });
+    return {
+      taskType: request.taskType, output, providerId: "google", modelId, runtime: "remote",
+      durationMs: Math.round(performance.now() - startedAt),
+      ...(inputTokens !== undefined ? { inputTokens } : {}),
+      ...(outputTokens !== undefined ? { outputTokens } : {})
     };
   }
 }

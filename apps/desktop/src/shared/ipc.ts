@@ -23,6 +23,7 @@ export const ipcChannels = {
   ingestionImportFile: "app:ingestion:import-file",
   ingestionLookupSources: "app:ingestion:lookup-sources",
   jobsList: "app:jobs:list",
+  jobsChanged: "app:jobs:changed",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
   jobsClearCompletedOrFailed: "app:jobs:clear-completed-or-failed",
@@ -185,8 +186,20 @@ export const jobRecordSchema = z.object({
   canCancel: z.boolean(),
   canRetry: z.boolean(),
   error: z.string().nullable(),
+  errorHistory: z.array(z.object({
+    message: z.string().min(1),
+    stage: z.string().min(1),
+    attempt: z.number().int().nonnegative(),
+    occurredAt: z.string().datetime()
+  }).strict()).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  source: z.object({
+    id: z.string().uuid(),
+    title: z.string().min(1),
+    type: SourceItemTypeSchema,
+    origin: z.string().min(1)
+  }).strict().nullable().optional(),
   ingestionRun: z.object({
     id: z.string().uuid(),
     status: z.enum(["pending", "running", "succeeded", "failed", "canceled"]),
@@ -630,6 +643,7 @@ export interface DesktopApi {
   };
   jobs: {
     list: () => Promise<JobRecord[]>;
+    subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;
     retry: (jobId: string) => Promise<JobRecord | null>;
     clearCompletedOrFailed: () => Promise<JobsClearResult>;

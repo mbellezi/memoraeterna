@@ -133,6 +133,7 @@ describe("knowledge processing", () => {
     );
     expect(prompt).toContain("Atomic notes:");
     expect(prompt).toContain("evidence=c1");
+    expect(prompt).toContain('only allowed evidence aliases in this batch are: ["c1"]');
     expect(prompt).not.toContain("00000000-0000-4000-8000-000000000001");
   });
 

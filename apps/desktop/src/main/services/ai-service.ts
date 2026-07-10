@@ -8,6 +8,7 @@ import {
   OpenAiCompatibleAdapter,
   redactSensitiveText,
   type AiModelAdapter,
+  type AiProgressEvent,
   type AiTaskRequest,
   type AiTaskResult
 } from "@app/ai";
@@ -55,6 +56,7 @@ export interface AiTaskLogContext {
   sourceItemId?: string;
   documentId?: string;
   stage?: string;
+  onProgress?: (event: AiProgressEvent) => void;
 }
 
 export class AiService {
@@ -206,6 +208,7 @@ export class AiService {
     logContext: AiTaskLogContext = {},
     signal?: AbortSignal
   ): Promise<DefaultAiTaskResult | null> {
+    const { onProgress, ...structuredLogContext } = logContext;
     const repository = createAiConfigRepository(this.requirePool());
     const selection = await repository.getDefaultTask(taskType);
     if (!selection) return null;
@@ -233,13 +236,20 @@ export class AiService {
         requiredCapabilities,
         offlineOnly: Boolean(selection.localModelId)
       });
-      const run = () => adapter.run({
+      const request: AiTaskRequest = {
         taskType, input: taskInput, profileId: selection.profileId, modelId: selection.modelId,
         requiredCapabilities, parameters, metadata: {}
-      }, signal);
+      };
+      const progress = createProgressReporter(onProgress);
+      const run = () => adapter.runStreaming
+        && (descriptor.capabilities.includes("streaming") || descriptor.capabilities.includes("supports-progress-events"))
+        ? adapter.runStreaming(request, signal, progress)
+        : adapter.run(request, signal);
+      progress({ progress: 0.02 });
       const result = selection.localModelId
         ? await this.withLocalModelUsage(selection.localModelId, run)
         : await run();
+      progress({ progress: 1 });
       const aiTaskRunId = await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: result.providerId, modelId: result.modelId,
         runtime: selection.localModelId ? selection.runtime : result.runtime,
@@ -258,8 +268,8 @@ export class AiService {
       if (selection.localModelId) {
         const debugOutputEnabled = await isLocalModelOutputDebugEnabled(this.options.getDashboardDebugMode);
         logLocalModelOutput(this.options.logger, debugOutputEnabled, {
-          ...logContext,
-          stage: logContext.stage ?? "ai_execution",
+          ...structuredLogContext,
+          stage: structuredLogContext.stage ?? "ai_execution",
           taskType,
           profileId: selection.profileId,
           providerId: result.providerId,
@@ -283,8 +293,8 @@ export class AiService {
       });
       if (taskType === "atomic-note-generation") {
         logStructuredError(this.options.logger, "atomic_note_ai_task_failed", {
-          ...logContext,
-          stage: logContext.stage ?? "ai_execution",
+          ...structuredLogContext,
+          stage: structuredLogContext.stage ?? "ai_execution",
           taskType,
           profileId: selection.profileId,
           providerId: selection.provider,
@@ -543,4 +553,18 @@ function withOutputLanguageInstruction(input: string, language: string): string 
     es: "Spanish"
   } as Record<string, string>)[language] ?? language;
   return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly.\n\n${input}`;
+}
+
+function createProgressReporter(listener?: (event: AiProgressEvent) => void): (event: AiProgressEvent) => void {
+  let lastProgress = -1;
+  let lastReportedAt = 0;
+  return (event) => {
+    if (!listener) return;
+    const now = Date.now();
+    const progress = Math.max(0, Math.min(1, event.progress));
+    if (progress < 1 && progress - lastProgress < 0.01 && now - lastReportedAt < 250) return;
+    lastProgress = progress;
+    lastReportedAt = now;
+    listener({ ...event, progress });
+  };
 }

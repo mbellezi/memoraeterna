@@ -89,6 +89,23 @@
   },
   "jobs": {
     "title": "Tareas",
+    "dashboard": {
+      "eyebrow": "Centro de procesamiento",
+      "title": "Cada archivo, un unico flujo continuo",
+      "description": "Sigue en vivo desde la conversion hasta el grafo de conocimiento, con checkpoints, intentos y errores reunidos."
+    },
+    "summary": { "active": "Activas ahora", "completed": "Completadas", "attention": "Requieren atencion" },
+    "filters": { "label": "Filtrar tareas", "all": "Todas", "active": "Activas", "completed": "Completadas", "attention": "Requieren atencion" },
+    "liveUpdates": "Actualizaciones en vivo conectadas",
+    "streaming": "Procesamiento del modelo en vivo",
+    "updatedAt": "Actualizada {date}",
+    "details": "Actividad del procesamiento ({count})",
+    "errorCount": "{count} errores",
+    "activity": { "title": "Actividad del procesamiento" },
+    "errors": { "title": "Historial de errores", "empty": "No hay errores registrados para este flujo.", "unknownEvidence": "El modelo cito una evidencia fuera de este lote. El checkpoint valido se conservo y el lote se volvera a procesar.", "invalidModelOutput": "El modelo devolvio un grafo no valido. El checkpoint valido se conservo para otro intento." },
+    "loadError": "No se pudieron actualizar las tareas.",
+    "emptyState": { "title": "Tu centro de procesamiento esta listo", "description": "Importa un archivo o agrega contenido. Todo su recorrido aparecera aqui en una unica tarjeta en vivo." },
+    "filteredEmpty": { "title": "No hay tareas en esta vista", "description": "Elige otro filtro para ver los demas flujos." },
     "status": {
       "queued": "En cola",
       "running": "En ejecucion",

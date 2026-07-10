@@ -129,6 +129,11 @@ const api: DesktopApi = {
     async list() {
       return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
     },
+    subscribe(listener: () => void) {
+      const handler = () => listener();
+      ipcRenderer.on(ipcChannels.jobsChanged, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.jobsChanged, handler);
+    },
     async cancel(jobId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.jobsCancel, jobId);
       return result === null ? null : jobRecordSchema.parse(result);

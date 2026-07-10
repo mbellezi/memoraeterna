@@ -89,6 +89,23 @@
   },
   "jobs": {
     "title": "Taches",
+    "dashboard": {
+      "eyebrow": "Centre de traitement",
+      "title": "Chaque fichier, un flux continu unique",
+      "description": "Suivez en direct de la conversion au graphe de connaissances, avec checkpoints, tentatives et erreurs regroupes."
+    },
+    "summary": { "active": "Actives", "completed": "Terminees", "attention": "A surveiller" },
+    "filters": { "label": "Filtrer les taches", "all": "Toutes", "active": "Actives", "completed": "Terminees", "attention": "A surveiller" },
+    "liveUpdates": "Mises a jour en direct connectees",
+    "streaming": "Traitement du modele en direct",
+    "updatedAt": "Mise a jour {date}",
+    "details": "Activite du traitement ({count})",
+    "errorCount": "{count} erreurs",
+    "activity": { "title": "Activite du traitement" },
+    "errors": { "title": "Historique des erreurs", "empty": "Aucune erreur enregistree pour ce flux.", "unknownEvidence": "Le modele a cite une preuve hors de ce lot. Le checkpoint valide a ete conserve et le lot sera relance.", "invalidModelOutput": "Le modele a renvoye un graphe invalide. Le checkpoint valide a ete conserve pour une nouvelle tentative." },
+    "loadError": "Impossible d'actualiser les taches.",
+    "emptyState": { "title": "Votre centre de traitement est pret", "description": "Importez un fichier ou ajoutez du contenu. Son parcours complet apparaitra ici dans une seule carte en direct." },
+    "filteredEmpty": { "title": "Aucune tache dans cette vue", "description": "Choisissez un autre filtre pour voir les autres flux." },
     "status": {
       "queued": "En attente",
       "running": "En cours",

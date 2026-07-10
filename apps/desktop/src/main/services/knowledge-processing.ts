@@ -207,6 +207,7 @@ ${knowledgeGraphJsonContract}
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
 Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
 Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
+The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Keep the response small: at most 12 entities, 8 claims, and 12 relations. Use empty arrays when no supported items exist.
 
 Source title: ${source.title}
@@ -234,7 +235,8 @@ Return one complete compact JSON object only. Do not include reasoning, commenta
 Use exactly this shape and property names:
 ${knowledgeGraphJsonContract}
 
-Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary. Cite only supplied evidence aliases and copy them exactly.
+Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary.
+The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Source title: ${source.title}
 Source language: ${source.language}
 Atomic notes:

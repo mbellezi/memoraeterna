@@ -97,6 +97,23 @@
   },
   "jobs": {
     "title": "Tarefas",
+    "dashboard": {
+      "eyebrow": "Central de processamento",
+      "title": "Cada arquivo, um unico fluxo continuo",
+      "description": "Acompanhe ao vivo da conversao ao grafo de conhecimento, com checkpoints, tentativas e erros reunidos no mesmo lugar."
+    },
+    "summary": { "active": "Ativas agora", "completed": "Concluidas", "attention": "Pedem atencao" },
+    "filters": { "label": "Filtrar tarefas", "all": "Todas", "active": "Ativas", "completed": "Concluidas", "attention": "Pedem atencao" },
+    "liveUpdates": "Atualizacoes ao vivo conectadas",
+    "streaming": "Processamento do modelo ao vivo",
+    "updatedAt": "Atualizada em {date}",
+    "details": "Atividade do processamento ({count})",
+    "errorCount": "{count} erros",
+    "activity": { "title": "Atividade do processamento" },
+    "errors": { "title": "Historico de erros", "empty": "Nenhum erro registrado neste fluxo.", "unknownEvidence": "O modelo citou uma evidencia fora deste lote. O checkpoint valido foi preservado e o lote sera processado novamente.", "invalidModelOutput": "O modelo retornou um grafo invalido. O checkpoint valido foi preservado para uma nova tentativa." },
+    "loadError": "Nao foi possivel atualizar as tarefas.",
+    "emptyState": { "title": "Sua central de processamento esta pronta", "description": "Importe um arquivo ou adicione conteudo. Toda a jornada de processamento aparecera aqui em um unico card ao vivo." },
+    "filteredEmpty": { "title": "Nenhuma tarefa nesta visualizacao", "description": "Escolha outro filtro para ver os demais fluxos." },
     "status": {
       "queued": "Na fila",
       "running": "Em execucao",

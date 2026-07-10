@@ -97,6 +97,23 @@
   },
   "jobs": {
     "title": "Jobs",
+    "dashboard": {
+      "eyebrow": "Processing control center",
+      "title": "Every file, one continuous workflow",
+      "description": "Follow processing live from conversion to your knowledge graph, with checkpoints, retries and errors kept together."
+    },
+    "summary": { "active": "Active now", "completed": "Completed", "attention": "Needs attention" },
+    "filters": { "label": "Filter jobs", "all": "All", "active": "Active", "completed": "Completed", "attention": "Needs attention" },
+    "liveUpdates": "Live updates connected",
+    "streaming": "Live model processing",
+    "updatedAt": "Updated {date}",
+    "details": "Processing activity ({count})",
+    "errorCount": "{count} errors",
+    "activity": { "title": "Processing activity" },
+    "errors": { "title": "Error history", "empty": "No errors recorded for this workflow.", "unknownEvidence": "The model referenced evidence outside this batch. The valid checkpoint was preserved and the batch will be retried.", "invalidModelOutput": "The model returned an invalid graph result. The valid checkpoint was preserved for retry." },
+    "loadError": "Jobs could not be refreshed.",
+    "emptyState": { "title": "Your processing workspace is ready", "description": "Import a file or add content. Its full processing journey will appear here as one live card." },
+    "filteredEmpty": { "title": "No jobs in this view", "description": "Choose another filter to see the remaining workflows." },
     "status": {
       "queued": "Queued",
       "running": "Running",

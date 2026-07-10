@@ -1,5 +1,5 @@
 import type { IpcMain } from "electron";
-import { app, dialog, shell } from "electron";
+import { app, dialog, shell, webContents } from "electron";
 import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
@@ -114,9 +114,14 @@ export function registerIpcHandlers(
     ingestionService.lookupSources(z.string().trim().min(1).max(200).parse(payload))
   );
 
-  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun }) =>
-    serializeJob(job, ingestionRun)
+  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun, source }) =>
+    serializeJob(job, ingestionRun, source)
   ));
+  jobSupervisor.subscribe(() => {
+    for (const contents of webContents.getAllWebContents()) {
+      if (!contents.isDestroyed()) contents.send(ipcChannels.jobsChanged);
+    }
+  });
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
     const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;
@@ -234,8 +239,10 @@ export function registerIpcHandlers(
 
 function serializeJob(
   job: Awaited<ReturnType<JobSupervisor["list"]>>[number],
-  ingestionRun: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["ingestionRun"] = null
+  ingestionRun: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["ingestionRun"] = null,
+  source: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["source"] = null
 ) {
+  const errorHistory = readJobErrorHistory(job.payload, job.error, job.type, job.attempts, job.updatedAt);
   return {
     id: job.id,
     type: job.type,
@@ -247,8 +254,15 @@ function serializeJob(
       && (job.status === "queued" || job.status === "running"),
     canRetry: canManuallyRetryJob(job, ingestionRun),
     error: job.error,
+    errorHistory,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
+    source: source ? {
+      id: source.id,
+      title: source.title,
+      type: source.type,
+      origin: source.sourceOrigin
+    } : null,
     ingestionRun: ingestionRun ? {
       id: ingestionRun.id,
       status: ingestionRun.status,
@@ -256,6 +270,28 @@ function serializeJob(
       stagesCheckpoint: ingestionRun.stagesCheckpoint
     } : null
   };
+}
+
+function readJobErrorHistory(
+  payload: Record<string, unknown>,
+  currentError: string | null,
+  stage: string,
+  attempt: number,
+  updatedAt: Date
+) {
+  const history = Array.isArray(payload.errorHistory)
+    ? payload.errorHistory.flatMap((item) => {
+        if (typeof item !== "object" || item === null) return [];
+        const record = item as Record<string, unknown>;
+        if (typeof record.message !== "string" || typeof record.stage !== "string"
+            || typeof record.attempt !== "number" || typeof record.occurredAt !== "string") return [];
+        return [{ message: record.message, stage: record.stage, attempt: record.attempt, occurredAt: record.occurredAt }];
+      })
+    : [];
+  if (currentError && !history.some((item) => item.message === currentError && item.attempt === attempt)) {
+    history.push({ message: currentError, stage, attempt, occurredAt: updatedAt.toISOString() });
+  }
+  return history;
 }
 
 function isCancelableAiStage(type: string): boolean {
