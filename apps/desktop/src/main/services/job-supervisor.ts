@@ -13,6 +13,8 @@ import {
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
+import { logStructuredError } from "./structured-logging.js";
+import { canManuallyRetryJob } from "./job-retry.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
@@ -121,13 +123,26 @@ export class JobSupervisor {
   }
 
   public async retry(jobId: string): Promise<JobRecord | null> {
-    const job = await createJobRepository(this.requirePool()).retry(jobId);
+    const pool = this.requirePool();
+    const repository = createJobRepository(pool);
+    const current = await repository.findById(jobId);
+    if (!current) return null;
+    const ingestionRunId = optionalString(current.payload.ingestionRunId);
+    const ingestionRun = ingestionRunId
+      ? await createIngestionRunRepository(pool).findById(ingestionRunId)
+      : null;
+    if (!canManuallyRetryJob(current, ingestionRun)) return null;
+    const job = await repository.retry(jobId);
     if (job) this.schedule(0);
     return job;
   }
 
   public async list(limit = 100): Promise<JobRecord[]> {
     return createJobRepository(this.requirePool()).list(limit);
+  }
+
+  public async clearCompletedOrFailed(): Promise<number> {
+    return createJobRepository(this.requirePool()).clearCompletedOrFailed();
   }
 
   public async listWithRuns(limit = 100) {
@@ -233,7 +248,11 @@ export class JobSupervisor {
         ? await this.runInlineStageJob(
             "atomic-note-generation",
             { ingestionRunId, sourceItemId, documentId },
-            () => this.options.knowledgeService!.generateAtomicNotes(sourceItemId, documentId)
+            (jobId) => this.options.knowledgeService!.generateAtomicNotes(
+              sourceItemId,
+              documentId,
+              { jobId, ingestionRunId }
+            )
           )
         : { configured: false, generatedCount: 0, noteIds: [] };
       noteIds = readStringArray(generated.noteIds);
@@ -275,7 +294,7 @@ export class JobSupervisor {
   private async runInlineStageJob(
     type: string,
     payload: JsonObject,
-    run: () => Promise<Record<string, unknown>>
+    run: (jobId: string) => Promise<Record<string, unknown>>
   ): Promise<Record<string, unknown>> {
     const repository = createJobRepository(this.requirePool());
     const job = await repository.create({ type, payload, maxAttempts: 1 });
@@ -286,7 +305,7 @@ export class JobSupervisor {
       lockedBy: this.workerId
     });
     try {
-      const result = await run();
+      const result = await run(job.id);
       await repository.update(job.id, {
         status: "succeeded",
         progress: 1,
@@ -298,6 +317,14 @@ export class JobSupervisor {
       });
       return result;
     } catch (error) {
+      logStructuredError(this.options.logger, "job_failed", {
+        jobId: job.id,
+        jobType: type,
+        ingestionRunId: optionalString(payload.ingestionRunId),
+        sourceItemId: optionalString(payload.sourceItemId),
+        documentId: optionalString(payload.documentId),
+        stage: type
+      }, error, "job_failed");
       await repository.update(job.id, {
         status: "failed",
         error: normalizeWorkerError(error),
@@ -367,6 +394,10 @@ function normalizeWorkerError(error: unknown): string {
 
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 function throwIfAborted(signal: AbortSignal): void {

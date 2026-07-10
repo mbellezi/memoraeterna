@@ -13,9 +13,28 @@ Dependencias fixadas:
 Build reproduzivel:
 
 ```bash
-swift build -c release --package-path native/mlx-helper
+npm run mlx:build
 ```
 
-O binario resultante deve ser copiado para
-`resources/sidecars/mlx/darwin-arm64/memora-mlx-helper` pelo fluxo de pacote do
-desktop. Python, `pip` e o sidecar Docling nao participam deste runtime.
+O build exige Xcode completo e o componente Metal Toolchain instalado:
+
+```bash
+xcodebuild -downloadComponent MetalToolchain
+```
+
+O script compila o executavel via SwiftPM, gera os shaders pelo projeto Xcode
+oficial do `mlx-swift` e materializa lado a lado:
+
+- `.build/release/memora-mlx-helper`;
+- `.build/release/mlx.metallib`.
+
+Para executar uma inferencia real com um modelo ja instalado:
+
+```bash
+npm run mlx:smoke
+```
+
+O smoke tambem aceita `MEMORA_MLX_MODEL_PATH` ou `--model-path <path>`. O fluxo
+de pacote copia o executavel e o `mlx.metallib` para
+`resources/sidecars/mlx/darwin-arm64`. Python, `pip` e o sidecar Docling nao
+participam deste runtime.

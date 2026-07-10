@@ -5,6 +5,7 @@ import { createSettingsRepository } from "./settingsRepository.js";
 import { createSourceItemRepository } from "./sourceItemRepository.js";
 import { createSourceSummaryRepository } from "./sourceSummaryRepository.js";
 import { createLocalModelRepository } from "./localModelRepository.js";
+import { createJobRepository } from "./jobRepository.js";
 import type { Queryable } from "./types.js";
 
 class FakeQueryable implements Queryable {
@@ -155,5 +156,48 @@ describe("repositories", () => {
     expect(model.catalogId).toBe("mlx-test");
     expect(db.queries[0]?.text).toContain("on conflict (catalog_id) do update");
     expect(JSON.stringify(db.queries[0]?.values)).not.toContain("hf_");
+  });
+
+  it("starts a fresh attempt budget when manually retrying an exhausted job", async () => {
+    const now = new Date("2026-07-10T10:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "job-1", type: "ingestion", status: "queued", priority: 0,
+        payload: {}, result: null, error: null, progress: 0, attempts: 0,
+        maxAttempts: 3, runAfter: now, lockedAt: null, lockedBy: null,
+        finishedAt: null, cancelRequestedAt: null, createdAt: now, updatedAt: now
+      }
+    ]]);
+
+    const retried = await createJobRepository(db).retry("job-1");
+
+    expect(retried?.attempts).toBe(0);
+    expect(db.queries[0]?.text).toContain("attempts = 0");
+    expect(db.queries[0]?.text).toContain("status in ('failed', 'canceled', 'succeeded')");
+    expect(db.queries[0]?.text).toContain("result = null");
+    expect(db.queries[0]?.text).not.toContain("attempts < max_attempts");
+  });
+
+  it("clears only completed or failed jobs", async () => {
+    let queryText = "";
+    const db: Queryable = {
+      async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
+        queryText = text;
+        return {
+          command: "DELETE",
+          rowCount: 2,
+          oid: 0,
+          fields: [],
+          rows: []
+        };
+      }
+    };
+
+    const deletedCount = await createJobRepository(db).clearCompletedOrFailed();
+
+    expect(deletedCount).toBe(2);
+    expect(queryText).toContain("status in ('succeeded', 'failed')");
+    expect(queryText).not.toContain("canceled");
+    expect(queryText).not.toContain("running");
   });
 });

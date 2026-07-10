@@ -27,6 +27,9 @@ import type {
 } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
+import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
+import { logLocalModelOutput } from "./local-model-output-debug.js";
+import { logStructuredError } from "./structured-logging.js";
 import { join } from "node:path";
 
 export interface AiServiceOptions {
@@ -35,6 +38,16 @@ export interface AiServiceOptions {
   workspaceRoot: string;
   resourcesPath: string;
   isPackaged: boolean;
+  logger?: Pick<Console, "error" | "info">;
+  debugLogLocalModelOutput?: boolean;
+}
+
+export interface AiTaskLogContext {
+  jobId?: string;
+  ingestionRunId?: string;
+  sourceItemId?: string;
+  documentId?: string;
+  stage?: string;
 }
 
 export class AiService {
@@ -121,33 +134,39 @@ export class AiService {
       ...(input.localModelId !== undefined ? { localModelId: input.localModelId } : {}),
       runtime: input.runtime,
       fallbackPolicy: "block",
-      parameters: input.task === "embedding" ? { dimensions: 768 } : {}
+      parameters: withAiTaskParameterDefaults(input.task, {}, Boolean(input.localModelId))
     });
   }
 
   public async runDefaultTask(
     taskType: "embedding" | "summarization" | "atomic-note-generation" | "reranking",
-    input: string
+    input: string,
+    logContext: AiTaskLogContext = {}
   ): Promise<DefaultAiTaskResult | null> {
     const repository = createAiConfigRepository(this.requirePool());
     const selection = await repository.getDefaultTask(taskType);
     if (!selection) return null;
-    const configuredAdapter = selection.localModelId
-      ? await this.createLocalAdapter(selection.localModelId)
-      : await this.createAdapter(selection.providerConfigId ?? "");
-    const requiredCapabilities = capabilitiesForTask(taskType);
-    const descriptor = configuredAdapter.describe();
-    const adapter = this.registry.resolve({
-      providerId: descriptor.providerId,
-      modelId: descriptor.modelId,
-      requiredCapabilities,
-      offlineOnly: Boolean(selection.localModelId)
-    });
+    const parameters = withAiTaskParameterDefaults(
+      taskType,
+      selection.parameters,
+      Boolean(selection.localModelId)
+    );
     const started = Date.now();
     try {
+      const configuredAdapter = selection.localModelId
+        ? await this.createLocalAdapter(selection.localModelId)
+        : await this.createAdapter(selection.providerConfigId ?? "");
+      const requiredCapabilities = capabilitiesForTask(taskType);
+      const descriptor = configuredAdapter.describe();
+      const adapter = this.registry.resolve({
+        providerId: descriptor.providerId,
+        modelId: descriptor.modelId,
+        requiredCapabilities,
+        offlineOnly: Boolean(selection.localModelId)
+      });
       const run = () => adapter.run({
         taskType, input, profileId: selection.profileId, modelId: selection.modelId,
-        requiredCapabilities, parameters: selection.parameters, metadata: {}
+        requiredCapabilities, parameters, metadata: {}
       });
       const result = selection.localModelId
         ? await this.withLocalModelUsage(selection.localModelId, run)
@@ -160,26 +179,50 @@ export class AiService {
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters: selection.parameters,
+        parameters,
         inputHash: sha256(input), outputHash: sha256(JSON.stringify(result.output)),
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
         durationMs: result.durationMs, status: "succeeded"
       });
+      if (selection.localModelId) {
+        logLocalModelOutput(this.options.logger, this.options.debugLogLocalModelOutput === true, {
+          ...logContext,
+          stage: logContext.stage ?? "ai_execution",
+          taskType,
+          profileId: selection.profileId,
+          providerId: result.providerId,
+          modelId: result.modelId,
+          runtime: result.runtime,
+          aiTaskRunId
+        }, result.output);
+      }
       return { ...result, profileId: selection.profileId, aiTaskRunId };
     } catch (error) {
-      await repository.recordTaskRun({
+      const aiTaskRunId = await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: selection.provider,
         modelId: selection.modelId, runtime: selection.runtime,
         adapter: selection.localModelId ? localAdapterName(selection.runtime) : selection.provider,
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters: selection.parameters,
+        parameters,
         durationMs: Date.now() - started, status: "failed",
         error: redactSensitiveText(error).slice(0, 500)
       });
+      if (taskType === "atomic-note-generation") {
+        logStructuredError(this.options.logger, "atomic_note_ai_task_failed", {
+          ...logContext,
+          stage: logContext.stage ?? "ai_execution",
+          taskType,
+          profileId: selection.profileId,
+          providerId: selection.provider,
+          modelId: selection.modelId,
+          runtime: selection.runtime,
+          aiTaskRunId
+        }, error, "atomic_note_ai_task_failed");
+      }
       throw error;
     }
   }

@@ -16,6 +16,7 @@ import {
 } from "@app/db";
 
 import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
+import { logStructuredError } from "./structured-logging.js";
 import {
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
@@ -37,6 +38,12 @@ export interface KnowledgeServiceOptions {
   summaryMaxInputCharacters?: number;
   userDataPath: string;
   getUploadedFilesBasePath: () => Promise<string | null>;
+  logger?: Pick<Console, "error">;
+}
+
+export interface AtomicNoteGenerationLogContext {
+  jobId?: string;
+  ingestionRunId?: string;
 }
 
 export class KnowledgeService {
@@ -199,62 +206,93 @@ export class KnowledgeService {
     };
   }
 
-  public async generateAtomicNotes(sourceItemId: string, documentId: string) {
+  public async generateAtomicNotes(
+    sourceItemId: string,
+    documentId: string,
+    logContext: AtomicNoteGenerationLogContext = {}
+  ) {
     const pool = this.requirePool();
-    const source = await createSourceItemRepository(pool).findById(sourceItemId);
-    const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
-    const chunks = await createChunkRepository(pool).listByDocument(documentId);
-    if (chunks.length === 0) return { configured: true, generatedCount: 0, noteIds: [] as string[] };
-    const generatedResult = await generateAtomicNoteCandidates(
-      source,
-      chunks,
-      async (prompt) => toKnowledgeExecution(
-        await this.options.aiService.runDefaultTask("atomic-note-generation", prompt)
-      )
-    );
-    if (!generatedResult) return { configured: false, generatedCount: 0, noteIds: [] as string[] };
-    const { output: parsed, execution } = generatedResult;
-    const repository = createAtomicNoteRepository(pool);
-    const noteIds: string[] = [];
-    for (const generated of parsed.notes) {
-      const evidence = generated.evidenceChunkIds.flatMap((chunkId) => {
-        const chunk = chunks.find((candidate) => candidate.id === chunkId);
-        return chunk ? [{ chunkId: chunk.id, sourceSpanId: chunk.sourceSpanId }] : [];
-      });
-      const primary = evidence[0];
-      if (!primary) continue;
-      const generationKey = sha256(JSON.stringify({
-        promptVersion: atomicNotePromptVersion,
-        title: generated.title,
-        ideaStatement: generated.ideaStatement,
-        evidenceChunkIds: generated.evidenceChunkIds.toSorted()
-      }));
-      const note = await repository.upsertGenerated({
-        title: generated.title,
-        bodyMarkdown: generated.bodyMarkdown,
-        ideaStatement: generated.ideaStatement,
-        language: generated.language ?? source.language,
-        sourceItemId,
-        evidenceChunkId: primary.chunkId,
-        sourceSpanId: primary.sourceSpanId,
-        evidenceLinks: evidence,
-        generationProfileId: execution.profileId,
-        aiTaskRunId: execution.aiTaskRunId,
-        generationProvider: execution.providerId,
-        generationModel: execution.modelId,
-        generationRuntime: execution.runtime,
-        generationPromptVersion: atomicNotePromptVersion,
-        generationKey,
-        metadata: {
-          entities: readStringArray(source.metadata.entities),
-          tags: readStringArray(source.metadata.tags),
-          concepts: readStringArray(source.metadata.concepts)
+    let stage = "source_loading";
+    let execution: KnowledgeAiExecution | null = null;
+    try {
+      const source = await createSourceItemRepository(pool).findById(sourceItemId);
+      const document = await createDocumentRepository(pool).findById(documentId);
+      if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+      const chunks = await createChunkRepository(pool).listByDocument(documentId);
+      if (chunks.length === 0) return { configured: true, generatedCount: 0, noteIds: [] as string[] };
+      stage = "ai_execution";
+      const generatedResult = await generateAtomicNoteCandidates(
+        source,
+        chunks,
+        async (prompt) => {
+          execution = toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+            "atomic-note-generation",
+            prompt,
+            { ...logContext, sourceItemId, documentId, stage: "ai_execution" }
+          ));
+          stage = "output_validation";
+          return execution;
         }
-      });
-      noteIds.push(note.id);
+      );
+      if (!generatedResult) return { configured: false, generatedCount: 0, noteIds: [] as string[] };
+      const { output: parsed } = generatedResult;
+      execution = generatedResult.execution;
+      stage = "persistence";
+      const repository = createAtomicNoteRepository(pool);
+      const noteIds: string[] = [];
+      for (const generated of parsed.notes) {
+        const evidence = generated.evidenceChunkIds.flatMap((chunkId) => {
+          const chunk = chunks.find((candidate) => candidate.id === chunkId);
+          return chunk ? [{ chunkId: chunk.id, sourceSpanId: chunk.sourceSpanId }] : [];
+        });
+        const primary = evidence[0];
+        if (!primary) continue;
+        const generationKey = sha256(JSON.stringify({
+          promptVersion: atomicNotePromptVersion,
+          title: generated.title,
+          ideaStatement: generated.ideaStatement,
+          evidenceChunkIds: generated.evidenceChunkIds.toSorted()
+        }));
+        const note = await repository.upsertGenerated({
+          title: generated.title,
+          bodyMarkdown: generated.bodyMarkdown,
+          ideaStatement: generated.ideaStatement,
+          language: generated.language ?? source.language,
+          sourceItemId,
+          evidenceChunkId: primary.chunkId,
+          sourceSpanId: primary.sourceSpanId,
+          evidenceLinks: evidence,
+          generationProfileId: execution.profileId,
+          aiTaskRunId: execution.aiTaskRunId,
+          generationProvider: execution.providerId,
+          generationModel: execution.modelId,
+          generationRuntime: execution.runtime,
+          generationPromptVersion: atomicNotePromptVersion,
+          generationKey,
+          metadata: {
+            entities: readStringArray(source.metadata.entities),
+            tags: readStringArray(source.metadata.tags),
+            concepts: readStringArray(source.metadata.concepts)
+          }
+        });
+        noteIds.push(note.id);
+      }
+      return { configured: true, generatedCount: noteIds.length, noteIds };
+    } catch (error) {
+      logStructuredError(this.options.logger, "atomic_note_generation_failed", {
+        ...logContext,
+        sourceItemId,
+        documentId,
+        stage,
+        taskType: "atomic-note-generation",
+        profileId: execution?.profileId ?? null,
+        providerId: execution?.providerId ?? null,
+        modelId: execution?.modelId ?? null,
+        runtime: execution?.runtime ?? null,
+        aiTaskRunId: execution?.aiTaskRunId ?? null
+      }, error, stage === "output_validation" ? "atomic_note_output_invalid" : "atomic_note_generation_failed");
+      throw error;
     }
-    return { configured: true, generatedCount: noteIds.length, noteIds };
   }
 
   public async matchAtomicNotes(noteIds: string[]) {

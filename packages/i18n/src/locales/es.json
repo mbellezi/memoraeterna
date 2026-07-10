@@ -116,7 +116,8 @@
     "stages": {
       "queued": "En cola", "conversion": "Conversion", "chunking": "Segmentacion",
       "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
-      "atomicNoteMatching": "Conexion de notas", "completed": "Completada"
+      "atomicNoteMatching": "Conexion de notas", "obsidianProjection": "Proyeccion en Obsidian",
+      "completed": "Completada"
     },
     "stageStatus": {
       "pending": "Pendiente", "running": "En ejecucion", "completed": "Completada",
@@ -124,7 +125,9 @@
     },
     "empty": "Aun no hay tareas.",
     "actions": {
-      "refresh": "Actualizar tareas"
+      "refresh": "Actualizar tareas",
+      "clearCompletedOrFailed": "Limpiar completadas y fallidas",
+      "clearCompletedOrFailedConfirm": "Eliminar todas las tareas completadas y fallidas?"
     }
   },
   "import": {

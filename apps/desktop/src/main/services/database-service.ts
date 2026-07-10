@@ -17,6 +17,7 @@ import type {
   DatabaseStatus,
   DatabaseStatusMessageKey
 } from "../../shared/ipc";
+import { resolveWorkspaceRoot } from "./workspace-paths.js";
 
 interface StoredDatabaseCredentials {
   readonly version: 1;
@@ -327,27 +328,6 @@ function parseStoredCredentials(raw: string): StoredDatabaseCredentials | null {
     encryptedPassword: value.encryptedPassword,
     createdAt: value.createdAt
   };
-}
-
-function resolveWorkspaceRoot(cwd: string, env: NodeJS.ProcessEnv): string {
-  if (env.MEMORA_WORKSPACE_ROOT) {
-    return resolve(env.MEMORA_WORKSPACE_ROOT);
-  }
-
-  let current = resolve(cwd);
-  for (let depth = 0; depth < 8; depth += 1) {
-    if (existsSync(join(current, "packages/db/drizzle")) || existsSync(join(current, "vendor/sidecars"))) {
-      return current;
-    }
-
-    const parent = resolve(current, "..");
-    if (parent === current) {
-      break;
-    }
-    current = parent;
-  }
-
-  return resolve(cwd);
 }
 
 function resolveMigrationsFolder(input: {

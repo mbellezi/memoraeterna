@@ -130,6 +130,7 @@
       "summarization": "Resumo",
       "atomicNotes": "Notas atomicas",
       "atomicNoteMatching": "Conexao de notas",
+      "obsidianProjection": "Projecao no Obsidian",
       "completed": "Concluida"
     },
     "stageStatus": {
@@ -141,7 +142,9 @@
     },
     "empty": "Nenhuma tarefa ainda.",
     "actions": {
-      "refresh": "Atualizar tarefas"
+      "refresh": "Atualizar tarefas",
+      "clearCompletedOrFailed": "Limpar concluidas e falhas",
+      "clearCompletedOrFailedConfirm": "Remover todas as tarefas concluidas e que falharam?"
     }
   },
   "import": {

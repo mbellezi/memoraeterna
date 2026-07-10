@@ -31,6 +31,7 @@
     "db:phase5:verify": "npm run db:phase5:verify -w @app/db",
     "phase4:e2e": "npm run phase4:e2e -w @app/desktop",
     "mlx:build": "npm run native:mlx:build -w @app/desktop",
+    "mlx:smoke": "tsx scripts/smoke-mlx-helper.ts",
     "docling:build": "node scripts/build-docling-sidecar.mjs",
     "docling:verify": "node scripts/build-docling-sidecar.mjs --verify",
     "docling:smoke": "node scripts/build-docling-sidecar.mjs --smoke",

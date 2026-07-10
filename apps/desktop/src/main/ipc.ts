@@ -25,6 +25,7 @@ import type { SettingsService } from "./services/settings-service";
 import type { AiService } from "./services/ai-service.js";
 import type { IngestionService } from "./services/ingestion-service.js";
 import type { JobSupervisor } from "./services/job-supervisor.js";
+import { canManuallyRetryJob } from "./services/job-retry.js";
 import type { SearchService } from "./services/search-service.js";
 import type { KnowledgeService } from "./services/knowledge-service.js";
 import type { IntegrationGateway } from "./services/integration-gateway.js";
@@ -105,6 +106,9 @@ export function registerIpcHandlers(
     const job = await jobSupervisor.retry(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;
   });
+  ipcMain.handle(ipcChannels.jobsClearCompletedOrFailed, async () => ({
+    deletedCount: await jobSupervisor.clearCompletedOrFailed()
+  }));
 
   ipcMain.handle(ipcChannels.searchQuery, (_event, payload: unknown) =>
     searchService.search(searchInputSchema.parse(payload))
@@ -204,7 +208,7 @@ function serializeJob(
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
     canCancel: job.type === "ingestion" && (job.status === "queued" || job.status === "running"),
-    canRetry: job.type === "ingestion" && job.status === "failed" && job.attempts < job.maxAttempts,
+    canRetry: canManuallyRetryJob(job, ingestionRun),
     error: job.error,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),

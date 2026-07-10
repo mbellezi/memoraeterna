@@ -32,8 +32,9 @@ const artifacts = [
   {
     id: "mlx-helper",
     version: "mlx-swift-0.31.6+mlx-swift-lm-3.31.4",
-    source: join(root, "native", "mlx-helper", ".build", "release", "memora-mlx-helper"),
-    destination: join(output, "sidecars", "mlx", "darwin-arm64", "memora-mlx-helper"),
+    source: join(root, "native", "mlx-helper", ".build", "release"),
+    destination: join(output, "sidecars", "mlx", "darwin-arm64"),
+    include: ["memora-mlx-helper", "mlx.metallib"],
     required: true,
     platform: "darwin-arm64"
   },

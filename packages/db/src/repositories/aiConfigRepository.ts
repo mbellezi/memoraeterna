@@ -104,16 +104,21 @@ export function createAiConfigRepository(db: Queryable) {
       const result = await db.query<ProfileRow>(
         `with profile as (
            insert into ai_profile_sets (name, description, is_default, privacy_mode, status)
-           select $2, description, false, privacy_mode, status from ai_profile_sets where id = $1
+           select $2, source.description, false, source.privacy_mode, source.status
+           from ai_profile_sets as source where source.id = $1
            returning *
          ), copied_tasks as (
            insert into ai_profile_tasks (
              profile_id, task, provider_config_id, local_model_id, model_id, runtime,
              required_capabilities, parameters, fallback_policy, status
            )
-           select profile.id, task, provider_config_id, local_model_id, model_id, runtime,
-                  required_capabilities, parameters, fallback_policy, status
-           from ai_profile_tasks, profile where ai_profile_tasks.profile_id = $1
+           select profile.id, source_task.task, source_task.provider_config_id,
+                  source_task.local_model_id, source_task.model_id, source_task.runtime,
+                  source_task.required_capabilities, source_task.parameters,
+                  source_task.fallback_policy, source_task.status
+           from ai_profile_tasks as source_task
+           cross join profile
+           where source_task.profile_id = $1
          )
          select ${profileReturning} from profile`,
         [profileId, name]

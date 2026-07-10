@@ -7,8 +7,14 @@ import {
 } from "@app/domain";
 
 export const summaryPromptVersion = "summary-v1";
-export const atomicNotePromptVersion = "atomic-note-v1";
+export const atomicNotePromptVersion = "atomic-note-v2";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v1";
+
+const atomicNoteGenerationJsonSchema = JSON.stringify(
+  z.toJSONSchema(AtomicNoteGenerationOutputSchema),
+  null,
+  2
+);
 
 export interface KnowledgeAiExecution {
   output: unknown;
@@ -63,13 +69,35 @@ export function buildAtomicNoteGenerationPrompt(
   chunks: ReadonlyArray<{ id: string; content: string }>
 ): string {
   return `Generate independent atomic knowledge notes from the source below.
-Return only JSON with this exact shape:
-{"notes":[{"title":"...","bodyMarkdown":"...","ideaStatement":"...","language":"${source.language}","evidenceChunkIds":["chunk uuid"]}]}
+Return exactly one complete JSON object. Do not use Markdown fences or add commentary.
+The JSON must conform exactly to this JSON Schema:
+${atomicNoteGenerationJsonSchema}
+
 Every note must express one self-contained idea and cite at least one supplied chunk id. Do not invent ids.
+Use the exact property name "bodyMarkdown" and close the root JSON object.
+Use "${source.language}" as the note language.
 
 Source title: ${source.title}
 Chunks:
 ${chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")}`;
+}
+
+export function buildAtomicNoteRepairPrompt(
+  previousOutput: unknown,
+  language: string,
+  allowedChunkIds: ReadonlyArray<string>
+): string {
+  return `The previous atomic-note output failed JSON parsing or schema validation.
+Return exactly one corrected, complete JSON object. Do not use Markdown fences or add commentary.
+The JSON must conform exactly to this JSON Schema:
+${atomicNoteGenerationJsonSchema}
+
+Use the exact property name "bodyMarkdown" and close the root JSON object.
+Use "${language}" as the note language.
+Evidence chunk ids must come only from this list: ${JSON.stringify(allowedChunkIds)}
+
+Previous invalid output:
+${serializeOutputForRepair(previousOutput)}`;
 }
 
 export function parseAtomicNoteGenerationOutput(
@@ -94,12 +122,26 @@ export async function generateAtomicNoteCandidates(
   chunks: ReadonlyArray<{ id: string; content: string }>,
   run: KnowledgeAiRunner
 ): Promise<{ output: AtomicNoteGenerationOutput; execution: KnowledgeAiExecution } | null> {
+  const allowedChunkIds = new Set(chunks.map((chunk) => chunk.id));
   const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks));
   if (!execution) return null;
-  return {
-    output: parseAtomicNoteGenerationOutput(execution.output, new Set(chunks.map((chunk) => chunk.id))),
-    execution
-  };
+  try {
+    return {
+      output: parseAtomicNoteGenerationOutput(execution.output, allowedChunkIds),
+      execution
+    };
+  } catch (initialError) {
+    const repairedExecution = await run(buildAtomicNoteRepairPrompt(
+      execution.output,
+      source.language,
+      [...allowedChunkIds]
+    ));
+    if (!repairedExecution) throw initialError;
+    return {
+      output: parseAtomicNoteGenerationOutput(repairedExecution.output, allowedChunkIds),
+      execution: repairedExecution
+    };
+  }
 }
 
 export function scoreMetadataOverlap(left: Record<string, unknown>, right: Record<string, unknown>): number {
@@ -198,6 +240,15 @@ function parseJsonOutput(output: unknown): unknown {
     ? trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
     : trimmed;
   return JSON.parse(withoutFence);
+}
+
+function serializeOutputForRepair(output: unknown): string {
+  if (typeof output === "string") return output;
+  try {
+    return JSON.stringify(output) ?? String(output);
+  } catch {
+    return String(output);
+  }
 }
 
 function collectMetadataSignals(metadata: Record<string, unknown>): Set<string> {

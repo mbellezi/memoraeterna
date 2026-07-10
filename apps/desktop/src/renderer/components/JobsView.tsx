@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { RefreshCw, RotateCcw, X } from "lucide-react";
+import { RefreshCw, RotateCcw, Trash2, X } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { JobRecord } from "../../shared/ipc";
 import { Button } from "./ui/button";
 
 export function JobsView({ t }: { t: Translator }) {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [clearing, setClearing] = useState(false);
 
   async function load() {
     setJobs(await window.app.jobs.list());
@@ -17,11 +18,36 @@ export function JobsView({ t }: { t: Translator }) {
     return () => clearInterval(timer);
   }, []);
 
+  async function clearCompletedOrFailed() {
+    if (!window.confirm(t("jobs.actions.clearCompletedOrFailedConfirm"))) return;
+    setClearing(true);
+    try {
+      await window.app.jobs.clearCompletedOrFailed();
+      await load();
+    } finally {
+      setClearing(false);
+    }
+  }
+
   if (jobs.length === 0) {
     return <p className="rounded-md border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{t("jobs.empty")}</p>;
   }
 
-  return <section className="grid gap-3">{jobs.map((job) => <article key={job.id} className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+  const hasClearableJobs = jobs.some((job) => job.status === "succeeded" || job.status === "failed");
+
+  return <section className="grid gap-3">
+    <div className="flex justify-end">
+      <Button
+        type="button"
+        className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-700 dark:bg-rose-700 dark:hover:bg-rose-600"
+        disabled={!hasClearableJobs || clearing}
+        onClick={() => void clearCompletedOrFailed()}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+        {t("jobs.actions.clearCompletedOrFailed")}
+      </Button>
+    </div>
+    {jobs.map((job) => <article key={job.id} className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
     <div className="flex items-center justify-between gap-4">
       <div><h2 className="font-medium">{t(jobTypeMessageKey(job.type))}</h2><p className="text-xs text-slate-500">{t(`jobs.status.${job.status}` as MessageKey)}</p></div>
       <div className="flex gap-2">

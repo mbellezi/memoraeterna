@@ -205,15 +205,24 @@ export function createJobRepository(db: Queryable) {
     async retry(id: string): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `update jobs
-         set status = 'queued', error = null, progress = 0, run_after = now(),
+         set status = 'queued', result = null, error = null, progress = 0, run_after = now(),
+             attempts = 0,
              locked_at = null, locked_by = null, finished_at = null,
              cancel_requested_at = null, updated_at = now()
-         where id = $1 and status = 'failed' and attempts < max_attempts
+         where id = $1 and status in ('failed', 'canceled', 'succeeded')
          returning ${returning}`,
         [id]
       );
       const row = result.rows[0];
       return row ? mapJob(row) : null;
+    },
+
+    async clearCompletedOrFailed(): Promise<number> {
+      const result = await db.query(
+        `delete from jobs
+         where status in ('succeeded', 'failed')`
+      );
+      return result.rowCount ?? 0;
     },
 
     async recoverStale(staleAfterSeconds = 60): Promise<number> {

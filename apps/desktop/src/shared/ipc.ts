@@ -20,6 +20,7 @@ export const ipcChannels = {
   jobsList: "app:jobs:list",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
+  jobsClearCompletedOrFailed: "app:jobs:clear-completed-or-failed",
   searchQuery: "app:search:query",
   libraryList: "app:library:list",
   librarySourceGet: "app:library:source:get",
@@ -177,6 +178,10 @@ export const jobRecordSchema = z.object({
     currentStage: z.string().min(1),
     stagesCheckpoint: z.record(z.string(), z.unknown())
   }).strict().nullable().optional()
+}).strict();
+
+export const jobsClearResultSchema = z.object({
+  deletedCount: z.number().int().nonnegative()
 }).strict();
 
 export const librarySourceSchema = z.object({
@@ -441,6 +446,7 @@ export type FileImportInput = z.infer<typeof fileImportInputSchema>;
 export type IngestionResult = z.infer<typeof ingestionResultSchema>;
 export type SourceSuggestion = z.infer<typeof sourceSuggestionSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
+export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
 export type SearchResult = z.infer<typeof SearchEvidenceSchema>;
 export type LibrarySource = z.infer<typeof librarySourceSchema>;
@@ -498,6 +504,7 @@ export interface DesktopApi {
     list: () => Promise<JobRecord[]>;
     cancel: (jobId: string) => Promise<JobRecord | null>;
     retry: (jobId: string) => Promise<JobRecord | null>;
+    clearCompletedOrFailed: () => Promise<JobsClearResult>;
   };
   search: {
     query: (input: SearchInput) => Promise<SearchResult[]>;

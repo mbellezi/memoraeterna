@@ -13,6 +13,7 @@ import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import { IntegrationGateway } from "./services/integration-gateway.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
+import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -111,13 +112,15 @@ void app.whenReady().then(() => {
     requireDatabase: true,
     desktopLocale: app.getLocale()
   });
-  const workspaceRoot = resolve(process.cwd());
+  const workspaceRoot = resolveWorkspaceRoot(process.cwd());
   aiService = new AiService({
     userDataPath: app.getPath("userData"),
     getPool: () => databaseService?.getPool() ?? null,
     workspaceRoot,
     resourcesPath: getResourcesPath(),
-    isPackaged: app.isPackaged
+    isPackaged: app.isPackaged,
+    logger: console,
+    debugLogLocalModelOutput: readBooleanFlag(process.env.MEMORA_DEBUG_LOCAL_MODEL_OUTPUT)
   });
   localModelService = new LocalModelService({
     getPool: () => databaseService?.getPool() ?? null,
@@ -145,6 +148,7 @@ void app.whenReady().then(() => {
     aiService,
     userDataPath: app.getPath("userData"),
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
+    logger: console,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
   obsidianSyncService = new ObsidianSyncService({
@@ -314,6 +318,10 @@ function readRelationThreshold(value: string | undefined): number | undefined {
 function readPositiveInteger(value: string | undefined): number | undefined {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readBooleanFlag(value: string | undefined): boolean {
+  return value === "1" || value?.toLowerCase() === "true";
 }
 
 function readGatewayPort(value: string | undefined): number | undefined {

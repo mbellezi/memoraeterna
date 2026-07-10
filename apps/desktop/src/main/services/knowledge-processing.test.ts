@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  buildAtomicNoteGenerationPrompt,
   calculateRelationScore,
   generateAtomicNoteCandidates,
   generateSummaryFromChunks,
@@ -63,6 +64,84 @@ describe("knowledge processing", () => {
     );
     expect(result?.output.notes[0]?.evidenceChunkIds).toEqual(["chunk-1"]);
     expect(result?.execution.modelId).toBe("mock-model");
+  });
+
+  it("includes the strict JSON Schema in the atomic-note prompt", () => {
+    const prompt = buildAtomicNoteGenerationPrompt(
+      { title: "Source", language: "en" },
+      [{ id: "chunk-1", content: "Evidence" }]
+    );
+
+    expect(prompt).toContain('"bodyMarkdown"');
+    expect(prompt).toContain('"additionalProperties": false');
+    expect(prompt).toContain("Do not use Markdown fences");
+  });
+
+  it("repairs one malformed local-model response and uses the repaired execution", async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce({
+        output: `\`\`\`json
+{"notes":[{"title":"Atomic idea","bodyDescriptor":"Wrong property","ideaStatement":"Evidence supports the note.","evidenceChunkIds":["chunk-1"]}]
+\`\`\``,
+        providerId: "local-mlx",
+        modelId: "mock-model",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-invalid"
+      })
+      .mockResolvedValueOnce({
+        output: JSON.stringify({ notes: [{
+          title: "Atomic idea",
+          bodyMarkdown: "Evidence-backed body.",
+          ideaStatement: "Evidence supports the note.",
+          language: "en",
+          evidenceChunkIds: ["chunk-1"]
+        }] }),
+        providerId: "local-mlx",
+        modelId: "mock-model",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-repaired"
+      });
+
+    const result = await generateAtomicNoteCandidates(
+      { title: "Source", language: "en" },
+      [{ id: "chunk-1", content: "Evidence" }],
+      run
+    );
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toContain("Previous invalid output");
+    expect(run.mock.calls[1]?.[0]).toContain('"bodyMarkdown"');
+    expect(result?.output.notes[0]?.bodyMarkdown).toBe("Evidence-backed body.");
+    expect(result?.execution.aiTaskRunId).toBe("run-repaired");
+  });
+
+  it("stops after one repair attempt when both outputs are invalid", async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce({
+        output: "{invalid",
+        providerId: "local-mlx",
+        modelId: "mock-model",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-invalid-1"
+      })
+      .mockResolvedValueOnce({
+        output: "{still-invalid",
+        providerId: "local-mlx",
+        modelId: "mock-model",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-invalid-2"
+      });
+
+    await expect(generateAtomicNoteCandidates(
+      { title: "Source", language: "en" },
+      [{ id: "chunk-1", content: "Evidence" }],
+      run
+    )).rejects.toBeInstanceOf(SyntaxError);
+    expect(run).toHaveBeenCalledTimes(2);
   });
 
   it("scores simple entity and metadata overlap", () => {

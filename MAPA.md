@@ -103,7 +103,8 @@ Implementado ate aqui:
 - adapter GGUF real via `node-llama-cpp` e adapter MLX via helper Swift nativo,
   restritos ao main process/helper e cobertos por teste de fronteira;
 - helper `native/mlx-helper` com `mlx-swift`, `mlx-swift-lm` e
-  `swift-transformers` fixados, protocolo JSONL Zod, timeout e cancelamento;
+  `swift-transformers` fixados, protocolo JSONL Zod, timeout, cancelamento,
+  shaders `mlx.metallib` gerados por Xcode e smoke com modelo real instalado;
 - Settings > Local models para catalogo/filtros, token seguro, aceite de
   licenca, downloads, retomada, teste, importacao GGUF e remocao protegida;
 - backup basico via `pg_dump` e copias das pastas gerenciadas configuradas;
@@ -127,9 +128,8 @@ Pendencias conhecidas:
   warning sobre a chave legada `python` na configuracao do usuario.
 - o corpus golden e os benchmarks completos dos formatos Docling continuam
   pendentes; o smoke offline automatizado cobre inicialmente um PDF com OCR;
-- o smoke de um modelo MLX completo do catalogo exige consentimento explicito
-  para baixar pelo menos 2,28 GB; o helper nativo e o health check estao
-  validados sem pesos;
+- o smoke real do Gemma 4 12B MLX instalado foi validado; os demais modelos do
+  catalogo ainda exigem download e validacao individual;
 - smoke tests manuais da extensao carregada no Chrome e do plugin instalado no
   Obsidian ainda exigem os aplicativos host no ambiente local.
 
@@ -430,6 +430,7 @@ npm run build
 npm run format:check
 npm run docling:verify
 npm run docling:smoke
+npm run mlx:smoke
 npm run package:desktop:dir
 npm run package:desktop:smoke
 ```
@@ -444,6 +445,7 @@ Runtimes e pacote:
 
 ```bash
 npm run mlx:build
+npm run mlx:smoke
 npm run docling:build
 npm run docling:verify
 npm run docling:smoke

@@ -130,6 +130,7 @@
       "summarization": "Summarization",
       "atomicNotes": "Atomic notes",
       "atomicNoteMatching": "Note matching",
+      "obsidianProjection": "Obsidian projection",
       "completed": "Completed"
     },
     "stageStatus": {
@@ -141,7 +142,9 @@
     },
     "empty": "No jobs yet.",
     "actions": {
-      "refresh": "Refresh jobs"
+      "refresh": "Refresh jobs",
+      "clearCompletedOrFailed": "Clear completed and failed",
+      "clearCompletedOrFailedConfirm": "Remove all completed and failed jobs?"
     }
   },
   "import": {

@@ -116,7 +116,8 @@
     "stages": {
       "queued": "En attente", "conversion": "Conversion", "chunking": "Decoupage",
       "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
-      "atomicNoteMatching": "Mise en relation", "completed": "Terminee"
+      "atomicNoteMatching": "Mise en relation", "obsidianProjection": "Projection Obsidian",
+      "completed": "Terminee"
     },
     "stageStatus": {
       "pending": "En attente", "running": "En cours", "completed": "Terminee",
@@ -124,7 +125,9 @@
     },
     "empty": "Aucune tache pour le moment.",
     "actions": {
-      "refresh": "Actualiser les taches"
+      "refresh": "Actualiser les taches",
+      "clearCompletedOrFailed": "Effacer les taches terminees et echouees",
+      "clearCompletedOrFailedConfirm": "Supprimer toutes les taches terminees et echouees ?"
     }
   },
   "import": {

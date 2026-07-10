@@ -29,6 +29,7 @@ import {
   fileImportInputSchema,
   ingestionResultSchema,
   jobRecordSchema,
+  jobsClearResultSchema,
   librarySourceSchema,
   manualIngestionInputSchema,
   searchInputSchema,
@@ -110,6 +111,11 @@ const api: DesktopApi = {
     async retry(jobId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.jobsRetry, jobId);
       return result === null ? null : jobRecordSchema.parse(result);
+    },
+    async clearCompletedOrFailed() {
+      return jobsClearResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.jobsClearCompletedOrFailed)
+      );
     }
   },
   search: {

@@ -17,8 +17,16 @@ controlado pelo desktop.
 Build do helper:
 
 ```bash
+xcodebuild -downloadComponent MetalToolchain # uma vez por instalacao do Xcode
 npm run mlx:build
+npm run mlx:smoke # usa um modelo ja instalado
 ```
+
+O `swift build` isolado nao compila os shaders Metal exigidos pelo MLX. O script
+do projeto compila o executavel com SwiftPM, gera `mlx.metallib` pelo projeto
+Xcode oficial do `mlx-swift` e mantem ambos lado a lado. O smoke executa o mesmo
+adapter usado pelo desktop e aceita `MEMORA_MLX_MODEL_PATH` ou
+`--model-path <path>` quando o modelo nao estiver no `userData` DEV padrao.
 
 ## Catalogo auditado
 
@@ -77,8 +85,8 @@ O staging reproduzivel dos recursos e criado com:
 node scripts/prepare-desktop-resources.mjs
 ```
 
-Ele copia migrations, baseline, PostgreSQL, o sidecar CPython/Docling offline e
-o helper MLX para `apps/desktop/build-resources`, gerando
+Ele copia migrations, baseline, PostgreSQL, o sidecar CPython/Docling offline,
+o helper MLX e seu `mlx.metallib` para `apps/desktop/build-resources`, gerando
 `runtime-manifest.json` com SHA-256 de cada arquivo e `sbom.spdx.json` com os
 pacotes Python e modelos. Todos os artefatos da plataforma alvo sao
 obrigatorios: o build falha, em vez de produzir um app parcialmente funcional,

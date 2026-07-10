@@ -102,6 +102,19 @@ try {
   if ((await ai.getDefaultTask("summarization"))?.localModelId !== model.id) {
     throw new Error("Local model profile selection failed.");
   }
+  const clonedProfile = await ai.cloneProfile(profile.id, "Offline verifier copy");
+  const clonedTasks = await pool.query<{
+    local_model_id: string | null;
+    status: string;
+  }>(
+    `select local_model_id, status from ai_profile_tasks
+     where profile_id = $1 and task = 'summarization'`,
+    [clonedProfile.id]
+  );
+  if (clonedProfile.isDefault || clonedProfile.privacyMode !== profile.privacyMode
+      || clonedTasks.rows[0]?.local_model_id !== model.id || clonedTasks.rows[0]?.status !== "active") {
+    throw new Error("AI profile clone did not preserve its profile and task configuration.");
+  }
   await ai.recordTaskRun({
     profileId: profile.id,
     taskType: "summarization",
@@ -135,6 +148,7 @@ try {
     columns: columns.rows.map((row) => `${row.table_name}.${row.column_name}`),
     indexes: indexes.rows.map((row) => row.indexname),
     localModelId: model.id,
+    clonedProfileId: clonedProfile.id,
     downloadJobId: job.id,
     baselineMigrations: baseline.seed.seededMigrations
   }, null, 2));

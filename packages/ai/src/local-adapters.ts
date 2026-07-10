@@ -10,7 +10,7 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
-import { mlxHelperMessageSchema, mlxHelperRequestSchema, type MlxHelperRequest } from "./local-runtime-protocol.js";
+import { mlxHelperRequestSchema, parseMlxHelperOutput, type MlxHelperRequest } from "./local-runtime-protocol.js";
 
 const supportedLocalTasks = new Set([
   "text-generation",
@@ -155,7 +155,7 @@ async function runHelperProcess(
       child.once("exit", resolve);
     });
     if (signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
-    const messages = stdout.split(/\r?\n/).filter(Boolean).map((line) => mlxHelperMessageSchema.parse(JSON.parse(line)));
+    const messages = parseMlxHelperOutput(stdout);
     const response = messages.findLast((message) => message.kind === "result");
     if (!response || response.requestId !== request.requestId) throw new Error("errors.localModels.invalidRuntimeResponse");
     if (!response.ok) throw new Error(response.error.messageKey);

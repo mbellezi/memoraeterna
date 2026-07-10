@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const requestIdSchema = z.string().uuid().transform((value) => value.toLowerCase());
+
 const generationParametersSchema = z.object({
   maxTokens: z.number().int().min(1).max(32_768).default(1_024),
   temperature: z.number().min(0).max(2).default(0.2),
@@ -9,12 +11,12 @@ const generationParametersSchema = z.object({
 export const mlxHelperRequestSchema = z.discriminatedUnion("command", [
   z.object({
     protocolVersion: z.literal(1),
-    requestId: z.string().uuid(),
+    requestId: requestIdSchema,
     command: z.literal("health")
   }).strict(),
   z.object({
     protocolVersion: z.literal(1),
-    requestId: z.string().uuid(),
+    requestId: requestIdSchema,
     command: z.literal("generate"),
     modelPath: z.string().min(1),
     prompt: z.string().min(1),
@@ -22,14 +24,14 @@ export const mlxHelperRequestSchema = z.discriminatedUnion("command", [
   }).strict(),
   z.object({
     protocolVersion: z.literal(1),
-    requestId: z.string().uuid(),
+    requestId: requestIdSchema,
     command: z.literal("shutdown")
   }).strict()
 ]);
 
 const mlxHelperProgressSchema = z.object({
   protocolVersion: z.literal(1),
-  requestId: z.string().uuid(),
+  requestId: requestIdSchema,
   kind: z.literal("progress"),
   progress: z.number().min(0).max(1),
   messageKey: z.string().min(1)
@@ -37,7 +39,7 @@ const mlxHelperProgressSchema = z.object({
 
 const mlxHelperResultSchema = z.object({
   protocolVersion: z.literal(1),
-  requestId: z.string().uuid(),
+  requestId: requestIdSchema,
   kind: z.literal("result"),
   ok: z.literal(true),
   output: z.string(),
@@ -48,7 +50,7 @@ const mlxHelperResultSchema = z.object({
 
 const mlxHelperErrorSchema = z.object({
   protocolVersion: z.literal(1),
-  requestId: z.string().uuid(),
+  requestId: requestIdSchema,
   kind: z.literal("result"),
   ok: z.literal(false),
   error: z.object({
@@ -58,7 +60,7 @@ const mlxHelperErrorSchema = z.object({
   }).strict()
 }).strict();
 
-export const mlxHelperMessageSchema = z.discriminatedUnion("kind", [
+export const mlxHelperMessageSchema = z.union([
   mlxHelperProgressSchema,
   mlxHelperResultSchema,
   mlxHelperErrorSchema
@@ -66,3 +68,18 @@ export const mlxHelperMessageSchema = z.discriminatedUnion("kind", [
 
 export type MlxHelperRequest = z.infer<typeof mlxHelperRequestSchema>;
 export type MlxHelperMessage = z.infer<typeof mlxHelperMessageSchema>;
+
+export function parseMlxHelperOutput(stdout: string): MlxHelperMessage[] {
+  const messages: MlxHelperMessage[] = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    messages.push(mlxHelperMessageSchema.parse(value));
+  }
+  return messages;
+}

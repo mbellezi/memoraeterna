@@ -116,7 +116,8 @@
     "stages": {
       "queued": "In coda", "conversion": "Conversione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
-      "atomicNoteMatching": "Collegamento note", "completed": "Completata"
+      "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian",
+      "completed": "Completata"
     },
     "stageStatus": {
       "pending": "In attesa", "running": "In esecuzione", "completed": "Completata",
@@ -124,7 +125,9 @@
     },
     "empty": "Nessuna attivita.",
     "actions": {
-      "refresh": "Aggiorna attivita"
+      "refresh": "Aggiorna attivita",
+      "clearCompletedOrFailed": "Pulisci completate e non riuscite",
+      "clearCompletedOrFailedConfirm": "Rimuovere tutte le attivita completate e non riuscite?"
     }
   },
   "import": {
