@@ -38,6 +38,7 @@ export function AiParameterFields({ value, onChange, t, embeddingOnly = false }:
             <option value="">{t("settings.ai.parameters.inherit")}</option>
             <option value="256">256</option>
             <option value="768">768</option>
+            <option value="1024">1024</option>
           </select>
         </div>
       ) : (

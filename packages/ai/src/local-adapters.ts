@@ -235,7 +235,7 @@ async function executeNodeLlamaEmbedding(input: {
     if (input.signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
     const embedding = await context.getEmbeddingFor(input.text);
     const requestedDimensions = numberParameter(input.parameters.dimensions, embedding.vector.length);
-    if ((requestedDimensions !== 256 && requestedDimensions !== 768)
+    if ((requestedDimensions !== 256 && requestedDimensions !== 768 && requestedDimensions !== 1_024)
         || requestedDimensions > embedding.vector.length) {
       throw new Error(`Unsupported embedding dimension: ${requestedDimensions}`);
     }

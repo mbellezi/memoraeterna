@@ -232,12 +232,14 @@
       "obsidianPlugin": "Plugin Obsidian",
       "states": { "stopped": "Arretee", "starting": "Demarrage", "ready": "Prete", "failed": "Echec" }
     },
+    "matching": { "title": "Correspondance des connaissances", "description": "Definit le score final minimal requis pour enregistrer une relation entre des notes atomiques.", "minimumScore": "Score minimal de correspondance", "moreRelations": "Plus de relations", "fewerRelations": "Moins de relations, plus strictes", "savedAutomatically": "Cette valeur est appliquée automatiquement lorsqu'elle change." },
+    "reset": { "title": "Reinitialiser la bibliotheque", "description": "Supprime toute la bibliotheque, les fichiers geres, les vecteurs, les taches et les notes atomiques. Les modeles locaux telecharges et les reglages sont conserves.", "action": "Tout reinitialiser", "confirmation": "Supprimer definitivement toute la bibliotheque, les fichiers geres, les vecteurs et les notes atomiques ? Les modeles locaux telecharges seront conserves.", "completed": "Bibliotheque reinitialisee.", "completedWithWarnings": "Bibliotheque reinitialisee, mais certains fichiers geres n'ont pas pu etre supprimes.", "failed": "Impossible de reinitialiser la bibliotheque." },
     "ai": {
       "title": "Fournisseurs et profils IA", "provider": "Fournisseur", "google": "Google Gemini",
       "openAiCompatible": "Compatible OpenAI", "displayName": "Nom affiche", "baseUrl": "URL de base",
       "model": "Modele", "apiKey": "Cle API", "saveProvider": "Enregistrer le fournisseur", "test": "Tester",
       "connectionOk": "Connexion reussie.", "profiles": "Profils", "profileName": "Nom du profil",
-      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "selectModel": "Selectionner un modele distant ou local",
+      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "removeProfile": "Supprimer le profil", "removeProfileConfirmation": "Supprimer ce profil et ses routages de taches ? Les modeles telecharges seront conserves.", "selectModel": "Selectionner un modele distant ou local",
       "remoteModels": "Ajouter un modele distant", "modelPurpose": "Fonction du modele", "saveModel": "Enregistrer le modele",
       "embeddingModels": "Modeles d'embedding distants", "generationModels": "Modeles distants de generation et reranking",
       "noModels": "Aucun modele configure.", "saveDefaults": "Enregistrer les valeurs par defaut", "noProfiles": "Creez un profil pour configurer les taches.",
@@ -260,6 +262,10 @@
     "progress": { "loading": "Chargement du modele", "generating": "Generation locale", "completed": "Termine", "verifying": "Verification des fichiers", "etaUnknown": "Estimation du temps" }
   },
   "backup": { "title": "Sauvegarde", "description": "Creez un dump PostgreSQL et copiez les fichiers geres configures dans un dossier date.", "action": "Creer une sauvegarde", "completed": "Sauvegarde terminee :", "failed": "La sauvegarde n'a pas pu etre creee." },
+  "debug": {
+    "title": "Tableau de débogage", "captureTitle": "Diagnostic de similarité", "captureDescription": "Enregistre les scores textuels, vectoriels, de métadonnées, de reranking et finaux utilisés par les recherches et la correspondance des notes atomiques.", "enabled": "Débogage activé", "disabled": "Débogage désactivé", "executions": "Exécutions", "candidates": "Candidats", "captureState": "État de capture", "recording": "Enregistrement", "paused": "En pause", "refresh": "Actualiser", "clear": "Effacer les journaux", "clearConfirmation": "Supprimer tous les journaux de débogage de similarité ?", "empty": "Aucun diagnostic enregistré", "emptyDescription": "Activez le débogage et lancez une recherche ou importez du contenu pour inspecter les calculs de similarité.", "chunkSearch": "Recherche de segments", "noteMatching": "Correspondance des notes atomiques", "noModel": "Aucun modèle d'embedding", "passed": "Accepté", "rejected": "Sous le seuil", "thresholdUsed": "Seuil utilisé", "textRank": "Rang textuel", "vectorRank": "Rang vectoriel", "textScore": "Texte", "vectorScore": "Vecteur", "metadataScore": "Métadonnées", "rerankScore": "Reranking", "fusionScore": "Fusion RRF", "finalScore": "Final", "beforeRerank": "Score avant reranking", "rerankError": "Erreur de reranking", "rerankNotConfigured": "Le reranking n'a pas été exécuté car aucun profil compatible n'est configuré.",
+    "filters": { "all": "Tous", "chunk_search": "Recherches de segments", "atomic_note_matching": "Correspondance des notes" }
+  },
   "integrations": {
     "title": "Integrations",
     "chromeExtension": "Extension Chrome",

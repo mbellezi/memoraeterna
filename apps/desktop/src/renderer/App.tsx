@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BriefcaseBusiness,
+  Bug,
   ClipboardCheck,
   Database,
   Download,
@@ -40,8 +41,9 @@ import { LibraryView } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { LocalModelsView } from "./components/LocalModelsView";
 import { BackupView } from "./components/BackupView";
+import { DebugDashboard } from "./components/DebugDashboard";
 
-type ViewId = "library" | "import" | "search" | "review" | "jobs" | "settings";
+type ViewId = "library" | "import" | "search" | "review" | "jobs" | "debug" | "settings";
 
 interface NavItem {
   id: ViewId;
@@ -55,10 +57,11 @@ const navItems: NavItem[] = [
   { id: "search", label: "shell.navigation.search", icon: Search },
   { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
   { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
+  { id: "debug", label: "debug.title", icon: Bug },
   { id: "settings", label: "shell.navigation.settings", icon: Settings }
 ];
 
-const emptyViews: Record<Exclude<ViewId, "settings" | "review">, { title: MessageKey; empty: MessageKey }> = {
+const emptyViews: Record<Exclude<ViewId, "settings" | "review" | "debug">, { title: MessageKey; empty: MessageKey }> = {
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
   search: { title: "shell.navigation.search", empty: "shell.states.empty" },
@@ -217,7 +220,8 @@ export function App({
       const [savedAppSettings, savedStorageSettings] = await Promise.all([
         window.app.settings.updateApp({
           language: appSettings.language,
-          themeMode: appSettings.themeMode
+          themeMode: appSettings.themeMode,
+          atomicNoteRelationThreshold: appSettings.atomicNoteRelationThreshold
         }),
         window.app.settings.update({
           obsidianVaultPath: settings.obsidianVaultPath,
@@ -250,6 +254,16 @@ export function App({
     );
   }
 
+  async function persistRelationThreshold(atomicNoteRelationThreshold: number) {
+    try {
+      setAppSettings(await window.app.settings.updateApp({ atomicNoteRelationThreshold }));
+      setStatus("shell.states.saved");
+    } catch {
+      setStatus("errors.common.unknown");
+      throw new Error("relation_threshold_update_failed");
+    }
+  }
+
   async function toggleThemeMode() {
     const previous = appSettings;
     const nextThemeMode = appSettings.themeMode === "dark" ? "light" : "dark";
@@ -266,6 +280,22 @@ export function App({
     } catch {
       setAppSettings(previous);
       setStatus("errors.common.unknown");
+    }
+  }
+
+  async function setDebugMode(debugMode: boolean) {
+    const previous = appSettings;
+    setAppSettings((current) => appSettingsSchema.parse({
+      ...current,
+      debugMode,
+      updatedAt: new Date().toISOString()
+    }));
+    try {
+      setAppSettings(await window.app.settings.updateApp({ debugMode }));
+      setStatus("shell.states.saved");
+    } catch (error) {
+      setAppSettings(previous);
+      throw error;
     }
   }
 
@@ -304,6 +334,8 @@ export function App({
     ? "settings.title"
     : activeView === "review"
       ? "knowledge.review.title"
+      : activeView === "debug"
+        ? "debug.title"
       : emptyViews[activeView].title;
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
@@ -434,6 +466,7 @@ export function App({
                 onAppSettingsChange={(update) => {
                   void updateAppSettings(update);
                 }}
+                onRelationThresholdChange={persistRelationThreshold}
                 onChange={setSettings}
                 onSave={saveSettings}
               />
@@ -449,6 +482,12 @@ export function App({
             <JobsView t={t} />
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
+          ) : activeView === "debug" ? (
+            <DebugDashboard
+              enabled={appSettings.debugMode}
+              t={t}
+              onEnabledChange={setDebugMode}
+            />
           ) : activeView === "library" ? (
             <LibraryView t={t} />
           ) : (

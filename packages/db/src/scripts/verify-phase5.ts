@@ -38,7 +38,7 @@ try {
   const seedFolder = resolve(packageRoot, "seed");
   await runMigrations(pool, migrationsFolder);
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 8) throw new Error("Unexpected AI configuration migration history.");
+  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected AI configuration migration history.");
 
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables where table_schema = 'public'
@@ -151,7 +151,7 @@ try {
   seedUrl.pathname = "/memora_phase5_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 8) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 10) {
     throw new Error("Empty database did not apply the complete phase 5 baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {

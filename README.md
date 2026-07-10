@@ -189,7 +189,7 @@ salvar um token opcional da Hugging Face, baixar/retomar/verificar modelos e
 seleciona-los nos perfis de IA. Plataformas sem MLX mostram a incompatibilidade
 explicitamente. Arquivos GGUF existentes podem ser importados e executados via
 `node-llama-cpp`. O catalogo inclui modelos GGUF de embedding separados
-(EmbeddingGemma 300M e multilingual-e5-base), baixaveis e instalaveis pela
+(Qwen3-Embedding-0.6B e BGE-M3), baixaveis e instalaveis pela
 mesma interface.
 
 Em `Settings > AI`, cada modelo remoto ou local possui parametros padrao. Cada

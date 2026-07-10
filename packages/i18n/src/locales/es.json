@@ -232,12 +232,14 @@
       "obsidianPlugin": "Plugin de Obsidian",
       "states": { "stopped": "Detenido", "starting": "Iniciando", "ready": "Listo", "failed": "Error" }
     },
+    "matching": { "title": "Coincidencia de conocimiento", "description": "Define la puntuacion final minima necesaria para guardar una relacion entre notas atomicas.", "minimumScore": "Puntuacion minima de coincidencia", "moreRelations": "Mas relaciones", "fewerRelations": "Menos relaciones, mas estrictas", "savedAutomatically": "Este valor se aplica automáticamente al cambiar." },
+    "reset": { "title": "Restablecer biblioteca", "description": "Elimina toda la biblioteca, archivos gestionados, vectores, trabajos y notas atomicas. Se conservan los modelos locales descargados y la configuracion.", "action": "Restablecer todo", "confirmation": "Eliminar permanentemente toda la biblioteca, archivos gestionados, vectores y notas atomicas? Se conservaran los modelos locales descargados.", "completed": "Biblioteca restablecida.", "completedWithWarnings": "Biblioteca restablecida, pero algunos archivos gestionados no se pudieron eliminar.", "failed": "No se pudo restablecer la biblioteca." },
     "ai": {
       "title": "Proveedores y perfiles de IA", "provider": "Proveedor", "google": "Google Gemini",
       "openAiCompatible": "Compatible con OpenAI", "displayName": "Nombre visible", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Clave API", "saveProvider": "Guardar proveedor", "test": "Probar",
       "connectionOk": "Conexion correcta.", "profiles": "Perfiles", "profileName": "Nombre del perfil",
-      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil", "selectModel": "Selecciona un modelo remoto o local",
+      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil", "removeProfile": "Eliminar perfil", "removeProfileConfirmation": "Eliminar este perfil y sus rutas de tareas? Se conservaran los modelos descargados.", "selectModel": "Selecciona un modelo remoto o local",
       "remoteModels": "Agregar modelo remoto", "modelPurpose": "Funcion del modelo", "saveModel": "Guardar modelo",
       "embeddingModels": "Modelos remotos de embedding", "generationModels": "Modelos remotos de generacion y reranking",
       "noModels": "No hay modelos configurados.", "saveDefaults": "Guardar valores predeterminados", "noProfiles": "Crea un perfil para configurar tareas.",
@@ -260,6 +262,10 @@
     "progress": { "loading": "Cargando el modelo", "generating": "Generando localmente", "completed": "Completado", "verifying": "Verificando archivos", "etaUnknown": "Estimando tiempo" }
   },
   "backup": { "title": "Copia de seguridad", "description": "Crea un dump de PostgreSQL y copia los archivos gestionados configurados en una carpeta con fecha.", "action": "Crear copia", "completed": "Copia completada:", "failed": "No se pudo crear la copia." },
+  "debug": {
+    "title": "Panel de depuración", "captureTitle": "Diagnóstico de similitud", "captureDescription": "Registra las puntuaciones textuales, vectoriales, de metadatos, de reranking y finales usadas en búsquedas y coincidencia de notas atómicas.", "enabled": "Depuración activada", "disabled": "Depuración desactivada", "executions": "Ejecuciones", "candidates": "Candidatos", "captureState": "Estado de captura", "recording": "Grabando", "paused": "Pausado", "refresh": "Actualizar", "clear": "Borrar registros", "clearConfirmation": "¿Eliminar todos los registros de depuración de similitud?", "empty": "No hay diagnósticos registrados", "emptyDescription": "Activa la depuración y ejecuta una búsqueda o importa contenido para inspeccionar los cálculos de similitud.", "chunkSearch": "Búsqueda de fragmentos", "noteMatching": "Coincidencia de notas atómicas", "noModel": "Sin modelo de embedding", "passed": "Aprobado", "rejected": "Bajo el umbral", "thresholdUsed": "Corte usado", "textRank": "Posición textual", "vectorRank": "Posición vectorial", "textScore": "Texto", "vectorScore": "Vector", "metadataScore": "Metadatos", "rerankScore": "Reranking", "fusionScore": "Fusión RRF", "finalScore": "Final", "beforeRerank": "Puntuación antes del reranking", "rerankError": "Error de reranking", "rerankNotConfigured": "El reranking no se ejecutó porque no hay un perfil compatible configurado.",
+    "filters": { "all": "Todos", "chunk_search": "Búsquedas de fragmentos", "atomic_note_matching": "Coincidencia de notas" }
+  },
   "integrations": {
     "title": "Integraciones",
     "chromeExtension": "Extension de Chrome",

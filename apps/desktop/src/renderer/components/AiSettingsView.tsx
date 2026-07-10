@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Bot, Copy, Plus, Save, TestTubeDiagonal } from "lucide-react";
+import { Bot, Copy, Plus, Save, TestTubeDiagonal, Trash2 } from "lucide-react";
 import type { AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
@@ -81,7 +81,9 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
     setProfileTasks(nextTasks);
     setRoutes(Object.fromEntries(nextRoutes.map((route) => [route.task, route.profileId])));
     setLocalModels(nextLocalModels.filter((model) => model.status === "ready"));
-    setSelectedProfileId((current) => current || nextProfiles[0]?.id || "");
+    setSelectedProfileId((current) => nextProfiles.some((profile) => profile.id === current)
+      ? current
+      : nextProfiles[0]?.id ?? "");
   }
 
   useEffect(() => { void load().catch(() => setStatus("errors.common.unknown")); }, []);
@@ -174,6 +176,22 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
           </div>
           {selectedProfile ? (
             <div className="grid gap-4 rounded-md border border-slate-200 p-4 dark:border-slate-800">
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  className="border-red-700 bg-red-700 hover:bg-red-800 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+                  onClick={() => {
+                    if (!window.confirm(t("settings.ai.removeProfileConfirmation"))) return;
+                    void run(async () => {
+                      await window.app.ai.deleteProfile(selectedProfile.id);
+                      setSelectedProfileId("");
+                    });
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  {t("settings.ai.removeProfile")}
+                </Button>
+              </div>
               <ProfileHeader profile={selectedProfile} providers={providers} localModels={localModels} t={t} interfaceLanguage={interfaceLanguage} onSave={(update) => run(() => window.app.ai.updateProfile({ id: selectedProfile.id, ...update }))} />
               {taskDefinitions.filter((definition) => supportsTask(selectedProfile, definition)).map((definition) => (
                 <ProfileTaskEditor

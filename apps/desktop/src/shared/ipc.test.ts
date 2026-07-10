@@ -19,6 +19,8 @@ import {
   , aiTaskRouteSchema
   , localModelDownloadInputSchema
   , localModelViewSchema
+  , libraryResetResultSchema
+  , similarityDebugRunSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -159,5 +161,52 @@ describe("desktop IPC contracts", () => {
       licenseAccepted: false, status: "not_downloaded", compatible: true,
       compatibilityReason: "compatible", profilesUsing: [], lastError: null, download: null
     }).catalogId).toBe("mlx-test");
+  });
+
+  it("validates the destructive library reset result", () => {
+    expect(libraryResetResultSchema.parse({
+      deletedSources: 2,
+      deletedAtomicNotes: 3,
+      deletedFiles: 4,
+      failedFiles: 0
+    })).toEqual({ deletedSources: 2, deletedAtomicNotes: 3, deletedFiles: 4, failedFiles: 0 });
+  });
+
+  it("validates similarity debug runs and score details", () => {
+    const runId = "00000000-0000-4000-8000-000000000001";
+    const resultId = "00000000-0000-4000-8000-000000000002";
+    expect(similarityDebugRunSchema.parse({
+      id: runId,
+      kind: "atomic_note_matching",
+      queryText: "Atomic idea",
+      queryTargetId: resultId,
+      mode: "hybrid",
+      model: "embed-model",
+      dimensions: 1024,
+      requestedLimit: 20,
+      strategy: "weighted_scores_with_optional_reranking",
+      metadata: { threshold: 0.72 },
+      createdAt: new Date(0).toISOString(),
+      results: [{
+        id: resultId,
+        runId,
+        targetType: "atomic_note",
+        targetId: resultId,
+        targetLabel: "Candidate",
+        finalRank: 1,
+        textRank: 2,
+        vectorRank: 1,
+        textScore: 0.4,
+        vectorScore: 0.8,
+        metadataScore: 0.5,
+        rerankScore: 0.9,
+        fusionScore: null,
+        finalScore: 0.81,
+        passedThreshold: true,
+        explanation: "related",
+        metadata: { rerankStatus: "succeeded" },
+        createdAt: new Date(0).toISOString()
+      }]
+    }).results[0]?.rerankScore).toBe(0.9);
   });
 });

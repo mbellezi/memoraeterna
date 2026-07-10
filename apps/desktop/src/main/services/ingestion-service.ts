@@ -107,7 +107,7 @@ export class IngestionService {
       sourceUri: null,
       language: "und",
       duplicatePolicy: input.duplicatePolicy,
-      metadata: { originalFileName: fileName, mimeType },
+      metadata: { originalFileName: fileName, originalFilePath: path, mimeType },
       conversion,
       originalAsset: { data, fileName, mimeType }
     });

@@ -34,6 +34,8 @@ import type { KnowledgeService } from "./services/knowledge-service.js";
 import type { IntegrationGateway } from "./services/integration-gateway.js";
 import type { LocalModelService } from "./services/local-model-service.js";
 import type { BackupService } from "./services/backup-service.js";
+import type { LibraryResetService } from "./services/library-reset-service.js";
+import type { SimilarityDebugService } from "./services/similarity-debug-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -51,7 +53,9 @@ export function registerIpcHandlers(
   knowledgeService: KnowledgeService,
   integrationGateway: IntegrationGateway,
   localModelService: LocalModelService,
-  backupService: BackupService
+  backupService: BackupService,
+  libraryResetService: LibraryResetService,
+  similarityDebugService: SimilarityDebugService
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -82,6 +86,18 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.settingsUpdate, (_event, payload: unknown) => {
     const settings = storageSettingsUpdateSchema.parse(payload);
     return settingsService.update(settings);
+  });
+
+  ipcMain.handle(ipcChannels.debugSimilarityRunsList, () => similarityDebugService.list());
+  ipcMain.handle(ipcChannels.debugSimilarityRunsClear, () => similarityDebugService.clear());
+
+  ipcMain.handle(ipcChannels.libraryReset, async () => {
+    await Promise.all([integrationGateway.stop(), jobSupervisor.stop(), localModelService.shutdown()]);
+    try {
+      return await libraryResetService.reset();
+    } finally {
+      await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
+    }
   });
 
   ipcMain.handle(ipcChannels.ingestionCreateManual, (_event, payload: unknown) =>
@@ -153,6 +169,9 @@ export function registerIpcHandlers(
     const input = aiProfileCloneSchema.parse(payload);
     return aiService.cloneProfile(input.profileId, input.name);
   });
+  ipcMain.handle(ipcChannels.aiProfilesDelete, (_event, payload: unknown) =>
+    aiService.deleteProfile(z.string().uuid().parse(payload))
+  );
   ipcMain.handle(ipcChannels.aiProfileTasksList, (_event, payload: unknown) =>
     aiService.listProfileTasks(payload === undefined ? undefined : z.string().uuid().parse(payload))
   );

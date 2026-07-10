@@ -8,6 +8,7 @@ import {
   createDocumentRepository,
   createEmbeddingRepository,
   createLibraryRepository,
+  createSimilarityDebugRepository,
   createSourceItemRepository,
   createSourceSummaryRepository,
   type AtomicNoteRecord,
@@ -25,6 +26,7 @@ import {
   generateAtomicNoteCandidates,
   generateSummaryFromChunks,
   meetsRelationThreshold,
+  normalizeSummaryText,
   parseRerankOutput,
   scoreMetadataOverlap,
   summaryPromptVersion,
@@ -35,9 +37,11 @@ export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
   relationThreshold?: number;
+  getRelationThreshold?: () => Promise<number>;
   summaryMaxInputCharacters?: number;
   userDataPath: string;
   getUploadedFilesBasePath: () => Promise<string | null>;
+  isDebugEnabled?: () => Promise<boolean>;
   logger?: Pick<Console, "error">;
 }
 
@@ -58,6 +62,7 @@ export class KnowledgeService {
   public async listLibrary(sourceTypes: SourceItemType[] = []) {
     return (await createLibraryRepository(this.requirePool()).listSources({ sourceTypes })).map((source) => ({
       ...source,
+      summary: source.summary ? normalizeSummaryText(source.summary) : null,
       updatedAt: source.updatedAt.toISOString()
     }));
   }
@@ -95,13 +100,13 @@ export class KnowledgeService {
       subtitle: source.subtitle,
       sourceUri: source.sourceUri,
       language: source.language,
-      summary: source.summary,
+      summary: source.summary ? normalizeSummaryText(source.summary) : null,
       metadata: source.metadata,
       updatedAt: source.updatedAt.toISOString(),
       documents: documentDetails,
       summaries: summaries.map((summary) => ({
         id: summary.id,
-        summary: summary.summary,
+        summary: normalizeSummaryText(summary.summary),
         provider: summary.provider,
         model: summary.model,
         promptVersion: summary.promptVersion,
@@ -299,6 +304,7 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
+    const relationThreshold = clamp(await this.options.getRelationThreshold?.() ?? this.relationThreshold);
     let persistedCount = 0;
     for (const noteId of noteIds) {
       const note = await notes.findById(noteId);
@@ -327,18 +333,21 @@ export class KnowledgeService {
         ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
         limit: 20
       });
-      for (const candidate of candidates) {
+      const debugResults: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"] = [];
+      for (const [candidateIndex, candidate] of candidates.entries()) {
         const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
-        let finalScore = calculateRelationScore({
+        const baseScore = calculateRelationScore({
           vectorScore: candidate.vectorScore,
           textScore: candidate.textScore,
           metadataScore,
           hasEmbedding: Boolean(embedding)
         });
+        let finalScore = baseScore;
         let relationType = "related";
         let explanation = "knowledge.relations.explanations.hybrid";
         let rerankScore: number | null = null;
         let rerankExecution: DefaultAiTaskResult | null = null;
+        let rerankError: string | null = null;
         try {
           rerankExecution = await this.options.aiService.runDefaultTask(
             "reranking",
@@ -357,10 +366,35 @@ export class KnowledgeService {
             relationType = reranked.relationType;
             explanation = reranked.explanation;
           }
-        } catch {
+        } catch (error) {
+          rerankError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
           // Candidate matching remains available when an optional reranker is unavailable.
         }
-        if (!meetsRelationThreshold(finalScore, this.relationThreshold)) continue;
+        const passedThreshold = meetsRelationThreshold(finalScore, relationThreshold);
+        debugResults.push({
+          targetType: "atomic_note",
+          targetId: candidate.note.id,
+          targetLabel: candidate.note.title,
+          finalRank: candidateIndex + 1,
+          textRank: candidateIndex + 1,
+          textScore: candidate.textScore,
+          vectorScore: candidate.vectorScore,
+          metadataScore,
+          rerankScore,
+          finalScore,
+          passedThreshold,
+          explanation,
+          metadata: {
+            baseScore,
+            relationType,
+            rerankError,
+            rerankStatus: rerankExecution ? "succeeded" : rerankError ? "failed" : "not_configured",
+            rerankProfileId: rerankExecution?.profileId ?? null,
+            rerankModel: rerankExecution?.modelId ?? null,
+            candidateStatus: candidate.note.status
+          }
+        });
+        if (!passedThreshold) continue;
         await relations.upsert({
           sourceAtomicNoteId: note.id,
           targetAtomicNoteId: candidate.note.id,
@@ -374,7 +408,7 @@ export class KnowledgeService {
           matchingModel: rerankExecution?.modelId ?? null,
           metadata: {
             version: atomicNoteMatchingVersion,
-            threshold: this.relationThreshold,
+            threshold: relationThreshold,
             textScore: candidate.textScore,
             metadataScore,
             pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
@@ -382,8 +416,17 @@ export class KnowledgeService {
         });
         persistedCount += 1;
       }
+      await this.recordAtomicMatchingDebug({
+        noteId: note.id,
+        queryText: `${note.title}\n${note.ideaStatement}`,
+        embeddingModel: embeddingExecution?.modelId ?? null,
+        dimensions: embedding?.length ?? null,
+        hasEmbedding: Boolean(embedding),
+        relationThreshold,
+        results: debugResults
+      });
     }
-    return { persistedCount, threshold: this.relationThreshold };
+    return { persistedCount, threshold: relationThreshold };
   }
 
   private async tryRunDefaultTask(task: "embedding", input: string) {
@@ -391,6 +434,40 @@ export class KnowledgeService {
       return await this.options.aiService.runDefaultTask(task, input);
     } catch {
       return null;
+    }
+  }
+
+  private async recordAtomicMatchingDebug(input: {
+    noteId: string;
+    queryText: string;
+    embeddingModel: string | null;
+    dimensions: number | null;
+    hasEmbedding: boolean;
+    relationThreshold: number;
+    results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
+  }): Promise<void> {
+    try {
+      if (!await this.options.isDebugEnabled?.()) return;
+      await createSimilarityDebugRepository(this.requirePool()).record({
+        kind: "atomic_note_matching",
+        queryText: input.queryText,
+        queryTargetId: input.noteId,
+        mode: input.hasEmbedding ? "hybrid" : "text_metadata",
+        model: input.embeddingModel,
+        dimensions: input.dimensions,
+        requestedLimit: 20,
+        strategy: "weighted_scores_with_optional_reranking",
+        metadata: {
+          threshold: input.relationThreshold,
+          baseWeights: input.hasEmbedding
+            ? { vector: 0.55, text: 0.3, metadata: 0.15 }
+            : { text: 0.7, metadata: 0.3 },
+          rerankWeights: { base: 0.6, reranker: 0.4 }
+        },
+        results: input.results
+      });
+    } catch {
+      // Debug persistence must never make atomic-note matching fail.
     }
   }
 
@@ -434,7 +511,8 @@ function toKnowledgeExecution(result: DefaultAiTaskResult | null): KnowledgeAiEx
 function readEmbedding(output: unknown): number[] | undefined {
   if (!Array.isArray(output)) return undefined;
   const embedding = output.map(Number);
-  return (embedding.length === 256 || embedding.length === 768) && embedding.every(Number.isFinite)
+  return (embedding.length === 256 || embedding.length === 768 || embedding.length === 1_024)
+      && embedding.every(Number.isFinite)
     ? embedding
     : undefined;
 }

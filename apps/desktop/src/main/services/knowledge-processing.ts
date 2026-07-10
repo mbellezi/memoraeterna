@@ -34,6 +34,27 @@ export interface SummaryResult {
   executions: KnowledgeAiExecution[];
 }
 
+export function normalizeSummaryText(output: unknown): string {
+  if (typeof output === "object" && output !== null && "summary" in output) {
+    const summary = (output as { summary?: unknown }).summary;
+    if (typeof summary === "string" && summary.trim().length > 0) return summary.trim();
+  }
+  if (typeof output !== "string" || output.trim().length === 0) {
+    throw new Error("ai_task_empty_output");
+  }
+  const trimmed = output.trim();
+  try {
+    const parsed = parseJsonOutput(trimmed);
+    if (typeof parsed === "object" && parsed !== null && "summary" in parsed) {
+      const summary = (parsed as { summary?: unknown }).summary;
+      if (typeof summary === "string" && summary.trim().length > 0) return summary.trim();
+    }
+  } catch {
+    // Plain-text summaries are the normal response format.
+  }
+  return trimmed;
+}
+
 export async function generateSummaryFromChunks(
   chunks: ReadonlyArray<{ id: string; content: string }>,
   run: KnowledgeAiRunner,
@@ -47,7 +68,7 @@ export async function generateSummaryFromChunks(
     const execution = await run(summaryPrompt(groups[0] ?? [], false));
     if (!execution) return null;
     executions.push(execution);
-    return { summary: readGeneratedText(execution.output), mapReduce: false, executions };
+    return { summary: normalizeSummaryText(execution.output), mapReduce: false, executions };
   }
 
   const partials: string[] = [];
@@ -55,14 +76,14 @@ export async function generateSummaryFromChunks(
     const execution = await run(summaryPrompt(group, true));
     if (!execution) return null;
     executions.push(execution);
-    partials.push(readGeneratedText(execution.output));
+    partials.push(normalizeSummaryText(execution.output));
   }
   const reduction = await run(
     `Create one faithful, concise source summary from these partial summaries. Preserve important claims and uncertainty.\n\n${partials.join("\n\n---\n\n")}`
   );
   if (!reduction) return null;
   executions.push(reduction);
-  return { summary: readGeneratedText(reduction.output), mapReduce: true, executions };
+  return { summary: normalizeSummaryText(reduction.output), mapReduce: true, executions };
 }
 
 export function buildAtomicNoteGenerationPrompt(
@@ -223,13 +244,6 @@ function groupChunks(
   }
   if (current.length > 0) groups.push(current);
   return groups;
-}
-
-function readGeneratedText(output: unknown): string {
-  if (typeof output !== "string" || output.trim().length === 0) {
-    throw new Error("ai_task_empty_output");
-  }
-  return output.trim();
 }
 
 function parseJsonOutput(output: unknown): unknown {

@@ -277,7 +277,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       limit?: number;
     }): Promise<AtomicNoteCandidateRecord[]> {
       const dimensions = input.embedding?.length;
-      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768) {
+      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
         throw new Error(`Unsupported embedding dimension: ${dimensions}`);
       }
       const vectorJoin = dimensions

@@ -42,7 +42,7 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 5) {
+  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 10) {
     throw new Error("Empty database did not apply the complete phase 2 baseline.");
   }
 
@@ -51,7 +51,7 @@ try {
   if (secondRun.seed.applied) throw new Error("Existing database reapplied the baseline.");
 
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 5) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected Drizzle migration history.");
   const extensions = await pool.query<{ extname: string }>(
     "select extname from pg_extension where extname in ('vector', 'unaccent', 'pg_trgm') order by extname"
   );
@@ -65,9 +65,10 @@ try {
   const indexes = await pool.query<{ indexname: string }>(
     `select indexname from pg_indexes where schemaname = 'public'
      and indexname in ('embeddings_256_embedding_hnsw_idx', 'embeddings_768_embedding_hnsw_idx',
+                       'embeddings_1024_embedding_hnsw_idx',
                        'chunks_content_trgm_idx', 'chunks_content_fts_idx')`
   );
-  if (indexes.rows.length !== 4) throw new Error("Phase 2 search indexes are missing.");
+  if (indexes.rows.length !== 5) throw new Error("Phase 2 search indexes are missing.");
 
   const sources = createSourceItemRepository(pool);
   const documents = createDocumentRepository(pool);
@@ -110,7 +111,15 @@ try {
   });
   const matches = await createEmbeddingRepository(pool).search(vector, 5, "test-256");
   if (matches[0]?.chunkId !== chunkId) throw new Error("Vector search did not return the expected chunk.");
-  const search = await createSearchRepository(pool).search({ text: "memoria", limit: 5 });
+  const vector1024 = Array.from({ length: 1_024 }, (_, index) => index === 0 ? 1 : 0);
+  await createEmbeddingRepository(pool).upsert({
+    targetType: "chunk", targetId: chunkId, chunkId, provider: "test", model: "test-1024",
+    runtime: "local", contentHash: "c".repeat(64), embedding: vector1024
+  });
+  if ((await createEmbeddingRepository(pool).search(vector1024, 5, "test-1024"))[0]?.chunkId !== chunkId) {
+    throw new Error("1024-dimension vector search did not return the expected chunk.");
+  }
+  const search = await createSearchRepository(pool).searchText({ text: "memoria", limit: 5 });
   if (search[0]?.chunkId !== chunkId || search[0].page !== 1) {
     throw new Error("Accent-insensitive text search did not preserve evidence.");
   }

@@ -59,7 +59,7 @@ export const AiModelParametersSchema = z.object({
   maxTokens: z.number().int().min(1).max(1_000_000).optional(),
   reasoningLevel: AiReasoningLevelSchema.optional(),
   topP: z.number().min(0).max(1).optional(),
-  dimensions: z.union([z.literal(256), z.literal(768)]).optional(),
+  dimensions: z.union([z.literal(256), z.literal(768), z.literal(1024)]).optional(),
   seed: z.number().int().nonnegative().optional()
 }).strict();
 export type AiModelParameters = z.infer<typeof AiModelParametersSchema>;

@@ -25,6 +25,10 @@ const vector768 = customType<{ data: string }>({
   dataType: () => "vector(768)"
 });
 
+const vector1024 = customType<{ data: string }>({
+  dataType: () => "vector(1024)"
+});
+
 export const sourceItemType = pgEnum("source_item_type", [
   "PersonalNote",
   "DailyNote",
@@ -769,6 +773,64 @@ export const embeddings768 = pgTable(
   (table) => ({
     targetUidx: uniqueIndex("embeddings_768_target_model_uidx").on(table.targetType, table.targetId, table.model),
     chunkIdx: index("embeddings_768_chunk_id_idx").on(table.chunkId)
+  })
+);
+
+export const embeddings1024 = pgTable(
+  "embeddings_1024",
+  { ...createEmbeddingColumns(), embedding: vector1024("embedding").notNull() },
+  (table) => ({
+    targetUidx: uniqueIndex("embeddings_1024_target_model_uidx").on(table.targetType, table.targetId, table.model),
+    chunkIdx: index("embeddings_1024_chunk_id_idx").on(table.chunkId)
+  })
+);
+
+export const similarityDebugRuns = pgTable(
+  "similarity_debug_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kind: text("kind").notNull(),
+    queryText: text("query_text").notNull(),
+    queryTargetId: uuid("query_target_id"),
+    mode: text("mode").notNull(),
+    model: text("model"),
+    dimensions: integer("dimensions"),
+    requestedLimit: integer("requested_limit").notNull(),
+    strategy: text("strategy").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    kindCreatedIdx: index("similarity_debug_runs_kind_created_at_idx").on(table.kind, table.createdAt)
+  })
+);
+
+export const similarityDebugResults = pgTable(
+  "similarity_debug_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id")
+      .notNull()
+      .references(() => similarityDebugRuns.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull(),
+    targetId: uuid("target_id").notNull(),
+    targetLabel: text("target_label"),
+    finalRank: integer("final_rank").notNull(),
+    textRank: integer("text_rank"),
+    vectorRank: integer("vector_rank"),
+    textScore: doublePrecision("text_score"),
+    vectorScore: doublePrecision("vector_score"),
+    metadataScore: doublePrecision("metadata_score"),
+    rerankScore: doublePrecision("rerank_score"),
+    fusionScore: doublePrecision("fusion_score"),
+    finalScore: doublePrecision("final_score").notNull(),
+    passedThreshold: boolean("passed_threshold"),
+    explanation: text("explanation"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    runRankIdx: index("similarity_debug_results_run_rank_idx").on(table.runId, table.finalRank)
   })
 );
 

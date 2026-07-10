@@ -6,11 +6,18 @@ import {
   generateAtomicNoteCandidates,
   generateSummaryFromChunks,
   meetsRelationThreshold,
+  normalizeSummaryText,
   parseAtomicNoteGenerationOutput,
   scoreMetadataOverlap
 } from "./knowledge-processing.js";
 
 describe("knowledge processing", () => {
+  it("unwraps JSON summary responses while preserving plain text", () => {
+    expect(normalizeSummaryText('{"summary":"Generated summary"}')).toBe("Generated summary");
+    expect(normalizeSummaryText('```json\n{"summary":"Fenced summary"}\n```')).toBe("Fenced summary");
+    expect(normalizeSummaryText("Plain summary")).toBe("Plain summary");
+  });
+
   it("uses map-reduce for a source that exceeds the model input budget", async () => {
     const run = vi.fn(async (input: string) => ({
       output: input.includes("partial summaries") ? "Reduced summary" : "Partial summary",

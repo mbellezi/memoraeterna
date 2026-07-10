@@ -15,6 +15,7 @@ import {
   createIngestionRunRepository,
   createLibraryRepository,
   createPgPool,
+  createSimilarityDebugRepository,
   createSourceItemRepository,
   createSourceSummaryRepository,
   PostgresSidecarManager,
@@ -43,7 +44,7 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 5) {
+  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 10) {
     throw new Error("Empty database did not apply the complete phase 3 baseline.");
   }
   const secondRun = await runMigrations(pool, migrationsFolder, { seedFolder });
@@ -52,15 +53,16 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 5) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected Drizzle migration history.");
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables
      where table_schema = 'public' and table_name in (
        'source_summaries', 'atomic_notes', 'atomic_note_source_links',
-       'atomic_note_relations', 'atomic_note_review_events'
+       'atomic_note_relations', 'atomic_note_review_events',
+       'similarity_debug_runs', 'similarity_debug_results'
      ) order by table_name`
   );
-  if (tables.rows.length !== 5) throw new Error("Phase 3 knowledge tables are missing.");
+  if (tables.rows.length !== 7) throw new Error("Knowledge/debug tables are missing.");
   const indexes = await pool.query<{ indexname: string }>(
     `select indexname from pg_indexes where schemaname = 'public'
      and indexname in (
@@ -68,10 +70,12 @@ try {
        'atomic_notes_source_generation_key_uidx',
        'atomic_note_source_links_note_chunk_uidx',
        'atomic_note_relations_source_target_uidx',
-       'atomic_note_review_events_note_id_idx'
+       'atomic_note_review_events_note_id_idx',
+       'similarity_debug_runs_kind_created_at_idx',
+       'similarity_debug_results_run_rank_idx'
      )`
   );
-  if (indexes.rows.length !== 6) throw new Error("Phase 3 indexes are missing.");
+  if (indexes.rows.length !== 8) throw new Error("Knowledge/debug indexes are missing.");
 
   const sources = createSourceItemRepository(pool);
   const source = await sources.create({
@@ -231,6 +235,29 @@ try {
     metadata: { threshold: 0.72 }
   });
   if (relation.finalScore !== 0.9) throw new Error("Atomic note relation was not persisted.");
+  const debug = createSimilarityDebugRepository(pool);
+  const debugRunId = await debug.record({
+    kind: "atomic_note_matching",
+    queryText: firstNote.ideaStatement,
+    queryTargetId: firstNote.id,
+    mode: "hybrid",
+    model: "mock-model",
+    dimensions: 256,
+    requestedLimit: 20,
+    strategy: "weighted_scores_with_optional_reranking",
+    results: [{
+      targetType: "atomic_note",
+      targetId: secondNote.id,
+      targetLabel: secondNote.title,
+      finalRank: 1,
+      textScore: candidates[0].textScore,
+      vectorScore: candidates[0].vectorScore,
+      rerankScore: 0.8,
+      finalScore: 0.9,
+      passedThreshold: true
+    }]
+  });
+  if ((await debug.list(5))[0]?.id !== debugRunId) throw new Error("Similarity debug log was not persisted.");
   const approved = await notes.review({ id: firstNote.id, action: "approve" });
   if (approved?.status !== "approved") throw new Error("Atomic note approval failed.");
   const reviewEvents = await pool.query<{ count: string }>(

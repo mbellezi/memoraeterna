@@ -733,7 +733,7 @@ Implementar:
 - tabelas de embeddings separadas por dimensao (indices pgvector exigem dimensao fixa por coluna);
 - adapter de embedding remoto conforme perfil (Gemini ou OpenAI-compatible);
 - adapter local GGUF com `node-llama-cpp` para modelos que declarem capability `embedding`;
-- catalogo local instalavel pela UI com EmbeddingGemma 300M e multilingual-e5-base em revisions e checksums fixos;
+- catalogo local instalavel pela UI com Qwen3-Embedding-0.6B e BGE-M3 em revisions e checksums fixos;
 - job de embedding;
 - salvar modelo, dimensao, runtime e estrategia;
 - busca vetorial basica.
@@ -1310,8 +1310,8 @@ Implementar:
   - Qwen3 4B Instruct, usando como candidato inicial
     `mlx-community/Qwen3-4B-Instruct-2507-4bit`;
 - incluir no catalogo GGUF de embeddings, com download pela mesma UI e adapter `node-llama-cpp`:
-  - `ggml-org/embeddinggemma-300M-GGUF`, Q8_0;
-  - `dinab/multilingual-e5-base-Q5_K_S-GGUF`, Q5_K_S;
+  - `Qwen/Qwen3-Embedding-0.6B-GGUF`, Q8_0;
+  - `ggml-org/bge-m3-Q8_0-GGUF`, Q8_0;
 - tratar os repositorios acima como descritores auditaveis, nao como aliases
   flutuantes: o download deve usar revision fixada e manifest verificado;
 - exigir aceite explicito da licenca quando o repositorio/modelo exigir e

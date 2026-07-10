@@ -50,7 +50,9 @@ describe("baseline seed", () => {
       "0004_condemned_the_anarchist",
       "0005_fantastic_iceman",
       "0006_workable_lockheed",
-      "0007_concerned_marrow"
+      "0007_concerned_marrow",
+      "0008_plain_wrecker",
+      "0009_same_nighthawk"
     ]);
   });
 
@@ -76,7 +78,9 @@ describe("baseline seed", () => {
         "0004_condemned_the_anarchist",
         "0005_fantastic_iceman",
         "0006_workable_lockheed",
-        "0007_concerned_marrow"
+        "0007_concerned_marrow",
+        "0008_plain_wrecker",
+        "0009_same_nighthawk"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

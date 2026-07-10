@@ -150,6 +150,10 @@ export class AiService {
     return mapProfile(await createAiConfigRepository(this.requirePool()).cloneProfile(profileId, name));
   }
 
+  public async deleteProfile(profileId: string): Promise<boolean> {
+    return createAiConfigRepository(this.requirePool()).deleteProfile(profileId);
+  }
+
   public async listProfileTasks(profileId?: string): Promise<AiProfileTask[]> {
     return (await createAiConfigRepository(this.requirePool()).listProfileTasks(profileId)).map((task) => ({
       ...task,

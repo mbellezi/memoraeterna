@@ -16,6 +16,9 @@ export const ipcChannels = {
   appSettingsUpdate: "app:settings:app:update",
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update",
+  debugSimilarityRunsList: "app:debug:similarity-runs:list",
+  debugSimilarityRunsClear: "app:debug:similarity-runs:clear",
+  libraryReset: "app:library:reset",
   ingestionCreateManual: "app:ingestion:create-manual",
   ingestionImportFile: "app:ingestion:import-file",
   ingestionLookupSources: "app:ingestion:lookup-sources",
@@ -37,6 +40,7 @@ export const ipcChannels = {
   aiProfilesCreate: "app:ai:profiles:create",
   aiProfilesUpdate: "app:ai:profiles:update",
   aiProfilesClone: "app:ai:profiles:clone",
+  aiProfilesDelete: "app:ai:profiles:delete",
   aiProfileTasksList: "app:ai:profiles:tasks:list",
   aiProfileTaskSet: "app:ai:profiles:task:set",
   aiTaskRoutesList: "app:ai:task-routes:list",
@@ -91,13 +95,17 @@ export const languageCodeSchema = z.enum(appLanguageCodes);
 export const appSettingsSchema = z.object({
   language: languageCodeSchema,
   themeMode: themeModeSchema,
+  debugMode: z.boolean().default(false),
+  atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
   updatedAt: z.string().datetime()
 });
 
-export const appSettingsUpdateSchema = appSettingsSchema
-  .omit({ updatedAt: true })
-  .partial()
-  .strict();
+export const appSettingsUpdateSchema = z.object({
+  language: languageCodeSchema.optional(),
+  themeMode: themeModeSchema.optional(),
+  debugMode: z.boolean().optional(),
+  atomicNoteRelationThreshold: z.number().min(0).max(1).optional()
+}).strict();
 
 export const storageSettingsSchema = z.object({
   obsidianVaultPath: z.string().nullable(),
@@ -189,6 +197,13 @@ export const jobRecordSchema = z.object({
 
 export const jobsClearResultSchema = z.object({
   deletedCount: z.number().int().nonnegative()
+}).strict();
+
+export const libraryResetResultSchema = z.object({
+  deletedSources: z.number().int().nonnegative(),
+  deletedAtomicNotes: z.number().int().nonnegative(),
+  deletedFiles: z.number().int().nonnegative(),
+  failedFiles: z.number().int().nonnegative()
 }).strict();
 
 export const librarySourceSchema = z.object({
@@ -297,6 +312,46 @@ export const searchInputSchema = z.object({
 }).strict();
 
 export const searchResultsSchema = z.array(SearchEvidenceSchema);
+
+export const similarityDebugResultSchema = z.object({
+  id: z.string().uuid(),
+  runId: z.string().uuid(),
+  targetType: z.enum(["chunk", "atomic_note"]),
+  targetId: z.string().uuid(),
+  targetLabel: z.string().nullable(),
+  finalRank: z.number().int().positive(),
+  textRank: z.number().int().positive().nullable(),
+  vectorRank: z.number().int().positive().nullable(),
+  textScore: z.number().finite().nullable(),
+  vectorScore: z.number().finite().nullable(),
+  metadataScore: z.number().finite().nullable(),
+  rerankScore: z.number().finite().nullable(),
+  fusionScore: z.number().finite().nullable(),
+  finalScore: z.number().finite(),
+  passedThreshold: z.boolean().nullable(),
+  explanation: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  createdAt: z.string().datetime()
+}).strict();
+
+export const similarityDebugRunSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["chunk_search", "atomic_note_matching"]),
+  queryText: z.string(),
+  queryTargetId: z.string().uuid().nullable(),
+  mode: z.string().min(1),
+  model: z.string().nullable(),
+  dimensions: z.number().int().positive().nullable(),
+  requestedLimit: z.number().int().positive(),
+  strategy: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()),
+  createdAt: z.string().datetime(),
+  results: z.array(similarityDebugResultSchema)
+}).strict();
+
+export const similarityDebugClearResultSchema = z.object({
+  deletedCount: z.number().int().nonnegative()
+}).strict();
 
 export const aiProviderKindSchema = z.enum(["google", "openai-compatible"]);
 export const aiReasoningLevelSchema = AiReasoningLevelSchema;
@@ -502,8 +557,10 @@ export type IngestionResult = z.infer<typeof ingestionResultSchema>;
 export type SourceSuggestion = z.infer<typeof sourceSuggestionSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
+export type LibraryResetResult = z.infer<typeof libraryResetResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
 export type SearchResult = z.infer<typeof SearchEvidenceSchema>;
+export type SimilarityDebugRun = z.infer<typeof similarityDebugRunSchema>;
 export type LibrarySource = z.infer<typeof librarySourceSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type AtomicNoteView = z.infer<typeof atomicNoteViewSchema>;
@@ -529,7 +586,9 @@ export type IntegrationPairingResult = z.infer<typeof integrationPairingResultSc
 export type IntegrationClient = z.infer<typeof integrationClientSchema>;
 
 export const defaultAppSettings = {
-  themeMode: "dark"
+  themeMode: "dark",
+  debugMode: false,
+  atomicNoteRelationThreshold: 0.72
 } satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {
@@ -555,6 +614,11 @@ export interface DesktopApi {
     updateApp: (settings: AppSettingsUpdate) => Promise<AppSettings>;
     get: () => Promise<StorageSettings>;
     update: (settings: StorageSettingsUpdate) => Promise<StorageSettings>;
+    resetLibrary: () => Promise<LibraryResetResult>;
+  };
+  debug: {
+    listSimilarityRuns: () => Promise<SimilarityDebugRun[]>;
+    clearSimilarityRuns: () => Promise<{ deletedCount: number }>;
   };
   ingestion: {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
@@ -586,6 +650,7 @@ export interface DesktopApi {
     createProfile: (input: AiProfileCreate) => Promise<AiProfile>;
     updateProfile: (input: AiProfileUpdate) => Promise<AiProfile>;
     cloneProfile: (profileId: string, name: string) => Promise<AiProfile>;
+    deleteProfile: (profileId: string) => Promise<boolean>;
     listProfileTasks: (profileId?: string) => Promise<AiProfileTask[]>;
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
     listTaskRoutes: () => Promise<AiTaskRoute[]>;

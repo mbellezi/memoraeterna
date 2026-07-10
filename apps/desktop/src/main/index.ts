@@ -14,6 +14,8 @@ import { IntegrationGateway } from "./services/integration-gateway.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
+import { LibraryResetService } from "./services/library-reset-service.js";
+import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -91,6 +93,8 @@ let obsidianSyncService: ObsidianSyncService | null = null;
 let integrationGateway: IntegrationGateway | null = null;
 let localModelService: LocalModelService | null = null;
 let backupService: BackupService | null = null;
+let libraryResetService: LibraryResetService | null = null;
+let similarityDebugService: SimilarityDebugService | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceStartupPromise: Promise<void> | null = null;
@@ -134,6 +138,11 @@ void app.whenReady().then(() => {
     getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
+  libraryResetService = new LibraryResetService({
+    getPool: () => databaseService?.getPool() ?? null,
+    getStorageSettings: () => settingsService!.get(),
+    userDataPath: app.getPath("userData")
+  });
   ingestionService = new IngestionService({
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
@@ -142,13 +151,19 @@ void app.whenReady().then(() => {
     workspaceRoot,
     isPackaged: app.isPackaged
   });
-  searchService = new SearchService(() => databaseService?.getPool() ?? null, aiService);
+  searchService = new SearchService(
+    () => databaseService?.getPool() ?? null,
+    aiService,
+    async () => (await settingsService!.getApp()).debugMode
+  );
   const relationThreshold = readRelationThreshold(process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD);
   knowledgeService = new KnowledgeService({
     getPool: () => databaseService?.getPool() ?? null,
     aiService,
     userDataPath: app.getPath("userData"),
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
+    isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
+    getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
     logger: console,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
@@ -181,6 +196,7 @@ void app.whenReady().then(() => {
     ...(gatewayPort !== undefined ? { preferredPort: gatewayPort } : {}),
     logger: console
   });
+  similarityDebugService = new SimilarityDebugService(() => databaseService?.getPool() ?? null);
   registerIpcHandlers(
     ipcMain,
     settingsService,
@@ -192,7 +208,9 @@ void app.whenReady().then(() => {
     knowledgeService,
     integrationGateway,
     localModelService,
-    backupService
+    backupService,
+    libraryResetService,
+    similarityDebugService
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
@@ -247,6 +265,7 @@ async function shutdownServices(): Promise<void> {
   await localModelService?.shutdown();
   localModelService = null;
   backupService = null;
+  libraryResetService = null;
   searchService = null;
   knowledgeService = null;
   await obsidianSyncService?.shutdown();

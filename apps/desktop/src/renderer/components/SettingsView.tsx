@@ -1,4 +1,4 @@
-import type { FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   Archive,
   FileX,
@@ -9,7 +9,8 @@ import {
   Save,
   ServerCog,
   Sun,
-  Trash2
+  Trash2,
+  RotateCcw
 } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
 import type {
@@ -32,6 +33,7 @@ interface SettingsViewProps {
   isSaving: boolean;
   t: (key: MessageKey) => string;
   onAppSettingsChange: (settings: AppSettingsUpdate) => void;
+  onRelationThresholdChange: (threshold: number) => Promise<void>;
   onChange: (settings: StorageSettings) => void;
   onSave: () => void;
 }
@@ -62,9 +64,13 @@ export function SettingsView({
   isSaving,
   t,
   onAppSettingsChange,
+  onRelationThresholdChange,
   onChange,
   onSave
 }: SettingsViewProps) {
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
+
   function update<K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
@@ -72,6 +78,20 @@ export function SettingsView({
   function submit(event: FormEvent) {
     event.preventDefault();
     onSave();
+  }
+
+  async function resetLibrary() {
+    if (!window.confirm(t("settings.reset.confirmation"))) return;
+    setIsResetting(true);
+    setResetStatus(null);
+    try {
+      const result = await window.app.settings.resetLibrary();
+      setResetStatus(result.failedFiles > 0 ? "settings.reset.completedWithWarnings" : "settings.reset.completed");
+    } catch {
+      setResetStatus("settings.reset.failed");
+    } finally {
+      setIsResetting(false);
+    }
   }
 
   return (
@@ -124,6 +144,36 @@ export function SettingsView({
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 border-b border-slate-200 pb-6 dark:border-slate-800">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t("settings.matching.title")}</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("settings.matching.description")}</p>
+          </div>
+          <span className="rounded-full bg-amber-100 px-3 py-1 text-lg font-bold text-amber-950 dark:bg-amber-950 dark:text-amber-100">
+            {appSettings.atomicNoteRelationThreshold.toFixed(2)}
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={appSettings.atomicNoteRelationThreshold}
+          aria-label={t("settings.matching.minimumScore")}
+          className="w-full accent-amber-600"
+          onChange={(event) => onAppSettingsChange({ atomicNoteRelationThreshold: Number(event.target.value) })}
+          onPointerUp={(event) => void onRelationThresholdChange(Number(event.currentTarget.value))}
+          onKeyUp={(event) => void onRelationThresholdChange(Number(event.currentTarget.value))}
+          onBlur={(event) => void onRelationThresholdChange(Number(event.currentTarget.value))}
+        />
+        <p className="text-xs text-slate-500">{t("settings.matching.savedAutomatically")}</p>
+        <div className="flex justify-between text-xs font-medium text-slate-500">
+          <span>{t("settings.matching.moreRelations")}</span>
+          <span>{t("settings.matching.fewerRelations")}</span>
         </div>
       </section>
 
@@ -211,6 +261,28 @@ export function SettingsView({
             disabled={!settings.uploadCopiesEnabled}
             onChange={(event) => update("uploadCopiesFolderPath", event.target.value || null)}
           />
+        </div>
+      </section>
+
+      <section className="grid gap-4 rounded-md border border-red-300 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+        <div className="flex items-center gap-2">
+          <RotateCcw className="h-5 w-5 text-red-700 dark:text-red-300" aria-hidden="true" />
+          <h2 className="text-lg font-semibold text-red-950 dark:text-red-100">{t("settings.reset.title")}</h2>
+        </div>
+        <p className="text-sm text-red-900 dark:text-red-200">{t("settings.reset.description")}</p>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-sm text-red-800 dark:text-red-200" role="status">
+            {resetStatus ? t(resetStatus) : ""}
+          </p>
+          <Button
+            type="button"
+            disabled={isResetting}
+            className="border-red-700 bg-red-700 hover:bg-red-800 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-800"
+            onClick={() => void resetLibrary()}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            {t("settings.reset.action")}
+          </Button>
         </div>
       </section>
 

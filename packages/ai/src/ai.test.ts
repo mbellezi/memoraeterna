@@ -86,7 +86,12 @@ describe("AI adapters", () => {
 
   it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
     expect(localModelCatalog).toHaveLength(5);
-    expect(localModelCatalog.filter((entry) => entry.capabilities.includes("embedding"))).toHaveLength(2);
+    const embeddingModels = localModelCatalog.filter((entry) => entry.capabilities.includes("embedding"));
+    expect(embeddingModels.map((entry) => entry.id)).toEqual([
+      "gguf-qwen3-embedding-0.6b-q8-0",
+      "gguf-bge-m3-q8-0"
+    ]);
+    expect(embeddingModels.every((entry) => entry.defaultParameters.dimensions === 1_024)).toBe(true);
     for (const entry of localModelCatalog) {
       expect(entry.revision).toMatch(/^[a-f0-9]{40}$/);
       expect(localModelExpectedSize(entry)).toBeGreaterThan(200_000_000);
@@ -275,7 +280,7 @@ describe("AI adapters", () => {
       taskType: "embedding",
       input: "query: hello",
       requiredCapabilities: ["embedding"],
-      parameters: { dimensions: 768 },
+      parameters: { dimensions: 1_024 },
       metadata: {}
     })).output).toEqual([0.6, 0.8]);
   });

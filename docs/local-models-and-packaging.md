@@ -39,16 +39,16 @@ SHA-256.
 | `mlx-gemma-4-e4b-it-4bit` | `mlx-community/gemma-4-e4b-it-4bit` | `475b9088d29754a3379866cf5aeb6b41acd313c2` | 5.18 GB | Gemma, aceite explicito |
 | `mlx-gemma-4-12b-it-4bit` | `mlx-community/gemma-4-12B-it-4bit` | `73bcf09092aa277861d5a191b989b666f7f32e8f` | 6.77 GB | Gemma, aceite explicito |
 | `mlx-qwen3-4b-instruct-2507-4bit` | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | `50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b` | 2.28 GB | Apache-2.0 |
-| `gguf-embeddinggemma-300m-q8-0` | `ggml-org/embeddinggemma-300M-GGUF` | `0f741b5a6585bd53aeb15cd1372c56f2a0f65e12` | 333.59 MB | Gemma, aceite explicito |
-| `gguf-multilingual-e5-base-q5-k-s` | `dinab/multilingual-e5-base-Q5_K_S-GGUF` | `fe6baddc69aa0aa9c4b74da2333225580603a4b0` | 224.79 MB | MIT |
+| `gguf-qwen3-embedding-0.6b-q8-0` | `Qwen/Qwen3-Embedding-0.6B-GGUF` | `370f27d7550e0def9b39c1f16d3fbaa13aa67728` | 639.15 MB | Apache-2.0 |
+| `gguf-bge-m3-q8-0` | `ggml-org/bge-m3-Q8_0-GGUF` | `9eba04c5d75ba5a1595e45de734d36bef4e5cb98` | 634.55 MB | MIT |
 
 Capabilities multimodais nao sao declaradas. Elas so devem entrar no catalogo
 depois de validacao real do adapter e das modalidades correspondentes.
 
 Os dois modelos GGUF de embedding declaram somente `embedding`, `offline` e
-`local-files`. O adapter `node-llama-cpp` usa `createEmbeddingContext`, permite
-configurar janela de contexto e dimensao 256/768 quando compativel, normaliza o
-vetor e nunca tenta executar esses modelos como geradores de texto.
+`local-files`. O adapter `node-llama-cpp` usa `createEmbeddingContext`, aceita
+dimensoes 256/768/1024 quando compativeis e normaliza o vetor. Qwen3 e BGE-M3
+usam 1024 dimensoes por padrao; nenhum deles e executado como gerador de texto.
 
 ## Download e armazenamento
 
@@ -66,6 +66,11 @@ Os modelos ficam em `userData/local-models/<catalog-id>`. O downloader:
 O token fica no `safeStorage`; banco e logs guardam apenas sua referencia. Um
 arquivo GGUF existente tambem pode ser importado para a pasta gerenciada. Seu
 SHA-256 passa a ser a revision local imutavel.
+
+O reset geral disponivel em Settings preserva `userData/local-models` e os
+registros dos modelos instalados. Ele remove a biblioteca, vetores, jobs, notas
+atomicas, assets internos, copias externas registradas e arquivos Obsidian
+gerenciados que estejam registrados no banco.
 
 ## Backup e limites
 

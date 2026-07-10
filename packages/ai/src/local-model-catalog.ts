@@ -63,52 +63,52 @@ const textCapabilities = [
 
 export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   {
-    id: "gguf-embeddinggemma-300m-q8-0",
-    displayName: "EmbeddingGemma 300M Q8_0",
-    family: "EmbeddingGemma",
-    variant: "300M Q8_0",
+    id: "gguf-qwen3-embedding-0.6b-q8-0",
+    displayName: "Qwen3-Embedding-0.6B Q8_0",
+    family: "Qwen3 Embedding",
+    variant: "0.6B Q8_0",
     runtime: "gguf",
-    repository: "ggml-org/embeddinggemma-300M-GGUF",
-    revision: "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
+    repository: "Qwen/Qwen3-Embedding-0.6B-GGUF",
+    revision: "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
     format: "gguf",
     quantization: "Q8_0",
     capabilities: ["embedding", "offline", "local-files"],
-    defaultParameters: { contextWindow: 2_048, dimensions: 768 },
-    minimumMemoryBytes: 1 * gib,
-    recommendedMemoryBytes: 2 * gib,
-    license: "Gemma",
-    licenseUrl: "https://ai.google.dev/gemma/terms",
-    requiresLicenseAcceptance: true,
+    defaultParameters: { contextWindow: 8_192, dimensions: 1_024 },
+    minimumMemoryBytes: 2 * gib,
+    recommendedMemoryBytes: 4 * gib,
+    license: "Apache-2.0",
+    licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+    requiresLicenseAcceptance: false,
     files: [
       {
-        path: "embeddinggemma-300M-Q8_0.gguf",
-        sizeBytes: 333_590_944,
-        sha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
+        path: "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        sizeBytes: 639_150_592,
+        sha256: "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439"
       }
     ]
   },
   {
-    id: "gguf-multilingual-e5-base-q5-k-s",
-    displayName: "Multilingual E5 Base Q5_K_S",
-    family: "Multilingual E5",
-    variant: "Base Q5_K_S",
+    id: "gguf-bge-m3-q8-0",
+    displayName: "BGE-M3 Q8_0",
+    family: "BGE-M3",
+    variant: "Q8_0",
     runtime: "gguf",
-    repository: "dinab/multilingual-e5-base-Q5_K_S-GGUF",
-    revision: "fe6baddc69aa0aa9c4b74da2333225580603a4b0",
+    repository: "ggml-org/bge-m3-Q8_0-GGUF",
+    revision: "9eba04c5d75ba5a1595e45de734d36bef4e5cb98",
     format: "gguf",
-    quantization: "Q5_K_S",
+    quantization: "Q8_0",
     capabilities: ["embedding", "offline", "local-files"],
-    defaultParameters: { contextWindow: 512, dimensions: 768 },
-    minimumMemoryBytes: 1 * gib,
-    recommendedMemoryBytes: 2 * gib,
+    defaultParameters: { contextWindow: 8_192, dimensions: 1_024 },
+    minimumMemoryBytes: 2 * gib,
+    recommendedMemoryBytes: 4 * gib,
     license: "MIT",
     licenseUrl: "https://opensource.org/license/mit",
     requiresLicenseAcceptance: false,
     files: [
       {
-        path: "multilingual-e5-base-q5_k_s.gguf",
-        sizeBytes: 224_787_776,
-        sha256: "b2a905dec5a2f9ff06a00d1e580c07100b46268c3313c2237655180df71fb2e1"
+        path: "bge-m3-q8_0.gguf",
+        sizeBytes: 634_553_760,
+        sha256: "aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173"
       }
     ]
   },
@@ -199,7 +199,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   }
 ]);
 
-export const localModelCatalogVersion = "2026-07-10.2";
+export const localModelCatalogVersion = "2026-07-10.3";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);

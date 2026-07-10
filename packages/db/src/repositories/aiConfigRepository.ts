@@ -167,6 +167,11 @@ export function createAiConfigRepository(db: Queryable) {
       return result.rows.map(mapProfile);
     },
 
+    async deleteProfile(profileId: string): Promise<boolean> {
+      const result = await db.query("delete from ai_profile_sets where id = $1", [profileId]);
+      return (result.rowCount ?? 0) > 0;
+    },
+
     async updateProfile(input: {
       id: string;
       name?: string;

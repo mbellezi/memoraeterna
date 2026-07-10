@@ -63,10 +63,13 @@ Implementado ate aqui:
   main process;
 - chunks e SourceSpans com pagina, bloco, bounding box, selector e
   reprocessamento idempotente;
-- embeddings separados em 256/768 dimensoes, indices HNSW e busca textual com
+- embeddings separados em 256/768/1024 dimensoes, indices HNSW e busca textual com
   `simple`, `unaccent` e `pg_trgm`;
-- busca hibrida com evidencias e UI funcional de Import, Search, Jobs e
-  configuracao de IA.
+- busca hibrida com rankings textual e vetorial separados, fusao RRF,
+  evidencias e UI funcional de Import, Search, Jobs e configuracao de IA;
+- dashboard de debug com captura opcional das buscas de chunks e do matching
+  de notas atomicas, incluindo scores de texto, vetor, metadados, reranking,
+  decisao do limiar e erros do reranker;
 - resumos rastreaveis com perfil/modelo/prompt registrados e map-reduce para
   fontes que excedem o limite de contexto configurado;
 - notas atomicas geradas por resultado estruturado Zod, vinculadas a fonte,
@@ -101,8 +104,8 @@ Implementado ate aqui:
   de clientes/sync em PostgreSQL temporario.
 - catalogo local versionado com tres modelos MLX auditados, revisions imutaveis,
   tamanhos, SHA-256, licencas, capabilities e requisitos de memoria;
-- catalogo local ampliado com EmbeddingGemma 300M Q8_0 e multilingual-e5-base
-  Q5_K_S em GGUF auditado, disponiveis para download na interface;
+- catalogo local ampliado com Qwen3-Embedding-0.6B Q8_0 e BGE-M3 Q8_0 em GGUF
+  auditado, disponiveis para download na interface;
 - downloader Hugging Face direto, retomavel por Range, com `.partial`, preflight
   de disco/memoria/plataforma, progresso, cancelamento, retry, verificacao e
   promocao atomica;
@@ -117,6 +120,9 @@ Implementado ate aqui:
   shaders `mlx.metallib` gerados por Xcode e smoke com modelo real instalado;
 - Settings > Local models para catalogo/filtros, token seguro, aceite de
   licenca, downloads, retomada, teste, importacao GGUF e remocao protegida;
+- Settings permite remover perfis de IA e executar um reset geral da biblioteca,
+  apagando conteudo, arquivos gerenciados, vetores, jobs e notas atomicas sem
+  remover modelos locais ja baixados;
 - backup basico via `pg_dump` e copias das pastas gerenciadas configuradas;
 - limites de importacao e limites de paginas/tempo/memoria de saida/concorrencia
   do Docling;
@@ -124,7 +130,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migration `0007_concerned_marrow`, baseline com 8 migrations e verificacao
+- migration `0009_same_nighthawk`, baseline com 10 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.

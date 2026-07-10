@@ -160,7 +160,7 @@ try {
     throw new Error("Obsidian edit did not update canonical Markdown.");
   }
   await indexDocument(pool, webDocument.id, webDocument.sourceItemId, webDocument.canonicalMarkdown);
-  const search = await createSearchRepository(pool).search({ text: "offline obsidian edit", limit: 5 });
+  const search = await createSearchRepository(pool).searchText({ text: "offline obsidian edit", limit: 5 });
   if (search[0]?.sourceItemId !== webSourceId) throw new Error("Search did not reflect the Obsidian edit.");
 
   const movedPath = join(dirname(webPath), "phase-4-article-moved.md");

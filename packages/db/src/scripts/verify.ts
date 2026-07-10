@@ -29,6 +29,9 @@ const expectedTables = [
   ,"ai_task_runs"
   ,"embeddings_256"
   ,"embeddings_768"
+  ,"embeddings_1024"
+  ,"similarity_debug_runs"
+  ,"similarity_debug_results"
 ];
 
 const pool = createPgPool({ connectionString, max: 1 });

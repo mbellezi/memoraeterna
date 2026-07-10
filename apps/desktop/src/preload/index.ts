@@ -36,6 +36,7 @@ import {
   ingestionResultSchema,
   jobRecordSchema,
   jobsClearResultSchema,
+  libraryResetResultSchema,
   librarySourceSchema,
   manualIngestionInputSchema,
   searchInputSchema,
@@ -54,7 +55,9 @@ import {
   localModelDownloadInputSchema,
   localModelDefaultsInputSchema,
   localModelViewSchema,
-  repositoryTokenInputSchema
+  repositoryTokenInputSchema,
+  similarityDebugRunSchema,
+  similarityDebugClearResultSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
@@ -92,6 +95,21 @@ const api: DesktopApi = {
       const payload = storageSettingsUpdateSchema.parse(settings);
       const result = await ipcRenderer.invoke(ipcChannels.settingsUpdate, payload);
       return storageSettingsSchema.parse(result);
+    },
+    async resetLibrary() {
+      return libraryResetResultSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryReset));
+    }
+  },
+  debug: {
+    async listSimilarityRuns() {
+      return similarityDebugRunSchema.array().parse(
+        await ipcRenderer.invoke(ipcChannels.debugSimilarityRunsList)
+      );
+    },
+    async clearSimilarityRuns() {
+      return similarityDebugClearResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.debugSimilarityRunsClear)
+      );
     }
   },
   ingestion: {
@@ -181,6 +199,9 @@ const api: DesktopApi = {
     },
     async cloneProfile(profileId: string, name: string) {
       return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesClone, { profileId, name }));
+    },
+    async deleteProfile(profileId: string) {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.aiProfilesDelete, profileId));
     },
     async listProfileTasks(profileId?: string) {
       return aiProfileTaskSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfileTasksList, profileId));

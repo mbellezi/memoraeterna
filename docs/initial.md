@@ -40,7 +40,7 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - A aplicacao deve incluir uma area de configuracoes para provedores de IA, modelos de processamento, embeddings, chaves e modelos locais.
 - Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram na fase seguinte como novos adaptadores.
 - Modelos locais via GGUF devem ser executados inicialmente com `node-llama-cpp` embutido na aplicacao Electron.
-- Embeddings no MVP: Google (Gemini), endpoints OpenAI-compatible e modelos locais GGUF baixaveis pela interface, inicialmente EmbeddingGemma 300M e multilingual-e5-base.
+- Embeddings no MVP: Google (Gemini), endpoints OpenAI-compatible e modelos locais GGUF baixaveis pela interface, inicialmente Qwen3-Embedding-0.6B e BGE-M3.
 - PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - Main process gerencia o ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao de crash.
 - Drizzle ORM sobre `node-postgres`.
@@ -540,8 +540,8 @@ Provedores remotos iniciais:
 
 Modelos locais baixaveis iniciais:
 
-- `google/embeddinggemma-300m`;
-- `intfloat/multilingual-e5-base`.
+- `Qwen/Qwen3-Embedding-0.6B`;
+- `BAAI/bge-m3`.
 
 O gerenciador de modelos locais deve permitir:
 
@@ -562,7 +562,7 @@ Estrategia de dimensoes:
 - usar dimensao maior/nativa para reranking semantico quando o modelo suportar;
 - registrar dimensao, modelo e estrategia em cada embedding gerado.
 
-Ideia inicial: usar um indice rapido com 256 dimensoes para recuperar candidatos e um indice maior para reranking. Essa estrategia combina bem com modelos Matryoshka, como `google/embeddinggemma-300m`, que pode produzir 768 dimensoes e suportar truncamentos como 256. `intfloat/multilingual-e5-base` tem dimensao nativa de 768, o que tambem se encaixa bem na etapa de reranking em maior qualidade.
+Ideia inicial: usar indices separados conforme a dimensao nativa ou validada de cada modelo. `Qwen/Qwen3-Embedding-0.6B` suporta Matryoshka ate 1024 dimensoes; `BAAI/bge-m3` produz vetores densos nativos de 1024 dimensoes. Ambos usam 1024 por padrao no catalogo local.
 
 ## Parametros, Perfis e Idioma de IA
 
@@ -1050,8 +1050,8 @@ Local GGUF via node-llama-cpp
 Modelos locais iniciais:
 
 ```txt
-ggml-org/embeddinggemma-300M-GGUF
-dinab/multilingual-e5-base-Q5_K_S-GGUF
+Qwen/Qwen3-Embedding-0.6B-GGUF
+ggml-org/bge-m3-Q8_0-GGUF
 ```
 
 ## Pacote `@app/conversion`
@@ -1854,9 +1854,9 @@ semantic reranking
   -> exemplo: 768 em modelos que suportem essa dimensao
 ```
 
-Essa regra deve ser orientada por capacidade real do modelo e benchmarks. `google/embeddinggemma-300m` suporta 768 dimensoes e opcoes menores como 512, 256 e 128 via Matryoshka Representation Learning. `intfloat/multilingual-e5-base` tem dimensao nativa de 768.
+Essa regra deve ser orientada por capacidade real do modelo e benchmarks. `Qwen/Qwen3-Embedding-0.6B` suporta dimensoes flexiveis via Matryoshka Representation Learning; `BAAI/bge-m3` usa dimensao densa nativa de 1024.
 
-Dimensoes diferentes nao devem ser misturadas no mesmo indice vetorial. Se o sistema mantiver embeddings de 256 e 768 dimensoes, a persistencia deve separar claramente modelo, dimensao, uso e indice correspondente. Na implementacao, usar tabelas (ou colunas) separadas por dimensao — por exemplo `embeddings_256` e `embeddings_768` — pois indices pgvector exigem dimensao fixa por coluna.
+Dimensoes diferentes nao devem ser misturadas no mesmo indice vetorial. Se o sistema mantiver embeddings de 256, 768 e 1024 dimensoes, a persistencia deve separar claramente modelo, dimensao, uso e indice correspondente. Na implementacao, usar tabelas separadas por dimensao — `embeddings_256`, `embeddings_768` e `embeddings_1024` — pois indices pgvector exigem dimensao fixa por coluna.
 
 ## Grafo
 
@@ -2446,7 +2446,7 @@ node-llama-cpp
   -> runtime local embutido para modelos GGUF no Electron
 
 Embeddings remotos e locais
-  -> OpenAI, Google, EmbeddingGemma e multilingual-e5-base
+  -> OpenAI, Google, Qwen3-Embedding-0.6B e BGE-M3
 
 Defuddle
   -> extracao primaria de paginas web para Markdown limpo

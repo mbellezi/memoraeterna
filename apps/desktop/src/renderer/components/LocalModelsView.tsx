@@ -31,6 +31,8 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   const [hasToken, setHasToken] = useState(false);
   const [status, setStatus] = useState<MessageKey>("shell.states.ready");
   const [testOutput, setTestOutput] = useState("");
+  const [testedModelId, setTestedModelId] = useState<string | null>(null);
+  const [testingModelId, setTestingModelId] = useState<string | null>(null);
 
   async function load() {
     const [nextModels, tokenConfigured] = await Promise.all([
@@ -82,6 +84,19 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
       setRepositoryToken("");
       setHasToken(true);
     });
+  }
+
+  async function testModel(model: LocalModelView) {
+    setTestedModelId(model.id);
+    setTestingModelId(model.id);
+    setTestOutput("");
+    try {
+      await run(async () => {
+        setTestOutput(await window.app.localModels.test(model.catalogId));
+      }, "localModels.testSucceeded");
+    } finally {
+      setTestingModelId(null);
+    }
   }
 
   return (
@@ -184,17 +199,22 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
                 {model.status === "not_downloaded" ? <Button type="button" disabled={!model.compatible || (model.requiresLicenseAcceptance && !licenseAccepted)} onClick={() => void run(() => window.app.localModels.download({ catalogId: model.catalogId, acceptLicense: licenseAccepted }))}><Download className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.download")}</Button> : null}
                 {active ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void run(() => window.app.localModels.cancel(model.catalogId))}><CircleStop className="h-4 w-4" aria-hidden="true" />{t("shell.actions.cancel")}</Button> : null}
                 {model.status === "failed" ? <Button type="button" onClick={() => void run(() => window.app.localModels.resume(model.catalogId))}><RefreshCw className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.resume")}</Button> : null}
-                {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void run(async () => { setTestOutput(await window.app.localModels.test(model.catalogId)); }, "localModels.testSucceeded")}><Play className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.test")}</Button> : null}
+                {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={testingModelId !== null} onClick={() => void testModel(model)}>{testingModelId === model.id ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}{t(testingModelId === model.id ? "shell.states.loading" : "localModels.actions.test")}</Button> : null}
                 {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={model.profilesUsing.length > 0} onClick={() => {
                   if (window.confirm(t("localModels.removeConfirmation"))) void run(() => window.app.localModels.remove(model.catalogId));
                 }}><Trash2 className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.remove")}</Button> : null}
               </div>
+              {testedModelId === model.id ? (
+                <div className="grid gap-2" role="status">
+                  {testOutput ? <pre className="max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testOutput}</pre> : null}
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{t(status)}</p>
+                </div>
+              ) : null}
             </article>
           );
         })}
       </div>
       {filtered.length === 0 ? <p className="text-sm text-slate-600 dark:text-slate-300">{t("localModels.empty")}</p> : null}
-      {testOutput ? <pre className="max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testOutput}</pre> : null}
       <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{t(status)}</p>
     </section>
   );

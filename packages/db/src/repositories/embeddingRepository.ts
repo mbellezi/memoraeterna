@@ -2,7 +2,7 @@ import type { QueryResultRow } from "pg";
 
 import type { Queryable } from "./types.js";
 
-export type SupportedEmbeddingDimension = 256 | 768;
+export type SupportedEmbeddingDimension = 256 | 768 | 1024;
 
 export interface UpsertEmbeddingInput {
   targetType: "chunk" | "atomic_note" | "document" | "source_item";
@@ -24,7 +24,7 @@ export interface VectorMatch {
 }
 
 function embeddingTable(dimensions: number): string {
-  if (dimensions === 256 || dimensions === 768) {
+  if (dimensions === 256 || dimensions === 768 || dimensions === 1_024) {
     return `embeddings_${dimensions}`;
   }
   throw new Error(`Unsupported embedding dimension: ${dimensions}`);
