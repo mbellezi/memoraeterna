@@ -95,6 +95,8 @@ export class IntegrationGateway {
   private readonly sessions = new Map<string, Session>();
   private readonly sockets = new Set<SocketClient>();
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private pollPromise: Promise<void> | null = null;
+  private stopping = false;
   private readonly jobSignatures = new Map<string, string>();
   private status: IntegrationGatewayStatus = { state: "stopped", host: "127.0.0.1", port: null, baseUrl: null };
 
@@ -106,6 +108,7 @@ export class IntegrationGateway {
 
   public async start(): Promise<IntegrationGatewayStatus> {
     if (this.server) return this.getStatus();
+    this.stopping = false;
     this.status = { ...this.status, state: "starting" };
     const server = createServer((request, response) => {
       void this.handleHttp(request, response);
@@ -154,11 +157,13 @@ export class IntegrationGateway {
   }
 
   public async stop(): Promise<void> {
+    this.stopping = true;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = null;
     for (const client of this.sockets) client.socket.close(1001, "gateway_stopping");
     this.sockets.clear();
     this.sessions.clear();
+    await this.pollPromise;
     this.webSockets?.close();
     this.webSockets = null;
     const server = this.server;
@@ -374,12 +379,15 @@ export class IntegrationGateway {
   }
 
   private scheduleJobPolling(delay: number): void {
-    if (!this.server) return;
+    if (!this.server || this.stopping) return;
     this.pollTimer = setTimeout(() => {
       this.pollTimer = null;
-      void this.pollJobs()
+      this.pollPromise = this.pollJobs()
         .catch(() => this.options.logger?.warn("integration_gateway_job_poll_failed"))
-        .finally(() => this.scheduleJobPolling(500));
+        .finally(() => {
+          this.pollPromise = null;
+          this.scheduleJobPolling(500);
+        });
     }, delay);
   }
 

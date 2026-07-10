@@ -12,15 +12,18 @@ export interface PgPoolConfig {
   max?: number;
   idleTimeoutMillis?: number;
   connectionTimeoutMillis?: number;
+  onError?: (error: Error) => void;
 }
 
 export function createPgPool(config: PgPoolConfig): PgPool {
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString: config.connectionString,
     max: config.max ?? 10,
     idleTimeoutMillis: config.idleTimeoutMillis ?? 30_000,
     connectionTimeoutMillis: config.connectionTimeoutMillis ?? 5_000
   });
+  pool.on("error", (error) => config.onError?.(error));
+  return pool;
 }
 
 export function createDbClient(pool: PgPool) {

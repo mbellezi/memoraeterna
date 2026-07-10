@@ -14,6 +14,9 @@ import {
   searchInputSchema,
   atomicNoteReviewInputSchema,
   sourceDetailSchema
+  , aiProfileTaskInputSchema
+  , localModelDownloadInputSchema
+  , localModelViewSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -125,5 +128,38 @@ describe("desktop IPC contracts", () => {
       atomicNotes: [],
       relations: []
     }).title).toBe("Source");
+  });
+
+  it("validates phase 5 local model commands and profile selections", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(localModelDownloadInputSchema.parse({ catalogId: "mlx-test" })).toEqual({
+      catalogId: "mlx-test",
+      acceptLicense: false
+    });
+    expect(aiProfileTaskInputSchema.parse({
+      profileId: id,
+      task: "summarization",
+      localModelId: id,
+      modelId: "local/model",
+      runtime: "mlx",
+      requiredCapabilities: ["summarization"]
+    }).runtime).toBe("mlx");
+    expect(() => aiProfileTaskInputSchema.parse({
+      profileId: id,
+      task: "summarization",
+      modelId: "missing-source",
+      runtime: "remote",
+      requiredCapabilities: []
+    })).toThrow();
+    expect(localModelViewSchema.parse({
+      id, catalogId: "mlx-test", modelId: "repo/model", displayName: "Model",
+      family: "Family", variant: "Variant", repository: "repo/model", revision: "a".repeat(40),
+      runtime: "mlx", format: "safetensors", quantization: "4-bit",
+      capabilities: ["offline"], minimumMemoryBytes: 1, recommendedMemoryBytes: 2,
+      expectedSizeBytes: 10, installedSizeBytes: 0, licenseName: "Test",
+      licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
+      licenseAccepted: false, status: "not_downloaded", compatible: true,
+      compatibilityReason: "compatible", profilesUsing: [], lastError: null, download: null
+    }).catalogId).toBe("mlx-test");
   });
 });

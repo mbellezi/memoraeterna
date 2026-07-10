@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@app/domain": "0.0.0",
+    "node-llama-cpp": "3.19.0",
     "zod": "4.4.3"
   }
 }

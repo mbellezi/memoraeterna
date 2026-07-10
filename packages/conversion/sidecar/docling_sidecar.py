@@ -65,7 +65,12 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
         raise FileNotFoundError(source)
 
     converter = DocumentConverter()
-    conversion = converter.convert(source)
+    options = request.get("options", {})
+    max_pages = options.get("maxPages") if isinstance(options, dict) else None
+    conversion = converter.convert(
+        source,
+        **({"max_num_pages": max_pages} if isinstance(max_pages, int) and max_pages > 0 else {}),
+    )
     document = conversion.document
     markdown = document.export_to_markdown().strip()
     if markdown:

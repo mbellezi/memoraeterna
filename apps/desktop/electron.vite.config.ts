@@ -11,12 +11,19 @@ const i18nPackage = resolve(rootDir, "../../packages/i18n/src/index.ts");
 const aiPackage = resolve(rootDir, "../../packages/ai/src/index.ts");
 const conversionPackage = resolve(rootDir, "../../packages/conversion/src/index.ts");
 const domainPackage = resolve(rootDir, "../../packages/domain/src/index.ts");
+const integrationContractsPackage = resolve(rootDir, "../../packages/integration-contracts/src/index.ts");
 
 export default defineConfig({
   main: {
-    json: { stringify: false },
+    json: { stringify: true },
     plugins: [externalizeDepsPlugin({
-      exclude: ["@app/ai", "@app/conversion", "@app/db", "@app/domain"]
+      exclude: [
+        "@app/ai",
+        "@app/conversion",
+        "@app/db",
+        "@app/domain",
+        "@app/integration-contracts"
+      ]
     })],
     build: {
       rollupOptions: {
@@ -29,6 +36,8 @@ export default defineConfig({
           /^drizzle-orm($|\/)/,
           /^fflate($|\/)/,
           /^linkedom($|\/)/,
+          /^node-llama-cpp($|\/)/,
+          /^@node-llama-cpp($|\/)/,
           /^pg($|\/)/,
           "pg-native"
         ],
@@ -44,6 +53,7 @@ export default defineConfig({
         "@app/ai": aiPackage,
         "@app/conversion": conversionPackage,
         "@app/domain": domainPackage,
+        "@app/integration-contracts": integrationContractsPackage,
         "@desktop": srcDir
       }
     }

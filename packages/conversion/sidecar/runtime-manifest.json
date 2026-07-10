@@ -5,5 +5,21 @@
   "offlineByDefault": true,
   "networkServer": false,
   "runtimeInstallAtStartup": false,
-  "platformArtifacts": []
+  "platformArtifacts": [
+    {
+      "platform": "darwin-arm64",
+      "pythonDistribution": {
+        "source": "https://github.com/astral-sh/python-build-standalone/releases/download/20260408/cpython-3.13.13%2B20260408-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "db8b4f8c7ab5d51cee148d8a2eaf1ad8bb2b9def51cb24c185c6db6143938e9e"
+      },
+      "requirements": "requirements-darwin-arm64.lock",
+      "models": [
+        { "repository": "docling-project/CodeFormulaV2", "revision": "ecedbe111d15c2dc60bfd4a823cbe80127b58af4" },
+        { "repository": "docling-project/DocumentFigureClassifier-v2.5", "revision": "f859dfbff5c9916cd996942d4b0db7fa25808220" },
+        { "repository": "docling-project/docling-layout-heron", "revision": "8f39ad3c0b4c58e9c2d2c84a38465abf757272d8" },
+        { "repository": "docling-project/docling-models", "revision": "fc0f2d45e2218ea24bce5045f58a389aed16dc23" },
+        { "repository": "RapidOCR bundled model set", "revision": "rapidocr-3.9.1" }
+      ]
+    }
+  ]
 }

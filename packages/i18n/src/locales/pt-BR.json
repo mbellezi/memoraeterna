@@ -74,6 +74,25 @@
       "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
       "secureStorageUnavailable": "O armazenamento seguro de credenciais nao esta disponivel.",
       "missingCredential": "A credencial do provedor esta ausente."
+    },
+    "localModels": {
+      "notFound": "O modelo local nao foi encontrado.",
+      "notReady": "O modelo local nao esta instalado e pronto.",
+      "licenseRequired": "Aceite a licenca do modelo antes do download.",
+      "unsupported_platform": "MLX exige um Mac com Apple Silicon.",
+      "insufficient_memory": "Esta maquina nao tem memoria suficiente para o modelo.",
+      "insufficientDisk": "Nao ha espaco livre suficiente para o modelo.",
+      "downloadHttp": "O download do modelo falhou.",
+      "sizeMismatch": "Um arquivo do modelo baixado tem tamanho incorreto.",
+      "checksumMismatch": "Um arquivo do modelo falhou na verificacao de checksum.",
+      "unsafePath": "O modelo contem um caminho de arquivo inseguro.",
+      "invalidRuntimeResponse": "O runtime local retornou uma resposta invalida.",
+      "runtimeFailed": "O runtime do modelo local falhou.",
+      "runtimeUnavailable": "O runtime do modelo local nao esta instalado.",
+      "modelBusy": "O modelo esta em uso.",
+      "profileInUse": "Substitua este modelo nos perfis afetados antes de remove-lo.",
+      "canceled": "O download do modelo foi cancelado.",
+      "invalidGguf": "Escolha um arquivo de modelo GGUF valido."
     }
   },
   "jobs": {
@@ -96,6 +115,7 @@
       "atomicNoteMatching": "Conexao de notas atomicas",
       "obsidianSync": "Sincronizacao com Obsidian",
       "assetStorage": "Armazenamento de assets"
+      , "localModelDownload": "Download de modelo local"
     },
     "progress": {
       "processingSource": "Processando {title}",
@@ -264,8 +284,33 @@
       "openAiCompatible": "Compativel com OpenAI", "displayName": "Nome de exibicao", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Chave de API", "saveProvider": "Salvar provedor", "test": "Testar",
       "connectionOk": "Conexao bem-sucedida.", "profiles": "Perfis", "profileName": "Nome do perfil",
-      "createProfile": "Criar perfil", "defaultProfile": "Padrao", "cloneProfile": "Clonar perfil"
+      "createProfile": "Criar perfil", "defaultProfile": "Padrao", "cloneProfile": "Clonar perfil",
+      "selectModel": "Selecione um modelo remoto ou local"
     }
+  },
+  "localModels": {
+    "title": "Modelos locais",
+    "repositoryToken": "Token da Hugging Face",
+    "tokenConfigured": "Token configurado",
+    "tokenOptional": "Opcional para repositorios privados ou restritos",
+    "saveToken": "Salvar token",
+    "empty": "Nenhum modelo corresponde aos filtros.",
+    "licenseAccept": "Aceito a licenca do modelo:",
+    "profileUsage": "Usado pelos perfis",
+    "removeConfirmation": "Remover este modelo e seus arquivos gerenciados desta maquina?",
+    "testSucceeded": "A inferencia local funcionou.",
+    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos os runtimes", "allFamilies": "Todas as familias", "compatibleOnly": "Somente compativeis" },
+    "compatibility": { "compatible": "Compativel com esta maquina", "unsupported_platform": "Exige macOS com Apple Silicon", "insufficient_memory": "Memoria insuficiente" },
+    "status": { "not_downloaded": "Nao baixado", "downloading": "Baixando", "verifying": "Verificando", "ready": "Instalado", "failed": "Falhou", "removing": "Removendo" },
+    "actions": { "download": "Baixar", "resume": "Retomar", "test": "Testar inferencia", "remove": "Remover", "importGguf": "Importar GGUF" },
+    "progress": { "loading": "Carregando o modelo", "generating": "Gerando localmente", "completed": "Concluido", "verifying": "Verificando arquivos", "etaUnknown": "Estimando tempo" }
+  },
+  "backup": {
+    "title": "Backup",
+    "description": "Crie um dump do PostgreSQL e copie os arquivos gerenciados configurados para uma pasta datada.",
+    "action": "Criar backup",
+    "completed": "Backup concluido:",
+    "failed": "Nao foi possivel criar o backup."
   },
   "integrations": {
     "title": "Integracoes",

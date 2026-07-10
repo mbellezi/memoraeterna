@@ -34,6 +34,16 @@ export const ipcChannels = {
   aiProfilesCreate: "app:ai:profiles:create",
   aiProfilesClone: "app:ai:profiles:clone",
   aiProfileTaskSet: "app:ai:profiles:task:set",
+  localModelsList: "app:local-models:list",
+  localModelsDownload: "app:local-models:download",
+  localModelsCancel: "app:local-models:cancel",
+  localModelsResume: "app:local-models:resume",
+  localModelsRemove: "app:local-models:remove",
+  localModelsTest: "app:local-models:test",
+  localModelsImportGguf: "app:local-models:import-gguf",
+  localModelsRepositoryTokenSet: "app:local-models:repository-token:set",
+  localModelsRepositoryTokenStatus: "app:local-models:repository-token:status",
+  backupCreate: "app:backup:create",
   integrationGatewayStatus: "app:integration:gateway:status",
   integrationClientsList: "app:integration:clients:list",
   integrationPairingCreate: "app:integration:pairing:create",
@@ -317,9 +327,73 @@ export const aiProfileCloneSchema = z.object({
 export const aiProfileTaskInputSchema = z.object({
   profileId: z.string().uuid(),
   task: z.enum(["embedding", "summarization", "text-generation", "structured-output", "atomic-note-generation", "reranking"]),
-  providerConfigId: z.string().uuid(),
+  providerConfigId: z.string().uuid().nullable().optional(),
+  localModelId: z.string().uuid().nullable().optional(),
   modelId: z.string().trim().min(1),
+  runtime: z.enum(["remote", "gguf", "mlx"]).default("remote"),
   requiredCapabilities: z.array(AiCapabilitySchema).default([])
+}).strict().superRefine((input, context) => {
+  const hasRemote = Boolean(input.providerConfigId);
+  const hasLocal = Boolean(input.localModelId);
+  if (hasRemote === hasLocal) {
+    context.addIssue({ code: "custom", message: "Select exactly one remote or local model.", path: ["modelId"] });
+  }
+  if (hasLocal && input.runtime === "remote") {
+    context.addIssue({ code: "custom", message: "Local model requires a local runtime.", path: ["runtime"] });
+  }
+});
+
+export const localModelStatusSchema = z.enum([
+  "not_downloaded", "downloading", "verifying", "ready", "failed", "removing"
+]);
+
+export const localModelViewSchema = z.object({
+  id: z.string().uuid(),
+  catalogId: z.string().min(1),
+  modelId: z.string().min(1),
+  displayName: z.string().min(1),
+  family: z.string().min(1),
+  variant: z.string().min(1),
+  repository: z.string().min(1),
+  revision: z.string().min(1),
+  runtime: z.enum(["gguf", "mlx"]),
+  format: z.string().min(1),
+  quantization: z.string().min(1),
+  capabilities: z.array(AiCapabilitySchema),
+  minimumMemoryBytes: z.number().int().nonnegative(),
+  recommendedMemoryBytes: z.number().int().nonnegative(),
+  expectedSizeBytes: z.number().int().nonnegative(),
+  installedSizeBytes: z.number().int().nonnegative(),
+  licenseName: z.string().min(1),
+  licenseUrl: z.string().url(),
+  requiresLicenseAcceptance: z.boolean(),
+  licenseAccepted: z.boolean(),
+  status: localModelStatusSchema,
+  compatible: z.boolean(),
+  compatibilityReason: z.enum(["compatible", "unsupported_platform", "insufficient_memory"]),
+  profilesUsing: z.array(z.string()),
+  lastError: z.string().nullable(),
+  download: z.object({
+    jobId: z.string().uuid(),
+    currentFile: z.string().nullable(),
+    downloadedBytes: z.number().int().nonnegative(),
+    totalBytes: z.number().int().nonnegative(),
+    bytesPerSecond: z.number().int().nonnegative(),
+    etaSeconds: z.number().int().nonnegative().nullable()
+  }).strict().nullable()
+}).strict();
+
+export const localModelDownloadInputSchema = z.object({
+  catalogId: z.string().min(1),
+  acceptLicense: z.boolean().default(false)
+}).strict();
+
+export const repositoryTokenInputSchema = z.object({ token: z.string().min(1) }).strict();
+
+export const backupResultSchema = z.object({
+  path: z.string().min(1),
+  createdAt: z.string().datetime(),
+  included: z.array(z.enum(["database", "obsidian", "uploadedFiles"]))
 }).strict();
 
 export const integrationGatewayStatusSchema = z.object({
@@ -379,6 +453,9 @@ export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
 export type AiProfile = z.infer<typeof aiProfileSchema>;
 export type AiProfileCreate = z.infer<typeof aiProfileCreateSchema>;
 export type AiProfileTaskInput = z.infer<typeof aiProfileTaskInputSchema>;
+export type LocalModelView = z.infer<typeof localModelViewSchema>;
+export type LocalModelDownloadInput = z.infer<typeof localModelDownloadInputSchema>;
+export type BackupResult = z.infer<typeof backupResultSchema>;
 export type IntegrationGatewayStatus = z.infer<typeof integrationGatewayStatusSchema>;
 export type IntegrationPairingInput = z.infer<typeof integrationPairingInputSchema>;
 export type IntegrationPairingResult = z.infer<typeof integrationPairingResultSchema>;
@@ -441,6 +518,20 @@ export interface DesktopApi {
     createProfile: (input: AiProfileCreate) => Promise<AiProfile>;
     cloneProfile: (profileId: string, name: string) => Promise<AiProfile>;
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
+  };
+  localModels: {
+    list: () => Promise<LocalModelView[]>;
+    download: (input: LocalModelDownloadInput) => Promise<LocalModelView>;
+    cancel: (catalogId: string) => Promise<LocalModelView>;
+    resume: (catalogId: string) => Promise<LocalModelView>;
+    remove: (catalogId: string) => Promise<LocalModelView>;
+    test: (catalogId: string) => Promise<string>;
+    importGguf: () => Promise<LocalModelView | null>;
+    setRepositoryToken: (token: string) => Promise<boolean>;
+    hasRepositoryToken: () => Promise<boolean>;
+  };
+  backup: {
+    create: () => Promise<BackupResult | null>;
   };
   integrations: {
     getGatewayStatus: () => Promise<IntegrationGatewayStatus>;

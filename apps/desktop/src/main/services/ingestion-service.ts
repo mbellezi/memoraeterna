@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -94,6 +94,8 @@ export class IngestionService {
   }
 
   public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
+    const file = await stat(path);
+    assertImportSize(file.size, readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024));
     const data = await readFile(path);
     const fileName = basename(path);
     const mimeType = detectMimeType(fileName, data);
@@ -414,7 +416,41 @@ function resolveDoclingRuntime(options: IngestionServiceOptions) {
     ? join(options.resourcesPath, "docling", "docling_sidecar.py")
     : join(options.workspaceRoot, "packages", "conversion", "sidecar", "docling_sidecar.py");
   if (!existsSync(executablePath) || !existsSync(sidecarScriptPath)) return null;
-  return { executablePath, sidecarScriptPath };
+  return {
+    executablePath,
+    sidecarScriptPath,
+    timeoutMs: readPositiveInteger(process.env.MEMORA_DOCLING_TIMEOUT_MS, 5 * 60_000),
+    maxOutputBytes: readPositiveInteger(process.env.MEMORA_DOCLING_MAX_OUTPUT_BYTES, 256 * 1024 * 1024),
+    conversionOptions: {
+      maxPages: readPositiveInteger(process.env.MEMORA_DOCLING_MAX_PAGES, 500)
+    },
+    env: {
+      PATH: process.platform === "win32" ? root : join(root, "bin"),
+      HOME: join(options.userDataPath, "docling-home"),
+      TMPDIR: join(options.userDataPath, "tmp", "conversion"),
+      LANG: "en_US.UTF-8",
+      DOCLING_ARTIFACTS_PATH: join(root, "artifacts"),
+      DOCLING_NUM_THREADS: String(readPositiveInteger(process.env.MEMORA_DOCLING_NUM_THREADS, 4)),
+      HF_HUB_OFFLINE: "1",
+      TRANSFORMERS_OFFLINE: "1",
+      HF_HUB_DISABLE_TELEMETRY: "1",
+      HTTP_PROXY: "http://127.0.0.1:9",
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      ALL_PROXY: "http://127.0.0.1:9",
+      NO_PROXY: ""
+    }
+  };
+}
+
+export function assertImportSize(sizeBytes: number, maxBytes: number): void {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0 || sizeBytes > maxBytes) {
+    throw new Error("errors.common.fileTooLarge");
+  }
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function detectMimeType(fileName: string, data: Uint8Array): string {

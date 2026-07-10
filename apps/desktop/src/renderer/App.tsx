@@ -38,6 +38,8 @@ import { JobsView } from "./components/JobsView";
 import { SearchView } from "./components/SearchView";
 import { LibraryView } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
+import { LocalModelsView } from "./components/LocalModelsView";
+import { BackupView } from "./components/BackupView";
 
 type ViewId = "library" | "import" | "search" | "review" | "jobs" | "settings";
 
@@ -436,6 +438,8 @@ export function App({
                 onSave={saveSettings}
               />
               <AiSettingsView t={t} />
+              <LocalModelsView t={t} />
+              <BackupView t={t} />
             </div>
           ) : activeView === "import" ? (
             <ImportView t={t} />

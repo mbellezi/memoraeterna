@@ -11,6 +11,11 @@ import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
 import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import { IntegrationGateway } from "./services/integration-gateway.js";
+import { LocalModelService } from "./services/local-model-service.js";
+import { BackupService } from "./services/backup-service.js";
+
+const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
+if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
 
 const trayIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
@@ -32,7 +37,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.on("close", (event) => {
-    if (isQuittingAfterShutdown) {
+    if (isQuittingAfterShutdown || isShutdownInProgress) {
       return;
     }
 
@@ -83,9 +88,13 @@ let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
 let obsidianSyncService: ObsidianSyncService | null = null;
 let integrationGateway: IntegrationGateway | null = null;
+let localModelService: LocalModelService | null = null;
+let backupService: BackupService | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+let serviceStartupPromise: Promise<void> | null = null;
 let shutdownPromise: Promise<void> | null = null;
+let isShutdownInProgress = false;
 let isQuittingAfterShutdown = false;
 
 void app.whenReady().then(() => {
@@ -102,13 +111,31 @@ void app.whenReady().then(() => {
     requireDatabase: true,
     desktopLocale: app.getLocale()
   });
-  aiService = new AiService(app.getPath("userData"), () => databaseService?.getPool() ?? null);
+  const workspaceRoot = resolve(process.cwd());
+  aiService = new AiService({
+    userDataPath: app.getPath("userData"),
+    getPool: () => databaseService?.getPool() ?? null,
+    workspaceRoot,
+    resourcesPath: getResourcesPath(),
+    isPackaged: app.isPackaged
+  });
+  localModelService = new LocalModelService({
+    getPool: () => databaseService?.getPool() ?? null,
+    userDataPath: app.getPath("userData"),
+    logger: console,
+    isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
+    testModel: (localModelId) => aiService!.testLocalModel(localModelId)
+  });
+  backupService = new BackupService({
+    getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
+    getStorageSettings: () => settingsService!.get()
+  });
   ingestionService = new IngestionService({
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData"),
     resourcesPath: getResourcesPath(),
-    workspaceRoot: resolve(process.cwd()),
+    workspaceRoot,
     isPackaged: app.isPackaged
   });
   searchService = new SearchService(() => databaseService?.getPool() ?? null, aiService);
@@ -158,19 +185,25 @@ void app.whenReady().then(() => {
     searchService,
     aiService,
     knowledgeService,
-    integrationGateway
+    integrationGateway,
+    localModelService,
+    backupService
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
-  void databaseService.start().then((status) => {
+  serviceStartupPromise = databaseService.start().then(async (status) => {
     if (status.state === "ready") {
-      return Promise.all([
+      await Promise.all([
+        localModelService?.start(),
         jobSupervisor?.start(),
         integrationGateway?.start(),
         obsidianSyncService?.reconcileVault()
       ]);
+      const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
+      if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
     }
-    return undefined;
+  }).catch((error: unknown) => {
+    console.error(`Service startup failed: ${error instanceof Error ? error.message : String(error)}`);
   });
 
   app.on("activate", () => {
@@ -188,6 +221,7 @@ app.on("before-quit", (event) => {
   }
 
   event.preventDefault();
+  isShutdownInProgress = true;
   shutdownPromise ??= shutdownServices().finally(() => {
     isQuittingAfterShutdown = true;
     app.quit();
@@ -195,10 +229,19 @@ app.on("before-quit", (event) => {
 });
 
 async function shutdownServices(): Promise<void> {
+  activeMainWindow?.destroy();
+  activeMainWindow = null;
+  tray?.destroy();
+  tray = null;
+  await serviceStartupPromise;
+  serviceStartupPromise = null;
   await integrationGateway?.stop();
   integrationGateway = null;
   await jobSupervisor?.stop();
   jobSupervisor = null;
+  await localModelService?.shutdown();
+  localModelService = null;
+  backupService = null;
   searchService = null;
   knowledgeService = null;
   await obsidianSyncService?.shutdown();
@@ -266,6 +309,11 @@ function readRelationThreshold(value: string | undefined): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
+}
+
+function readPositiveInteger(value: string | undefined): number | undefined {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function readGatewayPort(value: string | undefined): number | undefined {

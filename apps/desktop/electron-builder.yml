@@ -1,0 +1,32 @@
+appId: dev.memoraeterna.desktop
+productName: Memora Eterna
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - "!**/node_modules/@app/*/src/**/*"
+  - "!**/node_modules/@app/*/tsconfig*.json"
+  - "!**/node_modules/@app/*/dist/**/*.test.*"
+asar: true
+asarUnpack:
+  - "**/node_modules/node-llama-cpp/**/*"
+  - "**/node_modules/@node-llama-cpp/**/*"
+extraResources:
+  - from: build-resources
+    to: .
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+dmg:
+  sign: false

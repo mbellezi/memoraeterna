@@ -10,7 +10,11 @@
     "build": "electron-vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --config vitest.config.ts",
-    "phase4:e2e": "tsx src/main/services/verify-phase4-e2e.ts"
+    "phase4:e2e": "tsx src/main/services/verify-phase4-e2e.ts",
+    "native:mlx:build": "swift build -c release --package-path ../../native/mlx-helper",
+    "package:deps": "npm run build -w @app/i18n",
+    "package:dir": "npm run package:deps && npm run build && node ../../scripts/prepare-desktop-resources.mjs && electron-builder --dir --config electron-builder.yml",
+    "package:mac": "npm run package:deps && npm run build && node ../../scripts/prepare-desktop-resources.mjs && electron-builder --mac --config electron-builder.yml"
   },
   "dependencies": {
     "@app/ai": "0.0.0",
@@ -34,6 +38,7 @@
     "@types/ws": "8.18.1",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "43.0.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "tailwindcss": "4.3.2",
     "vite": "7.3.6"

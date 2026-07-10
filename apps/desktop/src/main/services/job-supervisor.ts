@@ -40,6 +40,8 @@ export class JobSupervisor {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private stopping = false;
+  private drainPromise: Promise<void> | null = null;
+  private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
   private readonly workerId = `${hostname()}:${process.pid}`;
 
   public constructor(private readonly options: JobSupervisorOptions) {}
@@ -59,13 +61,15 @@ export class JobSupervisor {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     for (const controller of this.controllers.values()) controller.abort();
-    this.controllers.clear();
     await this.workers.shutdown();
+    await this.drainPromise;
+    await Promise.allSettled(this.pendingProgressUpdates);
+    this.controllers.clear();
   }
 
   public async runOnce(): Promise<JobRecord | null> {
     const repository = createJobRepository(this.requirePool());
-    const job = await repository.claimNext(this.workerId);
+    const job = await repository.claimNext(this.workerId, [...supportedJobTypes]);
     if (!job) return null;
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
@@ -75,7 +79,7 @@ export class JobSupervisor {
         ? await this.executeIngestion(job, controller.signal)
         : await this.workers.execute(job.type as WorkerTask["type"], job.payload, {
             signal: controller.signal,
-            onProgress: (progress) => { void repository.reportProgress(job.id, progress); }
+            onProgress: (progress) => this.trackProgress(repository.reportProgress(job.id, progress))
           });
       return await repository.update(job.id, {
         status: controller.signal.aborted ? "canceled" : "succeeded",
@@ -143,7 +147,9 @@ export class JobSupervisor {
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
-      void this.drain().catch((error: unknown) => this.options.logger?.error(normalizeWorkerError(error)));
+      this.drainPromise = this.drain()
+        .catch((error: unknown) => this.options.logger?.error(normalizeWorkerError(error)))
+        .finally(() => { this.drainPromise = null; });
     }, delay);
   }
 
@@ -165,9 +171,9 @@ export class JobSupervisor {
         blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
       }, {
         signal,
-        onProgress: (progress) => {
-          void createJobRepository(pool).reportProgress(job.id, 0.05 + progress * 0.3);
-        }
+        onProgress: (progress) => this.trackProgress(
+          createJobRepository(pool).reportProgress(job.id, 0.05 + progress * 0.3)
+        )
       });
       const chunks = Array.isArray(chunkResult.chunks) ? chunkResult.chunks : [];
       persistedChunks = await createChunkRepository(pool).replaceDocumentChunks(
@@ -307,6 +313,13 @@ export class JobSupervisor {
     if (!this.running || this.stopping) return;
     const job = await this.runOnce();
     this.schedule(job ? 0 : (this.options.pollIntervalMs ?? 500));
+  }
+
+  private trackProgress(promise: Promise<unknown>): void {
+    this.pendingProgressUpdates.add(promise);
+    void promise
+      .catch((error: unknown) => this.options.logger?.warn(normalizeWorkerError(error)))
+      .finally(() => this.pendingProgressUpdates.delete(promise));
   }
 
   private requirePool(): PgPool {

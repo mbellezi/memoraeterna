@@ -29,6 +29,7 @@
     "db:phase2:verify": "tsx src/scripts/verify-phase2.ts",
     "db:phase3:verify": "tsx src/scripts/verify-phase3.ts",
     "db:phase4:verify": "tsx src/scripts/verify-phase4.ts",
+    "db:phase5:verify": "tsx src/scripts/verify-phase5.ts",
     "db:seed:verify": "tsx src/scripts/verify-seed.ts"
   },
   "dependencies": {

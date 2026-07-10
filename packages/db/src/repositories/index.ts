@@ -17,3 +17,4 @@ export * from "./sourceSummaryRepository.js";
 export * from "./atomicNoteRepository.js";
 export * from "./atomicNoteRelationRepository.js";
 export * from "./libraryRepository.js";
+export * from "./localModelRepository.js";

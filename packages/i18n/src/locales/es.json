@@ -74,6 +74,17 @@
       "unsupportedTask": "El modelo seleccionado no puede ejecutar esta tarea.",
       "secureStorageUnavailable": "El almacenamiento seguro de credenciales no esta disponible.",
       "missingCredential": "Falta la credencial del proveedor."
+    },
+    "localModels": {
+      "notFound": "No se encontro el modelo local.", "notReady": "El modelo local no esta instalado y listo.",
+      "licenseRequired": "Acepta la licencia del modelo antes de descargarlo.", "unsupported_platform": "MLX requiere un Mac con Apple Silicon.",
+      "insufficient_memory": "Este equipo no tiene memoria suficiente para el modelo.", "insufficientDisk": "No hay suficiente espacio libre para el modelo.",
+      "downloadHttp": "Fallo la descarga del modelo.", "sizeMismatch": "Un archivo del modelo tiene un tamano incorrecto.",
+      "checksumMismatch": "Un archivo del modelo fallo la verificacion checksum.", "unsafePath": "El modelo contiene una ruta no segura.",
+      "invalidRuntimeResponse": "El runtime local devolvio una respuesta no valida.", "runtimeFailed": "Fallo el runtime del modelo local.",
+      "runtimeUnavailable": "El runtime del modelo local no esta instalado.", "modelBusy": "El modelo esta en uso.",
+      "profileInUse": "Sustituye este modelo en los perfiles afectados antes de eliminarlo.", "canceled": "Se cancelo la descarga del modelo.",
+      "invalidGguf": "Elige un archivo de modelo GGUF valido."
     }
   },
   "jobs": {
@@ -95,7 +106,7 @@
       "atomicNoteGeneration": "Generacion de nota atomica",
       "atomicNoteMatching": "Conexion de notas atomicas",
       "obsidianSync": "Sincronizacion con Obsidian",
-      "assetStorage": "Almacenamiento de assets"
+      "assetStorage": "Almacenamiento de assets", "localModelDownload": "Descarga de modelo local"
     },
     "progress": {
       "processingSource": "Procesando {title}",
@@ -223,9 +234,19 @@
       "openAiCompatible": "Compatible con OpenAI", "displayName": "Nombre visible", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Clave API", "saveProvider": "Guardar proveedor", "test": "Probar",
       "connectionOk": "Conexion correcta.", "profiles": "Perfiles", "profileName": "Nombre del perfil",
-      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil"
+      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil", "selectModel": "Selecciona un modelo remoto o local"
     }
   },
+  "localModels": {
+    "title": "Modelos locales", "repositoryToken": "Token de Hugging Face", "tokenConfigured": "Token configurado", "tokenOptional": "Opcional para repositorios privados o restringidos", "saveToken": "Guardar token", "empty": "Ningun modelo coincide con los filtros.",
+    "licenseAccept": "Acepto la licencia del modelo:", "profileUsage": "Usado por los perfiles", "removeConfirmation": "Eliminar este modelo y sus archivos gestionados del equipo?", "testSucceeded": "La inferencia local funciono.",
+    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos los runtimes", "allFamilies": "Todas las familias", "compatibleOnly": "Solo compatibles" },
+    "compatibility": { "compatible": "Compatible con este equipo", "unsupported_platform": "Requiere macOS con Apple Silicon", "insufficient_memory": "Memoria insuficiente" },
+    "status": { "not_downloaded": "No descargado", "downloading": "Descargando", "verifying": "Verificando", "ready": "Instalado", "failed": "Fallo", "removing": "Eliminando" },
+    "actions": { "download": "Descargar", "resume": "Reanudar", "test": "Probar inferencia", "remove": "Eliminar", "importGguf": "Importar GGUF" },
+    "progress": { "loading": "Cargando el modelo", "generating": "Generando localmente", "completed": "Completado", "verifying": "Verificando archivos", "etaUnknown": "Estimando tiempo" }
+  },
+  "backup": { "title": "Copia de seguridad", "description": "Crea un dump de PostgreSQL y copia los archivos gestionados configurados en una carpeta con fecha.", "action": "Crear copia", "completed": "Copia completada:", "failed": "No se pudo crear la copia." },
   "integrations": {
     "title": "Integraciones",
     "chromeExtension": "Extension de Chrome",

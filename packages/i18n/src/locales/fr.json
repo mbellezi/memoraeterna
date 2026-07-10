@@ -74,6 +74,17 @@
       "unsupportedTask": "Le modele selectionne ne peut pas executer cette tache.",
       "secureStorageUnavailable": "Le stockage securise des identifiants est indisponible.",
       "missingCredential": "L'identifiant du fournisseur est manquant."
+    },
+    "localModels": {
+      "notFound": "Le modele local est introuvable.", "notReady": "Le modele local n'est pas installe et pret.",
+      "licenseRequired": "Acceptez la licence du modele avant le telechargement.", "unsupported_platform": "MLX necessite un Mac Apple Silicon.",
+      "insufficient_memory": "Cette machine n'a pas assez de memoire pour le modele.", "insufficientDisk": "Espace disque insuffisant pour le modele.",
+      "downloadHttp": "Le telechargement du modele a echoue.", "sizeMismatch": "Un fichier du modele a une taille incorrecte.",
+      "checksumMismatch": "Un fichier du modele a echoue a la verification checksum.", "unsafePath": "Le modele contient un chemin non securise.",
+      "invalidRuntimeResponse": "Le runtime local a renvoye une reponse invalide.", "runtimeFailed": "Le runtime du modele local a echoue.",
+      "runtimeUnavailable": "Le runtime du modele local n'est pas installe.", "modelBusy": "Le modele est actuellement utilise.",
+      "profileInUse": "Remplacez ce modele dans les profils concernes avant de le supprimer.", "canceled": "Le telechargement du modele a ete annule.",
+      "invalidGguf": "Choisissez un fichier de modele GGUF valide."
     }
   },
   "jobs": {
@@ -95,7 +106,7 @@
       "atomicNoteGeneration": "Generation de note atomique",
       "atomicNoteMatching": "Mise en relation des notes",
       "obsidianSync": "Synchronisation Obsidian",
-      "assetStorage": "Stockage des assets"
+      "assetStorage": "Stockage des assets", "localModelDownload": "Telechargement de modele local"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
@@ -223,9 +234,19 @@
       "openAiCompatible": "Compatible OpenAI", "displayName": "Nom affiche", "baseUrl": "URL de base",
       "model": "Modele", "apiKey": "Cle API", "saveProvider": "Enregistrer le fournisseur", "test": "Tester",
       "connectionOk": "Connexion reussie.", "profiles": "Profils", "profileName": "Nom du profil",
-      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil"
+      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "selectModel": "Selectionner un modele distant ou local"
     }
   },
+  "localModels": {
+    "title": "Modeles locaux", "repositoryToken": "Jeton Hugging Face", "tokenConfigured": "Jeton configure", "tokenOptional": "Facultatif pour les depots prives ou restreints", "saveToken": "Enregistrer le jeton", "empty": "Aucun modele ne correspond aux filtres.",
+    "licenseAccept": "J'accepte la licence du modele :", "profileUsage": "Utilise par les profils", "removeConfirmation": "Supprimer ce modele et ses fichiers geres de cette machine ?", "testSucceeded": "Inference locale reussie.",
+    "filters": { "runtime": "Runtime", "family": "Famille", "allRuntimes": "Tous les runtimes", "allFamilies": "Toutes les familles", "compatibleOnly": "Compatibles uniquement" },
+    "compatibility": { "compatible": "Compatible avec cette machine", "unsupported_platform": "Necessite macOS sur Apple Silicon", "insufficient_memory": "Memoire insuffisante" },
+    "status": { "not_downloaded": "Non telecharge", "downloading": "Telechargement", "verifying": "Verification", "ready": "Installe", "failed": "Echec", "removing": "Suppression" },
+    "actions": { "download": "Telecharger", "resume": "Reprendre", "test": "Tester l'inference", "remove": "Supprimer", "importGguf": "Importer GGUF" },
+    "progress": { "loading": "Chargement du modele", "generating": "Generation locale", "completed": "Termine", "verifying": "Verification des fichiers", "etaUnknown": "Estimation du temps" }
+  },
+  "backup": { "title": "Sauvegarde", "description": "Creez un dump PostgreSQL et copiez les fichiers geres configures dans un dossier date.", "action": "Creer une sauvegarde", "completed": "Sauvegarde terminee :", "failed": "La sauvegarde n'a pas pu etre creee." },
   "integrations": {
     "title": "Integrations",
     "chromeExtension": "Extension Chrome",

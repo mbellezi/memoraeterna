@@ -10,7 +10,8 @@ import type {
   ManualIngestionInput,
   SearchInput,
   StorageSettingsUpdate,
-  IntegrationPairingInput
+  IntegrationPairingInput,
+  LocalModelDownloadInput
 } from "../shared/ipc";
 import type { SourceItemType } from "@app/domain";
 import {
@@ -41,7 +42,11 @@ import {
   integrationClientSchema,
   integrationGatewayStatusSchema,
   integrationPairingInputSchema,
-  integrationPairingResultSchema
+  integrationPairingResultSchema,
+  backupResultSchema,
+  localModelDownloadInputSchema,
+  localModelViewSchema,
+  repositoryTokenInputSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
@@ -160,6 +165,48 @@ const api: DesktopApi = {
     },
     async setProfileTask(input: AiProfileTaskInput) {
       await ipcRenderer.invoke(ipcChannels.aiProfileTaskSet, aiProfileTaskInputSchema.parse(input));
+    }
+  },
+  localModels: {
+    async list() {
+      return localModelViewSchema.array().parse(await ipcRenderer.invoke(ipcChannels.localModelsList));
+    },
+    async download(input: LocalModelDownloadInput) {
+      return localModelViewSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.localModelsDownload,
+        localModelDownloadInputSchema.parse(input)
+      ));
+    },
+    async cancel(catalogId: string) {
+      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsCancel, catalogId));
+    },
+    async resume(catalogId: string) {
+      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsResume, catalogId));
+    },
+    async remove(catalogId: string) {
+      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsRemove, catalogId));
+    },
+    async test(catalogId: string) {
+      return String(await ipcRenderer.invoke(ipcChannels.localModelsTest, catalogId));
+    },
+    async importGguf() {
+      const result = await ipcRenderer.invoke(ipcChannels.localModelsImportGguf);
+      return result === null ? null : localModelViewSchema.parse(result);
+    },
+    async setRepositoryToken(token: string) {
+      return Boolean(await ipcRenderer.invoke(
+        ipcChannels.localModelsRepositoryTokenSet,
+        repositoryTokenInputSchema.parse({ token })
+      ));
+    },
+    async hasRepositoryToken() {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.localModelsRepositoryTokenStatus));
+    }
+  },
+  backup: {
+    async create() {
+      const result = await ipcRenderer.invoke(ipcChannels.backupCreate);
+      return result === null ? null : backupResultSchema.parse(result);
     }
   },
   integrations: {

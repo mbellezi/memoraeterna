@@ -8,6 +8,8 @@ import { JobsView } from "./JobsView";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
+import { LocalModelsView } from "./LocalModelsView";
+import { BackupView } from "./BackupView";
 
 const t = createTranslator("en");
 
@@ -28,5 +30,11 @@ describe("phase 2 renderer views", () => {
   it("renders the phase 3 library and atomic note review empty states", () => {
     expect(renderToString(<LibraryView t={t} />)).toContain("Filter by source type");
     expect(renderToString(<ReviewQueueView t={t} />)).toContain("Loading");
+  });
+
+  it("renders phase 5 local model and backup controls", () => {
+    expect(renderToString(<LocalModelsView t={t} />)).toContain("Local models");
+    expect(renderToString(<LocalModelsView t={t} />)).toContain("Import GGUF");
+    expect(renderToString(<BackupView t={t} />)).toContain("Create backup");
   });
 });

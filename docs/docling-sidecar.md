@@ -42,9 +42,29 @@ derivado pelo `IngestionService`.
 
 ## Estado do artefato
 
-O source bridge e os testes de contrato/crash/timeout/cancelamento estao
-versionados. O bundle por plataforma ainda nao existe no repositorio local. A
-proxima acao de distribuicao deve produzir os artefatos, preencher
-`runtime-manifest.json` com origem, licencas, checksums e SBOM reais e executar
-o corpus golden/benchmarks de PDF, Office, EPUB, OpenDocument e imagens. Nao se
-deve preencher checksums ou afirmar suporte de formato antes dessa validacao.
+O builder versionado materializa atualmente `darwin-arm64`. Ele baixa uma
+distribuicao CPython imutavel e verifica seu SHA-256, instala exclusivamente as
+versoes de `requirements-darwin-arm64.lock` e pre-baixa os modelos em revisions
+fixadas. O conjunto RapidOCR vem da versao fixada do pacote `rapidocr`.
+
+```bash
+npm run docling:build
+npm run docling:verify
+npm run docling:smoke
+```
+
+`docling:smoke` cria e converte um PDF com os proxies apontados para loopback
+invalido e com os modos offline de Hugging Face/Transformers ativos. Assim, o
+teste usa somente o CPython, wheels e modelos do sidecar. Para atualizar o
+artefato, revise primeiro a definicao e o lock e execute
+`npm run docling:build -- --force`; para remover o artefato gerado, use
+`npm run docling:remove`. Nenhuma dessas operacoes acontece no runtime do app.
+
+O builder grava um manifesto do runtime com origem do CPython, hash do lock,
+pacotes, revisions dos modelos, tamanhos e hashes agregados. O staging desktop
+valida novamente todos os arquivos e incorpora os componentes ao SBOM SPDX.
+
+O corpus golden amplo e os benchmarks de todos os formatos continuam como
+validacao de distribuicao. Os artefatos Windows/Linux devem ser adicionados
+somente com origem, locks e testes equivalentes; nao ha fallback para Python do
+sistema.

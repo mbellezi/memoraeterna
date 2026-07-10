@@ -409,6 +409,85 @@ export const aiProviderConfigs = pgTable(
   (table) => ({ providerIdx: index("ai_provider_configs_provider_idx").on(table.provider) })
 );
 
+export const localModels = pgTable(
+  "local_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    catalogId: text("catalog_id").notNull(),
+    modelId: text("model_id").notNull(),
+    displayName: text("display_name").notNull(),
+    family: text("family").notNull(),
+    variant: text("variant").notNull(),
+    repository: text("repository").notNull(),
+    revision: text("revision").notNull(),
+    runtime: text("runtime").notNull(),
+    format: text("format").notNull(),
+    quantization: text("quantization").notNull(),
+    managedPath: text("managed_path"),
+    expectedSizeBytes: bigint("expected_size_bytes", { mode: "number" }).notNull(),
+    installedSizeBytes: bigint("installed_size_bytes", { mode: "number" }).notNull().default(0),
+    manifestHash: text("manifest_hash").notNull(),
+    capabilities: jsonb("capabilities").notNull().default(sql`'[]'::jsonb`),
+    licenseName: text("license_name").notNull(),
+    licenseUrl: text("license_url").notNull(),
+    licenseAcceptedAt: timestamp("license_accepted_at", { withTimezone: true }),
+    status: text("status").notNull().default("not_downloaded"),
+    lastError: text("last_error"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    catalogUidx: uniqueIndex("local_models_catalog_id_uidx").on(table.catalogId),
+    runtimeIdx: index("local_models_runtime_idx").on(table.runtime),
+    statusIdx: index("local_models_status_idx").on(table.status)
+  })
+);
+
+export const localModelFiles = pgTable(
+  "local_model_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    localModelId: uuid("local_model_id")
+      .notNull()
+      .references(() => localModels.id, { onDelete: "cascade" }),
+    relativePath: text("relative_path").notNull(),
+    expectedSizeBytes: bigint("expected_size_bytes", { mode: "number" }).notNull(),
+    downloadedSizeBytes: bigint("downloaded_size_bytes", { mode: "number" }).notNull().default(0),
+    sha256: text("sha256").notNull(),
+    status: text("status").notNull().default("pending"),
+    ...timestamps
+  },
+  (table) => ({
+    modelPathUidx: uniqueIndex("local_model_files_model_path_uidx").on(table.localModelId, table.relativePath),
+    statusIdx: index("local_model_files_status_idx").on(table.status)
+  })
+);
+
+export const localModelDownloads = pgTable(
+  "local_model_downloads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    localModelId: uuid("local_model_id")
+      .notNull()
+      .references(() => localModels.id, { onDelete: "cascade" }),
+    jobId: uuid("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+    currentFile: text("current_file"),
+    downloadedBytes: bigint("downloaded_bytes", { mode: "number" }).notNull().default(0),
+    totalBytes: bigint("total_bytes", { mode: "number" }).notNull(),
+    bytesPerSecond: bigint("bytes_per_second", { mode: "number" }).notNull().default(0),
+    etaSeconds: integer("eta_seconds"),
+    checkpoint: jsonb("checkpoint").notNull().default(sql`'{}'::jsonb`),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    jobUidx: uniqueIndex("local_model_downloads_job_id_uidx").on(table.jobId),
+    modelIdx: index("local_model_downloads_model_id_idx").on(table.localModelId)
+  })
+);
+
 export const aiProfileSets = pgTable(
   "ai_profile_sets",
   {
@@ -434,6 +513,7 @@ export const aiProfileTasks = pgTable(
     providerConfigId: uuid("provider_config_id").references(() => aiProviderConfigs.id, {
       onDelete: "set null"
     }),
+    localModelId: uuid("local_model_id").references(() => localModels.id, { onDelete: "set null" }),
     modelId: text("model_id").notNull(),
     runtime: text("runtime").notNull().default("remote"),
     requiredCapabilities: jsonb("required_capabilities").notNull().default(sql`'[]'::jsonb`),
@@ -479,6 +559,11 @@ export const aiTaskRuns = pgTable(
     provider: text("provider").notNull(),
     modelId: text("model_id").notNull(),
     runtime: text("runtime").notNull(),
+    adapter: text("adapter"),
+    repository: text("repository"),
+    revision: text("revision"),
+    quantization: text("quantization"),
+    parameters: jsonb("parameters").notNull().default(sql`'{}'::jsonb`),
     capabilitiesUsed: jsonb("capabilities_used").notNull().default(sql`'[]'::jsonb`),
     inputHash: text("input_hash"),
     outputHash: text("output_hash"),

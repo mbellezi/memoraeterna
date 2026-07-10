@@ -162,11 +162,12 @@ export function createJobRepository(db: Queryable) {
       return rows.map(mapJob);
     },
 
-    async claimNext(workerId: string): Promise<JobRecord | null> {
+    async claimNext(workerId: string, allowedTypes?: readonly string[]): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `with candidate as (
            select id from jobs
            where status = 'queued' and run_after <= now()
+             and ($2::text[] is null or type = any($2::text[]))
            order by priority desc, run_after asc
            for update skip locked
            limit 1
@@ -176,7 +177,7 @@ export function createJobRepository(db: Queryable) {
              attempts = attempts + 1, updated_at = now()
          where id = (select id from candidate)
          returning ${returning}`,
-        [workerId]
+        [workerId, allowedTypes ? [...allowedTypes] : null]
       );
       const row = result.rows[0];
       return row ? mapJob(row) : null;

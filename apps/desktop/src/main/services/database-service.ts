@@ -60,6 +60,7 @@ export class DatabaseService {
   private manager: PostgresSidecarManager | null = null;
   private pool: PgPool | null = null;
   private connection: PostgresSidecarConnection | null = null;
+  private sidecarBinDir: string | null = null;
   private startPromise: Promise<void> | null = null;
 
   public constructor(private readonly options: DatabaseServiceOptions) {
@@ -88,6 +89,14 @@ export class DatabaseService {
     }
 
     return this.connection;
+  }
+
+  public getBackupContext(): { connection: PostgresSidecarConnection; pgDumpPath: string } | null {
+    if (this.status.state !== "ready" || !this.connection || !this.sidecarBinDir) return null;
+    return {
+      connection: this.connection,
+      pgDumpPath: join(this.sidecarBinDir, process.platform === "win32" ? "pg_dump.exe" : "pg_dump")
+    };
   }
 
   public async start(): Promise<DatabaseStatus> {
@@ -132,6 +141,7 @@ export class DatabaseService {
       this.logger?.warn(redactError(error));
     } finally {
       this.connection = null;
+      this.sidecarBinDir = null;
       this.manager = null;
       this.setStatus("stopped");
     }
@@ -148,6 +158,7 @@ export class DatabaseService {
         env: this.env,
         ...(this.options.isPackaged ? { resourcesPath: this.options.resourcesPath } : {})
       });
+      this.sidecarBinDir = sidecarPaths.binDir;
       const migrationsFolder = resolveMigrationsFolder({
         env: this.env,
         isPackaged: this.options.isPackaged,
@@ -180,7 +191,12 @@ export class DatabaseService {
         connectionString: this.connection.connectionString,
         max: 5,
         idleTimeoutMillis: 30_000,
-        connectionTimeoutMillis: 5_000
+        connectionTimeoutMillis: 5_000,
+        onError: (error) => {
+          if (this.status.state !== "stopping" && this.status.state !== "stopped") {
+            this.logger?.warn(redactError(error));
+          }
+        }
       });
       await withTimeout(
         runMigrations(this.pool, migrationsFolder, { seedFolder }),
@@ -196,6 +212,7 @@ export class DatabaseService {
         this.logger?.warn(redactError(stopError));
       }
       this.connection = null;
+      this.sidecarBinDir = null;
       this.manager = null;
       const redactedError = redactError(error);
       this.logger?.error(redactedError);

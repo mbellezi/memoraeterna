@@ -1,6 +1,22 @@
+import { createHash } from "node:crypto";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
 import { describe, expect, it } from "vitest";
 
-import { AiModelRegistry, OpenAiCompatibleAdapter } from "./index.js";
+import {
+  AiModelRegistry,
+  MlxAdapter,
+  NodeLlamaCppAdapter,
+  OpenAiCompatibleAdapter,
+  detectLocalRuntimeCompatibility,
+  downloadLocalModel,
+  localModelCatalog,
+  localModelCatalogEntrySchema,
+  localModelExpectedSize,
+  redactSensitiveText
+} from "./index.js";
 
 describe("AI adapters", () => {
   it("negotiates capabilities", () => {
@@ -29,4 +45,194 @@ describe("AI adapters", () => {
     expect(result.output).toEqual([0.1, 0.2]);
     expect(JSON.stringify(result)).not.toContain("secret");
   });
+
+  it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
+    expect(localModelCatalog).toHaveLength(3);
+    for (const entry of localModelCatalog) {
+      expect(entry.revision).toMatch(/^[a-f0-9]{40}$/);
+      expect(localModelExpectedSize(entry)).toBeGreaterThan(2_000_000_000);
+      expect(entry.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
+      expect(entry.capabilities).not.toContain("image-understanding");
+    }
+  });
+
+  it("detects MLX platform and memory compatibility without hiding unsupported models", () => {
+    expect(detectLocalRuntimeCompatibility({
+      runtime: "mlx", platform: "darwin", arch: "arm64",
+      totalMemoryBytes: 16, minimumMemoryBytes: 8
+    })).toEqual({ compatible: true, reason: "compatible" });
+    expect(detectLocalRuntimeCompatibility({
+      runtime: "mlx", platform: "linux", arch: "x64",
+      totalMemoryBytes: 16, minimumMemoryBytes: 8
+    }).reason).toBe("unsupported_platform");
+    expect(detectLocalRuntimeCompatibility({
+      runtime: "gguf", platform: "linux", arch: "x64",
+      totalMemoryBytes: 4, minimumMemoryBytes: 8
+    }).reason).toBe("insufficient_memory");
+  });
+
+  it("resumes ranged model downloads and atomically verifies SHA-256", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-model-download-"));
+    const bytes = new TextEncoder().encode("verified model bytes");
+    const entry = localModelCatalogEntrySchema.parse({
+      id: "test-model", displayName: "Test", family: "Test", variant: "Test",
+      runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
+      format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+      minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
+      licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
+      files: [{ path: "model.bin", sizeBytes: bytes.byteLength, sha256: sha256(bytes) }]
+    });
+    const modelDirectory = join(root, entry.id);
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(modelDirectory, { recursive: true }));
+    await writeFile(join(modelDirectory, "model.bin.partial"), bytes.slice(0, 8));
+    let requestedRange: string | null = null;
+    const result = await downloadLocalModel({
+      entry,
+      destinationRoot: root,
+      minFreeBytes: 0,
+      fetch: async (_input, init) => {
+        requestedRange = new Headers(init?.headers).get("range");
+        return new Response(bytes.slice(8), { status: 206 });
+      }
+    });
+    expect(requestedRange).toBe("bytes=8-");
+    expect(new Uint8Array(await readFile(join(result.modelPath, "model.bin")))).toEqual(bytes);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("restarts a partial download when the server ignores Range", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-model-no-range-"));
+    const bytes = new TextEncoder().encode("complete model bytes");
+    const entry = testCatalogEntry(bytes);
+    const modelDirectory = join(root, entry.id);
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(modelDirectory, { recursive: true }));
+    await writeFile(join(modelDirectory, "model.bin.partial"), bytes.slice(0, 5));
+    const ranges: Array<string | null> = [];
+    await downloadLocalModel({
+      entry,
+      destinationRoot: root,
+      minFreeBytes: 0,
+      fetch: async (_input, init) => {
+        ranges.push(new Headers(init?.headers).get("range"));
+        return new Response(bytes, { status: 200 });
+      }
+    });
+    expect(ranges).toEqual(["bytes=5-", null]);
+    expect(new Uint8Array(await readFile(join(modelDirectory, "model.bin")))).toEqual(bytes);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps a short partial for retry and removes a checksum-invalid partial", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-model-invalid-"));
+    const bytes = new TextEncoder().encode("expected model bytes");
+    const entry = testCatalogEntry(bytes);
+    await expect(downloadLocalModel({
+      entry,
+      destinationRoot: root,
+      minFreeBytes: 0,
+      fetch: async () => new Response(bytes.slice(0, -2), { status: 200 })
+    })).rejects.toThrow("errors.localModels.sizeMismatch");
+    await expect(access(join(root, entry.id, "model.bin.partial"))).resolves.toBeUndefined();
+    await expect(downloadLocalModel({
+      entry,
+      destinationRoot: root,
+      minFreeBytes: 0,
+      fetch: async () => new Response(new Uint8Array([0, 1]), { status: 206 })
+    })).rejects.toThrow("errors.localModels.checksumMismatch");
+    await expect(access(join(root, entry.id, "model.bin.partial"))).rejects.toThrow();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("fails preflight without fetching when disk reserve is unavailable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-model-disk-"));
+    const bytes = new TextEncoder().encode("model bytes");
+    let fetched = false;
+    await expect(downloadLocalModel({
+      entry: testCatalogEntry(bytes),
+      destinationRoot: root,
+      minFreeBytes: Number.MAX_SAFE_INTEGER,
+      fetch: async () => {
+        fetched = true;
+        return new Response(bytes);
+      }
+    })).rejects.toThrow("errors.localModels.insufficientDisk");
+    expect(fetched).toBe(false);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("propagates cancellation without logging authorization data", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-model-cancel-"));
+    const bytes = new TextEncoder().encode("model bytes");
+    const controller = new AbortController();
+    const download = downloadLocalModel({
+      entry: testCatalogEntry(bytes),
+      destinationRoot: root,
+      minFreeBytes: 0,
+      token: "hf_secret_download_token",
+      signal: controller.signal,
+      fetch: async (_input, init) => await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Canceled", "AbortError")), { once: true });
+        queueMicrotask(() => controller.abort());
+      })
+    });
+    await expect(download).rejects.toMatchObject({ name: "AbortError" });
+    expect(redactSensitiveText("https://example.test/file?token=hf_secret_download_token&x=1"))
+      .toBe("https://example.test/file?token=[redacted]&x=1");
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("rejects unsafe catalog paths and redacts repository credentials", () => {
+    expect(() => localModelCatalogEntrySchema.parse({
+      id: "unsafe-model", displayName: "Unsafe", family: "Test", variant: "Test",
+      runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
+      format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+      minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
+      licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
+      files: [{ path: "../outside", sizeBytes: 1, sha256: "a".repeat(64) }]
+    })).toThrow();
+    const redacted = redactSensitiveText("Authorization: Bearer hf_super_secret?token=api_secret_value");
+    expect(redacted).not.toContain("hf_super_secret");
+    expect(redacted).not.toContain("api_secret_value");
+  });
+
+  it("runs GGUF and MLX adapters through injectable native executors", async () => {
+    const base = {
+      modelId: "local-test", modelPath: "/managed/model",
+      capabilities: ["text-generation", "offline"] as const
+    };
+    const gguf = new NodeLlamaCppAdapter(
+      { ...base, capabilities: [...base.capabilities] },
+      async () => ({ output: "gguf", inputTokens: 2, outputTokens: 1, durationMs: 2 })
+    );
+    const mlx = new MlxAdapter(
+      { ...base, capabilities: [...base.capabilities], helperPath: "/managed/helper" },
+      async () => ({ output: "mlx", durationMs: 3 })
+    );
+    const request = {
+      taskType: "text-generation" as const,
+      input: "hello",
+      requiredCapabilities: ["text-generation" as const],
+      parameters: {}, metadata: {}
+    };
+    expect((await gguf.run(request)).output).toBe("gguf");
+    expect((await gguf.run(request)).inputTokens).toBe(2);
+    expect((await mlx.run(request)).output).toBe("mlx");
+    expect(gguf.describe().capabilities).toContain("offline");
+    expect(mlx.describe().providerId).toBe("local-mlx");
+  });
 });
+
+function sha256(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function testCatalogEntry(bytes: Uint8Array) {
+  return localModelCatalogEntrySchema.parse({
+    id: "test-model", displayName: "Test", family: "Test", variant: "Test",
+    runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
+    format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+    minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
+    licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
+    files: [{ path: "model.bin", sizeBytes: bytes.byteLength, sha256: sha256(bytes) }]
+  });
+}

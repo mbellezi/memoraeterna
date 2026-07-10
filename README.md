@@ -12,6 +12,10 @@ A implementacao atual tambem inclui o Integration Gateway local, captura por
 extensao Chrome, YouTube via `youtubei.js`, projecao Markdown e sincronizacao
 bidirecional essencial com o plugin Obsidian.
 
+A fase de fechamento adiciona gerenciamento de modelos locais MLX/GGUF,
+downloads retomaveis e verificados, perfis offline, backup e staging do pacote
+desktop com manifest de runtimes e SBOM.
+
 ## Estrutura
 
 ```txt
@@ -72,6 +76,14 @@ Para instalar apenas o sidecar, preservando os `.env` existentes:
 
 ```bash
 npm run sidecar:install:postgres
+```
+
+Materialize e valide o sidecar CPython/Docling isolado para a plataforma:
+
+```bash
+npm run docling:build
+npm run docling:verify
+npm run docling:smoke
 ```
 
 ## Sidecars
@@ -164,6 +176,49 @@ npm run sidecar:spike
 npm run dev -w @app/desktop
 ```
 
+## Modelos locais
+
+Em Macs Apple Silicon, compile o helper MLX nativo:
+
+```bash
+npm run mlx:build
+```
+
+Depois use `Settings > Local models` para filtrar o catalogo, aceitar licencas,
+salvar um token opcional da Hugging Face, baixar/retomar/verificar modelos e
+seleciona-los nos perfis de IA. Plataformas sem MLX mostram a incompatibilidade
+explicitamente. Arquivos GGUF existentes podem ser importados e executados via
+`node-llama-cpp`.
+
+Detalhes de revisions, checksums, armazenamento e protocolo ficam em
+`docs/local-models-and-packaging.md`.
+
+## Backup e pacote desktop
+
+Settings permite criar um backup datado com `pg_dump` e as pastas gerenciadas
+configuradas. Para preparar e inspecionar um pacote sem instalador:
+
+```bash
+npm run package:desktop:dir
+```
+
+Valide duas aberturas e shutdowns limpos contra o mesmo banco temporario:
+
+```bash
+npm run package:desktop:smoke
+```
+
+Para DMG/ZIP no macOS:
+
+```bash
+npm run package:desktop:mac
+```
+
+O staging gera `runtime-manifest.json` com checksums e `sbom.spdx.json`.
+Assinatura/notarizacao exigem credenciais externas e devem ser validadas antes
+da publicacao. O pacote macOS materializado nesta fase e `arm64`; builds para
+outras plataformas exigem sidecars Postgres/AGE e Docling equivalentes.
+
 Durante o boot, a UI mostra o estado do banco local. Se o sidecar ainda estiver
 subindo ou aplicando migrations, a shell principal permanece bloqueada com
 spinner.
@@ -252,6 +307,7 @@ npm run db:seed:verify
 npm run db:phase2:verify
 npm run db:phase3:verify
 npm run db:phase4:verify
+npm run db:phase5:verify
 npm run phase4:e2e
 ```
 
@@ -274,9 +330,8 @@ dominio.
   diretamente; tudo passa por preload seguro e IPC validado por Zod.
 - `MAPA.md` mantem o mapa operacional inicial para agentes e deve ser
   atualizado quando a estrutura ou fluxos centrais mudarem.
-- O empacotamento final para macOS ainda precisa copiar `resources/sidecars/...`,
-  `resources/drizzle/` e `resources/db-seed/`, alem de cuidar de
-  assinatura/notarizacao dos binarios nativos.
-- O bridge Docling esta implementado, mas o bundle CPython/Docling/modelos por
-  plataforma ainda precisa ser produzido e verificado. Consulte
-  `docs/docling-sidecar.md`.
+- O staging do empacotamento copia sidecars, migrations e baseline e gera
+  manifest/SBOM; assinatura e notarizacao continuam dependendo de credenciais
+  externas de distribuicao.
+- O builder Docling fixa CPython, wheels e revisions de modelos, e o smoke
+  offline deve passar antes de empacotar. Consulte `docs/docling-sidecar.md`.

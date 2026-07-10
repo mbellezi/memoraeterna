@@ -16,6 +16,8 @@ import {
   searchInputSchema,
   storageSettingsUpdateSchema,
   integrationPairingInputSchema,
+  localModelDownloadInputSchema,
+  repositoryTokenInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
 import { SourceItemTypeSchema } from "@app/domain";
@@ -26,6 +28,8 @@ import type { JobSupervisor } from "./services/job-supervisor.js";
 import type { SearchService } from "./services/search-service.js";
 import type { KnowledgeService } from "./services/knowledge-service.js";
 import type { IntegrationGateway } from "./services/integration-gateway.js";
+import type { LocalModelService } from "./services/local-model-service.js";
+import type { BackupService } from "./services/backup-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -41,7 +45,9 @@ export function registerIpcHandlers(
   searchService: SearchService,
   aiService: AiService,
   knowledgeService: KnowledgeService,
-  integrationGateway: IntegrationGateway
+  integrationGateway: IntegrationGateway,
+  localModelService: LocalModelService,
+  backupService: BackupService
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -140,6 +146,41 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.aiProfileTaskSet, (_event, payload: unknown) =>
     aiService.setProfileTask(aiProfileTaskInputSchema.parse(payload))
   );
+
+  ipcMain.handle(ipcChannels.localModelsList, () => localModelService.list());
+  ipcMain.handle(ipcChannels.localModelsDownload, (_event, payload: unknown) =>
+    localModelService.requestDownload(localModelDownloadInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.localModelsCancel, (_event, payload: unknown) =>
+    localModelService.cancel(z.string().min(1).parse(payload))
+  );
+  ipcMain.handle(ipcChannels.localModelsResume, (_event, payload: unknown) =>
+    localModelService.resume(z.string().min(1).parse(payload))
+  );
+  ipcMain.handle(ipcChannels.localModelsRemove, (_event, payload: unknown) =>
+    localModelService.remove(z.string().min(1).parse(payload))
+  );
+  ipcMain.handle(ipcChannels.localModelsTest, (_event, payload: unknown) =>
+    localModelService.test(z.string().min(1).parse(payload))
+  );
+  ipcMain.handle(ipcChannels.localModelsImportGguf, async () => {
+    const selection = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      filters: [{ name: "GGUF", extensions: ["gguf"] }]
+    });
+    const path = selection.filePaths[0];
+    return selection.canceled || !path ? null : localModelService.importGguf(path);
+  });
+  ipcMain.handle(ipcChannels.localModelsRepositoryTokenSet, (_event, payload: unknown) =>
+    localModelService.setRepositoryToken(repositoryTokenInputSchema.parse(payload).token)
+  );
+  ipcMain.handle(ipcChannels.localModelsRepositoryTokenStatus, () => localModelService.hasRepositoryToken());
+
+  ipcMain.handle(ipcChannels.backupCreate, async () => {
+    const selection = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    const path = selection.filePaths[0];
+    return selection.canceled || !path ? null : backupService.create(path);
+  });
 
   ipcMain.handle(ipcChannels.integrationGatewayStatus, () => integrationGateway.getStatus());
   ipcMain.handle(ipcChannels.integrationClientsList, () => integrationGateway.listClients());

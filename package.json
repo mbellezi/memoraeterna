@@ -28,7 +28,16 @@
     "db:phase2:verify": "npm run db:phase2:verify -w @app/db",
     "db:phase3:verify": "npm run db:phase3:verify -w @app/db",
     "db:phase4:verify": "npm run db:phase4:verify -w @app/db",
+    "db:phase5:verify": "npm run db:phase5:verify -w @app/db",
     "phase4:e2e": "npm run phase4:e2e -w @app/desktop",
+    "mlx:build": "npm run native:mlx:build -w @app/desktop",
+    "docling:build": "node scripts/build-docling-sidecar.mjs",
+    "docling:verify": "node scripts/build-docling-sidecar.mjs --verify",
+    "docling:smoke": "node scripts/build-docling-sidecar.mjs --smoke",
+    "docling:remove": "node scripts/build-docling-sidecar.mjs --remove",
+    "package:desktop:dir": "npm run package:dir -w @app/desktop",
+    "package:desktop:mac": "npm run package:mac -w @app/desktop",
+    "package:desktop:smoke": "node scripts/smoke-packaged-desktop.mjs",
     "db:seed:verify": "npm run db:seed:verify -w @app/db",
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
     "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts"
@@ -38,5 +47,8 @@
     "tsx": "4.23.0",
     "typescript": "6.0.3",
     "vitest": "4.1.9"
+  },
+  "allowScripts": {
+    "node-llama-cpp@3.19.0": true
   }
 }

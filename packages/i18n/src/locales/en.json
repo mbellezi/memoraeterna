@@ -74,6 +74,25 @@
       "unsupportedTask": "The selected model cannot run this task.",
       "secureStorageUnavailable": "Secure credential storage is unavailable.",
       "missingCredential": "The provider credential is missing."
+    },
+    "localModels": {
+      "notFound": "The local model was not found.",
+      "notReady": "The local model is not installed and ready.",
+      "licenseRequired": "Accept the model license before downloading.",
+      "unsupported_platform": "MLX requires a Mac with Apple Silicon.",
+      "insufficient_memory": "This machine does not have enough memory for the model.",
+      "insufficientDisk": "There is not enough free disk space for the model.",
+      "downloadHttp": "The model download failed.",
+      "sizeMismatch": "A downloaded model file has the wrong size.",
+      "checksumMismatch": "A downloaded model file failed checksum verification.",
+      "unsafePath": "The model contains an unsafe file path.",
+      "invalidRuntimeResponse": "The local runtime returned an invalid response.",
+      "runtimeFailed": "The local model runtime failed.",
+      "runtimeUnavailable": "The local model runtime is not installed.",
+      "modelBusy": "The model is currently in use.",
+      "profileInUse": "Replace this model in the affected profiles before removing it.",
+      "canceled": "The model download was canceled.",
+      "invalidGguf": "Choose a valid GGUF model file."
     }
   },
   "jobs": {
@@ -96,6 +115,7 @@
       "atomicNoteMatching": "Atomic note matching",
       "obsidianSync": "Obsidian sync",
       "assetStorage": "Asset storage"
+      , "localModelDownload": "Local model download"
     },
     "progress": {
       "processingSource": "Processing {title}",
@@ -269,8 +289,62 @@
       "openAiCompatible": "OpenAI-compatible", "displayName": "Display name", "baseUrl": "Base URL",
       "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test",
       "connectionOk": "Connection successful.", "profiles": "Profiles", "profileName": "Profile name",
-      "createProfile": "Create profile", "defaultProfile": "Default", "cloneProfile": "Clone profile"
+      "createProfile": "Create profile", "defaultProfile": "Default", "cloneProfile": "Clone profile",
+      "selectModel": "Select a remote or local model"
     }
+  },
+  "localModels": {
+    "title": "Local models",
+    "repositoryToken": "Hugging Face token",
+    "tokenConfigured": "Token configured",
+    "tokenOptional": "Optional for private or gated repositories",
+    "saveToken": "Save token",
+    "empty": "No models match these filters.",
+    "licenseAccept": "I accept the model license:",
+    "profileUsage": "Used by profiles",
+    "removeConfirmation": "Remove this model and its managed files from this machine?",
+    "testSucceeded": "Local inference succeeded.",
+    "filters": {
+      "runtime": "Runtime",
+      "family": "Family",
+      "allRuntimes": "All runtimes",
+      "allFamilies": "All families",
+      "compatibleOnly": "Compatible only"
+    },
+    "compatibility": {
+      "compatible": "Compatible with this machine",
+      "unsupported_platform": "Requires macOS on Apple Silicon",
+      "insufficient_memory": "Not enough memory"
+    },
+    "status": {
+      "not_downloaded": "Not downloaded",
+      "downloading": "Downloading",
+      "verifying": "Verifying",
+      "ready": "Installed",
+      "failed": "Failed",
+      "removing": "Removing"
+    },
+    "actions": {
+      "download": "Download",
+      "resume": "Resume",
+      "test": "Test inference",
+      "remove": "Remove",
+      "importGguf": "Import GGUF"
+    },
+    "progress": {
+      "loading": "Loading the model",
+      "generating": "Generating locally",
+      "completed": "Completed",
+      "verifying": "Verifying files",
+      "etaUnknown": "Estimating time"
+    }
+  },
+  "backup": {
+    "title": "Backup",
+    "description": "Create a PostgreSQL dump and copy the configured managed files into a dated folder.",
+    "action": "Create backup",
+    "completed": "Backup completed:",
+    "failed": "The backup could not be created."
   },
   "integrations": {
     "title": "Integrations",

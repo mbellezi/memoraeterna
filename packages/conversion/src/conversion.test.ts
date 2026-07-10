@@ -69,5 +69,12 @@ describe("conversion", () => {
     const canceled = client.convert("timeout.pdf", "standard", controller.signal);
     controller.abort();
     await expect(canceled).rejects.toMatchObject({ name: "AbortError" });
+
+    const limitedClient = new DoclingClient({
+      executablePath: process.execPath,
+      sidecarScriptPath: fileURLToPath(new URL("./test-fixtures/fake-docling.mjs", import.meta.url)),
+      maxOutputBytes: 128
+    });
+    await expect(limitedClient.convert("output-limit.pdf")).rejects.toThrow("output-limit");
   });
 });

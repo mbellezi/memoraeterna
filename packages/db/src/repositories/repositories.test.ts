@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createSettingsRepository } from "./settingsRepository.js";
 import { createSourceItemRepository } from "./sourceItemRepository.js";
 import { createSourceSummaryRepository } from "./sourceSummaryRepository.js";
+import { createLocalModelRepository } from "./localModelRepository.js";
 import type { Queryable } from "./types.js";
 
 class FakeQueryable implements Queryable {
@@ -129,5 +130,30 @@ describe("repositories", () => {
     });
     expect(summary.profileId).toBe("profile-1");
     expect(db.queries[0]?.text).toContain("insert into source_summaries");
+  });
+
+  it("persists an immutable local model descriptor with parameterized SQL", async () => {
+    const now = new Date("2026-07-10T10:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "model-1", catalogId: "mlx-test", modelId: "repo/model", displayName: "Model",
+        family: "Test", variant: "4-bit", repository: "repo/model", revision: "a".repeat(40),
+        runtime: "mlx", format: "safetensors", quantization: "4-bit", managedPath: null,
+        expectedSizeBytes: 10, installedSizeBytes: 0, manifestHash: "b".repeat(64),
+        capabilities: ["offline"], licenseName: "Test", licenseUrl: "https://example.test/license",
+        licenseAcceptedAt: null, status: "not_downloaded", lastError: null, metadata: {},
+        createdAt: now, updatedAt: now
+      }
+    ]]);
+    const model = await createLocalModelRepository(db).upsertModel({
+      catalogId: "mlx-test", modelId: "repo/model", displayName: "Model", family: "Test",
+      variant: "4-bit", repository: "repo/model", revision: "a".repeat(40), runtime: "mlx",
+      format: "safetensors", quantization: "4-bit", expectedSizeBytes: 10,
+      manifestHash: "b".repeat(64), capabilities: ["offline"], licenseName: "Test",
+      licenseUrl: "https://example.test/license"
+    });
+    expect(model.catalogId).toBe("mlx-test");
+    expect(db.queries[0]?.text).toContain("on conflict (catalog_id) do update");
+    expect(JSON.stringify(db.queries[0]?.values)).not.toContain("hf_");
   });
 });

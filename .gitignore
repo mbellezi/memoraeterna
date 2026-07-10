@@ -7,6 +7,9 @@ apps/*/.env
 apps/*/.env.*
 !apps/*/.env.example
 node_modules/
+apps/desktop/build-resources/
+apps/desktop/release/
+native/mlx-helper/.build/
 dist/
 out/
 coverage/

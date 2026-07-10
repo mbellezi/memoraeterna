@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { assertImportSize } from "./ingestion-service.js";
 import { validateAbsolutePath, validateManagedRoot } from "./path-validation";
 
 describe("path validation", () => {
+  it("enforces the configured import size limit before reading a file", () => {
+    expect(() => assertImportSize(10, 10)).not.toThrow();
+    expect(() => assertImportSize(11, 10)).toThrow("errors.common.fileTooLarge");
+  });
   it("accepts absolute paths without traversal", () => {
     expect(validateAbsolutePath("/Users/name/Vault")).toEqual({ ok: true });
   });

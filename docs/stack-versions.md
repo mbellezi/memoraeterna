@@ -17,7 +17,7 @@ Este arquivo e a fonte canonica de versoes para criar ou atualizar manifests, lo
 | Componente | Versao alvo | Observacoes |
 | --- | --- | --- |
 | Node.js | `24.18.0` LTS `Krypton` | Baseline do repo. Atende ao requisito de TypeScript nativo por type stripping estavel e fica alinhado ao Electron 43, que embute Node `24.17.0`. Node `26.4.0` e a linha Current, mas nao e o baseline enquanto Electron/dependencias nativas estiverem em Node 24. |
-| CPython sidecar | `3.13.13` | Runtime isolado apenas para Docling. Nao usar o Python do sistema nem instalar pacotes em runtime; o spike de conversao deve fixar a origem dos binarios por plataforma e seus checksums. |
+| CPython sidecar | `3.13.13` | Runtime isolado apenas para Docling. Em `darwin-arm64`, o builder usa `python-build-standalone` `20260408`, SHA-256 `db8b4f8c7ab5d51cee148d8a2eaf1ad8bb2b9def51cb24c185c6db6143938e9e`. Nao usar o Python do sistema nem instalar pacotes em runtime. |
 | npm | `11.16.0` | Versao empacotada com Node `24.18.0`. |
 | TypeScript | `6.0.3` | Usar `tsc` para typecheck/build. Para scripts executados diretamente pelo Node, limitar a sintaxe a TypeScript erasable. |
 | `@types/node` | `24.13.2` | Fixar na linha 24 para refletir o runtime alvo e o Node embutido no Electron. |
@@ -91,6 +91,9 @@ Next.js nao faz parte da stack obrigatoria do MVP desktop. Se um app web separad
 | Conversores TypeScript nativos | interno | TXT, Markdown, CSV, JSON, XML, RSS, Atom e IPYNB; sem framework generico obrigatorio. |
 | `youtubei.js` | `17.2.0` | Metadados e transcricoes de YouTube quando disponiveis. |
 | `node-llama-cpp` | `3.19.0` | Apenas main process ou workers controlados pelo main process. |
+| MLX Swift | `0.31.6` | Runtime nativo Apple Silicon usado pelo helper Swift; fixado no `Package.swift` do helper. |
+| MLX Swift LM | `3.31.4` | Carregamento e inferencia MLX/Gemma/Qwen no helper nativo macOS arm64. |
+| Swift Transformers | `1.3.3` | Tokenizer local do helper MLX; nenhum download ou Python em runtime. |
 
 ## Fontes Auditadas
 

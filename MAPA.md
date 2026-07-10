@@ -14,9 +14,10 @@ Leia tambem, antes de editar codigo:
 
 ## Estado Atual
 
-Fase atual: Fase 4 - Integracoes Externas concluida em codigo e testes
-automatizados; smoke tests manuais nos hosts Chrome e Obsidian continuam
-dependentes da instalacao local dos artefatos.
+Fase atual: Fase 5 - Fechamento implementada em codigo, migrations, runtimes e
+testes automatizados. O pacote macOS arm64 sem instalador foi gerado; assinatura,
+notarizacao e smoke tests manuais nos hosts Chrome/Obsidian continuam como
+validacoes de distribuicao.
 
 Implementado ate aqui:
 
@@ -92,21 +93,43 @@ Implementado ate aqui:
   conflitos explicitos e reprocessamento do documento alterado;
 - verificacao real da Fase 4 para migration, baseline, indices e repositorios
   de clientes/sync em PostgreSQL temporario.
+- catalogo local versionado com tres modelos MLX auditados, revisions imutaveis,
+  tamanhos, SHA-256, licencas, capabilities e requisitos de memoria;
+- downloader Hugging Face direto, retomavel por Range, com `.partial`, preflight
+  de disco/memoria/plataforma, progresso, cancelamento, retry, verificacao e
+  promocao atomica;
+- persistencia de `local_models`, arquivos, downloads/checkpoints e selecao por
+  tarefa em perfis offline, com rastreabilidade ampliada em `ai_task_runs`;
+- adapter GGUF real via `node-llama-cpp` e adapter MLX via helper Swift nativo,
+  restritos ao main process/helper e cobertos por teste de fronteira;
+- helper `native/mlx-helper` com `mlx-swift`, `mlx-swift-lm` e
+  `swift-transformers` fixados, protocolo JSONL Zod, timeout e cancelamento;
+- Settings > Local models para catalogo/filtros, token seguro, aceite de
+  licenca, downloads, retomada, teste, importacao GGUF e remocao protegida;
+- backup basico via `pg_dump` e copias das pastas gerenciadas configuradas;
+- limites de importacao e limites de paginas/tempo/memoria de saida/concorrencia
+  do Docling;
+- builder CPython 3.13.13 + Docling 2.111.0 para macOS arm64 com lock exato,
+  modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
+- staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
+  `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
+- migration `0005_fantastic_iceman`, baseline com 6 migrations e verificacao
+  real da Fase 5 em banco vazio e existente;
+- pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
+  presentes fora do ASAR.
 
 Pendencias conhecidas:
 
-- empacotamento final macOS ainda precisa copiar `resources/sidecars/...` e
-  `resources/drizzle/` e `resources/db-seed/`;
 - assinatura/notarizacao dos binarios nativos ainda nao foi configurada;
-- builds AGE para Windows e Linux estao fora do escopo inicial;
+- builds AGE/Docling para Windows, Linux e macOS x64 estao fora do artefato
+  inicial macOS arm64;
 - o shell local foi validado com Node 24.18.0; o npm ainda emite apenas um
   warning sobre a chave legada `python` na configuracao do usuario.
-- o artefato CPython 3.13.13 + Docling 2.111.0 e os modelos ainda nao estao
-  materializados em `vendor/sidecars/docling/<platform>`; o bridge, o protocolo
-  e a resolucao DEV/prod estao implementados, mas PDF/DOCX/XLSX/PPTX reais
-  dependem desse bundle externo;
 - o corpus golden e os benchmarks completos dos formatos Docling continuam
-  pendentes ate o runtime/modelos serem disponibilizados.
+  pendentes; o smoke offline automatizado cobre inicialmente um PDF com OCR;
+- o smoke de um modelo MLX completo do catalogo exige consentimento explicito
+  para baixar pelo menos 2,28 GB; o helper nativo e o health check estao
+  validados sem pesos;
 - smoke tests manuais da extensao carregada no Chrome e do plugin instalado no
   Obsidian ainda exigem os aplicativos host no ambiente local.
 
@@ -125,6 +148,8 @@ Pendencias conhecidas:
     domain/
     i18n/
     integration-contracts/
+  native/
+    mlx-helper/
   docs/
   scripts/
   RULES.md
@@ -166,6 +191,10 @@ Arquivos principais:
   persistencia dos artefatos.
 - `src/main/services/asset-storage-service.ts`: storage por hash.
 - `src/main/services/ai-service.ts`: providers, perfis e execucao de tarefas.
+- `src/main/services/local-model-service.ts`: catalogo, downloads persistidos,
+  token seguro, importacao GGUF, teste e remocao de modelos locais.
+- `src/main/services/backup-service.ts`: `pg_dump` e copia dos arquivos
+  gerenciados configurados.
 - `src/main/services/credential-service.ts`: segredos de IA via `safeStorage`.
 - `src/main/services/search-service.ts`: busca textual/hibrida com fallback.
 - `src/main/services/knowledge-service.ts`: resumos, notas atomicas, matching,
@@ -189,6 +218,7 @@ Arquivos principais:
 - `src/renderer/components/ReviewQueueView.tsx`: fila de revisao das notas
   atomicas.
 - `electron.vite.config.ts`: build Electron/Vite.
+- `electron-builder.yml`: pacote macOS arm64, ASAR/unpack nativo e recursos.
 
 Fronteira obrigatoria:
 
@@ -268,6 +298,8 @@ Arquivos principais:
   resumos, notas, matching, relacoes e revisao da Fase 3.
 - `src/scripts/verify-phase4.ts`: verificacao real de migration/baseline,
   clientes autorizados e identidade de arquivos Obsidian.
+- `src/scripts/verify-phase5.ts`: verificacao real das tabelas de modelos,
+  checkpoints, perfis locais, tracing e baseline com 6 migrations.
 - `src/sidecar/manager.ts`: initdb/start/stop/restart do Postgres sidecar.
 - `src/sidecar/paths.ts`: resolucao de paths DEV/prod/env.
 - `src/sidecar/nodeRunner.ts`: runner Node para comandos do sidecar.
@@ -292,8 +324,9 @@ Regras especificas:
 ### `packages/ai`
 
 Registry, contratos de task/handle, negociacao por capabilities e adapters
-Google Gemini/OpenAI-compatible. Segredos sao injetados pelo desktop e nunca
-persistidos neste pacote.
+Google Gemini/OpenAI-compatible, GGUF e MLX. Contem o catalogo auditado, o
+protocolo MLX e o downloader verificado. Segredos sao injetados pelo desktop e
+nunca persistidos neste pacote.
 
 ### `packages/conversion`
 
@@ -306,9 +339,10 @@ controlado pelo main process ou pelo worker de conversao. O resultado preserva
 Markdown, blocos e proveniencia estruturada quando disponivel.
 
 O pacote agora contem `ConversionRouter`, conversores nativos, Defuddle,
-extracao ZIP limitada, normalizador, chunker e `DoclingClient`. O bridge Python
-fica em `packages/conversion/sidecar/`; o bundle CPython/Docling continua sendo
-artefato por plataforma, nao dependencia do Python do sistema.
+extracao ZIP limitada, normalizador, chunker e `DoclingClient`. O bridge Python,
+o lock exato e a definicao de revisions ficam em
+`packages/conversion/sidecar/`; o bundle CPython/Docling e gerado por plataforma
+e nunca depende do Python do sistema.
 
 ## Fluxo do Banco no Desktop
 
@@ -382,6 +416,7 @@ npm run db:verify
 npm run db:phase2:verify
 npm run db:phase3:verify
 npm run db:phase4:verify
+npm run db:phase5:verify
 npm run db:seed:sync
 npm run phase4:e2e
 ```
@@ -393,12 +428,26 @@ npm run typecheck
 npm test
 npm run build
 npm run format:check
+npm run docling:verify
+npm run docling:smoke
+npm run package:desktop:dir
+npm run package:desktop:smoke
 ```
 
 Desktop DEV:
 
 ```bash
 npm run dev -w @app/desktop
+```
+
+Runtimes e pacote:
+
+```bash
+npm run mlx:build
+npm run docling:build
+npm run docling:verify
+npm run docling:smoke
+npm run package:desktop:dir
 ```
 
 ## Documentacao de Referencia
@@ -408,6 +457,8 @@ npm run dev -w @app/desktop
 - `docs/stack-versions.md`: matriz canonica de versoes.
 - `docs/postgres-sidecar-age-spike.md`: reproducao e status do sidecar
   Postgres/pgvector/AGE.
+- `docs/docling-sidecar.md`: build fixado, verificacao e smoke offline Docling.
+- `docs/local-models-and-packaging.md`: catalogo local, downloads e pacote.
 - `README.md`: instrucoes para pessoas desenvolvedoras.
 
 ## Cuidados Para Proximas Edicoes
