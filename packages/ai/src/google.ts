@@ -82,7 +82,9 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
           generationConfig: {
-            ...(request.taskType === "structured-output" ? { responseMimeType: "application/json" } : {}),
+            ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
+              ? { responseMimeType: "application/json" }
+              : {}),
             ...request.parameters
           }
         })

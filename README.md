@@ -207,13 +207,14 @@ Verificar migration no banco real:
 npm run db:verify
 ```
 
-Sincronizar mecanicamente o baseline com o journal e validar toda a Fase 2 em
+Sincronizar mecanicamente o baseline com o journal e validar as Fases 2 e 3 em
 um sidecar temporario real:
 
 ```bash
 npm run db:seed:sync
 npm run db:seed:verify
 npm run db:phase2:verify
+npm run db:phase3:verify
 ```
 
 Toda mudanca de schema deve ser validada no banco real, incluindo historico em

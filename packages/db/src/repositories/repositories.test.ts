@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { createSettingsRepository } from "./settingsRepository.js";
 import { createSourceItemRepository } from "./sourceItemRepository.js";
+import { createSourceSummaryRepository } from "./sourceSummaryRepository.js";
 import type { Queryable } from "./types.js";
 
 class FakeQueryable implements Queryable {
@@ -93,5 +94,40 @@ describe("repositories", () => {
       updatedAt: now
     });
     expect(db.queries[0]?.text).toContain("on conflict (key) do update");
+  });
+
+  it("records traceable source summaries", async () => {
+    const now = new Date("2026-07-10T10:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "summary-1",
+        sourceItemId: "source-1",
+        summary: "A concise summary.",
+        language: "en",
+        profileId: "profile-1",
+        aiTaskRunId: "run-1",
+        provider: "test",
+        model: "mock-model",
+        runtime: "remote",
+        promptVersion: "summary-v1",
+        inputHash: "a".repeat(64),
+        outputHash: "b".repeat(64),
+        generatedAt: now,
+        metadata: { mapReduce: false },
+        createdAt: now
+      }
+    ]]);
+    const summary = await createSourceSummaryRepository(db).create({
+      sourceItemId: "source-1",
+      summary: "A concise summary.",
+      provider: "test",
+      model: "mock-model",
+      runtime: "remote",
+      promptVersion: "summary-v1",
+      inputHash: "a".repeat(64),
+      outputHash: "b".repeat(64)
+    });
+    expect(summary.profileId).toBe("profile-1");
+    expect(db.queries[0]?.text).toContain("insert into source_summaries");
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BriefcaseBusiness,
+  ClipboardCheck,
   Database,
   Download,
   Moon,
@@ -35,8 +36,10 @@ import { AiSettingsView } from "./components/AiSettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
 import { SearchView } from "./components/SearchView";
+import { LibraryView } from "./components/LibraryView";
+import { ReviewQueueView } from "./components/ReviewQueueView";
 
-type ViewId = "library" | "import" | "search" | "jobs" | "settings";
+type ViewId = "library" | "import" | "search" | "review" | "jobs" | "settings";
 
 interface NavItem {
   id: ViewId;
@@ -48,11 +51,12 @@ const navItems: NavItem[] = [
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
   { id: "import", label: "shell.navigation.import", icon: Download },
   { id: "search", label: "shell.navigation.search", icon: Search },
+  { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
   { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
   { id: "settings", label: "shell.navigation.settings", icon: Settings }
 ];
 
-const emptyViews: Record<Exclude<ViewId, "settings">, { title: MessageKey; empty: MessageKey }> = {
+const emptyViews: Record<Exclude<ViewId, "settings" | "review">, { title: MessageKey; empty: MessageKey }> = {
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
   search: { title: "shell.navigation.search", empty: "shell.states.empty" },
@@ -294,7 +298,11 @@ export function App({
     };
   }
 
-  const pageTitle = activeView === "settings" ? "settings.title" : emptyViews[activeView].title;
+  const pageTitle = activeView === "settings"
+    ? "settings.title"
+    : activeView === "review"
+      ? "knowledge.review.title"
+      : emptyViews[activeView].title;
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
     const isFailed = databaseStatus.state === "failed";
@@ -435,11 +443,12 @@ export function App({
             <SearchView t={t} />
           ) : activeView === "jobs" ? (
             <JobsView t={t} />
+          ) : activeView === "review" ? (
+            <ReviewQueueView t={t} />
+          ) : activeView === "library" ? (
+            <LibraryView t={t} />
           ) : (
-            <section className="grid min-h-80 content-center justify-items-center gap-3 rounded-md border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
-              <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t(emptyViews[activeView].title)}</h2>
-              <p className="max-w-lg text-sm text-slate-600 dark:text-slate-300">{t(emptyViews[activeView].empty)}</p>
-            </section>
+            null
           )}
         </div>
       </main>

@@ -3,6 +3,7 @@ import type {
   AiProfileCreate,
   AiProfileTaskInput,
   AiProviderConfigInput,
+  AtomicNoteReviewInput,
   AppSettingsUpdate,
   DesktopApi,
   FileImportInput,
@@ -10,6 +11,7 @@ import type {
   SearchInput,
   StorageSettingsUpdate
 } from "../shared/ipc";
+import type { SourceItemType } from "@app/domain";
 import {
   appSettingsSchema,
   appSettingsUpdateSchema,
@@ -18,14 +20,19 @@ import {
   aiProfileSchema,
   aiProviderConfigInputSchema,
   aiProviderConfigSchema,
+  atomicNoteReviewInputSchema,
+  atomicNoteViewSchema,
   databaseStatusSchema,
   ipcChannels,
   fileImportInputSchema,
   ingestionResultSchema,
   jobRecordSchema,
+  librarySourceSchema,
   manualIngestionInputSchema,
   searchInputSchema,
   searchResultsSchema,
+  pendingAtomicNoteSchema,
+  sourceDetailSchema,
   sourceSuggestionSchema,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
@@ -98,6 +105,30 @@ const api: DesktopApi = {
   search: {
     async query(input: SearchInput) {
       return searchResultsSchema.parse(await ipcRenderer.invoke(ipcChannels.searchQuery, searchInputSchema.parse(input)));
+    }
+  },
+  knowledge: {
+    async listLibrary(sourceTypes: SourceItemType[] = []) {
+      return librarySourceSchema.array().parse(await ipcRenderer.invoke(ipcChannels.libraryList, sourceTypes));
+    },
+    async getSourceDetail(sourceItemId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.librarySourceGet, sourceItemId);
+      return result === null ? null : sourceDetailSchema.parse(result);
+    },
+    async openAsset(assetId: string) {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.libraryAssetOpen, assetId));
+    },
+    async listPendingNotes() {
+      return pendingAtomicNoteSchema.array().parse(
+        await ipcRenderer.invoke(ipcChannels.knowledgePendingNotesList)
+      );
+    },
+    async reviewNote(input: AtomicNoteReviewInput) {
+      const result = await ipcRenderer.invoke(
+        ipcChannels.knowledgeNoteReview,
+        atomicNoteReviewInputSchema.parse(input)
+      );
+      return result === null ? null : atomicNoteViewSchema.parse(result);
     }
   },
   ai: {

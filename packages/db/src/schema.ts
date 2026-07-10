@@ -66,6 +66,19 @@ export const obsidianSyncStatus = pgEnum("obsidian_sync_status", [
   "ignored"
 ]);
 
+export const atomicNoteStatus = pgEnum("atomic_note_status", [
+  "pending_review",
+  "approved",
+  "rejected",
+  "archived"
+]);
+
+export const atomicNoteRelationStatus = pgEnum("atomic_note_relation_status", [
+  "pending_review",
+  "accepted",
+  "rejected"
+]);
+
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
@@ -474,6 +487,146 @@ export const aiTaskRuns = pgTable(
   (table) => ({ taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType) })
 );
 
+export const sourceSummaries = pgTable(
+  "source_summaries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceItemId: uuid("source_item_id")
+      .notNull()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    summary: text("summary").notNull(),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    profileId: uuid("profile_id").references(() => aiProfileSets.id, { onDelete: "set null" }),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    runtime: text("runtime").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    inputHash: text("input_hash").notNull(),
+    outputHash: text("output_hash").notNull(),
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    sourceItemIdx: index("source_summaries_source_item_id_idx").on(table.sourceItemId),
+    generatedAtIdx: index("source_summaries_generated_at_idx").on(table.generatedAt)
+  })
+);
+
+export const atomicNotes = pgTable(
+  "atomic_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    bodyMarkdown: text("body_markdown").notNull(),
+    ideaStatement: text("idea_statement").notNull(),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    status: atomicNoteStatus("status").notNull().default("pending_review"),
+    createdFromSourceItemId: uuid("created_from_source_item_id")
+      .notNull()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
+    evidenceChunkId: uuid("evidence_chunk_id")
+      .notNull()
+      .references(() => chunks.id, { onDelete: "cascade" }),
+    generationProfileId: uuid("generation_profile_id").references(() => aiProfileSets.id, { onDelete: "set null" }),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    generationProvider: text("generation_provider").notNull(),
+    generationModel: text("generation_model").notNull(),
+    generationRuntime: text("generation_runtime").notNull(),
+    generationPromptVersion: text("generation_prompt_version").notNull(),
+    generationKey: text("generation_key").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    ...timestamps
+  },
+  (table) => ({
+    sourceItemIdx: index("atomic_notes_source_item_id_idx").on(table.createdFromSourceItemId),
+    statusIdx: index("atomic_notes_status_idx").on(table.status),
+    sourceGenerationUidx: uniqueIndex("atomic_notes_source_generation_key_uidx").on(
+      table.createdFromSourceItemId,
+      table.generationKey
+    )
+  })
+);
+
+export const atomicNoteSourceLinks = pgTable(
+  "atomic_note_source_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    atomicNoteId: uuid("atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id")
+      .notNull()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    chunkId: uuid("chunk_id")
+      .notNull()
+      .references(() => chunks.id, { onDelete: "cascade" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
+    claimId: uuid("claim_id"),
+    relationType: text("relation_type").notNull().default("derived_from"),
+    confidence: doublePrecision("confidence"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    noteIdx: index("atomic_note_source_links_note_id_idx").on(table.atomicNoteId),
+    sourceIdx: index("atomic_note_source_links_source_id_idx").on(table.sourceItemId),
+    noteChunkUidx: uniqueIndex("atomic_note_source_links_note_chunk_uidx").on(table.atomicNoteId, table.chunkId)
+  })
+);
+
+export const atomicNoteRelations = pgTable(
+  "atomic_note_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceAtomicNoteId: uuid("source_atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    targetAtomicNoteId: uuid("target_atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    relationType: text("relation_type").notNull().default("related"),
+    vectorScore: doublePrecision("vector_score"),
+    graphScore: doublePrecision("graph_score"),
+    rerankScore: doublePrecision("rerank_score"),
+    finalScore: doublePrecision("final_score").notNull(),
+    explanation: text("explanation").notNull(),
+    status: atomicNoteRelationStatus("status").notNull().default("pending_review"),
+    matchingProfileId: uuid("matching_profile_id").references(() => aiProfileSets.id, { onDelete: "set null" }),
+    matchingModel: text("matching_model"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    sourceIdx: index("atomic_note_relations_source_id_idx").on(table.sourceAtomicNoteId),
+    targetIdx: index("atomic_note_relations_target_id_idx").on(table.targetAtomicNoteId),
+    sourceTargetUidx: uniqueIndex("atomic_note_relations_source_target_uidx").on(
+      table.sourceAtomicNoteId,
+      table.targetAtomicNoteId
+    )
+  })
+);
+
+export const atomicNoteReviewEvents = pgTable(
+  "atomic_note_review_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    atomicNoteId: uuid("atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    previousStatus: atomicNoteStatus("previous_status").notNull(),
+    nextStatus: atomicNoteStatus("next_status").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    noteIdx: index("atomic_note_review_events_note_id_idx").on(table.atomicNoteId)
+  })
+);
+
 function createEmbeddingColumns() {
   return {
     id: uuid("id").primaryKey().defaultRandom(),
@@ -514,7 +667,9 @@ export const sourceItemsRelations = relations(sourceItems, ({ many }) => ({
   spans: many(sourceSpans),
   chunks: many(chunks),
   ingestionRuns: many(ingestionRuns),
-  obsidianSyncFiles: many(obsidianSyncFiles)
+  obsidianSyncFiles: many(obsidianSyncFiles),
+  summaries: many(sourceSummaries),
+  atomicNotes: many(atomicNotes)
 }));
 
 export const documentsRelations = relations(documents, ({ one, many }) => ({

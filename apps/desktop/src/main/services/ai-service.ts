@@ -3,6 +3,7 @@ import {
   GoogleGeminiAdapter,
   OpenAiCompatibleAdapter,
   type AiModelAdapter,
+  type AiTaskRequest,
   type AiTaskResult
 } from "@app/ai";
 import {
@@ -87,28 +88,32 @@ export class AiService {
     });
   }
 
-  public async runDefaultTask(taskType: "embedding" | "summarization", input: string): Promise<AiTaskResult | null> {
+  public async runDefaultTask(
+    taskType: "embedding" | "summarization" | "atomic-note-generation" | "reranking",
+    input: string
+  ): Promise<DefaultAiTaskResult | null> {
     const repository = createAiConfigRepository(this.requirePool());
     const selection = await repository.getDefaultTask(taskType);
     if (!selection) return null;
     const adapter = await this.createAdapter(selection.providerConfigId);
     const started = Date.now();
     try {
+      const requiredCapabilities = capabilitiesForTask(taskType);
       const result = await adapter.run({
         taskType, input, profileId: selection.profileId, modelId: selection.modelId,
-        requiredCapabilities: taskType === "embedding" ? ["embedding"] : ["summarization"],
+        requiredCapabilities,
         parameters: selection.parameters, metadata: {}
       });
-      await repository.recordTaskRun({
+      const aiTaskRunId = await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: result.providerId, modelId: result.modelId,
-        runtime: result.runtime, capabilitiesUsed: taskType === "embedding" ? ["embedding"] : ["summarization"],
+        runtime: result.runtime, capabilitiesUsed: requiredCapabilities,
         inputHash: sha256(input), outputHash: sha256(JSON.stringify(result.output)),
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
         durationMs: result.durationMs, status: "succeeded"
       });
-      return result;
+      return { ...result, profileId: selection.profileId, aiTaskRunId };
     } catch (error) {
       await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: selection.provider,
@@ -146,6 +151,20 @@ export class AiService {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
+}
+
+export interface DefaultAiTaskResult extends AiTaskResult {
+  profileId: string;
+  aiTaskRunId: string;
+}
+
+function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[] {
+  return ({
+    embedding: ["embedding"],
+    summarization: ["summarization"],
+    "atomic-note-generation": ["atomic-note-generation", "structured-output"],
+    reranking: ["reranking"]
+  } as Partial<Record<AiTaskRequest["taskType"], AiCapability[]>>)[taskType] ?? [];
 }
 
 function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {

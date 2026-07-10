@@ -11,6 +11,7 @@ import {
 } from "@app/db";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
+import type { KnowledgeService } from "./knowledge-service.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
@@ -23,6 +24,7 @@ export interface JobSupervisorOptions {
     model: string;
     runtime: string;
   } | null>;
+  knowledgeService?: KnowledgeService;
 }
 
 const supportedJobTypes = new Set<WorkerTask["type"]>([
@@ -122,6 +124,18 @@ export class JobSupervisor {
     return createJobRepository(this.requirePool()).list(limit);
   }
 
+  public async listWithRuns(limit = 100) {
+    const pool = this.requirePool();
+    const [jobs, runs] = await Promise.all([
+      createJobRepository(pool).list(limit),
+      createIngestionRunRepository(pool).list(limit)
+    ]);
+    return jobs.map((job) => ({
+      job,
+      ingestionRun: runs.find((run) => run.jobId === job.id || run.id === job.payload.ingestionRunId) ?? null
+    }));
+  }
+
   private schedule(delay: number): void {
     if (!this.running || this.stopping) return;
     if (this.timer) clearTimeout(this.timer);
@@ -150,7 +164,7 @@ export class JobSupervisor {
       }, {
         signal,
         onProgress: (progress) => {
-          void createJobRepository(pool).reportProgress(job.id, 0.2 + progress * 0.7);
+          void createJobRepository(pool).reportProgress(job.id, 0.05 + progress * 0.3);
         }
       });
       const chunks = Array.isArray(chunkResult.chunks) ? chunkResult.chunks : [];
@@ -187,8 +201,91 @@ export class JobSupervisor {
         configured: Boolean(this.options.generateEmbedding)
       });
     }
+    await createJobRepository(pool).reportProgress(job.id, 0.5);
+    throwIfAborted(signal);
+    const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
+    if (summaryCheckpoint?.status !== "completed") {
+      await runs.beginStage(ingestionRunId, "summarization");
+      const summary = this.options.knowledgeService
+        ? await this.runInlineStageJob(
+            "summarization",
+            { ingestionRunId, sourceItemId, documentId },
+            () => this.options.knowledgeService!.summarizeSource(sourceItemId, documentId)
+          )
+        : { configured: false, generated: false };
+      await runs.completeStage(ingestionRunId, "summarization", summary);
+    }
+    throwIfAborted(signal);
+    await createJobRepository(pool).reportProgress(job.id, 0.68);
+    const atomicCheckpoint = run.stagesCheckpoint.atomicNotes as JsonObject | undefined;
+    let noteIds = readStringArray((atomicCheckpoint?.metadata as JsonObject | undefined)?.noteIds);
+    if (atomicCheckpoint?.status !== "completed") {
+      await runs.beginStage(ingestionRunId, "atomicNotes");
+      const generated = this.options.knowledgeService
+        ? await this.runInlineStageJob(
+            "atomic-note-generation",
+            { ingestionRunId, sourceItemId, documentId },
+            () => this.options.knowledgeService!.generateAtomicNotes(sourceItemId, documentId)
+          )
+        : { configured: false, generatedCount: 0, noteIds: [] };
+      noteIds = readStringArray(generated.noteIds);
+      await runs.completeStage(ingestionRunId, "atomicNotes", generated);
+    }
+    throwIfAborted(signal);
+    await createJobRepository(pool).reportProgress(job.id, 0.84);
+    const matchingCheckpoint = run.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined;
+    if (matchingCheckpoint?.status !== "completed") {
+      await runs.beginStage(ingestionRunId, "atomicNoteMatching");
+      const matching = this.options.knowledgeService && noteIds.length > 0
+        ? await this.runInlineStageJob(
+            "atomic-note-matching",
+            { ingestionRunId, sourceItemId, documentId, noteIds },
+            () => this.options.knowledgeService!.matchAtomicNotes(noteIds)
+          )
+        : { persistedCount: 0 };
+      await runs.completeStage(ingestionRunId, "atomicNoteMatching", matching);
+    }
+    throwIfAborted(signal);
+    await createJobRepository(pool).reportProgress(job.id, 0.98);
     await runs.complete(ingestionRunId);
     return { ingestionRunId, documentId, sourceItemId };
+  }
+
+  private async runInlineStageJob(
+    type: string,
+    payload: JsonObject,
+    run: () => Promise<Record<string, unknown>>
+  ): Promise<Record<string, unknown>> {
+    const repository = createJobRepository(this.requirePool());
+    const job = await repository.create({ type, payload, maxAttempts: 1 });
+    await repository.update(job.id, {
+      status: "running",
+      attempts: 1,
+      lockedAt: new Date(),
+      lockedBy: this.workerId
+    });
+    try {
+      const result = await run();
+      await repository.update(job.id, {
+        status: "succeeded",
+        progress: 1,
+        result,
+        error: null,
+        lockedAt: null,
+        lockedBy: null,
+        finishedAt: new Date()
+      });
+      return result;
+    } catch (error) {
+      await repository.update(job.id, {
+        status: "failed",
+        error: normalizeWorkerError(error),
+        lockedAt: null,
+        lockedBy: null,
+        finishedAt: new Date()
+      });
+      throw error;
+    }
   }
 
   private async drain(): Promise<void> {
@@ -238,4 +335,12 @@ function parseWorkerChunk(raw: unknown) {
 function normalizeWorkerError(error: unknown): string {
   if (!(error instanceof Error)) return "worker_failed";
   return error.message.slice(0, 500);
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
 }

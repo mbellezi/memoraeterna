@@ -27,6 +27,7 @@
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:verify": "tsx src/scripts/verify.ts",
     "db:phase2:verify": "tsx src/scripts/verify-phase2.ts",
+    "db:phase3:verify": "tsx src/scripts/verify-phase3.ts",
     "db:seed:verify": "tsx src/scripts/verify-seed.ts"
   },
   "dependencies": {

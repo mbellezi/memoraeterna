@@ -12,6 +12,7 @@
       "library": "Biblioteca",
       "import": "Importar",
       "search": "Buscar",
+      "review": "Revisar notas",
       "jobs": "Tarefas",
       "settings": "Configuracoes"
     },
@@ -92,12 +93,31 @@
       "embedding": "Embedding",
       "summarization": "Resumo",
       "atomicNoteGeneration": "Geracao de nota atomica",
+      "atomicNoteMatching": "Conexao de notas atomicas",
       "obsidianSync": "Sincronizacao com Obsidian",
       "assetStorage": "Armazenamento de assets"
     },
     "progress": {
       "processingSource": "Processando {title}",
       "percentComplete": "{percent}% concluido"
+    },
+    "currentStage": "Etapa atual: {stage}",
+    "stages": {
+      "queued": "Na fila",
+      "conversion": "Conversao",
+      "chunking": "Divisao em trechos",
+      "embedding": "Embedding",
+      "summarization": "Resumo",
+      "atomicNotes": "Notas atomicas",
+      "atomicNoteMatching": "Conexao de notas",
+      "completed": "Concluida"
+    },
+    "stageStatus": {
+      "pending": "Pendente",
+      "running": "Em execucao",
+      "completed": "Concluida",
+      "failed": "Falhou",
+      "skipped": "Ignorada"
     },
     "empty": "Nenhuma tarefa ainda.",
     "actions": {
@@ -123,6 +143,69 @@
   "search": {
     "placeholder": "Buscar fontes e evidencias", "action": "Buscar", "empty": "Nenhuma evidencia correspondente.",
     "page": "Pagina", "markdownEvidence": "Evidencia no Markdown"
+  },
+  "library": {
+    "filterByType": "Filtrar por tipo de fonte",
+    "allTypes": "Todos os tipos de fonte",
+    "refresh": "Atualizar biblioteca",
+    "error": "Nao foi possivel carregar a biblioteca.",
+    "empty": "Ainda nao ha fontes na biblioteca.",
+    "currentStage": "Etapa atual: {stage}",
+    "back": "Voltar para a biblioteca",
+    "openOriginal": "Abrir original",
+    "openFile": "Abrir arquivo original",
+    "noSummary": "Nenhum resumo foi gerado.",
+    "chunk": "Trecho {index}",
+    "processing": {
+      "pending": "Pendente",
+      "running": "Processando",
+      "succeeded": "Pronta",
+      "failed": "Falhou",
+      "canceled": "Cancelada"
+    },
+    "sections": {
+      "metadata": "Metadados",
+      "summary": "Resumo",
+      "document": "Documento Markdown",
+      "originals": "Arquivos originais",
+      "chunks": "Trechos da fonte",
+      "atomicNotes": "Notas atomicas",
+      "relations": "Relacoes entre notas"
+    }
+  },
+  "knowledge": {
+    "review": {
+      "title": "Revisao de notas atomicas",
+      "error": "Nao foi possivel carregar a fila de revisao.",
+      "empty": "Nenhuma nota atomica aguarda revisao.",
+      "unknownSource": "Fonte desconhecida",
+      "fields": { "title": "Titulo", "idea": "Ideia principal", "body": "Corpo da nota" },
+      "actions": { "approve": "Aprovar", "edit": "Editar", "discard": "Descartar", "saveEdit": "Salvar edicao" }
+    },
+    "notes": {
+      "emptyForSource": "Esta fonte ainda nao possui notas atomicas.",
+      "status": {
+        "pending_review": "Pendente de revisao",
+        "approved": "Aprovada",
+        "rejected": "Descartada",
+        "archived": "Arquivada"
+      }
+    },
+    "relations": {
+      "empty": "Nenhuma relacao relevante entre notas foi encontrada.",
+      "pendingInvolved": "Inclui nota pendente de revisao",
+      "explanations": { "hybrid": "As notas ultrapassaram o limiar de similaridade hibrida." },
+      "types": {
+        "supports": "Sustenta",
+        "contrasts": "Contrasta",
+        "extends": "Amplia",
+        "similar_to": "Semelhante a",
+        "depends_on": "Depende de",
+        "clarifies": "Esclarece",
+        "mentions": "Menciona",
+        "related": "Relacionada"
+      }
+    }
   },
   "settings": {
     "title": "Configuracoes",

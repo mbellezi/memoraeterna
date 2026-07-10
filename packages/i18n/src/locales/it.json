@@ -12,6 +12,7 @@
       "library": "Libreria",
       "import": "Importa",
       "search": "Cerca",
+      "review": "Rivedi note",
       "jobs": "Attivita",
       "settings": "Impostazioni"
     },
@@ -92,12 +93,23 @@
       "embedding": "Embedding",
       "summarization": "Riepilogo",
       "atomicNoteGeneration": "Generazione di note atomiche",
+      "atomicNoteMatching": "Collegamento note atomiche",
       "obsidianSync": "Sincronizzazione Obsidian",
       "assetStorage": "Archiviazione asset"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
       "percentComplete": "{percent}% completato"
+    },
+    "currentStage": "Fase corrente: {stage}",
+    "stages": {
+      "queued": "In coda", "conversion": "Conversione", "chunking": "Suddivisione",
+      "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
+      "atomicNoteMatching": "Collegamento note", "completed": "Completata"
+    },
+    "stageStatus": {
+      "pending": "In attesa", "running": "In esecuzione", "completed": "Completata",
+      "failed": "Non riuscita", "skipped": "Saltata"
     },
     "empty": "Nessuna attivita.",
     "actions": {
@@ -123,6 +135,36 @@
   "search": {
     "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
     "page": "Pagina", "markdownEvidence": "Evidenza Markdown"
+  },
+  "library": {
+    "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
+    "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
+    "empty": "Nessuna fonte nella libreria.", "currentStage": "Fase corrente: {stage}",
+    "back": "Torna alla libreria", "openOriginal": "Apri originale", "openFile": "Apri file originale",
+    "noSummary": "Non e stato generato alcun riepilogo.", "chunk": "Frammento {index}",
+    "processing": { "pending": "In attesa", "running": "Elaborazione", "succeeded": "Pronta", "failed": "Non riuscita", "canceled": "Annullata" },
+    "sections": {
+      "metadata": "Metadati", "summary": "Riepilogo", "document": "Documento Markdown",
+      "originals": "File originali", "chunks": "Frammenti della fonte",
+      "atomicNotes": "Note atomiche", "relations": "Relazioni tra note"
+    }
+  },
+  "knowledge": {
+    "review": {
+      "title": "Revisione note atomiche", "error": "Impossibile caricare la coda di revisione.",
+      "empty": "Nessuna nota atomica attende revisione.", "unknownSource": "Fonte sconosciuta",
+      "fields": { "title": "Titolo", "idea": "Idea principale", "body": "Corpo della nota" },
+      "actions": { "approve": "Approva", "edit": "Modifica", "discard": "Scarta", "saveEdit": "Salva modifica" }
+    },
+    "notes": {
+      "emptyForSource": "Questa fonte non ha ancora note atomiche.",
+      "status": { "pending_review": "In attesa di revisione", "approved": "Approvata", "rejected": "Scartata", "archived": "Archiviata" }
+    },
+    "relations": {
+      "empty": "Nessuna relazione rilevante tra note.", "pendingInvolved": "Include una nota in attesa di revisione",
+      "explanations": { "hybrid": "Le note hanno superato la soglia di similarita ibrida." },
+      "types": { "supports": "Supporta", "contrasts": "Contrasta", "extends": "Estende", "similar_to": "Simile a", "depends_on": "Dipende da", "clarifies": "Chiarisce", "mentions": "Menziona", "related": "Correlata" }
+    }
   },
   "settings": {
     "title": "Impostazioni",

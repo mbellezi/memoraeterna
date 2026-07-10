@@ -11,7 +11,9 @@ import {
 } from "./ipc";
 import {
   manualIngestionInputSchema,
-  searchInputSchema
+  searchInputSchema,
+  atomicNoteReviewInputSchema,
+  sourceDetailSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -102,5 +104,26 @@ describe("desktop IPC contracts", () => {
       content: "No"
     })).toThrow();
     expect(searchInputSchema.parse({ text: "memory" })).toMatchObject({ mode: "hybrid", limit: 20 });
+  });
+
+  it("validates phase 3 source details and review actions", () => {
+    const id = "00000000-0000-4000-8000-000000000001";
+    expect(atomicNoteReviewInputSchema.parse({ id, action: "approve" })).toEqual({ id, action: "approve" });
+    expect(() => atomicNoteReviewInputSchema.parse({ id, action: "edit" })).toThrow();
+    expect(sourceDetailSchema.parse({
+      id,
+      type: "PersonalNote",
+      title: "Source",
+      subtitle: null,
+      sourceUri: null,
+      language: "en",
+      summary: null,
+      metadata: {},
+      updatedAt: new Date(0).toISOString(),
+      documents: [],
+      summaries: [],
+      atomicNotes: [],
+      relations: []
+    }).title).toBe("Source");
   });
 });

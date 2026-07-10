@@ -66,6 +66,10 @@ export const AtomicNoteSchema = z
     sourceSpanId: StableIdSchema.optional(),
     evidenceChunkId: StableIdSchema.optional(),
     generationModel: z.string().min(1).optional(),
+    generationProvider: z.string().min(1).optional(),
+    generationRuntime: z.string().min(1).optional(),
+    generationProfileId: StableIdSchema.optional(),
+    aiTaskRunId: StableIdSchema.optional(),
     generationPromptVersion: z.string().min(1).optional(),
     metadata: OptionalMetadataSchema,
     createdAt: IsoDateTimeSchema,
@@ -74,6 +78,56 @@ export const AtomicNoteSchema = z
   .strict();
 
 export type AtomicNote = z.infer<typeof AtomicNoteSchema>;
+
+export const AtomicNoteGenerationCandidateSchema = z
+  .object({
+    title: NonEmptyStringSchema,
+    bodyMarkdown: NonEmptyStringSchema,
+    ideaStatement: NonEmptyStringSchema,
+    language: LanguageCodeSchema.optional(),
+    evidenceChunkIds: z.array(StableIdSchema).min(1)
+  })
+  .strict();
+
+export type AtomicNoteGenerationCandidate = z.infer<
+  typeof AtomicNoteGenerationCandidateSchema
+>;
+
+export const AtomicNoteGenerationOutputSchema = z
+  .object({
+    notes: z.array(AtomicNoteGenerationCandidateSchema).max(50)
+  })
+  .strict();
+
+export type AtomicNoteGenerationOutput = z.infer<
+  typeof AtomicNoteGenerationOutputSchema
+>;
+
+export const AtomicNoteSourceLinkSchema = z
+  .object({
+    id: StableIdSchema,
+    atomicNoteId: StableIdSchema,
+    sourceItemId: StableIdSchema,
+    chunkId: StableIdSchema,
+    sourceSpanId: StableIdSchema.optional(),
+    claimId: StableIdSchema.optional(),
+    relationType: z.string().min(1),
+    confidence: ConfidenceScoreSchema.optional(),
+    createdAt: IsoDateTimeSchema
+  })
+  .strict();
+
+export type AtomicNoteSourceLink = z.infer<typeof AtomicNoteSourceLinkSchema>;
+
+export const AtomicNoteReviewActionSchema = z.enum([
+  "approve",
+  "edit",
+  "discard"
+]);
+
+export type AtomicNoteReviewAction = z.infer<
+  typeof AtomicNoteReviewActionSchema
+>;
 
 export const AtomicNoteRelationTypeSchema = z.enum([
   "supports",
@@ -133,6 +187,11 @@ export const SourceSummarySchema = z
     sourceItemId: StableIdSchema,
     summary: NonEmptyStringSchema,
     model: NonEmptyStringSchema,
+    provider: NonEmptyStringSchema.optional(),
+    runtime: NonEmptyStringSchema.optional(),
+    profileId: StableIdSchema.optional(),
+    aiTaskRunId: StableIdSchema.optional(),
+    promptVersion: NonEmptyStringSchema.optional(),
     language: LanguageCodeSchema.optional(),
     generatedAt: IsoDateTimeSchema,
     metadata: OptionalMetadataSchema,

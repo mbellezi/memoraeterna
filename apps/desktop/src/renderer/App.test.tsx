@@ -40,6 +40,7 @@ describe("App", () => {
     expect(html).toContain("Memora Eterna");
     expect(html).toContain("dark");
     expect(html).toContain("Library");
+    expect(html).toContain("Review notes");
     expect(html).toContain("Settings");
   });
 });

@@ -12,6 +12,7 @@
       "library": "Biblioteca",
       "import": "Importar",
       "search": "Buscar",
+      "review": "Revisar notas",
       "jobs": "Tareas",
       "settings": "Ajustes"
     },
@@ -92,12 +93,23 @@
       "embedding": "Embedding",
       "summarization": "Resumen",
       "atomicNoteGeneration": "Generacion de nota atomica",
+      "atomicNoteMatching": "Conexion de notas atomicas",
       "obsidianSync": "Sincronizacion con Obsidian",
       "assetStorage": "Almacenamiento de assets"
     },
     "progress": {
       "processingSource": "Procesando {title}",
       "percentComplete": "{percent}% completado"
+    },
+    "currentStage": "Etapa actual: {stage}",
+    "stages": {
+      "queued": "En cola", "conversion": "Conversion", "chunking": "Segmentacion",
+      "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
+      "atomicNoteMatching": "Conexion de notas", "completed": "Completada"
+    },
+    "stageStatus": {
+      "pending": "Pendiente", "running": "En ejecucion", "completed": "Completada",
+      "failed": "Fallo", "skipped": "Omitida"
     },
     "empty": "Aun no hay tareas.",
     "actions": {
@@ -123,6 +135,36 @@
   "search": {
     "placeholder": "Buscar fuentes y evidencias", "action": "Buscar", "empty": "No hay evidencias coincidentes.",
     "page": "Pagina", "markdownEvidence": "Evidencia Markdown"
+  },
+  "library": {
+    "filterByType": "Filtrar por tipo de fuente", "allTypes": "Todos los tipos de fuente",
+    "refresh": "Actualizar biblioteca", "error": "No se pudo cargar la biblioteca.",
+    "empty": "Aun no hay fuentes en la biblioteca.", "currentStage": "Etapa actual: {stage}",
+    "back": "Volver a la biblioteca", "openOriginal": "Abrir original", "openFile": "Abrir archivo original",
+    "noSummary": "No se ha generado ningun resumen.", "chunk": "Fragmento {index}",
+    "processing": { "pending": "Pendiente", "running": "Procesando", "succeeded": "Lista", "failed": "Fallo", "canceled": "Cancelada" },
+    "sections": {
+      "metadata": "Metadatos", "summary": "Resumen", "document": "Documento Markdown",
+      "originals": "Archivos originales", "chunks": "Fragmentos de la fuente",
+      "atomicNotes": "Notas atomicas", "relations": "Relaciones entre notas"
+    }
+  },
+  "knowledge": {
+    "review": {
+      "title": "Revision de notas atomicas", "error": "No se pudo cargar la cola de revision.",
+      "empty": "No hay notas atomicas pendientes de revision.", "unknownSource": "Fuente desconocida",
+      "fields": { "title": "Titulo", "idea": "Idea principal", "body": "Cuerpo de la nota" },
+      "actions": { "approve": "Aprobar", "edit": "Editar", "discard": "Descartar", "saveEdit": "Guardar edicion" }
+    },
+    "notes": {
+      "emptyForSource": "Esta fuente aun no tiene notas atomicas.",
+      "status": { "pending_review": "Pendiente de revision", "approved": "Aprobada", "rejected": "Descartada", "archived": "Archivada" }
+    },
+    "relations": {
+      "empty": "No se encontraron relaciones relevantes entre notas.", "pendingInvolved": "Incluye una nota pendiente de revision",
+      "explanations": { "hybrid": "Las notas superaron el umbral de similitud hibrida." },
+      "types": { "supports": "Sustenta", "contrasts": "Contrasta", "extends": "Amplia", "similar_to": "Similar a", "depends_on": "Depende de", "clarifies": "Aclara", "mentions": "Menciona", "related": "Relacionada" }
+    }
   },
   "settings": {
     "title": "Ajustes",

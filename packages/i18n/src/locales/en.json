@@ -12,6 +12,7 @@
       "library": "Library",
       "import": "Import",
       "search": "Search",
+      "review": "Review notes",
       "jobs": "Jobs",
       "settings": "Settings"
     },
@@ -92,12 +93,31 @@
       "embedding": "Embedding",
       "summarization": "Summarization",
       "atomicNoteGeneration": "Atomic note generation",
+      "atomicNoteMatching": "Atomic note matching",
       "obsidianSync": "Obsidian sync",
       "assetStorage": "Asset storage"
     },
     "progress": {
       "processingSource": "Processing {title}",
       "percentComplete": "{percent}% complete"
+    },
+    "currentStage": "Current stage: {stage}",
+    "stages": {
+      "queued": "Queued",
+      "conversion": "Conversion",
+      "chunking": "Chunking",
+      "embedding": "Embedding",
+      "summarization": "Summarization",
+      "atomicNotes": "Atomic notes",
+      "atomicNoteMatching": "Note matching",
+      "completed": "Completed"
+    },
+    "stageStatus": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "skipped": "Skipped"
     },
     "empty": "No jobs yet.",
     "actions": {
@@ -123,6 +143,69 @@
   "search": {
     "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
     "page": "Page", "markdownEvidence": "Markdown evidence"
+  },
+  "library": {
+    "filterByType": "Filter by source type",
+    "allTypes": "All source types",
+    "refresh": "Refresh library",
+    "error": "The library could not be loaded.",
+    "empty": "No sources in the library yet.",
+    "currentStage": "Current stage: {stage}",
+    "back": "Back to library",
+    "openOriginal": "Open original",
+    "openFile": "Open original file",
+    "noSummary": "No summary has been generated.",
+    "chunk": "Chunk {index}",
+    "processing": {
+      "pending": "Pending",
+      "running": "Processing",
+      "succeeded": "Ready",
+      "failed": "Failed",
+      "canceled": "Canceled"
+    },
+    "sections": {
+      "metadata": "Metadata",
+      "summary": "Summary",
+      "document": "Document Markdown",
+      "originals": "Original files",
+      "chunks": "Source chunks",
+      "atomicNotes": "Atomic notes",
+      "relations": "Note relations"
+    }
+  },
+  "knowledge": {
+    "review": {
+      "title": "Atomic note review",
+      "error": "The review queue could not be loaded.",
+      "empty": "No atomic notes are waiting for review.",
+      "unknownSource": "Unknown source",
+      "fields": { "title": "Title", "idea": "Idea statement", "body": "Note body" },
+      "actions": { "approve": "Approve", "edit": "Edit", "discard": "Discard", "saveEdit": "Save edit" }
+    },
+    "notes": {
+      "emptyForSource": "This source has no atomic notes yet.",
+      "status": {
+        "pending_review": "Pending review",
+        "approved": "Approved",
+        "rejected": "Discarded",
+        "archived": "Archived"
+      }
+    },
+    "relations": {
+      "empty": "No relevant note relations were found.",
+      "pendingInvolved": "Includes a note pending review",
+      "explanations": { "hybrid": "The notes passed the hybrid similarity threshold." },
+      "types": {
+        "supports": "Supports",
+        "contrasts": "Contrasts",
+        "extends": "Extends",
+        "similar_to": "Similar to",
+        "depends_on": "Depends on",
+        "clarifies": "Clarifies",
+        "mentions": "Mentions",
+        "related": "Related"
+      }
+    }
   },
   "settings": {
     "title": "Settings",

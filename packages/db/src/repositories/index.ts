@@ -12,3 +12,7 @@ export * from "./embeddingRepository.js";
 export * from "./searchRepository.js";
 export * from "./bibliographicRepository.js";
 export * from "./aiConfigRepository.js";
+export * from "./sourceSummaryRepository.js";
+export * from "./atomicNoteRepository.js";
+export * from "./atomicNoteRelationRepository.js";
+export * from "./libraryRepository.js";

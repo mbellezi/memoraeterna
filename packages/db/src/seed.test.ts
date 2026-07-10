@@ -45,7 +45,8 @@ describe("baseline seed", () => {
     expect(plan.includedMigrations.map((migration) => migration.tag)).toEqual([
       "0000_sour_dust",
       "0001_sleepy_the_hunter",
-      "0002_flat_captain_cross"
+      "0002_flat_captain_cross",
+      "0003_small_wrecking_crew"
     ]);
   });
 
@@ -63,7 +64,12 @@ describe("baseline seed", () => {
 
     expect(result).toEqual({
       applied: true,
-      seededMigrations: ["0000_sour_dust", "0001_sleepy_the_hunter", "0002_flat_captain_cross"]
+      seededMigrations: [
+        "0000_sour_dust",
+        "0001_sleepy_the_hunter",
+        "0002_flat_captain_cross",
+        "0003_small_wrecking_crew"
+      ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
     expect(pool.queries.some((query) => query.text.startsWith("CREATE TYPE"))).toBe(true);

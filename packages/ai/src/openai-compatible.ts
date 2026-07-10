@@ -80,7 +80,9 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       body: JSON.stringify({
         model: request.modelId ?? this.options.modelId,
         messages: [{ role: "user", content: readText(request.input) }],
-        ...(request.taskType === "structured-output" ? { response_format: { type: "json_object" } } : {}),
+        ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
+          ? { response_format: { type: "json_object" } }
+          : {}),
         ...request.parameters
       })
     });

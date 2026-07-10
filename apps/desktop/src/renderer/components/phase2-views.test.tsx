@@ -6,6 +6,8 @@ import { AiSettingsView } from "./AiSettingsView";
 import { ImportView } from "./ImportView";
 import { JobsView } from "./JobsView";
 import { SearchView } from "./SearchView";
+import { LibraryView } from "./LibraryView";
+import { ReviewQueueView } from "./ReviewQueueView";
 
 const t = createTranslator("en");
 
@@ -21,5 +23,10 @@ describe("phase 2 renderer views", () => {
     expect(renderToString(<SearchView t={t} />)).toContain("Search sources and evidence");
     expect(renderToString(<JobsView t={t} />)).toContain("No jobs yet");
     expect(renderToString(<AiSettingsView t={t} />)).toContain("AI providers and profiles");
+  });
+
+  it("renders the phase 3 library and atomic note review empty states", () => {
+    expect(renderToString(<LibraryView t={t} />)).toContain("Filter by source type");
+    expect(renderToString(<ReviewQueueView t={t} />)).toContain("Loading");
   });
 });

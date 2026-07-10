@@ -1,6 +1,6 @@
 import type { QueryResultRow } from "pg";
 
-import { asJsonObject, findById, insertRow, listRows, mapTimestamp, updateRow } from "./sql.js";
+import { asJsonObject, findById, insertRow, listRows, mapNullableTimestamp, mapTimestamp, updateRow } from "./sql.js";
 import type { JsonObject, Queryable, SourceItemRecord, SourceItemType } from "./types.js";
 
 interface SourceItemRow extends QueryResultRow {
@@ -15,6 +15,7 @@ interface SourceItemRow extends QueryResultRow {
   contentHash: string | null;
   language: string;
   summary: string | null;
+  summaryGeneratedAt: unknown;
   metadata: unknown;
   createdAt: unknown;
   updatedAt: unknown;
@@ -44,6 +45,7 @@ export interface UpdateSourceItemInput {
   contentHash?: string | null;
   language?: string;
   summary?: string | null;
+  summaryGeneratedAt?: Date | null;
   metadata?: JsonObject;
 }
 
@@ -59,6 +61,7 @@ const returning = [
   "content_hash as \"contentHash\"",
   "language",
   "summary",
+  "summary_generated_at as \"summaryGeneratedAt\"",
   "metadata",
   "created_at as \"createdAt\"",
   "updated_at as \"updatedAt\""
@@ -77,6 +80,7 @@ function mapSourceItem(row: SourceItemRow): SourceItemRecord {
     contentHash: row.contentHash,
     language: row.language,
     summary: row.summary,
+    summaryGeneratedAt: mapNullableTimestamp(row.summaryGeneratedAt),
     metadata: asJsonObject(row.metadata),
     createdAt: mapTimestamp(row.createdAt),
     updatedAt: mapTimestamp(row.updatedAt)
@@ -127,6 +131,7 @@ export function createSourceItemRepository(db: Queryable) {
           content_hash: input.contentHash,
           language: input.language,
           summary: input.summary,
+          summary_generated_at: input.summaryGeneratedAt,
           metadata: input.metadata
         },
         returning

@@ -1,5 +1,5 @@
 import type { IpcMain } from "electron";
-import { app, dialog } from "electron";
+import { app, dialog, shell } from "electron";
 import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
@@ -10,17 +10,20 @@ import {
   aiProfileCreateSchema,
   aiProfileTaskInputSchema,
   aiProviderConfigInputSchema,
+  atomicNoteReviewInputSchema,
   fileImportInputSchema,
   manualIngestionInputSchema,
   searchInputSchema,
   storageSettingsUpdateSchema,
   type DatabaseStatus
 } from "../shared/ipc";
+import { SourceItemTypeSchema } from "@app/domain";
 import type { SettingsService } from "./services/settings-service";
 import type { AiService } from "./services/ai-service.js";
 import type { IngestionService } from "./services/ingestion-service.js";
 import type { JobSupervisor } from "./services/job-supervisor.js";
 import type { SearchService } from "./services/search-service.js";
+import type { KnowledgeService } from "./services/knowledge-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -34,7 +37,8 @@ export function registerIpcHandlers(
   ingestionService: IngestionService,
   jobSupervisor: JobSupervisor,
   searchService: SearchService,
-  aiService: AiService
+  aiService: AiService,
+  knowledgeService: KnowledgeService
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -81,7 +85,9 @@ export function registerIpcHandlers(
     ingestionService.lookupSources(z.string().trim().min(1).max(200).parse(payload))
   );
 
-  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.list()).map(serializeJob));
+  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun }) =>
+    serializeJob(job, ingestionRun)
+  ));
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
     const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;
@@ -93,6 +99,21 @@ export function registerIpcHandlers(
 
   ipcMain.handle(ipcChannels.searchQuery, (_event, payload: unknown) =>
     searchService.search(searchInputSchema.parse(payload))
+  );
+
+  ipcMain.handle(ipcChannels.libraryList, (_event, payload: unknown) =>
+    knowledgeService.listLibrary(SourceItemTypeSchema.array().parse(payload ?? []))
+  );
+  ipcMain.handle(ipcChannels.librarySourceGet, (_event, payload: unknown) =>
+    knowledgeService.getSourceDetail(z.string().uuid().parse(payload))
+  );
+  ipcMain.handle(ipcChannels.libraryAssetOpen, async (_event, payload: unknown) => {
+    const path = await knowledgeService.resolveAssetPath(z.string().uuid().parse(payload));
+    return (await shell.openPath(path)).length === 0;
+  });
+  ipcMain.handle(ipcChannels.knowledgePendingNotesList, () => knowledgeService.listPendingNotes());
+  ipcMain.handle(ipcChannels.knowledgeNoteReview, (_event, payload: unknown) =>
+    knowledgeService.reviewNote(atomicNoteReviewInputSchema.parse(payload))
   );
 
   ipcMain.handle(ipcChannels.aiProvidersList, () => aiService.listProviders());
@@ -118,7 +139,10 @@ export function registerIpcHandlers(
   );
 }
 
-function serializeJob(job: Awaited<ReturnType<JobSupervisor["list"]>>[number]) {
+function serializeJob(
+  job: Awaited<ReturnType<JobSupervisor["list"]>>[number],
+  ingestionRun: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["ingestionRun"] = null
+) {
   return {
     id: job.id,
     type: job.type,
@@ -126,8 +150,16 @@ function serializeJob(job: Awaited<ReturnType<JobSupervisor["list"]>>[number]) {
     progress: job.progress,
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
+    canCancel: job.type === "ingestion" && (job.status === "queued" || job.status === "running"),
+    canRetry: job.type === "ingestion" && job.status === "failed" && job.attempts < job.maxAttempts,
     error: job.error,
     createdAt: job.createdAt.toISOString(),
-    updatedAt: job.updatedAt.toISOString()
+    updatedAt: job.updatedAt.toISOString(),
+    ingestionRun: ingestionRun ? {
+      id: ingestionRun.id,
+      status: ingestionRun.status,
+      currentStage: ingestionRun.currentStage,
+      stagesCheckpoint: ingestionRun.stagesCheckpoint
+    } : null
   };
 }

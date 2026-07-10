@@ -14,7 +14,7 @@ Leia tambem, antes de editar codigo:
 
 ## Estado Atual
 
-Fase atual: Fase 2 - Espinha Dorsal.
+Fase atual: Fase 3 - Camada de Conhecimento.
 
 Implementado ate aqui:
 
@@ -58,6 +58,16 @@ Implementado ate aqui:
   `simple`, `unaccent` e `pg_trgm`;
 - busca hibrida com evidencias e UI funcional de Import, Search, Jobs e
   configuracao de IA.
+- resumos rastreaveis com perfil/modelo/prompt registrados e map-reduce para
+  fontes que excedem o limite de contexto configurado;
+- notas atomicas geradas por resultado estruturado Zod, vinculadas a fonte,
+  chunks e SourceSpans, sempre iniciando em `pending_review`;
+- matching hibrido entre notas com sinais vetoriais e de metadados, reranking
+  opcional, limiar configuravel e relacoes canonicas persistidas em SQL;
+- auditoria das transicoes de revisao de notas atomicas;
+- pipeline retomavel completo ate resumo, notas atomicas e matching;
+- UI funcional de Library, detalhe da fonte, arquivos originais, checkpoints
+  dos jobs e fila de revisao com aprovar, editar e descartar.
 
 Pendencias conhecidas:
 
@@ -132,11 +142,19 @@ Arquivos principais:
 - `src/main/services/ai-service.ts`: providers, perfis e execucao de tarefas.
 - `src/main/services/credential-service.ts`: segredos de IA via `safeStorage`.
 - `src/main/services/search-service.ts`: busca textual/hibrida com fallback.
+- `src/main/services/knowledge-service.ts`: resumos, notas atomicas, matching,
+  biblioteca, detalhe de fonte e revisao.
+- `src/main/services/knowledge-processing.ts`: prompts versionados, map-reduce,
+  parsing estruturado e scoring puro/testavel.
 - `src/main/workers/*`: entradas e contratos dos workers da fila.
 - `src/preload/index.ts`: API segura exposta em `window.app`.
 - `src/shared/ipc.ts`: canais, schemas Zod e tipos compartilhados do IPC.
 - `src/renderer/App.tsx`: shell React, bootstrap do banco e navegacao inicial.
 - `src/renderer/components/SettingsView.tsx`: UI inicial de settings.
+- `src/renderer/components/LibraryView.tsx`: biblioteca e detalhe completo de
+  fontes.
+- `src/renderer/components/ReviewQueueView.tsx`: fila de revisao das notas
+  atomicas.
 - `electron.vite.config.ts`: build Electron/Vite.
 
 Fronteira obrigatoria:
@@ -212,6 +230,8 @@ Arquivos principais:
 - `src/scripts/migrate.ts`: CLI de migration via `MEMORA_DATABASE_URL`.
 - `src/scripts/verify.ts`: verificacao basica de migrations/tabelas.
 - `src/scripts/verify-seed.ts`: verificacao de sincronizacao seed/migrations.
+- `src/scripts/verify-phase3.ts`: verificacao real da migration, baseline,
+  resumos, notas, matching, relacoes e revisao da Fase 3.
 - `src/sidecar/manager.ts`: initdb/start/stop/restart do Postgres sidecar.
 - `src/sidecar/paths.ts`: resolucao de paths DEV/prod/env.
 - `src/sidecar/nodeRunner.ts`: runner Node para comandos do sidecar.
@@ -324,6 +344,7 @@ npm run db:seed:verify
 npm run db:migrate
 npm run db:verify
 npm run db:phase2:verify
+npm run db:phase3:verify
 npm run db:seed:sync
 ```
 

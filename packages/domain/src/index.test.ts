@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AtomicNoteGenerationOutputSchema,
   AtomicNoteRelationSchema,
   AtomicNoteSchema,
   DocumentSchema,
@@ -105,6 +106,21 @@ describe("@app/domain schemas", () => {
     expect(AtomicNoteRelationSchema.safeParse(invalidRelation).success).toBe(
       false
     );
+  });
+
+  it("validates structured atomic note generation output", () => {
+    expect(AtomicNoteGenerationOutputSchema.parse({
+      notes: [{
+        title: "One idea",
+        bodyMarkdown: "A self-contained explanation.",
+        ideaStatement: "One source idea becomes one note.",
+        evidenceChunkIds: ["chunk_01JABCDEF123456789"]
+      }]
+    }).notes).toHaveLength(1);
+
+    expect(AtomicNoteGenerationOutputSchema.safeParse({
+      notes: [{ title: "Missing evidence", bodyMarkdown: "Body", ideaStatement: "Idea", evidenceChunkIds: [] }]
+    }).success).toBe(false);
   });
 
   it("rejects storage settings that enable paths without configured roots", () => {

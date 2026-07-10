@@ -4,6 +4,7 @@
   "includedMigrations": [
     "0000_sour_dust",
     "0001_sleepy_the_hunter",
-    "0002_flat_captain_cross"
+    "0002_flat_captain_cross",
+    "0003_small_wrecking_crew"
   ]
 }

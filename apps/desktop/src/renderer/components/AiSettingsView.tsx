@@ -29,7 +29,10 @@ export function AiSettingsView({ t }: { t: (key: MessageKey) => string }) {
     setStatus("shell.states.loading");
     try {
       await window.app.ai.saveProvider({
-        provider, displayName, modelId, capabilities: ["text-generation", "summarization", "embedding", "requires-network", "requires-api-key"],
+        provider, displayName, modelId, capabilities: [
+          "text-generation", "structured-output", "summarization", "atomic-note-generation",
+          "embedding", "reranking", "requires-network", "requires-api-key"
+        ],
         ...(baseUrl ? { baseUrl } : {}), ...(apiKey ? { apiKey } : {})
       });
       setApiKey("");
@@ -46,7 +49,9 @@ export function AiSettingsView({ t }: { t: (key: MessageKey) => string }) {
     });
     await Promise.all([
       window.app.ai.setProfileTask({ profileId: profile.id, task: "embedding", providerConfigId: selectedProvider.id, modelId: selectedProvider.modelId, requiredCapabilities: ["embedding"] }),
-      window.app.ai.setProfileTask({ profileId: profile.id, task: "summarization", providerConfigId: selectedProvider.id, modelId: selectedProvider.modelId, requiredCapabilities: ["summarization"] })
+      window.app.ai.setProfileTask({ profileId: profile.id, task: "summarization", providerConfigId: selectedProvider.id, modelId: selectedProvider.modelId, requiredCapabilities: ["summarization"] }),
+      window.app.ai.setProfileTask({ profileId: profile.id, task: "atomic-note-generation", providerConfigId: selectedProvider.id, modelId: selectedProvider.modelId, requiredCapabilities: ["atomic-note-generation", "structured-output"] }),
+      window.app.ai.setProfileTask({ profileId: profile.id, task: "reranking", providerConfigId: selectedProvider.id, modelId: selectedProvider.modelId, requiredCapabilities: ["reranking"] })
     ]);
     setProfileName("");
     setStatus("shell.states.saved");

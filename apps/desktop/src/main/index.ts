@@ -8,6 +8,7 @@ import { AiService } from "./services/ai-service.js";
 import { IngestionService } from "./services/ingestion-service.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
 import { SearchService } from "./services/search-service.js";
+import { KnowledgeService } from "./services/knowledge-service.js";
 
 const trayIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
@@ -77,6 +78,7 @@ let aiService: AiService | null = null;
 let ingestionService: IngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
 let searchService: SearchService | null = null;
+let knowledgeService: KnowledgeService | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let shutdownPromise: Promise<void> | null = null;
@@ -106,9 +108,18 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged
   });
   searchService = new SearchService(() => databaseService?.getPool() ?? null, aiService);
+  const relationThreshold = readRelationThreshold(process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD);
+  knowledgeService = new KnowledgeService({
+    getPool: () => databaseService?.getPool() ?? null,
+    aiService,
+    userDataPath: app.getPath("userData"),
+    getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
+    ...(relationThreshold !== undefined ? { relationThreshold } : {})
+  });
   jobSupervisor = new JobSupervisor({
     getPool: () => databaseService?.getPool() ?? null,
     logger: console,
+    knowledgeService,
     generateEmbedding: async (text) => {
       const result = await aiService?.runDefaultTask("embedding", text);
       if (!result || !Array.isArray(result.output)) return null;
@@ -127,7 +138,8 @@ void app.whenReady().then(() => {
     ingestionService,
     jobSupervisor,
     searchService,
-    aiService
+    aiService,
+    knowledgeService
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
@@ -161,6 +173,7 @@ async function shutdownServices(): Promise<void> {
   await jobSupervisor?.stop();
   jobSupervisor = null;
   searchService = null;
+  knowledgeService = null;
   ingestionService = null;
   aiService = null;
   await settingsService?.dispose();
@@ -218,4 +231,10 @@ function showMainWindow(): void {
 
 function getResourcesPath(): string {
   return (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? process.cwd();
+}
+
+function readRelationThreshold(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : undefined;
 }

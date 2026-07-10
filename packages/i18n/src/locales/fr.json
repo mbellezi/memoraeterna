@@ -12,6 +12,7 @@
       "library": "Bibliotheque",
       "import": "Importer",
       "search": "Rechercher",
+      "review": "Reviser les notes",
       "jobs": "Taches",
       "settings": "Parametres"
     },
@@ -92,12 +93,23 @@
       "embedding": "Embedding",
       "summarization": "Resume",
       "atomicNoteGeneration": "Generation de note atomique",
+      "atomicNoteMatching": "Mise en relation des notes",
       "obsidianSync": "Synchronisation Obsidian",
       "assetStorage": "Stockage des assets"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
       "percentComplete": "{percent}% termine"
+    },
+    "currentStage": "Etape actuelle : {stage}",
+    "stages": {
+      "queued": "En attente", "conversion": "Conversion", "chunking": "Decoupage",
+      "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
+      "atomicNoteMatching": "Mise en relation", "completed": "Terminee"
+    },
+    "stageStatus": {
+      "pending": "En attente", "running": "En cours", "completed": "Terminee",
+      "failed": "Echec", "skipped": "Ignoree"
     },
     "empty": "Aucune tache pour le moment.",
     "actions": {
@@ -123,6 +135,36 @@
   "search": {
     "placeholder": "Rechercher des sources et preuves", "action": "Rechercher", "empty": "Aucune preuve correspondante.",
     "page": "Page", "markdownEvidence": "Preuve Markdown"
+  },
+  "library": {
+    "filterByType": "Filtrer par type de source", "allTypes": "Tous les types de source",
+    "refresh": "Actualiser la bibliotheque", "error": "Impossible de charger la bibliotheque.",
+    "empty": "Aucune source dans la bibliotheque.", "currentStage": "Etape actuelle : {stage}",
+    "back": "Retour a la bibliotheque", "openOriginal": "Ouvrir l'original", "openFile": "Ouvrir le fichier original",
+    "noSummary": "Aucun resume n'a ete genere.", "chunk": "Segment {index}",
+    "processing": { "pending": "En attente", "running": "Traitement", "succeeded": "Prete", "failed": "Echec", "canceled": "Annulee" },
+    "sections": {
+      "metadata": "Metadonnees", "summary": "Resume", "document": "Document Markdown",
+      "originals": "Fichiers originaux", "chunks": "Segments de la source",
+      "atomicNotes": "Notes atomiques", "relations": "Relations entre notes"
+    }
+  },
+  "knowledge": {
+    "review": {
+      "title": "Revision des notes atomiques", "error": "Impossible de charger la file de revision.",
+      "empty": "Aucune note atomique en attente de revision.", "unknownSource": "Source inconnue",
+      "fields": { "title": "Titre", "idea": "Idee principale", "body": "Corps de la note" },
+      "actions": { "approve": "Approuver", "edit": "Modifier", "discard": "Rejeter", "saveEdit": "Enregistrer" }
+    },
+    "notes": {
+      "emptyForSource": "Cette source n'a pas encore de notes atomiques.",
+      "status": { "pending_review": "En attente de revision", "approved": "Approuvee", "rejected": "Rejetee", "archived": "Archivee" }
+    },
+    "relations": {
+      "empty": "Aucune relation pertinente entre les notes.", "pendingInvolved": "Inclut une note en attente de revision",
+      "explanations": { "hybrid": "Les notes ont depasse le seuil de similarite hybride." },
+      "types": { "supports": "Soutient", "contrasts": "Contraste", "extends": "Etend", "similar_to": "Semblable a", "depends_on": "Depend de", "clarifies": "Clarifie", "mentions": "Mentionne", "related": "Associee" }
+    }
   },
   "settings": {
     "title": "Parametres",
