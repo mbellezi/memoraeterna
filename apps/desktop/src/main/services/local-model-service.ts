@@ -23,7 +23,8 @@ import {
   type LocalModelRecord,
   type PgPool
 } from "@app/db";
-import type { LocalModelDownloadInput, LocalModelView } from "../../shared/ipc.js";
+import { aiModelParametersSchema } from "../../shared/ipc.js";
+import type { AiModelParameters, LocalModelDownloadInput, LocalModelView } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
 
@@ -171,6 +172,13 @@ export class LocalModelService {
     return this.options.testModel(model.id);
   }
 
+  public async setDefaults(localModelId: string, defaultParameters: AiModelParameters): Promise<LocalModelView> {
+    const repository = createLocalModelRepository(this.requirePool());
+    const model = await repository.findById(localModelId);
+    if (!model) throw new Error("errors.localModels.notFound");
+    return this.toView(await repository.updateModel(model.id, { defaultParameters }));
+  }
+
   public async setRepositoryToken(token: string): Promise<boolean> {
     const settings = createSettingsRepository(this.requirePool());
     const current = await settings.get<string>(repositoryTokenSettingKey);
@@ -214,6 +222,7 @@ export class LocalModelService {
       expectedSizeBytes: source.size,
       manifestHash: checksum,
       capabilities: ["text-generation", "structured-output", "summarization", "atomic-note-generation", "cancellation", "offline", "local-files"],
+      defaultParameters: { contextWindow: 4_096, temperature: 0.2, maxTokens: 1_024 },
       licenseName: "User supplied",
       licenseUrl: "https://github.com/ggml-org/ggml/blob/master/docs/gguf.md",
       metadata: { minimumMemoryBytes: source.size, recommendedMemoryBytes: Math.ceil(source.size * 1.5) }
@@ -241,10 +250,12 @@ export class LocalModelService {
         expectedSizeBytes: localModelExpectedSize(entry),
         manifestHash: localModelManifestHash(entry),
         capabilities: entry.capabilities,
+        defaultParameters: entry.defaultParameters,
         licenseName: entry.license,
         licenseUrl: entry.licenseUrl,
         metadata: {
           catalogVersion: localModelCatalogVersion,
+          defaultParametersInitialized: true,
           minimumMemoryBytes: entry.minimumMemoryBytes,
           recommendedMemoryBytes: entry.recommendedMemoryBytes,
           requiresLicenseAcceptance: entry.requiresLicenseAcceptance
@@ -400,6 +411,7 @@ export class LocalModelService {
       format: model.format,
       quantization: model.quantization,
       capabilities: model.capabilities as LocalModelView["capabilities"],
+      defaultParameters: aiModelParametersSchema.parse(model.defaultParameters),
       minimumMemoryBytes,
       recommendedMemoryBytes,
       expectedSizeBytes: model.expectedSizeBytes,

@@ -437,7 +437,7 @@ export function App({
                 onChange={setSettings}
                 onSave={saveSettings}
               />
-              <AiSettingsView t={t} />
+              <AiSettingsView t={t} interfaceLanguage={appSettings.language} />
               <LocalModelsView t={t} />
               <BackupView t={t} />
             </div>

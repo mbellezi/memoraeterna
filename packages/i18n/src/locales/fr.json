@@ -237,13 +237,23 @@
       "openAiCompatible": "Compatible OpenAI", "displayName": "Nom affiche", "baseUrl": "URL de base",
       "model": "Modele", "apiKey": "Cle API", "saveProvider": "Enregistrer le fournisseur", "test": "Tester",
       "connectionOk": "Connexion reussie.", "profiles": "Profils", "profileName": "Nom du profil",
-      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "selectModel": "Selectionner un modele distant ou local"
+      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "selectModel": "Selectionner un modele distant ou local",
+      "remoteModels": "Ajouter un modele distant", "modelPurpose": "Fonction du modele", "saveModel": "Enregistrer le modele",
+      "embeddingModels": "Modeles d'embedding distants", "generationModels": "Modeles distants de generation et reranking",
+      "noModels": "Aucun modele configure.", "saveDefaults": "Enregistrer les valeurs par defaut", "noProfiles": "Creez un profil pour configurer les taches.",
+      "outputLanguage": "Langue des reponses", "selectProfile": "Selectionner un profil", "taskRouting": "Profil utilise par tache",
+      "taskRoutingDescription": "Choisissez independamment le profil configure utilise par chaque tache IA.",
+      "purposes": { "generation": "Generation de texte", "embedding": "Embedding", "reranking": "Reranking" },
+      "privacy": { "allowRemote": "Autoriser les modeles distants", "offlineOnly": "Modeles locaux uniquement" },
+      "languages": { "interface": "Meme langue que l'interface" },
+      "tasks": { "embedding": "Embedding", "summarization": "Resume", "text-generation": "Generation de texte", "structured-output": "Sortie structuree", "atomic-note-generation": "Generation de notes atomiques", "reranking": "Reranking" },
+      "parameters": { "contextWindow": "Fenetre de contexte", "temperature": "Temperature", "maxTokens": "Tokens de sortie maximum", "reasoningLevel": "Niveau de raisonnement", "topP": "Top P", "dimensions": "Dimensions d'embedding", "seed": "Seed", "inherit": "Utiliser la valeur heritee/par defaut", "reasoning": { "off": "Desactive", "minimal": "Minimal", "low": "Faible", "medium": "Moyen", "high": "Eleve" } }
     }
   },
   "localModels": {
     "title": "Modeles locaux", "repositoryToken": "Jeton Hugging Face", "tokenConfigured": "Jeton configure", "tokenOptional": "Facultatif pour les depots prives ou restreints", "saveToken": "Enregistrer le jeton", "empty": "Aucun modele ne correspond aux filtres.",
-    "licenseAccept": "J'accepte la licence du modele :", "profileUsage": "Utilise par les profils", "removeConfirmation": "Supprimer ce modele et ses fichiers geres de cette machine ?", "testSucceeded": "Inference locale reussie.",
-    "filters": { "runtime": "Runtime", "family": "Famille", "allRuntimes": "Tous les runtimes", "allFamilies": "Toutes les familles", "compatibleOnly": "Compatibles uniquement" },
+    "licenseAccept": "J'accepte la licence du modele :", "profileUsage": "Utilise par les profils", "removeConfirmation": "Supprimer ce modele et ses fichiers geres de cette machine ?", "testSucceeded": "Inference locale reussie.", "defaultParameters": "Parametres par defaut du modele",
+    "filters": { "runtime": "Runtime", "family": "Famille", "allRuntimes": "Tous les runtimes", "allFamilies": "Toutes les familles", "compatibleOnly": "Compatibles uniquement", "capability": "Capacite", "allCapabilities": "Toutes les capacites", "generation": "Generation de texte", "embedding": "Embedding" },
     "compatibility": { "compatible": "Compatible avec cette machine", "unsupported_platform": "Necessite macOS sur Apple Silicon", "insufficient_memory": "Memoire insuffisante" },
     "status": { "not_downloaded": "Non telecharge", "downloading": "Telechargement", "verifying": "Verification", "ready": "Installe", "failed": "Echec", "removing": "Suppression" },
     "actions": { "download": "Telecharger", "resume": "Reprendre", "test": "Tester l'inference", "remove": "Supprimer", "importGguf": "Importer GGUF" },

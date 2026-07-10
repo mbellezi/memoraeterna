@@ -120,6 +120,7 @@ void app.whenReady().then(() => {
     resourcesPath: getResourcesPath(),
     isPackaged: app.isPackaged,
     logger: console,
+    getUiLanguage: async () => (await settingsService!.getApp()).language,
     debugLogLocalModelOutput: readBooleanFlag(process.env.MEMORA_DEBUG_LOCAL_MODEL_OUTPUT)
   });
   localModelService = new LocalModelService({

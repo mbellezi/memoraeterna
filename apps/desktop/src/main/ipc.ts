@@ -8,7 +8,9 @@ import {
   appSettingsUpdateSchema,
   aiProfileCloneSchema,
   aiProfileCreateSchema,
+  aiProfileUpdateSchema,
   aiProfileTaskInputSchema,
+  aiTaskRouteSchema,
   aiProviderConfigInputSchema,
   atomicNoteReviewInputSchema,
   fileImportInputSchema,
@@ -17,6 +19,7 @@ import {
   storageSettingsUpdateSchema,
   integrationPairingInputSchema,
   localModelDownloadInputSchema,
+  localModelDefaultsInputSchema,
   repositoryTokenInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
@@ -143,12 +146,22 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.aiProfilesCreate, (_event, payload: unknown) =>
     aiService.createProfile(aiProfileCreateSchema.parse(payload))
   );
+  ipcMain.handle(ipcChannels.aiProfilesUpdate, (_event, payload: unknown) =>
+    aiService.updateProfile(aiProfileUpdateSchema.parse(payload))
+  );
   ipcMain.handle(ipcChannels.aiProfilesClone, (_event, payload: unknown) => {
     const input = aiProfileCloneSchema.parse(payload);
     return aiService.cloneProfile(input.profileId, input.name);
   });
+  ipcMain.handle(ipcChannels.aiProfileTasksList, (_event, payload: unknown) =>
+    aiService.listProfileTasks(payload === undefined ? undefined : z.string().uuid().parse(payload))
+  );
   ipcMain.handle(ipcChannels.aiProfileTaskSet, (_event, payload: unknown) =>
     aiService.setProfileTask(aiProfileTaskInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiTaskRoutesList, () => aiService.listTaskRoutes());
+  ipcMain.handle(ipcChannels.aiTaskRouteSet, (_event, payload: unknown) =>
+    aiService.setTaskRoute(aiTaskRouteSchema.parse(payload))
   );
 
   ipcMain.handle(ipcChannels.localModelsList, () => localModelService.list());
@@ -167,6 +180,10 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.localModelsTest, (_event, payload: unknown) =>
     localModelService.test(z.string().min(1).parse(payload))
   );
+  ipcMain.handle(ipcChannels.localModelsDefaultsSet, (_event, payload: unknown) => {
+    const input = localModelDefaultsInputSchema.parse(payload);
+    return localModelService.setDefaults(input.localModelId, input.defaultParameters);
+  });
   ipcMain.handle(ipcChannels.localModelsImportGguf, async () => {
     const selection = await dialog.showOpenDialog({
       properties: ["openFile"],

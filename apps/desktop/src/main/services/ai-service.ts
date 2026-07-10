@@ -1,6 +1,7 @@
 import { sha256 } from "@app/conversion";
 import {
   AiModelRegistry,
+  findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
   MlxAdapter,
   NodeLlamaCppAdapter,
@@ -15,22 +16,27 @@ import {
   createLocalModelRepository,
   type AiProfileRecord,
   type AiProviderConfigRecord,
+  type LocalModelRecord,
   type PgPool
 } from "@app/db";
 import { AiCapabilitySchema, type AiCapability } from "@app/domain";
 import type {
   AiProfile,
   AiProfileCreate,
+  AiProfileUpdate,
+  AiProfileTask,
   AiProfileTaskInput,
+  AiTaskRoute,
   AiProviderConfig,
   AiProviderConfigInput
 } from "../../shared/ipc.js";
+import { aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
 import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { logLocalModelOutput } from "./local-model-output-debug.js";
 import { logStructuredError } from "./structured-logging.js";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 export interface AiServiceOptions {
   userDataPath: string;
@@ -40,6 +46,7 @@ export interface AiServiceOptions {
   isPackaged: boolean;
   logger?: Pick<Console, "error" | "info">;
   debugLogLocalModelOutput?: boolean;
+  getUiLanguage?: () => Promise<string>;
 }
 
 export interface AiTaskLogContext {
@@ -72,6 +79,7 @@ export class AiService {
     const record = await repository.upsertProvider({
       ...(input.id ? { id: input.id } : {}), provider: input.provider, displayName: input.displayName,
       credentialRef, baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
+      defaultParameters: input.defaultParameters,
       metadata: { modelId: input.modelId, capabilities: input.capabilities }
     });
     return mapProvider(record);
@@ -97,7 +105,44 @@ export class AiService {
       name: input.name,
       isDefault: input.isDefault,
       privacyMode: input.privacyMode,
+      outputLanguage: input.outputLanguage,
       ...(input.description !== undefined ? { description: input.description } : {})
+    }));
+  }
+
+  public async updateProfile(input: AiProfileUpdate): Promise<AiProfile> {
+    const repository = createAiConfigRepository(this.requirePool());
+    let modelCapabilities: AiCapability[] | undefined;
+    if (input.modelId !== undefined) {
+      if (input.localModelId) {
+        const localModel = await createLocalModelRepository(this.requirePool()).findById(input.localModelId);
+        if (!localModel || localModel.status !== "ready") throw new Error("errors.localModels.notReady");
+        if (localModel.runtime !== input.runtime || localModel.modelId !== input.modelId
+            || !input.capabilities?.every((capability) => localModel.capabilities.includes(capability))) {
+          throw new Error("errors.ai.noCompatibleModel");
+        }
+        modelCapabilities = parseCapabilities(localModel.capabilities);
+      } else {
+        if (input.privacyMode === "offline_only") throw new Error("errors.ai.noCompatibleModel");
+        const provider = (await repository.listProviders()).find((candidate) => candidate.id === input.providerConfigId);
+        const capabilities = parseCapabilities(provider?.metadata.capabilities);
+        if (!provider || provider.metadata.modelId !== input.modelId
+            || !input.capabilities?.every((capability) => capabilities.includes(capability))) {
+          throw new Error("errors.ai.noCompatibleModel");
+        }
+        modelCapabilities = capabilities;
+      }
+    }
+    return mapProfile(await repository.updateProfile({
+      id: input.id,
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.privacyMode !== undefined ? { privacyMode: input.privacyMode } : {}),
+      ...(input.outputLanguage !== undefined ? { outputLanguage: input.outputLanguage } : {}),
+      ...(input.providerConfigId !== undefined ? { providerConfigId: input.providerConfigId } : {}),
+      ...(input.localModelId !== undefined ? { localModelId: input.localModelId } : {}),
+      ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
+      ...(input.runtime !== undefined ? { runtime: input.runtime } : {}),
+      ...(modelCapabilities !== undefined ? { capabilities: modelCapabilities } : {})
     }));
   }
 
@@ -105,36 +150,48 @@ export class AiService {
     return mapProfile(await createAiConfigRepository(this.requirePool()).cloneProfile(profileId, name));
   }
 
+  public async listProfileTasks(profileId?: string): Promise<AiProfileTask[]> {
+    return (await createAiConfigRepository(this.requirePool()).listProfileTasks(profileId)).map((task) => ({
+      ...task,
+      task: task.task as AiProfileTask["task"],
+      parameters: aiModelParametersSchema.parse(task.parameters)
+    }));
+  }
+
+  public async listTaskRoutes(): Promise<AiTaskRoute[]> {
+    return (await createAiConfigRepository(this.requirePool()).listTaskRoutes()).map((route) => ({
+      task: route.task as AiTaskRoute["task"],
+      profileId: route.profileId
+    }));
+  }
+
+  public async setTaskRoute(input: AiTaskRoute): Promise<void> {
+    const repository = createAiConfigRepository(this.requirePool());
+    const profile = (await repository.listProfiles()).find((candidate) => candidate.id === input.profileId);
+    if (!profile || profile.status !== "active" || !profile.modelId
+        || !capabilitiesForTask(input.task).every((capability) => profile.capabilities.includes(capability))) {
+      throw new Error("errors.ai.noCompatibleModel");
+    }
+    const configuredTask = (await repository.listProfileTasks(input.profileId))
+      .some((task) => task.task === input.task);
+    if (!configuredTask) {
+      await repository.setProfileTask({ profileId: input.profileId, task: input.task, parameters: {} });
+    }
+    await repository.setTaskRoute(input.task, input.profileId);
+  }
+
   public async setProfileTask(input: AiProfileTaskInput): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
     const profile = (await repository.listProfiles()).find((candidate) => candidate.id === input.profileId);
     if (!profile) throw new Error("errors.common.notFound");
-    if (input.localModelId) {
-      const localModel = await createLocalModelRepository(this.requirePool()).findById(input.localModelId);
-      if (!localModel || localModel.status !== "ready") throw new Error("errors.localModels.notReady");
-      if (localModel.runtime !== input.runtime || localModel.modelId !== input.modelId
-          || !input.requiredCapabilities.every((capability) => localModel.capabilities.includes(capability))) {
-        throw new Error("errors.ai.noCompatibleModel");
-      }
-    } else {
-      if (profile.privacyMode === "offline_only") throw new Error("errors.ai.noCompatibleModel");
-      const provider = (await repository.listProviders()).find((candidate) => candidate.id === input.providerConfigId);
-      const capabilities = parseCapabilities(provider?.metadata.capabilities);
-      if (!provider || provider.metadata.modelId !== input.modelId
-          || !input.requiredCapabilities.every((capability) => capabilities.includes(capability))) {
-        throw new Error("errors.ai.noCompatibleModel");
-      }
+    if (!profile.modelId || !capabilitiesForTask(input.task).every((capability) => profile.capabilities.includes(capability))) {
+      throw new Error("errors.ai.noCompatibleModel");
     }
     await repository.setProfileTask({
       profileId: input.profileId,
       task: input.task,
-      modelId: input.modelId,
-      requiredCapabilities: input.requiredCapabilities,
-      ...(input.providerConfigId !== undefined ? { providerConfigId: input.providerConfigId } : {}),
-      ...(input.localModelId !== undefined ? { localModelId: input.localModelId } : {}),
-      runtime: input.runtime,
       fallbackPolicy: "block",
-      parameters: withAiTaskParameterDefaults(input.task, {}, Boolean(input.localModelId))
+      parameters: input.parameters
     });
   }
 
@@ -148,9 +205,15 @@ export class AiService {
     if (!selection) return null;
     const parameters = withAiTaskParameterDefaults(
       taskType,
-      selection.parameters,
+      { ...selection.modelDefaultParameters, ...selection.parameters },
       Boolean(selection.localModelId)
     );
+    const outputLanguage = selection.outputLanguage === "ui"
+      ? await this.options.getUiLanguage?.() ?? "en"
+      : selection.outputLanguage;
+    const taskInput = taskType === "embedding"
+      ? input
+      : withOutputLanguageInstruction(input, outputLanguage);
     const started = Date.now();
     try {
       const configuredAdapter = selection.localModelId
@@ -165,7 +228,7 @@ export class AiService {
         offlineOnly: Boolean(selection.localModelId)
       });
       const run = () => adapter.run({
-        taskType, input, profileId: selection.profileId, modelId: selection.modelId,
+        taskType, input: taskInput, profileId: selection.profileId, modelId: selection.modelId,
         requiredCapabilities, parameters, metadata: {}
       });
       const result = selection.localModelId
@@ -180,7 +243,7 @@ export class AiService {
         revision: selection.revision,
         quantization: selection.quantization,
         parameters,
-        inputHash: sha256(input), outputHash: sha256(JSON.stringify(result.output)),
+        inputHash: sha256(taskInput), outputHash: sha256(JSON.stringify(result.output)),
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
@@ -198,7 +261,7 @@ export class AiService {
           aiTaskRunId
         }, result.output);
       }
-      return { ...result, profileId: selection.profileId, aiTaskRunId };
+      return { ...result, profileId: selection.profileId, aiTaskRunId, outputLanguage };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: selection.provider,
@@ -236,27 +299,35 @@ export class AiService {
     if (!model) throw new Error("errors.common.notFound");
     const configuredAdapter = await this.createLocalAdapter(localModelId);
     const descriptor = configuredAdapter.describe();
+    const embeddingOnly = model.capabilities.includes("embedding")
+      && !model.capabilities.includes("text-generation");
+    const taskType = embeddingOnly ? "embedding" as const : "text-generation" as const;
+    const requiredCapabilities = embeddingOnly ? ["embedding" as const] : ["text-generation" as const];
     const adapter = this.registry.resolve({
       providerId: descriptor.providerId,
       modelId: descriptor.modelId,
-      requiredCapabilities: ["text-generation"],
+      requiredCapabilities,
       offlineOnly: true
     });
     const repository = createAiConfigRepository(this.requirePool());
-    const input = "Reply with exactly: OK";
-    const parameters = { maxTokens: 16, temperature: 0 };
+    const input = embeddingOnly ? "query: local embedding smoke test" : "Reply with exactly: OK";
+    const parameters = withAiTaskParameterDefaults(
+      taskType,
+      model.defaultParameters,
+      true
+    );
     const started = Date.now();
     try {
       const result = await this.withLocalModelUsage(localModelId, () => adapter.run({
-        taskType: "text-generation",
+        taskType,
         input,
         modelId: adapter.describe().modelId,
-        requiredCapabilities: ["text-generation"],
+        requiredCapabilities,
         parameters,
         metadata: { purpose: "local-model-test" }
       }));
       await repository.recordTaskRun({
-        taskType: "text-generation",
+        taskType,
         provider: result.providerId,
         modelId: result.modelId,
         runtime: model.runtime,
@@ -264,7 +335,7 @@ export class AiService {
         repository: model.repository,
         revision: model.revision,
         quantization: model.quantization,
-        capabilitiesUsed: ["text-generation", "offline"],
+        capabilitiesUsed: [...requiredCapabilities, "offline"],
         parameters,
         inputHash: sha256(input),
         outputHash: sha256(JSON.stringify(result.output)),
@@ -274,10 +345,12 @@ export class AiService {
         durationMs: result.durationMs,
         status: "succeeded"
       });
-      return typeof result.output === "string" ? result.output : JSON.stringify(result.output);
+      return Array.isArray(result.output)
+        ? `Embedding generated (${result.output.length} dimensions)`
+        : typeof result.output === "string" ? result.output : JSON.stringify(result.output);
     } catch (error) {
       await repository.recordTaskRun({
-        taskType: "text-generation",
+        taskType,
         provider: `local-${model.runtime}`,
         modelId: model.modelId,
         runtime: model.runtime,
@@ -285,7 +358,7 @@ export class AiService {
         repository: model.repository,
         revision: model.revision,
         quantization: model.quantization,
-        capabilitiesUsed: ["text-generation", "offline"],
+        capabilitiesUsed: [...requiredCapabilities, "offline"],
         parameters,
         inputHash: sha256(input),
         durationMs: Date.now() - started,
@@ -324,7 +397,7 @@ export class AiService {
     if (!model || model.status !== "ready" || !model.managedPath) throw new Error("errors.localModels.notReady");
     const options = {
       modelId: model.modelId,
-      modelPath: model.managedPath,
+      modelPath: resolveLocalModelPath(model),
       capabilities: parseCapabilities(model.capabilities),
       repository: model.repository,
       revision: model.revision,
@@ -367,6 +440,7 @@ export class AiService {
 export interface DefaultAiTaskResult extends AiTaskResult {
   profileId: string;
   aiTaskRunId: string;
+  outputLanguage: string;
 }
 
 function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[] {
@@ -394,6 +468,7 @@ function mapProvider(record: AiProviderConfigRecord): AiProviderConfig {
     baseUrl: record.baseUrl,
     modelId: typeof record.metadata.modelId === "string" ? record.metadata.modelId : "",
     capabilities: parseCapabilities(record.metadata.capabilities),
+    defaultParameters: aiModelParametersSchema.parse(record.defaultParameters),
     secretConfigured: Boolean(record.credentialRef),
     status: record.status
   };
@@ -410,6 +485,36 @@ function parseCapabilities(value: unknown): AiCapability[] {
 function mapProfile(record: AiProfileRecord): AiProfile {
   return {
     id: record.id, name: record.name, description: record.description,
-    isDefault: record.isDefault, privacyMode: record.privacyMode, status: record.status
+    isDefault: record.isDefault,
+    privacyMode: record.privacyMode,
+    outputLanguage: record.outputLanguage as AiProfile["outputLanguage"],
+    providerConfigId: record.providerConfigId,
+    localModelId: record.localModelId,
+    modelId: record.modelId,
+    runtime: record.runtime as AiProfile["runtime"],
+    capabilities: parseCapabilities(record.capabilities),
+    status: record.status
   };
+}
+
+function resolveLocalModelPath(model: LocalModelRecord): string {
+  if (!model.managedPath) throw new Error("errors.localModels.notReady");
+  if (model.runtime !== "gguf" || extname(model.managedPath).toLowerCase() === ".gguf") {
+    return model.managedPath;
+  }
+  const entry = findLocalModelCatalogEntry(model.catalogId);
+  const file = entry?.files.find((candidate) => candidate.path.toLowerCase().endsWith(".gguf"));
+  if (!file) throw new Error("errors.localModels.invalidGguf");
+  return join(model.managedPath, file.path);
+}
+
+function withOutputLanguageInstruction(input: string, language: string): string {
+  const languageName = ({
+    en: "English",
+    "pt-BR": "Brazilian Portuguese",
+    it: "Italian",
+    fr: "French",
+    es: "Spanish"
+  } as Record<string, string>)[language] ?? language;
+  return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly.\n\n${input}`;
 }

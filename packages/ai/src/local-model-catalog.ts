@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { z } from "zod";
-import { AiCapabilitySchema } from "@app/domain";
+import { AiCapabilitySchema, AiModelParametersSchema } from "@app/domain";
 
 export const localModelRuntimeSchema = z.enum(["gguf", "mlx"]);
 export type LocalModelRuntime = z.infer<typeof localModelRuntimeSchema>;
@@ -24,6 +24,7 @@ export const localModelCatalogEntrySchema = z.object({
   format: z.enum(["safetensors", "gguf"]),
   quantization: z.string().min(1),
   capabilities: z.array(AiCapabilitySchema).min(1),
+  defaultParameters: AiModelParametersSchema.default({}),
   minimumMemoryBytes: z.number().int().positive(),
   recommendedMemoryBytes: z.number().int().positive(),
   license: z.string().min(1),
@@ -53,6 +54,7 @@ const textCapabilities = [
   "structured-output",
   "summarization",
   "atomic-note-generation",
+  "reranking",
   "cancellation",
   "offline",
   "local-files",
@@ -60,6 +62,56 @@ const textCapabilities = [
 ] as const;
 
 export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
+  {
+    id: "gguf-embeddinggemma-300m-q8-0",
+    displayName: "EmbeddingGemma 300M Q8_0",
+    family: "EmbeddingGemma",
+    variant: "300M Q8_0",
+    runtime: "gguf",
+    repository: "ggml-org/embeddinggemma-300M-GGUF",
+    revision: "0f741b5a6585bd53aeb15cd1372c56f2a0f65e12",
+    format: "gguf",
+    quantization: "Q8_0",
+    capabilities: ["embedding", "offline", "local-files"],
+    defaultParameters: { contextWindow: 2_048, dimensions: 768 },
+    minimumMemoryBytes: 1 * gib,
+    recommendedMemoryBytes: 2 * gib,
+    license: "Gemma",
+    licenseUrl: "https://ai.google.dev/gemma/terms",
+    requiresLicenseAcceptance: true,
+    files: [
+      {
+        path: "embeddinggemma-300M-Q8_0.gguf",
+        sizeBytes: 333_590_944,
+        sha256: "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
+      }
+    ]
+  },
+  {
+    id: "gguf-multilingual-e5-base-q5-k-s",
+    displayName: "Multilingual E5 Base Q5_K_S",
+    family: "Multilingual E5",
+    variant: "Base Q5_K_S",
+    runtime: "gguf",
+    repository: "dinab/multilingual-e5-base-Q5_K_S-GGUF",
+    revision: "fe6baddc69aa0aa9c4b74da2333225580603a4b0",
+    format: "gguf",
+    quantization: "Q5_K_S",
+    capabilities: ["embedding", "offline", "local-files"],
+    defaultParameters: { contextWindow: 512, dimensions: 768 },
+    minimumMemoryBytes: 1 * gib,
+    recommendedMemoryBytes: 2 * gib,
+    license: "MIT",
+    licenseUrl: "https://opensource.org/license/mit",
+    requiresLicenseAcceptance: false,
+    files: [
+      {
+        path: "multilingual-e5-base-q5_k_s.gguf",
+        sizeBytes: 224_787_776,
+        sha256: "b2a905dec5a2f9ff06a00d1e580c07100b46268c3313c2237655180df71fb2e1"
+      }
+    ]
+  },
   {
     id: "mlx-gemma-4-e4b-it-4bit",
     displayName: "Gemma 4 E4B Instruct 4-bit",
@@ -147,7 +199,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   }
 ]);
 
-export const localModelCatalogVersion = "2026-07-10.1";
+export const localModelCatalogVersion = "2026-07-10.2";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);

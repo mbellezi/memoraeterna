@@ -9,11 +9,13 @@ import {
   KeyRound,
   Play,
   RefreshCw,
+  Save,
   Trash2
 } from "lucide-react";
 
 import type { MessageKey } from "@app/i18n";
-import type { LocalModelView } from "../../shared/ipc";
+import type { AiModelParameters, LocalModelView } from "../../shared/ipc";
+import { AiParameterFields } from "./AiParameterFields";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -22,6 +24,7 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   const [models, setModels] = useState<LocalModelView[]>([]);
   const [runtime, setRuntime] = useState<"all" | "gguf" | "mlx">("all");
   const [family, setFamily] = useState("all");
+  const [capability, setCapability] = useState<"all" | "generation" | "embedding">("all");
   const [compatibleOnly, setCompatibleOnly] = useState(false);
   const [acceptedLicenses, setAcceptedLicenses] = useState<Set<string>>(new Set());
   const [repositoryToken, setRepositoryToken] = useState("");
@@ -52,6 +55,9 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   const filtered = models.filter((model) =>
     (runtime === "all" || model.runtime === runtime)
     && (family === "all" || model.family === family)
+    && (capability === "all" || (capability === "embedding"
+      ? model.capabilities.includes("embedding")
+      : model.capabilities.includes("text-generation")))
     && (!compatibleOnly || model.compatible)
   );
 
@@ -101,7 +107,7 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
           {t("localModels.saveToken")}
         </Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <select aria-label={t("localModels.filters.runtime")} value={runtime} onChange={(event) => setRuntime(event.target.value as typeof runtime)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
           <option value="all">{t("localModels.filters.allRuntimes")}</option>
           <option value="mlx">MLX</option>
@@ -110,6 +116,11 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
         <select aria-label={t("localModels.filters.family")} value={family} onChange={(event) => setFamily(event.target.value)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
           <option value="all">{t("localModels.filters.allFamilies")}</option>
           {families.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <select aria-label={t("localModels.filters.capability")} value={capability} onChange={(event) => setCapability(event.target.value as typeof capability)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+          <option value="all">{t("localModels.filters.allCapabilities")}</option>
+          <option value="generation">{t("localModels.filters.generation")}</option>
+          <option value="embedding">{t("localModels.filters.embedding")}</option>
         </select>
         <label className="flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700">
           <input type="checkbox" checked={compatibleOnly} onChange={(event) => setCompatibleOnly(event.target.checked)} />
@@ -144,6 +155,7 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
                 </span>
               </div>
               <p className="text-xs text-slate-600 dark:text-slate-300">{model.capabilities.join(" · ")}</p>
+              <LocalModelDefaults model={model} t={t} onSave={(parameters) => run(() => window.app.localModels.setDefaults(model.id, parameters))} />
               {model.requiresLicenseAcceptance && !model.licenseAccepted ? (
                 <label className="flex items-start gap-2 text-sm">
                   <input
@@ -186,6 +198,11 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
       <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{t(status)}</p>
     </section>
   );
+}
+
+function LocalModelDefaults({ model, t, onSave }: { model: LocalModelView; t: (key: MessageKey) => string; onSave: (parameters: AiModelParameters) => Promise<unknown> }) {
+  const [parameters, setParameters] = useState(model.defaultParameters);
+  return <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900"><p className="text-sm font-medium">{t("localModels.defaultParameters")}</p><AiParameterFields value={parameters} onChange={setParameters} t={t} embeddingOnly={model.capabilities.includes("embedding")} /><div className="flex justify-end"><Button type="button" onClick={() => void onSave(parameters)}><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveDefaults")}</Button></div></div>;
 }
 
 function formatBytes(bytes: number): string {

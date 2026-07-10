@@ -85,7 +85,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
             ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
               ? { responseMimeType: "application/json" }
               : {}),
-            ...request.parameters
+            ...googleGenerationParameters(request.parameters, modelId)
           }
         })
       }
@@ -103,4 +103,18 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
       ...(payload.usageMetadata?.candidatesTokenCount !== undefined ? { outputTokens: payload.usageMetadata.candidatesTokenCount } : {})
     };
   }
+}
+
+function googleGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
+  const reasoningLevel = parameters.reasoningLevel;
+  const thinkingConfig = reasoningLevel === "off"
+    ? modelId.includes("2.5") ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" }
+    : typeof reasoningLevel === "string" ? { thinkingLevel: reasoningLevel } : undefined;
+  return {
+    ...(typeof parameters.maxTokens === "number" ? { maxOutputTokens: parameters.maxTokens } : {}),
+    ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
+    ...(typeof parameters.topP === "number" ? { topP: parameters.topP } : {}),
+    ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
+    ...(thinkingConfig ? { thinkingConfig } : {})
+  };
 }

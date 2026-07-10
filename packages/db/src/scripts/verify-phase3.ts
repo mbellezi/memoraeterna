@@ -104,16 +104,14 @@ try {
     displayName: "Phase 3 verifier",
     credentialRef: "test:secret",
     baseUrl: "https://example.test/v1",
-    metadata: { modelId: "mock-model" }
+    metadata: { modelId: "mock-model", capabilities: ["summarization"] }
   });
   const profile = await ai.createProfile({ name: "Phase 3", isDefault: true });
-  await ai.setProfileTask({
-    profileId: profile.id,
-    task: "summarization",
-    providerConfigId: provider.id,
-    modelId: "mock-model",
-    requiredCapabilities: ["summarization"]
+  await ai.updateProfile({
+    id: profile.id, providerConfigId: provider.id, modelId: "mock-model",
+    runtime: "remote", capabilities: ["summarization"]
   });
+  await ai.setProfileTask({ profileId: profile.id, task: "summarization" });
   const aiTaskRunId = await ai.recordTaskRun({
     profileId: profile.id,
     taskType: "summarization",

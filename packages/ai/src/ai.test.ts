@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AiModelRegistry,
+  GoogleGeminiAdapter,
   MlxAdapter,
   NodeLlamaCppAdapter,
   OpenAiCompatibleAdapter,
@@ -46,11 +47,49 @@ describe("AI adapters", () => {
     expect(JSON.stringify(result)).not.toContain("secret");
   });
 
+  it("maps canonical generation parameters to remote provider contracts", async () => {
+    let openAiBody: Record<string, unknown> = {};
+    const openAi = new OpenAiCompatibleAdapter({
+      baseUrl: "https://example.test/v1", apiKey: "secret", modelId: "reasoning-model",
+      capabilities: ["text-generation"],
+      fetch: async (_input, init) => {
+        openAiBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+      }
+    });
+    await openAi.run({
+      taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
+      parameters: { maxTokens: 512, temperature: 0.3, topP: 0.9, reasoningLevel: "high" }, metadata: {}
+    });
+    expect(openAiBody).toMatchObject({
+      max_tokens: 512, temperature: 0.3, top_p: 0.9, reasoning_effort: "high"
+    });
+    expect(openAiBody).not.toHaveProperty("maxTokens");
+
+    let googleBody: { generationConfig?: Record<string, unknown> } = {};
+    const google = new GoogleGeminiAdapter({
+      apiKey: "secret", modelId: "gemini-3.5-flash", capabilities: ["text-generation"],
+      fetch: async (_input, init) => {
+        googleBody = JSON.parse(String(init?.body)) as typeof googleBody;
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }), { status: 200 });
+      }
+    });
+    await google.run({
+      taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
+      parameters: { maxTokens: 256, reasoningLevel: "low" }, metadata: {}
+    });
+    expect(googleBody.generationConfig).toMatchObject({
+      maxOutputTokens: 256,
+      thinkingConfig: { thinkingLevel: "low" }
+    });
+  });
+
   it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
-    expect(localModelCatalog).toHaveLength(3);
+    expect(localModelCatalog).toHaveLength(5);
+    expect(localModelCatalog.filter((entry) => entry.capabilities.includes("embedding"))).toHaveLength(2);
     for (const entry of localModelCatalog) {
       expect(entry.revision).toMatch(/^[a-f0-9]{40}$/);
-      expect(localModelExpectedSize(entry)).toBeGreaterThan(2_000_000_000);
+      expect(localModelExpectedSize(entry)).toBeGreaterThan(200_000_000);
       expect(entry.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
       expect(entry.capabilities).not.toContain("image-understanding");
     }
@@ -198,7 +237,7 @@ describe("AI adapters", () => {
   it("runs GGUF and MLX adapters through injectable native executors", async () => {
     const base = {
       modelId: "local-test", modelPath: "/managed/model",
-      capabilities: ["text-generation", "offline"] as const
+      capabilities: ["text-generation", "reranking", "offline"] as const
     };
     const gguf = new NodeLlamaCppAdapter(
       { ...base, capabilities: [...base.capabilities] },
@@ -219,6 +258,26 @@ describe("AI adapters", () => {
     expect((await mlx.run(request)).output).toBe("mlx");
     expect(gguf.describe().capabilities).toContain("offline");
     expect(mlx.describe().providerId).toBe("local-mlx");
+    const rerankRequest = {
+      ...request,
+      taskType: "reranking" as const,
+      requiredCapabilities: ["reranking" as const]
+    };
+    expect(gguf.canHandle(rerankRequest)).toBe(true);
+    expect(mlx.canHandle(rerankRequest)).toBe(true);
+
+    const embed = new NodeLlamaCppAdapter(
+      { modelId: "local-embed", modelPath: "/managed/embed.gguf", capabilities: ["embedding", "offline"] },
+      async () => ({ output: "unused", durationMs: 1 }),
+      async () => ({ output: [0.6, 0.8], inputTokens: 2, durationMs: 2 })
+    );
+    expect((await embed.run({
+      taskType: "embedding",
+      input: "query: hello",
+      requiredCapabilities: ["embedding"],
+      parameters: { dimensions: 768 },
+      metadata: {}
+    })).output).toEqual([0.6, 0.8]);
   });
 });
 

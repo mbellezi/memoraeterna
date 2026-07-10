@@ -22,6 +22,7 @@ export interface LocalModelRecord {
   installedSizeBytes: number;
   manifestHash: string;
   capabilities: string[];
+  defaultParameters: JsonObject;
   licenseName: string;
   licenseUrl: string;
   licenseAcceptedAt: Date | null;
@@ -59,8 +60,9 @@ export interface LocalModelDownloadRecord {
   updatedAt: Date;
 }
 
-interface LocalModelRow extends QueryResultRow, Omit<LocalModelRecord, "capabilities" | "metadata" | "createdAt" | "updatedAt" | "licenseAcceptedAt"> {
+interface LocalModelRow extends QueryResultRow, Omit<LocalModelRecord, "capabilities" | "defaultParameters" | "metadata" | "createdAt" | "updatedAt" | "licenseAcceptedAt"> {
   capabilities: unknown;
+  defaultParameters: unknown;
   metadata: unknown;
   createdAt: unknown;
   updatedAt: unknown;
@@ -80,7 +82,8 @@ interface LocalModelDownloadRow extends QueryResultRow, Omit<LocalModelDownloadR
 const modelReturning = `id, catalog_id as "catalogId", model_id as "modelId", display_name as "displayName",
   family, variant, repository, revision, runtime, format, quantization, managed_path as "managedPath",
   expected_size_bytes as "expectedSizeBytes", installed_size_bytes as "installedSizeBytes",
-  manifest_hash as "manifestHash", capabilities, license_name as "licenseName", license_url as "licenseUrl",
+  manifest_hash as "manifestHash", capabilities, default_parameters as "defaultParameters",
+  license_name as "licenseName", license_url as "licenseUrl",
   license_accepted_at as "licenseAcceptedAt", status, last_error as "lastError", metadata,
   created_at as "createdAt", updated_at as "updatedAt"`;
 
@@ -95,25 +98,32 @@ export function createLocalModelRepository(db: Queryable) {
       catalogId: string; modelId: string; displayName: string; family: string; variant: string;
       repository: string; revision: string; runtime: "gguf" | "mlx"; format: string;
       quantization: string; expectedSizeBytes: number; manifestHash: string; capabilities: string[];
-      licenseName: string; licenseUrl: string; metadata?: JsonObject;
+      defaultParameters?: JsonObject; licenseName: string; licenseUrl: string; metadata?: JsonObject;
     }): Promise<LocalModelRecord> {
       const result = await db.query<LocalModelRow>(
         `insert into local_models (
            catalog_id, model_id, display_name, family, variant, repository, revision, runtime, format,
-           quantization, expected_size_bytes, manifest_hash, capabilities, license_name, license_url, metadata
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+           quantization, expected_size_bytes, manifest_hash, capabilities, default_parameters,
+           license_name, license_url, metadata
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          on conflict (catalog_id) do update set
            model_id = excluded.model_id, display_name = excluded.display_name, family = excluded.family,
            variant = excluded.variant, repository = excluded.repository, revision = excluded.revision,
            runtime = excluded.runtime, format = excluded.format, quantization = excluded.quantization,
            expected_size_bytes = excluded.expected_size_bytes, manifest_hash = excluded.manifest_hash,
-           capabilities = excluded.capabilities, license_name = excluded.license_name,
+           capabilities = excluded.capabilities,
+           default_parameters = case
+             when coalesce(local_models.metadata ->> 'defaultParametersInitialized', 'false') <> 'true'
+               then excluded.default_parameters
+             else local_models.default_parameters
+           end,
+           license_name = excluded.license_name,
            license_url = excluded.license_url, metadata = excluded.metadata, updated_at = now()
          returning ${modelReturning}`,
         [input.catalogId, input.modelId, input.displayName, input.family, input.variant, input.repository,
           input.revision, input.runtime, input.format, input.quantization, input.expectedSizeBytes,
-          input.manifestHash, JSON.stringify(input.capabilities), input.licenseName, input.licenseUrl,
-          input.metadata ?? {}]
+          input.manifestHash, JSON.stringify(input.capabilities), input.defaultParameters ?? {},
+          input.licenseName, input.licenseUrl, input.metadata ?? {}]
       );
       return mapModel(requiredRow(result.rows[0], "Local model upsert"));
     },
@@ -136,6 +146,7 @@ export function createLocalModelRepository(db: Queryable) {
     async updateModel(id: string, input: {
       status?: LocalModelStatus; managedPath?: string | null; installedSizeBytes?: number;
       lastError?: string | null; licenseAcceptedAt?: Date | null; metadata?: JsonObject;
+      defaultParameters?: JsonObject;
     }): Promise<LocalModelRecord> {
       const result = await db.query<LocalModelRow>(
         `update local_models set
@@ -143,11 +154,13 @@ export function createLocalModelRepository(db: Queryable) {
            installed_size_bytes = coalesce($5, installed_size_bytes),
            last_error = case when $6::boolean then $7 else last_error end,
            license_accepted_at = case when $8::boolean then $9 else license_accepted_at end,
-           metadata = coalesce($10, metadata), updated_at = now()
+           metadata = coalesce($10, metadata), default_parameters = coalesce($11, default_parameters),
+           updated_at = now()
          where id = $1 returning ${modelReturning}`,
         [id, input.status ?? null, "managedPath" in input, input.managedPath ?? null,
           input.installedSizeBytes ?? null, "lastError" in input, input.lastError ?? null,
-          "licenseAcceptedAt" in input, input.licenseAcceptedAt ?? null, input.metadata ?? null]
+          "licenseAcceptedAt" in input, input.licenseAcceptedAt ?? null, input.metadata ?? null,
+          input.defaultParameters ?? null]
       );
       return mapModel(requiredRow(result.rows[0], "Local model update"));
     },
@@ -221,8 +234,8 @@ export function createLocalModelRepository(db: Queryable) {
 
     async profilesUsing(localModelId: string): Promise<string[]> {
       const result = await db.query<QueryResultRow & { name: string }>(
-        `select distinct p.name from ai_profile_sets p join ai_profile_tasks t on t.profile_id = p.id
-         where t.local_model_id = $1 and p.status = 'active' and t.status = 'active' order by p.name`,
+        `select distinct p.name from ai_profile_sets p
+         where p.local_model_id = $1 and p.status = 'active' order by p.name`,
         [localModelId]
       );
       return result.rows.map((row) => row.name);
@@ -241,6 +254,7 @@ function mapModel(row: LocalModelRow): LocalModelRecord {
     expectedSizeBytes: Number(row.expectedSizeBytes),
     installedSizeBytes: Number(row.installedSizeBytes),
     capabilities: Array.isArray(row.capabilities) ? row.capabilities.map(String) : [],
+    defaultParameters: asJsonObject(row.defaultParameters),
     metadata: asJsonObject(row.metadata),
     licenseAcceptedAt: mapNullableTimestamp(row.licenseAcceptedAt),
     createdAt: mapTimestamp(row.createdAt),

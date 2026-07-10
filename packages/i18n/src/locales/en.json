@@ -293,7 +293,25 @@
       "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test",
       "connectionOk": "Connection successful.", "profiles": "Profiles", "profileName": "Profile name",
       "createProfile": "Create profile", "defaultProfile": "Default", "cloneProfile": "Clone profile",
-      "selectModel": "Select a remote or local model"
+      "selectModel": "Select a remote or local model", "remoteModels": "Add remote model",
+      "modelPurpose": "Model purpose", "saveModel": "Save model", "embeddingModels": "Remote embedding models",
+      "generationModels": "Remote generation and reranking models", "noModels": "No models configured.",
+      "saveDefaults": "Save defaults", "noProfiles": "Create a profile to configure tasks.",
+      "outputLanguage": "Response language", "selectProfile": "Select a profile",
+      "taskRouting": "Profile used by task", "taskRoutingDescription": "Choose independently which configured profile each AI task uses.",
+      "purposes": { "generation": "Text generation", "embedding": "Embedding", "reranking": "Reranking" },
+      "privacy": { "allowRemote": "Allow remote models", "offlineOnly": "Local models only" },
+      "languages": { "interface": "Same as interface" },
+      "tasks": {
+        "embedding": "Embedding", "summarization": "Summarization", "text-generation": "Text generation",
+        "structured-output": "Structured output", "atomic-note-generation": "Atomic note generation", "reranking": "Reranking"
+      },
+      "parameters": {
+        "contextWindow": "Context window", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
+        "reasoningLevel": "Reasoning level", "topP": "Top P", "dimensions": "Embedding dimensions", "seed": "Seed",
+        "inherit": "Use inherited/default value",
+        "reasoning": { "off": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High" }
+      }
     }
   },
   "localModels": {
@@ -307,12 +325,14 @@
     "profileUsage": "Used by profiles",
     "removeConfirmation": "Remove this model and its managed files from this machine?",
     "testSucceeded": "Local inference succeeded.",
+    "defaultParameters": "Default model parameters",
     "filters": {
       "runtime": "Runtime",
       "family": "Family",
       "allRuntimes": "All runtimes",
       "allFamilies": "All families",
-      "compatibleOnly": "Compatible only"
+      "compatibleOnly": "Compatible only", "capability": "Capability", "allCapabilities": "All capabilities",
+      "generation": "Text generation", "embedding": "Embedding"
     },
     "compatibility": {
       "compatible": "Compatible with this machine",

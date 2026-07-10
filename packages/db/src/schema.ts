@@ -402,6 +402,7 @@ export const aiProviderConfigs = pgTable(
     displayName: text("display_name").notNull(),
     credentialRef: text("credential_ref"),
     baseUrl: text("base_url"),
+    defaultParameters: jsonb("default_parameters").notNull().default(sql`'{}'::jsonb`),
     status: text("status").notNull().default("configured"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
@@ -428,6 +429,7 @@ export const localModels = pgTable(
     installedSizeBytes: bigint("installed_size_bytes", { mode: "number" }).notNull().default(0),
     manifestHash: text("manifest_hash").notNull(),
     capabilities: jsonb("capabilities").notNull().default(sql`'[]'::jsonb`),
+    defaultParameters: jsonb("default_parameters").notNull().default(sql`'{}'::jsonb`),
     licenseName: text("license_name").notNull(),
     licenseUrl: text("license_url").notNull(),
     licenseAcceptedAt: timestamp("license_accepted_at", { withTimezone: true }),
@@ -496,6 +498,14 @@ export const aiProfileSets = pgTable(
     description: text("description"),
     isDefault: boolean("is_default").notNull().default(false),
     privacyMode: text("privacy_mode").notNull().default("allow_remote"),
+    outputLanguage: varchar("output_language", { length: 16 }).notNull().default("ui"),
+    providerConfigId: uuid("provider_config_id").references(() => aiProviderConfigs.id, {
+      onDelete: "set null"
+    }),
+    localModelId: uuid("local_model_id").references(() => localModels.id, { onDelete: "set null" }),
+    modelId: text("model_id"),
+    runtime: text("runtime"),
+    capabilities: jsonb("capabilities").notNull().default(sql`'[]'::jsonb`),
     status: text("status").notNull().default("active"),
     ...timestamps
   },
@@ -510,13 +520,6 @@ export const aiProfileTasks = pgTable(
       .notNull()
       .references(() => aiProfileSets.id, { onDelete: "cascade" }),
     task: text("task").notNull(),
-    providerConfigId: uuid("provider_config_id").references(() => aiProviderConfigs.id, {
-      onDelete: "set null"
-    }),
-    localModelId: uuid("local_model_id").references(() => localModels.id, { onDelete: "set null" }),
-    modelId: text("model_id").notNull(),
-    runtime: text("runtime").notNull().default("remote"),
-    requiredCapabilities: jsonb("required_capabilities").notNull().default(sql`'[]'::jsonb`),
     parameters: jsonb("parameters").notNull().default(sql`'{}'::jsonb`),
     fallbackPolicy: text("fallback_policy").notNull().default("block"),
     status: text("status").notNull().default("active"),
@@ -524,6 +527,22 @@ export const aiProfileTasks = pgTable(
   },
   (table) => ({
     profileTaskUidx: uniqueIndex("ai_profile_tasks_profile_task_uidx").on(table.profileId, table.task)
+  })
+);
+
+export const aiTaskProfileRoutes = pgTable(
+  "ai_task_profile_routes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    task: text("task").notNull(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => aiProfileSets.id, { onDelete: "cascade" }),
+    ...timestamps
+  },
+  (table) => ({
+    taskUidx: uniqueIndex("ai_task_profile_routes_task_uidx").on(table.task),
+    profileIdx: index("ai_task_profile_routes_profile_id_idx").on(table.profileId)
   })
 );
 

@@ -185,6 +185,21 @@ npm run db:generate
 - Busca textual usa configuracao `simple` com `unaccent` e `pg_trgm`; o idioma do documento deve ser registrado para evolucao futura.
 - AGE nao e fonte canonica no MVP. Tabelas relacionais continuam canonicas.
 
+## Modelos, Perfis e Parametros de IA
+
+- Modelos de embedding devem ser cadastrados e exibidos separadamente de modelos generativos. A separacao e orientada por `capabilities`; nunca atribua automaticamente `embedding`, geracao e reranking a todo modelo remoto.
+- O catalogo local deve manter modelos de embedding instalaveis pela mesma UI de download dos demais modelos, com revision imutavel, tamanho e SHA-256 auditados antes de entrar no catalogo.
+- Um modelo local so pode declarar `embedding` quando o adapter do runtime realmente gerar vetores. Nao exponha uma capability apenas porque o modelo de origem a documenta.
+- Parametros padrao pertencem a configuracao de cada modelo remoto ou local. Overrides pertencem ao vinculo entre perfil e tarefa em `ai_profile_tasks.parameters`.
+- A precedencia obrigatoria dos parametros em execucao e: defaults internos seguros, depois defaults do modelo, depois overrides do perfil/tarefa.
+- Parametros conhecidos devem usar nomes canonicos internos (`contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions`, `seed`). Cada adapter converte esses nomes para o contrato do provedor/runtime e nao deve enviar parametros internos desconhecidos diretamente.
+- Cada tipo de tarefa de IA deve poder escolher seu proprio perfil ativo pela configuracao persistida de roteamento. Um unico perfil global nao deve ser imposto a todas as tarefas.
+- Cada perfil referencia exatamente um modelo remoto ou local. A escolha de qual modelo executa cada tarefa ocorre indiretamente pelo roteamento de `ai_task_profile_routes`, que seleciona um perfil compativel para a tarefa.
+- Overrides de parametros continuam independentes por perfil/tarefa em `ai_profile_tasks`, respeitando as capabilities do unico modelo do perfil e o `privacyMode`.
+- Cada perfil deve guardar o idioma das respostas. O valor padrao e `ui`, que herda o idioma atual da interface; idiomas fixos iniciais sao `en`, `pt-BR`, `it`, `fr` e `es`.
+- A instrucao de idioma se aplica a tarefas generativas e deve preservar chaves/schemas de saida estruturada. Embeddings nao recebem instrucao de idioma.
+- Toda execucao deve registrar em `ai_task_runs` os parametros efetivos depois do merge, alem de perfil, modelo, provider, runtime e metadados ja exigidos.
+
 ## Dados Canonicos e Identidade
 
 - Identidade canonica fica no banco.
@@ -257,8 +272,8 @@ UploadedFiles/
 - Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram em fase seguinte como novos adaptadores.
 - Cada adaptador deve encapsular carregamento, execucao, cancelamento, progresso, streaming e erros.
 - Cada modelo deve declarar capabilities.
-- O pipeline escolhe modelo por tarefa via registry e perfil ativo.
-- Perfis de IA agrupam escolhas por tarefa.
+- O pipeline escolhe o perfil ativo por tarefa e usa o unico modelo vinculado ao perfil.
+- Perfis de IA agrupam um modelo, privacidade, idioma e overrides por tarefa.
 - Apenas um perfil deve estar ativo como padrao por vez.
 - Cada artefato gerado deve registrar:
   - perfil;
@@ -400,7 +415,7 @@ Capabilities iniciais incluem:
 - Integration Gateway deve autenticar/autorizar clientes.
 - Rejeitar paths inseguros.
 - Respeitar politicas de privacidade local/remoto do perfil ativo.
-- Nao enviar conteudo a provedor remoto se o perfil/tarefa exigir offline.
+- Nao enviar conteudo a provedor remoto se o perfil exigir modo offline.
 - Chamadas remotas de IA devem ser transparentes em custo: registrar tokens/custo por execucao e respeitar configuracao de confirmacao para importacoes em lote.
 
 ## Entrega de Cada Etapa

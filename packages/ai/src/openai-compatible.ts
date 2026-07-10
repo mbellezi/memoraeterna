@@ -83,7 +83,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...request.parameters
+        ...openAiGenerationParameters(request.parameters)
       })
     });
     const payload = await parseResponse<{
@@ -110,6 +110,18 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` }
     });
   }
+}
+
+function openAiGenerationParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...(typeof parameters.maxTokens === "number" ? { max_tokens: parameters.maxTokens } : {}),
+    ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
+    ...(typeof parameters.topP === "number" ? { top_p: parameters.topP } : {}),
+    ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
+    ...(typeof parameters.reasoningLevel === "string"
+      ? { reasoning_effort: parameters.reasoningLevel === "off" ? "none" : parameters.reasoningLevel }
+      : {})
+  };
 }
 
 export function readText(input: unknown): string {

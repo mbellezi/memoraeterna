@@ -23,6 +23,7 @@ export interface KnowledgeAiExecution {
   runtime: string;
   profileId: string;
   aiTaskRunId: string;
+  outputLanguage?: string;
 }
 
 export type KnowledgeAiRunner = (input: string) => Promise<KnowledgeAiExecution | null>;
@@ -75,7 +76,7 @@ ${atomicNoteGenerationJsonSchema}
 
 Every note must express one self-contained idea and cite at least one supplied chunk id. Do not invent ids.
 Use the exact property name "bodyMarkdown" and close the root JSON object.
-Use "${source.language}" as the note language.
+Set each "language" field to the language used in that note.
 
 Source title: ${source.title}
 Chunks:
@@ -84,7 +85,6 @@ ${chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")}`;
 
 export function buildAtomicNoteRepairPrompt(
   previousOutput: unknown,
-  language: string,
   allowedChunkIds: ReadonlyArray<string>
 ): string {
   return `The previous atomic-note output failed JSON parsing or schema validation.
@@ -93,7 +93,7 @@ The JSON must conform exactly to this JSON Schema:
 ${atomicNoteGenerationJsonSchema}
 
 Use the exact property name "bodyMarkdown" and close the root JSON object.
-Use "${language}" as the note language.
+Set each "language" field to the language used in that note.
 Evidence chunk ids must come only from this list: ${JSON.stringify(allowedChunkIds)}
 
 Previous invalid output:
@@ -133,7 +133,6 @@ export async function generateAtomicNoteCandidates(
   } catch (initialError) {
     const repairedExecution = await run(buildAtomicNoteRepairPrompt(
       execution.output,
-      source.language,
       [...allowedChunkIds]
     ));
     if (!repairedExecution) throw initialError;

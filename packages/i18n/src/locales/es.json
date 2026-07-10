@@ -237,13 +237,23 @@
       "openAiCompatible": "Compatible con OpenAI", "displayName": "Nombre visible", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Clave API", "saveProvider": "Guardar proveedor", "test": "Probar",
       "connectionOk": "Conexion correcta.", "profiles": "Perfiles", "profileName": "Nombre del perfil",
-      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil", "selectModel": "Selecciona un modelo remoto o local"
+      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil", "selectModel": "Selecciona un modelo remoto o local",
+      "remoteModels": "Agregar modelo remoto", "modelPurpose": "Funcion del modelo", "saveModel": "Guardar modelo",
+      "embeddingModels": "Modelos remotos de embedding", "generationModels": "Modelos remotos de generacion y reranking",
+      "noModels": "No hay modelos configurados.", "saveDefaults": "Guardar valores predeterminados", "noProfiles": "Crea un perfil para configurar tareas.",
+      "outputLanguage": "Idioma de las respuestas", "selectProfile": "Seleccionar un perfil", "taskRouting": "Perfil usado por tarea",
+      "taskRoutingDescription": "Elige de forma independiente que perfil configurado usa cada tarea de IA.",
+      "purposes": { "generation": "Generacion de texto", "embedding": "Embedding", "reranking": "Reranking" },
+      "privacy": { "allowRemote": "Permitir modelos remotos", "offlineOnly": "Solo modelos locales" },
+      "languages": { "interface": "Mismo idioma que la interfaz" },
+      "tasks": { "embedding": "Embedding", "summarization": "Resumen", "text-generation": "Generacion de texto", "structured-output": "Salida estructurada", "atomic-note-generation": "Generacion de notas atomicas", "reranking": "Reranking" },
+      "parameters": { "contextWindow": "Ventana de contexto", "temperature": "Temperatura", "maxTokens": "Tokens maximos de salida", "reasoningLevel": "Nivel de razonamiento", "topP": "Top P", "dimensions": "Dimensiones de embedding", "seed": "Seed", "inherit": "Usar valor heredado/predeterminado", "reasoning": { "off": "Desactivado", "minimal": "Minimo", "low": "Bajo", "medium": "Medio", "high": "Alto" } }
     }
   },
   "localModels": {
     "title": "Modelos locales", "repositoryToken": "Token de Hugging Face", "tokenConfigured": "Token configurado", "tokenOptional": "Opcional para repositorios privados o restringidos", "saveToken": "Guardar token", "empty": "Ningun modelo coincide con los filtros.",
-    "licenseAccept": "Acepto la licencia del modelo:", "profileUsage": "Usado por los perfiles", "removeConfirmation": "Eliminar este modelo y sus archivos gestionados del equipo?", "testSucceeded": "La inferencia local funciono.",
-    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos los runtimes", "allFamilies": "Todas las familias", "compatibleOnly": "Solo compatibles" },
+    "licenseAccept": "Acepto la licencia del modelo:", "profileUsage": "Usado por los perfiles", "removeConfirmation": "Eliminar este modelo y sus archivos gestionados del equipo?", "testSucceeded": "La inferencia local funciono.", "defaultParameters": "Parametros predeterminados del modelo",
+    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos los runtimes", "allFamilies": "Todas las familias", "compatibleOnly": "Solo compatibles", "capability": "Capacidad", "allCapabilities": "Todas las capacidades", "generation": "Generacion de texto", "embedding": "Embedding" },
     "compatibility": { "compatible": "Compatible con este equipo", "unsupported_platform": "Requiere macOS con Apple Silicon", "insufficient_memory": "Memoria insuficiente" },
     "status": { "not_downloaded": "No descargado", "downloading": "Descargando", "verifying": "Verificando", "ready": "Instalado", "failed": "Fallo", "removing": "Eliminando" },
     "actions": { "download": "Descargar", "resume": "Reanudar", "test": "Probar inferencia", "remove": "Eliminar", "importGguf": "Importar GGUF" },

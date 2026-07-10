@@ -16,7 +16,8 @@ const supportedLocalTasks = new Set([
   "text-generation",
   "structured-output",
   "summarization",
-  "atomic-note-generation"
+  "atomic-note-generation",
+  "reranking"
 ]);
 
 export interface LocalAdapterOptions {
@@ -29,7 +30,7 @@ export interface LocalAdapterOptions {
 }
 
 export interface LocalExecutionResult {
-  output: string;
+  output: string | number[];
   inputTokens?: number;
   outputTokens?: number;
   durationMs: number;
@@ -38,7 +39,8 @@ export interface LocalExecutionResult {
 export class NodeLlamaCppAdapter implements AiModelAdapter {
   public constructor(
     private readonly options: LocalAdapterOptions,
-    private readonly execute: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult> = executeNodeLlamaCpp
+    private readonly execute: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult> = executeNodeLlamaCpp,
+    private readonly executeEmbedding: (input: { modelPath: string; text: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult> = executeNodeLlamaEmbedding
   ) {}
 
   public describe(): AiModelDescriptor {
@@ -46,17 +48,25 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
   }
 
   public canHandle(request: AiTaskRequest): boolean {
-    return supportedLocalTasks.has(request.taskType) && request.requiredCapabilities.every((item) => this.options.capabilities.includes(item));
+    return (request.taskType === "embedding" || supportedLocalTasks.has(request.taskType))
+      && request.requiredCapabilities.every((item) => this.options.capabilities.includes(item));
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
-    const result = await this.execute({
-      modelPath: this.options.modelPath,
-      prompt: promptFromInput(input.input),
-      parameters: input.parameters,
-      ...(signal ? { signal } : {})
-    });
+    const result = input.taskType === "embedding"
+      ? await this.executeEmbedding({
+          modelPath: this.options.modelPath,
+          text: promptFromInput(input.input),
+          parameters: input.parameters,
+          ...(signal ? { signal } : {})
+        })
+      : await this.execute({
+          modelPath: this.options.modelPath,
+          prompt: promptFromInput(input.input),
+          parameters: input.parameters,
+          ...(signal ? { signal } : {})
+        });
     return taskResult(input, "local-gguf", this.options.modelId, result);
   }
 }
@@ -183,19 +193,55 @@ async function executeNodeLlamaCpp(input: {
   const module = await import("node-llama-cpp");
   const llama = await module.getLlama();
   const model = await llama.loadModel({ modelPath: input.modelPath });
-  const context = await model.createContext();
+  const context = await model.createContext({ contextSize: contextSizeParameter(input.parameters.contextWindow) });
   const session = new module.LlamaChatSession({ contextSequence: context.getSequence() });
   try {
     const inputTokens = model.tokenize(input.prompt).length;
     const output = await session.prompt(input.prompt, {
       maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
       temperature: numberParameter(input.parameters.temperature, 0.2),
+      ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
+      ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {}),
       ...(input.signal ? { signal: input.signal } : {})
     });
     return {
       output,
       inputTokens,
       outputTokens: model.tokenize(output).length,
+      durationMs: Date.now() - startedAt
+    };
+  } finally {
+    await context.dispose();
+    await model.dispose();
+    await llama.dispose();
+  }
+}
+
+async function executeNodeLlamaEmbedding(input: {
+  modelPath: string;
+  text: string;
+  parameters: Record<string, unknown>;
+  signal?: AbortSignal;
+}): Promise<LocalExecutionResult> {
+  const startedAt = Date.now();
+  const module = await import("node-llama-cpp");
+  const llama = await module.getLlama();
+  const model = await llama.loadModel({ modelPath: input.modelPath });
+  const context = await model.createEmbeddingContext({
+    contextSize: contextSizeParameter(input.parameters.contextWindow),
+    ...(input.signal ? { createSignal: input.signal } : {})
+  });
+  try {
+    if (input.signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
+    const embedding = await context.getEmbeddingFor(input.text);
+    const requestedDimensions = numberParameter(input.parameters.dimensions, embedding.vector.length);
+    if ((requestedDimensions !== 256 && requestedDimensions !== 768)
+        || requestedDimensions > embedding.vector.length) {
+      throw new Error(`Unsupported embedding dimension: ${requestedDimensions}`);
+    }
+    return {
+      output: normalizeVector(embedding.vector.slice(0, requestedDimensions)),
+      inputTokens: model.tokenize(input.text).length,
       durationMs: Date.now() - startedAt
     };
   } finally {
@@ -242,6 +288,15 @@ function promptFromInput(input: unknown): string {
 
 function numberParameter(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function contextSizeParameter(value: unknown): "auto" | number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 128 ? value : "auto";
+}
+
+function normalizeVector(vector: readonly number[]): number[] {
+  const magnitude = Math.sqrt(vector.reduce((total, value) => total + (value * value), 0));
+  return magnitude === 0 ? [...vector] : vector.map((value) => value / magnitude);
 }
 
 function minimalRuntimeEnvironment(): NodeJS.ProcessEnv {

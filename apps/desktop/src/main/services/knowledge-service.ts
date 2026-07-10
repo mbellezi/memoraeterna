@@ -179,7 +179,7 @@ export class KnowledgeService {
     const persisted = await createSourceSummaryRepository(pool).create({
       sourceItemId,
       summary: summary.summary,
-      language: source.language,
+      language: finalExecution.outputLanguage ?? source.language,
       profileId: finalExecution.profileId,
       aiTaskRunId: finalExecution.aiTaskRunId,
       provider: finalExecution.providerId,
@@ -257,7 +257,7 @@ export class KnowledgeService {
           title: generated.title,
           bodyMarkdown: generated.bodyMarkdown,
           ideaStatement: generated.ideaStatement,
-          language: generated.language ?? source.language,
+          language: generated.language ?? execution.outputLanguage ?? source.language,
           sourceItemId,
           evidenceChunkId: primary.chunkId,
           sourceSpanId: primary.sourceSpanId,
@@ -426,7 +426,8 @@ function toKnowledgeExecution(result: DefaultAiTaskResult | null): KnowledgeAiEx
     modelId: result.modelId,
     runtime: result.runtime,
     profileId: result.profileId,
-    aiTaskRunId: result.aiTaskRunId
+    aiTaskRunId: result.aiTaskRunId,
+    outputLanguage: result.outputLanguage
   } : null;
 }
 

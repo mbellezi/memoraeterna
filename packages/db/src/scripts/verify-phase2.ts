@@ -130,10 +130,11 @@ try {
     baseUrl: "https://example.test/v1", metadata: { modelId: "test-256", capabilities: ["embedding"] }
   });
   const profile = await ai.createProfile({ name: "Default", isDefault: true });
-  await ai.setProfileTask({
-    profileId: profile.id, task: "embedding", providerConfigId: provider.id,
-    modelId: "test-256", requiredCapabilities: ["embedding"]
+  await ai.updateProfile({
+    id: profile.id, providerConfigId: provider.id, modelId: "test-256",
+    runtime: "remote", capabilities: ["embedding"]
   });
+  await ai.setProfileTask({ profileId: profile.id, task: "embedding" });
   if ((await ai.getDefaultTask("embedding"))?.providerConfigId !== provider.id) {
     throw new Error("Default AI profile task resolution failed.");
   }

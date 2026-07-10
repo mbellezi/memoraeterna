@@ -585,3 +585,58 @@ CREATE UNIQUE INDEX "local_models_catalog_id_uidx" ON "local_models" USING btree
 CREATE INDEX "local_models_runtime_idx" ON "local_models" USING btree ("runtime");--> statement-breakpoint
 CREATE INDEX "local_models_status_idx" ON "local_models" USING btree ("status");--> statement-breakpoint
 ALTER TABLE "ai_profile_tasks" ADD CONSTRAINT "ai_profile_tasks_local_model_id_local_models_id_fk" FOREIGN KEY ("local_model_id") REFERENCES "public"."local_models"("id") ON DELETE set null ON UPDATE no action;
+
+CREATE TABLE "ai_task_profile_routes" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"task" text NOT NULL,
+	"profile_id" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "output_language" varchar(16) DEFAULT 'ui' NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_provider_configs" ADD COLUMN "default_parameters" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "local_models" ADD COLUMN "default_parameters" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "ai_task_profile_routes" ADD CONSTRAINT "ai_task_profile_routes_profile_id_ai_profile_sets_id_fk" FOREIGN KEY ("profile_id") REFERENCES "public"."ai_profile_sets"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "ai_task_profile_routes_task_uidx" ON "ai_task_profile_routes" USING btree ("task");--> statement-breakpoint
+CREATE INDEX "ai_task_profile_routes_profile_id_idx" ON "ai_task_profile_routes" USING btree ("profile_id");
+
+
+ALTER TABLE "ai_profile_tasks" DROP CONSTRAINT "ai_profile_tasks_provider_config_id_ai_provider_configs_id_fk";
+--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP CONSTRAINT "ai_profile_tasks_local_model_id_local_models_id_fk";
+--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "provider_config_id" uuid;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "local_model_id" uuid;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "model_id" text;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "runtime" text;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD COLUMN "capabilities" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+WITH selected_models AS (
+	SELECT DISTINCT ON (task.profile_id)
+		task.profile_id,
+		task.provider_config_id,
+		task.local_model_id,
+		task.model_id,
+		task.runtime,
+		COALESCE(local_model.capabilities, provider.metadata->'capabilities', task.required_capabilities, '[]'::jsonb) AS capabilities
+	FROM ai_profile_tasks AS task
+	LEFT JOIN ai_provider_configs AS provider ON provider.id = task.provider_config_id
+	LEFT JOIN local_models AS local_model ON local_model.id = task.local_model_id
+	WHERE task.status = 'active'
+	ORDER BY task.profile_id, task.updated_at DESC, task.created_at DESC
+)
+UPDATE ai_profile_sets AS profile
+SET provider_config_id = selected.provider_config_id,
+	local_model_id = selected.local_model_id,
+	model_id = selected.model_id,
+	runtime = selected.runtime,
+	capabilities = selected.capabilities
+FROM selected_models AS selected
+WHERE selected.profile_id = profile.id;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD CONSTRAINT "ai_profile_sets_provider_config_id_ai_provider_configs_id_fk" FOREIGN KEY ("provider_config_id") REFERENCES "public"."ai_provider_configs"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ai_profile_sets" ADD CONSTRAINT "ai_profile_sets_local_model_id_local_models_id_fk" FOREIGN KEY ("local_model_id") REFERENCES "public"."local_models"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP COLUMN "provider_config_id";--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP COLUMN "local_model_id";--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP COLUMN "model_id";--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP COLUMN "runtime";--> statement-breakpoint
+ALTER TABLE "ai_profile_tasks" DROP COLUMN "required_capabilities";

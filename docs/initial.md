@@ -40,7 +40,7 @@ As seguintes decisoes foram adotadas como base inicial do projeto:
 - A aplicacao deve incluir uma area de configuracoes para provedores de IA, modelos de processamento, embeddings, chaves e modelos locais.
 - Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram na fase seguinte como novos adaptadores.
 - Modelos locais via GGUF devem ser executados inicialmente com `node-llama-cpp` embutido na aplicacao Electron.
-- Provedores de embedding no MVP: Google (Gemini) e endpoints OpenAI-compatible; modelos locais baixaveis na sequencia.
+- Embeddings no MVP: Google (Gemini), endpoints OpenAI-compatible e modelos locais GGUF baixaveis pela interface, inicialmente EmbeddingGemma 300M e multilingual-e5-base.
 - PostgreSQL nativo embarcado como sidecar da aplicacao desktop, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
 - Main process gerencia o ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao de crash.
 - Drizzle ORM sobre `node-postgres`.
@@ -329,13 +329,13 @@ Cada provedor remoto deve permitir:
 - cadastro de API key ou credencial equivalente;
 - teste de conexao;
 - listagem dinamica dos modelos disponiveis;
-- selecao de modelo por tarefa;
+- selecao de um modelo por perfil e roteamento de perfil por tarefa;
 - registro de modelo usado em cada artefato gerado;
 - tratamento de erro localizavel via i18n.
 
 ## Perfis de IA por Tarefa
 
-As configuracoes de IA devem ser agrupadas em perfis reutilizaveis. Um perfil define qual provedor/modelo/configuracao sera usado para cada tarefa do pipeline. O usuario pode manter varios perfis, alternar o perfil padrao ativo e testar combinacoes diferentes sem redefinir cada tarefa manualmente.
+As configuracoes de IA devem ser agrupadas em perfis reutilizaveis. Cada perfil define exatamente um provedor/modelo, sua configuracao, privacidade e idioma. O usuario pode manter varios perfis e escolher, no roteamento por tarefa, qual perfil — e portanto qual modelo — executa cada etapa do pipeline.
 
 Exemplos de perfis:
 
@@ -347,7 +347,7 @@ Perfil privado/offline
 Perfil experimental
 ```
 
-Cada perfil deve conter selecoes por tarefa:
+O roteamento deve permitir selecionar um perfil compativel para cada tarefa:
 
 - busca de metadados sobre conteudo;
 - catalogacao;
@@ -366,10 +366,11 @@ Cada perfil deve conter selecoes por tarefa:
 
 Regras:
 
-- apenas um perfil deve estar ativo como padrao por vez;
+- apenas um perfil deve estar ativo como padrao por vez, usado como fallback quando nao houver rota explicita;
 - a aplicacao deve permitir clonar um perfil existente;
 - a aplicacao deve permitir comparar perfis por cobertura de capabilities, custo estimado, uso local/remoto e privacidade;
-- cada entrada do perfil deve validar se o modelo escolhido possui as capabilities necessarias para a tarefa;
+- cada perfil deve referenciar um unico modelo remoto ou local;
+- cada rota de tarefa deve validar se o modelo do perfil escolhido possui as capabilities necessarias;
 - uma tarefa sem modelo configurado deve seguir politica explicita: bloquear, pedir escolha ao usuario ou usar fallback permitido;
 - cada artefato gerado deve registrar o perfil, a tarefa, o modelo, o provedor, o runtime e os parametros usados;
 - mudancas no perfil ativo so devem afetar novas execucoes, nao alterar historico de artefatos ja gerados.
@@ -530,6 +531,8 @@ Ollama, LM Studio, `llama-server` externo ou qualquer endpoint OpenAI-compatible
 
 A aplicacao deve permitir escolher o modelo de embedding por provedor remoto ou local.
 
+Modelos de embedding devem aparecer separados dos modelos generativos em cadastro, listagem e seletores de perfil. A separacao usa capabilities reais do adapter; cadastrar um provedor remoto nao pode atribuir automaticamente todas as capabilities ao modelo.
+
 Provedores remotos iniciais:
 
 - OpenAI;
@@ -549,6 +552,7 @@ O gerenciador de modelos locais deve permitir:
 - registrar backend local, inicialmente `node-llama-cpp` para GGUF;
 - indicar se o modelo esta pronto para uso offline;
 - escolher modelo padrao para chunks e para notas atomicas.
+- editar os parametros padrao de cada modelo e permitir overrides independentes em cada perfil/tarefa.
 
 Estrategia de dimensoes:
 
@@ -559,6 +563,32 @@ Estrategia de dimensoes:
 - registrar dimensao, modelo e estrategia em cada embedding gerado.
 
 Ideia inicial: usar um indice rapido com 256 dimensoes para recuperar candidatos e um indice maior para reranking. Essa estrategia combina bem com modelos Matryoshka, como `google/embeddinggemma-300m`, que pode produzir 768 dimensoes e suportar truncamentos como 256. `intfloat/multilingual-e5-base` tem dimensao nativa de 768, o que tambem se encaixa bem na etapa de reranking em maior qualidade.
+
+## Parametros, Perfis e Idioma de IA
+
+Cada configuracao de modelo remoto ou local guarda parametros padrao editaveis. O vocabulario canonico inicial e:
+
+- `contextWindow`;
+- `temperature`;
+- `maxTokens`;
+- `reasoningLevel` (`off`, `minimal`, `low`, `medium`, `high`);
+- `topP`;
+- `dimensions` para embeddings;
+- `seed`.
+
+Adapters convertem esses nomes para o contrato concreto do provedor ou runtime. Parametros nao suportados por uma tarefa nao devem ser enviados por espalhamento direto ao endpoint.
+
+Ao configurar uma tarefa para um perfil, o usuario pode sobrescrever os parametros daquele vinculo sem alterar os defaults do unico modelo do perfil ou outros perfis. A precedencia em execucao e:
+
+```txt
+defaults internos seguros
+  -> defaults do modelo
+  -> overrides do perfil/tarefa
+```
+
+O roteamento ativo e configurado por tipo de tarefa: embedding, resumo, geracao de notas atomicas, reranking, geracao textual e saida estruturada podem escolher perfis diferentes. O perfil padrao antigo permanece apenas como fallback de compatibilidade enquanto uma rota explicita ainda nao existir.
+
+Cada perfil escolhe tambem o idioma das respostas. O padrao `ui` acompanha o idioma atual da interface; tambem e possivel fixar `en`, `pt-BR`, `it`, `fr` ou `es`. A instrucao de idioma vale somente para tarefas generativas e deve preservar schemas/chaves de saida estruturada; embeddings permanecem independentes de idioma.
 
 ## Extracao Web para Markdown
 
@@ -1014,13 +1044,14 @@ Provedores de embedding no MVP:
 ```txt
 Google (Gemini)
 Generic OpenAI-compatible endpoint
+Local GGUF via node-llama-cpp
 ```
 
-Fase seguinte:
+Modelos locais iniciais:
 
 ```txt
-OpenAI
-Local embedding models
+ggml-org/embeddinggemma-300M-GGUF
+dinab/multilingual-e5-base-Q5_K_S-GGUF
 ```
 
 ## Pacote `@app/conversion`
@@ -1664,6 +1695,11 @@ ai_profile_sets
   description
   is_default
   privacy_mode
+  provider_config_id
+  local_model_id
+  model_id
+  runtime
+  capabilities
   status
   created_at
   updated_at
@@ -1672,13 +1708,16 @@ ai_profile_tasks
   id
   profile_id
   task
-  provider_config_id
-  model_id
-  runtime
-  required_capabilities
   parameters
   fallback_policy
   status
+  created_at
+  updated_at
+
+ai_task_profile_routes
+  id
+  task
+  profile_id
   created_at
   updated_at
 
@@ -1787,7 +1826,7 @@ Os chunks sao sempre gerados a partir do documento fonte normalizado, nunca do r
 
 `atomic_note_relations` e a tabela canonica de ligacoes entre notas atomicas. Essas relacoes podem ser descobertas por busca vetorial, grafo e reranking, mas devem ser persistidas em SQL para auditoria, consulta e evolucao do Zettelkasten.
 
-`ai_provider_configs`, `ai_profile_sets`, `ai_profile_tasks`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, perfis, referencias, capacidades e metadados de execucao. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
+`ai_provider_configs`, `ai_profile_sets`, `ai_profile_tasks`, `ai_task_profile_routes`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, perfis, referencias, capacidades e metadados de execucao. `ai_provider_configs.default_parameters` e `local_models.default_parameters` guardam defaults por modelo; `ai_profile_tasks.parameters` guarda apenas overrides do perfil/tarefa. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
 
 ## Vetores
 
@@ -1865,7 +1904,7 @@ Receber conteudo
   -> projetar arquivo Markdown no vault Obsidian quando sincronizacao estiver habilitada
   -> vincular obra, instancia, volume, issue ou item relacionado quando aplicavel
   -> criar IngestionJob
-  -> carregar modelos configurados para cada tarefa
+  -> carregar o perfil roteado para cada tarefa e seu unico modelo
   -> gerar resumo quando a fonte for longa
   -> detectar idioma
   -> criar SourceSpans
@@ -2241,7 +2280,7 @@ O fluxo padrao e nao fazer o commit final automaticamente. Ao concluir uma taref
 - Chamadas remotas de IA devem ser transparentes em custo: cada execucao registra tokens e custo estimado, e importacoes em lote respeitam configuracao de confirmacao.
 - Relacoes entre notas atomicas devem ser persistidas no SQL e manter os sinais usados na decisao.
 - Fontes longas devem receber resumo gerado durante a importacao.
-- Modelos e provedores de IA devem ser configuraveis por tarefa.
+- Modelos e provedores de IA devem ser configuraveis por perfil, com selecao do perfil por tarefa.
 - API keys e segredos devem ser protegidos e nunca aparecer em logs, banco em texto puro ou UI depois de salvos.
 - Embeddings devem registrar modelo, provedor, dimensao e estrategia usada.
 - Toda informacao derivada deve manter referencia a evidencias.
@@ -2330,9 +2369,11 @@ O primeiro MVP tecnico deve provar a espinha dorsal do sistema. Ideias como AGE 
 13. Configuracao opcional de pasta para copias de arquivos subidos.
 14. Cadastro seguro de provedor de IA e API key.
 15. Listagem dinamica de modelos quando suportada pelo provedor.
-16. Perfis de IA por tarefa, com um perfil padrao ativo.
-17. Selecao de modelo de processamento por tarefa dentro de perfis.
-18. Selecao de modelo de embedding remoto ou local dentro de perfis.
+16. Perfis de IA com um unico modelo e roteamento explicito de um perfil ativo para cada tipo de tarefa.
+17. Selecao de um modelo de processamento remoto ou local por perfil.
+18. Selecao do perfil de embedding remoto ou local no roteamento por tarefa.
+18.1. Parametros padrao por modelo e overrides independentes por perfil/tarefa.
+18.2. Idioma de resposta por perfil, herdando o idioma da interface por padrao.
 19. `AiModelAdapter` e registry de modelos com capabilities.
 20. Negociacao de modelo por tarefa a partir de capabilities.
 21. Preparacao da interface para runtime local com `node-llama-cpp`, sem exigir execucao multimodal local no MVP.

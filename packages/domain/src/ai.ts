@@ -49,3 +49,17 @@ export const AiCapabilities = [
 export const AiCapabilitySchema = z.enum(AiCapabilities);
 
 export type AiCapability = z.infer<typeof AiCapabilitySchema>;
+
+export const AiReasoningLevelSchema = z.enum(["off", "minimal", "low", "medium", "high"]);
+export type AiReasoningLevel = z.infer<typeof AiReasoningLevelSchema>;
+
+export const AiModelParametersSchema = z.object({
+  contextWindow: z.number().int().min(128).max(2_000_000).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+  reasoningLevel: AiReasoningLevelSchema.optional(),
+  topP: z.number().min(0).max(1).optional(),
+  dimensions: z.union([z.literal(256), z.literal(768)]).optional(),
+  seed: z.number().int().nonnegative().optional()
+}).strict();
+export type AiModelParameters = z.infer<typeof AiModelParametersSchema>;

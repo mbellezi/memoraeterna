@@ -51,7 +51,13 @@ Implementado ate aqui:
 - armazenamento de assets por SHA-256, deduplicacao fisica e deteccao de
   arquivos ausentes;
 - `@app/ai` com registry/capabilities e adapters Google Gemini e
-  OpenAI-compatible, perfis por tarefa e credenciais via `safeStorage`;
+  OpenAI-compatible, um modelo por perfil, roteamento de perfil por tarefa e
+  credenciais via `safeStorage`;
+- modelos remotos separados por capability, parametros padrao por modelo,
+  overrides independentes por perfil/tarefa e conversao dos parametros
+  canonicos para cada adapter;
+- roteamento persistido de perfil por tipo de tarefa e idioma de resposta por
+  perfil, herdando o idioma da interface por padrao;
 - ingestao manual progressiva para os 8 tipos do MVP, source picker,
   deduplicacao, vinculo bibliografico e importacao de arquivo via dialog do
   main process;
@@ -95,6 +101,8 @@ Implementado ate aqui:
   de clientes/sync em PostgreSQL temporario.
 - catalogo local versionado com tres modelos MLX auditados, revisions imutaveis,
   tamanhos, SHA-256, licencas, capabilities e requisitos de memoria;
+- catalogo local ampliado com EmbeddingGemma 300M Q8_0 e multilingual-e5-base
+  Q5_K_S em GGUF auditado, disponiveis para download na interface;
 - downloader Hugging Face direto, retomavel por Range, com `.partial`, preflight
   de disco/memoria/plataforma, progresso, cancelamento, retry, verificacao e
   promocao atomica;
@@ -102,6 +110,8 @@ Implementado ate aqui:
   tarefa em perfis offline, com rastreabilidade ampliada em `ai_task_runs`;
 - adapter GGUF real via `node-llama-cpp` e adapter MLX via helper Swift nativo,
   restritos ao main process/helper e cobertos por teste de fronteira;
+- adapter GGUF com geracao local real de embeddings, controle de contexto e
+  dimensao e normalizacao do vetor;
 - helper `native/mlx-helper` com `mlx-swift`, `mlx-swift-lm` e
   `swift-transformers` fixados, protocolo JSONL Zod, timeout, cancelamento,
   shaders `mlx.metallib` gerados por Xcode e smoke com modelo real instalado;
@@ -114,7 +124,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migration `0005_fantastic_iceman`, baseline com 6 migrations e verificacao
+- migration `0007_concerned_marrow`, baseline com 8 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.
@@ -213,6 +223,11 @@ Arquivos principais:
 - `src/shared/ipc.ts`: canais, schemas Zod e tipos compartilhados do IPC.
 - `src/renderer/App.tsx`: shell React, bootstrap do banco e navegacao inicial.
 - `src/renderer/components/SettingsView.tsx`: UI inicial de settings.
+- `src/renderer/components/AiSettingsView.tsx`: modelos remotos separados,
+  defaults, um modelo por perfil, overrides por tarefa, idioma de resposta e
+  roteamento de perfil por tarefa.
+- `src/renderer/components/AiParameterFields.tsx`: editor compartilhado dos
+  parametros canonicos de modelos e perfis.
 - `src/renderer/components/LibraryView.tsx`: biblioteca e detalhe completo de
   fontes.
 - `src/renderer/components/ReviewQueueView.tsx`: fila de revisao das notas

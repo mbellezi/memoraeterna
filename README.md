@@ -188,7 +188,16 @@ Depois use `Settings > Local models` para filtrar o catalogo, aceitar licencas,
 salvar um token opcional da Hugging Face, baixar/retomar/verificar modelos e
 seleciona-los nos perfis de IA. Plataformas sem MLX mostram a incompatibilidade
 explicitamente. Arquivos GGUF existentes podem ser importados e executados via
-`node-llama-cpp`.
+`node-llama-cpp`. O catalogo inclui modelos GGUF de embedding separados
+(EmbeddingGemma 300M e multilingual-e5-base), baixaveis e instalaveis pela
+mesma interface.
+
+Em `Settings > AI`, cada modelo remoto ou local possui parametros padrao. Cada
+perfil pode sobrescrever esses parametros por tarefa, escolher o idioma das
+respostas (herdando o idioma da interface por padrao) e vincular um unico
+modelo remoto ou local. A secao de roteamento escolhe qual perfil — e portanto
+qual modelo — cada tarefa usa. Modelos locais generativos tambem podem executar
+o reranking baseado em prompt.
 
 Detalhes de revisions, checksums, armazenamento e protocolo ficam em
 `docs/local-models-and-packaging.md`.

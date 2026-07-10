@@ -237,13 +237,23 @@
       "openAiCompatible": "Compatibile OpenAI", "displayName": "Nome visualizzato", "baseUrl": "URL base",
       "model": "Modello", "apiKey": "Chiave API", "saveProvider": "Salva provider", "test": "Testa",
       "connectionOk": "Connessione riuscita.", "profiles": "Profili", "profileName": "Nome profilo",
-      "createProfile": "Crea profilo", "defaultProfile": "Predefinito", "cloneProfile": "Clona profilo", "selectModel": "Seleziona un modello remoto o locale"
+      "createProfile": "Crea profilo", "defaultProfile": "Predefinito", "cloneProfile": "Clona profilo", "selectModel": "Seleziona un modello remoto o locale",
+      "remoteModels": "Aggiungi modello remoto", "modelPurpose": "Scopo del modello", "saveModel": "Salva modello",
+      "embeddingModels": "Modelli di embedding remoti", "generationModels": "Modelli remoti di generazione e reranking",
+      "noModels": "Nessun modello configurato.", "saveDefaults": "Salva predefiniti", "noProfiles": "Crea un profilo per configurare le attivita.",
+      "outputLanguage": "Lingua delle risposte", "selectProfile": "Seleziona un profilo", "taskRouting": "Profilo usato per attivita",
+      "taskRoutingDescription": "Scegli indipendentemente quale profilo configurato usa ogni attivita IA.",
+      "purposes": { "generation": "Generazione testo", "embedding": "Embedding", "reranking": "Reranking" },
+      "privacy": { "allowRemote": "Consenti modelli remoti", "offlineOnly": "Solo modelli locali" },
+      "languages": { "interface": "Come l'interfaccia" },
+      "tasks": { "embedding": "Embedding", "summarization": "Riepilogo", "text-generation": "Generazione testo", "structured-output": "Output strutturato", "atomic-note-generation": "Generazione note atomiche", "reranking": "Reranking" },
+      "parameters": { "contextWindow": "Finestra di contesto", "temperature": "Temperatura", "maxTokens": "Token massimi di output", "reasoningLevel": "Livello di ragionamento", "topP": "Top P", "dimensions": "Dimensioni embedding", "seed": "Seed", "inherit": "Usa valore ereditato/predefinito", "reasoning": { "off": "Disattivato", "minimal": "Minimo", "low": "Basso", "medium": "Medio", "high": "Alto" } }
     }
   },
   "localModels": {
     "title": "Modelli locali", "repositoryToken": "Token Hugging Face", "tokenConfigured": "Token configurato", "tokenOptional": "Facoltativo per repository privati o limitati", "saveToken": "Salva token", "empty": "Nessun modello corrisponde ai filtri.",
-    "licenseAccept": "Accetto la licenza del modello:", "profileUsage": "Usato dai profili", "removeConfirmation": "Rimuovere questo modello e i file gestiti da questa macchina?", "testSucceeded": "Inferenza locale riuscita.",
-    "filters": { "runtime": "Runtime", "family": "Famiglia", "allRuntimes": "Tutti i runtime", "allFamilies": "Tutte le famiglie", "compatibleOnly": "Solo compatibili" },
+    "licenseAccept": "Accetto la licenza del modello:", "profileUsage": "Usato dai profili", "removeConfirmation": "Rimuovere questo modello e i file gestiti da questa macchina?", "testSucceeded": "Inferenza locale riuscita.", "defaultParameters": "Parametri predefiniti del modello",
+    "filters": { "runtime": "Runtime", "family": "Famiglia", "allRuntimes": "Tutti i runtime", "allFamilies": "Tutte le famiglie", "compatibleOnly": "Solo compatibili", "capability": "Capacita", "allCapabilities": "Tutte le capacita", "generation": "Generazione testo", "embedding": "Embedding" },
     "compatibility": { "compatible": "Compatibile con questa macchina", "unsupported_platform": "Richiede macOS su Apple Silicon", "insufficient_memory": "Memoria insufficiente" },
     "status": { "not_downloaded": "Non scaricato", "downloading": "Download", "verifying": "Verifica", "ready": "Installato", "failed": "Errore", "removing": "Rimozione" },
     "actions": { "download": "Scarica", "resume": "Riprendi", "test": "Test inferenza", "remove": "Rimuovi", "importGguf": "Importa GGUF" },

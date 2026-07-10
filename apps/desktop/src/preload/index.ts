@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AiProfileCreate,
+  AiProfileUpdate,
   AiProfileTaskInput,
+  AiTaskRoute,
+  AiModelParameters,
   AiProviderConfigInput,
   AtomicNoteReviewInput,
   AppSettingsUpdate,
@@ -18,7 +21,10 @@ import {
   appSettingsSchema,
   appSettingsUpdateSchema,
   aiProfileCreateSchema,
+  aiProfileUpdateSchema,
   aiProfileTaskInputSchema,
+  aiProfileTaskSchema,
+  aiTaskRouteSchema,
   aiProfileSchema,
   aiProviderConfigInputSchema,
   aiProviderConfigSchema,
@@ -46,6 +52,7 @@ import {
   integrationPairingResultSchema,
   backupResultSchema,
   localModelDownloadInputSchema,
+  localModelDefaultsInputSchema,
   localModelViewSchema,
   repositoryTokenInputSchema
 } from "../shared/ipc";
@@ -166,11 +173,26 @@ const api: DesktopApi = {
     async createProfile(input: AiProfileCreate) {
       return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesCreate, aiProfileCreateSchema.parse(input)));
     },
+    async updateProfile(input: AiProfileUpdate) {
+      return aiProfileSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.aiProfilesUpdate,
+        aiProfileUpdateSchema.parse(input)
+      ));
+    },
     async cloneProfile(profileId: string, name: string) {
       return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesClone, { profileId, name }));
     },
+    async listProfileTasks(profileId?: string) {
+      return aiProfileTaskSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfileTasksList, profileId));
+    },
     async setProfileTask(input: AiProfileTaskInput) {
       await ipcRenderer.invoke(ipcChannels.aiProfileTaskSet, aiProfileTaskInputSchema.parse(input));
+    },
+    async listTaskRoutes() {
+      return aiTaskRouteSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiTaskRoutesList));
+    },
+    async setTaskRoute(input: AiTaskRoute) {
+      await ipcRenderer.invoke(ipcChannels.aiTaskRouteSet, aiTaskRouteSchema.parse(input));
     }
   },
   localModels: {
@@ -194,6 +216,12 @@ const api: DesktopApi = {
     },
     async test(catalogId: string) {
       return String(await ipcRenderer.invoke(ipcChannels.localModelsTest, catalogId));
+    },
+    async setDefaults(localModelId: string, defaultParameters: AiModelParameters) {
+      return localModelViewSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.localModelsDefaultsSet,
+        localModelDefaultsInputSchema.parse({ localModelId, defaultParameters })
+      ));
     },
     async importGguf() {
       const result = await ipcRenderer.invoke(ipcChannels.localModelsImportGguf);

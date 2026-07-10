@@ -569,6 +569,7 @@ Implementar:
   - `ai_provider_configs`;
   - `ai_profile_sets`;
   - `ai_profile_tasks`;
+  - `ai_task_profile_routes`;
   - `ai_model_capabilities`;
   - `ai_task_runs` (incluindo `input_tokens`, `output_tokens`, `cost_estimate`, `duration_ms`).
 - repositorio `aiConfigRepository`;
@@ -588,8 +589,15 @@ Implementar:
   - provedores;
   - modelos;
   - perfis;
-  - perfil padrao ativo;
-  - tarefas por perfil.
+  - modelos de embedding separados dos modelos generativos;
+  - parametros padrao por modelo remoto ou local;
+  - selecao de um unico modelo remoto ou local por perfil;
+  - overrides de parametros por perfil/tarefa;
+  - idioma de resposta por perfil, herdando o idioma da interface por padrao;
+  - selecao explicita do perfil ativo para cada tipo de tarefa;
+  - tarefas compativeis com o modelo de cada perfil.
+- vocabulario canonico inicial de parametros: `contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions` e `seed`;
+- precedencia em execucao: defaults internos, defaults do modelo e overrides do perfil/tarefa;
 - validacao de capabilities por tarefa;
 - adapters stub/mock para testes;
 - registro em `ai_task_runs` com tokens, duracao e custo estimado.
@@ -610,8 +618,8 @@ Testes e validacao:
 
 Criterio de pronto:
 
-- app consegue escolher um perfil ativo;
-- pipeline consegue pedir modelo por tarefa sem conhecer provedor concreto;
+- app consegue escolher um perfil ativo diferente para cada tipo de tarefa;
+- pipeline consegue carregar o perfil roteado e seu modelo sem conhecer provedor concreto;
 - um perfil consegue executar resumo com provedor remoto;
 - credenciais nao ficam em texto puro no banco.
 
@@ -724,14 +732,19 @@ Implementar:
 - habilitar extensao `pgvector` (`CREATE EXTENSION vector`), ja incluida nos binarios do sidecar;
 - tabelas de embeddings separadas por dimensao (indices pgvector exigem dimensao fixa por coluna);
 - adapter de embedding remoto conforme perfil (Gemini ou OpenAI-compatible);
+- adapter local GGUF com `node-llama-cpp` para modelos que declarem capability `embedding`;
+- catalogo local instalavel pela UI com EmbeddingGemma 300M e multilingual-e5-base em revisions e checksums fixos;
 - job de embedding;
 - salvar modelo, dimensao, runtime e estrategia;
 - busca vetorial basica.
+- UI separa modelos de embedding, permite configurar dimensao/defaults e aplicar overrides por perfil.
 
 Testes e validacao:
 
 - gerar/aplicar/verificar migration;
 - teste com adapter mock de embedding;
+- teste de adapter local de embedding;
+- teste de catalogo local auditado para os modelos de embedding;
 - teste de dimensao incorreta rejeitada;
 - teste de busca vetorial em dataset pequeno.
 
@@ -1296,6 +1309,9 @@ Implementar:
     `mlx-community/gemma-4-12B-it-4bit`;
   - Qwen3 4B Instruct, usando como candidato inicial
     `mlx-community/Qwen3-4B-Instruct-2507-4bit`;
+- incluir no catalogo GGUF de embeddings, com download pela mesma UI e adapter `node-llama-cpp`:
+  - `ggml-org/embeddinggemma-300M-GGUF`, Q8_0;
+  - `dinab/multilingual-e5-base-Q5_K_S-GGUF`, Q5_K_S;
 - tratar os repositorios acima como descritores auditaveis, nao como aliases
   flutuantes: o download deve usar revision fixada e manifest verificado;
 - exigir aceite explicito da licenca quando o repositorio/modelo exigir e
@@ -1336,8 +1352,10 @@ Implementar:
 - registrar modelos MLX e GGUF no `AiModelRegistry` para que aparecam nos
   seletores de provider/modelo dos perfis ao lado das opcoes remotas
   OpenAI-compatible (incluindo OpenAI quando configurado) e Google Gemini;
-- permitir selecionar um modelo local por tarefa conforme suas capabilities e
-  politica de privacidade, com execucao offline e sem API key;
+- permitir selecionar um modelo local por perfil conforme suas capabilities e
+  politica de privacidade, com execucao offline e sem API key; cada tarefa
+  seleciona esse modelo ao ser roteada para o perfil;
+- permitir editar defaults de cada modelo local e overrides independentes por perfil/tarefa;
 - registrar em `ai_task_runs` o perfil, adapter, runtime, repositorio, revision,
   quantizacao, parametros, tokens e duracao de cada execucao local;
 - validar inicialmente geracao de texto, structured output, resumo e geracao de

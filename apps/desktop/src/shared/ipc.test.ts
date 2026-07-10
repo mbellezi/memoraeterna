@@ -15,6 +15,8 @@ import {
   atomicNoteReviewInputSchema,
   sourceDetailSchema
   , aiProfileTaskInputSchema
+  , aiProfileCreateSchema
+  , aiTaskRouteSchema
   , localModelDownloadInputSchema
   , localModelViewSchema
 } from "./ipc";
@@ -139,23 +141,19 @@ describe("desktop IPC contracts", () => {
     expect(aiProfileTaskInputSchema.parse({
       profileId: id,
       task: "summarization",
-      localModelId: id,
-      modelId: "local/model",
-      runtime: "mlx",
-      requiredCapabilities: ["summarization"]
-    }).runtime).toBe("mlx");
-    expect(() => aiProfileTaskInputSchema.parse({
-      profileId: id,
-      task: "summarization",
-      modelId: "missing-source",
-      runtime: "remote",
-      requiredCapabilities: []
-    })).toThrow();
+    })).toEqual({ profileId: id, task: "summarization", parameters: {} });
+    expect(aiProfileCreateSchema.parse({ name: "Portuguese" })).toMatchObject({
+      outputLanguage: "ui"
+    });
+    expect(aiTaskRouteSchema.parse({ task: "embedding", profileId: id })).toEqual({
+      task: "embedding", profileId: id
+    });
     expect(localModelViewSchema.parse({
       id, catalogId: "mlx-test", modelId: "repo/model", displayName: "Model",
       family: "Family", variant: "Variant", repository: "repo/model", revision: "a".repeat(40),
       runtime: "mlx", format: "safetensors", quantization: "4-bit",
-      capabilities: ["offline"], minimumMemoryBytes: 1, recommendedMemoryBytes: 2,
+      capabilities: ["offline"], defaultParameters: { contextWindow: 4096 },
+      minimumMemoryBytes: 1, recommendedMemoryBytes: 2,
       expectedSizeBytes: 10, installedSizeBytes: 0, licenseName: "Test",
       licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
       licenseAccepted: false, status: "not_downloaded", compatible: true,

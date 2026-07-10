@@ -9,6 +9,7 @@ export interface AiProviderConfigRecord {
   displayName: string;
   credentialRef: string | null;
   baseUrl: string | null;
+  defaultParameters: JsonObject;
   status: string;
   metadata: JsonObject;
   createdAt: Date;
@@ -21,6 +22,12 @@ export interface AiProfileRecord {
   description: string | null;
   isDefault: boolean;
   privacyMode: string;
+  outputLanguage: string;
+  providerConfigId: string | null;
+  localModelId: string | null;
+  modelId: string | null;
+  runtime: string | null;
+  capabilities: string[];
   status: string;
   createdAt: Date;
   updatedAt: Date;
@@ -28,25 +35,42 @@ export interface AiProfileRecord {
 
 interface ProviderRow extends QueryResultRow {
   id: string; provider: string; displayName: string; credentialRef: string | null;
-  baseUrl: string | null; status: string; metadata: unknown; createdAt: unknown; updatedAt: unknown;
+  baseUrl: string | null; defaultParameters: unknown; status: string; metadata: unknown;
+  createdAt: unknown; updatedAt: unknown;
 }
 
 interface ProfileRow extends QueryResultRow {
   id: string; name: string; description: string | null; isDefault: boolean;
-  privacyMode: string; status: string; createdAt: unknown; updatedAt: unknown;
+  privacyMode: string; outputLanguage: string; providerConfigId: string | null;
+  localModelId: string | null; modelId: string | null; runtime: string | null;
+  capabilities: unknown; status: string; createdAt: unknown; updatedAt: unknown;
 }
 
 const providerReturning = `id, provider, display_name as "displayName", credential_ref as "credentialRef",
-  base_url as "baseUrl", status, metadata, created_at as "createdAt", updated_at as "updatedAt"`;
+  base_url as "baseUrl", default_parameters as "defaultParameters", status, metadata,
+  created_at as "createdAt", updated_at as "updatedAt"`;
 const profileReturning = `id, name, description, is_default as "isDefault", privacy_mode as "privacyMode",
+  output_language as "outputLanguage", provider_config_id as "providerConfigId",
+  local_model_id as "localModelId", model_id as "modelId", runtime, capabilities,
   status, created_at as "createdAt", updated_at as "updatedAt"`;
 
 function mapProvider(row: ProviderRow): AiProviderConfigRecord {
-  return { ...row, metadata: asJsonObject(row.metadata), createdAt: mapTimestamp(row.createdAt), updatedAt: mapTimestamp(row.updatedAt) };
+  return {
+    ...row,
+    defaultParameters: asJsonObject(row.defaultParameters),
+    metadata: asJsonObject(row.metadata),
+    createdAt: mapTimestamp(row.createdAt),
+    updatedAt: mapTimestamp(row.updatedAt)
+  };
 }
 
 function mapProfile(row: ProfileRow): AiProfileRecord {
-  return { ...row, createdAt: mapTimestamp(row.createdAt), updatedAt: mapTimestamp(row.updatedAt) };
+  return {
+    ...row,
+    capabilities: Array.isArray(row.capabilities) ? row.capabilities.map(String) : [],
+    createdAt: mapTimestamp(row.createdAt),
+    updatedAt: mapTimestamp(row.updatedAt)
+  };
 }
 
 export function createAiConfigRepository(db: Queryable) {
@@ -57,22 +81,26 @@ export function createAiConfigRepository(db: Queryable) {
       displayName: string;
       credentialRef?: string | null;
       baseUrl?: string | null;
+      defaultParameters?: JsonObject;
       status?: string;
       metadata?: JsonObject;
     }): Promise<AiProviderConfigRecord> {
       const result = input.id
         ? await db.query<ProviderRow>(
             `update ai_provider_configs set provider = $2, display_name = $3, credential_ref = $4,
-               base_url = $5, status = $6, metadata = $7, updated_at = now()
+               base_url = $5, default_parameters = $6, status = $7, metadata = $8, updated_at = now()
              where id = $1 returning ${providerReturning}`,
             [input.id, input.provider, input.displayName, input.credentialRef ?? null,
-              input.baseUrl ?? null, input.status ?? "configured", input.metadata ?? {}]
+              input.baseUrl ?? null, input.defaultParameters ?? {}, input.status ?? "configured",
+              input.metadata ?? {}]
           )
         : await db.query<ProviderRow>(
-            `insert into ai_provider_configs (provider, display_name, credential_ref, base_url, status, metadata)
-             values ($1, $2, $3, $4, $5, $6) returning ${providerReturning}`,
+            `insert into ai_provider_configs (
+               provider, display_name, credential_ref, base_url, default_parameters, status, metadata
+             ) values ($1, $2, $3, $4, $5, $6, $7) returning ${providerReturning}`,
             [input.provider, input.displayName, input.credentialRef ?? null,
-              input.baseUrl ?? null, input.status ?? "configured", input.metadata ?? {}]
+              input.baseUrl ?? null, input.defaultParameters ?? {}, input.status ?? "configured",
+              input.metadata ?? {}]
           );
       const row = result.rows[0];
       if (!row) throw new Error("AI provider configuration write returned no row.");
@@ -84,16 +112,23 @@ export function createAiConfigRepository(db: Queryable) {
       return result.rows.map(mapProvider);
     },
 
-    async createProfile(input: { name: string; description?: string | null; isDefault?: boolean; privacyMode?: string }): Promise<AiProfileRecord> {
+    async createProfile(input: {
+      name: string;
+      description?: string | null;
+      isDefault?: boolean;
+      privacyMode?: string;
+      outputLanguage?: string;
+    }): Promise<AiProfileRecord> {
       const result = await db.query<ProfileRow>(
         `with unset_default as (
            update ai_profile_sets set is_default = false, updated_at = now() where $3::boolean = true
            returning id
          )
-         insert into ai_profile_sets (name, description, is_default, privacy_mode)
-         select $1, $2, $3, $4 where (select count(*) from unset_default) >= 0
+         insert into ai_profile_sets (name, description, is_default, privacy_mode, output_language)
+         select $1, $2, $3, $4, $5 where (select count(*) from unset_default) >= 0
          returning ${profileReturning}`,
-        [input.name, input.description ?? null, input.isDefault ?? false, input.privacyMode ?? "allow_remote"]
+        [input.name, input.description ?? null, input.isDefault ?? false,
+          input.privacyMode ?? "allow_remote", input.outputLanguage ?? "ui"]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI profile insert returned no row.");
@@ -103,19 +138,18 @@ export function createAiConfigRepository(db: Queryable) {
     async cloneProfile(profileId: string, name: string): Promise<AiProfileRecord> {
       const result = await db.query<ProfileRow>(
         `with profile as (
-           insert into ai_profile_sets (name, description, is_default, privacy_mode, status)
-           select $2, source.description, false, source.privacy_mode, source.status
+           insert into ai_profile_sets (
+             name, description, is_default, privacy_mode, output_language, provider_config_id,
+             local_model_id, model_id, runtime, capabilities, status
+           )
+           select $2, source.description, false, source.privacy_mode, source.output_language,
+                  source.provider_config_id, source.local_model_id, source.model_id, source.runtime,
+                  source.capabilities, source.status
            from ai_profile_sets as source where source.id = $1
            returning *
          ), copied_tasks as (
-           insert into ai_profile_tasks (
-             profile_id, task, provider_config_id, local_model_id, model_id, runtime,
-             required_capabilities, parameters, fallback_policy, status
-           )
-           select profile.id, source_task.task, source_task.provider_config_id,
-                  source_task.local_model_id, source_task.model_id, source_task.runtime,
-                  source_task.required_capabilities, source_task.parameters,
-                  source_task.fallback_policy, source_task.status
+           insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy, status)
+           select profile.id, source_task.task, source_task.parameters, source_task.fallback_policy, source_task.status
            from ai_profile_tasks as source_task
            cross join profile
            where source_task.profile_id = $1
@@ -133,6 +167,71 @@ export function createAiConfigRepository(db: Queryable) {
       return result.rows.map(mapProfile);
     },
 
+    async updateProfile(input: {
+      id: string;
+      name?: string;
+      privacyMode?: string;
+      outputLanguage?: string;
+      providerConfigId?: string | null;
+      localModelId?: string | null;
+      modelId?: string | null;
+      runtime?: string | null;
+      capabilities?: string[];
+    }): Promise<AiProfileRecord> {
+      const result = await db.query<ProfileRow>(
+        `update ai_profile_sets set
+           name = coalesce($2, name), privacy_mode = coalesce($3, privacy_mode),
+           output_language = coalesce($4, output_language),
+           provider_config_id = case when $5::boolean then $6::uuid else provider_config_id end,
+           local_model_id = case when $5::boolean then $7::uuid else local_model_id end,
+           model_id = case when $5::boolean then $8 else model_id end,
+           runtime = case when $5::boolean then $9 else runtime end,
+           capabilities = case when $5::boolean then $10::jsonb else capabilities end,
+           updated_at = now()
+         where id = $1 returning ${profileReturning}`,
+        [input.id, input.name ?? null, input.privacyMode ?? null, input.outputLanguage ?? null,
+          input.modelId !== undefined, input.providerConfigId ?? null, input.localModelId ?? null,
+          input.modelId ?? null, input.runtime ?? null, JSON.stringify(input.capabilities ?? [])]
+      );
+      const row = result.rows[0];
+      if (!row) throw new Error("AI profile update returned no row.");
+      return mapProfile(row);
+    },
+
+    async listProfileTasks(profileId?: string): Promise<Array<{
+      profileId: string;
+      task: string;
+      parameters: JsonObject;
+    }>> {
+      const result = await db.query<QueryResultRow & Record<string, unknown>>(
+        `select profile_id as "profileId", task, parameters
+         from ai_profile_tasks
+         where status = 'active' and ($1::uuid is null or profile_id = $1)
+         order by task`,
+        [profileId ?? null]
+      );
+      return result.rows.map((row) => ({
+        profileId: String(row.profileId),
+        task: String(row.task),
+        parameters: asJsonObject(row.parameters)
+      }));
+    },
+
+    async listTaskRoutes(): Promise<Array<{ task: string; profileId: string }>> {
+      const result = await db.query<QueryResultRow & { task: string; profileId: string }>(
+        `select task, profile_id as "profileId" from ai_task_profile_routes order by task`
+      );
+      return result.rows.map((row) => ({ task: row.task, profileId: row.profileId }));
+    },
+
+    async setTaskRoute(task: string, profileId: string): Promise<void> {
+      await db.query(
+        `insert into ai_task_profile_routes (task, profile_id) values ($1, $2)
+         on conflict (task) do update set profile_id = excluded.profile_id, updated_at = now()`,
+        [task, profileId]
+      );
+    },
+
     async getDefaultTask(task: string): Promise<{
       profileId: string;
       providerConfigId: string | null;
@@ -148,20 +247,30 @@ export function createAiConfigRepository(db: Queryable) {
       quantization: string | null;
       requiredCapabilities: string[];
       parameters: JsonObject;
+      modelDefaultParameters: JsonObject;
       providerMetadata: JsonObject;
+      outputLanguage: string;
     } | null> {
       const result = await db.query<QueryResultRow & Record<string, unknown>>(
-        `select p.id as "profileId", t.provider_config_id as "providerConfigId",
-                t.local_model_id as "localModelId", coalesce(c.provider, 'local-' || lm.runtime) as provider,
+        `with chosen_profile as (
+           select coalesce(
+             (select profile_id from ai_task_profile_routes where task = $1),
+             (select id from ai_profile_sets where is_default = true and status = 'active' limit 1)
+           ) as id
+         )
+         select p.id as "profileId", p.provider_config_id as "providerConfigId",
+                p.local_model_id as "localModelId", coalesce(c.provider, 'local-' || lm.runtime) as provider,
                 c.credential_ref as "credentialRef", c.base_url as "baseUrl",
-                t.model_id as "modelId", t.runtime, t.required_capabilities as "requiredCapabilities",
-                t.parameters, coalesce(c.metadata, '{}'::jsonb) as "providerMetadata",
+                p.model_id as "modelId", p.runtime, p.capabilities as "requiredCapabilities", t.parameters,
+                coalesce(c.default_parameters, lm.default_parameters, '{}'::jsonb) as "modelDefaultParameters",
+                coalesce(c.metadata, '{}'::jsonb) as "providerMetadata", p.output_language as "outputLanguage",
                 lm.managed_path as "managedPath", lm.repository, lm.revision, lm.quantization
          from ai_profile_sets p
+         join chosen_profile selected on selected.id = p.id
          join ai_profile_tasks t on t.profile_id = p.id
-         left join ai_provider_configs c on c.id = t.provider_config_id
-         left join local_models lm on lm.id = t.local_model_id and lm.status = 'ready'
-         where p.is_default = true and p.status = 'active' and t.status = 'active' and t.task = $1
+         left join ai_provider_configs c on c.id = p.provider_config_id
+         left join local_models lm on lm.id = p.local_model_id and lm.status = 'ready'
+         where p.status = 'active' and t.status = 'active' and t.task = $1
            and (c.id is not null or lm.id is not null)
          limit 1`,
         [task]
@@ -180,29 +289,23 @@ export function createAiConfigRepository(db: Queryable) {
         revision: row.revision === null ? null : String(row.revision),
         quantization: row.quantization === null ? null : String(row.quantization),
         requiredCapabilities: Array.isArray(row.requiredCapabilities) ? row.requiredCapabilities.map(String) : [],
-        parameters: asJsonObject(row.parameters), providerMetadata: asJsonObject(row.providerMetadata)
+        parameters: asJsonObject(row.parameters),
+        modelDefaultParameters: asJsonObject(row.modelDefaultParameters),
+        providerMetadata: asJsonObject(row.providerMetadata),
+        outputLanguage: String(row.outputLanguage)
       };
     },
 
     async setProfileTask(input: {
-      profileId: string; task: string; providerConfigId?: string | null; modelId: string;
-      localModelId?: string | null; runtime?: string; requiredCapabilities?: string[];
-      parameters?: JsonObject; fallbackPolicy?: string;
+      profileId: string; task: string; parameters?: JsonObject; fallbackPolicy?: string;
     }): Promise<void> {
       await db.query(
-        `insert into ai_profile_tasks (
-           profile_id, task, provider_config_id, local_model_id, model_id, runtime,
-           required_capabilities, parameters, fallback_policy
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        `insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy)
+         values ($1, $2, $3, $4)
          on conflict (profile_id, task) do update set
-           provider_config_id = excluded.provider_config_id, local_model_id = excluded.local_model_id,
-           model_id = excluded.model_id,
-           runtime = excluded.runtime, required_capabilities = excluded.required_capabilities,
            parameters = excluded.parameters, fallback_policy = excluded.fallback_policy,
            updated_at = now()`,
-        [input.profileId, input.task, input.providerConfigId ?? null, input.localModelId ?? null,
-          input.modelId, input.runtime ?? "remote", JSON.stringify(input.requiredCapabilities ?? []),
-          input.parameters ?? {}, input.fallbackPolicy ?? "block"]
+        [input.profileId, input.task, input.parameters ?? {}, input.fallbackPolicy ?? "block"]
       );
     },
 

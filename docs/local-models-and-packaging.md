@@ -39,9 +39,16 @@ SHA-256.
 | `mlx-gemma-4-e4b-it-4bit` | `mlx-community/gemma-4-e4b-it-4bit` | `475b9088d29754a3379866cf5aeb6b41acd313c2` | 5.18 GB | Gemma, aceite explicito |
 | `mlx-gemma-4-12b-it-4bit` | `mlx-community/gemma-4-12B-it-4bit` | `73bcf09092aa277861d5a191b989b666f7f32e8f` | 6.77 GB | Gemma, aceite explicito |
 | `mlx-qwen3-4b-instruct-2507-4bit` | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | `50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b` | 2.28 GB | Apache-2.0 |
+| `gguf-embeddinggemma-300m-q8-0` | `ggml-org/embeddinggemma-300M-GGUF` | `0f741b5a6585bd53aeb15cd1372c56f2a0f65e12` | 333.59 MB | Gemma, aceite explicito |
+| `gguf-multilingual-e5-base-q5-k-s` | `dinab/multilingual-e5-base-Q5_K_S-GGUF` | `fe6baddc69aa0aa9c4b74da2333225580603a4b0` | 224.79 MB | MIT |
 
 Capabilities multimodais nao sao declaradas. Elas so devem entrar no catalogo
 depois de validacao real do adapter e das modalidades correspondentes.
+
+Os dois modelos GGUF de embedding declaram somente `embedding`, `offline` e
+`local-files`. O adapter `node-llama-cpp` usa `createEmbeddingContext`, permite
+configurar janela de contexto e dimensao 256/768 quando compativel, normaliza o
+vetor e nunca tenta executar esses modelos como geradores de texto.
 
 ## Download e armazenamento
 

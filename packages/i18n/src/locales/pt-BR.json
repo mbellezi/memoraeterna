@@ -288,7 +288,25 @@
       "model": "Modelo", "apiKey": "Chave de API", "saveProvider": "Salvar provedor", "test": "Testar",
       "connectionOk": "Conexao bem-sucedida.", "profiles": "Perfis", "profileName": "Nome do perfil",
       "createProfile": "Criar perfil", "defaultProfile": "Padrao", "cloneProfile": "Clonar perfil",
-      "selectModel": "Selecione um modelo remoto ou local"
+      "selectModel": "Selecione um modelo remoto ou local", "remoteModels": "Adicionar modelo remoto",
+      "modelPurpose": "Finalidade do modelo", "saveModel": "Salvar modelo", "embeddingModels": "Modelos remotos de embedding",
+      "generationModels": "Modelos remotos de geracao e reranking", "noModels": "Nenhum modelo configurado.",
+      "saveDefaults": "Salvar padroes", "noProfiles": "Crie um perfil para configurar as tarefas.",
+      "outputLanguage": "Idioma das respostas", "selectProfile": "Selecione um perfil",
+      "taskRouting": "Perfil usado por tarefa", "taskRoutingDescription": "Escolha independentemente qual perfil configurado cada tarefa de IA deve usar.",
+      "purposes": { "generation": "Geracao de texto", "embedding": "Embedding", "reranking": "Reranking" },
+      "privacy": { "allowRemote": "Permitir modelos remotos", "offlineOnly": "Somente modelos locais" },
+      "languages": { "interface": "Mesmo idioma da interface" },
+      "tasks": {
+        "embedding": "Embedding", "summarization": "Resumo", "text-generation": "Geracao de texto",
+        "structured-output": "Saida estruturada", "atomic-note-generation": "Geracao de notas atomicas", "reranking": "Reranking"
+      },
+      "parameters": {
+        "contextWindow": "Janela de contexto", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
+        "reasoningLevel": "Nivel de raciocinio", "topP": "Top P", "dimensions": "Dimensoes do embedding", "seed": "Seed",
+        "inherit": "Usar valor herdado/padrao",
+        "reasoning": { "off": "Desligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto" }
+      }
     }
   },
   "localModels": {
@@ -302,7 +320,8 @@
     "profileUsage": "Usado pelos perfis",
     "removeConfirmation": "Remover este modelo e seus arquivos gerenciados desta maquina?",
     "testSucceeded": "A inferencia local funcionou.",
-    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos os runtimes", "allFamilies": "Todas as familias", "compatibleOnly": "Somente compativeis" },
+    "defaultParameters": "Parametros padrao do modelo",
+    "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos os runtimes", "allFamilies": "Todas as familias", "compatibleOnly": "Somente compativeis", "capability": "Capacidade", "allCapabilities": "Todas as capacidades", "generation": "Geracao de texto", "embedding": "Embedding" },
     "compatibility": { "compatible": "Compativel com esta maquina", "unsupported_platform": "Exige macOS com Apple Silicon", "insufficient_memory": "Memoria insuficiente" },
     "status": { "not_downloaded": "Nao baixado", "downloading": "Baixando", "verifying": "Verificando", "ready": "Instalado", "failed": "Falhou", "removing": "Removendo" },
     "actions": { "download": "Baixar", "resume": "Retomar", "test": "Testar inferencia", "remove": "Remover", "importGguf": "Importar GGUF" },

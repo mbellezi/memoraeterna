@@ -24,6 +24,7 @@ const expectedTables = [
   ,"ai_provider_configs"
   ,"ai_profile_sets"
   ,"ai_profile_tasks"
+  ,"ai_task_profile_routes"
   ,"ai_model_capabilities"
   ,"ai_task_runs"
   ,"embeddings_256"

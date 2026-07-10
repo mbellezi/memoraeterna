@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   AiCapabilitySchema,
+  AiModelParametersSchema,
+  AiReasoningLevelSchema,
   SearchEvidenceSchema,
   SourceItemTypeSchema,
   type SourceItemType
@@ -33,14 +35,19 @@ export const ipcChannels = {
   aiModelsList: "app:ai:models:list",
   aiProfilesList: "app:ai:profiles:list",
   aiProfilesCreate: "app:ai:profiles:create",
+  aiProfilesUpdate: "app:ai:profiles:update",
   aiProfilesClone: "app:ai:profiles:clone",
+  aiProfileTasksList: "app:ai:profiles:tasks:list",
   aiProfileTaskSet: "app:ai:profiles:task:set",
+  aiTaskRoutesList: "app:ai:task-routes:list",
+  aiTaskRouteSet: "app:ai:task-routes:set",
   localModelsList: "app:local-models:list",
   localModelsDownload: "app:local-models:download",
   localModelsCancel: "app:local-models:cancel",
   localModelsResume: "app:local-models:resume",
   localModelsRemove: "app:local-models:remove",
   localModelsTest: "app:local-models:test",
+  localModelsDefaultsSet: "app:local-models:defaults:set",
   localModelsImportGguf: "app:local-models:import-gguf",
   localModelsRepositoryTokenSet: "app:local-models:repository-token:set",
   localModelsRepositoryTokenStatus: "app:local-models:repository-token:status",
@@ -292,6 +299,17 @@ export const searchInputSchema = z.object({
 export const searchResultsSchema = z.array(SearchEvidenceSchema);
 
 export const aiProviderKindSchema = z.enum(["google", "openai-compatible"]);
+export const aiReasoningLevelSchema = AiReasoningLevelSchema;
+export const aiModelParametersSchema = AiModelParametersSchema;
+export const aiConfigurableTaskSchema = z.enum([
+  "embedding",
+  "summarization",
+  "text-generation",
+  "structured-output",
+  "atomic-note-generation",
+  "reranking"
+]);
+export const aiOutputLanguageSchema = z.union([languageCodeSchema, z.literal("ui")]);
 export const aiProviderConfigInputSchema = z.object({
   id: z.string().uuid().optional(),
   provider: aiProviderKindSchema,
@@ -299,7 +317,8 @@ export const aiProviderConfigInputSchema = z.object({
   baseUrl: z.string().url().nullable().optional(),
   apiKey: z.string().min(1).optional(),
   modelId: z.string().trim().min(1),
-  capabilities: z.array(AiCapabilitySchema).default([])
+  capabilities: z.array(AiCapabilitySchema).default([]),
+  defaultParameters: aiModelParametersSchema.default({})
 }).strict();
 
 export const aiProviderConfigSchema = aiProviderConfigInputSchema.omit({ apiKey: true }).extend({
@@ -314,6 +333,12 @@ export const aiProfileSchema = z.object({
   description: z.string().nullable(),
   isDefault: z.boolean(),
   privacyMode: z.string().min(1),
+  outputLanguage: aiOutputLanguageSchema,
+  providerConfigId: z.string().uuid().nullable(),
+  localModelId: z.string().uuid().nullable(),
+  modelId: z.string().min(1).nullable(),
+  runtime: z.enum(["remote", "gguf", "mlx"]).nullable(),
+  capabilities: z.array(AiCapabilitySchema),
   status: z.string().min(1)
 }).strict();
 
@@ -321,8 +346,34 @@ export const aiProfileCreateSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().nullable().optional(),
   isDefault: z.boolean().default(false),
-  privacyMode: z.enum(["allow_remote", "offline_only"]).default("allow_remote")
+  privacyMode: z.enum(["allow_remote", "offline_only"]).default("allow_remote"),
+  outputLanguage: aiOutputLanguageSchema.default("ui")
 }).strict();
+
+export const aiProfileUpdateSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().trim().min(1).optional(),
+  privacyMode: z.enum(["allow_remote", "offline_only"]).optional(),
+  outputLanguage: aiOutputLanguageSchema.optional(),
+  providerConfigId: z.string().uuid().nullable().optional(),
+  localModelId: z.string().uuid().nullable().optional(),
+  modelId: z.string().trim().min(1).nullable().optional(),
+  runtime: z.enum(["remote", "gguf", "mlx"]).nullable().optional(),
+  capabilities: z.array(AiCapabilitySchema).optional()
+}).strict().superRefine((input, context) => {
+  const updatesModel = input.providerConfigId !== undefined || input.localModelId !== undefined
+    || input.modelId !== undefined || input.runtime !== undefined || input.capabilities !== undefined;
+  if (updatesModel) {
+    const hasRemote = Boolean(input.providerConfigId);
+    const hasLocal = Boolean(input.localModelId);
+    if (hasRemote === hasLocal) {
+      context.addIssue({ code: "custom", message: "Select exactly one remote or local model.", path: ["modelId"] });
+    }
+    if (!input.modelId || !input.runtime || input.capabilities === undefined) {
+      context.addIssue({ code: "custom", message: "Model id, runtime and capabilities are required together.", path: ["modelId"] });
+    }
+  }
+});
 
 export const aiProfileCloneSchema = z.object({
   profileId: z.string().uuid(),
@@ -331,22 +382,20 @@ export const aiProfileCloneSchema = z.object({
 
 export const aiProfileTaskInputSchema = z.object({
   profileId: z.string().uuid(),
-  task: z.enum(["embedding", "summarization", "text-generation", "structured-output", "atomic-note-generation", "reranking"]),
-  providerConfigId: z.string().uuid().nullable().optional(),
-  localModelId: z.string().uuid().nullable().optional(),
-  modelId: z.string().trim().min(1),
-  runtime: z.enum(["remote", "gguf", "mlx"]).default("remote"),
-  requiredCapabilities: z.array(AiCapabilitySchema).default([])
-}).strict().superRefine((input, context) => {
-  const hasRemote = Boolean(input.providerConfigId);
-  const hasLocal = Boolean(input.localModelId);
-  if (hasRemote === hasLocal) {
-    context.addIssue({ code: "custom", message: "Select exactly one remote or local model.", path: ["modelId"] });
-  }
-  if (hasLocal && input.runtime === "remote") {
-    context.addIssue({ code: "custom", message: "Local model requires a local runtime.", path: ["runtime"] });
-  }
-});
+  task: aiConfigurableTaskSchema,
+  parameters: aiModelParametersSchema.default({})
+}).strict();
+
+export const aiProfileTaskSchema = z.object({
+  profileId: z.string().uuid(),
+  task: aiConfigurableTaskSchema,
+  parameters: aiModelParametersSchema
+}).strict();
+
+export const aiTaskRouteSchema = z.object({
+  task: aiConfigurableTaskSchema,
+  profileId: z.string().uuid()
+}).strict();
 
 export const localModelStatusSchema = z.enum([
   "not_downloaded", "downloading", "verifying", "ready", "failed", "removing"
@@ -365,6 +414,7 @@ export const localModelViewSchema = z.object({
   format: z.string().min(1),
   quantization: z.string().min(1),
   capabilities: z.array(AiCapabilitySchema),
+  defaultParameters: aiModelParametersSchema,
   minimumMemoryBytes: z.number().int().nonnegative(),
   recommendedMemoryBytes: z.number().int().nonnegative(),
   expectedSizeBytes: z.number().int().nonnegative(),
@@ -386,6 +436,11 @@ export const localModelViewSchema = z.object({
     bytesPerSecond: z.number().int().nonnegative(),
     etaSeconds: z.number().int().nonnegative().nullable()
   }).strict().nullable()
+}).strict();
+
+export const localModelDefaultsInputSchema = z.object({
+  localModelId: z.string().uuid(),
+  defaultParameters: aiModelParametersSchema
 }).strict();
 
 export const localModelDownloadInputSchema = z.object({
@@ -458,7 +513,13 @@ export type AiProviderConfigInput = z.infer<typeof aiProviderConfigInputSchema>;
 export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
 export type AiProfile = z.infer<typeof aiProfileSchema>;
 export type AiProfileCreate = z.infer<typeof aiProfileCreateSchema>;
+export type AiProfileUpdate = z.infer<typeof aiProfileUpdateSchema>;
 export type AiProfileTaskInput = z.infer<typeof aiProfileTaskInputSchema>;
+export type AiProfileTask = z.infer<typeof aiProfileTaskSchema>;
+export type AiTaskRoute = z.infer<typeof aiTaskRouteSchema>;
+export type AiConfigurableTask = z.infer<typeof aiConfigurableTaskSchema>;
+export type AiModelParameters = z.infer<typeof aiModelParametersSchema>;
+export type AiOutputLanguage = z.infer<typeof aiOutputLanguageSchema>;
 export type LocalModelView = z.infer<typeof localModelViewSchema>;
 export type LocalModelDownloadInput = z.infer<typeof localModelDownloadInputSchema>;
 export type BackupResult = z.infer<typeof backupResultSchema>;
@@ -523,8 +584,12 @@ export interface DesktopApi {
     listModels: (providerId: string) => Promise<string[]>;
     listProfiles: () => Promise<AiProfile[]>;
     createProfile: (input: AiProfileCreate) => Promise<AiProfile>;
+    updateProfile: (input: AiProfileUpdate) => Promise<AiProfile>;
     cloneProfile: (profileId: string, name: string) => Promise<AiProfile>;
+    listProfileTasks: (profileId?: string) => Promise<AiProfileTask[]>;
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
+    listTaskRoutes: () => Promise<AiTaskRoute[]>;
+    setTaskRoute: (input: AiTaskRoute) => Promise<void>;
   };
   localModels: {
     list: () => Promise<LocalModelView[]>;
@@ -533,6 +598,7 @@ export interface DesktopApi {
     resume: (catalogId: string) => Promise<LocalModelView>;
     remove: (catalogId: string) => Promise<LocalModelView>;
     test: (catalogId: string) => Promise<string>;
+    setDefaults: (localModelId: string, defaultParameters: AiModelParameters) => Promise<LocalModelView>;
     importGguf: () => Promise<LocalModelView | null>;
     setRepositoryToken: (token: string) => Promise<boolean>;
     hasRepositoryToken: () => Promise<boolean>;

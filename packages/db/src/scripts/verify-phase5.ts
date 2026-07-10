@@ -38,26 +38,31 @@ try {
   const seedFolder = resolve(packageRoot, "seed");
   await runMigrations(pool, migrationsFolder);
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 6) throw new Error("Unexpected phase 5 migration history.");
+  if (Number(history.rows[0]?.count) !== 8) throw new Error("Unexpected AI configuration migration history.");
 
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables where table_schema = 'public'
-     and table_name in ('local_models', 'local_model_files', 'local_model_downloads') order by table_name`
+     and table_name in ('local_models', 'local_model_files', 'local_model_downloads', 'ai_task_profile_routes') order by table_name`
   );
-  if (tables.rows.length !== 3) throw new Error("Phase 5 local model tables are missing.");
+  if (tables.rows.length !== 4) throw new Error("AI configuration tables are missing.");
   const columns = await pool.query<{ table_name: string; column_name: string }>(
     `select table_name, column_name from information_schema.columns where table_schema = 'public' and (
-       (table_name = 'ai_profile_tasks' and column_name = 'local_model_id') or
+       (table_name = 'ai_profile_sets' and column_name in (
+         'output_language','provider_config_id','local_model_id','model_id','runtime','capabilities'
+       )) or
+       (table_name = 'ai_provider_configs' and column_name = 'default_parameters') or
+       (table_name = 'local_models' and column_name = 'default_parameters') or
        (table_name = 'ai_task_runs' and column_name in ('adapter','repository','revision','quantization','parameters'))
      ) order by table_name, column_name`
   );
-  if (columns.rows.length !== 6) throw new Error("Phase 5 AI traceability columns are missing.");
+  if (columns.rows.length !== 13) throw new Error("AI parameter and traceability columns are missing.");
   const indexes = await pool.query<{ indexname: string }>(
     `select indexname from pg_indexes where schemaname = 'public' and indexname in (
-       'local_models_catalog_id_uidx','local_model_files_model_path_uidx','local_model_downloads_job_id_uidx'
+       'local_models_catalog_id_uidx','local_model_files_model_path_uidx','local_model_downloads_job_id_uidx',
+       'ai_task_profile_routes_task_uidx','ai_task_profile_routes_profile_id_idx'
      )`
   );
-  if (indexes.rows.length !== 3) throw new Error("Phase 5 local model indexes are missing.");
+  if (indexes.rows.length !== 5) throw new Error("AI configuration indexes are missing.");
 
   const localModels = createLocalModelRepository(pool);
   const model = await localModels.upsertModel({
@@ -74,6 +79,7 @@ try {
     expectedSizeBytes: 10,
     manifestHash: "b".repeat(64),
     capabilities: ["text-generation", "offline"],
+    defaultParameters: { contextWindow: 4096, maxTokens: 1024 },
     licenseName: "Test",
     licenseUrl: "https://example.test/license"
   });
@@ -90,29 +96,39 @@ try {
   if ((await localModels.latestDownload(model.id))?.downloadedBytes !== 5) throw new Error("Download checkpoint persistence failed.");
 
   const ai = createAiConfigRepository(pool);
-  const profile = await ai.createProfile({ name: "Offline verifier", isDefault: true, privacyMode: "offline_only" });
-  await ai.setProfileTask({
-    profileId: profile.id,
-    task: "summarization",
+  const profile = await ai.createProfile({
+    name: "Offline verifier", isDefault: true, privacyMode: "offline_only", outputLanguage: "pt-BR"
+  });
+  await ai.updateProfile({
+    id: profile.id,
     localModelId: model.id,
     modelId: model.modelId,
     runtime: "mlx",
-    requiredCapabilities: ["summarization"]
+    capabilities: ["text-generation", "summarization", "reranking", "offline"]
   });
-  if ((await ai.getDefaultTask("summarization"))?.localModelId !== model.id) {
+  await ai.setProfileTask({
+    profileId: profile.id,
+    task: "summarization",
+    parameters: { maxTokens: 256, temperature: 0 }
+  });
+  await ai.setTaskRoute("summarization", profile.id);
+  const selectedTask = await ai.getDefaultTask("summarization");
+  if (selectedTask?.localModelId !== model.id || selectedTask.outputLanguage !== "pt-BR"
+      || selectedTask.modelDefaultParameters.contextWindow !== 4096
+      || selectedTask.parameters.maxTokens !== 256) {
     throw new Error("Local model profile selection failed.");
   }
   const clonedProfile = await ai.cloneProfile(profile.id, "Offline verifier copy");
   const clonedTasks = await pool.query<{
-    local_model_id: string | null;
     status: string;
   }>(
-    `select local_model_id, status from ai_profile_tasks
+    `select status from ai_profile_tasks
      where profile_id = $1 and task = 'summarization'`,
     [clonedProfile.id]
   );
   if (clonedProfile.isDefault || clonedProfile.privacyMode !== profile.privacyMode
-      || clonedTasks.rows[0]?.local_model_id !== model.id || clonedTasks.rows[0]?.status !== "active") {
+      || clonedProfile.outputLanguage !== profile.outputLanguage
+      || clonedProfile.localModelId !== model.id || clonedTasks.rows[0]?.status !== "active") {
     throw new Error("AI profile clone did not preserve its profile and task configuration.");
   }
   await ai.recordTaskRun({
@@ -135,7 +151,7 @@ try {
   seedUrl.pathname = "/memora_phase5_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 6) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 8) {
     throw new Error("Empty database did not apply the complete phase 5 baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {
