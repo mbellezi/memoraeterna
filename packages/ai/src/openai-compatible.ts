@@ -12,7 +12,7 @@ export interface OpenAiCompatibleAdapterOptions {
 
 const generationTasks = new Set<AiTaskType>([
   "text-generation", "structured-output", "summarization", "atomic-note-generation",
-  "entity-extraction", "claim-extraction", "reranking", "writing-assistance"
+  "entity-extraction", "claim-extraction", "knowledge-graph-generation", "reranking", "writing-assistance"
 ]);
 
 export class OpenAiCompatibleAdapter implements AiModelAdapter {
@@ -80,7 +80,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       body: JSON.stringify({
         model: request.modelId ?? this.options.modelId,
         messages: [{ role: "user", content: readText(request.input) }],
-        ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
+        ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
         ...openAiGenerationParameters(request.parameters)

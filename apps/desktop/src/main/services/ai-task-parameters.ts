@@ -1,6 +1,6 @@
 import type { JsonObject } from "@app/db";
 
-export const atomicNoteGenerationMaxTokens = 16_384;
+export const profileGenerationMaxTokens = 16_384;
 
 export function withAiTaskParameterDefaults(
   taskType: string,
@@ -10,12 +10,9 @@ export function withAiTaskParameterDefaults(
   if (taskType === "embedding") {
     return { dimensions: 768, ...parameters };
   }
-  if (localModel && taskType === "atomic-note-generation") {
-    return {
-      maxTokens: atomicNoteGenerationMaxTokens,
-      temperature: 0,
-      ...parameters
-    };
-  }
-  return { ...parameters };
+  return {
+    maxTokens: profileGenerationMaxTokens,
+    ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
+    ...parameters
+  };
 }

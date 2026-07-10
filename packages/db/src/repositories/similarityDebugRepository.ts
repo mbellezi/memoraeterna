@@ -10,9 +10,11 @@ export interface SimilarityDebugResultInput {
   finalRank: number;
   textRank?: number | null;
   vectorRank?: number | null;
+  graphRank?: number | null;
   textScore?: number | null;
   vectorScore?: number | null;
   metadataScore?: number | null;
+  graphScore?: number | null;
   rerankScore?: number | null;
   fusionScore?: number | null;
   finalScore: number;
@@ -69,9 +71,11 @@ interface ResultRow extends QueryResultRow {
   finalRank: number;
   textRank: number | null;
   vectorRank: number | null;
+  graphRank: number | null;
   textScore: number | null;
   vectorScore: number | null;
   metadataScore: number | null;
+  graphScore: number | null;
   rerankScore: number | null;
   fusionScore: number | null;
   finalScore: number;
@@ -87,8 +91,8 @@ const runReturning = `id, kind, query_text as "queryText", query_target_id as "q
 
 const resultReturning = `id, run_id as "runId", target_type as "targetType", target_id as "targetId",
   target_label as "targetLabel", final_rank as "finalRank", text_rank as "textRank",
-  vector_rank as "vectorRank", text_score as "textScore", vector_score as "vectorScore",
-  metadata_score as "metadataScore", rerank_score as "rerankScore", fusion_score as "fusionScore",
+  vector_rank as "vectorRank", graph_rank as "graphRank", text_score as "textScore", vector_score as "vectorScore",
+  metadata_score as "metadataScore", graph_score as "graphScore", rerank_score as "rerankScore", fusion_score as "fusionScore",
   final_score as "finalScore", passed_threshold as "passedThreshold", explanation, metadata,
   created_at as "createdAt"`;
 
@@ -98,9 +102,11 @@ function mapResult(row: ResultRow): SimilarityDebugResultRecord {
     finalRank: Number(row.finalRank),
     textRank: numberOrNull(row.textRank),
     vectorRank: numberOrNull(row.vectorRank),
+    graphRank: numberOrNull(row.graphRank),
     textScore: numberOrNull(row.textScore),
     vectorScore: numberOrNull(row.vectorScore),
     metadataScore: numberOrNull(row.metadataScore),
+    graphScore: numberOrNull(row.graphScore),
     rerankScore: numberOrNull(row.rerankScore),
     fusionScore: numberOrNull(row.fusionScore),
     finalScore: Number(row.finalScore),
@@ -140,20 +146,20 @@ export function createSimilarityDebugRepository(db: Queryable) {
       if (input.results.length > 0) {
         const values: unknown[] = [];
         const rows = input.results.map((result, index) => {
-          const offset = index * 16;
+          const offset = index * 18;
           values.push(
             runId, result.targetType, result.targetId, result.targetLabel ?? null,
-            result.finalRank, result.textRank ?? null, result.vectorRank ?? null,
-            result.textScore ?? null, result.vectorScore ?? null, result.metadataScore ?? null,
+            result.finalRank, result.textRank ?? null, result.vectorRank ?? null, result.graphRank ?? null,
+            result.textScore ?? null, result.vectorScore ?? null, result.metadataScore ?? null, result.graphScore ?? null,
             result.rerankScore ?? null, result.fusionScore ?? null, result.finalScore,
             result.passedThreshold ?? null, result.explanation ?? null, result.metadata ?? {}
           );
-          return `(${Array.from({ length: 16 }, (_, valueIndex) => `$${offset + valueIndex + 1}`).join(", ")})`;
+          return `(${Array.from({ length: 18 }, (_, valueIndex) => `$${offset + valueIndex + 1}`).join(", ")})`;
         });
         await db.query(
           `insert into similarity_debug_results (
              run_id, target_type, target_id, target_label, final_rank, text_rank,
-             vector_rank, text_score, vector_score, metadata_score, rerank_score,
+             vector_rank, graph_rank, text_score, vector_score, metadata_score, graph_score, rerank_score,
              fusion_score, final_score, passed_threshold, explanation, metadata
            ) values ${rows.join(", ")}`,
           values

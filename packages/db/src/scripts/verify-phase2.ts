@@ -42,7 +42,7 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 10) {
+  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 11) {
     throw new Error("Empty database did not apply the complete phase 2 baseline.");
   }
 
@@ -51,7 +51,7 @@ try {
   if (secondRun.seed.applied) throw new Error("Existing database reapplied the baseline.");
 
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected Drizzle migration history.");
   const extensions = await pool.query<{ extname: string }>(
     "select extname from pg_extension where extname in ('vector', 'unaccent', 'pg_trgm') order by extname"
   );
@@ -165,6 +165,25 @@ try {
   await jobs.reportProgress(job.id, 0.5);
   const canceled = await jobs.requestCancel(job.id);
   if (!canceled?.cancelRequestedAt) throw new Error("Running job cancellation was not persisted.");
+
+  const interruptedRun = await runs.create({ sourceItemId: source.id, currentStage: "chunking" });
+  const interruptedJob = await jobs.create({
+    type: "ingestion",
+    payload: { ingestionRunId: interruptedRun.id, sourceItemId: source.id, documentId: document.id }
+  });
+  await runs.update(interruptedRun.id, { jobId: interruptedJob.id });
+  await runs.beginStage(interruptedRun.id, "chunking");
+  if ((await jobs.claimNext("interrupted-worker"))?.id !== interruptedJob.id) {
+    throw new Error("Interrupted ingestion fixture was not claimed.");
+  }
+  await jobs.recoverInterrupted();
+  await runs.recoverInterrupted();
+  const recoveredJob = await jobs.findById(interruptedJob.id);
+  const recoveredRun = await runs.findById(interruptedRun.id);
+  if (recoveredJob?.status !== "queued" || recoveredRun?.status !== "pending"
+      || (recoveredRun.stagesCheckpoint.chunking as { status?: string } | undefined)?.status !== "pending") {
+    throw new Error("Interrupted queue state was not recovered on startup.");
+  }
 
   console.info(JSON.stringify({
     baselineMigrations: firstRun.seed.seededMigrations,

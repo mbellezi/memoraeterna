@@ -152,13 +152,47 @@ export function createIngestionRunRepository(db: Queryable) {
              stages_checkpoint = jsonb_set(
                stages_checkpoint,
                array[$2],
-               jsonb_build_object('status', 'running', 'startedAt', now()),
+               coalesce(stages_checkpoint -> $2, '{}'::jsonb)
+                 || jsonb_build_object(
+                      'status', 'running',
+                      'startedAt', coalesce(stages_checkpoint -> $2 -> 'startedAt', to_jsonb(now())),
+                      'resumedAt', now()
+                    ),
                true
              ),
              started_at = coalesce(started_at, now()), error = null, updated_at = now()
          where id = $1
          returning ${returning}`,
         [id, stage]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
+    async updateStageProgress(
+      id: string,
+      stage: string,
+      progress: number,
+      metadata: JsonObject = {}
+    ): Promise<IngestionRunRecord | null> {
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set stages_checkpoint = jsonb_set(
+               stages_checkpoint,
+               array[$2],
+               coalesce(stages_checkpoint -> $2, '{}'::jsonb)
+                 || jsonb_build_object(
+                      'status', 'running',
+                      'progress', $3::double precision,
+                      'metadata', $4::jsonb,
+                      'updatedAt', now()
+                    ),
+               true
+             ),
+             updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id, stage, Math.max(0, Math.min(1, progress)), metadata]
       );
       const row = result.rows[0];
       return row ? mapIngestionRun(row) : null;
@@ -187,7 +221,51 @@ export function createIngestionRunRepository(db: Queryable) {
     },
 
     async fail(id: string, error: string): Promise<IngestionRunRecord | null> {
-      return this.update(id, { status: "failed", error });
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set status = 'failed', error = $2,
+             stages_checkpoint = case
+               when stages_checkpoint -> current_stage ->> 'status' = 'running' then
+                 jsonb_set(
+                   stages_checkpoint,
+                   array[current_stage],
+                   (stages_checkpoint -> current_stage)
+                     || jsonb_build_object('status', 'failed', 'failedAt', now()),
+                   true
+                 )
+               else stages_checkpoint
+             end,
+             updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id, error]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
+    async cancel(id: string): Promise<IngestionRunRecord | null> {
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set status = 'canceled', error = null,
+             stages_checkpoint = case
+               when stages_checkpoint -> current_stage ->> 'status' = 'running' then
+                 jsonb_set(
+                   stages_checkpoint,
+                   array[current_stage],
+                   (stages_checkpoint -> current_stage)
+                     || jsonb_build_object('status', 'canceled', 'canceledAt', now()),
+                   true
+                 )
+               else stages_checkpoint
+             end,
+             updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
     },
 
     async complete(id: string): Promise<IngestionRunRecord | null> {
@@ -209,6 +287,51 @@ export function createIngestionRunRepository(db: Queryable) {
         [limit]
       );
       return result.rows.map(mapIngestionRun);
+    },
+
+    async recoverInterrupted(): Promise<number> {
+      const result = await db.query(
+        `update ingestion_runs as run
+         set status = case
+               when recovered.job_status = 'queued' then 'pending'::ingestion_run_status
+               when recovered.job_status = 'canceled' then 'canceled'::ingestion_run_status
+               else 'failed'::ingestion_run_status
+             end,
+             stages_checkpoint = case
+               when run.stages_checkpoint -> run.current_stage ->> 'status' = 'running' then
+                 jsonb_set(
+                   run.stages_checkpoint,
+                   array[run.current_stage],
+                   (run.stages_checkpoint -> run.current_stage)
+                     || jsonb_build_object(
+                          'status', case
+                            when recovered.job_status = 'queued' then 'pending'
+                            when recovered.job_status = 'canceled' then 'canceled'
+                            else 'failed'
+                          end,
+                          'interruptedAt', now()
+                        ),
+                   true
+                 )
+               else run.stages_checkpoint
+             end,
+             error = case
+               when recovered.job_status = 'failed' or recovered.job_status is null
+                 then coalesce(run.error, recovered.job_error, 'worker_crashed')
+               else null
+             end,
+             completed_at = case when recovered.job_status in ('failed', 'canceled') or recovered.job_status is null then now() else null end,
+             updated_at = now()
+         from (
+           select interrupted.id, job.status as job_status, job.error as job_error
+           from ingestion_runs as interrupted
+           left join jobs as job on job.id = interrupted.job_id
+           where interrupted.status = 'running'
+         ) as recovered
+         where run.id = recovered.id
+           and recovered.job_status is distinct from 'running'`
+      );
+      return result.rowCount ?? 0;
     }
   };
 }

@@ -81,7 +81,7 @@ Renderer
 - Nao usar `trust` em TCP.
 - Upgrade de major do Postgres e mudanca planejada com migracao de dados explicita; nao trocar o major sem plano.
 - Workers podem abrir conexoes proprias com o banco; o pool deve ter limites configurados.
-- AGE compilado inicialmente apenas para macOS; em plataformas sem AGE, consultas de grafo devem degradar para CTEs recursivas sobre as tabelas relacionais, nunca quebrar o app.
+- AGE e o mecanismo de consulta/projecao do grafo. Se uma consulta AGE falhar ou o runtime nao estiver disponivel, o pipeline e a busca continuam sem o score de grafo; nao implementar fallback por CTE relacional.
 
 ## Monorepo e Pacotes
 
@@ -192,6 +192,9 @@ npm run db:generate
 - Um modelo local so pode declarar `embedding` quando o adapter do runtime realmente gerar vetores. Nao exponha uma capability apenas porque o modelo de origem a documenta.
 - Parametros padrao pertencem a configuracao de cada modelo remoto ou local. Overrides pertencem ao vinculo entre perfil e tarefa em `ai_profile_tasks.parameters`.
 - A precedencia obrigatoria dos parametros em execucao e: defaults internos seguros, depois defaults do modelo, depois overrides do perfil/tarefa.
+- Etapas generativas executadas por perfil usam `maxTokens: 16384` como default
+  interno seguro. Um valor definido nos defaults do modelo ou nos overrides do
+  perfil/tarefa deve prevalecer sobre esse default.
 - Parametros conhecidos devem usar nomes canonicos internos (`contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions`, `seed`). Cada adapter converte esses nomes para o contrato do provedor/runtime e nao deve enviar parametros internos desconhecidos diretamente.
 - Cada tipo de tarefa de IA deve poder escolher seu proprio perfil ativo pela configuracao persistida de roteamento. Um unico perfil global nao deve ser imposto a todas as tarefas.
 - Cada perfil referencia exatamente um modelo remoto ou local. A escolha de qual modelo executa cada tarefa ocorre indiretamente pelo roteamento de `ai_task_profile_routes`, que seleciona um perfil compativel para a tarefa.
@@ -285,9 +288,16 @@ UploadedFiles/
   - versao de prompt quando aplicavel.
 - Registrar tokens de entrada/saida, duracao e custo estimado em `ai_task_runs`.
 - Notas atomicas geradas automaticamente nascem com status `pending_review` e passam por fila de revisao.
+- A geracao do grafo de conhecimento usa as notas atomicas da fonte como entrada;
+  o documento completo nao deve ser enviado novamente para essa etapa. Chunks e
+  SourceSpans permanecem como proveniencia herdada das notas.
 - Credenciais nunca ficam em texto puro no banco local.
 - Segredos devem usar Electron `safeStorage` (armazenamento seguro do SO; no Linux depende de keyring disponivel).
-- Logs nunca devem incluir chaves, tokens ou payloads sensiveis.
+- Logs nunca devem incluir chaves ou tokens. Payloads completos de modelos locais
+  podem ser registrados somente quando o debug estiver habilitado na dashboard,
+  para diagnostico explicito, com aviso de privacidade no evento; essa opcao
+  deve permanecer desabilitada por padrao e nao se aplica a respostas de
+  provedores remotos.
 
 Capabilities iniciais incluem:
 
@@ -410,6 +420,9 @@ Capabilities iniciais incluem:
 ## Seguranca e Privacidade
 
 - Nao logar segredos.
+- O debug habilitado na dashboard pode registrar o output completo de modelos
+  locais para diagnostico. Trate esses eventos como dados sensiveis, nao os
+  compartilhe sem revisao e desabilite o debug apos o diagnostico.
 - Nao armazenar API keys em texto puro no banco.
 - Validar todos os payloads externos.
 - Integration Gateway deve autenticar/autorizar clientes.

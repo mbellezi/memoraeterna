@@ -107,7 +107,11 @@ function processingKey(status: string): MessageKey {
 }
 
 function stageKey(stage: string): MessageKey {
-  const normalized = ({ atomicNotes: "atomicNotes", atomicNoteMatching: "atomicNoteMatching" } as Record<string, string>)[stage] ?? stage;
+  const normalized = ({
+    atomicNotes: "atomicNotes",
+    knowledgeGraph: "knowledgeGraph",
+    atomicNoteMatching: "atomicNoteMatching"
+  } as Record<string, string>)[stage] ?? stage;
   return (`jobs.stages.${normalized}` as MessageKey);
 }
 

@@ -37,6 +37,7 @@ type ModelOption = {
 const taskDefinitions: Array<{ task: AiConfigurableTask; capabilities: AiCapability[] }> = [
   { task: "embedding", capabilities: ["embedding"] },
   { task: "summarization", capabilities: ["summarization"] },
+  { task: "knowledge-graph-generation", capabilities: ["structured-output"] },
   { task: "atomic-note-generation", capabilities: ["atomic-note-generation", "structured-output"] },
   { task: "reranking", capabilities: ["reranking"] },
   { task: "text-generation", capabilities: ["text-generation"] },
@@ -44,7 +45,7 @@ const taskDefinitions: Array<{ task: AiConfigurableTask; capabilities: AiCapabil
 ];
 
 const purposeCapabilities: Record<ModelPurpose, AiCapability[]> = {
-  generation: ["text-generation", "structured-output", "summarization", "atomic-note-generation", "requires-network", "requires-api-key"],
+  generation: ["text-generation", "structured-output", "summarization", "knowledge-graph-generation", "atomic-note-generation", "requires-network", "requires-api-key"],
   embedding: ["embedding", "requires-network", "requires-api-key"],
   reranking: ["reranking", "requires-network", "requires-api-key"]
 };

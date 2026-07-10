@@ -144,6 +144,10 @@ describe("desktop IPC contracts", () => {
       profileId: id,
       task: "summarization",
     })).toEqual({ profileId: id, task: "summarization", parameters: {} });
+    expect(aiProfileTaskInputSchema.parse({
+      profileId: id,
+      task: "knowledge-graph-generation"
+    }).task).toBe("knowledge-graph-generation");
     expect(aiProfileCreateSchema.parse({ name: "Portuguese" })).toMatchObject({
       outputLanguage: "ui"
     });
@@ -196,9 +200,11 @@ describe("desktop IPC contracts", () => {
         finalRank: 1,
         textRank: 2,
         vectorRank: 1,
+        graphRank: 3,
         textScore: 0.4,
         vectorScore: 0.8,
         metadataScore: 0.5,
+        graphScore: 0.7,
         rerankScore: 0.9,
         fusionScore: null,
         finalScore: 0.81,

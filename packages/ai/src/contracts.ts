@@ -59,6 +59,7 @@ export interface AiModelAdapter {
   run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult>;
   listModels?(signal?: AbortSignal): Promise<AiModelDescriptor[]>;
   testConnection?(signal?: AbortSignal): Promise<void>;
+  dispose?(): Promise<void>;
 }
 
 export function createTaskHandle(adapter: AiModelAdapter, request: AiTaskRequest): AiTaskHandle {

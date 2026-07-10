@@ -72,7 +72,7 @@ Next.js nao faz parte da stack obrigatoria do MVP desktop. Se um app web separad
 | --- | --- | --- |
 | PostgreSQL sidecar | `18.4` | Major estavel atual. Major upgrades exigem plano explicito de migracao. |
 | `pgvector` | `0.8.4` | Compilar/empacotar junto aos binarios do sidecar. |
-| Apache AGE | `PG18/v1.7.0-rc0` | Alvo explicito do spike macOS com PostgreSQL 18. Como ainda traz sufixo `rc0`, a Etapa 0.5 deve validar build, `CREATE EXTENSION age`, query Cypher trivial e ciclos start/stop antes de qualquer dependencia de produto. Consultas de grafo devem degradar para CTEs recursivas quando AGE nao estiver disponivel ou falhar na plataforma. |
+| Apache AGE | `PG18/v1.7.0-rc0` | Alvo explicito do spike macOS com PostgreSQL 18. Como ainda traz sufixo `rc0`, a Etapa 0.5 deve validar build, `CREATE EXTENSION age`, query Cypher trivial e ciclos start/stop antes de qualquer dependencia de produto. Se o AGE falhar, a busca omite o score de grafo; nao ha fallback por CTE relacional. |
 | `pg` (`node-postgres`) | `8.22.0` | Cliente Postgres para `@app/db`. |
 | `@types/pg` | `8.20.0` | Tipos para `pg`. |
 | Drizzle ORM | `0.45.2` | ORM e query builder. |

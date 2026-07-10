@@ -598,6 +598,9 @@ Implementar:
   - tarefas compativeis com o modelo de cada perfil.
 - vocabulario canonico inicial de parametros: `contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions` e `seed`;
 - precedencia em execucao: defaults internos, defaults do modelo e overrides do perfil/tarefa;
+- default interno `maxTokens: 16384` para etapas generativas executadas por
+  perfil, preservando valores diferentes definidos no modelo ou no vinculo
+  perfil/tarefa;
 - validacao de capabilities por tarefa;
 - adapters stub/mock para testes;
 - registro em `ai_task_runs` com tokens, duracao e custo estimado.
@@ -850,6 +853,40 @@ Criterio de pronto:
 
 ---
 
+## Etapa 16.5 - Geracao e Projecao do Grafo de Conhecimento
+
+Objetivo: extrair os elementos rastreaveis usados nas consultas de grafo.
+
+Implementar:
+
+- tarefa configuravel `knowledge-graph-generation`, com perfil de IA selecionado independentemente;
+- saida estruturada Zod para entidades, mencoes/evidencias, claims e relacoes entre entidades;
+- extracao baseada exclusivamente nas notas atomicas nao rejeitadas da fonte;
+- processamento das notas atomicas em lotes para respeitar o contexto do modelo,
+  usando aliases curtos de evidencia que sao convertidos deterministicamente
+  para os chunk ids reais apos a resposta;
+- checkpoint e progresso por lote, retomando apenas lotes ainda nao concluidos;
+- persistencia canonica em SQL de `entities`, `entity_mentions`, `claims`, `claim_entity_links`, `entity_relations` e `atomic_note_entity_links`;
+- reconciliacao de entidades por tipo e nome normalizado;
+- proveniencia obrigatoria por chunk e `SourceSpan`;
+- projecao idempotente no Apache AGE de entidades, chunks, claims, notas atomicas e suas arestas;
+- se a projecao ou consulta AGE falhar, concluir a etapa SQL e omitir o score de grafo nas buscas, sem fallback de travessia relacional.
+
+Testes e validacao:
+
+- teste do parser estruturado, resolucao dos aliases de evidencia e rejeicao de
+  aliases inventados;
+- teste de retomada a partir dos lotes ja concluidos;
+- teste de persistencia e idempotencia no SQL;
+- teste real de projecao e consulta Cypher no AGE;
+- teste de rastreabilidade de entidades, claims e relacoes ate o chunk.
+
+Criterio de pronto:
+
+- uma fonte gera elementos de grafo auditaveis e consultaveis no AGE sem tornar a busca dependente da disponibilidade desse score.
+
+---
+
 ## Etapa 17 - Matching Inicial entre Notas Atomicas
 
 Objetivo: conectar novas notas com notas existentes.
@@ -859,6 +896,7 @@ Implementar:
 - busca hibrida de candidatos;
 - score vetorial;
 - score por entidades/metadados simples;
+- score de grafo via AGE quando disponivel;
 - reranking simples via perfil ativo quando configurado;
 - persistencia em `atomic_note_relations`;
 - limiar de relevancia configuravel;
@@ -869,6 +907,7 @@ Testes e validacao:
 
 - teste de candidatos por embedding;
 - teste de score final;
+- teste de omissao do score de grafo quando a consulta AGE falhar;
 - teste de nao persistir relacao abaixo do limiar;
 - teste de relacao persistida.
 

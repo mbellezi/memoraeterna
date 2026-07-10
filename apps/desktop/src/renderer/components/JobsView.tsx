@@ -59,9 +59,9 @@ export function JobsView({ t }: { t: Translator }) {
     <div className="h-2 overflow-hidden rounded bg-slate-200 dark:bg-slate-800"><div className="h-full bg-cyan-600" style={{ width: `${Math.round(job.progress * 100)}%` }} /></div>
     {job.ingestionRun ? <div className="grid gap-2">
       <p className="text-xs text-slate-500">{t("jobs.currentStage", { values: { stage: t(stageMessageKey(job.ingestionRun.currentStage)) } })}</p>
-      <ol className="flex flex-wrap gap-2">{Object.entries(job.ingestionRun.stagesCheckpoint).map(([stage, checkpoint]) => <li key={stage} className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{t(stageMessageKey(stage))}: {t(checkpointStatusKey(checkpoint))}</li>)}</ol>
+      <ol className="flex flex-wrap gap-2">{Object.entries(job.ingestionRun.stagesCheckpoint).map(([stage, checkpoint]) => <li key={stage} className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{t(stageMessageKey(stage))}: {checkpointStatusLabel(t, checkpoint)}</li>)}</ol>
     </div> : null}
-    {job.error ? <p className="text-sm text-rose-700 dark:text-rose-300">{job.error.startsWith("errors.") ? t(job.error as MessageKey) : t("errors.common.unknown")}</p> : null}
+    {job.error ? <p className="text-sm text-rose-700 dark:text-rose-300">{jobErrorLabel(t, job.error)}</p> : null}
   </article>)}</section>;
 }
 
@@ -73,6 +73,7 @@ function jobTypeMessageKey(type: string): MessageKey {
     embedding: "jobs.types.embedding",
     summarization: "jobs.types.summarization",
     "atomic-note-generation": "jobs.types.atomicNoteGeneration",
+    "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
     "atomic-note-matching": "jobs.types.atomicNoteMatching",
     "obsidian-sync": "jobs.types.obsidianSync",
     "asset-storage": "jobs.types.assetStorage"
@@ -89,4 +90,21 @@ function checkpointStatusKey(checkpoint: unknown): MessageKey {
     return (`jobs.stageStatus.${checkpoint.status}` as MessageKey);
   }
   return "jobs.stageStatus.pending";
+}
+
+function checkpointStatusLabel(t: Translator, checkpoint: unknown): string {
+  const status = t(checkpointStatusKey(checkpoint));
+  if (typeof checkpoint !== "object" || checkpoint === null || !("metadata" in checkpoint)) return status;
+  const metadata = checkpoint.metadata;
+  if (typeof metadata !== "object" || metadata === null) return status;
+  const completed = "completed" in metadata ? Number(metadata.completed) : NaN;
+  const total = "total" in metadata ? Number(metadata.total) : NaN;
+  return Number.isInteger(completed) && Number.isInteger(total) && total > 0
+    ? `${status} (${completed}/${total})`
+    : status;
+}
+
+function jobErrorLabel(t: Translator, error: string): string {
+  const messageKey = error.match(/^errors\.[A-Za-z0-9.]+/)?.[0];
+  return messageKey ? t(messageKey as MessageKey) : t("errors.common.unknown");
 }

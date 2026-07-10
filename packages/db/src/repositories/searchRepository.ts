@@ -39,6 +39,7 @@ function mapSearchRow(row: SearchRow, finalScore: number): SearchEvidenceRecord 
     boundingBox: row.boundingBox === null ? null : asJsonObject(row.boundingBox),
     textScore: Number(row.textScore),
     vectorScore: Number(row.vectorScore),
+    graphScore: 0,
     finalScore
   };
 }

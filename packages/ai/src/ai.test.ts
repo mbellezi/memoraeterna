@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -283,6 +283,83 @@ describe("AI adapters", () => {
       parameters: { dimensions: 1_024 },
       metadata: {}
     })).output).toEqual([0.6, 0.8]);
+  });
+
+  it("keeps the MLX helper alive between requests and stops it on dispose", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-mlx-resident-"));
+    const helperPath = join(root, "fake-helper.mjs");
+    await writeFile(helperPath, `#!/usr/bin/env node
+import readline from "node:readline";
+let requests = 0;
+const lines = readline.createInterface({ input: process.stdin });
+for await (const line of lines) {
+  const request = JSON.parse(line);
+  if (request.command === "shutdown") process.exit(0);
+  if (request.prompt === "hang") continue;
+  requests += 1;
+  process.stdout.write(JSON.stringify({
+    protocolVersion: 1, requestId: request.requestId, kind: "result", ok: true,
+    output: String(requests), durationMs: 1
+  }) + "\\n");
+}
+`);
+    await chmod(helperPath, 0o755);
+    const adapter = new MlxAdapter({
+      modelId: "local-test",
+      modelPath: "/managed/model",
+      helperPath,
+      capabilities: ["text-generation", "offline"]
+    });
+    const request = {
+      taskType: "text-generation" as const,
+      input: "hello",
+      requiredCapabilities: ["text-generation" as const],
+      parameters: {}, metadata: {}
+    };
+    expect((await adapter.run(request)).output).toBe("1");
+    expect((await adapter.run(request)).output).toBe("2");
+    const controller = new AbortController();
+    const canceled = adapter.run({ ...request, input: "hang" }, controller.signal);
+    setTimeout(() => controller.abort(), 20);
+    await expect(canceled).rejects.toMatchObject({ name: "AbortError" });
+    expect((await adapter.run(request)).output).toBe("1");
+    await adapter.dispose();
+    expect((await adapter.run(request)).output).toBe("1");
+    await adapter.dispose();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("supports an older MLX helper that exits successfully after each request", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-mlx-legacy-"));
+    const helperPath = join(root, "legacy-helper.mjs");
+    await writeFile(helperPath, `#!/usr/bin/env node
+import readline from "node:readline";
+const lines = readline.createInterface({ input: process.stdin });
+lines.once("line", (line) => {
+  const request = JSON.parse(line);
+  process.stdout.write(JSON.stringify({
+    protocolVersion: 1, requestId: request.requestId, kind: "result", ok: true,
+    output: "legacy", durationMs: 1
+  }) + "\\n", () => process.exit(0));
+});
+`);
+    await chmod(helperPath, 0o755);
+    const adapter = new MlxAdapter({
+      modelId: "local-test",
+      modelPath: "/managed/model",
+      helperPath,
+      capabilities: ["text-generation", "offline"]
+    });
+    const request = {
+      taskType: "text-generation" as const,
+      input: "hello",
+      requiredCapabilities: ["text-generation" as const],
+      parameters: {}, metadata: {}
+    };
+    expect((await adapter.run(request)).output).toBe("legacy");
+    expect((await adapter.run(request)).output).toBe("legacy");
+    await adapter.dispose();
+    await rm(root, { recursive: true, force: true });
   });
 });
 

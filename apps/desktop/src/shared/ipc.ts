@@ -322,9 +322,11 @@ export const similarityDebugResultSchema = z.object({
   finalRank: z.number().int().positive(),
   textRank: z.number().int().positive().nullable(),
   vectorRank: z.number().int().positive().nullable(),
+  graphRank: z.number().int().positive().nullable(),
   textScore: z.number().finite().nullable(),
   vectorScore: z.number().finite().nullable(),
   metadataScore: z.number().finite().nullable(),
+  graphScore: z.number().finite().nullable(),
   rerankScore: z.number().finite().nullable(),
   fusionScore: z.number().finite().nullable(),
   finalScore: z.number().finite(),
@@ -361,6 +363,7 @@ export const aiConfigurableTaskSchema = z.enum([
   "summarization",
   "text-generation",
   "structured-output",
+  "knowledge-graph-generation",
   "atomic-note-generation",
   "reranking"
 ]);

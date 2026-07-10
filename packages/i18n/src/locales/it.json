@@ -104,6 +104,7 @@
       "embedding": "Embedding",
       "summarization": "Riepilogo",
       "atomicNoteGeneration": "Generazione di note atomiche",
+      "knowledgeGraphGeneration": "Generazione grafo della conoscenza",
       "atomicNoteMatching": "Collegamento note atomiche",
       "obsidianSync": "Sincronizzazione Obsidian",
       "assetStorage": "Archiviazione asset", "localModelDownload": "Download modello locale"
@@ -116,12 +117,13 @@
     "stages": {
       "queued": "In coda", "conversion": "Conversione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
+      "knowledgeGraph": "Grafo della conoscenza",
       "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian",
       "completed": "Completata"
     },
     "stageStatus": {
       "pending": "In attesa", "running": "In esecuzione", "completed": "Completata",
-      "failed": "Non riuscita", "skipped": "Saltata"
+      "failed": "Non riuscita", "canceled": "Annullata", "skipped": "Saltata"
     },
     "empty": "Nessuna attivita.",
     "actions": {
@@ -248,7 +250,7 @@
       "purposes": { "generation": "Generazione testo", "embedding": "Embedding", "reranking": "Reranking" },
       "privacy": { "allowRemote": "Consenti modelli remoti", "offlineOnly": "Solo modelli locali" },
       "languages": { "interface": "Come l'interfaccia" },
-      "tasks": { "embedding": "Embedding", "summarization": "Riepilogo", "text-generation": "Generazione testo", "structured-output": "Output strutturato", "atomic-note-generation": "Generazione note atomiche", "reranking": "Reranking" },
+      "tasks": { "embedding": "Embedding", "summarization": "Riepilogo", "text-generation": "Generazione testo", "structured-output": "Output strutturato", "knowledge-graph-generation": "Generazione grafo della conoscenza", "atomic-note-generation": "Generazione note atomiche", "reranking": "Reranking" },
       "parameters": { "contextWindow": "Finestra di contesto", "temperature": "Temperatura", "maxTokens": "Token massimi di output", "reasoningLevel": "Livello di ragionamento", "topP": "Top P", "dimensions": "Dimensioni embedding", "seed": "Seed", "inherit": "Usa valore ereditato/predefinito", "reasoning": { "off": "Disattivato", "minimal": "Minimo", "low": "Basso", "medium": "Medio", "high": "Alto" } }
     }
   },
@@ -263,7 +265,7 @@
   },
   "backup": { "title": "Backup", "description": "Crea un dump PostgreSQL e copia i file gestiti configurati in una cartella datata.", "action": "Crea backup", "completed": "Backup completato:", "failed": "Impossibile creare il backup." },
   "debug": {
-    "title": "Dashboard di debug", "captureTitle": "Diagnostica di similarità", "captureDescription": "Registra i punteggi testuali, vettoriali, dei metadati, di reranking e finali usati nelle ricerche e nel matching delle note atomiche.", "enabled": "Debug attivo", "disabled": "Debug disattivato", "executions": "Esecuzioni", "candidates": "Candidati", "captureState": "Stato acquisizione", "recording": "Registrazione", "paused": "In pausa", "refresh": "Aggiorna", "clear": "Cancella log", "clearConfirmation": "Eliminare tutti i log di debug della similarità?", "empty": "Nessuna diagnostica registrata", "emptyDescription": "Attiva il debug ed esegui una ricerca o importa contenuti per ispezionare i calcoli di similarità.", "chunkSearch": "Ricerca chunk", "noteMatching": "Matching note atomiche", "noModel": "Nessun modello embedding", "passed": "Superato", "rejected": "Sotto soglia", "thresholdUsed": "Soglia usata", "textRank": "Posizione testo", "vectorRank": "Posizione vettore", "textScore": "Testo", "vectorScore": "Vettore", "metadataScore": "Metadati", "rerankScore": "Reranking", "fusionScore": "Fusione RRF", "finalScore": "Finale", "beforeRerank": "Punteggio prima del reranking", "rerankError": "Errore di reranking", "rerankNotConfigured": "Il reranking non è stato eseguito perché non è configurato un profilo compatibile.",
+    "title": "Dashboard di debug", "captureTitle": "Diagnostica di similarità", "captureDescription": "Registra i punteggi testuali, vettoriali, del grafo, dei metadati, di reranking e finali usati nelle ricerche e nel matching delle note atomiche.", "enabled": "Debug attivo", "disabled": "Debug disattivato", "executions": "Esecuzioni", "candidates": "Candidati", "captureState": "Stato acquisizione", "recording": "Registrazione", "paused": "In pausa", "refresh": "Aggiorna", "clear": "Cancella log", "clearConfirmation": "Eliminare tutti i log di debug della similarità?", "empty": "Nessuna diagnostica registrata", "emptyDescription": "Attiva il debug ed esegui una ricerca o importa contenuti per ispezionare i calcoli di similarità.", "chunkSearch": "Ricerca chunk", "noteMatching": "Matching note atomiche", "noModel": "Nessun modello embedding", "passed": "Superato", "rejected": "Sotto soglia", "thresholdUsed": "Soglia usata", "textRank": "Posizione testo", "vectorRank": "Posizione vettore", "graphRank": "Posizione grafo", "textScore": "Testo", "vectorScore": "Vettore", "graphScore": "Grafo", "metadataScore": "Metadati", "rerankScore": "Reranking", "fusionScore": "Fusione RRF", "finalScore": "Finale", "beforeRerank": "Punteggio prima del reranking", "rerankError": "Errore di reranking", "rerankNotConfigured": "Il reranking non è stato eseguito perché non è configurato un profilo compatibile.", "graphError": "Errore query del grafo", "graphUnavailable": "Il segnale del grafo è stato omesso perché la query AGE non è riuscita.", "sourceElements": "Elementi collegati alla nota di origine", "candidateElements": "Elementi collegati a questa candidata", "entities": "Entità", "claims": "Affermazioni", "relations": "Relazioni",
     "filters": { "all": "Tutti", "chunk_search": "Ricerche chunk", "atomic_note_matching": "Matching note" }
   },
   "integrations": {

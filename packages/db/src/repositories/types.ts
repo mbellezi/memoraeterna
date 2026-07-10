@@ -196,7 +196,22 @@ export interface SearchEvidenceRecord {
   selector: string | null;
   textScore: number;
   vectorScore: number;
+  graphScore: number;
   finalScore: number;
+}
+
+export interface GraphEntityRecord {
+  id: string;
+  type: string;
+  canonicalName: string;
+  normalizedName: string;
+  aliases: string[];
+  description: string | null;
+  language: string;
+  confidence: number;
+  metadata: JsonObject;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface IngestionRunRecord {

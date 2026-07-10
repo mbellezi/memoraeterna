@@ -71,6 +71,13 @@
       "when": 1783716555620,
       "tag": "0009_same_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783719799493,
+      "tag": "0010_handy_gamora",
+      "breakpoints": true
     }
   ]
 }

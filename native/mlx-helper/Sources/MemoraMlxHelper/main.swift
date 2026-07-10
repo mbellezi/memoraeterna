@@ -45,12 +45,11 @@ private struct Message: Codable {
 @main
 private struct MemoraMlxHelper {
     static func main() async {
-        guard let line = readLine(), let data = line.data(using: .utf8) else {
-            Foundation.exit(2)
-        }
-
         let decoder = JSONDecoder()
-        do {
+        var loadedModelPath: String?
+        var loadedModel: ModelContainer?
+        while let line = readLine(), let data = line.data(using: .utf8) {
+          do {
             let request = try decoder.decode(Request.self, from: data)
             guard request.protocolVersion == protocolVersion else {
                 throw HelperError.unsupportedProtocol
@@ -68,8 +67,9 @@ private struct MemoraMlxHelper {
                     kind: "result", progress: nil, messageKey: nil, ok: true,
                     output: "", durationMs: 0, inputTokens: nil, outputTokens: nil, error: nil
                 ))
+                return
             case "generate":
-                try await generate(request)
+                try await generate(request, loadedModelPath: &loadedModelPath, loadedModel: &loadedModel)
             default:
                 throw HelperError.unsupportedCommand
             }
@@ -85,21 +85,31 @@ private struct MemoraMlxHelper {
                     recoverable: true
                 )
             ))
-            Foundation.exit(1)
+            loadedModel = nil
+            loadedModelPath = nil
+          }
         }
     }
 
-    private static func generate(_ request: Request) async throws {
+    private static func generate(
+        _ request: Request,
+        loadedModelPath: inout String?,
+        loadedModel: inout ModelContainer?
+    ) async throws {
         guard let modelPath = request.modelPath, let prompt = request.prompt else {
             throw HelperError.invalidRequest
         }
         let parameters = request.parameters ?? GenerationParameters(maxTokens: 1_024, temperature: 0.2, seed: nil)
         let startedAt = ContinuousClock.now
         emitProgress(request.requestId, progress: 0.05, messageKey: "localModels.progress.loading")
-        let model = try await loadModelContainer(
-            from: URL(filePath: modelPath),
-            using: #huggingFaceTokenizerLoader()
-        )
+        if loadedModel == nil || loadedModelPath != modelPath {
+            loadedModel = try await loadModelContainer(
+                from: URL(filePath: modelPath),
+                using: #huggingFaceTokenizerLoader()
+            )
+            loadedModelPath = modelPath
+        }
+        guard let model = loadedModel else { throw HelperError.invalidRequest }
         let tokenizer = await model.tokenizer
         let inputTokenCount = tokenizer.encode(text: prompt).count
         emitProgress(request.requestId, progress: 0.65, messageKey: "localModels.progress.generating")

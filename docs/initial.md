@@ -355,6 +355,7 @@ O roteamento deve permitir selecionar um perfil compativel para cada tarefa:
 - extracao de entidades;
 - extracao de claims;
 - geracao de notas atomicas;
+- geracao do grafo de conhecimento;
 - matching/reranking;
 - OCR;
 - parsing de imagens;
@@ -380,7 +381,11 @@ Seguranca de credenciais:
 - API keys nao devem ser armazenadas em texto puro no banco local;
 - o banco deve guardar apenas referencias, metadados nao sensiveis e status;
 - segredos devem usar Electron `safeStorage` (armazenamento seguro do SO; no Linux depende de keyring disponivel);
-- logs nunca devem incluir chaves, tokens ou payloads sensiveis.
+- logs nunca devem incluir chaves ou tokens; como excecao de diagnostico, o
+  debug habilitado na dashboard pode registrar o output completo de modelos
+  locais com aviso explicito de privacidade. Ele fica desabilitado por padrao,
+  deve ser desligado apos o debug e nao autoriza registrar respostas de
+  provedores remotos.
 
 Selecao por tarefa:
 
@@ -585,6 +590,10 @@ defaults internos seguros
   -> defaults do modelo
   -> overrides do perfil/tarefa
 ```
+
+Etapas generativas executadas por perfil usam `maxTokens: 16384` como default
+interno. Se o modelo ou o vinculo perfil/tarefa configurar outro valor, o valor
+configurado prevalece.
 
 O roteamento ativo e configurado por tipo de tarefa: embedding, resumo, geracao de notas atomicas, reranking, geracao textual e saida estruturada podem escolher perfis diferentes. O perfil padrao antigo permanece apenas como fallback de compatibilidade enquanto uma rota explicita ainda nao existir.
 
@@ -1422,7 +1431,7 @@ Regras de ciclo de vida:
 - impedir duas instancias da aplicacao disputando o mesmo data dir;
 - upgrade de major do Postgres e mudanca planejada, com estrategia explicita de migracao de dados (`pg_upgrade` ou dump/restore);
 - binarios do Postgres e extensoes entram no fluxo de assinatura/notarizacao do empacotamento por plataforma;
-- em plataformas sem build do AGE, consultas de grafo degradam para CTEs recursivas sobre as tabelas relacionais; o app nunca deve quebrar pela ausencia do AGE.
+- se o AGE nao estiver disponivel ou uma consulta falhar, o app continua sem o score de grafo; nao existe fallback de travessia por CTE relacional.
 
 Com Postgres completo, multiplas conexoes sao suportadas: workers podem abrir conexoes proprias com o banco, respeitando limites de pool configurados.
 
@@ -1860,7 +1869,14 @@ Dimensoes diferentes nao devem ser misturadas no mesmo indice vetorial. Se o sis
 
 ## Grafo
 
-Apache AGE, compilado por plataforma e carregado no Postgres sidecar, sera usado para consultas e projecoes de grafo. Inicialmente o AGE sera compilado apenas para macOS; enquanto uma plataforma nao tiver build do AGE, as consultas de grafo devem degradar para CTEs recursivas sobre as tabelas relacionais. A recomendacao inicial e manter as tabelas relacionais `entities`, `entity_mentions` e `relations` como fonte canonica, usando AGE como uma camada de consulta/projecao.
+Apache AGE, compilado por plataforma e carregado no Postgres sidecar, sera usado para consultas e projecoes de grafo. Se o AGE nao estiver disponivel ou uma consulta falhar, a busca omite o score de grafo e continua com os demais sinais, sem executar uma travessia substituta por CTE relacional. As tabelas relacionais `entities`, `entity_mentions` e `relations` permanecem como fonte canonica, usando AGE como camada de consulta/projecao.
+
+A extracao do grafo usa somente as notas atomicas nao rejeitadas da fonte, e nao
+o documento completo. Os chunks permanecem como proveniencia herdada das notas.
+O prompt usa aliases curtos (`c1`, `c2`, ...) no lugar de UUIDs; depois da
+validacao, o backend resolve cada alias para o chunk id real. O processamento
+mantem checkpoint e progresso por lote para que retries nao repitam lotes ja
+validados.
 
 ```txt
 entities / relations

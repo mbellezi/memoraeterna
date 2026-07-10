@@ -39,7 +39,8 @@ export class LibraryResetService {
 
     await pool.query(`truncate table
       similarity_debug_results, similarity_debug_runs,
-      atomic_note_review_events, atomic_note_relations, atomic_note_source_links, atomic_notes,
+      atomic_note_review_events, atomic_note_relations, atomic_note_entity_links, atomic_note_source_links, atomic_notes,
+      claim_entity_links, claims, entity_relations, entity_mentions, entities,
       source_summaries, embeddings_256, embeddings_768, embeddings_1024, chunks, source_spans,
       document_assets, documents, source_item_bibliographic_links, bibliographic_instances,
       bibliographic_works, obsidian_sync_files, ingestion_runs, ai_task_runs, source_items, jobs

@@ -104,6 +104,7 @@
       "embedding": "Embedding",
       "summarization": "Resumen",
       "atomicNoteGeneration": "Generacion de nota atomica",
+      "knowledgeGraphGeneration": "Generacion del grafo de conocimiento",
       "atomicNoteMatching": "Conexion de notas atomicas",
       "obsidianSync": "Sincronizacion con Obsidian",
       "assetStorage": "Almacenamiento de assets", "localModelDownload": "Descarga de modelo local"
@@ -116,12 +117,13 @@
     "stages": {
       "queued": "En cola", "conversion": "Conversion", "chunking": "Segmentacion",
       "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
+      "knowledgeGraph": "Grafo de conocimiento",
       "atomicNoteMatching": "Conexion de notas", "obsidianProjection": "Proyeccion en Obsidian",
       "completed": "Completada"
     },
     "stageStatus": {
       "pending": "Pendiente", "running": "En ejecucion", "completed": "Completada",
-      "failed": "Fallo", "skipped": "Omitida"
+      "failed": "Fallo", "canceled": "Cancelada", "skipped": "Omitida"
     },
     "empty": "Aun no hay tareas.",
     "actions": {
@@ -248,7 +250,7 @@
       "purposes": { "generation": "Generacion de texto", "embedding": "Embedding", "reranking": "Reranking" },
       "privacy": { "allowRemote": "Permitir modelos remotos", "offlineOnly": "Solo modelos locales" },
       "languages": { "interface": "Mismo idioma que la interfaz" },
-      "tasks": { "embedding": "Embedding", "summarization": "Resumen", "text-generation": "Generacion de texto", "structured-output": "Salida estructurada", "atomic-note-generation": "Generacion de notas atomicas", "reranking": "Reranking" },
+      "tasks": { "embedding": "Embedding", "summarization": "Resumen", "text-generation": "Generacion de texto", "structured-output": "Salida estructurada", "knowledge-graph-generation": "Generacion del grafo de conocimiento", "atomic-note-generation": "Generacion de notas atomicas", "reranking": "Reranking" },
       "parameters": { "contextWindow": "Ventana de contexto", "temperature": "Temperatura", "maxTokens": "Tokens maximos de salida", "reasoningLevel": "Nivel de razonamiento", "topP": "Top P", "dimensions": "Dimensiones de embedding", "seed": "Seed", "inherit": "Usar valor heredado/predeterminado", "reasoning": { "off": "Desactivado", "minimal": "Minimo", "low": "Bajo", "medium": "Medio", "high": "Alto" } }
     }
   },
@@ -263,7 +265,7 @@
   },
   "backup": { "title": "Copia de seguridad", "description": "Crea un dump de PostgreSQL y copia los archivos gestionados configurados en una carpeta con fecha.", "action": "Crear copia", "completed": "Copia completada:", "failed": "No se pudo crear la copia." },
   "debug": {
-    "title": "Panel de depuración", "captureTitle": "Diagnóstico de similitud", "captureDescription": "Registra las puntuaciones textuales, vectoriales, de metadatos, de reranking y finales usadas en búsquedas y coincidencia de notas atómicas.", "enabled": "Depuración activada", "disabled": "Depuración desactivada", "executions": "Ejecuciones", "candidates": "Candidatos", "captureState": "Estado de captura", "recording": "Grabando", "paused": "Pausado", "refresh": "Actualizar", "clear": "Borrar registros", "clearConfirmation": "¿Eliminar todos los registros de depuración de similitud?", "empty": "No hay diagnósticos registrados", "emptyDescription": "Activa la depuración y ejecuta una búsqueda o importa contenido para inspeccionar los cálculos de similitud.", "chunkSearch": "Búsqueda de fragmentos", "noteMatching": "Coincidencia de notas atómicas", "noModel": "Sin modelo de embedding", "passed": "Aprobado", "rejected": "Bajo el umbral", "thresholdUsed": "Corte usado", "textRank": "Posición textual", "vectorRank": "Posición vectorial", "textScore": "Texto", "vectorScore": "Vector", "metadataScore": "Metadatos", "rerankScore": "Reranking", "fusionScore": "Fusión RRF", "finalScore": "Final", "beforeRerank": "Puntuación antes del reranking", "rerankError": "Error de reranking", "rerankNotConfigured": "El reranking no se ejecutó porque no hay un perfil compatible configurado.",
+    "title": "Panel de depuración", "captureTitle": "Diagnóstico de similitud", "captureDescription": "Registra las puntuaciones textuales, vectoriales, de grafo, de metadatos, de reranking y finales usadas en búsquedas y coincidencia de notas atómicas.", "enabled": "Depuración activada", "disabled": "Depuración desactivada", "executions": "Ejecuciones", "candidates": "Candidatos", "captureState": "Estado de captura", "recording": "Grabando", "paused": "Pausado", "refresh": "Actualizar", "clear": "Borrar registros", "clearConfirmation": "¿Eliminar todos los registros de depuración de similitud?", "empty": "No hay diagnósticos registrados", "emptyDescription": "Activa la depuración y ejecuta una búsqueda o importa contenido para inspeccionar los cálculos de similitud.", "chunkSearch": "Búsqueda de fragmentos", "noteMatching": "Coincidencia de notas atómicas", "noModel": "Sin modelo de embedding", "passed": "Aprobado", "rejected": "Bajo el umbral", "thresholdUsed": "Corte usado", "textRank": "Posición textual", "vectorRank": "Posición vectorial", "graphRank": "Posición de grafo", "textScore": "Texto", "vectorScore": "Vector", "graphScore": "Grafo", "metadataScore": "Metadatos", "rerankScore": "Reranking", "fusionScore": "Fusión RRF", "finalScore": "Final", "beforeRerank": "Puntuación antes del reranking", "rerankError": "Error de reranking", "rerankNotConfigured": "El reranking no se ejecutó porque no hay un perfil compatible configurado.", "graphError": "Error en la consulta del grafo", "graphUnavailable": "La señal del grafo se omitió porque falló la consulta de AGE.", "sourceElements": "Elementos vinculados a la nota de origen", "candidateElements": "Elementos vinculados a esta candidata", "entities": "Entidades", "claims": "Afirmaciones", "relations": "Relaciones",
     "filters": { "all": "Todos", "chunk_search": "Búsquedas de fragmentos", "atomic_note_matching": "Coincidencia de notas" }
   },
   "integrations": {

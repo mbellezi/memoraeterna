@@ -32,6 +32,12 @@ const expectedTables = [
   ,"embeddings_1024"
   ,"similarity_debug_runs"
   ,"similarity_debug_results"
+  ,"entities"
+  ,"entity_mentions"
+  ,"claims"
+  ,"claim_entity_links"
+  ,"entity_relations"
+  ,"atomic_note_entity_links"
 ];
 
 const pool = createPgPool({ connectionString, max: 1 });

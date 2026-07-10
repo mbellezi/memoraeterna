@@ -214,6 +214,104 @@ export const chunks = pgTable(
   })
 );
 
+export const entities = pgTable(
+  "entities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: text("type").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    aliases: jsonb("aliases").notNull().default(sql`'[]'::jsonb`),
+    description: text("description"),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    confidence: doublePrecision("confidence").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    typeNameUidx: uniqueIndex("entities_type_normalized_name_uidx").on(table.type, table.normalizedName),
+    canonicalNameIdx: index("entities_canonical_name_idx").on(table.canonicalName)
+  })
+);
+
+export const entityMentions = pgTable(
+  "entity_mentions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+    chunkId: uuid("chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
+    surfaceText: text("surface_text").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    sourceIdx: index("entity_mentions_source_item_id_idx").on(table.sourceItemId),
+    chunkIdx: index("entity_mentions_chunk_id_idx").on(table.chunkId),
+    entityChunkUidx: uniqueIndex("entity_mentions_entity_chunk_uidx").on(table.entityId, table.chunkId)
+  })
+);
+
+export const claims = pgTable(
+  "claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+    evidenceChunkId: uuid("evidence_chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
+    text: text("text").notNull(),
+    contentHash: text("content_hash").notNull(),
+    confidence: doublePrecision("confidence").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    sourceIdx: index("claims_source_item_id_idx").on(table.sourceItemId),
+    evidenceIdx: index("claims_evidence_chunk_id_idx").on(table.evidenceChunkId),
+    sourceHashUidx: uniqueIndex("claims_source_content_hash_uidx").on(table.sourceItemId, table.contentHash)
+  })
+);
+
+export const claimEntityLinks = pgTable(
+  "claim_entity_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id").notNull().references(() => claims.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    claimEntityUidx: uniqueIndex("claim_entity_links_claim_entity_uidx").on(table.claimId, table.entityId),
+    entityIdx: index("claim_entity_links_entity_id_idx").on(table.entityId)
+  })
+);
+
+export const entityRelations = pgTable(
+  "entity_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subjectEntityId: uuid("subject_entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    predicate: text("predicate").notNull(),
+    objectEntityId: uuid("object_entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+    evidenceChunkId: uuid("evidence_chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),
+    sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
+    confidence: doublePrecision("confidence").notNull(),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    sourceIdx: index("entity_relations_source_item_id_idx").on(table.sourceItemId),
+    subjectIdx: index("entity_relations_subject_entity_id_idx").on(table.subjectEntityId),
+    objectIdx: index("entity_relations_object_entity_id_idx").on(table.objectEntityId),
+    evidenceUidx: uniqueIndex("entity_relations_evidence_uidx").on(
+      table.sourceItemId, table.subjectEntityId, table.predicate, table.objectEntityId, table.evidenceChunkId
+    )
+  })
+);
+
 export const jobs = pgTable(
   "jobs",
   {
@@ -680,7 +778,7 @@ export const atomicNoteSourceLinks = pgTable(
       .notNull()
       .references(() => chunks.id, { onDelete: "cascade" }),
     sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
-    claimId: uuid("claim_id"),
+    claimId: uuid("claim_id").references(() => claims.id, { onDelete: "set null" }),
     relationType: text("relation_type").notNull().default("derived_from"),
     confidence: doublePrecision("confidence"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
@@ -689,6 +787,22 @@ export const atomicNoteSourceLinks = pgTable(
     noteIdx: index("atomic_note_source_links_note_id_idx").on(table.atomicNoteId),
     sourceIdx: index("atomic_note_source_links_source_id_idx").on(table.sourceItemId),
     noteChunkUidx: uniqueIndex("atomic_note_source_links_note_chunk_uidx").on(table.atomicNoteId, table.chunkId)
+  })
+);
+
+export const atomicNoteEntityLinks = pgTable(
+  "atomic_note_entity_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    atomicNoteId: uuid("atomic_note_id").notNull().references(() => atomicNotes.id, { onDelete: "cascade" }),
+    entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+    relationType: text("relation_type").notNull().default("about"),
+    confidence: doublePrecision("confidence").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    noteEntityUidx: uniqueIndex("atomic_note_entity_links_note_entity_uidx").on(table.atomicNoteId, table.entityId),
+    entityIdx: index("atomic_note_entity_links_entity_id_idx").on(table.entityId)
   })
 );
 
@@ -818,9 +932,11 @@ export const similarityDebugResults = pgTable(
     finalRank: integer("final_rank").notNull(),
     textRank: integer("text_rank"),
     vectorRank: integer("vector_rank"),
+    graphRank: integer("graph_rank"),
     textScore: doublePrecision("text_score"),
     vectorScore: doublePrecision("vector_score"),
     metadataScore: doublePrecision("metadata_score"),
+    graphScore: doublePrecision("graph_score"),
     rerankScore: doublePrecision("rerank_score"),
     fusionScore: doublePrecision("fusion_score"),
     finalScore: doublePrecision("final_score").notNull(),

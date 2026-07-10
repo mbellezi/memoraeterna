@@ -1,8 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { logLocalModelOutput } from "./local-model-output-debug.js";
+import { isLocalModelOutputDebugEnabled, logLocalModelOutput } from "./local-model-output-debug.js";
 
 describe("local model output debug logging", () => {
+  it("follows the dashboard setting", async () => {
+    await expect(isLocalModelOutputDebugEnabled(async () => true)).resolves.toBe(true);
+    await expect(isLocalModelOutputDebugEnabled(async () => false)).resolves.toBe(false);
+  });
+
+  it("stays disabled when reading the dashboard setting fails", async () => {
+    await expect(isLocalModelOutputDebugEnabled(async () => {
+      throw new Error("settings_unavailable");
+    })).resolves.toBe(false);
+  });
+
   it("prints the complete textual output when explicitly enabled", () => {
     const info = vi.fn();
     const output = "```json\n{\"notes\":[]}\n```\nmodel suffix";

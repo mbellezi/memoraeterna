@@ -6,10 +6,15 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createAtomicNoteRepository,
   createAiConfigRepository,
+  createChunkRepository,
+  createDocumentRepository,
   createJobRepository,
+  createKnowledgeGraphRepository,
   createLocalModelRepository,
   createPgPool,
+  createSourceItemRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations
@@ -38,13 +43,16 @@ try {
   const seedFolder = resolve(packageRoot, "seed");
   await runMigrations(pool, migrationsFolder);
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected AI configuration migration history.");
+  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected AI configuration migration history.");
 
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables where table_schema = 'public'
-     and table_name in ('local_models', 'local_model_files', 'local_model_downloads', 'ai_task_profile_routes') order by table_name`
+     and table_name in (
+       'local_models', 'local_model_files', 'local_model_downloads', 'ai_task_profile_routes',
+       'entities', 'entity_mentions', 'claims', 'claim_entity_links', 'entity_relations', 'atomic_note_entity_links'
+     ) order by table_name`
   );
-  if (tables.rows.length !== 4) throw new Error("AI configuration tables are missing.");
+  if (tables.rows.length !== 10) throw new Error("AI or knowledge graph tables are missing.");
   const columns = await pool.query<{ table_name: string; column_name: string }>(
     `select table_name, column_name from information_schema.columns where table_schema = 'public' and (
        (table_name = 'ai_profile_sets' and column_name in (
@@ -52,17 +60,19 @@ try {
        )) or
        (table_name = 'ai_provider_configs' and column_name = 'default_parameters') or
        (table_name = 'local_models' and column_name = 'default_parameters') or
+       (table_name = 'similarity_debug_results' and column_name in ('graph_rank','graph_score')) or
        (table_name = 'ai_task_runs' and column_name in ('adapter','repository','revision','quantization','parameters'))
      ) order by table_name, column_name`
   );
-  if (columns.rows.length !== 13) throw new Error("AI parameter and traceability columns are missing.");
+  if (columns.rows.length !== 15) throw new Error("AI parameter, graph score, and traceability columns are missing.");
   const indexes = await pool.query<{ indexname: string }>(
     `select indexname from pg_indexes where schemaname = 'public' and indexname in (
        'local_models_catalog_id_uidx','local_model_files_model_path_uidx','local_model_downloads_job_id_uidx',
-       'ai_task_profile_routes_task_uidx','ai_task_profile_routes_profile_id_idx'
+       'ai_task_profile_routes_task_uidx','ai_task_profile_routes_profile_id_idx',
+       'entities_type_normalized_name_uidx','entity_relations_evidence_uidx'
      )`
   );
-  if (indexes.rows.length !== 5) throw new Error("AI configuration indexes are missing.");
+  if (indexes.rows.length !== 7) throw new Error("AI configuration or knowledge graph indexes are missing.");
 
   const localModels = createLocalModelRepository(pool);
   const model = await localModels.upsertModel({
@@ -146,12 +156,77 @@ try {
     status: "succeeded"
   });
 
+  const graphSource = await createSourceItemRepository(pool).create({
+    type: "PersonalNote",
+    title: "Graph verifier",
+    language: "en"
+  });
+  const graphDocument = await createDocumentRepository(pool).create({
+    sourceItemId: graphSource.id,
+    title: graphSource.title,
+    canonicalMarkdown: "PostgreSQL supports vector search.",
+    contentHash: "graph-verifier",
+    language: "en"
+  });
+  const graphChunkId = randomUUID();
+  await createChunkRepository(pool).replaceDocumentChunks(graphDocument.id, graphSource.id, [{
+    id: graphChunkId,
+    sourceSpanId: randomUUID(),
+    chunkIndex: 0,
+    content: "PostgreSQL supports vector search.",
+    contentHash: "graph-verifier-chunk",
+    language: "en",
+    span: { id: randomUUID(), startOffset: 0, endOffset: 34 }
+  }].map((chunk) => ({ ...chunk, sourceSpanId: chunk.span.id })));
+  const graphNote = await createAtomicNoteRepository(pool).upsertGenerated({
+    title: "PostgreSQL vector search",
+    bodyMarkdown: "PostgreSQL supports vector search.",
+    ideaStatement: "PostgreSQL supports vector search.",
+    language: "en",
+    sourceItemId: graphSource.id,
+    evidenceChunkId: graphChunkId,
+    evidenceLinks: [{ chunkId: graphChunkId }],
+    generationProvider: "verify",
+    generationModel: "verify",
+    generationRuntime: "test",
+    generationPromptVersion: "atomic-note-v2",
+    generationKey: "graph-verifier-note"
+  });
+  const graph = createKnowledgeGraphRepository(pool);
+  const graphPersistence = await graph.replaceSourceExtraction({
+    sourceItemId: graphSource.id,
+    language: "en",
+    generation: { provider: "verify", model: "verify", promptVersion: "knowledge-graph-v1" },
+    batches: [{
+      entities: [
+        { key: "postgres", type: "Product", canonicalName: "PostgreSQL", aliases: [], confidence: 1, evidenceChunkIds: [graphChunkId] },
+        { key: "vector", type: "Concept", canonicalName: "Vector search", aliases: [], confidence: 1, evidenceChunkIds: [graphChunkId] }
+      ],
+      claims: [{ text: "PostgreSQL supports vector search.", confidence: 1, evidenceChunkIds: [graphChunkId], relatedEntityKeys: ["postgres", "vector"] }],
+      relations: [{ subjectEntityKey: "postgres", predicate: "supports", objectEntityKey: "vector", confidence: 1, evidenceChunkIds: [graphChunkId] }]
+    }]
+  });
+  if (graphPersistence.entityCount !== 2 || graphPersistence.claimCount !== 1
+      || graphPersistence.relationCount !== 1 || graphPersistence.atomicNoteEntityLinkCount !== 2) {
+    throw new Error("Knowledge graph SQL persistence failed.");
+  }
+  const noteElements = await graph.listAtomicNoteElements([graphNote.id]);
+  const extracted = noteElements.get(graphNote.id);
+  if (extracted?.entities.length !== 2 || extracted.claims.length !== 1 || extracted.relations.length !== 1) {
+    throw new Error("Atomic-note graph debug elements are incomplete.");
+  }
+  await graph.projectSource(graphSource.id);
+  const graphResults = await graph.searchChunks({ text: "PostgreSQL", limit: 10 });
+  if (graphResults[0]?.chunkId !== graphChunkId || graphResults[0].graphScore <= 0) {
+    throw new Error("AGE graph projection or search failed.");
+  }
+
   await pool.query("create database memora_phase5_seed");
   const seedUrl = new URL(connection.connectionString);
   seedUrl.pathname = "/memora_phase5_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 10) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 11) {
     throw new Error("Empty database did not apply the complete phase 5 baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {
@@ -166,6 +241,8 @@ try {
     localModelId: model.id,
     clonedProfileId: clonedProfile.id,
     downloadJobId: job.id,
+    graphSourceId: graphSource.id,
+    graphScore: graphResults[0].graphScore,
     baselineMigrations: baseline.seed.seededMigrations
   }, null, 2));
 } finally {

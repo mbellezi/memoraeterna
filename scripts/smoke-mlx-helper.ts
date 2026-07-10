@@ -20,20 +20,24 @@ const adapter = new MlxAdapter({
   capabilities: ["text-generation", "offline"],
   timeoutMs: 10 * 60_000
 });
-const result = await adapter.run({
-  taskType: "text-generation",
-  input: "Reply with exactly: OK",
-  requiredCapabilities: ["text-generation"],
-  parameters: { maxTokens: 4, temperature: 0 },
-  metadata: { purpose: "mlx-real-model-smoke" }
-});
-if (typeof result.output !== "string" || result.output.trim() !== "OK") {
-  throw new Error(`The MLX helper returned an unexpected smoke result: ${JSON.stringify(result.output)}`);
+const results = [];
+for (let attempt = 1; attempt <= 2; attempt += 1) {
+  const result = await adapter.run({
+    taskType: "text-generation",
+    input: "Reply with exactly: OK",
+    requiredCapabilities: ["text-generation"],
+    parameters: { maxTokens: 4, temperature: 0 },
+    metadata: { purpose: "mlx-real-model-smoke", attempt }
+  });
+  if (typeof result.output !== "string" || result.output.trim() !== "OK") {
+    throw new Error(`The MLX helper returned an unexpected smoke result: ${JSON.stringify(result.output)}`);
+  }
+  results.push(result);
 }
+await adapter.dispose();
 
 console.info(
-  `MLX real-model smoke passed for ${basename(modelPath)} in ${result.durationMs} ms `
-  + `(${result.inputTokens ?? "?"} input tokens, ${result.outputTokens ?? "?"} output tokens).`
+  `MLX real-model smoke passed twice for ${basename(modelPath)} in ${results.map((result) => result.durationMs).join("/")} ms.`
 );
 
 async function resolveModelPath(): Promise<string> {

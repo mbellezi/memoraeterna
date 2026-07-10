@@ -125,7 +125,7 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     logger: console,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
-    debugLogLocalModelOutput: readBooleanFlag(process.env.MEMORA_DEBUG_LOCAL_MODEL_OUTPUT)
+    getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode
   });
   localModelService = new LocalModelService({
     getPool: () => databaseService?.getPool() ?? null,
@@ -176,8 +176,8 @@ void app.whenReady().then(() => {
     logger: console,
     knowledgeService,
     obsidianSyncService,
-    generateEmbedding: async (text) => {
-      const result = await aiService?.runDefaultTask("embedding", text);
+    generateEmbedding: async (text, signal) => {
+      const result = await aiService?.runDefaultTask("embedding", text, {}, signal);
       if (!result || !Array.isArray(result.output)) return null;
       return {
         embedding: result.output.map(Number),
@@ -185,7 +185,8 @@ void app.whenReady().then(() => {
         model: result.modelId,
         runtime: result.runtime
       };
-    }
+    },
+    releaseAiRuntime: () => aiService!.releaseLocalRuntime()
   });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
@@ -271,6 +272,7 @@ async function shutdownServices(): Promise<void> {
   await obsidianSyncService?.shutdown();
   obsidianSyncService = null;
   ingestionService = null;
+  await aiService?.dispose();
   aiService = null;
   await settingsService?.dispose();
   settingsService = null;
@@ -338,10 +340,6 @@ function readRelationThreshold(value: string | undefined): number | undefined {
 function readPositiveInteger(value: string | undefined): number | undefined {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function readBooleanFlag(value: string | undefined): boolean {
-  return value === "1" || value?.toLowerCase() === "true";
 }
 
 function readGatewayPort(value: string | undefined): number | undefined {

@@ -244,6 +244,25 @@ export function createJobRepository(db: Queryable) {
         [staleAfterSeconds]
       );
       return result.rowCount ?? 0;
+    },
+
+    async recoverInterrupted(): Promise<number> {
+      const result = await db.query(
+        `update jobs
+         set status = case
+               when cancel_requested_at is not null then 'canceled'::job_status
+               when attempts < max_attempts then 'queued'::job_status
+               else 'failed'::job_status
+             end,
+             error = case
+               when cancel_requested_at is not null or attempts < max_attempts then error
+               else coalesce(error, 'worker_crashed')
+             end,
+             finished_at = case when cancel_requested_at is not null or attempts >= max_attempts then now() else null end,
+             run_after = now(), locked_at = null, locked_by = null, updated_at = now()
+         where status = 'running'`
+      );
+      return result.rowCount ?? 0;
     }
   };
 }

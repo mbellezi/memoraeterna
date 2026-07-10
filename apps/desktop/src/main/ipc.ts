@@ -243,7 +243,8 @@ function serializeJob(
     progress: job.progress,
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
-    canCancel: job.type === "ingestion" && (job.status === "queued" || job.status === "running"),
+    canCancel: (job.type === "ingestion" || isCancelableAiStage(job.type))
+      && (job.status === "queued" || job.status === "running"),
     canRetry: canManuallyRetryJob(job, ingestionRun),
     error: job.error,
     createdAt: job.createdAt.toISOString(),
@@ -255,4 +256,8 @@ function serializeJob(
       stagesCheckpoint: ingestionRun.stagesCheckpoint
     } : null
   };
+}
+
+function isCancelableAiStage(type: string): boolean {
+  return ["summarization", "atomic-note-generation", "knowledge-graph-generation", "atomic-note-matching"].includes(type);
 }

@@ -1,5 +1,6 @@
 import {
   createSearchRepository,
+  createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
   type PgPool,
   type SearchEvidenceRecord
@@ -13,6 +14,7 @@ const reciprocalRankConstant = 60;
 export interface FusedSearchCandidate extends SearchEvidenceRecord {
   textRank: number | null;
   vectorRank: number | null;
+  graphRank: number | null;
   fusionScore: number;
 }
 
@@ -58,12 +60,24 @@ export class SearchService {
           limit: candidateLimit
         })
       : [];
-    const candidates = input.mode === "hybrid" && vectorCandidates.length > 0
-      ? fuseSearchRankings(textCandidates, vectorCandidates)
+    let graphCandidates: SearchEvidenceRecord[] = [];
+    let graphError: string | null = null;
+    try {
+      graphCandidates = await createKnowledgeGraphRepository(pool).searchChunks({
+        text: input.text,
+        sourceTypes: input.sourceTypes,
+        limit: candidateLimit
+      });
+    } catch (error) {
+      graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+    }
+    const candidates = (input.mode === "hybrid" && vectorCandidates.length > 0) || graphCandidates.length > 0
+      ? fuseSearchRankings(textCandidates, vectorCandidates, graphCandidates)
       : textCandidates.map((candidate, index) => ({
           ...candidate,
           textRank: index + 1,
           vectorRank: null,
+          graphRank: null,
           fusionScore: candidate.textScore,
           finalScore: candidate.textScore
         }));
@@ -73,6 +87,8 @@ export class SearchService {
       dimensions: embedding?.length,
       textCandidateCount: textCandidates.length,
       vectorCandidateCount: vectorCandidates.length,
+      graphCandidateCount: graphCandidates.length,
+      graphError,
       candidateLimit
     });
 
@@ -88,6 +104,8 @@ export class SearchService {
       dimensions: number | undefined;
       textCandidateCount: number;
       vectorCandidateCount: number;
+      graphCandidateCount: number;
+      graphError: string | null;
       candidateLimit: number;
     }
   ): Promise<void> {
@@ -100,12 +118,17 @@ export class SearchService {
         model: context.embeddingModel ?? null,
         dimensions: context.dimensions ?? null,
         requestedLimit: input.limit,
-        strategy: context.vectorCandidateCount > 0 ? "reciprocal_rank_fusion" : "text_only",
+        strategy: context.vectorCandidateCount > 0 || context.graphCandidateCount > 0
+          ? "reciprocal_rank_fusion"
+          : "text_only",
         metadata: {
           reciprocalRankConstant,
           candidateLimit: context.candidateLimit,
           textCandidateCount: context.textCandidateCount,
           vectorCandidateCount: context.vectorCandidateCount,
+          graphCandidateCount: context.graphCandidateCount,
+          graphStatus: context.graphError ? "failed" : context.graphCandidateCount > 0 ? "succeeded" : "no_signal",
+          graphError: context.graphError,
           sourceTypes: input.sourceTypes
         },
         results: candidates.map((candidate, index) => ({
@@ -115,8 +138,10 @@ export class SearchService {
           finalRank: index + 1,
           textRank: candidate.textRank,
           vectorRank: candidate.vectorRank,
+          graphRank: candidate.graphRank,
           textScore: candidate.textScore,
           vectorScore: candidate.vectorScore,
+          graphScore: candidate.graphScore,
           fusionScore: candidate.fusionScore,
           finalScore: candidate.finalScore,
           metadata: {
@@ -141,15 +166,18 @@ export class SearchService {
 
 export function fuseSearchRankings(
   textCandidates: SearchEvidenceRecord[],
-  vectorCandidates: SearchEvidenceRecord[]
+  vectorCandidates: SearchEvidenceRecord[],
+  graphCandidates: SearchEvidenceRecord[] = []
 ): FusedSearchCandidate[] {
   const candidates = new Map<string, FusedSearchCandidate>();
   textCandidates.forEach((candidate, index) => {
     candidates.set(candidate.chunkId, {
       ...candidate,
       vectorScore: 0,
+      graphScore: 0,
       textRank: index + 1,
       vectorRank: null,
+      graphRank: null,
       fusionScore: 0,
       finalScore: 0
     });
@@ -162,21 +190,42 @@ export function fuseSearchRankings(
       vectorScore: candidate.vectorScore,
       textRank: current?.textRank ?? null,
       vectorRank: index + 1,
+      graphRank: current?.graphRank ?? null,
+      fusionScore: 0,
+      finalScore: 0
+    });
+  });
+  graphCandidates.forEach((candidate, index) => {
+    const current = candidates.get(candidate.chunkId);
+    candidates.set(candidate.chunkId, {
+      ...(current ?? candidate),
+      textScore: current?.textScore ?? 0,
+      vectorScore: current?.vectorScore ?? 0,
+      graphScore: candidate.graphScore,
+      textRank: current?.textRank ?? null,
+      vectorRank: current?.vectorRank ?? null,
+      graphRank: index + 1,
       fusionScore: 0,
       finalScore: 0
     });
   });
 
-  const maximumRrf = 2 / (reciprocalRankConstant + 1);
+  const activeRankings = Math.max(1,
+    (textCandidates.length > 0 ? 1 : 0)
+      + (vectorCandidates.length > 0 ? 1 : 0)
+      + (graphCandidates.length > 0 ? 1 : 0));
+  const maximumRrf = activeRankings / (reciprocalRankConstant + 1);
   return [...candidates.values()]
     .map((candidate) => {
       const rawRrf = (candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0)
         + (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0);
-      const fusionScore = rawRrf / maximumRrf;
+      const graphRrf = candidate.graphRank ? 1 / (reciprocalRankConstant + candidate.graphRank) : 0;
+      const fusionScore = (rawRrf + graphRrf) / maximumRrf;
       return { ...candidate, fusionScore, finalScore: fusionScore };
     })
     .sort((left, right) => right.fusionScore - left.fusionScore
       || right.vectorScore - left.vectorScore
+      || right.graphScore - left.graphScore
       || right.textScore - left.textScore
       || left.chunkId.localeCompare(right.chunkId));
 }
@@ -191,6 +240,7 @@ function toSearchResult(row: SearchEvidenceRecord): SearchResult {
     excerpt: row.excerpt,
     textScore: row.textScore,
     vectorScore: row.vectorScore,
+    graphScore: row.graphScore,
     finalScore: row.finalScore,
     ...(row.sourceSpanId ? { sourceSpanId: row.sourceSpanId } : {}),
     ...(row.page ? { page: row.page } : {}),

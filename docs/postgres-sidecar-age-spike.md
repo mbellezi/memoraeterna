@@ -121,7 +121,7 @@ Observed spike result:
 ## Remaining Risks
 
 - Windows and Linux AGE builds are explicitly out of scope for the first spike and remain pending.
-- AGE is an `rc0` target; product graph queries must keep relational fallbacks.
+- AGE is an `rc0` target; if a graph query fails, product ranking omits the graph score and continues without a relational traversal fallback.
 - Native artifacts need signing/notarization before application packaging.
 - The packaging config still needs to copy `resources/sidecars/...` and `resources/drizzle/`.
 - Major PostgreSQL upgrades require an explicit data migration plan.

@@ -221,7 +221,7 @@ export class LocalModelService {
       quantization: "unknown",
       expectedSizeBytes: source.size,
       manifestHash: checksum,
-      capabilities: ["text-generation", "structured-output", "summarization", "atomic-note-generation", "cancellation", "offline", "local-files"],
+      capabilities: ["text-generation", "structured-output", "summarization", "knowledge-graph-generation", "atomic-note-generation", "cancellation", "offline", "local-files"],
       defaultParameters: { contextWindow: 4_096, temperature: 0.2, maxTokens: 1_024 },
       licenseName: "User supplied",
       licenseUrl: "https://github.com/ggml-org/ggml/blob/master/docs/gguf.md",

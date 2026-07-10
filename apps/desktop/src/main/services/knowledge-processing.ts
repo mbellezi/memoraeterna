@@ -1,20 +1,45 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   AtomicNoteGenerationOutputSchema,
   AtomicNoteRelationTypeSchema,
+  KnowledgeGraphGenerationOutputSchema,
   type AtomicNoteGenerationOutput,
-  type AtomicNoteRelationType
+  type AtomicNoteRelationType,
+  type KnowledgeGraphGenerationOutput
 } from "@app/domain";
 
 export const summaryPromptVersion = "summary-v1";
 export const atomicNotePromptVersion = "atomic-note-v2";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v1";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v2";
 
 const atomicNoteGenerationJsonSchema = JSON.stringify(
   z.toJSONSchema(AtomicNoteGenerationOutputSchema),
   null,
   2
 );
+
+const knowledgeGraphJsonContract = `{
+  "entities": [{"key":"e1","type":"Concept","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
+  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
+  "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
+}`;
+
+const knowledgeGraphExecutionTraceSchema = z.object({
+  providerId: z.string(),
+  modelId: z.string(),
+  runtime: z.string(),
+  profileId: z.string(),
+  aiTaskRunId: z.string(),
+  outputLanguage: z.string().optional()
+}).strict();
+
+const knowledgeGraphBatchCheckpointSchema = z.object({
+  batchKey: z.string(),
+  batch: KnowledgeGraphGenerationOutputSchema,
+  execution: knowledgeGraphExecutionTraceSchema
+}).strict();
 
 export interface KnowledgeAiExecution {
   output: unknown;
@@ -27,6 +52,38 @@ export interface KnowledgeAiExecution {
 }
 
 export type KnowledgeAiRunner = (input: string) => Promise<KnowledgeAiExecution | null>;
+
+export interface KnowledgeGraphAtomicNoteInput {
+  id: string;
+  title: string;
+  ideaStatement: string;
+  bodyMarkdown: string;
+  evidenceChunkIds: string[];
+}
+
+export interface KnowledgeGraphExecutionTrace {
+  providerId: string;
+  modelId: string;
+  runtime: string;
+  profileId: string;
+  aiTaskRunId: string;
+  outputLanguage?: string | undefined;
+}
+
+export interface KnowledgeGraphBatchCheckpoint {
+  batchKey: string;
+  batch: KnowledgeGraphGenerationOutput;
+  execution: KnowledgeGraphExecutionTrace;
+}
+
+export interface KnowledgeGraphGenerationOptions {
+  completedBatches?: ReadonlyArray<KnowledgeGraphBatchCheckpoint>;
+  onBatchCompleted?: (input: {
+    completed: number;
+    total: number;
+    checkpoints: KnowledgeGraphBatchCheckpoint[];
+  }) => Promise<void>;
+}
 
 export interface SummaryResult {
   summary: string;
@@ -58,7 +115,7 @@ export function normalizeSummaryText(output: unknown): string {
 export async function generateSummaryFromChunks(
   chunks: ReadonlyArray<{ id: string; content: string }>,
   run: KnowledgeAiRunner,
-  maxInputCharacters = 12_000
+  maxInputCharacters = 3_500
 ): Promise<SummaryResult | null> {
   const nonEmptyChunks = chunks.filter((chunk) => chunk.content.trim().length > 0);
   if (nonEmptyChunks.length === 0) return null;
@@ -84,6 +141,109 @@ export async function generateSummaryFromChunks(
   if (!reduction) return null;
   executions.push(reduction);
   return { summary: normalizeSummaryText(reduction.output), mapReduce: true, executions };
+}
+
+export async function generateKnowledgeGraphFromAtomicNotes(
+  source: { title: string; language: string },
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  run: KnowledgeAiRunner,
+  maxInputCharacters = 12_000,
+  options: KnowledgeGraphGenerationOptions = {}
+): Promise<{
+  batches: KnowledgeGraphGenerationOutput[];
+  executions: KnowledgeGraphExecutionTrace[];
+  checkpoints: KnowledgeGraphBatchCheckpoint[];
+} | null> {
+  const groups = groupAtomicNotes(notes.filter((note) => graphNoteContent(note).trim().length > 0), maxInputCharacters);
+  if (groups.length === 0) return null;
+  const checkpoints = reusableGraphCheckpoints(groups, options.completedBatches ?? []);
+  for (let batchIndex = checkpoints.length; batchIndex < groups.length; batchIndex += 1) {
+    const group = groups[batchIndex] ?? [];
+    const evidenceAliases = createEvidenceAliases(group);
+    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases));
+    if (!execution) return null;
+    let parsed: KnowledgeGraphGenerationOutput;
+    let finalExecution = execution;
+    try {
+      parsed = parseKnowledgeGraphOutput(execution.output, evidenceAliases);
+    } catch (initialError) {
+      const repaired = await run(buildKnowledgeGraphRepairPrompt(source, group, evidenceAliases));
+      if (!repaired) throw initialError;
+      try {
+        parsed = parseKnowledgeGraphOutput(repaired.output, evidenceAliases);
+      } catch (repairError) {
+        throw new Error(`knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`);
+      }
+      finalExecution = repaired;
+    }
+    checkpoints.push({
+      batchKey: knowledgeGraphBatchKey(group),
+      batch: parsed,
+      execution: executionTrace(finalExecution)
+    });
+    await options.onBatchCompleted?.({
+      completed: checkpoints.length,
+      total: groups.length,
+      checkpoints: [...checkpoints]
+    });
+  }
+  return {
+    batches: checkpoints.map((checkpoint) => checkpoint.batch),
+    executions: checkpoints.map((checkpoint) => checkpoint.execution),
+    checkpoints
+  };
+}
+
+export function buildKnowledgeGraphPrompt(
+  source: { title: string; language: string },
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  evidenceAliases = createEvidenceAliases(notes)
+): string {
+  return `Extract knowledge graph elements only from the atomic notes below.
+Return exactly one complete JSON object. Do not use Markdown fences or add commentary.
+Use exactly this compact JSON shape and these property names:
+${knowledgeGraphJsonContract}
+
+Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
+Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
+Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
+Keep the response small: at most 12 entities, 8 claims, and 12 relations. Use empty arrays when no supported items exist.
+
+Source title: ${source.title}
+Source language: ${source.language}
+Atomic notes:
+${formatAtomicNotesForGraph(notes, evidenceAliases)}`;
+}
+
+export function parseKnowledgeGraphOutput(
+  output: unknown,
+  evidenceAliases?: ReadonlyMap<string, string>
+): KnowledgeGraphGenerationOutput {
+  const value = parseJsonOutput(output);
+  const resolved = evidenceAliases ? resolveGraphEvidenceAliases(value, evidenceAliases) : value;
+  return KnowledgeGraphGenerationOutputSchema.parse(resolved);
+}
+
+function buildKnowledgeGraphRepairPrompt(
+  source: { title: string; language: string },
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  evidenceAliases: ReadonlyMap<string, string>
+): string {
+  return `The previous knowledge-graph response was invalid or incomplete. Regenerate it only from the atomic notes below.
+Return one complete compact JSON object only. Do not include reasoning, commentary, or Markdown fences.
+Use exactly this shape and property names:
+${knowledgeGraphJsonContract}
+
+Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary. Cite only supplied evidence aliases and copy them exactly.
+Source title: ${source.title}
+Source language: ${source.language}
+Atomic notes:
+${formatAtomicNotesForGraph(notes, evidenceAliases)}`;
+}
+
+export function parseKnowledgeGraphBatchCheckpoints(value: unknown): KnowledgeGraphBatchCheckpoint[] {
+  const parsed = z.array(knowledgeGraphBatchCheckpointSchema).safeParse(value);
+  return parsed.success ? parsed.data : [];
 }
 
 export function buildAtomicNoteGenerationPrompt(
@@ -181,12 +341,18 @@ export function calculateRelationScore(input: {
   vectorScore: number;
   textScore: number;
   metadataScore: number;
+  graphScore?: number | null;
   hasEmbedding: boolean;
   rerankScore?: number | null;
 }): number {
+  const hasGraph = input.graphScore !== null && input.graphScore !== undefined;
   const baseScore = input.hasEmbedding
-    ? (input.vectorScore * 0.55) + (input.textScore * 0.3) + (input.metadataScore * 0.15)
-    : (input.textScore * 0.7) + (input.metadataScore * 0.3);
+    ? hasGraph
+      ? (input.vectorScore * 0.45) + (input.textScore * 0.25) + (input.graphScore! * 0.2) + (input.metadataScore * 0.1)
+      : (input.vectorScore * 0.55) + (input.textScore * 0.3) + (input.metadataScore * 0.15)
+    : hasGraph
+      ? (input.textScore * 0.55) + (input.graphScore! * 0.3) + (input.metadataScore * 0.15)
+      : (input.textScore * 0.7) + (input.metadataScore * 0.3);
   return Math.max(0, Math.min(1, input.rerankScore === null || input.rerankScore === undefined
     ? baseScore
     : (baseScore * 0.6) + (input.rerankScore * 0.4)));
@@ -246,13 +412,162 @@ function groupChunks(
   return groups;
 }
 
+function groupAtomicNotes(
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  maxCharacters: number
+): KnowledgeGraphAtomicNoteInput[][] {
+  const groups: KnowledgeGraphAtomicNoteInput[][] = [];
+  let current: KnowledgeGraphAtomicNoteInput[] = [];
+  let currentLength = 0;
+  for (const note of notes) {
+    const length = graphNoteContent(note).length;
+    if (current.length > 0 && currentLength + length > maxCharacters) {
+      groups.push(current);
+      current = [];
+      currentLength = 0;
+    }
+    current.push(note);
+    currentLength += length;
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+function graphNoteContent(note: KnowledgeGraphAtomicNoteInput): string {
+  return `${note.title}\n${note.ideaStatement}\n${note.bodyMarkdown}`;
+}
+
+function createEvidenceAliases(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>): Map<string, string> {
+  const chunkIds = [...new Set(notes.flatMap((note) => note.evidenceChunkIds))].sort();
+  return new Map(chunkIds.map((chunkId, index) => [`c${index + 1}`, chunkId]));
+}
+
+function formatAtomicNotesForGraph(
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  evidenceAliases: ReadonlyMap<string, string>
+): string {
+  const aliasByChunkId = new Map([...evidenceAliases].map(([alias, chunkId]) => [chunkId, alias]));
+  return notes.map((note, index) => {
+    const aliases = note.evidenceChunkIds.flatMap((chunkId) => {
+      const alias = aliasByChunkId.get(chunkId);
+      return alias ? [alias] : [];
+    });
+    return `[n${index + 1}; evidence=${aliases.join(",")}]
+Title: ${note.title}
+Idea: ${note.ideaStatement}
+${note.bodyMarkdown}`;
+  }).join("\n\n");
+}
+
+function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMap<string, string>): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const root = value as Record<string, unknown>;
+  const resolveItems = (items: unknown): unknown => Array.isArray(items)
+    ? items.map((item) => {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
+        const record = item as Record<string, unknown>;
+        if (!Array.isArray(record.evidenceChunkIds)) return record;
+        return {
+          ...record,
+          evidenceChunkIds: record.evidenceChunkIds.map((candidate) => {
+            if (typeof candidate !== "string") return candidate;
+            const chunkId = evidenceAliases.get(candidate);
+            if (!chunkId) throw new Error(`knowledge_graph_unknown_evidence_alias:${candidate}`);
+            return chunkId;
+          })
+        };
+      })
+    : items;
+  return {
+    ...root,
+    entities: resolveItems(root.entities),
+    claims: resolveItems(root.claims),
+    relations: resolveItems(root.relations)
+  };
+}
+
+function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>): string {
+  const hash = createHash("sha256");
+  for (const note of notes) {
+    hash.update(note.id);
+    hash.update("\0");
+    hash.update(graphNoteContent(note));
+    hash.update("\0");
+    hash.update([...note.evidenceChunkIds].sort().join(","));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function reusableGraphCheckpoints(
+  groups: ReadonlyArray<ReadonlyArray<KnowledgeGraphAtomicNoteInput>>,
+  completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>
+): KnowledgeGraphBatchCheckpoint[] {
+  const reusable: KnowledgeGraphBatchCheckpoint[] = [];
+  for (let index = 0; index < Math.min(groups.length, completed.length); index += 1) {
+    const group = groups[index] ?? [];
+    const checkpoint = completed[index];
+    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group)) break;
+    reusable.push(checkpoint);
+  }
+  return reusable;
+}
+
+function executionTrace(execution: KnowledgeAiExecution): KnowledgeGraphExecutionTrace {
+  return {
+    providerId: execution.providerId,
+    modelId: execution.modelId,
+    runtime: execution.runtime,
+    profileId: execution.profileId,
+    aiTaskRunId: execution.aiTaskRunId,
+    ...(execution.outputLanguage !== undefined ? { outputLanguage: execution.outputLanguage } : {})
+  };
+}
+
+function knowledgeGraphValidationCode(error: unknown): string {
+  if (error instanceof SyntaxError) return "invalid_json";
+  if (error instanceof z.ZodError) return "schema_validation";
+  if (error instanceof Error && /^[a-zA-Z0-9_.:-]{1,100}$/.test(error.message)) return error.message;
+  return "unknown_validation_error";
+}
+
 function parseJsonOutput(output: unknown): unknown {
   if (typeof output !== "string") return output;
   const trimmed = output.trim();
   const withoutFence = trimmed.startsWith("```")
     ? trimmed.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")
     : trimmed;
-  return JSON.parse(withoutFence);
+  try {
+    return JSON.parse(withoutFence);
+  } catch (error) {
+    const object = extractFirstJsonObject(withoutFence);
+    if (!object) throw error;
+    return JSON.parse(object);
+  }
+}
+
+function extractFirstJsonObject(value: string): string | null {
+  const start = value.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "\"") inString = false;
+      continue;
+    }
+    if (character === "\"") inString = true;
+    else if (character === "{") depth += 1;
+    else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return value.slice(start, index + 1);
+    }
+  }
+  return null;
 }
 
 function serializeOutputForRepair(output: unknown): string {

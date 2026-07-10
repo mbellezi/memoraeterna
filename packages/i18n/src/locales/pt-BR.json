@@ -112,6 +112,7 @@
       "embedding": "Embedding",
       "summarization": "Resumo",
       "atomicNoteGeneration": "Geracao de nota atomica",
+      "knowledgeGraphGeneration": "Geracao do grafo de conhecimento",
       "atomicNoteMatching": "Conexao de notas atomicas",
       "obsidianSync": "Sincronizacao com Obsidian",
       "assetStorage": "Armazenamento de assets"
@@ -129,6 +130,7 @@
       "embedding": "Embedding",
       "summarization": "Resumo",
       "atomicNotes": "Notas atomicas",
+      "knowledgeGraph": "Grafo de conhecimento",
       "atomicNoteMatching": "Conexao de notas",
       "obsidianProjection": "Projecao no Obsidian",
       "completed": "Concluida"
@@ -138,6 +140,7 @@
       "running": "Em execucao",
       "completed": "Concluida",
       "failed": "Falhou",
+      "canceled": "Cancelada",
       "skipped": "Ignorada"
     },
     "empty": "Nenhuma tarefa ainda.",
@@ -301,7 +304,7 @@
       "languages": { "interface": "Mesmo idioma da interface" },
       "tasks": {
         "embedding": "Embedding", "summarization": "Resumo", "text-generation": "Geracao de texto",
-        "structured-output": "Saida estruturada", "atomic-note-generation": "Geracao de notas atomicas", "reranking": "Reranking"
+        "structured-output": "Saida estruturada", "knowledge-graph-generation": "Geracao do grafo de conhecimento", "atomic-note-generation": "Geracao de notas atomicas", "reranking": "Reranking"
       },
       "parameters": {
         "contextWindow": "Janela de contexto", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
@@ -337,7 +340,7 @@
     "failed": "Nao foi possivel criar o backup."
   },
   "debug": {
-    "title": "Dashboard de debug", "captureTitle": "Diagnóstico de similaridade", "captureDescription": "Registra os scores textual, vetorial, de metadados, reranking e final usados nas buscas e no matching de notas atômicas.", "enabled": "Debug ativado", "disabled": "Debug desativado", "executions": "Execuções", "candidates": "Candidatos", "captureState": "Estado da captura", "recording": "Gravando", "paused": "Pausado", "refresh": "Atualizar", "clear": "Limpar logs", "clearConfirmation": "Apagar todos os logs de debug de similaridade?", "empty": "Nenhum diagnóstico registrado", "emptyDescription": "Ative o debug e execute uma busca ou importe conteúdo para inspecionar os cálculos de similaridade.", "chunkSearch": "Busca de chunks", "noteMatching": "Matching de notas atômicas", "noModel": "Sem modelo de embedding", "passed": "Passou", "rejected": "Abaixo do limiar", "thresholdUsed": "Corte usado", "textRank": "Posição textual", "vectorRank": "Posição vetorial", "textScore": "Texto", "vectorScore": "Vetor", "metadataScore": "Metadados", "rerankScore": "Reranking", "fusionScore": "Fusão RRF", "finalScore": "Final", "beforeRerank": "Score antes do reranking", "rerankError": "Erro no reranking", "rerankNotConfigured": "O reranking não foi executado porque não há um perfil compatível configurado.",
+    "title": "Dashboard de debug", "captureTitle": "Diagnóstico de similaridade", "captureDescription": "Registra os scores textual, vetorial, de grafo, de metadados, reranking e final usados nas buscas e no matching de notas atômicas.", "enabled": "Debug ativado", "disabled": "Debug desativado", "executions": "Execuções", "candidates": "Candidatos", "captureState": "Estado da captura", "recording": "Gravando", "paused": "Pausado", "refresh": "Atualizar", "clear": "Limpar logs", "clearConfirmation": "Apagar todos os logs de debug de similaridade?", "empty": "Nenhum diagnóstico registrado", "emptyDescription": "Ative o debug e execute uma busca ou importe conteúdo para inspecionar os cálculos de similaridade.", "chunkSearch": "Busca de chunks", "noteMatching": "Matching de notas atômicas", "noModel": "Sem modelo de embedding", "passed": "Passou", "rejected": "Abaixo do limiar", "thresholdUsed": "Corte usado", "textRank": "Posição textual", "vectorRank": "Posição vetorial", "graphRank": "Posição no grafo", "textScore": "Texto", "vectorScore": "Vetor", "graphScore": "Grafo", "metadataScore": "Metadados", "rerankScore": "Reranking", "fusionScore": "Fusão RRF", "finalScore": "Final", "beforeRerank": "Score antes do reranking", "rerankError": "Erro no reranking", "rerankNotConfigured": "O reranking não foi executado porque não há um perfil compatível configurado.", "graphError": "Erro na consulta do grafo", "graphUnavailable": "O sinal de grafo foi omitido porque a consulta ao AGE falhou.", "sourceElements": "Elementos vinculados à nota de origem", "candidateElements": "Elementos vinculados a esta candidata", "entities": "Entidades", "claims": "Claims", "relations": "Relações",
     "filters": { "all": "Todos", "chunk_search": "Buscas de chunks", "atomic_note_matching": "Matching de notas" }
   },
   "integrations": {

@@ -112,6 +112,7 @@
       "embedding": "Embedding",
       "summarization": "Summarization",
       "atomicNoteGeneration": "Atomic note generation",
+      "knowledgeGraphGeneration": "Knowledge graph generation",
       "atomicNoteMatching": "Atomic note matching",
       "obsidianSync": "Obsidian sync",
       "assetStorage": "Asset storage"
@@ -129,6 +130,7 @@
       "embedding": "Embedding",
       "summarization": "Summarization",
       "atomicNotes": "Atomic notes",
+      "knowledgeGraph": "Knowledge graph",
       "atomicNoteMatching": "Note matching",
       "obsidianProjection": "Obsidian projection",
       "completed": "Completed"
@@ -138,6 +140,7 @@
       "running": "Running",
       "completed": "Completed",
       "failed": "Failed",
+      "canceled": "Canceled",
       "skipped": "Skipped"
     },
     "empty": "No jobs yet.",
@@ -306,7 +309,7 @@
       "languages": { "interface": "Same as interface" },
       "tasks": {
         "embedding": "Embedding", "summarization": "Summarization", "text-generation": "Text generation",
-        "structured-output": "Structured output", "atomic-note-generation": "Atomic note generation", "reranking": "Reranking"
+        "structured-output": "Structured output", "knowledge-graph-generation": "Knowledge graph generation", "atomic-note-generation": "Atomic note generation", "reranking": "Reranking"
       },
       "parameters": {
         "contextWindow": "Context window", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
@@ -372,7 +375,7 @@
     "failed": "The backup could not be created."
   },
   "debug": {
-    "title": "Debug dashboard", "captureTitle": "Similarity diagnostics", "captureDescription": "Record the textual, vector, metadata, reranking and final scores used by searches and atomic-note matching.", "enabled": "Debug enabled", "disabled": "Debug disabled", "executions": "Executions", "candidates": "Candidates", "captureState": "Capture state", "recording": "Recording", "paused": "Paused", "refresh": "Refresh", "clear": "Clear logs", "clearConfirmation": "Delete all similarity debug logs?", "empty": "No diagnostics recorded", "emptyDescription": "Enable debug and run a search or import content to inspect its similarity calculations.", "chunkSearch": "Chunk search", "noteMatching": "Atomic-note matching", "noModel": "No embedding model", "passed": "Passed", "rejected": "Below threshold", "thresholdUsed": "Threshold used", "textRank": "Text rank", "vectorRank": "Vector rank", "textScore": "Text", "vectorScore": "Vector", "metadataScore": "Metadata", "rerankScore": "Reranking", "fusionScore": "RRF fusion", "finalScore": "Final", "beforeRerank": "Score before reranking", "rerankError": "Reranking error", "rerankNotConfigured": "Reranking was not executed because no compatible profile is configured.",
+    "title": "Debug dashboard", "captureTitle": "Similarity diagnostics", "captureDescription": "Record the textual, vector, graph, metadata, reranking and final scores used by searches and atomic-note matching.", "enabled": "Debug enabled", "disabled": "Debug disabled", "executions": "Executions", "candidates": "Candidates", "captureState": "Capture state", "recording": "Recording", "paused": "Paused", "refresh": "Refresh", "clear": "Clear logs", "clearConfirmation": "Delete all similarity debug logs?", "empty": "No diagnostics recorded", "emptyDescription": "Enable debug and run a search or import content to inspect its similarity calculations.", "chunkSearch": "Chunk search", "noteMatching": "Atomic-note matching", "noModel": "No embedding model", "passed": "Passed", "rejected": "Below threshold", "thresholdUsed": "Threshold used", "textRank": "Text rank", "vectorRank": "Vector rank", "graphRank": "Graph rank", "textScore": "Text", "vectorScore": "Vector", "graphScore": "Graph", "metadataScore": "Metadata", "rerankScore": "Reranking", "fusionScore": "RRF fusion", "finalScore": "Final", "beforeRerank": "Score before reranking", "rerankError": "Reranking error", "rerankNotConfigured": "Reranking was not executed because no compatible profile is configured.", "graphError": "Graph query error", "graphUnavailable": "The graph signal was omitted because the AGE query failed.", "sourceElements": "Elements linked to the source note", "candidateElements": "Elements linked to this candidate", "entities": "Entities", "claims": "Claims", "relations": "Relations",
     "filters": { "all": "All", "chunk_search": "Chunk searches", "atomic_note_matching": "Note matching" }
   },
   "integrations": {

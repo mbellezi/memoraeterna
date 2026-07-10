@@ -5,6 +5,7 @@ export const resumableIngestionStages = [
   "embedding",
   "summarization",
   "atomicNotes",
+  "knowledgeGraph",
   "atomicNoteMatching",
   "obsidianProjection"
 ] as const;

@@ -7,6 +7,7 @@ const completedStages = {
   embedding: { status: "completed" },
   summarization: { status: "completed" },
   atomicNotes: { status: "completed" },
+  knowledgeGraph: { status: "completed" },
   atomicNoteMatching: { status: "completed" },
   obsidianProjection: { status: "completed" }
 };

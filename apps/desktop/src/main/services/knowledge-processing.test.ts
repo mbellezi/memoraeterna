@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAtomicNoteGenerationPrompt,
+  buildKnowledgeGraphPrompt,
   calculateRelationScore,
   generateAtomicNoteCandidates,
+  generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   meetsRelationThreshold,
   normalizeSummaryText,
+  parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
   scoreMetadataOverlap
 } from "./knowledge-processing.js";
@@ -34,6 +37,126 @@ describe("knowledge processing", () => {
 
     expect(result).toMatchObject({ summary: "Reduced summary", mapReduce: true });
     expect(run).toHaveBeenCalledTimes(3);
+  });
+
+  it("parses graph knowledge with traceable entities, claims, and relations", async () => {
+    const output = {
+      entities: [
+        { key: "postgres", type: "Product", canonicalName: "PostgreSQL", aliases: [], confidence: 0.98, evidenceChunkIds: ["c1"] },
+        { key: "vector", type: "Concept", canonicalName: "Vector search", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] }
+      ],
+      claims: [{ text: "PostgreSQL supports vector search.", confidence: 0.9, evidenceChunkIds: ["c1"], relatedEntityKeys: ["postgres", "vector"] }],
+      relations: [{ subjectEntityKey: "postgres", predicate: "supports", objectEntityKey: "vector", confidence: 0.88, evidenceChunkIds: ["c1"] }]
+    };
+    const resolved = {
+      ...output,
+      entities: output.entities.map((entity) => ({ ...entity, evidenceChunkIds: ["chunk-1"] })),
+      claims: output.claims.map((claim) => ({ ...claim, evidenceChunkIds: ["chunk-1"] })),
+      relations: output.relations.map((relation) => ({ ...relation, evidenceChunkIds: ["chunk-1"] }))
+    };
+    expect(parseKnowledgeGraphOutput(JSON.stringify(output), new Map([["c1", "chunk-1"]]))).toEqual(resolved);
+    expect(parseKnowledgeGraphOutput(
+      `<think>extract carefully</think>\n${JSON.stringify(output)}\nDone.`,
+      new Map([["c1", "chunk-1"]])
+    )).toEqual(resolved);
+    expect(() => parseKnowledgeGraphOutput(JSON.stringify(output), new Map([["c2", "chunk-1"]]))).toThrow(
+      "knowledge_graph_unknown_evidence_alias:c1"
+    );
+    const generated = await generateKnowledgeGraphFromAtomicNotes(
+      { title: "Source", language: "en" },
+      [{
+        id: "note-1", title: "PostgreSQL", ideaStatement: "PostgreSQL supports vector search.",
+        bodyMarkdown: "Vector search is supported.", evidenceChunkIds: ["chunk-1"]
+      }],
+      async () => ({
+        output: JSON.stringify(output), providerId: "test", modelId: "mock", runtime: "remote",
+        profileId: "profile-1", aiTaskRunId: "run-1"
+      })
+    );
+    expect(generated?.batches[0]?.relations).toHaveLength(1);
+  });
+
+  it("regenerates a compact graph response after truncated JSON", async () => {
+    const valid = JSON.stringify({
+      entities: [{
+        key: "e1", type: "Concept", canonicalName: "Local-first", aliases: [],
+        confidence: 0.9, evidenceChunkIds: ["c1"]
+      }],
+      claims: [],
+      relations: []
+    });
+    const run = vi.fn()
+      .mockResolvedValueOnce({
+        output: '{"entities":[{"key":"e1"', providerId: "test", modelId: "mock",
+        runtime: "local", profileId: "profile-1", aiTaskRunId: "run-invalid"
+      })
+      .mockResolvedValueOnce({
+        output: `<think>retry</think>\n${valid}`, providerId: "test", modelId: "mock",
+        runtime: "local", profileId: "profile-1", aiTaskRunId: "run-repaired"
+      });
+    const result = await generateKnowledgeGraphFromAtomicNotes(
+      { title: "Source", language: "en" },
+      [{
+        id: "note-1", title: "Local-first", ideaStatement: "Local-first evidence.",
+        bodyMarkdown: "Local-first body.", evidenceChunkIds: ["chunk-1"]
+      }],
+      run
+    );
+    expect(result?.batches[0]?.entities[0]?.canonicalName).toBe("Local-first");
+    expect(result?.executions[0]?.aiTaskRunId).toBe("run-repaired");
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a stable graph error code after two invalid responses", async () => {
+    const run = vi.fn().mockResolvedValue({
+      output: '{"entities":[', providerId: "test", modelId: "mock", runtime: "local",
+      profileId: "profile-1", aiTaskRunId: "run-invalid"
+    });
+    await expect(generateKnowledgeGraphFromAtomicNotes(
+      { title: "Source", language: "en" },
+      [{
+        id: "note-1", title: "Evidence", ideaStatement: "Evidence.",
+        bodyMarkdown: "Body.", evidenceChunkIds: ["chunk-1"]
+      }],
+      run
+    )).rejects.toThrow("knowledge_graph_output_invalid:invalid_json");
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses atomic notes and short aliases without exposing source UUIDs to the model", () => {
+    const prompt = buildKnowledgeGraphPrompt(
+      { title: "Source", language: "en" },
+      [{
+        id: "note-1", title: "Atomic title", ideaStatement: "Atomic idea",
+        bodyMarkdown: "Atomic body", evidenceChunkIds: ["00000000-0000-4000-8000-000000000001"]
+      }]
+    );
+    expect(prompt).toContain("Atomic notes:");
+    expect(prompt).toContain("evidence=c1");
+    expect(prompt).not.toContain("00000000-0000-4000-8000-000000000001");
+  });
+
+  it("resumes after completed graph batches instead of executing them again", async () => {
+    const notes = [
+      { id: "note-1", title: "One", ideaStatement: "A".repeat(60), bodyMarkdown: "Body", evidenceChunkIds: ["chunk-1"] },
+      { id: "note-2", title: "Two", ideaStatement: "B".repeat(60), bodyMarkdown: "Body", evidenceChunkIds: ["chunk-2"] }
+    ];
+    const output = (alias: string) => JSON.stringify({
+      entities: [{ key: "e1", type: "Concept", canonicalName: "Concept", aliases: [], confidence: 0.9, evidenceChunkIds: [alias] }],
+      claims: [], relations: []
+    });
+    const firstRun = vi.fn()
+      .mockResolvedValueOnce({ output: output("c1"), providerId: "test", modelId: "mock", runtime: "remote", profileId: "profile-1", aiTaskRunId: "run-1" })
+      .mockResolvedValueOnce({ output: output("c1"), providerId: "test", modelId: "mock", runtime: "remote", profileId: "profile-1", aiTaskRunId: "run-2" });
+    const first = await generateKnowledgeGraphFromAtomicNotes({ title: "Source", language: "en" }, notes, firstRun, 70);
+    const resumedRun = vi.fn();
+    const resumed = await generateKnowledgeGraphFromAtomicNotes(
+      { title: "Source", language: "en" }, notes, resumedRun, 70,
+      first ? { completedBatches: first.checkpoints } : {}
+    );
+    expect(firstRun).toHaveBeenCalledTimes(2);
+    expect(resumedRun).not.toHaveBeenCalled();
+    expect(resumed?.batches).toHaveLength(2);
   });
 
   it("parses structured notes and rejects invented evidence ids", () => {
@@ -165,5 +288,13 @@ describe("knowledge processing", () => {
       hasEmbedding: true,
       rerankScore: 0.8
     })).toBeCloseTo(0.752);
+    expect(calculateRelationScore({
+      vectorScore: 0.9,
+      textScore: 0.6,
+      metadataScore: 0.3,
+      graphScore: 0.8,
+      hasEmbedding: true,
+      rerankScore: 0.8
+    })).toBeCloseTo(0.767);
   });
 });

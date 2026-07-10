@@ -76,6 +76,11 @@ Implementado ate aqui:
   chunks e SourceSpans, sempre iniciando em `pending_review`;
 - matching hibrido entre notas com sinais vetoriais e de metadados, reranking
   opcional, limiar configuravel e relacoes canonicas persistidas em SQL;
+- etapa configuravel de geracao do grafo de conhecimento a partir das notas
+  atomicas, com aliases curtos de evidencia, checkpoint por lote e entidades,
+  mencoes, claims e relacoes rastreaveis persistidas em SQL e projetadas no AGE;
+- busca e matching com ranking/sinal opcional do AGE integrado por RRF e debug
+  de `graphRank`/`graphScore`; falhas do AGE apenas omitem esse sinal;
 - auditoria das transicoes de revisao de notas atomicas;
 - pipeline retomavel completo ate resumo, notas atomicas e matching;
 - UI funcional de Library, detalhe da fonte, arquivos originais, checkpoints
@@ -130,7 +135,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migration `0009_same_nighthawk`, baseline com 10 migrations e verificacao
+- migration `0010_handy_gamora`, baseline com 11 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.

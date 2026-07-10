@@ -52,7 +52,8 @@ describe("baseline seed", () => {
       "0006_workable_lockheed",
       "0007_concerned_marrow",
       "0008_plain_wrecker",
-      "0009_same_nighthawk"
+      "0009_same_nighthawk",
+      "0010_handy_gamora"
     ]);
   });
 
@@ -80,7 +81,8 @@ describe("baseline seed", () => {
         "0006_workable_lockheed",
         "0007_concerned_marrow",
         "0008_plain_wrecker",
-        "0009_same_nighthawk"
+        "0009_same_nighthawk",
+        "0010_handy_gamora"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -53,6 +53,7 @@ const textCapabilities = [
   "text-generation",
   "structured-output",
   "summarization",
+  "knowledge-graph-generation",
   "atomic-note-generation",
   "reranking",
   "cancellation",

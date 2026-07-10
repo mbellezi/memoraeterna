@@ -8,9 +8,11 @@ import {
   createDocumentRepository,
   createEmbeddingRepository,
   createLibraryRepository,
+  createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
   createSourceItemRepository,
   createSourceSummaryRepository,
+  type AtomicNoteGraphElements,
   type AtomicNoteRecord,
   type PgPool,
   type SourceItemType
@@ -24,12 +26,16 @@ import {
   buildRerankPrompt,
   calculateRelationScore,
   generateAtomicNoteCandidates,
+  generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   meetsRelationThreshold,
   normalizeSummaryText,
   parseRerankOutput,
   scoreMetadataOverlap,
+  knowledgeGraphPromptVersion,
+  parseKnowledgeGraphBatchCheckpoints,
   summaryPromptVersion,
+  type KnowledgeGraphBatchCheckpoint,
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
 
@@ -39,6 +45,7 @@ export interface KnowledgeServiceOptions {
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
   summaryMaxInputCharacters?: number;
+  knowledgeGraphMaxInputCharacters?: number;
   userDataPath: string;
   getUploadedFilesBasePath: () => Promise<string | null>;
   isDebugEnabled?: () => Promise<boolean>;
@@ -50,13 +57,24 @@ export interface AtomicNoteGenerationLogContext {
   ingestionRunId?: string;
 }
 
+export interface KnowledgeGraphGenerationContext {
+  completedBatches?: unknown;
+  onBatchCompleted?: (input: {
+    completed: number;
+    total: number;
+    checkpoints: KnowledgeGraphBatchCheckpoint[];
+  }) => Promise<void>;
+}
+
 export class KnowledgeService {
   private readonly relationThreshold: number;
   private readonly summaryMaxInputCharacters: number;
+  private readonly knowledgeGraphMaxInputCharacters: number;
 
   public constructor(private readonly options: KnowledgeServiceOptions) {
     this.relationThreshold = clamp(options.relationThreshold ?? 0.72);
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
+    this.knowledgeGraphMaxInputCharacters = Math.max(2_000, options.knowledgeGraphMaxInputCharacters ?? 3_500);
   }
 
   public async listLibrary(sourceTypes: SourceItemType[] = []) {
@@ -165,7 +183,7 @@ export class KnowledgeService {
     return absolutePath;
   }
 
-  public async summarizeSource(sourceItemId: string, documentId: string) {
+  public async summarizeSource(sourceItemId: string, documentId: string, signal?: AbortSignal) {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
@@ -175,7 +193,7 @@ export class KnowledgeService {
       chunks.length > 0
         ? chunks.map((chunk) => ({ id: chunk.id, content: chunk.content }))
         : [{ id: document.id, content: document.canonicalMarkdown }],
-      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask("summarization", prompt)),
+      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask("summarization", prompt, {}, signal)),
       this.summaryMaxInputCharacters
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
@@ -214,7 +232,8 @@ export class KnowledgeService {
   public async generateAtomicNotes(
     sourceItemId: string,
     documentId: string,
-    logContext: AtomicNoteGenerationLogContext = {}
+    logContext: AtomicNoteGenerationLogContext = {},
+    signal?: AbortSignal
   ) {
     const pool = this.requirePool();
     let stage = "source_loading";
@@ -233,7 +252,8 @@ export class KnowledgeService {
           execution = toKnowledgeExecution(await this.options.aiService.runDefaultTask(
             "atomic-note-generation",
             prompt,
-            { ...logContext, sourceItemId, documentId, stage: "ai_execution" }
+            { ...logContext, sourceItemId, documentId, stage: "ai_execution" },
+            signal
           ));
           stage = "output_validation";
           return execution;
@@ -300,7 +320,84 @@ export class KnowledgeService {
     }
   }
 
-  public async matchAtomicNotes(noteIds: string[]) {
+  public async generateKnowledgeGraph(
+    sourceItemId: string,
+    documentId: string,
+    context: KnowledgeGraphGenerationContext = {},
+    signal?: AbortSignal
+  ) {
+    const pool = this.requirePool();
+    const source = await createSourceItemRepository(pool).findById(sourceItemId);
+    const document = await createDocumentRepository(pool).findById(documentId);
+    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    const notes = await createAtomicNoteRepository(pool).listGraphInputsBySourceItem(sourceItemId);
+    if (notes.length === 0) {
+      return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+    }
+    const generated = await generateKnowledgeGraphFromAtomicNotes(
+      source,
+      notes,
+      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+        "knowledge-graph-generation",
+        prompt,
+        { sourceItemId, documentId, stage: "knowledge_graph_generation" },
+        signal
+      )),
+      this.knowledgeGraphMaxInputCharacters,
+      {
+        completedBatches: parseKnowledgeGraphBatchCheckpoints(context.completedBatches),
+        ...(context.onBatchCompleted ? { onBatchCompleted: context.onBatchCompleted } : {})
+      }
+    );
+    if (!generated) {
+      return { configured: false, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+    }
+    const finalExecution = generated.executions.at(-1);
+    if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
+    const repository = createKnowledgeGraphRepository(pool);
+    const persisted = await repository.replaceSourceExtraction({
+      sourceItemId,
+      language: source.language,
+      batches: generated.batches,
+      generation: {
+        profileId: finalExecution.profileId,
+        aiTaskRunIds: generated.executions.map((execution) => execution.aiTaskRunId),
+        provider: finalExecution.providerId,
+        model: finalExecution.modelId,
+        runtime: finalExecution.runtime,
+        promptVersion: knowledgeGraphPromptVersion
+      }
+    });
+    let projected = true;
+    let projectionError: string | null = null;
+    try {
+      await repository.projectSource(sourceItemId);
+    } catch (error) {
+      projected = false;
+      projectionError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+      logStructuredError(this.options.logger, "knowledge_graph_projection_failed", {
+        sourceItemId,
+        documentId,
+        stage: "graph_projection",
+        taskType: "knowledge-graph-generation",
+        profileId: finalExecution.profileId,
+        providerId: finalExecution.providerId,
+        modelId: finalExecution.modelId,
+        runtime: finalExecution.runtime,
+        aiTaskRunId: finalExecution.aiTaskRunId
+      }, error, "knowledge_graph_projection_failed");
+    }
+    return {
+      configured: true,
+      generated: true,
+      projected,
+      projectionError,
+      batchCount: generated.batches.length,
+      ...persisted
+    };
+  }
+
+  public async matchAtomicNotes(noteIds: string[], signal?: AbortSignal) {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
@@ -311,7 +408,8 @@ export class KnowledgeService {
       if (!note) continue;
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
-        `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`
+        `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
+        signal
       );
       const embedding = readEmbedding(embeddingExecution?.output);
       if (embedding && embeddingExecution) {
@@ -333,13 +431,35 @@ export class KnowledgeService {
         ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
         limit: 20
       });
+      const graphRepository = createKnowledgeGraphRepository(pool);
+      let graphScores = new Map<string, number>();
+      let graphError: string | null = null;
+      try {
+        graphScores = await graphRepository.scoreAtomicNoteCandidates(
+          noteId,
+          candidates.map((candidate) => candidate.note.id)
+        );
+      } catch (error) {
+        graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+      }
+      let graphElementsByNote = new Map<string, AtomicNoteGraphElements>();
+      try {
+        graphElementsByNote = await graphRepository.listAtomicNoteElements([
+          noteId,
+          ...candidates.map((candidate) => candidate.note.id)
+        ]);
+      } catch {
+        // Debug enrichment must not make note matching fail.
+      }
       const debugResults: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"] = [];
       for (const [candidateIndex, candidate] of candidates.entries()) {
         const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
+        const graphScore = graphScores.get(candidate.note.id) ?? null;
         const baseScore = calculateRelationScore({
           vectorScore: candidate.vectorScore,
           textScore: candidate.textScore,
           metadataScore,
+          graphScore,
           hasEmbedding: Boolean(embedding)
         });
         let finalScore = baseScore;
@@ -351,7 +471,9 @@ export class KnowledgeService {
         try {
           rerankExecution = await this.options.aiService.runDefaultTask(
             "reranking",
-            buildRerankPrompt(note, candidate.note)
+            buildRerankPrompt(note, candidate.note),
+            {},
+            signal
           );
           if (rerankExecution) {
             const reranked = parseRerankOutput(rerankExecution.output);
@@ -360,6 +482,7 @@ export class KnowledgeService {
               vectorScore: candidate.vectorScore,
               textScore: candidate.textScore,
               metadataScore,
+              graphScore,
               hasEmbedding: Boolean(embedding),
               rerankScore: reranked.score
             });
@@ -367,6 +490,7 @@ export class KnowledgeService {
             explanation = reranked.explanation;
           }
         } catch (error) {
+          if (signal?.aborted) throw error;
           rerankError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
           // Candidate matching remains available when an optional reranker is unavailable.
         }
@@ -380,6 +504,7 @@ export class KnowledgeService {
           textScore: candidate.textScore,
           vectorScore: candidate.vectorScore,
           metadataScore,
+          graphScore,
           rerankScore,
           finalScore,
           passedThreshold,
@@ -387,6 +512,9 @@ export class KnowledgeService {
           metadata: {
             baseScore,
             relationType,
+            graphError,
+            graphStatus: graphError ? "failed" : graphScores.size > 0 ? "succeeded" : "no_signal",
+            graphElements: graphElementsByNote.get(candidate.note.id) ?? { entities: [], claims: [], relations: [] },
             rerankError,
             rerankStatus: rerankExecution ? "succeeded" : rerankError ? "failed" : "not_configured",
             rerankProfileId: rerankExecution?.profileId ?? null,
@@ -400,7 +528,7 @@ export class KnowledgeService {
           targetAtomicNoteId: candidate.note.id,
           relationType,
           vectorScore: candidate.vectorScore,
-          graphScore: metadataScore,
+          graphScore,
           rerankScore,
           finalScore,
           explanation,
@@ -411,6 +539,7 @@ export class KnowledgeService {
             threshold: relationThreshold,
             textScore: candidate.textScore,
             metadataScore,
+            graphScore,
             pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
           }
         });
@@ -423,16 +552,18 @@ export class KnowledgeService {
         dimensions: embedding?.length ?? null,
         hasEmbedding: Boolean(embedding),
         relationThreshold,
+        sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
         results: debugResults
       });
     }
     return { persistedCount, threshold: relationThreshold };
   }
 
-  private async tryRunDefaultTask(task: "embedding", input: string) {
+  private async tryRunDefaultTask(task: "embedding", input: string, signal?: AbortSignal) {
     try {
-      return await this.options.aiService.runDefaultTask(task, input);
-    } catch {
+      return await this.options.aiService.runDefaultTask(task, input, {}, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
       return null;
     }
   }
@@ -444,6 +575,7 @@ export class KnowledgeService {
     dimensions: number | null;
     hasEmbedding: boolean;
     relationThreshold: number;
+    sourceGraphElements: AtomicNoteGraphElements;
     results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
   }): Promise<void> {
     try {
@@ -462,7 +594,8 @@ export class KnowledgeService {
           baseWeights: input.hasEmbedding
             ? { vector: 0.55, text: 0.3, metadata: 0.15 }
             : { text: 0.7, metadata: 0.3 },
-          rerankWeights: { base: 0.6, reranker: 0.4 }
+          rerankWeights: { base: 0.6, reranker: 0.4 },
+          sourceGraphElements: input.sourceGraphElements
         },
         results: input.results
       });

@@ -12,6 +12,7 @@ export * from "./chunkRepository.js";
 export * from "./embeddingRepository.js";
 export * from "./searchRepository.js";
 export * from "./similarityDebugRepository.js";
+export * from "./knowledgeGraphRepository.js";
 export * from "./bibliographicRepository.js";
 export * from "./aiConfigRepository.js";
 export * from "./sourceSummaryRepository.js";

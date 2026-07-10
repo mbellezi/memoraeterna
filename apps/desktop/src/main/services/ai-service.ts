@@ -34,7 +34,7 @@ import { aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
 import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
-import { logLocalModelOutput } from "./local-model-output-debug.js";
+import { isLocalModelOutputDebugEnabled, logLocalModelOutput } from "./local-model-output-debug.js";
 import { logStructuredError } from "./structured-logging.js";
 import { extname, join } from "node:path";
 
@@ -45,7 +45,7 @@ export interface AiServiceOptions {
   resourcesPath: string;
   isPackaged: boolean;
   logger?: Pick<Console, "error" | "info">;
-  debugLogLocalModelOutput?: boolean;
+  getDashboardDebugMode?: () => Promise<boolean>;
   getUiLanguage?: () => Promise<string>;
 }
 
@@ -61,6 +61,7 @@ export class AiService {
   private readonly credentials: CredentialService;
   private readonly activeLocalModels = new Set<string>();
   private readonly registry = new AiModelRegistry();
+  private residentLocalAdapter: { localModelId: string; adapter: AiModelAdapter } | null = null;
 
   public constructor(private readonly options: AiServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
@@ -200,9 +201,10 @@ export class AiService {
   }
 
   public async runDefaultTask(
-    taskType: "embedding" | "summarization" | "atomic-note-generation" | "reranking",
+    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking",
     input: string,
-    logContext: AiTaskLogContext = {}
+    logContext: AiTaskLogContext = {},
+    signal?: AbortSignal
   ): Promise<DefaultAiTaskResult | null> {
     const repository = createAiConfigRepository(this.requirePool());
     const selection = await repository.getDefaultTask(taskType);
@@ -234,7 +236,7 @@ export class AiService {
       const run = () => adapter.run({
         taskType, input: taskInput, profileId: selection.profileId, modelId: selection.modelId,
         requiredCapabilities, parameters, metadata: {}
-      });
+      }, signal);
       const result = selection.localModelId
         ? await this.withLocalModelUsage(selection.localModelId, run)
         : await run();
@@ -254,7 +256,8 @@ export class AiService {
         durationMs: result.durationMs, status: "succeeded"
       });
       if (selection.localModelId) {
-        logLocalModelOutput(this.options.logger, this.options.debugLogLocalModelOutput === true, {
+        const debugOutputEnabled = await isLocalModelOutputDebugEnabled(this.options.getDashboardDebugMode);
+        logLocalModelOutput(this.options.logger, debugOutputEnabled, {
           ...logContext,
           stage: logContext.stage ?? "ai_execution",
           taskType,
@@ -296,6 +299,20 @@ export class AiService {
 
   public isLocalModelInUse(localModelId: string): boolean {
     return this.activeLocalModels.has(localModelId);
+  }
+
+  public async releaseLocalRuntime(force = false): Promise<void> {
+    const resident = this.residentLocalAdapter;
+    if (!resident) return;
+    if (!force && this.activeLocalModels.has(resident.localModelId)) return;
+    this.residentLocalAdapter = null;
+    const descriptor = resident.adapter.describe();
+    this.registry.unregister(descriptor.providerId, descriptor.modelId);
+    await resident.adapter.dispose?.();
+  }
+
+  public async dispose(): Promise<void> {
+    await this.releaseLocalRuntime(true);
   }
 
   public async testLocalModel(localModelId: string): Promise<string> {
@@ -397,6 +414,9 @@ export class AiService {
   }
 
   private async createLocalAdapter(localModelId: string): Promise<AiModelAdapter> {
+    if (this.residentLocalAdapter?.localModelId === localModelId) return this.residentLocalAdapter.adapter;
+    await this.releaseLocalRuntime();
+    if (this.residentLocalAdapter) throw new Error("errors.localModels.modelBusy");
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model || model.status !== "ready" || !model.managedPath) throw new Error("errors.localModels.notReady");
     const options = {
@@ -407,10 +427,11 @@ export class AiService {
       revision: model.revision,
       quantization: model.quantization
     };
-    if (model.runtime === "mlx") {
-      return this.registerAdapter(new MlxAdapter({ ...options, helperPath: this.resolveMlxHelperPath() }));
-    }
-    return this.registerAdapter(new NodeLlamaCppAdapter(options));
+    const adapter = model.runtime === "mlx"
+      ? new MlxAdapter({ ...options, helperPath: this.resolveMlxHelperPath() })
+      : new NodeLlamaCppAdapter(options);
+    this.residentLocalAdapter = { localModelId, adapter };
+    return this.registerAdapter(adapter);
   }
 
   private registerAdapter<T extends AiModelAdapter>(adapter: T): T {
@@ -451,6 +472,7 @@ function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[
   return ({
     embedding: ["embedding"],
     summarization: ["summarization"],
+    "knowledge-graph-generation": ["structured-output"],
     "atomic-note-generation": ["atomic-note-generation", "structured-output"],
     reranking: ["reranking"]
   } as Partial<Record<AiTaskRequest["taskType"], AiCapability[]>>)[taskType] ?? [];

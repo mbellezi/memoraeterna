@@ -13,7 +13,7 @@ export interface GoogleGeminiAdapterOptions {
 
 const generationTasks = new Set<AiTaskType>([
   "text-generation", "structured-output", "summarization", "atomic-note-generation",
-  "entity-extraction", "claim-extraction", "reranking", "writing-assistance"
+  "entity-extraction", "claim-extraction", "knowledge-graph-generation", "reranking", "writing-assistance"
 ]);
 
 export class GoogleGeminiAdapter implements AiModelAdapter {
@@ -82,7 +82,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
           generationConfig: {
-            ...(["structured-output", "atomic-note-generation", "reranking"].includes(request.taskType)
+            ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
               ? { responseMimeType: "application/json" }
               : {}),
             ...googleGenerationParameters(request.parameters, modelId)

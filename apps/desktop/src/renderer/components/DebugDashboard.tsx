@@ -16,6 +16,7 @@ type RunFilter = "all" | SimilarityDebugRun["kind"];
 const scoreStyles = {
   text: { bar: "bg-amber-500", badge: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200" },
   vector: { bar: "bg-cyan-500", badge: "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200" },
+  graph: { bar: "bg-blue-500", badge: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200" },
   metadata: { bar: "bg-violet-500", badge: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200" },
   rerank: { bar: "bg-fuchsia-500", badge: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200" },
   final: { bar: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" }
@@ -174,6 +175,7 @@ function RunCard({ run, t }: { run: SimilarityDebugRun; t: DebugDashboardProps["
         </div>
       </summary>
       <div className="grid gap-3 border-t border-slate-200 p-5 dark:border-slate-800">
+        <GraphElementsPanel title={t("debug.sourceElements")} value={run.metadata.sourceGraphElements} t={t} />
         {run.results.map((result) => (
           <article key={result.id} className="grid gap-4 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -182,9 +184,9 @@ function RunCard({ run, t }: { run: SimilarityDebugRun; t: DebugDashboardProps["
                   <span className="text-lg font-bold text-slate-400">#{result.finalRank}</span>
                   <h3 className="font-medium text-slate-950 dark:text-slate-50">{result.targetLabel ?? result.targetId}</h3>
                 </div>
-                {(result.textRank || result.vectorRank) && (
+                {(result.textRank || result.vectorRank || result.graphRank) && (
                   <p className="mt-1 text-xs text-slate-500">
-                    {t("debug.textRank")}: {result.textRank ?? "—"} · {t("debug.vectorRank")}: {result.vectorRank ?? "—"}
+                    {t("debug.textRank")}: {result.textRank ?? "—"} · {t("debug.vectorRank")}: {result.vectorRank ?? "—"} · {t("debug.graphRank")}: {result.graphRank ?? "—"}
                   </p>
                 )}
               </div>
@@ -196,9 +198,10 @@ function RunCard({ run, t }: { run: SimilarityDebugRun; t: DebugDashboardProps["
                 </span>
               )}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <ScoreMetric label={t("debug.textScore")} value={result.textScore} tone="text" />
               <ScoreMetric label={t("debug.vectorScore")} value={result.vectorScore} tone="vector" />
+              <ScoreMetric label={t("debug.graphScore")} value={result.graphScore} tone="graph" />
               {result.metadataScore !== null && <ScoreMetric label={t("debug.metadataScore")} value={result.metadataScore} tone="metadata" />}
               {result.rerankScore !== null && <ScoreMetric label={t("debug.rerankScore")} value={result.rerankScore} tone="rerank" />}
               <ScoreMetric label={t(result.fusionScore !== null ? "debug.fusionScore" : "debug.finalScore")} value={result.finalScore} tone="final" />
@@ -211,17 +214,107 @@ function RunCard({ run, t }: { run: SimilarityDebugRun; t: DebugDashboardProps["
                 <strong>{t("debug.rerankError")}:</strong> {result.metadata.rerankError}
               </div>
             )}
+            {((typeof result.metadata.graphError === "string" && result.metadata.graphError.length > 0)
+              || (typeof run.metadata.graphError === "string" && run.metadata.graphError.length > 0)) && (
+              <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+                <strong>{t("debug.graphError")}:</strong> {t("debug.graphUnavailable")}
+              </div>
+            )}
             {result.metadata.rerankStatus === "not_configured" && (
               <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
                 {t("debug.rerankNotConfigured")}
               </div>
             )}
+            <GraphElementsPanel title={t("debug.candidateElements")} value={result.metadata.graphElements} t={t} />
             {result.explanation && <p className="text-sm text-slate-600 dark:text-slate-300">{result.explanation}</p>}
           </article>
         ))}
       </div>
     </details>
   );
+}
+
+function GraphElementsPanel({ title, value, t }: {
+  title: string;
+  value: unknown;
+  t: DebugDashboardProps["t"];
+}) {
+  const elements = readGraphElements(value);
+  if (!elements || elements.entities.length + elements.claims.length + elements.relations.length === 0) return null;
+  return (
+    <section className="grid gap-3 rounded-lg border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/20">
+      <h4 className="flex items-center gap-2 text-sm font-semibold text-blue-950 dark:text-blue-100">
+        <Network className="h-4 w-4" aria-hidden="true" />{title}
+      </h4>
+      {elements.entities.length > 0 && <div className="grid gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">{t("debug.entities")}</p>
+        <div className="flex flex-wrap gap-2">{elements.entities.map((entity, index) => (
+          <span key={`${entity.name}:${index}`} className="rounded-full bg-white px-2 py-1 text-xs text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-200">
+            {entity.name} · {entity.type} · {formatScore(entity.confidence)}
+          </span>
+        ))}</div>
+      </div>}
+      {elements.claims.length > 0 && <div className="grid gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">{t("debug.claims")}</p>
+        <ul className="grid gap-1 text-sm text-slate-700 dark:text-slate-300">{elements.claims.map((claim, index) => (
+          <li key={`${claim.text}:${index}`}>• {claim.text} <span className="text-xs text-slate-500">({formatScore(claim.confidence)})</span></li>
+        ))}</ul>
+      </div>}
+      {elements.relations.length > 0 && <div className="grid gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">{t("debug.relations")}</p>
+        <ul className="grid gap-1 text-sm text-slate-700 dark:text-slate-300">{elements.relations.map((relation, index) => (
+          <li key={`${relation.subject}:${relation.predicate}:${relation.object}:${index}`}>
+            {relation.subject} → {relation.predicate} → {relation.object} <span className="text-xs text-slate-500">({formatScore(relation.confidence)})</span>
+          </li>
+        ))}</ul>
+      </div>}
+    </section>
+  );
+}
+
+function readGraphElements(value: unknown): {
+  entities: Array<{ name: string; type: string; confidence: number }>;
+  claims: Array<{ text: string; confidence: number }>;
+  relations: Array<{ subject: string; predicate: string; object: string; confidence: number }>;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return {
+    entities: readElementArray(record.entities, (item) => {
+      const name = readString(item.name);
+      const type = readString(item.type);
+      return name && type ? { name, type, confidence: readConfidence(item.confidence) } : null;
+    }),
+    claims: readElementArray(record.claims, (item) => {
+      const text = readString(item.text);
+      return text ? { text, confidence: readConfidence(item.confidence) } : null;
+    }),
+    relations: readElementArray(record.relations, (item) => {
+      const subject = readString(item.subject);
+      const predicate = readString(item.predicate);
+      const object = readString(item.object);
+      return subject && predicate && object
+        ? { subject, predicate, object, confidence: readConfidence(item.confidence) }
+        : null;
+    })
+  };
+}
+
+function readElementArray<T>(value: unknown, read: (item: Record<string, unknown>) => T | null): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const parsed = read(item as Record<string, unknown>);
+    return parsed ? [parsed] : [];
+  });
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function readConfidence(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function ScoreMetric({ label, value, tone }: {

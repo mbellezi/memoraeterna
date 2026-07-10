@@ -45,7 +45,7 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 10) throw new Error("Unexpected phase 4 migration history.");
+  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected phase 4 migration history.");
 
   const columns = await pool.query<{ table_name: string; column_name: string; is_nullable: string }>(
     `select table_name, column_name, is_nullable from information_schema.columns
@@ -113,7 +113,7 @@ try {
   seedUrl.pathname = "/memora_phase4_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 10) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 11) {
     throw new Error("Empty database did not apply the complete phase 4 baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {
