@@ -130,6 +130,85 @@ export function createIngestionRunRepository(db: Queryable) {
     async list(limit?: number): Promise<IngestionRunRecord[]> {
       const rows = await listRows<IngestionRunRow>(db, "ingestion_runs", returning, limit);
       return rows.map(mapIngestionRun);
+    },
+
+    async startOrResume(id: string): Promise<IngestionRunRecord | null> {
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set status = 'running', started_at = coalesce(started_at, now()),
+             error = null, updated_at = now()
+         where id = $1 and status in ('pending', 'failed', 'canceled')
+         returning ${returning}`,
+        [id]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
+    async beginStage(id: string, stage: string): Promise<IngestionRunRecord | null> {
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set status = 'running', current_stage = $2,
+             stages_checkpoint = jsonb_set(
+               stages_checkpoint,
+               array[$2],
+               jsonb_build_object('status', 'running', 'startedAt', now()),
+               true
+             ),
+             started_at = coalesce(started_at, now()), error = null, updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id, stage]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
+    async completeStage(
+      id: string,
+      stage: string,
+      metadata: JsonObject = {}
+    ): Promise<IngestionRunRecord | null> {
+      const result = await db.query<IngestionRunRow>(
+        `update ingestion_runs
+         set stages_checkpoint = jsonb_set(
+               stages_checkpoint,
+               array[$2],
+               jsonb_build_object('status', 'completed', 'completedAt', now(), 'metadata', $3::jsonb),
+               true
+             ),
+             updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id, stage, metadata]
+      );
+      const row = result.rows[0];
+      return row ? mapIngestionRun(row) : null;
+    },
+
+    async fail(id: string, error: string): Promise<IngestionRunRecord | null> {
+      return this.update(id, { status: "failed", error });
+    },
+
+    async complete(id: string): Promise<IngestionRunRecord | null> {
+      return this.update(id, {
+        status: "succeeded",
+        currentStage: "completed",
+        completedAt: new Date(),
+        error: null
+      });
+    },
+
+    async listResumable(limit = 25): Promise<IngestionRunRecord[]> {
+      const result = await db.query<IngestionRunRow>(
+        `select ${returning}
+         from ingestion_runs
+         where status in ('pending', 'running', 'failed')
+         order by updated_at asc
+         limit $1`,
+        [limit]
+      );
+      return result.rows.map(mapIngestionRun);
     }
   };
 }

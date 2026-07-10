@@ -89,6 +89,16 @@ export const SourceSpanSchema = z
     documentId: StableIdSchema,
     chunkId: StableIdSchema.optional(),
     page: z.number().int().positive().optional(),
+    sourceBlockId: z.string().min(1).optional(),
+    boundingBox: z
+      .object({
+        left: z.number(),
+        top: z.number(),
+        right: z.number(),
+        bottom: z.number()
+      })
+      .strict()
+      .optional(),
     startOffset: z.number().int().nonnegative(),
     endOffset: z.number().int().nonnegative(),
     selector: z.string().min(1).optional(),

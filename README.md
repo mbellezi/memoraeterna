@@ -8,6 +8,11 @@ ingestao/indexacao e as integracoes com Chrome e Obsidian.
 O MVP usa um monorepo TypeScript com Electron, React, Tailwind, Drizzle e
 PostgreSQL nativo como sidecar.
 
+A espinha dorsal implementada permite inserir conteudo manual, importar
+formatos textuais, acompanhar jobs retomaveis, preservar assets, gerar chunks
+com proveniencia e buscar evidencias por texto ou por combinacao textual e
+vetorial quando um perfil de embedding esta configurado.
+
 ## Estrutura
 
 ```txt
@@ -202,6 +207,15 @@ Verificar migration no banco real:
 npm run db:verify
 ```
 
+Sincronizar mecanicamente o baseline com o journal e validar toda a Fase 2 em
+um sidecar temporario real:
+
+```bash
+npm run db:seed:sync
+npm run db:seed:verify
+npm run db:phase2:verify
+```
+
 Toda mudanca de schema deve ser validada no banco real, incluindo historico em
 `drizzle.__drizzle_migrations` e estrutura esperada em `information_schema` ou
 consulta equivalente.
@@ -224,3 +238,6 @@ dominio.
 - O empacotamento final para macOS ainda precisa copiar `resources/sidecars/...`,
   `resources/drizzle/` e `resources/db-seed/`, alem de cuidar de
   assinatura/notarizacao dos binarios nativos.
+- O bridge Docling esta implementado, mas o bundle CPython/Docling/modelos por
+  plataforma ainda precisa ser produzido e verificado. Consulte
+  `docs/docling-sidecar.md`.

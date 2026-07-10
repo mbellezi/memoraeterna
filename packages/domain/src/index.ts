@@ -7,5 +7,6 @@ export * from "./knowledge.js";
 export * from "./language.js";
 export * from "./obsidian.js";
 export * from "./primitives.js";
+export * from "./search.js";
 export * from "./source-item.js";
 export * from "./storage.js";

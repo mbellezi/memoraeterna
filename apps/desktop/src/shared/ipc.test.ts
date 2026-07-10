@@ -9,6 +9,10 @@ import {
   storageSettingsUpdateSchema,
   systemInfoSchema
 } from "./ipc";
+import {
+  manualIngestionInputSchema,
+  searchInputSchema
+} from "./ipc";
 
 describe("desktop IPC contracts", () => {
   it("parses database lifecycle status responses", () => {
@@ -83,5 +87,20 @@ describe("desktop IPC contracts", () => {
       managedRoot: "Memora",
       deletionPolicy: "tombstone"
     });
+  });
+
+  it("validates phase 2 ingestion and search payloads", () => {
+    expect(manualIngestionInputSchema.parse({
+      sourceType: "PersonalNote",
+      title: "An idea",
+      content: "Evidence",
+      metadata: {}
+    })).toMatchObject({ duplicatePolicy: "ignore" });
+    expect(() => manualIngestionInputSchema.parse({
+      sourceType: "PodcastEpisode",
+      title: "Outside the MVP",
+      content: "No"
+    })).toThrow();
+    expect(searchInputSchema.parse({ text: "memory" })).toMatchObject({ mode: "hybrid", limit: 20 });
   });
 });

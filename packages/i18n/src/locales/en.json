@@ -62,6 +62,17 @@
     },
     "database": {
       "notReady": "The local database is not ready yet."
+    },
+    "conversion": {
+      "emptyResult": "The converter returned no usable text.",
+      "doclingUnavailable": "The local document converter is not installed.",
+      "doclingFailed": "The local document converter failed."
+    },
+    "ai": {
+      "noCompatibleModel": "No compatible model is configured.",
+      "unsupportedTask": "The selected model cannot run this task.",
+      "secureStorageUnavailable": "Secure credential storage is unavailable.",
+      "missingCredential": "The provider credential is missing."
     }
   },
   "jobs": {
@@ -87,7 +98,31 @@
     "progress": {
       "processingSource": "Processing {title}",
       "percentComplete": "{percent}% complete"
+    },
+    "empty": "No jobs yet.",
+    "actions": {
+      "refresh": "Refresh jobs"
     }
+  },
+  "import": {
+    "modes": { "manual": "Manual content", "file": "Local file" },
+    "fields": {
+      "sourceType": "Source type", "title": "Title", "content": "Content",
+      "originalUri": "Original URL", "workTitle": "Related work", "isbn": "ISBN",
+      "doi": "DOI", "pages": "Pages"
+    },
+    "sourceTypes": {
+      "PersonalNote": "Personal note", "DailyNote": "Daily note", "WebArticle": "Web article",
+      "Book": "Book", "BookChapter": "Book chapter", "StandaloneArticle": "Standalone article",
+      "Video": "Video", "GenericDocument": "Generic document"
+    },
+    "actions": { "queue": "Queue import", "chooseFile": "Choose file" },
+    "file": { "description": "Choose a supported local file. The original is preserved and processing runs in the background." },
+    "status": { "queued": "Import queued.", "canceled": "File selection canceled." }
+  },
+  "search": {
+    "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
+    "page": "Page", "markdownEvidence": "Markdown evidence"
   },
   "settings": {
     "title": "Settings",
@@ -128,6 +163,13 @@
     "integrations": {
       "title": "Integrations",
       "authorizedClients": "Authorized clients"
+    },
+    "ai": {
+      "title": "AI providers and profiles", "provider": "Provider", "google": "Google Gemini",
+      "openAiCompatible": "OpenAI-compatible", "displayName": "Display name", "baseUrl": "Base URL",
+      "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test",
+      "connectionOk": "Connection successful.", "profiles": "Profiles", "profileName": "Profile name",
+      "createProfile": "Create profile", "defaultProfile": "Default", "cloneProfile": "Clone profile"
     }
   },
   "integrations": {

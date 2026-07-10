@@ -12,7 +12,10 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@app/ai": "0.0.0",
+    "@app/conversion": "0.0.0",
     "@app/db": "0.0.0",
+    "@app/domain": "0.0.0",
     "@app/i18n": "0.0.0",
     "lucide-react": "1.23.0",
     "react": "19.2.7",

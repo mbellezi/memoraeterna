@@ -18,6 +18,16 @@ const expectedTables = [
   "storage_settings",
   "integration_clients",
   "obsidian_sync_files"
+  ,"bibliographic_works"
+  ,"bibliographic_instances"
+  ,"source_item_bibliographic_links"
+  ,"ai_provider_configs"
+  ,"ai_profile_sets"
+  ,"ai_profile_tasks"
+  ,"ai_model_capabilities"
+  ,"ai_task_runs"
+  ,"embeddings_256"
+  ,"embeddings_768"
 ];
 
 const pool = createPgPool({ connectionString, max: 1 });
@@ -38,11 +48,18 @@ try {
   const foundTables = new Set(tableResult.rows.map((row) => row.table_name));
   const missingTables = expectedTables.filter((table) => !foundTables.has(table));
 
-  if (migrationCount < 1) {
+  const extensionResult = await pool.query<{ extname: string }>(
+    "select extname from pg_extension where extname = any($1::text[]) order by extname",
+    [["pg_trgm", "unaccent", "vector"]]
+  );
+  if (migrationCount < 3) {
     throw new Error("No rows found in drizzle.__drizzle_migrations.");
   }
   if (missingTables.length > 0) {
     throw new Error(`Missing expected tables: ${missingTables.join(", ")}.`);
+  }
+  if (extensionResult.rows.length !== 3) {
+    throw new Error("Missing one or more phase 2 PostgreSQL extensions.");
   }
 
   console.info(`Verified ${migrationCount} Drizzle migration(s) and ${foundTables.size} expected table(s).`);

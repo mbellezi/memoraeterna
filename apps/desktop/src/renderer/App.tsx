@@ -31,6 +31,10 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { SettingsView } from "./components/SettingsView";
+import { AiSettingsView } from "./components/AiSettingsView";
+import { ImportView } from "./components/ImportView";
+import { JobsView } from "./components/JobsView";
+import { SearchView } from "./components/SearchView";
 
 type ViewId = "library" | "import" | "search" | "jobs" | "settings";
 
@@ -410,18 +414,27 @@ export function App({
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {activeView === "settings" ? (
-            <SettingsView
-              appSettings={appSettings}
-              settings={settings}
-              status={status}
-              isSaving={isSaving}
-              t={t}
-              onAppSettingsChange={(update) => {
-                void updateAppSettings(update);
-              }}
-              onChange={setSettings}
-              onSave={saveSettings}
-            />
+            <div className="grid gap-6">
+              <SettingsView
+                appSettings={appSettings}
+                settings={settings}
+                status={status}
+                isSaving={isSaving}
+                t={t}
+                onAppSettingsChange={(update) => {
+                  void updateAppSettings(update);
+                }}
+                onChange={setSettings}
+                onSave={saveSettings}
+              />
+              <AiSettingsView t={t} />
+            </div>
+          ) : activeView === "import" ? (
+            <ImportView t={t} />
+          ) : activeView === "search" ? (
+            <SearchView t={t} />
+          ) : activeView === "jobs" ? (
+            <JobsView t={t} />
           ) : (
             <section className="grid min-h-80 content-center justify-items-center gap-3 rounded-md border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-900">
               <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t(emptyViews[activeView].title)}</h2>

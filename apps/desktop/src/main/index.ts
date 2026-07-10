@@ -1,9 +1,13 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
 import { SettingsService } from "./services/settings-service";
+import { AiService } from "./services/ai-service.js";
+import { IngestionService } from "./services/ingestion-service.js";
+import { JobSupervisor } from "./services/job-supervisor.js";
+import { SearchService } from "./services/search-service.js";
 
 const trayIconDataUrl =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAANUlEQVR4nGNgoBH4jwNTpJkoQwhpxmsIsZqxGkKqZgxDRg2gggEURyNVEhKxhhAFKNJMEgAA0ICbZZSdbUEAAAAASUVORK5CYII=";
@@ -69,6 +73,10 @@ function createMainWindow(): BrowserWindow {
 
 let settingsService: SettingsService | null = null;
 let databaseService: DatabaseService | null = null;
+let aiService: AiService | null = null;
+let ingestionService: IngestionService | null = null;
+let jobSupervisor: JobSupervisor | null = null;
+let searchService: SearchService | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let shutdownPromise: Promise<void> | null = null;
@@ -88,10 +96,45 @@ void app.whenReady().then(() => {
     requireDatabase: true,
     desktopLocale: app.getLocale()
   });
-  registerIpcHandlers(ipcMain, settingsService, databaseService);
+  aiService = new AiService(app.getPath("userData"), () => databaseService?.getPool() ?? null);
+  ingestionService = new IngestionService({
+    getPool: () => databaseService?.getPool() ?? null,
+    getStorageSettings: () => settingsService!.get(),
+    userDataPath: app.getPath("userData"),
+    resourcesPath: getResourcesPath(),
+    workspaceRoot: resolve(process.cwd()),
+    isPackaged: app.isPackaged
+  });
+  searchService = new SearchService(() => databaseService?.getPool() ?? null, aiService);
+  jobSupervisor = new JobSupervisor({
+    getPool: () => databaseService?.getPool() ?? null,
+    logger: console,
+    generateEmbedding: async (text) => {
+      const result = await aiService?.runDefaultTask("embedding", text);
+      if (!result || !Array.isArray(result.output)) return null;
+      return {
+        embedding: result.output.map(Number),
+        provider: result.providerId,
+        model: result.modelId,
+        runtime: result.runtime
+      };
+    }
+  });
+  registerIpcHandlers(
+    ipcMain,
+    settingsService,
+    databaseService,
+    ingestionService,
+    jobSupervisor,
+    searchService,
+    aiService
+  );
   createApplicationTray();
   activeMainWindow = createMainWindow();
-  void databaseService.start();
+  void databaseService.start().then((status) => {
+    if (status.state === "ready") return jobSupervisor?.start();
+    return undefined;
+  });
 
   app.on("activate", () => {
     showMainWindow();
@@ -115,6 +158,11 @@ app.on("before-quit", (event) => {
 });
 
 async function shutdownServices(): Promise<void> {
+  await jobSupervisor?.stop();
+  jobSupervisor = null;
+  searchService = null;
+  ingestionService = null;
+  aiService = null;
   await settingsService?.dispose();
   settingsService = null;
   await databaseService?.stop();

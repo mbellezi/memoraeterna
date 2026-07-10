@@ -42,7 +42,11 @@ describe("baseline seed", () => {
     const plan = await verifyBaselineSeed(migrationsFolder, seedFolder);
 
     expect(plan.seedFile).toBe("baseline.sql");
-    expect(plan.includedMigrations.map((migration) => migration.tag)).toEqual(["0000_sour_dust"]);
+    expect(plan.includedMigrations.map((migration) => migration.tag)).toEqual([
+      "0000_sour_dust",
+      "0001_sleepy_the_hunter",
+      "0002_flat_captain_cross"
+    ]);
   });
 
   it("splits seed SQL on Drizzle statement breakpoints", () => {
@@ -57,7 +61,10 @@ describe("baseline seed", () => {
 
     const result = await applyBaselineSeedIfNeeded(pool, migrationsFolder, seedFolder);
 
-    expect(result).toEqual({ applied: true, seededMigrations: ["0000_sour_dust"] });
+    expect(result).toEqual({
+      applied: true,
+      seededMigrations: ["0000_sour_dust", "0001_sleepy_the_hunter", "0002_flat_captain_cross"]
+    });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
     expect(pool.queries.some((query) => query.text.startsWith("CREATE TYPE"))).toBe(true);
     expect(

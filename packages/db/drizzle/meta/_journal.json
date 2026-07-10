@@ -8,6 +8,20 @@
       "when": 1783280385840,
       "tag": "0000_sour_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783641400447,
+      "tag": "0001_sleepy_the_hunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783642339488,
+      "tag": "0002_flat_captain_cross",
+      "breakpoints": true
     }
   ]
 }

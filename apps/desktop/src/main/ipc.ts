@@ -1,14 +1,26 @@
 import type { IpcMain } from "electron";
-import { app } from "electron";
+import { app, dialog } from "electron";
+import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
   databaseStatusSchema,
   ipcChannels,
   appSettingsUpdateSchema,
+  aiProfileCloneSchema,
+  aiProfileCreateSchema,
+  aiProfileTaskInputSchema,
+  aiProviderConfigInputSchema,
+  fileImportInputSchema,
+  manualIngestionInputSchema,
+  searchInputSchema,
   storageSettingsUpdateSchema,
   type DatabaseStatus
 } from "../shared/ipc";
 import type { SettingsService } from "./services/settings-service";
+import type { AiService } from "./services/ai-service.js";
+import type { IngestionService } from "./services/ingestion-service.js";
+import type { JobSupervisor } from "./services/job-supervisor.js";
+import type { SearchService } from "./services/search-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -18,7 +30,11 @@ export interface DatabaseServicePort {
 export function registerIpcHandlers(
   ipcMain: IpcMain,
   settingsService: SettingsService,
-  databaseService: DatabaseServicePort
+  databaseService: DatabaseServicePort,
+  ingestionService: IngestionService,
+  jobSupervisor: JobSupervisor,
+  searchService: SearchService,
+  aiService: AiService
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -50,4 +66,68 @@ export function registerIpcHandlers(
     const settings = storageSettingsUpdateSchema.parse(payload);
     return settingsService.update(settings);
   });
+
+  ipcMain.handle(ipcChannels.ingestionCreateManual, (_event, payload: unknown) =>
+    ingestionService.createManual(manualIngestionInputSchema.parse(payload))
+  );
+
+  ipcMain.handle(ipcChannels.ingestionImportFile, async (_event, payload: unknown) => {
+    const input = fileImportInputSchema.parse(payload);
+    const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
+    const path = selection.filePaths[0];
+    return selection.canceled || !path ? null : ingestionService.importFile(path, input);
+  });
+  ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) =>
+    ingestionService.lookupSources(z.string().trim().min(1).max(200).parse(payload))
+  );
+
+  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.list()).map(serializeJob));
+  ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
+    const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
+    return job ? serializeJob(job) : null;
+  });
+  ipcMain.handle(ipcChannels.jobsRetry, async (_event, payload: unknown) => {
+    const job = await jobSupervisor.retry(z.string().uuid().parse(payload));
+    return job ? serializeJob(job) : null;
+  });
+
+  ipcMain.handle(ipcChannels.searchQuery, (_event, payload: unknown) =>
+    searchService.search(searchInputSchema.parse(payload))
+  );
+
+  ipcMain.handle(ipcChannels.aiProvidersList, () => aiService.listProviders());
+  ipcMain.handle(ipcChannels.aiProvidersSave, (_event, payload: unknown) =>
+    aiService.saveProvider(aiProviderConfigInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiProvidersTest, (_event, payload: unknown) =>
+    aiService.testProvider(z.string().uuid().parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiModelsList, (_event, payload: unknown) =>
+    aiService.listModels(z.string().uuid().parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiProfilesList, () => aiService.listProfiles());
+  ipcMain.handle(ipcChannels.aiProfilesCreate, (_event, payload: unknown) =>
+    aiService.createProfile(aiProfileCreateSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiProfilesClone, (_event, payload: unknown) => {
+    const input = aiProfileCloneSchema.parse(payload);
+    return aiService.cloneProfile(input.profileId, input.name);
+  });
+  ipcMain.handle(ipcChannels.aiProfileTaskSet, (_event, payload: unknown) =>
+    aiService.setProfileTask(aiProfileTaskInputSchema.parse(payload))
+  );
+}
+
+function serializeJob(job: Awaited<ReturnType<JobSupervisor["list"]>>[number]) {
+  return {
+    id: job.id,
+    type: job.type,
+    status: job.status,
+    progress: job.progress,
+    attempts: job.attempts,
+    maxAttempts: job.maxAttempts,
+    error: job.error,
+    createdAt: job.createdAt.toISOString(),
+    updatedAt: job.updatedAt.toISOString()
+  };
 }

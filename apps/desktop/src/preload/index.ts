@@ -1,10 +1,32 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { AppSettingsUpdate, DesktopApi, StorageSettingsUpdate } from "../shared/ipc";
+import type {
+  AiProfileCreate,
+  AiProfileTaskInput,
+  AiProviderConfigInput,
+  AppSettingsUpdate,
+  DesktopApi,
+  FileImportInput,
+  ManualIngestionInput,
+  SearchInput,
+  StorageSettingsUpdate
+} from "../shared/ipc";
 import {
   appSettingsSchema,
   appSettingsUpdateSchema,
+  aiProfileCreateSchema,
+  aiProfileTaskInputSchema,
+  aiProfileSchema,
+  aiProviderConfigInputSchema,
+  aiProviderConfigSchema,
   databaseStatusSchema,
   ipcChannels,
+  fileImportInputSchema,
+  ingestionResultSchema,
+  jobRecordSchema,
+  manualIngestionInputSchema,
+  searchInputSchema,
+  searchResultsSchema,
+  sourceSuggestionSchema,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
   systemInfoSchema
@@ -45,6 +67,63 @@ const api: DesktopApi = {
       const payload = storageSettingsUpdateSchema.parse(settings);
       const result = await ipcRenderer.invoke(ipcChannels.settingsUpdate, payload);
       return storageSettingsSchema.parse(result);
+    }
+  },
+  ingestion: {
+    async createManual(input: ManualIngestionInput) {
+      const result = await ipcRenderer.invoke(ipcChannels.ingestionCreateManual, manualIngestionInputSchema.parse(input));
+      return ingestionResultSchema.parse(result);
+    },
+    async importFile(input: FileImportInput) {
+      const result = await ipcRenderer.invoke(ipcChannels.ingestionImportFile, fileImportInputSchema.parse(input));
+      return result === null ? null : ingestionResultSchema.parse(result);
+    },
+    async lookupSources(query: string) {
+      return sourceSuggestionSchema.array().parse(await ipcRenderer.invoke(ipcChannels.ingestionLookupSources, query));
+    }
+  },
+  jobs: {
+    async list() {
+      return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
+    },
+    async cancel(jobId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.jobsCancel, jobId);
+      return result === null ? null : jobRecordSchema.parse(result);
+    },
+    async retry(jobId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.jobsRetry, jobId);
+      return result === null ? null : jobRecordSchema.parse(result);
+    }
+  },
+  search: {
+    async query(input: SearchInput) {
+      return searchResultsSchema.parse(await ipcRenderer.invoke(ipcChannels.searchQuery, searchInputSchema.parse(input)));
+    }
+  },
+  ai: {
+    async listProviders() {
+      return aiProviderConfigSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProvidersList));
+    },
+    async saveProvider(input: AiProviderConfigInput) {
+      return aiProviderConfigSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProvidersSave, aiProviderConfigInputSchema.parse(input)));
+    },
+    async testProvider(providerId: string) {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.aiProvidersTest, providerId));
+    },
+    async listModels(providerId: string) {
+      return (await ipcRenderer.invoke(ipcChannels.aiModelsList, providerId)) as string[];
+    },
+    async listProfiles() {
+      return aiProfileSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfilesList));
+    },
+    async createProfile(input: AiProfileCreate) {
+      return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesCreate, aiProfileCreateSchema.parse(input)));
+    },
+    async cloneProfile(profileId: string, name: string) {
+      return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesClone, { profileId, name }));
+    },
+    async setProfileTask(input: AiProfileTaskInput) {
+      await ipcRenderer.invoke(ipcChannels.aiProfileTaskSet, aiProfileTaskInputSchema.parse(input));
     }
   }
 };

@@ -62,6 +62,17 @@
     },
     "database": {
       "notReady": "La base de datos local aun no esta lista."
+    },
+    "conversion": {
+      "emptyResult": "El conversor no devolvio texto utilizable.",
+      "doclingUnavailable": "El conversor local de documentos no esta instalado.",
+      "doclingFailed": "El conversor local de documentos fallo."
+    },
+    "ai": {
+      "noCompatibleModel": "No hay un modelo compatible configurado.",
+      "unsupportedTask": "El modelo seleccionado no puede ejecutar esta tarea.",
+      "secureStorageUnavailable": "El almacenamiento seguro de credenciales no esta disponible.",
+      "missingCredential": "Falta la credencial del proveedor."
     }
   },
   "jobs": {
@@ -87,7 +98,31 @@
     "progress": {
       "processingSource": "Procesando {title}",
       "percentComplete": "{percent}% completado"
+    },
+    "empty": "Aun no hay tareas.",
+    "actions": {
+      "refresh": "Actualizar tareas"
     }
+  },
+  "import": {
+    "modes": { "manual": "Contenido manual", "file": "Archivo local" },
+    "fields": {
+      "sourceType": "Tipo de fuente", "title": "Titulo", "content": "Contenido",
+      "originalUri": "URL original", "workTitle": "Obra relacionada", "isbn": "ISBN",
+      "doi": "DOI", "pages": "Paginas"
+    },
+    "sourceTypes": {
+      "PersonalNote": "Nota personal", "DailyNote": "Nota diaria", "WebArticle": "Articulo web",
+      "Book": "Libro", "BookChapter": "Capitulo de libro", "StandaloneArticle": "Articulo independiente",
+      "Video": "Video", "GenericDocument": "Documento generico"
+    },
+    "actions": { "queue": "Poner importacion en cola", "chooseFile": "Elegir archivo" },
+    "file": { "description": "Elige un archivo local compatible. El original se conserva y el procesamiento se ejecuta en segundo plano." },
+    "status": { "queued": "Importacion en cola.", "canceled": "Seleccion de archivo cancelada." }
+  },
+  "search": {
+    "placeholder": "Buscar fuentes y evidencias", "action": "Buscar", "empty": "No hay evidencias coincidentes.",
+    "page": "Pagina", "markdownEvidence": "Evidencia Markdown"
   },
   "settings": {
     "title": "Ajustes",
@@ -128,6 +163,13 @@
     "integrations": {
       "title": "Integraciones",
       "authorizedClients": "Clientes autorizados"
+    },
+    "ai": {
+      "title": "Proveedores y perfiles de IA", "provider": "Proveedor", "google": "Google Gemini",
+      "openAiCompatible": "Compatible con OpenAI", "displayName": "Nombre visible", "baseUrl": "URL base",
+      "model": "Modelo", "apiKey": "Clave API", "saveProvider": "Guardar proveedor", "test": "Probar",
+      "connectionOk": "Conexion correcta.", "profiles": "Perfiles", "profileName": "Nombre del perfil",
+      "createProfile": "Crear perfil", "defaultProfile": "Predeterminado", "cloneProfile": "Clonar perfil"
     }
   },
   "integrations": {

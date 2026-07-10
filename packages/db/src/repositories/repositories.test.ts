@@ -61,8 +61,13 @@ describe("repositories", () => {
     expect(db.queries[0]?.values).toEqual([
       "WebArticle",
       "Example",
+      null,
+      "manual",
       "https://example.test",
       null,
+      null,
+      null,
+      "und",
       { capturedBy: "test" }
     ]);
   });

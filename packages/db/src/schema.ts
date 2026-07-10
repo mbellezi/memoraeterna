@@ -2,6 +2,8 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  customType,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -13,6 +15,15 @@ import {
   uuid,
   varchar
 } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
+
+const vector256 = customType<{ data: string }>({
+  dataType: () => "vector(256)"
+});
+
+const vector768 = customType<{ data: string }>({
+  dataType: () => "vector(768)"
+});
 
 export const sourceItemType = pgEnum("source_item_type", [
   "PersonalNote",
@@ -66,15 +77,26 @@ export const sourceItems = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     type: sourceItemType("type").notNull(),
     title: text("title").notNull(),
+    subtitle: text("subtitle"),
+    sourceOrigin: text("source_origin").notNull().default("manual"),
     sourceUri: text("source_uri"),
     externalId: text("external_id"),
+    parentSourceItemId: uuid("parent_source_item_id").references((): AnyPgColumn => sourceItems.id, {
+      onDelete: "set null"
+    }),
+    contentHash: text("content_hash"),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    summary: text("summary"),
+    summaryGeneratedAt: timestamp("summary_generated_at", { withTimezone: true }),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
   },
   (table) => ({
     typeIdx: index("source_items_type_idx").on(table.type),
     sourceUriIdx: index("source_items_source_uri_idx").on(table.sourceUri),
-    externalIdIdx: index("source_items_external_id_idx").on(table.externalId)
+    contentHashIdx: index("source_items_content_hash_idx").on(table.contentHash),
+    externalIdIdx: index("source_items_external_id_idx").on(table.externalId),
+    parentSourceItemIdx: index("source_items_parent_source_item_id_idx").on(table.parentSourceItemId)
   })
 );
 
@@ -118,7 +140,7 @@ export const documentAssets = pgTable(
     documentIdx: index("document_assets_document_id_idx").on(table.documentId),
     sourceItemIdx: index("document_assets_source_item_id_idx").on(table.sourceItemId),
     sha256Idx: index("document_assets_sha256_idx").on(table.sha256),
-    storagePathIdx: uniqueIndex("document_assets_storage_path_uidx").on(table.storageBase, table.relativePath)
+    storagePathIdx: index("document_assets_storage_path_idx").on(table.storageBase, table.relativePath)
   })
 );
 
@@ -134,6 +156,10 @@ export const sourceSpans = pgTable(
       .references(() => sourceItems.id, { onDelete: "cascade" }),
     startOffset: integer("start_offset").notNull(),
     endOffset: integer("end_offset").notNull(),
+    page: integer("page"),
+    sourceBlockId: text("source_block_id"),
+    boundingBox: jsonb("bounding_box"),
+    selector: text("selector"),
     label: text("label"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
@@ -159,6 +185,8 @@ export const chunks = pgTable(
     content: text("content").notNull(),
     tokenCount: integer("token_count"),
     contentHash: text("content_hash").notNull(),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    chunkingVersion: text("chunking_version").notNull().default("markdown-v1"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
   },
@@ -179,12 +207,14 @@ export const jobs = pgTable(
     payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
     result: jsonb("result"),
     error: text("error"),
+    progress: integer("progress").notNull().default(0),
     attempts: integer("attempts").notNull().default(0),
     maxAttempts: integer("max_attempts").notNull().default(3),
     runAfter: timestamp("run_after", { withTimezone: true }).notNull().defaultNow(),
     lockedAt: timestamp("locked_at", { withTimezone: true }),
     lockedBy: text("locked_by"),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
     ...timestamps
   },
   (table) => ({
@@ -272,6 +302,209 @@ export const obsidianSyncFiles = pgTable(
     sourceItemIdx: index("obsidian_sync_files_source_item_id_idx").on(table.sourceItemId),
     documentIdx: index("obsidian_sync_files_document_id_idx").on(table.documentId),
     statusIdx: index("obsidian_sync_files_status_idx").on(table.status)
+  })
+);
+
+export const bibliographicWorks = pgTable(
+  "bibliographic_works",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    subtitle: text("subtitle"),
+    canonicalTitle: text("canonical_title"),
+    language: varchar("language", { length: 16 }).notNull().default("und"),
+    identifiers: jsonb("identifiers").notNull().default(sql`'{}'::jsonb`),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    titleIdx: index("bibliographic_works_title_idx").on(table.title),
+    canonicalTitleIdx: index("bibliographic_works_canonical_title_idx").on(table.canonicalTitle)
+  })
+);
+
+export const bibliographicInstances = pgTable(
+  "bibliographic_instances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workId: uuid("work_id")
+      .notNull()
+      .references(() => bibliographicWorks.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    edition: text("edition"),
+    volume: text("volume"),
+    issue: text("issue"),
+    publicationDate: text("publication_date"),
+    publisher: text("publisher"),
+    isbn: text("isbn"),
+    issn: text("issn"),
+    doi: text("doi"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    workIdx: index("bibliographic_instances_work_id_idx").on(table.workId),
+    isbnIdx: index("bibliographic_instances_isbn_idx").on(table.isbn),
+    issnIdx: index("bibliographic_instances_issn_idx").on(table.issn),
+    doiIdx: index("bibliographic_instances_doi_idx").on(table.doi)
+  })
+);
+
+export const sourceItemBibliographicLinks = pgTable(
+  "source_item_bibliographic_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceItemId: uuid("source_item_id")
+      .notNull()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    workId: uuid("work_id")
+      .notNull()
+      .references(() => bibliographicWorks.id, { onDelete: "cascade" }),
+    instanceId: uuid("instance_id").references(() => bibliographicInstances.id, { onDelete: "set null" }),
+    relationType: text("relation_type").notNull().default("instance_of"),
+    pages: text("pages"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    sourceWorkUidx: uniqueIndex("source_item_bibliographic_links_source_work_uidx").on(
+      table.sourceItemId,
+      table.workId
+    )
+  })
+);
+
+export const aiProviderConfigs = pgTable(
+  "ai_provider_configs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    provider: text("provider").notNull(),
+    displayName: text("display_name").notNull(),
+    credentialRef: text("credential_ref"),
+    baseUrl: text("base_url"),
+    status: text("status").notNull().default("configured"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({ providerIdx: index("ai_provider_configs_provider_idx").on(table.provider) })
+);
+
+export const aiProfileSets = pgTable(
+  "ai_profile_sets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    isDefault: boolean("is_default").notNull().default(false),
+    privacyMode: text("privacy_mode").notNull().default("allow_remote"),
+    status: text("status").notNull().default("active"),
+    ...timestamps
+  },
+  (table) => ({ defaultIdx: index("ai_profile_sets_default_idx").on(table.isDefault) })
+);
+
+export const aiProfileTasks = pgTable(
+  "ai_profile_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id")
+      .notNull()
+      .references(() => aiProfileSets.id, { onDelete: "cascade" }),
+    task: text("task").notNull(),
+    providerConfigId: uuid("provider_config_id").references(() => aiProviderConfigs.id, {
+      onDelete: "set null"
+    }),
+    modelId: text("model_id").notNull(),
+    runtime: text("runtime").notNull().default("remote"),
+    requiredCapabilities: jsonb("required_capabilities").notNull().default(sql`'[]'::jsonb`),
+    parameters: jsonb("parameters").notNull().default(sql`'{}'::jsonb`),
+    fallbackPolicy: text("fallback_policy").notNull().default("block"),
+    status: text("status").notNull().default("active"),
+    ...timestamps
+  },
+  (table) => ({
+    profileTaskUidx: uniqueIndex("ai_profile_tasks_profile_task_uidx").on(table.profileId, table.task)
+  })
+);
+
+export const aiModelCapabilities = pgTable(
+  "ai_model_capabilities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    providerConfigId: uuid("provider_config_id").references(() => aiProviderConfigs.id, {
+      onDelete: "cascade"
+    }),
+    modelId: text("model_id").notNull(),
+    capability: text("capability").notNull(),
+    limits: jsonb("limits").notNull().default(sql`'{}'::jsonb`),
+    requirements: jsonb("requirements").notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("available"),
+    ...timestamps
+  },
+  (table) => ({
+    modelCapabilityUidx: uniqueIndex("ai_model_capabilities_model_capability_uidx").on(
+      table.providerConfigId,
+      table.modelId,
+      table.capability
+    )
+  })
+);
+
+export const aiTaskRuns = pgTable(
+  "ai_task_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    profileId: uuid("profile_id").references(() => aiProfileSets.id, { onDelete: "set null" }),
+    taskType: text("task_type").notNull(),
+    provider: text("provider").notNull(),
+    modelId: text("model_id").notNull(),
+    runtime: text("runtime").notNull(),
+    capabilitiesUsed: jsonb("capabilities_used").notNull().default(sql`'[]'::jsonb`),
+    inputHash: text("input_hash"),
+    outputHash: text("output_hash"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costEstimate: doublePrecision("cost_estimate"),
+    durationMs: integer("duration_ms").notNull(),
+    status: text("status").notNull(),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true })
+  },
+  (table) => ({ taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType) })
+);
+
+function createEmbeddingColumns() {
+  return {
+    id: uuid("id").primaryKey().defaultRandom(),
+    targetType: text("target_type").notNull(),
+    targetId: uuid("target_id").notNull(),
+    chunkId: uuid("chunk_id").references(() => chunks.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    runtime: text("runtime").notNull(),
+    usage: text("usage").notNull().default("retrieval"),
+    strategy: text("strategy").notNull().default("native"),
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  };
+}
+
+export const embeddings256 = pgTable(
+  "embeddings_256",
+  { ...createEmbeddingColumns(), embedding: vector256("embedding").notNull() },
+  (table) => ({
+    targetUidx: uniqueIndex("embeddings_256_target_model_uidx").on(table.targetType, table.targetId, table.model),
+    chunkIdx: index("embeddings_256_chunk_id_idx").on(table.chunkId)
+  })
+);
+
+export const embeddings768 = pgTable(
+  "embeddings_768",
+  { ...createEmbeddingColumns(), embedding: vector768("embedding").notNull() },
+  (table) => ({
+    targetUidx: uniqueIndex("embeddings_768_target_model_uidx").on(table.targetType, table.targetId, table.model),
+    chunkIdx: index("embeddings_768_chunk_id_idx").on(table.chunkId)
   })
 );
 

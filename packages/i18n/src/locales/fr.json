@@ -62,6 +62,17 @@
     },
     "database": {
       "notReady": "La base locale n'est pas encore prete."
+    },
+    "conversion": {
+      "emptyResult": "Le convertisseur n'a renvoye aucun texte utilisable.",
+      "doclingUnavailable": "Le convertisseur local de documents n'est pas installe.",
+      "doclingFailed": "Le convertisseur local de documents a echoue."
+    },
+    "ai": {
+      "noCompatibleModel": "Aucun modele compatible n'est configure.",
+      "unsupportedTask": "Le modele selectionne ne peut pas executer cette tache.",
+      "secureStorageUnavailable": "Le stockage securise des identifiants est indisponible.",
+      "missingCredential": "L'identifiant du fournisseur est manquant."
     }
   },
   "jobs": {
@@ -87,7 +98,31 @@
     "progress": {
       "processingSource": "Traitement de {title}",
       "percentComplete": "{percent}% termine"
+    },
+    "empty": "Aucune tache pour le moment.",
+    "actions": {
+      "refresh": "Actualiser les taches"
     }
+  },
+  "import": {
+    "modes": { "manual": "Contenu manuel", "file": "Fichier local" },
+    "fields": {
+      "sourceType": "Type de source", "title": "Titre", "content": "Contenu",
+      "originalUri": "URL d'origine", "workTitle": "Oeuvre associee", "isbn": "ISBN",
+      "doi": "DOI", "pages": "Pages"
+    },
+    "sourceTypes": {
+      "PersonalNote": "Note personnelle", "DailyNote": "Note quotidienne", "WebArticle": "Article web",
+      "Book": "Livre", "BookChapter": "Chapitre de livre", "StandaloneArticle": "Article autonome",
+      "Video": "Video", "GenericDocument": "Document generique"
+    },
+    "actions": { "queue": "Mettre l'import en file", "chooseFile": "Choisir un fichier" },
+    "file": { "description": "Choisissez un fichier local pris en charge. L'original est conserve et le traitement s'execute en arriere-plan." },
+    "status": { "queued": "Import en file.", "canceled": "Selection de fichier annulee." }
+  },
+  "search": {
+    "placeholder": "Rechercher des sources et preuves", "action": "Rechercher", "empty": "Aucune preuve correspondante.",
+    "page": "Page", "markdownEvidence": "Preuve Markdown"
   },
   "settings": {
     "title": "Parametres",
@@ -128,6 +163,13 @@
     "integrations": {
       "title": "Integrations",
       "authorizedClients": "Clients autorises"
+    },
+    "ai": {
+      "title": "Fournisseurs et profils IA", "provider": "Fournisseur", "google": "Google Gemini",
+      "openAiCompatible": "Compatible OpenAI", "displayName": "Nom affiche", "baseUrl": "URL de base",
+      "model": "Modele", "apiKey": "Cle API", "saveProvider": "Enregistrer le fournisseur", "test": "Tester",
+      "connectionOk": "Connexion reussie.", "profiles": "Profils", "profileName": "Nom du profil",
+      "createProfile": "Creer un profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil"
     }
   },
   "integrations": {

@@ -1,0 +1,9 @@
+{
+  "protocolVersion": 1,
+  "pythonVersion": "3.13.13",
+  "doclingVersion": "2.111.0",
+  "offlineByDefault": true,
+  "networkServer": false,
+  "runtimeInstallAtStartup": false,
+  "platformArtifacts": []
+}

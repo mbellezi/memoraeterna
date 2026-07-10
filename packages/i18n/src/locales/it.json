@@ -62,6 +62,17 @@
     },
     "database": {
       "notReady": "Il database locale non e ancora pronto."
+    },
+    "conversion": {
+      "emptyResult": "Il convertitore non ha restituito testo utilizzabile.",
+      "doclingUnavailable": "Il convertitore locale di documenti non e installato.",
+      "doclingFailed": "Il convertitore locale di documenti non e riuscito."
+    },
+    "ai": {
+      "noCompatibleModel": "Nessun modello compatibile e configurato.",
+      "unsupportedTask": "Il modello selezionato non puo eseguire questa attivita.",
+      "secureStorageUnavailable": "L'archiviazione sicura delle credenziali non e disponibile.",
+      "missingCredential": "La credenziale del provider e mancante."
     }
   },
   "jobs": {
@@ -87,7 +98,31 @@
     "progress": {
       "processingSource": "Elaborazione di {title}",
       "percentComplete": "{percent}% completato"
+    },
+    "empty": "Nessuna attivita.",
+    "actions": {
+      "refresh": "Aggiorna attivita"
     }
+  },
+  "import": {
+    "modes": { "manual": "Contenuto manuale", "file": "File locale" },
+    "fields": {
+      "sourceType": "Tipo di fonte", "title": "Titolo", "content": "Contenuto",
+      "originalUri": "URL originale", "workTitle": "Opera correlata", "isbn": "ISBN",
+      "doi": "DOI", "pages": "Pagine"
+    },
+    "sourceTypes": {
+      "PersonalNote": "Nota personale", "DailyNote": "Nota giornaliera", "WebArticle": "Articolo web",
+      "Book": "Libro", "BookChapter": "Capitolo di libro", "StandaloneArticle": "Articolo autonomo",
+      "Video": "Video", "GenericDocument": "Documento generico"
+    },
+    "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file" },
+    "file": { "description": "Scegli un file locale supportato. L'originale viene conservato e l'elaborazione avviene in background." },
+    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata." }
+  },
+  "search": {
+    "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
+    "page": "Pagina", "markdownEvidence": "Evidenza Markdown"
   },
   "settings": {
     "title": "Impostazioni",
@@ -128,6 +163,13 @@
     "integrations": {
       "title": "Integrazioni",
       "authorizedClients": "Client autorizzati"
+    },
+    "ai": {
+      "title": "Provider e profili IA", "provider": "Provider", "google": "Google Gemini",
+      "openAiCompatible": "Compatibile OpenAI", "displayName": "Nome visualizzato", "baseUrl": "URL base",
+      "model": "Modello", "apiKey": "Chiave API", "saveProvider": "Salva provider", "test": "Testa",
+      "connectionOk": "Connessione riuscita.", "profiles": "Profili", "profileName": "Nome profilo",
+      "createProfile": "Crea profilo", "defaultProfile": "Predefinito", "cloneProfile": "Clona profilo"
     }
   },
   "integrations": {

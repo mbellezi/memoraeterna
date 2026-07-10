@@ -27,8 +27,14 @@ export interface SourceItemRecord {
   id: string;
   type: SourceItemType;
   title: string;
+  subtitle: string | null;
+  sourceOrigin: string;
   sourceUri: string | null;
   externalId: string | null;
+  parentSourceItemId: string | null;
+  contentHash: string | null;
+  language: string;
+  summary: string | null;
   metadata: JsonObject;
   createdAt: Date;
   updatedAt: Date;
@@ -70,14 +76,65 @@ export interface JobRecord {
   payload: JsonObject;
   result: JsonObject | null;
   error: string | null;
+  progress: number;
   attempts: number;
   maxAttempts: number;
   runAfter: Date;
   lockedAt: Date | null;
   lockedBy: string | null;
   finishedAt: Date | null;
+  cancelRequestedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SourceSpanRecord {
+  id: string;
+  documentId: string;
+  sourceItemId: string;
+  startOffset: number;
+  endOffset: number;
+  page: number | null;
+  sourceBlockId: string | null;
+  boundingBox: JsonObject | null;
+  selector: string | null;
+  label: string | null;
+  metadata: JsonObject;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ChunkRecord {
+  id: string;
+  documentId: string;
+  sourceItemId: string;
+  sourceSpanId: string | null;
+  chunkIndex: number;
+  content: string;
+  tokenCount: number | null;
+  contentHash: string;
+  language: string;
+  chunkingVersion: string;
+  metadata: JsonObject;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SearchEvidenceRecord {
+  sourceItemId: string;
+  sourceTitle: string;
+  sourceType: SourceItemType;
+  documentId: string;
+  chunkId: string;
+  sourceSpanId: string | null;
+  excerpt: string;
+  page: number | null;
+  sourceBlockId: string | null;
+  boundingBox: JsonObject | null;
+  selector: string | null;
+  textScore: number;
+  vectorScore: number;
+  finalScore: number;
 }
 
 export interface IngestionRunRecord {

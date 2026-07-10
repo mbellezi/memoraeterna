@@ -1,5 +1,9 @@
 {
   "version": 1,
   "seedFile": "baseline.sql",
-  "includedMigrations": ["0000_sour_dust"]
+  "includedMigrations": [
+    "0000_sour_dust",
+    "0001_sleepy_the_hunter",
+    "0002_flat_captain_cross"
+  ]
 }

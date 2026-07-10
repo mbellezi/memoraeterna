@@ -7,3 +7,8 @@ export * from "./ingestionRunRepository.js";
 export * from "./settingsRepository.js";
 export * from "./storageSettingsRepository.js";
 export * from "./obsidianSyncRepository.js";
+export * from "./chunkRepository.js";
+export * from "./embeddingRepository.js";
+export * from "./searchRepository.js";
+export * from "./bibliographicRepository.js";
+export * from "./aiConfigRepository.js";

@@ -14,7 +14,7 @@ Leia tambem, antes de editar codigo:
 
 ## Estado Atual
 
-Fase atual: Fase 1 - Fundacao.
+Fase atual: Fase 2 - Espinha Dorsal.
 
 Implementado ate aqui:
 
@@ -38,6 +38,26 @@ Implementado ate aqui:
   `light`;
 - scripts de bootstrap DEV, validacao de sidecar, build, typecheck e testes;
 - README raiz com instrucoes de desenvolvimento.
+- fila Postgres com claim atomico via `FOR UPDATE SKIP LOCKED`, progresso,
+  cancelamento, retry, recuperacao de workers e ingestion runs retomaveis;
+- supervisor de `worker_threads` no main process e entradas de worker para
+  ingestao, conversao, chunking, embedding, assets e shells das etapas futuras;
+- `@app/conversion` com Defuddle, conversores nativos de formatos textuais,
+  ZIP com limites, normalizacao, hashing, chunking e protocolo JSONL do sidecar
+  Docling;
+- armazenamento de assets por SHA-256, deduplicacao fisica e deteccao de
+  arquivos ausentes;
+- `@app/ai` com registry/capabilities e adapters Google Gemini e
+  OpenAI-compatible, perfis por tarefa e credenciais via `safeStorage`;
+- ingestao manual progressiva para os 8 tipos do MVP, source picker,
+  deduplicacao, vinculo bibliografico e importacao de arquivo via dialog do
+  main process;
+- chunks e SourceSpans com pagina, bloco, bounding box, selector e
+  reprocessamento idempotente;
+- embeddings separados em 256/768 dimensoes, indices HNSW e busca textual com
+  `simple`, `unaccent` e `pg_trgm`;
+- busca hibrida com evidencias e UI funcional de Import, Search, Jobs e
+  configuracao de IA.
 
 Pendencias conhecidas:
 
@@ -45,8 +65,14 @@ Pendencias conhecidas:
   `resources/drizzle/` e `resources/db-seed/`;
 - assinatura/notarizacao dos binarios nativos ainda nao foi configurada;
 - builds AGE para Windows e Linux estao fora do escopo inicial;
-- o shell local usado nesta sessao ainda reportou Node 22/npm 10, embora o
-  baseline do repo seja Node 24.18/npm 11.16.
+- o shell local foi validado com Node 24.18.0; o npm ainda emite apenas um
+  warning sobre a chave legada `python` na configuracao do usuario.
+- o artefato CPython 3.13.13 + Docling 2.111.0 e os modelos ainda nao estao
+  materializados em `vendor/sidecars/docling/<platform>`; o bridge, o protocolo
+  e a resolucao DEV/prod estao implementados, mas PDF/DOCX/XLSX/PPTX reais
+  dependem desse bundle externo;
+- o corpus golden e os benchmarks completos dos formatos Docling continuam
+  pendentes ate o runtime/modelos serem disponibilizados.
 
 ## Estrutura Raiz
 
@@ -97,6 +123,16 @@ Arquivos principais:
 - `src/main/services/settings-service.ts`: settings de storage usando o banco
   quando o runtime esta pronto, alem de preferencias de UI em `settings`.
 - `src/main/services/path-validation.ts`: validacao de paths e nomes gerenciados.
+- `src/main/services/job-supervisor.ts`: claim, retry, cancelamento e despacho
+  dos jobs persistidos.
+- `src/main/services/worker-supervisor.ts`: lifecycle dos `worker_threads`.
+- `src/main/services/ingestion-service.ts`: ingestao manual/arquivo e
+  persistencia dos artefatos.
+- `src/main/services/asset-storage-service.ts`: storage por hash.
+- `src/main/services/ai-service.ts`: providers, perfis e execucao de tarefas.
+- `src/main/services/credential-service.ts`: segredos de IA via `safeStorage`.
+- `src/main/services/search-service.ts`: busca textual/hibrida com fallback.
+- `src/main/workers/*`: entradas e contratos dos workers da fila.
 - `src/preload/index.ts`: API segura exposta em `window.app`.
 - `src/shared/ipc.ts`: canais, schemas Zod e tipos compartilhados do IPC.
 - `src/renderer/App.tsx`: shell React, bootstrap do banco e navegacao inicial.
@@ -199,8 +235,9 @@ Regras especificas:
 
 ### `packages/ai`
 
-Base inicial para tipos/adaptadores de IA. Deve permanecer fora do renderer e
-fora das apps externas quando incluir runtime ou segredos.
+Registry, contratos de task/handle, negociacao por capabilities e adapters
+Google Gemini/OpenAI-compatible. Segredos sao injetados pelo desktop e nunca
+persistidos neste pacote.
 
 ### `packages/conversion`
 
@@ -211,6 +248,11 @@ Decisao para a Fase 2: formatos textuais simples usam conversores TypeScript
 nativos; PDF e documentos complexos usam Docling em sidecar CPython local,
 controlado pelo main process ou pelo worker de conversao. O resultado preserva
 Markdown, blocos e proveniencia estruturada quando disponivel.
+
+O pacote agora contem `ConversionRouter`, conversores nativos, Defuddle,
+extracao ZIP limitada, normalizador, chunker e `DoclingClient`. O bridge Python
+fica em `packages/conversion/sidecar/`; o bundle CPython/Docling continua sendo
+artefato por plataforma, nao dependencia do Python do sistema.
 
 ## Fluxo do Banco no Desktop
 
@@ -281,6 +323,8 @@ npm run db:generate
 npm run db:seed:verify
 npm run db:migrate
 npm run db:verify
+npm run db:phase2:verify
+npm run db:seed:sync
 ```
 
 Validacao:
