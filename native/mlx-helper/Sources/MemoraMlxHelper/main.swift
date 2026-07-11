@@ -10,6 +10,7 @@ private let protocolVersion = 1
 private struct GenerationParameters: Codable {
     let maxTokens: Int
     let temperature: Float
+    let enableThinking: Bool?
     let seed: UInt64?
 }
 
@@ -99,7 +100,9 @@ private struct MemoraMlxHelper {
         guard let modelPath = request.modelPath, let prompt = request.prompt else {
             throw HelperError.invalidRequest
         }
-        let parameters = request.parameters ?? GenerationParameters(maxTokens: 1_024, temperature: 0.2, seed: nil)
+        let parameters = request.parameters ?? GenerationParameters(
+            maxTokens: 1_024, temperature: 0.2, enableThinking: false, seed: nil
+        )
         let startedAt = ContinuousClock.now
         emitProgress(request.requestId, progress: 0.05, messageKey: "localModels.progress.loading")
         if loadedModel == nil || loadedModelPath != modelPath {
@@ -118,7 +121,11 @@ private struct MemoraMlxHelper {
             temperature: parameters.temperature,
             seed: parameters.seed
         )
-        let session = ChatSession(model, generateParameters: generation)
+        let session = ChatSession(
+            model,
+            generateParameters: generation,
+            additionalContext: ["enable_thinking": parameters.enableThinking ?? false]
+        )
         let output = try await session.respond(to: prompt)
         let outputTokenCount = tokenizer.encode(text: output, addSpecialTokens: false).count
         let duration = startedAt.duration(to: .now)

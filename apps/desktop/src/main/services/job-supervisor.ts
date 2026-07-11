@@ -22,7 +22,13 @@ export interface JobSupervisorOptions {
   getPool: () => PgPool | null;
   pollIntervalMs?: number;
   logger?: Pick<Console, "error" | "warn">;
-  generateEmbedding?: (text: string, signal?: AbortSignal) => Promise<{
+  generateEmbedding?: (text: string, signal?: AbortSignal, context?: {
+    jobId: string;
+    ingestionRunId: string;
+    sourceItemId: string;
+    documentId: string;
+    stage: string;
+  }) => Promise<{
     embedding: number[];
     provider: string;
     model: string;
@@ -238,7 +244,13 @@ export class JobSupervisor {
       if (this.options.generateEmbedding) {
         for (const chunk of persistedChunks) {
           if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
-          const generated = await this.options.generateEmbedding(chunk.content, signal);
+          const generated = await this.options.generateEmbedding(chunk.content, signal, {
+            jobId: job.id,
+            ingestionRunId,
+            sourceItemId,
+            documentId,
+            stage: "embedding"
+          });
           if (!generated) break;
           const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
           const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
@@ -270,7 +282,8 @@ export class JobSupervisor {
               sourceItemId,
               documentId,
               signal,
-              (progress) => this.reportInlineProgress(stageJobId, progress)
+              (progress) => this.reportInlineProgress(stageJobId, progress),
+              { jobId: stageJobId, ingestionRunId, sourceItemId, documentId, stage: "summarization" }
             ),
             controller
           )
@@ -317,6 +330,8 @@ export class JobSupervisor {
               sourceItemId,
               documentId,
               {
+                jobId: stageJobId,
+                ingestionRunId,
                 completedBatches: graphMetadata?.completedBatches,
                 onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
                 onBatchCompleted: async ({ completed, total, checkpoints }) => {
@@ -354,7 +369,7 @@ export class JobSupervisor {
               noteIds,
               signal,
               async (progress) => {
-                const completed = Math.min(noteIds.length, Math.round(progress * noteIds.length));
+                const completed = Math.min(noteIds.length, Math.floor(progress * noteIds.length));
                 await Promise.all([
                   createJobRepository(pool).reportProgress(stageJobId, progress),
                   createJobRepository(pool).reportProgress(job.id, 0.89 + progress * 0.06),
@@ -364,7 +379,8 @@ export class JobSupervisor {
                   })
                 ]);
                 this.notify();
-              }
+              },
+              { jobId: stageJobId, ingestionRunId, sourceItemId, documentId, stage: "atomic_note_matching" }
             ),
             controller
           )

@@ -139,7 +139,10 @@ export class MlxAdapter implements AiModelAdapter {
       timeoutMs: this.options.timeoutMs ?? 10 * 60_000,
       ...(signal ? { signal } : {})
     });
-    return taskResult(input, "local-mlx", this.options.modelId, result);
+    return taskResult(input, "local-mlx", this.options.modelId, {
+      ...result,
+      output: typeof result.output === "string" ? stripThinkingOutput(result.output) : result.output
+    });
   }
 
   public async dispose(): Promise<void> {
@@ -280,10 +283,19 @@ function createMlxGenerateRequest(input: MlxExecutionInput): MlxHelperRequest {
     parameters: {
       maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
       temperature: numberParameter(input.parameters.temperature, 0.2),
+      enableThinking: typeof input.parameters.reasoningLevel === "string"
+        ? input.parameters.reasoningLevel !== "off"
+        : false,
       ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {})
     }
   });
   return request;
+}
+
+export function stripThinkingOutput(output: string): string {
+  const closingTag = "</think>";
+  const closingIndex = output.indexOf(closingTag);
+  return (closingIndex >= 0 ? output.slice(closingIndex + closingTag.length) : output).trim();
 }
 
 class NodeLlamaRuntime {

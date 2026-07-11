@@ -1,7 +1,8 @@
-import type { AiCapability, AiTaskType } from "@app/domain";
+import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
 import { parseResponse, readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
+import { googleThinkingConfig } from "./reasoning.js";
 
 export interface GoogleGeminiAdapterOptions {
   apiKey: string;
@@ -152,10 +153,10 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
 }
 
 function googleGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
-  const reasoningLevel = parameters.reasoningLevel;
-  const thinkingConfig = reasoningLevel === "off"
-    ? modelId.includes("2.5") ? { thinkingBudget: 0 } : { thinkingLevel: "minimal" }
-    : typeof reasoningLevel === "string" ? { thinkingLevel: reasoningLevel } : undefined;
+  const thinkingConfig = googleThinkingConfig(
+    modelId,
+    typeof parameters.reasoningLevel === "string" ? parameters.reasoningLevel as AiReasoningLevel : undefined
+  );
   return {
     ...(typeof parameters.maxTokens === "number" ? { maxOutputTokens: parameters.maxTokens } : {}),
     ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),

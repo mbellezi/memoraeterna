@@ -53,6 +53,9 @@ Implementado ate aqui:
 - `@app/ai` com registry/capabilities e adapters Google Gemini e
   OpenAI-compatible, um modelo por perfil, roteamento de perfil por tarefa e
   credenciais via `safeStorage`;
+- autenticacao ChatGPT/Codex por OAuth 2.0 + PKCE, com callback apenas em
+  loopback, tokens rotativos via `safeStorage`, catalogo remoto e adapter
+  generativo Responses; embeddings permanecem em API key ou modelo local;
 - modelos remotos separados por capability, parametros padrao por modelo,
   overrides independentes por perfil/tarefa e conversao dos parametros
   canonicos para cada adapter;
@@ -74,13 +77,16 @@ Implementado ate aqui:
   fontes que excedem o limite de contexto configurado;
 - notas atomicas geradas por resultado estruturado Zod, vinculadas a fonte,
   chunks e SourceSpans, sempre iniciando em `pending_review`;
-- matching hibrido entre notas com sinais vetoriais e de metadados, reranking
-  opcional, limiar configuravel e relacoes canonicas persistidas em SQL;
+- matching hibrido entre notas com recuperadores independentes de texto, vetor
+  e grafo, fusao RRF com reserva para descobertas exclusivas do grafo,
+  reranking opcional em um unico lote por nota, limiar configuravel e relacoes
+  canonicas persistidas em SQL;
 - etapa configuravel de geracao do grafo de conhecimento a partir das notas
   atomicas, com aliases curtos de evidencia, checkpoint por lote e entidades,
   mencoes, claims e relacoes rastreaveis persistidas em SQL e projetadas no AGE;
 - busca e matching com ranking/sinal opcional do AGE integrado por RRF e debug
-  de `graphRank`/`graphScore`; falhas do AGE apenas omitem esse sinal;
+  de `graphRank`/`graphScore`; o matching penaliza entidades ligadas a muitas
+  notas, e falhas do AGE apenas omitem esse sinal;
 - auditoria das transicoes de revisao de notas atomicas;
 - pipeline retomavel completo ate resumo, notas atomicas e matching;
 - UI funcional de Library, detalhe da fonte, arquivos originais, checkpoints
@@ -105,9 +111,12 @@ Implementado ate aqui:
   paths humanos, tratamento de colisao e escrita atomica por worker;
 - sync Obsidian bidirecional com `file_mtime`, hash, versao, tombstone,
   conflitos explicitos e reprocessamento do documento alterado;
+- sincronizacao manual do vault com estado/progresso no dashboard de debug;
+  scans reconciliam apenas arquivos presentes e nunca inferem exclusao por
+  ausencia, enquanto exclusoes explicitas validam identidade, versao e path;
 - verificacao real da Fase 4 para migration, baseline, indices e repositorios
   de clientes/sync em PostgreSQL temporario.
-- catalogo local versionado com tres modelos MLX auditados, revisions imutaveis,
+- catalogo local versionado com quatro modelos MLX auditados, revisions imutaveis,
   tamanhos, SHA-256, licencas, capabilities e requisitos de memoria;
 - catalogo local ampliado com Qwen3-Embedding-0.6B Q8_0 e BGE-M3 Q8_0 em GGUF
   auditado, disponiveis para download na interface;
@@ -212,6 +221,8 @@ Arquivos principais:
   persistencia dos artefatos.
 - `src/main/services/asset-storage-service.ts`: storage por hash.
 - `src/main/services/ai-service.ts`: providers, perfis e execucao de tarefas.
+- `src/main/services/openai-codex-oauth.ts`: login OAuth PKCE, callback
+  loopback, troca/refresh de tokens e identidade da conta ChatGPT.
 - `src/main/services/local-model-service.ts`: catalogo, downloads persistidos,
   token seguro, importacao GGUF, teste e remocao de modelos locais.
 - `src/main/services/backup-service.ts`: `pg_dump` e copia dos arquivos
@@ -350,9 +361,9 @@ Regras especificas:
 ### `packages/ai`
 
 Registry, contratos de task/handle, negociacao por capabilities e adapters
-Google Gemini/OpenAI-compatible, GGUF e MLX. Contem o catalogo auditado, o
-protocolo MLX e o downloader verificado. Segredos sao injetados pelo desktop e
-nunca persistidos neste pacote.
+Google Gemini, OpenAI-compatible, ChatGPT/Codex Responses, GGUF e MLX. Contem o
+catalogo auditado, o protocolo MLX e o downloader verificado. Segredos sao
+injetados pelo desktop e nunca persistidos neste pacote.
 
 ### `packages/conversion`
 

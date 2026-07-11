@@ -187,6 +187,23 @@ export function createJobRepository(db: Queryable) {
       return this.update(id, { progress: Math.max(0, Math.min(1, progress)) });
     },
 
+    async setAiExecution(id: string, input: {
+      provider: string;
+      modelId: string;
+      reasoningLevel: string | null;
+    }): Promise<JobRecord | null> {
+      const result = await db.query<JobRow>(
+        `update jobs set
+           payload = jsonb_set(payload, '{aiExecution}', $2::jsonb, true),
+           updated_at = now()
+         where id = $1
+         returning ${returning}`,
+        [id, input]
+      );
+      const row = result.rows[0];
+      return row ? mapJob(row) : null;
+    },
+
     async requestCancel(id: string): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `update jobs

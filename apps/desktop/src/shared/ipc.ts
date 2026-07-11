@@ -16,6 +16,9 @@ export const ipcChannels = {
   appSettingsUpdate: "app:settings:app:update",
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update",
+  settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
+  obsidianSyncStart: "app:obsidian:sync:start",
+  obsidianSyncStatus: "app:obsidian:sync:status",
   debugSimilarityRunsList: "app:debug:similarity-runs:list",
   debugSimilarityRunsClear: "app:debug:similarity-runs:clear",
   libraryReset: "app:library:reset",
@@ -35,8 +38,12 @@ export const ipcChannels = {
   knowledgeNoteReview: "app:knowledge:notes:review",
   aiProvidersList: "app:ai:providers:list",
   aiProvidersSave: "app:ai:providers:save",
+  aiProvidersDelete: "app:ai:providers:delete",
   aiProvidersTest: "app:ai:providers:test",
   aiModelsList: "app:ai:models:list",
+  aiModelsDiscover: "app:ai:models:discover",
+  aiOpenAiCodexConnect: "app:ai:openai-codex:connect",
+  aiOpenAiCodexDisconnect: "app:ai:openai-codex:disconnect",
   aiProfilesList: "app:ai:profiles:list",
   aiProfilesCreate: "app:ai:profiles:create",
   aiProfilesUpdate: "app:ai:profiles:update",
@@ -124,6 +131,20 @@ export const storageSettingsUpdateSchema = storageSettingsSchema
   .partial()
   .strict();
 
+export const obsidianSyncStatusSchema = z.object({
+  state: z.enum(["idle", "running", "completed", "failed"]),
+  stage: z.enum(["idle", "reconciling", "projecting", "completed", "failed"]),
+  progress: z.number().min(0).max(1),
+  processed: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  synced: z.number().int().nonnegative(),
+  conflicts: z.number().int().nonnegative(),
+  projected: z.number().int().nonnegative(),
+  startedAt: z.string().datetime().nullable(),
+  finishedAt: z.string().datetime().nullable(),
+  error: z.string().nullable()
+}).strict();
+
 export const systemInfoSchema = z.object({
   appName: z.string().min(1),
   locale: z.string().min(2),
@@ -194,6 +215,11 @@ export const jobRecordSchema = z.object({
   }).strict()).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  aiExecution: z.object({
+    provider: z.string().min(1),
+    modelId: z.string().min(1),
+    reasoningLevel: AiReasoningLevelSchema.nullable()
+  }).strict().nullable(),
   source: z.object({
     id: z.string().uuid(),
     title: z.string().min(1),
@@ -368,7 +394,7 @@ export const similarityDebugClearResultSchema = z.object({
   deletedCount: z.number().int().nonnegative()
 }).strict();
 
-export const aiProviderKindSchema = z.enum(["google", "openai-compatible"]);
+export const aiProviderKindSchema = z.enum(["google", "openai-compatible", "openai-codex"]);
 export const aiReasoningLevelSchema = AiReasoningLevelSchema;
 export const aiModelParametersSchema = AiModelParametersSchema;
 export const aiConfigurableTaskSchema = z.enum([
@@ -391,6 +417,18 @@ export const aiProviderConfigInputSchema = z.object({
   capabilities: z.array(AiCapabilitySchema).default([]),
   defaultParameters: aiModelParametersSchema.default({})
 }).strict();
+
+export const aiModelDiscoveryInputSchema = z.object({
+  provider: aiProviderKindSchema,
+  baseUrl: z.string().url().nullable().optional(),
+  apiKey: z.string().min(1).optional()
+}).strict().superRefine((input, context) => {
+  if (input.provider !== "openai-codex" && !input.apiKey) {
+    context.addIssue({ code: "custom", message: "API key is required.", path: ["apiKey"] });
+  }
+});
+
+export const aiModelListSchema = z.array(z.string().min(1));
 
 export const aiProviderConfigSchema = aiProviderConfigInputSchema.omit({ apiKey: true }).extend({
   id: z.string().uuid(),
@@ -584,6 +622,7 @@ export type PendingAtomicNote = z.infer<typeof pendingAtomicNoteSchema>;
 export type AtomicNoteReviewInput = z.infer<typeof atomicNoteReviewInputSchema>;
 export type AiProviderConfigInput = z.infer<typeof aiProviderConfigInputSchema>;
 export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
+export type AiModelDiscoveryInput = z.infer<typeof aiModelDiscoveryInputSchema>;
 export type AiProfile = z.infer<typeof aiProfileSchema>;
 export type AiProfileCreate = z.infer<typeof aiProfileCreateSchema>;
 export type AiProfileUpdate = z.infer<typeof aiProfileUpdateSchema>;
@@ -600,6 +639,7 @@ export type IntegrationGatewayStatus = z.infer<typeof integrationGatewayStatusSc
 export type IntegrationPairingInput = z.infer<typeof integrationPairingInputSchema>;
 export type IntegrationPairingResult = z.infer<typeof integrationPairingResultSchema>;
 export type IntegrationClient = z.infer<typeof integrationClientSchema>;
+export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
 
 export const defaultAppSettings = {
   themeMode: "dark",
@@ -630,7 +670,12 @@ export interface DesktopApi {
     updateApp: (settings: AppSettingsUpdate) => Promise<AppSettings>;
     get: () => Promise<StorageSettings>;
     update: (settings: StorageSettingsUpdate) => Promise<StorageSettings>;
+    selectObsidianVault: () => Promise<StorageSettings | null>;
     resetLibrary: () => Promise<LibraryResetResult>;
+  };
+  obsidian: {
+    startSync: () => Promise<ObsidianSyncStatus>;
+    getSyncStatus: () => Promise<ObsidianSyncStatus>;
   };
   debug: {
     listSimilarityRuns: () => Promise<SimilarityDebugRun[]>;
@@ -661,8 +706,12 @@ export interface DesktopApi {
   ai: {
     listProviders: () => Promise<AiProviderConfig[]>;
     saveProvider: (input: AiProviderConfigInput) => Promise<AiProviderConfig>;
+    deleteProvider: (providerId: string) => Promise<boolean>;
     testProvider: (providerId: string) => Promise<boolean>;
     listModels: (providerId: string) => Promise<string[]>;
+    discoverModels: (input: AiModelDiscoveryInput) => Promise<string[]>;
+    connectOpenAiCodex: () => Promise<string[]>;
+    disconnectOpenAiCodex: () => Promise<void>;
     listProfiles: () => Promise<AiProfile[]>;
     createProfile: (input: AiProfileCreate) => Promise<AiProfile>;
     updateProfile: (input: AiProfileUpdate) => Promise<AiProfile>;

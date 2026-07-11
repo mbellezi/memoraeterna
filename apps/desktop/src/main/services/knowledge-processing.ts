@@ -11,7 +11,7 @@ import {
 
 export const summaryPromptVersion = "summary-v1";
 export const atomicNotePromptVersion = "atomic-note-v3";
-export const atomicNoteMatchingVersion = "atomic-note-matching-v1";
+export const atomicNoteMatchingVersion = "atomic-note-matching-v2";
 export const knowledgeGraphPromptVersion = "knowledge-graph-v3";
 
 const atomicNoteGenerationJsonSchema = JSON.stringify(
@@ -379,33 +379,175 @@ export function calculateRelationScore(input: {
     : (baseScore * 0.6) + (input.rerankScore * 0.4)));
 }
 
-const rerankOutputSchema = z.object({
+export function calculateAtomicNoteMatchingProgress(input: {
+  noteIndex: number;
+  noteCount: number;
+  completedCandidates: number;
+  candidateCount: number;
+}): number {
+  if (input.noteCount <= 0) return 1;
+  const candidateProgress = input.candidateCount > 0
+    ? input.completedCandidates / input.candidateCount
+    : 1;
+  return Math.max(0, Math.min(1, (input.noteIndex + candidateProgress) / input.noteCount));
+}
+
+const batchRerankItemSchema = z.object({
+  candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
   score: z.number().min(0).max(1),
-  relationType: AtomicNoteRelationTypeSchema.default("related"),
-  explanation: z.string().trim().min(1).max(500)
+  relationType: AtomicNoteRelationTypeSchema
 }).strict();
 
-export interface RerankOutput {
+const batchRerankOutputSchema = z.object({
+  results: z.array(z.unknown()).max(30)
+}).strict();
+
+export interface BatchRerankOutput {
+  candidateAlias: string;
   score: number;
   relationType: AtomicNoteRelationType;
-  explanation: string;
 }
 
-export function parseRerankOutput(output: unknown): RerankOutput {
-  return rerankOutputSchema.parse(parseJsonOutput(output));
+export function parseBatchRerankOutput(
+  output: unknown,
+  allowedAliases: ReadonlySet<string>
+): Map<string, BatchRerankOutput> {
+  const envelope = batchRerankOutputSchema.parse(parseJsonOutput(output));
+  if (envelope.results.length !== allowedAliases.size) {
+    throw new Error("atomic_note_rerank_incomplete_batch");
+  }
+  const parsed = new Map<string, BatchRerankOutput>();
+  for (const candidate of envelope.results) {
+    const result = batchRerankItemSchema.parse(candidate);
+    if (!allowedAliases.has(result.candidateAlias)) {
+      throw new Error("atomic_note_rerank_unknown_candidate");
+    }
+    if (parsed.has(result.candidateAlias)) {
+      throw new Error("atomic_note_rerank_duplicate_candidate");
+    }
+    parsed.set(result.candidateAlias, result);
+  }
+  if ([...allowedAliases].some((alias) => !parsed.has(alias))) {
+    throw new Error("atomic_note_rerank_incomplete_batch");
+  }
+  return parsed;
 }
 
-export function buildRerankPrompt(
+export function buildBatchRerankPrompt(
   source: { title: string; ideaStatement: string },
-  target: { title: string; ideaStatement: string }
+  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>
 ): string {
-  return `Evaluate whether these two atomic notes have a meaningful knowledge relationship.
-Return only JSON: {"score":0.0,"relationType":"related","explanation":"one short explanation"}.
+  return `Evaluate whether the source atomic note has a meaningful knowledge relationship with each candidate.
+The relationship direction is always source note -> candidate note.
+Return every candidate exactly once, using its candidateAlias. Do not omit, add, or reorder aliases.
+Return only JSON: {"results":[{"candidateAlias":"c1","score":0.0,"relationType":"related"}]}.
 Allowed relationType values: supports, contrasts, extends, similar_to, depends_on, clarifies, mentions, related.
 
-Note A: ${source.title}\n${source.ideaStatement}
+Source note: ${source.title}\n${source.ideaStatement}
 
-Note B: ${target.title}\n${target.ideaStatement}`;
+Candidates:\n${candidates.map((candidate) =>
+    `[${candidate.alias}]\nTitle: ${candidate.title}\nMain idea: ${candidate.ideaStatement}`
+  ).join("\n\n")}`;
+}
+
+export interface AtomicNoteRankingInput {
+  noteId: string;
+  score: number;
+}
+
+export interface FusedAtomicNoteCandidate {
+  noteId: string;
+  textScore: number;
+  vectorScore: number;
+  graphScore: number | null;
+  textRank: number | null;
+  vectorRank: number | null;
+  graphRank: number | null;
+  fusionScore: number;
+}
+
+export function fuseAtomicNoteCandidateRankings(
+  textCandidates: ReadonlyArray<AtomicNoteRankingInput>,
+  vectorCandidates: ReadonlyArray<AtomicNoteRankingInput>,
+  graphCandidates: ReadonlyArray<AtomicNoteRankingInput>,
+  limit = 30,
+  minimumGraphOnlyCandidates = 5
+): FusedAtomicNoteCandidate[] {
+  const candidates = new Map<string, FusedAtomicNoteCandidate>();
+  const add = (
+    ranking: ReadonlyArray<AtomicNoteRankingInput>,
+    kind: "text" | "vector" | "graph"
+  ) => ranking.forEach((candidate, index) => {
+    const current = candidates.get(candidate.noteId) ?? {
+      noteId: candidate.noteId,
+      textScore: 0,
+      vectorScore: 0,
+      graphScore: null,
+      textRank: null,
+      vectorRank: null,
+      graphRank: null,
+      fusionScore: 0
+    };
+    if (kind === "text") {
+      current.textScore = candidate.score;
+      current.textRank = index + 1;
+    } else if (kind === "vector") {
+      current.vectorScore = candidate.score;
+      current.vectorRank = index + 1;
+    } else {
+      current.graphScore = candidate.score;
+      current.graphRank = index + 1;
+    }
+    candidates.set(candidate.noteId, current);
+  });
+  add(textCandidates, "text");
+  add(vectorCandidates, "vector");
+  add(graphCandidates, "graph");
+  const activeRankings = Math.max(1,
+    (textCandidates.length > 0 ? 1 : 0)
+      + (vectorCandidates.length > 0 ? 1 : 0)
+      + (graphCandidates.length > 0 ? 1 : 0));
+  const reciprocalRankConstant = 60;
+  const maximumRrf = activeRankings / (reciprocalRankConstant + 1);
+  const compare = (left: FusedAtomicNoteCandidate, right: FusedAtomicNoteCandidate) =>
+    right.fusionScore - left.fusionScore
+      || (right.graphScore ?? 0) - (left.graphScore ?? 0)
+      || right.vectorScore - left.vectorScore
+      || right.textScore - left.textScore
+      || left.noteId.localeCompare(right.noteId);
+  const ranked = [...candidates.values()]
+    .map((candidate) => ({
+      ...candidate,
+      fusionScore: (
+        (candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0)
+        + (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0)
+        + (candidate.graphRank ? 1 / (reciprocalRankConstant + candidate.graphRank) : 0)
+      ) / maximumRrf
+    }))
+    .sort(compare);
+  const safeLimit = Math.max(0, limit);
+  const selected = ranked.slice(0, safeLimit);
+  if (safeLimit === 0 || minimumGraphOnlyCandidates <= 0) return selected;
+  const textOrVectorIds = new Set([
+    ...textCandidates.map((candidate) => candidate.noteId),
+    ...vectorCandidates.map((candidate) => candidate.noteId)
+  ]);
+  const reservedGraphOnlyIds = graphCandidates
+    .filter((candidate) => !textOrVectorIds.has(candidate.noteId))
+    .slice(0, Math.min(safeLimit, minimumGraphOnlyCandidates))
+    .map((candidate) => candidate.noteId);
+  const selectedIds = new Set(selected.map((candidate) => candidate.noteId));
+  const reservedIds = new Set(reservedGraphOnlyIds);
+  for (const noteId of reservedGraphOnlyIds) {
+    if (selectedIds.has(noteId)) continue;
+    const graphCandidate = ranked.find((candidate) => candidate.noteId === noteId);
+    const replacementIndex = selected.findLastIndex((candidate) => !reservedIds.has(candidate.noteId));
+    if (!graphCandidate || replacementIndex < 0) continue;
+    selectedIds.delete(selected[replacementIndex]!.noteId);
+    selected[replacementIndex] = graphCandidate;
+    selectedIds.add(noteId);
+  }
+  return selected.sort(compare);
 }
 
 function summaryPrompt(chunks: ReadonlyArray<{ id: string; content: string }>, partial: boolean): string {

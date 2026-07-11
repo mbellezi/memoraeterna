@@ -196,8 +196,8 @@ try {
 
   await unlink(movedPath);
   const reconcileDelete = await obsidian.reconcileVault();
-  if (reconcileDelete.deleted < 1 || (await syncRepository.findByMemoraId(webSourceId))?.status !== "deleted") {
-    throw new Error("Offline Obsidian delete did not create a tombstone.");
+  if (reconcileDelete.deleted !== 0 || (await syncRepository.findByMemoraId(webSourceId))?.status === "deleted") {
+    throw new Error("A missing file was incorrectly treated as an explicit deletion.");
   }
   const queuedAfterEdit = (await createJobRepository(pool).list()).some((job) =>
     job.type === "ingestion" && job.payload.sourceItemId === webSourceId
@@ -212,7 +212,7 @@ try {
     offlineEditReconciled: reconcileEdit.synced,
     movedPath: movedRecord.relativePath,
     explicitConflict: conflict.syncStatus,
-    tombstones: reconcileDelete.deleted,
+    inferredDeletions: reconcileDelete.deleted,
     searchEvidence: search[0]?.excerpt
   }, null, 2));
 } finally {

@@ -73,7 +73,17 @@
       "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
       "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
       "secureStorageUnavailable": "O armazenamento seguro de credenciais nao esta disponivel.",
-      "missingCredential": "A credencial do provedor esta ausente."
+      "missingCredential": "A credencial do provedor esta ausente.",
+      "connectionFailed": "O teste de conexao com o modelo falhou.",
+      "oauthLoginFailed": "A autenticacao com o ChatGPT falhou.",
+      "oauthStateMismatch": "Nao foi possivel verificar o retorno do OAuth.",
+      "oauthCallbackUnavailable": "Nao foi possivel iniciar o retorno OAuth local.",
+      "oauthTimedOut": "A autenticacao com o ChatGPT expirou.",
+      "oauthNotConnected": "Entre com o ChatGPT antes de salvar este modelo.",
+      "oauthRefreshFailed": "A sessao do ChatGPT expirou. Entre novamente.",
+      "oauthCredentialInvalid": "A credencial salva do ChatGPT e invalida.",
+      "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticacao invalida.",
+      "oauthTokenExchangeFailed": "O ChatGPT nao conseguiu concluir a troca de token."
     },
     "localModels": {
       "notFound": "O modelo local nao foi encontrado.",
@@ -109,7 +119,7 @@
     "updatedAt": "Atualizada em {date}",
     "details": "Atividade do processamento ({count})",
     "errorCount": "{count} erros",
-    "activity": { "title": "Atividade do processamento" },
+    "activity": { "title": "Atividade do processamento", "reasoning": "Raciocinio: {level}", "modelDefault": "Padrao do modelo" },
     "errors": { "title": "Historico de erros", "empty": "Nenhum erro registrado neste fluxo.", "unknownEvidence": "O modelo citou uma evidencia fora deste lote. O checkpoint valido foi preservado e o lote sera processado novamente.", "invalidModelOutput": "O modelo retornou um grafo invalido. O checkpoint valido foi preservado para uma nova tentativa." },
     "loadError": "Nao foi possivel atualizar as tarefas.",
     "emptyState": { "title": "Sua central de processamento esta pronta", "description": "Importe um arquivo ou adicione conteudo. Toda a jornada de processamento aparecera aqui em um unico card ao vivo." },
@@ -213,7 +223,7 @@
       "originals": "Arquivos originais",
       "chunks": "Trechos da fonte",
       "atomicNotes": "Notas atomicas",
-      "relations": "Relacoes entre notas"
+      "relations": "Relações entre notas"
     }
   },
   "knowledge": {
@@ -237,7 +247,7 @@
     "relations": {
       "empty": "Nenhuma relacao relevante entre notas foi encontrada.",
       "pendingInvolved": "Inclui nota pendente de revisao",
-      "explanations": { "hybrid": "As notas ultrapassaram o limiar de similaridade hibrida." },
+      "explanations": { "hybrid": "As notas ultrapassaram o limiar de similaridade hibrida.", "reranked": "As notas ultrapassaram o limiar de similaridade hibrida apos o reranking em lote." },
       "types": {
         "supports": "Sustenta",
         "contrasts": "Contrasta",
@@ -325,6 +335,7 @@
     "storage": {
       "title": "Armazenamento",
       "obsidianVaultPath": "Caminho do vault Obsidian",
+      "selectObsidianVault": "Escolher pasta",
       "obsidianRootFolder": "Pasta gerenciada",
       "obsidianSyncEnabled": "Sincronizar com Obsidian",
       "obsidianSyncPaused": "Pausar sincronizacao com Obsidian",
@@ -362,19 +373,20 @@
         "profiles": "Perfis", "profilesDescription": "Privacidade, modelo e parametros",
         "routing": "Roteamento de tarefas", "routingDescription": "Escolha o perfil de cada tarefa"
       },
-      "openAiCompatible": "Compativel com OpenAI", "displayName": "Nome de exibicao", "baseUrl": "URL base",
-      "model": "Modelo", "apiKey": "Chave de API", "saveProvider": "Salvar provedor", "test": "Testar",
+      "openAiCompatible": "Compativel com OpenAI", "openAiCodex": "Assinatura ChatGPT (OAuth)", "displayName": "Nome de exibicao", "baseUrl": "URL base",
+      "model": "Modelo", "apiKey": "Chave de API", "saveProvider": "Salvar provedor", "test": "Testar", "loadModels": "Carregar modelos",
       "connectionOk": "Conexao bem-sucedida.", "profiles": "Perfis", "profileName": "Nome do perfil",
       "createProfile": "Criar perfil", "defaultProfile": "Padrao", "cloneProfile": "Clonar perfil", "removeProfile": "Remover perfil", "removeProfileConfirmation": "Remover este perfil e seus roteamentos de tarefas? Os modelos baixados serao preservados.",
       "selectModel": "Selecione um modelo remoto ou local", "remoteModels": "Adicionar modelo remoto",
       "modelPurpose": "Finalidade do modelo", "saveModel": "Salvar modelo", "embeddingModels": "Modelos remotos de embedding",
       "generationModels": "Modelos remotos de geracao e reranking", "noModels": "Nenhum modelo configurado.",
-      "saveDefaults": "Salvar padroes", "noProfiles": "Crie um perfil para configurar as tarefas.",
+      "saveDefaults": "Salvar padroes", "editModel": "Editar", "saveModelChanges": "Salvar alteracoes", "deleteModel": "Excluir", "deleteModelConfirmation": "Excluir este modelo remoto? Os perfis vinculados serao mantidos, mas precisarao ter outro modelo selecionado.", "noProfiles": "Crie um perfil para configurar as tarefas.",
       "outputLanguage": "Idioma das respostas", "selectProfile": "Selecione um perfil",
       "taskRouting": "Perfil usado por tarefa", "taskRoutingDescription": "Escolha independentemente qual perfil configurado cada tarefa de IA deve usar.",
       "purposes": { "generation": "Geracao de texto", "embedding": "Embedding", "reranking": "Reranking" },
       "privacy": { "allowRemote": "Permitir modelos remotos", "offlineOnly": "Somente modelos locais" },
       "languages": { "interface": "Mesmo idioma da interface" },
+      "oauth": { "authentication": "Autenticacao do ChatGPT", "connect": "Entrar com ChatGPT", "reconnect": "Entrar novamente", "connected": "Conectado; escolha e salve um modelo.", "description": "Usa a cota da assinatura ChatGPT/Codex em tarefas generativas. Embeddings ainda exigem chave de API ou modelo local.", "modelSelectionHint": "Digite para buscar e selecionar um modelo da lista ou informe o nome manualmente.", "callbackSuccessTitle": "ChatGPT conectado", "callbackSuccessDescription": "Volte ao Memora Eterna para escolher e salvar um modelo.", "callbackErrorTitle": "Falha na autenticacao", "callbackCloseWindow": "Feche esta janela e tente novamente no Memora Eterna." },
       "tasks": {
         "embedding": "Embedding", "summarization": "Resumo", "text-generation": "Geracao de texto",
         "structured-output": "Saida estruturada", "knowledge-graph-generation": "Geracao do grafo de conhecimento", "atomic-note-generation": "Geracao de notas atomicas", "reranking": "Reranking"
@@ -383,7 +395,7 @@
         "contextWindow": "Janela de contexto", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
         "reasoningLevel": "Nivel de raciocinio", "topP": "Top P", "dimensions": "Dimensoes do embedding", "seed": "Seed",
         "inherit": "Usar valor herdado/padrao",
-        "reasoning": { "off": "Desligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto" }
+        "reasoning": { "off": "Desligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto", "xhigh": "Muito alto", "max": "Maximo" }
       }
     }
   },
@@ -411,6 +423,15 @@
     "action": "Criar backup",
     "completed": "Backup concluido:",
     "failed": "Nao foi possivel criar o backup."
+  },
+  "obsidianSync": {
+    "title": "Sincronizacao com Obsidian",
+    "description": "Reconcilia com seguranca os arquivos gerenciados e projeta a biblioteca atual no vault configurado.",
+    "action": "Sincronizar agora",
+    "unavailable": "Configure e ative um vault do Obsidian para iniciar a sincronizacao.",
+    "processed": "Fontes processadas", "synced": "Alteracoes importadas", "projected": "Arquivos projetados", "conflicts": "Conflitos",
+    "states": { "idle": "Aguardando", "running": "Sincronizando", "completed": "Concluida", "failed": "Falhou" },
+    "stages": { "idle": "Aguardando", "reconciling": "Reconciliando arquivos gerenciados", "projecting": "Projetando biblioteca", "completed": "Sincronizacao concluida", "failed": "Sincronizacao interrompida" }
   },
   "debug": {
     "title": "Dashboard de debug", "captureTitle": "Diagnóstico de similaridade", "captureDescription": "Registra os scores textual, vetorial, de grafo, de metadados, reranking e final usados nas buscas e no matching de notas atômicas.", "enabled": "Debug ativado", "disabled": "Debug desativado", "executions": "Execuções", "candidates": "Candidatos", "captureState": "Estado da captura", "recording": "Gravando", "paused": "Pausado", "refresh": "Atualizar", "clear": "Limpar logs", "clearConfirmation": "Apagar todos os logs de debug de similaridade?", "empty": "Nenhum diagnóstico registrado", "emptyDescription": "Ative o debug e execute uma busca ou importe conteúdo para inspecionar os cálculos de similaridade.", "chunkSearch": "Busca de chunks", "noteMatching": "Matching de notas atômicas", "noModel": "Sem modelo de embedding", "passed": "Passou", "rejected": "Abaixo do limiar", "thresholdUsed": "Corte usado", "textRank": "Posição textual", "vectorRank": "Posição vetorial", "graphRank": "Posição no grafo", "textScore": "Texto", "vectorScore": "Vetor", "graphScore": "Grafo", "metadataScore": "Metadados", "rerankScore": "Reranking", "fusionScore": "Fusão RRF", "finalScore": "Final", "beforeRerank": "Score antes do reranking", "rerankError": "Erro no reranking", "rerankNotConfigured": "O reranking não foi executado porque não há um perfil compatível configurado.", "graphError": "Erro na consulta do grafo", "graphUnavailable": "O sinal de grafo foi omitido porque a consulta ao AGE falhou.", "sourceElements": "Elementos vinculados à nota de origem", "candidateElements": "Elementos vinculados a esta candidata", "entities": "Entidades", "claims": "Claims", "relations": "Relações",

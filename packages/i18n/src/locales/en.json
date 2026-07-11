@@ -73,7 +73,17 @@
       "noCompatibleModel": "No compatible model is configured.",
       "unsupportedTask": "The selected model cannot run this task.",
       "secureStorageUnavailable": "Secure credential storage is unavailable.",
-      "missingCredential": "The provider credential is missing."
+      "missingCredential": "The provider credential is missing.",
+      "connectionFailed": "The model connection test failed.",
+      "oauthLoginFailed": "ChatGPT authentication failed.",
+      "oauthStateMismatch": "The OAuth callback could not be verified.",
+      "oauthCallbackUnavailable": "The local OAuth callback could not be started.",
+      "oauthTimedOut": "ChatGPT authentication timed out.",
+      "oauthNotConnected": "Sign in with ChatGPT before saving this model.",
+      "oauthRefreshFailed": "The ChatGPT session expired. Sign in again.",
+      "oauthCredentialInvalid": "The stored ChatGPT credential is invalid.",
+      "oauthTokenResponseInvalid": "ChatGPT returned an invalid authentication response.",
+      "oauthTokenExchangeFailed": "ChatGPT could not complete token exchange."
     },
     "localModels": {
       "notFound": "The local model was not found.",
@@ -109,7 +119,7 @@
     "updatedAt": "Updated {date}",
     "details": "Processing activity ({count})",
     "errorCount": "{count} errors",
-    "activity": { "title": "Processing activity" },
+    "activity": { "title": "Processing activity", "reasoning": "Reasoning: {level}", "modelDefault": "Model default" },
     "errors": { "title": "Error history", "empty": "No errors recorded for this workflow.", "unknownEvidence": "The model referenced evidence outside this batch. The valid checkpoint was preserved and the batch will be retried.", "invalidModelOutput": "The model returned an invalid graph result. The valid checkpoint was preserved for retry." },
     "loadError": "Jobs could not be refreshed.",
     "emptyState": { "title": "Your processing workspace is ready", "description": "Import a file or add content. Its full processing journey will appear here as one live card." },
@@ -237,7 +247,7 @@
     "relations": {
       "empty": "No relevant note relations were found.",
       "pendingInvolved": "Includes a note pending review",
-      "explanations": { "hybrid": "The notes passed the hybrid similarity threshold." },
+      "explanations": { "hybrid": "The notes passed the hybrid similarity threshold.", "reranked": "The notes passed the hybrid similarity threshold after batch reranking." },
       "types": {
         "supports": "Supports",
         "contrasts": "Contrasts",
@@ -325,6 +335,7 @@
     "storage": {
       "title": "Storage",
       "obsidianVaultPath": "Obsidian vault path",
+      "selectObsidianVault": "Choose folder",
       "obsidianRootFolder": "Managed folder",
       "obsidianSyncEnabled": "Sync with Obsidian",
       "obsidianSyncPaused": "Pause Obsidian sync",
@@ -367,19 +378,20 @@
         "profiles": "Profiles", "profilesDescription": "Privacy, model and task parameters",
         "routing": "Task routing", "routingDescription": "Choose the profile for each task"
       },
-      "openAiCompatible": "OpenAI-compatible", "displayName": "Display name", "baseUrl": "Base URL",
-      "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test",
+      "openAiCompatible": "OpenAI-compatible", "openAiCodex": "ChatGPT subscription (OAuth)", "displayName": "Display name", "baseUrl": "Base URL",
+      "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test", "loadModels": "Load models",
       "connectionOk": "Connection successful.", "profiles": "Profiles", "profileName": "Profile name",
       "createProfile": "Create profile", "defaultProfile": "Default", "cloneProfile": "Clone profile", "removeProfile": "Remove profile", "removeProfileConfirmation": "Remove this profile and its task routes? Downloaded models will be preserved.",
       "selectModel": "Select a remote or local model", "remoteModels": "Add remote model",
       "modelPurpose": "Model purpose", "saveModel": "Save model", "embeddingModels": "Remote embedding models",
       "generationModels": "Remote generation and reranking models", "noModels": "No models configured.",
-      "saveDefaults": "Save defaults", "noProfiles": "Create a profile to configure tasks.",
+      "saveDefaults": "Save defaults", "editModel": "Edit", "saveModelChanges": "Save changes", "deleteModel": "Delete", "deleteModelConfirmation": "Delete this remote model? Linked profiles will be kept but will need another model selected.", "noProfiles": "Create a profile to configure tasks.",
       "outputLanguage": "Response language", "selectProfile": "Select a profile",
       "taskRouting": "Profile used by task", "taskRoutingDescription": "Choose independently which configured profile each AI task uses.",
       "purposes": { "generation": "Text generation", "embedding": "Embedding", "reranking": "Reranking" },
       "privacy": { "allowRemote": "Allow remote models", "offlineOnly": "Local models only" },
       "languages": { "interface": "Same as interface" },
+      "oauth": { "authentication": "ChatGPT authentication", "connect": "Sign in with ChatGPT", "reconnect": "Sign in again", "connected": "Connected; choose and save a model.", "description": "Uses ChatGPT/Codex subscription quota for generative tasks. Embeddings still require an API key or local model.", "modelSelectionHint": "Type to search and select a listed model, or enter a model name manually.", "callbackSuccessTitle": "ChatGPT connected", "callbackSuccessDescription": "Return to Memora Eterna to choose and save a model.", "callbackErrorTitle": "Authentication failed", "callbackCloseWindow": "Close this window and try again in Memora Eterna." },
       "tasks": {
         "embedding": "Embedding", "summarization": "Summarization", "text-generation": "Text generation",
         "structured-output": "Structured output", "knowledge-graph-generation": "Knowledge graph generation", "atomic-note-generation": "Atomic note generation", "reranking": "Reranking"
@@ -388,7 +400,7 @@
         "contextWindow": "Context window", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
         "reasoningLevel": "Reasoning level", "topP": "Top P", "dimensions": "Embedding dimensions", "seed": "Seed",
         "inherit": "Use inherited/default value",
-        "reasoning": { "off": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High" }
+        "reasoning": { "off": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" }
       }
     }
   },
@@ -446,6 +458,15 @@
     "action": "Create backup",
     "completed": "Backup completed:",
     "failed": "The backup could not be created."
+  },
+  "obsidianSync": {
+    "title": "Obsidian synchronization",
+    "description": "Safely reconcile managed files and project the current library into the configured vault.",
+    "action": "Synchronize now",
+    "unavailable": "Configure and enable an Obsidian vault to start synchronization.",
+    "processed": "Sources processed", "synced": "Imported changes", "projected": "Files projected", "conflicts": "Conflicts",
+    "states": { "idle": "Idle", "running": "Synchronizing", "completed": "Completed", "failed": "Failed" },
+    "stages": { "idle": "Waiting", "reconciling": "Reconciling managed files", "projecting": "Projecting library", "completed": "Synchronization complete", "failed": "Synchronization interrupted" }
   },
   "debug": {
     "title": "Debug dashboard", "captureTitle": "Similarity diagnostics", "captureDescription": "Record the textual, vector, graph, metadata, reranking and final scores used by searches and atomic-note matching.", "enabled": "Debug enabled", "disabled": "Debug disabled", "executions": "Executions", "candidates": "Candidates", "captureState": "Capture state", "recording": "Recording", "paused": "Paused", "refresh": "Refresh", "clear": "Clear logs", "clearConfirmation": "Delete all similarity debug logs?", "empty": "No diagnostics recorded", "emptyDescription": "Enable debug and run a search or import content to inspect its similarity calculations.", "chunkSearch": "Chunk search", "noteMatching": "Atomic-note matching", "noModel": "No embedding model", "passed": "Passed", "rejected": "Below threshold", "thresholdUsed": "Threshold used", "textRank": "Text rank", "vectorRank": "Vector rank", "graphRank": "Graph rank", "textScore": "Text", "vectorScore": "Vector", "graphScore": "Graph", "metadataScore": "Metadata", "rerankScore": "Reranking", "fusionScore": "RRF fusion", "finalScore": "Final", "beforeRerank": "Score before reranking", "rerankError": "Reranking error", "rerankNotConfigured": "Reranking was not executed because no compatible profile is configured.", "graphError": "Graph query error", "graphUnavailable": "The graph signal was omitted because the AGE query failed.", "sourceElements": "Elements linked to the source note", "candidateElements": "Elements linked to this candidate", "entities": "Entities", "claims": "Claims", "relations": "Relations",

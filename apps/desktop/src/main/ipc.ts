@@ -12,6 +12,7 @@ import {
   aiProfileTaskInputSchema,
   aiTaskRouteSchema,
   aiProviderConfigInputSchema,
+  aiModelDiscoveryInputSchema,
   atomicNoteReviewInputSchema,
   fileImportInputSchema,
   manualIngestionInputSchema,
@@ -23,7 +24,7 @@ import {
   repositoryTokenInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
-import { SourceItemTypeSchema } from "@app/domain";
+import { AiReasoningLevelSchema, SourceItemTypeSchema } from "@app/domain";
 import type { SettingsService } from "./services/settings-service";
 import type { AiService } from "./services/ai-service.js";
 import type { IngestionService } from "./services/ingestion-service.js";
@@ -36,6 +37,7 @@ import type { LocalModelService } from "./services/local-model-service.js";
 import type { BackupService } from "./services/backup-service.js";
 import type { LibraryResetService } from "./services/library-reset-service.js";
 import type { SimilarityDebugService } from "./services/similarity-debug-service.js";
+import type { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -55,7 +57,8 @@ export function registerIpcHandlers(
   localModelService: LocalModelService,
   backupService: BackupService,
   libraryResetService: LibraryResetService,
-  similarityDebugService: SimilarityDebugService
+  similarityDebugService: SimilarityDebugService,
+  obsidianSyncService: ObsidianSyncService
 ): void {
   const t = createTranslator(app.getLocale());
 
@@ -87,6 +90,22 @@ export function registerIpcHandlers(
     const settings = storageSettingsUpdateSchema.parse(payload);
     return settingsService.update(settings);
   });
+
+  ipcMain.handle(ipcChannels.settingsSelectObsidianVault, async () => {
+    const selection = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    const path = selection.filePaths[0];
+    if (selection.canceled || !path) return null;
+    const settings = await settingsService.update({
+      obsidianVaultPath: path,
+      obsidianSyncEnabled: true,
+      obsidianSyncPaused: false
+    });
+    obsidianSyncService.startSynchronization();
+    return settings;
+  });
+
+  ipcMain.handle(ipcChannels.obsidianSyncStart, () => obsidianSyncService.startSynchronization());
+  ipcMain.handle(ipcChannels.obsidianSyncStatus, () => obsidianSyncService.getSynchronizationStatus());
 
   ipcMain.handle(ipcChannels.debugSimilarityRunsList, () => similarityDebugService.list());
   ipcMain.handle(ipcChannels.debugSimilarityRunsClear, () => similarityDebugService.clear());
@@ -157,12 +176,20 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.aiProvidersSave, (_event, payload: unknown) =>
     aiService.saveProvider(aiProviderConfigInputSchema.parse(payload))
   );
+  ipcMain.handle(ipcChannels.aiProvidersDelete, (_event, payload: unknown) =>
+    aiService.deleteProvider(z.string().uuid().parse(payload))
+  );
   ipcMain.handle(ipcChannels.aiProvidersTest, (_event, payload: unknown) =>
     aiService.testProvider(z.string().uuid().parse(payload))
   );
   ipcMain.handle(ipcChannels.aiModelsList, (_event, payload: unknown) =>
     aiService.listModels(z.string().uuid().parse(payload))
   );
+  ipcMain.handle(ipcChannels.aiModelsDiscover, (_event, payload: unknown) =>
+    aiService.discoverModels(aiModelDiscoveryInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiOpenAiCodexConnect, () => aiService.connectOpenAiCodex());
+  ipcMain.handle(ipcChannels.aiOpenAiCodexDisconnect, () => aiService.disconnectOpenAiCodex());
   ipcMain.handle(ipcChannels.aiProfilesList, () => aiService.listProfiles());
   ipcMain.handle(ipcChannels.aiProfilesCreate, (_event, payload: unknown) =>
     aiService.createProfile(aiProfileCreateSchema.parse(payload))
@@ -257,6 +284,7 @@ function serializeJob(
     errorHistory,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
+    aiExecution: readJobAiExecution(job.payload),
     source: source ? {
       id: source.id,
       title: source.title,
@@ -269,6 +297,22 @@ function serializeJob(
       currentStage: ingestionRun.currentStage,
       stagesCheckpoint: ingestionRun.stagesCheckpoint
     } : null
+  };
+}
+
+function readJobAiExecution(payload: Record<string, unknown>) {
+  const value = payload.aiExecution;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.provider !== "string" || typeof record.modelId !== "string") return null;
+  const reasoningLevel = record.reasoningLevel === null
+    ? null
+    : AiReasoningLevelSchema.safeParse(record.reasoningLevel);
+  if (reasoningLevel !== null && !reasoningLevel.success) return null;
+  return {
+    provider: record.provider,
+    modelId: record.modelId,
+    reasoningLevel: reasoningLevel === null ? null : reasoningLevel.data
   };
 }
 

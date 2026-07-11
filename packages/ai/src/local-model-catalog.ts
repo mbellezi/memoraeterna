@@ -197,10 +197,40 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
       { path: "tokenizer_config.json", sizeBytes: 5_440, sha256: "4397cc477eb6d79715ccd2000accd6b3531928f30029665832fa1b255f24d2b9" },
       { path: "vocab.json", sizeBytes: 2_776_833, sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910" }
     ]
+  },
+  {
+    id: "mlx-qwen3.5-9b-4bit",
+    displayName: "Qwen 3.5 9B 4-bit",
+    family: "Qwen 3.5",
+    variant: "9B",
+    runtime: "mlx",
+    repository: "mlx-community/Qwen3.5-9B-4bit",
+    revision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
+    format: "safetensors",
+    quantization: "4-bit",
+    capabilities: textCapabilities,
+    minimumMemoryBytes: 12 * gib,
+    recommendedMemoryBytes: 16 * gib,
+    license: "Apache-2.0",
+    licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+    requiresLicenseAcceptance: false,
+    files: [
+      { path: "chat_template.jinja", sizeBytes: 7_756, sha256: "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715" },
+      { path: "config.json", sizeBytes: 3_331, sha256: "a96942cb6a8a1d3f1d17514d81a1925d04362a6a3233b389d13012211baaa9f8" },
+      { path: "model-00001-of-00002.safetensors", sizeBytes: 5_349_771_222, sha256: "a68b87558c6ef43f74c2bd63ce7e9092ceddc3101f3def0030774bae5f42aadd" },
+      { path: "model-00002-of-00002.safetensors", sizeBytes: 600_449_850, sha256: "b0a770bf8469c7f3f18756a0e0283f1c1174344a83e059a4e483f6af4907352d" },
+      { path: "model.safetensors.index.json", sizeBytes: 123_592, sha256: "dd023913fb87cfdae27fb11dcf695117c925833796ccac3c64117d6652d8ff1e" },
+      { path: "preprocessor_config.json", sizeBytes: 390, sha256: "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516" },
+      { path: "processor_config.json", sizeBytes: 1_300, sha256: "14932921ca485d458a04dafd8069fbb0a4505622a48208d19ed247115801385b" },
+      { path: "tokenizer.json", sizeBytes: 19_989_343, sha256: "87a7830d63fcf43bf241c3c5242e96e62dd3fdc29224ca26fed8ea333db72de4" },
+      { path: "tokenizer_config.json", sizeBytes: 1_139, sha256: "e98f1901ac6f0adff67b1d540bfa0c36ac1a0cf59eb72ed78146ef89aafa1182" },
+      { path: "video_preprocessor_config.json", sizeBytes: 385, sha256: "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13" },
+      { path: "vocab.json", sizeBytes: 6_722_759, sha256: "ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003" }
+    ]
   }
 ]);
 
-export const localModelCatalogVersion = "2026-07-10.3";
+export const localModelCatalogVersion = "2026-07-11.1";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);

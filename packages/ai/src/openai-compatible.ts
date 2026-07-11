@@ -1,6 +1,7 @@
-import type { AiCapability, AiTaskType } from "@app/domain";
+import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
 
 export interface OpenAiCompatibleAdapterOptions {
   baseUrl: string;
@@ -83,7 +84,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters)
+        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
       })
     });
     const payload = await parseResponse<{
@@ -122,7 +123,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters)
+        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
       })
     });
     let output = "";
@@ -161,15 +162,17 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   }
 }
 
-function openAiGenerationParameters(parameters: Record<string, unknown>): Record<string, unknown> {
+function openAiGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
+  const reasoningLevel = typeof parameters.reasoningLevel === "string"
+    ? effectiveReasoningLevel("openai-compatible", modelId, parameters.reasoningLevel as AiReasoningLevel)
+    : undefined;
+  const reasoningEffort = openAiReasoningEffort(reasoningLevel);
   return {
     ...(typeof parameters.maxTokens === "number" ? { max_tokens: parameters.maxTokens } : {}),
     ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
     ...(typeof parameters.topP === "number" ? { top_p: parameters.topP } : {}),
     ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
-    ...(typeof parameters.reasoningLevel === "string"
-      ? { reasoning_effort: parameters.reasoningLevel === "off" ? "none" : parameters.reasoningLevel }
-      : {})
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
   };
 }
 
@@ -184,14 +187,24 @@ export async function parseResponse<T>(response: Response): Promise<T> {
   return await response.json() as T;
 }
 
-export async function readServerSentEvents(response: Response, onData: (data: string) => void): Promise<void> {
+export async function readServerSentEvents(
+  response: Response,
+  onData: (data: string) => void,
+  maximumBytes?: number
+): Promise<void> {
   if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
   if (!response.body) throw new Error("AI provider streaming response did not contain a body.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let receivedBytes = 0;
   while (true) {
     const { done, value } = await reader.read();
+    receivedBytes += value?.byteLength ?? 0;
+    if (maximumBytes !== undefined && receivedBytes > maximumBytes) {
+      await reader.cancel();
+      throw new Error("AI provider streaming response exceeded the configured size limit.");
+    }
     buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
     const events = buffer.split("\n\n");
     buffer = events.pop() ?? "";

@@ -52,7 +52,7 @@ export const AiCapabilitySchema = z.enum(AiCapabilities);
 
 export type AiCapability = z.infer<typeof AiCapabilitySchema>;
 
-export const AiReasoningLevelSchema = z.enum(["off", "minimal", "low", "medium", "high"]);
+export const AiReasoningLevelSchema = z.enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 export type AiReasoningLevel = z.infer<typeof AiReasoningLevelSchema>;
 
 export const AiModelParametersSchema = z.object({

@@ -18,26 +18,34 @@ import {
   type SourceItemType
 } from "@app/db";
 
-import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
+import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "./ai-service.js";
 import { logStructuredError } from "./structured-logging.js";
 import {
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
-  buildRerankPrompt,
+  buildBatchRerankPrompt,
+  calculateAtomicNoteMatchingProgress,
   calculateRelationScore,
+  fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   meetsRelationThreshold,
   normalizeSummaryText,
-  parseRerankOutput,
+  parseBatchRerankOutput,
   scoreMetadataOverlap,
   knowledgeGraphPromptVersion,
   parseKnowledgeGraphBatchCheckpoints,
   summaryPromptVersion,
+  type BatchRerankOutput,
   type KnowledgeGraphBatchCheckpoint,
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
+
+const atomicNoteTextCandidateLimit = 30;
+const atomicNoteVectorCandidateLimit = 30;
+const atomicNoteGraphCandidateLimit = 20;
+const atomicNoteFusedCandidateLimit = 30;
 
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
@@ -59,6 +67,8 @@ export interface AtomicNoteGenerationLogContext {
 }
 
 export interface KnowledgeGraphGenerationContext {
+  jobId?: string;
+  ingestionRunId?: string;
   completedBatches?: unknown;
   onProgress?: (progress: number) => void;
   onBatchCompleted?: (input: {
@@ -189,7 +199,8 @@ export class KnowledgeService {
     sourceItemId: string,
     documentId: string,
     signal?: AbortSignal,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    logContext: AiTaskLogContext = {}
   ) {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
@@ -203,7 +214,7 @@ export class KnowledgeService {
       async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "summarization",
         prompt,
-        { onProgress: (event) => onProgress?.(event.progress) },
+        { ...logContext, onProgress: (event) => onProgress?.(event.progress) },
         signal
       )),
       this.summaryMaxInputCharacters
@@ -360,6 +371,8 @@ export class KnowledgeService {
         "knowledge-graph-generation",
         prompt,
         {
+          ...(context.jobId ? { jobId: context.jobId } : {}),
+          ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
           sourceItemId,
           documentId,
           stage: "knowledge_graph_generation",
@@ -424,7 +437,8 @@ export class KnowledgeService {
   public async matchAtomicNotes(
     noteIds: string[],
     signal?: AbortSignal,
-    onProgress?: (progress: number) => void | Promise<void>
+    onProgress?: (progress: number) => void | Promise<void>,
+    logContext: AiTaskLogContext = {}
   ) {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
@@ -440,7 +454,8 @@ export class KnowledgeService {
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
         `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
-        signal
+        signal,
+        logContext
       );
       const embedding = readEmbedding(embeddingExecution?.output);
       if (embedding && embeddingExecution) {
@@ -456,23 +471,49 @@ export class KnowledgeService {
           embedding
         });
       }
-      const candidates = await notes.findMatchingCandidates({
+      const textCandidates = await notes.findTextMatchingCandidates({
         noteId,
-        ...(embedding ? { embedding } : {}),
-        ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
-        limit: 20
+        limit: atomicNoteTextCandidateLimit
       });
+      const vectorCandidates = embedding
+        ? await notes.findVectorMatchingCandidates({
+            noteId,
+            embedding,
+            ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
+            limit: atomicNoteVectorCandidateLimit
+          })
+        : [];
       const graphRepository = createKnowledgeGraphRepository(pool);
-      let graphScores = new Map<string, number>();
+      let graphCandidates: Awaited<ReturnType<typeof graphRepository.findAtomicNoteCandidates>> = [];
       let graphError: string | null = null;
       try {
-        graphScores = await graphRepository.scoreAtomicNoteCandidates(
-          noteId,
-          candidates.map((candidate) => candidate.note.id)
-        );
+        graphCandidates = await graphRepository.findAtomicNoteCandidates(noteId, atomicNoteGraphCandidateLimit);
       } catch (error) {
         graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
       }
+      const fusedCandidates = fuseAtomicNoteCandidateRankings(
+        textCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.textScore })),
+        vectorCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.vectorScore })),
+        graphCandidates.map((candidate) => ({ noteId: candidate.noteId, score: candidate.graphScore })),
+        atomicNoteFusedCandidateLimit
+      );
+      const scoredCandidates = await notes.scoreMatchingCandidates({
+        noteId,
+        candidateIds: fusedCandidates.map((candidate) => candidate.noteId),
+        ...(embedding ? { embedding } : {}),
+        ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {})
+      });
+      const scoresById = new Map(scoredCandidates.map((candidate) => [candidate.note.id, candidate]));
+      const graphPathsById = new Map(graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType]));
+      const candidates = fusedCandidates.flatMap((candidate) => {
+        const scored = scoresById.get(candidate.noteId);
+        return scored ? [{
+          ...candidate,
+          note: scored.note,
+          textScore: scored.textScore,
+          vectorScore: scored.vectorScore
+        }] : [];
+      });
       let graphElementsByNote = new Map<string, AtomicNoteGraphElements>();
       try {
         graphElementsByNote = await graphRepository.listAtomicNoteElements([
@@ -482,10 +523,40 @@ export class KnowledgeService {
       } catch {
         // Debug enrichment must not make note matching fail.
       }
+      let rerankExecution: DefaultAiTaskResult | null = null;
+      let rerankResults = new Map<string, BatchRerankOutput>();
+      let rerankError: string | null = null;
+      const rerankAliases = new Map(candidates.map((candidate, index) => [candidate.note.id, `c${index + 1}`]));
+      if (candidates.length > 0) {
+        try {
+          rerankExecution = await this.options.aiService.runDefaultTask(
+            "reranking",
+            buildBatchRerankPrompt(note, candidates.map((candidate) => ({
+              alias: rerankAliases.get(candidate.note.id)!,
+              title: candidate.note.title,
+              ideaStatement: candidate.note.ideaStatement
+            }))),
+            logContext,
+            signal
+          );
+          if (rerankExecution) {
+            rerankResults = parseBatchRerankOutput(
+              rerankExecution.output,
+              new Set(rerankAliases.values())
+            );
+          }
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          rerankExecution = null;
+          rerankResults.clear();
+          rerankError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+          // The batch is atomic: any invalid or incomplete output discards all reranking results.
+        }
+      }
       const debugResults: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"] = [];
       for (const [candidateIndex, candidate] of candidates.entries()) {
         const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
-        const graphScore = graphScores.get(candidate.note.id) ?? null;
+        const graphScore = candidate.graphScore;
         const baseScore = calculateRelationScore({
           vectorScore: candidate.vectorScore,
           textScore: candidate.textScore,
@@ -497,33 +568,20 @@ export class KnowledgeService {
         let relationType = "related";
         let explanation = "knowledge.relations.explanations.hybrid";
         let rerankScore: number | null = null;
-        let rerankExecution: DefaultAiTaskResult | null = null;
-        let rerankError: string | null = null;
-        try {
-          rerankExecution = await this.options.aiService.runDefaultTask(
-            "reranking",
-            buildRerankPrompt(note, candidate.note),
-            {},
-            signal
-          );
-          if (rerankExecution) {
-            const reranked = parseRerankOutput(rerankExecution.output);
-            rerankScore = reranked.score;
-            finalScore = calculateRelationScore({
-              vectorScore: candidate.vectorScore,
-              textScore: candidate.textScore,
-              metadataScore,
-              graphScore,
-              hasEmbedding: Boolean(embedding),
-              rerankScore: reranked.score
-            });
-            relationType = reranked.relationType;
-            explanation = reranked.explanation;
-          }
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          rerankError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-          // Candidate matching remains available when an optional reranker is unavailable.
+        const alias = rerankAliases.get(candidate.note.id);
+        const reranked = alias ? rerankResults.get(alias) : undefined;
+        if (reranked) {
+          rerankScore = reranked.score;
+          finalScore = calculateRelationScore({
+            vectorScore: candidate.vectorScore,
+            textScore: candidate.textScore,
+            metadataScore,
+            graphScore,
+            hasEmbedding: Boolean(embedding),
+            rerankScore: reranked.score
+          });
+          relationType = reranked.relationType;
+          explanation = "knowledge.relations.explanations.reranked";
         }
         const passedThreshold = meetsRelationThreshold(finalScore, relationThreshold);
         debugResults.push({
@@ -531,12 +589,15 @@ export class KnowledgeService {
           targetId: candidate.note.id,
           targetLabel: candidate.note.title,
           finalRank: candidateIndex + 1,
-          textRank: candidateIndex + 1,
+          textRank: candidate.textRank,
+          vectorRank: candidate.vectorRank,
+          graphRank: candidate.graphRank,
           textScore: candidate.textScore,
           vectorScore: candidate.vectorScore,
           metadataScore,
           graphScore,
           rerankScore,
+          fusionScore: candidate.fusionScore,
           finalScore,
           passedThreshold,
           explanation,
@@ -544,7 +605,8 @@ export class KnowledgeService {
             baseScore,
             relationType,
             graphError,
-            graphStatus: graphError ? "failed" : graphScores.size > 0 ? "succeeded" : "no_signal",
+            graphStatus: graphError ? "failed" : graphCandidates.length > 0 ? "succeeded" : "no_signal",
+            graphPathType: graphPathsById.get(candidate.note.id) ?? null,
             graphElements: graphElementsByNote.get(candidate.note.id) ?? { entities: [], claims: [], relations: [] },
             rerankError,
             rerankStatus: rerankExecution ? "succeeded" : rerankError ? "failed" : "not_configured",
@@ -553,28 +615,42 @@ export class KnowledgeService {
             candidateStatus: candidate.note.status
           }
         });
-        if (!passedThreshold) continue;
-        await relations.upsert({
-          sourceAtomicNoteId: note.id,
-          targetAtomicNoteId: candidate.note.id,
-          relationType,
-          vectorScore: candidate.vectorScore,
-          graphScore,
-          rerankScore,
-          finalScore,
-          explanation,
-          matchingProfileId: rerankExecution?.profileId ?? null,
-          matchingModel: rerankExecution?.modelId ?? null,
-          metadata: {
-            version: atomicNoteMatchingVersion,
-            threshold: relationThreshold,
-            textScore: candidate.textScore,
-            metadataScore,
+        if (passedThreshold) {
+          await relations.upsert({
+            sourceAtomicNoteId: note.id,
+            targetAtomicNoteId: candidate.note.id,
+            relationType,
+            vectorScore: candidate.vectorScore,
             graphScore,
-            pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
-          }
-        });
-        persistedCount += 1;
+            rerankScore,
+            finalScore,
+            explanation,
+            matchingProfileId: rerankExecution?.profileId ?? null,
+            matchingModel: rerankExecution?.modelId ?? null,
+            metadata: {
+              version: atomicNoteMatchingVersion,
+              threshold: relationThreshold,
+              textScore: candidate.textScore,
+              metadataScore,
+              graphScore,
+              graphPathType: graphPathsById.get(candidate.note.id) ?? null,
+              fusionScore: candidate.fusionScore,
+              textRank: candidate.textRank,
+              vectorRank: candidate.vectorRank,
+              graphRank: candidate.graphRank,
+              semanticSourceAtomicNoteId: note.id,
+              semanticTargetAtomicNoteId: candidate.note.id,
+              pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
+            }
+          });
+          persistedCount += 1;
+        }
+        await onProgress?.(calculateAtomicNoteMatchingProgress({
+          noteIndex,
+          noteCount: noteIds.length,
+          completedCandidates: candidateIndex + 1,
+          candidateCount: candidates.length
+        }));
       }
       await this.recordAtomicMatchingDebug({
         noteId: note.id,
@@ -586,14 +662,19 @@ export class KnowledgeService {
         sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
         results: debugResults
       });
-      await onProgress?.((noteIndex + 1) / noteIds.length);
+      if (candidates.length === 0) await onProgress?.((noteIndex + 1) / noteIds.length);
     }
     return { persistedCount, threshold: relationThreshold };
   }
 
-  private async tryRunDefaultTask(task: "embedding", input: string, signal?: AbortSignal) {
+  private async tryRunDefaultTask(
+    task: "embedding",
+    input: string,
+    signal?: AbortSignal,
+    logContext: AiTaskLogContext = {}
+  ) {
     try {
-      return await this.options.aiService.runDefaultTask(task, input, {}, signal);
+      return await this.options.aiService.runDefaultTask(task, input, logContext, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
       return null;
@@ -619,14 +700,25 @@ export class KnowledgeService {
         mode: input.hasEmbedding ? "hybrid" : "text_metadata",
         model: input.embeddingModel,
         dimensions: input.dimensions,
-        requestedLimit: 20,
-        strategy: "weighted_scores_with_optional_reranking",
+        requestedLimit: atomicNoteFusedCandidateLimit,
+        strategy: "text_vector_graph_rrf_with_batch_reranking",
         metadata: {
           threshold: input.relationThreshold,
-          baseWeights: input.hasEmbedding
-            ? { vector: 0.55, text: 0.3, metadata: 0.15 }
-            : { text: 0.7, metadata: 0.3 },
+          retrievalLimits: {
+            text: atomicNoteTextCandidateLimit,
+            vector: atomicNoteVectorCandidateLimit,
+            graph: atomicNoteGraphCandidateLimit,
+            fused: atomicNoteFusedCandidateLimit
+          },
+          fusion: { strategy: "rrf", reciprocalRankConstant: 60 },
+          baseWeights: {
+            withEmbeddingAndGraph: { vector: 0.45, text: 0.25, graph: 0.2, metadata: 0.1 },
+            withEmbedding: { vector: 0.55, text: 0.3, metadata: 0.15 },
+            withGraph: { text: 0.55, graph: 0.3, metadata: 0.15 },
+            textAndMetadata: { text: 0.7, metadata: 0.3 }
+          },
           rerankWeights: { base: 0.6, reranker: 0.4 },
+          rerankMode: "single_atomic_batch",
           sourceGraphElements: input.sourceGraphElements
         },
         results: input.results

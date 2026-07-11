@@ -5,6 +5,7 @@ import type {
   AiProfileTaskInput,
   AiTaskRoute,
   AiModelParameters,
+  AiModelDiscoveryInput,
   AiProviderConfigInput,
   AtomicNoteReviewInput,
   AppSettingsUpdate,
@@ -28,6 +29,8 @@ import {
   aiProfileSchema,
   aiProviderConfigInputSchema,
   aiProviderConfigSchema,
+  aiModelDiscoveryInputSchema,
+  aiModelListSchema,
   atomicNoteReviewInputSchema,
   atomicNoteViewSchema,
   databaseStatusSchema,
@@ -56,6 +59,7 @@ import {
   localModelDefaultsInputSchema,
   localModelViewSchema,
   repositoryTokenInputSchema,
+  obsidianSyncStatusSchema,
   similarityDebugRunSchema,
   similarityDebugClearResultSchema
 } from "../shared/ipc";
@@ -96,8 +100,20 @@ const api: DesktopApi = {
       const result = await ipcRenderer.invoke(ipcChannels.settingsUpdate, payload);
       return storageSettingsSchema.parse(result);
     },
+    async selectObsidianVault() {
+      const result = await ipcRenderer.invoke(ipcChannels.settingsSelectObsidianVault);
+      return result === null ? null : storageSettingsSchema.parse(result);
+    },
     async resetLibrary() {
       return libraryResetResultSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryReset));
+    }
+  },
+  obsidian: {
+    async startSync() {
+      return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStart));
+    },
+    async getSyncStatus() {
+      return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStatus));
     }
   },
   debug: {
@@ -184,11 +200,26 @@ const api: DesktopApi = {
     async saveProvider(input: AiProviderConfigInput) {
       return aiProviderConfigSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProvidersSave, aiProviderConfigInputSchema.parse(input)));
     },
+    async deleteProvider(providerId: string) {
+      return Boolean(await ipcRenderer.invoke(ipcChannels.aiProvidersDelete, providerId));
+    },
     async testProvider(providerId: string) {
       return Boolean(await ipcRenderer.invoke(ipcChannels.aiProvidersTest, providerId));
     },
     async listModels(providerId: string) {
-      return (await ipcRenderer.invoke(ipcChannels.aiModelsList, providerId)) as string[];
+      return aiModelListSchema.parse(await ipcRenderer.invoke(ipcChannels.aiModelsList, providerId));
+    },
+    async discoverModels(input: AiModelDiscoveryInput) {
+      return aiModelListSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.aiModelsDiscover,
+        aiModelDiscoveryInputSchema.parse(input)
+      ));
+    },
+    async connectOpenAiCodex() {
+      return aiModelListSchema.parse(await ipcRenderer.invoke(ipcChannels.aiOpenAiCodexConnect));
+    },
+    async disconnectOpenAiCodex() {
+      await ipcRenderer.invoke(ipcChannels.aiOpenAiCodexDisconnect);
     },
     async listProfiles() {
       return aiProfileSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfilesList));

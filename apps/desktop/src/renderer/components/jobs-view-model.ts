@@ -49,6 +49,11 @@ export function matchesFilter(card: JobCardModel, filter: JobFilter): boolean {
   return card.status === "failed" || card.status === "canceled";
 }
 
+export function listActivityJobs(card: JobCardModel): JobRecord[] {
+  if (card.mainJob.type !== "ingestion") return card.jobs;
+  return card.jobs.filter((job) => job.id !== card.mainJob.id);
+}
+
 function deduplicateErrors(errors: JobRecord["errorHistory"]): JobRecord["errorHistory"] {
   const seen = new Set<string>();
   return errors.filter((error) => {

@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { mlxHelperMessageSchema, parseMlxHelperOutput } from "./local-runtime-protocol.js";
+import { mlxHelperMessageSchema, mlxHelperRequestSchema, parseMlxHelperOutput } from "./local-runtime-protocol.js";
 
 const requestId = "d1b64150-63cc-4e0d-93a4-fd8560d80b2a";
 
 describe("mlxHelperMessageSchema", () => {
+  it("disables model thinking by default and accepts an explicit opt-in", () => {
+    const base = {
+      protocolVersion: 1 as const,
+      requestId,
+      command: "generate" as const,
+      modelPath: "/managed/model",
+      prompt: "Reply with exactly: OK"
+    };
+    expect(mlxHelperRequestSchema.parse(base)).toMatchObject({
+      command: "generate",
+      parameters: { enableThinking: false }
+    });
+    expect(mlxHelperRequestSchema.parse({
+      ...base,
+      parameters: { maxTokens: 4, temperature: 0, enableThinking: true }
+    })).toMatchObject({
+      command: "generate",
+      parameters: { enableThinking: true }
+    });
+  });
+
   it("accepts successful and failed result messages with the same kind", () => {
     const success = mlxHelperMessageSchema.parse({
       protocolVersion: 1,

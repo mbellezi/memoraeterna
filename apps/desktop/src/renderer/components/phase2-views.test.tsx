@@ -2,7 +2,7 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
-import { AiSettingsView } from "./AiSettingsView";
+import { AiSettingsView, resolveProviderTestStatus } from "./AiSettingsView";
 import { ImportView } from "./ImportView";
 import { JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
@@ -33,7 +33,16 @@ describe("phase 2 renderer views", () => {
   it("renders search, jobs and AI settings empty states", () => {
     expect(renderToString(<SearchView t={t} />)).toContain("Search sources and evidence");
     expect(renderToString(<JobsView t={t} />)).toContain("Your processing workspace is ready");
-    expect(renderToString(<AiSettingsView t={t} />)).toContain("AI providers and profiles");
+    const aiSettings = renderToString(<AiSettingsView t={t} />);
+    expect(aiSettings).toContain("AI providers and profiles");
+    expect(aiSettings).toContain("Load models");
+    expect(aiSettings).toContain("ChatGPT subscription (OAuth)");
+  });
+
+  it("reports remote model connection test results", async () => {
+    await expect(resolveProviderTestStatus(async () => true)).resolves.toBe("settings.ai.connectionOk");
+    await expect(resolveProviderTestStatus(async () => { throw new Error("errors.ai.oauthRefreshFailed"); })).resolves.toBe("errors.ai.oauthRefreshFailed");
+    await expect(resolveProviderTestStatus(async () => { throw new Error("request failed"); })).resolves.toBe("errors.ai.connectionFailed");
   });
 
   it("renders settings as scoped dashboard instead of a single configuration list", () => {
@@ -54,6 +63,7 @@ describe("phase 2 renderer views", () => {
         onAppSettingsChange={() => undefined}
         onRelationThresholdChange={async () => undefined}
         onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
         onSave={() => undefined}
       />
     );
@@ -87,17 +97,33 @@ describe("phase 2 renderer views", () => {
       errorHistory: [],
       createdAt: "2026-07-11T10:00:00.000Z",
       updatedAt: "2026-07-11T10:01:00.000Z",
+      aiExecution: null,
       ingestionRun,
       source
     };
     const grouped = groupJobs([
       jobRecordSchema.parse({ ...common, id: "00000000-0000-4000-8000-000000000001", type: "ingestion", progress: 0.68 }),
-      jobRecordSchema.parse({ ...common, id: "00000000-0000-4000-8000-000000000002", type: "summarization", progress: 0.42 })
+      jobRecordSchema.parse({
+        ...common,
+        id: "00000000-0000-4000-8000-000000000002",
+        type: "summarization",
+        progress: 0.42,
+        aiExecution: {
+          provider: "openai-codex",
+          modelId: "gpt-5.4",
+          reasoningLevel: "xhigh"
+        }
+      })
     ]);
     expect(grouped).toHaveLength(1);
     expect(grouped[0]?.jobs).toHaveLength(2);
     expect(grouped[0]?.source?.title).toBe("A professional dashboard.pdf");
     expect(grouped[0]?.progress).toBe(0.68);
+    expect(grouped[0]?.jobs[1]?.aiExecution).toEqual({
+      provider: "openai-codex",
+      modelId: "gpt-5.4",
+      reasoningLevel: "xhigh"
+    });
   });
 
   it("renders the phase 3 library and atomic note review empty states", () => {

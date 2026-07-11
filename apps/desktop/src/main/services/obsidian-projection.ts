@@ -1,9 +1,29 @@
 import { posix } from "node:path";
 
+import { translate, type MessageKey } from "@app/i18n";
 import {
   obsidianManagedFrontmatterSchema,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
+
+const relationsStartMarker = "<!-- memora:relations:start -->";
+const relationsEndMarker = "<!-- memora:relations:end -->";
+const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
+  supports: "knowledge.relations.types.supports",
+  contrasts: "knowledge.relations.types.contrasts",
+  extends: "knowledge.relations.types.extends",
+  similar_to: "knowledge.relations.types.similar_to",
+  depends_on: "knowledge.relations.types.depends_on",
+  clarifies: "knowledge.relations.types.clarifies",
+  mentions: "knowledge.relations.types.mentions",
+  related: "knowledge.relations.types.related"
+};
+
+export interface ObsidianRelatedNote {
+  relationType: string;
+  title: string;
+  target: string;
+}
 
 export interface ObsidianProjectionInput {
   managedRoot: string;
@@ -47,6 +67,44 @@ export function renderObsidianProjection(input: ObsidianProjectionInput): Render
     frontmatterText,
     markdown: `${frontmatterText}\n${body}\n`
   };
+}
+
+export function appendObsidianRelations(
+  bodyMarkdown: string,
+  locale: string,
+  relatedNotes: ObsidianRelatedNote[]
+): string {
+  const grouped = new Map<string, ObsidianRelatedNote[]>();
+  for (const relatedNote of relatedNotes) {
+    const entries = grouped.get(relatedNote.relationType) ?? [];
+    entries.push(relatedNote);
+    grouped.set(relatedNote.relationType, entries);
+  }
+  const sections = [...grouped.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([relationType, entries]) => {
+      const key = relationTypeMessageKeys[relationType];
+      const heading = key ? translate(locale, key) : relationType;
+      const links = entries
+        .sort((left, right) => left.title.localeCompare(right.title) || left.target.localeCompare(right.target))
+        .map((entry) => `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`);
+      return `### ${heading}\n\n${links.join("\n")}`;
+    });
+  return [
+    bodyMarkdown.trim(),
+    relationsStartMarker,
+    `## ${translate(locale, "library.sections.relations")}`,
+    ...(sections.length > 0 ? sections : [translate(locale, "knowledge.relations.empty")]),
+    relationsEndMarker
+  ].join("\n\n");
+}
+
+export function stripObsidianRelations(bodyMarkdown: string): string {
+  const start = bodyMarkdown.indexOf(relationsStartMarker);
+  if (start < 0) return bodyMarkdown.trim();
+  const end = bodyMarkdown.indexOf(relationsEndMarker, start + relationsStartMarker.length);
+  if (end < 0) return bodyMarkdown.trim();
+  return `${bodyMarkdown.slice(0, start)}${bodyMarkdown.slice(end + relationsEndMarker.length)}`.trim();
 }
 
 export function collisionFileName(baseFileName: string, date: Date, attempt: number, memoraId: string): string {
@@ -160,4 +218,8 @@ function unquoteYaml(value: string): string {
     try { return JSON.parse(value) as string; } catch { return value.slice(1, -1); }
   }
   return value;
+}
+
+function escapeWikilink(value: string): string {
+  return value.replace(/[\\|\[\]]/g, "\\$&");
 }

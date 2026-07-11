@@ -1,8 +1,9 @@
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import type { PgPool } from "@app/db";
+import { createKnowledgeGraphRepository, type PgPool } from "@app/db";
 import type { StorageSettings } from "../../shared/ipc.js";
+import { parseManagedMarkdown } from "./obsidian-projection.js";
 
 interface AssetPathRow {
   storage_base: string;
@@ -10,6 +11,7 @@ interface AssetPathRow {
 }
 
 interface SyncPathRow {
+  memora_id: string;
   relative_path: string;
 }
 
@@ -32,10 +34,12 @@ export class LibraryResetService {
     const settings = await this.options.getStorageSettings();
     const [assets, syncFiles, sourceCount, noteCount] = await Promise.all([
       pool.query<AssetPathRow>("select storage_base, relative_path from document_assets"),
-      pool.query<SyncPathRow>("select relative_path from obsidian_sync_files"),
+      pool.query<SyncPathRow>("select memora_id, relative_path from obsidian_sync_files"),
       pool.query<{ count: string }>("select count(*)::text as count from source_items"),
       pool.query<{ count: string }>("select count(*)::text as count from atomic_notes")
     ]);
+
+    await createKnowledgeGraphRepository(pool).clearProjection();
 
     await pool.query(`truncate table
       similarity_debug_results, similarity_debug_runs,
@@ -60,7 +64,9 @@ export class LibraryResetService {
       const managedPath = resolveInside(vaultPath, settings.managedRoot);
       for (const file of syncFiles.rows) {
         const target = resolveInside(vaultPath, file.relative_path);
-        if (isInside(managedPath, target)) fileTargets.add(target);
+        if (isInside(managedPath, target) && await isOwnedManagedFile(target, file.memora_id)) {
+          fileTargets.add(target);
+        }
       }
     }
 
@@ -83,6 +89,15 @@ export class LibraryResetService {
     const pool = this.options.getPool();
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
+  }
+}
+
+async function isOwnedManagedFile(path: string, memoraId: string): Promise<boolean> {
+  try {
+    const parsed = parseManagedMarkdown(await readFile(path, "utf8"));
+    return parsed?.frontmatter.memoraId === memoraId;
+  } catch {
+    return false;
   }
 }
 

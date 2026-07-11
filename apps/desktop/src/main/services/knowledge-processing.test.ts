@@ -2,8 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAtomicNoteGenerationPrompt,
+  buildBatchRerankPrompt,
   buildKnowledgeGraphPrompt,
+  calculateAtomicNoteMatchingProgress,
   calculateRelationScore,
+  fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
@@ -11,10 +14,82 @@ import {
   normalizeSummaryText,
   parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
+  parseBatchRerankOutput,
   scoreMetadataOverlap
 } from "./knowledge-processing.js";
 
 describe("knowledge processing", () => {
+  it("builds and validates one complete atomic-note reranking batch", () => {
+    const prompt = buildBatchRerankPrompt(
+      { title: "Source", ideaStatement: "Source idea" },
+      [
+        { alias: "c1", title: "First", ideaStatement: "First idea" },
+        { alias: "c2", title: "Second", ideaStatement: "Second idea" }
+      ]
+    );
+    expect(prompt).toContain("source note -> candidate note");
+    expect(prompt).toContain("[c1]");
+    expect(prompt).not.toContain("explanation");
+
+    const parsed = parseBatchRerankOutput(JSON.stringify({ results: [
+      { candidateAlias: "c1", score: 0.9, relationType: "supports" },
+      { candidateAlias: "c2", score: 0.2, relationType: "related" }
+    ] }), new Set(["c1", "c2"]));
+    expect(parsed.get("c1")).toMatchObject({ score: 0.9, relationType: "supports" });
+    expect(() => parseBatchRerankOutput(JSON.stringify({ results: [
+      { candidateAlias: "c1", score: 0.9, relationType: "supports" }
+    ] }), new Set(["c1", "c2"]))).toThrow("atomic_note_rerank_incomplete_batch");
+  });
+
+  it("uses graph-only candidates in atomic-note RRF preselection", () => {
+    const fused = fuseAtomicNoteCandidateRankings(
+      [{ noteId: "text", score: 0.8 }, { noteId: "both", score: 0.7 }],
+      [{ noteId: "both", score: 0.9 }],
+      [{ noteId: "graph", score: 0.95 }],
+      3
+    );
+    expect(fused.map((candidate) => candidate.noteId)).toContain("graph");
+    expect(fused[0]?.noteId).toBe("both");
+    expect(fused.find((candidate) => candidate.noteId === "graph")?.graphRank).toBe(1);
+  });
+
+  it("reserves space for graph-only discoveries when text and vector fill the limit", () => {
+    const common = Array.from({ length: 30 }, (_, index) => ({
+      noteId: `common-${index + 1}`,
+      score: 1 - index / 100
+    }));
+    const fused = fuseAtomicNoteCandidateRankings(
+      common,
+      common,
+      Array.from({ length: 5 }, (_, index) => ({ noteId: `graph-${index + 1}`, score: 0.9 - index / 10 })),
+      30,
+      5
+    );
+    expect(fused).toHaveLength(30);
+    expect(fused.filter((candidate) => candidate.noteId.startsWith("graph-"))).toHaveLength(5);
+  });
+
+  it("advances atomic-note matching progress after each reranking candidate", () => {
+    expect(calculateAtomicNoteMatchingProgress({
+      noteIndex: 0,
+      noteCount: 2,
+      completedCandidates: 1,
+      candidateCount: 4
+    })).toBe(0.125);
+    expect(calculateAtomicNoteMatchingProgress({
+      noteIndex: 0,
+      noteCount: 2,
+      completedCandidates: 4,
+      candidateCount: 4
+    })).toBe(0.5);
+    expect(calculateAtomicNoteMatchingProgress({
+      noteIndex: 1,
+      noteCount: 2,
+      completedCandidates: 2,
+      candidateCount: 2
+    })).toBe(1);
+  });
+
   it("unwraps JSON summary responses while preserving plain text", () => {
     expect(normalizeSummaryText('{"summary":"Generated summary"}')).toBe("Generated summary");
     expect(normalizeSummaryText('```json\n{"summary":"Fenced summary"}\n```')).toBe("Fenced summary");

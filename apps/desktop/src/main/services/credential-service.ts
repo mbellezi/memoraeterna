@@ -33,6 +33,15 @@ export class CredentialService {
     return safeStorage.decryptString(Buffer.from(encrypted, "base64"));
   }
 
+  public async remove(reference: string): Promise<boolean> {
+    const file = await this.read();
+    if (!Object.prototype.hasOwnProperty.call(file.secrets, reference)) return false;
+    delete file.secrets[reference];
+    await mkdir(dirname(this.path), { recursive: true });
+    await writeFile(this.path, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+    return true;
+  }
+
   private async read(): Promise<CredentialFile> {
     try {
       const value = JSON.parse(await readFile(this.path, "utf8")) as Partial<CredentialFile>;

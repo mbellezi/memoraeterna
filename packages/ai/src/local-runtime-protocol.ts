@@ -5,6 +5,7 @@ const requestIdSchema = z.string().uuid().transform((value) => value.toLowerCase
 const generationParametersSchema = z.object({
   maxTokens: z.number().int().min(1).max(32_768).default(1_024),
   temperature: z.number().min(0).max(2).default(0.2),
+  enableThinking: z.boolean().default(false),
   seed: z.number().int().nonnegative().optional()
 }).strict();
 
@@ -20,7 +21,7 @@ export const mlxHelperRequestSchema = z.discriminatedUnion("command", [
     command: z.literal("generate"),
     modelPath: z.string().min(1),
     prompt: z.string().min(1),
-    parameters: generationParametersSchema.default({ maxTokens: 1_024, temperature: 0.2 })
+    parameters: generationParametersSchema.default({ maxTokens: 1_024, temperature: 0.2, enableThinking: false })
   }).strict(),
   z.object({
     protocolVersion: z.literal(1),

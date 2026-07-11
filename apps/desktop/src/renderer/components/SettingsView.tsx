@@ -8,6 +8,7 @@ import {
   DatabaseBackup,
   FileX,
   HardDrive,
+  FolderOpen,
   Languages,
   Moon,
   Network,
@@ -34,6 +35,7 @@ import { AiSettingsView } from "./AiSettingsView";
 import { BackupView } from "./BackupView";
 import { IntegrationGatewaySettings } from "./IntegrationGatewaySettings";
 import { LocalModelsView } from "./LocalModelsView";
+import { ObsidianSyncStatusCard } from "./ObsidianSyncStatusCard";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -49,6 +51,7 @@ interface SettingsViewProps {
   onRelationThresholdChange: (threshold: number) => Promise<void>;
   onChange: (settings: StorageSettings) => void;
   onSave: () => void;
+  onSelectObsidianVault: () => Promise<void>;
 }
 
 type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "connections" | "data";
@@ -155,7 +158,8 @@ export function SettingsView({
   onAppSettingsChange,
   onRelationThresholdChange,
   onChange,
-  onSave
+  onSave,
+  onSelectObsidianVault
 }: SettingsViewProps) {
   const [activeScope, setActiveScope] = useState<SettingsScope>("overview");
   const [isResetting, setIsResetting] = useState(false);
@@ -309,7 +313,13 @@ export function SettingsView({
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
               <IntegrationGatewaySettings t={t} />
-              <ObsidianCard settings={settings} t={t} onUpdate={update} />
+              <ObsidianCard
+                settings={settings}
+                isSaving={isSaving}
+                t={t}
+                onUpdate={update}
+                onSelectVault={onSelectObsidianVault}
+              />
               <SaveBar status={status} isSaving={isSaving} t={t} onSave={onSave} />
             </div>
           ) : null}
@@ -318,6 +328,11 @@ export function SettingsView({
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
               <StorageCard settings={settings} t={t} onUpdate={update} />
+              <ObsidianSyncStatusCard
+                available={Boolean(settings.obsidianVaultPath) && settings.obsidianSyncEnabled && !settings.obsidianSyncPaused}
+                showAction
+                t={t}
+              />
               <BackupView t={t} />
               <ResetCard
                 isResetting={isResetting}
@@ -539,10 +554,12 @@ function MatchingCard({ appSettings, t, onChange, onPersist }: {
   );
 }
 
-function ObsidianCard({ settings, t, onUpdate }: {
+function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
   settings: StorageSettings;
+  isSaving: boolean;
   t: SettingsViewProps["t"];
   onUpdate: <K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) => void;
+  onSelectVault: () => Promise<void>;
 }) {
   return (
     <section className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -570,11 +587,17 @@ function ObsidianCard({ settings, t, onUpdate }: {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="grid gap-2">
           <Label htmlFor="obsidianVaultPath">{t("settings.storage.obsidianVaultPath")}</Label>
-          <Input
-            id="obsidianVaultPath"
-            value={settings.obsidianVaultPath ?? ""}
-            onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
-          />
+          <div className="flex gap-2">
+            <Input
+              id="obsidianVaultPath"
+              value={settings.obsidianVaultPath ?? ""}
+              onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
+            />
+            <Button type="button" disabled={isSaving} onClick={() => void onSelectVault()}>
+              <FolderOpen className="h-4 w-4" aria-hidden="true" />
+              {t("settings.storage.selectObsidianVault")}
+            </Button>
+          </div>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="managedRoot">{t("settings.storage.obsidianRootFolder")}</Label>

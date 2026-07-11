@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Bot, Copy, Plus, Route, Save, ServerCog, TestTubeDiagonal, Trash2, Users } from "lucide-react";
+import { Bot, Copy, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Route, Save, ServerCog, TestTubeDiagonal, Trash2, Users } from "lucide-react";
 import type { AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
@@ -46,7 +46,7 @@ const taskDefinitions: Array<{ task: AiConfigurableTask; capabilities: AiCapabil
 ];
 
 const purposeCapabilities: Record<ModelPurpose, AiCapability[]> = {
-  generation: ["text-generation", "structured-output", "summarization", "knowledge-graph-generation", "atomic-note-generation", "requires-network", "requires-api-key"],
+  generation: ["text-generation", "structured-output", "summarization", "knowledge-graph-generation", "atomic-note-generation", "reranking", "requires-network", "requires-api-key"],
   embedding: ["embedding", "requires-network", "requires-api-key"],
   reranking: ["reranking", "requires-network", "requires-api-key"]
 };
@@ -58,13 +58,17 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
   const [routes, setRoutes] = useState<Record<string, string>>({});
   const [localModels, setLocalModels] = useState<LocalModelView[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState("");
-  const [provider, setProvider] = useState<"google" | "openai-compatible">("google");
+  const [provider, setProvider] = useState<"google" | "openai-compatible" | "openai-codex">("google");
   const [displayName, setDisplayName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [modelId, setModelId] = useState("");
   const [modelPurpose, setModelPurpose] = useState<ModelPurpose>("generation");
   const [modelDefaults, setModelDefaults] = useState<AiModelParameters>({});
   const [apiKey, setApiKey] = useState("");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [discoveringModels, setDiscoveringModels] = useState(false);
+  const [connectingOpenAiCodex, setConnectingOpenAiCodex] = useState(false);
+  const [openAiCodexConnected, setOpenAiCodexConnected] = useState(false);
   const [profileName, setProfileName] = useState("");
   const [profilePrivacy, setProfilePrivacy] = useState<"allow_remote" | "offline_only">("allow_remote");
   const [profileLanguage, setProfileLanguage] = useState<AiOutputLanguage>("ui");
@@ -97,10 +101,10 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
       await action();
       await load();
       setStatus("shell.states.saved");
+      return true;
     } catch (error) {
-      setStatus(error instanceof Error && error.message.startsWith("errors.")
-        ? error.message.split(":")[0] as MessageKey
-        : "errors.common.validationFailed");
+      setStatus(readErrorMessageKey(error, "errors.common.validationFailed"));
+      return false;
     }
   }
 
@@ -111,7 +115,8 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
         provider,
         displayName,
         modelId,
-        capabilities: purposeCapabilities[modelPurpose],
+        capabilities: purposeCapabilities[modelPurpose].filter((capability) =>
+          provider !== "openai-codex" || capability !== "requires-api-key"),
         defaultParameters: modelDefaults,
         ...(baseUrl ? { baseUrl } : {}),
         ...(apiKey ? { apiKey } : {})
@@ -119,8 +124,61 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
       setDisplayName("");
       setModelId("");
       setApiKey("");
+      setAvailableModels([]);
+      setOpenAiCodexConnected(false);
       setModelDefaults({});
     });
+  }
+
+  async function discoverModels() {
+    setDiscoveringModels(true);
+    setStatus("shell.states.loading");
+    try {
+      const models = await window.app.ai.discoverModels({
+        provider,
+        apiKey,
+        ...(baseUrl ? { baseUrl } : {})
+      });
+      setAvailableModels(models);
+      setModelId((current) => current || models[0] || "");
+      setStatus("shell.states.ready");
+    } catch (error) {
+      setStatus(readErrorMessageKey(error, "errors.common.validationFailed"));
+    } finally {
+      setDiscoveringModels(false);
+    }
+  }
+
+  async function connectOpenAiCodex() {
+    setConnectingOpenAiCodex(true);
+    setStatus("shell.states.loading");
+    try {
+      const models = await window.app.ai.connectOpenAiCodex();
+      setAvailableModels(models);
+      setModelId((current) => current || models[0] || "");
+      setOpenAiCodexConnected(true);
+      setStatus("shell.states.ready");
+    } catch (error) {
+      setOpenAiCodexConnected(false);
+      setStatus(readErrorMessageKey(error, "errors.ai.oauthLoginFailed"));
+    } finally {
+      setConnectingOpenAiCodex(false);
+    }
+  }
+
+  function changeProvider(nextProvider: typeof provider) {
+    if (provider === "openai-codex" && nextProvider !== "openai-codex" && openAiCodexConnected) {
+      void window.app.ai.disconnectOpenAiCodex();
+    }
+    setProvider(nextProvider);
+    setAvailableModels([]);
+    setModelId("");
+    setOpenAiCodexConnected(false);
+    if (nextProvider === "openai-codex") {
+      setBaseUrl("");
+      setApiKey("");
+      if (modelPurpose === "embedding") setModelPurpose("generation");
+    }
   }
 
   async function createProfile() {
@@ -177,19 +235,19 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
         <form className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900" onSubmit={saveProvider}>
           <h3 className="font-medium">{t("settings.ai.remoteModels")}</h3>
           <div className="grid gap-4 md:grid-cols-3">
-            <Field label={t("settings.ai.provider")}><select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} className={selectClass}><option value="google">{t("settings.ai.google")}</option><option value="openai-compatible">{t("settings.ai.openAiCompatible")}</option></select></Field>
-            <Field label={t("settings.ai.modelPurpose")}><select value={modelPurpose} onChange={(event) => setModelPurpose(event.target.value as ModelPurpose)} className={selectClass}><option value="generation">{t("settings.ai.purposes.generation")}</option><option value="embedding">{t("settings.ai.purposes.embedding")}</option><option value="reranking">{t("settings.ai.purposes.reranking")}</option></select></Field>
+            <Field label={t("settings.ai.provider")}><select value={provider} disabled={connectingOpenAiCodex} onChange={(event) => changeProvider(event.target.value as typeof provider)} className={selectClass}><option value="google">{t("settings.ai.google")}</option><option value="openai-compatible">{t("settings.ai.openAiCompatible")}</option><option value="openai-codex">{t("settings.ai.openAiCodex")}</option></select></Field>
+            <Field label={t("settings.ai.modelPurpose")}><select value={modelPurpose} onChange={(event) => setModelPurpose(event.target.value as ModelPurpose)} className={selectClass}><option value="generation">{t("settings.ai.purposes.generation")}</option><option value="embedding" disabled={provider === "openai-codex"}>{t("settings.ai.purposes.embedding")}</option><option value="reranking">{t("settings.ai.purposes.reranking")}</option></select></Field>
             <Field label={t("settings.ai.displayName")}><Input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
-            <Field label={t("settings.ai.baseUrl")}><Input type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></Field>
-            <Field label={t("settings.ai.model")}><Input required value={modelId} onChange={(event) => setModelId(event.target.value)} /></Field>
-            <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>
+            <Field label={t("settings.ai.baseUrl")}><Input type="url" disabled={provider === "openai-codex"} value={provider === "openai-codex" ? "https://chatgpt.com/backend-api/codex" : baseUrl} onChange={(event) => { setBaseUrl(event.target.value); setAvailableModels([]); }} /></Field>
+            <Field label={t("settings.ai.model")}><div className="grid gap-1"><div className="flex gap-2"><Input required list="remote-model-options" autoComplete="off" value={modelId} onChange={(event) => setModelId(event.target.value)} /><datalist id="remote-model-options">{availableModels.map((model) => <option key={model} value={model} />)}</datalist>{provider !== "openai-codex" ? <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={!apiKey.trim() || discoveringModels} onClick={() => void discoverModels()}>{discoveringModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button> : null}</div>{provider === "openai-codex" ? <p className="text-xs text-slate-500">{t("settings.ai.oauth.modelSelectionHint")}</p> : null}</div></Field>
+            {provider === "openai-codex" ? <Field label={t("settings.ai.oauth.authentication")}><div className="grid gap-1"><div className="flex items-center gap-2"><Button type="button" disabled={connectingOpenAiCodex} onClick={() => void connectOpenAiCodex()}>{connectingOpenAiCodex ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogIn className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.oauth.connect")}</Button>{openAiCodexConnected ? <span className="text-xs text-emerald-700 dark:text-emerald-300">{t("settings.ai.oauth.connected")}</span> : null}</div><p className="text-xs text-slate-500">{t("settings.ai.oauth.description")}</p></div></Field> : <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>}
           </div>
           <AiParameterFields value={modelDefaults} onChange={setModelDefaults} t={t} embeddingOnly={modelPurpose === "embedding"} />
           <div className="flex justify-end"><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
         </form>
 
-        <ModelGroup title={t("settings.ai.embeddingModels")} models={remoteEmbeddingModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
-        <ModelGroup title={t("settings.ai.generationModels")} models={remoteGenerationModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
+        <ModelGroup title={t("settings.ai.embeddingModels")} models={remoteEmbeddingModels} t={t} onSave={(model, defaults, displayName, nextModelId) => run(() => saveRemoteModel(model, defaults, displayName, nextModelId))} onDelete={(model) => run(() => window.app.ai.deleteProvider(model.id))} onReconnect={(model) => run(() => reconnectOpenAiCodexModel(model))} />
+        <ModelGroup title={t("settings.ai.generationModels")} models={remoteGenerationModels} t={t} onSave={(model, defaults, displayName, nextModelId) => run(() => saveRemoteModel(model, defaults, displayName, nextModelId))} onDelete={(model) => run(() => window.app.ai.deleteProvider(model.id))} onReconnect={(model) => run(() => reconnectOpenAiCodexModel(model))} />
       </> : null}
 
       {activeScope === "profiles" ? <div className="grid gap-4">
@@ -253,27 +311,122 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
     </section>
   );
 
-  function saveRemoteModelDefaults(model: AiProviderConfig, defaultParameters: AiModelParameters) {
+  function saveRemoteModel(
+    model: AiProviderConfig,
+    defaultParameters: AiModelParameters,
+    displayName = model.displayName,
+    nextModelId = model.modelId
+  ) {
     return window.app.ai.saveProvider({
       id: model.id,
       provider: model.provider,
-      displayName: model.displayName,
+      displayName,
       baseUrl: model.baseUrl,
-      modelId: model.modelId,
+      modelId: nextModelId,
       capabilities: model.capabilities,
       defaultParameters
     });
   }
+
+  async function reconnectOpenAiCodexModel(model: AiProviderConfig) {
+    await window.app.ai.connectOpenAiCodex();
+    await saveRemoteModel(model, model.defaultParameters);
+  }
 }
 
-function ModelGroup({ title, models, t, onSave }: { title: string; models: AiProviderConfig[]; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters) => Promise<unknown> }) {
-  return <div className="grid gap-3"><h3 className="font-medium">{title}</h3>{models.length === 0 ? <p className="text-sm text-slate-600 dark:text-slate-300">{t("settings.ai.noModels")}</p> : models.map((model) => <RemoteModelCard key={model.id} model={model} t={t} onSave={onSave} />)}</div>;
+function ModelGroup({ title, models, t, onSave, onDelete, onReconnect }: { title: string; models: AiProviderConfig[]; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters, displayName?: string, modelId?: string) => Promise<boolean>; onDelete: (model: AiProviderConfig) => Promise<boolean>; onReconnect: (model: AiProviderConfig) => Promise<unknown> }) {
+  return <div className="grid gap-3"><h3 className="font-medium">{title}</h3>{models.length === 0 ? <p className="text-sm text-slate-600 dark:text-slate-300">{t("settings.ai.noModels")}</p> : models.map((model) => <RemoteModelCard key={model.id} model={model} t={t} onSave={onSave} onDelete={onDelete} onReconnect={onReconnect} />)}</div>;
 }
 
-function RemoteModelCard({ model, t, onSave }: { model: AiProviderConfig; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters) => Promise<unknown> }) {
+function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: AiProviderConfig; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters, displayName?: string, modelId?: string) => Promise<boolean>; onDelete: (model: AiProviderConfig) => Promise<boolean>; onReconnect: (model: AiProviderConfig) => Promise<unknown> }) {
   const [defaults, setDefaults] = useState(model.defaultParameters);
+  const [testStatus, setTestStatus] = useState<MessageKey | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editDisplayName, setEditDisplayName] = useState(model.displayName);
+  const [editModelId, setEditModelId] = useState(model.modelId);
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const embeddingOnly = model.capabilities.includes("embedding");
-  return <article className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">{model.displayName}</p><p className="text-xs text-slate-500">{model.modelId} · {model.provider}</p></div><Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void window.app.ai.testProvider(model.id)}><TestTubeDiagonal className="h-4 w-4" aria-hidden="true" />{t("settings.ai.test")}</Button></div><AiParameterFields value={defaults} onChange={setDefaults} t={t} embeddingOnly={embeddingOnly} /><div className="flex justify-end"><Button type="button" onClick={() => void onSave(model, defaults)}><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveDefaults")}</Button></div></article>;
+  const modelOptionsId = `remote-model-options-${model.id}`;
+  useEffect(() => {
+    setDefaults(model.defaultParameters);
+    setEditDisplayName(model.displayName);
+    setEditModelId(model.modelId);
+  }, [model.defaultParameters, model.displayName, model.modelId]);
+
+  async function testProvider() {
+    setTesting(true);
+    setTestStatus("shell.states.loading");
+    setTestStatus(await resolveProviderTestStatus(() => window.app.ai.testProvider(model.id)));
+    setTesting(false);
+  }
+
+  async function loadModelOptions() {
+    setLoadingModels(true);
+    try {
+      setModelOptions(await window.app.ai.listModels(model.id));
+    } catch (error) {
+      setTestStatus(readErrorMessageKey(error, "errors.ai.connectionFailed"));
+    } finally {
+      setLoadingModels(false);
+    }
+  }
+
+  function beginEdit() {
+    setEditing(true);
+    setEditDisplayName(model.displayName);
+    setEditModelId(model.modelId);
+    void loadModelOptions();
+  }
+
+  async function saveEdit() {
+    const saved = await onSave(model, defaults, editDisplayName.trim(), editModelId.trim());
+    if (saved) setEditing(false);
+  }
+
+  async function deleteModel() {
+    if (!window.confirm(t("settings.ai.deleteModelConfirmation"))) return;
+    setDeleting(true);
+    await onDelete(model);
+    setDeleting(false);
+  }
+
+  return (
+    <article className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">{model.displayName}</p>
+          <p className="text-xs text-slate-500">{model.modelId} · {model.provider}</p>
+          {testStatus ? <p className={testStatus === "settings.ai.connectionOk" ? "mt-1 text-xs text-emerald-700 dark:text-emerald-300" : testStatus === "shell.states.loading" ? "mt-1 text-xs text-slate-500" : "mt-1 text-xs text-rose-700 dark:text-rose-300"} role="status">{t(testStatus)}</p> : null}
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          {model.provider === "openai-codex" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void onReconnect(model)}><LogIn className="h-4 w-4" aria-hidden="true" />{t("settings.ai.oauth.reconnect")}</Button> : null}
+          <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={testing} onClick={() => void testProvider()}>{testing ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTubeDiagonal className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.test")}</Button>
+          <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={editing} onClick={beginEdit}><Pencil className="h-4 w-4" aria-hidden="true" />{t("settings.ai.editModel")}</Button>
+          <Button type="button" className="border-red-700 bg-red-700 hover:bg-red-800 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-800" disabled={deleting} onClick={() => void deleteModel()}>{deleting ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.deleteModel")}</Button>
+        </div>
+      </div>
+      {editing ? (
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950 md:grid-cols-2">
+          <Field label={t("settings.ai.displayName")}><Input required value={editDisplayName} onChange={(event) => setEditDisplayName(event.target.value)} /></Field>
+          <Field label={t("settings.ai.model")}>
+            <div className="flex gap-2">
+              <Input required list={modelOptionsId} autoComplete="off" value={editModelId} onChange={(event) => setEditModelId(event.target.value)} />
+              <datalist id={modelOptionsId}>{modelOptions.map((modelId) => <option key={modelId} value={modelId} />)}</datalist>
+              <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={loadingModels} onClick={() => void loadModelOptions()}>{loadingModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button>
+            </div>
+          </Field>
+        </div>
+      ) : null}
+      <AiParameterFields value={defaults} onChange={setDefaults} t={t} embeddingOnly={embeddingOnly} />
+      <div className="flex justify-end gap-2">
+        {editing ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => setEditing(false)}>{t("shell.actions.cancel")}</Button> : null}
+        <Button type="button" disabled={editing && (!editDisplayName.trim() || !editModelId.trim())} onClick={() => void (editing ? saveEdit() : onSave(model, defaults))}><Save className="h-4 w-4" aria-hidden="true" />{t(editing ? "settings.ai.saveModelChanges" : "settings.ai.saveDefaults")}</Button>
+      </div>
+    </article>
+  );
 }
 
 function ProfileHeader({ profile, providers, localModels, t, interfaceLanguage, onSave }: { profile: AiProfile; providers: AiProviderConfig[]; localModels: LocalModelView[]; t: (key: MessageKey) => string; interfaceLanguage: LanguageCode; onSave: (update: { privacyMode: "allow_remote" | "offline_only"; outputLanguage: AiOutputLanguage; providerConfigId?: string; localModelId?: string; modelId: string; runtime: "remote" | "gguf" | "mlx"; capabilities: AiCapability[] }) => Promise<unknown> }) {
@@ -306,6 +459,20 @@ function LanguageSelect({ value, onChange, t, interfaceLanguage }: { value: AiOu
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="grid gap-1"><Label>{label}</Label>{children}</div>;
+}
+
+function readErrorMessageKey(error: unknown, fallback: MessageKey): MessageKey {
+  const match = error instanceof Error ? error.message.match(/errors\.[a-zA-Z0-9_.-]+/) : null;
+  return match?.[0] as MessageKey | undefined ?? fallback;
+}
+
+export async function resolveProviderTestStatus(action: () => Promise<unknown>): Promise<MessageKey> {
+  try {
+    await action();
+    return "settings.ai.connectionOk";
+  } catch (error) {
+    return readErrorMessageKey(error, "errors.ai.connectionFailed");
+  }
 }
 
 const selectClass = "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950";

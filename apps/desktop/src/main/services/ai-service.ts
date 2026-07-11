@@ -1,11 +1,14 @@
 import { sha256 } from "@app/conversion";
+import { createTranslator } from "@app/i18n";
 import {
   AiModelRegistry,
+  effectiveReasoningParameters,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
   MlxAdapter,
   NodeLlamaCppAdapter,
   OpenAiCompatibleAdapter,
+  OpenAiCodexAdapter,
   redactSensitiveText,
   type AiModelAdapter,
   type AiProgressEvent,
@@ -14,6 +17,7 @@ import {
 } from "@app/ai";
 import {
   createAiConfigRepository,
+  createJobRepository,
   createLocalModelRepository,
   type AiProfileRecord,
   type AiProviderConfigRecord,
@@ -29,7 +33,8 @@ import type {
   AiProfileTaskInput,
   AiTaskRoute,
   AiProviderConfig,
-  AiProviderConfigInput
+  AiProviderConfigInput,
+  AiModelDiscoveryInput
 } from "../../shared/ipc.js";
 import { aiModelParametersSchema } from "../../shared/ipc.js";
 
@@ -37,6 +42,12 @@ import { CredentialService } from "./credential-service.js";
 import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { isLocalModelOutputDebugEnabled, logLocalModelOutput } from "./local-model-output-debug.js";
 import { logStructuredError } from "./structured-logging.js";
+import {
+  loginOpenAiCodex,
+  parseOpenAiCodexCredential,
+  refreshOpenAiCodexCredential,
+  type OpenAiCodexCredential
+} from "./openai-codex-oauth.js";
 import { extname, join } from "node:path";
 
 export interface AiServiceOptions {
@@ -48,6 +59,7 @@ export interface AiServiceOptions {
   logger?: Pick<Console, "error" | "info">;
   getDashboardDebugMode?: () => Promise<boolean>;
   getUiLanguage?: () => Promise<string>;
+  openExternal?: (url: string) => Promise<void>;
 }
 
 export interface AiTaskLogContext {
@@ -63,6 +75,8 @@ export class AiService {
   private readonly credentials: CredentialService;
   private readonly activeLocalModels = new Set<string>();
   private readonly registry = new AiModelRegistry();
+  private readonly oauthRefreshes = new Map<string, Promise<OpenAiCodexCredential>>();
+  private pendingOpenAiCodexCredential: OpenAiCodexCredential | null = null;
   private residentLocalAdapter: { localModelId: string; adapter: AiModelAdapter } | null = null;
 
   public constructor(private readonly options: AiServiceOptions) {
@@ -70,21 +84,49 @@ export class AiService {
   }
 
   public async listProviders(): Promise<AiProviderConfig[]> {
-    return (await createAiConfigRepository(this.requirePool()).listProviders()).map(mapProvider);
+    const repository = createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
+    return (await repository.listProviders()).map(mapProvider);
+  }
+
+  public async deleteProvider(providerId: string): Promise<boolean> {
+    const repository = createAiConfigRepository(this.requirePool());
+    const deleted = await repository.deleteProvider(providerId);
+    if (!deleted) return false;
+    if (deleted.credentialRef
+        && !(await repository.listProviders()).some((provider) => provider.credentialRef === deleted.credentialRef)) {
+      try {
+        await this.credentials.remove(deleted.credentialRef);
+      } catch (error) {
+        this.options.logger?.error("Failed to remove unused AI provider credential", error);
+      }
+    }
+    return true;
   }
 
   public async saveProvider(input: AiProviderConfigInput): Promise<AiProviderConfig> {
     const repository = createAiConfigRepository(this.requirePool());
     const existing = input.id ? (await repository.listProviders()).find((provider) => provider.id === input.id) : undefined;
-    const credentialRef = input.apiKey
-      ? await this.credentials.save(input.apiKey, existing?.credentialRef)
-      : existing?.credentialRef ?? null;
+    const capabilities = withRemoteRerankingCapability(input.provider, input.capabilities);
+    let credentialRef: string | null;
+    if (input.provider === "openai-codex") {
+      const existingRef = existing?.provider === "openai-codex" ? existing.credentialRef : null;
+      credentialRef = this.pendingOpenAiCodexCredential
+        ? await this.credentials.save(JSON.stringify(this.pendingOpenAiCodexCredential), existingRef)
+        : existingRef;
+      if (!credentialRef) throw new Error("errors.ai.oauthNotConnected");
+    } else {
+      credentialRef = input.apiKey
+        ? await this.credentials.save(input.apiKey, existing?.credentialRef)
+        : existing?.credentialRef ?? null;
+    }
     const record = await repository.upsertProvider({
       ...(input.id ? { id: input.id } : {}), provider: input.provider, displayName: input.displayName,
       credentialRef, baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
       defaultParameters: input.defaultParameters,
-      metadata: { modelId: input.modelId, capabilities: input.capabilities }
+      metadata: { modelId: input.modelId, capabilities }
     });
+    if (input.provider === "openai-codex") this.pendingOpenAiCodexCredential = null;
     return mapProvider(record);
   }
 
@@ -99,8 +141,46 @@ export class AiService {
     return (await adapter.listModels?.() ?? []).map((model) => model.modelId);
   }
 
+  public async discoverModels(input: AiModelDiscoveryInput): Promise<string[]> {
+    const baseUrl = input.baseUrl ?? defaultBaseUrl(input.provider);
+    const adapter = input.provider === "openai-codex"
+      ? this.createPendingOpenAiCodexAdapter()
+      : input.provider === "google"
+        ? new GoogleGeminiAdapter({ apiKey: input.apiKey!, modelId: "", capabilities: [], baseUrl })
+        : new OpenAiCompatibleAdapter({ apiKey: input.apiKey!, modelId: "", capabilities: [], baseUrl });
+    const modelIds = (await adapter.listModels?.() ?? []).map((model) => model.modelId);
+    return [...new Set(modelIds)].sort((left, right) => left.localeCompare(right));
+  }
+
+  public async connectOpenAiCodex(): Promise<string[]> {
+    if (!this.options.openExternal) throw new Error("errors.ai.oauthLoginFailed");
+    const t = createTranslator(await this.options.getUiLanguage?.() ?? "en");
+    const credential = await loginOpenAiCodex({
+      openExternal: this.options.openExternal,
+      pageText: {
+        successTitle: t("settings.ai.oauth.callbackSuccessTitle"),
+        successDescription: t("settings.ai.oauth.callbackSuccessDescription"),
+        errorTitle: t("settings.ai.oauth.callbackErrorTitle"),
+        closeWindow: t("settings.ai.oauth.callbackCloseWindow")
+      }
+    });
+    this.pendingOpenAiCodexCredential = credential;
+    try {
+      return await this.discoverModels({ provider: "openai-codex" });
+    } catch (error) {
+      this.pendingOpenAiCodexCredential = null;
+      throw error;
+    }
+  }
+
+  public disconnectOpenAiCodex(): void {
+    this.pendingOpenAiCodexCredential = null;
+  }
+
   public async listProfiles(): Promise<AiProfile[]> {
-    return (await createAiConfigRepository(this.requirePool()).listProfiles()).map(mapProfile);
+    const repository = createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
+    return (await repository.listProfiles()).map(mapProfile);
   }
 
   public async createProfile(input: AiProfileCreate): Promise<AiProfile> {
@@ -174,6 +254,7 @@ export class AiService {
 
   public async setTaskRoute(input: AiTaskRoute): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
     const profile = (await repository.listProfiles()).find((candidate) => candidate.id === input.profileId);
     if (!profile || profile.status !== "active" || !profile.modelId
         || !capabilitiesForTask(input.task).every((capability) => profile.capabilities.includes(capability))) {
@@ -189,6 +270,7 @@ export class AiService {
 
   public async setProfileTask(input: AiProfileTaskInput): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
     const profile = (await repository.listProfiles()).find((candidate) => candidate.id === input.profileId);
     if (!profile) throw new Error("errors.common.notFound");
     if (!profile.modelId || !capabilitiesForTask(input.task).every((capability) => profile.capabilities.includes(capability))) {
@@ -210,13 +292,29 @@ export class AiService {
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
     const repository = createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
     const selection = await repository.getDefaultTask(taskType);
     if (!selection) return null;
-    const parameters = withAiTaskParameterDefaults(
-      taskType,
-      { ...selection.modelDefaultParameters, ...selection.parameters },
-      Boolean(selection.localModelId)
+    const parameters = effectiveReasoningParameters(
+      selection.provider,
+      selection.modelId,
+      withAiTaskParameterDefaults(
+        taskType,
+        { ...selection.modelDefaultParameters, ...selection.parameters },
+        Boolean(selection.localModelId)
+      )
     );
+    if (structuredLogContext.jobId) {
+      try {
+        await createJobRepository(this.requirePool()).setAiExecution(structuredLogContext.jobId, {
+          provider: selection.provider,
+          modelId: selection.modelId,
+          reasoningLevel: parameters.reasoningLevel ?? null
+        });
+      } catch (error) {
+        this.options.logger?.error("Failed to attach AI execution metadata to job", error);
+      }
+    }
     const outputLanguage = selection.outputLanguage === "ui"
       ? await this.options.getUiLanguage?.() ?? "en"
       : selection.outputLanguage;
@@ -404,7 +502,6 @@ export class AiService {
     const config = (await createAiConfigRepository(this.requirePool()).listProviders()).find((provider) => provider.id === providerId);
     if (!config) throw new Error("errors.common.notFound");
     if (!config.credentialRef) throw new Error("errors.ai.missingCredential");
-    const apiKey = await this.credentials.get(config.credentialRef);
     const modelId = typeof config.metadata.modelId === "string" ? config.metadata.modelId : "";
     const capabilities: AiCapability[] = Array.isArray(config.metadata.capabilities)
       ? config.metadata.capabilities.flatMap((value) => {
@@ -412,6 +509,17 @@ export class AiService {
           return parsed.success ? [parsed.data] : [];
         })
       : [];
+    if (config.provider === "openai-codex") {
+      const credential = await this.getOpenAiCodexCredential(config.credentialRef);
+      return this.registerAdapter(new OpenAiCodexAdapter({
+        accessToken: credential.access,
+        accountId: credential.accountId,
+        modelId,
+        capabilities,
+        ...(config.baseUrl ? { baseUrl: config.baseUrl } : {})
+      }));
+    }
+    const apiKey = await this.credentials.get(config.credentialRef);
     if (config.provider === "google") {
       return this.registerAdapter(new GoogleGeminiAdapter({
         apiKey, modelId, capabilities, ...(config.baseUrl ? { baseUrl: config.baseUrl } : {})
@@ -421,6 +529,41 @@ export class AiService {
       apiKey, modelId, capabilities,
       baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1"
     }));
+  }
+
+  private createPendingOpenAiCodexAdapter(): OpenAiCodexAdapter {
+    const credential = this.pendingOpenAiCodexCredential;
+    if (!credential) throw new Error("errors.ai.oauthNotConnected");
+    return new OpenAiCodexAdapter({
+      accessToken: credential.access,
+      accountId: credential.accountId,
+      modelId: "",
+      capabilities: [],
+      baseUrl: defaultBaseUrl("openai-codex")
+    });
+  }
+
+  private async getOpenAiCodexCredential(credentialRef: string): Promise<OpenAiCodexCredential> {
+    const credential = parseOpenAiCodexCredential(await this.credentials.get(credentialRef));
+    if (credential.expires > Date.now() + 60_000) return credential;
+    const activeRefresh = this.oauthRefreshes.get(credentialRef);
+    if (activeRefresh) return activeRefresh;
+    const refresh = (async () => {
+      try {
+        const next = await refreshOpenAiCodexCredential(credential.refresh);
+        await this.credentials.save(JSON.stringify(next), credentialRef);
+        return next;
+      } catch (error) {
+        this.options.logger?.error("OpenAI Codex OAuth refresh failed", error);
+        throw new Error("errors.ai.oauthRefreshFailed");
+      }
+    })();
+    this.oauthRefreshes.set(credentialRef, refresh);
+    try {
+      return await refresh;
+    } finally {
+      if (this.oauthRefreshes.get(credentialRef) === refresh) this.oauthRefreshes.delete(credentialRef);
+    }
   }
 
   private async createLocalAdapter(localModelId: string): Promise<AiModelAdapter> {
@@ -488,8 +631,29 @@ function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[
   } as Partial<Record<AiTaskRequest["taskType"], AiCapability[]>>)[taskType] ?? [];
 }
 
+const remoteGenerativeCapabilities = new Set<AiCapability>([
+  "text-generation",
+  "structured-output",
+  "summarization",
+  "knowledge-graph-generation",
+  "atomic-note-generation"
+]);
+
+function withRemoteRerankingCapability(
+  provider: AiProviderConfigInput["provider"],
+  capabilities: AiCapability[]
+): AiCapability[] {
+  const supportsReranking = provider === "openai-codex"
+    || capabilities.some((capability) => remoteGenerativeCapabilities.has(capability));
+  return supportsReranking && !capabilities.includes("reranking")
+    ? [...capabilities, "reranking"]
+    : capabilities;
+}
+
 function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {
-  return provider === "google" ? "https://generativelanguage.googleapis.com/v1beta" : "http://127.0.0.1:11434/v1";
+  if (provider === "google") return "https://generativelanguage.googleapis.com/v1beta";
+  if (provider === "openai-codex") return "https://chatgpt.com/backend-api/codex";
+  return "http://127.0.0.1:11434/v1";
 }
 
 function localAdapterName(runtime: string): string {

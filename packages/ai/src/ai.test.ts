@@ -50,7 +50,7 @@ describe("AI adapters", () => {
   it("maps canonical generation parameters to remote provider contracts", async () => {
     let openAiBody: Record<string, unknown> = {};
     const openAi = new OpenAiCompatibleAdapter({
-      baseUrl: "https://example.test/v1", apiKey: "secret", modelId: "reasoning-model",
+      baseUrl: "https://example.test/v1", apiKey: "secret", modelId: "gpt-5.4",
       capabilities: ["text-generation"],
       fetch: async (_input, init) => {
         openAiBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
@@ -59,12 +59,17 @@ describe("AI adapters", () => {
     });
     await openAi.run({
       taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
-      parameters: { maxTokens: 512, temperature: 0.3, topP: 0.9, reasoningLevel: "high" }, metadata: {}
+      parameters: { maxTokens: 512, temperature: 0.3, topP: 0.9, reasoningLevel: "minimal" }, metadata: {}
     });
     expect(openAiBody).toMatchObject({
-      max_tokens: 512, temperature: 0.3, top_p: 0.9, reasoning_effort: "high"
+      max_tokens: 512, temperature: 0.3, top_p: 0.9, reasoning_effort: "low"
     });
     expect(openAiBody).not.toHaveProperty("maxTokens");
+    await openAi.run({
+      taskType: "text-generation", input: "hello", modelId: "gpt-5.6-terra",
+      requiredCapabilities: ["text-generation"], parameters: { reasoningLevel: "max" }, metadata: {}
+    });
+    expect(openAiBody).toMatchObject({ model: "gpt-5.6-terra", reasoning_effort: "max" });
 
     let googleBody: { generationConfig?: Record<string, unknown> } = {};
     const google = new GoogleGeminiAdapter({
@@ -115,13 +120,19 @@ describe("AI adapters", () => {
   });
 
   it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
-    expect(localModelCatalog).toHaveLength(5);
+    expect(localModelCatalog).toHaveLength(6);
     const embeddingModels = localModelCatalog.filter((entry) => entry.capabilities.includes("embedding"));
     expect(embeddingModels.map((entry) => entry.id)).toEqual([
       "gguf-qwen3-embedding-0.6b-q8-0",
       "gguf-bge-m3-q8-0"
     ]);
     expect(embeddingModels.every((entry) => entry.defaultParameters.dimensions === 1_024)).toBe(true);
+    expect(localModelCatalog.find((entry) => entry.id === "mlx-qwen3.5-9b-4bit")).toMatchObject({
+      repository: "mlx-community/Qwen3.5-9B-4bit",
+      revision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
+      runtime: "mlx",
+      quantization: "4-bit"
+    });
     for (const entry of localModelCatalog) {
       expect(entry.revision).toMatch(/^[a-f0-9]{40}$/);
       expect(localModelExpectedSize(entry)).toBeGreaterThan(200_000_000);
@@ -280,7 +291,7 @@ describe("AI adapters", () => {
     );
     const mlx = new MlxAdapter(
       { ...base, capabilities: [...base.capabilities], helperPath: "/managed/helper" },
-      async () => ({ output: "mlx", durationMs: 3 })
+      async () => ({ output: "Thinking Process:\nprivate reasoning\n</think>\n\nmlx", durationMs: 3 })
     );
     const request = {
       taskType: "text-generation" as const,
@@ -329,7 +340,7 @@ for await (const line of lines) {
   requests += 1;
   process.stdout.write(JSON.stringify({
     protocolVersion: 1, requestId: request.requestId, kind: "result", ok: true,
-    output: String(requests), durationMs: 1
+    output: String(requests) + ":" + String(request.parameters.enableThinking), durationMs: 1
   }) + "\\n");
 }
 `);
@@ -346,15 +357,18 @@ for await (const line of lines) {
       requiredCapabilities: ["text-generation" as const],
       parameters: {}, metadata: {}
     };
-    expect((await adapter.run(request)).output).toBe("1");
-    expect((await adapter.run(request)).output).toBe("2");
+    expect((await adapter.run(request)).output).toBe("1:false");
+    expect((await adapter.run({
+      ...request,
+      parameters: { reasoningLevel: "high" as const }
+    })).output).toBe("2:true");
     const controller = new AbortController();
     const canceled = adapter.run({ ...request, input: "hang" }, controller.signal);
     setTimeout(() => controller.abort(), 20);
     await expect(canceled).rejects.toMatchObject({ name: "AbortError" });
-    expect((await adapter.run(request)).output).toBe("1");
+    expect((await adapter.run(request)).output).toBe("1:false");
     await adapter.dispose();
-    expect((await adapter.run(request)).output).toBe("1");
+    expect((await adapter.run(request)).output).toBe("1:false");
     await adapter.dispose();
     await rm(root, { recursive: true, force: true });
   });

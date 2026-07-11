@@ -298,6 +298,111 @@ export function createAtomicNoteRepository(db: Queryable) {
       return row ? mapNote(row) : null;
     },
 
+    async findTextMatchingCandidates(input: {
+      noteId: string;
+      limit?: number;
+    }): Promise<AtomicNoteCandidateRecord[]> {
+      const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
+        `select ${candidateReturning},
+                least(1, greatest(
+                  similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
+                  similarity(unaccent(candidate.title), unaccent(source.title)),
+                  ts_rank_cd(
+                    to_tsvector('simple', unaccent(candidate.title || ' ' || candidate.idea_statement || ' ' || candidate.body_markdown)),
+                    plainto_tsquery('simple', unaccent(source.idea_statement))
+                  )
+                )) as "textScore",
+                0::double precision as "vectorScore"
+         from atomic_notes source
+         join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
+         where source.id = $1
+         order by "textScore" desc, candidate.id
+         limit $2`,
+        [input.noteId, input.limit ?? 30]
+      );
+      return result.rows.map((row) => ({
+        note: mapNote(row),
+        textScore: Number(row.textScore),
+        vectorScore: 0
+      }));
+    },
+
+    async findVectorMatchingCandidates(input: {
+      noteId: string;
+      embedding: number[];
+      embeddingModel?: string;
+      limit?: number;
+    }): Promise<AtomicNoteCandidateRecord[]> {
+      const dimensions = input.embedding.length;
+      if (dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
+        throw new Error(`Unsupported embedding dimension: ${dimensions}`);
+      }
+      const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
+        `select ${candidateReturning},
+                0::double precision as "textScore",
+                coalesce(greatest(0, 1 - (e.embedding <=> $2::vector)), 0) as "vectorScore"
+         from atomic_notes source
+         join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
+         join embeddings_${dimensions} e
+           on e.target_type = 'atomic_note' and e.target_id = candidate.id
+          and ($3::text is null or e.model = $3)
+         where source.id = $1
+         order by "vectorScore" desc, candidate.id
+         limit $4`,
+        [input.noteId, `[${input.embedding.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 30]
+      );
+      return result.rows.map((row) => ({
+        note: mapNote(row),
+        textScore: 0,
+        vectorScore: Number(row.vectorScore)
+      }));
+    },
+
+    async scoreMatchingCandidates(input: {
+      noteId: string;
+      candidateIds: string[];
+      embedding?: number[];
+      embeddingModel?: string;
+    }): Promise<AtomicNoteCandidateRecord[]> {
+      if (input.candidateIds.length === 0) return [];
+      const dimensions = input.embedding?.length;
+      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
+        throw new Error(`Unsupported embedding dimension: ${dimensions}`);
+      }
+      const vectorJoin = dimensions
+        ? `left join embeddings_${dimensions} e
+             on e.target_type = 'atomic_note' and e.target_id = candidate.id
+            and ($4::text is null or e.model = $4)`
+        : "";
+      const vectorScore = dimensions
+        ? "coalesce(greatest(0, 1 - (e.embedding <=> $3::vector)), 0)"
+        : "0::double precision";
+      const result = await db.query<AtomicNoteRow & { textScore: number; vectorScore: number }>(
+        `select ${candidateReturning},
+                least(1, greatest(
+                  similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
+                  similarity(unaccent(candidate.title), unaccent(source.title)),
+                  ts_rank_cd(
+                    to_tsvector('simple', unaccent(candidate.title || ' ' || candidate.idea_statement || ' ' || candidate.body_markdown)),
+                    plainto_tsquery('simple', unaccent(source.idea_statement))
+                  )
+                )) as "textScore",
+                ${vectorScore} as "vectorScore"
+         from atomic_notes source
+         join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
+         ${vectorJoin}
+         where source.id = $1 and candidate.id = any($2::uuid[])`,
+        dimensions
+          ? [input.noteId, input.candidateIds, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null]
+          : [input.noteId, input.candidateIds]
+      );
+      return result.rows.map((row) => ({
+        note: mapNote(row),
+        textScore: Number(row.textScore),
+        vectorScore: Number(row.vectorScore)
+      }));
+    },
+
     async findMatchingCandidates(input: {
       noteId: string;
       embedding?: number[];

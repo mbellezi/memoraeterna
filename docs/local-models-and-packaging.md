@@ -14,6 +14,11 @@ local ja verificado e emite progresso e resultado em JSONL. Ele nao usa Python,
 nao instala pacotes e nao baixa pesos. Cancelamento e timeout encerram o helper
 controlado pelo desktop.
 
+O parametro canonico `reasoningLevel` e convertido para o contexto
+`enable_thinking` dos templates MLX. O default seguro e desabilitado; valores
+explicitos diferentes de `off` habilitam o raciocinio. Blocos `<think>` residuais
+sao removidos antes de a resposta seguir para resumos e saidas estruturadas.
+
 Build do helper:
 
 ```bash
@@ -30,7 +35,7 @@ adapter usado pelo desktop e aceita `MEMORA_MLX_MODEL_PATH` ou
 
 ## Catalogo auditado
 
-Auditoria realizada em 2026-07-10 usando a API do Hugging Face. O catalogo em
+Auditoria realizada em 2026-07-11 usando a API do Hugging Face. O catalogo em
 `packages/ai/src/local-model-catalog.ts` fixa todos os arquivos, tamanhos e
 SHA-256.
 
@@ -39,10 +44,13 @@ SHA-256.
 | `mlx-gemma-4-e4b-it-4bit` | `mlx-community/gemma-4-e4b-it-4bit` | `475b9088d29754a3379866cf5aeb6b41acd313c2` | 5.18 GB | Gemma, aceite explicito |
 | `mlx-gemma-4-12b-it-4bit` | `mlx-community/gemma-4-12B-it-4bit` | `73bcf09092aa277861d5a191b989b666f7f32e8f` | 6.77 GB | Gemma, aceite explicito |
 | `mlx-qwen3-4b-instruct-2507-4bit` | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | `50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b` | 2.28 GB | Apache-2.0 |
+| `mlx-qwen3.5-9b-4bit` | `mlx-community/Qwen3.5-9B-4bit` | `8b2b98c00a6b4d291155e4890773ca8f769aee53` | 5.98 GB | Apache-2.0 |
 | `gguf-qwen3-embedding-0.6b-q8-0` | `Qwen/Qwen3-Embedding-0.6B-GGUF` | `370f27d7550e0def9b39c1f16d3fbaa13aa67728` | 639.15 MB | Apache-2.0 |
 | `gguf-bge-m3-q8-0` | `ggml-org/bge-m3-Q8_0-GGUF` | `9eba04c5d75ba5a1595e45de734d36bef4e5cb98` | 634.55 MB | MIT |
 
-Capabilities multimodais nao sao declaradas. Elas so devem entrar no catalogo
+Capabilities multimodais nao sao declaradas. O Qwen 3.5 9B usa o checkpoint
+unificado com pesos visuais, mas entra no catalogo apenas com as capabilities
+textuais validadas pelo helper. Modalidades adicionais so devem ser declaradas
 depois de validacao real do adapter e das modalidades correspondentes.
 
 Os dois modelos GGUF de embedding declaram somente `embedding`, `offline` e

@@ -192,6 +192,20 @@ try {
     generationPromptVersion: "atomic-note-v2",
     generationKey: "graph-verifier-note"
   });
+  const relatedGraphNote = await createAtomicNoteRepository(pool).upsertGenerated({
+    title: "Local vector indexing",
+    bodyMarkdown: "Vector search can be indexed locally with PostgreSQL.",
+    ideaStatement: "PostgreSQL can index vector search locally.",
+    language: "en",
+    sourceItemId: graphSource.id,
+    evidenceChunkId: graphChunkId,
+    evidenceLinks: [{ chunkId: graphChunkId }],
+    generationProvider: "verify",
+    generationModel: "verify",
+    generationRuntime: "test",
+    generationPromptVersion: "atomic-note-v2",
+    generationKey: "graph-verifier-related-note"
+  });
   const graph = createKnowledgeGraphRepository(pool);
   const graphPersistence = await graph.replaceSourceExtraction({
     sourceItemId: graphSource.id,
@@ -207,7 +221,7 @@ try {
     }]
   });
   if (graphPersistence.entityCount !== 2 || graphPersistence.claimCount !== 1
-      || graphPersistence.relationCount !== 1 || graphPersistence.atomicNoteEntityLinkCount !== 2) {
+      || graphPersistence.relationCount !== 1 || graphPersistence.atomicNoteEntityLinkCount !== 4) {
     throw new Error("Knowledge graph SQL persistence failed.");
   }
   const noteElements = await graph.listAtomicNoteElements([graphNote.id]);
@@ -216,9 +230,20 @@ try {
     throw new Error("Atomic-note graph debug elements are incomplete.");
   }
   await graph.projectSource(graphSource.id);
+  const graphNoteCandidates = await graph.findAtomicNoteCandidates(graphNote.id, 10);
+  if (graphNoteCandidates[0]?.noteId !== relatedGraphNote.id || graphNoteCandidates[0].graphScore <= 0) {
+    throw new Error("AGE atomic-note candidate discovery or entity-frequency scoring failed.");
+  }
   const graphResults = await graph.searchChunks({ text: "PostgreSQL", limit: 10 });
   if (graphResults[0]?.chunkId !== graphChunkId || graphResults[0].graphScore <= 0) {
     throw new Error("AGE graph projection or search failed.");
+  }
+  await graph.clearProjection();
+  const clearedGraph = await pool.query(
+    "select 1 from ag_catalog.ag_graph where name = 'memora_knowledge'"
+  );
+  if (clearedGraph.rowCount !== 0) {
+    throw new Error("AGE graph projection cleanup failed.");
   }
 
   await pool.query("create database memora_phase5_seed");

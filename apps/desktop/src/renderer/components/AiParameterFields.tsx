@@ -55,7 +55,7 @@ export function AiParameterFields({ value, onChange, t, embeddingOnly = false }:
             <Label>{t("settings.ai.parameters.reasoningLevel")}</Label>
             <select value={value.reasoningLevel ?? ""} onChange={(event) => reasoningValue(event.target.value)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
               <option value="">{t("settings.ai.parameters.inherit")}</option>
-              {(["off", "minimal", "low", "medium", "high"] as const).map((level) => <option key={level} value={level}>{t(`settings.ai.parameters.reasoning.${level}` as MessageKey)}</option>)}
+              {(["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const).map((level) => <option key={level} value={level}>{t(`settings.ai.parameters.reasoning.${level}` as MessageKey)}</option>)}
             </select>
           </div>
           <div className="grid gap-1">

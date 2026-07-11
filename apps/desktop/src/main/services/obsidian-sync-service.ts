@@ -3,6 +3,7 @@ import { join, posix, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
+  createAtomicNoteRelationRepository,
   createAtomicNoteRepository,
   createDocumentRepository,
   createIngestionRunRepository,
@@ -10,6 +11,7 @@ import {
   createObsidianSyncRepository,
   createSourceItemRepository,
   type AtomicNoteRecord,
+  type AtomicNoteRelationRecord,
   type DocumentRecord,
   type ObsidianSyncFileRecord,
   type PgPool,
@@ -25,12 +27,16 @@ import type {
   ObsidianReconciliationRequest,
   ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
-import type { StorageSettings } from "../../shared/ipc.js";
+import type { ObsidianSyncStatus, StorageSettings } from "../../shared/ipc.js";
 
 import {
+  appendObsidianRelations,
   collisionFileName,
   parseManagedMarkdown,
-  renderObsidianProjection
+  renderObsidianProjection,
+  slugify,
+  stripObsidianRelations,
+  type ObsidianRelatedNote
 } from "./obsidian-projection.js";
 import { WorkerSupervisor } from "./worker-supervisor.js";
 
@@ -46,6 +52,8 @@ export interface ObsidianSyncServiceOptions {
 
 export class ObsidianSyncService {
   private readonly workers = new WorkerSupervisor();
+  private synchronizationPromise: Promise<void> | null = null;
+  private synchronizationStatus: ObsidianSyncStatus = createIdleSynchronizationStatus();
 
   public constructor(private readonly options: ObsidianSyncServiceOptions) {}
 
@@ -63,16 +71,26 @@ export class ObsidianSyncService {
     if (!document) throw new Error("document_not_found");
     let projected = await this.projectEntity(settings, source, document);
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
-    for (const note of notes) projected += await this.projectAtomicNote(settings, source, document, note);
+    const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);
+    for (const note of notes) {
+      const relatedNotes = await this.resolveRelatedNotes(note.id, relations);
+      projected += await this.projectAtomicNote(settings, source, document, note, relatedNotes);
+    }
     return { projected };
   }
 
   public async importNote(
     input: ImportObsidianNoteRequest & { frontmatter: ObsidianManagedFrontmatter }
   ): Promise<IntegrationCommandResult> {
+    const settings = await this.options.getStorageSettings();
+    const relativePath = validateManagedRelativePath(settings, input.relativePath);
     const pool = this.requirePool();
     const syncFiles = createObsidianSyncRepository(pool);
     const existing = await syncFiles.findByMemoraId(input.frontmatter.memoraId);
+    if (existing && existing.relativePath !== relativePath) {
+      await syncFiles.update(existing.id, { status: "conflict" });
+      return { requestId: input.requestId, accepted: false, syncStatus: "conflict" };
+    }
     if (existing && input.frontmatter.memoraSyncVersion !== existing.syncVersion
         && input.contentHash !== existing.contentHash) {
       await syncFiles.update(existing.id, {
@@ -86,7 +104,7 @@ export class ObsidianSyncService {
     if (contentHash !== stripHashPrefix(input.contentHash)) throw new Error("obsidian_content_hash_mismatch");
     if (existing?.contentHash === contentHash) {
       await syncFiles.update(existing.id, {
-        relativePath: normalizeRelativePath(input.relativePath),
+        relativePath,
         mtimeMs: input.mtimeMs,
         status: "synced",
         lastSyncedAt: new Date()
@@ -104,7 +122,11 @@ export class ObsidianSyncService {
       const notes = createAtomicNoteRepository(pool);
       const note = await notes.findById(input.frontmatter.memoraId);
       if (!note) throw new Error("atomic_note_not_found");
-      await notes.review({ id: note.id, action: "edit", bodyMarkdown: stripProjectedTitle(body, note.title) });
+      await notes.review({
+        id: note.id,
+        action: "edit",
+        bodyMarkdown: stripProjectedTitle(stripObsidianRelations(body), note.title)
+      });
     }
     const recordInput = {
       memoraId: input.frontmatter.memoraId,
@@ -113,7 +135,7 @@ export class ObsidianSyncService {
       sourceItemId,
       documentId,
       memoraType: input.frontmatter.memoraType,
-      relativePath: normalizeRelativePath(input.relativePath),
+      relativePath,
       frontmatterHash: sha256(JSON.stringify(input.frontmatter)),
       contentHash,
       mtimeMs: input.mtimeMs,
@@ -141,21 +163,36 @@ export class ObsidianSyncService {
   }
 
   public async handleMoved(event: ObsidianFileMovedEvent): Promise<IntegrationCommandResult> {
+    const settings = await this.options.getStorageSettings();
+    const previousRelativePath = validateManagedRelativePath(settings, event.previousRelativePath);
+    const relativePath = validateManagedRelativePath(settings, event.relativePath);
+    const vaultPath = settings.obsidianVaultPath;
+    if (!vaultPath || !await pathExists(vaultPath)) throw new Error("obsidian_vault_unavailable");
     const repository = createObsidianSyncRepository(this.requirePool());
-    const record = await repository.findByMemoraId(event.memoraId)
-      ?? await repository.findByRelativePath(normalizeRelativePath(event.previousRelativePath));
+    const record = await repository.findByMemoraId(event.memoraId);
     if (!record) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
-    if (event.syncVersion !== record.syncVersion) {
+    if (record.relativePath !== previousRelativePath || event.syncVersion !== record.syncVersion) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
     }
-    const collision = await repository.findByRelativePath(normalizeRelativePath(event.relativePath));
+    const collision = await repository.findByRelativePath(relativePath);
     if (collision && collision.id !== record.id) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
     }
+    const previousPath = resolve(vaultPath, previousRelativePath);
+    const targetPath = resolve(vaultPath, relativePath);
+    if (await pathExists(previousPath) || !await pathExists(targetPath)) {
+      await repository.update(record.id, { status: "conflict" });
+      return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
+    }
+    const movedFile = parseManagedMarkdown(await readFile(targetPath, "utf8"));
+    if (movedFile?.frontmatter.memoraId !== event.memoraId) {
+      await repository.update(record.id, { status: "conflict" });
+      return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
+    }
     await repository.update(record.id, {
-      relativePath: normalizeRelativePath(event.relativePath),
+      relativePath,
       mtimeMs: event.mtimeMs,
       status: "synced",
       lastSyncedAt: new Date()
@@ -164,16 +201,22 @@ export class ObsidianSyncService {
   }
 
   public async handleDeleted(event: ObsidianFileDeletedEvent): Promise<IntegrationCommandResult> {
+    const settings = await this.options.getStorageSettings();
+    const relativePath = validateManagedRelativePath(settings, event.relativePath);
+    const vaultPath = settings.obsidianVaultPath;
+    if (!vaultPath || !await pathExists(vaultPath)) throw new Error("obsidian_vault_unavailable");
     const pool = this.requirePool();
     const repository = createObsidianSyncRepository(pool);
-    const record = await repository.findByMemoraId(event.memoraId)
-      ?? await repository.findByRelativePath(normalizeRelativePath(event.relativePath));
+    const record = await repository.findByMemoraId(event.memoraId);
     if (!record) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
-    if (event.syncVersion !== record.syncVersion) {
+    if (record.relativePath !== relativePath || event.syncVersion !== record.syncVersion) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
     }
-    const settings = await this.options.getStorageSettings();
+    if (await pathExists(resolve(vaultPath, relativePath))) {
+      await repository.update(record.id, { status: "conflict" });
+      return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
+    }
     const deletedAt = new Date();
     await repository.update(record.id, {
       status: "deleted",
@@ -203,11 +246,19 @@ export class ObsidianSyncService {
   }
 
   public async reconcileSnapshot(input: ObsidianReconciliationRequest): Promise<{ synced: number; conflicts: number; deleted: number }> {
+    const settings = await this.options.getStorageSettings();
     const repository = createObsidianSyncRepository(this.requirePool());
     const seen = new Set<string>();
     let synced = 0;
     let conflicts = 0;
     for (const file of input.files) {
+      validateManagedRelativePath(settings, file.relativePath);
+      if (seen.has(file.frontmatter.memoraId)) {
+        const duplicate = await repository.findByMemoraId(file.frontmatter.memoraId);
+        if (duplicate) await repository.update(duplicate.id, { status: "conflict" });
+        conflicts += 1;
+        continue;
+      }
       seen.add(file.frontmatter.memoraId);
       const existing = await repository.findByMemoraId(file.frontmatter.memoraId);
       if (existing && existing.relativePath !== normalizeRelativePath(file.relativePath)) {
@@ -220,7 +271,10 @@ export class ObsidianSyncService {
           syncVersion: file.frontmatter.memoraSyncVersion,
           mtimeMs: file.mtimeMs
         });
-        if (moved.syncStatus === "conflict") conflicts += 1;
+        if (moved.syncStatus === "conflict") {
+          conflicts += 1;
+          continue;
+        }
       }
       if (!existing || existing.contentHash !== stripHashPrefix(file.contentHash) || existing.mtimeMs !== file.mtimeMs) {
         if (file.markdown === undefined) continue;
@@ -236,22 +290,12 @@ export class ObsidianSyncService {
         else if (result.syncStatus === "synced") synced += 1;
       }
     }
-    let deleted = 0;
-    for (const record of await repository.list()) {
-      if (record.status === "deleted" || seen.has(record.memoraId)) continue;
-      await this.handleDeleted({
-        eventId: randomUUID(),
-        occurredAt: input.scannedAt,
-        memoraId: record.memoraId,
-        relativePath: record.relativePath,
-        syncVersion: record.syncVersion
-      });
-      deleted += 1;
-    }
-    return { synced, conflicts, deleted };
+    return { synced, conflicts, deleted: 0 };
   }
 
-  public async reconcileVault(): Promise<{ synced: number; conflicts: number; deleted: number }> {
+  public async reconcileVault(
+    onScanProgress?: (processed: number, total: number) => void
+  ): Promise<{ synced: number; conflicts: number; deleted: number }> {
     const settings = await this.options.getStorageSettings();
     if (!isSyncActive(settings)) return { synced: 0, conflicts: 0, deleted: 0 };
     const vaultPath = settings.obsidianVaultPath!;
@@ -260,21 +304,96 @@ export class ObsidianSyncService {
     if (!isInside(resolve(vaultPath), managedPath)) throw new Error("unsafe_obsidian_root");
     if (!await pathExists(managedPath)) return { synced: 0, conflicts: 0, deleted: 0 };
     const files = await listMarkdownFiles(managedPath);
+    onScanProgress?.(0, files.length);
     const snapshots: ObsidianReconciliationRequest["files"] = [];
-    for (const fullPath of files) {
+    for (const [index, fullPath] of files.entries()) {
       const raw = await readFile(fullPath, "utf8");
       const parsed = parseManagedMarkdown(raw);
-      if (!parsed) continue;
-      const file = await stat(fullPath);
-      snapshots.push({
-        relativePath: relative(vaultPath, fullPath).split(sep).join("/"),
-        frontmatter: parsed.frontmatter,
-        contentHash: sha256(normalizeMarkdown(parsed.bodyMarkdown)),
-        mtimeMs: Math.trunc(file.mtimeMs),
-        markdown: parsed.bodyMarkdown
-      });
+      if (parsed) {
+        const file = await stat(fullPath);
+        snapshots.push({
+          relativePath: relative(vaultPath, fullPath).split(sep).join("/"),
+          frontmatter: parsed.frontmatter,
+          contentHash: sha256(normalizeMarkdown(parsed.bodyMarkdown)),
+          mtimeMs: Math.trunc(file.mtimeMs),
+          markdown: parsed.bodyMarkdown
+        });
+      }
+      onScanProgress?.(index + 1, files.length);
     }
     return this.reconcileSnapshot({ requestId: randomUUID(), scannedAt: new Date().toISOString(), files: snapshots });
+  }
+
+  public startSynchronization(): ObsidianSyncStatus {
+    if (this.synchronizationPromise) return this.getSynchronizationStatus();
+    this.synchronizationStatus = {
+      state: "running",
+      stage: "reconciling",
+      progress: 0,
+      processed: 0,
+      total: 0,
+      synced: 0,
+      conflicts: 0,
+      projected: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      error: null
+    };
+    this.synchronizationPromise = this.runSynchronization()
+      .catch((error: unknown) => {
+        this.synchronizationStatus = {
+          ...this.synchronizationStatus,
+          state: "failed",
+          stage: "failed",
+          finishedAt: new Date().toISOString(),
+          error: error instanceof Error ? error.message : String(error)
+        };
+      })
+      .finally(() => {
+        this.synchronizationPromise = null;
+      });
+    return this.getSynchronizationStatus();
+  }
+
+  public getSynchronizationStatus(): ObsidianSyncStatus {
+    return { ...this.synchronizationStatus };
+  }
+
+  private async runSynchronization(): Promise<void> {
+    const settings = await this.options.getStorageSettings();
+    if (!isSyncActive(settings)) throw new Error("obsidian_sync_not_configured");
+    const reconciliation = await this.reconcileVault((processed, total) => {
+      this.synchronizationStatus = {
+        ...this.synchronizationStatus,
+        progress: total === 0 ? 0.2 : (0.2 * processed) / total
+      };
+    });
+    const sources = await createSourceItemRepository(this.requirePool()).list();
+    this.synchronizationStatus = {
+      ...this.synchronizationStatus,
+      stage: "projecting",
+      progress: sources.length === 0 ? 1 : 0.2,
+      total: sources.length,
+      synced: reconciliation.synced,
+      conflicts: reconciliation.conflicts
+    };
+    let projected = 0;
+    for (const [index, source] of sources.entries()) {
+      projected += (await this.projectSource(source.id)).projected;
+      this.synchronizationStatus = {
+        ...this.synchronizationStatus,
+        processed: index + 1,
+        projected,
+        progress: 0.2 + (0.8 * (index + 1)) / sources.length
+      };
+    }
+    this.synchronizationStatus = {
+      ...this.synchronizationStatus,
+      state: "completed",
+      stage: "completed",
+      progress: 1,
+      finishedAt: new Date().toISOString()
+    };
   }
 
   private async projectEntity(settings: StorageSettings, source: SourceItemRecord, document: DocumentRecord): Promise<number> {
@@ -297,7 +416,8 @@ export class ObsidianSyncService {
     settings: StorageSettings,
     source: SourceItemRecord,
     document: DocumentRecord,
-    note: AtomicNoteRecord
+    note: AtomicNoteRecord,
+    relatedNotes: ObsidianRelatedNote[]
   ): Promise<number> {
     return this.writeEntity(settings, {
       memoraId: note.id,
@@ -307,9 +427,38 @@ export class ObsidianSyncService {
       sourceItemId: source.id,
       documentId: document.id,
       title: note.title,
-      bodyMarkdown: `# ${note.title}\n\n${note.bodyMarkdown}`,
+      bodyMarkdown: appendObsidianRelations(
+        `# ${note.title}\n\n${note.bodyMarkdown}`,
+        note.language,
+        relatedNotes
+      ),
       date: note.updatedAt
     });
+  }
+
+  private async resolveRelatedNotes(
+    noteId: string,
+    relations: Array<AtomicNoteRelationRecord & {
+      sourceTitle: string;
+      targetTitle: string;
+    }>
+  ): Promise<ObsidianRelatedNote[]> {
+    const repository = createObsidianSyncRepository(this.requirePool());
+    const relatedNotes: ObsidianRelatedNote[] = [];
+    for (const relation of relations) {
+      if (relation.status === "rejected") continue;
+      const isSource = relation.sourceAtomicNoteId === noteId;
+      const isTarget = relation.targetAtomicNoteId === noteId;
+      if (!isSource && !isTarget) continue;
+      const relatedId = isSource ? relation.targetAtomicNoteId : relation.sourceAtomicNoteId;
+      const title = isSource ? relation.targetTitle : relation.sourceTitle;
+      const syncFile = await repository.findByMemoraId(relatedId);
+      const target = syncFile?.relativePath
+        ? normalizeRelativePath(syncFile.relativePath).replace(/\.md$/i, "")
+        : slugify(title).replace(/\.md$/i, "");
+      relatedNotes.push({ relationType: relation.relationType, title, target });
+    }
+    return relatedNotes;
   }
 
   private async writeEntity(settings: StorageSettings, input: {
@@ -347,6 +496,7 @@ export class ObsidianSyncService {
     });
     let relativePath = existing?.relativePath;
     const vaultPath = settings.obsidianVaultPath!;
+    if (relativePath) relativePath = validateManagedRelativePath(settings, relativePath);
     if (!relativePath) relativePath = await this.selectAvailablePath(
       repository,
       vaultPath,
@@ -355,7 +505,19 @@ export class ObsidianSyncService {
       input.date,
       input.memoraId
     );
-    if (existing?.contentHash === contentHash && await pathExists(resolve(vaultPath, relativePath))) return 0;
+    if (existing && await pathExists(resolve(vaultPath, relativePath))) {
+      const raw = await readFile(resolve(vaultPath, relativePath), "utf8");
+      const parsed = parseManagedMarkdown(raw);
+      const actualContentHash = parsed ? sha256(normalizeMarkdown(parsed.bodyMarkdown)) : null;
+      if (!parsed || parsed.frontmatter.memoraId !== input.memoraId || actualContentHash !== existing.contentHash) {
+        await repository.update(existing.id, {
+          status: "conflict",
+          metadata: { ...existing.metadata, conflictDetectedAt: new Date().toISOString() }
+        });
+        throw new Error("obsidian_projection_target_conflict");
+      }
+      if (existing.contentHash === contentHash) return 0;
+    }
     const output = await this.writeProjection({ vaultPath, relativePath, content: rendered.markdown });
     const persistence = {
       memoraId: input.memoraId,
@@ -445,6 +607,31 @@ function normalizeRelativePath(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "");
   if (normalized.split("/").includes("..")) throw new Error("unsafe_obsidian_path");
   return normalized;
+}
+
+function validateManagedRelativePath(settings: StorageSettings, path: string): string {
+  const normalized = normalizeRelativePath(path);
+  const managedRoot = normalizeRelativePath(settings.managedRoot).replace(/\/$/, "");
+  if (!managedRoot || normalized === managedRoot || !normalized.startsWith(`${managedRoot}/`)) {
+    throw new Error("unsafe_obsidian_managed_path");
+  }
+  return normalized;
+}
+
+function createIdleSynchronizationStatus(): ObsidianSyncStatus {
+  return {
+    state: "idle",
+    stage: "idle",
+    progress: 0,
+    processed: 0,
+    total: 0,
+    synced: 0,
+    conflicts: 0,
+    projected: 0,
+    startedAt: null,
+    finishedAt: null,
+    error: null
+  };
 }
 
 function stripHashPrefix(hash: string): string {

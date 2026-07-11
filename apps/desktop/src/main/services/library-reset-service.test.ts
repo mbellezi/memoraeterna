@@ -16,6 +16,7 @@ describe("LibraryResetService", () => {
     const internalAsset = join(root, "assets", "sha256", "aa", "bb", "internal.pdf");
     const uploadedAsset = join(uploads, "sha256", "cc", "dd", "copy.pdf");
     const obsidianFile = join(vault, "Memora", "Sources", "note.md");
+    const unrelatedObsidianFile = join(vault, "Memora", "Sources", "unrelated.md");
     const localModel = join(root, "local-models", "installed", "model.gguf");
     await Promise.all([
       mkdir(join(internalAsset, ".."), { recursive: true }),
@@ -26,7 +27,15 @@ describe("LibraryResetService", () => {
     await Promise.all([
       writeFile(internalAsset, "internal"),
       writeFile(uploadedAsset, "copy"),
-      writeFile(obsidianFile, "managed"),
+      writeFile(obsidianFile, `---
+memora_id: 11111111-1111-4111-8111-111111111111
+memora_type: source_item
+memora_managed: true
+memora_sync_version: 1
+memora_content_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+---
+managed`),
+      writeFile(unrelatedObsidianFile, "# Personal note that is not managed by Memora"),
       writeFile(localModel, "model")
     ]);
 
@@ -52,14 +61,25 @@ describe("LibraryResetService", () => {
     await expect(access(internalAsset)).rejects.toThrow();
     await expect(access(uploadedAsset)).rejects.toThrow();
     await expect(access(obsidianFile)).rejects.toThrow();
+    await expect(access(unrelatedObsidianFile)).resolves.toBeUndefined();
     await expect(access(localModel)).resolves.toBeUndefined();
     expect(pool.queries.some((query) => query.includes("truncate table"))).toBe(true);
+    expect(pool.queries.some((query) => query.includes("drop_graph"))).toBe(true);
+    expect(pool.queries.findIndex((query) => query.includes("drop_graph")))
+      .toBeLessThan(pool.queries.findIndex((query) => query.includes("truncate table")));
     await rm(root, { recursive: true, force: true });
   });
 });
 
 class ResetPool {
   readonly queries: string[] = [];
+
+  async connect() {
+    return {
+      query: this.query.bind(this),
+      release() {}
+    };
+  }
 
   async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
     this.queries.push(text);
@@ -70,11 +90,16 @@ class ResetPool {
         { storage_base: "uploaded_files", relative_path: "sha256/cc/dd/copy.pdf" }
       ];
     } else if (text.includes("from obsidian_sync_files")) {
-      rows = [{ relative_path: "Memora/Sources/note.md" }];
+      rows = [
+        { memora_id: "11111111-1111-4111-8111-111111111111", relative_path: "Memora/Sources/note.md" },
+        { memora_id: "22222222-2222-4222-8222-222222222222", relative_path: "Memora/Sources/unrelated.md" }
+      ];
     } else if (text.includes("from source_items")) {
       rows = [{ count: "2" }];
     } else if (text.includes("from atomic_notes")) {
       rows = [{ count: "3" }];
+    } else if (text.includes("from ag_catalog.ag_graph")) {
+      rows = [{ exists: 1 }];
     }
     return {
       command: text.includes("truncate table") ? "TRUNCATE" : "SELECT",

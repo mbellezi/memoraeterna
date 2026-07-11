@@ -147,6 +147,35 @@ try {
   if ((await ai.getDefaultTask("embedding"))?.providerConfigId !== provider.id) {
     throw new Error("Default AI profile task resolution failed.");
   }
+  await ai.upsertProvider({
+    id: provider.id,
+    provider: "openai-compatible",
+    displayName: "Updated provider",
+    credentialRef: "test:secret",
+    baseUrl: "https://example.test/v1",
+    metadata: { modelId: "test-768", capabilities: ["text-generation"] }
+  });
+  if ((await ai.listProfiles()).find((candidate) => candidate.id === profile.id)?.modelId !== "test-768") {
+    throw new Error("Remote model edit did not update its linked profile selection.");
+  }
+  if (await ai.ensureRemoteRerankingCapabilities() !== 1) {
+    throw new Error("Existing generative remote model was not marked for reranking.");
+  }
+  const rerankingProvider = (await ai.listProviders()).find((candidate) => candidate.id === provider.id);
+  const rerankingProfile = (await ai.listProfiles()).find((candidate) => candidate.id === profile.id);
+  if (!Array.isArray(rerankingProvider?.metadata.capabilities)
+      || !rerankingProvider.metadata.capabilities.includes("reranking")
+      || !rerankingProfile?.capabilities.includes("reranking")) {
+    throw new Error("Remote reranking capability was not synchronized to its linked profile.");
+  }
+  if (!(await ai.deleteProvider(provider.id))) {
+    throw new Error("Remote model deletion failed.");
+  }
+  const unlinkedProfile = (await ai.listProfiles()).find((candidate) => candidate.id === profile.id);
+  if (unlinkedProfile?.providerConfigId !== null || unlinkedProfile.modelId !== null
+      || unlinkedProfile.runtime !== null || unlinkedProfile.capabilities.length !== 0) {
+    throw new Error("Remote model deletion did not clear its linked profile selection.");
+  }
 
   const runs = createIngestionRunRepository(pool);
   const ingestionRun = await runs.create({ sourceItemId: source.id, currentStage: "chunking" });
@@ -162,6 +191,15 @@ try {
   const job = await jobs.create({ type: "chunking", payload: { documentId: document.id } });
   const claimed = await jobs.claimNext("phase2-verifier");
   if (claimed?.id !== job.id || claimed.status !== "running") throw new Error("SKIP LOCKED queue claim failed.");
+  const jobWithAiExecution = await jobs.setAiExecution(job.id, {
+    provider: "google",
+    modelId: "gemini-3.1-pro-preview",
+    reasoningLevel: "low"
+  });
+  const aiExecution = jobWithAiExecution?.payload.aiExecution as Record<string, unknown> | undefined;
+  if (aiExecution?.modelId !== "gemini-3.1-pro-preview" || aiExecution.reasoningLevel !== "low") {
+    throw new Error("Job AI execution metadata was not persisted.");
+  }
   await jobs.reportProgress(job.id, 0.5);
   const canceled = await jobs.requestCancel(job.id);
   if (!canceled?.cancelRequestedAt) throw new Error("Running job cancellation was not persisted.");

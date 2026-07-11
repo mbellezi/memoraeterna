@@ -4,6 +4,7 @@ import type { MessageKey } from "@app/i18n";
 import type { SimilarityDebugRun } from "../../shared/ipc";
 import { Button } from "./ui/button";
 import { Switch } from "./ui/switch";
+import { ObsidianSyncStatusCard } from "./ObsidianSyncStatusCard";
 
 interface DebugDashboardProps {
   enabled: boolean;
@@ -70,6 +71,7 @@ export function DebugDashboard({
 
   return (
     <div className="grid gap-6">
+      <ObsidianSyncStatusCard available t={t} />
       <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-start gap-3">

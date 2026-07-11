@@ -51,6 +51,12 @@ export interface AtomicNoteGraphElements {
   relations: Array<{ id: string; subject: string; predicate: string; object: string; confidence: number }>;
 }
 
+export interface AtomicNoteGraphCandidate {
+  noteId: string;
+  graphScore: number;
+  pathType: "shared_entity" | "related_entity";
+}
+
 interface EntityRow extends QueryResultRow {
   id: string;
   type: string;
@@ -100,8 +106,16 @@ interface AgRelatedRow extends AgDirectRow {
   relationConfidence: unknown;
 }
 
-interface AgAtomicRow extends QueryResultRow {
+interface AgAtomicDirectRow extends QueryResultRow {
   targetId: unknown;
+  entityId: unknown;
+  relationConfidence: unknown;
+}
+
+interface AgAtomicRelatedRow extends QueryResultRow {
+  targetId: unknown;
+  sourceEntityId: unknown;
+  targetEntityId: unknown;
   relationConfidence: unknown;
 }
 
@@ -110,6 +124,19 @@ const entityReturning = `id, type, canonical_name as "canonicalName", normalized
 
 export function createKnowledgeGraphRepository(pool: PgPool) {
   return {
+    async clearProjection(): Promise<void> {
+      const client = await pool.connect();
+      try {
+        await prepareAge(client);
+        const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [graphName]);
+        if (existing.rowCount !== 0) {
+          await client.query("select ag_catalog.drop_graph($1, $2)", [graphName, true]);
+        }
+      } finally {
+        client.release();
+      }
+    },
+
     async replaceSourceExtraction(input: ReplaceKnowledgeGraphInput): Promise<{
       entityCount: number;
       mentionCount: number;
@@ -405,29 +432,18 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       }
     },
 
+    async findAtomicNoteCandidates(noteId: string, limit = 20): Promise<AtomicNoteGraphCandidate[]> {
+      const candidates = await scoreAtomicNoteGraphPaths(pool, noteId, null, Math.max(200, limit * 25));
+      return [...candidates.entries()]
+        .map(([candidateId, candidate]) => ({ noteId: candidateId, ...candidate }))
+        .sort((left, right) => right.graphScore - left.graphScore || left.noteId.localeCompare(right.noteId))
+        .slice(0, limit);
+    },
+
     async scoreAtomicNoteCandidates(noteId: string, candidateIds: string[]): Promise<Map<string, number>> {
       if (candidateIds.length === 0) return new Map();
-      const client = await pool.connect();
-      try {
-        await initializeAge(client);
-        const targets = candidateIds.map((id) => `'${uuid(id)}'`).join(", ");
-        const direct = await readCypher<AgAtomicRow>(client,
-          `MATCH (source:AtomicNote {id: '${uuid(noteId)}'})-[a:ABOUT]->(entity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id IN [${targets}] RETURN target.id, a.confidence * b.confidence`,
-          `"targetId" agtype, "relationConfidence" agtype`
-        );
-        const related = await readCypher<AgAtomicRow>(client,
-          `MATCH (source:AtomicNote {id: '${uuid(noteId)}'})-[a:ABOUT]->(:Entity)-[r:RELATED]-(:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id IN [${targets}] RETURN target.id, a.confidence * r.confidence * b.confidence * 0.75`,
-          `"targetId" agtype, "relationConfidence" agtype`
-        );
-        const scores = new Map<string, number>();
-        for (const row of [...direct.rows, ...related.rows]) {
-          const id = agString(row.targetId);
-          scores.set(id, Math.max(scores.get(id) ?? 0, agNumber(row.relationConfidence)));
-        }
-        return scores;
-      } finally {
-        client.release();
-      }
+      const candidates = await scoreAtomicNoteGraphPaths(pool, noteId, candidateIds);
+      return new Map([...candidates].map(([id, candidate]) => [id, candidate.graphScore]));
     },
 
     async listAtomicNoteElements(noteIds: string[]): Promise<Map<string, AtomicNoteGraphElements>> {
@@ -470,12 +486,116 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          order by subject.canonical_name, r.predicate, object.canonical_name`,
         [noteIds]
       );
+      const relationIndexes = new Map<string, Map<string, number>>();
       for (const row of relationRows.rows) {
-        result.get(row.noteId)?.relations.push({ ...row, confidence: Number(row.confidence) });
+        const elements = result.get(row.noteId);
+        if (!elements) continue;
+        const relation = { ...row, confidence: Number(row.confidence) };
+        const relationKey = `${row.subject}\0${row.predicate}\0${row.object}`;
+        const indexes = relationIndexes.get(row.noteId) ?? new Map<string, number>();
+        relationIndexes.set(row.noteId, indexes);
+        const existingIndex = indexes.get(relationKey);
+        if (existingIndex === undefined) {
+          indexes.set(relationKey, elements.relations.length);
+          elements.relations.push(relation);
+        } else if (relation.confidence > (elements.relations[existingIndex]?.confidence ?? 0)) {
+          elements.relations[existingIndex] = relation;
+        }
       }
       return result;
     }
   };
+}
+
+async function scoreAtomicNoteGraphPaths(
+  pool: PgPool,
+  noteId: string,
+  candidateIds: string[] | null,
+  maxPaths?: number
+): Promise<Map<string, Omit<AtomicNoteGraphCandidate, "noteId">>> {
+  const client = await pool.connect();
+  try {
+    await initializeAge(client);
+    const targetFilter = candidateIds
+      ? ` AND target.id IN [${candidateIds.map((id) => `'${uuid(id)}'`).join(", ")}]`
+      : "";
+    const pathLimit = maxPaths ? ` LIMIT ${Math.max(1, Math.floor(maxPaths))}` : "";
+    const sourceId = uuid(noteId);
+    const direct = await readCypher<AgAtomicDirectRow>(client,
+      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(entity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, entity, a.confidence * b.confidence AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, entity.id, pathScore`,
+      `"targetId" agtype, "entityId" agtype, "relationConfidence" agtype`
+    );
+    const related = await readCypher<AgAtomicRelatedRow>(client,
+      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(sourceEntity:Entity)-[r:RELATED]-(targetEntity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, sourceEntity, targetEntity, a.confidence * r.confidence * b.confidence * 0.75 AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, sourceEntity.id, targetEntity.id, pathScore`,
+      `"targetId" agtype, "sourceEntityId" agtype, "targetEntityId" agtype, "relationConfidence" agtype`
+    );
+    const targetIds = [...new Set([
+      ...direct.rows.map((row) => agString(row.targetId)),
+      ...related.rows.map((row) => agString(row.targetId))
+    ])];
+    if (targetIds.length === 0) return new Map();
+    const activeTargets = await client.query<{ id: string } & QueryResultRow>(
+      `select id from atomic_notes where id = any($1::uuid[]) and status <> 'rejected'`,
+      [targetIds]
+    );
+    const allowedTargets = new Set(activeTargets.rows.map((row) => row.id));
+    const entityIds = [...new Set([
+      ...direct.rows.map((row) => agString(row.entityId)),
+      ...related.rows.flatMap((row) => [agString(row.sourceEntityId), agString(row.targetEntityId)])
+    ])];
+    const frequencyRows = await client.query<{
+      entityId: string;
+      noteCount: string;
+      totalNotes: string;
+    } & QueryResultRow>(
+      `select links.entity_id as "entityId", count(distinct links.atomic_note_id)::text as "noteCount",
+              (select count(*)::text from atomic_notes where status <> 'rejected') as "totalNotes"
+       from atomic_note_entity_links links
+       join atomic_notes note on note.id = links.atomic_note_id and note.status <> 'rejected'
+       where links.entity_id = any($1::uuid[])
+       group by links.entity_id`,
+      [entityIds]
+    );
+    const totalNotes = Number(frequencyRows.rows[0]?.totalNotes ?? 0);
+    const entityWeights = new Map(frequencyRows.rows.map((row) => [
+      row.entityId,
+      inverseEntityFrequency(totalNotes, Number(row.noteCount))
+    ]));
+    const candidates = new Map<string, Omit<AtomicNoteGraphCandidate, "noteId">>();
+    const record = (targetId: string, graphScore: number, pathType: AtomicNoteGraphCandidate["pathType"]) => {
+      if (!allowedTargets.has(targetId)) return;
+      const previous = candidates.get(targetId);
+      if (!previous || graphScore > previous.graphScore) {
+        candidates.set(targetId, { graphScore: score(graphScore), pathType });
+      }
+    };
+    for (const row of direct.rows) {
+      const entityWeight = entityWeights.get(agString(row.entityId)) ?? 0.2;
+      record(
+        agString(row.targetId),
+        agNumber(row.relationConfidence) * entityWeight,
+        "shared_entity"
+      );
+    }
+    for (const row of related.rows) {
+      const sourceWeight = entityWeights.get(agString(row.sourceEntityId)) ?? 0.2;
+      const targetWeight = entityWeights.get(agString(row.targetEntityId)) ?? 0.2;
+      record(
+        agString(row.targetId),
+        agNumber(row.relationConfidence) * Math.sqrt(sourceWeight * targetWeight),
+        "related_entity"
+      );
+    }
+    return candidates;
+  } finally {
+    client.release();
+  }
+}
+
+export function inverseEntityFrequency(totalNotes: number, linkedNotes: number): number {
+  if (totalNotes <= 1 || linkedNotes <= 1) return 1;
+  const normalized = Math.log((totalNotes + 1) / (linkedNotes + 1)) / Math.log(totalNotes + 1);
+  return Math.max(0.2, Math.min(1, normalized));
 }
 
 function emptyAtomicNoteElements(): AtomicNoteGraphElements {
@@ -498,11 +618,15 @@ function normalizeEntityName(value: string): string {
 }
 
 async function initializeAge(client: PoolClient): Promise<void> {
+  await prepareAge(client);
+  const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [graphName]);
+  if (existing.rowCount === 0) await client.query("select ag_catalog.create_graph($1)", [graphName]);
+}
+
+async function prepareAge(client: PoolClient): Promise<void> {
   await client.query("create extension if not exists age");
   await client.query("load 'age'");
   await client.query(`set search_path = ag_catalog, "$user", public`);
-  const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [graphName]);
-  if (existing.rowCount === 0) await client.query("select ag_catalog.create_graph($1)", [graphName]);
 }
 
 async function writeCypher(client: PoolClient, statement: string): Promise<void> {

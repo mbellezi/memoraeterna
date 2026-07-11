@@ -124,6 +124,7 @@ void app.whenReady().then(() => {
     resourcesPath: getResourcesPath(),
     isPackaged: app.isPackaged,
     logger: console,
+    openExternal: (url) => shell.openExternal(url),
     getUiLanguage: async () => (await settingsService!.getApp()).language,
     getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode
   });
@@ -176,8 +177,8 @@ void app.whenReady().then(() => {
     logger: console,
     knowledgeService,
     obsidianSyncService,
-    generateEmbedding: async (text, signal) => {
-      const result = await aiService?.runDefaultTask("embedding", text, {}, signal);
+    generateEmbedding: async (text, signal, context) => {
+      const result = await aiService?.runDefaultTask("embedding", text, context, signal);
       if (!result || !Array.isArray(result.output)) return null;
       return {
         embedding: result.output.map(Number),
@@ -211,7 +212,8 @@ void app.whenReady().then(() => {
     localModelService,
     backupService,
     libraryResetService,
-    similarityDebugService
+    similarityDebugService,
+    obsidianSyncService
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();

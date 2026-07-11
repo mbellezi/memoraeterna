@@ -241,6 +241,23 @@ export function App({
     }
   }
 
+  async function selectObsidianVault() {
+    setIsSaving(true);
+    setStatus("shell.states.loading");
+    try {
+      const savedSettings = await window.app.settings.selectObsidianVault();
+      if (savedSettings) {
+        setSettings(savedSettings);
+        setStatus("shell.states.saved");
+      }
+    } catch (error) {
+      const key = error instanceof Error && error.message.startsWith("errors.") ? error.message : "errors.common.unknown";
+      setStatus(key as MessageKey);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function updateAppSettings(update: AppSettingsUpdate) {
     setAppSettings((current) =>
       appSettingsSchema.parse({
@@ -465,6 +482,7 @@ export function App({
               onRelationThresholdChange={persistRelationThreshold}
               onChange={setSettings}
               onSave={saveSettings}
+              onSelectObsidianVault={selectObsidianVault}
             />
           ) : activeView === "import" ? (
             <ImportView t={t} />

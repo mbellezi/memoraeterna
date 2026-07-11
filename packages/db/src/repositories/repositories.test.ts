@@ -7,6 +7,7 @@ import { createSourceSummaryRepository } from "./sourceSummaryRepository.js";
 import { createLocalModelRepository } from "./localModelRepository.js";
 import { createJobRepository } from "./jobRepository.js";
 import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
+import { createAiConfigRepository } from "./aiConfigRepository.js";
 import { createIngestionRunRepository } from "./ingestionRunRepository.js";
 import type { Queryable } from "./types.js";
 
@@ -239,6 +240,95 @@ describe("repositories", () => {
     expect(queryText).not.toContain("running");
   });
 
+  it("attaches effective AI execution metadata to a running job", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "job-1", type: "summarization", status: "running", priority: 0,
+        payload: { aiExecution: { provider: "google", modelId: "gemini-3.1-pro-preview", reasoningLevel: "low" } },
+        result: null, error: null, progress: 2_000, attempts: 1, maxAttempts: 1,
+        runAfter: now, lockedAt: now, lockedBy: "worker", finishedAt: null,
+        cancelRequestedAt: null, createdAt: now, updatedAt: now
+      }
+    ]]);
+
+    const updated = await createJobRepository(db).setAiExecution("job-1", {
+      provider: "google",
+      modelId: "gemini-3.1-pro-preview",
+      reasoningLevel: "low"
+    });
+
+    expect(updated?.payload.aiExecution).toMatchObject({ modelId: "gemini-3.1-pro-preview", reasoningLevel: "low" });
+    expect(db.queries[0]?.text).toContain("jsonb_set(payload, '{aiExecution}'");
+  });
+
+  it("deletes a remote model and clears linked profile model selections atomically", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "provider-1",
+        provider: "openai-codex",
+        displayName: "ChatGPT",
+        credentialRef: "ai:secret",
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        defaultParameters: {},
+        status: "configured",
+        metadata: { modelId: "gpt-test" },
+        createdAt: now,
+        updatedAt: now
+      }
+    ]]);
+
+    const deleted = await createAiConfigRepository(db).deleteProvider("provider-1");
+
+    expect(deleted?.id).toBe("provider-1");
+    expect(db.queries[0]?.text).toContain("update ai_profile_sets");
+    expect(db.queries[0]?.text).toContain("model_id = null");
+    expect(db.queries[0]?.text).toContain("delete from ai_provider_configs");
+    expect(db.queries[0]?.values).toEqual(["provider-1"]);
+  });
+
+  it("updates linked profiles when a remote model id changes", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "provider-1",
+        provider: "openai-codex",
+        displayName: "ChatGPT renamed",
+        credentialRef: "ai:secret",
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        defaultParameters: {},
+        status: "configured",
+        metadata: { modelId: "gpt-new", capabilities: ["text-generation"] },
+        createdAt: now,
+        updatedAt: now
+      }
+    ]]);
+
+    await createAiConfigRepository(db).upsertProvider({
+      id: "provider-1",
+      provider: "openai-codex",
+      displayName: "ChatGPT renamed",
+      credentialRef: "ai:secret",
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      metadata: { modelId: "gpt-new", capabilities: ["text-generation"] }
+    });
+
+    expect(db.queries[0]?.text).toContain("update ai_profile_sets");
+    expect(db.queries[0]?.text).toContain("model_id = coalesce");
+    expect(db.queries[0]?.text).toContain("capabilities = coalesce");
+  });
+
+  it("marks existing generative remote models and linked profiles for reranking", async () => {
+    const db = new FakeQueryable([[{ count: "2" }]]);
+
+    await expect(createAiConfigRepository(db).ensureRemoteRerankingCapabilities()).resolves.toBe(2);
+
+    expect(db.queries[0]?.text).toContain("'google', 'openai-compatible', 'openai-codex'");
+    expect(db.queries[0]?.text).toContain("'[\"reranking\"]'::jsonb");
+    expect(db.queries[0]?.text).toContain("update ai_profile_sets");
+  });
+
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {
     const db = new FakeQueryable([[
       {
@@ -255,6 +345,28 @@ describe("repositories", () => {
     expect(notes[0]?.evidenceChunkIds).toEqual(["chunk-1", "chunk-2"]);
     expect(db.queries[0]?.text).toContain("atomic_note_source_links");
     expect(db.queries[0]?.text).toContain("status <> 'rejected'");
+  });
+
+  it("retrieves atomic-note text and vector rankings independently", async () => {
+    const db = new FakeQueryable([[], [], []]);
+    const notes = createAtomicNoteRepository(db);
+
+    await notes.findTextMatchingCandidates({ noteId: "note-1", limit: 30 });
+    await notes.findVectorMatchingCandidates({
+      noteId: "note-1",
+      embedding: Array.from({ length: 256 }, () => 0),
+      embeddingModel: "embedding-model",
+      limit: 30
+    });
+    await notes.scoreMatchingCandidates({
+      noteId: "note-1",
+      candidateIds: ["00000000-0000-4000-8000-000000000001"]
+    });
+
+    expect(db.queries[0]?.text).toContain('order by "textScore" desc');
+    expect(db.queries[1]?.text).toContain('order by "vectorScore" desc');
+    expect(db.queries[1]?.text).toContain("join embeddings_256");
+    expect(db.queries[2]?.text).toContain("candidate.id = any($2::uuid[])");
   });
 
   it("persists per-batch ingestion progress without replacing the stage checkpoint", async () => {

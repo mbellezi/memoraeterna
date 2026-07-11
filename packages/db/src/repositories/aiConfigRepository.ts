@@ -87,9 +87,20 @@ export function createAiConfigRepository(db: Queryable) {
     }): Promise<AiProviderConfigRecord> {
       const result = input.id
         ? await db.query<ProviderRow>(
-            `update ai_provider_configs set provider = $2, display_name = $3, credential_ref = $4,
-               base_url = $5, default_parameters = $6, status = $7, metadata = $8, updated_at = now()
-             where id = $1 returning ${providerReturning}`,
+            `with updated_provider as (
+               update ai_provider_configs set provider = $2, display_name = $3, credential_ref = $4,
+                 base_url = $5, default_parameters = $6, status = $7, metadata = $8, updated_at = now()
+               where id = $1 returning ${providerReturning}
+             ), updated_profiles as (
+               update ai_profile_sets set
+                 model_id = coalesce($8::jsonb ->> 'modelId', model_id),
+                 capabilities = coalesce($8::jsonb -> 'capabilities', capabilities),
+                 updated_at = now()
+               where provider_config_id = $1 and exists (select 1 from updated_provider)
+               returning id
+             )
+             select * from updated_provider
+             where (select count(*) from updated_profiles) >= 0`,
             [input.id, input.provider, input.displayName, input.credentialRef ?? null,
               input.baseUrl ?? null, input.defaultParameters ?? {}, input.status ?? "configured",
               input.metadata ?? {}]
@@ -110,6 +121,58 @@ export function createAiConfigRepository(db: Queryable) {
     async listProviders(): Promise<AiProviderConfigRecord[]> {
       const result = await db.query<ProviderRow>(`select ${providerReturning} from ai_provider_configs order by display_name`);
       return result.rows.map(mapProvider);
+    },
+
+    async ensureRemoteRerankingCapabilities(): Promise<number> {
+      const result = await db.query<QueryResultRow & { count: string }>(
+        `with updated_providers as (
+           update ai_provider_configs set
+             metadata = jsonb_set(
+               metadata,
+               '{capabilities}',
+               coalesce(metadata -> 'capabilities', '[]'::jsonb) || '["reranking"]'::jsonb,
+               true
+             ),
+             updated_at = now()
+           where provider in ('google', 'openai-compatible', 'openai-codex')
+             and not (coalesce(metadata -> 'capabilities', '[]'::jsonb) ? 'reranking')
+             and (
+               provider = 'openai-codex'
+               or coalesce(metadata -> 'capabilities', '[]'::jsonb) ?| array[
+                 'text-generation', 'structured-output', 'summarization',
+                 'knowledge-graph-generation', 'atomic-note-generation'
+               ]
+             )
+           returning id, metadata -> 'capabilities' as capabilities
+         ), updated_profiles as (
+           update ai_profile_sets as profile set
+             capabilities = provider.capabilities,
+             updated_at = now()
+           from updated_providers as provider
+           where profile.provider_config_id = provider.id
+           returning profile.id
+         )
+         select count(*)::text as count from updated_providers
+         where (select count(*) from updated_profiles) >= 0`
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    },
+
+    async deleteProvider(providerId: string): Promise<AiProviderConfigRecord | null> {
+      const result = await db.query<ProviderRow>(
+        `with unlinked_profiles as (
+           update ai_profile_sets set provider_config_id = null, model_id = null, runtime = null,
+             capabilities = '[]'::jsonb, updated_at = now()
+           where provider_config_id = $1
+           returning id
+         )
+         delete from ai_provider_configs
+         where id = $1 and (select count(*) from unlinked_profiles) >= 0
+         returning ${providerReturning}`,
+        [providerId]
+      );
+      const row = result.rows[0];
+      return row ? mapProvider(row) : null;
     },
 
     async createProfile(input: {
