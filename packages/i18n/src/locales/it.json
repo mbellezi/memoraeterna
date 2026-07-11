@@ -201,6 +201,57 @@
   },
   "settings": {
     "title": "Impostazioni",
+    "dashboard": {
+      "eyebrow": "Centro di controllo",
+      "title": "Configura il tuo spazio di conoscenza",
+      "description": "Gestisci aspetto, intelligenza, integrazioni e dati di Memora Eterna da un unico spazio mirato.",
+      "navigation": {
+        "label": "Ambiti di configurazione",
+        "overview": "Panoramica",
+        "overviewDescription": "Stato e scorciatoie",
+        "personalization": "Aspetto e corrispondenza",
+        "personalizationDescription": "Interfaccia e collegamenti di conoscenza",
+        "intelligence": "IA ed elaborazione",
+        "intelligenceDescription": "Provider, profili e instradamento",
+        "models": "Modelli locali",
+        "modelsDescription": "Catalogo offline e runtime",
+        "connections": "Connessioni",
+        "connectionsDescription": "Gateway, client e Obsidian",
+        "data": "Dati e sicurezza",
+        "dataDescription": "Archiviazione, backup e ripristino"
+      },
+      "summary": {
+        "interface": "Interfaccia",
+        "knowledgeMatching": "Soglia di corrispondenza",
+        "obsidian": "Sincronizzazione Obsidian",
+        "uploadCopies": "Originali caricati"
+      },
+      "states": {
+        "active": "Attivo",
+        "needsSetup": "Da configurare",
+        "enabled": "Copie abilitate",
+        "internalOnly": "Solo archiviazione interna"
+      },
+      "overview": {
+        "title": "Il tuo spazio a colpo d'occhio",
+        "description": "Controlla i segnali piu importanti, quindi apri solo l'ambito di configurazione necessario. IA e modelli locali mantengono flussi dedicati."
+      },
+      "openScope": "Apri impostazioni",
+      "appearanceDescription": "Scegli la lingua e la modalita visiva usate nell'app desktop.",
+      "obsidianDescription": "Controlla la proiezione nel vault gestito, la sincronizzazione e il ciclo di vita dei file.",
+      "storageDescription": "Scegli se conservare anche una copia esterna gestita dei file originali caricati.",
+      "uploadCopiesDescription": "Conserva una seconda copia gestita di ogni file originale nella cartella seguente.",
+      "dangerZone": "Zona pericolosa",
+      "deletePolicyDescriptions": {
+        "tombstone": "Conserva un record recuperabile dell'eliminazione prima di rimuovere il contenuto.",
+        "archive": "Archivia il contenuto rimosso invece di eliminarlo immediatamente.",
+        "delete": "Rimuovi definitivamente il contenuto gestito quando l'eliminazione viene sincronizzata."
+      },
+      "syncDescriptions": {
+        "enabled": "Proietta fonti e note gestite nel vault configurato.",
+        "paused": "Interrompi temporaneamente la sincronizzazione senza rimuoverne la configurazione."
+      }
+    },
     "language": {
       "title": "Lingua",
       "uiLocale": "Lingua dell'interfaccia",
@@ -255,6 +306,11 @@
     "reset": { "title": "Reimposta libreria", "description": "Elimina tutta la libreria, i file gestiti, i vettori, i processi e le note atomiche. I modelli locali scaricati e le impostazioni vengono conservati.", "action": "Reimposta tutto", "confirmation": "Eliminare definitivamente tutta la libreria, i file gestiti, i vettori e le note atomiche? I modelli locali scaricati saranno conservati.", "completed": "Libreria reimpostata.", "completedWithWarnings": "Libreria reimpostata, ma alcuni file gestiti non sono stati rimossi.", "failed": "Impossibile reimpostare la libreria." },
     "ai": {
       "title": "Provider e profili IA", "provider": "Provider", "google": "Google Gemini",
+      "sections": {
+        "providers": "Provider e modelli", "providersDescription": "Credenziali remote e valori predefiniti",
+        "profiles": "Profili", "profilesDescription": "Privacy, modello e parametri",
+        "routing": "Instradamento attivita", "routingDescription": "Scegli il profilo per ogni attivita"
+      },
       "openAiCompatible": "Compatibile OpenAI", "displayName": "Nome visualizzato", "baseUrl": "URL base",
       "model": "Modello", "apiKey": "Chiave API", "saveProvider": "Salva provider", "test": "Testa",
       "connectionOk": "Connessione riuscita.", "profiles": "Profili", "profileName": "Nome profilo",

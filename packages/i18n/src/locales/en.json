@@ -252,6 +252,57 @@
   },
   "settings": {
     "title": "Settings",
+    "dashboard": {
+      "eyebrow": "Control center",
+      "title": "Configure your knowledge workspace",
+      "description": "Manage the look, intelligence, integrations and data behind Memora Eterna from one focused workspace.",
+      "navigation": {
+        "label": "Configuration scopes",
+        "overview": "Overview",
+        "overviewDescription": "Health and shortcuts",
+        "personalization": "Appearance & matching",
+        "personalizationDescription": "Interface and knowledge links",
+        "intelligence": "AI & processing",
+        "intelligenceDescription": "Providers, profiles and routing",
+        "models": "Local models",
+        "modelsDescription": "Offline catalog and runtimes",
+        "connections": "Connections",
+        "connectionsDescription": "Gateway, clients and Obsidian",
+        "data": "Data & safety",
+        "dataDescription": "Storage, backup and reset"
+      },
+      "summary": {
+        "interface": "Interface",
+        "knowledgeMatching": "Matching threshold",
+        "obsidian": "Obsidian sync",
+        "uploadCopies": "Uploaded originals"
+      },
+      "states": {
+        "active": "Active",
+        "needsSetup": "Needs setup",
+        "enabled": "Copies enabled",
+        "internalOnly": "Internal storage only"
+      },
+      "overview": {
+        "title": "Your workspace at a glance",
+        "description": "Review the most important signals, then open only the configuration scope you need. Changes to AI and local models keep their own focused workflows."
+      },
+      "openScope": "Open settings",
+      "appearanceDescription": "Choose the language and visual mode used throughout the desktop app.",
+      "obsidianDescription": "Control the managed vault projection, synchronization and file lifecycle.",
+      "storageDescription": "Choose whether original uploaded files also receive an external managed copy.",
+      "uploadCopiesDescription": "Keep a second managed copy of every original file in the folder below.",
+      "dangerZone": "Danger zone",
+      "deletePolicyDescriptions": {
+        "tombstone": "Keep a recoverable deletion record before removing content.",
+        "archive": "Move removed content aside instead of deleting it immediately.",
+        "delete": "Permanently remove managed content when deletion is synchronized."
+      },
+      "syncDescriptions": {
+        "enabled": "Project managed sources and notes into your configured vault.",
+        "paused": "Temporarily stop synchronization without removing its configuration."
+      }
+    },
     "language": {
       "title": "Language",
       "uiLocale": "Interface language",
@@ -311,6 +362,11 @@
     "reset": { "title": "Reset library", "description": "Delete the entire library, managed files, vectors, jobs and atomic notes. Downloaded local models and settings are preserved.", "action": "Reset everything", "confirmation": "Permanently delete the entire library, managed files, vectors and atomic notes? Downloaded local models will be preserved.", "completed": "Library reset completed.", "completedWithWarnings": "Library reset completed, but some managed files could not be removed.", "failed": "The library could not be reset." },
     "ai": {
       "title": "AI providers and profiles", "provider": "Provider", "google": "Google Gemini",
+      "sections": {
+        "providers": "Providers & models", "providersDescription": "Remote credentials and defaults",
+        "profiles": "Profiles", "profilesDescription": "Privacy, model and task parameters",
+        "routing": "Task routing", "routingDescription": "Choose the profile for each task"
+      },
       "openAiCompatible": "OpenAI-compatible", "displayName": "Display name", "baseUrl": "Base URL",
       "model": "Model", "apiKey": "API key", "saveProvider": "Save provider", "test": "Test",
       "connectionOk": "Connection successful.", "profiles": "Profiles", "profileName": "Profile name",

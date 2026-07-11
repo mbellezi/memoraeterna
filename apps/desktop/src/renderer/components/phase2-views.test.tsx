@@ -6,12 +6,19 @@ import { AiSettingsView } from "./AiSettingsView";
 import { ImportView } from "./ImportView";
 import { JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
-import { jobRecordSchema } from "../../shared/ipc";
+import {
+  appSettingsSchema,
+  defaultAppSettings,
+  defaultStorageSettings,
+  jobRecordSchema,
+  storageSettingsSchema
+} from "../../shared/ipc";
 import { SearchView } from "./SearchView";
 import { LibraryView } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
 import { LocalModelsView } from "./LocalModelsView";
 import { BackupView } from "./BackupView";
+import { SettingsView } from "./SettingsView";
 
 const t = createTranslator("en");
 
@@ -27,6 +34,34 @@ describe("phase 2 renderer views", () => {
     expect(renderToString(<SearchView t={t} />)).toContain("Search sources and evidence");
     expect(renderToString(<JobsView t={t} />)).toContain("Your processing workspace is ready");
     expect(renderToString(<AiSettingsView t={t} />)).toContain("AI providers and profiles");
+  });
+
+  it("renders settings as scoped dashboard instead of a single configuration list", () => {
+    const html = renderToString(
+      <SettingsView
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        status="shell.states.ready"
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onRelationThresholdChange={async () => undefined}
+        onChange={() => undefined}
+        onSave={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Configure your knowledge workspace");
+    expect(html).toContain("Configuration scopes");
+    expect(html).toContain("Appearance &amp; matching");
+    expect(html).toContain("Data &amp; safety");
   });
 
   it("groups a parent ingestion and its AI stage into one file workflow", () => {

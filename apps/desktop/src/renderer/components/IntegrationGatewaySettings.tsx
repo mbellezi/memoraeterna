@@ -45,12 +45,17 @@ export function IntegrationGatewaySettings({ t }: { t: (key: MessageKey) => stri
   }
 
   return (
-    <section className="grid gap-4 border-b border-slate-200 pb-6 dark:border-slate-800">
-      <div className="flex items-center gap-2">
-        <PlugZap className="h-5 w-5 text-amber-700 dark:text-amber-300" aria-hidden="true" />
-        <h2 className="text-lg font-semibold text-slate-950 dark:text-slate-50">{t("settings.integrations.gateway")}</h2>
+    <section className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <PlugZap className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <h2 className="font-semibold text-slate-950 dark:text-slate-50">{t("settings.integrations.gateway")}</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t("settings.dashboard.navigation.connectionsDescription")}</p>
+        </div>
       </div>
-      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="font-medium text-slate-900 dark:text-slate-100">
           {t("settings.integrations.gatewayStatus")}: {gateway ? t(`settings.integrations.states.${gateway.state}` as MessageKey) : t("shell.states.loading")}
         </div>
@@ -79,7 +84,7 @@ export function IntegrationGatewaySettings({ t }: { t: (key: MessageKey) => stri
         </Button>
       </div>
       {pairing ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
           <p className="text-sm font-medium text-amber-950 dark:text-amber-100">{t("integrations.clientId")}</p>
           <code className="mt-2 block break-all rounded bg-white p-2 text-xs dark:bg-slate-950">{pairing.clientId}</code>
           <p className="text-sm font-medium text-amber-950 dark:text-amber-100">{t("settings.integrations.pairingToken")}</p>
@@ -90,7 +95,7 @@ export function IntegrationGatewaySettings({ t }: { t: (key: MessageKey) => stri
       <div className="grid gap-2">
         <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("settings.integrations.authorizedClients")}</h3>
         {clients.length === 0 ? <p className="text-sm text-slate-500">{t("settings.integrations.noClients")}</p> : clients.map((client) => (
-          <div key={client.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 px-3 py-2 dark:border-slate-800">
+          <div key={client.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
             <div>
               <div className="text-sm font-medium text-slate-900 dark:text-slate-100">{client.displayName}</div>
               <div className="text-xs text-slate-500">{client.clientType} · {client.status}</div>

@@ -10,9 +10,9 @@ import {
 } from "@app/domain";
 
 export const summaryPromptVersion = "summary-v1";
-export const atomicNotePromptVersion = "atomic-note-v2";
+export const atomicNotePromptVersion = "atomic-note-v3";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v1";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v2";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v3";
 
 const atomicNoteGenerationJsonSchema = JSON.stringify(
   z.toJSONSchema(AtomicNoteGenerationOutputSchema),
@@ -92,20 +92,16 @@ export interface SummaryResult {
 }
 
 export function normalizeSummaryText(output: unknown): string {
-  if (typeof output === "object" && output !== null && "summary" in output) {
-    const summary = (output as { summary?: unknown }).summary;
-    if (typeof summary === "string" && summary.trim().length > 0) return summary.trim();
-  }
+  const structuredSummary = extractStructuredSummary(output);
+  if (structuredSummary) return structuredSummary;
   if (typeof output !== "string" || output.trim().length === 0) {
     throw new Error("ai_task_empty_output");
   }
   const trimmed = output.trim();
   try {
     const parsed = parseJsonOutput(trimmed);
-    if (typeof parsed === "object" && parsed !== null && "summary" in parsed) {
-      const summary = (parsed as { summary?: unknown }).summary;
-      if (typeof summary === "string" && summary.trim().length > 0) return summary.trim();
-    }
+    const parsedSummary = extractStructuredSummary(parsed);
+    if (parsedSummary) return parsedSummary;
   } catch {
     // Plain-text summaries are the normal response format.
   }
@@ -167,7 +163,13 @@ export async function generateKnowledgeGraphFromAtomicNotes(
     try {
       parsed = parseKnowledgeGraphOutput(execution.output, evidenceAliases);
     } catch (initialError) {
-      const repaired = await run(buildKnowledgeGraphRepairPrompt(source, group, evidenceAliases));
+      const repaired = await run(buildKnowledgeGraphRepairPrompt(
+        source,
+        group,
+        evidenceAliases,
+        execution.output,
+        initialError
+      ));
       if (!repaired) throw initialError;
       try {
         parsed = parseKnowledgeGraphOutput(repaired.output, evidenceAliases);
@@ -206,6 +208,7 @@ ${knowledgeGraphJsonContract}
 
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
 Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
+Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
 Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
 The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Keep the response small: at most 12 entities, 8 claims, and 12 relations. Use empty arrays when no supported items exist.
@@ -228,19 +231,28 @@ export function parseKnowledgeGraphOutput(
 function buildKnowledgeGraphRepairPrompt(
   source: { title: string; language: string },
   notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
-  evidenceAliases: ReadonlyMap<string, string>
+  evidenceAliases: ReadonlyMap<string, string>,
+  previousOutput: unknown,
+  validationError: unknown
 ): string {
-  return `The previous knowledge-graph response was invalid or incomplete. Regenerate it only from the atomic notes below.
+  return `The previous knowledge-graph response was invalid or incomplete. Correct it using only the atomic notes below.
 Return one complete compact JSON object only. Do not include reasoning, commentary, or Markdown fences.
 Use exactly this shape and property names:
 ${knowledgeGraphJsonContract}
 
+Validation problems:
+${structuredOutputRepairFeedback(validationError)}
+
+Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
 Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary.
 The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Source title: ${source.title}
 Source language: ${source.language}
 Atomic notes:
-${formatAtomicNotesForGraph(notes, evidenceAliases)}`;
+${formatAtomicNotesForGraph(notes, evidenceAliases)}
+
+Previous invalid output:
+${serializeOutputForRepair(previousOutput)}`;
 }
 
 export function parseKnowledgeGraphBatchCheckpoints(value: unknown): KnowledgeGraphBatchCheckpoint[] {
@@ -258,7 +270,7 @@ The JSON must conform exactly to this JSON Schema:
 ${atomicNoteGenerationJsonSchema}
 
 Every note must express one self-contained idea and cite at least one supplied chunk id. Do not invent ids.
-Use the exact property name "bodyMarkdown" and close the root JSON object.
+Use the exact property names "bodyMarkdown" and "evidenceChunkIds". The latter is always plural; never use "evidenceChunkId". Close the root JSON object.
 Set each "language" field to the language used in that note.
 
 Source title: ${source.title}
@@ -268,14 +280,18 @@ ${chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")}`;
 
 export function buildAtomicNoteRepairPrompt(
   previousOutput: unknown,
-  allowedChunkIds: ReadonlyArray<string>
+  allowedChunkIds: ReadonlyArray<string>,
+  validationError: unknown
 ): string {
   return `The previous atomic-note output failed JSON parsing or schema validation.
 Return exactly one corrected, complete JSON object. Do not use Markdown fences or add commentary.
 The JSON must conform exactly to this JSON Schema:
 ${atomicNoteGenerationJsonSchema}
 
-Use the exact property name "bodyMarkdown" and close the root JSON object.
+Validation problems:
+${structuredOutputRepairFeedback(validationError)}
+
+Use the exact property names "bodyMarkdown" and "evidenceChunkIds". The latter is always plural; never use "evidenceChunkId". Close the root JSON object.
 Set each "language" field to the language used in that note.
 Evidence chunk ids must come only from this list: ${JSON.stringify(allowedChunkIds)}
 
@@ -287,7 +303,9 @@ export function parseAtomicNoteGenerationOutput(
   output: unknown,
   allowedChunkIds?: ReadonlySet<string>
 ): AtomicNoteGenerationOutput {
-  const value = AtomicNoteGenerationOutputSchema.parse(parseJsonOutput(output));
+  const value = AtomicNoteGenerationOutputSchema.parse(
+    normalizeAtomicNoteGenerationOutput(parseJsonOutput(output))
+  );
   if (allowedChunkIds) {
     for (const note of value.notes) {
       for (const chunkId of note.evidenceChunkIds) {
@@ -316,7 +334,8 @@ export async function generateAtomicNoteCandidates(
   } catch (initialError) {
     const repairedExecution = await run(buildAtomicNoteRepairPrompt(
       execution.output,
-      [...allowedChunkIds]
+      [...allowedChunkIds],
+      initialError
     ));
     if (!repairedExecution) throw initialError;
     return {
@@ -523,6 +542,50 @@ function executionTrace(execution: KnowledgeAiExecution): KnowledgeGraphExecutio
     profileId: execution.profileId,
     aiTaskRunId: execution.aiTaskRunId,
     ...(execution.outputLanguage !== undefined ? { outputLanguage: execution.outputLanguage } : {})
+  };
+}
+
+function extractStructuredSummary(output: unknown): string | null {
+  if (typeof output !== "object" || output === null || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+  const summary = record.summary;
+  if (typeof summary === "string" && summary.trim().length > 0) return summary.trim();
+  const entries = Object.entries(record);
+  if (entries.length !== 1) return null;
+  const value = entries[0]?.[1];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function structuredOutputRepairFeedback(error: unknown): string {
+  if (error instanceof SyntaxError) return "- The response is not valid JSON. Fix its JSON syntax and close every string, array, and object.";
+  if (error instanceof z.ZodError) {
+    return error.issues.slice(0, 8).map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+      return `- ${path}: ${issue.message}`;
+    }).join("\n");
+  }
+  if (error instanceof Error && error.message.startsWith("knowledge_graph_unknown_evidence_alias:")) {
+    return `- ${error.message}. Use only the allowed evidence aliases listed below.`;
+  }
+  if (error instanceof Error && error.message === "atomic_note_unknown_evidence_chunk") {
+    return "- One or more evidenceChunkIds are not allowed. Use only the supplied chunk ids listed below.";
+  }
+  return "- The response failed the required structured-output schema. Match the schema and all consistency rules exactly.";
+}
+
+function normalizeAtomicNoteGenerationOutput(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const root = value as Record<string, unknown>;
+  if (!Array.isArray(root.notes)) return value;
+  return {
+    ...root,
+    notes: root.notes.map((note) => {
+      if (typeof note !== "object" || note === null || Array.isArray(note)) return note;
+      const record = note as Record<string, unknown>;
+      if ("evidenceChunkIds" in record || !Array.isArray(record.evidenceChunkId)) return note;
+      const { evidenceChunkId, ...canonical } = record;
+      return { ...canonical, evidenceChunkIds: evidenceChunkId };
+    })
   };
 }
 

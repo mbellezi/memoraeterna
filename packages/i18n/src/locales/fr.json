@@ -201,6 +201,57 @@
   },
   "settings": {
     "title": "Parametres",
+    "dashboard": {
+      "eyebrow": "Centre de controle",
+      "title": "Configurez votre espace de connaissances",
+      "description": "Gerez l'apparence, l'intelligence, les integrations et les donnees de Memora Eterna depuis un espace unique et cible.",
+      "navigation": {
+        "label": "Domaines de configuration",
+        "overview": "Vue d'ensemble",
+        "overviewDescription": "Etat et raccourcis",
+        "personalization": "Apparence et correspondance",
+        "personalizationDescription": "Interface et liens de connaissance",
+        "intelligence": "IA et traitement",
+        "intelligenceDescription": "Fournisseurs, profils et routage",
+        "models": "Modeles locaux",
+        "modelsDescription": "Catalogue hors ligne et moteurs",
+        "connections": "Connexions",
+        "connectionsDescription": "Passerelle, clients et Obsidian",
+        "data": "Donnees et securite",
+        "dataDescription": "Stockage, sauvegarde et reinitialisation"
+      },
+      "summary": {
+        "interface": "Interface",
+        "knowledgeMatching": "Seuil de correspondance",
+        "obsidian": "Synchronisation Obsidian",
+        "uploadCopies": "Fichiers originaux"
+      },
+      "states": {
+        "active": "Actif",
+        "needsSetup": "A configurer",
+        "enabled": "Copies activees",
+        "internalOnly": "Stockage interne uniquement"
+      },
+      "overview": {
+        "title": "Votre espace en un coup d'oeil",
+        "description": "Consultez les signaux essentiels, puis ouvrez uniquement le domaine necessaire. L'IA et les modeles locaux conservent leurs propres flux dedies."
+      },
+      "openScope": "Ouvrir les parametres",
+      "appearanceDescription": "Choisissez la langue et le mode visuel utilises dans toute l'application de bureau.",
+      "obsidianDescription": "Controlez la projection dans le coffre gere, la synchronisation et le cycle de vie des fichiers.",
+      "storageDescription": "Choisissez si les fichiers originaux importes recoivent aussi une copie externe geree.",
+      "uploadCopiesDescription": "Conservez une seconde copie geree de chaque fichier original dans le dossier ci-dessous.",
+      "dangerZone": "Zone dangereuse",
+      "deletePolicyDescriptions": {
+        "tombstone": "Conservez une trace recuperable de la suppression avant de retirer le contenu.",
+        "archive": "Archivez le contenu retire au lieu de le supprimer immediatement.",
+        "delete": "Supprimez definitivement le contenu gere lorsque la suppression est synchronisee."
+      },
+      "syncDescriptions": {
+        "enabled": "Projetez les sources et notes gerees dans le coffre configure.",
+        "paused": "Suspendez temporairement la synchronisation sans supprimer sa configuration."
+      }
+    },
     "language": {
       "title": "Langue",
       "uiLocale": "Langue de l'interface",
@@ -255,6 +306,11 @@
     "reset": { "title": "Reinitialiser la bibliotheque", "description": "Supprime toute la bibliotheque, les fichiers geres, les vecteurs, les taches et les notes atomiques. Les modeles locaux telecharges et les reglages sont conserves.", "action": "Tout reinitialiser", "confirmation": "Supprimer definitivement toute la bibliotheque, les fichiers geres, les vecteurs et les notes atomiques ? Les modeles locaux telecharges seront conserves.", "completed": "Bibliotheque reinitialisee.", "completedWithWarnings": "Bibliotheque reinitialisee, mais certains fichiers geres n'ont pas pu etre supprimes.", "failed": "Impossible de reinitialiser la bibliotheque." },
     "ai": {
       "title": "Fournisseurs et profils IA", "provider": "Fournisseur", "google": "Google Gemini",
+      "sections": {
+        "providers": "Fournisseurs et modeles", "providersDescription": "Identifiants distants et valeurs par defaut",
+        "profiles": "Profils", "profilesDescription": "Confidentialite, modele et parametres",
+        "routing": "Routage des taches", "routingDescription": "Choisissez le profil de chaque tache"
+      },
       "openAiCompatible": "Compatible OpenAI", "displayName": "Nom affiche", "baseUrl": "URL de base",
       "model": "Modele", "apiKey": "Cle API", "saveProvider": "Enregistrer le fournisseur", "test": "Tester",
       "connectionOk": "Connexion reussie.", "profiles": "Profils", "profileName": "Nom du profil",

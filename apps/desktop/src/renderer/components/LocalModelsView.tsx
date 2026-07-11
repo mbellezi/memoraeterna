@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   CircleStop,
   Cpu,
   Download,
@@ -100,12 +101,12 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   }
 
   return (
-    <section className="grid gap-5 rounded-md border border-slate-200 p-5 dark:border-slate-800">
+    <section className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex items-center gap-2">
         <Cpu className="h-5 w-5 text-emerald-700 dark:text-emerald-300" aria-hidden="true" />
         <h2 className="text-lg font-semibold">{t("localModels.title")}</h2>
       </div>
-      <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900 md:grid-cols-[1fr_auto]">
+      <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900 md:grid-cols-[1fr_auto]">
         <div className="grid gap-2">
           <Label htmlFor="repositoryToken">
             <span className="inline-flex items-center gap-2"><KeyRound className="h-4 w-4" aria-hidden="true" />{t("localModels.repositoryToken")}</span>
@@ -153,8 +154,8 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
             : 0;
           const licenseAccepted = model.licenseAccepted || acceptedLicenses.has(model.catalogId);
           return (
-            <article key={model.id} className="grid gap-3 rounded-md border border-slate-200 p-4 dark:border-slate-800">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+            <details key={model.id} open={active} className="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60 open:ring-2 open:ring-emerald-100 dark:border-slate-800 dark:bg-slate-900/50 dark:open:ring-emerald-950">
+              <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 p-4">
                 <div className="grid gap-1">
                   <h3 className="font-medium">{model.displayName}</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -164,53 +165,58 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
                     {t(`localModels.compatibility.${model.compatibilityReason}` as MessageKey)}
                   </p>
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-900">
-                  {model.status === "ready" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> : <HardDriveDownload className="h-3.5 w-3.5" aria-hidden="true" />}
-                  {t(`localModels.status.${model.status}` as MessageKey)}
+                <span className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-900">
+                    {model.status === "ready" ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" /> : <HardDriveDownload className="h-3.5 w-3.5" aria-hidden="true" />}
+                    {t(`localModels.status.${model.status}` as MessageKey)}
+                  </span>
+                  <ChevronDown className="h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true" />
                 </span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300">{model.capabilities.join(" · ")}</p>
-              <LocalModelDefaults model={model} t={t} onSave={(parameters) => run(() => window.app.localModels.setDefaults(model.id, parameters))} />
-              {model.requiresLicenseAcceptance && !model.licenseAccepted ? (
-                <label className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={acceptedLicenses.has(model.catalogId)}
-                    onChange={(event) => setAcceptedLicenses((current) => {
-                      const next = new Set(current);
-                      if (event.target.checked) next.add(model.catalogId); else next.delete(model.catalogId);
-                      return next;
-                    })}
-                  />
-                  <span>{t("localModels.licenseAccept")} <a className="text-cyan-700 underline dark:text-cyan-300" href={model.licenseUrl} target="_blank" rel="noreferrer">{model.licenseName}</a></span>
-                </label>
-              ) : null}
-              {active && model.download ? (
-                <div className="grid gap-2">
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div className="h-full bg-cyan-600" style={{ width: `${progress}%` }} /></div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    {model.download.currentFile ?? t("localModels.progress.verifying")} · {formatBytes(model.download.downloadedBytes)} / {formatBytes(model.download.totalBytes)} · {formatBytes(model.download.bytesPerSecond)}/s · {formatEta(model.download.etaSeconds, t)}
-                  </p>
+              </summary>
+              <div className="grid gap-3 border-t border-slate-200 p-4 dark:border-slate-800">
+                <p className="text-xs text-slate-600 dark:text-slate-300">{model.capabilities.join(" · ")}</p>
+                <LocalModelDefaults model={model} t={t} onSave={(parameters) => run(() => window.app.localModels.setDefaults(model.id, parameters))} />
+                {model.requiresLicenseAcceptance && !model.licenseAccepted ? (
+                  <label className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={acceptedLicenses.has(model.catalogId)}
+                      onChange={(event) => setAcceptedLicenses((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(model.catalogId); else next.delete(model.catalogId);
+                        return next;
+                      })}
+                    />
+                    <span>{t("localModels.licenseAccept")} <a className="text-cyan-700 underline dark:text-cyan-300" href={model.licenseUrl} target="_blank" rel="noreferrer">{model.licenseName}</a></span>
+                  </label>
+                ) : null}
+                {active && model.download ? (
+                  <div className="grid gap-2">
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"><div className="h-full bg-cyan-600" style={{ width: `${progress}%` }} /></div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      {model.download.currentFile ?? t("localModels.progress.verifying")} · {formatBytes(model.download.downloadedBytes)} / {formatBytes(model.download.totalBytes)} · {formatBytes(model.download.bytesPerSecond)}/s · {formatEta(model.download.etaSeconds, t)}
+                    </p>
+                  </div>
+                ) : null}
+                {model.lastError ? <p className="text-sm text-rose-700 dark:text-rose-300">{translateError(model.lastError, t)}</p> : null}
+                {model.profilesUsing.length > 0 ? <p className="text-xs text-amber-700 dark:text-amber-300">{t("localModels.profileUsage")}: {model.profilesUsing.join(", ")}</p> : null}
+                <div className="flex flex-wrap justify-end gap-2">
+                  {model.status === "not_downloaded" ? <Button type="button" disabled={!model.compatible || (model.requiresLicenseAcceptance && !licenseAccepted)} onClick={() => void run(() => window.app.localModels.download({ catalogId: model.catalogId, acceptLicense: licenseAccepted }))}><Download className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.download")}</Button> : null}
+                  {active ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void run(() => window.app.localModels.cancel(model.catalogId))}><CircleStop className="h-4 w-4" aria-hidden="true" />{t("shell.actions.cancel")}</Button> : null}
+                  {model.status === "failed" ? <Button type="button" onClick={() => void run(() => window.app.localModels.resume(model.catalogId))}><RefreshCw className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.resume")}</Button> : null}
+                  {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={testingModelId !== null} onClick={() => void testModel(model)}>{testingModelId === model.id ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}{t(testingModelId === model.id ? "shell.states.loading" : "localModels.actions.test")}</Button> : null}
+                  {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={model.profilesUsing.length > 0} onClick={() => {
+                    if (window.confirm(t("localModels.removeConfirmation"))) void run(() => window.app.localModels.remove(model.catalogId));
+                  }}><Trash2 className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.remove")}</Button> : null}
                 </div>
-              ) : null}
-              {model.lastError ? <p className="text-sm text-rose-700 dark:text-rose-300">{translateError(model.lastError, t)}</p> : null}
-              {model.profilesUsing.length > 0 ? <p className="text-xs text-amber-700 dark:text-amber-300">{t("localModels.profileUsage")}: {model.profilesUsing.join(", ")}</p> : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                {model.status === "not_downloaded" ? <Button type="button" disabled={!model.compatible || (model.requiresLicenseAcceptance && !licenseAccepted)} onClick={() => void run(() => window.app.localModels.download({ catalogId: model.catalogId, acceptLicense: licenseAccepted }))}><Download className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.download")}</Button> : null}
-                {active ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void run(() => window.app.localModels.cancel(model.catalogId))}><CircleStop className="h-4 w-4" aria-hidden="true" />{t("shell.actions.cancel")}</Button> : null}
-                {model.status === "failed" ? <Button type="button" onClick={() => void run(() => window.app.localModels.resume(model.catalogId))}><RefreshCw className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.resume")}</Button> : null}
-                {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={testingModelId !== null} onClick={() => void testModel(model)}>{testingModelId === model.id ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}{t(testingModelId === model.id ? "shell.states.loading" : "localModels.actions.test")}</Button> : null}
-                {model.status === "ready" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={model.profilesUsing.length > 0} onClick={() => {
-                  if (window.confirm(t("localModels.removeConfirmation"))) void run(() => window.app.localModels.remove(model.catalogId));
-                }}><Trash2 className="h-4 w-4" aria-hidden="true" />{t("localModels.actions.remove")}</Button> : null}
+                {testedModelId === model.id ? (
+                  <div className="grid gap-2" role="status">
+                    {testOutput ? <pre className="max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testOutput}</pre> : null}
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{t(status)}</p>
+                  </div>
+                ) : null}
               </div>
-              {testedModelId === model.id ? (
-                <div className="grid gap-2" role="status">
-                  {testOutput ? <pre className="max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testOutput}</pre> : null}
-                  <p className="text-sm text-slate-600 dark:text-slate-300">{t(status)}</p>
-                </div>
-              ) : null}
-            </article>
+            </details>
           );
         })}
       </div>

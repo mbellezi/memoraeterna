@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Bot, Copy, Plus, Save, TestTubeDiagonal, Trash2 } from "lucide-react";
+import { Bot, Copy, Plus, Route, Save, ServerCog, TestTubeDiagonal, Trash2, Users } from "lucide-react";
 import type { AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
@@ -24,6 +24,7 @@ interface AiSettingsViewProps {
 }
 
 type ModelPurpose = "generation" | "embedding" | "reranking";
+type AiSettingsScope = "providers" | "profiles" | "routing";
 type ModelOption = {
   value: string;
   label: string;
@@ -68,6 +69,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
   const [profilePrivacy, setProfilePrivacy] = useState<"allow_remote" | "offline_only">("allow_remote");
   const [profileLanguage, setProfileLanguage] = useState<AiOutputLanguage>("ui");
   const [status, setStatus] = useState<MessageKey>("shell.states.ready");
+  const [activeScope, setActiveScope] = useState<AiSettingsScope>("providers");
 
   async function load() {
     const [nextProviders, nextProfiles, nextTasks, nextRoutes, nextLocalModels] = await Promise.all([
@@ -140,30 +142,57 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
   const remoteGenerationModels = providers.filter((item) => !item.capabilities.includes("embedding"));
 
   return (
-    <section className="grid gap-6 rounded-md border border-slate-200 p-5 dark:border-slate-800">
+    <section className="grid gap-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex items-center gap-2">
         <Bot className="h-5 w-5 text-violet-700 dark:text-violet-300" aria-hidden="true" />
         <h2 className="text-lg font-semibold">{t("settings.ai.title")}</h2>
       </div>
 
-      <form className="grid gap-4 rounded-md bg-slate-50 p-4 dark:bg-slate-900" onSubmit={saveProvider}>
-        <h3 className="font-medium">{t("settings.ai.remoteModels")}</h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <Field label={t("settings.ai.provider")}><select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} className={selectClass}><option value="google">{t("settings.ai.google")}</option><option value="openai-compatible">{t("settings.ai.openAiCompatible")}</option></select></Field>
-          <Field label={t("settings.ai.modelPurpose")}><select value={modelPurpose} onChange={(event) => setModelPurpose(event.target.value as ModelPurpose)} className={selectClass}><option value="generation">{t("settings.ai.purposes.generation")}</option><option value="embedding">{t("settings.ai.purposes.embedding")}</option><option value="reranking">{t("settings.ai.purposes.reranking")}</option></select></Field>
-          <Field label={t("settings.ai.displayName")}><Input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
-          <Field label={t("settings.ai.baseUrl")}><Input type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></Field>
-          <Field label={t("settings.ai.model")}><Input required value={modelId} onChange={(event) => setModelId(event.target.value)} /></Field>
-          <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>
-        </div>
-        <AiParameterFields value={modelDefaults} onChange={setModelDefaults} t={t} embeddingOnly={modelPurpose === "embedding"} />
-        <div className="flex justify-end"><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
-      </form>
+      <div className="grid gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-900 sm:grid-cols-3" role="tablist" aria-label={t("settings.ai.title")}>
+        {([
+          { id: "providers", icon: ServerCog },
+          { id: "profiles", icon: Users },
+          { id: "routing", icon: Route }
+        ] as const).map(({ id, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={activeScope === id}
+            className={activeScope === id
+              ? "flex min-h-14 items-center gap-3 rounded-lg bg-white px-4 text-left text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white"
+              : "flex min-h-14 items-center gap-3 rounded-lg px-4 text-left text-slate-600 transition hover:bg-white/60 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"}
+            onClick={() => setActiveScope(id)}
+          >
+            <Icon className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+            <span>
+              <span className="block text-sm font-semibold">{t(`settings.ai.sections.${id}` as MessageKey)}</span>
+              <span className="mt-0.5 block text-xs text-slate-500">{t(`settings.ai.sections.${id}Description` as MessageKey)}</span>
+            </span>
+          </button>
+        ))}
+      </div>
 
-      <ModelGroup title={t("settings.ai.embeddingModels")} models={remoteEmbeddingModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
-      <ModelGroup title={t("settings.ai.generationModels")} models={remoteGenerationModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
+      {activeScope === "providers" ? <>
+        <form className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900" onSubmit={saveProvider}>
+          <h3 className="font-medium">{t("settings.ai.remoteModels")}</h3>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label={t("settings.ai.provider")}><select value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)} className={selectClass}><option value="google">{t("settings.ai.google")}</option><option value="openai-compatible">{t("settings.ai.openAiCompatible")}</option></select></Field>
+            <Field label={t("settings.ai.modelPurpose")}><select value={modelPurpose} onChange={(event) => setModelPurpose(event.target.value as ModelPurpose)} className={selectClass}><option value="generation">{t("settings.ai.purposes.generation")}</option><option value="embedding">{t("settings.ai.purposes.embedding")}</option><option value="reranking">{t("settings.ai.purposes.reranking")}</option></select></Field>
+            <Field label={t("settings.ai.displayName")}><Input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
+            <Field label={t("settings.ai.baseUrl")}><Input type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></Field>
+            <Field label={t("settings.ai.model")}><Input required value={modelId} onChange={(event) => setModelId(event.target.value)} /></Field>
+            <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>
+          </div>
+          <AiParameterFields value={modelDefaults} onChange={setModelDefaults} t={t} embeddingOnly={modelPurpose === "embedding"} />
+          <div className="flex justify-end"><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
+        </form>
 
-      <div className="grid gap-4 border-t border-slate-200 pt-5 dark:border-slate-800">
+        <ModelGroup title={t("settings.ai.embeddingModels")} models={remoteEmbeddingModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
+        <ModelGroup title={t("settings.ai.generationModels")} models={remoteGenerationModels} t={t} onSave={(model, defaults) => run(() => saveRemoteModelDefaults(model, defaults))} />
+      </> : null}
+
+      {activeScope === "profiles" ? <div className="grid gap-4">
         <h3 className="font-medium">{t("settings.ai.profiles")}</h3>
         <div className="grid gap-3 md:grid-cols-4">
           <Input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={t("settings.ai.profileName")} />
@@ -176,7 +205,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
             {profiles.map((profile) => <button key={profile.id} type="button" onClick={() => setSelectedProfileId(profile.id)} className={profile.id === selectedProfileId ? "flex items-center justify-between rounded-md border border-cyan-500 bg-cyan-50 px-3 py-2 text-left text-sm dark:bg-cyan-950" : "flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-left text-sm dark:border-slate-800"}><span>{profile.name}{profile.isDefault ? ` · ${t("settings.ai.defaultProfile")}` : ""}</span><Copy className="h-4 w-4" aria-hidden="true" onClick={(event) => { event.stopPropagation(); void run(() => window.app.ai.cloneProfile(profile.id, `${profile.name} 2`)); }} /></button>)}
           </div>
           {selectedProfile ? (
-            <div className="grid gap-4 rounded-md border border-slate-200 p-4 dark:border-slate-800">
+            <div className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50">
               <div className="flex justify-end">
                 <Button
                   type="button"
@@ -207,9 +236,9 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
             </div>
           ) : <p className="text-sm text-slate-600 dark:text-slate-300">{t("settings.ai.noProfiles")}</p>}
         </div>
-      </div>
+      </div> : null}
 
-      <div className="grid gap-3 border-t border-slate-200 pt-5 dark:border-slate-800">
+      {activeScope === "routing" ? <div className="grid gap-3">
         <h3 className="font-medium">{t("settings.ai.taskRouting")}</h3>
         <p className="text-sm text-slate-600 dark:text-slate-300">{t("settings.ai.taskRoutingDescription")}</p>
         <div className="grid gap-3 md:grid-cols-2">
@@ -219,7 +248,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
             return <Field key={task} label={t(`settings.ai.tasks.${task}` as MessageKey)}><select value={routes[task] ?? ""} disabled={eligibleProfiles.length === 0} onChange={(event) => void run(() => window.app.ai.setTaskRoute({ task, profileId: event.target.value }))} className={selectClass}><option value="">{t("settings.ai.selectProfile")}</option>{eligibleProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Field>;
           })}
         </div>
-      </div>
+      </div> : null}
       <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{t(status)}</p>
     </section>
   );
@@ -244,7 +273,7 @@ function ModelGroup({ title, models, t, onSave }: { title: string; models: AiPro
 function RemoteModelCard({ model, t, onSave }: { model: AiProviderConfig; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters) => Promise<unknown> }) {
   const [defaults, setDefaults] = useState(model.defaultParameters);
   const embeddingOnly = model.capabilities.includes("embedding");
-  return <article className="grid gap-3 rounded-md border border-slate-200 p-3 dark:border-slate-800"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">{model.displayName}</p><p className="text-xs text-slate-500">{model.modelId} · {model.provider}</p></div><Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void window.app.ai.testProvider(model.id)}><TestTubeDiagonal className="h-4 w-4" aria-hidden="true" />{t("settings.ai.test")}</Button></div><AiParameterFields value={defaults} onChange={setDefaults} t={t} embeddingOnly={embeddingOnly} /><div className="flex justify-end"><Button type="button" onClick={() => void onSave(model, defaults)}><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveDefaults")}</Button></div></article>;
+  return <article className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50"><div className="flex items-center justify-between gap-3"><div><p className="font-medium">{model.displayName}</p><p className="text-xs text-slate-500">{model.modelId} · {model.provider}</p></div><Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void window.app.ai.testProvider(model.id)}><TestTubeDiagonal className="h-4 w-4" aria-hidden="true" />{t("settings.ai.test")}</Button></div><AiParameterFields value={defaults} onChange={setDefaults} t={t} embeddingOnly={embeddingOnly} /><div className="flex justify-end"><Button type="button" onClick={() => void onSave(model, defaults)}><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveDefaults")}</Button></div></article>;
 }
 
 function ProfileHeader({ profile, providers, localModels, t, interfaceLanguage, onSave }: { profile: AiProfile; providers: AiProviderConfig[]; localModels: LocalModelView[]; t: (key: MessageKey) => string; interfaceLanguage: LanguageCode; onSave: (update: { privacyMode: "allow_remote" | "offline_only"; outputLanguage: AiOutputLanguage; providerConfigId?: string; localModelId?: string; modelId: string; runtime: "remote" | "gguf" | "mlx"; capabilities: AiCapability[] }) => Promise<unknown> }) {

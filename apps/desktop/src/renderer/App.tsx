@@ -33,14 +33,11 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { SettingsView } from "./components/SettingsView";
-import { AiSettingsView } from "./components/AiSettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
 import { SearchView } from "./components/SearchView";
 import { LibraryView } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
-import { LocalModelsView } from "./components/LocalModelsView";
-import { BackupView } from "./components/BackupView";
 import { DebugDashboard } from "./components/DebugDashboard";
 
 type ViewId = "library" | "import" | "search" | "review" | "jobs" | "debug" | "settings";
@@ -456,24 +453,19 @@ export function App({
         </header>
         <div className="min-h-0 flex-1 overflow-auto p-6">
           {activeView === "settings" ? (
-            <div className="grid gap-6">
-              <SettingsView
-                appSettings={appSettings}
-                settings={settings}
-                status={status}
-                isSaving={isSaving}
-                t={t}
-                onAppSettingsChange={(update) => {
-                  void updateAppSettings(update);
-                }}
-                onRelationThresholdChange={persistRelationThreshold}
-                onChange={setSettings}
-                onSave={saveSettings}
-              />
-              <AiSettingsView t={t} interfaceLanguage={appSettings.language} />
-              <LocalModelsView t={t} />
-              <BackupView t={t} />
-            </div>
+            <SettingsView
+              appSettings={appSettings}
+              settings={settings}
+              status={status}
+              isSaving={isSaving}
+              t={t}
+              onAppSettingsChange={(update) => {
+                void updateAppSettings(update);
+              }}
+              onRelationThresholdChange={persistRelationThreshold}
+              onChange={setSettings}
+              onSave={saveSettings}
+            />
           ) : activeView === "import" ? (
             <ImportView t={t} />
           ) : activeView === "search" ? (

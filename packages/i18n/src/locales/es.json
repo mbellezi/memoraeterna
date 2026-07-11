@@ -201,6 +201,57 @@
   },
   "settings": {
     "title": "Ajustes",
+    "dashboard": {
+      "eyebrow": "Centro de control",
+      "title": "Configura tu espacio de conocimiento",
+      "description": "Gestiona la apariencia, la inteligencia, las integraciones y los datos de Memora Eterna desde un unico espacio enfocado.",
+      "navigation": {
+        "label": "Ambitos de configuracion",
+        "overview": "Vista general",
+        "overviewDescription": "Estado y accesos directos",
+        "personalization": "Apariencia y coincidencias",
+        "personalizationDescription": "Interfaz y enlaces de conocimiento",
+        "intelligence": "IA y procesamiento",
+        "intelligenceDescription": "Proveedores, perfiles y enrutamiento",
+        "models": "Modelos locales",
+        "modelsDescription": "Catalogo sin conexion y runtimes",
+        "connections": "Conexiones",
+        "connectionsDescription": "Gateway, clientes y Obsidian",
+        "data": "Datos y seguridad",
+        "dataDescription": "Almacenamiento, copia y restablecimiento"
+      },
+      "summary": {
+        "interface": "Interfaz",
+        "knowledgeMatching": "Umbral de coincidencia",
+        "obsidian": "Sincronizacion con Obsidian",
+        "uploadCopies": "Archivos originales"
+      },
+      "states": {
+        "active": "Activo",
+        "needsSetup": "Requiere configuracion",
+        "enabled": "Copias activadas",
+        "internalOnly": "Solo almacenamiento interno"
+      },
+      "overview": {
+        "title": "Tu espacio de un vistazo",
+        "description": "Revisa las senales mas importantes y abre solo el ambito que necesites. La IA y los modelos locales conservan flujos propios y enfocados."
+      },
+      "openScope": "Abrir configuracion",
+      "appearanceDescription": "Elige el idioma y el modo visual utilizados en toda la aplicacion de escritorio.",
+      "obsidianDescription": "Controla la proyeccion en la boveda gestionada, la sincronizacion y el ciclo de vida de los archivos.",
+      "storageDescription": "Elige si los archivos originales cargados tambien reciben una copia externa gestionada.",
+      "uploadCopiesDescription": "Conserva una segunda copia gestionada de cada archivo original en la carpeta indicada.",
+      "dangerZone": "Zona de peligro",
+      "deletePolicyDescriptions": {
+        "tombstone": "Conserva un registro recuperable de la eliminacion antes de retirar el contenido.",
+        "archive": "Archiva el contenido retirado en lugar de eliminarlo inmediatamente.",
+        "delete": "Elimina permanentemente el contenido gestionado cuando se sincronice la eliminacion."
+      },
+      "syncDescriptions": {
+        "enabled": "Proyecta las fuentes y notas gestionadas en la boveda configurada.",
+        "paused": "Pausa temporalmente la sincronizacion sin eliminar su configuracion."
+      }
+    },
     "language": {
       "title": "Idioma",
       "uiLocale": "Idioma de la interfaz",
@@ -255,6 +306,11 @@
     "reset": { "title": "Restablecer biblioteca", "description": "Elimina toda la biblioteca, archivos gestionados, vectores, trabajos y notas atomicas. Se conservan los modelos locales descargados y la configuracion.", "action": "Restablecer todo", "confirmation": "Eliminar permanentemente toda la biblioteca, archivos gestionados, vectores y notas atomicas? Se conservaran los modelos locales descargados.", "completed": "Biblioteca restablecida.", "completedWithWarnings": "Biblioteca restablecida, pero algunos archivos gestionados no se pudieron eliminar.", "failed": "No se pudo restablecer la biblioteca." },
     "ai": {
       "title": "Proveedores y perfiles de IA", "provider": "Proveedor", "google": "Google Gemini",
+      "sections": {
+        "providers": "Proveedores y modelos", "providersDescription": "Credenciales remotas y valores predeterminados",
+        "profiles": "Perfiles", "profilesDescription": "Privacidad, modelo y parametros",
+        "routing": "Enrutamiento de tareas", "routingDescription": "Elige el perfil para cada tarea"
+      },
       "openAiCompatible": "Compatible con OpenAI", "displayName": "Nombre visible", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Clave API", "saveProvider": "Guardar proveedor", "test": "Probar",
       "connectionOk": "Conexion correcta.", "profiles": "Perfiles", "profileName": "Nombre del perfil",

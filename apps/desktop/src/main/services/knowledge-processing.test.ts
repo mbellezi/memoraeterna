@@ -18,6 +18,7 @@ describe("knowledge processing", () => {
   it("unwraps JSON summary responses while preserving plain text", () => {
     expect(normalizeSummaryText('{"summary":"Generated summary"}')).toBe("Generated summary");
     expect(normalizeSummaryText('```json\n{"summary":"Fenced summary"}\n```')).toBe("Fenced summary");
+    expect(normalizeSummaryText('```json\n{"resumo":"Resumo em português"}\n```')).toBe("Resumo em português");
     expect(normalizeSummaryText("Plain summary")).toBe("Plain summary");
   });
 
@@ -105,6 +106,48 @@ describe("knowledge processing", () => {
     expect(result?.batches[0]?.entities[0]?.canonicalName).toBe("Local-first");
     expect(result?.executions[0]?.aiTaskRunId).toBe("run-repaired");
     expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toContain("Previous invalid output");
+    expect(run.mock.calls[1]?.[0]).toContain('{"entities":[{"key":"e1"');
+    expect(run.mock.calls[1]?.[0]).toContain("not valid JSON");
+  });
+
+  it("tells the repair model to replace free-text relation endpoints with entity keys", async () => {
+    const entity = {
+      key: "e1", type: "Concept", canonicalName: "Imantação", aliases: [],
+      confidence: 0.9, evidenceChunkIds: ["c1"]
+    };
+    const invalid = JSON.stringify({
+      entities: [entity], claims: [],
+      relations: [{
+        subjectEntityKey: "e1", predicate: "involves", objectEntityKey: "co-presença",
+        confidence: 0.9, evidenceChunkIds: ["c1"]
+      }]
+    });
+    const valid = JSON.stringify({ entities: [entity], claims: [], relations: [] });
+    const run = vi.fn()
+      .mockResolvedValueOnce({
+        output: invalid, providerId: "test", modelId: "mock", runtime: "local",
+        profileId: "profile-1", aiTaskRunId: "run-invalid"
+      })
+      .mockResolvedValueOnce({
+        output: valid, providerId: "test", modelId: "mock", runtime: "local",
+        profileId: "profile-1", aiTaskRunId: "run-repaired"
+      });
+
+    const result = await generateKnowledgeGraphFromAtomicNotes(
+      { title: "Source", language: "pt-BR" },
+      [{
+        id: "note-1", title: "Imantação", ideaStatement: "Imantação envolve co-presença.",
+        bodyMarkdown: "A imantação é uma sintonia progressiva.", evidenceChunkIds: ["chunk-1"]
+      }],
+      run
+    );
+
+    expect(result?.batches[0]?.relations).toEqual([]);
+    expect(result?.executions[0]?.aiTaskRunId).toBe("run-repaired");
+    expect(run.mock.calls[1]?.[0]).toContain("relations.0: relation references an unknown entity key");
+    expect(run.mock.calls[1]?.[0]).toContain("must exactly match an entities[].key");
+    expect(run.mock.calls[1]?.[0]).toContain('"objectEntityKey":"co-presença"');
   });
 
   it("returns a stable graph error code after two invalid responses", async () => {
@@ -134,6 +177,7 @@ describe("knowledge processing", () => {
     expect(prompt).toContain("Atomic notes:");
     expect(prompt).toContain("evidence=c1");
     expect(prompt).toContain('only allowed evidence aliases in this batch are: ["c1"]');
+    expect(prompt).toContain("must exactly match an entities[].key");
     expect(prompt).not.toContain("00000000-0000-4000-8000-000000000001");
   });
 
@@ -204,6 +248,7 @@ describe("knowledge processing", () => {
     );
 
     expect(prompt).toContain('"bodyMarkdown"');
+    expect(prompt).toContain('never use "evidenceChunkId"');
     expect(prompt).toContain('"additionalProperties": false');
     expect(prompt).toContain("Do not use Markdown fences");
   });
@@ -243,9 +288,50 @@ describe("knowledge processing", () => {
 
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[1]?.[0]).toContain("Previous invalid output");
+    expect(run.mock.calls[1]?.[0]).toContain("Validation problems");
     expect(run.mock.calls[1]?.[0]).toContain('"bodyMarkdown"');
     expect(result?.output.notes[0]?.bodyMarkdown).toBe("Evidence-backed body.");
     expect(result?.execution.aiTaskRunId).toBe("run-repaired");
+  });
+
+  it("recovers when Gemma repairs corrupted JSON with singular evidenceChunkId", async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce({
+        output: `{"notes":[{"title":"Canopus","body<image|><|channel>"bodyMarkdown":"Evidence",` +
+          `"ideaStatement":"Canopus guides.","evidenceChunkIds":["chunk-1"]}]}`,
+        providerId: "local-mlx",
+        modelId: "gemma",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-corrupted"
+      })
+      .mockResolvedValueOnce({
+        output: JSON.stringify({ notes: [{
+          title: "Canopus",
+          bodyMarkdown: "Canopus is associated with guidance.",
+          ideaStatement: "Canopus guides.",
+          language: "pt-BR",
+          evidenceChunkId: ["chunk-1"]
+        }] }),
+        providerId: "local-mlx",
+        modelId: "gemma",
+        runtime: "local",
+        profileId: "profile-1",
+        aiTaskRunId: "run-singular-key"
+      });
+
+    const result = await generateAtomicNoteCandidates(
+      { title: "Sírius e Canopus", language: "pt-BR" },
+      [{ id: "chunk-1", content: "Canopus is associated with guidance." }],
+      run
+    );
+
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(run.mock.calls[1]?.[0]).toContain("not valid JSON");
+    expect(run.mock.calls[1]?.[0]).toContain('never use "evidenceChunkId"');
+    expect(result?.output.notes[0]?.evidenceChunkIds).toEqual(["chunk-1"]);
+    expect(result?.output.notes[0]).not.toHaveProperty("evidenceChunkId");
+    expect(result?.execution.aiTaskRunId).toBe("run-singular-key");
   });
 
   it("stops after one repair attempt when both outputs are invalid", async () => {

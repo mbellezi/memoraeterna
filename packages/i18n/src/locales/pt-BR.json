@@ -252,6 +252,57 @@
   },
   "settings": {
     "title": "Configuracoes",
+    "dashboard": {
+      "eyebrow": "Central de controle",
+      "title": "Configure seu espaco de conhecimento",
+      "description": "Gerencie a aparencia, a inteligencia, as integracoes e os dados da Memora Eterna em um unico espaco focado.",
+      "navigation": {
+        "label": "Escopos de configuracao",
+        "overview": "Visao geral",
+        "overviewDescription": "Estado e atalhos",
+        "personalization": "Aparencia e matching",
+        "personalizationDescription": "Interface e conexoes de conhecimento",
+        "intelligence": "IA e processamento",
+        "intelligenceDescription": "Provedores, perfis e roteamento",
+        "models": "Modelos locais",
+        "modelsDescription": "Catalogo offline e runtimes",
+        "connections": "Conexoes",
+        "connectionsDescription": "Gateway, clientes e Obsidian",
+        "data": "Dados e seguranca",
+        "dataDescription": "Armazenamento, backup e reset"
+      },
+      "summary": {
+        "interface": "Interface",
+        "knowledgeMatching": "Limiar de matching",
+        "obsidian": "Sincronizacao Obsidian",
+        "uploadCopies": "Arquivos originais"
+      },
+      "states": {
+        "active": "Ativo",
+        "needsSetup": "Requer configuracao",
+        "enabled": "Copias ativadas",
+        "internalOnly": "Somente armazenamento interno"
+      },
+      "overview": {
+        "title": "Seu espaco em um olhar",
+        "description": "Revise os sinais mais importantes e abra somente o escopo necessario. As alteracoes de IA e modelos locais mantem fluxos proprios e focados."
+      },
+      "openScope": "Abrir configuracoes",
+      "appearanceDescription": "Escolha o idioma e o modo visual usados em todo o aplicativo desktop.",
+      "obsidianDescription": "Controle a projecao no vault gerenciado, a sincronizacao e o ciclo de vida dos arquivos.",
+      "storageDescription": "Escolha se os arquivos originais enviados tambem recebem uma copia externa gerenciada.",
+      "uploadCopiesDescription": "Mantenha uma segunda copia gerenciada de cada arquivo original na pasta abaixo.",
+      "dangerZone": "Zona de risco",
+      "deletePolicyDescriptions": {
+        "tombstone": "Mantenha um registro recuperavel da exclusao antes de remover o conteudo.",
+        "archive": "Mova o conteudo removido para um arquivo em vez de apaga-lo imediatamente.",
+        "delete": "Remova permanentemente o conteudo gerenciado quando a exclusao for sincronizada."
+      },
+      "syncDescriptions": {
+        "enabled": "Projete fontes e notas gerenciadas no vault configurado.",
+        "paused": "Interrompa temporariamente a sincronizacao sem remover sua configuracao."
+      }
+    },
     "language": {
       "title": "Idioma",
       "uiLocale": "Idioma da interface",
@@ -306,6 +357,11 @@
     "reset": { "title": "Resetar biblioteca", "description": "Apaga toda a biblioteca, arquivos gerenciados, vetores, jobs e notas atomicas. Modelos locais baixados e configuracoes sao preservados.", "action": "Resetar tudo", "confirmation": "Apagar permanentemente toda a biblioteca, arquivos gerenciados, vetores e notas atomicas? Os modelos locais baixados serao preservados.", "completed": "Reset da biblioteca concluido.", "completedWithWarnings": "Reset concluido, mas alguns arquivos gerenciados nao puderam ser removidos.", "failed": "Nao foi possivel resetar a biblioteca." },
     "ai": {
       "title": "Provedores e perfis de IA", "provider": "Provedor", "google": "Google Gemini",
+      "sections": {
+        "providers": "Provedores e modelos", "providersDescription": "Credenciais remotas e padroes",
+        "profiles": "Perfis", "profilesDescription": "Privacidade, modelo e parametros",
+        "routing": "Roteamento de tarefas", "routingDescription": "Escolha o perfil de cada tarefa"
+      },
       "openAiCompatible": "Compativel com OpenAI", "displayName": "Nome de exibicao", "baseUrl": "URL base",
       "model": "Modelo", "apiKey": "Chave de API", "saveProvider": "Salvar provedor", "test": "Testar",
       "connectionOk": "Conexao bem-sucedida.", "profiles": "Perfis", "profileName": "Nome do perfil",
