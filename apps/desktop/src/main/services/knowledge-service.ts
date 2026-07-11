@@ -421,7 +421,11 @@ export class KnowledgeService {
     };
   }
 
-  public async matchAtomicNotes(noteIds: string[], signal?: AbortSignal, onProgress?: (progress: number) => void) {
+  public async matchAtomicNotes(
+    noteIds: string[],
+    signal?: AbortSignal,
+    onProgress?: (progress: number) => void | Promise<void>
+  ) {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
@@ -430,7 +434,7 @@ export class KnowledgeService {
     for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
       if (!note) {
-        onProgress?.((noteIndex + 1) / noteIds.length);
+        await onProgress?.((noteIndex + 1) / noteIds.length);
         continue;
       }
       const embeddingExecution = await this.tryRunDefaultTask(
@@ -582,7 +586,7 @@ export class KnowledgeService {
         sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
         results: debugResults
       });
-      onProgress?.((noteIndex + 1) / noteIds.length);
+      await onProgress?.((noteIndex + 1) / noteIds.length);
     }
     return { persistedCount, threshold: relationThreshold };
   }

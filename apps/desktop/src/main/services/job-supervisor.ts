@@ -353,7 +353,18 @@ export class JobSupervisor {
             (stageJobId) => this.options.knowledgeService!.matchAtomicNotes(
               noteIds,
               signal,
-              (progress) => this.reportInlineProgress(stageJobId, progress)
+              async (progress) => {
+                const completed = Math.min(noteIds.length, Math.round(progress * noteIds.length));
+                await Promise.all([
+                  createJobRepository(pool).reportProgress(stageJobId, progress),
+                  createJobRepository(pool).reportProgress(job.id, 0.89 + progress * 0.06),
+                  runs.updateStageProgress(ingestionRunId, "atomicNoteMatching", progress, {
+                    completed,
+                    total: noteIds.length
+                  })
+                ]);
+                this.notify();
+              }
             ),
             controller
           )
