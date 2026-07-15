@@ -20,6 +20,7 @@ import {
   , localModelDownloadInputSchema
   , localModelViewSchema
   , libraryResetResultSchema
+  , sourceDeletionResultSchema
   , similarityDebugRunSchema
 } from "./ipc";
 
@@ -174,6 +175,16 @@ describe("desktop IPC contracts", () => {
       deletedFiles: 4,
       failedFiles: 0
     })).toEqual({ deletedSources: 2, deletedAtomicNotes: 3, deletedFiles: 4, failedFiles: 0 });
+  });
+
+  it("validates a complete source deletion result", () => {
+    expect(sourceDeletionResultSchema.parse({
+      deletedSources: 3,
+      deletedAtomicNotes: 4,
+      deletedFiles: 5,
+      failedFiles: 0,
+      graphCleanupFailed: false
+    })).toMatchObject({ deletedSources: 3, deletedAtomicNotes: 4, graphCleanupFailed: false });
   });
 
   it("validates similarity debug runs and score details", () => {

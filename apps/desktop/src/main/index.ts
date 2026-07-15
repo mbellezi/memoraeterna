@@ -68,9 +68,9 @@ function createMainWindow(): BrowserWindow {
     console.error(`Preload failed: ${preloadPath}: ${error.message}`);
   });
 
-  mainWindow.webContents.on("console-message", (_event, level, message) => {
-    if (level >= 2) {
-      console.warn(`Renderer console: ${message}`);
+  mainWindow.webContents.on("console-message", (event) => {
+    if (event.level === "warning" || event.level === "error") {
+      console.warn(`Renderer console: ${event.message}`);
     }
   });
 
@@ -168,6 +168,7 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null,
     aiService,
     userDataPath: app.getPath("userData"),
+    getStorageSettings: () => settingsService!.get(),
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,

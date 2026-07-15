@@ -230,6 +230,7 @@
     "actions": { "selectSource": "Selecionar {title}", "process": "Processar esta fonte", "processSelected": "Processar selecionadas", "clearSelection": "Limpar selecao", "queueProcessing": "Enfileirar processamento" },
     "processingDialog": { "title": "Processar fontes da biblioteca", "description": "Escolha o que gerar para {count} fontes selecionadas.", "scope": "Aplicar a", "regenerate": "Gerar novamente os artefatos existentes", "regenerateHint": "Notas revisadas sao preservadas; geracoes pendentes sao arquivadas com seguranca." },
     "scopes": { "source_only": "Somente esta fonte", "children_only": "Somente os filhos", "source_and_children": "Esta fonte e todos os filhos" },
+    "delete": { "action": "Apagar fonte", "deleting": "Apagando...", "confirmation": "Apagar permanentemente “{title}”, todos os seus capitulos e secoes, resumos, embeddings, grafos, notas atomicas, relacoes, arquivos gravados e arquivos sincronizados no Obsidian? Esta acao nao pode ser desfeita.", "completedWithWarnings": "A fonte foi apagada, mas alguns arquivos ou dados da projecao do grafo nao puderam ser removidos.", "failed": "Nao foi possivel apagar a fonte." },
     "currentStage": "Etapa atual: {stage}",
     "back": "Voltar para a biblioteca",
     "openOriginal": "Abrir original",

@@ -254,6 +254,7 @@
     "actions": { "selectSource": "Select {title}", "process": "Process this source", "processSelected": "Process selected", "clearSelection": "Clear selection", "queueProcessing": "Queue processing" },
     "processingDialog": { "title": "Process library sources", "description": "Choose what to generate for {count} selected sources.", "scope": "Apply to", "regenerate": "Regenerate existing artifacts", "regenerateHint": "Reviewed notes are preserved; pending generations are archived safely." },
     "scopes": { "source_only": "This source only", "children_only": "Children only", "source_and_children": "This source and all children" },
+    "delete": { "action": "Delete source", "deleting": "Deleting...", "confirmation": "Permanently delete “{title}”, all of its chapters and sections, summaries, embeddings, graphs, atomic notes, relations, stored files and synchronized Obsidian files? This cannot be undone.", "completedWithWarnings": "The source was deleted, but some files or graph projection data could not be removed.", "failed": "The source could not be deleted." },
     "currentStage": "Current stage: {stage}",
     "back": "Back to library",
     "openOriginal": "Open original",

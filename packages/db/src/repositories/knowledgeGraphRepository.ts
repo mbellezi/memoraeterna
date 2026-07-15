@@ -351,6 +351,30 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       }
     },
 
+    async removeSourceProjections(sourceItemIds: string[], entityIds: string[] = []): Promise<void> {
+      if (sourceItemIds.length === 0 && entityIds.length === 0) return;
+      const client = await pool.connect();
+      try {
+        await initializeAge(client);
+        await client.query("begin");
+        for (const sourceItemId of sourceItemIds) {
+          await writeCypher(client, `MATCH (c:Chunk {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
+          await writeCypher(client, `MATCH (c:Claim {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
+          await writeCypher(client, `MATCH (n:AtomicNote {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE n RETURN count(n)`);
+          await writeCypher(client, `MATCH ()-[r:RELATED]->() WHERE r.sourceItemId = '${uuid(sourceItemId)}' DELETE r RETURN count(r)`);
+        }
+        for (const entityId of entityIds) {
+          await writeCypher(client, `MATCH (e:Entity {id: '${uuid(entityId)}'}) DETACH DELETE e RETURN count(e)`);
+        }
+        await client.query("commit");
+      } catch (error) {
+        await client.query("rollback").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+
     async searchChunks(input: {
       text: string;
       sourceTypes?: SourceItemType[];

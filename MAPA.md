@@ -116,6 +116,9 @@ Implementado ate aqui:
 - pipeline retomavel completo ate resumo, notas atomicas e matching;
 - UI funcional de Library, detalhe da fonte, arquivos originais, checkpoints
   dos jobs e fila de revisao com aprovar, editar e descartar.
+- exclusao individual de fontes pela Library com confirmacao, remocao
+  transacional da arvore hierarquica e dos artefatos derivados, alem da
+  limpeza dos arquivos gerenciados pela aplicacao e projetados no Obsidian;
 - contratos de integracao `1.x` completos e validados por Zod para handshake,
   captura web/selecao/YouTube, eventos Obsidian, reconciliacao, progresso e
   erros normalizados;
@@ -258,6 +261,9 @@ Arquivos principais:
 - `src/main/services/search-service.ts`: busca textual/hibrida com fallback.
 - `src/main/services/knowledge-service.ts`: resumos, notas atomicas, matching,
   biblioteca, detalhe de fonte e revisao.
+- `src/main/services/source-deletion-service.ts`: exclusao transacional de uma
+  fonte e descendentes, dados derivados, arquivos armazenados e projecoes
+  gerenciadas no Obsidian e no AGE.
 - `src/main/services/knowledge-processing.ts`: prompts versionados, map-reduce,
   parsing estruturado e scoring puro/testavel.
 - `src/main/services/integration-gateway.ts`: HTTP/WebSocket loopback,

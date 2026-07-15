@@ -23,21 +23,24 @@ const optionalStages = ProcessingStages.filter((stage) =>
 );
 
 export function defaultProcessingPlan(preset: ProcessingPreset = "import_only"): ProcessingPlanRequest {
-  const resolved = resolveProcessingPlan({
+  return toProcessingPlanRequest(resolveProcessingPlan({
     preset,
     requestedStages: [],
     scope: "source_only",
     targetSourceItemIds: [],
     forceRegeneration: false,
     previousArtifactPolicy: "reuse_valid"
-  });
+  }));
+}
+
+export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
-    preset: resolved.preset,
-    requestedStages: resolved.requestedStages,
-    scope: resolved.scope,
-    targetSourceItemIds: resolved.targetSourceItemIds,
-    forceRegeneration: resolved.forceRegeneration,
-    previousArtifactPolicy: resolved.previousArtifactPolicy
+    preset: plan.preset,
+    requestedStages: plan.requestedStages,
+    scope: plan.scope,
+    targetSourceItemIds: plan.targetSourceItemIds,
+    forceRegeneration: plan.forceRegeneration,
+    previousArtifactPolicy: plan.previousArtifactPolicy
   };
 }
 
@@ -68,7 +71,11 @@ export function ProcessingPlanPicker({
     } else {
       selected.add(stage);
     }
-    onChange(resolveProcessingPlan({ ...value, preset: "custom", requestedStages: [...selected] }));
+    onChange(toProcessingPlanRequest(resolveProcessingPlan({
+      ...value,
+      preset: "custom",
+      requestedStages: [...selected]
+    })));
   }
 
   return <section className={cn("grid gap-4", compact && "gap-3")}>

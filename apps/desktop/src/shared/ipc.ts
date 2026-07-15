@@ -40,6 +40,7 @@ export const ipcChannels = {
   searchQuery: "app:search:query",
   libraryList: "app:library:list",
   librarySourceGet: "app:library:source:get",
+  librarySourceDelete: "app:library:source:delete",
   libraryAssetOpen: "app:library:asset:open",
   knowledgePendingNotesList: "app:knowledge:notes:pending:list",
   knowledgeNoteReview: "app:knowledge:notes:review",
@@ -318,6 +319,14 @@ export const libraryResetResultSchema = z.object({
   deletedAtomicNotes: z.number().int().nonnegative(),
   deletedFiles: z.number().int().nonnegative(),
   failedFiles: z.number().int().nonnegative()
+}).strict();
+
+export const sourceDeletionResultSchema = z.object({
+  deletedSources: z.number().int().nonnegative(),
+  deletedAtomicNotes: z.number().int().nonnegative(),
+  deletedFiles: z.number().int().nonnegative(),
+  failedFiles: z.number().int().nonnegative(),
+  graphCleanupFailed: z.boolean()
 }).strict();
 
 export const librarySourceSchema = z.object({
@@ -696,6 +705,7 @@ export type SourceSuggestion = z.infer<typeof sourceSuggestionSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
 export type LibraryResetResult = z.infer<typeof libraryResetResultSchema>;
+export type SourceDeletionResult = z.infer<typeof sourceDeletionResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
 export type SearchResult = z.infer<typeof SearchEvidenceSchema>;
 export type SimilarityDebugRun = z.infer<typeof similarityDebugRunSchema>;
@@ -788,6 +798,7 @@ export interface DesktopApi {
   knowledge: {
     listLibrary: (sourceTypes?: SourceItemType[]) => Promise<LibrarySource[]>;
     getSourceDetail: (sourceItemId: string) => Promise<SourceDetail | null>;
+    deleteSource: (sourceItemId: string) => Promise<SourceDeletionResult>;
     openAsset: (assetId: string) => Promise<boolean>;
     listPendingNotes: () => Promise<PendingAtomicNote[]>;
     reviewNote: (input: AtomicNoteReviewInput) => Promise<AtomicNoteView | null>;

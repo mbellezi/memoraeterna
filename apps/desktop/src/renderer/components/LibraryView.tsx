@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronRight, ExternalLink, FileText, Play, RefreshCw, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, FileText, Play, RefreshCw, Trash2, X } from "lucide-react";
 import { SourceItemTypes, type ProcessingPlanRequest, type SourceItemType } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SourceDetail } from "../../shared/ipc";
@@ -42,7 +42,12 @@ export function LibraryView({ t }: { t: Translator }) {
   useEffect(() => { void load(); }, [filter]);
 
   if (selected) {
-    return <SourceDetailView detail={selected} t={t} onBack={() => setSelected(null)} />;
+    return <SourceDetailView
+      detail={selected}
+      t={t}
+      onBack={() => setSelected(null)}
+      onDeleted={() => { setSelected(null); void load(); }}
+    />;
   }
 
   const orderedSources = orderHierarchically(sources);
@@ -131,12 +136,40 @@ function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibraryS
   return result;
 }
 
-function SourceDetailView({ detail, t, onBack }: { detail: SourceDetail; t: Translator; onBack: () => void }) {
+function SourceDetailView({ detail, t, onBack, onDeleted }: {
+  detail: SourceDetail;
+  t: Translator;
+  onBack: () => void;
+  onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
+
+  async function deleteSource() {
+    if (!window.confirm(t("library.delete.confirmation", { values: { title: detail.title } }))) return;
+    setDeleting(true);
+    setDeleteFailed(false);
+    try {
+      const result = await window.app.knowledge.deleteSource(detail.id);
+      if (result.failedFiles > 0 || result.graphCleanupFailed) {
+        window.alert(t("library.delete.completedWithWarnings"));
+      }
+      onDeleted();
+    } catch {
+      setDeleteFailed(true);
+      setDeleting(false);
+    }
+  }
+
   return <section className="grid gap-5">
     <div className="flex items-start justify-between gap-4">
       <div className="grid gap-1"><h2 className="text-xl font-semibold">{detail.title}</h2><p className="text-sm text-slate-500">{t(`import.sourceTypes.${detail.type}` as MessageKey)}</p></div>
-      <Button type="button" onClick={onBack}><ArrowLeft className="h-4 w-4" aria-hidden="true" />{t("library.back")}</Button>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" disabled={deleting} className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-800 dark:bg-rose-800 dark:hover:bg-rose-700" onClick={() => void deleteSource()}><Trash2 className="h-4 w-4" aria-hidden="true" />{deleting ? t("library.delete.deleting") : t("library.delete.action")}</Button>
+        <Button type="button" disabled={deleting} onClick={onBack}><ArrowLeft className="h-4 w-4" aria-hidden="true" />{t("library.back")}</Button>
+      </div>
     </div>
+    {deleteFailed ? <p role="alert" className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">{t("library.delete.failed")}</p> : null}
     <section className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between gap-4"><h3 className="font-semibold">{t("library.sections.metadata")}</h3>{detail.sourceUri ? <a href={detail.sourceUri} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-cyan-700 dark:text-cyan-300"><ExternalLink className="h-4 w-4" aria-hidden="true" />{t("library.openOriginal")}</a> : null}</div>
       <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>

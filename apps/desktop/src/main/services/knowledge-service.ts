@@ -20,7 +20,9 @@ import {
 } from "@app/db";
 
 import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "./ai-service.js";
+import { SourceDeletionService } from "./source-deletion-service.js";
 import { logStructuredError } from "./structured-logging.js";
+import type { StorageSettings } from "../../shared/ipc.js";
 import {
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
@@ -56,9 +58,10 @@ export interface KnowledgeServiceOptions {
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
   userDataPath: string;
+  getStorageSettings: () => Promise<StorageSettings>;
   getUploadedFilesBasePath: () => Promise<string | null>;
   isDebugEnabled?: () => Promise<boolean>;
-  logger?: Pick<Console, "error">;
+  logger?: Pick<Console, "error" | "warn">;
 }
 
 export interface AtomicNoteGenerationLogContext {
@@ -83,11 +86,18 @@ export class KnowledgeService {
   private readonly relationThreshold: number;
   private readonly summaryMaxInputCharacters: number;
   private readonly knowledgeGraphMaxInputCharacters: number;
+  private readonly sourceDeletionService: SourceDeletionService;
 
   public constructor(private readonly options: KnowledgeServiceOptions) {
     this.relationThreshold = clamp(options.relationThreshold ?? 0.72);
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
     this.knowledgeGraphMaxInputCharacters = Math.max(2_000, options.knowledgeGraphMaxInputCharacters ?? 3_500);
+    this.sourceDeletionService = new SourceDeletionService({
+      getPool: options.getPool,
+      getStorageSettings: options.getStorageSettings,
+      userDataPath: options.userDataPath,
+      ...(options.logger ? { logger: options.logger } : {})
+    });
   }
 
   public async listLibrary(sourceTypes: SourceItemType[] = []) {
@@ -157,6 +167,14 @@ export class KnowledgeService {
         explanation: relation.explanation
       }))
     };
+  }
+
+  public async listSourceTreeIds(sourceItemId: string): Promise<string[]> {
+    return this.sourceDeletionService.listSourceTreeIds(sourceItemId);
+  }
+
+  public async deleteSource(sourceItemId: string) {
+    return this.sourceDeletionService.delete(sourceItemId);
   }
 
   public async listPendingNotes() {

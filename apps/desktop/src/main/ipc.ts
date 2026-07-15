@@ -196,6 +196,13 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.librarySourceGet, (_event, payload: unknown) =>
     knowledgeService.getSourceDetail(z.string().uuid().parse(payload))
   );
+  ipcMain.handle(ipcChannels.librarySourceDelete, async (_event, payload: unknown) => {
+    const sourceItemId = z.string().uuid().parse(payload);
+    await obsidianSyncService.waitForSynchronization();
+    const sourceItemIds = await knowledgeService.listSourceTreeIds(sourceItemId);
+    await jobSupervisor.cancelForSources(sourceItemIds);
+    return knowledgeService.deleteSource(sourceItemId);
+  });
   ipcMain.handle(ipcChannels.libraryAssetOpen, async (_event, payload: unknown) => {
     const path = await knowledgeService.resolveAssetPath(z.string().uuid().parse(payload));
     return (await shell.openPath(path)).length === 0;

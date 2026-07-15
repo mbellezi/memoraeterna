@@ -359,6 +359,10 @@ export class ObsidianSyncService {
     return { ...this.synchronizationStatus };
   }
 
+  public async waitForSynchronization(): Promise<void> {
+    await this.synchronizationPromise;
+  }
+
   private async runSynchronization(): Promise<void> {
     const settings = await this.options.getStorageSettings();
     if (!isSyncActive(settings)) throw new Error("obsidian_sync_not_configured");

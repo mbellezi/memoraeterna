@@ -55,6 +55,7 @@ import {
   searchResultsSchema,
   pendingAtomicNoteSchema,
   sourceDetailSchema,
+  sourceDeletionResultSchema,
   sourceSuggestionSchema,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
@@ -210,6 +211,11 @@ const api: DesktopApi = {
     async getSourceDetail(sourceItemId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.librarySourceGet, sourceItemId);
       return result === null ? null : sourceDetailSchema.parse(result);
+    },
+    async deleteSource(sourceItemId: string) {
+      return sourceDeletionResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.librarySourceDelete, sourceItemId)
+      );
     },
     async openAsset(assetId: string) {
       return Boolean(await ipcRenderer.invoke(ipcChannels.libraryAssetOpen, assetId));

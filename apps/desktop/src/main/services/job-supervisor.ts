@@ -177,6 +177,25 @@ export class JobSupervisor {
     return deleted;
   }
 
+  public async cancelForSources(sourceItemIds: string[]): Promise<void> {
+    if (sourceItemIds.length === 0) return;
+    const pool = this.requirePool();
+    const jobs = await pool.query<{ id: string }>(
+      `select id from jobs
+       where status in ('queued', 'running') and payload->>'sourceItemId' = any($1::text[])`,
+      [sourceItemIds]
+    );
+    if (jobs.rows.length === 0) return;
+    const repository = createJobRepository(pool);
+    await Promise.all(jobs.rows.map(async ({ id }) => {
+      await repository.requestCancel(id);
+      this.controllers.get(id)?.abort();
+    }));
+    this.notify();
+    if (this.drainPromise) await this.drainPromise;
+    await Promise.allSettled(this.pendingProgressUpdates);
+  }
+
   public subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
