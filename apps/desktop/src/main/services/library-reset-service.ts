@@ -47,7 +47,7 @@ export class LibraryResetService {
       claim_entity_links, claims, entity_relations, entity_mentions, entities,
       source_summaries, embeddings_256, embeddings_768, embeddings_1024, chunks, source_spans,
       document_assets, documents, source_item_bibliographic_links, bibliographic_instances,
-      bibliographic_works, obsidian_sync_files, ingestion_runs, ai_task_runs, source_items, jobs
+      bibliographic_works, obsidian_sync_files, ingestion_runs, ai_task_run_sources, ai_task_runs, source_items, jobs
       restart identity cascade`);
 
     const fileTargets = new Set<string>();

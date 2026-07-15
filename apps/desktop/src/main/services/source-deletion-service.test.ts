@@ -80,6 +80,8 @@ describe("SourceDeletionService", () => {
     expect(pool.queries.filter((query) => query.includes("delete from embeddings_")).length).toBe(3);
     expect(pool.queries.some((query) => query.includes("delete from ingestion_runs"))).toBe(true);
     expect(pool.queries.some((query) => query.includes("delete from obsidian_sync_files"))).toBe(true);
+    expect(pool.queries.some((query) => query.includes("from ai_task_run_sources"))).toBe(true);
+    expect(pool.queries.some((query) => query.includes("not exists (select 1 from ai_task_run_sources"))).toBe(true);
     expect(pool.queries.some((query) => query.includes("delete from source_items"))).toBe(true);
     expect(pool.queries.at(-1)).toBe("commit");
     await rm(root, { recursive: true, force: true });

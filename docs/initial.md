@@ -1788,6 +1788,12 @@ ai_task_runs
   started_at
   finished_at
 
+ai_task_run_sources
+  id
+  ai_task_run_id
+  source_item_id
+  created_at
+
 ingestion_runs
   id
   source_item_id
@@ -1835,7 +1841,7 @@ Os chunks sao sempre gerados a partir do documento fonte normalizado, nunca do r
 
 `atomic_note_relations` e a tabela canonica de ligacoes entre notas atomicas. Essas relacoes podem ser descobertas por busca vetorial, grafo e reranking, mas devem ser persistidas em SQL para auditoria, consulta e evolucao do Zettelkasten.
 
-`ai_provider_configs`, `ai_profile_sets`, `ai_profile_tasks`, `ai_task_profile_routes`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, perfis, referencias, capacidades e metadados de execucao. `ai_provider_configs.default_parameters` e `local_models.default_parameters` guardam defaults por modelo; `ai_profile_tasks.parameters` guarda apenas overrides do perfil/tarefa. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
+`ai_provider_configs`, `ai_profile_sets`, `ai_profile_tasks`, `ai_task_profile_routes`, `embedding_model_configs`, `local_models`, `ai_model_capabilities` e `ai_task_runs` devem guardar configuracoes, perfis, referencias, capacidades e metadados de execucao. `ai_task_run_sources` registra todas as fontes envolvidas em cada execucao, inclusive tarefas compartilhadas, para que a exclusao de uma arvore de fontes remova apenas runs que nao possuam outra fonte sobrevivente. `ai_provider_configs.default_parameters` e `local_models.default_parameters` guardam defaults por modelo; `ai_profile_tasks.parameters` guarda apenas overrides do perfil/tarefa. Segredos reais, como API keys, devem ficar fora do banco em armazenamento seguro.
 
 ## Vetores
 

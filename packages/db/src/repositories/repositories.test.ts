@@ -331,6 +331,25 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("update ai_profile_sets");
   });
 
+  it("records every source associated with an AI task run atomically", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }]]);
+
+    const runId = await createAiConfigRepository(db).recordTaskRun({
+      taskType: "reranking",
+      provider: "test",
+      modelId: "test-model",
+      runtime: "remote",
+      durationMs: 12,
+      status: "succeeded",
+      sourceItemIds: ["source-1", "source-2", "source-1"]
+    });
+
+    expect(runId).toBe("run-1");
+    expect(db.queries[0]?.text).toContain("insert into ai_task_run_sources");
+    expect(db.queries[0]?.text).toContain("unnest($20::uuid[])");
+    expect(db.queries[0]?.values[19]).toEqual(["source-1", "source-2"]);
+  });
+
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {
     const db = new FakeQueryable([[
       {

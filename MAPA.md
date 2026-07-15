@@ -68,6 +68,9 @@ Implementado ate aqui:
 - modelos remotos separados por capability, parametros padrao por modelo,
   overrides independentes por perfil/tarefa e conversao dos parametros
   canonicos para cada adapter;
+- proveniencia de execucoes de IA em `ai_task_run_sources`, incluindo tarefas
+  compartilhadas entre fontes e limpeza segura quando a ultima fonte vinculada
+  e removida;
 - roteamento persistido de perfil por tipo de tarefa e idioma de resposta por
   perfil, herdando o idioma da interface por padrao;
 - ingestao manual progressiva para os 8 tipos do MVP, source picker,
@@ -172,7 +175,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migrations ate `0015_chunky_marvel_apes`, baseline com 16 migrations e verificacao
+- migrations ate `0016_awesome_dragon_man`, baseline com 17 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.
@@ -372,7 +375,7 @@ Arquivos principais:
 - `src/scripts/verify-phase4.ts`: verificacao real de migration/baseline,
   clientes autorizados e identidade de arquivos Obsidian.
 - `src/scripts/verify-phase5.ts`: verificacao real das tabelas de modelos,
-  checkpoints, perfis locais, tracing e baseline com 6 migrations.
+  checkpoints, perfis locais, tracing por fonte e baseline completo.
 - `src/sidecar/manager.ts`: initdb/start/stop/restart do Postgres sidecar.
 - `src/sidecar/paths.ts`: resolucao de paths DEV/prod/env.
 - `src/sidecar/nodeRunner.ts`: runner Node para comandos do sidecar.

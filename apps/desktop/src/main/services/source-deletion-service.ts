@@ -113,7 +113,9 @@ export class SourceDeletionService {
         )).rows.map((row) => row.id)
       ]);
       const aiTaskRunIds = unique((await client.query<IdRow>(
-        `select ai_task_run_id::text as id from source_summaries
+        `select ai_task_run_id::text as id from ai_task_run_sources
+           where source_item_id = any($1::uuid[])
+         union select ai_task_run_id::text from source_summaries
            where source_item_id = any($1::uuid[]) and ai_task_run_id is not null
          union select ai_task_run_id::text from atomic_notes
            where created_from_source_item_id = any($1::uuid[]) and ai_task_run_id is not null
@@ -190,8 +192,10 @@ export class SourceDeletionService {
       if (aiTaskRunIds.length > 0) {
         await client.query(
           `delete from ai_task_runs run where run.id = any($1::uuid[])
+             and not exists (select 1 from ai_task_run_sources source where source.ai_task_run_id = run.id)
              and not exists (select 1 from source_summaries summary where summary.ai_task_run_id = run.id)
-             and not exists (select 1 from atomic_notes note where note.ai_task_run_id = run.id)`,
+             and not exists (select 1 from atomic_notes note where note.ai_task_run_id = run.id)
+             and not exists (select 1 from knowledge_generations generation where generation.ai_task_run_id = run.id)`,
           [aiTaskRunIds]
         );
       }

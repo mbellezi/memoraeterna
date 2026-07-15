@@ -908,6 +908,24 @@ export const aiTaskRuns = pgTable(
   (table) => ({ taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType) })
 );
 
+export const aiTaskRunSources = pgTable(
+  "ai_task_run_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    aiTaskRunId: uuid("ai_task_run_id")
+      .notNull()
+      .references(() => aiTaskRuns.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id")
+      .notNull()
+      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    runSourceUidx: uniqueIndex("ai_task_run_sources_run_source_uidx").on(table.aiTaskRunId, table.sourceItemId),
+    sourceItemIdx: index("ai_task_run_sources_source_item_id_idx").on(table.sourceItemId)
+  })
+);
+
 export const sourceSummaries = pgTable(
   "source_summaries",
   {

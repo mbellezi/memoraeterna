@@ -27,6 +27,7 @@ const expectedTables = [
   ,"ai_task_profile_routes"
   ,"ai_model_capabilities"
   ,"ai_task_runs"
+  ,"ai_task_run_sources"
   ,"embeddings_256"
   ,"embeddings_768"
   ,"embeddings_1024"

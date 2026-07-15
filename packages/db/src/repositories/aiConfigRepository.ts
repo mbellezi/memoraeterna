@@ -384,20 +384,32 @@ export function createAiConfigRepository(db: Queryable) {
       quantization?: string | null; parameters?: JsonObject;
       outputHash?: string | null; inputTokens?: number | null; outputTokens?: number | null;
       costEstimate?: number | null; durationMs: number; status: string; error?: string | null;
+      sourceItemIds?: string[];
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
-        `insert into ai_task_runs (
-           profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
-           quantization, parameters, capabilities_used,
-           input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
-           duration_ms, status, error, finished_at
-         ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
-         returning id`,
+        `with inserted_run as (
+           insert into ai_task_runs (
+             profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
+             quantization, parameters, capabilities_used,
+             input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
+             duration_ms, status, error, finished_at
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
+           returning id
+         ), inserted_sources as (
+           insert into ai_task_run_sources (ai_task_run_id, source_item_id)
+           select inserted_run.id, source_id
+           from inserted_run cross join unnest($20::uuid[]) as sources(source_id)
+           on conflict (ai_task_run_id, source_item_id) do nothing
+           returning id
+         )
+         select id from inserted_run
+         where (select count(*) from inserted_sources) >= 0`,
         [input.profileId ?? null, input.taskType, input.provider, input.modelId, input.runtime,
           input.adapter ?? null, input.repository ?? null, input.revision ?? null, input.quantization ?? null,
           input.parameters ?? {}, JSON.stringify(input.capabilitiesUsed ?? []), input.inputHash ?? null,
           input.outputHash ?? null, input.inputTokens ?? null, input.outputTokens ?? null,
-          input.costEstimate ?? null, input.durationMs, input.status, input.error ?? null]
+          input.costEstimate ?? null, input.durationMs, input.status, input.error ?? null,
+          [...new Set(input.sourceItemIds ?? [])]]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI task run insert returned no row.");

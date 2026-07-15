@@ -64,6 +64,7 @@ managed`),
     await expect(access(unrelatedObsidianFile)).resolves.toBeUndefined();
     await expect(access(localModel)).resolves.toBeUndefined();
     expect(pool.queries.some((query) => query.includes("truncate table"))).toBe(true);
+    expect(pool.queries.some((query) => query.includes("ai_task_run_sources, ai_task_runs"))).toBe(true);
     expect(pool.queries.some((query) => query.includes("drop_graph"))).toBe(true);
     expect(pool.queries.findIndex((query) => query.includes("drop_graph")))
       .toBeLessThan(pool.queries.findIndex((query) => query.includes("truncate table")));

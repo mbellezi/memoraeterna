@@ -233,7 +233,11 @@ export class KnowledgeService {
       async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "summarization",
         prompt,
-        { ...logContext, onProgress: (event) => onProgress?.(event.progress) },
+        {
+          ...withAiSourceItems(logContext, [sourceItemId]),
+          documentId,
+          onProgress: (event) => onProgress?.(event.progress)
+        },
         signal
       )),
       this.summaryMaxInputCharacters
@@ -318,7 +322,16 @@ export class KnowledgeService {
         "Preserve disagreements and progression across chapters. Do not introduce facts absent from the summaries.",
         ...children.map((child, index) => `\n## ${index + 1}. ${child.childTitle}\n${child.summary}`)
       ].join("\n");
-      const execution = await this.options.aiService.runDefaultTask("summarization", prompt, logContext, signal);
+      const execution = await this.options.aiService.runDefaultTask(
+        "summarization",
+        prompt,
+        {
+          ...withAiSourceItems(logContext, [root.rootId, ...children.map((child) => child.childId)]),
+          sourceItemId: root.rootId,
+          documentId: root.documentId
+        },
+        signal
+      );
       if (!execution) continue;
       const summary = normalizeSummaryText(execution.output);
       const hierarchy = createHierarchicalIngestionRepository(pool);
@@ -558,7 +571,7 @@ export class KnowledgeService {
         "embedding",
         `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
         signal,
-        logContext
+        withAiSourceItems(logContext, [note.createdFromSourceItemId])
       );
       const embedding = readEmbedding(embeddingExecution?.output);
       if (embedding && embeddingExecution) {
@@ -639,7 +652,10 @@ export class KnowledgeService {
               title: candidate.note.title,
               ideaStatement: candidate.note.ideaStatement
             }))),
-            logContext,
+            withAiSourceItems(logContext, [
+              note.createdFromSourceItemId,
+              ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
+            ]),
             signal
           );
           if (rerankExecution) {
@@ -836,6 +852,19 @@ export class KnowledgeService {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
+}
+
+function withAiSourceItems(context: AiTaskLogContext, sourceItemIds: string[]): AiTaskLogContext {
+  const combined = [...new Set([
+    ...(context.sourceItemId ? [context.sourceItemId] : []),
+    ...(context.sourceItemIds ?? []),
+    ...sourceItemIds
+  ])];
+  return {
+    ...context,
+    ...(combined[0] ? { sourceItemId: combined[0] } : {}),
+    sourceItemIds: combined
+  };
 }
 
 function serializeNote(note: AtomicNoteRecord) {

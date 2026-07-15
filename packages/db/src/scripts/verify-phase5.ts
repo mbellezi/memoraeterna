@@ -43,16 +43,17 @@ try {
   const seedFolder = resolve(packageRoot, "seed");
   await runMigrations(pool, migrationsFolder);
   const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected AI configuration migration history.");
+  if (Number(history.rows[0]?.count) !== 17) throw new Error("Unexpected AI configuration migration history.");
 
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables where table_schema = 'public'
      and table_name in (
        'local_models', 'local_model_files', 'local_model_downloads', 'ai_task_profile_routes',
-       'entities', 'entity_mentions', 'claims', 'claim_entity_links', 'entity_relations', 'atomic_note_entity_links'
+       'ai_task_run_sources', 'entities', 'entity_mentions', 'claims', 'claim_entity_links',
+       'entity_relations', 'atomic_note_entity_links'
      ) order by table_name`
   );
-  if (tables.rows.length !== 10) throw new Error("AI or knowledge graph tables are missing.");
+  if (tables.rows.length !== 11) throw new Error("AI or knowledge graph tables are missing.");
   const columns = await pool.query<{ table_name: string; column_name: string }>(
     `select table_name, column_name from information_schema.columns where table_schema = 'public' and (
        (table_name = 'ai_profile_sets' and column_name in (
@@ -69,10 +70,11 @@ try {
     `select indexname from pg_indexes where schemaname = 'public' and indexname in (
        'local_models_catalog_id_uidx','local_model_files_model_path_uidx','local_model_downloads_job_id_uidx',
        'ai_task_profile_routes_task_uidx','ai_task_profile_routes_profile_id_idx',
+       'ai_task_run_sources_run_source_uidx','ai_task_run_sources_source_item_id_idx',
        'entities_type_normalized_name_uidx','entity_relations_evidence_uidx'
      )`
   );
-  if (indexes.rows.length !== 7) throw new Error("AI configuration or knowledge graph indexes are missing.");
+  if (indexes.rows.length !== 9) throw new Error("AI configuration or knowledge graph indexes are missing.");
 
   const localModels = createLocalModelRepository(pool);
   const model = await localModels.upsertModel({
@@ -141,7 +143,12 @@ try {
       || clonedProfile.localModelId !== model.id || clonedTasks.rows[0]?.status !== "active") {
     throw new Error("AI profile clone did not preserve its profile and task configuration.");
   }
-  await ai.recordTaskRun({
+  const graphSource = await createSourceItemRepository(pool).create({
+    type: "PersonalNote",
+    title: "Graph verifier",
+    language: "en"
+  });
+  const tracedTaskRunId = await ai.recordTaskRun({
     profileId: profile.id,
     taskType: "summarization",
     provider: "local-mlx",
@@ -153,14 +160,16 @@ try {
     quantization: model.quantization,
     parameters: { maxTokens: 32 },
     durationMs: 12,
-    status: "succeeded"
+    status: "succeeded",
+    sourceItemIds: [graphSource.id]
   });
-
-  const graphSource = await createSourceItemRepository(pool).create({
-    type: "PersonalNote",
-    title: "Graph verifier",
-    language: "en"
-  });
+  const tracedSources = await pool.query<{ sourceItemId: string }>(
+    `select source_item_id as "sourceItemId" from ai_task_run_sources where ai_task_run_id = $1`,
+    [tracedTaskRunId]
+  );
+  if (tracedSources.rows[0]?.sourceItemId !== graphSource.id) {
+    throw new Error("AI task run source provenance was not persisted.");
+  }
   const graphDocument = await createDocumentRepository(pool).create({
     sourceItemId: graphSource.id,
     title: graphSource.title,
@@ -251,7 +260,7 @@ try {
   seedUrl.pathname = "/memora_phase5_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 11) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 17) {
     throw new Error("Empty database did not apply the complete phase 5 baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {

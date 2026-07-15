@@ -66,6 +66,7 @@ export interface AiTaskLogContext {
   jobId?: string;
   ingestionRunId?: string;
   sourceItemId?: string;
+  sourceItemIds?: string[];
   documentId?: string;
   stage?: string;
   onProgress?: (event: AiProgressEvent) => void;
@@ -291,6 +292,7 @@ export class AiService {
     signal?: AbortSignal
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
+    const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     await repository.ensureRemoteRerankingCapabilities();
     const selection = await repository.getDefaultTask(taskType);
@@ -361,7 +363,7 @@ export class AiService {
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
-        durationMs: result.durationMs, status: "succeeded"
+        durationMs: result.durationMs, status: "succeeded", sourceItemIds
       });
       if (selection.localModelId) {
         const debugOutputEnabled = await isLocalModelOutputDebugEnabled(this.options.getDashboardDebugMode);
@@ -387,7 +389,7 @@ export class AiService {
         quantization: selection.quantization,
         parameters,
         durationMs: Date.now() - started, status: "failed",
-        error: redactSensitiveText(error).slice(0, 500)
+        error: redactSensitiveText(error).slice(0, 500), sourceItemIds
       });
       if (taskType === "atomic-note-generation") {
         logStructuredError(this.options.logger, "atomic_note_ai_task_failed", {
@@ -731,4 +733,11 @@ function createProgressReporter(listener?: (event: AiProgressEvent) => void): (e
     lastReportedAt = now;
     listener({ ...event, progress });
   };
+}
+
+function taskSourceItemIds(context: Omit<AiTaskLogContext, "onProgress">): string[] {
+  return [...new Set([
+    ...(context.sourceItemId ? [context.sourceItemId] : []),
+    ...(context.sourceItemIds ?? [])
+  ])];
 }
