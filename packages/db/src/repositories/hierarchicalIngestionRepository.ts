@@ -556,7 +556,7 @@ async function replaceDivisions(client: PoolClient, structureId: string, divisio
         [division.id, structureId, division.parentId ? inserted.get(division.parentId) : null, division.kind, division.title, division.level, division.position,
           division.startSelector, division.endSelector, division.startPage ?? null, division.endPage ?? null,
           division.markdownStart ?? null, division.markdownEnd ?? null, division.contentHash ?? null,
-          division.confidence, division.evidence, division.reviewStatus, division.isProcessable, division.metadata]
+          division.confidence, JSON.stringify(division.evidence), division.reviewStatus, division.isProcessable, division.metadata]
       );
       const rowId = result.rows[0]?.id;
       if (!rowId) throw new Error("document_division_insert_failed");

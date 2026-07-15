@@ -234,6 +234,7 @@
     "evidence": "{source} · {score}% confidence",
     "noSelection": "Select an item in the structure to review it.",
     "blockingIssues": "Resolve {count} structure issues before continuing.",
+    "selectAtLeastOne": "Select at least one item to create as an independent source.",
     "ready": "Structure is valid and ready to confirm.",
     "confidence": { "high": "High", "medium": "Review", "low": "Low" },
     "kinds": { "part": "Part", "chapter": "Chapter", "article": "Article", "section": "Section", "subsection": "Subsection", "frontmatter": "Front matter", "backmatter": "Back matter", "appendix": "Appendix", "unknown": "Other" },

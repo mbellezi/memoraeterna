@@ -211,7 +211,7 @@
     "treeTitle": "Estrutura do documento", "selectedCount": "{count} itens a criar", "fields": { "title": "Titulo", "kind": "Tipo", "range": "Intervalo da fonte", "behavior": "Incluir e processar" },
     "pageRange": "Paginas {start}-{end}", "offsetRange": "Texto {start}-{end}", "includeNavigation": "Manter este item", "includeNavigationHint": "Itens excluidos nao sao materializados nem exibidos na navegacao.",
     "processable": "Criar uma fonte independente", "processableHint": "Transforma esta divisao em um item selecionavel da biblioteca.", "evidenceTitle": "Por que esta divisao foi detectada", "evidence": "{source} · {score}% de confianca", "noSelection": "Selecione um item da estrutura para revisa-lo.",
-    "blockingIssues": "Resolva {count} problemas na estrutura antes de continuar.", "ready": "A estrutura e valida e esta pronta para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baixa" },
+    "blockingIssues": "Resolva {count} problemas na estrutura antes de continuar.", "selectAtLeastOne": "Selecione ao menos um item para criar como fonte independente.", "ready": "A estrutura e valida e esta pronta para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baixa" },
     "kinds": { "part": "Parte", "chapter": "Capitulo", "article": "Artigo", "section": "Secao", "subsection": "Subsecao", "frontmatter": "Elementos iniciais", "backmatter": "Elementos finais", "appendix": "Apendice", "unknown": "Outro" },
     "actions": { "undo": "Desfazer", "redo": "Refazer", "restore": "Restaurar versao detectada", "split": "Dividir", "mergePrevious": "Unir ao anterior", "moveUp": "Mover para cima", "moveDown": "Mover para baixo", "saveDraft": "Salvar rascunho", "confirm": "Confirmar e continuar" }
   },

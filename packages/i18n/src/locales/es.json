@@ -189,7 +189,7 @@
     "treeTitle": "Estructura del documento", "selectedCount": "{count} elementos por crear", "fields": { "title": "Titulo", "kind": "Tipo", "range": "Intervalo de origen", "behavior": "Incluir y procesar" },
     "pageRange": "Paginas {start}-{end}", "offsetRange": "Texto {start}-{end}", "includeNavigation": "Mantener esta entrada", "includeNavigationHint": "Las entradas excluidas no se materializan ni aparecen en la navegacion.",
     "processable": "Crear una fuente independiente", "processableHint": "Convierte esta division en un elemento seleccionable de la biblioteca.", "evidenceTitle": "Por que se detecto esta division", "evidence": "{source} · confianza {score}%", "noSelection": "Selecciona un elemento para revisarlo.",
-    "blockingIssues": "Resuelve {count} problemas antes de continuar.", "ready": "La estructura es valida y esta lista para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baja" },
+    "blockingIssues": "Resuelve {count} problemas antes de continuar.", "selectAtLeastOne": "Selecciona al menos un elemento para crearlo como fuente independiente.", "ready": "La estructura es valida y esta lista para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baja" },
     "kinds": { "part": "Parte", "chapter": "Capitulo", "article": "Articulo", "section": "Seccion", "subsection": "Subseccion", "frontmatter": "Paginas iniciales", "backmatter": "Paginas finales", "appendix": "Apendice", "unknown": "Otro" },
     "actions": { "undo": "Deshacer", "redo": "Rehacer", "restore": "Restaurar version detectada", "split": "Dividir", "mergePrevious": "Unir con anterior", "moveUp": "Subir", "moveDown": "Bajar", "saveDraft": "Guardar borrador", "confirm": "Confirmar y continuar" }
   },

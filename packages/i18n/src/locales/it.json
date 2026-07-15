@@ -189,7 +189,7 @@
     "treeTitle": "Struttura del documento", "selectedCount": "{count} elementi da creare", "fields": { "title": "Titolo", "kind": "Tipo", "range": "Intervallo fonte", "behavior": "Includi ed elabora" },
     "pageRange": "Pagine {start}-{end}", "offsetRange": "Testo {start}-{end}", "includeNavigation": "Mantieni questa voce", "includeNavigationHint": "Le voci escluse non vengono materializzate ne mostrate nella navigazione.",
     "processable": "Crea una fonte indipendente", "processableHint": "Trasforma questa divisione in un elemento selezionabile della libreria.", "evidenceTitle": "Perche questa divisione e stata rilevata", "evidence": "{source} · affidabilita {score}%", "noSelection": "Seleziona un elemento da rivedere.",
-    "blockingIssues": "Risolvi {count} problemi prima di continuare.", "ready": "La struttura e valida e pronta per la conferma.", "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
+    "blockingIssues": "Risolvi {count} problemi prima di continuare.", "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.", "ready": "La struttura e valida e pronta per la conferma.", "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
     "kinds": { "part": "Parte", "chapter": "Capitolo", "article": "Articolo", "section": "Sezione", "subsection": "Sottosezione", "frontmatter": "Pagine iniziali", "backmatter": "Pagine finali", "appendix": "Appendice", "unknown": "Altro" },
     "actions": { "undo": "Annulla", "redo": "Ripeti", "restore": "Ripristina versione rilevata", "split": "Dividi", "mergePrevious": "Unisci al precedente", "moveUp": "Sposta su", "moveDown": "Sposta giu", "saveDraft": "Salva bozza", "confirm": "Conferma e continua" }
   },

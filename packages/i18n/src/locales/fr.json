@@ -189,7 +189,7 @@
     "treeTitle": "Structure du document", "selectedCount": "{count} elements a creer", "fields": { "title": "Titre", "kind": "Type", "range": "Plage source", "behavior": "Inclure et traiter" },
     "pageRange": "Pages {start}-{end}", "offsetRange": "Texte {start}-{end}", "includeNavigation": "Conserver cette entree", "includeNavigationHint": "Les entrees exclues ne sont ni materialisees ni affichees dans la navigation.",
     "processable": "Creer une source independante", "processableHint": "Transforme cette division en element selectionnable de la bibliotheque.", "evidenceTitle": "Pourquoi cette division a ete detectee", "evidence": "{source} · confiance {score}%", "noSelection": "Selectionnez un element a reviser.",
-    "blockingIssues": "Resolvez {count} problemes avant de continuer.", "ready": "La structure est valide et prete a confirmer.", "confidence": { "high": "Elevee", "medium": "A reviser", "low": "Faible" },
+    "blockingIssues": "Resolvez {count} problemes avant de continuer.", "selectAtLeastOne": "Selectionnez au moins un element a creer comme source independante.", "ready": "La structure est valide et prete a confirmer.", "confidence": { "high": "Elevee", "medium": "A reviser", "low": "Faible" },
     "kinds": { "part": "Partie", "chapter": "Chapitre", "article": "Article", "section": "Section", "subsection": "Sous-section", "frontmatter": "Pages liminaires", "backmatter": "Pages finales", "appendix": "Annexe", "unknown": "Autre" },
     "actions": { "undo": "Annuler", "redo": "Retablir", "restore": "Restaurer la version detectee", "split": "Diviser", "mergePrevious": "Fusionner avec le precedent", "moveUp": "Monter", "moveDown": "Descendre", "saveDraft": "Enregistrer le brouillon", "confirm": "Confirmer et continuer" }
   },

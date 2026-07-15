@@ -53,11 +53,14 @@ export function StructureReview({
     setHistoryIndex((current) => current + 1);
   }
 
-  function updateSelected(patch: Partial<DocumentDivisionCandidate>) {
-    if (!selected) return;
-    commit(divisions.map((division) => division.id === selected.id
+  function updateDivision(id: string, patch: Partial<DocumentDivisionCandidate>) {
+    commit(divisions.map((division) => division.id === id
       ? { ...division, ...patch, reviewStatus: patch.reviewStatus ?? "edited" }
       : division));
+  }
+
+  function updateSelected(patch: Partial<DocumentDivisionCandidate>) {
+    if (selected) updateDivision(selected.id, patch);
   }
 
   function splitSelected() {
@@ -138,20 +141,31 @@ export function StructureReview({
             const active = division.id === selectedId;
             const rejected = division.reviewStatus === "rejected";
             return <li key={division.id} role="treeitem" aria-level={division.level + 1} aria-selected={active}>
-              <button type="button" onClick={() => setSelectedId(division.id)}
+              <div
                 className={cn(
                   "grid w-full grid-cols-[auto_1fr_auto] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm",
                   active ? "bg-cyan-50 ring-1 ring-cyan-300 dark:bg-cyan-950/50 dark:ring-cyan-800" : "hover:bg-slate-50 dark:hover:bg-slate-900",
                   rejected && "opacity-50"
                 )}
                 style={{ paddingLeft: `${8 + Math.min(division.level, 5) * 16}px` }}>
-                <span className={cn("grid h-5 w-5 place-items-center rounded border", !rejected && division.isProcessable
-                  ? "border-cyan-600 bg-cyan-600 text-white" : "border-slate-300 dark:border-slate-700")}>
-                  {!rejected && division.isProcessable ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-                </span>
-                <span className="min-w-0"><span className="block truncate font-medium">{division.title}</span><span className="text-[11px] text-slate-500">{t(`structure.kinds.${division.kind}` as MessageKey)}</span></span>
-                <ConfidenceBadge confidence={division.confidence} t={t} />
-              </button>
+                <input
+                  type="checkbox"
+                  aria-label={t("structure.processable")}
+                  title={t("structure.processable")}
+                  className="h-5 w-5 cursor-pointer accent-cyan-600 disabled:cursor-not-allowed"
+                  checked={!rejected && division.isProcessable}
+                  disabled={rejected}
+                  onChange={(event) => {
+                    setSelectedId(division.id);
+                    updateDivision(division.id, { isProcessable: event.target.checked });
+                  }}
+                />
+                <button type="button" className="col-span-2 grid min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-left"
+                  onClick={() => setSelectedId(division.id)}>
+                  <span className="min-w-0"><span className="block truncate font-medium">{division.title}</span><span className="text-[11px] text-slate-500">{t(`structure.kinds.${division.kind}` as MessageKey)}</span></span>
+                  <ConfidenceBadge confidence={division.confidence} t={t} />
+                </button>
+              </div>
             </li>;
           })}
         </ol>
@@ -212,6 +226,7 @@ export function StructureReview({
     <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
       <div className="text-sm">
         {blockingIssues.length > 0 ? <span className="inline-flex items-center gap-2 font-medium text-rose-700 dark:text-rose-300"><AlertTriangle className="h-4 w-4" />{t("structure.blockingIssues", { values: { count: blockingIssues.length } })}</span>
+          : selectedCount === 0 ? <span className="inline-flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300"><AlertTriangle className="h-4 w-4" />{t("structure.selectAtLeastOne")}</span>
           : <span className="inline-flex items-center gap-2 text-emerald-700 dark:text-emerald-300"><Check className="h-4 w-4" />{t("structure.ready")}</span>}
       </div>
       <div className="flex gap-2">
