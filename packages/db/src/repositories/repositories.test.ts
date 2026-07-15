@@ -204,6 +204,32 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("'interruptedAt', now()");
   });
 
+  it("serializes ingestion stage lists as JSON", async () => {
+    const now = new Date("2026-07-15T10:00:00.000Z");
+    const requestedStages = ["conversion", "chunking"];
+    const effectiveStages = ["conversion", "chunking", "embedding"];
+    const db = new FakeQueryable([[
+      {
+        id: "run-1", sourceItemId: "source-1", jobId: null, batchId: "batch-1",
+        runKind: "initial", requestedStages, effectiveStages, planVersion: "1",
+        inputDocumentRevisionId: null, inputHashes: {}, supersedesRunId: null,
+        previousArtifactPolicy: "reuse_valid", trigger: "interactive_import",
+        status: "pending", currentStage: "queued", stagesCheckpoint: {}, error: null,
+        startedAt: null, completedAt: null, createdAt: now, updatedAt: now
+      }
+    ]]);
+
+    await createIngestionRunRepository(db).create({
+      sourceItemId: "source-1",
+      batchId: "batch-1",
+      requestedStages,
+      effectiveStages
+    });
+
+    expect(db.queries[0]?.values[4]).toBe(JSON.stringify(requestedStages));
+    expect(db.queries[0]?.values[5]).toBe(JSON.stringify(effectiveStages));
+  });
+
   it("marks the active ingestion checkpoint when the run fails or is canceled", async () => {
     const db = new FakeQueryable([[], []]);
     const runs = createIngestionRunRepository(db);
