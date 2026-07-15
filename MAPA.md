@@ -12,6 +12,12 @@ Leia tambem, antes de editar codigo:
 - `docs/mvp-implementation-plan.md`
 - `docs/stack-versions.md`
 
+Planos de evolucao ainda nao implementados:
+
+- `docs/hierarchical-import-and-selective-ingestion-plan.md`: importacao
+  hierarquica de livros, revistas e papers, revisao de divisoes, escolha de
+  etapas, processamento posterior em lote e reingestao segura.
+
 ## Estado Atual
 
 Fase atual: Fase 5 - Fechamento implementada em codigo, migrations, runtimes e
