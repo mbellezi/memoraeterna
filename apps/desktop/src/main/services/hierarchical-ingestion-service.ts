@@ -50,7 +50,12 @@ export class HierarchicalIngestionService {
   }
 
   public async getStructure(structureId: string) {
-    return createHierarchicalIngestionRepository(this.requirePool()).findById(structureId);
+    const pool = this.requirePool();
+    const structure = await createHierarchicalIngestionRepository(pool).findById(structureId);
+    if (!structure) return null;
+    const document = await createDocumentRepository(pool).findById(structure.rootDocumentId);
+    const rootMarkdown = document?.canonicalMarkdown ?? "";
+    return { ...structure, rootMarkdown, boundaries: structureBoundaries(rootMarkdown, structure.divisions) };
   }
 
   public async saveStructure(structureId: string, divisions: DocumentDivisionCandidate[]) {
@@ -58,7 +63,7 @@ export class HierarchicalIngestionService {
     const repository = createHierarchicalIngestionRepository(this.requirePool());
     const saved = await repository.saveDraft(structureId, parsed);
     if (!saved) throw new Error("structure_not_editable");
-    const structure = await repository.findById(structureId);
+    const structure = await this.getStructure(structureId);
     if (!structure) throw new Error("structure_not_found");
     return structure;
   }
@@ -206,4 +211,40 @@ export class HierarchicalIngestionService {
     if (!pool) throw new Error("database_not_ready");
     return pool;
   }
+}
+
+function structureBoundaries(
+  markdown: string,
+  divisions: Array<{
+    title: string;
+    markdownStart?: number | undefined;
+    markdownEnd?: number | undefined;
+    startPage?: number | undefined;
+    endPage?: number | undefined;
+  }>
+) {
+  const boundaries = new Map<number, { offset: number; label: string; kind: "heading" | "division" | "page"; page?: number }>();
+  for (const match of markdown.matchAll(/^(#{1,6})\s+(.+)$/gm)) {
+    boundaries.set(match.index, { offset: match.index, label: match[2]!.trim(), kind: "heading" });
+  }
+  for (const division of divisions) {
+    if (division.markdownStart !== undefined && !boundaries.has(division.markdownStart)) {
+      boundaries.set(division.markdownStart, {
+        offset: division.markdownStart, label: division.title,
+        kind: division.startPage ? "page" : "division",
+        ...(division.startPage ? { page: division.startPage } : {})
+      });
+    }
+    if (division.markdownEnd !== undefined && !boundaries.has(division.markdownEnd)) {
+      boundaries.set(division.markdownEnd, {
+        offset: division.markdownEnd,
+        label: division.endPage ? `Page ${division.endPage}` : division.title,
+        kind: division.endPage ? "page" : "division",
+        ...(division.endPage ? { page: division.endPage } : {})
+      });
+    }
+  }
+  boundaries.set(0, { offset: 0, label: "Document start", kind: "division" });
+  boundaries.set(markdown.length, { offset: markdown.length, label: "Document end", kind: "division" });
+  return [...boundaries.values()].sort((left, right) => left.offset - right.offset);
 }

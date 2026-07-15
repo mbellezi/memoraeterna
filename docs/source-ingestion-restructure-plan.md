@@ -1,6 +1,40 @@
 # Plano de Reestruturacao da Ingestao de Fontes
 
-Status: plano aprovado em 2026-07-15, sem implementacao iniciada.
+Status: implementado em 2026-07-15. As fases F1-F7 foram entregues em codigo,
+migration, testes e documentacao. Nao existe backfill de descriptors antigos:
+por decisao do usuario, os bancos estavam vazios e a compatibilidade de dados
+legados nao era necessaria.
+
+## Estado da implementacao
+
+- F1: `CreatorSchema`, `SourceDescriptorSchema`, proveniencia por campo,
+  validacao ISBN/DOI e migration `0017_wooden_thunderbird` com creators,
+  page count e series;
+- F2: extracao local EPUB/PDF/Docling, mapeamento Web/YouTube e selecao segura
+  de arquivo por token opaco no main process;
+- F3: enriquecimento Open Library, Google Books e Crossref, cache local,
+  timeout, fallback, download seguro de capas e opt-out global;
+- F4: wizard por cards, formularios por tipo, aplicacao de candidatos sem
+  sobrescrever campos manuais, confirmacao e politica explicita de duplicata;
+- F5: fontes-container sem documento, parent picker filtrado, criacao inline
+  da fonte-mae e tolerancia de Library/processamento/Obsidian a containers;
+- F6: revisao estrutural com preview, snap de fronteiras, split em fronteira
+  detectada, nivel de corte, controle unico de sub-elemento e criadores por
+  divisao, propagados na materializacao;
+- F7: testes unitarios/integrados, verificacao do baseline e banco real,
+  atualizacao do `MAPA.md` e ADR arquitetural. Um corpus amplo de arquivos
+  reais variados permanece como hardening de qualidade, nao como bloqueio do
+  contrato implementado.
+
+O endpoint separado `ingestion.detectStructureFromContent` proposto no plano
+nao foi criado: `createManual` chama diretamente `detectMarkdownStructure` no
+main process antes de persistir o draft, evitando um round-trip IPC redundante
+sem alterar a fronteira de seguranca.
+
+A proposta opcional de deteccao estrutural assistida por IA foi avaliada e
+adiada. EPUB nav/NCX, PDF outline/Docling e headings Markdown continuam
+deterministicos, locais e revisaveis; incluir IA agora aumentaria custo e
+variabilidade sem um corpus golden que demonstrasse ganho mensuravel.
 
 Este plano descreve a reestruturacao do fluxo de insercao de fontes (manual e
 por arquivo) para torna-lo mais preciso em metadados, mais automatizado e mais
@@ -457,9 +491,8 @@ pendencias registradas.
   por isso o merge exige aceite do usuario e preserva proveniencia;
 - PDFs sem Info dict e sem outline continuam existindo: heuristicas de
   primeiras paginas reduzem, mas nao eliminam, preenchimento manual;
-- compatibilidade com fontes ja importadas: nenhuma migracao de dados
-  retroativa obrigatoria; um backfill opcional de descriptors a partir de
-  `metadata` existente pode ser avaliado em F7;
+- compatibilidade com fontes ja importadas: nao foi criado backfill; o usuario
+  confirmou que os bancos estavam vazios durante a reestruturacao;
 - volume de i18n: os cards e formularios por tipo geram muitas chaves; tratar
   como parte do criterio de pronto de F4, nunca hardcoded;
 - fronteiras de arquitetura: extracao fica em `@app/conversion` (sem banco),

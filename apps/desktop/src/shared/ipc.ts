@@ -4,8 +4,12 @@ import {
   AiModelParametersSchema,
   AiReasoningLevelSchema,
   DocumentDivisionCandidateSchema,
+  EnrichmentCandidateSchema,
+  MetadataEnrichmentQuerySchema,
   ProcessingPlanRequestSchema,
   SearchEvidenceSchema,
+  SourceDescriptorDraftSchema,
+  SourceDescriptorSchema,
   SourceItemTypeSchema,
   type SourceItemType
 } from "@app/domain";
@@ -25,6 +29,11 @@ export const ipcChannels = {
   debugSimilarityRunsClear: "app:debug:similarity-runs:clear",
   libraryReset: "app:library:reset",
   ingestionCreateManual: "app:ingestion:create-manual",
+  ingestionExtractFileMetadata: "app:ingestion:extract-file-metadata",
+  ingestionEnrichMetadata: "app:ingestion:enrich-metadata",
+  ingestionApplyEnrichmentCover: "app:ingestion:apply-enrichment-cover",
+  ingestionFindDuplicate: "app:ingestion:find-duplicate",
+  ingestionCreateContainerSource: "app:ingestion:create-container-source",
   ingestionImportFile: "app:ingestion:import-file",
   ingestionLookupSources: "app:ingestion:lookup-sources",
   ingestionStructureGet: "app:ingestion:structure:get",
@@ -112,6 +121,7 @@ export const appSettingsSchema = z.object({
   language: languageCodeSchema,
   themeMode: themeModeSchema,
   debugMode: z.boolean().default(false),
+  metadataEnrichmentEnabled: z.boolean().default(true),
   atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
   updatedAt: z.string().datetime()
 });
@@ -120,6 +130,7 @@ export const appSettingsUpdateSchema = z.object({
   language: languageCodeSchema.optional(),
   themeMode: themeModeSchema.optional(),
   debugMode: z.boolean().optional(),
+  metadataEnrichmentEnabled: z.boolean().optional(),
   atomicNoteRelationThreshold: z.number().min(0).max(1).optional()
 }).strict();
 
@@ -167,41 +178,72 @@ export const systemInfoSchema = z.object({
 export const duplicatePolicySchema = z.enum(["ignore", "update", "version"]);
 
 export const manualIngestionInputSchema = z.object({
-  sourceType: SourceItemTypeSchema,
-  title: z.string().trim().min(1),
-  content: z.string().min(1),
-  originalUri: z.string().url().nullable().optional(),
-  language: z.string().min(2).max(16).default("und"),
+  descriptor: SourceDescriptorSchema,
+  content: z.string().default(""),
   duplicatePolicy: duplicatePolicySchema.default("ignore"),
-  parentSourceItemId: z.string().uuid().nullable().optional(),
-  bibliographic: z.object({
-    workId: z.string().uuid().optional(),
-    workTitle: z.string().trim().min(1).optional(),
-    workType: z.string().min(1).optional(),
-    isbn: z.string().trim().min(1).optional(),
-    issn: z.string().trim().min(1).optional(),
-    doi: z.string().trim().min(1).optional(),
-    pages: z.string().trim().min(1).optional()
-  }).strict().optional(),
-  metadata: z.record(z.string(), z.unknown()).default({}),
+  processingPlan: ProcessingPlanRequestSchema.default({
+    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
+    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+  })
+}).strict().superRefine((input, context) => {
+  const containerType = ["Book", "PeriodicalIssue", "AcademicPaper"].includes(input.descriptor.type);
+  if (!containerType && input.content.trim().length === 0) {
+    context.addIssue({ code: "custom", message: "Content is required for this source type.", path: ["content"] });
+  }
+});
+
+export const fileImportInputSchema = z.object({
+  fileToken: z.string().uuid().optional(),
+  descriptor: SourceDescriptorSchema,
+  duplicatePolicy: duplicatePolicySchema.default("ignore"),
   processingPlan: ProcessingPlanRequestSchema.default({
     preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
     forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
   })
 }).strict();
 
-export const fileImportInputSchema = z.object({
-  sourceType: SourceItemTypeSchema.default("GenericDocument"),
-  duplicatePolicy: duplicatePolicySchema.default("ignore"),
-  processingPlan: ProcessingPlanRequestSchema.default({
-    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
-    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
-  })
+export const containerSourceInputSchema = z.object({
+  descriptor: SourceDescriptorSchema.refine(
+    (descriptor) => ["Book", "PeriodicalIssue", "AcademicPaper"].includes(descriptor.type),
+    "Only hierarchical root types can be containers."
+  ),
+  duplicatePolicy: duplicatePolicySchema.default("ignore")
+}).strict();
+
+export const duplicateCheckInputSchema = z.object({
+  descriptor: SourceDescriptorSchema,
+  content: z.string().optional(),
+  fileToken: z.string().uuid().optional()
+}).strict();
+
+export const duplicateCandidateSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string().min(1),
+  type: SourceItemTypeSchema
+}).strict();
+
+export const fileMetadataExtractionInputSchema = z.object({
+  sourceType: SourceItemTypeSchema.default("GenericDocument")
+}).strict();
+
+export const fileMetadataExtractionResultSchema = z.object({
+  fileToken: z.string().uuid(),
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  draft: SourceDescriptorDraftSchema
+}).strict();
+
+export const metadataEnrichmentInputSchema = MetadataEnrichmentQuerySchema;
+export const metadataEnrichmentResultSchema = EnrichmentCandidateSchema.array();
+export const enrichmentCoverInputSchema = z.object({ coverUrl: z.string().url() }).strict();
+export const enrichmentCoverResultSchema = z.object({
+  assetId: z.string().uuid(),
+  mimeType: z.string().min(1)
 }).strict();
 
 export const ingestionResultSchema = z.object({
   sourceItemId: z.string().uuid(),
-  documentId: z.string().uuid(),
+  documentId: z.string().uuid().nullable(),
   ingestionRunId: z.string().uuid().nullable(),
   jobId: z.string().uuid().nullable(),
   batchId: z.string().uuid().nullable(),
@@ -225,6 +267,13 @@ export const documentStructureViewSchema = z.object({
   overallConfidence: z.number().min(0).max(1),
   revision: z.number().int().positive(),
   warnings: z.array(z.string()),
+  rootMarkdown: z.string(),
+  boundaries: z.array(z.object({
+    offset: z.number().int().nonnegative(),
+    label: z.string().min(1),
+    kind: z.enum(["heading", "division", "page"]),
+    page: z.number().int().positive().optional()
+  }).strict()),
   divisions: z.array(documentDivisionViewSchema),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
@@ -269,6 +318,11 @@ export const sourceSuggestionSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
   type: SourceItemTypeSchema
+}).strict();
+
+export const sourceLookupInputSchema = z.object({
+  query: z.string().trim().min(1).max(200),
+  sourceTypes: z.array(SourceItemTypeSchema).max(11).default([])
 }).strict();
 
 export const jobRecordSchema = z.object({
@@ -333,6 +387,7 @@ export const librarySourceSchema = z.object({
   id: z.string().uuid(),
   parentSourceItemId: z.string().uuid().nullable(),
   childCount: z.number().int().nonnegative(),
+  hasDocument: z.boolean(),
   type: SourceItemTypeSchema,
   title: z.string().min(1),
   subtitle: z.string().nullable(),
@@ -375,6 +430,9 @@ export const sourceDetailSchema = z.object({
   summary: z.string().nullable(),
   metadata: z.record(z.string(), z.unknown()),
   updatedAt: z.string().datetime(),
+  assets: z.array(z.object({
+    id: z.string().uuid(), originalFileName: z.string().min(1), mimeType: z.string().min(1), role: z.string().min(1)
+  }).strict()),
   documents: z.array(z.object({
     id: z.string().uuid(),
     title: z.string().min(1),
@@ -692,8 +750,17 @@ export type AppSettingsUpdate = z.infer<typeof appSettingsUpdateSchema>;
 export type StorageSettings = z.infer<typeof storageSettingsSchema>;
 export type StorageSettingsUpdate = z.infer<typeof storageSettingsUpdateSchema>;
 export type SystemInfo = z.infer<typeof systemInfoSchema>;
+export type DuplicatePolicy = z.infer<typeof duplicatePolicySchema>;
 export type ManualIngestionInput = z.infer<typeof manualIngestionInputSchema>;
 export type FileImportInput = z.infer<typeof fileImportInputSchema>;
+export type ContainerSourceInput = z.infer<typeof containerSourceInputSchema>;
+export type DuplicateCheckInput = z.infer<typeof duplicateCheckInputSchema>;
+export type DuplicateCandidate = z.infer<typeof duplicateCandidateSchema>;
+export type FileMetadataExtractionInput = z.infer<typeof fileMetadataExtractionInputSchema>;
+export type FileMetadataExtractionResult = z.infer<typeof fileMetadataExtractionResultSchema>;
+export type MetadataEnrichmentInput = z.infer<typeof metadataEnrichmentInputSchema>;
+export type EnrichmentCandidate = z.infer<typeof EnrichmentCandidateSchema>;
+export type EnrichmentCoverResult = z.infer<typeof enrichmentCoverResultSchema>;
 export type IngestionResult = z.infer<typeof ingestionResultSchema>;
 export type DocumentStructureView = z.infer<typeof documentStructureViewSchema>;
 export type StructureConfirmInput = z.infer<typeof structureConfirmInputSchema>;
@@ -738,6 +805,7 @@ export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
 export const defaultAppSettings = {
   themeMode: "dark",
   debugMode: false,
+  metadataEnrichmentEnabled: true,
   atomicNoteRelationThreshold: 0.72
 } satisfies Omit<AppSettingsUpdate, "language">;
 
@@ -777,8 +845,13 @@ export interface DesktopApi {
   };
   ingestion: {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
+    extractFileMetadata: (input: FileMetadataExtractionInput) => Promise<FileMetadataExtractionResult | null>;
+    enrichMetadata: (input: MetadataEnrichmentInput) => Promise<EnrichmentCandidate[]>;
+    applyEnrichmentCover: (coverUrl: string) => Promise<EnrichmentCoverResult>;
+    findDuplicate: (input: DuplicateCheckInput) => Promise<DuplicateCandidate | null>;
+    createContainerSource: (input: ContainerSourceInput) => Promise<IngestionResult>;
     importFile: (input: FileImportInput) => Promise<IngestionResult | null>;
-    lookupSources: (query: string) => Promise<SourceSuggestion[]>;
+    lookupSources: (query: string, sourceTypes?: SourceItemType[]) => Promise<SourceSuggestion[]>;
     getStructure: (structureId: string) => Promise<DocumentStructureView | null>;
     saveStructure: (input: StructureSaveInput) => Promise<DocumentStructureView>;
     confirmStructure: (input: StructureConfirmInput) => Promise<ProcessingQueueResult>;

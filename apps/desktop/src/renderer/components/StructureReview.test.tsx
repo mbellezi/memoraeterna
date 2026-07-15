@@ -17,6 +17,12 @@ function createStructure(isProcessable: boolean): DocumentStructureView {
     overallConfidence: 0.9,
     revision: 1,
     warnings: [],
+    rootMarkdown: "# Chapter 1\n\nFirst section.\n\n# Chapter 2\n\nSecond section.",
+    boundaries: [
+      { offset: 0, label: "Chapter 1", kind: "heading" },
+      { offset: 30, label: "Chapter 2", kind: "heading" },
+      { offset: 59, label: "Document end", kind: "division" }
+    ],
     divisions: [{
       id: "00000000-0000-4000-8000-000000000004",
       parentId: null,
@@ -31,7 +37,7 @@ function createStructure(isProcessable: boolean): DocumentStructureView {
       startPage: 1,
       endPage: 2,
       markdownStart: 0,
-      markdownEnd: 100,
+      markdownEnd: 59,
       confidence: 0.9,
       evidence: [],
       reviewStatus: "accepted",
@@ -56,15 +62,15 @@ function renderReview(isProcessable: boolean) {
 function confirmButton(markup: string) {
   return [...markup.matchAll(/<button\b[^>]*>.*?<\/button>/g)]
     .map((match) => match[0])
-    .find((button) => button.includes("Confirmar e continuar"));
+    .find((button) => button.includes("Importar fonte com"));
 }
 
 describe("StructureReview", () => {
-  it("renders an actionable source checkbox and explains why confirmation is disabled", () => {
+  it("renders the single sub-element control and explains why confirmation is disabled", () => {
     const markup = renderReview(false);
 
     expect(markup).toContain('type="checkbox"');
-    expect(markup).toContain('aria-label="Criar uma fonte independente"');
+    expect(markup).toContain('aria-label="Criar como sub-elemento"');
     expect(markup).toContain("Selecione ao menos um item para criar como fonte independente.");
     expect(confirmButton(markup)).toContain(' disabled=""');
   });

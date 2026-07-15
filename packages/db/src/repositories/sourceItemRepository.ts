@@ -166,17 +166,44 @@ export function createSourceItemRepository(db: Queryable) {
       return row ? mapSourceItem(row) : null;
     },
 
-    async lookup(query: string, limit = 10): Promise<SourceItemRecord[]> {
+    async findDescriptorDuplicate(input: {
+      type: SourceItemType;
+      title: string;
+      identifiers?: string[];
+    }): Promise<SourceItemRecord | null> {
+      const identifiers = (input.identifiers ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean);
       const result = await db.query<SourceItemRow>(
         `select ${returning}
          from source_items
-         where unaccent(title) ilike '%' || unaccent($1) || '%'
-            or source_uri ilike '%' || $1 || '%'
-            or external_id ilike '%' || $1 || '%'
-            or metadata::text ilike '%' || $1 || '%'
+         where type = $1
+           and (
+             unaccent(lower(title)) = unaccent(lower($2))
+             or exists (
+               select 1
+               from unnest($3::text[]) identifier
+               where lower(metadata::text) like '%' || identifier || '%'
+             )
+           )
+         order by updated_at desc
+         limit 1`,
+        [input.type, input.title, identifiers]
+      );
+      const row = result.rows[0];
+      return row ? mapSourceItem(row) : null;
+    },
+
+    async lookup(query: string, limit = 10, sourceTypes: SourceItemType[] = []): Promise<SourceItemRecord[]> {
+      const result = await db.query<SourceItemRow>(
+        `select ${returning}
+         from source_items
+         where (cardinality($3::source_item_type[]) = 0 or type = any($3::source_item_type[]))
+           and (unaccent(title) ilike '%' || unaccent($1) || '%'
+             or source_uri ilike '%' || $1 || '%'
+             or external_id ilike '%' || $1 || '%'
+             or metadata::text ilike '%' || $1 || '%')
          order by similarity(unaccent(title), unaccent($1)) desc, updated_at desc
          limit $2`,
-        [query, limit]
+        [query, limit, sourceTypes]
       );
       return result.rows.map(mapSourceItem);
     }

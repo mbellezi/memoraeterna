@@ -23,11 +23,12 @@ import { SettingsView } from "./SettingsView";
 const t = createTranslator("en");
 
 describe("phase 2 renderer views", () => {
-  it("renders the manual and file ingestion controls", () => {
+  it("renders the source-type step of the ingestion wizard", () => {
     const html = renderToString(<ImportView t={t} />);
-    expect(html).toContain("Manual content");
+    expect(html).toContain("Search source types");
     expect(html).toContain("Personal note");
-    expect(html).toContain("Queue import");
+    expect(html).toContain("Metadata");
+    expect(html).toContain("Continue");
   });
 
   it("renders search, jobs and AI settings empty states", () => {

@@ -15,6 +15,11 @@ import {
   aiModelDiscoveryInputSchema,
   atomicNoteReviewInputSchema,
   fileImportInputSchema,
+  fileMetadataExtractionInputSchema,
+  metadataEnrichmentInputSchema,
+  enrichmentCoverInputSchema,
+  containerSourceInputSchema,
+  duplicateCheckInputSchema,
   manualIngestionInputSchema,
   searchInputSchema,
   storageSettingsUpdateSchema,
@@ -25,6 +30,7 @@ import {
   processingRequestSchema,
   structureSaveInputSchema,
   structureConfirmInputSchema,
+  sourceLookupInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
 import { AiReasoningLevelSchema, SourceItemTypeSchema } from "@app/domain";
@@ -42,6 +48,7 @@ import type { LibraryResetService } from "./services/library-reset-service.js";
 import type { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import type { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import type { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
+import type { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -53,6 +60,7 @@ export function registerIpcHandlers(
   settingsService: SettingsService,
   databaseService: DatabaseServicePort,
   ingestionService: IngestionService,
+  metadataEnrichmentService: MetadataEnrichmentService,
   hierarchicalIngestionService: HierarchicalIngestionService,
   jobSupervisor: JobSupervisor,
   searchService: SearchService,
@@ -128,15 +136,37 @@ export function registerIpcHandlers(
     ingestionService.createManual(manualIngestionInputSchema.parse(payload))
   );
 
+  ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (_event, payload: unknown) => {
+    const input = fileMetadataExtractionInputSchema.parse(payload);
+    const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
+    const path = selection.filePaths[0];
+    return selection.canceled || !path ? null : ingestionService.prepareFileMetadata(path, input.sourceType);
+  });
+  ipcMain.handle(ipcChannels.ingestionEnrichMetadata, (_event, payload: unknown) =>
+    metadataEnrichmentService.search(metadataEnrichmentInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.ingestionApplyEnrichmentCover, (_event, payload: unknown) => {
+    const input = enrichmentCoverInputSchema.parse(payload);
+    return metadataEnrichmentService.downloadCover(input.coverUrl);
+  });
+  ipcMain.handle(ipcChannels.ingestionFindDuplicate, (_event, payload: unknown) =>
+    ingestionService.findDuplicate(duplicateCheckInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.ingestionCreateContainerSource, (_event, payload: unknown) =>
+    ingestionService.createContainerSource(containerSourceInputSchema.parse(payload))
+  );
+
   ipcMain.handle(ipcChannels.ingestionImportFile, async (_event, payload: unknown) => {
     const input = fileImportInputSchema.parse(payload);
+    if (input.fileToken) return ingestionService.importPreparedFile(input.fileToken, input);
     const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
     const path = selection.filePaths[0];
     return selection.canceled || !path ? null : ingestionService.importFile(path, input);
   });
-  ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) =>
-    ingestionService.lookupSources(z.string().trim().min(1).max(200).parse(payload))
-  );
+  ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) => {
+    const input = sourceLookupInputSchema.parse(payload);
+    return ingestionService.lookupSources(input.query, input.sourceTypes);
+  });
   ipcMain.handle(ipcChannels.ingestionStructureGet, async (_event, payload: unknown) => {
     const structure = await hierarchicalIngestionService.getStructure(z.string().uuid().parse(payload));
     return structure ? serializeStructure(structure) : null;
@@ -316,6 +346,8 @@ function serializeStructure(structure: NonNullable<Awaited<ReturnType<Hierarchic
     overallConfidence: structure.overallConfidence,
     revision: structure.revision,
     warnings: Array.isArray(rawWarnings) ? rawWarnings.filter((item): item is string => typeof item === "string") : [],
+    rootMarkdown: structure.rootMarkdown,
+    boundaries: structure.boundaries,
     divisions: structure.divisions.map((division) => ({
       id: division.id,
       parentId: division.parentId,

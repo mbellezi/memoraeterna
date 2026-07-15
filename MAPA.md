@@ -19,11 +19,14 @@ Evolucoes pos-MVP implementadas:
   etapas, processamento posterior em lote e reingestao segura. Implementacao
   funcional concluida em 2026-07-15; corpus golden amplo, benchmarks e smoke
   manual multiplataforma seguem como hardening.
+- `docs/source-ingestion-restructure-plan.md`: descriptors tipados por fonte,
+  extracao e enriquecimento de metadados, wizard, fontes-container e revisao
+  estrutural v2. Implementacao concluida em 2026-07-15.
 
 ## Estado Atual
 
-Fase atual: Fase 5 - Fechamento e evolucao de importacao hierarquica
-implementadas em codigo, migrations, runtimes e testes automatizados. O pacote
+Fase atual: Fase 5 e reestruturacao da ingestao de fontes concluidas em codigo,
+migrations, runtimes, documentacao e testes automatizados. O pacote
 macOS arm64 sem instalador foi gerado; assinatura,
 notarizacao e smoke tests manuais nos hosts Chrome/Obsidian continuam como
 validacoes de distribuicao.
@@ -73,15 +76,20 @@ Implementado ate aqui:
   e removida;
 - roteamento persistido de perfil por tipo de tarefa e idioma de resposta por
   perfil, herdando o idioma da interface por padrao;
-- ingestao manual progressiva para os 8 tipos do MVP, source picker,
-  deduplicacao, vinculo bibliografico e importacao de arquivo via dialog do
-  main process;
+- ingestao dos 11 tipos via wizard com cards pesquisaveis, descriptors Zod por
+  tipo, proveniencia por campo, deduplicacao explicita, vinculo bibliografico,
+  parent picker filtrado e importacao de arquivo por token opaco do main process;
+- extracao local de metadados EPUB/PDF/Docling, capas embarcadas e mapeamento
+  tipado de capturas Web/YouTube; enriquecimento opcional via Open Library,
+  Google Books e Crossref com cache, timeout e download seguro de capas;
+- fontes-container `Book`, `PeriodicalIssue` e `AcademicPaper` sem documento,
+  aceitas pela Library, processamento por escopo, exclusao e sync Obsidian;
 - importacao hierarquica de `Book`, `PeriodicalIssue` e `AcademicPaper`, com
   detectores EPUB 2/3 e PDF, draft persistido, revisao humana obrigatoria,
   materializacao transacional e filhos `BookChapter`, `StandaloneArticle` e
   `DocumentSection`;
-- wizard de importacao com quatro presets, plano personalizado e DAG de
-  dependencias visivel; `Importar somente` nao cria job de IA;
+- wizard adaptativo de importacao com seis estados, quatro presets, plano
+  personalizado e DAG de dependencias visivel; `Importar somente` nao cria job de IA;
 - Library hierarquica com selecao multipla e escopo raiz/filhos, processamento
   posterior, etapas ausentes e reingestao que preserva notas revisadas;
 - processing batches, runs normalizadas por etapa, execucao seletiva,
@@ -175,7 +183,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migrations ate `0016_awesome_dragon_man`, baseline com 17 migrations e verificacao
+- migrations ate `0017_wooden_thunderbird`, baseline com 18 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.
@@ -189,6 +197,8 @@ Pendencias conhecidas:
   warning sobre a chave legada `python` na configuracao do usuario.
 - o corpus golden e os benchmarks completos dos formatos Docling continuam
   pendentes; o smoke offline automatizado cobre inicialmente um PDF com OCR;
+  o corpus amplo de metadados/estruturas EPUB e PDF reais variados tambem
+  permanece como hardening de qualidade da ingestao;
 - o smoke real do Gemma 4 12B MLX instalado foi validado; os demais modelos do
   catalogo ainda exigem download e validacao individual;
 - smoke tests manuais da extensao carregada no Chrome e do plugin instalado no
@@ -249,7 +259,9 @@ Arquivos principais:
   dos jobs persistidos.
 - `src/main/services/worker-supervisor.ts`: lifecycle dos `worker_threads`.
 - `src/main/services/ingestion-service.ts`: ingestao manual/arquivo e
-  persistencia dos artefatos.
+  persistencia de descriptors, containers, bibliografia, arquivos e capas.
+- `src/main/services/metadata-enrichment-service.ts`: adapters Open Library,
+  Google Books e Crossref, cache, limites de rede e persistencia de capas.
 - `src/main/services/hierarchical-ingestion-service.ts`: drafts estruturais,
   materializacao, planos seletivos, batches e reingestao.
 - `src/main/services/asset-storage-service.ts`: storage por hash.
@@ -288,6 +300,10 @@ Arquivos principais:
   parametros canonicos de modelos e perfis.
 - `src/renderer/components/LibraryView.tsx`: biblioteca e detalhe completo de
   fontes.
+- `src/renderer/components/ImportView.tsx`: wizard adaptativo de fonte,
+  metadados, parent picker, enriquecimento, conteudo e duplicatas.
+- `src/renderer/components/StructureReview.tsx`: preview, snap, nivel de corte
+  e revisao dos sub-elementos detectados.
 - `src/renderer/components/ReviewQueueView.tsx`: fila de revisao das notas
   atomicas.
 - `electron.vite.config.ts`: build Electron/Vite.
@@ -349,6 +365,10 @@ Inclui os 8 tipos do MVP e os 3 tipos hierarquicos pos-MVP:
 - `Video`
 - `GenericDocument`
 
+`src/source-descriptor.ts` define os descriptors discriminados, creators,
+proveniencia, capas e normalizacao de ISBN/DOI. `src/metadata-enrichment.ts`
+define consultas e candidatos de provedores externos.
+
 ### `packages/integration-contracts`
 
 Contratos externos seguros e versionados para extensao Chrome, plugin Obsidian
@@ -376,6 +396,8 @@ Arquivos principais:
   clientes autorizados e identidade de arquivos Obsidian.
 - `src/scripts/verify-phase5.ts`: verificacao real das tabelas de modelos,
   checkpoints, perfis locais, tracing por fonte e baseline completo.
+- `src/scripts/verify-source-ingestion.ts`: verificacao real da migration de
+  descriptors, round-trip de creators e baseline em banco vazio/existente.
 - `src/sidecar/manager.ts`: initdb/start/stop/restart do Postgres sidecar.
 - `src/sidecar/paths.ts`: resolucao de paths DEV/prod/env.
 - `src/sidecar/nodeRunner.ts`: runner Node para comandos do sidecar.
@@ -540,8 +562,10 @@ npm run package:desktop:dir
 - `docs/local-models-and-packaging.md`: catalogo local, downloads e pacote.
 - `docs/source-ingestion-restructure-plan.md`: plano aprovado de
   reestruturacao da ingestao de fontes (wizard, metadados por tipo,
-  enriquecimento externo, fontes-container e revisao de estrutura v2), ainda
-  nao implementado.
+  enriquecimento externo, fontes-container e revisao de estrutura v2),
+  implementado em 2026-07-15.
+- `docs/adr/0001-typed-source-ingestion.md`: decisoes arquiteturais da nova
+  ingestao e suas consequencias.
 - `README.md`: instrucoes para pessoas desenvolvedoras.
 
 ## Cuidados Para Proximas Edicoes

@@ -17,6 +17,7 @@ import { BackupService } from "./services/backup-service.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
+import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -87,6 +88,7 @@ let settingsService: SettingsService | null = null;
 let databaseService: DatabaseService | null = null;
 let aiService: AiService | null = null;
 let ingestionService: IngestionService | null = null;
+let metadataEnrichmentService: MetadataEnrichmentService | null = null;
 let hierarchicalIngestionService: HierarchicalIngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
 let searchService: SearchService | null = null;
@@ -158,6 +160,12 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     hierarchicalIngestionService
   });
+  metadataEnrichmentService = new MetadataEnrichmentService({
+    getPool: () => databaseService?.getPool() ?? null,
+    getEnabled: async () => (await settingsService!.getApp()).metadataEnrichmentEnabled,
+    userDataPath: app.getPath("userData"),
+    logger: console
+  });
   searchService = new SearchService(
     () => databaseService?.getPool() ?? null,
     aiService,
@@ -211,6 +219,7 @@ void app.whenReady().then(() => {
     settingsService,
     databaseService,
     ingestionService,
+    metadataEnrichmentService,
     hierarchicalIngestionService,
     jobSupervisor,
     searchService,
@@ -282,6 +291,7 @@ async function shutdownServices(): Promise<void> {
   await obsidianSyncService?.shutdown();
   obsidianSyncService = null;
   ingestionService = null;
+  metadataEnrichmentService = null;
   await aiService?.dispose();
   aiService = null;
   await settingsService?.dispose();

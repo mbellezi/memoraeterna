@@ -320,19 +320,18 @@ function readNcxNavigation(entries: Record<string, Uint8Array>, ncxPath: string,
 }
 
 function readSafeEpubEntries(data: Uint8Array): Record<string, Uint8Array> {
-  const entries = unzipSync(data);
-  const names = Object.keys(entries);
-  if (names.length > MAX_EPUB_ENTRIES) throw new Error("epub_entry_limit_exceeded");
+  let count = 0;
   let total = 0;
-  for (const name of names) {
-    safeArchivePath(name);
-    const entry = entries[name];
-    if (!entry) continue;
-    if (entry.byteLength > MAX_EPUB_ENTRY_BYTES) throw new Error("epub_entry_size_limit_exceeded");
-    total += entry.byteLength;
-    if (total > MAX_EPUB_TOTAL_BYTES) throw new Error("epub_total_size_limit_exceeded");
-  }
-  return entries;
+  return unzipSync(data, { filter: (file) => {
+    count += 1;
+    if (count > MAX_EPUB_ENTRIES) throw new Error("epub_entry_limit_exceeded");
+    safeArchivePath(file.name);
+    if (!Number.isSafeInteger(file.originalSize) || file.originalSize < 0
+        || file.originalSize > MAX_EPUB_ENTRY_BYTES) throw new Error("epub_entry_size_limit_exceeded");
+    total += file.originalSize;
+    if (!Number.isSafeInteger(total) || total > MAX_EPUB_TOTAL_BYTES) throw new Error("epub_total_size_limit_exceeded");
+    return true;
+  } });
 }
 
 function divisionsFromBlocks(

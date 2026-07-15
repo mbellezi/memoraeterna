@@ -644,6 +644,7 @@ export const bibliographicWorks = pgTable(
     subtitle: text("subtitle"),
     canonicalTitle: text("canonical_title"),
     language: varchar("language", { length: 16 }).notNull().default("und"),
+    creators: jsonb("creators").notNull().default(sql`'[]'::jsonb`),
     identifiers: jsonb("identifiers").notNull().default(sql`'{}'::jsonb`),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
@@ -670,6 +671,9 @@ export const bibliographicInstances = pgTable(
     isbn: text("isbn"),
     issn: text("issn"),
     doi: text("doi"),
+    creators: jsonb("creators").notNull().default(sql`'[]'::jsonb`),
+    pageCount: integer("page_count"),
+    series: text("series"),
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
     ...timestamps
   },

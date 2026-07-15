@@ -29,6 +29,7 @@
     "db:phase3:verify": "npm run db:phase3:verify -w @app/db",
     "db:phase4:verify": "npm run db:phase4:verify -w @app/db",
     "db:phase5:verify": "npm run db:phase5:verify -w @app/db",
+    "db:source-ingestion:verify": "npm run db:source-ingestion:verify -w @app/db",
     "phase4:e2e": "npm run phase4:e2e -w @app/desktop",
     "mlx:build": "npm run native:mlx:build -w @app/desktop",
     "mlx:smoke": "tsx scripts/smoke-mlx-helper.ts",

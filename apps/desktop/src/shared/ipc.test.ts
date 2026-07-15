@@ -22,6 +22,7 @@ import {
   , libraryResetResultSchema
   , sourceDeletionResultSchema
   , similarityDebugRunSchema
+  , fileMetadataExtractionResultSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -101,17 +102,27 @@ describe("desktop IPC contracts", () => {
 
   it("validates phase 2 ingestion and search payloads", () => {
     expect(manualIngestionInputSchema.parse({
-      sourceType: "PersonalNote",
-      title: "An idea",
+      descriptor: {
+        type: "PersonalNote", title: "An idea", language: "en", creators: [], tags: [], provenance: {}
+      },
       content: "Evidence",
-      metadata: {}
     })).toMatchObject({ duplicatePolicy: "ignore" });
     expect(() => manualIngestionInputSchema.parse({
-      sourceType: "PodcastEpisode",
-      title: "Outside the MVP",
+      descriptor: { type: "PodcastEpisode", title: "Outside the MVP" },
       content: "No"
     })).toThrow();
     expect(searchInputSchema.parse({ text: "memory" })).toMatchObject({ mode: "hybrid", limit: 20 });
+    expect(fileMetadataExtractionResultSchema.parse({
+      fileToken: "00000000-0000-4000-8000-000000000001",
+      fileName: "book.epub",
+      mimeType: "application/epub+zip",
+      draft: {
+        sourceType: "Book",
+        values: { title: "Book" },
+        provenance: { title: { source: "extracted", evidence: "epub-opf" } },
+        warnings: []
+      }
+    }).draft.values.title).toBe("Book");
   });
 
   it("validates phase 3 source details and review actions", () => {
@@ -128,6 +139,7 @@ describe("desktop IPC contracts", () => {
       summary: null,
       metadata: {},
       updatedAt: new Date(0).toISOString(),
+      assets: [],
       documents: [],
       summaries: [],
       atomicNotes: [],

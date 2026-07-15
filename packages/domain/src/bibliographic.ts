@@ -7,6 +7,7 @@ import {
   OptionalMetadataSchema,
   StableIdSchema
 } from "./primitives.js";
+import { CreatorSchema } from "./source-descriptor.js";
 
 export const BibliographicWorkTypeSchema = z.enum([
   "book",
@@ -30,6 +31,7 @@ export const BibliographicWorkSchema = z
     subtitle: NonEmptyStringSchema.optional(),
     canonicalTitle: NonEmptyStringSchema.optional(),
     language: LanguageCodeSchema.optional(),
+    creators: z.array(CreatorSchema).default([]),
     identifiers: z.record(z.string(), z.string()).default({}),
     metadata: OptionalMetadataSchema,
     createdAt: IsoDateTimeSchema,
@@ -67,6 +69,9 @@ export const BibliographicInstanceSchema = z
     isbn: z.string().min(1).optional(),
     issn: z.string().min(1).optional(),
     doi: z.string().min(1).optional(),
+    creators: z.array(CreatorSchema).default([]),
+    pageCount: z.number().int().positive().optional(),
+    series: z.string().min(1).optional(),
     metadata: OptionalMetadataSchema,
     createdAt: IsoDateTimeSchema,
     updatedAt: IsoDateTimeSchema

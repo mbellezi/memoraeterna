@@ -184,7 +184,10 @@
   },
   "import": {
     "modes": { "manual": "Manual content", "file": "Local file" },
-    "steps": { "source": "Choose source and processing", "structure": "Review detected structure" },
+    "steps": { "type": "Type", "origin": "Origin", "metadata": "Metadata", "content": "Content", "confirm": "Confirm", "structure": "Structure" },
+    "searchTypes": "Search source types",
+    "groups": { "notes": "Notes", "publications": "Publications", "media": "Web, video, and files" },
+    "badges": { "container": "Container", "child": "Needs parent" },
     "hierarchyHint": "This type can detect chapters, articles, and sections before processing.",
     "fields": {
       "sourceType": "Source type", "title": "Title", "content": "Content",
@@ -197,9 +200,26 @@
       "PeriodicalIssue": "Periodical issue", "AcademicPaper": "Academic paper", "DocumentSection": "Document section",
       "Video": "Video", "GenericDocument": "Generic document"
     },
-    "actions": { "queue": "Queue import", "chooseFile": "Choose file" },
+    "sourceDescriptions": {
+      "PersonalNote": "A thought, excerpt, or note written by you.", "DailyNote": "A journal entry anchored to a calendar date.", "WebArticle": "An article captured with its original web address.",
+      "Book": "A complete book, with optional chapters added now or later.", "BookChapter": "A chapter linked to a book already in your library.", "StandaloneArticle": "An article on its own or linked to a periodical issue.",
+      "PeriodicalIssue": "A journal, magazine, or newspaper issue that can contain articles.", "AcademicPaper": "A scholarly work with DOI, venue, authors, and sections.", "DocumentSection": "A section linked to an academic paper.",
+      "Video": "A video with channel, platform, duration, and thumbnail.", "GenericDocument": "Any other document or file that does not fit a specific type."
+    },
+    "originDescriptions": { "manual": "Enter metadata and paste content yourself. Containers can be saved without content.", "file": "Select a file, extract metadata locally, then review everything before import." },
+    "metadataFields": {
+      "title": "Title", "subtitle": "Subtitle", "creators": "Creators (role: name | affiliation, one per line)", "language": "Language code", "description": "Description", "tags": "Tags (comma separated)", "context": "Context", "noteDate": "Note date", "url": "Original URL", "siteName": "Site name", "publicationDate": "Publication date", "imageUrl": "Main image URL",
+      "edition": "Edition", "publisher": "Publisher", "isbn10": "ISBN-10", "isbn13": "ISBN-13", "series": "Series", "volume": "Volume", "pageCount": "Page count", "subjects": "Subjects", "chapterNumber": "Chapter number", "pageStart": "Start page", "pageEnd": "End page", "publicationTitle": "Publication title", "issn": "ISSN", "issue": "Issue", "doi": "DOI", "venue": "Venue", "year": "Year", "abstract": "Abstract", "keywords": "Keywords", "sectionNumber": "Section number", "periodicalTitle": "Periodical title", "channel": "Channel", "durationSeconds": "Duration (seconds)", "platform": "Platform", "videoId": "Video ID", "thumbnailUrl": "Thumbnail URL", "creationDate": "Creation date", "mimeType": "MIME type"
+    },
+    "parent": { "label": "Parent source", "create": "Create parent", "createTitle": "Create the parent source without leaving this import" },
+    "enrichment": { "title": "Suggested metadata", "waiting": "Suggestions appear automatically when a title, ISBN, or DOI is available.", "apply": "Apply suggestion" },
+    "content": { "hint": "Markdown content is preserved as the source document.", "containerHint": "Leave empty to create a metadata-only container, or paste content to detect its internal structure." },
+    "confirmation": { "origin": "Origin", "content": "Content", "container": "Metadata-only container" },
+    "duplicate": { "found": "A possible duplicate was found: {title}", "none": "No duplicate was detected.", "ignore": "Keep existing", "update": "Update existing", "version": "Create new version" },
+    "validation": { "chooseFile": "Choose a file before continuing.", "contentRequired": "Content is required for this source type." },
+    "actions": { "queue": "Queue import", "chooseFile": "Choose file", "changeFile": "Change file", "back": "Back", "continue": "Continue", "import": "Import source" },
     "file": { "title": "Choose the original file", "description": "The original is preserved. For books, issues, and papers, you review the detected structure before any AI processing starts." },
-    "status": { "queued": "Import queued.", "canceled": "File selection canceled.", "saved": "Source saved without background processing.", "reviewStructure": "Structure detected. Review it before continuing.", "draftSaved": "Structure draft saved.", "queuedChildren": "Structure confirmed and selected items queued.", "savedChildren": "Structure confirmed and selected items saved." }
+    "status": { "queued": "Import queued.", "canceled": "File selection canceled.", "saved": "Source saved without background processing.", "metadataExtracted": "Metadata extracted locally. Review it before continuing.", "duplicateHandled": "Duplicate policy applied.", "reviewStructure": "Structure detected. Review it before continuing.", "draftSaved": "Structure draft saved.", "queuedChildren": "Structure confirmed and selected items queued.", "savedChildren": "Structure confirmed and selected items saved." }
   },
   "processing": {
     "title": "Choose how far to process",
@@ -220,10 +240,17 @@
   "structure": {
     "eyebrow": "Human review checkpoint",
     "title": "Review the detected structure",
-    "description": "Confirm titles and ranges, exclude navigation-only entries, and choose what becomes an independent source.",
+    "description": "Review the detected segments, snap their boundaries, and choose which ones become sub-elements.",
     "treeTitle": "Document structure",
     "selectedCount": "{count} items to create",
-    "fields": { "title": "Title", "kind": "Type", "range": "Source range", "behavior": "Include and process" },
+    "fields": { "title": "Title", "kind": "Type", "range": "Source range", "behavior": "Include and process", "metadata": "Sub-element", "creators": "Creators (role: name | affiliation)" },
+    "cutoffLevel": "Create through outline level",
+    "createSubelement": "Create as a sub-element",
+    "createSubelementHint": "When selected, this segment becomes a child source with its own document.",
+    "previewTitle": "Segment content preview",
+    "previewUnavailable": "A text preview is not available for this page-based segment.",
+    "splitBoundary": "Split at detected boundary",
+    "boundaryStart": "Start boundary", "boundaryEnd": "End boundary", "boundaryPage": "Page {page} · {label}",
     "pageRange": "Pages {start}–{end}",
     "offsetRange": "Text {start}–{end}",
     "includeNavigation": "Keep this entry",
@@ -238,7 +265,7 @@
     "ready": "Structure is valid and ready to confirm.",
     "confidence": { "high": "High", "medium": "Review", "low": "Low" },
     "kinds": { "part": "Part", "chapter": "Chapter", "article": "Article", "section": "Section", "subsection": "Subsection", "frontmatter": "Front matter", "backmatter": "Back matter", "appendix": "Appendix", "unknown": "Other" },
-    "actions": { "undo": "Undo", "redo": "Redo", "restore": "Restore detected version", "split": "Split", "mergePrevious": "Merge with previous", "moveUp": "Move up", "moveDown": "Move down", "saveDraft": "Save draft", "confirm": "Confirm and continue" }
+    "actions": { "undo": "Undo", "redo": "Redo", "restore": "Restore detected version", "split": "Split", "mergePrevious": "Merge with previous", "moveUp": "Move up", "moveDown": "Move down", "saveDraft": "Save draft", "confirm": "Confirm and continue", "confirmCount": "Import source with {count} sub-elements" }
   },
   "search": {
     "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
@@ -251,6 +278,8 @@
     "refresh": "Refresh library",
     "error": "The library could not be loaded.",
     "empty": "No sources in the library yet.",
+    "container": "Container",
+    "containerHint": "This metadata-only container is ready to receive child sources.",
     "selectionCount": "{count} sources selected", "childCount": "{count} direct items",
     "actions": { "selectSource": "Select {title}", "process": "Process this source", "processSelected": "Process selected", "clearSelection": "Clear selection", "queueProcessing": "Queue processing" },
     "processingDialog": { "title": "Process library sources", "description": "Choose what to generate for {count} selected sources.", "scope": "Apply to", "regenerate": "Regenerate existing artifacts", "regenerateHint": "Reviewed notes are preserved; pending generations are archived safely." },
@@ -423,6 +452,7 @@
       }
     },
     "matching": { "title": "Knowledge matching", "description": "Set the minimum final score required to persist a relationship between atomic notes.", "minimumScore": "Minimum match score", "moreRelations": "More relations", "fewerRelations": "Fewer, stricter relations", "savedAutomatically": "This value is applied automatically when changed." },
+    "metadataEnrichment": { "title": "Automatic metadata enrichment", "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests." },
     "reset": { "title": "Reset library", "description": "Delete the entire library, managed files, vectors, jobs and atomic notes. Downloaded local models and settings are preserved.", "action": "Reset everything", "confirmation": "Permanently delete the entire library, managed files, vectors and atomic notes? Downloaded local models will be preserved.", "completed": "Library reset completed.", "completedWithWarnings": "Library reset completed, but some managed files could not be removed.", "failed": "The library could not be reset." },
     "ai": {
       "title": "AI providers and profiles", "provider": "Provider", "google": "Google Gemini",

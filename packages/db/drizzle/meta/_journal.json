@@ -120,6 +120,13 @@
       "when": 1784146248160,
       "tag": "0016_awesome_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1784155136096,
+      "tag": "0017_wooden_thunderbird",
+      "breakpoints": true
     }
   ]
 }

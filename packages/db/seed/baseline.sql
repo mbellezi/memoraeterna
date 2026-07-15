@@ -1095,3 +1095,9 @@ FROM ai_task_runs run
 JOIN chunks chunk ON chunk.content_hash = run.input_hash
 WHERE run.task_type = 'embedding'
 ON CONFLICT ("ai_task_run_id", "source_item_id") DO NOTHING;
+
+
+ALTER TABLE "bibliographic_instances" ADD COLUMN "creators" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "bibliographic_instances" ADD COLUMN "page_count" integer;--> statement-breakpoint
+ALTER TABLE "bibliographic_instances" ADD COLUMN "series" text;--> statement-breakpoint
+ALTER TABLE "bibliographic_works" ADD COLUMN "creators" jsonb DEFAULT '[]'::jsonb NOT NULL;

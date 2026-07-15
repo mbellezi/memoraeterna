@@ -82,10 +82,10 @@ export function LibraryView({ t }: { t: Translator }) {
                 {depth > 0 ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /> : null}
                 <div className="min-w-0"><h2 className="truncate font-semibold">{source.title}</h2><p className="text-xs text-slate-500">{t(`import.sourceTypes.${source.type}` as MessageKey)}{source.childCount > 0 ? ` · ${t("library.childCount", { values: { count: source.childCount } })}` : ""}</p></div>
               </div>
-              <div className="flex items-center gap-2"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{t(processingKey(source.processingStatus))}</span><button type="button" className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-cyan-50 dark:border-slate-700 dark:hover:bg-cyan-950" title={t("library.actions.process")} onClick={(event) => { event.stopPropagation(); setProcessingIds([source.id]); }}><Play className="h-3.5 w-3.5" /></button></div>
+              <div className="flex items-center gap-2"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}</span><button type="button" className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-cyan-50 dark:border-slate-700 dark:hover:bg-cyan-950" title={t("library.actions.process")} onClick={(event) => { event.stopPropagation(); setProcessingIds([source.id]); }}><Play className="h-3.5 w-3.5" /></button></div>
             </div>
             {source.summary ? <p className="line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
-            <p className="text-xs text-slate-500">{t("library.currentStage", { values: { stage: t(stageKey(source.currentStage)) } })}</p>
+            {source.hasDocument ? <p className="text-xs text-slate-500">{t("library.currentStage", { values: { stage: t(stageKey(source.currentStage)) } })}</p> : <p className="text-xs text-slate-500">{t("library.containerHint")}</p>}
           </div>
         </li>)}</ol>}
     {processingIds ? <ProcessingDialog sourceIds={processingIds} sources={sources} t={t} onClose={() => setProcessingIds(null)} onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }} /> : null}
@@ -93,7 +93,10 @@ export function LibraryView({ t }: { t: Translator }) {
 }
 
 function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { sourceIds: string[]; sources: LibrarySource[]; t: Translator; onClose: () => void; onQueued: () => void }) {
-  const [plan, setPlan] = useState<ProcessingPlanRequest>(() => ({ ...defaultProcessingPlan("search_ready"), targetSourceItemIds: sourceIds, scope: sourceIds.length > 1 ? "selected_items" : "source_only" }));
+  const [plan, setPlan] = useState<ProcessingPlanRequest>(() => ({
+    ...defaultProcessingPlan("search_ready"), targetSourceItemIds: sourceIds,
+    scope: sourceIds.length > 1 ? "selected_items" : sources.find((source) => source.id === sourceIds[0])?.hasDocument ? "source_only" : "children_only"
+  }));
   const [busy, setBusy] = useState(false);
   const selected = sources.filter((source) => sourceIds.includes(source.id));
   async function queue() {
@@ -173,7 +176,9 @@ function SourceDetailView({ detail, t, onBack, onDeleted }: {
     <section className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center justify-between gap-4"><h3 className="font-semibold">{t("library.sections.metadata")}</h3>{detail.sourceUri ? <a href={detail.sourceUri} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-cyan-700 dark:text-cyan-300"><ExternalLink className="h-4 w-4" aria-hidden="true" />{t("library.openOriginal")}</a> : null}</div>
       <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>
+      {detail.assets.filter((asset) => asset.role === "cover").map((asset) => <button key={asset.id} type="button" className="inline-flex w-fit items-center gap-2 text-sm text-cyan-700 dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}><FileText className="h-4 w-4" />{asset.originalFileName}</button>)}
     </section>
+    {detail.documents.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
     <section className="grid gap-2 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <h3 className="font-semibold">{t("library.sections.summary")}</h3>
       <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{detail.summary ?? t("library.noSummary")}</p>

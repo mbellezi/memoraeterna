@@ -162,7 +162,10 @@
   },
   "import": {
     "modes": { "manual": "Contenido manual", "file": "Archivo local" },
-    "steps": { "source": "Elegir fuente y procesamiento", "structure": "Revisar la estructura detectada" },
+    "steps": { "type": "Tipo", "origin": "Origen", "metadata": "Metadatos", "content": "Contenido", "confirm": "Confirmar", "structure": "Estructura" },
+    "searchTypes": "Buscar tipos de fuente",
+    "groups": { "notes": "Notas", "publications": "Publicaciones", "media": "Web, video y archivos" },
+    "badges": { "container": "Contenedor", "child": "Requiere fuente madre" },
     "hierarchyHint": "Este tipo puede detectar capitulos, articulos y secciones antes del procesamiento.",
     "fields": {
       "sourceType": "Tipo de fuente", "title": "Titulo", "content": "Contenido",
@@ -175,9 +178,26 @@
       "PeriodicalIssue": "Numero de revista", "AcademicPaper": "Articulo academico", "DocumentSection": "Seccion de documento",
       "Video": "Video", "GenericDocument": "Documento generico"
     },
-    "actions": { "queue": "Poner importacion en cola", "chooseFile": "Elegir archivo" },
+    "sourceDescriptions": {
+      "PersonalNote": "Un pensamiento, fragmento o nota escrita por ti.", "DailyNote": "Una entrada de diario vinculada a una fecha.", "WebArticle": "Un articulo capturado con su direccion web original.",
+      "Book": "Un libro completo, con capitulos añadidos ahora o despues.", "BookChapter": "Un capitulo vinculado a un libro de tu biblioteca.", "StandaloneArticle": "Un articulo independiente o vinculado a un numero de revista.",
+      "PeriodicalIssue": "Un numero de revista o periodico que puede contener articulos.", "AcademicPaper": "Un trabajo academico con DOI, publicacion, autores y secciones.", "DocumentSection": "Una seccion vinculada a un trabajo academico.",
+      "Video": "Un video con canal, plataforma, duracion y miniatura.", "GenericDocument": "Cualquier otro documento o archivo sin un tipo mas especifico."
+    },
+    "originDescriptions": { "manual": "Introduce metadatos y pega el contenido. Los contenedores pueden guardarse sin contenido.", "file": "Selecciona un archivo, extrae metadatos localmente y revisa todo antes de importar." },
+    "metadataFields": {
+      "title": "Titulo", "subtitle": "Subtitulo", "creators": "Creadores (rol: nombre | afiliacion, uno por linea)", "language": "Codigo de idioma", "description": "Descripcion", "tags": "Etiquetas (separadas por comas)", "context": "Contexto", "noteDate": "Fecha de la nota", "url": "URL original", "siteName": "Nombre del sitio", "publicationDate": "Fecha de publicacion", "imageUrl": "URL de la imagen principal",
+      "edition": "Edicion", "publisher": "Editorial", "isbn10": "ISBN-10", "isbn13": "ISBN-13", "series": "Serie", "volume": "Volumen", "pageCount": "Numero de paginas", "subjects": "Temas", "chapterNumber": "Numero de capitulo", "pageStart": "Pagina inicial", "pageEnd": "Pagina final", "publicationTitle": "Titulo de la publicacion", "issn": "ISSN", "issue": "Numero", "doi": "DOI", "venue": "Publicacion", "year": "Año", "abstract": "Resumen", "keywords": "Palabras clave", "sectionNumber": "Numero de seccion", "periodicalTitle": "Titulo del periodico", "channel": "Canal", "durationSeconds": "Duracion (segundos)", "platform": "Plataforma", "videoId": "ID del video", "thumbnailUrl": "URL de miniatura", "creationDate": "Fecha de creacion", "mimeType": "Tipo MIME"
+    },
+    "parent": { "label": "Fuente madre", "create": "Crear fuente madre", "createTitle": "Crea la fuente madre sin salir de esta importacion" },
+    "enrichment": { "title": "Metadatos sugeridos", "waiting": "Las sugerencias aparecen automaticamente cuando hay titulo, ISBN o DOI.", "apply": "Aplicar sugerencia" },
+    "content": { "hint": "El contenido Markdown se conserva como documento fuente.", "containerHint": "Dejalo vacio para crear solo el contenedor o pega contenido para detectar su estructura." },
+    "confirmation": { "origin": "Origen", "content": "Contenido", "container": "Contenedor solo con metadatos" },
+    "duplicate": { "found": "Se encontro un posible duplicado: {title}", "none": "No se detectaron duplicados.", "ignore": "Conservar existente", "update": "Actualizar existente", "version": "Crear nueva version" },
+    "validation": { "chooseFile": "Elige un archivo antes de continuar.", "contentRequired": "Este tipo de fuente requiere contenido." },
+    "actions": { "queue": "Poner importacion en cola", "chooseFile": "Elegir archivo", "changeFile": "Cambiar archivo", "back": "Volver", "continue": "Continuar", "import": "Importar fuente" },
     "file": { "title": "Elegir el archivo original", "description": "El original se conserva. En libros, revistas y articulos, revisa la estructura antes de cualquier procesamiento con IA." },
-    "status": { "queued": "Importacion en cola.", "canceled": "Seleccion de archivo cancelada.", "saved": "Fuente guardada sin procesamiento en segundo plano.", "reviewStructure": "Estructura detectada. Revisala antes de continuar.", "draftSaved": "Borrador de estructura guardado.", "queuedChildren": "Estructura confirmada y elementos seleccionados en cola.", "savedChildren": "Estructura confirmada y elementos seleccionados guardados." }
+    "status": { "queued": "Importacion en cola.", "canceled": "Seleccion de archivo cancelada.", "saved": "Fuente guardada sin procesamiento en segundo plano.", "metadataExtracted": "Metadatos extraidos localmente. Revisalos antes de continuar.", "duplicateHandled": "Politica de duplicados aplicada.", "reviewStructure": "Estructura detectada. Revisala antes de continuar.", "draftSaved": "Borrador de estructura guardado.", "queuedChildren": "Estructura confirmada y elementos seleccionados en cola.", "savedChildren": "Estructura confirmada y elementos seleccionados guardados." }
   },
   "processing": {
     "title": "Elegir cuanto procesar", "aiOptional": "La IA es opcional", "description": "Importa primero y crea solo los artefactos necesarios. Las dependencias se incluyen automaticamente.",
@@ -185,13 +205,14 @@
     "presets": { "import_only": { "title": "Solo importar", "description": "Conserva y organiza la fuente sin IA." }, "search_ready": { "title": "Lista para buscar", "description": "Crea segmentos y embeddings para recuperacion." }, "summary": { "title": "Resumen", "description": "Genera un resumen conciso con evidencias." }, "full_knowledge": { "title": "Conocimiento completo", "description": "Genera notas, grafo y coincidencias." } }
   },
   "structure": {
-    "eyebrow": "Punto de revision humana", "title": "Revisar la estructura detectada", "description": "Confirma titulos e intervalos, excluye entradas de navegacion y elige las fuentes independientes.",
-    "treeTitle": "Estructura del documento", "selectedCount": "{count} elementos por crear", "fields": { "title": "Titulo", "kind": "Tipo", "range": "Intervalo de origen", "behavior": "Incluir y procesar" },
+    "eyebrow": "Punto de revision humana", "title": "Revisar la estructura detectada", "description": "Revisa los segmentos, ajusta sus limites y elige cuales seran subelementos.",
+    "treeTitle": "Estructura del documento", "selectedCount": "{count} elementos por crear", "fields": { "title": "Titulo", "kind": "Tipo", "range": "Intervalo de origen", "behavior": "Incluir y procesar", "metadata": "Subelemento", "creators": "Creadores (rol: nombre | afiliacion)" },
+    "cutoffLevel": "Crear hasta el nivel", "createSubelement": "Crear como subelemento", "createSubelementHint": "Este segmento se convierte en una fuente hija con documento propio.", "previewTitle": "Vista previa del contenido", "previewUnavailable": "No hay vista previa de texto para este segmento basado en paginas.", "splitBoundary": "Dividir en el limite detectado", "boundaryStart": "Limite inicial", "boundaryEnd": "Limite final", "boundaryPage": "Pagina {page} · {label}",
     "pageRange": "Paginas {start}-{end}", "offsetRange": "Texto {start}-{end}", "includeNavigation": "Mantener esta entrada", "includeNavigationHint": "Las entradas excluidas no se materializan ni aparecen en la navegacion.",
     "processable": "Crear una fuente independiente", "processableHint": "Convierte esta division en un elemento seleccionable de la biblioteca.", "evidenceTitle": "Por que se detecto esta division", "evidence": "{source} · confianza {score}%", "noSelection": "Selecciona un elemento para revisarlo.",
     "blockingIssues": "Resuelve {count} problemas antes de continuar.", "selectAtLeastOne": "Selecciona al menos un elemento para crearlo como fuente independiente.", "ready": "La estructura es valida y esta lista para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baja" },
     "kinds": { "part": "Parte", "chapter": "Capitulo", "article": "Articulo", "section": "Seccion", "subsection": "Subseccion", "frontmatter": "Paginas iniciales", "backmatter": "Paginas finales", "appendix": "Apendice", "unknown": "Otro" },
-    "actions": { "undo": "Deshacer", "redo": "Rehacer", "restore": "Restaurar version detectada", "split": "Dividir", "mergePrevious": "Unir con anterior", "moveUp": "Subir", "moveDown": "Bajar", "saveDraft": "Guardar borrador", "confirm": "Confirmar y continuar" }
+    "actions": { "undo": "Deshacer", "redo": "Rehacer", "restore": "Restaurar version detectada", "split": "Dividir", "mergePrevious": "Unir con anterior", "moveUp": "Subir", "moveDown": "Bajar", "saveDraft": "Guardar borrador", "confirm": "Confirmar y continuar", "confirmCount": "Importar fuente con {count} subelementos" }
   },
   "search": {
     "placeholder": "Buscar fuentes y evidencias", "action": "Buscar", "empty": "No hay evidencias coincidentes.",
@@ -201,7 +222,7 @@
   "library": {
     "filterByType": "Filtrar por tipo de fuente", "allTypes": "Todos los tipos de fuente",
     "refresh": "Actualizar biblioteca", "error": "No se pudo cargar la biblioteca.",
-    "empty": "Aun no hay fuentes en la biblioteca.", "selectionCount": "{count} fuentes seleccionadas", "childCount": "{count} elementos directos",
+    "empty": "Aun no hay fuentes en la biblioteca.", "container": "Contenedor", "containerHint": "Este contenedor de metadatos esta listo para recibir fuentes hijas.", "selectionCount": "{count} fuentes seleccionadas", "childCount": "{count} elementos directos",
     "actions": { "selectSource": "Seleccionar {title}", "process": "Procesar esta fuente", "processSelected": "Procesar seleccionadas", "clearSelection": "Limpiar seleccion", "queueProcessing": "Poner procesamiento en cola" },
     "processingDialog": { "title": "Procesar fuentes de la biblioteca", "description": "Elige que generar para {count} fuentes seleccionadas.", "scope": "Aplicar a", "regenerate": "Regenerar artefactos existentes", "regenerateHint": "Las notas revisadas se conservan; las generaciones pendientes se archivan." },
     "scopes": { "source_only": "Solo esta fuente", "children_only": "Solo elementos hijos", "source_and_children": "Esta fuente y todos sus hijos" },
@@ -338,6 +359,7 @@
       "states": { "stopped": "Detenido", "starting": "Iniciando", "ready": "Listo", "failed": "Error" }
     },
     "matching": { "title": "Coincidencia de conocimiento", "description": "Define la puntuacion final minima necesaria para guardar una relacion entre notas atomicas.", "minimumScore": "Puntuacion minima de coincidencia", "moreRelations": "Mas relaciones", "fewerRelations": "Menos relaciones, mas estrictas", "savedAutomatically": "Este valor se aplica automáticamente al cambiar." },
+    "metadataEnrichment": { "title": "Enriquecimiento automático de metadatos", "description": "Consulta ISBN, DOI, títulos y autores en Open Library, Google Books y Crossref. Desactívalo para impedir todas las consultas de metadatos." },
     "reset": { "title": "Restablecer biblioteca", "description": "Elimina toda la biblioteca, archivos gestionados, vectores, trabajos y notas atomicas. Se conservan los modelos locales descargados y la configuracion.", "action": "Restablecer todo", "confirmation": "Eliminar permanentemente toda la biblioteca, archivos gestionados, vectores y notas atomicas? Se conservaran los modelos locales descargados.", "completed": "Biblioteca restablecida.", "completedWithWarnings": "Biblioteca restablecida, pero algunos archivos gestionados no se pudieron eliminar.", "failed": "No se pudo restablecer la biblioteca." },
     "ai": {
       "title": "Proveedores y perfiles de IA", "provider": "Proveedor", "google": "Google Gemini",

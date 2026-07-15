@@ -68,7 +68,7 @@ export class ObsidianSyncService {
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     if (!source) throw new Error("source_item_not_found");
     const document = (await createDocumentRepository(pool).listBySourceItem(sourceItemId))[0];
-    if (!document) throw new Error("document_not_found");
+    if (!document) return { projected: 0 };
     let projected = await this.projectEntity(settings, source, document);
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);

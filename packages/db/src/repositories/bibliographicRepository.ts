@@ -10,6 +10,7 @@ export interface BibliographicWorkRecord {
   subtitle: string | null;
   canonicalTitle: string | null;
   language: string;
+  creators: unknown[];
   identifiers: JsonObject;
   metadata: JsonObject;
   createdAt: Date;
@@ -23,6 +24,7 @@ interface WorkRow extends QueryResultRow {
   subtitle: string | null;
   canonicalTitle: string | null;
   language: string;
+  creators: unknown;
   identifiers: unknown;
   metadata: unknown;
   createdAt: unknown;
@@ -31,17 +33,18 @@ interface WorkRow extends QueryResultRow {
 
 const workReturning = [
   "id", "type", "title", "subtitle", "canonical_title as \"canonicalTitle\"", "language",
-  "identifiers", "metadata", "created_at as \"createdAt\"", "updated_at as \"updatedAt\""
+  "creators", "identifiers", "metadata", "created_at as \"createdAt\"", "updated_at as \"updatedAt\""
 ].join(", ");
 
 const workSelection = [
   "w.id", "w.type", "w.title", "w.subtitle", "w.canonical_title as \"canonicalTitle\"", "w.language",
-  "w.identifiers", "w.metadata", "w.created_at as \"createdAt\"", "w.updated_at as \"updatedAt\""
+  "w.creators", "w.identifiers", "w.metadata", "w.created_at as \"createdAt\"", "w.updated_at as \"updatedAt\""
 ].join(", ");
 
 function mapWork(row: WorkRow): BibliographicWorkRecord {
   return {
     ...row,
+    creators: Array.isArray(row.creators) ? row.creators : [],
     identifiers: asJsonObject(row.identifiers),
     metadata: asJsonObject(row.metadata),
     createdAt: mapTimestamp(row.createdAt),
@@ -57,16 +60,17 @@ export function createBibliographicRepository(db: Queryable) {
       subtitle?: string | null;
       canonicalTitle?: string | null;
       language?: string;
+      creators?: unknown[];
       identifiers?: JsonObject;
       metadata?: JsonObject;
     }): Promise<BibliographicWorkRecord> {
       const result = await db.query<WorkRow>(
         `insert into bibliographic_works
-           (type, title, subtitle, canonical_title, language, identifiers, metadata)
-         values ($1, $2, $3, $4, $5, $6, $7)
+           (type, title, subtitle, canonical_title, language, creators, identifiers, metadata)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning ${workReturning}`,
         [input.type, input.title, input.subtitle ?? null, input.canonicalTitle ?? null,
-          input.language ?? "und", input.identifiers ?? {}, input.metadata ?? {}]
+          input.language ?? "und", JSON.stringify(input.creators ?? []), input.identifiers ?? {}, input.metadata ?? {}]
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic work insert returned no row.");
@@ -102,16 +106,21 @@ export function createBibliographicRepository(db: Queryable) {
       isbn?: string | null;
       issn?: string | null;
       doi?: string | null;
+      creators?: unknown[];
+      pageCount?: number | null;
+      series?: string | null;
       metadata?: JsonObject;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
         `insert into bibliographic_instances
-           (work_id, type, edition, volume, issue, publication_date, publisher, isbn, issn, doi, metadata)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           (work_id, type, edition, volume, issue, publication_date, publisher, isbn, issn, doi,
+            creators, page_count, series, metadata)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          returning id`,
         [input.workId, input.type, input.edition ?? null, input.volume ?? null, input.issue ?? null,
           input.publicationDate ?? null, input.publisher ?? null, input.isbn ?? null,
-          input.issn ?? null, input.doi ?? null, input.metadata ?? {}]
+          input.issn ?? null, input.doi ?? null, JSON.stringify(input.creators ?? []), input.pageCount ?? null,
+          input.series ?? null, input.metadata ?? {}]
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic instance insert returned no row.");

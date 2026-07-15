@@ -218,6 +218,7 @@ export function App({
         window.app.settings.updateApp({
           language: appSettings.language,
           themeMode: appSettings.themeMode,
+          metadataEnrichmentEnabled: appSettings.metadataEnrichmentEnabled,
           atomicNoteRelationThreshold: appSettings.atomicNoteRelationThreshold
         }),
         window.app.settings.update({
@@ -485,7 +486,7 @@ export function App({
               onSelectObsidianVault={selectObsidianVault}
             />
           ) : activeView === "import" ? (
-            <ImportView t={t} />
+            <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
           ) : activeView === "search" ? (
             <SearchView t={t} />
           ) : activeView === "jobs" ? (

@@ -7,6 +7,7 @@ export interface LibrarySourceRecord {
   id: string;
   parentSourceItemId: string | null;
   childCount: number;
+  hasDocument: boolean;
   type: SourceItemType;
   title: string;
   subtitle: string | null;
@@ -23,6 +24,7 @@ interface LibrarySourceRow extends QueryResultRow {
   id: string;
   parentSourceItemId: string | null;
   childCount: number;
+  hasDocument: boolean;
   type: SourceItemType;
   title: string;
   subtitle: string | null;
@@ -41,6 +43,7 @@ export function createLibraryRepository(db: Queryable) {
       const result = await db.query<LibrarySourceRow>(
         `select source.id, source.parent_source_item_id as "parentSourceItemId",
                 (select count(*)::int from source_items child where child.parent_source_item_id = source.id) as "childCount",
+                exists(select 1 from documents document where document.source_item_id = source.id) as "hasDocument",
                 source.type, source.title, source.subtitle,
                 source.source_uri as "sourceUri", source.language, source.summary,
                 source.metadata, coalesce(run.status::text, 'pending') as "processingStatus",

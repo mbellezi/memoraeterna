@@ -550,6 +550,20 @@ function MatchingCard({ appSettings, t, onChange, onPersist }: {
         <ShieldCheck className="h-4 w-4" aria-hidden="true" />
         {t("settings.matching.savedAutomatically")}
       </div>
+      <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+        <div className="grid gap-1">
+          <Label htmlFor="metadataEnrichmentEnabled">{t("settings.metadataEnrichment.title")}</Label>
+          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t("settings.metadataEnrichment.description")}
+          </p>
+        </div>
+        <Switch
+          id="metadataEnrichmentEnabled"
+          checked={appSettings.metadataEnrichmentEnabled}
+          aria-label={t("settings.metadataEnrichment.title")}
+          onChange={(event) => onChange({ metadataEnrichmentEnabled: event.target.checked })}
+        />
+      </div>
     </section>
   );
 }

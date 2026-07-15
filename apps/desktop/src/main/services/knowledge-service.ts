@@ -113,6 +113,7 @@ export class KnowledgeService {
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     if (!source) return null;
     const documents = await createDocumentRepository(pool).listBySourceItem(sourceItemId);
+    const sourceAssets = await createDocumentAssetRepository(pool).listBySourceItem(sourceItemId);
     const documentDetails = await Promise.all(documents.map(async (document) => ({
       id: document.id,
       title: document.title,
@@ -144,6 +145,9 @@ export class KnowledgeService {
       summary: source.summary ? normalizeSummaryText(source.summary) : null,
       metadata: source.metadata,
       updatedAt: source.updatedAt.toISOString(),
+      assets: sourceAssets.map((asset) => ({
+        id: asset.id, originalFileName: asset.originalFileName, mimeType: asset.mimeType, role: asset.role
+      })),
       documents: documentDetails,
       summaries: summaries.map((summary) => ({
         id: summary.id,

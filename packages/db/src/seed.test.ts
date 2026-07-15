@@ -59,7 +59,8 @@ describe("baseline seed", () => {
       "0013_nice_kinsey_walden",
       "0014_living_typhoid_mary",
       "0015_chunky_marvel_apes",
-      "0016_awesome_dragon_man"
+      "0016_awesome_dragon_man",
+      "0017_wooden_thunderbird"
     ]);
   });
 
@@ -94,7 +95,8 @@ describe("baseline seed", () => {
         "0013_nice_kinsey_walden",
         "0014_living_typhoid_mary",
         "0015_chunky_marvel_apes",
-        "0016_awesome_dragon_man"
+        "0016_awesome_dragon_man",
+        "0017_wooden_thunderbird"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -16,12 +16,20 @@ import {
   DoclingClient,
   createTextBlocks,
   detectDocumentStructure,
+  detectMarkdownStructure,
+  descriptorDraftFromVideoMetadata,
+  descriptorDraftFromWebMetadata,
+  extractFileMetadata as extractLocalFileMetadata,
   normalizeMarkdown,
   sha256,
   type MarkdownConversionResult
 } from "@app/conversion";
 import {
   resolveProcessingPlan,
+  SourceDescriptorSchema,
+  type SourceDescriptor,
+  type SourceDescriptorDraft,
+  type SourceItemType,
   type ProcessingPlanRequest
 } from "@app/domain";
 import type {
@@ -32,6 +40,10 @@ import type {
 } from "@app/integration-contracts";
 import type {
   FileImportInput,
+  ContainerSourceInput,
+  DuplicateCandidate,
+  DuplicateCheckInput,
+  DuplicatePolicy,
   IngestionResult,
   ManualIngestionInput,
   StorageSettings
@@ -52,11 +64,22 @@ export interface IngestionServiceOptions {
   hierarchicalIngestionService?: HierarchicalIngestionService;
 }
 
+interface PreparedFileImport {
+  path: string;
+  fileName: string;
+  mimeType: string;
+  data: Uint8Array;
+  conversion: MarkdownConversionResult;
+  draft: SourceDescriptorDraft;
+  preparedAt: number;
+}
+
 export class IngestionService {
   private readonly assetStorage = new AssetStorageService();
   private readonly router: ConversionRouter;
   private readonly youtube: YouTubeService;
   private readonly hierarchical: HierarchicalIngestionService;
+  private readonly preparedFiles = new Map<string, PreparedFileImport>();
 
   public constructor(private readonly options: IngestionServiceOptions) {
     this.youtube = options.youtubeService ?? new YouTubeService();
@@ -78,6 +101,9 @@ export class IngestionService {
   }
 
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {
+    if (input.content.trim().length === 0 && isHierarchicalSourceType(input.descriptor.type)) {
+      return this.createContainerSource({ descriptor: input.descriptor, duplicatePolicy: input.duplicatePolicy });
+    }
     const markdown = normalizeMarkdown(input.content);
     const conversion: MarkdownConversionResult = {
       status: "converted",
@@ -90,47 +116,137 @@ export class IngestionService {
       profile: "standard",
       options: {}, warnings: [], quality: { textCoverage: 1 }, metadata: {}
     };
+    const descriptor = input.descriptor;
+    const detection = isHierarchicalSourceType(descriptor.type)
+      ? detectMarkdownStructure(markdown, documentKind(descriptor.type))
+      : undefined;
     return this.persist({
-      sourceType: input.sourceType,
-      title: input.title,
+      descriptor,
       sourceOrigin: "manual",
-      sourceUri: input.originalUri ?? null,
-      language: input.language,
       duplicatePolicy: input.duplicatePolicy,
-      parentSourceItemId: input.parentSourceItemId ?? null,
-      metadata: input.metadata,
-      bibliographic: input.bibliographic,
       conversion,
-      processingPlan: input.processingPlan
+      processingPlan: input.processingPlan,
+      ...(detection ? { structureDetection: detection } : {})
     });
   }
 
-  public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
+  public async createContainerSource(input: ContainerSourceInput): Promise<IngestionResult> {
+    const pool = this.requirePool();
+    const sources = createSourceItemRepository(pool);
+    const descriptor = input.descriptor;
+    const duplicate = await sources.findDescriptorDuplicate({
+      type: descriptor.type,
+      title: descriptor.title,
+      identifiers: descriptorIdentifiers(descriptor)
+    });
+    if (duplicate && input.duplicatePolicy === "ignore") return containerResult(duplicate.id, true);
+
+    const values = sourceValues(descriptor, "manual", null);
+    const sourceItem = duplicate && input.duplicatePolicy === "update"
+      ? await sources.update(duplicate.id, values)
+      : await sources.create(values);
+    if (!sourceItem) throw new Error("Source item persistence failed.");
+    await this.persistBibliographic(sourceItem.id, descriptor);
+    await this.attachDescriptorCover(sourceItem.id, descriptor);
+    return containerResult(sourceItem.id, Boolean(duplicate));
+  }
+
+  public async findDuplicate(input: DuplicateCheckInput): Promise<DuplicateCandidate | null> {
+    const sources = createSourceItemRepository(this.requirePool());
+    const prepared = input.fileToken ? this.preparedFiles.get(input.fileToken) : undefined;
+    const normalized = input.content === undefined ? undefined : normalizeMarkdown(input.content);
+    const byContent = await sources.findDuplicate({
+      sourceUri: descriptorSourceUri(input.descriptor),
+      contentHash: prepared?.conversion.contentHash ?? (normalized ? sha256(normalized) : null)
+    });
+    const duplicate = byContent ?? await sources.findDescriptorDuplicate({
+      type: input.descriptor.type,
+      title: input.descriptor.title,
+      identifiers: descriptorIdentifiers(input.descriptor)
+    });
+    return duplicate ? { id: duplicate.id, title: duplicate.title, type: duplicate.type } : null;
+  }
+
+  public async prepareFileMetadata(path: string, sourceType: SourceItemType) {
     const file = await stat(path);
     assertImportSize(file.size, readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024));
     const fileName = basename(path);
     const data = extname(fileName).toLowerCase() === ".pdf" ? new Uint8Array() : await readFile(path);
     const mimeType = detectMimeType(fileName, data);
     const conversion = await this.router.convert({ data, sourcePath: path, fileName, mimeType, profile: "standard" });
-    const detection = isHierarchicalSourceType(input.sourceType)
+    let draft = await extractLocalFileMetadata({
+      sourceType,
+      data,
+      sourcePath: path,
+      fileName,
+      mimeType,
+      conversion
+    });
+    if (draft.coverData) {
+      const stored = await this.assetStorage.store({
+        data: draft.coverData.data,
+        originalFileName: draft.coverData.fileName,
+        basePath: join(this.options.userDataPath, "assets"),
+        storageBase: "app_internal"
+      });
+      const asset = await createDocumentAssetRepository(this.requirePool()).create({
+        originalFileName: draft.coverData.fileName,
+        sha256: stored.sha256,
+        mimeType: draft.coverData.mimeType,
+        sizeBytes: stored.sizeBytes,
+        storageBase: stored.storageBase,
+        relativePath: stored.relativePath,
+        role: "cover",
+        metadata: { origin: "embedded_file_metadata" }
+      });
+      draft = {
+        ...draft,
+        values: { ...draft.values, cover: { assetId: asset.id, mimeType: draft.coverData.mimeType } },
+        provenance: {
+          ...draft.provenance,
+          cover: { source: "extracted", evidence: "embedded file cover" }
+        },
+        coverData: undefined
+      };
+    }
+    this.removeExpiredPreparedFiles();
+    const fileToken = randomUUID();
+    this.preparedFiles.set(fileToken, { path, fileName, mimeType, data, conversion, draft, preparedAt: Date.now() });
+    return { fileToken, fileName, mimeType, draft };
+  }
+
+  public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
+    const prepared = await this.prepareFileMetadata(path, input.descriptor.type);
+    return this.importPreparedFile(prepared.fileToken, input);
+  }
+
+  public async importPreparedFile(fileToken: string, input: FileImportInput): Promise<IngestionResult> {
+    this.removeExpiredPreparedFiles();
+    const prepared = this.preparedFiles.get(fileToken);
+    if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
+    const sourceType = input.descriptor.type;
+    const detection = isHierarchicalSourceType(sourceType)
       ? await detectDocumentStructure({
-          data, sourcePath: path, fileName, mimeType, conversion,
-          documentKind: input.sourceType === "Book" ? "book" : input.sourceType === "PeriodicalIssue" ? "periodical" : "paper"
+          data: prepared.data,
+          sourcePath: prepared.path,
+          fileName: prepared.fileName,
+          mimeType: prepared.mimeType,
+          conversion: prepared.conversion,
+          documentKind: sourceType === "Book" ? "book" : sourceType === "PeriodicalIssue" ? "periodical" : "paper"
         })
       : undefined;
-    return this.persist({
-      sourceType: input.sourceType,
-      title: fileName.replace(/\.[^.]+$/, ""),
+    const result = await this.persist({
+      descriptor: input.descriptor,
       sourceOrigin: "file_upload",
-      sourceUri: null,
-      language: "und",
       duplicatePolicy: input.duplicatePolicy,
-      metadata: { originalFileName: fileName, originalFilePath: path, mimeType },
-      conversion,
-      originalAsset: { sourcePath: path, fileName, mimeType },
+      metadata: { originalFileName: prepared.fileName, mimeType: prepared.mimeType },
+      conversion: prepared.conversion,
+      originalAsset: { sourcePath: prepared.path, fileName: prepared.fileName, mimeType: prepared.mimeType },
       processingPlan: input.processingPlan,
       ...(detection ? { structureDetection: detection } : {})
     });
+    this.preparedFiles.delete(fileToken);
+    return result;
   }
 
   public async captureWebPage(input: CaptureWebPageRequest): Promise<IngestionResult> {
@@ -145,14 +261,21 @@ export class IngestionService {
             profile: "standard"
           })
         : markdownResult(input.textContent ?? "", "chrome-text");
-    return this.persist({
-      sourceType: "WebArticle",
+    const descriptor = descriptorDraftFromWebMetadata({
       title: input.title,
+      url: input.url,
+      metadata: { ...input.metadata, ...conversion.metadata }
+    });
+    return this.persist({
+      descriptor: descriptorFromDraft(descriptor, readMetadataLanguage(input.metadata)),
       sourceOrigin: "web_capture",
-      sourceUri: input.url,
-      language: readMetadataLanguage(input.metadata),
       duplicatePolicy: "ignore",
-      metadata: { ...input.metadata, capturedAt: input.capturedAt, captureRequestId: input.requestId },
+      metadata: {
+        ...input.metadata,
+        capturedAt: input.capturedAt,
+        captureRequestId: input.requestId,
+        descriptor: { ...descriptor.values, provenance: descriptor.provenance }
+      },
       conversion,
       processingPlan: importOnlyPlan()
     });
@@ -166,11 +289,13 @@ export class IngestionService {
       `[Source](${input.url})`
     ].filter(Boolean).join("\n\n");
     return this.persist({
-      sourceType: "WebArticle",
-      title: input.title,
+      descriptor: SourceDescriptorSchema.parse({
+        type: "WebArticle", title: input.title, url: input.url,
+        language: readMetadataLanguage(input.metadata), creators: [], tags: [],
+        provenance: { title: { source: "extracted", evidence: "selection capture" } }
+      }),
       sourceOrigin: "web_capture",
-      sourceUri: `${input.url}#selection=${input.requestId}`,
-      language: readMetadataLanguage(input.metadata),
+      sourceUriOverride: `${input.url}#selection=${input.requestId}`,
       duplicatePolicy: "ignore",
       metadata: { ...input.metadata, capturedAt: input.capturedAt, selectionCapture: true },
       conversion: markdownResult(markdown, "chrome-selection"),
@@ -180,18 +305,21 @@ export class IngestionService {
 
   public async captureYouTube(input: CaptureYouTubeVideoRequest): Promise<IngestionResult> {
     const captured = await this.youtube.capture(input.videoId, input.title);
-    return this.persist({
-      sourceType: "Video",
+    const descriptor = descriptorDraftFromVideoMetadata({
       title: captured.title,
+      url: input.url,
+      metadata: { ...input.visibleMetadata, ...captured.metadata, videoId: input.videoId, platform: "youtube" }
+    });
+    return this.persist({
+      descriptor: descriptorFromDraft(descriptor, captured.language),
       sourceOrigin: "youtube",
-      sourceUri: input.url,
-      language: captured.language,
       duplicatePolicy: "ignore",
       metadata: {
         ...input.visibleMetadata,
         ...captured.metadata,
         capturedAt: input.capturedAt,
-        captureRequestId: input.requestId
+        captureRequestId: input.requestId,
+        descriptor: { ...descriptor.values, provenance: descriptor.provenance }
       },
       conversion: markdownResult(captured.markdown, "youtubei.js"),
       processingPlan: importOnlyPlan()
@@ -200,11 +328,13 @@ export class IngestionService {
 
   public async importObsidianNote(input: ImportObsidianNoteRequest): Promise<IngestionResult> {
     return this.persist({
-      sourceType: "PersonalNote",
-      title: input.title ?? basename(input.relativePath, extname(input.relativePath)),
+      descriptor: SourceDescriptorSchema.parse({
+        type: "PersonalNote",
+        title: input.title ?? basename(input.relativePath, extname(input.relativePath)),
+        language: "und", creators: [], tags: [], provenance: {}
+      }),
       sourceOrigin: "obsidian",
-      sourceUri: `obsidian://${input.relativePath}`,
-      language: "und",
+      sourceUriOverride: `obsidian://${input.relativePath}`,
       duplicatePolicy: "ignore",
       metadata: { obsidianRelativePath: input.relativePath, obsidianMtimeMs: input.mtimeMs },
       conversion: markdownResult(input.markdown, "obsidian"),
@@ -212,8 +342,8 @@ export class IngestionService {
     });
   }
 
-  public async lookupSources(query: string) {
-    return (await createSourceItemRepository(this.requirePool()).lookup(query, 10)).map((source) => ({
+  public async lookupSources(query: string, sourceTypes: SourceItemType[] = []) {
+    return (await createSourceItemRepository(this.requirePool()).lookup(query, 10, sourceTypes)).map((source) => ({
       id: source.id,
       title: source.title,
       type: source.type
@@ -221,15 +351,11 @@ export class IngestionService {
   }
 
   private async persist(input: {
-    sourceType: ManualIngestionInput["sourceType"];
-    title: string;
+    descriptor: SourceDescriptor;
     sourceOrigin: string;
-    sourceUri: string | null;
-    language: string;
-    duplicatePolicy: ManualIngestionInput["duplicatePolicy"];
-    parentSourceItemId?: string | null;
-    metadata: Record<string, unknown>;
-    bibliographic?: ManualIngestionInput["bibliographic"];
+    sourceUriOverride?: string | null;
+    duplicatePolicy: DuplicatePolicy;
+    metadata?: Record<string, unknown>;
     conversion: MarkdownConversionResult;
     originalAsset?: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string };
     processingPlan: ProcessingPlanRequest;
@@ -239,7 +365,14 @@ export class IngestionService {
     const sources = createSourceItemRepository(pool);
     const documents = createDocumentRepository(pool);
     const runs = createIngestionRunRepository(pool);
-    const duplicate = await sources.findDuplicate({ sourceUri: input.sourceUri, contentHash: input.conversion.contentHash });
+    const descriptor = input.descriptor;
+    const sourceUri = input.sourceUriOverride ?? descriptorSourceUri(descriptor);
+    const duplicate = await sources.findDuplicate({ sourceUri, contentHash: input.conversion.contentHash })
+      ?? await sources.findDescriptorDuplicate({
+        type: descriptor.type,
+        title: descriptor.title,
+        identifiers: descriptorIdentifiers(descriptor)
+      });
     if (duplicate && input.duplicatePolicy === "ignore") {
       const existingDocuments = await documents.listBySourceItem(duplicate.id);
       const existingRuns = await runs.listBySourceItem(duplicate.id);
@@ -257,19 +390,17 @@ export class IngestionService {
           requiresStructureReview: existingStructure?.status === "draft" || existingStructure?.status === "in_review", duplicate: true
         };
       }
+      return containerResult(duplicate.id, true);
     }
 
     let sourceItem = duplicate && input.duplicatePolicy === "update"
       ? await sources.update(duplicate.id, {
-          type: input.sourceType, title: input.title, sourceUri: input.sourceUri,
-          parentSourceItemId: input.parentSourceItemId ?? null,
-          contentHash: input.conversion.contentHash, language: input.language, metadata: input.metadata
+          ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata),
+          sourceUri
         })
       : await sources.create({
-          type: input.sourceType, title: input.title, sourceOrigin: input.sourceOrigin,
-          sourceUri: input.sourceUri, contentHash: input.conversion.contentHash,
-          parentSourceItemId: input.parentSourceItemId ?? null,
-          language: input.language, metadata: input.metadata
+          ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata),
+          sourceUri
         });
     sourceItem ??= duplicate;
     if (!sourceItem) throw new Error("Source item persistence failed.");
@@ -279,23 +410,24 @@ export class IngestionService {
       : [];
     const document = existingDocuments[0]
       ? await documents.update(existingDocuments[0].id, {
-          title: input.title,
+          title: descriptor.title,
           canonicalMarkdown: input.conversion.markdown,
           contentHash: input.conversion.contentHash,
-          language: input.language,
+          language: descriptor.language,
           metadata: conversionMetadata(input.conversion)
         })
       : await documents.create({
           sourceItemId: sourceItem.id,
-          title: input.title,
+          title: descriptor.title,
           canonicalMarkdown: input.conversion.markdown,
           contentHash: input.conversion.contentHash,
-          language: input.language,
+          language: descriptor.language,
           metadata: conversionMetadata(input.conversion)
         });
     if (!document) throw new Error("Document persistence failed.");
 
-    if (input.bibliographic) await this.persistBibliographic(sourceItem.id, input.title, input.bibliographic);
+    await this.persistBibliographic(sourceItem.id, descriptor);
+    await this.attachDescriptorCover(sourceItem.id, descriptor, document.id);
     if (input.originalAsset) await this.persistOriginalAsset(sourceItem.id, document.id, input.originalAsset);
     if (input.conversion.rawStructuredResult !== undefined) {
       await this.persistStructuredAsset(sourceItem.id, document.id, input.conversion.rawStructuredResult);
@@ -329,29 +461,132 @@ export class IngestionService {
 
   private async persistBibliographic(
     sourceItemId: string,
-    sourceTitle: string,
-    input: NonNullable<ManualIngestionInput["bibliographic"]>
+    descriptor: SourceDescriptor
   ): Promise<void> {
+    if (!["Book", "BookChapter", "PeriodicalIssue", "AcademicPaper", "StandaloneArticle"].includes(descriptor.type)) {
+      return;
+    }
     const repository = createBibliographicRepository(this.requirePool());
-    const workId = input.workId ?? (await repository.createWork({
-      type: input.workType ?? "generic_work",
-      title: input.workTitle ?? sourceTitle,
-      identifiers: { ...(input.isbn ? { isbn: input.isbn } : {}), ...(input.issn ? { issn: input.issn } : {}), ...(input.doi ? { doi: input.doi } : {}) }
-    })).id;
-    const instanceId = input.isbn || input.issn || input.doi
+    if ((descriptor.type === "BookChapter" || descriptor.type === "StandaloneArticle") && descriptor.parentSourceItemId) {
+      const parent = await this.requirePool().query<{ workId: string; instanceId: string | null }>(
+        `select work_id as "workId", instance_id as "instanceId"
+         from source_item_bibliographic_links where source_item_id = $1 limit 1`,
+        [descriptor.parentSourceItemId]
+      );
+      const link = parent.rows[0];
+      if (link) {
+        await repository.linkSource({
+          sourceItemId, workId: link.workId, instanceId: link.instanceId,
+          relationType: descriptor.type === "BookChapter" ? "chapter_of" : "article_in",
+          ...(descriptor.pages ? { pages: formatPageRange(descriptor.pages) } : {})
+        });
+        return;
+      }
+    }
+
+    const identifiers = descriptorIdentifierMap(descriptor);
+    const existing = await this.requirePool().query<{ workId: string; instanceId: string | null }>(
+      `select work_id as "workId", instance_id as "instanceId"
+       from source_item_bibliographic_links where source_item_id = $1 limit 1`,
+      [sourceItemId]
+    );
+    const existingLink = existing.rows[0];
+    if (existingLink) {
+      await this.requirePool().query(
+        `update bibliographic_works set type = $2, title = $3, subtitle = $4, language = $5,
+           creators = $6::jsonb, identifiers = $7::jsonb,
+           metadata = metadata || $8::jsonb, updated_at = now() where id = $1`,
+        [existingLink.workId, bibliographicWorkType(descriptor.type),
+          descriptor.type === "PeriodicalIssue" ? descriptor.publicationTitle : descriptor.title,
+          descriptor.subtitle ?? null, descriptor.language, JSON.stringify(descriptor.creators), identifiers,
+          { sourceDescriptorType: descriptor.type }]
+      );
+      if (existingLink.instanceId) {
+        await this.updateBibliographicInstance(existingLink.instanceId, descriptor);
+      }
+      return;
+    }
+    const work = await repository.createWork({
+      type: bibliographicWorkType(descriptor.type),
+      title: descriptor.type === "PeriodicalIssue" ? descriptor.publicationTitle : descriptor.title,
+      subtitle: descriptor.subtitle ?? null,
+      language: descriptor.language,
+      creators: descriptor.creators,
+      identifiers,
+      metadata: { sourceDescriptorType: descriptor.type }
+    });
+    const instanceId = descriptor.type === "Book"
       ? await repository.createInstance({
-          workId,
-          type: "generic_instance",
-          ...(input.isbn ? { isbn: input.isbn } : {}),
-          ...(input.issn ? { issn: input.issn } : {}),
-          ...(input.doi ? { doi: input.doi } : {})
+          workId: work.id, type: "book_edition", creators: descriptor.creators,
+          ...(descriptor.edition ? { edition: descriptor.edition } : {}),
+          ...(descriptor.volume ? { volume: descriptor.volume } : {}),
+          ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
+          ...(descriptor.publisher ? { publisher: descriptor.publisher } : {}),
+          ...((descriptor.isbn13 ?? descriptor.isbn10) ? { isbn: (descriptor.isbn13 ?? descriptor.isbn10)! } : {}),
+          ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {}),
+          ...(descriptor.series ? { series: descriptor.series } : {})
         })
-      : null;
+      : descriptor.type === "PeriodicalIssue"
+        ? await repository.createInstance({
+            workId: work.id, type: "periodical_issue", creators: descriptor.creators,
+            ...(descriptor.volume ? { volume: descriptor.volume } : {}),
+            ...(descriptor.issue ? { issue: descriptor.issue } : {}),
+            ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
+            ...(descriptor.publisher ? { publisher: descriptor.publisher } : {}),
+            ...(descriptor.issn ? { issn: descriptor.issn } : {}),
+            ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {})
+          })
+        : descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle"
+          ? await repository.createInstance({
+              workId: work.id, type: "article", creators: descriptor.creators,
+              ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
+              ...(descriptor.doi ? { doi: descriptor.doi } : {})
+            })
+          : null;
     await repository.linkSource({
       sourceItemId,
-      workId,
+      workId: work.id,
       instanceId,
-      ...(input.pages ? { pages: input.pages } : {})
+      ...("pages" in descriptor && descriptor.pages ? { pages: formatPageRange(descriptor.pages) } : {})
+    });
+  }
+
+  private async updateBibliographicInstance(instanceId: string, descriptor: SourceDescriptor): Promise<void> {
+    if (descriptor.type !== "Book" && descriptor.type !== "PeriodicalIssue"
+        && descriptor.type !== "AcademicPaper" && descriptor.type !== "StandaloneArticle") return;
+    await this.requirePool().query(
+      `update bibliographic_instances set type = $2, edition = $3, volume = $4, issue = $5,
+         publication_date = $6, publisher = $7, isbn = $8, issn = $9, doi = $10,
+         creators = $11::jsonb, page_count = $12, series = $13, updated_at = now() where id = $1`,
+      [
+        instanceId,
+        descriptor.type === "Book" ? "book_edition" : descriptor.type === "PeriodicalIssue" ? "periodical_issue" : "article",
+        descriptor.type === "Book" ? descriptor.edition ?? null : null,
+        "volume" in descriptor ? descriptor.volume ?? null : null,
+        "issue" in descriptor ? descriptor.issue ?? null : null,
+        descriptor.publicationDate ?? null,
+        "publisher" in descriptor ? descriptor.publisher ?? null : null,
+        descriptor.type === "Book" ? descriptor.isbn13 ?? descriptor.isbn10 ?? null : null,
+        descriptor.type === "PeriodicalIssue" ? descriptor.issn ?? null : null,
+        descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle" ? descriptor.doi ?? null : null,
+        JSON.stringify(descriptor.creators),
+        "pageCount" in descriptor ? descriptor.pageCount ?? null : null,
+        descriptor.type === "Book" ? descriptor.series ?? null : null
+      ]
+    );
+  }
+
+  private async attachDescriptorCover(
+    sourceItemId: string,
+    descriptor: SourceDescriptor,
+    documentId?: string
+  ): Promise<void> {
+    const assetId = descriptor.cover?.assetId;
+    if (!assetId) return;
+    await createDocumentAssetRepository(this.requirePool()).update(assetId, {
+      sourceItemId,
+      ...(documentId ? { documentId } : {}),
+      role: "cover"
     });
   }
 
@@ -404,6 +639,17 @@ export class IngestionService {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
+
+  private removeExpiredPreparedFiles(): void {
+    const cutoff = Date.now() - 30 * 60_000;
+    for (const [token, prepared] of this.preparedFiles) {
+      if (prepared.preparedAt < cutoff) this.preparedFiles.delete(token);
+    }
+    const excess = this.preparedFiles.size - 10;
+    if (excess > 0) {
+      for (const token of [...this.preparedFiles.keys()].slice(0, excess)) this.preparedFiles.delete(token);
+    }
+  }
 }
 
 function importOnlyPlan(): ProcessingPlanRequest {
@@ -413,8 +659,105 @@ function importOnlyPlan(): ProcessingPlanRequest {
   });
 }
 
-function isHierarchicalSourceType(type: FileImportInput["sourceType"]): boolean {
+function isHierarchicalSourceType(type: SourceItemType): type is "Book" | "PeriodicalIssue" | "AcademicPaper" {
   return type === "Book" || type === "PeriodicalIssue" || type === "AcademicPaper";
+}
+
+function documentKind(type: SourceItemType): "book" | "periodical" | "paper" | "other" {
+  if (type === "Book") return "book";
+  if (type === "PeriodicalIssue") return "periodical";
+  if (type === "AcademicPaper") return "paper";
+  return "other";
+}
+
+function descriptorFromDraft(draft: SourceDescriptorDraft, language = "und"): SourceDescriptor {
+  const candidate = SourceDescriptorSchema.safeParse({
+    type: draft.sourceType,
+    language,
+    creators: [],
+    tags: [],
+    ...draft.values,
+    provenance: draft.provenance
+  });
+  if (candidate.success) return candidate.data;
+  const title = typeof draft.values.title === "string" && draft.values.title.trim()
+    ? draft.values.title.trim()
+    : "Untitled";
+  if (draft.sourceType === "WebArticle") {
+    const url = typeof draft.values.url === "string" && URL.canParse(draft.values.url) ? draft.values.url : undefined;
+    return SourceDescriptorSchema.parse({
+      type: "WebArticle", title, language, creators: [], tags: [], provenance: draft.provenance,
+      ...(url ? { url } : {})
+    });
+  }
+  if (draft.sourceType === "Video") {
+    const url = typeof draft.values.url === "string" && URL.canParse(draft.values.url) ? draft.values.url : undefined;
+    return SourceDescriptorSchema.parse({
+      type: "Video", title, language, creators: [], tags: [], provenance: draft.provenance,
+      ...(url ? { url } : {})
+    });
+  }
+  throw new Error("source_descriptor_draft_invalid");
+}
+
+function descriptorSourceUri(descriptor: SourceDescriptor): string | null {
+  return "url" in descriptor ? descriptor.url ?? null : null;
+}
+
+function descriptorIdentifiers(descriptor: SourceDescriptor): string[] {
+  return Object.values(descriptorIdentifierMap(descriptor));
+}
+
+function descriptorIdentifierMap(descriptor: SourceDescriptor): Record<string, string> {
+  if (descriptor.type === "Book") {
+    return {
+      ...(descriptor.isbn10 ? { isbn10: descriptor.isbn10 } : {}),
+      ...(descriptor.isbn13 ? { isbn13: descriptor.isbn13 } : {})
+    };
+  }
+  if (descriptor.type === "PeriodicalIssue") return descriptor.issn ? { issn: descriptor.issn } : {};
+  if (descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle") {
+    return descriptor.doi ? { doi: descriptor.doi } : {};
+  }
+  if (descriptor.type === "Video" && descriptor.videoId) return { videoId: descriptor.videoId };
+  return {};
+}
+
+function sourceValues(
+  descriptor: SourceDescriptor,
+  sourceOrigin: string,
+  contentHash: string | null,
+  extraMetadata: Record<string, unknown> = {}
+) {
+  return {
+    type: descriptor.type,
+    title: descriptor.title,
+    subtitle: descriptor.subtitle ?? null,
+    sourceOrigin,
+    sourceUri: descriptorSourceUri(descriptor),
+    parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null,
+    contentHash,
+    language: descriptor.language,
+    metadata: { ...extraMetadata, descriptor }
+  };
+}
+
+function containerResult(sourceItemId: string, duplicate: boolean): IngestionResult {
+  return {
+    sourceItemId, documentId: null, ingestionRunId: null, jobId: null, batchId: null,
+    structureId: null, requiresStructureReview: false, duplicate
+  };
+}
+
+function formatPageRange(pages: { start: string; end?: string | undefined }): string {
+  return pages.end && pages.end !== pages.start ? `${pages.start}-${pages.end}` : pages.start;
+}
+
+function bibliographicWorkType(type: SourceDescriptor["type"]): string {
+  if (type === "Book" || type === "BookChapter") return "book";
+  if (type === "PeriodicalIssue") return "periodical";
+  if (type === "AcademicPaper" || type === "StandaloneArticle") return "article";
+  return "generic_work";
 }
 
 function conversionMetadata(result: MarkdownConversionResult): Record<string, unknown> {

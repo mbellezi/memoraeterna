@@ -277,11 +277,15 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           rootSourceItemId: string;
           rootDocumentId: string;
           rootType: SourceItemType;
+          rootTitle: string;
+          sourceOrigin: string;
           language: string;
+          metadata: unknown;
           markdown: string;
         }>(
           `select structure.root_source_item_id as "rootSourceItemId", structure.root_document_id as "rootDocumentId",
-                  source.type as "rootType", source.language, document.canonical_markdown as markdown
+                  source.type as "rootType", source.title as "rootTitle", source.source_origin as "sourceOrigin",
+                  source.language, source.metadata, document.canonical_markdown as markdown
            from document_structures structure
            join source_items source on source.id = structure.root_source_item_id
            join documents document on document.id = structure.root_document_id
@@ -310,25 +314,45 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           const parentSourceItemId = division.parentId
             ? sourceByDivision.get(division.parentId) ?? structure.rootSourceItemId
             : structure.rootSourceItemId;
+          const childMetadata = materializedChildMetadata({
+            structureId: id,
+            division,
+            childType,
+            parentSourceItemId,
+            language: structure.language,
+            rootMetadata: asJsonObject(structure.metadata)
+          });
           let sourceItemId = division.childSourceItemId;
           if (sourceItemId) {
             await client.query(
               `update source_items set type = $2, title = $3, parent_source_item_id = $4, content_hash = $5,
                  metadata = metadata || $6::jsonb, updated_at = now() where id = $1`,
-              [sourceItemId, childType, division.title, parentSourceItemId, contentHash,
-                { divisionId: division.id, structureId: id, startPage: division.startPage, endPage: division.endPage }]
+              [sourceItemId, childType, division.title, parentSourceItemId, contentHash, childMetadata]
             );
           } else {
             const sourceResult = await client.query<{ id: string }>(
               `insert into source_items
                  (type, title, source_origin, parent_source_item_id, content_hash, language, metadata)
-               values ($1::source_item_type, $2, 'file_upload', $3, $4, $5, $6::jsonb) returning id`,
-              [childType, division.title, parentSourceItemId, contentHash, structure.language,
-                { divisionId: division.id, structureId: id, startPage: division.startPage, endPage: division.endPage }]
+               values ($1::source_item_type, $2, $3, $4, $5, $6, $7::jsonb) returning id`,
+              [childType, division.title, structure.sourceOrigin, parentSourceItemId, contentHash,
+                structure.language, childMetadata]
             );
             sourceItemId = sourceResult.rows[0]?.id ?? null;
           }
           if (!sourceItemId) throw new Error("division_source_materialization_failed");
+          const pages = division.startPage
+            ? `${division.startPage}${division.endPage && division.endPage !== division.startPage ? `-${division.endPage}` : ""}`
+            : null;
+          await client.query(
+            `insert into source_item_bibliographic_links (source_item_id, work_id, instance_id, relation_type, pages)
+             select $1, work_id, instance_id, $3, $4
+             from source_item_bibliographic_links where source_item_id = $2
+             on conflict (source_item_id, work_id) do update set
+               instance_id = excluded.instance_id, relation_type = excluded.relation_type, pages = excluded.pages`,
+            [sourceItemId, structure.rootSourceItemId,
+              childType === "BookChapter" ? "chapter_of" : childType === "StandaloneArticle" ? "article_in" : "section_of",
+              pages]
+          );
 
           let documentId = division.childDocumentId;
           const currentDocument = documentId
@@ -611,4 +635,71 @@ function childTypeForRoot(rootType: SourceItemType): SourceItemType {
   if (rootType === "PeriodicalIssue") return "StandaloneArticle";
   if (rootType === "AcademicPaper") return "DocumentSection";
   return "DocumentSection";
+}
+
+function materializedChildMetadata(input: {
+  structureId: string;
+  division: DocumentDivisionRecord;
+  childType: SourceItemType;
+  parentSourceItemId: string;
+  language: string;
+  rootMetadata: JsonObject;
+}): JsonObject {
+  const rootDescriptor = asJsonObject(input.rootMetadata.descriptor);
+  const divisionCreators = Array.isArray(input.division.metadata.creators)
+    ? input.division.metadata.creators.flatMap((creator) => {
+        const value = asJsonObject(creator);
+        return typeof value.name === "string" && value.name.trim()
+          ? [{
+              name: value.name.trim(),
+              role: typeof value.role === "string" ? value.role : "author",
+              ...(typeof value.affiliation === "string" && value.affiliation.trim()
+                ? { affiliation: value.affiliation.trim() }
+                : {})
+            }]
+          : [];
+      })
+    : [];
+  const pageRange = input.division.startPage ? {
+    start: String(input.division.startPage),
+    ...(input.division.endPage ? { end: String(input.division.endPage) } : {})
+  } : undefined;
+  const common = {
+    type: input.childType,
+    title: input.division.title,
+    language: input.language,
+    creators: divisionCreators,
+    tags: [],
+    parentSourceItemId: input.parentSourceItemId,
+    provenance: {
+      title: { source: "extracted", evidence: "document structure" },
+      creators: { source: divisionCreators.length ? "manual" : "extracted", evidence: "structure review" }
+    },
+    ...(typeof rootDescriptor.publicationDate === "string" ? { publicationDate: rootDescriptor.publicationDate } : {})
+  };
+  const descriptor = input.childType === "BookChapter"
+    ? { ...common, ...(pageRange ? { pages: pageRange } : {}) }
+    : input.childType === "StandaloneArticle"
+      ? {
+          ...common,
+          ...(typeof rootDescriptor.publicationTitle === "string" ? { periodicalTitle: rootDescriptor.publicationTitle } : {}),
+          ...(typeof rootDescriptor.volume === "string" ? { volume: rootDescriptor.volume } : {}),
+          ...(typeof rootDescriptor.issue === "string" ? { issue: rootDescriptor.issue } : {}),
+          ...(pageRange ? { pages: pageRange } : {})
+        }
+      : { ...common, ...(pageRange ? { pages: pageRange } : {}) };
+  return {
+    divisionId: input.division.id,
+    structureId: input.structureId,
+    startPage: input.division.startPage ?? null,
+    endPage: input.division.endPage ?? null,
+    descriptor,
+    inheritedBibliographic: {
+      ...(typeof rootDescriptor.edition === "string" ? { edition: rootDescriptor.edition } : {}),
+      ...(typeof rootDescriptor.publisher === "string" ? { publisher: rootDescriptor.publisher } : {}),
+      ...(typeof rootDescriptor.isbn10 === "string" ? { isbn10: rootDescriptor.isbn10 } : {}),
+      ...(typeof rootDescriptor.isbn13 === "string" ? { isbn13: rootDescriptor.isbn13 } : {}),
+      ...(typeof rootDescriptor.issn === "string" ? { issn: rootDescriptor.issn } : {})
+    }
+  };
 }

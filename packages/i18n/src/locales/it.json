@@ -162,7 +162,10 @@
   },
   "import": {
     "modes": { "manual": "Contenuto manuale", "file": "File locale" },
-    "steps": { "source": "Scegli fonte ed elaborazione", "structure": "Rivedi la struttura rilevata" },
+    "steps": { "type": "Tipo", "origin": "Origine", "metadata": "Metadati", "content": "Contenuto", "confirm": "Conferma", "structure": "Struttura" },
+    "searchTypes": "Cerca tipi di fonte",
+    "groups": { "notes": "Note", "publications": "Pubblicazioni", "media": "Web, video e file" },
+    "badges": { "container": "Contenitore", "child": "Richiede fonte principale" },
     "hierarchyHint": "Questo tipo puo rilevare capitoli, articoli e sezioni prima dell'elaborazione.",
     "fields": {
       "sourceType": "Tipo di fonte", "title": "Titolo", "content": "Contenuto",
@@ -175,9 +178,26 @@
       "PeriodicalIssue": "Numero di periodico", "AcademicPaper": "Articolo accademico", "DocumentSection": "Sezione documento",
       "Video": "Video", "GenericDocument": "Documento generico"
     },
-    "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file" },
+    "sourceDescriptions": {
+      "PersonalNote": "Un pensiero, estratto o nota scritta da te.", "DailyNote": "Una voce di diario collegata a una data.", "WebArticle": "Un articolo acquisito con il suo indirizzo web originale.",
+      "Book": "Un libro completo, con capitoli aggiunti ora o in seguito.", "BookChapter": "Un capitolo collegato a un libro della libreria.", "StandaloneArticle": "Un articolo autonomo o collegato a un numero di periodico.",
+      "PeriodicalIssue": "Un numero di rivista o giornale che puo contenere articoli.", "AcademicPaper": "Un lavoro accademico con DOI, pubblicazione, autori e sezioni.", "DocumentSection": "Una sezione collegata a un lavoro accademico.",
+      "Video": "Un video con canale, piattaforma, durata e miniatura.", "GenericDocument": "Qualsiasi altro documento o file senza un tipo piu specifico."
+    },
+    "originDescriptions": { "manual": "Inserisci metadati e contenuto. I contenitori possono essere salvati senza contenuto.", "file": "Seleziona un file, estrai i metadati localmente e rivedi tutto prima dell'importazione." },
+    "metadataFields": {
+      "title": "Titolo", "subtitle": "Sottotitolo", "creators": "Autori (ruolo: nome | affiliazione, uno per riga)", "language": "Codice lingua", "description": "Descrizione", "tags": "Tag (separati da virgole)", "context": "Contesto", "noteDate": "Data della nota", "url": "URL originale", "siteName": "Nome del sito", "publicationDate": "Data di pubblicazione", "imageUrl": "URL immagine principale",
+      "edition": "Edizione", "publisher": "Editore", "isbn10": "ISBN-10", "isbn13": "ISBN-13", "series": "Serie", "volume": "Volume", "pageCount": "Numero di pagine", "subjects": "Argomenti", "chapterNumber": "Numero capitolo", "pageStart": "Pagina iniziale", "pageEnd": "Pagina finale", "publicationTitle": "Titolo pubblicazione", "issn": "ISSN", "issue": "Numero", "doi": "DOI", "venue": "Pubblicazione", "year": "Anno", "abstract": "Abstract", "keywords": "Parole chiave", "sectionNumber": "Numero sezione", "periodicalTitle": "Titolo periodico", "channel": "Canale", "durationSeconds": "Durata (secondi)", "platform": "Piattaforma", "videoId": "ID video", "thumbnailUrl": "URL miniatura", "creationDate": "Data di creazione", "mimeType": "Tipo MIME"
+    },
+    "parent": { "label": "Fonte principale", "create": "Crea fonte principale", "createTitle": "Crea la fonte principale senza uscire da questa importazione" },
+    "enrichment": { "title": "Metadati suggeriti", "waiting": "I suggerimenti appaiono automaticamente con titolo, ISBN o DOI.", "apply": "Applica suggerimento" },
+    "content": { "hint": "Il contenuto Markdown viene conservato come documento fonte.", "containerHint": "Lascia vuoto per creare solo il contenitore o incolla contenuto per rilevarne la struttura." },
+    "confirmation": { "origin": "Origine", "content": "Contenuto", "container": "Contenitore con soli metadati" },
+    "duplicate": { "found": "Trovato un possibile duplicato: {title}", "none": "Nessun duplicato rilevato.", "ignore": "Mantieni esistente", "update": "Aggiorna esistente", "version": "Crea nuova versione" },
+    "validation": { "chooseFile": "Scegli un file prima di continuare.", "contentRequired": "Questo tipo di fonte richiede contenuto." },
+    "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file", "changeFile": "Cambia file", "back": "Indietro", "continue": "Continua", "import": "Importa fonte" },
     "file": { "title": "Scegli il file originale", "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA." },
-    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
+    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "metadataExtracted": "Metadati estratti localmente. Rivedili prima di continuare.", "duplicateHandled": "Politica duplicati applicata.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
   },
   "processing": {
     "title": "Scegli quanto elaborare", "aiOptional": "L'IA e facoltativa", "description": "Importa prima, poi crea solo gli artefatti necessari. Le dipendenze vengono incluse automaticamente.",
@@ -185,13 +205,14 @@
     "presets": { "import_only": { "title": "Solo importazione", "description": "Conserva e organizza la fonte senza IA." }, "search_ready": { "title": "Pronto per la ricerca", "description": "Crea segmenti ed embedding per la ricerca." }, "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." }, "full_knowledge": { "title": "Conoscenza completa", "description": "Genera note, grafo e corrispondenze." } }
   },
   "structure": {
-    "eyebrow": "Controllo umano", "title": "Rivedi la struttura rilevata", "description": "Conferma titoli e intervalli, escludi le voci di sola navigazione e scegli cosa diventa una fonte indipendente.",
-    "treeTitle": "Struttura del documento", "selectedCount": "{count} elementi da creare", "fields": { "title": "Titolo", "kind": "Tipo", "range": "Intervallo fonte", "behavior": "Includi ed elabora" },
+    "eyebrow": "Controllo umano", "title": "Rivedi la struttura rilevata", "description": "Rivedi i segmenti, regola i confini e scegli quali diventano sottoelementi.",
+    "treeTitle": "Struttura del documento", "selectedCount": "{count} elementi da creare", "fields": { "title": "Titolo", "kind": "Tipo", "range": "Intervallo fonte", "behavior": "Includi ed elabora", "metadata": "Sottoelemento", "creators": "Autori (ruolo: nome | affiliazione)" },
+    "cutoffLevel": "Crea fino al livello", "createSubelement": "Crea come sottoelemento", "createSubelementHint": "Questo segmento diventa una fonte figlia con documento proprio.", "previewTitle": "Anteprima del contenuto", "previewUnavailable": "Nessuna anteprima testuale per questo segmento basato sulle pagine.", "splitBoundary": "Dividi al confine rilevato", "boundaryStart": "Confine iniziale", "boundaryEnd": "Confine finale", "boundaryPage": "Pagina {page} · {label}",
     "pageRange": "Pagine {start}-{end}", "offsetRange": "Testo {start}-{end}", "includeNavigation": "Mantieni questa voce", "includeNavigationHint": "Le voci escluse non vengono materializzate ne mostrate nella navigazione.",
     "processable": "Crea una fonte indipendente", "processableHint": "Trasforma questa divisione in un elemento selezionabile della libreria.", "evidenceTitle": "Perche questa divisione e stata rilevata", "evidence": "{source} · affidabilita {score}%", "noSelection": "Seleziona un elemento da rivedere.",
     "blockingIssues": "Risolvi {count} problemi prima di continuare.", "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.", "ready": "La struttura e valida e pronta per la conferma.", "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
     "kinds": { "part": "Parte", "chapter": "Capitolo", "article": "Articolo", "section": "Sezione", "subsection": "Sottosezione", "frontmatter": "Pagine iniziali", "backmatter": "Pagine finali", "appendix": "Appendice", "unknown": "Altro" },
-    "actions": { "undo": "Annulla", "redo": "Ripeti", "restore": "Ripristina versione rilevata", "split": "Dividi", "mergePrevious": "Unisci al precedente", "moveUp": "Sposta su", "moveDown": "Sposta giu", "saveDraft": "Salva bozza", "confirm": "Conferma e continua" }
+    "actions": { "undo": "Annulla", "redo": "Ripeti", "restore": "Ripristina versione rilevata", "split": "Dividi", "mergePrevious": "Unisci al precedente", "moveUp": "Sposta su", "moveDown": "Sposta giu", "saveDraft": "Salva bozza", "confirm": "Conferma e continua", "confirmCount": "Importa fonte con {count} sottoelementi" }
   },
   "search": {
     "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
@@ -201,7 +222,7 @@
   "library": {
     "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
     "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
-    "empty": "Nessuna fonte nella libreria.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti",
+    "empty": "Nessuna fonte nella libreria.", "container": "Contenitore", "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti",
     "actions": { "selectSource": "Seleziona {title}", "process": "Elabora questa fonte", "processSelected": "Elabora selezionate", "clearSelection": "Cancella selezione", "queueProcessing": "Accoda elaborazione" },
     "processingDialog": { "title": "Elabora fonti della libreria", "description": "Scegli cosa generare per {count} fonti selezionate.", "scope": "Applica a", "regenerate": "Rigenera artefatti esistenti", "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate." },
     "scopes": { "source_only": "Solo questa fonte", "children_only": "Solo elementi figli", "source_and_children": "Questa fonte e tutti i figli" },
@@ -338,6 +359,7 @@
       "states": { "stopped": "Arrestato", "starting": "Avvio", "ready": "Pronto", "failed": "Errore" }
     },
     "matching": { "title": "Matching della conoscenza", "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.", "minimumScore": "Punteggio minimo del matching", "moreRelations": "Più relazioni", "fewerRelations": "Meno relazioni, più rigorose", "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia." },
+    "metadataEnrichment": { "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },
     "reset": { "title": "Reimposta libreria", "description": "Elimina tutta la libreria, i file gestiti, i vettori, i processi e le note atomiche. I modelli locali scaricati e le impostazioni vengono conservati.", "action": "Reimposta tutto", "confirmation": "Eliminare definitivamente tutta la libreria, i file gestiti, i vettori e le note atomiche? I modelli locali scaricati saranno conservati.", "completed": "Libreria reimpostata.", "completedWithWarnings": "Libreria reimpostata, ma alcuni file gestiti non sono stati rimossi.", "failed": "Impossibile reimpostare la libreria." },
     "ai": {
       "title": "Provider e profili IA", "provider": "Provider", "google": "Google Gemini",

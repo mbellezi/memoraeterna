@@ -115,6 +115,14 @@ export function createDocumentAssetRepository(db: Queryable) {
       return result.rows.map(mapDocumentAsset);
     },
 
+    async listBySourceItem(sourceItemId: string): Promise<DocumentAssetRecord[]> {
+      const result = await db.query<DocumentAssetRow>(
+        `select ${returning} from document_assets where source_item_id = $1 order by created_at desc`,
+        [sourceItemId]
+      );
+      return result.rows.map(mapDocumentAsset);
+    },
+
     async update(id: string, input: UpdateDocumentAssetInput): Promise<DocumentAssetRecord | null> {
       const row = await updateRow<DocumentAssetRow>(
         db,

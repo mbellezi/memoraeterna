@@ -10,7 +10,11 @@ import type {
   AtomicNoteReviewInput,
   AppSettingsUpdate,
   DesktopApi,
+  ContainerSourceInput,
+  DuplicateCheckInput,
   FileImportInput,
+  FileMetadataExtractionInput,
+  MetadataEnrichmentInput,
   ManualIngestionInput,
   ProcessingRequest,
   StructureConfirmInput,
@@ -39,6 +43,15 @@ import {
   databaseStatusSchema,
   ipcChannels,
   fileImportInputSchema,
+  fileMetadataExtractionInputSchema,
+  fileMetadataExtractionResultSchema,
+  metadataEnrichmentInputSchema,
+  metadataEnrichmentResultSchema,
+  enrichmentCoverInputSchema,
+  enrichmentCoverResultSchema,
+  containerSourceInputSchema,
+  duplicateCandidateSchema,
+  duplicateCheckInputSchema,
   ingestionResultSchema,
   documentStructureViewSchema,
   processingBatchSchema,
@@ -57,6 +70,7 @@ import {
   sourceDetailSchema,
   sourceDeletionResultSchema,
   sourceSuggestionSchema,
+  sourceLookupInputSchema,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
   systemInfoSchema,
@@ -143,12 +157,47 @@ const api: DesktopApi = {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionCreateManual, manualIngestionInputSchema.parse(input));
       return ingestionResultSchema.parse(result);
     },
+    async extractFileMetadata(input: FileMetadataExtractionInput) {
+      const result = await ipcRenderer.invoke(
+        ipcChannels.ingestionExtractFileMetadata,
+        fileMetadataExtractionInputSchema.parse(input)
+      );
+      return result === null ? null : fileMetadataExtractionResultSchema.parse(result);
+    },
+    async enrichMetadata(input: MetadataEnrichmentInput) {
+      return metadataEnrichmentResultSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionEnrichMetadata,
+        metadataEnrichmentInputSchema.parse(input)
+      ));
+    },
+    async applyEnrichmentCover(coverUrl: string) {
+      return enrichmentCoverResultSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionApplyEnrichmentCover,
+        enrichmentCoverInputSchema.parse({ coverUrl })
+      ));
+    },
+    async findDuplicate(input: DuplicateCheckInput) {
+      const result = await ipcRenderer.invoke(
+        ipcChannels.ingestionFindDuplicate,
+        duplicateCheckInputSchema.parse(input)
+      );
+      return result === null ? null : duplicateCandidateSchema.parse(result);
+    },
+    async createContainerSource(input: ContainerSourceInput) {
+      return ingestionResultSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionCreateContainerSource,
+        containerSourceInputSchema.parse(input)
+      ));
+    },
     async importFile(input: FileImportInput) {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionImportFile, fileImportInputSchema.parse(input));
       return result === null ? null : ingestionResultSchema.parse(result);
     },
-    async lookupSources(query: string) {
-      return sourceSuggestionSchema.array().parse(await ipcRenderer.invoke(ipcChannels.ingestionLookupSources, query));
+    async lookupSources(query: string, sourceTypes: SourceItemType[] = []) {
+      return sourceSuggestionSchema.array().parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionLookupSources,
+        sourceLookupInputSchema.parse({ query, sourceTypes })
+      ));
     },
     async getStructure(structureId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionStructureGet, structureId);
