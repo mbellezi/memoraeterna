@@ -182,7 +182,7 @@ describe("repositories", () => {
   });
 
   it("immediately recovers every job left running by the previous process", async () => {
-    const db = new FakeQueryable([[], []]);
+    const db = new FakeQueryable([[], [], [], []]);
 
     await createJobRepository(db).recoverInterrupted();
 
@@ -211,10 +211,12 @@ describe("repositories", () => {
     await runs.fail("run-1", "errors.localModels.runtimeFailed");
     await runs.cancel("run-2");
 
-    expect(db.queries[0]?.text).toContain("jsonb_build_object('status', 'failed'");
-    expect(db.queries[0]?.values).toEqual(["run-1", "errors.localModels.runtimeFailed"]);
-    expect(db.queries[1]?.text).toContain("jsonb_build_object('status', 'canceled'");
-    expect(db.queries[1]?.values).toEqual(["run-2"]);
+    expect(db.queries[0]?.text).toContain("update ingestion_run_stages");
+    expect(db.queries[1]?.text).toContain("jsonb_build_object('status', 'failed'");
+    expect(db.queries[1]?.values).toEqual(["run-1", "errors.localModels.runtimeFailed"]);
+    expect(db.queries[2]?.text).toContain("update ingestion_run_stages");
+    expect(db.queries[3]?.text).toContain("jsonb_build_object('status', 'canceled'");
+    expect(db.queries[3]?.values).toEqual(["run-2"]);
   });
 
   it("clears only completed or failed jobs", async () => {
@@ -371,7 +373,7 @@ describe("repositories", () => {
 
   it("persists per-batch ingestion progress without replacing the stage checkpoint", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
-    const db = new FakeQueryable([[
+    const db = new FakeQueryable([[], [
       {
         id: "run-1", sourceItemId: "source-1", jobId: "job-1", status: "running",
         currentStage: "knowledgeGraph", stagesCheckpoint: {
@@ -389,8 +391,9 @@ describe("repositories", () => {
     );
 
     expect(run?.stagesCheckpoint.knowledgeGraph).toMatchObject({ progress: 0.5 });
-    expect(db.queries[0]?.text).toContain("coalesce(stages_checkpoint -> $2");
-    expect(db.queries[0]?.values).toEqual([
+    expect(db.queries[0]?.text).toContain("ingestion_run_stages");
+    expect(db.queries[1]?.text).toContain("coalesce(stages_checkpoint -> $2");
+    expect(db.queries[1]?.values).toEqual([
       "run-1", "knowledgeGraph", 0.5, { completed: 1, total: 2 }
     ]);
   });

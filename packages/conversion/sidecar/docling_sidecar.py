@@ -14,7 +14,7 @@ from typing import Any
 
 from docling.document_converter import DocumentConverter
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 def _block_payload(document_dict: dict[str, Any], markdown: str) -> list[dict[str, Any]]:
@@ -44,7 +44,23 @@ def _block_payload(document_dict: dict[str, Any], markdown: str) -> list[dict[st
             "text": text,
             "markdownStart": start,
             "markdownEnd": end,
+            "readingOrder": index,
+            "childrenRefs": [
+                str(child.get("$ref"))
+                for child in item.get("children", [])
+                if isinstance(child, dict) and child.get("$ref")
+            ],
         }
+        parent = item.get("parent")
+        if isinstance(parent, dict) and parent.get("$ref"):
+            block["parentRef"] = str(parent["$ref"])
+        charspan = first_provenance.get("charspan") if isinstance(first_provenance, dict) else None
+        if (
+            isinstance(charspan, list)
+            and len(charspan) == 2
+            and all(isinstance(value, int) and value >= 0 for value in charspan)
+        ):
+            block["sourceCharspan"] = charspan
         if isinstance(first_provenance, dict) and isinstance(first_provenance.get("page_no"), int):
             block["page"] = first_provenance["page_no"]
         if isinstance(bbox, dict) and all(name in bbox for name in ("l", "t", "r", "b")):
@@ -63,13 +79,24 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
     source = Path(request["inputPath"])
     if not source.is_file():
         raise FileNotFoundError(source)
+    max_input_bytes = request.get("maxInputBytes")
+    if isinstance(max_input_bytes, int) and source.stat().st_size > max_input_bytes:
+        raise ValueError("input_size_limit_exceeded")
 
     converter = DocumentConverter()
     options = request.get("options", {})
     max_pages = options.get("maxPages") if isinstance(options, dict) else None
+    page_start = request.get("pageStart")
+    page_end = request.get("pageEnd")
+    page_range = None
+    if isinstance(page_start, int) and isinstance(page_end, int):
+        if page_start > page_end:
+            raise ValueError("invalid_page_range")
+        page_range = (page_start, page_end)
     conversion = converter.convert(
         source,
         **({"max_num_pages": max_pages} if isinstance(max_pages, int) and max_pages > 0 else {}),
+        **({"page_range": page_range} if page_range else {}),
     )
     document = conversion.document
     markdown = document.export_to_markdown().strip()
@@ -105,6 +132,17 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
         "warnings": warnings,
         "quality": {"textCoverage": 0 if requires_ocr else 1},
         "metadata": {"durationMs": int((time.monotonic() - started) * 1000)},
+        "documentStructure": {
+            "body": document_dict.get("body", {}).get("children", [])
+            if isinstance(document_dict.get("body"), dict)
+            else [],
+            "groups": document_dict.get("groups", [])
+            if isinstance(document_dict.get("groups"), list)
+            else [],
+            "pageCount": len(document_dict.get("pages", {}))
+            if isinstance(document_dict.get("pages"), dict)
+            else 0,
+        },
         "rawStructuredResult": document_dict,
     }
     if confidence is not None:

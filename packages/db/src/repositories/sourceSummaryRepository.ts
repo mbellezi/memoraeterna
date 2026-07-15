@@ -5,6 +5,8 @@ import type { JsonObject, Queryable, SourceSummaryRecord } from "./types.js";
 
 interface SourceSummaryRow extends QueryResultRow {
   id: string;
+  generationId: string | null;
+  isCurrent: boolean;
   sourceItemId: string;
   summary: string;
   language: string;
@@ -21,7 +23,8 @@ interface SourceSummaryRow extends QueryResultRow {
   createdAt: unknown;
 }
 
-const returning = `id, source_item_id as "sourceItemId", summary, language,
+const returning = `id, generation_id as "generationId", is_current as "isCurrent",
+  source_item_id as "sourceItemId", summary, language,
   profile_id as "profileId", ai_task_run_id as "aiTaskRunId", provider, model,
   runtime, prompt_version as "promptVersion", input_hash as "inputHash",
   output_hash as "outputHash", generated_at as "generatedAt", metadata,
@@ -40,6 +43,7 @@ export function createSourceSummaryRepository(db: Queryable) {
   return {
     async create(input: {
       sourceItemId: string;
+      generationId?: string;
       summary: string;
       language?: string;
       profileId?: string | null;
@@ -53,10 +57,14 @@ export function createSourceSummaryRepository(db: Queryable) {
       metadata?: JsonObject;
     }): Promise<SourceSummaryRecord> {
       const result = await db.query<SourceSummaryRow>(
-        `insert into source_summaries (
+        `with previous as (
+           update source_summaries set is_current = false
+           where source_item_id = $1 and is_current = true returning id
+         )
+         insert into source_summaries (
            source_item_id, summary, language, profile_id, ai_task_run_id,
-           provider, model, runtime, prompt_version, input_hash, output_hash, metadata
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           provider, model, runtime, prompt_version, input_hash, output_hash, metadata, generation_id, is_current
+         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, true)
          returning ${returning}`,
         [
           input.sourceItemId,
@@ -70,7 +78,8 @@ export function createSourceSummaryRepository(db: Queryable) {
           input.promptVersion,
           input.inputHash,
           input.outputHash,
-          input.metadata ?? {}
+          input.metadata ?? {},
+          input.generationId ?? null
         ]
       );
       const row = result.rows[0];

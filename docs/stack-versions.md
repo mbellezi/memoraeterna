@@ -88,6 +88,7 @@ Next.js nao faz parte da stack obrigatoria do MVP desktop. Se um app web separad
 | --- | --- | --- |
 | Defuddle | `0.19.1` | Extracao primaria de paginas web. |
 | Docling | `2.111.0` | Conversao primaria de PDF e documentos complexos em sidecar Python local, com Markdown e JSON estruturado. Modelos e wheels devem ser fixados e verificados no spike da Etapa 7. |
+| PDF.js (`pdfjs-dist`) | `6.1.200` | Leitura local de outline/bookmarks, destinos e page labels no backend Node; nunca no renderer. |
 | Conversores TypeScript nativos | interno | TXT, Markdown, CSV, JSON, XML, RSS, Atom e IPYNB; sem framework generico obrigatorio. |
 | `youtubei.js` | `17.2.0` | Metadados e transcricoes de YouTube quando disponiveis. |
 | `node-llama-cpp` | `3.19.0` | Apenas main process ou workers controlados pelo main process. |

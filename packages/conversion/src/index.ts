@@ -6,3 +6,4 @@ export * from "./docling-client.js";
 export * from "./conversion-router.js";
 export * from "./chunking.js";
 export * from "./zip-converter.js";
+export * from "./structure-detection.js";

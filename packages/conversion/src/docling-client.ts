@@ -21,12 +21,18 @@ export class DoclingClient {
     profile: ConversionProfile = "standard",
     signal?: AbortSignal
   ): Promise<MarkdownConversionResult> {
+    const pageStart = positiveInteger(this.options.conversionOptions?.pageStart);
+    const pageEnd = positiveInteger(this.options.conversionOptions?.pageEnd);
+    const maxInputBytes = positiveInteger(this.options.conversionOptions?.maxInputBytes);
     const request = doclingRequestSchema.parse({
-      protocolVersion: 1,
+      protocolVersion: 2,
       requestId: randomUUID(),
       command: "convert",
       inputPath,
       profile,
+      ...(pageStart ? { pageStart } : {}),
+      ...(pageEnd ? { pageEnd } : {}),
+      ...(maxInputBytes ? { maxInputBytes } : {}),
       options: this.options.conversionOptions ?? {}
     });
     const child = spawn(this.options.executablePath, [this.options.sidecarScriptPath], {
@@ -79,4 +85,8 @@ export class DoclingClient {
       if (!child.killed) child.kill("SIGTERM");
     }
   }
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }

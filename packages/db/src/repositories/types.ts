@@ -15,6 +15,9 @@ export type SourceItemType =
   | "WebArticle"
   | "Book"
   | "BookChapter"
+  | "PeriodicalIssue"
+  | "AcademicPaper"
+  | "DocumentSection"
   | "StandaloneArticle"
   | "Video"
   | "GenericDocument";
@@ -45,6 +48,8 @@ export interface SourceItemRecord {
 
 export interface SourceSummaryRecord {
   id: string;
+  generationId: string | null;
+  isCurrent: boolean;
   sourceItemId: string;
   summary: string;
   language: string;
@@ -63,6 +68,8 @@ export interface SourceSummaryRecord {
 
 export interface AtomicNoteRecord {
   id: string;
+  generationId: string | null;
+  supersessionStatus: string;
   title: string;
   bodyMarkdown: string;
   ideaStatement: string;
@@ -186,6 +193,7 @@ export interface SearchEvidenceRecord {
   sourceItemId: string;
   sourceTitle: string;
   sourceType: SourceItemType;
+  breadcrumbs?: Array<{ id: string; title: string }>;
   documentId: string;
   chunkId: string;
   sourceSpanId: string | null;
@@ -218,6 +226,16 @@ export interface IngestionRunRecord {
   id: string;
   sourceItemId: string | null;
   jobId: string | null;
+  batchId: string | null;
+  runKind: "initial" | "missing_stages" | "reingestion" | "retry_resume";
+  requestedStages: unknown[];
+  effectiveStages: unknown[];
+  planVersion: string;
+  inputDocumentRevisionId: string | null;
+  inputHashes: JsonObject;
+  supersedesRunId: string | null;
+  previousArtifactPolicy: string;
+  trigger: string;
   status: IngestionRunStatus;
   currentStage: string;
   stagesCheckpoint: JsonObject;

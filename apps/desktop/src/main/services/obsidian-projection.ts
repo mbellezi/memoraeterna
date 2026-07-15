@@ -37,6 +37,11 @@ export interface ObsidianProjectionInput {
   syncVersion: number;
   sourceType?: string;
   sourceUri?: string | null;
+  rootSourceItemId?: string;
+  rootTitle?: string;
+  divisionId?: string;
+  documentRevisionId?: string;
+  isHierarchyRoot?: boolean;
   date: Date;
 }
 
@@ -54,6 +59,9 @@ export function renderObsidianProjection(input: ObsidianProjectionInput): Render
     memoraType: input.memoraType,
     ...(input.sourceItemId ? { memoraSourceId: input.sourceItemId } : {}),
     ...(input.documentId ? { memoraDocumentId: input.documentId } : {}),
+    ...(input.rootSourceItemId ? { memoraRootSourceId: input.rootSourceItemId } : {}),
+    ...(input.divisionId ? { memoraDivisionId: input.divisionId } : {}),
+    ...(input.documentRevisionId ? { memoraDocumentRevisionId: input.documentRevisionId } : {}),
     memoraManaged: true,
     memoraSyncVersion: input.syncVersion,
     memoraContentHash: input.contentHash
@@ -62,7 +70,7 @@ export function renderObsidianProjection(input: ObsidianProjectionInput): Render
   const body = input.bodyMarkdown.trim();
   return {
     relativeDirectory: projectionDirectory(input),
-    baseFileName: `${slugify(input.title)}.md`,
+    baseFileName: input.isHierarchyRoot ? "index.md" : `${slugify(input.title)}.md`,
     frontmatter,
     frontmatterText,
     markdown: `${frontmatterText}\n${body}\n`
@@ -139,6 +147,9 @@ export function parseManagedMarkdown(markdown: string): {
     memoraType: values.memora_type,
     ...(values.memora_source_id ? { memoraSourceId: values.memora_source_id } : {}),
     ...(values.memora_document_id ? { memoraDocumentId: values.memora_document_id } : {}),
+    ...(values.memora_root_source_id ? { memoraRootSourceId: values.memora_root_source_id } : {}),
+    ...(values.memora_division_id ? { memoraDivisionId: values.memora_division_id } : {}),
+    ...(values.memora_document_revision_id ? { memoraDocumentRevisionId: values.memora_document_revision_id } : {}),
     memoraManaged: values.memora_managed === "true",
     memoraSyncVersion: Number(values.memora_sync_version),
     memoraContentHash: values.memora_content_hash
@@ -155,6 +166,9 @@ function serializeFrontmatter(frontmatter: ObsidianManagedFrontmatter): string {
     `memora_type: ${yamlString(frontmatter.memoraType)}`,
     ...(frontmatter.memoraSourceId ? [`memora_source_id: ${yamlString(frontmatter.memoraSourceId)}`] : []),
     ...(frontmatter.memoraDocumentId ? [`memora_document_id: ${yamlString(frontmatter.memoraDocumentId)}`] : []),
+    ...(frontmatter.memoraRootSourceId ? [`memora_root_source_id: ${yamlString(frontmatter.memoraRootSourceId)}`] : []),
+    ...(frontmatter.memoraDivisionId ? [`memora_division_id: ${yamlString(frontmatter.memoraDivisionId)}`] : []),
+    ...(frontmatter.memoraDocumentRevisionId ? [`memora_document_revision_id: ${yamlString(frontmatter.memoraDocumentRevisionId)}`] : []),
     "memora_managed: true",
     `memora_sync_version: ${frontmatter.memoraSyncVersion}`,
     `memora_content_hash: ${yamlString(frontmatter.memoraContentHash)}`,
@@ -173,9 +187,12 @@ function projectionDirectory(input: ObsidianProjectionInput): string {
     return posix.join(root, "Sources", "Web", year, month, host);
   }
   if (input.sourceType === "Video") return posix.join(root, "Sources", "Videos", year, month);
-  if (input.sourceType === "Book" || input.sourceType === "BookChapter") {
-    return posix.join(root, "Sources", "Books");
-  }
+  if (input.sourceType === "Book") return posix.join(root, "Books", slugify(input.title));
+  if (input.sourceType === "BookChapter") return posix.join(root, "Books", slugify(input.rootTitle ?? "book"), "Chapters");
+  if (input.sourceType === "PeriodicalIssue") return posix.join(root, "Periodicals", slugify(input.title));
+  if (input.sourceType === "StandaloneArticle" && input.rootTitle) return posix.join(root, "Periodicals", slugify(input.rootTitle), "Articles");
+  if (input.sourceType === "AcademicPaper") return posix.join(root, "Papers", slugify(input.title));
+  if (input.sourceType === "DocumentSection") return posix.join(root, "Papers", slugify(input.rootTitle ?? "paper"), "Sections");
   if (input.sourceType === "DailyNote") return posix.join(root, "Sources", "Daily", year, month);
   if (input.sourceType === "PersonalNote") return posix.join(root, "Sources", "Notes");
   return posix.join(root, "Sources", "Documents");

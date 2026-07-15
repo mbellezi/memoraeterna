@@ -64,13 +64,16 @@ const validAtomicNote = {
 } as const;
 
 describe("@app/domain schemas", () => {
-  it("keeps the MVP SourceItem type taxonomy exact", () => {
+  it("keeps the hierarchical SourceItem type taxonomy exact", () => {
     expect(SourceItemTypes).toEqual([
       "PersonalNote",
       "DailyNote",
       "WebArticle",
       "Book",
       "BookChapter",
+      "PeriodicalIssue",
+      "AcademicPaper",
+      "DocumentSection",
       "StandaloneArticle",
       "Video",
       "GenericDocument"

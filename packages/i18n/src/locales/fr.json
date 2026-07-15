@@ -105,6 +105,7 @@
       "description": "Suivez en direct de la conversion au graphe de connaissances, avec checkpoints, tentatives et erreurs regroupes."
     },
     "summary": { "active": "Actives", "completed": "Terminees", "attention": "A surveiller" },
+    "batch": { "label": "Lot de traitement", "plan": "Plan : {plan}", "custom": "Personnalise", "items": "{completed} sur {total} elements" },
     "filters": { "label": "Filtrer les taches", "all": "Toutes", "active": "Actives", "completed": "Terminees", "attention": "A surveiller" },
     "liveUpdates": "Mises a jour en direct connectees",
     "streaming": "Traitement du modele en direct",
@@ -142,10 +143,10 @@
     },
     "currentStage": "Etape actuelle : {stage}",
     "stages": {
-      "queued": "En attente", "conversion": "Conversion", "chunking": "Decoupage",
+      "queued": "En attente", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
       "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
       "knowledgeGraph": "Graphe de connaissances",
-      "atomicNoteMatching": "Mise en relation", "obsidianProjection": "Projection Obsidian",
+      "atomicNoteMatching": "Mise en relation", "obsidianProjection": "Projection Obsidian", "aggregateSummarization": "Resume agrege",
       "completed": "Terminee"
     },
     "stageStatus": {
@@ -161,6 +162,8 @@
   },
   "import": {
     "modes": { "manual": "Contenu manuel", "file": "Fichier local" },
+    "steps": { "source": "Choisir la source et le traitement", "structure": "Reviser la structure detectee" },
+    "hierarchyHint": "Ce type peut detecter les chapitres, articles et sections avant le traitement.",
     "fields": {
       "sourceType": "Type de source", "title": "Titre", "content": "Contenu",
       "originalUri": "URL d'origine", "workTitle": "Oeuvre associee", "isbn": "ISBN",
@@ -169,20 +172,39 @@
     "sourceTypes": {
       "PersonalNote": "Note personnelle", "DailyNote": "Note quotidienne", "WebArticle": "Article web",
       "Book": "Livre", "BookChapter": "Chapitre de livre", "StandaloneArticle": "Article autonome",
+      "PeriodicalIssue": "Numero de periodique", "AcademicPaper": "Article academique", "DocumentSection": "Section de document",
       "Video": "Video", "GenericDocument": "Document generique"
     },
     "actions": { "queue": "Mettre l'import en file", "chooseFile": "Choisir un fichier" },
-    "file": { "description": "Choisissez un fichier local pris en charge. L'original est conserve et le traitement s'execute en arriere-plan." },
-    "status": { "queued": "Import en file.", "canceled": "Selection de fichier annulee." }
+    "file": { "title": "Choisir le fichier original", "description": "L'original est conserve. Pour les livres, periodiques et articles, revise la structure avant tout traitement par IA." },
+    "status": { "queued": "Import en file.", "canceled": "Selection de fichier annulee.", "saved": "Source enregistree sans traitement en arriere-plan.", "reviewStructure": "Structure detectee. Revisez-la avant de continuer.", "draftSaved": "Brouillon de structure enregistre.", "queuedChildren": "Structure confirmee et elements selectionnes mis en file.", "savedChildren": "Structure confirmee et elements selectionnes enregistres." }
+  },
+  "processing": {
+    "title": "Choisir le niveau de traitement", "aiOptional": "L'IA est facultative", "description": "Importez d'abord, puis creez seulement les artefacts necessaires. Les dependances sont incluses automatiquement.",
+    "customize": "Personnaliser les etapes", "includedDependency": "Incluse car une autre etape en depend", "stageCount": "{count} etapes dans ce plan", "profileNotice": "Utilise votre profil IA configure", "noAiNotice": "Aucun appel IA necessaire",
+    "presets": { "import_only": { "title": "Importer seulement", "description": "Conserve et organise la source sans IA." }, "search_ready": { "title": "Pret pour la recherche", "description": "Cree des segments et embeddings pour la recherche." }, "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." }, "full_knowledge": { "title": "Connaissance complete", "description": "Genere notes, graphe et rapprochements." } }
+  },
+  "structure": {
+    "eyebrow": "Point de controle humain", "title": "Reviser la structure detectee", "description": "Confirmez titres et plages, excluez les entrees de navigation et choisissez les sources independantes.",
+    "treeTitle": "Structure du document", "selectedCount": "{count} elements a creer", "fields": { "title": "Titre", "kind": "Type", "range": "Plage source", "behavior": "Inclure et traiter" },
+    "pageRange": "Pages {start}-{end}", "offsetRange": "Texte {start}-{end}", "includeNavigation": "Conserver cette entree", "includeNavigationHint": "Les entrees exclues ne sont ni materialisees ni affichees dans la navigation.",
+    "processable": "Creer une source independante", "processableHint": "Transforme cette division en element selectionnable de la bibliotheque.", "evidenceTitle": "Pourquoi cette division a ete detectee", "evidence": "{source} · confiance {score}%", "noSelection": "Selectionnez un element a reviser.",
+    "blockingIssues": "Resolvez {count} problemes avant de continuer.", "ready": "La structure est valide et prete a confirmer.", "confidence": { "high": "Elevee", "medium": "A reviser", "low": "Faible" },
+    "kinds": { "part": "Partie", "chapter": "Chapitre", "article": "Article", "section": "Section", "subsection": "Sous-section", "frontmatter": "Pages liminaires", "backmatter": "Pages finales", "appendix": "Annexe", "unknown": "Autre" },
+    "actions": { "undo": "Annuler", "redo": "Retablir", "restore": "Restaurer la version detectee", "split": "Diviser", "mergePrevious": "Fusionner avec le precedent", "moveUp": "Monter", "moveDown": "Descendre", "saveDraft": "Enregistrer le brouillon", "confirm": "Confirmer et continuer" }
   },
   "search": {
     "placeholder": "Rechercher des sources et preuves", "action": "Rechercher", "empty": "Aucune preuve correspondante.",
+    "scope": "Rechercher dans", "scopeAll": "Toute la bibliotheque",
     "page": "Page", "markdownEvidence": "Preuve Markdown"
   },
   "library": {
     "filterByType": "Filtrer par type de source", "allTypes": "Tous les types de source",
     "refresh": "Actualiser la bibliotheque", "error": "Impossible de charger la bibliotheque.",
-    "empty": "Aucune source dans la bibliotheque.", "currentStage": "Etape actuelle : {stage}",
+    "empty": "Aucune source dans la bibliotheque.", "selectionCount": "{count} sources selectionnees", "childCount": "{count} elements directs",
+    "actions": { "selectSource": "Selectionner {title}", "process": "Traiter cette source", "processSelected": "Traiter la selection", "clearSelection": "Effacer la selection", "queueProcessing": "Mettre le traitement en file" },
+    "processingDialog": { "title": "Traiter les sources", "description": "Choisissez quoi generer pour {count} sources selectionnees.", "scope": "Appliquer a", "regenerate": "Regenerer les artefacts existants", "regenerateHint": "Les notes revisees sont conservees; les generations en attente sont archivees." },
+    "scopes": { "source_only": "Cette source uniquement", "children_only": "Enfants uniquement", "source_and_children": "Cette source et tous ses enfants" }, "currentStage": "Etape actuelle : {stage}",
     "back": "Retour a la bibliotheque", "openOriginal": "Ouvrir l'original", "openFile": "Ouvrir le fichier original",
     "noSummary": "Aucun resume n'a ete genere.", "chunk": "Segment {index}",
     "processing": { "pending": "En attente", "running": "Traitement", "succeeded": "Prete", "failed": "Echec", "canceled": "Annulee" },

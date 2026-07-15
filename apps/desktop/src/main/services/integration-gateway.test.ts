@@ -17,6 +17,9 @@ const result = {
   documentId: "83f7509d-71ea-4276-922c-c305eb9f7420",
   ingestionRunId: "1a53c3d9-6bda-4c72-b82c-36dcac71ff13",
   jobId: "7d18118a-6c6d-484a-930c-7d819d33e288",
+  batchId: "f03b81bd-3c8b-4d04-a0c1-21bc199ade08",
+  structureId: null,
+  requiresStructureReview: false,
   duplicate: false
 };
 

@@ -354,6 +354,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
     async searchChunks(input: {
       text: string;
       sourceTypes?: SourceItemType[];
+      sourceItemIds?: string[];
       limit?: number;
     }): Promise<SearchEvidenceRecord[]> {
       const seeds = await pool.query<{ id: string; seedScore: number }>(
@@ -411,8 +412,9 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
            join source_items s on s.id = c.source_item_id
            left join source_spans sp on sp.id = c.source_span_id
            where c.id = any($1::uuid[])
-             and (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))`,
-          [ranked.map(([chunkId]) => chunkId), input.sourceTypes ?? []]
+             and (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))
+             and (coalesce(array_length($3::uuid[], 1), 0) = 0 or s.id = any($3))`,
+          [ranked.map(([chunkId]) => chunkId), input.sourceTypes ?? [], input.sourceItemIds ?? []]
         );
         const byId = new Map(evidence.rows.map((row) => [row.chunkId, row]));
         return ranked.flatMap(([chunkId, graphScore]) => {

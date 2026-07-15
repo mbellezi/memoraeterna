@@ -12,16 +12,19 @@ Leia tambem, antes de editar codigo:
 - `docs/mvp-implementation-plan.md`
 - `docs/stack-versions.md`
 
-Planos de evolucao ainda nao implementados:
+Evolucoes pos-MVP implementadas:
 
 - `docs/hierarchical-import-and-selective-ingestion-plan.md`: importacao
   hierarquica de livros, revistas e papers, revisao de divisoes, escolha de
-  etapas, processamento posterior em lote e reingestao segura.
+  etapas, processamento posterior em lote e reingestao segura. Implementacao
+  funcional concluida em 2026-07-15; corpus golden amplo, benchmarks e smoke
+  manual multiplataforma seguem como hardening.
 
 ## Estado Atual
 
-Fase atual: Fase 5 - Fechamento implementada em codigo, migrations, runtimes e
-testes automatizados. O pacote macOS arm64 sem instalador foi gerado; assinatura,
+Fase atual: Fase 5 - Fechamento e evolucao de importacao hierarquica
+implementadas em codigo, migrations, runtimes e testes automatizados. O pacote
+macOS arm64 sem instalador foi gerado; assinatura,
 notarizacao e smoke tests manuais nos hosts Chrome/Obsidian continuam como
 validacoes de distribuicao.
 
@@ -70,6 +73,22 @@ Implementado ate aqui:
 - ingestao manual progressiva para os 8 tipos do MVP, source picker,
   deduplicacao, vinculo bibliografico e importacao de arquivo via dialog do
   main process;
+- importacao hierarquica de `Book`, `PeriodicalIssue` e `AcademicPaper`, com
+  detectores EPUB 2/3 e PDF, draft persistido, revisao humana obrigatoria,
+  materializacao transacional e filhos `BookChapter`, `StandaloneArticle` e
+  `DocumentSection`;
+- wizard de importacao com quatro presets, plano personalizado e DAG de
+  dependencias visivel; `Importar somente` nao cria job de IA;
+- Library hierarquica com selecao multipla e escopo raiz/filhos, processamento
+  posterior, etapas ausentes e reingestao que preserva notas revisadas;
+- processing batches, runs normalizadas por etapa, execucao seletiva,
+  barreira de matching por lote e resumo agregado de livros;
+- busca por raiz com breadcrumbs e Jobs agrupados por lote, exibindo somente
+  as etapas efetivas;
+- protocolo Docling v2 com arvore `body/groups`, page range e limites;
+  PDF.js 6.1.200 para outline/page labels e copia do original por streaming;
+- geracoes de conhecimento versionadas e projecao Obsidian hierarquica com ids
+  de raiz, divisao e revisao no frontmatter;
 - chunks e SourceSpans com pagina, bloco, bounding box, selector e
   reprocessamento idempotente;
 - embeddings separados em 256/768/1024 dimensoes, indices HNSW e busca textual com
@@ -150,7 +169,7 @@ Implementado ate aqui:
   modelos prebaixados em revisions fixadas e smoke real de PDF sem rede;
 - staging Electron com PostgreSQL, Docling, helper MLX, migrations e baseline,
   `runtime-manifest.json` com hashes e SBOM SPDX incluindo wheels/modelos;
-- migration `0010_handy_gamora`, baseline com 11 migrations e verificacao
+- migrations ate `0015_chunky_marvel_apes`, baseline com 16 migrations e verificacao
   real da Fase 5 em banco vazio e existente;
 - pacote `.app` macOS arm64 validado, com runtimes nativos e bindings GGUF
   presentes fora do ASAR.
@@ -225,6 +244,8 @@ Arquivos principais:
 - `src/main/services/worker-supervisor.ts`: lifecycle dos `worker_threads`.
 - `src/main/services/ingestion-service.ts`: ingestao manual/arquivo e
   persistencia dos artefatos.
+- `src/main/services/hierarchical-ingestion-service.ts`: drafts estruturais,
+  materializacao, planos seletivos, batches e reingestao.
 - `src/main/services/asset-storage-service.ts`: storage por hash.
 - `src/main/services/ai-service.ts`: providers, perfis e execucao de tarefas.
 - `src/main/services/openai-codex-oauth.ts`: login OAuth PKCE, callback
@@ -305,13 +326,16 @@ Regra: qualquer texto visivel ao usuario deve passar por este pacote.
 Linguagem canonica do dominio. Deve manter schemas Zod e tipos sem dependencias
 pesadas.
 
-Inclui os 8 tipos de fonte do MVP:
+Inclui os 8 tipos do MVP e os 3 tipos hierarquicos pos-MVP:
 
 - `PersonalNote`
 - `DailyNote`
 - `WebArticle`
 - `Book`
 - `BookChapter`
+- `PeriodicalIssue`
+- `AcademicPaper`
+- `DocumentSection`
 - `StandaloneArticle`
 - `Video`
 - `GenericDocument`
@@ -382,7 +406,8 @@ controlado pelo main process ou pelo worker de conversao. O resultado preserva
 Markdown, blocos e proveniencia estruturada quando disponivel.
 
 O pacote agora contem `ConversionRouter`, conversores nativos, Defuddle,
-extracao ZIP limitada, normalizador, chunker e `DoclingClient`. O bridge Python,
+extracao ZIP limitada, detectores EPUB/PDF/Markdown, PDF.js, normalizador,
+chunker e `DoclingClient` v2. O bridge Python,
 o lock exato e a definicao de revisions ficam em
 `packages/conversion/sidecar/`; o bundle CPython/Docling e gerado por plataforma
 e nunca depende do Python do sistema.

@@ -1,5 +1,6 @@
 import {
   createSearchRepository,
+  createHierarchicalIngestionRepository,
   createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
   type PgPool,
@@ -28,6 +29,10 @@ export class SearchService {
   public async search(input: SearchInput): Promise<SearchResult[]> {
     const pool = this.requirePool();
     const repository = createSearchRepository(pool);
+    const hierarchy = createHierarchicalIngestionRepository(pool);
+    const sourceItemIds = input.rootSourceItemId
+      ? [input.rootSourceItemId, ...(await hierarchy.listDescendants(input.rootSourceItemId)).map((source) => source.id)]
+      : [];
     let embedding: number[] | undefined;
     let embeddingModel: string | undefined;
     if (input.mode === "hybrid") {
@@ -50,6 +55,7 @@ export class SearchService {
     const textCandidates = await repository.searchText({
       text: input.text,
       sourceTypes: input.sourceTypes,
+      sourceItemIds,
       limit: candidateLimit
     });
     const vectorCandidates = embedding && embeddingModel
@@ -57,6 +63,7 @@ export class SearchService {
           embedding,
           embeddingModel,
           sourceTypes: input.sourceTypes,
+          sourceItemIds,
           limit: candidateLimit
         })
       : [];
@@ -66,6 +73,7 @@ export class SearchService {
       graphCandidates = await createKnowledgeGraphRepository(pool).searchChunks({
         text: input.text,
         sourceTypes: input.sourceTypes,
+        sourceItemIds,
         limit: candidateLimit
       });
     } catch (error) {
@@ -92,7 +100,9 @@ export class SearchService {
       candidateLimit
     });
 
-    return candidates.slice(0, input.limit).map(toSearchResult);
+    const selected = candidates.slice(0, input.limit);
+    const breadcrumbs = await hierarchy.getBreadcrumbs([...new Set(selected.map((candidate) => candidate.sourceItemId))]);
+    return selected.map((candidate) => toSearchResult({ ...candidate, breadcrumbs: breadcrumbs.get(candidate.sourceItemId) ?? [] }));
   }
 
   private async recordDebugRun(
@@ -235,6 +245,7 @@ function toSearchResult(row: SearchEvidenceRecord): SearchResult {
     sourceItemId: row.sourceItemId,
     sourceTitle: row.sourceTitle,
     sourceType: row.sourceType,
+    breadcrumbs: row.breadcrumbs ?? [],
     documentId: row.documentId,
     chunkId: row.chunkId,
     excerpt: row.excerpt,

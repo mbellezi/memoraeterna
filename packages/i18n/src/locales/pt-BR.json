@@ -113,6 +113,7 @@
       "description": "Acompanhe ao vivo da conversao ao grafo de conhecimento, com checkpoints, tentativas e erros reunidos no mesmo lugar."
     },
     "summary": { "active": "Ativas agora", "completed": "Concluidas", "attention": "Pedem atencao" },
+    "batch": { "label": "Lote de processamento", "plan": "Plano: {plan}", "custom": "Personalizado", "items": "{completed} de {total} itens" },
     "filters": { "label": "Filtrar tarefas", "all": "Todas", "active": "Ativas", "completed": "Concluidas", "attention": "Pedem atencao" },
     "liveUpdates": "Atualizacoes ao vivo conectadas",
     "streaming": "Processamento do modelo ao vivo",
@@ -153,6 +154,9 @@
     "stages": {
       "queued": "Na fila",
       "conversion": "Conversao",
+      "structureDetection": "Deteccao da estrutura",
+      "structureReview": "Revisao da estrutura",
+      "materialization": "Materializacao",
       "chunking": "Divisao em trechos",
       "embedding": "Embedding",
       "summarization": "Resumo",
@@ -160,6 +164,7 @@
       "knowledgeGraph": "Grafo de conhecimento",
       "atomicNoteMatching": "Conexao de notas",
       "obsidianProjection": "Projecao no Obsidian",
+      "aggregateSummarization": "Resumo consolidado",
       "completed": "Concluida"
     },
     "stageStatus": {
@@ -179,6 +184,8 @@
   },
   "import": {
     "modes": { "manual": "Conteudo manual", "file": "Arquivo local" },
+    "steps": { "source": "Escolha a fonte e o processamento", "structure": "Revise a estrutura detectada" },
+    "hierarchyHint": "Este tipo pode detectar capitulos, artigos e secoes antes do processamento.",
     "fields": {
       "sourceType": "Tipo de fonte", "title": "Titulo", "content": "Conteudo",
       "originalUri": "URL original", "workTitle": "Obra relacionada", "isbn": "ISBN",
@@ -187,14 +194,30 @@
     "sourceTypes": {
       "PersonalNote": "Nota pessoal", "DailyNote": "Nota diaria", "WebArticle": "Artigo web",
       "Book": "Livro", "BookChapter": "Capitulo de livro", "StandaloneArticle": "Artigo avulso",
+      "PeriodicalIssue": "Edicao de periodico", "AcademicPaper": "Artigo academico", "DocumentSection": "Secao de documento",
       "Video": "Video", "GenericDocument": "Documento generico"
     },
     "actions": { "queue": "Enfileirar importacao", "chooseFile": "Escolher arquivo" },
-    "file": { "description": "Escolha um arquivo local suportado. O original sera preservado e o processamento ocorrera em segundo plano." },
-    "status": { "queued": "Importacao enfileirada.", "canceled": "Selecao de arquivo cancelada." }
+    "file": { "title": "Escolha o arquivo original", "description": "O original sera preservado. Em livros, periodicos e artigos, voce revisa a estrutura detectada antes de qualquer processamento com IA." },
+    "status": { "queued": "Importacao enfileirada.", "canceled": "Selecao de arquivo cancelada.", "saved": "Fonte salva sem processamento em segundo plano.", "reviewStructure": "Estrutura detectada. Revise-a antes de continuar.", "draftSaved": "Rascunho da estrutura salvo.", "queuedChildren": "Estrutura confirmada e itens selecionados enfileirados.", "savedChildren": "Estrutura confirmada e itens selecionados salvos." }
+  },
+  "processing": {
+    "title": "Escolha ate onde processar", "aiOptional": "IA e opcional", "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependencias sao incluidas automaticamente.",
+    "customize": "Personalizar etapas", "includedDependency": "Incluida porque outra etapa precisa dela", "stageCount": "{count} etapas neste plano", "profileNotice": "Usa seu perfil de IA configurado", "noAiNotice": "Nenhuma chamada de IA e necessaria",
+    "presets": { "import_only": { "title": "Somente importar", "description": "Preserva e organiza a fonte sem IA." }, "search_ready": { "title": "Pronto para busca", "description": "Cria segmentos e embeddings para recuperacao." }, "summary": { "title": "Resumo", "description": "Gera um resumo conciso com evidencias." }, "full_knowledge": { "title": "Conhecimento completo", "description": "Gera notas, grafo e correspondencias." } }
+  },
+  "structure": {
+    "eyebrow": "Ponto de revisao humana", "title": "Revise a estrutura detectada", "description": "Confirme titulos e intervalos, exclua itens apenas de navegacao e escolha o que vira uma fonte independente.",
+    "treeTitle": "Estrutura do documento", "selectedCount": "{count} itens a criar", "fields": { "title": "Titulo", "kind": "Tipo", "range": "Intervalo da fonte", "behavior": "Incluir e processar" },
+    "pageRange": "Paginas {start}-{end}", "offsetRange": "Texto {start}-{end}", "includeNavigation": "Manter este item", "includeNavigationHint": "Itens excluidos nao sao materializados nem exibidos na navegacao.",
+    "processable": "Criar uma fonte independente", "processableHint": "Transforma esta divisao em um item selecionavel da biblioteca.", "evidenceTitle": "Por que esta divisao foi detectada", "evidence": "{source} · {score}% de confianca", "noSelection": "Selecione um item da estrutura para revisa-lo.",
+    "blockingIssues": "Resolva {count} problemas na estrutura antes de continuar.", "ready": "A estrutura e valida e esta pronta para confirmar.", "confidence": { "high": "Alta", "medium": "Revisar", "low": "Baixa" },
+    "kinds": { "part": "Parte", "chapter": "Capitulo", "article": "Artigo", "section": "Secao", "subsection": "Subsecao", "frontmatter": "Elementos iniciais", "backmatter": "Elementos finais", "appendix": "Apendice", "unknown": "Outro" },
+    "actions": { "undo": "Desfazer", "redo": "Refazer", "restore": "Restaurar versao detectada", "split": "Dividir", "mergePrevious": "Unir ao anterior", "moveUp": "Mover para cima", "moveDown": "Mover para baixo", "saveDraft": "Salvar rascunho", "confirm": "Confirmar e continuar" }
   },
   "search": {
     "placeholder": "Buscar fontes e evidencias", "action": "Buscar", "empty": "Nenhuma evidencia correspondente.",
+    "scope": "Buscar dentro de", "scopeAll": "Biblioteca inteira",
     "page": "Pagina", "markdownEvidence": "Evidencia no Markdown"
   },
   "library": {
@@ -203,6 +226,10 @@
     "refresh": "Atualizar biblioteca",
     "error": "Nao foi possivel carregar a biblioteca.",
     "empty": "Ainda nao ha fontes na biblioteca.",
+    "selectionCount": "{count} fontes selecionadas", "childCount": "{count} itens diretos",
+    "actions": { "selectSource": "Selecionar {title}", "process": "Processar esta fonte", "processSelected": "Processar selecionadas", "clearSelection": "Limpar selecao", "queueProcessing": "Enfileirar processamento" },
+    "processingDialog": { "title": "Processar fontes da biblioteca", "description": "Escolha o que gerar para {count} fontes selecionadas.", "scope": "Aplicar a", "regenerate": "Gerar novamente os artefatos existentes", "regenerateHint": "Notas revisadas sao preservadas; geracoes pendentes sao arquivadas com seguranca." },
+    "scopes": { "source_only": "Somente esta fonte", "children_only": "Somente os filhos", "source_and_children": "Esta fonte e todos os filhos" },
     "currentStage": "Etapa atual: {stage}",
     "back": "Voltar para a biblioteca",
     "openOriginal": "Abrir original",

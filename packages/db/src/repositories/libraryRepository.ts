@@ -5,6 +5,8 @@ import type { JsonObject, Queryable, SourceItemType } from "./types.js";
 
 export interface LibrarySourceRecord {
   id: string;
+  parentSourceItemId: string | null;
+  childCount: number;
   type: SourceItemType;
   title: string;
   subtitle: string | null;
@@ -19,6 +21,8 @@ export interface LibrarySourceRecord {
 
 interface LibrarySourceRow extends QueryResultRow {
   id: string;
+  parentSourceItemId: string | null;
+  childCount: number;
   type: SourceItemType;
   title: string;
   subtitle: string | null;
@@ -35,7 +39,9 @@ export function createLibraryRepository(db: Queryable) {
   return {
     async listSources(input: { sourceTypes?: SourceItemType[]; limit?: number } = {}): Promise<LibrarySourceRecord[]> {
       const result = await db.query<LibrarySourceRow>(
-        `select source.id, source.type, source.title, source.subtitle,
+        `select source.id, source.parent_source_item_id as "parentSourceItemId",
+                (select count(*)::int from source_items child where child.parent_source_item_id = source.id) as "childCount",
+                source.type, source.title, source.subtitle,
                 source.source_uri as "sourceUri", source.language, source.summary,
                 source.metadata, coalesce(run.status::text, 'pending') as "processingStatus",
                 coalesce(run.current_stage, 'queued') as "currentStage",

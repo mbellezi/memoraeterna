@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,5 +23,18 @@ describe("AssetStorageService", () => {
 
   it("rejects traversal", () => {
     expect(() => resolveInside("/tmp/base", "../outside")).toThrow("errors.common.permissionDenied");
+  });
+
+  it("copies and hashes an original from a stream without loading it through the caller", async () => {
+    const basePath = await mkdtemp(join(tmpdir(), "memora-assets-stream-"));
+    paths.push(basePath);
+    const sourcePath = join(basePath, "large-original.pdf");
+    await writeFile(sourcePath, Buffer.alloc(2 * 1024 * 1024, 7));
+    const stored = await new AssetStorageService().store({
+      sourcePath, originalFileName: "large-original.pdf", basePath: join(basePath, "managed"), storageBase: "app_internal"
+    });
+    expect(stored.sizeBytes).toBe(2 * 1024 * 1024);
+    expect(stored.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(await new AssetStorageService().exists(join(basePath, "managed"), stored.relativePath)).toBe(true);
   });
 });

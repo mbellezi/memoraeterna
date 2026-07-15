@@ -7,6 +7,7 @@ import {
   createDocumentAssetRepository,
   createDocumentRepository,
   createEmbeddingRepository,
+  createHierarchicalIngestionRepository,
   createLibraryRepository,
   createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
@@ -222,8 +223,21 @@ export class KnowledgeService {
     if (!summary) return { configured: false, generated: false, mapReduce: false };
     const finalExecution = summary.executions.at(-1);
     if (!finalExecution) throw new Error("summary_execution_missing");
+    const summaryHierarchy = createHierarchicalIngestionRepository(pool);
+    const summaryRevisionId = await summaryHierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+    const summaryGenerationId = await summaryHierarchy.createKnowledgeGeneration({
+      sourceItemId,
+      documentRevisionId: summaryRevisionId,
+      stage: "summarization",
+      ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
+      jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
+      aiTaskRunId: finalExecution.aiTaskRunId,
+      inputHash: sha256(document.canonicalMarkdown),
+      metadata: { promptVersion: summaryPromptVersion }
+    });
     const persisted = await createSourceSummaryRepository(pool).create({
       sourceItemId,
+      generationId: summaryGenerationId,
       summary: summary.summary,
       language: finalExecution.outputLanguage ?? source.language,
       profileId: finalExecution.profileId,
@@ -250,6 +264,64 @@ export class KnowledgeService {
       mapReduce: summary.mapReduce,
       sourceSummaryId: persisted.id
     };
+  }
+
+  public async summarizeBooksForBatch(batchId: string, signal?: AbortSignal, logContext: AiTaskLogContext = {}) {
+    const pool = this.requirePool();
+    const rows = await pool.query<{
+      rootId: string; rootTitle: string; rootLanguage: string; documentId: string; documentHash: string;
+      childId: string; childTitle: string; summaryId: string | null; summary: string | null; summaryHash: string | null;
+    }>(
+      `select root.id as "rootId", root.title as "rootTitle", root.language as "rootLanguage",
+              document.id as "documentId", document.content_hash as "documentHash",
+              child.id as "childId", child.title as "childTitle", summary.id as "summaryId",
+              summary.summary, summary.output_hash as "summaryHash"
+       from source_items root
+       join source_items child on child.parent_source_item_id = root.id and child.type = 'BookChapter'
+       join documents document on document.source_item_id = root.id
+       left join source_summaries summary on summary.source_item_id = child.id and summary.is_current = true
+       where root.type = 'Book' and exists (
+         select 1 from ingestion_runs run where run.batch_id = $1 and run.source_item_id = child.id
+       )
+       order by root.id, child.created_at, child.id`,
+      [batchId]
+    );
+    const grouped = new Map<string, typeof rows.rows>();
+    for (const row of rows.rows) grouped.set(row.rootId, [...(grouped.get(row.rootId) ?? []), row]);
+    let generatedCount = 0;
+    for (const children of grouped.values()) {
+      const root = children[0];
+      if (!root || children.some((child) => !child.summary || !child.summaryId || !child.summaryHash)) continue;
+      const inputHash = sha256(children.map((child) => `${child.childId}:${child.summaryHash}`).join("\n"));
+      const current = (await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)).find((summary) => summary.isCurrent);
+      if (current?.inputHash === inputHash) continue;
+      const prompt = [
+        `Create a coherent aggregate summary of the book "${root.rootTitle}" using every chapter summary below.`,
+        "Preserve disagreements and progression across chapters. Do not introduce facts absent from the summaries.",
+        ...children.map((child, index) => `\n## ${index + 1}. ${child.childTitle}\n${child.summary}`)
+      ].join("\n");
+      const execution = await this.options.aiService.runDefaultTask("summarization", prompt, logContext, signal);
+      if (!execution) continue;
+      const summary = normalizeSummaryText(execution.output);
+      const hierarchy = createHierarchicalIngestionRepository(pool);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(root.documentId, root.documentHash);
+      const generationId = await hierarchy.createKnowledgeGeneration({
+        sourceItemId: root.rootId, documentRevisionId: revisionId, stage: "aggregateSummarization",
+        ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
+        jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
+        aiTaskRunId: execution.aiTaskRunId, inputHash,
+        metadata: { promptVersion: "book-aggregate-v1", batchId, childSummaryIds: children.map((child) => child.summaryId!) }
+      });
+      const persisted = await createSourceSummaryRepository(pool).create({
+        sourceItemId: root.rootId, generationId, summary, language: execution.outputLanguage ?? root.rootLanguage,
+        profileId: execution.profileId, aiTaskRunId: execution.aiTaskRunId, provider: execution.providerId,
+        model: execution.modelId, runtime: execution.runtime, promptVersion: "book-aggregate-v1", inputHash,
+        outputHash: sha256(summary), metadata: { aggregate: true, batchId, childSummaryIds: children.map((child) => child.summaryId!) }
+      });
+      await createSourceItemRepository(pool).update(root.rootId, { summary, summaryGeneratedAt: persisted.generatedAt });
+      generatedCount += 1;
+    }
+    return { generatedCount };
   }
 
   public async generateAtomicNotes(
@@ -293,6 +365,18 @@ export class KnowledgeService {
       const { output: parsed } = generatedResult;
       execution = generatedResult.execution;
       stage = "persistence";
+      const hierarchy = createHierarchicalIngestionRepository(pool);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+      const generationId = await hierarchy.createKnowledgeGeneration({
+        sourceItemId,
+        documentRevisionId: revisionId,
+        stage: "atomicNotes",
+        ingestionRunId: logContext.ingestionRunId ?? null,
+        jobId: logContext.jobId ?? null,
+        aiTaskRunId: execution.aiTaskRunId,
+        inputHash: sha256(document.canonicalMarkdown),
+        metadata: { promptVersion: atomicNotePromptVersion }
+      });
       const repository = createAtomicNoteRepository(pool);
       const noteIds: string[] = [];
       for (const generated of parsed.notes) {
@@ -309,6 +393,7 @@ export class KnowledgeService {
           evidenceChunkIds: generated.evidenceChunkIds.toSorted()
         }));
         const note = await repository.upsertGenerated({
+          generationId,
           title: generated.title,
           bodyMarkdown: generated.bodyMarkdown,
           ideaStatement: generated.ideaStatement,

@@ -8,7 +8,6 @@ import {
   createDocumentAssetRepository,
   createDocumentRepository,
   createIngestionRunRepository,
-  createJobRepository,
   createSourceItemRepository,
   type PgPool
 } from "@app/db";
@@ -16,10 +15,15 @@ import {
   ConversionRouter,
   DoclingClient,
   createTextBlocks,
+  detectDocumentStructure,
   normalizeMarkdown,
   sha256,
   type MarkdownConversionResult
 } from "@app/conversion";
+import {
+  resolveProcessingPlan,
+  type ProcessingPlanRequest
+} from "@app/domain";
 import type {
   CaptureSelectionRequest,
   CaptureWebPageRequest,
@@ -35,6 +39,7 @@ import type {
 
 import { AssetStorageService } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
+import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 
 export interface IngestionServiceOptions {
   getPool: () => PgPool | null;
@@ -44,19 +49,25 @@ export interface IngestionServiceOptions {
   workspaceRoot: string;
   isPackaged: boolean;
   youtubeService?: YouTubeService;
+  hierarchicalIngestionService?: HierarchicalIngestionService;
 }
 
 export class IngestionService {
   private readonly assetStorage = new AssetStorageService();
   private readonly router: ConversionRouter;
   private readonly youtube: YouTubeService;
+  private readonly hierarchical: HierarchicalIngestionService;
 
   public constructor(private readonly options: IngestionServiceOptions) {
     this.youtube = options.youtubeService ?? new YouTubeService();
+    this.hierarchical = options.hierarchicalIngestionService ?? new HierarchicalIngestionService({ getPool: options.getPool });
     const docling = resolveDoclingRuntime(options);
     this.router = new ConversionRouter({
       ...(docling ? { doclingClient: new DoclingClient(docling) } : {}),
       materializeForDocling: async (input) => {
+        if (input.sourcePath && existsSync(input.sourcePath)) {
+          return { path: resolve(input.sourcePath), cleanup: async () => undefined };
+        }
         const directory = join(options.userDataPath, "tmp", "conversion");
         await mkdir(directory, { recursive: true });
         const path = join(directory, `${randomUUID()}${extname(input.fileName ?? "")}`);
@@ -89,17 +100,24 @@ export class IngestionService {
       parentSourceItemId: input.parentSourceItemId ?? null,
       metadata: input.metadata,
       bibliographic: input.bibliographic,
-      conversion
+      conversion,
+      processingPlan: input.processingPlan
     });
   }
 
   public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
     const file = await stat(path);
     assertImportSize(file.size, readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024));
-    const data = await readFile(path);
     const fileName = basename(path);
+    const data = extname(fileName).toLowerCase() === ".pdf" ? new Uint8Array() : await readFile(path);
     const mimeType = detectMimeType(fileName, data);
-    const conversion = await this.router.convert({ data, fileName, mimeType, profile: "standard" });
+    const conversion = await this.router.convert({ data, sourcePath: path, fileName, mimeType, profile: "standard" });
+    const detection = isHierarchicalSourceType(input.sourceType)
+      ? await detectDocumentStructure({
+          data, sourcePath: path, fileName, mimeType, conversion,
+          documentKind: input.sourceType === "Book" ? "book" : input.sourceType === "PeriodicalIssue" ? "periodical" : "paper"
+        })
+      : undefined;
     return this.persist({
       sourceType: input.sourceType,
       title: fileName.replace(/\.[^.]+$/, ""),
@@ -109,7 +127,9 @@ export class IngestionService {
       duplicatePolicy: input.duplicatePolicy,
       metadata: { originalFileName: fileName, originalFilePath: path, mimeType },
       conversion,
-      originalAsset: { data, fileName, mimeType }
+      originalAsset: { sourcePath: path, fileName, mimeType },
+      processingPlan: input.processingPlan,
+      ...(detection ? { structureDetection: detection } : {})
     });
   }
 
@@ -133,7 +153,8 @@ export class IngestionService {
       language: readMetadataLanguage(input.metadata),
       duplicatePolicy: "ignore",
       metadata: { ...input.metadata, capturedAt: input.capturedAt, captureRequestId: input.requestId },
-      conversion
+      conversion,
+      processingPlan: importOnlyPlan()
     });
   }
 
@@ -152,7 +173,8 @@ export class IngestionService {
       language: readMetadataLanguage(input.metadata),
       duplicatePolicy: "ignore",
       metadata: { ...input.metadata, capturedAt: input.capturedAt, selectionCapture: true },
-      conversion: markdownResult(markdown, "chrome-selection")
+      conversion: markdownResult(markdown, "chrome-selection"),
+      processingPlan: importOnlyPlan()
     });
   }
 
@@ -171,7 +193,8 @@ export class IngestionService {
         capturedAt: input.capturedAt,
         captureRequestId: input.requestId
       },
-      conversion: markdownResult(captured.markdown, "youtubei.js")
+      conversion: markdownResult(captured.markdown, "youtubei.js"),
+      processingPlan: importOnlyPlan()
     });
   }
 
@@ -184,7 +207,8 @@ export class IngestionService {
       language: "und",
       duplicatePolicy: "ignore",
       metadata: { obsidianRelativePath: input.relativePath, obsidianMtimeMs: input.mtimeMs },
-      conversion: markdownResult(input.markdown, "obsidian")
+      conversion: markdownResult(input.markdown, "obsidian"),
+      processingPlan: importOnlyPlan()
     });
   }
 
@@ -207,21 +231,31 @@ export class IngestionService {
     metadata: Record<string, unknown>;
     bibliographic?: ManualIngestionInput["bibliographic"];
     conversion: MarkdownConversionResult;
-    originalAsset?: { data: Uint8Array; fileName: string; mimeType: string };
+    originalAsset?: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string };
+    processingPlan: ProcessingPlanRequest;
+    structureDetection?: Awaited<ReturnType<typeof detectDocumentStructure>>;
   }): Promise<IngestionResult> {
     const pool = this.requirePool();
     const sources = createSourceItemRepository(pool);
     const documents = createDocumentRepository(pool);
     const runs = createIngestionRunRepository(pool);
-    const jobs = createJobRepository(pool);
     const duplicate = await sources.findDuplicate({ sourceUri: input.sourceUri, contentHash: input.conversion.contentHash });
     if (duplicate && input.duplicatePolicy === "ignore") {
       const existingDocuments = await documents.listBySourceItem(duplicate.id);
       const existingRuns = await runs.listBySourceItem(duplicate.id);
       const document = existingDocuments[0];
       const run = existingRuns[0];
-      if (document && run?.jobId) {
-        return { sourceItemId: duplicate.id, documentId: document.id, ingestionRunId: run.id, jobId: run.jobId, duplicate: true };
+      if (document) {
+        const structureResult = await pool.query<{ id: string; status: string }>(
+          `select id, status::text from document_structures where root_source_item_id = $1 order by revision desc limit 1`,
+          [duplicate.id]
+        );
+        const existingStructure = structureResult.rows[0];
+        return {
+          sourceItemId: duplicate.id, documentId: document.id, ingestionRunId: run?.id ?? null, jobId: run?.jobId ?? null,
+          batchId: run?.batchId ?? null, structureId: existingStructure?.id ?? null,
+          requiresStructureReview: existingStructure?.status === "draft" || existingStructure?.status === "in_review", duplicate: true
+        };
       }
     }
 
@@ -267,29 +301,28 @@ export class IngestionService {
       await this.persistStructuredAsset(sourceItem.id, document.id, input.conversion.rawStructuredResult);
     }
 
-    const ingestionRun = await runs.create({
-      sourceItemId: sourceItem.id,
-      currentStage: "chunking",
-      stagesCheckpoint: {
-        conversion: { status: "completed", completedAt: new Date().toISOString(), metadata: conversionMetadata(input.conversion) }
-      }
+    if (input.structureDetection) {
+      const structure = await this.hierarchical.createStructureDraft(sourceItem.id, document.id, input.structureDetection);
+      return {
+        sourceItemId: sourceItem.id, documentId: document.id, ingestionRunId: null, jobId: null,
+        batchId: null, structureId: structure.id, requiresStructureReview: true, duplicate: Boolean(duplicate)
+      };
+    }
+    const queued = await this.hierarchical.process({
+      plan: { ...input.processingPlan, targetSourceItemIds: [sourceItem.id], scope: "source_only" },
+      runKind: "initial",
+      trigger: input.sourceOrigin === "manual" || input.sourceOrigin === "file_upload" ? "interactive_import" : "integration"
     });
-    const job = await jobs.create({
-      type: "ingestion",
-      payload: {
-        ingestionRunId: ingestionRun.id,
-        sourceItemId: sourceItem.id,
-        documentId: document.id,
-        markdown: input.conversion.markdown,
-        blocks: input.conversion.blocks
-      }
-    });
-    await runs.update(ingestionRun.id, { jobId: job.id });
+    const first = queued.queued[0];
+    if (!first) throw new Error("ingestion_queue_failed");
     return {
       sourceItemId: sourceItem.id,
       documentId: document.id,
-      ingestionRunId: ingestionRun.id,
-      jobId: job.id,
+      ingestionRunId: first.ingestionRunId,
+      jobId: first.jobId,
+      batchId: queued.batchId,
+      structureId: null,
+      requiresStructureReview: false,
       duplicate: Boolean(duplicate)
     };
   }
@@ -325,10 +358,10 @@ export class IngestionService {
   private async persistOriginalAsset(
     sourceItemId: string,
     documentId: string,
-    input: { data: Uint8Array; fileName: string; mimeType: string }
+    input: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string }
   ): Promise<void> {
     const internal = await this.assetStorage.store({
-      data: input.data,
+      ...(input.data ? { data: input.data } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
       originalFileName: input.fileName,
       basePath: join(this.options.userDataPath, "assets"),
       storageBase: "app_internal"
@@ -342,7 +375,7 @@ export class IngestionService {
     const storageSettings = await this.options.getStorageSettings();
     if (storageSettings.uploadCopiesEnabled && storageSettings.uploadCopiesFolderPath) {
       const copy = await this.assetStorage.store({
-        data: input.data, originalFileName: input.fileName,
+        ...(input.data ? { data: input.data } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}), originalFileName: input.fileName,
         basePath: storageSettings.uploadCopiesFolderPath, storageBase: "uploaded_files"
       });
       await assets.create({
@@ -371,6 +404,17 @@ export class IngestionService {
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
   }
+}
+
+function importOnlyPlan(): ProcessingPlanRequest {
+  return resolveProcessingPlan({
+    preset: "import_only", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
+    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+  });
+}
+
+function isHierarchicalSourceType(type: FileImportInput["sourceType"]): boolean {
+  return type === "Book" || type === "PeriodicalIssue" || type === "AcademicPaper";
 }
 
 function conversionMetadata(result: MarkdownConversionResult): Record<string, unknown> {
@@ -461,7 +505,7 @@ function detectMimeType(fileName: string, data: Uint8Array): string {
     ".html": "text/html", ".htm": "text/html", ".csv": "text/csv",
     ".json": "application/json", ".xml": "application/xml", ".rss": "application/rss+xml",
     ".atom": "application/atom+xml", ".ipynb": "application/x-ipynb+json",
-    ".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pdf": "application/pdf", ".epub": "application/epub+zip", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     ".zip": "application/zip"

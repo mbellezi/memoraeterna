@@ -23,6 +23,7 @@ export const SearchEvidenceSchema = z
     sourceItemId: StableIdSchema,
     sourceTitle: z.string().min(1),
     sourceType: SourceItemTypeSchema,
+    breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
     documentId: StableIdSchema,
     chunkId: StableIdSchema,
     sourceSpanId: StableIdSchema.optional(),

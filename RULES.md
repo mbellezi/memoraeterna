@@ -14,7 +14,7 @@ Se houver conflito entre este arquivo e uma etapa de algum comand dado ao agente
 - O projeto e local-first, TypeScript-first e orientado por contratos.
 - Implemente uma etapa por vez, conforme `docs/mvp-implementation-plan.md`.
 - Nao implemente escopo futuro dentro do MVP sem pedido explicito.
-- Taxonomia de `SourceItem` no MVP: `PersonalNote`, `DailyNote`, `WebArticle`, `Book`, `BookChapter`, `StandaloneArticle`, `Video`, `GenericDocument`; os demais tipos documentados ficam para fase seguinte.
+- Taxonomia canonica de `SourceItem`: `PersonalNote`, `DailyNote`, `WebArticle`, `Book`, `BookChapter`, `PeriodicalIssue`, `AcademicPaper`, `DocumentSection`, `StandaloneArticle`, `Video`, `GenericDocument`. Os tres tipos hierarquicos pos-MVP foram aprovados pelo plano de importacao hierarquica e nao devem ser escondidos em `metadata`.
 - Preserve as ideias documentadas, mesmo quando estiverem fora da etapa atual.
 - Evite refactors amplos que nao sejam necessarios para a etapa.
 - Nao reverta alteracoes do usuario ou de outros agentes sem pedido explicito.

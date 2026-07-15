@@ -1,7 +1,9 @@
-import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { constants, createReadStream, createWriteStream } from "node:fs";
+import { access, link, mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { extname, join, relative, resolve, sep } from "node:path";
+import { Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 export interface StoredAsset {
   sha256: string;
@@ -20,6 +22,7 @@ export class AssetStorageService {
     basePath: string;
     storageBase: StoredAsset["storageBase"];
   }): Promise<StoredAsset> {
+    if (input.sourcePath && input.data === undefined) return this.storeFromPath(input.sourcePath, input);
     const data = input.data ?? (input.sourcePath ? await readFile(input.sourcePath) : null);
     if (!data) throw new Error("Asset storage requires data or a source path.");
     const hash = createHash("sha256").update(data).digest("hex");
@@ -42,6 +45,32 @@ export class AssetStorageService {
       absolutePath,
       deduplicated
     };
+  }
+
+  private async storeFromPath(sourcePath: string, input: {
+    originalFileName: string; basePath: string; storageBase: StoredAsset["storageBase"];
+  }): Promise<StoredAsset> {
+    const incoming = resolveInside(input.basePath, join(".incoming", randomUUID()));
+    await mkdir(resolve(incoming, ".."), { recursive: true });
+    const hash = createHash("sha256");
+    const hashingStream = new Transform({ transform(chunk: Buffer, _encoding, callback) { hash.update(chunk); callback(null, chunk); } });
+    try {
+      await pipeline(createReadStream(sourcePath), hashingStream, createWriteStream(incoming, { flags: "wx", mode: 0o600 }));
+      const digest = hash.digest("hex");
+      const extension = sanitizeExtension(extname(input.originalFileName));
+      const relativePath = join("sha256", digest.slice(0, 2), digest.slice(2, 4), `${digest}${extension}`);
+      const absolutePath = resolveInside(input.basePath, relativePath);
+      await mkdir(resolve(absolutePath, ".."), { recursive: true });
+      let deduplicated = false;
+      try { await link(incoming, absolutePath); } catch (error) {
+        if (!isAlreadyExists(error)) throw error;
+        deduplicated = true;
+      }
+      const file = await stat(incoming);
+      return { sha256: digest, sizeBytes: file.size, storageBase: input.storageBase, relativePath, absolutePath, deduplicated };
+    } finally {
+      await unlink(incoming).catch(() => undefined);
+    }
   }
 
   public async exists(basePath: string, relativePath: string): Promise<boolean> {

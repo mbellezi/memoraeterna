@@ -19,7 +19,16 @@ export const conversionBlockSchema = z.object({
   sourceCharspan: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()]).optional(),
   markdownStart: z.number().int().nonnegative(),
   markdownEnd: z.number().int().nonnegative(),
-  confidence: z.number().min(0).max(1).optional()
+  confidence: z.number().min(0).max(1).optional(),
+  parentRef: z.string().optional(),
+  childrenRefs: z.array(z.string()).optional(),
+  readingOrder: z.number().int().nonnegative().optional()
+}).strict();
+
+export const doclingStructureSchema = z.object({
+  body: z.array(z.record(z.string(), z.unknown())).default([]),
+  groups: z.array(z.record(z.string(), z.unknown())).default([]),
+  pageCount: z.number().int().nonnegative().optional()
 }).strict();
 
 export const convertedAssetSchema = z.object({
@@ -52,6 +61,7 @@ export const markdownConversionResultSchema = z.object({
     textCoverage: z.number().min(0).max(1).optional()
   }).default({}),
   metadata: z.record(z.string(), z.unknown()).default({}),
+  documentStructure: doclingStructureSchema.optional(),
   rawStructuredResult: z.unknown().optional()
 }).strict();
 
@@ -61,6 +71,7 @@ export type MarkdownConversionResult = z.infer<typeof markdownConversionResultSc
 
 export interface ConversionInput {
   data: Uint8Array;
+  sourcePath?: string;
   fileName?: string;
   mimeType?: string;
   sourceUrl?: string;

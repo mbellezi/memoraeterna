@@ -3,6 +3,8 @@ import {
   AiCapabilitySchema,
   AiModelParametersSchema,
   AiReasoningLevelSchema,
+  DocumentDivisionCandidateSchema,
+  ProcessingPlanRequestSchema,
   SearchEvidenceSchema,
   SourceItemTypeSchema,
   type SourceItemType
@@ -25,6 +27,11 @@ export const ipcChannels = {
   ingestionCreateManual: "app:ingestion:create-manual",
   ingestionImportFile: "app:ingestion:import-file",
   ingestionLookupSources: "app:ingestion:lookup-sources",
+  ingestionStructureGet: "app:ingestion:structure:get",
+  ingestionStructureSave: "app:ingestion:structure:save",
+  ingestionStructureConfirm: "app:ingestion:structure:confirm",
+  ingestionProcess: "app:ingestion:process",
+  ingestionBatchesList: "app:ingestion:batches:list",
   jobsList: "app:jobs:list",
   jobsChanged: "app:jobs:changed",
   jobsCancel: "app:jobs:cancel",
@@ -175,20 +182,86 @@ export const manualIngestionInputSchema = z.object({
     doi: z.string().trim().min(1).optional(),
     pages: z.string().trim().min(1).optional()
   }).strict().optional(),
-  metadata: z.record(z.string(), z.unknown()).default({})
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  processingPlan: ProcessingPlanRequestSchema.default({
+    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
+    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+  })
 }).strict();
 
 export const fileImportInputSchema = z.object({
   sourceType: SourceItemTypeSchema.default("GenericDocument"),
-  duplicatePolicy: duplicatePolicySchema.default("ignore")
+  duplicatePolicy: duplicatePolicySchema.default("ignore"),
+  processingPlan: ProcessingPlanRequestSchema.default({
+    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
+    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+  })
 }).strict();
 
 export const ingestionResultSchema = z.object({
   sourceItemId: z.string().uuid(),
   documentId: z.string().uuid(),
-  ingestionRunId: z.string().uuid(),
-  jobId: z.string().uuid(),
+  ingestionRunId: z.string().uuid().nullable(),
+  jobId: z.string().uuid().nullable(),
+  batchId: z.string().uuid().nullable(),
+  structureId: z.string().uuid().nullable(),
+  requiresStructureReview: z.boolean(),
   duplicate: z.boolean()
+}).strict();
+
+export const documentDivisionViewSchema = DocumentDivisionCandidateSchema.safeExtend({
+  childSourceItemId: z.string().uuid().nullable(),
+  childDocumentId: z.string().uuid().nullable()
+});
+
+export const documentStructureViewSchema = z.object({
+  id: z.string().uuid(),
+  rootSourceItemId: z.string().uuid(),
+  rootDocumentId: z.string().uuid(),
+  format: z.string().min(1),
+  detectorVersion: z.string().min(1),
+  status: z.enum(["draft", "in_review", "confirmed", "materialized", "superseded"]),
+  overallConfidence: z.number().min(0).max(1),
+  revision: z.number().int().positive(),
+  warnings: z.array(z.string()),
+  divisions: z.array(documentDivisionViewSchema),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+}).strict();
+
+export const structureConfirmInputSchema = z.object({
+  structureId: z.string().uuid(),
+  divisions: z.array(DocumentDivisionCandidateSchema),
+  plan: ProcessingPlanRequestSchema
+}).strict();
+
+export const structureSaveInputSchema = z.object({
+  structureId: z.string().uuid(),
+  divisions: z.array(DocumentDivisionCandidateSchema)
+}).strict();
+
+export const processingRequestSchema = z.object({
+  plan: ProcessingPlanRequestSchema,
+  runKind: z.enum(["initial", "missing_stages", "reingestion"]),
+  trigger: z.enum(["library_action", "interactive_import", "integration", "recovery"]).optional()
+}).strict();
+
+export const processingQueueResultSchema = z.object({
+  batchId: z.string().uuid(),
+  queued: z.array(z.object({
+    sourceItemId: z.string().uuid(),
+    documentId: z.string().uuid(),
+    ingestionRunId: z.string().uuid(),
+    jobId: z.string().uuid().nullable()
+  }).strict())
+}).strict();
+
+export const processingBatchSchema = z.object({
+  id: z.string().uuid(), trigger: z.string(), requestedPlan: z.record(z.string(), z.unknown()),
+  effectivePlan: z.record(z.string(), z.unknown()), reingestionPolicy: z.string(), status: z.string(),
+  progress: z.number().min(0).max(1), totalItems: z.number().int().nonnegative(),
+  completedItems: z.number().int().nonnegative(), failedItems: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime()
 }).strict();
 
 export const sourceSuggestionSchema = z.object({
@@ -228,8 +301,10 @@ export const jobRecordSchema = z.object({
   }).strict().nullable().optional(),
   ingestionRun: z.object({
     id: z.string().uuid(),
+    batchId: z.string().uuid().nullable().default(null),
     status: z.enum(["pending", "running", "succeeded", "failed", "canceled"]),
     currentStage: z.string().min(1),
+    effectiveStages: z.array(z.string()).default([]),
     stagesCheckpoint: z.record(z.string(), z.unknown())
   }).strict().nullable().optional()
 }).strict();
@@ -247,6 +322,8 @@ export const libraryResetResultSchema = z.object({
 
 export const librarySourceSchema = z.object({
   id: z.string().uuid(),
+  parentSourceItemId: z.string().uuid().nullable(),
+  childCount: z.number().int().nonnegative(),
   type: SourceItemTypeSchema,
   title: z.string().min(1),
   subtitle: z.string().nullable(),
@@ -346,6 +423,7 @@ export const atomicNoteReviewInputSchema = z.object({
 export const searchInputSchema = z.object({
   text: z.string().trim().min(1),
   sourceTypes: z.array(SourceItemTypeSchema).default([]),
+  rootSourceItemId: z.string().uuid().optional(),
   mode: z.enum(["text", "hybrid"]).default("hybrid"),
   limit: z.number().int().min(1).max(100).default(20)
 }).strict();
@@ -608,6 +686,12 @@ export type SystemInfo = z.infer<typeof systemInfoSchema>;
 export type ManualIngestionInput = z.infer<typeof manualIngestionInputSchema>;
 export type FileImportInput = z.infer<typeof fileImportInputSchema>;
 export type IngestionResult = z.infer<typeof ingestionResultSchema>;
+export type DocumentStructureView = z.infer<typeof documentStructureViewSchema>;
+export type StructureConfirmInput = z.infer<typeof structureConfirmInputSchema>;
+export type StructureSaveInput = z.infer<typeof structureSaveInputSchema>;
+export type ProcessingRequest = z.infer<typeof processingRequestSchema>;
+export type ProcessingQueueResult = z.infer<typeof processingQueueResultSchema>;
+export type ProcessingBatch = z.infer<typeof processingBatchSchema>;
 export type SourceSuggestion = z.infer<typeof sourceSuggestionSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
@@ -685,6 +769,11 @@ export interface DesktopApi {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
     importFile: (input: FileImportInput) => Promise<IngestionResult | null>;
     lookupSources: (query: string) => Promise<SourceSuggestion[]>;
+    getStructure: (structureId: string) => Promise<DocumentStructureView | null>;
+    saveStructure: (input: StructureSaveInput) => Promise<DocumentStructureView>;
+    confirmStructure: (input: StructureConfirmInput) => Promise<ProcessingQueueResult>;
+    process: (input: ProcessingRequest) => Promise<ProcessingQueueResult>;
+    listBatches: () => Promise<ProcessingBatch[]>;
   };
   jobs: {
     list: () => Promise<JobRecord[]>;

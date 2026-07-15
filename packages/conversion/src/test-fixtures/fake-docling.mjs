@@ -6,7 +6,7 @@ if (request.inputPath.includes("timeout")) await new Promise((resolve) => setTim
 if (request.inputPath.includes("output-limit")) process.stdout.write("x".repeat(1_024));
 const markdown = "# Fake Docling\n";
 process.stdout.write(`${JSON.stringify({
-  protocolVersion: 1,
+  protocolVersion: 2,
   requestId: request.requestId,
   ok: true,
   result: {

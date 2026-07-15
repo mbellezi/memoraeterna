@@ -35,6 +35,9 @@ export const sourceItemType = pgEnum("source_item_type", [
   "WebArticle",
   "Book",
   "BookChapter",
+  "PeriodicalIssue",
+  "AcademicPaper",
+  "DocumentSection",
   "StandaloneArticle",
   "Video",
   "GenericDocument"
@@ -81,6 +84,48 @@ export const atomicNoteRelationStatus = pgEnum("atomic_note_relation_status", [
   "pending_review",
   "accepted",
   "rejected"
+]);
+
+export const documentStructureStatus = pgEnum("document_structure_status", [
+  "draft",
+  "in_review",
+  "confirmed",
+  "materialized",
+  "superseded"
+]);
+
+export const documentDivisionReviewStatus = pgEnum("document_division_review_status", [
+  "proposed",
+  "accepted",
+  "rejected",
+  "edited"
+]);
+
+export const processingBatchStatus = pgEnum("processing_batch_status", [
+  "pending",
+  "running",
+  "waiting_for_review",
+  "succeeded",
+  "partial",
+  "failed",
+  "canceled"
+]);
+
+export const ingestionRunKind = pgEnum("ingestion_run_kind", [
+  "initial",
+  "missing_stages",
+  "reingestion",
+  "retry_resume"
+]);
+
+export const ingestionRunStageStatus = pgEnum("ingestion_run_stage_status", [
+  "pending",
+  "running",
+  "completed",
+  "skipped",
+  "failed",
+  "canceled",
+  "waiting_for_review"
 ]);
 
 const timestamps = {
@@ -134,6 +179,90 @@ export const documents = pgTable(
   (table) => ({
     sourceItemIdx: index("documents_source_item_id_idx").on(table.sourceItemId),
     contentHashIdx: index("documents_content_hash_idx").on(table.contentHash)
+  })
+);
+
+export const documentRevisions = pgTable(
+  "document_revisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    supersedesRevisionId: uuid("supersedes_revision_id").references((): AnyPgColumn => documentRevisions.id, { onDelete: "set null" }),
+    isCurrent: boolean("is_current").notNull().default(true),
+    contentHash: text("content_hash").notNull(),
+    structureHash: text("structure_hash"),
+    createdByIngestionRunId: uuid("created_by_ingestion_run_id"),
+    reason: text("reason").notNull().default("initial"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    documentRevisionUidx: uniqueIndex("document_revisions_document_revision_uidx").on(table.documentId, table.revision),
+    currentDocumentUidx: uniqueIndex("document_revisions_current_document_uidx").on(table.documentId).where(sql`${table.isCurrent} = true`)
+  })
+);
+
+export const documentStructures = pgTable(
+  "document_structures",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rootSourceItemId: uuid("root_source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+    rootDocumentId: uuid("root_document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+    format: text("format").notNull(),
+    detectorVersion: text("detector_version").notNull(),
+    status: documentStructureStatus("status").notNull().default("draft"),
+    overallConfidence: doublePrecision("overall_confidence").notNull(),
+    revision: integer("revision").notNull().default(1),
+    rawEvidence: jsonb("raw_evidence").notNull().default(sql`'{}'::jsonb`),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    confirmedBy: text("confirmed_by"),
+    supersedesStructureId: uuid("supersedes_structure_id").references((): AnyPgColumn => documentStructures.id, { onDelete: "set null" }),
+    ...timestamps
+  },
+  (table) => ({
+    rootRevisionUidx: uniqueIndex("document_structures_root_revision_uidx").on(table.rootSourceItemId, table.revision),
+    rootStatusIdx: index("document_structures_root_status_idx").on(table.rootSourceItemId, table.status)
+  })
+);
+
+export const documentDivisions = pgTable(
+  "document_divisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    stableId: uuid("stable_id").notNull(),
+    structureId: uuid("structure_id").notNull().references(() => documentStructures.id, { onDelete: "cascade" }),
+    parentDivisionId: uuid("parent_division_id").references((): AnyPgColumn => documentDivisions.id, { onDelete: "cascade" }),
+    childSourceItemId: uuid("child_source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
+    childDocumentId: uuid("child_document_id").references(() => documents.id, { onDelete: "set null" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    level: integer("level").notNull(),
+    position: integer("position").notNull(),
+    startSelector: jsonb("start_selector").notNull(),
+    endSelector: jsonb("end_selector").notNull(),
+    startPage: integer("start_page"),
+    endPage: integer("end_page"),
+    startPageLabel: text("start_page_label"),
+    endPageLabel: text("end_page_label"),
+    markdownStart: integer("markdown_start"),
+    markdownEnd: integer("markdown_end"),
+    contentHash: text("content_hash"),
+    confidence: doublePrecision("confidence").notNull(),
+    evidence: jsonb("evidence").notNull().default(sql`'[]'::jsonb`),
+    reviewStatus: documentDivisionReviewStatus("review_status").notNull().default("proposed"),
+    isProcessable: boolean("is_processable").notNull().default(true),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    structureIdx: index("document_divisions_structure_id_idx").on(table.structureId),
+    structureStableUidx: uniqueIndex("document_divisions_structure_stable_uidx").on(table.structureId, table.stableId),
+    childSourceIdx: index("document_divisions_child_source_idx").on(table.childSourceItemId),
+    siblingPositionUidx: uniqueIndex("document_divisions_sibling_position_uidx")
+      .on(table.structureId, table.parentDivisionId, table.position).where(sql`${table.parentDivisionId} is not null`),
+    rootPositionUidx: uniqueIndex("document_divisions_root_position_uidx")
+      .on(table.structureId, table.position).where(sql`${table.parentDivisionId} is null`)
   })
 );
 
@@ -338,12 +467,44 @@ export const jobs = pgTable(
   })
 );
 
+export const processingBatches = pgTable(
+  "processing_batches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    trigger: text("trigger").notNull(),
+    requestedPlan: jsonb("requested_plan").notNull(),
+    effectivePlan: jsonb("effective_plan").notNull(),
+    reingestionPolicy: text("reingestion_policy").notNull().default("reuse_valid"),
+    status: processingBatchStatus("status").notNull().default("pending"),
+    progress: integer("progress").notNull().default(0),
+    totalItems: integer("total_items").notNull().default(0),
+    completedItems: integer("completed_items").notNull().default(0),
+    failedItems: integer("failed_items").notNull().default(0),
+    matchingBarrierReleasedAt: timestamp("matching_barrier_released_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({ statusIdx: index("processing_batches_status_idx").on(table.status) })
+);
+
 export const ingestionRuns = pgTable(
   "ingestion_runs",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "set null" }),
     jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    batchId: uuid("batch_id").references(() => processingBatches.id, { onDelete: "set null" }),
+    runKind: ingestionRunKind("run_kind").notNull().default("initial"),
+    requestedStages: jsonb("requested_stages").notNull().default(sql`'[]'::jsonb`),
+    effectiveStages: jsonb("effective_stages").notNull().default(sql`'[]'::jsonb`),
+    planVersion: text("plan_version").notNull().default("1"),
+    inputDocumentRevisionId: uuid("input_document_revision_id").references(() => documentRevisions.id, { onDelete: "set null" }),
+    inputHashes: jsonb("input_hashes").notNull().default(sql`'{}'::jsonb`),
+    supersedesRunId: uuid("supersedes_run_id").references((): AnyPgColumn => ingestionRuns.id, { onDelete: "set null" }),
+    previousArtifactPolicy: text("previous_artifact_policy").notNull().default("reuse_valid"),
+    trigger: text("trigger").notNull().default("interactive_import"),
     status: ingestionRunStatus("status").notNull().default("pending"),
     currentStage: text("current_stage").notNull().default("queued"),
     stagesCheckpoint: jsonb("stages_checkpoint").notNull().default(sql`'{}'::jsonb`),
@@ -356,6 +517,53 @@ export const ingestionRuns = pgTable(
     sourceItemIdx: index("ingestion_runs_source_item_id_idx").on(table.sourceItemId),
     jobIdx: index("ingestion_runs_job_id_idx").on(table.jobId),
     statusIdx: index("ingestion_runs_status_idx").on(table.status)
+  })
+);
+
+export const ingestionRunStages = pgTable(
+  "ingestion_run_stages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ingestionRunId: uuid("ingestion_run_id").notNull().references(() => ingestionRuns.id, { onDelete: "cascade" }),
+    stage: text("stage").notNull(),
+    status: ingestionRunStageStatus("status").notNull().default("pending"),
+    skipReason: text("skip_reason"),
+    progress: integer("progress").notNull().default(0),
+    inputHash: text("input_hash"),
+    outputHash: text("output_hash"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    error: text("error"),
+    ...timestamps
+  },
+  (table) => ({
+    runStageUidx: uniqueIndex("ingestion_run_stages_run_stage_uidx").on(table.ingestionRunId, table.stage),
+    statusIdx: index("ingestion_run_stages_status_idx").on(table.status)
+  })
+);
+
+export const knowledgeGenerations = pgTable(
+  "knowledge_generations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+    documentRevisionId: uuid("document_revision_id").references(() => documentRevisions.id, { onDelete: "set null" }),
+    stage: text("stage").notNull(),
+    ingestionRunId: uuid("ingestion_run_id").references(() => ingestionRuns.id, { onDelete: "set null" }),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    aiTaskRunId: uuid("ai_task_run_id"),
+    supersedesGenerationId: uuid("supersedes_generation_id").references((): AnyPgColumn => knowledgeGenerations.id, { onDelete: "set null" }),
+    status: text("status").notNull().default("current"),
+    inputHash: text("input_hash"),
+    outputHash: text("output_hash"),
+    metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+    ...timestamps
+  },
+  (table) => ({
+    sourceStageIdx: index("knowledge_generations_source_stage_idx").on(table.sourceItemId, table.stage, table.status),
+    runStageUidx: uniqueIndex("knowledge_generations_run_stage_uidx").on(table.ingestionRunId, table.stage)
+      .where(sql`${table.ingestionRunId} is not null`)
   })
 );
 
@@ -704,6 +912,8 @@ export const sourceSummaries = pgTable(
   "source_summaries",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    generationId: uuid("generation_id").references(() => knowledgeGenerations.id, { onDelete: "set null" }),
+    isCurrent: boolean("is_current").notNull().default(true),
     sourceItemId: uuid("source_item_id")
       .notNull()
       .references(() => sourceItems.id, { onDelete: "cascade" }),
@@ -723,7 +933,8 @@ export const sourceSummaries = pgTable(
   },
   (table) => ({
     sourceItemIdx: index("source_summaries_source_item_id_idx").on(table.sourceItemId),
-    generatedAtIdx: index("source_summaries_generated_at_idx").on(table.generatedAt)
+    generatedAtIdx: index("source_summaries_generated_at_idx").on(table.generatedAt),
+    currentSourceUidx: uniqueIndex("source_summaries_current_source_uidx").on(table.sourceItemId).where(sql`${table.isCurrent} = true`)
   })
 );
 
@@ -731,6 +942,8 @@ export const atomicNotes = pgTable(
   "atomic_notes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    generationId: uuid("generation_id").references(() => knowledgeGenerations.id, { onDelete: "set null" }),
+    supersessionStatus: text("supersession_status").notNull().default("current"),
     title: text("title").notNull(),
     bodyMarkdown: text("body_markdown").notNull(),
     ideaStatement: text("idea_statement").notNull(),
@@ -759,6 +972,7 @@ export const atomicNotes = pgTable(
     statusIdx: index("atomic_notes_status_idx").on(table.status),
     sourceGenerationUidx: uniqueIndex("atomic_notes_source_generation_key_uidx").on(
       table.createdFromSourceItemId,
+      table.generationId,
       table.generationKey
     )
   })

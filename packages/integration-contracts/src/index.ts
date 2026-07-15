@@ -125,6 +125,9 @@ export const obsidianManagedFrontmatterSchema = z
     memoraType: obsidianMemoraTypeSchema,
     memoraSourceId: z.string().uuid().optional(),
     memoraDocumentId: z.string().uuid().optional(),
+    memoraRootSourceId: z.string().uuid().optional(),
+    memoraDivisionId: z.string().min(1).optional(),
+    memoraDocumentRevisionId: z.string().uuid().optional(),
     memoraManaged: z.literal(true),
     memoraSyncVersion: z.number().int().nonnegative(),
     memoraContentHash: sha256Schema

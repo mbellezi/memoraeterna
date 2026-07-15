@@ -2,9 +2,11 @@ import { hostname } from "node:os";
 
 import {
   createChunkRepository,
+  createAtomicNoteRepository,
   createEmbeddingRepository,
   createIngestionRunRepository,
   createJobRepository,
+  createHierarchicalIngestionRepository,
   createSourceItemRepository,
   type JobRecord,
   type JsonObject,
@@ -103,6 +105,8 @@ export class JobSupervisor {
         lockedBy: null,
         finishedAt: new Date()
       });
+      const batchId = optionalString(job.payload.batchId);
+      if (batchId) await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
       this.notify();
       return updated;
     } catch (error) {
@@ -131,6 +135,8 @@ export class JobSupervisor {
         lockedBy: null,
         finishedAt: shouldRetry ? null : new Date()
       });
+      const batchId = optionalString(job.payload.batchId);
+      if (batchId) await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
       this.notify();
       return updated;
     } finally {
@@ -211,9 +217,14 @@ export class JobSupervisor {
     const runs = createIngestionRunRepository(pool);
     const run = await runs.startOrResume(ingestionRunId) ?? await runs.findById(ingestionRunId);
     if (!run) throw new Error("ingestion_run_not_found");
+    const effectiveStages = new Set(
+      run.effectiveStages.filter((stage): stage is string => typeof stage === "string")
+    );
+    const legacyRun = effectiveStages.size === 0;
+    const shouldRun = (stage: string) => legacyRun || effectiveStages.has(stage);
     const checkpoint = run.stagesCheckpoint.chunking as JsonObject | undefined;
     let persistedChunks;
-    if (checkpoint?.status !== "completed") {
+    if (shouldRun("chunking") && checkpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "chunking");
       this.notify();
       const chunkResult = await this.workers.execute("chunking", {
@@ -237,7 +248,7 @@ export class JobSupervisor {
       persistedChunks = await createChunkRepository(pool).listByDocument(documentId);
     }
     const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
-    if (embeddingCheckpoint?.status !== "completed") {
+    if (shouldRun("embedding") && embeddingCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "embedding");
       this.notify();
       let embeddedCount = 0;
@@ -271,7 +282,7 @@ export class JobSupervisor {
     await createJobRepository(pool).reportProgress(job.id, 0.5);
     throwIfAborted(signal);
     const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
-    if (summaryCheckpoint?.status !== "completed") {
+    if (shouldRun("summarization") && summaryCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "summarization");
       this.notify();
       const summary = this.options.knowledgeService
@@ -290,12 +301,22 @@ export class JobSupervisor {
         : { configured: false, generated: false };
       await runs.completeStage(ingestionRunId, "summarization", summary);
       this.notify();
+      if (run.batchId && await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0) {
+        await this.options.knowledgeService?.summarizeBooksForBatch(run.batchId, signal, {
+          jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
+        });
+      }
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.68);
     const atomicCheckpoint = run.stagesCheckpoint.atomicNotes as JsonObject | undefined;
     let noteIds = readStringArray((atomicCheckpoint?.metadata as JsonObject | undefined)?.noteIds);
-    if (atomicCheckpoint?.status !== "completed") {
+    if (noteIds.length === 0 && atomicCheckpoint?.status === "completed") {
+      noteIds = (await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId))
+        .filter((note) => note.status !== "rejected")
+        .map((note) => note.id);
+    }
+    if (shouldRun("atomicNotes") && atomicCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "atomicNotes");
       this.notify();
       const generated = this.options.knowledgeService
@@ -318,7 +339,7 @@ export class JobSupervisor {
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.84);
     const graphCheckpoint = run.stagesCheckpoint.knowledgeGraph as JsonObject | undefined;
-    if (graphCheckpoint?.status !== "completed") {
+    if (shouldRun("knowledgeGraph") && graphCheckpoint?.status !== "completed") {
       const graphMetadata = graphCheckpoint?.metadata as JsonObject | undefined;
       await runs.beginStage(ingestionRunId, "knowledgeGraph");
       this.notify();
@@ -358,7 +379,26 @@ export class JobSupervisor {
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.89);
     const matchingCheckpoint = run.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined;
-    if (matchingCheckpoint?.status !== "completed") {
+    const batchId = run.batchId ?? optionalString(job.payload.batchId);
+    let matchingDeferred = false;
+    if (shouldRun("atomicNoteMatching") && batchId) {
+      const incompleteNotes = await runs.countIncompleteBatchStage(batchId, "atomicNotes");
+      if (incompleteNotes > 0) {
+        await runs.waitForBatchStage(ingestionRunId, "atomicNoteMatching");
+        matchingDeferred = true;
+      } else {
+        const batchRuns = await runs.listByBatch(batchId);
+        const batchNoteIds = new Set(noteIds);
+        for (const batchRun of batchRuns) {
+          if (!batchRun.sourceItemId) continue;
+          for (const note of await createAtomicNoteRepository(pool).listBySourceItem(batchRun.sourceItemId)) {
+            if (note.status !== "rejected") batchNoteIds.add(note.id);
+          }
+        }
+        noteIds = [...batchNoteIds];
+      }
+    }
+    if (shouldRun("atomicNoteMatching") && !matchingDeferred && matchingCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "atomicNoteMatching");
       this.notify();
       const matching = this.options.knowledgeService && noteIds.length > 0
@@ -386,12 +426,13 @@ export class JobSupervisor {
           )
         : { persistedCount: 0 };
       await runs.completeStage(ingestionRunId, "atomicNoteMatching", matching);
+      if (batchId) await runs.completeStageForBatch(batchId, "atomicNoteMatching", matching);
       this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.95);
     const projectionCheckpoint = run.stagesCheckpoint.obsidianProjection as JsonObject | undefined;
-    if (projectionCheckpoint?.status !== "completed") {
+    if (shouldRun("obsidianProjection") && projectionCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "obsidianProjection");
       this.notify();
       const projection = this.options.obsidianSyncService

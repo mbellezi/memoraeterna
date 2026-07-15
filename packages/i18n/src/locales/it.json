@@ -105,6 +105,7 @@
       "description": "Segui in tempo reale dalla conversione al grafo della conoscenza, con checkpoint, tentativi ed errori riuniti."
     },
     "summary": { "active": "Attive ora", "completed": "Completate", "attention": "Da controllare" },
+    "batch": { "label": "Lotto di elaborazione", "plan": "Piano: {plan}", "custom": "Personalizzato", "items": "{completed} di {total} elementi" },
     "filters": { "label": "Filtra attivita", "all": "Tutte", "active": "Attive", "completed": "Completate", "attention": "Da controllare" },
     "liveUpdates": "Aggiornamenti in tempo reale connessi",
     "streaming": "Elaborazione del modello in tempo reale",
@@ -142,10 +143,10 @@
     },
     "currentStage": "Fase corrente: {stage}",
     "stages": {
-      "queued": "In coda", "conversion": "Conversione", "chunking": "Suddivisione",
+      "queued": "In coda", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
       "knowledgeGraph": "Grafo della conoscenza",
-      "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian",
+      "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian", "aggregateSummarization": "Riepilogo aggregato",
       "completed": "Completata"
     },
     "stageStatus": {
@@ -161,6 +162,8 @@
   },
   "import": {
     "modes": { "manual": "Contenuto manuale", "file": "File locale" },
+    "steps": { "source": "Scegli fonte ed elaborazione", "structure": "Rivedi la struttura rilevata" },
+    "hierarchyHint": "Questo tipo puo rilevare capitoli, articoli e sezioni prima dell'elaborazione.",
     "fields": {
       "sourceType": "Tipo di fonte", "title": "Titolo", "content": "Contenuto",
       "originalUri": "URL originale", "workTitle": "Opera correlata", "isbn": "ISBN",
@@ -169,20 +172,39 @@
     "sourceTypes": {
       "PersonalNote": "Nota personale", "DailyNote": "Nota giornaliera", "WebArticle": "Articolo web",
       "Book": "Libro", "BookChapter": "Capitolo di libro", "StandaloneArticle": "Articolo autonomo",
+      "PeriodicalIssue": "Numero di periodico", "AcademicPaper": "Articolo accademico", "DocumentSection": "Sezione documento",
       "Video": "Video", "GenericDocument": "Documento generico"
     },
     "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file" },
-    "file": { "description": "Scegli un file locale supportato. L'originale viene conservato e l'elaborazione avviene in background." },
-    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata." }
+    "file": { "title": "Scegli il file originale", "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA." },
+    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
+  },
+  "processing": {
+    "title": "Scegli quanto elaborare", "aiOptional": "L'IA e facoltativa", "description": "Importa prima, poi crea solo gli artefatti necessari. Le dipendenze vengono incluse automaticamente.",
+    "customize": "Personalizza le fasi", "includedDependency": "Inclusa perche richiesta da un'altra fase", "stageCount": "{count} fasi in questo piano", "profileNotice": "Usa il profilo IA configurato", "noAiNotice": "Non e necessaria alcuna chiamata IA",
+    "presets": { "import_only": { "title": "Solo importazione", "description": "Conserva e organizza la fonte senza IA." }, "search_ready": { "title": "Pronto per la ricerca", "description": "Crea segmenti ed embedding per la ricerca." }, "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." }, "full_knowledge": { "title": "Conoscenza completa", "description": "Genera note, grafo e corrispondenze." } }
+  },
+  "structure": {
+    "eyebrow": "Controllo umano", "title": "Rivedi la struttura rilevata", "description": "Conferma titoli e intervalli, escludi le voci di sola navigazione e scegli cosa diventa una fonte indipendente.",
+    "treeTitle": "Struttura del documento", "selectedCount": "{count} elementi da creare", "fields": { "title": "Titolo", "kind": "Tipo", "range": "Intervallo fonte", "behavior": "Includi ed elabora" },
+    "pageRange": "Pagine {start}-{end}", "offsetRange": "Testo {start}-{end}", "includeNavigation": "Mantieni questa voce", "includeNavigationHint": "Le voci escluse non vengono materializzate ne mostrate nella navigazione.",
+    "processable": "Crea una fonte indipendente", "processableHint": "Trasforma questa divisione in un elemento selezionabile della libreria.", "evidenceTitle": "Perche questa divisione e stata rilevata", "evidence": "{source} · affidabilita {score}%", "noSelection": "Seleziona un elemento da rivedere.",
+    "blockingIssues": "Risolvi {count} problemi prima di continuare.", "ready": "La struttura e valida e pronta per la conferma.", "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
+    "kinds": { "part": "Parte", "chapter": "Capitolo", "article": "Articolo", "section": "Sezione", "subsection": "Sottosezione", "frontmatter": "Pagine iniziali", "backmatter": "Pagine finali", "appendix": "Appendice", "unknown": "Altro" },
+    "actions": { "undo": "Annulla", "redo": "Ripeti", "restore": "Ripristina versione rilevata", "split": "Dividi", "mergePrevious": "Unisci al precedente", "moveUp": "Sposta su", "moveDown": "Sposta giu", "saveDraft": "Salva bozza", "confirm": "Conferma e continua" }
   },
   "search": {
     "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
+    "scope": "Cerca in", "scopeAll": "Intera libreria",
     "page": "Pagina", "markdownEvidence": "Evidenza Markdown"
   },
   "library": {
     "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
     "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
-    "empty": "Nessuna fonte nella libreria.", "currentStage": "Fase corrente: {stage}",
+    "empty": "Nessuna fonte nella libreria.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti",
+    "actions": { "selectSource": "Seleziona {title}", "process": "Elabora questa fonte", "processSelected": "Elabora selezionate", "clearSelection": "Cancella selezione", "queueProcessing": "Accoda elaborazione" },
+    "processingDialog": { "title": "Elabora fonti della libreria", "description": "Scegli cosa generare per {count} fonti selezionate.", "scope": "Applica a", "regenerate": "Rigenera artefatti esistenti", "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate." },
+    "scopes": { "source_only": "Solo questa fonte", "children_only": "Solo elementi figli", "source_and_children": "Questa fonte e tutti i figli" }, "currentStage": "Fase corrente: {stage}",
     "back": "Torna alla libreria", "openOriginal": "Apri originale", "openFile": "Apri file originale",
     "noSummary": "Non e stato generato alcun riepilogo.", "chunk": "Frammento {index}",
     "processing": { "pending": "In attesa", "running": "Elaborazione", "succeeded": "Pronta", "failed": "Non riuscita", "canceled": "Annullata" },

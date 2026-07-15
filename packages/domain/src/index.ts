@@ -2,6 +2,7 @@ export * from "./ai.js";
 export * from "./bibliographic.js";
 export * from "./document.js";
 export * from "./graph.js";
+export * from "./hierarchical-ingestion.js";
 export * from "./jobs.js";
 export * from "./knowledge.js";
 export * from "./language.js";

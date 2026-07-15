@@ -12,6 +12,9 @@ import type {
   DesktopApi,
   FileImportInput,
   ManualIngestionInput,
+  ProcessingRequest,
+  StructureConfirmInput,
+  StructureSaveInput,
   SearchInput,
   StorageSettingsUpdate,
   IntegrationPairingInput,
@@ -37,6 +40,12 @@ import {
   ipcChannels,
   fileImportInputSchema,
   ingestionResultSchema,
+  documentStructureViewSchema,
+  processingBatchSchema,
+  processingQueueResultSchema,
+  processingRequestSchema,
+  structureConfirmInputSchema,
+  structureSaveInputSchema,
   jobRecordSchema,
   jobsClearResultSchema,
   libraryResetResultSchema,
@@ -139,6 +148,31 @@ const api: DesktopApi = {
     },
     async lookupSources(query: string) {
       return sourceSuggestionSchema.array().parse(await ipcRenderer.invoke(ipcChannels.ingestionLookupSources, query));
+    },
+    async getStructure(structureId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.ingestionStructureGet, structureId);
+      return result === null ? null : documentStructureViewSchema.parse(result);
+    },
+    async saveStructure(input: StructureSaveInput) {
+      return documentStructureViewSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionStructureSave,
+        structureSaveInputSchema.parse(input)
+      ));
+    },
+    async confirmStructure(input: StructureConfirmInput) {
+      return processingQueueResultSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionStructureConfirm,
+        structureConfirmInputSchema.parse(input)
+      ));
+    },
+    async process(input: ProcessingRequest) {
+      return processingQueueResultSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionProcess,
+        processingRequestSchema.parse(input)
+      ));
+    },
+    async listBatches() {
+      return processingBatchSchema.array().parse(await ipcRenderer.invoke(ipcChannels.ingestionBatchesList));
     }
   },
   jobs: {

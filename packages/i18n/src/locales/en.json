@@ -113,6 +113,7 @@
       "description": "Follow processing live from conversion to your knowledge graph, with checkpoints, retries and errors kept together."
     },
     "summary": { "active": "Active now", "completed": "Completed", "attention": "Needs attention" },
+    "batch": { "label": "Processing batch", "plan": "Plan: {plan}", "custom": "Custom", "items": "{completed} of {total} items" },
     "filters": { "label": "Filter jobs", "all": "All", "active": "Active", "completed": "Completed", "attention": "Needs attention" },
     "liveUpdates": "Live updates connected",
     "streaming": "Live model processing",
@@ -153,6 +154,9 @@
     "stages": {
       "queued": "Queued",
       "conversion": "Conversion",
+      "structureDetection": "Structure detection",
+      "structureReview": "Structure review",
+      "materialization": "Materialization",
       "chunking": "Chunking",
       "embedding": "Embedding",
       "summarization": "Summarization",
@@ -160,6 +164,7 @@
       "knowledgeGraph": "Knowledge graph",
       "atomicNoteMatching": "Note matching",
       "obsidianProjection": "Obsidian projection",
+      "aggregateSummarization": "Aggregate summary",
       "completed": "Completed"
     },
     "stageStatus": {
@@ -179,6 +184,8 @@
   },
   "import": {
     "modes": { "manual": "Manual content", "file": "Local file" },
+    "steps": { "source": "Choose source and processing", "structure": "Review detected structure" },
+    "hierarchyHint": "This type can detect chapters, articles, and sections before processing.",
     "fields": {
       "sourceType": "Source type", "title": "Title", "content": "Content",
       "originalUri": "Original URL", "workTitle": "Related work", "isbn": "ISBN",
@@ -187,14 +194,54 @@
     "sourceTypes": {
       "PersonalNote": "Personal note", "DailyNote": "Daily note", "WebArticle": "Web article",
       "Book": "Book", "BookChapter": "Book chapter", "StandaloneArticle": "Standalone article",
+      "PeriodicalIssue": "Periodical issue", "AcademicPaper": "Academic paper", "DocumentSection": "Document section",
       "Video": "Video", "GenericDocument": "Generic document"
     },
     "actions": { "queue": "Queue import", "chooseFile": "Choose file" },
-    "file": { "description": "Choose a supported local file. The original is preserved and processing runs in the background." },
-    "status": { "queued": "Import queued.", "canceled": "File selection canceled." }
+    "file": { "title": "Choose the original file", "description": "The original is preserved. For books, issues, and papers, you review the detected structure before any AI processing starts." },
+    "status": { "queued": "Import queued.", "canceled": "File selection canceled.", "saved": "Source saved without background processing.", "reviewStructure": "Structure detected. Review it before continuing.", "draftSaved": "Structure draft saved.", "queuedChildren": "Structure confirmed and selected items queued.", "savedChildren": "Structure confirmed and selected items saved." }
+  },
+  "processing": {
+    "title": "Choose how far to process",
+    "aiOptional": "AI is optional",
+    "description": "Import first, then add only the artifacts you need. Dependencies are included automatically.",
+    "customize": "Customize processing stages",
+    "includedDependency": "Included because another stage needs it",
+    "stageCount": "{count} stages in this plan",
+    "profileNotice": "Uses your configured AI profile",
+    "noAiNotice": "No AI call is required",
+    "presets": {
+      "import_only": { "title": "Import only", "description": "Preserve and organize the source without AI." },
+      "search_ready": { "title": "Search ready", "description": "Create chunks and embeddings for retrieval." },
+      "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },
+      "full_knowledge": { "title": "Full knowledge", "description": "Generate notes, graph, and matching artifacts." }
+    }
+  },
+  "structure": {
+    "eyebrow": "Human review checkpoint",
+    "title": "Review the detected structure",
+    "description": "Confirm titles and ranges, exclude navigation-only entries, and choose what becomes an independent source.",
+    "treeTitle": "Document structure",
+    "selectedCount": "{count} items to create",
+    "fields": { "title": "Title", "kind": "Type", "range": "Source range", "behavior": "Include and process" },
+    "pageRange": "Pages {start}–{end}",
+    "offsetRange": "Text {start}–{end}",
+    "includeNavigation": "Keep this entry",
+    "includeNavigationHint": "Excluded entries are not materialized or shown in navigation.",
+    "processable": "Create an independent source",
+    "processableHint": "Turn this division into a selectable library item.",
+    "evidenceTitle": "Why this division was detected",
+    "evidence": "{source} · {score}% confidence",
+    "noSelection": "Select an item in the structure to review it.",
+    "blockingIssues": "Resolve {count} structure issues before continuing.",
+    "ready": "Structure is valid and ready to confirm.",
+    "confidence": { "high": "High", "medium": "Review", "low": "Low" },
+    "kinds": { "part": "Part", "chapter": "Chapter", "article": "Article", "section": "Section", "subsection": "Subsection", "frontmatter": "Front matter", "backmatter": "Back matter", "appendix": "Appendix", "unknown": "Other" },
+    "actions": { "undo": "Undo", "redo": "Redo", "restore": "Restore detected version", "split": "Split", "mergePrevious": "Merge with previous", "moveUp": "Move up", "moveDown": "Move down", "saveDraft": "Save draft", "confirm": "Confirm and continue" }
   },
   "search": {
     "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
+    "scope": "Search within", "scopeAll": "Entire library",
     "page": "Page", "markdownEvidence": "Markdown evidence"
   },
   "library": {
@@ -203,6 +250,10 @@
     "refresh": "Refresh library",
     "error": "The library could not be loaded.",
     "empty": "No sources in the library yet.",
+    "selectionCount": "{count} sources selected", "childCount": "{count} direct items",
+    "actions": { "selectSource": "Select {title}", "process": "Process this source", "processSelected": "Process selected", "clearSelection": "Clear selection", "queueProcessing": "Queue processing" },
+    "processingDialog": { "title": "Process library sources", "description": "Choose what to generate for {count} selected sources.", "scope": "Apply to", "regenerate": "Regenerate existing artifacts", "regenerateHint": "Reviewed notes are preserved; pending generations are archived safely." },
+    "scopes": { "source_only": "This source only", "children_only": "Children only", "source_and_children": "This source and all children" },
     "currentStage": "Current stage: {stage}",
     "back": "Back to library",
     "openOriginal": "Open original",

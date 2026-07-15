@@ -22,6 +22,9 @@ import {
   localModelDownloadInputSchema,
   localModelDefaultsInputSchema,
   repositoryTokenInputSchema,
+  processingRequestSchema,
+  structureSaveInputSchema,
+  structureConfirmInputSchema,
   type DatabaseStatus
 } from "../shared/ipc";
 import { AiReasoningLevelSchema, SourceItemTypeSchema } from "@app/domain";
@@ -38,6 +41,7 @@ import type { BackupService } from "./services/backup-service.js";
 import type { LibraryResetService } from "./services/library-reset-service.js";
 import type { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import type { ObsidianSyncService } from "./services/obsidian-sync-service.js";
+import type { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
 
 export interface DatabaseServicePort {
   getStatus: () => DatabaseStatus;
@@ -49,6 +53,7 @@ export function registerIpcHandlers(
   settingsService: SettingsService,
   databaseService: DatabaseServicePort,
   ingestionService: IngestionService,
+  hierarchicalIngestionService: HierarchicalIngestionService,
   jobSupervisor: JobSupervisor,
   searchService: SearchService,
   aiService: AiService,
@@ -131,6 +136,34 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) =>
     ingestionService.lookupSources(z.string().trim().min(1).max(200).parse(payload))
+  );
+  ipcMain.handle(ipcChannels.ingestionStructureGet, async (_event, payload: unknown) => {
+    const structure = await hierarchicalIngestionService.getStructure(z.string().uuid().parse(payload));
+    return structure ? serializeStructure(structure) : null;
+  });
+  ipcMain.handle(ipcChannels.ingestionStructureSave, async (_event, payload: unknown) => {
+    const input = structureSaveInputSchema.parse(payload);
+    return serializeStructure(await hierarchicalIngestionService.saveStructure(input.structureId, input.divisions));
+  });
+  ipcMain.handle(ipcChannels.ingestionStructureConfirm, async (_event, payload: unknown) => {
+    const input = structureConfirmInputSchema.parse(payload);
+    const result = await hierarchicalIngestionService.confirmStructure(input);
+    return { batchId: result.batchId, queued: result.queued };
+  });
+  ipcMain.handle(ipcChannels.ingestionProcess, (_event, payload: unknown) => {
+    const input = processingRequestSchema.parse(payload);
+    return hierarchicalIngestionService.process({
+      plan: input.plan,
+      runKind: input.runKind,
+      ...(input.trigger ? { trigger: input.trigger } : {})
+    });
+  });
+  ipcMain.handle(ipcChannels.ingestionBatchesList, async () =>
+    (await hierarchicalIngestionService.listBatches()).map((batch) => ({
+      ...batch,
+      createdAt: batch.createdAt.toISOString(),
+      updatedAt: batch.updatedAt.toISOString()
+    }))
   );
 
   ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun, source }) =>
@@ -264,6 +297,44 @@ export function registerIpcHandlers(
   );
 }
 
+function serializeStructure(structure: NonNullable<Awaited<ReturnType<HierarchicalIngestionService["getStructure"]>>>) {
+  const rawWarnings = structure.rawEvidence.warnings;
+  return {
+    id: structure.id,
+    rootSourceItemId: structure.rootSourceItemId,
+    rootDocumentId: structure.rootDocumentId,
+    format: structure.format,
+    detectorVersion: structure.detectorVersion,
+    status: structure.status,
+    overallConfidence: structure.overallConfidence,
+    revision: structure.revision,
+    warnings: Array.isArray(rawWarnings) ? rawWarnings.filter((item): item is string => typeof item === "string") : [],
+    divisions: structure.divisions.map((division) => ({
+      id: division.id,
+      parentId: division.parentId,
+      kind: division.kind,
+      title: division.title,
+      level: division.level,
+      position: division.position,
+      startSelector: division.startSelector,
+      endSelector: division.endSelector,
+      ...(division.startPage === undefined ? {} : { startPage: division.startPage }),
+      ...(division.endPage === undefined ? {} : { endPage: division.endPage }),
+      ...(division.markdownStart === undefined ? {} : { markdownStart: division.markdownStart }),
+      ...(division.markdownEnd === undefined ? {} : { markdownEnd: division.markdownEnd }),
+      confidence: division.confidence,
+      evidence: division.evidence,
+      reviewStatus: division.reviewStatus,
+      isProcessable: division.isProcessable,
+      metadata: division.metadata,
+      childSourceItemId: division.childSourceItemId,
+      childDocumentId: division.childDocumentId
+    })),
+    createdAt: structure.createdAt.toISOString(),
+    updatedAt: structure.updatedAt.toISOString()
+  };
+}
+
 function serializeJob(
   job: Awaited<ReturnType<JobSupervisor["list"]>>[number],
   ingestionRun: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["ingestionRun"] = null,
@@ -293,8 +364,10 @@ function serializeJob(
     } : null,
     ingestionRun: ingestionRun ? {
       id: ingestionRun.id,
+      batchId: ingestionRun.batchId,
       status: ingestionRun.status,
       currentStage: ingestionRun.currentStage,
+      effectiveStages: ingestionRun.effectiveStages.filter((stage): stage is string => typeof stage === "string"),
       stagesCheckpoint: ingestionRun.stagesCheckpoint
     } : null
   };

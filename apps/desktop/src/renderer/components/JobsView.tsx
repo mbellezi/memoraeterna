@@ -21,7 +21,7 @@ import {
   X
 } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
-import type { JobRecord } from "../../shared/ipc";
+import type { JobRecord, ProcessingBatch } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { groupJobs, listActivityJobs, matchesFilter, type JobCardModel, type JobFilter } from "./jobs-view-model";
 import { Button } from "./ui/button";
@@ -30,17 +30,22 @@ type IngestionRun = NonNullable<JobRecord["ingestionRun"]>;
 
 const pipelineStages = [
   "conversion",
+  "structureDetection",
+  "structureReview",
+  "materialization",
   "chunking",
   "embedding",
   "summarization",
   "atomicNotes",
   "knowledgeGraph",
   "atomicNoteMatching",
-  "obsidianProjection"
+  "obsidianProjection",
+  "aggregateSummarization"
 ] as const;
 
 export function JobsView({ t }: { t: Translator }) {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
+  const [batches, setBatches] = useState<ProcessingBatch[]>([]);
   const [filter, setFilter] = useState<JobFilter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(typeof window !== "undefined");
@@ -50,7 +55,9 @@ export function JobsView({ t }: { t: Translator }) {
 
   async function load() {
     try {
-      setJobs(await window.app.jobs.list());
+      const [nextJobs, nextBatches] = await Promise.all([window.app.jobs.list(), window.app.ingestion.listBatches()]);
+      setJobs(nextJobs);
+      setBatches(nextBatches);
       setLoadError(false);
     } catch {
       setLoadError(true);
@@ -76,6 +83,7 @@ export function JobsView({ t }: { t: Translator }) {
 
   const cards = useMemo(() => groupJobs(jobs), [jobs]);
   const filteredCards = cards.filter((card) => matchesFilter(card, filter));
+  const batchGroups = groupCardsByBatch(filteredCards, batches);
   const stats = {
     active: cards.filter((card) => card.status === "queued" || card.status === "running" || card.status === "retrying").length,
     completed: cards.filter((card) => card.status === "succeeded").length,
@@ -187,16 +195,19 @@ export function JobsView({ t }: { t: Translator }) {
     {loading && cards.length === 0 ? <LoadingCards /> : filteredCards.length === 0 ? (
       <EmptyState t={t} filtered={cards.length > 0} />
     ) : (
-      <div className="grid gap-4">
-        {filteredCards.map((card) => <JobCard
-          key={card.id}
-          card={card}
-          expanded={expanded.has(card.id) || card.status === "failed"}
-          busy={busyJobId === card.mainJob.id}
-          t={t}
-          onToggle={() => toggleExpanded(card.id)}
-          onAction={(action) => void runAction(card.mainJob.id, action)}
-        />)}
+      <div className="grid gap-5">
+        {batchGroups.map((group) => <section key={group.id} className="grid gap-3">
+          {group.batch ? <BatchHeader batch={group.batch} t={t} /> : null}
+          {group.cards.map((card) => <JobCard
+            key={card.id}
+            card={card}
+            expanded={expanded.has(card.id) || card.status === "failed"}
+            busy={busyJobId === card.mainJob.id}
+            t={t}
+            onToggle={() => toggleExpanded(card.id)}
+            onAction={(action) => void runAction(card.mainJob.id, action)}
+          />)}
+        </section>)}
       </div>
     )}
   </section>;
@@ -346,14 +357,15 @@ function JobCard({
 }
 
 function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
-  return <ol className="mt-5 grid grid-cols-4 gap-x-2 gap-y-3 lg:grid-cols-8">
-    {pipelineStages.map((stage, index) => {
+  const visibleStages = pipelineStages.filter((stage) => run.effectiveStages.length === 0 || run.effectiveStages.includes(stage));
+  return <ol className="mt-5 grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+    {visibleStages.map((stage, index) => {
       const checkpoint = run.stagesCheckpoint[stage];
       const stageStatus = resolveStageStatus(run, stage, checkpoint);
       const Icon = stageStatus === "completed" ? Check : stageStatus === "running" ? LoaderCircle
         : stageStatus === "failed" ? AlertTriangle : Circle;
       return <li key={stage} className="relative min-w-0">
-        {index < pipelineStages.length - 1 ? <span className={cn(
+        {index < visibleStages.length - 1 ? <span className={cn(
           "absolute left-[calc(50%+12px)] right-[calc(-50%+12px)] top-3 hidden h-px lg:block",
           stageStatus === "completed" ? "bg-emerald-400 dark:bg-emerald-700" : "bg-slate-200 dark:bg-slate-800"
         )} /> : null}
@@ -376,6 +388,26 @@ function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
       </li>;
     })}
   </ol>;
+}
+
+function BatchHeader({ batch, t }: { batch: ProcessingBatch; t: Translator }) {
+  const percent = Math.round(batch.progress > 1 ? batch.progress / 100 : batch.progress * 100);
+  const preset = typeof batch.effectivePlan.preset === "string" ? batch.effectivePlan.preset : "custom";
+  return <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/40">
+    <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">{t("jobs.batch.label")}</p><p className="mt-1 text-sm font-semibold">{t("jobs.batch.plan", { values: { plan: preset === "custom" ? t("jobs.batch.custom") : t(`processing.presets.${preset}.title` as MessageKey) } })}</p></div>
+    <div className="min-w-56"><div className="flex justify-between text-xs text-slate-600 dark:text-slate-300"><span>{t("jobs.batch.items", { values: { completed: batch.completedItems, total: batch.totalItems } })}</span><span>{percent}%</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-900"><div className="h-full rounded-full bg-violet-500" style={{ width: `${percent}%` }} /></div></div>
+  </header>;
+}
+
+function groupCardsByBatch(cards: JobCardModel[], batches: ProcessingBatch[]) {
+  const batchById = new Map(batches.map((batch) => [batch.id, batch]));
+  const groups = new Map<string, { id: string; batch: ProcessingBatch | null; cards: JobCardModel[] }>();
+  for (const card of cards) {
+    const batchId = card.ingestionRun?.batchId ?? `standalone:${card.id}`;
+    const group = groups.get(batchId) ?? { id: batchId, batch: batchById.get(batchId) ?? null, cards: [] };
+    group.cards.push(card); groups.set(batchId, group);
+  }
+  return [...groups.values()];
 }
 
 function ActivityRow({ job, t }: { job: JobRecord; t: Translator }) {
@@ -498,6 +530,9 @@ function sourceIcon(type?: string) {
     WebArticle: Globe2,
     Book: BookOpen,
     BookChapter: BookOpen,
+    PeriodicalIssue: BookOpen,
+    AcademicPaper: FileText,
+    DocumentSection: FileText,
     StandaloneArticle: FileText,
     Video,
     GenericDocument: FileText

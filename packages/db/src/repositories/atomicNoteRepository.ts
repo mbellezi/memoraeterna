@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { QueryResultRow } from "pg";
 
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
@@ -10,6 +12,8 @@ import type {
 
 interface AtomicNoteRow extends QueryResultRow {
   id: string;
+  generationId: string | null;
+  supersessionStatus: string;
   title: string;
   bodyMarkdown: string;
   ideaStatement: string;
@@ -46,6 +50,7 @@ export interface AtomicNoteGraphInputRecord {
 }
 
 export interface CreateGeneratedAtomicNoteInput {
+  generationId?: string;
   title: string;
   bodyMarkdown: string;
   ideaStatement: string;
@@ -64,7 +69,8 @@ export interface CreateGeneratedAtomicNoteInput {
   metadata?: JsonObject;
 }
 
-const returning = `id, title, body_markdown as "bodyMarkdown", idea_statement as "ideaStatement",
+const returning = `id, generation_id as "generationId", supersession_status as "supersessionStatus",
+  title, body_markdown as "bodyMarkdown", idea_statement as "ideaStatement",
   language, status, created_from_source_item_id as "createdFromSourceItemId",
   source_span_id as "sourceSpanId", evidence_chunk_id as "evidenceChunkId",
   generation_profile_id as "generationProfileId", ai_task_run_id as "aiTaskRunId",
@@ -73,7 +79,8 @@ const returning = `id, title, body_markdown as "bodyMarkdown", idea_statement as
   generation_key as "generationKey", metadata, reviewed_at as "reviewedAt",
   created_at as "createdAt", updated_at as "updatedAt"`;
 
-const candidateReturning = `candidate.id, candidate.title,
+const candidateReturning = `candidate.id, candidate.generation_id as "generationId",
+  candidate.supersession_status as "supersessionStatus", candidate.title,
   candidate.body_markdown as "bodyMarkdown", candidate.idea_statement as "ideaStatement",
   candidate.language, candidate.status,
   candidate.created_from_source_item_id as "createdFromSourceItemId",
@@ -104,16 +111,17 @@ export function createAtomicNoteRepository(db: Queryable) {
       const connection = await acquireConnection(db);
       try {
         await connection.query("begin");
+        const generationId = input.generationId ?? await ensureLegacyGeneration(connection, input);
         const result = await connection.query<AtomicNoteRow>(
           `insert into atomic_notes (
              title, body_markdown, idea_statement, language, status,
              created_from_source_item_id, source_span_id, evidence_chunk_id,
              generation_profile_id, ai_task_run_id, generation_provider,
              generation_model, generation_runtime, generation_prompt_version,
-             generation_key, metadata
+             generation_key, metadata, generation_id
            ) values ($1, $2, $3, $4, 'pending_review', $5, $6, $7, $8, $9,
-                     $10, $11, $12, $13, $14, $15)
-           on conflict (created_from_source_item_id, generation_key) do update set
+                     $10, $11, $12, $13, $14, $15, $16)
+           on conflict (created_from_source_item_id, generation_id, generation_key) do update set
              title = excluded.title,
              body_markdown = excluded.body_markdown,
              idea_statement = excluded.idea_statement,
@@ -144,15 +152,16 @@ export function createAtomicNoteRepository(db: Queryable) {
             input.generationRuntime,
             input.generationPromptVersion,
             input.generationKey,
-            input.metadata ?? {}
+            input.metadata ?? {},
+            generationId
           ]
         );
         let row = result.rows[0];
         if (!row) {
           const existing = await connection.query<AtomicNoteRow>(
             `select ${returning} from atomic_notes
-             where created_from_source_item_id = $1 and generation_key = $2`,
-            [input.sourceItemId, input.generationKey]
+             where created_from_source_item_id = $1 and generation_id = $2 and generation_key = $3`,
+            [input.sourceItemId, generationId, input.generationKey]
           );
           row = existing.rows[0];
         }
@@ -456,6 +465,23 @@ export function createAtomicNoteRepository(db: Queryable) {
 
 interface RepositoryConnection extends Queryable {
   release?: () => void;
+}
+
+async function ensureLegacyGeneration(
+  connection: RepositoryConnection,
+  input: CreateGeneratedAtomicNoteInput
+): Promise<string> {
+  const hash = createHash("sha256")
+    .update(`${input.sourceItemId}:atomicNotes:${input.generationPromptVersion}`)
+    .digest("hex");
+  const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  await connection.query(
+    `insert into knowledge_generations (id, source_item_id, stage, status, metadata)
+     values ($1, $2, 'atomicNotes', 'current', jsonb_build_object('legacy', true))
+     on conflict (id) do nothing`,
+    [id, input.sourceItemId]
+  );
+  return id;
 }
 
 async function acquireConnection(db: Queryable): Promise<RepositoryConnection> {

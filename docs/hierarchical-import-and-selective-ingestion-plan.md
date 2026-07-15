@@ -1,12 +1,14 @@
 # Plano de Importacao Hierarquica e Ingestao Seletiva
 
-Status: proposta de evolucao pos-MVP, ainda nao implementada.
+Status: implementacao funcional concluida em 2026-07-15. O corpus golden amplo,
+benchmarks de memoria e smoke manual multiplataforma permanecem como hardening
+de distribuicao, sem bloquear o fluxo funcional descrito neste documento.
 
 Este plano descreve a evolucao da importacao de arquivos longos para suportar
 livros, revistas e papers estruturados, escolha das etapas de processamento,
 processamento posterior em lote e reingestao segura. Ele complementa
-`docs/initial.md` e `docs/mvp-implementation-plan.md`; nao altera o estado
-implementado descrito em `MAPA.md`.
+`docs/initial.md` e `docs/mvp-implementation-plan.md`; o estado implementado e
+os pontos de validacao operacional estao registrados em `MAPA.md`.
 
 ## 1. Resultado esperado
 

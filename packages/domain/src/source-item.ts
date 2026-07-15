@@ -15,6 +15,9 @@ export const SourceItemTypes = [
   "WebArticle",
   "Book",
   "BookChapter",
+  "PeriodicalIssue",
+  "AcademicPaper",
+  "DocumentSection",
   "StandaloneArticle",
   "Video",
   "GenericDocument"

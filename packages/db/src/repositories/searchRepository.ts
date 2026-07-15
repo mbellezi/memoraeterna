@@ -22,6 +22,7 @@ interface SearchRow extends QueryResultRow {
 export interface TextSearchInput {
   text: string;
   sourceTypes?: SourceItemType[];
+  sourceItemIds?: string[];
   limit?: number;
 }
 
@@ -29,6 +30,7 @@ export interface VectorSearchInput {
   embedding: number[];
   embeddingModel: string;
   sourceTypes?: SourceItemType[];
+  sourceItemIds?: string[];
   limit?: number;
 }
 
@@ -66,11 +68,12 @@ export function createSearchRepository(db: Queryable) {
            join source_items s on s.id = c.source_item_id
            left join source_spans sp on sp.id = c.source_span_id
            where (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))
+             and (coalesce(array_length($4::uuid[], 1), 0) = 0 or s.id = any($4))
          )
          select * from scored where "textScore" > 0
          order by "textScore" desc, "chunkId"
          limit $3`,
-        [input.text, input.sourceTypes ?? [], input.limit ?? 20]
+        [input.text, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? []]
       );
       return result.rows.map((row) => mapSearchRow(row, Number(row.textScore)));
     },
@@ -91,9 +94,10 @@ export function createSearchRepository(db: Queryable) {
          left join source_spans sp on sp.id = c.source_span_id
          where e.target_type = 'chunk' and e.model = $2
            and (coalesce(array_length($3::source_item_type[], 1), 0) = 0 or s.type = any($3))
+           and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
          order by e.embedding <=> $1::vector
          limit $4`,
-        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20]
+        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? []]
       );
       return result.rows.map((row) => mapSearchRow(row, Number(row.vectorScore)));
     }

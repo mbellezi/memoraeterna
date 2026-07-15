@@ -17,9 +17,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@app/domain": "0.0.0",
     "defuddle": "0.19.1",
     "fflate": "0.8.3",
     "linkedom": "0.18.13",
+    "pdfjs-dist": "6.1.200",
     "zod": "4.4.3"
   }
 }

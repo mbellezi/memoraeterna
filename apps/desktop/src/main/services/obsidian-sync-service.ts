@@ -397,6 +397,10 @@ export class ObsidianSyncService {
   }
 
   private async projectEntity(settings: StorageSettings, source: SourceItemRecord, document: DocumentRecord): Promise<number> {
+    const hierarchy = await this.resolveProjectionHierarchy(source);
+    const revision = await this.requirePool().query<{ id: string }>(
+      "select id from document_revisions where document_id = $1 and is_current = true limit 1", [document.id]
+    );
     return this.writeEntity(settings, {
       memoraId: source.id,
       memoraType: "source_item",
@@ -408,6 +412,11 @@ export class ObsidianSyncService {
       bodyMarkdown: document.canonicalMarkdown,
       sourceType: source.type,
       sourceUri: source.sourceUri,
+      rootSourceItemId: hierarchy.root.id,
+      rootTitle: hierarchy.root.title,
+      ...(typeof source.metadata.divisionId === "string" ? { divisionId: source.metadata.divisionId } : {}),
+      ...(revision.rows[0]?.id ? { documentRevisionId: revision.rows[0].id } : {}),
+      isHierarchyRoot: hierarchy.root.id === source.id && ["Book", "PeriodicalIssue", "AcademicPaper"].includes(source.type),
       date: source.updatedAt
     });
   }
@@ -472,6 +481,11 @@ export class ObsidianSyncService {
     bodyMarkdown: string;
     sourceType?: string;
     sourceUri?: string | null;
+    rootSourceItemId?: string;
+    rootTitle?: string;
+    divisionId?: string;
+    documentRevisionId?: string;
+    isHierarchyRoot?: boolean;
     date: Date;
   }): Promise<number> {
     const pool = this.requirePool();
@@ -492,6 +506,11 @@ export class ObsidianSyncService {
       syncVersion,
       ...(input.sourceType ? { sourceType: input.sourceType } : {}),
       ...(input.sourceUri !== undefined ? { sourceUri: input.sourceUri } : {}),
+      ...(input.rootSourceItemId ? { rootSourceItemId: input.rootSourceItemId } : {}),
+      ...(input.rootTitle ? { rootTitle: input.rootTitle } : {}),
+      ...(input.divisionId ? { divisionId: input.divisionId } : {}),
+      ...(input.documentRevisionId ? { documentRevisionId: input.documentRevisionId } : {}),
+      ...(input.isHierarchyRoot !== undefined ? { isHierarchyRoot: input.isHierarchyRoot } : {}),
       date: input.date
     });
     let relativePath = existing?.relativePath;
@@ -539,6 +558,19 @@ export class ObsidianSyncService {
     if (existing) await repository.update(existing.id, persistence);
     else await repository.create(persistence);
     return 1;
+  }
+
+  private async resolveProjectionHierarchy(source: SourceItemRecord): Promise<{ root: SourceItemRecord }> {
+    const sources = createSourceItemRepository(this.requirePool());
+    let root = source;
+    const seen = new Set<string>([source.id]);
+    while (root.parentSourceItemId && !seen.has(root.parentSourceItemId)) {
+      seen.add(root.parentSourceItemId);
+      const parent = await sources.findById(root.parentSourceItemId);
+      if (!parent) break;
+      root = parent;
+    }
+    return { root };
   }
 
   private async selectAvailablePath(

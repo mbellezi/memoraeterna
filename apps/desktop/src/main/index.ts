@@ -6,6 +6,7 @@ import { DatabaseService } from "./services/database-service";
 import { SettingsService } from "./services/settings-service";
 import { AiService } from "./services/ai-service.js";
 import { IngestionService } from "./services/ingestion-service.js";
+import { HierarchicalIngestionService } from "./services/hierarchical-ingestion-service.js";
 import { JobSupervisor } from "./services/job-supervisor.js";
 import { SearchService } from "./services/search-service.js";
 import { KnowledgeService } from "./services/knowledge-service.js";
@@ -86,6 +87,7 @@ let settingsService: SettingsService | null = null;
 let databaseService: DatabaseService | null = null;
 let aiService: AiService | null = null;
 let ingestionService: IngestionService | null = null;
+let hierarchicalIngestionService: HierarchicalIngestionService | null = null;
 let jobSupervisor: JobSupervisor | null = null;
 let searchService: SearchService | null = null;
 let knowledgeService: KnowledgeService | null = null;
@@ -144,13 +146,17 @@ void app.whenReady().then(() => {
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData")
   });
+  hierarchicalIngestionService = new HierarchicalIngestionService({
+    getPool: () => databaseService?.getPool() ?? null
+  });
   ingestionService = new IngestionService({
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData"),
     resourcesPath: getResourcesPath(),
     workspaceRoot,
-    isPackaged: app.isPackaged
+    isPackaged: app.isPackaged,
+    hierarchicalIngestionService
   });
   searchService = new SearchService(
     () => databaseService?.getPool() ?? null,
@@ -204,6 +210,7 @@ void app.whenReady().then(() => {
     settingsService,
     databaseService,
     ingestionService,
+    hierarchicalIngestionService,
     jobSupervisor,
     searchService,
     aiService,
