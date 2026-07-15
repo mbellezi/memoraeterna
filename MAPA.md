@@ -538,6 +538,10 @@ npm run package:desktop:dir
   Postgres/pgvector/AGE.
 - `docs/docling-sidecar.md`: build fixado, verificacao e smoke offline Docling.
 - `docs/local-models-and-packaging.md`: catalogo local, downloads e pacote.
+- `docs/source-ingestion-restructure-plan.md`: plano aprovado de
+  reestruturacao da ingestao de fontes (wizard, metadados por tipo,
+  enriquecimento externo, fontes-container e revisao de estrutura v2), ainda
+  nao implementado.
 - `README.md`: instrucoes para pessoas desenvolvedoras.
 
 ## Cuidados Para Proximas Edicoes
