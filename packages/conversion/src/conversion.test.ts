@@ -7,7 +7,8 @@ import {
   convertCsv,
   convertNotebook,
   convertWebHtml,
-  DoclingClient
+  DoclingClient,
+  doclingProgressSchema
 } from "./index.js";
 
 const encoder = new TextEncoder();
@@ -61,7 +62,18 @@ describe("conversion", () => {
       sidecarScriptPath: fileURLToPath(new URL("./test-fixtures/fake-docling.mjs", import.meta.url)),
       timeoutMs: 50
     });
-    await expect(client.convert("success.pdf")).resolves.toMatchObject({ engine: "docling" });
+    const progress: import("./types.js").ConversionProgress[] = [];
+    await expect(client.convert(
+      "success.pdf",
+      "standard",
+      undefined,
+      (event) => progress.push(event)
+    )).resolves.toMatchObject({ engine: "docling" });
+    expect(progress).toEqual([
+      expect.objectContaining({ stage: "loading_engine", progress: 0.05 }),
+      expect.objectContaining({ stage: "processing_pages", completedPages: 2, totalPages: 4 }),
+      expect.objectContaining({ stage: "serializing", completedPages: 4, totalPages: 4 })
+    ]);
     await expect(client.convert("crash.pdf")).rejects.toThrow("exited with code 2");
     await expect(client.convert("timeout.pdf")).rejects.toThrow();
 
@@ -76,5 +88,17 @@ describe("conversion", () => {
       maxOutputBytes: 128
     });
     await expect(limitedClient.convert("output-limit.pdf")).rejects.toThrow("output-limit");
+  });
+
+  it("rejects inconsistent Docling page progress", () => {
+    expect(() => doclingProgressSchema.parse({
+      protocolVersion: 3,
+      requestId: "00000000-0000-4000-8000-000000000001",
+      type: "progress",
+      stage: "processing_pages",
+      progress: 0.5,
+      completedPages: 5,
+      totalPages: 4
+    })).toThrow();
   });
 });

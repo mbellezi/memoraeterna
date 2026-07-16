@@ -22,6 +22,7 @@ import {
   , libraryResetResultSchema
   , sourceDeletionResultSchema
   , similarityDebugRunSchema
+  , fileImportProgressSchema
   , fileMetadataExtractionResultSchema
 } from "./ipc";
 
@@ -123,6 +124,20 @@ describe("desktop IPC contracts", () => {
         warnings: []
       }
     }).draft.values.title).toBe("Book");
+    expect(fileImportProgressSchema.parse({
+      requestId: "00000000-0000-4000-8000-000000000001",
+      stage: "processing_pages",
+      progress: 0.37,
+      completedPages: 37,
+      totalPages: 100
+    })).toMatchObject({ completedPages: 37, totalPages: 100 });
+    expect(() => fileImportProgressSchema.parse({
+      requestId: "00000000-0000-4000-8000-000000000001",
+      stage: "processing_pages",
+      progress: 0.37,
+      completedPages: 101,
+      totalPages: 100
+    })).toThrow();
   });
 
   it("validates phase 3 source details and review actions", () => {

@@ -197,6 +197,12 @@
     "validation": { "chooseFile": "Choisissez un fichier avant de continuer.", "contentRequired": "Ce type de source exige du contenu." },
     "actions": { "queue": "Mettre l'import en file", "chooseFile": "Choisir un fichier", "changeFile": "Changer de fichier", "back": "Retour", "continue": "Continuer", "import": "Importer la source" },
     "file": { "title": "Choisir le fichier original", "description": "L'original est conserve. Pour les livres, periodiques et articles, revise la structure avant tout traitement par IA." },
+    "progress": {
+      "title": "Préparation de votre fichier",
+      "stages": { "selectingFile": "Sélection du fichier local…", "inspectingFile": "Inspection du fichier…", "loadingEngine": "Chargement du moteur de conversion local…", "convertingDocument": "Conversion du document…", "processingPages": "Traitement des pages…", "serializing": "Organisation du contenu converti…", "extractingMetadata": "Extraction des métadonnées…", "storingCover": "Enregistrement de la couverture intégrée…", "completed": "Préparation du fichier terminée" },
+      "percent": "{percent}%", "pagesProcessed": "{completed} pages traitées sur {total}", "pagesFound": "{total} pages trouvées", "elapsed": "Temps écoulé : {time}",
+      "keepOpen": "Gardez cet écran ouvert ; les pages numérisées peuvent prendre plus de temps."
+    },
     "status": { "queued": "Import en file.", "canceled": "Selection de fichier annulee.", "saved": "Source enregistree sans traitement en arriere-plan.", "metadataExtracted": "Metadonnees extraites localement. Verifiez-les avant de continuer.", "duplicateHandled": "Politique de doublon appliquee.", "reviewStructure": "Structure detectee. Revisez-la avant de continuer.", "draftSaved": "Brouillon de structure enregistre.", "queuedChildren": "Structure confirmee et elements selectionnes mis en file.", "savedChildren": "Structure confirmee et elements selectionnes enregistres." }
   },
   "processing": {

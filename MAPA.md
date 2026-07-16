@@ -88,15 +88,27 @@ Implementado ate aqui:
   detectores EPUB 2/3 e PDF, draft persistido, revisao humana obrigatoria,
   materializacao transacional e filhos `BookChapter`, `StandaloneArticle` e
   `DocumentSection`;
-- wizard adaptativo de importacao com seis estados, quatro presets, plano
-  personalizado e DAG de dependencias visivel; `Importar somente` nao cria job de IA;
-- Library hierarquica com selecao multipla e escopo raiz/filhos, processamento
-  posterior, etapas ausentes e reingestao que preserva notas revisadas;
+- fallback de papers PDF sem bookmarks calibrado sobre os sete arquivos de
+  `samples/articles`: fronteiras derivadas do Markdown canonico, hierarquia por
+  numeracao/nivel/indentacao, filtros editoriais e lexico multilingue; blocos
+  Docling ficam como evidencia auxiliar de pagina e layout;
+- deteccao de livros calibrada sobre corpus local de treze EPUBs e nove PDFs:
+  navegacao EPUB e outline PDF preservam ordem/hierarquia nativas e sao
+  alinhados ao Markdown canonico; PDFs sem bookmarks detectam partes, capitulos
+  e apendices no Markdown, distinguem sumario impresso e recuperam lacunas de
+  headings produzidas pelo OCR;
+- wizard adaptativo de importacao com seis estados, barra de preparacao com
+  etapa/paginas/tempo decorrido, quatro presets, plano personalizado e DAG de
+  dependencias visivel; `Importar somente` nao cria job de IA;
+- Library hierarquica com selecao multipla, ordem de divisoes preservada por
+  `document_divisions.position`, escopo raiz/filhos, processamento posterior,
+  etapas ausentes e reingestao que preserva notas revisadas;
 - processing batches, runs normalizadas por etapa, execucao seletiva,
   barreira de matching por lote e resumo agregado de livros;
 - busca por raiz com breadcrumbs e Jobs agrupados por lote, exibindo somente
   as etapas efetivas;
-- protocolo Docling v2 com arvore `body/groups`, page range e limites;
+- protocolo Docling v3 com progresso real por pagina, arvore `body/groups`,
+  page range e limites;
   PDF.js 6.1.200 para outline/page labels e copia do original por streaming;
 - geracoes de conhecimento versionadas e projecao Obsidian hierarquica com ids
   de raiz, divisao e revisao no frontmatter;
@@ -197,8 +209,10 @@ Pendencias conhecidas:
   warning sobre a chave legada `python` na configuracao do usuario.
 - o corpus golden e os benchmarks completos dos formatos Docling continuam
   pendentes; o smoke offline automatizado cobre inicialmente um PDF com OCR;
-  o corpus amplo de metadados/estruturas EPUB e PDF reais variados tambem
-  permanece como hardening de qualidade da ingestao;
+  os sete papers, treze EPUBs e nove PDFs reais sob `samples/` cobrem o primeiro
+  ciclo local de calibracao estrutural; esse corpus, seus caches e baselines nao
+  sao versionados, e a ampliacao de editoras, layouts e idiomas permanece como
+  hardening de qualidade da ingestao;
 - o smoke real do Gemma 4 12B MLX instalado foi validado; os demais modelos do
   catalogo ainda exigem download e validacao individual;
 - smoke tests manuais da extensao carregada no Chrome e do plugin instalado no
@@ -301,7 +315,8 @@ Arquivos principais:
 - `src/renderer/components/LibraryView.tsx`: biblioteca e detalhe completo de
   fontes.
 - `src/renderer/components/ImportView.tsx`: wizard adaptativo de fonte,
-  metadados, parent picker, enriquecimento, conteudo e duplicatas.
+  metadados, parent picker, enriquecimento, progresso da preparacao de arquivo,
+  conteudo e duplicatas.
 - `src/renderer/components/StructureReview.tsx`: preview, snap, nivel de corte
   e revisao dos sub-elementos detectados.
 - `src/renderer/components/ReviewQueueView.tsx`: fila de revisao das notas
@@ -438,7 +453,7 @@ Markdown, blocos e proveniencia estruturada quando disponivel.
 
 O pacote agora contem `ConversionRouter`, conversores nativos, Defuddle,
 extracao ZIP limitada, detectores EPUB/PDF/Markdown, PDF.js, normalizador,
-chunker e `DoclingClient` v2. O bridge Python,
+chunker e `DoclingClient` v3 com eventos de etapa/pagina. O bridge Python,
 o lock exato e a definicao de revisions ficam em
 `packages/conversion/sidecar/`; o bundle CPython/Docling e gerado por plataforma
 e nunca depende do Python do sistema.

@@ -205,25 +205,31 @@ async function runOfflineSmoke(runtimeRoot) {
       "image.save(os.environ['MEMORA_SMOKE_PDF'],'PDF')"
     ].join("; ");
     await run(python, ["-c", createPdf], { MEMORA_SMOKE_PDF: pdfPath, PYTHONNOUSERSITE: "1" });
-    const response = await requestJsonLine(python, [
+    const messages = await requestJsonLines(python, [
       join(root, "packages", "conversion", "sidecar", "docling_sidecar.py")
     ], {
-      protocolVersion: 1,
+      protocolVersion: 3,
       requestId: randomUUID(),
       command: "convert",
       inputPath: pdfPath,
       profile: "standard",
       options: { maxPages: 5 }
     }, minimalOfflineEnvironment(runtimeRoot));
-    if (!response.ok || response.result?.engine !== "docling" || response.result?.engineVersion !== definition.doclingVersion) {
+    const response = messages.find((message) => typeof message?.ok === "boolean");
+    const pageProgress = messages.find((message) =>
+      message?.type === "progress" && message?.stage === "processing_pages"
+      && message?.completedPages === 1 && message?.totalPages === 1
+    );
+    if (!response?.ok || response.result?.engine !== "docling" || response.result?.engineVersion !== definition.doclingVersion) {
       throw new Error("Offline Docling smoke conversion failed.");
     }
+    if (!pageProgress) throw new Error("Offline Docling smoke did not report page progress.");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
 }
 
-function requestJsonLine(executable, args, request, env) {
+function requestJsonLines(executable, args, request, env) {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(executable, args, { stdio: ["pipe", "pipe", "pipe"], env });
     let stdout = "";
@@ -241,8 +247,10 @@ function requestJsonLine(executable, args, request, env) {
         return;
       }
       try {
-        const line = stdout.split(/\r?\n/).find((candidate) => candidate.trim().startsWith("{"));
-        resolvePromise(JSON.parse(line ?? ""));
+        const messages = stdout.split(/\r?\n/)
+          .filter((candidate) => candidate.trim().startsWith("{"))
+          .map((line) => JSON.parse(line));
+        resolvePromise(messages);
       } catch (error) {
         rejectPromise(error);
       }

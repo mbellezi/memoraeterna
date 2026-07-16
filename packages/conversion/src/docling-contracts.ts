@@ -1,9 +1,11 @@
 import { z } from "zod";
 
-import { markdownConversionResultSchema } from "./types.js";
+import { conversionProgressSchema, markdownConversionResultSchema } from "./types.js";
+
+export const DOCLING_PROTOCOL_VERSION = 3 as const;
 
 export const doclingRequestSchema = z.object({
-  protocolVersion: z.literal(2),
+  protocolVersion: z.literal(DOCLING_PROTOCOL_VERSION),
   requestId: z.string().uuid(),
   command: z.literal("convert"),
   inputPath: z.string().min(1),
@@ -14,15 +16,21 @@ export const doclingRequestSchema = z.object({
   options: z.record(z.string(), z.unknown()).default({})
 }).strict();
 
+export const doclingProgressSchema = conversionProgressSchema.extend({
+  protocolVersion: z.literal(DOCLING_PROTOCOL_VERSION),
+  requestId: z.string().uuid(),
+  type: z.literal("progress")
+}).strict();
+
 export const doclingResponseSchema = z.discriminatedUnion("ok", [
   z.object({
-    protocolVersion: z.literal(2),
+    protocolVersion: z.literal(DOCLING_PROTOCOL_VERSION),
     requestId: z.string().uuid(),
     ok: z.literal(true),
     result: markdownConversionResultSchema
   }).strict(),
   z.object({
-    protocolVersion: z.literal(2),
+    protocolVersion: z.literal(DOCLING_PROTOCOL_VERSION),
     requestId: z.string().uuid(),
     ok: z.literal(false),
     error: z.object({
@@ -35,4 +43,5 @@ export const doclingResponseSchema = z.discriminatedUnion("ok", [
 ]);
 
 export type DoclingRequest = z.infer<typeof doclingRequestSchema>;
+export type DoclingProgress = z.infer<typeof doclingProgressSchema>;
 export type DoclingResponse = z.infer<typeof doclingResponseSchema>;

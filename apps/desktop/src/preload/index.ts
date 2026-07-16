@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AiProfileCreate,
@@ -43,6 +44,7 @@ import {
   databaseStatusSchema,
   ipcChannels,
   fileImportInputSchema,
+  fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
   fileMetadataExtractionResultSchema,
   metadataEnrichmentInputSchema,
@@ -157,12 +159,22 @@ const api: DesktopApi = {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionCreateManual, manualIngestionInputSchema.parse(input));
       return ingestionResultSchema.parse(result);
     },
-    async extractFileMetadata(input: FileMetadataExtractionInput) {
-      const result = await ipcRenderer.invoke(
-        ipcChannels.ingestionExtractFileMetadata,
-        fileMetadataExtractionInputSchema.parse(input)
-      );
-      return result === null ? null : fileMetadataExtractionResultSchema.parse(result);
+    async extractFileMetadata(input: FileMetadataExtractionInput, onProgress) {
+      const requestId = input.requestId ?? randomUUID();
+      const payload = fileMetadataExtractionInputSchema.parse({ ...input, requestId });
+      const handler = (_event: Electron.IpcRendererEvent, progressPayload: unknown) => {
+        const progress = fileImportProgressSchema.safeParse(progressPayload);
+        if (progress.success && progress.data.requestId === requestId) {
+          onProgress?.(progress.data);
+        }
+      };
+      if (onProgress) ipcRenderer.on(ipcChannels.ingestionFileProgress, handler);
+      try {
+        const result = await ipcRenderer.invoke(ipcChannels.ingestionExtractFileMetadata, payload);
+        return result === null ? null : fileMetadataExtractionResultSchema.parse(result);
+      } finally {
+        if (onProgress) ipcRenderer.removeListener(ipcChannels.ingestionFileProgress, handler);
+      }
     },
     async enrichMetadata(input: MetadataEnrichmentInput) {
       return metadataEnrichmentResultSchema.parse(await ipcRenderer.invoke(

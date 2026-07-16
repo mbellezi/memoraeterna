@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   BookOpen, Check, ChevronLeft, ChevronRight, FileText, FileUp, Film, Globe2,
-  LibraryBig, NotebookPen, Search, Sparkles, StickyNote, Upload, X
+  Clock3, LibraryBig, LoaderCircle, NotebookPen, Search, Sparkles, StickyNote,
+  Upload, X
 } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import {
@@ -16,7 +17,7 @@ import {
 
 import type {
   DocumentStructureView, DuplicateCandidate, DuplicatePolicy, EnrichmentCandidate,
-  FileMetadataExtractionResult, SourceSuggestion
+  FileImportProgress, FileMetadataExtractionResult, SourceSuggestion
 } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
@@ -48,6 +49,18 @@ const compatibleParents: Partial<Record<SourceItemType, SourceItemType[]>> = {
   StandaloneArticle: ["PeriodicalIssue"]
 };
 
+const fileProgressStageKeys = {
+  selecting_file: "import.progress.stages.selectingFile",
+  inspecting_file: "import.progress.stages.inspectingFile",
+  loading_engine: "import.progress.stages.loadingEngine",
+  converting_document: "import.progress.stages.convertingDocument",
+  processing_pages: "import.progress.stages.processingPages",
+  serializing: "import.progress.stages.serializing",
+  extracting_metadata: "import.progress.stages.extractingMetadata",
+  storing_cover: "import.progress.stages.storingCover",
+  completed: "import.progress.stages.completed"
+} satisfies Record<FileImportProgress["stage"], MessageKey>;
+
 export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Translator; metadataEnrichmentEnabled?: boolean }) {
   const [step, setStep] = useState(0);
   const [sourceType, setSourceType] = useState<SourceItemType>("PersonalNote");
@@ -66,6 +79,9 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
   const [status, setStatus] = useState<MessageKey>("shell.states.ready");
   const [validationError, setValidationError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fileProgress, setFileProgress] = useState<FileImportProgress | null>(null);
+  const [progressStartedAt, setProgressStartedAt] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const descriptor = useMemo(() => buildDescriptor(sourceType, values, coverAssetId, fieldProvenance), [coverAssetId, fieldProvenance, sourceType, values]);
 
@@ -101,6 +117,16 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     }).then(setDuplicate).catch(() => setDuplicate(null));
   }, [content, descriptor, file, origin, step]);
 
+  useEffect(() => {
+    if (!busy || progressStartedAt === null) return;
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - progressStartedAt) / 1_000)));
+    };
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1_000);
+    return () => window.clearInterval(timer);
+  }, [busy, progressStartedAt]);
+
   function chooseType(type: SourceItemType) {
     setSourceType(type);
     setValues(initialValues(type));
@@ -109,13 +135,21 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     setFile(null);
     setCoverAssetId(null);
     setValidationError("");
+    setFileProgress(null);
   }
 
   async function chooseFile() {
+    const requestId = window.crypto.randomUUID();
+    setFileProgress({ requestId, stage: "selecting_file", progress: 0.01 });
+    setProgressStartedAt(Date.now());
+    setElapsedSeconds(0);
     setBusy(true);
     setStatus("shell.states.loading");
     try {
-      const extracted = await window.app.ingestion.extractFileMetadata({ sourceType });
+      const extracted = await window.app.ingestion.extractFileMetadata(
+        { sourceType, requestId },
+        setFileProgress
+      );
       if (!extracted) {
         setStatus("import.status.canceled");
         return;
@@ -131,6 +165,8 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
       setStatus(errorMessageKey(error));
     } finally {
       setBusy(false);
+      setFileProgress(null);
+      setProgressStartedAt(null);
     }
   }
 
@@ -225,6 +261,8 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     setCoverAssetId(null);
     setDuplicate(null);
     setCandidates([]);
+    setFileProgress(null);
+    setProgressStartedAt(null);
   }
 
   async function saveStructure(divisions: Parameters<typeof window.app.ingestion.saveStructure>[0]["divisions"]) {
@@ -255,6 +293,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
 
   return <section className="grid gap-5">
     <WizardSteps active={step} t={t} />
+    {busy && fileProgress ? <FileImportProgressCard progress={fileProgress} elapsedSeconds={elapsedSeconds} t={t} /> : null}
     {step === 0 ? <SourceTypeStep t={t} value={sourceType} search={sourceSearch} onSearch={setSourceSearch} onChoose={chooseType} /> : null}
     {step === 1 ? <OriginStep t={t} value={origin} onChange={setOrigin} /> : null}
     {step === 2 ? <section className="grid gap-5">
@@ -274,6 +313,76 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
       </div>
     </footer>
   </section>;
+}
+
+export function FileImportProgressCard({
+  progress,
+  elapsedSeconds,
+  t
+}: {
+  progress: FileImportProgress;
+  elapsedSeconds: number;
+  t: Translator;
+}) {
+  const percent = Math.round(progress.progress * 100);
+  const pageStatus = progress.totalPages !== undefined
+    ? progress.completedPages !== undefined
+      ? t("import.progress.pagesProcessed", {
+          values: { completed: progress.completedPages, total: progress.totalPages }
+        })
+      : t("import.progress.pagesFound", { values: { total: progress.totalPages } })
+    : null;
+  const complete = progress.stage === "completed";
+  return <section
+    aria-label={t("import.progress.title")}
+    aria-live="polite"
+    className="relative overflow-hidden rounded-2xl border border-cyan-300 bg-gradient-to-br from-cyan-50 via-white to-violet-50 p-5 shadow-sm dark:border-cyan-900 dark:from-cyan-950/40 dark:via-slate-950 dark:to-violet-950/30"
+  >
+    <div className="absolute inset-x-0 top-0 h-1 animate-pulse bg-gradient-to-r from-cyan-500 via-violet-500 to-cyan-500" />
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+          {complete ? <Check className="h-5 w-5" aria-hidden="true" /> : <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />}
+        </span>
+        <div className="min-w-0">
+          <h2 className="font-semibold text-slate-950 dark:text-white">{t("import.progress.title")}</h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t(fileProgressStageKeys[progress.stage])}</p>
+        </div>
+      </div>
+      <span className="shrink-0 font-mono text-lg font-bold tabular-nums text-cyan-800 dark:text-cyan-200">
+        {t("import.progress.percent", { values: { percent } })}
+      </span>
+    </div>
+    <div
+      role="progressbar"
+      aria-label={t(fileProgressStageKeys[progress.stage])}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={percent}
+      className="relative mt-5 h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+    >
+      <div
+        className="relative h-full min-w-1 overflow-hidden rounded-full bg-gradient-to-r from-cyan-600 via-sky-500 to-violet-500 transition-[width] duration-500 ease-out"
+        style={{ width: `${percent}%` }}
+      >
+        {!complete ? <span className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/45 to-transparent" /> : null}
+      </div>
+    </div>
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
+      <span>{pageStatus ?? t("import.progress.keepOpen")}</span>
+      <span className="flex items-center gap-1.5 font-medium tabular-nums">
+        <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+        {t("import.progress.elapsed", { values: { time: formatElapsedTime(elapsedSeconds) } })}
+      </span>
+    </div>
+    {pageStatus ? <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{t("import.progress.keepOpen")}</p> : null}
+  </section>;
+}
+
+function formatElapsedTime(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.max(0, totalSeconds % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function SourceTypeStep({ t, value, search, onSearch, onChoose }: { t: Translator; value: SourceItemType; search: string; onSearch: (value: string) => void; onChoose: (value: SourceItemType) => void }) {

@@ -262,6 +262,52 @@ Sinais especificos:
 - **Paper:** abstract, secoes numeradas, conclusao, acknowledgements,
   referencias e apendices; titulos de figuras/tabelas nao devem virar secoes.
 
+Calibracao implementada em 2026-07-16 para papers sem bookmarks:
+
+- o Markdown canonico exportado pelo Docling passou a ser a fonte dos limites
+  de cada secao; offsets dos blocos estruturados nao sao mais usados como
+  fronteira porque podem perder alinhamento em documentos longos;
+- blocos Docling continuam sendo cruzados por titulo para fornecer pagina,
+  bounding box, indentacao e evidencia explicavel;
+- a hierarquia combina numeracao (`1`, `1.1`, `1.1.1`), niveis Markdown e
+  indentacao conservadora; todas as secoes aceitas de um paper podem ser
+  materializadas como `DocumentSection` sem perder o texto das subpartes;
+- o filtro remove titulo/autoria repetidos, sumario, rotulos editoriais,
+  captions, headings dentro de figuras, marcadores de codigo e boilerplate do
+  publicador;
+- o lexico cobre inicialmente ingles, portugues, espanhol, frances, italiano e
+  alemao para abstract, introducao, metodos, resultados, discussao, conclusao,
+  declaracoes, referencias e apendices;
+- os sete PDFs de `samples/articles` foram usados na calibracao: seis acionam
+  este fallback sem bookmarks e passaram a produzir intervalos Markdown nao
+  vazios; o PDF com outline continua usando a navegacao nativa prioritaria.
+
+Calibracao implementada em 2026-07-16 para livros EPUB e PDF:
+
+- em EPUB, `nav.xhtml`/NCX permanece como autoridade para ordem e hierarquia,
+  mas cada entrada e alinhada ao Markdown canonico convertido para definir
+  intervalos reais; o alinhamento evita ocorrencias duplicadas no sumario e
+  tambem funciona quando o conversor nao preserva headings Markdown;
+- em PDF com bookmarks, outline e page labels permanecem prioritarios e os
+  destinos sao cruzados com headings do Markdown. Em PDF sem bookmarks, partes,
+  capitulos e apendices sao detectados diretamente no Markdown canonico, usando
+  blocos Docling somente como evidencia de pagina e layout;
+- em papers com outline hierarquico, a raiz e secoes que apenas agrupam filhos
+  ficam navegaveis, enquanto as secoes-folha sao processaveis; isso preserva
+  todas as subpartes sem materializar intervalos pai/filho sobrepostos;
+- o fallback distingue sumario impresso do corpo, combina marcadores genericos
+  de capitulo com o subtitulo seguinte e recupera lacunas numeradas quando o
+  OCR deixou de classificar um titulo como heading;
+- papeis de livro cobrem marcadores em portugues, ingles, espanhol, frances,
+  italiano e alemao, alem de ordinais romanos e marcadores chineses observados
+  no corpus; heuristicas especializadas reduzem sessoes internas a capitulos
+  tematicos em livros cujo layout repetiria dezenas de falsos capitulos;
+- o corpus local ignorado pelo Git contem sete papers, treze EPUBs e nove PDFs
+  de livros. Um PDF adicional foi excluido temporariamente; o PDF integralmente
+  escaneado de Ouspensky e exercitado apenas nas primeiras 100 paginas. O runner
+  guarda conversoes por lote e snapshots para comparar novos exemplos sem
+  reenviar esse corpus ao repositorio.
+
 ### 4.4 DoclingDocument e blocos
 
 O sidecar atual preserva `rawStructuredResult`, mas `_block_payload()` achata
@@ -822,7 +868,7 @@ Implementar:
 - copia/hash por streaming;
 - analisador EPUB estrutural;
 - PDF.js para outline/page labels;
-- protocolo Docling v2 com arvore e page range;
+- protocolo Docling v3 com progresso real por pagina, arvore e page range;
 - processamento PDF em intervalos com checkpoints;
 - `document_structures` e `document_divisions`;
 - detectores e scoring comum.

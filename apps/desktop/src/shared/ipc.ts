@@ -30,6 +30,7 @@ export const ipcChannels = {
   libraryReset: "app:library:reset",
   ingestionCreateManual: "app:ingestion:create-manual",
   ingestionExtractFileMetadata: "app:ingestion:extract-file-metadata",
+  ingestionFileProgress: "app:ingestion:file-progress",
   ingestionEnrichMetadata: "app:ingestion:enrich-metadata",
   ingestionApplyEnrichmentCover: "app:ingestion:apply-enrichment-cover",
   ingestionFindDuplicate: "app:ingestion:find-duplicate",
@@ -223,8 +224,38 @@ export const duplicateCandidateSchema = z.object({
 }).strict();
 
 export const fileMetadataExtractionInputSchema = z.object({
-  sourceType: SourceItemTypeSchema.default("GenericDocument")
+  sourceType: SourceItemTypeSchema.default("GenericDocument"),
+  requestId: z.string().uuid().optional()
 }).strict();
+
+export const fileImportProgressStageSchema = z.enum([
+  "selecting_file",
+  "inspecting_file",
+  "loading_engine",
+  "converting_document",
+  "processing_pages",
+  "serializing",
+  "extracting_metadata",
+  "storing_cover",
+  "completed"
+]);
+
+export const fileImportProgressSchema = z.object({
+  requestId: z.string().uuid(),
+  stage: fileImportProgressStageSchema,
+  progress: z.number().min(0).max(1),
+  completedPages: z.number().int().nonnegative().optional(),
+  totalPages: z.number().int().positive().optional()
+}).strict().superRefine((event, context) => {
+  if (event.completedPages !== undefined && event.totalPages !== undefined
+      && event.completedPages > event.totalPages) {
+    context.addIssue({
+      code: "custom",
+      message: "Completed pages cannot exceed total pages.",
+      path: ["completedPages"]
+    });
+  }
+});
 
 export const fileMetadataExtractionResultSchema = z.object({
   fileToken: z.string().uuid(),
@@ -386,6 +417,7 @@ export const sourceDeletionResultSchema = z.object({
 export const librarySourceSchema = z.object({
   id: z.string().uuid(),
   parentSourceItemId: z.string().uuid().nullable(),
+  structurePosition: z.number().int().nonnegative().nullable(),
   childCount: z.number().int().nonnegative(),
   hasDocument: z.boolean(),
   type: SourceItemTypeSchema,
@@ -758,6 +790,7 @@ export type DuplicateCheckInput = z.infer<typeof duplicateCheckInputSchema>;
 export type DuplicateCandidate = z.infer<typeof duplicateCandidateSchema>;
 export type FileMetadataExtractionInput = z.infer<typeof fileMetadataExtractionInputSchema>;
 export type FileMetadataExtractionResult = z.infer<typeof fileMetadataExtractionResultSchema>;
+export type FileImportProgress = z.infer<typeof fileImportProgressSchema>;
 export type MetadataEnrichmentInput = z.infer<typeof metadataEnrichmentInputSchema>;
 export type EnrichmentCandidate = z.infer<typeof EnrichmentCandidateSchema>;
 export type EnrichmentCoverResult = z.infer<typeof enrichmentCoverResultSchema>;
@@ -845,7 +878,10 @@ export interface DesktopApi {
   };
   ingestion: {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
-    extractFileMetadata: (input: FileMetadataExtractionInput) => Promise<FileMetadataExtractionResult | null>;
+    extractFileMetadata: (
+      input: FileMetadataExtractionInput,
+      onProgress?: (progress: FileImportProgress) => void
+    ) => Promise<FileMetadataExtractionResult | null>;
     enrichMetadata: (input: MetadataEnrichmentInput) => Promise<EnrichmentCandidate[]>;
     applyEnrichmentCover: (coverUrl: string) => Promise<EnrichmentCoverResult>;
     findDuplicate: (input: DuplicateCheckInput) => Promise<DuplicateCandidate | null>;

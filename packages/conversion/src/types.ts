@@ -3,6 +3,32 @@ import { z } from "zod";
 export const conversionProfileSchema = z.enum(["standard", "ocr"]);
 export type ConversionProfile = z.infer<typeof conversionProfileSchema>;
 
+export const conversionProgressStageSchema = z.enum([
+  "loading_engine",
+  "converting_document",
+  "processing_pages",
+  "serializing"
+]);
+
+export const conversionProgressSchema = z.object({
+  stage: conversionProgressStageSchema,
+  progress: z.number().min(0).max(1),
+  completedPages: z.number().int().nonnegative().optional(),
+  totalPages: z.number().int().positive().optional()
+}).strict().superRefine((event, context) => {
+  if (event.completedPages !== undefined && event.totalPages !== undefined
+      && event.completedPages > event.totalPages) {
+    context.addIssue({
+      code: "custom",
+      message: "Completed pages cannot exceed total pages.",
+      path: ["completedPages"]
+    });
+  }
+});
+
+export type ConversionProgress = z.infer<typeof conversionProgressSchema>;
+export type ConversionProgressListener = (event: ConversionProgress) => void;
+
 export const boundingBoxSchema = z.object({
   left: z.number(),
   top: z.number(),
@@ -81,5 +107,9 @@ export interface ConversionInput {
 }
 
 export interface Converter {
-  convert(input: ConversionInput, signal?: AbortSignal): Promise<MarkdownConversionResult>;
+  convert(
+    input: ConversionInput,
+    signal?: AbortSignal,
+    onProgress?: ConversionProgressListener
+  ): Promise<MarkdownConversionResult>;
 }

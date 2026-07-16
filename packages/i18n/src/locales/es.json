@@ -197,6 +197,12 @@
     "validation": { "chooseFile": "Elige un archivo antes de continuar.", "contentRequired": "Este tipo de fuente requiere contenido." },
     "actions": { "queue": "Poner importacion en cola", "chooseFile": "Elegir archivo", "changeFile": "Cambiar archivo", "back": "Volver", "continue": "Continuar", "import": "Importar fuente" },
     "file": { "title": "Elegir el archivo original", "description": "El original se conserva. En libros, revistas y articulos, revisa la estructura antes de cualquier procesamiento con IA." },
+    "progress": {
+      "title": "Preparando el archivo",
+      "stages": { "selectingFile": "Seleccionando el archivo local…", "inspectingFile": "Inspeccionando el archivo…", "loadingEngine": "Cargando el motor de conversión local…", "convertingDocument": "Convirtiendo el documento…", "processingPages": "Procesando páginas…", "serializing": "Organizando el contenido convertido…", "extractingMetadata": "Extrayendo metadatos…", "storingCover": "Guardando la portada incrustada…", "completed": "Preparación del archivo completada" },
+      "percent": "{percent}%", "pagesProcessed": "{completed} de {total} páginas procesadas", "pagesFound": "{total} páginas encontradas", "elapsed": "Tiempo transcurrido: {time}",
+      "keepOpen": "Mantén esta pantalla abierta; las páginas escaneadas pueden tardar más."
+    },
     "status": { "queued": "Importacion en cola.", "canceled": "Seleccion de archivo cancelada.", "saved": "Fuente guardada sin procesamiento en segundo plano.", "metadataExtracted": "Metadatos extraidos localmente. Revisalos antes de continuar.", "duplicateHandled": "Politica de duplicados aplicada.", "reviewStructure": "Estructura detectada. Revisala antes de continuar.", "draftSaved": "Borrador de estructura guardado.", "queuedChildren": "Estructura confirmada y elementos seleccionados en cola.", "savedChildren": "Estructura confirmada y elementos seleccionados guardados." }
   },
   "processing": {

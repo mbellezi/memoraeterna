@@ -21,7 +21,9 @@ import {
   descriptorDraftFromWebMetadata,
   extractFileMetadata as extractLocalFileMetadata,
   normalizeMarkdown,
+  readPdfPageCount,
   sha256,
+  type ConversionProgress,
   type MarkdownConversionResult
 } from "@app/conversion";
 import {
@@ -40,6 +42,7 @@ import type {
 } from "@app/integration-contracts";
 import type {
   FileImportInput,
+  FileImportProgress,
   ContainerSourceInput,
   DuplicateCandidate,
   DuplicateCheckInput,
@@ -73,6 +76,9 @@ interface PreparedFileImport {
   draft: SourceDescriptorDraft;
   preparedAt: number;
 }
+
+type FileImportProgressUpdate = Omit<FileImportProgress, "requestId">;
+type FileImportProgressListener = (progress: FileImportProgressUpdate) => void;
 
 export class IngestionService {
   private readonly assetStorage = new AssetStorageService();
@@ -167,13 +173,43 @@ export class IngestionService {
     return duplicate ? { id: duplicate.id, title: duplicate.title, type: duplicate.type } : null;
   }
 
-  public async prepareFileMetadata(path: string, sourceType: SourceItemType) {
+  public async prepareFileMetadata(
+    path: string,
+    sourceType: SourceItemType,
+    onProgress?: FileImportProgressListener
+  ) {
+    reportFileImportProgress(onProgress, { stage: "inspecting_file", progress: 0.02 });
     const file = await stat(path);
     assertImportSize(file.size, readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024));
     const fileName = basename(path);
-    const data = extname(fileName).toLowerCase() === ".pdf" ? new Uint8Array() : await readFile(path);
+    const extension = extname(fileName).toLowerCase();
+    const isPdf = extension === ".pdf";
+    const totalPages = isPdf ? await readPdfPageCount(path).catch(() => undefined) : undefined;
+    reportFileImportProgress(onProgress, {
+      stage: "inspecting_file",
+      progress: 0.06,
+      ...(totalPages ? { totalPages } : {})
+    });
+    const data = isPdf ? new Uint8Array() : await readFile(path);
     const mimeType = detectMimeType(fileName, data);
-    const conversion = await this.router.convert({ data, sourcePath: path, fileName, mimeType, profile: "standard" });
+    reportFileImportProgress(onProgress, {
+      stage: "loading_engine",
+      progress: 0.08,
+      ...(totalPages ? { totalPages } : {})
+    });
+    const conversion = await this.router.convert(
+      { data, sourcePath: path, fileName, mimeType, profile: "standard" },
+      undefined,
+      (progress) => reportFileImportProgress(
+        onProgress,
+        mapConversionProgress(progress, totalPages)
+      )
+    );
+    reportFileImportProgress(onProgress, {
+      stage: "extracting_metadata",
+      progress: 0.9,
+      ...(totalPages ? { completedPages: totalPages, totalPages } : {})
+    });
     let draft = await extractLocalFileMetadata({
       sourceType,
       data,
@@ -183,6 +219,11 @@ export class IngestionService {
       conversion
     });
     if (draft.coverData) {
+      reportFileImportProgress(onProgress, {
+        stage: "storing_cover",
+        progress: 0.96,
+        ...(totalPages ? { completedPages: totalPages, totalPages } : {})
+      });
       const stored = await this.assetStorage.store({
         data: draft.coverData.data,
         originalFileName: draft.coverData.fileName,
@@ -212,6 +253,11 @@ export class IngestionService {
     this.removeExpiredPreparedFiles();
     const fileToken = randomUUID();
     this.preparedFiles.set(fileToken, { path, fileName, mimeType, data, conversion, draft, preparedAt: Date.now() });
+    reportFileImportProgress(onProgress, {
+      stage: "completed",
+      progress: 1,
+      ...(totalPages ? { completedPages: totalPages, totalPages } : {})
+    });
     return { fileToken, fileName, mimeType, draft };
   }
 
@@ -827,6 +873,30 @@ function resolveDoclingRuntime(options: IngestionServiceOptions) {
       NO_PROXY: ""
     }
   };
+}
+
+function mapConversionProgress(
+  event: ConversionProgress,
+  fallbackTotalPages?: number
+): FileImportProgressUpdate {
+  const totalPages = event.totalPages ?? fallbackTotalPages;
+  return {
+    stage: event.stage,
+    progress: Math.min(0.88, 0.08 + (event.progress * 0.8)),
+    ...(event.completedPages !== undefined ? { completedPages: event.completedPages } : {}),
+    ...(totalPages !== undefined ? { totalPages } : {})
+  };
+}
+
+function reportFileImportProgress(
+  listener: FileImportProgressListener | undefined,
+  progress: FileImportProgressUpdate
+): void {
+  try {
+    listener?.(progress);
+  } catch {
+    // Progress reporting is best-effort and must never invalidate the import.
+  }
 }
 
 export function assertImportSize(sizeBytes: number, maxBytes: number): void {

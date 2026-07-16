@@ -9,6 +9,7 @@ import { createJobRepository } from "./jobRepository.js";
 import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
 import { createAiConfigRepository } from "./aiConfigRepository.js";
 import { createIngestionRunRepository } from "./ingestionRunRepository.js";
+import { createLibraryRepository } from "./libraryRepository.js";
 import type { Queryable } from "./types.js";
 
 class FakeQueryable implements Queryable {
@@ -76,6 +77,36 @@ describe("repositories", () => {
       "und",
       { capturedBy: "test" }
     ]);
+  });
+
+  it("exposes the latest materialized division position to the library", async () => {
+    const now = new Date("2026-07-16T10:00:00.000Z");
+    const db = new FakeQueryable([[
+      {
+        id: "source-1",
+        parentSourceItemId: "root-1",
+        structurePosition: 2,
+        childCount: 0,
+        hasDocument: true,
+        type: "DocumentSection",
+        title: "Third section",
+        subtitle: null,
+        sourceUri: null,
+        language: "en",
+        summary: null,
+        metadata: {},
+        processingStatus: "pending",
+        currentStage: "queued",
+        updatedAt: now
+      }
+    ]]);
+
+    const sources = await createLibraryRepository(db).listSources();
+
+    expect(sources[0]?.structurePosition).toBe(2);
+    expect(db.queries[0]?.text).toContain("division.child_source_item_id = source.id");
+    expect(db.queries[0]?.text).toContain("structure.status = 'materialized'");
+    expect(db.queries[0]?.text).toContain("order by structure.revision desc");
   });
 
   it("upserts settings by key", async () => {

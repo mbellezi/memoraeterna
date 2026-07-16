@@ -2,6 +2,7 @@
 
 - Status: aceito
 - Data: 2026-07-15
+- Atualizado: 2026-07-16
 - Escopo: desktop, dominio, conversao e persistencia
 
 ## Contexto
@@ -43,6 +44,20 @@ necessario manter o payload legado nem executar backfill de metadata existente.
    persistencia, mas sao atualizados juntos pela UI.
 9. Duplicatas sao verificadas por URI/hash e, em seguida, por tipo com titulo
    ou identificadores. O usuario escolhe manter, atualizar ou criar versao.
+10. A estrutura nativa da fonte e a autoridade de ordem e hierarquia quando
+    existir (`nav.xhtml`/NCX no EPUB e outline no PDF). Os intervalos de conteudo
+    sao alinhados ao Markdown canonico convertido; em PDFs sem outline, a
+    segmentacao tambem e derivada desse Markdown. Blocos Docling fornecem
+    evidencia de pagina/layout, mas seus offsets nao definem fronteiras.
+11. A calibracao com arquivos reais usa um runner e snapshots locais sob
+    `samples/`, ignorados pelo Git. Isso permite ampliar o corpus sem versionar
+    obras potencialmente protegidas nem tornar a suite comum dependente de OCR
+    demorado; os casos generalizaveis viram fixtures unitarias sinteticas.
+12. A preparacao inicial de arquivos publica progresso correlacionado e
+    validado em todas as fronteiras do sidecar ao renderer. Em PDFs, o valor e
+    derivado das paginas que saem do pipeline paralelo do Docling; o arquivo
+    nao e dividido em conversoes independentes. Formatos sem unidade de pagina
+    observavel publicam as etapas reais e progresso aproximado por etapa.
 
 ## Consequencias
 
@@ -56,6 +71,13 @@ necessario manter o payload legado nem executar backfill de metadata existente.
   indisponibilidade de rede degrada para preenchimento manual.
 - Metadados de criadores de sub-elementos ficam no descriptor do filho; o
   vinculo bibliografico herda obra/instancia e paginas do container.
+- A mesma arvore revisada alimenta materializacao e Library; a posicao
+  persistida de cada divisao precisa ser preservada na leitura dos filhos.
+- Alteracoes de heuristica podem ser comparadas contra o corpus local, enquanto
+  CI continua deterministico e independente dos arquivos de `samples/`.
+- O wizard permanece responsivo em conversoes longas e informa etapa, paginas
+  e tempo decorrido. Eventos de UI sao best-effort: falha no observador de
+  progresso nunca invalida uma conversao bem-sucedida.
 
 ## Alternativas rejeitadas
 

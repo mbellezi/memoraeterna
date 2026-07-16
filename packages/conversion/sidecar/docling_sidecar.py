@@ -10,11 +10,87 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from docling.document_converter import DocumentConverter
+from docling.datamodel.base_models import InputFormat
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.pipeline.standard_pdf_pipeline import StandardPdfPipeline
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
+
+ProgressReporter = Callable[[str, float, int | None, int | None], None]
+_progress_reporter: ProgressReporter | None = None
+
+
+def _report_progress(
+    stage: str,
+    progress: float,
+    completed_pages: int | None = None,
+    total_pages: int | None = None,
+) -> None:
+    if _progress_reporter is not None:
+        _progress_reporter(stage, progress, completed_pages, total_pages)
+
+
+class _ProgressOutputQueue:
+    """Observe completed pages while preserving Docling's original output queue."""
+
+    def __init__(self, delegate: Any, total_pages: int) -> None:
+        self._delegate = delegate
+        self._total_pages = total_pages
+        self._completed_page_numbers: set[int] = set()
+
+    def get_batch(self, size: int, timeout: float | None = None) -> list[Any]:
+        batch = self._delegate.get_batch(size, timeout)
+        for item in batch:
+            page_no = getattr(item, "page_no", None)
+            if isinstance(page_no, int) and page_no > 0:
+                self._completed_page_numbers.add(page_no)
+        if batch:
+            completed = min(len(self._completed_page_numbers), self._total_pages)
+            fraction = completed / self._total_pages
+            _report_progress(
+                "processing_pages",
+                0.1 + (0.8 * fraction),
+                completed,
+                self._total_pages,
+            )
+        return batch
+
+    def close(self) -> None:
+        self._delegate.close()
+
+    @property
+    def closed(self) -> bool:
+        return bool(self._delegate.closed)
+
+
+class ProgressPdfPipeline(StandardPdfPipeline):
+    """Standard threaded PDF pipeline with non-invasive page completion events."""
+
+    def __init__(self, pipeline_options: Any) -> None:
+        self._progress_total_pages = 0
+        super().__init__(pipeline_options)
+
+    def _build_document(self, conv_res: Any) -> Any:
+        self._progress_total_pages = len(self._get_expected_page_nos(conv_res))
+        if self._progress_total_pages > 0:
+            _report_progress(
+                "processing_pages",
+                0.1,
+                0,
+                self._progress_total_pages,
+            )
+        return super()._build_document(conv_res)
+
+    def _create_run_ctx(self) -> Any:
+        context = super()._create_run_ctx()
+        if self._progress_total_pages > 0:
+            context.output_queue = _ProgressOutputQueue(
+                context.output_queue,
+                self._progress_total_pages,
+            )
+        return context
 
 
 def _block_payload(document_dict: dict[str, Any], markdown: str) -> list[dict[str, Any]]:
@@ -83,7 +159,13 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
     if isinstance(max_input_bytes, int) and source.stat().st_size > max_input_bytes:
         raise ValueError("input_size_limit_exceeded")
 
-    converter = DocumentConverter()
+    _report_progress("loading_engine", 0.02)
+    converter = DocumentConverter(
+        format_options={
+            InputFormat.PDF: PdfFormatOption(pipeline_cls=ProgressPdfPipeline)
+        }
+    )
+    _report_progress("loading_engine", 0.07)
     options = request.get("options", {})
     max_pages = options.get("maxPages") if isinstance(options, dict) else None
     page_start = request.get("pageStart")
@@ -93,11 +175,14 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
         if page_start > page_end:
             raise ValueError("invalid_page_range")
         page_range = (page_start, page_end)
+    if source.suffix.lower() != ".pdf":
+        _report_progress("converting_document", 0.12)
     conversion = converter.convert(
         source,
         **({"max_num_pages": max_pages} if isinstance(max_pages, int) and max_pages > 0 else {}),
         **({"page_range": page_range} if page_range else {}),
     )
+    _report_progress("serializing", 0.92)
     document = conversion.document
     markdown = document.export_to_markdown().strip()
     if markdown:
@@ -147,15 +232,39 @@ def convert(request: dict[str, Any]) -> dict[str, Any]:
     }
     if confidence is not None:
         result["quality"]["confidence"] = confidence
+    _report_progress("serializing", 0.99)
     return result
 
 
 def main() -> int:
+    global _progress_reporter
     line = sys.stdin.readline()
     if not line:
         return 2
     request: dict[str, Any] = json.loads(line)
     request_id = request.get("requestId", "")
+
+    def emit_progress(
+        stage: str,
+        progress: float,
+        completed_pages: int | None,
+        total_pages: int | None,
+    ) -> None:
+        event: dict[str, Any] = {
+            "protocolVersion": PROTOCOL_VERSION,
+            "requestId": request_id,
+            "type": "progress",
+            "stage": stage,
+            "progress": max(0.0, min(1.0, progress)),
+        }
+        if completed_pages is not None:
+            event["completedPages"] = completed_pages
+        if total_pages is not None:
+            event["totalPages"] = total_pages
+        sys.stdout.write(json.dumps(event, separators=(",", ":")) + "\n")
+        sys.stdout.flush()
+
+    _progress_reporter = emit_progress
     try:
         if request.get("protocolVersion") != PROTOCOL_VERSION or request.get("command") != "convert":
             raise ValueError("unsupported_protocol")
@@ -179,6 +288,7 @@ def main() -> int:
         }
     sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")
     sys.stdout.flush()
+    _progress_reporter = None
     return 0
 
 

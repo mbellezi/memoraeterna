@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { AiSettingsView, resolveProviderTestStatus } from "./AiSettingsView";
-import { ImportView } from "./ImportView";
+import { FileImportProgressCard, ImportView } from "./ImportView";
 import { JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
 import {
@@ -11,10 +11,11 @@ import {
   defaultAppSettings,
   defaultStorageSettings,
   jobRecordSchema,
+  librarySourceSchema,
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchView } from "./SearchView";
-import { LibraryView } from "./LibraryView";
+import { LibraryView, orderHierarchically } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
 import { LocalModelsView } from "./LocalModelsView";
 import { BackupView } from "./BackupView";
@@ -29,6 +30,24 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Personal note");
     expect(html).toContain("Metadata");
     expect(html).toContain("Continue");
+  });
+
+  it("renders real file page progress with elapsed time", () => {
+    const html = renderToString(<FileImportProgressCard
+      progress={{
+        requestId: "00000000-0000-4000-8000-000000000001",
+        stage: "processing_pages",
+        progress: 0.37,
+        completedPages: 37,
+        totalPages: 100
+      }}
+      elapsedSeconds={83}
+      t={t}
+    />);
+    expect(html).toContain("37 of 100 pages processed");
+    expect(html).toContain("37%");
+    expect(html).toContain("01:23");
+    expect(html).toContain('role="progressbar"');
   });
 
   it("renders search, jobs and AI settings empty states", () => {
@@ -130,6 +149,47 @@ describe("phase 2 renderer views", () => {
   it("renders the phase 3 library and atomic note review empty states", () => {
     expect(renderToString(<LibraryView t={t} />)).toContain("Filter by source type");
     expect(renderToString(<ReviewQueueView t={t} />)).toContain("Loading");
+  });
+
+  it("orders parsed sub-elements by their structural position", () => {
+    const updatedAt = new Date(0).toISOString();
+    const source = (input: {
+      id: string;
+      title: string;
+      parentSourceItemId: string | null;
+      structurePosition: number | null;
+    }) => librarySourceSchema.parse({
+      ...input,
+      childCount: 0,
+      hasDocument: true,
+      type: input.parentSourceItemId ? "DocumentSection" : "AcademicPaper",
+      subtitle: null,
+      sourceUri: null,
+      language: "en",
+      summary: null,
+      metadata: {},
+      processingStatus: "pending",
+      currentStage: "queued",
+      updatedAt
+    });
+    const rootId = "00000000-0000-4000-8000-000000000001";
+    const firstId = "00000000-0000-4000-8000-000000000002";
+    const ordered = orderHierarchically([
+      source({ id: rootId, title: "Paper", parentSourceItemId: null, structurePosition: null }),
+      source({ id: "00000000-0000-4000-8000-000000000004", title: "Third", parentSourceItemId: rootId, structurePosition: 4 }),
+      source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
+      source({ id: "00000000-0000-4000-8000-000000000005", title: "First detail", parentSourceItemId: firstId, structurePosition: 1 }),
+      source({ id: "00000000-0000-4000-8000-000000000003", title: "Second", parentSourceItemId: rootId, structurePosition: 2 })
+    ]);
+
+    expect(ordered.map(({ source: item }) => item.title)).toEqual([
+      "Paper", "First", "First detail", "Second", "Third"
+    ]);
+    expect(orderHierarchically([
+      source({ id: "00000000-0000-4000-8000-000000000004", title: "Third", parentSourceItemId: rootId, structurePosition: 4 }),
+      source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
+      source({ id: "00000000-0000-4000-8000-000000000003", title: "Second", parentSourceItemId: rootId, structurePosition: 2 })
+    ]).map(({ source: item }) => item.title)).toEqual(["First", "Second", "Third"]);
   });
 
   it("renders phase 5 local model and backup controls", () => {

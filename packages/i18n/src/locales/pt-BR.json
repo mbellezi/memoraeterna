@@ -219,6 +219,12 @@
     "validation": { "chooseFile": "Escolha um arquivo antes de continuar.", "contentRequired": "Este tipo de fonte exige conteudo." },
     "actions": { "queue": "Enfileirar importacao", "chooseFile": "Escolher arquivo", "changeFile": "Trocar arquivo", "back": "Voltar", "continue": "Continuar", "import": "Importar fonte" },
     "file": { "title": "Escolha o arquivo original", "description": "O original sera preservado. Em livros, periodicos e artigos, voce revisa a estrutura detectada antes de qualquer processamento com IA." },
+    "progress": {
+      "title": "Preparando seu arquivo",
+      "stages": { "selectingFile": "Selecionando o arquivo local…", "inspectingFile": "Verificando o arquivo…", "loadingEngine": "Carregando o mecanismo local de conversao…", "convertingDocument": "Convertendo o documento…", "processingPages": "Processando paginas…", "serializing": "Organizando o conteudo convertido…", "extractingMetadata": "Extraindo metadados…", "storingCover": "Salvando a capa incorporada…", "completed": "Preparacao do arquivo concluida" },
+      "percent": "{percent}%", "pagesProcessed": "{completed} de {total} paginas processadas", "pagesFound": "{total} paginas encontradas", "elapsed": "Tempo decorrido: {time}",
+      "keepOpen": "Mantenha esta tela aberta; paginas digitalizadas podem levar mais tempo."
+    },
     "status": { "queued": "Importacao enfileirada.", "canceled": "Selecao de arquivo cancelada.", "saved": "Fonte salva sem processamento em segundo plano.", "metadataExtracted": "Metadados extraidos localmente. Revise-os antes de continuar.", "duplicateHandled": "Politica de duplicata aplicada.", "reviewStructure": "Estrutura detectada. Revise-a antes de continuar.", "draftSaved": "Rascunho da estrutura salvo.", "queuedChildren": "Estrutura confirmada e itens selecionados enfileirados.", "savedChildren": "Estrutura confirmada e itens selecionados salvos." }
   },
   "processing": {

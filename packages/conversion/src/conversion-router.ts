@@ -11,7 +11,11 @@ import {
   convertXml
 } from "./native-converters.js";
 import type { DoclingClient } from "./docling-client.js";
-import type { ConversionInput, MarkdownConversionResult } from "./types.js";
+import type {
+  ConversionInput,
+  ConversionProgressListener,
+  MarkdownConversionResult
+} from "./types.js";
 import { convertZip } from "./zip-converter.js";
 
 export interface ConversionRouterOptions {
@@ -36,7 +40,11 @@ function sniffExtension(input: ConversionInput): string {
 export class ConversionRouter {
   public constructor(private readonly options: ConversionRouterOptions = {}) {}
 
-  public async convert(input: ConversionInput, signal?: AbortSignal): Promise<MarkdownConversionResult> {
+  public async convert(
+    input: ConversionInput,
+    signal?: AbortSignal,
+    onProgress?: ConversionProgressListener
+  ): Promise<MarkdownConversionResult> {
     if (signal?.aborted) throw new DOMException("Conversion canceled.", "AbortError");
     const extension = sniffExtension(input);
     const mime = input.mimeType?.toLowerCase();
@@ -51,17 +59,26 @@ export class ConversionRouter {
     if (extension === ".ipynb" || mime === "application/x-ipynb+json") return convertNotebook(input);
     if ([".html", ".htm"].includes(extension) || mime === "text/html") return convertLocalHtml(input);
     if ([".txt", ""].includes(extension) || mime?.startsWith("text/")) return convertPlainText(input);
-    if (complexExtensions.has(extension)) return this.convertWithDocling(input, signal);
+    if (complexExtensions.has(extension)) return this.convertWithDocling(input, signal, onProgress);
     throw new Error("errors.common.unsupportedFile");
   }
 
-  private async convertWithDocling(input: ConversionInput, signal?: AbortSignal): Promise<MarkdownConversionResult> {
+  private async convertWithDocling(
+    input: ConversionInput,
+    signal?: AbortSignal,
+    onProgress?: ConversionProgressListener
+  ): Promise<MarkdownConversionResult> {
     if (!this.options.doclingClient || !this.options.materializeForDocling) {
       throw new Error("errors.conversion.doclingUnavailable");
     }
     const materialized = await this.options.materializeForDocling(input);
     try {
-      return await this.options.doclingClient.convert(materialized.path, input.profile ?? "standard", signal);
+      return await this.options.doclingClient.convert(
+        materialized.path,
+        input.profile ?? "standard",
+        signal,
+        onProgress
+      );
     } finally {
       await materialized.cleanup();
     }

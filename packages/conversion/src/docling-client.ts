@@ -1,8 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 
-import { doclingRequestSchema, doclingResponseSchema } from "./docling-contracts.js";
-import type { ConversionProfile, MarkdownConversionResult } from "./types.js";
+import {
+  DOCLING_PROTOCOL_VERSION,
+  doclingProgressSchema,
+  doclingRequestSchema,
+  doclingResponseSchema,
+  type DoclingResponse
+} from "./docling-contracts.js";
+import type {
+  ConversionProfile,
+  ConversionProgressListener,
+  MarkdownConversionResult
+} from "./types.js";
 
 export interface DoclingClientOptions {
   executablePath: string;
@@ -19,13 +29,14 @@ export class DoclingClient {
   public async convert(
     inputPath: string,
     profile: ConversionProfile = "standard",
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onProgress?: ConversionProgressListener
   ): Promise<MarkdownConversionResult> {
     const pageStart = positiveInteger(this.options.conversionOptions?.pageStart);
     const pageEnd = positiveInteger(this.options.conversionOptions?.pageEnd);
     const maxInputBytes = positiveInteger(this.options.conversionOptions?.maxInputBytes);
     const request = doclingRequestSchema.parse({
-      protocolVersion: 2,
+      protocolVersion: DOCLING_PROTOCOL_VERSION,
       requestId: randomUUID(),
       command: "convert",
       inputPath,
@@ -39,18 +50,48 @@ export class DoclingClient {
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...this.options.env, PYTHONNOUSERSITE: "1", PYTHONUNBUFFERED: "1" }
     });
-    let stdout = "";
+    let stdoutBuffer = "";
+    let stdoutBytes = 0;
     let stderr = "";
     let outputLimitExceeded = false;
     let timedOut = false;
+    let protocolError: Error | null = null;
+    const responseHolder: { value: DoclingResponse | null } = { value: null };
     const maxOutputBytes = this.options.maxOutputBytes ?? 256 * 1024 * 1024;
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-      if (Buffer.byteLength(stdout) > maxOutputBytes) {
+      stdoutBytes += Buffer.byteLength(chunk);
+      if (stdoutBytes > maxOutputBytes) {
         outputLimitExceeded = true;
-        stdout = stdout.slice(-Math.min(stdout.length, maxOutputBytes));
+        child.kill("SIGTERM");
+        return;
+      }
+      stdoutBuffer += chunk;
+      try {
+        stdoutBuffer = consumeJsonLines(stdoutBuffer, false, (line) => {
+          const message = JSON.parse(line) as unknown;
+          const progress = doclingProgressSchema.safeParse(message);
+          if (progress.success) {
+            if (progress.data.requestId !== request.requestId) {
+              throw new Error("Docling progress request id mismatch.");
+            }
+            try {
+              onProgress?.(progress.data);
+            } catch {
+              // UI progress observers cannot invalidate a successful conversion.
+            }
+            return;
+          }
+          const finalResponse = doclingResponseSchema.parse(message);
+          if (finalResponse.requestId !== request.requestId) {
+            throw new Error("Docling response request id mismatch.");
+          }
+          if (responseHolder.value) throw new Error("Docling sidecar returned more than one final response.");
+          responseHolder.value = finalResponse;
+        });
+      } catch (error) {
+        protocolError = error instanceof Error ? error : new Error(String(error));
         child.kill("SIGTERM");
       }
     });
@@ -72,11 +113,24 @@ export class DoclingClient {
       if (signal?.aborted) throw new DOMException("Conversion canceled.", "AbortError");
       if (timedOut) throw new Error("errors.conversion.doclingFailed:timeout");
       if (outputLimitExceeded) throw new Error("errors.conversion.doclingFailed:output-limit");
+      if (!protocolError) {
+        try {
+          stdoutBuffer = consumeJsonLines(stdoutBuffer, true, (line) => {
+            const finalResponse = doclingResponseSchema.parse(JSON.parse(line));
+            if (finalResponse.requestId !== request.requestId) {
+              throw new Error("Docling response request id mismatch.");
+            }
+            if (responseHolder.value) throw new Error("Docling sidecar returned more than one final response.");
+            responseHolder.value = finalResponse;
+          });
+        } catch (error) {
+          protocolError = error instanceof Error ? error : new Error(String(error));
+        }
+      }
+      if (protocolError) throw protocolError;
       if (exitCode !== 0) throw new Error(`Docling sidecar exited with code ${String(exitCode)}: ${stderr.slice(-500)}`);
-      const line = stdout.split(/\r?\n/).find((value) => value.trim().length > 0);
-      if (!line) throw new Error("Docling sidecar returned no response.");
-      const response = doclingResponseSchema.parse(JSON.parse(line));
-      if (response.requestId !== request.requestId) throw new Error("Docling response request id mismatch.");
+      const response = responseHolder.value;
+      if (!response) throw new Error("Docling sidecar returned no response.");
       if (!response.ok) throw new Error(response.error.messageKey);
       return response.result;
     } finally {
@@ -85,6 +139,20 @@ export class DoclingClient {
       if (!child.killed) child.kill("SIGTERM");
     }
   }
+}
+
+function consumeJsonLines(
+  buffer: string,
+  includeRemainder: boolean,
+  consume: (line: string) => void
+): string {
+  const lines = buffer.split(/\r?\n/);
+  const remainder = includeRemainder ? "" : lines.pop() ?? "";
+  for (const line of lines) {
+    if (line.trim()) consume(line);
+  }
+  if (includeRemainder && remainder.trim()) consume(remainder);
+  return remainder;
 }
 
 function positiveInteger(value: unknown): number | undefined {

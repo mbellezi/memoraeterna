@@ -29,10 +29,15 @@ resolvidos no build. O app nunca usa o Python do sistema e nunca executa
 ## Protocolo
 
 - um objeto JSON versionado por linha em stdin/stdout;
-- `protocolVersion: 1`;
-- request e response validados por Zod em `docling-contracts.ts`;
+- `protocolVersion: 3`;
+- request, eventos de progresso e response validados por Zod em
+  `docling-contracts.ts`;
 - nenhuma porta de rede;
 - timeout, cancelamento e encerramento do processo pelo `DoclingClient`;
+- eventos correlacionados por `requestId` informam etapa, fracao concluida e,
+  em PDF, paginas concluidas/total. A contagem observa a fila de saida do
+  pipeline PDF paralelo do Docling, sem fragmentar o arquivo nem reinicializar
+  modelos;
 - resultado com Markdown, blocos, pagina, bounding box, offsets, warnings,
   qualidade e `DoclingDocument` bruto quando disponivel.
 
@@ -54,8 +59,9 @@ npm run docling:smoke
 ```
 
 `docling:smoke` cria e converte um PDF com os proxies apontados para loopback
-invalido e com os modos offline de Hugging Face/Transformers ativos. Assim, o
-teste usa somente o CPython, wheels e modelos do sidecar. Para atualizar o
+invalido e com os modos offline de Hugging Face/Transformers ativos. O teste
+tambem exige um evento real de pagina concluida antes da resposta final. Assim,
+ele usa somente o CPython, wheels e modelos do sidecar. Para atualizar o
 artefato, revise primeiro a definicao e o lock e execute
 `npm run docling:build -- --force`; para remover o artefato gerado, use
 `npm run docling:remove`. Nenhuma dessas operacoes acontece no runtime do app.

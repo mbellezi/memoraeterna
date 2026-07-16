@@ -197,6 +197,12 @@
     "validation": { "chooseFile": "Scegli un file prima di continuare.", "contentRequired": "Questo tipo di fonte richiede contenuto." },
     "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file", "changeFile": "Cambia file", "back": "Indietro", "continue": "Continua", "import": "Importa fonte" },
     "file": { "title": "Scegli il file originale", "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA." },
+    "progress": {
+      "title": "Preparazione del file",
+      "stages": { "selectingFile": "Selezione del file locale…", "inspectingFile": "Analisi del file…", "loadingEngine": "Caricamento del motore di conversione locale…", "convertingDocument": "Conversione del documento…", "processingPages": "Elaborazione delle pagine…", "serializing": "Organizzazione del contenuto convertito…", "extractingMetadata": "Estrazione dei metadati…", "storingCover": "Salvataggio della copertina incorporata…", "completed": "Preparazione del file completata" },
+      "percent": "{percent}%", "pagesProcessed": "{completed} pagine elaborate su {total}", "pagesFound": "{total} pagine trovate", "elapsed": "Tempo trascorso: {time}",
+      "keepOpen": "Mantieni aperta questa schermata; le pagine scansionate possono richiedere più tempo."
+    },
     "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "metadataExtracted": "Metadati estratti localmente. Rivedili prima di continuare.", "duplicateHandled": "Politica duplicati applicata.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
   },
   "processing": {

@@ -219,6 +219,12 @@
     "validation": { "chooseFile": "Choose a file before continuing.", "contentRequired": "Content is required for this source type." },
     "actions": { "queue": "Queue import", "chooseFile": "Choose file", "changeFile": "Change file", "back": "Back", "continue": "Continue", "import": "Import source" },
     "file": { "title": "Choose the original file", "description": "The original is preserved. For books, issues, and papers, you review the detected structure before any AI processing starts." },
+    "progress": {
+      "title": "Preparing your file",
+      "stages": { "selectingFile": "Selecting the local file…", "inspectingFile": "Inspecting the file…", "loadingEngine": "Loading the local conversion engine…", "convertingDocument": "Converting the document…", "processingPages": "Processing pages…", "serializing": "Organizing the converted content…", "extractingMetadata": "Extracting metadata…", "storingCover": "Saving the embedded cover…", "completed": "File preparation completed" },
+      "percent": "{percent}%", "pagesProcessed": "{completed} of {total} pages processed", "pagesFound": "{total} pages found", "elapsed": "Elapsed {time}",
+      "keepOpen": "Keep this screen open; scanned pages can take longer."
+    },
     "status": { "queued": "Import queued.", "canceled": "File selection canceled.", "saved": "Source saved without background processing.", "metadataExtracted": "Metadata extracted locally. Review it before continuing.", "duplicateHandled": "Duplicate policy applied.", "reviewStructure": "Structure detected. Review it before continuing.", "draftSaved": "Structure draft saved.", "queuedChildren": "Structure confirmed and selected items queued.", "savedChildren": "Structure confirmed and selected items saved." }
   },
   "processing": {

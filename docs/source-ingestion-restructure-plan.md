@@ -10,12 +10,14 @@ legados nao era necessaria.
 - F1: `CreatorSchema`, `SourceDescriptorSchema`, proveniencia por campo,
   validacao ISBN/DOI e migration `0017_wooden_thunderbird` com creators,
   page count e series;
-- F2: extracao local EPUB/PDF/Docling, mapeamento Web/YouTube e selecao segura
-  de arquivo por token opaco no main process;
+- F2: extracao local EPUB/PDF/Docling, mapeamento Web/YouTube, selecao segura
+  de arquivo por token opaco no main process e progresso Docling real por
+  pagina no protocolo JSONL v3;
 - F3: enriquecimento Open Library, Google Books e Crossref, cache local,
   timeout, fallback, download seguro de capas e opt-out global;
 - F4: wizard por cards, formularios por tipo, aplicacao de candidatos sem
-  sobrescrever campos manuais, confirmacao e politica explicita de duplicata;
+  sobrescrever campos manuais, confirmacao, politica explicita de duplicata e
+  barra dinamica de preparacao com etapa, paginas e tempo decorrido;
 - F5: fontes-container sem documento, parent picker filtrado, criacao inline
   da fonte-mae e tolerancia de Library/processamento/Obsidian a containers;
 - F6: revisao estrutural com preview, snap de fronteiras, split em fronteira
@@ -282,7 +284,9 @@ Passos:
 3. Fluxo por origem:
    - arquivo: escolher arquivo -> extracao local (secao 4) -> formulario de
      dados pre-preenchido com proveniencia visivel -> enriquecimento
-     automatico (secao 5) com lista de candidatos e aplicacao por clique;
+     automatico (secao 5) com lista de candidatos e aplicacao por clique. A
+     conversao local exibe progresso correlacionado; PDFs usam paginas
+     concluidas pelo pipeline Docling e demais formatos usam etapas reais;
    - manual: formulario de dados por tipo (secao 3) -> passo de conteudo;
      para tipos hierarquicos o conteudo e opcional: vazio cria
      fonte-container so com metadados (secao 7); preenchido roda
@@ -407,6 +411,8 @@ Servicos novos/alterados no main process:
   - fluxo container: criar sem documento, adicionar filho, processar escopo;
   - composicao do wizard (estados vazio/carregando/erro/sucesso) sem GUI
     manual;
+  - contrato de progresso do sidecar/IPC, incluindo eventos antes da resposta
+    final, paginas concluidas e rejeicao de contadores invalidos;
 - migrations: gerar via `npm run db:generate`, atualizar
   `seed/baseline.sql` + `seed/manifest.json` na mesma mudanca, validar com
   `npm run db:seed:verify` e verificar estrutura real no banco
@@ -448,8 +454,8 @@ asset `cover`.
 ### F4 -- Wizard de importacao
 
 Entrega: novo wizard (tipo com cards, origem, dados pre-preenchidos,
-candidatos de enriquecimento, plano, confirmacao com duplicata explicita) e
-i18n completo.
+candidatos de enriquecimento, progresso de conversao, plano, confirmacao com
+duplicata explicita) e i18n completo.
 
 Pronto quando: fluxos manual e arquivo funcionam ponta a ponta para todos os
 tipos nao hierarquicos, com estados vazio/carregando/erro cobertos.
@@ -479,6 +485,19 @@ Entrega: fixtures adicionais (livros reais variados, papers com/sem DOI),
 ajuste fino das heuristicas, revisao de acessibilidade do wizard, atualizacao
 de `MAPA.md` e deste documento com o estado final; avaliacao da fase opcional
 de estrutura assistida por IA.
+
+Estado em 2026-07-16: o primeiro corpus real de papers (`samples/articles`,
+sete PDFs em portugues e ingles) foi incorporado ao ajuste da deteccao. O
+fallback sem bookmarks agora segmenta sobre o Markdown canonico e possui testes
+lexicais adicionais em portugues, ingles, espanhol, frances, italiano e alemao.
+O mesmo ciclo foi aplicado a `samples/books`: treze EPUBs e nove PDFs sao
+comparados por um runner local ignorado pelo Git, com cache, snapshots e
+configuracao por arquivo. EPUB preserva a hierarquia nativa e alinha seus
+limites ao Markdown convertido; PDF sem bookmarks segmenta partes/capitulos no
+Markdown canonico e usa blocos Docling apenas como evidencia. Um PDF foi
+temporariamente excluido e o livro integralmente escaneado de Ouspensky ficou
+limitado as primeiras 100 paginas. A ampliacao para mais editoras, layouts e
+idiomas continua como hardening incremental.
 
 Pronto quando: `npm run typecheck`, `npm test` e `npm run build` passam;
 pendencias registradas.

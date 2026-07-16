@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { IpcMain } from "electron";
 import { app, dialog, shell, webContents } from "electron";
 import { z } from "zod";
@@ -15,6 +16,7 @@ import {
   aiModelDiscoveryInputSchema,
   atomicNoteReviewInputSchema,
   fileImportInputSchema,
+  fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
   metadataEnrichmentInputSchema,
   enrichmentCoverInputSchema,
@@ -31,7 +33,8 @@ import {
   structureSaveInputSchema,
   structureConfirmInputSchema,
   sourceLookupInputSchema,
-  type DatabaseStatus
+  type DatabaseStatus,
+  type FileImportProgress
 } from "../shared/ipc";
 import { AiReasoningLevelSchema, SourceItemTypeSchema } from "@app/domain";
 import type { SettingsService } from "./services/settings-service";
@@ -136,11 +139,20 @@ export function registerIpcHandlers(
     ingestionService.createManual(manualIngestionInputSchema.parse(payload))
   );
 
-  ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (_event, payload: unknown) => {
+  ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (event, payload: unknown) => {
     const input = fileMetadataExtractionInputSchema.parse(payload);
+    const requestId = input.requestId ?? randomUUID();
     const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
     const path = selection.filePaths[0];
-    return selection.canceled || !path ? null : ingestionService.prepareFileMetadata(path, input.sourceType);
+    if (selection.canceled || !path) return null;
+    const report = (progress: Omit<FileImportProgress, "requestId">) => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send(ipcChannels.ingestionFileProgress, fileImportProgressSchema.parse({
+        requestId,
+        ...progress
+      }));
+    };
+    return ingestionService.prepareFileMetadata(path, input.sourceType, report);
   });
   ipcMain.handle(ipcChannels.ingestionEnrichMetadata, (_event, payload: unknown) =>
     metadataEnrichmentService.search(metadataEnrichmentInputSchema.parse(payload))

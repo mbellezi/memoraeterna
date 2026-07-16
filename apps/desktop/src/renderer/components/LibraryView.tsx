@@ -120,12 +120,25 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
   </div>;
 }
 
-function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibrarySource; depth: number }> {
+export function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibrarySource; depth: number }> {
   const ids = new Set(sources.map((source) => source.id));
+  const sourceOrder = new Map(sources.map((source, index) => [source.id, index]));
   const byParent = new Map<string | null, LibrarySource[]>();
   for (const source of sources) {
     const parent = source.parentSourceItemId && ids.has(source.parentSourceItemId) ? source.parentSourceItemId : null;
     byParent.set(parent, [...(byParent.get(parent) ?? []), source]);
+  }
+  const compareStructurePosition = (left: LibrarySource, right: LibrarySource) => {
+    if (left.structurePosition !== null && right.structurePosition !== null) {
+      const positionDifference = left.structurePosition - right.structurePosition;
+      if (positionDifference !== 0) return positionDifference;
+    } else if (left.structurePosition !== null) return -1;
+    else if (right.structurePosition !== null) return 1;
+    return (sourceOrder.get(left.id) ?? 0) - (sourceOrder.get(right.id) ?? 0);
+  };
+  for (const [parentId, siblings] of byParent) {
+    if (parentId === null) continue;
+    siblings.sort(compareStructurePosition);
   }
   const result: Array<{ source: LibrarySource; depth: number }> = [];
   const seen = new Set<string>();
@@ -134,7 +147,19 @@ function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibraryS
     seen.add(source.id); result.push({ source, depth });
     for (const child of byParent.get(source.id) ?? []) visit(child, depth + 1);
   }
-  for (const root of byParent.get(null) ?? []) visit(root, 0);
+  const roots = byParent.get(null) ?? [];
+  const visitedDetachedParents = new Set<string>();
+  for (const root of roots) {
+    const detachedParentId = root.parentSourceItemId && !ids.has(root.parentSourceItemId)
+      ? root.parentSourceItemId
+      : null;
+    if (!detachedParentId) visit(root, 0);
+    else if (!visitedDetachedParents.has(detachedParentId)) {
+      visitedDetachedParents.add(detachedParentId);
+      for (const sibling of roots.filter((candidate) => candidate.parentSourceItemId === detachedParentId)
+        .toSorted(compareStructurePosition)) visit(sibling, 0);
+    }
+  }
   for (const source of sources) visit(source, 0);
   return result;
 }
