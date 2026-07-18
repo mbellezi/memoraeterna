@@ -361,7 +361,7 @@ conversion (obrigatoria na importacao)
               -> atomicNoteMatching
       -> obsidianProjection (apos mudancas canonicas, quando habilitado)
 
-summarization (todos os capitulos processaveis atuais de um Book)
+summarization (subitens processaveis selecionados)
   -> aggregateSummarization (Book)
 ```
 
@@ -375,8 +375,8 @@ Regras:
   estavam disponiveis;
 - em lote, matching aguarda a geracao de notas de todos os itens selecionados
   para evitar viés pela ordem de execucao;
-- em um livro, `aggregateSummarization` aguarda os resumos atuais de todos os
-  capitulos processaveis;
+- em uma hierarquia, `aggregateSummarization` aguarda o fim do processamento
+  dos subitens selecionados e usa os resumos que efetivamente foram produzidos;
 - etapas nao solicitadas ficam `skipped` com motivo `not_requested`, em vez de
   parecerem pendentes ou falhas;
 - o plano efetivo e persistido como snapshot; mudancas posteriores nas
@@ -420,33 +420,38 @@ documento pode passar por chunking tecnico, embedding e construcao do grafo
 quando essas etapas fizerem parte do plano; resumo, notas atomicas e matching
 continuam exclusivos dos filhos selecionados.
 Em `Book`, processar somente a raiz oferece apenas etapas aplicaveis a raiz,
-como `aggregateSummarization`, e bloqueia a agregacao enquanto faltarem resumos
-de capitulos. Selecionar o preset **Gerar resumo** para o livro inclui todos os
-capitulos processaveis ainda sem resumo e finaliza com a agregacao.
+como `aggregateSummarization`. Selecionar o preset **Gerar resumo** para o livro
+inclui os capitulos processaveis ainda sem resumo e finaliza com a agregacao dos
+resumos que foram efetivamente produzidos.
 
 ### 5.4 Resumo agregado do livro
 
 O resumo atual de um `Book` deve ser obrigatoriamente um resumo dos resumos
-atuais de todos os seus `BookChapter` processaveis, nunca um resumo independente
-do arquivo inteiro.
+atuais e nao vazios de seus `BookChapter` processaveis, nunca um resumo
+independente do arquivo inteiro.
 
 Regras:
 
 - cada capitulo gera e mantem seu proprio resumo primeiro;
-- `aggregateSummarization` entra na fila automaticamente quando todos os
-  capitulos processaveis possuirem resumo atual e valido;
+- `aggregateSummarization` entra na fila automaticamente quando o processamento
+  dos subitens selecionados terminar e pelo menos um resumo atual e valido
+  tiver sido produzido;
 - a entrada da agregacao e ordenada pela ordem canonica dos capitulos;
 - a geracao registra os ids, hashes e versoes de todos os resumos de capitulo
   usados;
-- o resumo do livro fica `waiting_for_chapters` enquanto faltar qualquer resumo;
-- a UI mostra progresso, por exemplo, `9 de 12 capitulos resumidos`;
+- subitens sem conteudo resumivel, como titulos, indices, bibliografias e
+  referencias, podem permanecer sem resumo e nao bloqueiam a agregacao;
+- se nenhum subitem produzir resumo, a raiz permanece sem resumo agregado;
+- a mesma regra e aplicada de baixo para cima em cada nivel da hierarquia, de
+  modo que um resumo agregado intermediario possa alimentar seu pai;
+- a UI pode mostrar progresso, por exemplo, `9 de 12 capitulos processados, 7 resumidos`;
 - capitulos explicitamente excluidos da estrutura ou marcados apenas para
   navegacao nao entram na agregacao;
 - front matter, apendice ou outro filho processavel entra se tiver sido
   confirmado pelo usuario como parte do conteudo resumivel;
-- quando um resumo de capitulo for criado, reingerido ou substituido, o resumo
-  agregado atual do livro fica `stale` e uma nova agregacao e agendada assim que
-  todos os pre-requisitos voltarem a estar atuais;
+- quando um resumo de capitulo for criado, reingerido, substituido ou esvaziado,
+  o resumo agregado atual do livro fica `stale` e uma nova agregacao e agendada
+  depois que o processamento dos subitens selecionados terminar;
 - o historico de resumos agregados permanece auditavel;
 - notas atomicas continuam pertencendo aos capitulos; a agregacao nao gera
   copias de notas no nivel do livro.

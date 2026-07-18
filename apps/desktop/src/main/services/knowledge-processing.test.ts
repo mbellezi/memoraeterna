@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildAtomicNoteGenerationPrompt,
+  buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
   buildKnowledgeGraphPrompt,
   calculateAtomicNoteMatchingProgress,
@@ -10,6 +11,7 @@ import {
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
+  hasMinimumSummaryContent,
   meetsRelationThreshold,
   normalizeSummaryText,
   parseKnowledgeGraphOutput,
@@ -95,6 +97,51 @@ describe("knowledge processing", () => {
     expect(normalizeSummaryText('```json\n{"summary":"Fenced summary"}\n```')).toBe("Fenced summary");
     expect(normalizeSummaryText('```json\n{"resumo":"Resumo em português"}\n```')).toBe("Resumo em português");
     expect(normalizeSummaryText("Plain summary")).toBe("Plain summary");
+    expect(normalizeSummaryText("<NO_SUMMARY>")).toBe("");
+    expect(normalizeSummaryText('{"summary":"<NO_SUMMARY>"}')).toBe("");
+  });
+
+  it("skips summary generation below the substantive word-count heuristic", async () => {
+    const run = vi.fn();
+    const result = await generateSummaryFromChunks([
+      { id: "title", content: "# A short isolated title" }
+    ], run);
+
+    expect(hasMinimumSummaryContent(["# A short isolated title"])).toBe(false);
+    expect(result).toMatchObject({ summary: "", skippedReason: "too_short" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("allows the minimum summary word count to be disabled", async () => {
+    const run = vi.fn(async () => ({
+      output: "Short summary.",
+      providerId: "test",
+      modelId: "mock-model",
+      runtime: "remote",
+      profileId: "profile-1",
+      aiTaskRunId: "run-1"
+    }));
+
+    const result = await generateSummaryFromChunks(
+      [{ id: "title", content: "Brief but intentional content." }],
+      run,
+      3_500,
+      0
+    );
+
+    expect(result?.summary).toBe("Short summary.");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("builds aggregate summaries without requesting an output heading", () => {
+    const prompt = buildAggregateSummaryPrompt(
+      { kind: "book", title: "Source" },
+      [{ title: "Chapter", summary: "Substantive summary." }]
+    );
+
+    expect(prompt).toContain('do not output "# Aggregate summary" or "# Resumo agregado"');
+    expect(prompt).toContain("[Subpart 1: Chapter]");
+    expect(prompt).not.toContain("\n## 1.");
   });
 
   it("uses map-reduce for a source that exceeds the model input budget", async () => {
@@ -107,8 +154,8 @@ describe("knowledge processing", () => {
       aiTaskRunId: "00000000-0000-4000-8000-000000000002"
     }));
     const result = await generateSummaryFromChunks([
-      { id: "chunk-1", content: "A".repeat(80) },
-      { id: "chunk-2", content: "B".repeat(80) }
+      { id: "chunk-1", content: "alpha ".repeat(30) },
+      { id: "chunk-2", content: "beta ".repeat(30) }
     ], run, 100);
 
     expect(result).toMatchObject({ summary: "Reduced summary", mapReduce: true });
@@ -326,6 +373,8 @@ describe("knowledge processing", () => {
     expect(prompt).toContain('never use "evidenceChunkId"');
     expect(prompt).toContain('"additionalProperties": false');
     expect(prompt).toContain("Do not use Markdown fences");
+    expect(prompt).toContain("indexes or tables of contents");
+    expect(prompt).toContain('return exactly {"notes":[]}');
   });
 
   it("repairs one malformed local-model response and uses the repaired execution", async () => {

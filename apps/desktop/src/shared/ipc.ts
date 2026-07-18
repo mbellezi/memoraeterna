@@ -127,6 +127,7 @@ export const appSettingsSchema = z.object({
   debugMode: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
   atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
+  summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   updatedAt: z.string().datetime()
 });
 
@@ -135,7 +136,8 @@ export const appSettingsUpdateSchema = z.object({
   themeMode: themeModeSchema.optional(),
   debugMode: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
-  atomicNoteRelationThreshold: z.number().min(0).max(1).optional()
+  atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
+  summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional()
 }).strict();
 
 export const storageSettingsSchema = z.object({
@@ -863,7 +865,8 @@ export const defaultAppSettings = {
   themeMode: "dark",
   debugMode: false,
   metadataEnrichmentEnabled: true,
-  atomicNoteRelationThreshold: 0.72
+  atomicNoteRelationThreshold: 0.72,
+  summaryMinimumWordCount: 40
 } satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {

@@ -9,10 +9,13 @@ import {
   type KnowledgeGraphGenerationOutput
 } from "@app/domain";
 
-export const summaryPromptVersion = "summary-v1";
-export const atomicNotePromptVersion = "atomic-note-v3";
-export const atomicNoteMatchingVersion = "atomic-note-matching-v2";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v3";
+export const summaryPromptVersion = "summary-v2";
+export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
+export const atomicNotePromptVersion = "atomic-note-v4";
+export const atomicNoteMatchingVersion = "atomic-note-matching-v3";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v4";
+export const emptySummaryTag = "<NO_SUMMARY>";
+export const defaultSummaryMinimumWordCount = 40;
 
 const atomicNoteGenerationJsonSchema = JSON.stringify(
   z.toJSONSchema(AtomicNoteGenerationOutputSchema),
@@ -89,11 +92,12 @@ export interface SummaryResult {
   summary: string;
   mapReduce: boolean;
   executions: KnowledgeAiExecution[];
+  skippedReason?: "too_short" | "non_content";
 }
 
 export function normalizeSummaryText(output: unknown): string {
   const structuredSummary = extractStructuredSummary(output);
-  if (structuredSummary) return structuredSummary;
+  if (structuredSummary) return normalizeSummaryValue(structuredSummary);
   if (typeof output !== "string" || output.trim().length === 0) {
     throw new Error("ai_task_empty_output");
   }
@@ -101,27 +105,46 @@ export function normalizeSummaryText(output: unknown): string {
   try {
     const parsed = parseJsonOutput(trimmed);
     const parsedSummary = extractStructuredSummary(parsed);
-    if (parsedSummary) return parsedSummary;
+    if (parsedSummary) return normalizeSummaryValue(parsedSummary);
   } catch {
     // Plain-text summaries are the normal response format.
   }
-  return trimmed;
+  return normalizeSummaryValue(trimmed);
+}
+
+export function hasMinimumSummaryContent(
+  contents: ReadonlyArray<string>,
+  minimumWords = defaultSummaryMinimumWordCount
+): boolean {
+  if (minimumWords <= 0) return true;
+  const words = contents.join("\n").match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu);
+  return (words?.length ?? 0) >= minimumWords;
 }
 
 export async function generateSummaryFromChunks(
   chunks: ReadonlyArray<{ id: string; content: string }>,
   run: KnowledgeAiRunner,
-  maxInputCharacters = 3_500
+  maxInputCharacters = 3_500,
+  minimumWordCount = defaultSummaryMinimumWordCount
 ): Promise<SummaryResult | null> {
   const nonEmptyChunks = chunks.filter((chunk) => chunk.content.trim().length > 0);
   if (nonEmptyChunks.length === 0) return null;
+  if (!hasMinimumSummaryContent(nonEmptyChunks.map((chunk) => chunk.content), minimumWordCount)) {
+    return { summary: "", mapReduce: false, executions: [], skippedReason: "too_short" };
+  }
   const groups = groupChunks(nonEmptyChunks, maxInputCharacters);
   const executions: KnowledgeAiExecution[] = [];
   if (groups.length === 1) {
     const execution = await run(summaryPrompt(groups[0] ?? [], false));
     if (!execution) return null;
     executions.push(execution);
-    return { summary: normalizeSummaryText(execution.output), mapReduce: false, executions };
+    const summary = normalizeSummaryText(execution.output);
+    return {
+      summary,
+      mapReduce: false,
+      executions,
+      ...(summary.length === 0 ? { skippedReason: "non_content" as const } : {})
+    };
   }
 
   const partials: string[] = [];
@@ -129,14 +152,34 @@ export async function generateSummaryFromChunks(
     const execution = await run(summaryPrompt(group, true));
     if (!execution) return null;
     executions.push(execution);
-    partials.push(normalizeSummaryText(execution.output));
+    const partial = normalizeSummaryText(execution.output);
+    if (partial.length > 0) partials.push(partial);
   }
-  const reduction = await run(
-    `Create one faithful, concise source summary from these partial summaries. Preserve important claims and uncertainty.\n\n${partials.join("\n\n---\n\n")}`
-  );
+  if (partials.length === 0) {
+    return { summary: "", mapReduce: true, executions, skippedReason: "non_content" };
+  }
+  const reduction = await run(summaryReductionPrompt(partials));
   if (!reduction) return null;
   executions.push(reduction);
-  return { summary: normalizeSummaryText(reduction.output), mapReduce: true, executions };
+  const summary = normalizeSummaryText(reduction.output);
+  return {
+    summary,
+    mapReduce: true,
+    executions,
+    ...(summary.length === 0 ? { skippedReason: "non_content" as const } : {})
+  };
+}
+
+export function buildAggregateSummaryPrompt(
+  source: { kind: string; title: string },
+  subparts: ReadonlyArray<{ title: string; summary: string }>
+): string {
+  return `Create a coherent aggregate summary of the ${source.kind} "${source.title}" using the substantive subpart summaries below.
+Preserve disagreements and progression across subparts. Do not introduce facts absent from the summaries.
+Return only the summary body, without a title or Markdown heading. In particular, do not output "# Aggregate summary" or "# Resumo agregado".
+If the supplied summaries contain no substantive content, return exactly ${emptySummaryTag} and nothing else.
+
+${subparts.map((subpart, index) => `[Subpart ${index + 1}: ${subpart.title}]\n${subpart.summary}`).join("\n\n")}`;
 }
 
 export async function generateKnowledgeGraphFromAtomicNotes(
@@ -207,6 +250,7 @@ Use exactly this compact JSON shape and these property names:
 ${knowledgeGraphJsonContract}
 
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
+Ignore atomic notes that only reproduce navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from them.
 Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
 Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
 Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
@@ -245,6 +289,7 @@ ${structuredOutputRepairFeedback(validationError)}
 
 Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
 Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary.
+Do not repair structural or reference-only material into knowledge. If no substantive note remains, return empty entities, claims, and relations arrays.
 The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Source title: ${source.title}
 Source language: ${source.language}
@@ -270,6 +315,8 @@ The JSON must conform exactly to this JSON Schema:
 ${atomicNoteGenerationJsonSchema}
 
 Every note must express one self-contained idea and cite at least one supplied chunk id. Do not invent ids.
+Do not generate notes from navigation, indexes or tables of contents, title pages, isolated titles, headings or subheadings, bibliographies, or reference lists. These are structure or references, not source ideas.
+If the supplied chunks contain no substantive content beyond those cases, return exactly {"notes":[]}.
 Use the exact property names "bodyMarkdown" and "evidenceChunkIds". The latter is always plural; never use "evidenceChunkId". Close the root JSON object.
 Set each "language" field to the language used in that note.
 
@@ -294,6 +341,7 @@ ${structuredOutputRepairFeedback(validationError)}
 Use the exact property names "bodyMarkdown" and "evidenceChunkIds". The latter is always plural; never use "evidenceChunkId". Close the root JSON object.
 Set each "language" field to the language used in that note.
 Evidence chunk ids must come only from this list: ${JSON.stringify(allowedChunkIds)}
+Do not invent notes to satisfy the schema. For navigation, indexes or tables of contents, title pages, isolated titles, headings or subheadings, bibliographies, or reference lists, return {"notes":[]}.
 
 Previous invalid output:
 ${serializeOutputForRepair(previousOutput)}`;
@@ -442,6 +490,7 @@ The relationship direction is always source note -> candidate note.
 Return every candidate exactly once, using its candidateAlias. Do not omit, add, or reorder aliases.
 Return only JSON: {"results":[{"candidateAlias":"c1","score":0.0,"relationType":"related"}]}.
 Allowed relationType values: supports, contrasts, extends, similar_to, depends_on, clarifies, mentions, related.
+Material that only represents navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list is not a meaningful knowledge relationship. Assign score 0.0 to such candidates.
 
 Source note: ${source.title}\n${source.ideaStatement}
 
@@ -551,7 +600,20 @@ export function fuseAtomicNoteCandidateRankings(
 }
 
 function summaryPrompt(chunks: ReadonlyArray<{ id: string; content: string }>, partial: boolean): string {
-  return `${partial ? "Summarize this part of a longer source" : "Summarize this source"} faithfully and concisely. Preserve important claims, evidence, and uncertainty. Do not add facts.\n\n${chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")}`;
+  return `${partial ? "Summarize this part of a longer source" : "Summarize this source"} faithfully and concisely. Preserve important claims, evidence, and uncertainty. Do not add facts.
+Do not summarize navigation, indexes or tables of contents, title pages, isolated titles, headings or subheadings, bibliographies, or reference lists.
+If the supplied text contains no substantive content beyond those cases, return exactly ${emptySummaryTag} and nothing else.
+Return only the summary body, without a title or Markdown heading.
+
+${chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")}`;
+}
+
+function summaryReductionPrompt(partials: ReadonlyArray<string>): string {
+  return `Create one faithful, concise source summary from these substantive partial summaries. Preserve important claims and uncertainty.
+Do not introduce facts. Return only the summary body, without a title or Markdown heading.
+If the partial summaries contain no substantive content, return exactly ${emptySummaryTag} and nothing else.
+
+${partials.join("\n\n---\n\n")}`;
 }
 
 function groupChunks(
@@ -696,6 +758,11 @@ function extractStructuredSummary(output: unknown): string | null {
   if (entries.length !== 1) return null;
   const value = entries[0]?.[1];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeSummaryValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.toUpperCase() === emptySummaryTag ? "" : trimmed;
 }
 
 function structuredOutputRepairFeedback(error: unknown): string {

@@ -109,8 +109,9 @@ Implementado ate aqui:
   `document_divisions.position`, escopo raiz/filhos, processamento posterior,
   etapas ausentes e reingestao que preserva notas revisadas;
 - processing batches, runs normalizadas por etapa, execucao seletiva,
-  barreira de matching por lote e resumo agregado de livros, periodicos e
-  papers a partir dos resumos de suas subpartes;
+  barreira de matching por lote e resumo agregado bottom-up de livros,
+  periodicos e papers a partir dos resumos nao vazios de suas subpartes, sem
+  bloquear por titulos, indices, bibliografias ou outras partes sem resumo;
 - quando um lote hierarquico inclui descendentes, resumo, notas atomicas e
   matching rodam somente nos subitens; a raiz usa apenas titulo, criadores,
   metadados e seu resumo atual para o embedding e o grafo catalograficos
@@ -131,7 +132,8 @@ Implementado ate aqui:
 - dashboard de debug com captura opcional das buscas de chunks e do matching
   de notas atomicas, incluindo scores de texto, vetor, metadados, reranking,
   decisao do limiar e erros do reranker;
-- resumos rastreaveis com perfil/modelo/prompt registrados e map-reduce para
+- resumos rastreaveis com perfil/modelo/prompt registrados, minimo configuravel
+  de palavras, TAG explicita para conteudo nao resumivel e map-reduce para
   fontes que excedem o limite de contexto configurado;
 - notas atomicas geradas por resultado estruturado Zod, vinculadas a fonte,
   chunks e SourceSpans, sempre iniciando em `pending_review`;

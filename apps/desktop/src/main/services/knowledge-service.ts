@@ -27,13 +27,16 @@ import type { StorageSettings } from "../../shared/ipc.js";
 import {
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
+  buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
   calculateAtomicNoteMatchingProgress,
   calculateRelationScore,
+  defaultSummaryMinimumWordCount,
   fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
+  hierarchyAggregateSummaryPromptVersion,
   meetsRelationThreshold,
   normalizeSummaryText,
   parseBatchRerankOutput,
@@ -60,11 +63,41 @@ function aggregateSourceLabel(type: SourceItemType): string {
   return "source";
 }
 
+interface HierarchySummaryRow {
+  rootId: string;
+  rootType: SourceItemType;
+  rootTitle: string;
+  rootLanguage: string;
+  documentId: string;
+  documentHash: string;
+  childId: string;
+  childTitle: string;
+  summaryId: string | null;
+  summary: string | null;
+  summaryHash: string | null;
+}
+
+function updateGroupedChildSummary(
+  grouped: ReadonlyMap<string, HierarchySummaryRow[]>,
+  childId: string,
+  summary: { id: string; summary: string; hash: string } | null
+): void {
+  for (const children of grouped.values()) {
+    for (const child of children) {
+      if (child.childId !== childId) continue;
+      child.summaryId = summary?.id ?? null;
+      child.summary = summary?.summary ?? null;
+      child.summaryHash = summary?.hash ?? null;
+    }
+  }
+}
+
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
+  getSummaryMinimumWordCount?: () => Promise<number>;
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
   userDataPath: string;
@@ -268,9 +301,25 @@ export class KnowledgeService {
         },
         signal
       )),
-      this.summaryMaxInputCharacters
+      this.summaryMaxInputCharacters,
+      Math.max(0, Math.floor(
+        await this.options.getSummaryMinimumWordCount?.() ?? defaultSummaryMinimumWordCount
+      ))
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
+    if (summary.summary.length === 0) {
+      await createSourceSummaryRepository(pool).clearCurrent(sourceItemId);
+      await createSourceItemRepository(pool).update(sourceItemId, {
+        summary: null,
+        summaryGeneratedAt: null
+      });
+      return {
+        configured: true,
+        generated: false,
+        mapReduce: summary.mapReduce,
+        skippedReason: summary.skippedReason ?? "non_content"
+      };
+    }
     const finalExecution = summary.executions.at(-1);
     if (!finalExecution) throw new Error("summary_execution_missing");
     const summaryHierarchy = createHierarchicalIngestionRepository(pool);
@@ -324,38 +373,55 @@ export class KnowledgeService {
     forceRegeneration = false
   ) {
     const pool = this.requirePool();
-    const rows = await pool.query<{
-      rootId: string; rootType: SourceItemType; rootTitle: string; rootLanguage: string;
-      documentId: string; documentHash: string;
-      childId: string; childTitle: string; summaryId: string | null; summary: string | null; summaryHash: string | null;
-    }>(
+    const rows = await pool.query<HierarchySummaryRow>(
       `with recursive hierarchy as (
          select root.id as root_id, root.type as root_type, root.title as root_title,
                 root.language as root_language, document.id as document_id,
                 document.content_hash as document_hash, child.id as child_id,
-                child.title as child_title, child.created_at as child_created_at
+                1 as depth
          from source_items root
          join source_items child on child.parent_source_item_id = root.id
          join documents document on document.source_item_id = root.id
          union all
          select hierarchy.root_id, hierarchy.root_type, hierarchy.root_title,
                 hierarchy.root_language, hierarchy.document_id, hierarchy.document_hash,
-                child.id, child.title, child.created_at
+                child.id, hierarchy.depth + 1
          from hierarchy
          join source_items child on child.parent_source_item_id = hierarchy.child_id
+       ), aggregate_roots as (
+         select hierarchy.root_id, hierarchy.root_type, hierarchy.root_title,
+                hierarchy.root_language, hierarchy.document_id, hierarchy.document_hash,
+                max(hierarchy.depth) as maximum_depth
+         from hierarchy
+         where hierarchy.root_id = $2::uuid
+            or exists (
+              select 1 from hierarchy selected
+              where selected.root_id = $2::uuid and selected.child_id = hierarchy.root_id
+            )
+            or exists (
+              select 1 from ingestion_runs run
+              where run.batch_id = $1 and run.source_item_id in (hierarchy.root_id, hierarchy.child_id)
+            )
+         group by hierarchy.root_id, hierarchy.root_type, hierarchy.root_title,
+                  hierarchy.root_language, hierarchy.document_id, hierarchy.document_hash
        )
-       select hierarchy.root_id as "rootId", hierarchy.root_type as "rootType",
-              hierarchy.root_title as "rootTitle", hierarchy.root_language as "rootLanguage",
-              hierarchy.document_id as "documentId", hierarchy.document_hash as "documentHash",
-              hierarchy.child_id as "childId", hierarchy.child_title as "childTitle",
+       select aggregate_roots.root_id as "rootId", aggregate_roots.root_type as "rootType",
+              aggregate_roots.root_title as "rootTitle", aggregate_roots.root_language as "rootLanguage",
+              aggregate_roots.document_id as "documentId", aggregate_roots.document_hash as "documentHash",
+              child.id as "childId", child.title as "childTitle",
               summary.id as "summaryId", summary.summary, summary.output_hash as "summaryHash"
-       from hierarchy
-       left join source_summaries summary on summary.source_item_id = hierarchy.child_id and summary.is_current = true
-       where hierarchy.root_id = $2::uuid or exists (
-         select 1 from ingestion_runs run
-         where run.batch_id = $1 and run.source_item_id in (hierarchy.root_id, hierarchy.child_id)
-       )
-       order by hierarchy.root_id, hierarchy.child_created_at, hierarchy.child_id`,
+       from aggregate_roots
+       join source_items child on child.parent_source_item_id = aggregate_roots.root_id
+       left join lateral (
+         select division.position
+         from document_divisions division
+         join document_structures structure on structure.id = division.structure_id
+         where division.child_source_item_id = child.id and structure.status = 'materialized'
+         order by structure.revision desc limit 1
+       ) canonical_order on true
+       left join source_summaries summary on summary.source_item_id = child.id and summary.is_current = true
+       order by aggregate_roots.maximum_depth, aggregate_roots.root_id,
+                canonical_order.position nulls last, child.created_at, child.id`,
       [batchId, rootSourceItemId]
     );
     const grouped = new Map<string, typeof rows.rows>();
@@ -367,21 +433,26 @@ export class KnowledgeService {
       const root = children[0];
       if (!root) continue;
       const missingSummaryCount = children.filter((child) => !child.summary || !child.summaryId || !child.summaryHash).length;
-      if (missingSummaryCount > 0) {
+      const summarizedChildren = children.filter((child): child is typeof child & {
+        summaryId: string; summary: string; summaryHash: string;
+      } => Boolean(child.summary && child.summaryId && child.summaryHash));
+      if (summarizedChildren.length === 0) {
+        await createSourceSummaryRepository(pool).clearCurrent(root.rootId);
+        await createSourceItemRepository(pool).update(root.rootId, { summary: null, summaryGeneratedAt: null });
+        updateGroupedChildSummary(grouped, root.rootId, null);
         blockedRoots.push({ sourceItemId: root.rootId, missingSummaryCount, totalSubparts: children.length });
         continue;
       }
-      const inputHash = sha256(children.map((child) => `${child.childId}:${child.summaryHash}`).join("\n"));
+      const inputHash = sha256(summarizedChildren.map((child) => `${child.childId}:${child.summaryHash}`).join("\n"));
       const current = (await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)).find((summary) => summary.isCurrent);
       if (!forceRegeneration && current?.inputHash === inputHash) {
         reusedCount += 1;
         continue;
       }
-      const prompt = [
-        `Create a coherent aggregate summary of the ${aggregateSourceLabel(root.rootType)} "${root.rootTitle}" using every subpart summary below.`,
-        "Preserve disagreements and progression across subparts. Do not introduce facts absent from the summaries.",
-        ...children.map((child, index) => `\n## ${index + 1}. ${child.childTitle}\n${child.summary}`)
-      ].join("\n");
+      const prompt = buildAggregateSummaryPrompt(
+        { kind: aggregateSourceLabel(root.rootType), title: root.rootTitle },
+        summarizedChildren.map((child) => ({ title: child.childTitle, summary: child.summary }))
+      );
       const execution = await this.options.aiService.runDefaultTask(
         "summarization",
         prompt,
@@ -394,6 +465,12 @@ export class KnowledgeService {
       );
       if (!execution) continue;
       const summary = normalizeSummaryText(execution.output);
+      if (summary.length === 0) {
+        await createSourceSummaryRepository(pool).clearCurrent(root.rootId);
+        await createSourceItemRepository(pool).update(root.rootId, { summary: null, summaryGeneratedAt: null });
+        updateGroupedChildSummary(grouped, root.rootId, null);
+        continue;
+      }
       const hierarchy = createHierarchicalIngestionRepository(pool);
       const revisionId = await hierarchy.ensureCurrentDocumentRevision(root.documentId, root.documentHash);
       const generationId = await hierarchy.createKnowledgeGeneration({
@@ -401,15 +478,31 @@ export class KnowledgeService {
         ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
         jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
         aiTaskRunId: execution.aiTaskRunId, inputHash,
-        metadata: { promptVersion: "hierarchy-aggregate-v1", batchId, childSummaryIds: children.map((child) => child.summaryId!) }
+        metadata: {
+          promptVersion: hierarchyAggregateSummaryPromptVersion,
+          batchId,
+          childSummaryIds: summarizedChildren.map((child) => child.summaryId),
+          skippedSubpartCount: missingSummaryCount
+        }
       });
       const persisted = await createSourceSummaryRepository(pool).create({
         sourceItemId: root.rootId, generationId, summary, language: execution.outputLanguage ?? root.rootLanguage,
         profileId: execution.profileId, aiTaskRunId: execution.aiTaskRunId, provider: execution.providerId,
-        model: execution.modelId, runtime: execution.runtime, promptVersion: "hierarchy-aggregate-v1", inputHash,
-        outputHash: sha256(summary), metadata: { aggregate: true, batchId, childSummaryIds: children.map((child) => child.summaryId!) }
+        model: execution.modelId, runtime: execution.runtime,
+        promptVersion: hierarchyAggregateSummaryPromptVersion, inputHash,
+        outputHash: sha256(summary), metadata: {
+          aggregate: true,
+          batchId,
+          childSummaryIds: summarizedChildren.map((child) => child.summaryId),
+          skippedSubpartCount: missingSummaryCount
+        }
       });
       await createSourceItemRepository(pool).update(root.rootId, { summary, summaryGeneratedAt: persisted.generatedAt });
+      updateGroupedChildSummary(grouped, root.rootId, {
+        id: persisted.id,
+        summary,
+        hash: persisted.outputHash
+      });
       generatedCount += 1;
     }
     return { generatedCount, reusedCount, blockedRoots };

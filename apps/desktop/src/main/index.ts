@@ -180,6 +180,7 @@ void app.whenReady().then(() => {
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
+    getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
     logger: console,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });

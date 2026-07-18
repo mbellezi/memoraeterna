@@ -80,12 +80,17 @@ describe("desktop IPC contracts", () => {
       })
     ).toMatchObject({
       language: "pt-BR",
-      themeMode: "dark"
+      themeMode: "dark",
+      summaryMinimumWordCount: 40
     });
 
     expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
       themeMode: "light"
     });
+    expect(appSettingsUpdateSchema.parse({ summaryMinimumWordCount: 75 })).toEqual({
+      summaryMinimumWordCount: 75
+    });
+    expect(() => appSettingsUpdateSchema.parse({ summaryMinimumWordCount: -1 })).toThrow();
     expect(() => appSettingsUpdateSchema.parse({ language: "de" })).toThrow();
   });
 

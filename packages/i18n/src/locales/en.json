@@ -491,6 +491,7 @@
       }
     },
     "matching": { "title": "Knowledge matching", "description": "Set the minimum final score required to persist a relationship between atomic notes.", "minimumScore": "Minimum match score", "moreRelations": "More relations", "fewerRelations": "Fewer, stricter relations", "savedAutomatically": "This value is applied automatically when changed." },
+    "summarization": { "title": "Summary generation", "description": "Avoid spending an AI call on source items that are too small to contain useful content.", "minimumWordCount": "Minimum words for a summary", "minimumWordCountHint": "Use 0 to disable this size heuristic. Structural and reference-only sections are still excluded by the AI instructions." },
     "metadataEnrichment": { "title": "Automatic metadata enrichment", "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests." },
     "reset": { "title": "Reset library", "description": "Delete the entire library, managed files, vectors, jobs and atomic notes. Downloaded local models and settings are preserved.", "action": "Reset everything", "confirmation": "Permanently delete the entire library, managed files, vectors and atomic notes? Downloaded local models will be preserved.", "completed": "Library reset completed.", "completedWithWarnings": "Library reset completed, but some managed files could not be removed.", "failed": "The library could not be reset." },
     "ai": {

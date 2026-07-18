@@ -331,18 +331,14 @@ export class JobSupervisor {
       await runs.completeStage(ingestionRunId, "summarization", summary);
       this.notify();
     }
-    if (aggregateHierarchyRoot && this.options.knowledgeService) {
-      const aggregate = await this.options.knowledgeService.summarizeHierarchiesForBatch(run.batchId, signal, {
+    const batchSummariesComplete = !run.batchId
+      || !shouldRun("summarization")
+      || await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0;
+    if (aggregateHierarchyRoot && this.options.knowledgeService && batchSummariesComplete) {
+      await this.options.knowledgeService.summarizeHierarchiesForBatch(run.batchId, signal, {
         jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
       }, sourceItemId, run.runKind === "reingestion");
-      if (aggregate.generatedCount === 0 && aggregate.reusedCount === 0) {
-        const blocked = aggregate.blockedRoots.find((root) => root.sourceItemId === sourceItemId);
-        throw new Error(blocked
-          ? `errors.ingestion.aggregateSummaryMissingSubparts:${blocked.missingSummaryCount}:${blocked.totalSubparts}`
-          : "errors.ingestion.aggregateSummaryUnavailable");
-      }
-    } else if (shouldRun("summarization") && run.batchId
-      && await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0) {
+    } else if (!aggregateHierarchyRoot && shouldRun("summarization") && run.batchId && batchSummariesComplete) {
       await this.options.knowledgeService?.summarizeHierarchiesForBatch(run.batchId, signal, {
         jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
       });

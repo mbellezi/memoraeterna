@@ -295,6 +295,11 @@ export function SettingsView({
                   t={t}
                   onChange={onAppSettingsChange}
                 />
+                <SummarizationCard
+                  appSettings={appSettings}
+                  t={t}
+                  onChange={onAppSettingsChange}
+                />
               </div>
             </div>
           ) : null}
@@ -556,6 +561,43 @@ function MatchingCard({ appSettings, t, onChange }: {
           aria-label={t("settings.metadataEnrichment.title")}
           onChange={(event) => onChange({ metadataEnrichmentEnabled: event.target.checked })}
         />
+      </div>
+    </section>
+  );
+}
+
+function SummarizationCard({ appSettings, t, onChange }: {
+  appSettings: AppSettings;
+  t: SettingsViewProps["t"];
+  onChange: SettingsViewProps["onAppSettingsChange"];
+}) {
+  return (
+    <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.summarization.title")}</h3>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.summarization.description")}</p>
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="summaryMinimumWordCount">{t("settings.summarization.minimumWordCount")}</Label>
+        <Input
+          id="summaryMinimumWordCount"
+          type="number"
+          min={0}
+          max={1000}
+          step={1}
+          value={appSettings.summaryMinimumWordCount}
+          onChange={(event) => onChange({
+            summaryMinimumWordCount: Math.max(0, Math.min(1000, Math.floor(Number(event.target.value))))
+          })}
+        />
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+          {t("settings.summarization.minimumWordCountHint")}
+        </p>
       </div>
     </section>
   );

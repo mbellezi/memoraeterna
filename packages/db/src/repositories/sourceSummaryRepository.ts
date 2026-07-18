@@ -113,6 +113,13 @@ export function createSourceSummaryRepository(db: TransactionPool) {
         [sourceItemId]
       );
       return result.rows.map(mapSummary);
+    },
+
+    async clearCurrent(sourceItemId: string): Promise<void> {
+      await db.query(
+        "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
+        [sourceItemId]
+      );
     }
   };
 }

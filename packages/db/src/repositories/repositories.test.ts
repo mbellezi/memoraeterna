@@ -212,6 +212,17 @@ describe("repositories", () => {
     expect(db.released).toBe(true);
   });
 
+  it("invalidates the current summary when an item no longer has summarizable content", async () => {
+    const db = new FakeQueryable([[]]);
+
+    await createSourceSummaryRepository(db as never).clearCurrent("source-1");
+
+    expect(db.queries).toEqual([{
+      text: "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
+      values: ["source-1"]
+    }]);
+  });
+
   it("persists an immutable local model descriptor with parameterized SQL", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
     const db = new FakeQueryable([[

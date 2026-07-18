@@ -285,6 +285,34 @@ describe("phase 2 renderer views", () => {
     expect(html).not.toContain(">Save<");
   });
 
+  it("renders the configurable minimum word count for summaries", () => {
+    const html = renderToString(
+      <SettingsView
+        activeScope="personalization"
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Minimum words for a summary");
+    expect(html).toContain('id="summaryMinimumWordCount"');
+    expect(html).toContain('value="40"');
+  });
+
   it("renders configuration scopes for the main sidebar", () => {
     const html = renderToString(
       <SettingsScopeMenu activeScope="intelligence" t={t} onScopeChange={() => undefined} />
