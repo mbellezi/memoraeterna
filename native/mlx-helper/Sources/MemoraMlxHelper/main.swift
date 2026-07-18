@@ -10,6 +10,9 @@ private let protocolVersion = 1
 private struct GenerationParameters: Codable {
     let maxTokens: Int
     let temperature: Float
+    let topP: Float?
+    let topK: Int?
+    let presencePenalty: Float?
     let enableThinking: Bool?
     let seed: UInt64?
 }
@@ -101,7 +104,8 @@ private struct MemoraMlxHelper {
             throw HelperError.invalidRequest
         }
         let parameters = request.parameters ?? GenerationParameters(
-            maxTokens: 1_024, temperature: 0.2, enableThinking: false, seed: nil
+            maxTokens: 1_024, temperature: 0.2, topP: nil, topK: nil,
+            presencePenalty: nil, enableThinking: false, seed: nil
         )
         let startedAt = ContinuousClock.now
         emitProgress(request.requestId, progress: 0.05, messageKey: "localModels.progress.loading")
@@ -119,6 +123,9 @@ private struct MemoraMlxHelper {
         let generation = GenerateParameters(
             maxTokens: parameters.maxTokens,
             temperature: parameters.temperature,
+            topP: parameters.topP ?? 1.0,
+            topK: parameters.topK ?? 0,
+            presencePenalty: parameters.presencePenalty,
             seed: parameters.seed
         )
         let session = ChatSession(

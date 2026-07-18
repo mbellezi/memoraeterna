@@ -576,8 +576,11 @@ Cada configuracao de modelo remoto ou local guarda parametros padrao editaveis. 
 - `contextWindow`;
 - `temperature`;
 - `maxTokens`;
-- `reasoningLevel` (`off`, `minimal`, `low`, `medium`, `high`);
+- `reasoningLevel` (`off`, `on`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`), limitado aos valores declarados pelo modelo;
+- `reasoningMaxTokens`, apenas quando o motor declarar suporte a budget de raciocinio;
 - `topP`;
+- `topK`;
+- `presencePenalty`;
 - `dimensions` para embeddings;
 - `seed`.
 

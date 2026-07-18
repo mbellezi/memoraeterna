@@ -226,9 +226,61 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   );
 }
 
-function LocalModelDefaults({ model, t, onSave }: { model: LocalModelView; t: (key: MessageKey) => string; onSave: (parameters: AiModelParameters) => Promise<unknown> }) {
+export function LocalModelDefaults({ model, t, onSave }: { model: LocalModelView; t: (key: MessageKey) => string; onSave: (parameters: AiModelParameters) => Promise<unknown> }) {
   const [parameters, setParameters] = useState(model.defaultParameters);
-  return <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900"><p className="text-sm font-medium">{t("localModels.defaultParameters")}</p><AiParameterFields value={parameters} onChange={setParameters} t={t} embeddingOnly={model.capabilities.includes("embedding")} /><div className="flex justify-end"><Button type="button" onClick={() => void onSave(parameters)}><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveDefaults")}</Button></div></div>;
+  const recommendedParameters = recommendedParametersForCurrentMode(model, parameters);
+
+  useEffect(() => {
+    setParameters(model.defaultParameters);
+  }, [model.defaultParameters]);
+
+  return (
+    <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">{t("localModels.defaultParameters")}</p>
+        {model.recommendedParameters ? (
+          <Button
+            type="button"
+            className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100"
+            disabled={!recommendedParameters}
+            onClick={() => {
+              if (recommendedParameters) setParameters(recommendedParameters);
+            }}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            {t("localModels.actions.reloadRecommended")}
+          </Button>
+        ) : null}
+      </div>
+      <AiParameterFields
+        value={parameters}
+        onChange={setParameters}
+        capabilities={model.parameterCapabilities}
+        t={t}
+        embeddingOnly={model.capabilities.includes("embedding")}
+      />
+      <div className="flex justify-end">
+        <Button type="button" onClick={() => void onSave(parameters)}>
+          <Save className="h-4 w-4" aria-hidden="true" />
+          {t("settings.ai.saveDefaults")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function recommendedParametersForCurrentMode(
+  model: Pick<LocalModelView, "recommendedParameters">,
+  currentParameters: AiModelParameters
+): AiModelParameters | null {
+  const presets = model.recommendedParameters;
+  if (!presets) return null;
+  const reasoningEnabled = currentParameters.reasoningLevel !== undefined
+    && currentParameters.reasoningLevel !== "off";
+  const preset = reasoningEnabled
+    ? presets.reasoning ?? presets.nonReasoning
+    : presets.nonReasoning ?? presets.reasoning;
+  return preset ? { ...preset } : null;
 }
 
 function formatBytes(bytes: number): string {

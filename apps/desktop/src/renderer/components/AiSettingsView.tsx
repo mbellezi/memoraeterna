@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Bot, Copy, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Route, Save, ServerCog, TestTubeDiagonal, Trash2, Users } from "lucide-react";
-import type { AiCapability } from "@app/domain";
+import { normalizeAiModelParameters, type AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
   appLanguageCodes,
   type AiConfigurableTask,
+  type AiModelParameterCapabilities,
   type AiModelParameters,
   type AiOutputLanguage,
   type AiProfile,
@@ -64,6 +65,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
   const [modelId, setModelId] = useState("");
   const [modelPurpose, setModelPurpose] = useState<ModelPurpose>("generation");
   const [modelDefaults, setModelDefaults] = useState<AiModelParameters>({});
+  const [modelParameterCapabilities, setModelParameterCapabilities] = useState<AiModelParameterCapabilities>({});
   const [apiKey, setApiKey] = useState("");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [discoveringModels, setDiscoveringModels] = useState(false);
@@ -95,6 +97,29 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
 
   useEffect(() => { void load().catch(() => setStatus("errors.common.unknown")); }, []);
 
+  useEffect(() => {
+    if (!modelId.trim()) {
+      setModelParameterCapabilities({});
+      return;
+    }
+    let active = true;
+    const capabilities = purposeCapabilities[modelPurpose].filter((capability) =>
+      provider !== "openai-codex" || capability !== "requires-api-key");
+    void window.app.ai.getParameterCapabilities({
+      provider,
+      modelId: modelId.trim(),
+      capabilities,
+      ...(validUrl(baseUrl) ? { baseUrl } : {})
+    }).then((next) => {
+      if (!active) return;
+      setModelParameterCapabilities(next);
+      setModelDefaults((current) => normalizeAiModelParameters(current, next));
+    }).catch(() => {
+      if (active) setModelParameterCapabilities({});
+    });
+    return () => { active = false; };
+  }, [baseUrl, modelId, modelPurpose, provider]);
+
   async function run(action: () => Promise<unknown>) {
     setStatus("shell.states.loading");
     try {
@@ -117,7 +142,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
         modelId,
         capabilities: purposeCapabilities[modelPurpose].filter((capability) =>
           provider !== "openai-codex" || capability !== "requires-api-key"),
-        defaultParameters: modelDefaults,
+        defaultParameters: normalizeAiModelParameters(modelDefaults, modelParameterCapabilities),
         ...(baseUrl ? { baseUrl } : {}),
         ...(apiKey ? { apiKey } : {})
       });
@@ -196,6 +221,9 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
   }
 
   const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId);
+  const selectedProfileParameterCapabilities = selectedProfile
+    ? parameterCapabilitiesForProfile(selectedProfile, providers, localModels)
+    : {};
   const remoteEmbeddingModels = providers.filter((item) => item.capabilities.includes("embedding"));
   const remoteGenerationModels = providers.filter((item) => !item.capabilities.includes("embedding"));
 
@@ -242,7 +270,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
             <Field label={t("settings.ai.model")}><div className="grid gap-1"><div className="flex gap-2"><Input required list="remote-model-options" autoComplete="off" value={modelId} onChange={(event) => setModelId(event.target.value)} /><datalist id="remote-model-options">{availableModels.map((model) => <option key={model} value={model} />)}</datalist>{provider !== "openai-codex" ? <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={!apiKey.trim() || discoveringModels} onClick={() => void discoverModels()}>{discoveringModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button> : null}</div>{provider === "openai-codex" ? <p className="text-xs text-slate-500">{t("settings.ai.oauth.modelSelectionHint")}</p> : null}</div></Field>
             {provider === "openai-codex" ? <Field label={t("settings.ai.oauth.authentication")}><div className="grid gap-1"><div className="flex items-center gap-2"><Button type="button" disabled={connectingOpenAiCodex} onClick={() => void connectOpenAiCodex()}>{connectingOpenAiCodex ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogIn className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.oauth.connect")}</Button>{openAiCodexConnected ? <span className="text-xs text-emerald-700 dark:text-emerald-300">{t("settings.ai.oauth.connected")}</span> : null}</div><p className="text-xs text-slate-500">{t("settings.ai.oauth.description")}</p></div></Field> : <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>}
           </div>
-          <AiParameterFields value={modelDefaults} onChange={setModelDefaults} t={t} embeddingOnly={modelPurpose === "embedding"} />
+          <AiParameterFields value={modelDefaults} onChange={setModelDefaults} capabilities={modelParameterCapabilities} t={t} embeddingOnly={modelPurpose === "embedding"} />
           <div className="flex justify-end"><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
         </form>
 
@@ -287,6 +315,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en" }: AiSettingsViewPr
                   definition={definition}
                   profile={selectedProfile}
                   existing={profileTasks.find((item) => item.profileId === selectedProfile.id && item.task === definition.task)}
+                  parameterCapabilities={selectedProfileParameterCapabilities}
                   t={t}
                   onSave={(input) => run(() => window.app.ai.setProfileTask(input))}
                 />
@@ -340,6 +369,7 @@ function ModelGroup({ title, models, t, onSave, onDelete, onReconnect }: { title
 
 function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: AiProviderConfig; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters, displayName?: string, modelId?: string) => Promise<boolean>; onDelete: (model: AiProviderConfig) => Promise<boolean>; onReconnect: (model: AiProviderConfig) => Promise<unknown> }) {
   const [defaults, setDefaults] = useState(model.defaultParameters);
+  const [parameterCapabilities, setParameterCapabilities] = useState(model.parameterCapabilities);
   const [testStatus, setTestStatus] = useState<MessageKey | null>(null);
   const [testing, setTesting] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -352,9 +382,26 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
   const modelOptionsId = `remote-model-options-${model.id}`;
   useEffect(() => {
     setDefaults(model.defaultParameters);
+    setParameterCapabilities(model.parameterCapabilities);
     setEditDisplayName(model.displayName);
     setEditModelId(model.modelId);
-  }, [model.defaultParameters, model.displayName, model.modelId]);
+  }, [model.defaultParameters, model.displayName, model.modelId, model.parameterCapabilities]);
+
+  useEffect(() => {
+    if (!editing || !editModelId.trim()) return;
+    let active = true;
+    void window.app.ai.getParameterCapabilities({
+      provider: model.provider,
+      modelId: editModelId.trim(),
+      baseUrl: model.baseUrl,
+      capabilities: model.capabilities
+    }).then((next) => {
+      if (!active) return;
+      setParameterCapabilities(next);
+      setDefaults((current) => normalizeAiModelParameters(current, next));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [editModelId, editing, model.baseUrl, model.capabilities, model.provider]);
 
   async function testProvider() {
     setTesting(true);
@@ -378,11 +425,18 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
     setEditing(true);
     setEditDisplayName(model.displayName);
     setEditModelId(model.modelId);
+    setParameterCapabilities(model.parameterCapabilities);
     void loadModelOptions();
   }
 
+  function cancelEdit() {
+    setEditing(false);
+    setDefaults(model.defaultParameters);
+    setParameterCapabilities(model.parameterCapabilities);
+  }
+
   async function saveEdit() {
-    const saved = await onSave(model, defaults, editDisplayName.trim(), editModelId.trim());
+    const saved = await onSave(model, normalizeAiModelParameters(defaults, parameterCapabilities), editDisplayName.trim(), editModelId.trim());
     if (saved) setEditing(false);
   }
 
@@ -420,10 +474,10 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
           </Field>
         </div>
       ) : null}
-      <AiParameterFields value={defaults} onChange={setDefaults} t={t} embeddingOnly={embeddingOnly} />
+      <AiParameterFields value={defaults} onChange={setDefaults} capabilities={parameterCapabilities} t={t} embeddingOnly={embeddingOnly} />
       <div className="flex justify-end gap-2">
-        {editing ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => setEditing(false)}>{t("shell.actions.cancel")}</Button> : null}
-        <Button type="button" disabled={editing && (!editDisplayName.trim() || !editModelId.trim())} onClick={() => void (editing ? saveEdit() : onSave(model, defaults))}><Save className="h-4 w-4" aria-hidden="true" />{t(editing ? "settings.ai.saveModelChanges" : "settings.ai.saveDefaults")}</Button>
+        {editing ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={cancelEdit}>{t("shell.actions.cancel")}</Button> : null}
+        <Button type="button" disabled={editing && (!editDisplayName.trim() || !editModelId.trim())} onClick={() => void (editing ? saveEdit() : onSave(model, normalizeAiModelParameters(defaults, parameterCapabilities)))}><Save className="h-4 w-4" aria-hidden="true" />{t(editing ? "settings.ai.saveModelChanges" : "settings.ai.saveDefaults")}</Button>
       </div>
     </article>
   );
@@ -443,14 +497,38 @@ function ProfileHeader({ profile, providers, localModels, t, interfaceLanguage, 
   return <div className="grid gap-3 md:grid-cols-[1fr_1fr_1.5fr_auto]"><select value={privacyMode} onChange={(event) => setPrivacyMode(event.target.value as typeof privacyMode)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select><LanguageSelect value={outputLanguage} onChange={setOutputLanguage} t={t} interfaceLanguage={interfaceLanguage} /><select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className={selectClass}><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><Button type="button" disabled={!selected} onClick={() => selected && void onSave({ privacyMode, outputLanguage, modelId: selected.modelId, runtime: selected.runtime, capabilities: selected.capabilities, ...(selected.providerConfigId ? { providerConfigId: selected.providerConfigId } : {}), ...(selected.localModelId ? { localModelId: selected.localModelId } : {}) })}><Save className="h-4 w-4" aria-hidden="true" />{t("shell.actions.save")}</Button></div>;
 }
 
-function ProfileTaskEditor({ definition, profile, existing, t, onSave }: { definition: { task: AiConfigurableTask; capabilities: AiCapability[] }; profile: AiProfile; existing: AiProfileTask | undefined; t: (key: MessageKey) => string; onSave: (input: AiProfileTaskInput) => Promise<unknown> }) {
+function ProfileTaskEditor({ definition, profile, existing, parameterCapabilities, t, onSave }: { definition: { task: AiConfigurableTask; capabilities: AiCapability[] }; profile: AiProfile; existing: AiProfileTask | undefined; parameterCapabilities: AiModelParameterCapabilities; t: (key: MessageKey) => string; onSave: (input: AiProfileTaskInput) => Promise<unknown> }) {
   const [parameters, setParameters] = useState<AiModelParameters>(existing?.parameters ?? {});
   useEffect(() => { setParameters(existing?.parameters ?? {}); }, [existing]);
-  return <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><Label>{t(`settings.ai.tasks.${definition.task}` as MessageKey)}</Label><Button type="button" onClick={() => void onSave({ profileId: profile.id, task: definition.task, parameters })}><Save className="h-4 w-4" aria-hidden="true" />{t("shell.actions.save")}</Button></div><AiParameterFields value={parameters} onChange={setParameters} t={t} embeddingOnly={definition.task === "embedding"} /></div>;
+  return <div className="grid gap-3 rounded-md bg-slate-50 p-3 dark:bg-slate-900"><div className="flex items-center justify-between gap-2"><Label>{t(`settings.ai.tasks.${definition.task}` as MessageKey)}</Label><Button type="button" onClick={() => void onSave({ profileId: profile.id, task: definition.task, parameters: normalizeAiModelParameters(parameters, parameterCapabilities) })}><Save className="h-4 w-4" aria-hidden="true" />{t("shell.actions.save")}</Button></div><AiParameterFields value={parameters} onChange={setParameters} capabilities={parameterCapabilities} t={t} embeddingOnly={definition.task === "embedding"} /></div>;
 }
 
 function supportsTask(profile: AiProfile, definition: { capabilities: AiCapability[] }): boolean {
   return Boolean(profile.modelId) && definition.capabilities.every((capability) => profile.capabilities.includes(capability));
+}
+
+function parameterCapabilitiesForProfile(
+  profile: AiProfile,
+  providers: AiProviderConfig[],
+  localModels: LocalModelView[]
+): AiModelParameterCapabilities {
+  if (profile.localModelId) {
+    return localModels.find((model) => model.id === profile.localModelId)?.parameterCapabilities ?? {};
+  }
+  if (profile.providerConfigId) {
+    return providers.find((provider) => provider.id === profile.providerConfigId)?.parameterCapabilities ?? {};
+  }
+  return {};
+}
+
+function validUrl(value: string): boolean {
+  if (!value) return false;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function LanguageSelect({ value, onChange, t, interfaceLanguage }: { value: AiOutputLanguage; onChange: (value: AiOutputLanguage) => void; t: (key: MessageKey) => string; interfaceLanguage: LanguageCode }) {

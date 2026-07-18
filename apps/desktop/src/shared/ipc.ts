@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   AiCapabilitySchema,
+  AiModelParameterCapabilitiesSchema,
   AiModelParametersSchema,
   AiReasoningLevelSchema,
   DocumentDivisionCandidateSchema,
@@ -60,6 +61,7 @@ export const ipcChannels = {
   aiProvidersTest: "app:ai:providers:test",
   aiModelsList: "app:ai:models:list",
   aiModelsDiscover: "app:ai:models:discover",
+  aiParameterCapabilitiesGet: "app:ai:parameter-capabilities:get",
   aiOpenAiCodexConnect: "app:ai:openai-codex:connect",
   aiOpenAiCodexDisconnect: "app:ai:openai-codex:disconnect",
   aiProfilesList: "app:ai:profiles:list",
@@ -573,6 +575,7 @@ export const similarityDebugClearResultSchema = z.object({
 
 export const aiProviderKindSchema = z.enum(["google", "openai-compatible", "openai-codex"]);
 export const aiReasoningLevelSchema = AiReasoningLevelSchema;
+export const aiModelParameterCapabilitiesSchema = AiModelParameterCapabilitiesSchema;
 export const aiModelParametersSchema = AiModelParametersSchema;
 export const aiConfigurableTaskSchema = z.enum([
   "embedding",
@@ -605,10 +608,18 @@ export const aiModelDiscoveryInputSchema = z.object({
   }
 });
 
+export const aiParameterCapabilitiesInputSchema = z.object({
+  provider: aiProviderKindSchema,
+  modelId: z.string().trim().min(1),
+  baseUrl: z.string().url().nullable().optional(),
+  capabilities: z.array(AiCapabilitySchema).default([])
+}).strict();
+
 export const aiModelListSchema = z.array(z.string().min(1));
 
 export const aiProviderConfigSchema = aiProviderConfigInputSchema.omit({ apiKey: true }).extend({
   id: z.string().uuid(),
+  parameterCapabilities: aiModelParameterCapabilitiesSchema,
   secretConfigured: z.boolean(),
   status: z.string().min(1)
 }).strict();
@@ -687,6 +698,14 @@ export const localModelStatusSchema = z.enum([
   "not_downloaded", "downloading", "verifying", "ready", "failed", "removing"
 ]);
 
+export const localModelRecommendedParametersSchema = z.object({
+  reasoning: aiModelParametersSchema.optional(),
+  nonReasoning: aiModelParametersSchema.optional()
+}).strict().refine(
+  (presets) => presets.reasoning !== undefined || presets.nonReasoning !== undefined,
+  { message: "At least one recommended parameter preset is required." }
+);
+
 export const localModelViewSchema = z.object({
   id: z.string().uuid(),
   catalogId: z.string().min(1),
@@ -700,7 +719,9 @@ export const localModelViewSchema = z.object({
   format: z.string().min(1),
   quantization: z.string().min(1),
   capabilities: z.array(AiCapabilitySchema),
+  parameterCapabilities: aiModelParameterCapabilitiesSchema,
   defaultParameters: aiModelParametersSchema,
+  recommendedParameters: localModelRecommendedParametersSchema.nullable(),
   minimumMemoryBytes: z.number().int().nonnegative(),
   recommendedMemoryBytes: z.number().int().nonnegative(),
   expectedSizeBytes: z.number().int().nonnegative(),
@@ -817,6 +838,7 @@ export type AtomicNoteReviewInput = z.infer<typeof atomicNoteReviewInputSchema>;
 export type AiProviderConfigInput = z.infer<typeof aiProviderConfigInputSchema>;
 export type AiProviderConfig = z.infer<typeof aiProviderConfigSchema>;
 export type AiModelDiscoveryInput = z.infer<typeof aiModelDiscoveryInputSchema>;
+export type AiParameterCapabilitiesInput = z.infer<typeof aiParameterCapabilitiesInputSchema>;
 export type AiProfile = z.infer<typeof aiProfileSchema>;
 export type AiProfileCreate = z.infer<typeof aiProfileCreateSchema>;
 export type AiProfileUpdate = z.infer<typeof aiProfileUpdateSchema>;
@@ -825,6 +847,7 @@ export type AiProfileTask = z.infer<typeof aiProfileTaskSchema>;
 export type AiTaskRoute = z.infer<typeof aiTaskRouteSchema>;
 export type AiConfigurableTask = z.infer<typeof aiConfigurableTaskSchema>;
 export type AiModelParameters = z.infer<typeof aiModelParametersSchema>;
+export type AiModelParameterCapabilities = z.infer<typeof aiModelParameterCapabilitiesSchema>;
 export type AiOutputLanguage = z.infer<typeof aiOutputLanguageSchema>;
 export type LocalModelView = z.infer<typeof localModelViewSchema>;
 export type LocalModelDownloadInput = z.infer<typeof localModelDownloadInputSchema>;
@@ -919,6 +942,7 @@ export interface DesktopApi {
     testProvider: (providerId: string) => Promise<boolean>;
     listModels: (providerId: string) => Promise<string[]>;
     discoverModels: (input: AiModelDiscoveryInput) => Promise<string[]>;
+    getParameterCapabilities: (input: AiParameterCapabilitiesInput) => Promise<AiModelParameterCapabilities>;
     connectOpenAiCodex: () => Promise<string[]>;
     disconnectOpenAiCodex: () => Promise<void>;
     listProfiles: () => Promise<AiProfile[]>;

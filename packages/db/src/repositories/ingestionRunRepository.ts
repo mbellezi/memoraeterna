@@ -61,6 +61,7 @@ export interface UpdateIngestionRunInput {
   status?: IngestionRunStatus;
   currentStage?: string;
   stagesCheckpoint?: JsonObject;
+  inputHashes?: JsonObject;
   error?: string | null;
   startedAt?: Date | null;
   completedAt?: Date | null;
@@ -162,6 +163,7 @@ export function createIngestionRunRepository(db: Queryable) {
           status: input.status,
           current_stage: input.currentStage,
           stages_checkpoint: input.stagesCheckpoint,
+          input_hashes: input.inputHashes,
           error: input.error,
           started_at: input.startedAt,
           completed_at: input.completedAt

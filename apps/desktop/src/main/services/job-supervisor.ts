@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
 import {
@@ -14,6 +15,7 @@ import {
 } from "@app/db";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
+import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { logStructuredError } from "./structured-logging.js";
@@ -231,9 +233,19 @@ export class JobSupervisor {
     const ingestionRunId = readString(job.payload, "ingestionRunId");
     const documentId = readString(job.payload, "documentId");
     const sourceItemId = readString(job.payload, "sourceItemId");
-    const markdown = readString(job.payload, "markdown");
+    let markdown = readString(job.payload, "markdown");
+    const catalogMetadataOnly = job.payload.processingMode === "catalog_metadata";
     const pool = this.requirePool();
+    if (catalogMetadataOnly) {
+      const source = await createSourceItemRepository(pool).findById(sourceItemId);
+      if (source) markdown = buildCatalogMetadataMarkdown(source);
+    }
     const runs = createIngestionRunRepository(pool);
+    if (catalogMetadataOnly) {
+      await runs.update(ingestionRunId, {
+        inputHashes: { contentHash: createHash("sha256").update(markdown).digest("hex") }
+      });
+    }
     const run = await runs.startOrResume(ingestionRunId) ?? await runs.findById(ingestionRunId);
     if (!run) throw new Error("ingestion_run_not_found");
     const effectiveStages = new Set(
@@ -246,20 +258,13 @@ export class JobSupervisor {
     if (shouldRun("chunking") && checkpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "chunking");
       this.notify();
-      const chunkResult = await this.workers.execute("chunking", {
-        markdown,
-        blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
-      }, {
-        signal,
-        onProgress: (progress) => this.trackProgress(
-          createJobRepository(pool).reportProgress(job.id, 0.05 + progress * 0.3)
-        )
-      });
-      const chunks = Array.isArray(chunkResult.chunks) ? chunkResult.chunks : [];
+      const chunks = catalogMetadataOnly
+        ? [createCatalogMetadataChunk(markdown)]
+        : await this.createContentChunks(job, markdown, signal);
       persistedChunks = await createChunkRepository(pool).replaceDocumentChunks(
         documentId,
         sourceItemId,
-        chunks.map((raw) => parseWorkerChunk(raw))
+        chunks
       );
       await runs.completeStage(ingestionRunId, "chunking", { chunkCount: chunks.length });
       this.notify();
@@ -366,7 +371,18 @@ export class JobSupervisor {
         ? await this.runInlineStageJob(
             "knowledge-graph-generation",
             { ingestionRunId, sourceItemId, documentId },
-            (stageJobId) => this.options.knowledgeService!.generateKnowledgeGraph(
+            (stageJobId) => (catalogMetadataOnly
+              ? this.options.knowledgeService!.generateCatalogKnowledgeGraph(
+                  sourceItemId,
+                  documentId,
+                  {
+                    jobId: stageJobId,
+                    ingestionRunId,
+                    onProgress: (progress) => this.reportInlineProgress(stageJobId, progress)
+                  },
+                  signal
+                )
+              : this.options.knowledgeService!.generateKnowledgeGraph(
               sourceItemId,
               documentId,
               {
@@ -388,7 +404,7 @@ export class JobSupervisor {
                 }
               },
               signal
-            ),
+            )),
             controller
           )
         : { configured: false, generated: false, projected: false };
@@ -409,7 +425,7 @@ export class JobSupervisor {
         const batchRuns = await runs.listByBatch(batchId);
         const batchNoteIds = new Set(noteIds);
         for (const batchRun of batchRuns) {
-          if (!batchRun.sourceItemId) continue;
+          if (!batchRun.sourceItemId || !participatesInAtomicNoteMatching(batchRun.effectiveStages)) continue;
           for (const note of await createAtomicNoteRepository(pool).listBySourceItem(batchRun.sourceItemId)) {
             if (note.status !== "rejected") batchNoteIds.add(note.id);
           }
@@ -468,6 +484,19 @@ export class JobSupervisor {
     await runs.complete(ingestionRunId);
     this.notify();
     return { ingestionRunId, documentId, sourceItemId };
+  }
+
+  private async createContentChunks(job: JobRecord, markdown: string, signal: AbortSignal) {
+    const chunkResult = await this.workers.execute("chunking", {
+      markdown,
+      blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
+    }, {
+      signal,
+      onProgress: (progress) => this.trackProgress(
+        createJobRepository(this.requirePool()).reportProgress(job.id, 0.05 + progress * 0.3)
+      )
+    });
+    return (Array.isArray(chunkResult.chunks) ? chunkResult.chunks : []).map((raw) => parseWorkerChunk(raw));
   }
 
   private async runInlineStageJob(
@@ -591,6 +620,33 @@ function parseWorkerChunk(raw: unknown) {
       ...(typeof value.selector === "string" ? { selector: value.selector } : {})
     }
   };
+}
+
+export function createCatalogMetadataChunk(content: string) {
+  const id = randomUUID();
+  const sourceSpanId = randomUUID();
+  return {
+    id,
+    sourceSpanId,
+    chunkIndex: 0,
+    content,
+    tokenCount: Math.max(1, Math.ceil(content.length / 4)),
+    contentHash: createHash("sha256").update(content).digest("hex"),
+    chunkingVersion: "catalog-metadata-v1",
+    metadata: { processingMode: "catalog_metadata" },
+    span: {
+      id: sourceSpanId,
+      startOffset: 0,
+      endOffset: content.length,
+      selector: "catalog-metadata",
+      label: "catalog-metadata",
+      metadata: { processingMode: "catalog_metadata" }
+    }
+  };
+}
+
+export function participatesInAtomicNoteMatching(effectiveStages: readonly unknown[]): boolean {
+  return effectiveStages.includes("atomicNotes");
 }
 
 function normalizeWorkerError(error: unknown): string {

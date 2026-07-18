@@ -71,6 +71,9 @@ Implementado ate aqui:
 - modelos remotos separados por capability, parametros padrao por modelo,
   overrides independentes por perfil/tarefa e conversao dos parametros
   canonicos para cada adapter;
+- capacidades de parametros declaradas por motor/modelo, com UI adaptativa,
+  reasoning binario ou graduado conforme o contrato real e budget separado
+  somente quando suportado;
 - proveniencia de execucoes de IA em `ai_task_run_sources`, incluindo tarefas
   compartilhadas entre fontes e limpeza segura quando a ultima fonte vinculada
   e removida;
@@ -105,6 +108,10 @@ Implementado ate aqui:
   etapas ausentes e reingestao que preserva notas revisadas;
 - processing batches, runs normalizadas por etapa, execucao seletiva,
   barreira de matching por lote e resumo agregado de livros;
+- quando um lote hierarquico inclui descendentes, resumo, notas atomicas e
+  matching rodam somente nos subitens; a raiz usa apenas titulo, criadores,
+  metadados e seu resumo atual para o embedding e o grafo catalograficos
+  solicitados pelo plano;
 - busca por raiz com breadcrumbs e Jobs agrupados por lote, exibindo somente
   as etapas efetivas;
 - protocolo Docling v3 com progresso real por pagina, arvore `body/groups`,

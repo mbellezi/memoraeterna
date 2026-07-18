@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 
 import { z } from "zod";
-import { AiCapabilitySchema, AiModelParametersSchema } from "@app/domain";
+import {
+  AiCapabilitySchema,
+  AiModelParameterCapabilitiesSchema,
+  AiModelParametersSchema,
+  normalizeAiModelParameters,
+  type AiModelParameterCapabilities,
+  type AiModelParameters
+} from "@app/domain";
 
 export const localModelRuntimeSchema = z.enum(["gguf", "mlx"]);
 export type LocalModelRuntime = z.infer<typeof localModelRuntimeSchema>;
@@ -12,6 +19,15 @@ export const localModelCatalogFileSchema = z.object({
   sha256: z.string().regex(/^[a-f0-9]{64}$/)
 }).strict();
 export type LocalModelCatalogFile = z.infer<typeof localModelCatalogFileSchema>;
+
+export const localModelRecommendedParametersSchema = z.object({
+  reasoning: AiModelParametersSchema.optional(),
+  nonReasoning: AiModelParametersSchema.optional()
+}).strict().refine(
+  (presets) => presets.reasoning !== undefined || presets.nonReasoning !== undefined,
+  { message: "At least one recommended parameter preset is required." }
+);
+export type LocalModelRecommendedParameters = z.infer<typeof localModelRecommendedParametersSchema>;
 
 export const localModelCatalogEntrySchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]+$/),
@@ -24,7 +40,9 @@ export const localModelCatalogEntrySchema = z.object({
   format: z.enum(["safetensors", "gguf"]),
   quantization: z.string().min(1),
   capabilities: z.array(AiCapabilitySchema).min(1),
+  parameterCapabilities: AiModelParameterCapabilitiesSchema,
   defaultParameters: AiModelParametersSchema.default({}),
+  recommendedParameters: localModelRecommendedParametersSchema.optional(),
   minimumMemoryBytes: z.number().int().positive(),
   recommendedMemoryBytes: z.number().int().positive(),
   license: z.string().min(1),
@@ -44,6 +62,33 @@ export const localModelCatalogEntrySchema = z.object({
   }
   if (entry.recommendedMemoryBytes < entry.minimumMemoryBytes) {
     context.addIssue({ code: "custom", message: "Recommended memory must be at least the minimum.", path: ["recommendedMemoryBytes"] });
+  }
+  validateSupportedParameters(entry.defaultParameters, entry.parameterCapabilities, context, ["defaultParameters"]);
+  if (entry.recommendedParameters?.reasoning && !entry.parameterCapabilities.reasoning) {
+    context.addIssue({ code: "custom", message: "A reasoning preset requires reasoning capability.", path: ["recommendedParameters", "reasoning"] });
+  }
+  if (entry.recommendedParameters?.reasoning) {
+    if (entry.recommendedParameters.reasoning.reasoningLevel === "off") {
+      context.addIssue({ code: "custom", message: "A reasoning preset cannot disable reasoning.", path: ["recommendedParameters", "reasoning", "reasoningLevel"] });
+    }
+    validateSupportedParameters(
+      entry.recommendedParameters.reasoning,
+      entry.parameterCapabilities,
+      context,
+      ["recommendedParameters", "reasoning"]
+    );
+  }
+  if (entry.recommendedParameters?.nonReasoning) {
+    const level = entry.recommendedParameters.nonReasoning.reasoningLevel;
+    if (level !== undefined && level !== "off") {
+      context.addIssue({ code: "custom", message: "A non-reasoning preset cannot enable reasoning.", path: ["recommendedParameters", "nonReasoning", "reasoningLevel"] });
+    }
+    validateSupportedParameters(
+      entry.recommendedParameters.nonReasoning,
+      entry.parameterCapabilities,
+      context,
+      ["recommendedParameters", "nonReasoning"]
+    );
   }
 });
 export type LocalModelCatalogEntry = z.infer<typeof localModelCatalogEntrySchema>;
@@ -74,6 +119,10 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "gguf",
     quantization: "Q8_0",
     capabilities: ["embedding", "offline", "local-files"],
+    parameterCapabilities: {
+      contextWindow: { min: 128, max: 2_000_000, step: 1 },
+      dimensions: { values: [256, 768, 1_024] }
+    },
     defaultParameters: { contextWindow: 8_192, dimensions: 1_024 },
     minimumMemoryBytes: 2 * gib,
     recommendedMemoryBytes: 4 * gib,
@@ -99,6 +148,10 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "gguf",
     quantization: "Q8_0",
     capabilities: ["embedding", "offline", "local-files"],
+    parameterCapabilities: {
+      contextWindow: { min: 128, max: 2_000_000, step: 1 },
+      dimensions: { values: [256, 768, 1_024] }
+    },
     defaultParameters: { contextWindow: 8_192, dimensions: 1_024 },
     minimumMemoryBytes: 2 * gib,
     recommendedMemoryBytes: 4 * gib,
@@ -124,6 +177,18 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "safetensors",
     quantization: "4-bit",
     capabilities: textCapabilities,
+    parameterCapabilities: {
+      temperature: { min: 0, max: 2, step: 0.1 },
+      maxTokens: { min: 1, max: 32_768, step: 1 },
+      topP: { min: 0, max: 1, step: 0.05 },
+      topK: { min: 1, step: 1 },
+      presencePenalty: { min: -2, max: 2, step: 0.1 },
+      seed: { min: 0, step: 1 }
+    },
+    defaultParameters: { temperature: 1, topP: 0.95, topK: 64 },
+    recommendedParameters: {
+      nonReasoning: { temperature: 1, topP: 0.95, topK: 64 }
+    },
     minimumMemoryBytes: 8 * gib,
     recommendedMemoryBytes: 16 * gib,
     license: "Gemma",
@@ -151,6 +216,18 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "safetensors",
     quantization: "4-bit",
     capabilities: textCapabilities,
+    parameterCapabilities: {
+      temperature: { min: 0, max: 2, step: 0.1 },
+      maxTokens: { min: 1, max: 32_768, step: 1 },
+      topP: { min: 0, max: 1, step: 0.05 },
+      topK: { min: 1, step: 1 },
+      presencePenalty: { min: -2, max: 2, step: 0.1 },
+      seed: { min: 0, step: 1 }
+    },
+    defaultParameters: { temperature: 1, topP: 0.95, topK: 64 },
+    recommendedParameters: {
+      nonReasoning: { temperature: 1, topP: 0.95, topK: 64 }
+    },
     minimumMemoryBytes: 16 * gib,
     recommendedMemoryBytes: 24 * gib,
     license: "Gemma",
@@ -179,6 +256,18 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "safetensors",
     quantization: "4-bit",
     capabilities: textCapabilities,
+    parameterCapabilities: {
+      temperature: { min: 0, max: 2, step: 0.1 },
+      maxTokens: { min: 1, max: 32_768, step: 1 },
+      topP: { min: 0, max: 1, step: 0.05 },
+      topK: { min: 1, step: 1 },
+      presencePenalty: { min: -2, max: 2, step: 0.1 },
+      seed: { min: 0, step: 1 }
+    },
+    defaultParameters: { temperature: 0.7, maxTokens: 16_384, topP: 0.8, topK: 20 },
+    recommendedParameters: {
+      nonReasoning: { temperature: 0.7, maxTokens: 16_384, topP: 0.8, topK: 20 }
+    },
     minimumMemoryBytes: 8 * gib,
     recommendedMemoryBytes: 12 * gib,
     license: "Apache-2.0",
@@ -209,6 +298,41 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     format: "safetensors",
     quantization: "4-bit",
     capabilities: textCapabilities,
+    parameterCapabilities: {
+      temperature: { min: 0, max: 2, step: 0.1 },
+      maxTokens: { min: 1, max: 32_768, step: 1 },
+      topP: { min: 0, max: 1, step: 0.05 },
+      topK: { min: 1, step: 1 },
+      presencePenalty: { min: -2, max: 2, step: 0.1 },
+      reasoning: { levels: ["off", "on"] },
+      seed: { min: 0, step: 1 }
+    },
+    defaultParameters: {
+      temperature: 0.7,
+      maxTokens: 32_768,
+      reasoningLevel: "off",
+      topP: 0.8,
+      topK: 20,
+      presencePenalty: 1.5
+    },
+    recommendedParameters: {
+      reasoning: {
+        temperature: 1,
+        maxTokens: 32_768,
+        reasoningLevel: "on",
+        topP: 0.95,
+        topK: 20,
+        presencePenalty: 1.5
+      },
+      nonReasoning: {
+        temperature: 0.7,
+        maxTokens: 32_768,
+        reasoningLevel: "off",
+        topP: 0.8,
+        topK: 20,
+        presencePenalty: 1.5
+      }
+    },
     minimumMemoryBytes: 12 * gib,
     recommendedMemoryBytes: 16 * gib,
     license: "Apache-2.0",
@@ -230,7 +354,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   }
 ]);
 
-export const localModelCatalogVersion = "2026-07-11.1";
+export const localModelCatalogVersion = "2026-07-18.1";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);
@@ -251,4 +375,22 @@ export function isSafeModelRelativePath(path: string): boolean {
     && !path.startsWith("\\")
     && !path.split(/[\\/]/).includes("..")
     && !/^[a-zA-Z]:/.test(path);
+}
+
+function validateSupportedParameters(
+  parameters: AiModelParameters,
+  capabilities: AiModelParameterCapabilities,
+  context: z.RefinementCtx,
+  path: PropertyKey[]
+): void {
+  const normalized = normalizeAiModelParameters(parameters, capabilities);
+  const parameterKeys = Object.keys(parameters) as Array<keyof AiModelParameters>;
+  if (parameterKeys.length !== Object.keys(normalized).length
+      || parameterKeys.some((key) => normalized[key] !== parameters[key])) {
+    context.addIssue({
+      code: "custom",
+      message: "Parameters must be supported by the model capabilities and remain within their declared ranges.",
+      path
+    });
+  }
 }

@@ -195,7 +195,8 @@ npm run db:generate
 - Etapas generativas executadas por perfil usam `maxTokens: 16384` como default
   interno seguro. Um valor definido nos defaults do modelo ou nos overrides do
   perfil/tarefa deve prevalecer sobre esse default.
-- Parametros conhecidos devem usar nomes canonicos internos (`contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions`, `seed`). Cada adapter converte esses nomes para o contrato do provedor/runtime e nao deve enviar parametros internos desconhecidos diretamente.
+- Parametros conhecidos devem usar nomes canonicos internos (`contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `reasoningMaxTokens`, `topP`, `topK`, `presencePenalty`, `dimensions`, `seed`). Cada adapter converte esses nomes para o contrato do provedor/runtime e nao deve enviar parametros internos desconhecidos diretamente.
+- Cada adapter/modelo deve declarar suas capacidades de parametros, incluindo os niveis de reasoning aceitos e o suporte opcional a `reasoningMaxTokens`. A UI deve exibir somente controles declarados, e a execucao deve normalizar os parametros efetivos contra a mesma descricao antes de chamar o motor.
 - Cada tipo de tarefa de IA deve poder escolher seu proprio perfil ativo pela configuracao persistida de roteamento. Um unico perfil global nao deve ser imposto a todas as tarefas.
 - Cada perfil referencia exatamente um modelo remoto ou local. A escolha de qual modelo executa cada tarefa ocorre indiretamente pelo roteamento de `ai_task_profile_routes`, que seleciona um perfil compativel para a tarefa.
 - Overrides de parametros continuam independentes por perfil/tarefa em `ai_profile_tasks`, respeitando as capabilities do unico modelo do perfil e o `privacyMode`.

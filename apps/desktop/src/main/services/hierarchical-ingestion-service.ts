@@ -12,9 +12,10 @@ import {
   createHierarchicalIngestionRepository,
   createIngestionRunRepository,
   createJobRepository,
+  createSourceItemRepository,
   type PgPool
 } from "@app/db";
-import type { StructureDetectionResult } from "@app/conversion";
+import { sha256, type StructureDetectionResult } from "@app/conversion";
 
 const executableStages = [
   "chunking",
@@ -25,6 +26,8 @@ const executableStages = [
   "atomicNoteMatching",
   "obsidianProjection"
 ] as const;
+
+const catalogMetadataProcessingMode = "catalog_metadata";
 
 export interface HierarchicalIngestionServiceOptions {
   getPool: () => PgPool | null;
@@ -86,14 +89,17 @@ export class HierarchicalIngestionService {
     if (!saved) throw new Error("structure_not_editable");
     await repository.confirm(input.structureId);
     const materialized = await repository.materializeStructure(input.structureId);
+    const structure = await repository.findById(input.structureId);
+    if (!structure) throw new Error("structure_not_found");
     const plan = resolveProcessingPlan(input.plan);
     const batch = await this.queueSources(
       materialized.map((item) => item.sourceItemId),
       plan,
       "initial",
-      "interactive_import"
+      "interactive_import",
+      [structure.rootSourceItemId]
     );
-    return { structure: await repository.findById(input.structureId), materialized, ...batch };
+    return { structure, materialized, ...batch };
   }
 
   public async process(input: {
@@ -110,7 +116,15 @@ export class HierarchicalIngestionService {
         if (plan.scope === "children_only") targetIds.delete(rootId);
       }
     }
-    return this.queueSources([...targetIds], plan, input.runKind, input.trigger ?? "library_action");
+    const breadcrumbs = await repository.getBreadcrumbs([...targetIds]);
+    const targets = splitHierarchicalProcessingTargets([...targetIds], breadcrumbs);
+    return this.queueSources(
+      targets.contentSourceItemIds,
+      plan,
+      input.runKind,
+      input.trigger ?? "library_action",
+      targets.catalogParentIds
+    );
   }
 
   public async listBatches() {
@@ -121,14 +135,18 @@ export class HierarchicalIngestionService {
     sourceItemIds: string[],
     plan: EffectiveProcessingPlan,
     runKind: "initial" | "missing_stages" | "reingestion",
-    trigger: string
+    trigger: string,
+    catalogParentIds: string[] = []
   ) {
     const pool = this.requirePool();
     const hierarchy = createHierarchicalIngestionRepository(pool);
     const runs = createIngestionRunRepository(pool);
     const jobs = createJobRepository(pool);
     const documents = createDocumentRepository(pool);
-    const uniqueSourceIds = [...new Set(sourceItemIds)];
+    const sources = createSourceItemRepository(pool);
+    const catalogStages = catalogMetadataStages(plan.effectiveStages);
+    const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
+    const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
     const batch = await hierarchy.createBatch({
       trigger,
       requestedPlan: plan,
@@ -138,11 +156,21 @@ export class HierarchicalIngestionService {
     });
     const queued: Array<{ sourceItemId: string; documentId: string; ingestionRunId: string; jobId: string | null }> = [];
     for (const sourceItemId of uniqueSourceIds) {
-      const sourceDocuments = await documents.listBySourceItem(sourceItemId);
-      const document = sourceDocuments[0];
+      const catalogMetadataOnly = catalogIds.has(sourceItemId);
+      const source = catalogMetadataOnly ? await sources.findById(sourceItemId) : null;
+      if (catalogMetadataOnly && !source) continue;
+      const catalogInput = catalogMetadataOnly
+        ? await prepareCatalogMetadataDocument(documents, source!)
+        : null;
+      const document = catalogInput?.document ?? (await documents.listBySourceItem(sourceItemId))[0];
       if (!document) continue;
+      const processingMarkdown = catalogInput?.markdown ?? document.canonicalMarkdown;
       const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
-      if (runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
+      const effectiveStages = catalogMetadataOnly ? catalogStages : plan.effectiveStages;
+      const requestedStages = catalogMetadataOnly
+        ? effectiveStages.filter((stage) => stage !== "chunking")
+        : plan.requestedStages;
+      if (!catalogMetadataOnly && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
            where created_from_source_item_id = $1 and status = 'pending_review'`,
@@ -153,33 +181,33 @@ export class HierarchicalIngestionService {
         sourceItemId,
         batchId: batch.id,
         runKind,
-        requestedStages: plan.requestedStages,
-        effectiveStages: plan.effectiveStages,
+        requestedStages,
+        effectiveStages,
         planVersion: plan.planVersion,
         inputDocumentRevisionId: revisionId,
-        inputHashes: { contentHash: document.contentHash },
+        inputHashes: { contentHash: catalogMetadataOnly ? sha256(processingMarkdown) : document.contentHash },
         previousArtifactPolicy: plan.previousArtifactPolicy,
         trigger,
         currentStage: "queued"
       });
-      await runs.initializeStages(run.id, plan.effectiveStages, ProcessingStages);
-      const artifactState = await hierarchy.getArtifactState(sourceItemId, document.id);
+      await runs.initializeStages(run.id, effectiveStages, ProcessingStages);
+      const artifactState = catalogMetadataOnly ? {} : await hierarchy.getArtifactState(sourceItemId, document.id);
       for (const stage of ["conversion", "structureDetection", "structureReview", "materialization"] as const) {
-        if (plan.effectiveStages.includes(stage)) await runs.completeStage(run.id, stage, { reused: true });
+        if (effectiveStages.includes(stage)) await runs.completeStage(run.id, stage, { reused: true });
       }
-      if (!plan.forceRegeneration && plan.previousArtifactPolicy === "reuse_valid") {
+      if (!catalogMetadataOnly && !plan.forceRegeneration && plan.previousArtifactPolicy === "reuse_valid") {
         for (const stage of executableStages) {
-          if (plan.effectiveStages.includes(stage) && artifactState[stage]) {
+          if (effectiveStages.includes(stage) && artifactState[stage]) {
             await runs.completeStage(run.id, stage, { reused: true });
           }
         }
       }
-      if (plan.effectiveStages.includes("chunking") && artifactState.chunking) {
+      if (effectiveStages.includes("chunking") && artifactState.chunking) {
         await runs.completeStage(run.id, "chunking", { reused: true, reason: "same_document_revision" });
       }
       const refreshed = await runs.findById(run.id);
       const pending = executableStages.filter((stage) =>
-        plan.effectiveStages.includes(stage)
+        effectiveStages.includes(stage)
         && (refreshed?.stagesCheckpoint[stage] as { status?: string } | undefined)?.status !== "completed"
       );
       let jobId: string | null = null;
@@ -191,8 +219,9 @@ export class HierarchicalIngestionService {
             batchId: batch.id,
             sourceItemId,
             documentId: document.id,
-            markdown: document.canonicalMarkdown,
-            effectiveStages: plan.effectiveStages
+            markdown: processingMarkdown,
+            effectiveStages,
+            processingMode: catalogMetadataOnly ? catalogMetadataProcessingMode : "content"
           }
         });
         jobId = job.id;
@@ -211,6 +240,102 @@ export class HierarchicalIngestionService {
     if (!pool) throw new Error("database_not_ready");
     return pool;
   }
+}
+
+export function catalogMetadataStages(stages: readonly string[]) {
+  const selected = ["embedding", "knowledgeGraph"].filter((stage) => stages.includes(stage));
+  return selected.length > 0 ? ["chunking", ...selected] : [];
+}
+
+export function splitHierarchicalProcessingTargets(
+  sourceItemIds: readonly string[],
+  breadcrumbs: ReadonlyMap<string, ReadonlyArray<{ id: string }>>
+) {
+  const contentSourceItemIds = new Set(sourceItemIds);
+  const catalogParentIds = new Set<string>();
+  for (const sourceItemId of sourceItemIds) {
+    const path = breadcrumbs.get(sourceItemId) ?? [];
+    const root = path.length > 1 ? path[0] : undefined;
+    if (root) catalogParentIds.add(root.id);
+  }
+  for (const parentId of catalogParentIds) contentSourceItemIds.delete(parentId);
+  return {
+    contentSourceItemIds: [...contentSourceItemIds],
+    catalogParentIds: [...catalogParentIds]
+  };
+}
+
+export function buildCatalogMetadataMarkdown(source: {
+  type: string;
+  title: string;
+  subtitle: string | null;
+  sourceUri: string | null;
+  language: string;
+  summary: string | null;
+  metadata: Record<string, unknown>;
+}): string {
+  const descriptor = asObject(source.metadata.descriptor);
+  const creators = Array.isArray(descriptor.creators)
+    ? descriptor.creators.flatMap((creator) => {
+        const value = asObject(creator);
+        return typeof value.name === "string" && value.name.trim()
+          ? [{ name: value.name.trim(), ...(typeof value.role === "string" ? { role: value.role } : {}) }]
+          : [];
+      })
+    : [];
+  const excluded = new Set(["type", "title", "subtitle", "creators", "provenance", "cover", "parentSourceItemId"]);
+  const metadata = Object.fromEntries(Object.entries(descriptor).filter(([key]) => !excluded.has(key)));
+  return JSON.stringify({
+    sourceType: source.type,
+    title: source.title,
+    ...(source.subtitle ? { subtitle: source.subtitle } : {}),
+    creators,
+    language: source.language,
+    ...(source.summary ? { summary: source.summary } : {}),
+    ...(source.sourceUri ? { sourceUri: source.sourceUri } : {}),
+    metadata
+  }, null, 2);
+}
+
+async function prepareCatalogMetadataDocument(
+  documents: ReturnType<typeof createDocumentRepository>,
+  source: Parameters<typeof buildCatalogMetadataMarkdown>[0] & { id: string }
+) {
+  const markdown = buildCatalogMetadataMarkdown(source);
+  const contentHash = sha256(markdown);
+  const sourceDocuments = await documents.listBySourceItem(source.id);
+  const canonical = sourceDocuments.find(
+    (document) => document.metadata.processingMode !== catalogMetadataProcessingMode
+  );
+  if (canonical) return { document: canonical, markdown };
+  const existing = sourceDocuments.find(
+    (document) => document.metadata.processingMode === catalogMetadataProcessingMode
+  );
+  if (existing) {
+    const document = await documents.update(existing.id, {
+      title: source.title,
+      canonicalMarkdown: markdown,
+      contentHash,
+      language: source.language,
+      metadata: { processingMode: catalogMetadataProcessingMode }
+    });
+    return document ? { document, markdown } : null;
+  }
+  const document = await documents.create({
+    sourceItemId: source.id,
+    title: source.title,
+    canonicalMarkdown: markdown,
+    contentHash,
+    language: source.language,
+    metadata: { processingMode: catalogMetadataProcessingMode }
+  });
+  return { document, markdown };
+}
+
+function asObject(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function structureBoundaries(

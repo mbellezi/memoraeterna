@@ -59,10 +59,21 @@ describe("AI adapters", () => {
     });
     await openAi.run({
       taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
-      parameters: { maxTokens: 512, temperature: 0.3, topP: 0.9, reasoningLevel: "minimal" }, metadata: {}
+      parameters: {
+        maxTokens: 512,
+        temperature: 0.3,
+        topP: 0.9,
+        presencePenalty: -0.4,
+        reasoningLevel: "minimal"
+      },
+      metadata: {}
     });
     expect(openAiBody).toMatchObject({
-      max_tokens: 512, temperature: 0.3, top_p: 0.9, reasoning_effort: "low"
+      max_tokens: 512,
+      temperature: 0.3,
+      top_p: 0.9,
+      presence_penalty: -0.4,
+      reasoning_effort: "low"
     });
     expect(openAiBody).not.toHaveProperty("maxTokens");
     await openAi.run({
@@ -81,12 +92,80 @@ describe("AI adapters", () => {
     });
     await google.run({
       taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
-      parameters: { maxTokens: 256, reasoningLevel: "low" }, metadata: {}
+      parameters: {
+        maxTokens: 256,
+        temperature: 1,
+        topP: 0.95,
+        topK: 20,
+        presencePenalty: 1.5,
+        reasoningLevel: "low"
+      },
+      metadata: {}
     });
     expect(googleBody.generationConfig).toMatchObject({
       maxOutputTokens: 256,
+      temperature: 1,
+      topP: 0.95,
+      topK: 20,
+      presencePenalty: 1.5,
       thinkingConfig: { thinkingLevel: "low" }
     });
+  });
+
+  it("maps Qwen 3.5 reasoning controls to the serving engine contract", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const dashScope = new OpenAiCompatibleAdapter({
+      baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      apiKey: "secret",
+      modelId: "qwen3.5-plus",
+      capabilities: ["text-generation"],
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+      }
+    });
+    await dashScope.run({
+      taskType: "text-generation",
+      input: "hello",
+      requiredCapabilities: ["text-generation"],
+      parameters: {
+        temperature: 1,
+        topP: 0.95,
+        topK: 20,
+        presencePenalty: 1.5,
+        reasoningLevel: "on",
+        reasoningMaxTokens: 2_048
+      },
+      metadata: {}
+    });
+    expect(bodies[0]).toMatchObject({
+      temperature: 1,
+      top_p: 0.95,
+      top_k: 20,
+      presence_penalty: 1.5,
+      enable_thinking: true,
+      thinking_budget: 2_048
+    });
+    expect(bodies[0]).not.toHaveProperty("reasoning_effort");
+
+    const selfHosted = new OpenAiCompatibleAdapter({
+      baseUrl: "http://127.0.0.1:8000/v1",
+      apiKey: "secret",
+      modelId: "Qwen/Qwen3.5-9B",
+      capabilities: ["text-generation"],
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200 });
+      }
+    });
+    await selfHosted.run({
+      taskType: "text-generation",
+      input: "hello",
+      requiredCapabilities: ["text-generation"],
+      parameters: { reasoningLevel: "off" },
+      metadata: {}
+    });
+    expect(bodies[1]).toMatchObject({ chat_template_kwargs: { enable_thinking: false } });
   });
 
   it("streams remote generation progress without exposing partial output in events", async () => {
@@ -131,8 +210,45 @@ describe("AI adapters", () => {
       repository: "mlx-community/Qwen3.5-9B-4bit",
       revision: "8b2b98c00a6b4d291155e4890773ca8f769aee53",
       runtime: "mlx",
-      quantization: "4-bit"
+      quantization: "4-bit",
+      defaultParameters: {
+        temperature: 0.7,
+        maxTokens: 32_768,
+        reasoningLevel: "off",
+        topP: 0.8,
+        topK: 20,
+        presencePenalty: 1.5
+      },
+      recommendedParameters: {
+        reasoning: {
+          temperature: 1,
+          maxTokens: 32_768,
+          reasoningLevel: "on",
+          topP: 0.95,
+          topK: 20,
+          presencePenalty: 1.5
+        },
+        nonReasoning: {
+          temperature: 0.7,
+          maxTokens: 32_768,
+          reasoningLevel: "off",
+          topP: 0.8,
+          topK: 20,
+          presencePenalty: 1.5
+        }
+      }
     });
+    expect(localModelCatalog.find((entry) => entry.id === "mlx-qwen3-4b-instruct-2507-4bit")).toMatchObject({
+      defaultParameters: { temperature: 0.7, maxTokens: 16_384, topP: 0.8, topK: 20 },
+      recommendedParameters: {
+        nonReasoning: { temperature: 0.7, maxTokens: 16_384, topP: 0.8, topK: 20 }
+      }
+    });
+    expect(localModelCatalog.filter((entry) => entry.family === "Gemma 4").every((entry) => (
+      entry.defaultParameters.temperature === 1
+      && entry.defaultParameters.topP === 0.95
+      && entry.defaultParameters.topK === 64
+    ))).toBe(true);
     for (const entry of localModelCatalog) {
       expect(entry.revision).toMatch(/^[a-f0-9]{40}$/);
       expect(localModelExpectedSize(entry)).toBeGreaterThan(200_000_000);
@@ -163,6 +279,7 @@ describe("AI adapters", () => {
       id: "test-model", displayName: "Test", family: "Test", variant: "Test",
       runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
       format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+      parameterCapabilities: {},
       minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
       licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
       files: [{ path: "model.bin", sizeBytes: bytes.byteLength, sha256: sha256(bytes) }]
@@ -271,6 +388,7 @@ describe("AI adapters", () => {
       id: "unsafe-model", displayName: "Unsafe", family: "Test", variant: "Test",
       runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
       format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+      parameterCapabilities: {},
       minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
       licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
       files: [{ path: "../outside", sizeBytes: 1, sha256: "a".repeat(64) }]
@@ -340,7 +458,13 @@ for await (const line of lines) {
   requests += 1;
   process.stdout.write(JSON.stringify({
     protocolVersion: 1, requestId: request.requestId, kind: "result", ok: true,
-    output: String(requests) + ":" + String(request.parameters.enableThinking), durationMs: 1
+    output: [
+      String(requests),
+      String(request.parameters.enableThinking),
+      String(request.parameters.topP),
+      String(request.parameters.topK),
+      String(request.parameters.presencePenalty)
+    ].join(":"), durationMs: 1
   }) + "\\n");
 }
 `);
@@ -357,18 +481,23 @@ for await (const line of lines) {
       requiredCapabilities: ["text-generation" as const],
       parameters: {}, metadata: {}
     };
-    expect((await adapter.run(request)).output).toBe("1:false");
+    expect((await adapter.run(request)).output).toBe("1:false:undefined:undefined:undefined");
     expect((await adapter.run({
       ...request,
-      parameters: { reasoningLevel: "high" as const }
-    })).output).toBe("2:true");
+      parameters: {
+        reasoningLevel: "high" as const,
+        topP: 0.95,
+        topK: 20,
+        presencePenalty: 1.5
+      }
+    })).output).toBe("2:true:0.95:20:1.5");
     const controller = new AbortController();
     const canceled = adapter.run({ ...request, input: "hang" }, controller.signal);
     setTimeout(() => controller.abort(), 20);
     await expect(canceled).rejects.toMatchObject({ name: "AbortError" });
-    expect((await adapter.run(request)).output).toBe("1:false");
+    expect((await adapter.run(request)).output).toBe("1:false:undefined:undefined:undefined");
     await adapter.dispose();
-    expect((await adapter.run(request)).output).toBe("1:false");
+    expect((await adapter.run(request)).output).toBe("1:false:undefined:undefined:undefined");
     await adapter.dispose();
     await rm(root, { recursive: true, force: true });
   });
@@ -416,6 +545,7 @@ function testCatalogEntry(bytes: Uint8Array) {
     id: "test-model", displayName: "Test", family: "Test", variant: "Test",
     runtime: "mlx", repository: "example/model", revision: "a".repeat(40),
     format: "safetensors", quantization: "4-bit", capabilities: ["offline"],
+    parameterCapabilities: {},
     minimumMemoryBytes: 1, recommendedMemoryBytes: 1, license: "Test",
     licenseUrl: "https://example.test/license", requiresLicenseAcceptance: false,
     files: [{ path: "model.bin", sizeBytes: bytes.byteLength, sha256: sha256(bytes) }]

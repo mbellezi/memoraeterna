@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AiProfileCreate,
@@ -7,6 +6,7 @@ import type {
   AiTaskRoute,
   AiModelParameters,
   AiModelDiscoveryInput,
+  AiParameterCapabilitiesInput,
   AiProviderConfigInput,
   AtomicNoteReviewInput,
   AppSettingsUpdate,
@@ -38,6 +38,8 @@ import {
   aiProviderConfigInputSchema,
   aiProviderConfigSchema,
   aiModelDiscoveryInputSchema,
+  aiModelParameterCapabilitiesSchema,
+  aiParameterCapabilitiesInputSchema,
   aiModelListSchema,
   atomicNoteReviewInputSchema,
   atomicNoteViewSchema,
@@ -160,7 +162,7 @@ const api: DesktopApi = {
       return ingestionResultSchema.parse(result);
     },
     async extractFileMetadata(input: FileMetadataExtractionInput, onProgress) {
-      const requestId = input.requestId ?? randomUUID();
+      const requestId = input.requestId ?? globalThis.crypto.randomUUID();
       const payload = fileMetadataExtractionInputSchema.parse({ ...input, requestId });
       const handler = (_event: Electron.IpcRendererEvent, progressPayload: unknown) => {
         const progress = fileImportProgressSchema.safeParse(progressPayload);
@@ -314,6 +316,12 @@ const api: DesktopApi = {
       return aiModelListSchema.parse(await ipcRenderer.invoke(
         ipcChannels.aiModelsDiscover,
         aiModelDiscoveryInputSchema.parse(input)
+      ));
+    },
+    async getParameterCapabilities(input: AiParameterCapabilitiesInput) {
+      return aiModelParameterCapabilitiesSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.aiParameterCapabilitiesGet,
+        aiParameterCapabilitiesInputSchema.parse(input)
       ));
     },
     async connectOpenAiCodex() {

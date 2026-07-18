@@ -10,6 +10,7 @@ import {
   localModelCatalogVersion,
   localModelExpectedSize,
   localModelManifestHash,
+  localParameterCapabilities,
   redactSensitiveText,
   resolveManagedModelPath,
   sha256File,
@@ -23,6 +24,7 @@ import {
   type LocalModelRecord,
   type PgPool
 } from "@app/db";
+import { normalizeAiModelParameters } from "@app/domain";
 import { aiModelParametersSchema } from "../../shared/ipc.js";
 import type { AiModelParameters, LocalModelDownloadInput, LocalModelView } from "../../shared/ipc.js";
 
@@ -87,7 +89,8 @@ export class LocalModelService {
     const compatibility = compatibilityFor(entry);
     if (!compatibility.compatible) throw new Error(`errors.localModels.${compatibility.reason}`);
     const repository = createLocalModelRepository(this.requirePool());
-    const model = await this.requireCatalogModel(entry.id);
+    let model = await this.requireCatalogModel(entry.id);
+    model = await this.initializeRecommendedDefaults(model, entry);
     if (entry.requiresLicenseAcceptance && !model.licenseAcceptedAt && !input.acceptLicense) {
       throw new Error("errors.localModels.licenseRequired");
     }
@@ -117,7 +120,11 @@ export class LocalModelService {
   }
 
   public async resume(catalogId: string): Promise<LocalModelView> {
-    const model = await this.requireCatalogModel(catalogId);
+    const entry = requiredCatalogEntry(catalogId);
+    const model = await this.initializeRecommendedDefaults(
+      await this.requireCatalogModel(catalogId),
+      entry
+    );
     const repository = createLocalModelRepository(this.requirePool());
     const latest = await repository.latestDownload(model.id);
     const jobs = createJobRepository(this.requirePool());
@@ -176,7 +183,18 @@ export class LocalModelService {
     const repository = createLocalModelRepository(this.requirePool());
     const model = await repository.findById(localModelId);
     if (!model) throw new Error("errors.localModels.notFound");
-    return this.toView(await repository.updateModel(model.id, { defaultParameters }));
+    const parameterCapabilities = findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities
+      ?? localParameterCapabilities({
+        runtime: model.runtime,
+        modelId: model.modelId,
+        catalogId: model.catalogId,
+        capabilities: model.capabilities as LocalModelView["capabilities"]
+      });
+    const normalized = normalizeAiModelParameters(
+      aiModelParametersSchema.parse(defaultParameters),
+      parameterCapabilities
+    );
+    return this.toView(await repository.updateModel(model.id, { defaultParameters: normalized }));
   }
 
   public async setRepositoryToken(token: string): Promise<boolean> {
@@ -269,6 +287,18 @@ export class LocalModelService {
         await repository.replaceFiles(record.id, entry.files.map((file) => ({ path: file.path, sizeBytes: file.sizeBytes, sha256: file.sha256 })));
       }
     }
+  }
+
+  private async initializeRecommendedDefaults(
+    model: LocalModelRecord,
+    entry: LocalModelCatalogEntry
+  ): Promise<LocalModelRecord> {
+    if (Object.keys(model.defaultParameters).length > 0 || Object.keys(entry.defaultParameters).length === 0) {
+      return model;
+    }
+    return createLocalModelRepository(this.requirePool()).updateModel(model.id, {
+      defaultParameters: entry.defaultParameters
+    });
   }
 
   private async createDownload(model: LocalModelRecord): Promise<void> {
@@ -386,6 +416,12 @@ export class LocalModelService {
 
   private async toView(model: LocalModelRecord): Promise<LocalModelView> {
     const entry = findLocalModelCatalogEntry(model.catalogId);
+    const parameterCapabilities = entry?.parameterCapabilities ?? localParameterCapabilities({
+      runtime: model.runtime,
+      modelId: model.modelId,
+      catalogId: model.catalogId,
+      capabilities: model.capabilities as LocalModelView["capabilities"]
+    });
     const minimumMemoryBytes = entry?.minimumMemoryBytes ?? numericMetadata(model, "minimumMemoryBytes", model.expectedSizeBytes);
     const recommendedMemoryBytes = entry?.recommendedMemoryBytes ?? numericMetadata(model, "recommendedMemoryBytes", model.expectedSizeBytes);
     const compatibility = detectLocalRuntimeCompatibility({
@@ -411,7 +447,31 @@ export class LocalModelService {
       format: model.format,
       quantization: model.quantization,
       capabilities: model.capabilities as LocalModelView["capabilities"],
-      defaultParameters: aiModelParametersSchema.parse(model.defaultParameters),
+      parameterCapabilities,
+      defaultParameters: normalizeAiModelParameters(
+        aiModelParametersSchema.parse(model.defaultParameters),
+        parameterCapabilities
+      ),
+      recommendedParameters: entry?.recommendedParameters
+        ? {
+            ...(entry.recommendedParameters.reasoning
+              ? {
+                  reasoning: normalizeAiModelParameters(
+                    entry.recommendedParameters.reasoning,
+                    parameterCapabilities
+                  )
+                }
+              : {}),
+            ...(entry.recommendedParameters.nonReasoning
+              ? {
+                  nonReasoning: normalizeAiModelParameters(
+                    entry.recommendedParameters.nonReasoning,
+                    parameterCapabilities
+                  )
+                }
+              : {})
+          }
+        : null,
       minimumMemoryBytes,
       recommendedMemoryBytes,
       expectedSizeBytes: model.expectedSizeBytes,

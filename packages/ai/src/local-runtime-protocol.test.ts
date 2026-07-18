@@ -19,10 +19,17 @@ describe("mlxHelperMessageSchema", () => {
     });
     expect(mlxHelperRequestSchema.parse({
       ...base,
-      parameters: { maxTokens: 4, temperature: 0, enableThinking: true }
+      parameters: {
+        maxTokens: 4,
+        temperature: 0.7,
+        topP: 0.8,
+        topK: 20,
+        presencePenalty: 1.5,
+        enableThinking: true
+      }
     })).toMatchObject({
       command: "generate",
-      parameters: { enableThinking: true }
+      parameters: { topP: 0.8, topK: 20, presencePenalty: 1.5, enableThinking: true }
     });
   });
 

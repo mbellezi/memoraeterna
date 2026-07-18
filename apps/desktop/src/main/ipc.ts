@@ -14,6 +14,7 @@ import {
   aiTaskRouteSchema,
   aiProviderConfigInputSchema,
   aiModelDiscoveryInputSchema,
+  aiParameterCapabilitiesInputSchema,
   atomicNoteReviewInputSchema,
   fileImportInputSchema,
   fileImportProgressSchema,
@@ -269,6 +270,9 @@ export function registerIpcHandlers(
   );
   ipcMain.handle(ipcChannels.aiModelsDiscover, (_event, payload: unknown) =>
     aiService.discoverModels(aiModelDiscoveryInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.aiParameterCapabilitiesGet, (_event, payload: unknown) =>
+    aiService.getParameterCapabilities(aiParameterCapabilitiesInputSchema.parse(payload))
   );
   ipcMain.handle(ipcChannels.aiOpenAiCodexConnect, () => aiService.connectOpenAiCodex());
   ipcMain.handle(ipcChannels.aiOpenAiCodexDisconnect, () => aiService.disconnectOpenAiCodex());

@@ -5,6 +5,9 @@ const requestIdSchema = z.string().uuid().transform((value) => value.toLowerCase
 const generationParametersSchema = z.object({
   maxTokens: z.number().int().min(1).max(32_768).default(1_024),
   temperature: z.number().min(0).max(2).default(0.2),
+  topP: z.number().min(0).max(1).optional(),
+  topK: z.number().int().min(1).max(1_000_000).optional(),
+  presencePenalty: z.number().min(-2).max(2).optional(),
   enableThinking: z.boolean().default(false),
   seed: z.number().int().nonnegative().optional()
 }).strict();

@@ -413,6 +413,12 @@ Na raiz, a UI deve distinguir:
 
 Por padrao, livros/revistas/papers geram conhecimento nos filhos. A raiz agrega
 estado e resultados dos descendentes, sem duplicar notas do conteudo inteiro.
+Quando pelo menos um filho entra no plano, a raiz recebe somente um documento
+catalografico sintetico com titulo, criadores, metadados e o resumo atual da
+fonte, quando existir. Esse
+documento pode passar por chunking tecnico, embedding e construcao do grafo
+quando essas etapas fizerem parte do plano; resumo, notas atomicas e matching
+continuam exclusivos dos filhos selecionados.
 Em `Book`, processar somente a raiz oferece apenas etapas aplicaveis a raiz,
 como `aggregateSummarization`, e bloqueia a agregacao enquanto faltarem resumos
 de capitulos. Selecionar o preset **Gerar resumo** para o livro inclui todos os
@@ -775,13 +781,17 @@ independente por linha selecionada.
 - resultado de filho mostra breadcrumb;
 - filtro pela raiz inclui descendentes;
 - filtro por capitulo/secao continua possivel;
-- embeddings pertencem ao item filho para evitar atribuir evidencia ao livro
-  inteiro;
+- embeddings do conteudo pertencem ao item filho para evitar atribuir evidencia
+  ao livro inteiro; a raiz pode manter um unico embedding catalografico limitado
+  a titulo, criadores, metadados e ao resumo atual da raiz;
 - SourceSpan sempre volta ao original e a divisao.
 
 ### 10.2 Relacionamentos e grafo
 
 - notas sao criadas no filho;
+- a raiz pode projetar no grafo apenas os elementos sustentados pelo seu
+  documento catalografico, incluindo o resumo atual quando existir; o conteudo integral nunca e usado nessa projecao
+  quando filhos foram selecionados;
 - matching continua global por padrao e pode encontrar relacoes entre capitulos
   do mesmo livro e entre fontes diferentes;
 - a raiz agrega as relacoes dos descendentes sem duplicar linhas canonicas;

@@ -1,6 +1,7 @@
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import { googleParameterCapabilities } from "./parameter-capabilities.js";
 import { parseResponse, readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
 import { googleThinkingConfig } from "./reasoning.js";
 
@@ -32,6 +33,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
       modelId: this.options.modelId,
       runtime: "remote",
       capabilities: this.options.capabilities,
+      parameterCapabilities: googleParameterCapabilities(this.options),
       requirements: { network: true, apiKey: true },
       limits: {}
     };
@@ -49,9 +51,16 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
     const response = await this.fetchImplementation(`${this.baseUrl}/models?key=${encodeURIComponent(this.options.apiKey)}`, signal ? { signal } : {});
     const payload = await parseResponse<{ models?: Array<{ name?: string; displayName?: string }> }>(response);
-    return (payload.models ?? []).flatMap((model) => model.name ? [{
-      ...this.describe(), modelId: model.name.replace(/^models\//, ""), ...(model.displayName ? { displayName: model.displayName } : {})
-    }] : []);
+    return (payload.models ?? []).flatMap((model) => {
+      if (!model.name) return [];
+      const modelId = model.name.replace(/^models\//, "");
+      return [{
+        ...this.describe(),
+        modelId,
+        parameterCapabilities: googleParameterCapabilities({ modelId, capabilities: this.options.capabilities }),
+        ...(model.displayName ? { displayName: model.displayName } : {})
+      }];
+    });
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
@@ -155,12 +164,15 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
 function googleGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
   const thinkingConfig = googleThinkingConfig(
     modelId,
-    typeof parameters.reasoningLevel === "string" ? parameters.reasoningLevel as AiReasoningLevel : undefined
+    typeof parameters.reasoningLevel === "string" ? parameters.reasoningLevel as AiReasoningLevel : undefined,
+    typeof parameters.reasoningMaxTokens === "number" ? parameters.reasoningMaxTokens : undefined
   );
   return {
     ...(typeof parameters.maxTokens === "number" ? { maxOutputTokens: parameters.maxTokens } : {}),
     ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
     ...(typeof parameters.topP === "number" ? { topP: parameters.topP } : {}),
+    ...(typeof parameters.topK === "number" ? { topK: parameters.topK } : {}),
+    ...(typeof parameters.presencePenalty === "number" ? { presencePenalty: parameters.presencePenalty } : {}),
     ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
     ...(thinkingConfig ? { thinkingConfig } : {})
   };

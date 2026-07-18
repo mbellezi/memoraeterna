@@ -2,13 +2,14 @@ import { sha256 } from "@app/conversion";
 import { createTranslator } from "@app/i18n";
 import {
   AiModelRegistry,
-  effectiveReasoningParameters,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
+  localParameterCapabilities,
   MlxAdapter,
   NodeLlamaCppAdapter,
   OpenAiCompatibleAdapter,
   OpenAiCodexAdapter,
+  providerParameterCapabilities,
   redactSensitiveText,
   type AiModelAdapter,
   type AiProgressEvent,
@@ -24,7 +25,12 @@ import {
   type LocalModelRecord,
   type PgPool
 } from "@app/db";
-import { AiCapabilitySchema, type AiCapability } from "@app/domain";
+import {
+  AiCapabilitySchema,
+  normalizeAiModelParameters,
+  type AiCapability,
+  type AiModelParameterCapabilities
+} from "@app/domain";
 import type {
   AiProfile,
   AiProfileCreate,
@@ -34,7 +40,8 @@ import type {
   AiTaskRoute,
   AiProviderConfig,
   AiProviderConfigInput,
-  AiModelDiscoveryInput
+  AiModelDiscoveryInput,
+  AiParameterCapabilitiesInput
 } from "../../shared/ipc.js";
 import { aiModelParametersSchema } from "../../shared/ipc.js";
 
@@ -109,6 +116,12 @@ export class AiService {
     const repository = createAiConfigRepository(this.requirePool());
     const existing = input.id ? (await repository.listProviders()).find((provider) => provider.id === input.id) : undefined;
     const capabilities = withRemoteRerankingCapability(input.provider, input.capabilities);
+    const parameterCapabilities = providerParameterCapabilities({
+      provider: input.provider,
+      modelId: input.modelId,
+      baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
+      capabilities
+    });
     let credentialRef: string | null;
     if (input.provider === "openai-codex") {
       const existingRef = existing?.provider === "openai-codex" ? existing.credentialRef : null;
@@ -124,7 +137,7 @@ export class AiService {
     const record = await repository.upsertProvider({
       ...(input.id ? { id: input.id } : {}), provider: input.provider, displayName: input.displayName,
       credentialRef, baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
-      defaultParameters: input.defaultParameters,
+      defaultParameters: normalizeAiModelParameters(input.defaultParameters, parameterCapabilities),
       metadata: { modelId: input.modelId, capabilities }
     });
     if (input.provider === "openai-codex") this.pendingOpenAiCodexCredential = null;
@@ -151,6 +164,15 @@ export class AiService {
         : new OpenAiCompatibleAdapter({ apiKey: input.apiKey!, modelId: "", capabilities: [], baseUrl });
     const modelIds = (await adapter.listModels?.() ?? []).map((model) => model.modelId);
     return [...new Set(modelIds)].sort((left, right) => left.localeCompare(right));
+  }
+
+  public getParameterCapabilities(input: AiParameterCapabilitiesInput): AiModelParameterCapabilities {
+    return providerParameterCapabilities({
+      provider: input.provider,
+      modelId: input.modelId,
+      baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
+      capabilities: withRemoteRerankingCapability(input.provider, input.capabilities)
+    });
   }
 
   public async connectOpenAiCodex(): Promise<string[]> {
@@ -277,11 +299,12 @@ export class AiService {
     if (!profile.modelId || !capabilitiesForTask(input.task).every((capability) => profile.capabilities.includes(capability))) {
       throw new Error("errors.ai.noCompatibleModel");
     }
+    const parameterCapabilities = await this.parameterCapabilitiesForProfile(profile);
     await repository.setProfileTask({
       profileId: input.profileId,
       task: input.task,
       fallbackPolicy: "block",
-      parameters: input.parameters
+      parameters: normalizeAiModelParameters(input.parameters, parameterCapabilities)
     });
   }
 
@@ -297,26 +320,11 @@ export class AiService {
     await repository.ensureRemoteRerankingCapabilities();
     const selection = await repository.getDefaultTask(taskType);
     if (!selection) return null;
-    const parameters = effectiveReasoningParameters(
-      selection.provider,
-      selection.modelId,
-      withAiTaskParameterDefaults(
-        taskType,
-        { ...selection.modelDefaultParameters, ...selection.parameters },
-        Boolean(selection.localModelId)
-      )
-    );
-    if (structuredLogContext.jobId) {
-      try {
-        await createJobRepository(this.requirePool()).setAiExecution(structuredLogContext.jobId, {
-          provider: selection.provider,
-          modelId: selection.modelId,
-          reasoningLevel: parameters.reasoningLevel ?? null
-        });
-      } catch (error) {
-        this.options.logger?.error("Failed to attach AI execution metadata to job", error);
-      }
-    }
+    let parameters = aiModelParametersSchema.parse(withAiTaskParameterDefaults(
+      taskType,
+      { ...selection.modelDefaultParameters, ...selection.parameters },
+      Boolean(selection.localModelId)
+    ));
     const outputLanguage = selection.outputLanguage === "ui"
       ? await this.options.getUiLanguage?.() ?? "en"
       : selection.outputLanguage;
@@ -330,6 +338,18 @@ export class AiService {
         : await this.createAdapter(selection.providerConfigId ?? "");
       const requiredCapabilities = capabilitiesForTask(taskType);
       const descriptor = configuredAdapter.describe();
+      parameters = normalizeAiModelParameters(parameters, descriptor.parameterCapabilities);
+      if (structuredLogContext.jobId) {
+        try {
+          await createJobRepository(this.requirePool()).setAiExecution(structuredLogContext.jobId, {
+            provider: selection.provider,
+            modelId: selection.modelId,
+            reasoningLevel: parameters.reasoningLevel ?? null
+          });
+        } catch (error) {
+          this.options.logger?.error("Failed to attach AI execution metadata to job", error);
+        }
+      }
       const adapter = this.registry.resolve({
         providerId: descriptor.providerId,
         modelId: descriptor.modelId,
@@ -442,11 +462,11 @@ export class AiService {
     });
     const repository = createAiConfigRepository(this.requirePool());
     const input = embeddingOnly ? "query: local embedding smoke test" : "Reply with exactly: OK";
-    const parameters = withAiTaskParameterDefaults(
+    const parameters = normalizeAiModelParameters(aiModelParametersSchema.parse(withAiTaskParameterDefaults(
       taskType,
       model.defaultParameters,
       true
-    );
+    )), descriptor.parameterCapabilities);
     const started = Date.now();
     try {
       const result = await this.withLocalModelUsage(localModelId, () => adapter.run({
@@ -498,6 +518,28 @@ export class AiService {
       });
       throw error;
     }
+  }
+
+  private async parameterCapabilitiesForProfile(profile: AiProfileRecord): Promise<AiModelParameterCapabilities> {
+    if (profile.localModelId) {
+      const model = await createLocalModelRepository(this.requirePool()).findById(profile.localModelId);
+      if (!model) throw new Error("errors.common.notFound");
+      return findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities ?? localParameterCapabilities({
+        runtime: model.runtime,
+        modelId: model.modelId,
+        catalogId: model.catalogId,
+        capabilities: parseCapabilities(model.capabilities)
+      });
+    }
+    const provider = (await createAiConfigRepository(this.requirePool()).listProviders())
+      .find((candidate) => candidate.id === profile.providerConfigId);
+    if (!provider) throw new Error("errors.common.notFound");
+    return providerParameterCapabilities({
+      provider: provider.provider as AiProviderConfig["provider"],
+      modelId: typeof provider.metadata.modelId === "string" ? provider.metadata.modelId : profile.modelId ?? "",
+      baseUrl: provider.baseUrl,
+      capabilities: parseCapabilities(provider.metadata.capabilities)
+    });
   }
 
   private async createAdapter(providerId: string): Promise<AiModelAdapter> {
@@ -574,10 +616,20 @@ export class AiService {
     if (this.residentLocalAdapter) throw new Error("errors.localModels.modelBusy");
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model || model.status !== "ready" || !model.managedPath) throw new Error("errors.localModels.notReady");
+    const capabilities = parseCapabilities(model.capabilities);
+    const parameterCapabilities = findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities
+      ?? localParameterCapabilities({
+        runtime: model.runtime,
+        modelId: model.modelId,
+        catalogId: model.catalogId,
+        capabilities
+      });
     const options = {
       modelId: model.modelId,
       modelPath: resolveLocalModelPath(model),
-      capabilities: parseCapabilities(model.capabilities),
+      capabilities,
+      catalogId: model.catalogId,
+      parameterCapabilities,
       repository: model.repository,
       revision: model.revision,
       quantization: model.quantization
@@ -663,14 +715,24 @@ function localAdapterName(runtime: string): string {
 }
 
 function mapProvider(record: AiProviderConfigRecord): AiProviderConfig {
+  const provider = record.provider as AiProviderConfig["provider"];
+  const modelId = typeof record.metadata.modelId === "string" ? record.metadata.modelId : "";
+  const capabilities = parseCapabilities(record.metadata.capabilities);
+  const parameterCapabilities = providerParameterCapabilities({
+    provider,
+    modelId,
+    baseUrl: record.baseUrl,
+    capabilities
+  });
   return {
     id: record.id,
-    provider: record.provider as AiProviderConfig["provider"],
+    provider,
     displayName: record.displayName,
     baseUrl: record.baseUrl,
-    modelId: typeof record.metadata.modelId === "string" ? record.metadata.modelId : "",
-    capabilities: parseCapabilities(record.metadata.capabilities),
-    defaultParameters: aiModelParametersSchema.parse(record.defaultParameters),
+    modelId,
+    capabilities,
+    parameterCapabilities,
+    defaultParameters: normalizeAiModelParameters(aiModelParametersSchema.parse(record.defaultParameters), parameterCapabilities),
     secretConfigured: Boolean(record.credentialRef),
     status: record.status
   };

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
 import { AiSettingsView, resolveProviderTestStatus } from "./AiSettingsView";
+import { AiParameterFields } from "./AiParameterFields";
 import { FileImportProgressCard, ImportView } from "./ImportView";
 import { JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
@@ -12,12 +13,17 @@ import {
   defaultStorageSettings,
   jobRecordSchema,
   librarySourceSchema,
+  localModelViewSchema,
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchView } from "./SearchView";
 import { LibraryView, orderHierarchically } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
-import { LocalModelsView } from "./LocalModelsView";
+import {
+  LocalModelDefaults,
+  LocalModelsView,
+  recommendedParametersForCurrentMode
+} from "./LocalModelsView";
 import { BackupView } from "./BackupView";
 import { SettingsView } from "./SettingsView";
 
@@ -63,6 +69,126 @@ describe("phase 2 renderer views", () => {
     await expect(resolveProviderTestStatus(async () => true)).resolves.toBe("settings.ai.connectionOk");
     await expect(resolveProviderTestStatus(async () => { throw new Error("errors.ai.oauthRefreshFailed"); })).resolves.toBe("errors.ai.oauthRefreshFailed");
     await expect(resolveProviderTestStatus(async () => { throw new Error("request failed"); })).resolves.toBe("errors.ai.connectionFailed");
+  });
+
+  it("renders only the reasoning controls declared by the model", () => {
+    const qwen = renderToString(<AiParameterFields
+      value={{}}
+      onChange={() => undefined}
+      capabilities={{ reasoning: { levels: ["off", "on"] } }}
+      t={t}
+    />);
+    expect(qwen).toContain("Off");
+    expect(qwen).toContain("On");
+    expect(qwen).not.toContain("Minimal");
+    expect(qwen).not.toContain("Maximum reasoning tokens");
+
+    const budget = renderToString(<AiParameterFields
+      value={{ reasoningLevel: "on", reasoningMaxTokens: 4_096 }}
+      onChange={() => undefined}
+      capabilities={{
+        reasoning: {
+          levels: ["off", "on"],
+          maxTokens: { min: 1, max: 24_576, step: 1 }
+        }
+      }}
+      t={t}
+    />);
+    expect(budget).toContain("Maximum reasoning tokens");
+    expect(budget).toContain('max="24576"');
+  });
+
+  it("does not clamp a numeric field while the user is still typing", () => {
+    const html = renderToString(<AiParameterFields
+      value={{ contextWindow: 8 }}
+      onChange={() => undefined}
+      capabilities={{ contextWindow: { min: 128, max: 32_768, step: 1 } }}
+      t={t}
+    />);
+
+    expect(html).toContain('value="8"');
+    expect(html).not.toContain('value="128"');
+  });
+
+  it("renders sampling controls only when the model declares them", () => {
+    const supported = renderToString(<AiParameterFields
+      value={{ temperature: 1, topP: 0.95, topK: 20, presencePenalty: 1.5 }}
+      onChange={() => undefined}
+      capabilities={{
+        temperature: { min: 0, max: 2, step: 0.1 },
+        topP: { min: 0, max: 1, step: 0.05 },
+        topK: { min: 1, step: 1 },
+        presencePenalty: { min: 0, max: 2, step: 0.1 }
+      }}
+      t={t}
+    />);
+    const unsupported = renderToString(<AiParameterFields
+      value={{}}
+      onChange={() => undefined}
+      capabilities={{ temperature: { min: 0, max: 2, step: 0.1 } }}
+      t={t}
+    />);
+
+    expect(supported).toContain("Temperature");
+    expect(supported).toContain("Top P");
+    expect(supported).toContain("Top K");
+    expect(supported).toContain("Presence penalty");
+    expect(unsupported).not.toContain("Top K");
+    expect(unsupported).not.toContain("Presence penalty");
+  });
+
+  it("reloads the recommended local preset for the reasoning mode selected in the model card", () => {
+    const recommendedParameters = {
+      reasoning: { reasoningLevel: "on" as const, temperature: 1, topP: 0.95, topK: 20 },
+      nonReasoning: { reasoningLevel: "off" as const, temperature: 0.7, topP: 0.8, topK: 20 }
+    };
+    expect(recommendedParametersForCurrentMode(
+      { recommendedParameters },
+      { reasoningLevel: "on", temperature: 0.2 }
+    )).toEqual(recommendedParameters.reasoning);
+    expect(recommendedParametersForCurrentMode(
+      { recommendedParameters },
+      { reasoningLevel: "off", temperature: 0.2 }
+    )).toEqual(recommendedParameters.nonReasoning);
+
+    const model = localModelViewSchema.parse({
+      id: "00000000-0000-4000-8000-000000000001",
+      catalogId: "mlx-qwen-test",
+      modelId: "repo/model",
+      displayName: "Qwen test",
+      family: "Qwen",
+      variant: "Test",
+      repository: "repo/model",
+      revision: "a".repeat(40),
+      runtime: "mlx",
+      format: "safetensors",
+      quantization: "4-bit",
+      capabilities: ["text-generation", "offline"],
+      parameterCapabilities: {
+        temperature: { min: 0, max: 2, step: 0.1 },
+        topP: { min: 0, max: 1, step: 0.05 },
+        topK: { min: 1, step: 1 },
+        reasoning: { levels: ["off", "on"] }
+      },
+      defaultParameters: recommendedParameters.nonReasoning,
+      recommendedParameters,
+      minimumMemoryBytes: 1,
+      recommendedMemoryBytes: 2,
+      expectedSizeBytes: 10,
+      installedSizeBytes: 0,
+      licenseName: "Test",
+      licenseUrl: "https://example.test/license",
+      requiresLicenseAcceptance: false,
+      licenseAccepted: false,
+      status: "not_downloaded",
+      compatible: true,
+      compatibilityReason: "compatible",
+      profilesUsing: [],
+      lastError: null,
+      download: null
+    });
+    const html = renderToString(<LocalModelDefaults model={model} t={t} onSave={async () => undefined} />);
+    expect(html).toContain("Reload recommended defaults");
   });
 
   it("renders settings as scoped dashboard instead of a single configuration list", () => {

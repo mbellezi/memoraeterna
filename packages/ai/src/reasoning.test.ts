@@ -35,6 +35,8 @@ describe("reasoning parameter compatibility", () => {
   it("uses thinking budgets for Gemini 2.5", () => {
     expect(googleThinkingConfig("gemini-2.5-flash", "off")).toEqual({ thinkingBudget: 0 });
     expect(googleThinkingConfig("gemini-2.5-pro", "off")).toEqual({ thinkingBudget: 1_024 });
+    expect(googleThinkingConfig("gemini-2.5-flash", "on")).toEqual({ thinkingBudget: -1 });
+    expect(googleThinkingConfig("gemini-2.5-flash", "on", 4_096)).toEqual({ thinkingBudget: 4_096 });
     expect(googleThinkingConfig("gemini-2.5-flash", "medium")).toEqual({ thinkingBudget: 8_192 });
     expect(googleThinkingConfig("gemini-2.5-pro", "xhigh")).toEqual({ thinkingBudget: 24_576 });
   });

@@ -451,9 +451,9 @@
       },
       "parameters": {
         "contextWindow": "Janela de contexto", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
-        "reasoningLevel": "Nivel de raciocinio", "topP": "Top P", "dimensions": "Dimensoes do embedding", "seed": "Seed",
+        "reasoningLevel": "Raciocinio", "reasoningMaxTokens": "Maximo de tokens de raciocinio", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalidade de presenca", "dimensions": "Dimensoes do embedding", "seed": "Seed",
         "inherit": "Usar valor herdado/padrao",
-        "reasoning": { "off": "Desligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto", "xhigh": "Muito alto", "max": "Maximo" }
+        "reasoning": { "off": "Desligado", "on": "Ligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto", "xhigh": "Muito alto", "max": "Maximo" }
       }
     }
   },
@@ -472,7 +472,7 @@
     "filters": { "runtime": "Runtime", "family": "Familia", "allRuntimes": "Todos os runtimes", "allFamilies": "Todas as familias", "compatibleOnly": "Somente compativeis", "capability": "Capacidade", "allCapabilities": "Todas as capacidades", "generation": "Geracao de texto", "embedding": "Embedding" },
     "compatibility": { "compatible": "Compativel com esta maquina", "unsupported_platform": "Exige macOS com Apple Silicon", "insufficient_memory": "Memoria insuficiente" },
     "status": { "not_downloaded": "Nao baixado", "downloading": "Baixando", "verifying": "Verificando", "ready": "Instalado", "failed": "Falhou", "removing": "Removendo" },
-    "actions": { "download": "Baixar", "resume": "Retomar", "test": "Testar inferencia", "remove": "Remover", "importGguf": "Importar GGUF" },
+    "actions": { "download": "Baixar", "resume": "Retomar", "test": "Testar inferencia", "remove": "Remover", "importGguf": "Importar GGUF", "reloadRecommended": "Recarregar padroes recomendados" },
     "progress": { "loading": "Carregando o modelo", "generating": "Gerando localmente", "completed": "Concluido", "verifying": "Verificando arquivos", "etaUnknown": "Estimando tempo" }
   },
   "backup": {

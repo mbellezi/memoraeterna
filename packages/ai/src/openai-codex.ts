@@ -2,6 +2,7 @@ import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
 import { readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
+import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
 
 export interface OpenAiCodexAdapterOptions {
@@ -34,6 +35,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
       modelId: this.options.modelId,
       runtime: "remote",
       capabilities: this.options.capabilities,
+      parameterCapabilities: openAiCodexParameterCapabilities(this.options),
       requirements: { network: true, oauth: true },
       limits: {}
     };
@@ -58,14 +60,20 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     };
     return (payload.models ?? []).flatMap((model) => {
       if (!model.slug || model.visibility === "hide" || model.visibility === "none") return [];
+      const limits = {
+        ...(model.context_window !== undefined ? { contextWindow: model.context_window } : {}),
+        ...(model.max_output_tokens !== undefined ? { maxTokens: model.max_output_tokens } : {})
+      };
       return [{
         ...this.describe(),
         modelId: model.slug,
+        parameterCapabilities: openAiCodexParameterCapabilities({
+          modelId: model.slug,
+          capabilities: this.options.capabilities,
+          ...(model.max_output_tokens !== undefined ? { maxOutputTokens: model.max_output_tokens } : {})
+        }),
         ...(model.display_name ? { displayName: model.display_name } : {}),
-        limits: {
-          ...(model.context_window !== undefined ? { contextWindow: model.context_window } : {}),
-          ...(model.max_output_tokens !== undefined ? { maxTokens: model.max_output_tokens } : {})
-        }
+        limits
       }];
     });
   }
@@ -164,10 +172,12 @@ function codexGenerationParameters(parameters: Record<string, unknown>, modelId:
     ? effectiveReasoningLevel("openai-codex", modelId, parameters.reasoningLevel as AiReasoningLevel)
     : undefined;
   const reasoningEffort = openAiReasoningEffort(reasoningLevel);
-  if (!reasoningEffort) return {};
   return {
-    reasoning: reasoningEffort === "none"
-      ? { effort: reasoningEffort }
-      : { effort: reasoningEffort, summary: "auto" }
+    ...(typeof parameters.maxTokens === "number" ? { max_output_tokens: parameters.maxTokens } : {}),
+    ...(reasoningEffort ? {
+      reasoning: reasoningEffort === "none"
+        ? { effort: reasoningEffort }
+        : { effort: reasoningEffort, summary: "auto" }
+    } : {})
   };
 }

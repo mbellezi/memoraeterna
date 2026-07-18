@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
-import { AiCapabilitySchema, AiTaskTypeSchema, type AiCapability } from "@app/domain";
+import {
+  AiCapabilitySchema,
+  AiModelParameterCapabilitiesSchema,
+  AiTaskTypeSchema,
+  type AiCapability
+} from "@app/domain";
 
 export const aiProviderIdSchema = z.string().min(1);
 export type AiProviderId = z.infer<typeof aiProviderIdSchema>;
@@ -11,6 +16,7 @@ export const aiModelDescriptorSchema = z.object({
   modelId: z.string().min(1),
   runtime: z.enum(["remote", "local", "sidecar"]),
   capabilities: z.array(AiCapabilitySchema).default([]),
+  parameterCapabilities: AiModelParameterCapabilitiesSchema.default({}),
   displayName: z.string().min(1).optional(),
   limits: z.record(z.string(), z.unknown()).default({}),
   requirements: z.record(z.string(), z.unknown()).default({})

@@ -484,6 +484,51 @@ export class KnowledgeService {
     if (notes.length === 0) {
       return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
     }
+    return this.generateKnowledgeGraphFromInputs(sourceItemId, documentId, notes, context, signal);
+  }
+
+  public async generateCatalogKnowledgeGraph(
+    sourceItemId: string,
+    documentId: string,
+    context: KnowledgeGraphGenerationContext = {},
+    signal?: AbortSignal
+  ) {
+    const pool = this.requirePool();
+    const source = await createSourceItemRepository(pool).findById(sourceItemId);
+    const document = await createDocumentRepository(pool).findById(documentId);
+    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    const chunks = await createChunkRepository(pool).listByDocument(documentId);
+    if (chunks.length === 0) {
+      return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+    }
+    return this.generateKnowledgeGraphFromInputs(
+      sourceItemId,
+      documentId,
+      [{
+        id: `catalog:${sourceItemId}`,
+        title: source.title,
+        ideaStatement: "Source catalog metadata",
+        bodyMarkdown: chunks.map((chunk) => chunk.content).join("\n\n"),
+        evidenceChunkIds: chunks.map((chunk) => chunk.id)
+      }],
+      context,
+      signal,
+      "catalog_metadata"
+    );
+  }
+
+  private async generateKnowledgeGraphFromInputs(
+    sourceItemId: string,
+    documentId: string,
+    notes: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
+    context: KnowledgeGraphGenerationContext,
+    signal?: AbortSignal,
+    processingMode?: "catalog_metadata"
+  ) {
+    const pool = this.requirePool();
+    const source = await createSourceItemRepository(pool).findById(sourceItemId);
+    const document = await createDocumentRepository(pool).findById(documentId);
+    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
     const generated = await generateKnowledgeGraphFromAtomicNotes(
       source,
       notes,
@@ -522,9 +567,24 @@ export class KnowledgeService {
         provider: finalExecution.providerId,
         model: finalExecution.modelId,
         runtime: finalExecution.runtime,
-        promptVersion: knowledgeGraphPromptVersion
+        promptVersion: knowledgeGraphPromptVersion,
+        ...(processingMode ? { processingMode } : {})
       }
     });
+    if (processingMode) {
+      const hierarchy = createHierarchicalIngestionRepository(pool);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+      await hierarchy.createKnowledgeGeneration({
+        sourceItemId,
+        documentRevisionId: revisionId,
+        stage: "knowledgeGraph",
+        ingestionRunId: context.ingestionRunId ?? null,
+        jobId: context.jobId ?? null,
+        aiTaskRunId: finalExecution.aiTaskRunId,
+        inputHash: sha256(notes.map((note) => note.bodyMarkdown).join("\n\n")),
+        metadata: { processingMode, promptVersion: knowledgeGraphPromptVersion }
+      });
+    }
     let projected = true;
     let projectionError: string | null = null;
     try {

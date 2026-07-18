@@ -1,7 +1,12 @@
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
-import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
+import {
+  isDashScopeBaseUrl,
+  isQwen35Model,
+  openAiCompatibleParameterCapabilities
+} from "./parameter-capabilities.js";
+import { effectiveReasoningLevel, isOpenAiReasoningModel, openAiReasoningEffort } from "./reasoning.js";
 
 export interface OpenAiCompatibleAdapterOptions {
   baseUrl: string;
@@ -29,6 +34,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       modelId: this.options.modelId,
       runtime: "remote",
       capabilities: this.options.capabilities,
+      parameterCapabilities: openAiCompatibleParameterCapabilities(this.options),
       requirements: { network: true, apiKey: true },
       limits: {}
     };
@@ -47,7 +53,11 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
     if (!response.ok) throw new Error(`AI model discovery failed (${response.status}).`);
     const payload = await response.json() as { data?: Array<{ id?: string }> };
-    return (payload.data ?? []).flatMap((model) => model.id ? [{ ...this.describe(), modelId: model.id }] : []);
+    return (payload.data ?? []).flatMap((model) => model.id ? [{
+      ...this.describe(),
+      modelId: model.id,
+      parameterCapabilities: openAiCompatibleParameterCapabilities({ ...this.options, modelId: model.id })
+    }] : []);
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
@@ -84,7 +94,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
+        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId, this.options.baseUrl)
       })
     });
     const payload = await parseResponse<{
@@ -123,7 +133,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
+        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId, this.options.baseUrl)
       })
     });
     let output = "";
@@ -162,18 +172,48 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   }
 }
 
-function openAiGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
+function openAiGenerationParameters(
+  parameters: Record<string, unknown>,
+  modelId: string,
+  baseUrl: string
+): Record<string, unknown> {
   const reasoningLevel = typeof parameters.reasoningLevel === "string"
     ? effectiveReasoningLevel("openai-compatible", modelId, parameters.reasoningLevel as AiReasoningLevel)
     : undefined;
-  const reasoningEffort = openAiReasoningEffort(reasoningLevel);
+  const reasoningMaxTokens = typeof parameters.reasoningMaxTokens === "number"
+    ? parameters.reasoningMaxTokens
+    : undefined;
+  const qwenReasoning = qwenGenerationReasoningParameters(modelId, baseUrl, reasoningLevel, reasoningMaxTokens);
+  const reasoningEffort = qwenReasoning === undefined && isOpenAiReasoningModel(modelId)
+    ? openAiReasoningEffort(reasoningLevel)
+    : undefined;
   return {
     ...(typeof parameters.maxTokens === "number" ? { max_tokens: parameters.maxTokens } : {}),
     ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
     ...(typeof parameters.topP === "number" ? { top_p: parameters.topP } : {}),
+    ...(typeof parameters.topK === "number" ? { top_k: parameters.topK } : {}),
+    ...(typeof parameters.presencePenalty === "number" ? { presence_penalty: parameters.presencePenalty } : {}),
     ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
-    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {})
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    ...(qwenReasoning ?? {})
   };
+}
+
+function qwenGenerationReasoningParameters(
+  modelId: string,
+  baseUrl: string,
+  reasoningLevel: AiReasoningLevel | undefined,
+  reasoningMaxTokens: number | undefined
+): Record<string, unknown> | undefined {
+  if (!isQwen35Model(modelId) || (reasoningLevel === undefined && reasoningMaxTokens === undefined)) return undefined;
+  const enabled = reasoningLevel !== "off";
+  if (isDashScopeBaseUrl(baseUrl)) {
+    return {
+      enable_thinking: enabled,
+      ...(enabled && reasoningMaxTokens !== undefined ? { thinking_budget: reasoningMaxTokens } : {})
+    };
+  }
+  return { chat_template_kwargs: { enable_thinking: enabled } };
 }
 
 export function readText(input: unknown): string {

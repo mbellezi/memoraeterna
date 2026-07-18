@@ -596,7 +596,8 @@ Implementar:
   - idioma de resposta por perfil, herdando o idioma da interface por padrao;
   - selecao explicita do perfil ativo para cada tipo de tarefa;
   - tarefas compativeis com o modelo de cada perfil.
-- vocabulario canonico inicial de parametros: `contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `topP`, `dimensions` e `seed`;
+- vocabulario canonico inicial de parametros: `contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `reasoningMaxTokens`, `topP`, `topK`, `presencePenalty`, `dimensions` e `seed`;
+- capacidades de parametros declaradas pelo adapter/modelo governam os controles da UI e a normalizacao em execucao; budgets de raciocinio so aparecem quando suportados pelo contrato real do motor;
 - precedencia em execucao: defaults internos, defaults do modelo e overrides do perfil/tarefa;
 - default interno `maxTokens: 16384` para etapas generativas executadas por
   perfil, preservando valores diferentes definidos no modelo ou no vinculo

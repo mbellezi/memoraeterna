@@ -47,19 +47,36 @@ export function effectiveReasoningParameters(
 
 export function openAiReasoningEffort(level: AiReasoningLevel | undefined): string | undefined {
   if (!level) return undefined;
+  if (level === "on") return "medium";
   return level === "off" ? "none" : level;
 }
 
 export function googleThinkingConfig(
   modelId: string,
-  level: AiReasoningLevel | undefined
+  level: AiReasoningLevel | undefined,
+  reasoningMaxTokens?: number
 ): { thinkingLevel: string } | { thinkingBudget: number } | undefined {
-  const effective = effectiveReasoningLevel("google", modelId, level);
-  if (!effective) return undefined;
   if (isGemini25(modelId)) {
-    if (effective === "off") return { thinkingBudget: 0 };
-    return { thinkingBudget: ({ minimal: 1_024, low: 1_024, medium: 8_192, high: 24_576, xhigh: 24_576, max: 24_576 })[effective] };
+    if (!level && reasoningMaxTokens === undefined) return undefined;
+    if (level === "off") return { thinkingBudget: isGeminiPro(modelId) ? 1_024 : 0 };
+    if (reasoningMaxTokens !== undefined) return { thinkingBudget: reasoningMaxTokens };
+    if (level === "on") return { thinkingBudget: -1 };
+    const legacyLevel = effectiveReasoningLevel("google", modelId, level);
+    if (!legacyLevel) return undefined;
+    const legacyBudgets: Record<AiReasoningLevel, number> = {
+      off: 0,
+      on: -1,
+      minimal: 1_024,
+      low: 1_024,
+      medium: 8_192,
+      high: 24_576,
+      xhigh: 24_576,
+      max: 24_576
+    };
+    return { thinkingBudget: legacyBudgets[legacyLevel] };
   }
+  const effective = effectiveReasoningLevel("google", modelId, level === "on" ? "medium" : level);
+  if (!effective) return undefined;
   return { thinkingLevel: effective };
 }
 
@@ -83,12 +100,12 @@ function isGeminiFlashLiteImage(modelId: string): boolean {
   return /gemini-3(?:\.\d+)?-flash-lite-image/i.test(modelId);
 }
 
-function isOpenAiReasoningModel(modelId: string): boolean {
+export function isOpenAiReasoningModel(modelId: string): boolean {
   const id = unqualifiedModelId(modelId);
   return id.startsWith("gpt-5") || /^o[134](?:-|$)/.test(id) || id.startsWith("gpt-realtime-2");
 }
 
-function openAiSupportedReasoningLevels(modelId: string): readonly AiReasoningLevel[] | undefined {
+export function openAiSupportedReasoningLevels(modelId: string): readonly AiReasoningLevel[] | undefined {
   const id = unqualifiedModelId(modelId);
   if (id.startsWith("gpt-realtime-2")) return ["minimal", "low", "medium", "high", "xhigh"];
   if (/^o[134](?:-|$)/.test(id)) return ["low", "medium", "high"];
@@ -125,6 +142,7 @@ function closestSupportedReasoningLevel(
   supported: readonly AiReasoningLevel[]
 ): AiReasoningLevel {
   if (supported.includes(level)) return level;
+  if (level === "on") return supported.includes("medium") ? "medium" : supported[0] ?? level;
   const ordered: readonly AiReasoningLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
   const requestedIndex = ordered.indexOf(level);
   for (let distance = 1; distance < ordered.length; distance += 1) {

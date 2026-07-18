@@ -487,9 +487,9 @@
       },
       "parameters": {
         "contextWindow": "Context window", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
-        "reasoningLevel": "Reasoning level", "topP": "Top P", "dimensions": "Embedding dimensions", "seed": "Seed",
+        "reasoningLevel": "Reasoning", "reasoningMaxTokens": "Maximum reasoning tokens", "topP": "Top P", "topK": "Top K", "presencePenalty": "Presence penalty", "dimensions": "Embedding dimensions", "seed": "Seed",
         "inherit": "Use inherited/default value",
-        "reasoning": { "off": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" }
+        "reasoning": { "off": "Off", "on": "On", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" }
       }
     }
   },
@@ -531,7 +531,8 @@
       "resume": "Resume",
       "test": "Test inference",
       "remove": "Remove",
-      "importGguf": "Import GGUF"
+      "importGguf": "Import GGUF",
+      "reloadRecommended": "Reload recommended defaults"
     },
     "progress": {
       "loading": "Loading the model",

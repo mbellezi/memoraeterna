@@ -26,7 +26,13 @@ for (let attempt = 1; attempt <= 2; attempt += 1) {
     taskType: "text-generation",
     input: "Reply with exactly: OK",
     requiredCapabilities: ["text-generation"],
-    parameters: { maxTokens: 4, temperature: 0 },
+    parameters: {
+      maxTokens: 4,
+      temperature: 0,
+      topP: 0.95,
+      topK: 20,
+      presencePenalty: 1.5
+    },
     metadata: { purpose: "mlx-real-model-smoke", attempt }
   });
   if (typeof result.output !== "string" || result.output.trim() !== "OK") {

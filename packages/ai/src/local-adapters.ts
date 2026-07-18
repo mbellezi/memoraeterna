@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
-import type { AiCapability } from "@app/domain";
+import type { AiCapability, AiModelParameterCapabilities } from "@app/domain";
 
 import {
   aiTaskRequestSchema,
@@ -12,6 +12,7 @@ import {
   type AiTaskResult
 } from "./contracts.js";
 import { mlxHelperRequestSchema, parseMlxHelperOutput, type MlxHelperRequest } from "./local-runtime-protocol.js";
+import { localParameterCapabilities } from "./parameter-capabilities.js";
 
 const supportedLocalTasks = new Set([
   "text-generation",
@@ -29,6 +30,8 @@ export interface LocalAdapterOptions {
   repository?: string;
   revision?: string;
   quantization?: string;
+  catalogId?: string;
+  parameterCapabilities?: AiModelParameterCapabilities;
 }
 
 export interface LocalExecutionResult {
@@ -283,6 +286,11 @@ function createMlxGenerateRequest(input: MlxExecutionInput): MlxHelperRequest {
     parameters: {
       maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
       temperature: numberParameter(input.parameters.temperature, 0.2),
+      ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
+      ...(typeof input.parameters.topK === "number" ? { topK: input.parameters.topK } : {}),
+      ...(typeof input.parameters.presencePenalty === "number"
+        ? { presencePenalty: input.parameters.presencePenalty }
+        : {}),
       enableThinking: typeof input.parameters.reasoningLevel === "string"
         ? input.parameters.reasoningLevel !== "off"
         : false,
@@ -328,6 +336,7 @@ class NodeLlamaRuntime {
         maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
         temperature: numberParameter(input.parameters.temperature, 0.2),
         ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
+        ...(typeof input.parameters.topK === "number" ? { topK: input.parameters.topK } : {}),
         ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
         ...(input.onProgress ? {
@@ -414,11 +423,18 @@ class NodeLlamaRuntime {
 }
 
 function localDescriptor(providerId: string, options: LocalAdapterOptions, adapter: string): AiModelDescriptor {
+  const runtime = providerId === "local-mlx" ? "mlx" : "gguf";
   return {
     providerId,
     modelId: options.modelId,
     runtime: "local",
     capabilities: options.capabilities,
+    parameterCapabilities: options.parameterCapabilities ?? localParameterCapabilities({
+      runtime,
+      modelId: options.modelId,
+      capabilities: options.capabilities,
+      ...(options.catalogId ? { catalogId: options.catalogId } : {})
+    }),
     limits: {},
     requirements: {
       adapter,

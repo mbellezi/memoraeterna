@@ -14,10 +14,17 @@ local ja verificado e emite progresso e resultado em JSONL. Ele nao usa Python,
 nao instala pacotes e nao baixa pesos. Cancelamento e timeout encerram o helper
 controlado pelo desktop.
 
-O parametro canonico `reasoningLevel` e convertido para o contexto
-`enable_thinking` dos templates MLX. O default seguro e desabilitado; valores
-explicitos diferentes de `off` habilitam o raciocinio. Blocos `<think>` residuais
-sao removidos antes de a resposta seguir para resumos e saidas estruturadas.
+Cada modelo local declara capacidades de parametros consumidas tanto pela UI
+quanto pelo adapter. Para reasoning, o Qwen 3.5 9B declara somente
+`reasoningLevel: off|on`, convertido para o contexto `enable_thinking` do
+template MLX; ele nao declara
+`reasoningMaxTokens` porque o helper local nao implementa budget separado. O
+default seguro e desabilitado. Blocos `<think>` residuais sao removidos antes de
+a resposta seguir para resumos e saidas estruturadas. Outros modelos MLX nao
+exibem reasoning enquanto esse controle nao estiver validado no respectivo
+template/runtime. O helper encaminha `temperature`, `topP`, `topK` e
+`presencePenalty` ao `GenerateParameters` do MLX Swift; esses controles aparecem
+somente nos modelos locais que os declaram.
 
 Build do helper:
 
