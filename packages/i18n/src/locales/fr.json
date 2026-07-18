@@ -30,6 +30,11 @@
       "loading": "Chargement...",
       "empty": "Rien ici pour le moment.",
       "saved": "Enregistre."
+    },
+    "toasts": {
+      "settingsSaved": "Paramètres enregistrés.",
+      "settingsError": "Impossible d'enregistrer les paramètres.",
+      "dismiss": "Fermer la notification"
     }
   },
   "database": {
@@ -223,7 +228,14 @@
   "search": {
     "placeholder": "Rechercher des sources et preuves", "action": "Rechercher", "empty": "Aucune preuve correspondante.",
     "scope": "Rechercher dans", "scopeAll": "Toute la bibliotheque",
-    "page": "Page", "markdownEvidence": "Preuve Markdown"
+    "page": "Page", "markdownEvidence": "Preuve Markdown",
+    "kinds": {
+      "source": "Source",
+      "subitem": "Section",
+      "atomicNote": "Note atomique"
+    },
+    "resultsCount": "{count} résultats",
+    "openHint": "Ouvrir dans la bibliothèque"
   },
   "library": {
     "filterByType": "Filtrer par type de source", "allTypes": "Tous les types de source",
@@ -241,6 +253,20 @@
       "metadata": "Metadonnees", "summary": "Resume", "document": "Document Markdown",
       "originals": "Fichiers originaux", "chunks": "Segments de la source",
       "atomicNotes": "Notes atomiques", "relations": "Relations entre notes"
+    },
+    "cards": {
+      "openDetail": "Ouvrir les détails de {title}"
+    },
+    "detail": {
+      "subitems": "Sous-éléments",
+      "stats": {
+        "documents": "Documents",
+        "chunks": "Fragments",
+        "notes": "Notes atomiques",
+        "relations": "Relations"
+      },
+      "rawMetadata": "Métadonnées brutes",
+      "backToSearch": "Retour à la recherche"
     }
   },
   "knowledge": {
@@ -311,7 +337,8 @@
       "syncDescriptions": {
         "enabled": "Projetez les sources et notes gerees dans le coffre configure.",
         "paused": "Suspendez temporairement la synchronisation sans supprimer sa configuration."
-      }
+      },
+      "autoSaveHint": "Les modifications sont enregistrées automatiquement."
     },
     "language": {
       "title": "Langue",

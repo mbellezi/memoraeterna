@@ -30,6 +30,11 @@
       "loading": "Carregando...",
       "empty": "Nada por aqui ainda.",
       "saved": "Salvo."
+    },
+    "toasts": {
+      "settingsSaved": "Configuracoes salvas.",
+      "settingsError": "Nao foi possivel salvar as configuracoes.",
+      "dismiss": "Dispensar notificacao"
     }
   },
   "database": {
@@ -245,7 +250,14 @@
   "search": {
     "placeholder": "Buscar fontes e evidencias", "action": "Buscar", "empty": "Nenhuma evidencia correspondente.",
     "scope": "Buscar dentro de", "scopeAll": "Biblioteca inteira",
-    "page": "Pagina", "markdownEvidence": "Evidencia no Markdown"
+    "page": "Pagina", "markdownEvidence": "Evidencia no Markdown",
+    "kinds": {
+      "source": "Fonte",
+      "subitem": "Secao",
+      "atomicNote": "Nota atomica"
+    },
+    "resultsCount": "{count} resultados",
+    "openHint": "Abrir na biblioteca"
   },
   "library": {
     "filterByType": "Filtrar por tipo de fonte",
@@ -281,6 +293,20 @@
       "chunks": "Trechos da fonte",
       "atomicNotes": "Notas atomicas",
       "relations": "Relações entre notas"
+    },
+    "cards": {
+      "openDetail": "Abrir detalhes de {title}"
+    },
+    "detail": {
+      "subitems": "Subitens",
+      "stats": {
+        "documents": "Documentos",
+        "chunks": "Trechos",
+        "notes": "Notas atomicas",
+        "relations": "Relacoes"
+      },
+      "rawMetadata": "Metadados brutos",
+      "backToSearch": "Voltar para a busca"
     }
   },
   "knowledge": {
@@ -368,7 +394,8 @@
       "syncDescriptions": {
         "enabled": "Projete fontes e notas gerenciadas no vault configurado.",
         "paused": "Interrompa temporariamente a sincronizacao sem remover sua configuracao."
-      }
+      },
+      "autoSaveHint": "As mudancas sao salvas automaticamente."
     },
     "language": {
       "title": "Idioma",

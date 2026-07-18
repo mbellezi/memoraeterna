@@ -1,4 +1,5 @@
 import { sha256 } from "@app/conversion";
+import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createAtomicNoteRelationRepository,
@@ -45,6 +46,7 @@ import {
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
 
+const maxInlineAssetBytes = 5 * 1024 * 1024;
 const atomicNoteTextCandidateLimit = 30;
 const atomicNoteVectorCandidateLimit = 30;
 const atomicNoteGraphCandidateLimit = 20;
@@ -216,6 +218,20 @@ export class KnowledgeService {
       throw new Error("errors.common.permissionDenied");
     }
     return absolutePath;
+  }
+
+  public async getAssetDataUrl(assetId: string): Promise<string | null> {
+    try {
+      const asset = await createDocumentAssetRepository(this.requirePool()).findById(assetId);
+      if (!asset || !asset.mimeType.startsWith("image/") || asset.sizeBytes > maxInlineAssetBytes) {
+        return null;
+      }
+      const absolutePath = await this.resolveAssetPath(assetId);
+      const bytes = await readFile(absolutePath);
+      return `data:${asset.mimeType};base64,${bytes.toString("base64")}`;
+    } catch {
+      return null;
+    }
   }
 
   public async summarizeSource(

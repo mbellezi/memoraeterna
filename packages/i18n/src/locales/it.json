@@ -30,6 +30,11 @@
       "loading": "Caricamento...",
       "empty": "Non c'e ancora nulla qui.",
       "saved": "Salvato."
+    },
+    "toasts": {
+      "settingsSaved": "Impostazioni salvate.",
+      "settingsError": "Impossibile salvare le impostazioni.",
+      "dismiss": "Chiudi notifica"
     }
   },
   "database": {
@@ -223,7 +228,14 @@
   "search": {
     "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
     "scope": "Cerca in", "scopeAll": "Intera libreria",
-    "page": "Pagina", "markdownEvidence": "Evidenza Markdown"
+    "page": "Pagina", "markdownEvidence": "Evidenza Markdown",
+    "kinds": {
+      "source": "Fonte",
+      "subitem": "Sezione",
+      "atomicNote": "Nota atomica"
+    },
+    "resultsCount": "{count} risultati",
+    "openHint": "Apri nella libreria"
   },
   "library": {
     "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
@@ -241,6 +253,20 @@
       "metadata": "Metadati", "summary": "Riepilogo", "document": "Documento Markdown",
       "originals": "File originali", "chunks": "Frammenti della fonte",
       "atomicNotes": "Note atomiche", "relations": "Relazioni tra note"
+    },
+    "cards": {
+      "openDetail": "Apri i dettagli di {title}"
+    },
+    "detail": {
+      "subitems": "Sottoelementi",
+      "stats": {
+        "documents": "Documenti",
+        "chunks": "Frammenti",
+        "notes": "Note atomiche",
+        "relations": "Relazioni"
+      },
+      "rawMetadata": "Metadati grezzi",
+      "backToSearch": "Torna alla ricerca"
     }
   },
   "knowledge": {
@@ -311,7 +337,8 @@
       "syncDescriptions": {
         "enabled": "Proietta fonti e note gestite nel vault configurato.",
         "paused": "Interrompi temporaneamente la sincronizzazione senza rimuoverne la configurazione."
-      }
+      },
+      "autoSaveHint": "Le modifiche vengono salvate automaticamente."
     },
     "language": {
       "title": "Lingua",

@@ -8,7 +8,7 @@ import {
   EnrichmentCandidateSchema,
   MetadataEnrichmentQuerySchema,
   ProcessingPlanRequestSchema,
-  SearchEvidenceSchema,
+  SearchResultSchema,
   SourceDescriptorDraftSchema,
   SourceDescriptorSchema,
   SourceItemTypeSchema,
@@ -53,6 +53,7 @@ export const ipcChannels = {
   librarySourceGet: "app:library:source:get",
   librarySourceDelete: "app:library:source:delete",
   libraryAssetOpen: "app:library:asset:open",
+  libraryAssetData: "app:library:asset:data",
   knowledgePendingNotesList: "app:knowledge:notes:pending:list",
   knowledgeNoteReview: "app:knowledge:notes:review",
   aiProvidersList: "app:ai:providers:list",
@@ -529,7 +530,7 @@ export const searchInputSchema = z.object({
   limit: z.number().int().min(1).max(100).default(20)
 }).strict();
 
-export const searchResultsSchema = z.array(SearchEvidenceSchema);
+export const searchResultsSchema = z.array(SearchResultSchema);
 
 export const similarityDebugResultSchema = z.object({
   id: z.string().uuid(),
@@ -828,7 +829,7 @@ export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
 export type LibraryResetResult = z.infer<typeof libraryResetResultSchema>;
 export type SourceDeletionResult = z.infer<typeof sourceDeletionResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
-export type SearchResult = z.infer<typeof SearchEvidenceSchema>;
+export type SearchResult = z.infer<typeof SearchResultSchema>;
 export type SimilarityDebugRun = z.infer<typeof similarityDebugRunSchema>;
 export type LibrarySource = z.infer<typeof librarySourceSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;
@@ -932,6 +933,7 @@ export interface DesktopApi {
     getSourceDetail: (sourceItemId: string) => Promise<SourceDetail | null>;
     deleteSource: (sourceItemId: string) => Promise<SourceDeletionResult>;
     openAsset: (assetId: string) => Promise<boolean>;
+    getAssetDataUrl: (assetId: string) => Promise<string | null>;
     listPendingNotes: () => Promise<PendingAtomicNote[]>;
     reviewNote: (input: AtomicNoteReviewInput) => Promise<AtomicNoteView | null>;
   };

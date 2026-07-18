@@ -1,25 +1,105 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, ChevronRight, ExternalLink, FileText, Play, RefreshCw, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  ArrowLeft,
+  BookMarked,
+  BookOpen,
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  File,
+  FileText,
+  Film,
+  Globe,
+  GraduationCap,
+  Layers,
+  Newspaper,
+  NotebookPen,
+  Play,
+  RefreshCw,
+  ScrollText,
+  StickyNote,
+  Trash2,
+  X
+} from "lucide-react";
 import { SourceItemTypes, type ProcessingPlanRequest, type SourceItemType } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SourceDetail } from "../../shared/ipc";
+import { cn } from "../lib/cn";
+import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 import { Button } from "./ui/button";
+import { CoverImage } from "./ui/cover-image";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
 
-export function LibraryView({ t }: { t: Translator }) {
+export interface LibraryExternalTarget {
+  sourceItemId: string;
+  token: number;
+}
+
+const typeIcons: Record<SourceItemType, typeof FileText> = {
+  PersonalNote: StickyNote,
+  DailyNote: CalendarDays,
+  WebArticle: Globe,
+  Book: BookOpen,
+  BookChapter: BookMarked,
+  PeriodicalIssue: Newspaper,
+  AcademicPaper: GraduationCap,
+  DocumentSection: FileText,
+  StandaloneArticle: ScrollText,
+  Video: Film,
+  GenericDocument: File
+};
+
+const typeBadgeStyles: Record<SourceItemType, string> = {
+  PersonalNote: "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200",
+  DailyNote: "bg-indigo-100 text-indigo-900 dark:bg-indigo-950 dark:text-indigo-200",
+  WebArticle: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
+  Book: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200",
+  BookChapter: "bg-teal-100 text-teal-900 dark:bg-teal-950 dark:text-teal-200",
+  PeriodicalIssue: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200",
+  AcademicPaper: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200",
+  DocumentSection: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  StandaloneArticle: "bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200",
+  Video: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-200",
+  GenericDocument: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
+};
+
+export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translator }) {
+  const Icon = typeIcons[type];
+  return (
+    <span className={cn(
+      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold",
+      typeBadgeStyles[type]
+    )}>
+      <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+      {t(`import.sourceTypes.${type}` as MessageKey)}
+    </span>
+  );
+}
+
+export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
+  t: Translator;
+  externalTarget?: LibraryExternalTarget | null;
+  onExitToSearch?: () => void;
+}) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
-  const [selected, setSelected] = useState<SourceDetail | null>(null);
+  const [stack, setStack] = useState<string[]>([]);
+  const [detail, setDetail] = useState<SourceDetail | null>(null);
+  const [fromSearch, setFromSearch] = useState(false);
   const [filter, setFilter] = useState<SourceItemType | "all">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [processingIds, setProcessingIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const consumedTargetToken = useRef<number | null>(null);
+
+  const currentId = stack.at(-1) ?? null;
 
   async function load() {
     setLoading(true);
     setError(false);
     try {
-      setSources(await window.app.knowledge.listLibrary(filter === "all" ? [] : [filter]));
+      setSources(await window.app.knowledge.listLibrary([]));
     } catch {
       setError(true);
     } finally {
@@ -27,30 +107,96 @@ export function LibraryView({ t }: { t: Translator }) {
     }
   }
 
-  async function openSource(id: string) {
+  useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
+    consumedTargetToken.current = externalTarget.token;
+    setFromSearch(true);
+    setStack([externalTarget.sourceItemId]);
+  }, [externalTarget]);
+
+  useEffect(() => {
+    if (!currentId) {
+      setDetail(null);
+      return;
+    }
+    let active = true;
     setLoading(true);
     setError(false);
-    try {
-      setSelected(await window.app.knowledge.getSourceDetail(id));
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
+    window.app.knowledge.getSourceDetail(currentId)
+      .then((loaded) => {
+        if (!active) return;
+        setDetail(loaded);
+        if (!loaded) setError(true);
+      })
+      .catch(() => { if (active) setError(true); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [currentId]);
+
+  function openSource(id: string) {
+    setStack((current) => [...current, id]);
   }
 
-  useEffect(() => { void load(); }, [filter]);
+  function goBack() {
+    if (stack.length === 1 && fromSearch && onExitToSearch) {
+      setStack([]);
+      setFromSearch(false);
+      onExitToSearch();
+      return;
+    }
+    setStack((current) => current.slice(0, -1));
+    if (stack.length <= 1) setFromSearch(false);
+  }
 
-  if (selected) {
-    return <SourceDetailView
-      detail={selected}
-      t={t}
-      onBack={() => setSelected(null)}
-      onDeleted={() => { setSelected(null); void load(); }}
-    />;
+  function openPath(ids: string[]) {
+    setStack(ids);
+  }
+
+  if (currentId) {
+    return <>
+      {detail && detail.id === currentId ? (
+        <SourceDetailView
+          key={detail.id}
+          detail={detail}
+          allSources={sources}
+          backLabel={stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
+          t={t}
+          onOpen={openSource}
+          onOpenPath={openPath}
+          onGoToLibrary={() => { setStack([]); setFromSearch(false); }}
+          onBack={goBack}
+          onProcess={() => setProcessingIds([currentId])}
+          onDeleted={() => { setStack([]); setFromSearch(false); void load(); }}
+        />
+      ) : error ? (
+        <div className="grid gap-4">
+          <StateCard>{t("library.error")}</StateCard>
+          <Button type="button" className="w-fit" onClick={goBack}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            {t("library.back")}
+          </Button>
+        </div>
+      ) : (
+        <StateCard>{t("shell.states.loading")}</StateCard>
+      )}
+      {processingIds ? (
+        <ProcessingDialog
+          sourceIds={processingIds}
+          sources={sources}
+          t={t}
+          onClose={() => setProcessingIds(null)}
+          onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }}
+        />
+      ) : null}
+    </>;
   }
 
   const orderedSources = orderHierarchically(sources);
+  const gridSources = filter === "all"
+    ? orderedSources.filter(({ depth }) => depth === 0).map(({ source }) => source)
+    : orderedSources.filter(({ source }) => source.type === filter).map(({ source }) => source);
 
   return <section className="grid gap-4">
     <div className="flex flex-wrap items-end justify-between gap-3">
@@ -73,23 +219,95 @@ export function LibraryView({ t }: { t: Translator }) {
     </div> : null}
     {error ? <StateCard>{t("library.error")}</StateCard> : loading ? <StateCard>{t("shell.states.loading")}</StateCard>
       : sources.length === 0 ? <StateCard>{t("library.empty")}</StateCard>
-        : <ol className="grid gap-2">{orderedSources.map(({ source, depth }) => <li key={source.id} style={{ marginLeft: `${Math.min(depth, 5) * 22}px` }}>
-          <div role="button" tabIndex={0} onClick={() => void openSource(source.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") void openSource(source.id); }}
-            className="grid w-full gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left transition-colors hover:border-cyan-400 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex min-w-0 items-start gap-3">
-                <input type="checkbox" aria-label={t("library.actions.selectSource", { values: { title: source.title } })} checked={selectedIds.has(source.id)} className="mt-1 h-4 w-4 accent-cyan-600" onClick={(event) => event.stopPropagation()} onChange={(event) => setSelectedIds((current) => { const next = new Set(current); if (event.target.checked) next.add(source.id); else next.delete(source.id); return next; })} />
-                {depth > 0 ? <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /> : null}
-                <div className="min-w-0"><h2 className="truncate font-semibold">{source.title}</h2><p className="text-xs text-slate-500">{t(`import.sourceTypes.${source.type}` as MessageKey)}{source.childCount > 0 ? ` · ${t("library.childCount", { values: { count: source.childCount } })}` : ""}</p></div>
-              </div>
-              <div className="flex items-center gap-2"><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}</span><button type="button" className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 hover:bg-cyan-50 dark:border-slate-700 dark:hover:bg-cyan-950" title={t("library.actions.process")} onClick={(event) => { event.stopPropagation(); setProcessingIds([source.id]); }}><Play className="h-3.5 w-3.5" /></button></div>
-            </div>
-            {source.summary ? <p className="line-clamp-2 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
-            {source.hasDocument ? <p className="text-xs text-slate-500">{t("library.currentStage", { values: { stage: t(stageKey(source.currentStage)) } })}</p> : <p className="text-xs text-slate-500">{t("library.containerHint")}</p>}
-          </div>
-        </li>)}</ol>}
+        : <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {gridSources.map((source) => <li key={source.id} className="motion-fade-in-up">
+            <SourceCard
+              source={source}
+              t={t}
+              selected={selectedIds.has(source.id)}
+              onToggleSelect={(checked) => setSelectedIds((current) => {
+                const next = new Set(current);
+                if (checked) next.add(source.id); else next.delete(source.id);
+                return next;
+              })}
+              onOpen={() => { setFromSearch(false); setStack([source.id]); }}
+              onProcess={() => setProcessingIds([source.id])}
+            />
+          </li>)}
+        </ol>}
     {processingIds ? <ProcessingDialog sourceIds={processingIds} sources={sources} t={t} onClose={() => setProcessingIds(null)} onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }} /> : null}
   </section>;
+}
+
+function SourceCard({ source, t, selected, onToggleSelect, onOpen, onProcess }: {
+  source: LibrarySource;
+  t: Translator;
+  selected: boolean;
+  onToggleSelect: (checked: boolean) => void;
+  onOpen: () => void;
+  onProcess: () => void;
+}) {
+  const Icon = typeIcons[source.type];
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={t("library.cards.openDetail", { values: { title: source.title } })}
+      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700"
+      onClick={onOpen}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}
+    >
+      <div className="flex gap-4 p-4">
+        <div className="grid h-28 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
+          <CoverImage
+            assetId={coverAssetIdFromMetadata(source.metadata)}
+            alt={source.title}
+            fallback={<Icon className="h-8 w-8 text-slate-400" aria-hidden="true" />}
+          />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="line-clamp-2 font-semibold leading-snug">{source.title}</h2>
+          {source.subtitle ? <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{source.subtitle}</p> : null}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <SourceTypeBadge type={source.type} t={t} />
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium dark:bg-slate-800">
+              {source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col items-center justify-between gap-2">
+          <input
+            type="checkbox"
+            aria-label={t("library.actions.selectSource", { values: { title: source.title } })}
+            checked={selected}
+            className="h-4 w-4 accent-cyan-600"
+            onClick={(event) => event.stopPropagation()}
+            onChange={(event) => onToggleSelect(event.target.checked)}
+          />
+          <button
+            type="button"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 opacity-0 transition group-hover:opacity-100 hover:bg-cyan-50 focus-visible:opacity-100 dark:border-slate-700 dark:hover:bg-cyan-950"
+            title={t("library.actions.process")}
+            onClick={(event) => { event.stopPropagation(); onProcess(); }}
+          >
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+      {source.summary ? <p className="line-clamp-2 px-4 pb-3 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
+      <footer className="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500 dark:border-slate-800">
+        <span className="inline-flex items-center gap-1.5">
+          <Layers className="h-3.5 w-3.5" aria-hidden="true" />
+          {t("library.childCount", { values: { count: source.childCount } })}
+        </span>
+        <span className="truncate">
+          {source.hasDocument
+            ? t("library.currentStage", { values: { stage: t(stageKey(source.currentStage)) } })
+            : t("library.containerHint")}
+        </span>
+      </footer>
+    </article>
+  );
 }
 
 function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { sourceIds: string[]; sources: LibrarySource[]; t: Translator; onClose: () => void; onQueued: () => void }) {
@@ -107,7 +325,7 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
     } finally { setBusy(false); }
   }
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={t("library.processingDialog.title")}>
-    <div className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+    <div className="motion-scale-in max-h-[92vh] w-full max-w-4xl overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
       <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 className="text-lg font-semibold">{t("library.processingDialog.title")}</h2><p className="mt-1 text-sm text-slate-500">{t("library.processingDialog.description", { values: { count: sourceIds.length } })}</p></div><button type="button" className="grid h-9 w-9 place-items-center rounded-lg" onClick={onClose}><X className="h-4 w-4" /></button></header>
       <div className="grid gap-5 p-5">
         <div className="flex flex-wrap gap-2">{selected.map((source) => <span key={source.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs dark:bg-slate-900">{source.title}</span>)}</div>
@@ -120,15 +338,9 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
   </div>;
 }
 
-export function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibrarySource; depth: number }> {
-  const ids = new Set(sources.map((source) => source.id));
+function structurePositionComparator(sources: LibrarySource[]) {
   const sourceOrder = new Map(sources.map((source, index) => [source.id, index]));
-  const byParent = new Map<string | null, LibrarySource[]>();
-  for (const source of sources) {
-    const parent = source.parentSourceItemId && ids.has(source.parentSourceItemId) ? source.parentSourceItemId : null;
-    byParent.set(parent, [...(byParent.get(parent) ?? []), source]);
-  }
-  const compareStructurePosition = (left: LibrarySource, right: LibrarySource) => {
+  return (left: LibrarySource, right: LibrarySource) => {
     if (left.structurePosition !== null && right.structurePosition !== null) {
       const positionDifference = left.structurePosition - right.structurePosition;
       if (positionDifference !== 0) return positionDifference;
@@ -136,6 +348,35 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
     else if (right.structurePosition !== null) return 1;
     return (sourceOrder.get(left.id) ?? 0) - (sourceOrder.get(right.id) ?? 0);
   };
+}
+
+export function childrenOf(sources: LibrarySource[], parentId: string): LibrarySource[] {
+  return sources
+    .filter((source) => source.parentSourceItemId === parentId)
+    .toSorted(structurePositionComparator(sources));
+}
+
+export function breadcrumbChain(sources: LibrarySource[], id: string): LibrarySource[] {
+  const byId = new Map(sources.map((source) => [source.id, source]));
+  const chain: LibrarySource[] = [];
+  let current = byId.get(id) ?? null;
+  const visited = new Set<string>();
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    chain.unshift(current);
+    current = current.parentSourceItemId ? byId.get(current.parentSourceItemId) ?? null : null;
+  }
+  return chain;
+}
+
+export function orderHierarchically(sources: LibrarySource[]): Array<{ source: LibrarySource; depth: number }> {
+  const ids = new Set(sources.map((source) => source.id));
+  const byParent = new Map<string | null, LibrarySource[]>();
+  for (const source of sources) {
+    const parent = source.parentSourceItemId && ids.has(source.parentSourceItemId) ? source.parentSourceItemId : null;
+    byParent.set(parent, [...(byParent.get(parent) ?? []), source]);
+  }
+  const compareStructurePosition = structurePositionComparator(sources);
   for (const [parentId, siblings] of byParent) {
     if (parentId === null) continue;
     siblings.sort(compareStructurePosition);
@@ -164,14 +405,32 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
   return result;
 }
 
-function SourceDetailView({ detail, t, onBack, onDeleted }: {
+function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted }: {
   detail: SourceDetail;
+  allSources: LibrarySource[];
+  backLabel: string;
   t: Translator;
+  onOpen: (id: string) => void;
+  onOpenPath: (ids: string[]) => void;
+  onGoToLibrary: () => void;
   onBack: () => void;
+  onProcess: () => void;
   onDeleted: () => void;
 }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  const rootRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    rootRef.current?.scrollIntoView({ block: "start" });
+  }, [detail.id]);
+
+  const chain = breadcrumbChain(allSources, detail.id);
+  const subitems = childrenOf(allSources, detail.id);
+  const chunkCount = detail.documents.reduce((total, document) => total + document.chunks.length, 0);
+  const coverAssetId = detail.assets.find((asset) => asset.role === "cover")?.id
+    ?? coverAssetIdFromMetadata(detail.metadata);
+  const Icon = typeIcons[detail.type];
 
   async function deleteSource() {
     if (!window.confirm(t("library.delete.confirmation", { values: { title: detail.title } }))) return;
@@ -189,34 +448,227 @@ function SourceDetailView({ detail, t, onBack, onDeleted }: {
     }
   }
 
-  return <section className="grid gap-5">
-    <div className="flex items-start justify-between gap-4">
-      <div className="grid gap-1"><h2 className="text-xl font-semibold">{detail.title}</h2><p className="text-sm text-slate-500">{t(`import.sourceTypes.${detail.type}` as MessageKey)}</p></div>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" disabled={deleting} className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-800 dark:bg-rose-800 dark:hover:bg-rose-700" onClick={() => void deleteSource()}><Trash2 className="h-4 w-4" aria-hidden="true" />{deleting ? t("library.delete.deleting") : t("library.delete.action")}</Button>
-        <Button type="button" disabled={deleting} onClick={onBack}><ArrowLeft className="h-4 w-4" aria-hidden="true" />{t("library.back")}</Button>
+  return <section ref={rootRef} className="motion-fade-in-up grid gap-4">
+    <nav className="flex flex-wrap items-center gap-1 text-sm text-slate-500" aria-label={t("shell.navigation.library")}>
+      <button type="button" className="rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100" onClick={onGoToLibrary}>
+        {t("shell.navigation.library")}
+      </button>
+      {chain.map((ancestor, index) => <span key={ancestor.id} className="inline-flex items-center gap-1">
+        <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        {index === chain.length - 1
+          ? <span className="max-w-64 truncate font-medium text-slate-900 dark:text-slate-100">{ancestor.title}</span>
+          : <button type="button" className="max-w-56 truncate rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100"
+              onClick={() => onOpenPath(chain.slice(0, index + 1).map((item) => item.id))}>
+              {ancestor.title}
+            </button>}
+      </span>)}
+    </nav>
+
+    <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex min-w-0 flex-1 items-start gap-4">
+        <div className="grid h-36 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
+          <CoverImage
+            assetId={coverAssetId}
+            alt={detail.title}
+            fallback={<Icon className="h-10 w-10 text-slate-400" aria-hidden="true" />}
+          />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold leading-tight">{detail.title}</h2>
+          {detail.subtitle ? <p className="mt-1 text-sm text-slate-500">{detail.subtitle}</p> : null}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <SourceTypeBadge type={detail.type} t={t} />
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide dark:bg-slate-800">{detail.language}</span>
+            {detail.sourceUri ? <a href={detail.sourceUri} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-cyan-700 hover:underline dark:text-cyan-300">
+              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />{t("library.openOriginal")}
+            </a> : null}
+          </div>
+        </div>
       </div>
-    </div>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button type="button" disabled={deleting} onClick={onProcess}>
+          <Play className="h-4 w-4" aria-hidden="true" />{t("library.actions.process")}
+        </Button>
+        <Button type="button" disabled={deleting} className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-800 dark:bg-rose-800 dark:hover:bg-rose-700" onClick={() => void deleteSource()}>
+          <Trash2 className="h-4 w-4" aria-hidden="true" />{deleting ? t("library.delete.deleting") : t("library.delete.action")}
+        </Button>
+        <Button type="button" disabled={deleting} onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />{backLabel}
+        </Button>
+      </div>
+    </header>
+
     {deleteFailed ? <p role="alert" className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">{t("library.delete.failed")}</p> : null}
-    <section className="grid gap-3 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center justify-between gap-4"><h3 className="font-semibold">{t("library.sections.metadata")}</h3>{detail.sourceUri ? <a href={detail.sourceUri} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-cyan-700 dark:text-cyan-300"><ExternalLink className="h-4 w-4" aria-hidden="true" />{t("library.openOriginal")}</a> : null}</div>
-      <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>
-      {detail.assets.filter((asset) => asset.role === "cover").map((asset) => <button key={asset.id} type="button" className="inline-flex w-fit items-center gap-2 text-sm text-cyan-700 dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}><FileText className="h-4 w-4" />{asset.originalFileName}</button>)}
-    </section>
-    {detail.documents.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
-    <section className="grid gap-2 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <h3 className="font-semibold">{t("library.sections.summary")}</h3>
+
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <StatTile icon={FileText} label={t("library.detail.stats.documents")} value={detail.documents.length} tone="cyan" />
+      <StatTile icon={Layers} label={t("library.detail.stats.chunks")} value={chunkCount} tone="emerald" />
+      <StatTile icon={NotebookPen} label={t("library.detail.stats.notes")} value={detail.atomicNotes.length} tone="violet" />
+      <StatTile icon={Globe} label={t("library.detail.stats.relations")} value={detail.relations.length} tone="amber" />
+    </div>
+
+    {subitems.length > 0 ? <CollapsibleSection title={t("library.detail.subitems")} count={subitems.length} defaultOpen>
+      <ol className="grid gap-2 sm:grid-cols-2">
+        {subitems.map((subitem) => {
+          const SubIcon = typeIcons[subitem.type];
+          return <li key={subitem.id}>
+            <button
+              type="button"
+              className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-cyan-400 hover:bg-white dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-700 dark:hover:bg-slate-900"
+              onClick={() => onOpen(subitem.id)}
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-500 dark:bg-slate-900">
+                <SubIcon className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{subitem.title}</span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  {t(`import.sourceTypes.${subitem.type}` as MessageKey)}
+                  {subitem.childCount > 0 ? ` · ${t("library.childCount", { values: { count: subitem.childCount } })}` : ""}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+            </button>
+          </li>;
+        })}
+      </ol>
+    </CollapsibleSection> : null}
+
+    <CollapsibleSection title={t("library.sections.summary")} defaultOpen>
       <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{detail.summary ?? t("library.noSummary")}</p>
-    </section>
-    {detail.documents.map((document) => <section key={document.id} className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-      <h3 className="font-semibold">{t("library.sections.document")}</h3>
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-slate-50 p-3 text-sm dark:bg-slate-950">{document.canonicalMarkdown}</pre>
-      {document.assets.length > 0 ? <div className="grid gap-2"><h4 className="text-sm font-semibold">{t("library.sections.originals")}</h4><ul className="grid gap-1 text-sm">{document.assets.map((asset) => <li key={asset.id}><button type="button" className="inline-flex items-center gap-2 text-cyan-700 dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}><FileText className="h-4 w-4" aria-hidden="true" />{asset.originalFileName}<span className="sr-only">{t("library.openFile")}</span></button></li>)}</ul></div> : null}
-      <details><summary className="cursor-pointer text-sm font-semibold">{t("library.sections.chunks")}</summary><ol className="mt-3 grid gap-2">{document.chunks.map((chunk) => <li key={chunk.id} className="rounded border border-slate-200 p-3 text-sm dark:border-slate-800"><p className="mb-1 text-xs text-slate-500">{t("library.chunk", { values: { index: chunk.chunkIndex + 1 } })}</p><p className="whitespace-pre-wrap">{chunk.content}</p></li>)}</ol></details>
-    </section>)}
-    <section className="grid gap-3"><h3 className="font-semibold">{t("library.sections.atomicNotes")}</h3>{detail.atomicNotes.length === 0 ? <StateCard>{t("knowledge.notes.emptyForSource")}</StateCard> : detail.atomicNotes.map((note) => <article key={note.id} className="grid gap-2 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><div className="flex items-start justify-between gap-3"><h4 className="font-semibold">{note.title}</h4><span className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{t(noteStatusKey(note.status))}</span></div><p className="text-sm font-medium">{note.ideaStatement}</p><p className="whitespace-pre-wrap text-sm text-slate-600 dark:text-slate-300">{note.bodyMarkdown}</p></article>)}</section>
-    <section className="grid gap-3"><h3 className="font-semibold">{t("library.sections.relations")}</h3>{detail.relations.length === 0 ? <StateCard>{t("knowledge.relations.empty")}</StateCard> : detail.relations.map((relation) => <article key={relation.id} className="grid gap-2 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"><div className="flex items-start justify-between gap-4"><p className="text-sm font-medium">{relation.sourceTitle} ↔ {relation.targetTitle}</p><span className="text-xs text-slate-500">{Math.round(relation.finalScore * 100)}%</span></div><p className="text-sm">{t(relationTypeKey(relation.relationType))}</p><p className="text-sm text-slate-600 dark:text-slate-300">{relation.explanation.startsWith("knowledge.") ? t(relation.explanation as MessageKey) : relation.explanation}</p>{relation.sourceStatus === "pending_review" || relation.targetStatus === "pending_review" ? <span className="w-fit rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">{t("knowledge.relations.pendingInvolved")}</span> : null}</article>)}</section>
+    </CollapsibleSection>
+
+    {detail.documents.length === 0 && subitems.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
+
+    {detail.documents.map((document) => <div key={document.id} className="grid gap-3">
+      <CollapsibleSection title={t("library.sections.document")}>
+        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">{document.canonicalMarkdown}</pre>
+        {document.assets.length > 0 ? <div className="mt-3 grid gap-2">
+          <h4 className="text-sm font-semibold">{t("library.sections.originals")}</h4>
+          <ul className="grid gap-1 text-sm">{document.assets.map((asset) => <li key={asset.id}>
+            <button type="button" className="inline-flex items-center gap-2 text-cyan-700 hover:underline dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}>
+              <FileText className="h-4 w-4" aria-hidden="true" />{asset.originalFileName}
+              <span className="sr-only">{t("library.openFile")}</span>
+            </button>
+          </li>)}</ul>
+        </div> : null}
+      </CollapsibleSection>
+      <CollapsibleSection title={t("library.sections.chunks")} count={document.chunks.length}>
+        <ol className="grid gap-2">{document.chunks.map((chunk) => <li key={chunk.id} className="rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-800">
+          <p className="mb-1 text-xs text-slate-500">{t("library.chunk", { values: { index: chunk.chunkIndex + 1 } })}</p>
+          <p className="whitespace-pre-wrap">{chunk.content}</p>
+        </li>)}</ol>
+      </CollapsibleSection>
+    </div>)}
+
+    <CollapsibleSection title={t("library.sections.atomicNotes")} count={detail.atomicNotes.length} defaultOpen>
+      {detail.atomicNotes.length === 0 ? <StateCard>{t("knowledge.notes.emptyForSource")}</StateCard>
+        : <ol className="grid gap-2">{detail.atomicNotes.map((note) => <li key={note.id}><AtomicNoteCard note={note} t={t} /></li>)}</ol>}
+    </CollapsibleSection>
+
+    <CollapsibleSection title={t("library.sections.relations")} count={detail.relations.length} defaultOpen>
+      {detail.relations.length === 0 ? <StateCard>{t("knowledge.relations.empty")}</StateCard>
+        : <ol className="grid gap-2">{detail.relations.map((relation) => <li key={relation.id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-sm font-medium">{relation.sourceTitle} ↔ {relation.targetTitle}</p>
+            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold tabular-nums dark:bg-slate-800">{Math.round(relation.finalScore * 100)}%</span>
+          </div>
+          <p className="text-sm">{t(relationTypeKey(relation.relationType))}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{relation.explanation.startsWith("knowledge.") ? t(relation.explanation as MessageKey) : relation.explanation}</p>
+          {relation.sourceStatus === "pending_review" || relation.targetStatus === "pending_review" ? <span className="w-fit rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">{t("knowledge.relations.pendingInvolved")}</span> : null}
+        </li>)}</ol>}
+    </CollapsibleSection>
+
+    <CollapsibleSection title={t("library.detail.rawMetadata")}>
+      <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>
+      {detail.assets.filter((asset) => asset.role === "cover").map((asset) => <button key={asset.id} type="button" className="mt-2 inline-flex w-fit items-center gap-2 text-sm text-cyan-700 hover:underline dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}>
+        <FileText className="h-4 w-4" aria-hidden="true" />{asset.originalFileName}
+      </button>)}
+    </CollapsibleSection>
   </section>;
+}
+
+function AtomicNoteCard({ note, t }: { note: SourceDetail["atomicNotes"][number]; t: Translator }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <article className="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+      <button
+        type="button"
+        className="flex w-full items-start justify-between gap-3 p-4 text-left"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="block font-semibold">{note.title}</span>
+          <span className="mt-1 block text-sm font-medium text-slate-700 dark:text-slate-300">{note.ideaStatement}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="rounded-full bg-slate-200 px-2 py-1 text-xs dark:bg-slate-800">{t(noteStatusKey(note.status))}</span>
+          <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+        </span>
+      </button>
+      <div className={cn("section-collapse", expanded && "section-collapse-open")}>
+        <div>
+          <p className="whitespace-pre-wrap px-4 pb-4 text-sm text-slate-600 dark:text-slate-300">{note.bodyMarkdown}</p>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function CollapsibleSection({ title, count, defaultOpen = false, children }: {
+  title: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-950/40"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="flex items-center gap-2 font-semibold">
+          {title}
+          {count !== undefined ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">{count}</span> : null}
+        </span>
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} aria-hidden="true" />
+      </button>
+      <div className={cn("section-collapse", open && "section-collapse-open")}>
+        <div>
+          <div className="px-4 pb-4">{children}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StatTile({ icon: Icon, label, value, tone }: {
+  icon: typeof FileText;
+  label: string;
+  value: number;
+  tone: "cyan" | "emerald" | "violet" | "amber";
+}) {
+  const tones = {
+    cyan: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200",
+    emerald: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+    violet: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
+    amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+  };
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg", tones[tone])}>
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-xs text-slate-500">{label}</span>
+        <span className="mt-0.5 block text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">{value}</span>
+      </span>
+    </div>
+  );
 }
 
 function StateCard({ children }: { children: string }) {

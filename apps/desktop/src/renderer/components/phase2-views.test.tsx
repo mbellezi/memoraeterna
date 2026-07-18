@@ -17,7 +17,7 @@ import {
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchView } from "./SearchView";
-import { LibraryView, orderHierarchically } from "./LibraryView";
+import { breadcrumbChain, childrenOf, LibraryView, orderHierarchically } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
 import {
   LocalModelDefaults,
@@ -203,14 +203,11 @@ describe("phase 2 renderer views", () => {
           ...defaultStorageSettings,
           updatedAt: new Date(0).toISOString()
         })}
-        status="shell.states.ready"
         isSaving={false}
         t={t}
         onAppSettingsChange={() => undefined}
-        onRelationThresholdChange={async () => undefined}
         onChange={() => undefined}
         onSelectObsidianVault={async () => undefined}
-        onSave={() => undefined}
       />
     );
 
@@ -218,6 +215,8 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Configuration scopes");
     expect(html).toContain("Appearance &amp; matching");
     expect(html).toContain("Data &amp; safety");
+    expect(html).toContain("Changes are saved automatically.");
+    expect(html).not.toContain(">Save<");
   });
 
   it("groups a parent ingestion and its AI stage into one file workflow", () => {
@@ -316,6 +315,43 @@ describe("phase 2 renderer views", () => {
       source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
       source({ id: "00000000-0000-4000-8000-000000000003", title: "Second", parentSourceItemId: rootId, structurePosition: 2 })
     ]).map(({ source: item }) => item.title)).toEqual(["First", "Second", "Third"]);
+  });
+
+  it("resolves children and breadcrumb chains from the flat library list", () => {
+    const updatedAt = new Date(0).toISOString();
+    const source = (input: {
+      id: string;
+      title: string;
+      parentSourceItemId: string | null;
+      structurePosition: number | null;
+    }) => librarySourceSchema.parse({
+      ...input,
+      childCount: 0,
+      hasDocument: true,
+      type: input.parentSourceItemId ? "BookChapter" : "Book",
+      subtitle: null,
+      sourceUri: null,
+      language: "en",
+      summary: null,
+      metadata: {},
+      processingStatus: "pending",
+      currentStage: "queued",
+      updatedAt
+    });
+    const rootId = "00000000-0000-4000-8000-000000000001";
+    const chapterId = "00000000-0000-4000-8000-000000000002";
+    const sectionId = "00000000-0000-4000-8000-000000000003";
+    const sources = [
+      source({ id: rootId, title: "Book", parentSourceItemId: null, structurePosition: null }),
+      source({ id: sectionId, title: "Section", parentSourceItemId: chapterId, structurePosition: 0 }),
+      source({ id: chapterId, title: "Chapter", parentSourceItemId: rootId, structurePosition: 0 }),
+      source({ id: "00000000-0000-4000-8000-000000000004", title: "Chapter 2", parentSourceItemId: rootId, structurePosition: 1 })
+    ];
+
+    expect(childrenOf(sources, rootId).map((item) => item.title)).toEqual(["Chapter", "Chapter 2"]);
+    expect(childrenOf(sources, sectionId)).toEqual([]);
+    expect(breadcrumbChain(sources, sectionId).map((item) => item.title)).toEqual(["Book", "Chapter", "Section"]);
+    expect(breadcrumbChain(sources, rootId).map((item) => item.title)).toEqual(["Book"]);
   });
 
   it("renders phase 5 local model and backup controls", () => {

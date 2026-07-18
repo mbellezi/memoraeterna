@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Bug,
@@ -35,10 +35,11 @@ import { cn } from "./lib/cn";
 import { SettingsView } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
-import { SearchView } from "./components/SearchView";
-import { LibraryView } from "./components/LibraryView";
+import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
+import { LibraryView, type LibraryExternalTarget } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { DebugDashboard } from "./components/DebugDashboard";
+import { ToastViewport, useToasts } from "./components/ui/toast";
 
 type ViewId = "library" | "import" | "search" | "review" | "jobs" | "debug" | "settings";
 
@@ -113,9 +114,20 @@ export function App({
   );
   const [settings, setSettings] = useState<StorageSettings>(initialSettings ?? createDefaultSettings());
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(initialSystemInfo);
-  const [status, setStatus] = useState<MessageKey>("shell.states.loading");
   const [hasLoadedAppData, setHasLoadedAppData] = useState(Boolean(initialSettings));
   const [isSaving, setIsSaving] = useState(false);
+  const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
+  const [libraryTarget, setLibraryTarget] = useState<LibraryExternalTarget | null>(null);
+  const libraryTargetToken = useRef(0);
+  const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const lastPersistedAppSettings = useRef<AppSettings | null>(initialAppSettings ?? null);
+  const lastPersistedSettings = useRef<StorageSettings | null>(initialSettings ?? null);
+  const pendingAppUpdate = useRef<AppSettingsUpdate>({});
+  const appSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingStorageSettings = useRef<StorageSettings | null>(null);
+  const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = appSettings.themeMode === "dark";
 
@@ -123,6 +135,11 @@ export function App({
     document.documentElement.classList.toggle("dark", isDarkMode);
     document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
   }, [isDarkMode]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (container) container.scrollTop = scrollPositions.current[activeView] ?? 0;
+  }, [activeView]);
 
   async function loadAppData() {
     const [loadedAppSettings, loadedSettings, loadedSystemInfo] = await Promise.all([
@@ -133,13 +150,13 @@ export function App({
 
     setAppSettings(loadedAppSettings);
     setSettings(loadedSettings);
+    lastPersistedAppSettings.current = loadedAppSettings;
+    lastPersistedSettings.current = loadedSettings;
     setSystemInfo(loadedSystemInfo);
     setHasLoadedAppData(true);
-    setStatus("shell.states.ready");
   }
 
   async function bootstrap() {
-    setStatus("shell.states.loading");
     void loadSystemInfo();
     setDatabaseStatus((current) => ({
       ...current,
@@ -153,7 +170,6 @@ export function App({
     setDatabaseStatus(nextDatabaseStatus);
 
     if (nextDatabaseStatus.state !== "ready") {
-      setStatus("errors.database.notReady");
       return;
     }
 
@@ -190,7 +206,6 @@ export function App({
         await bootstrap();
       } catch {
         if (isMounted) {
-          setStatus("errors.common.unknown");
           setDatabaseStatus({
             state: "failed",
             messageKey: "database.status.failed",
@@ -209,57 +224,30 @@ export function App({
     };
   }, [hasLoadedAppData]);
 
-  async function saveSettings() {
-    setIsSaving(true);
-    setStatus("shell.states.loading");
+  function errorToastText(error: unknown): string {
+    const key = error instanceof Error && error.message.startsWith("errors.")
+      ? (error.message as MessageKey)
+      : "shell.toasts.settingsError";
+    return t(key);
+  }
 
+  async function flushAppSettings() {
+    appSaveTimer.current = null;
+    const update = pendingAppUpdate.current;
+    pendingAppUpdate.current = {};
+    if (Object.keys(update).length === 0) return;
     try {
-      const [savedAppSettings, savedStorageSettings] = await Promise.all([
-        window.app.settings.updateApp({
-          language: appSettings.language,
-          themeMode: appSettings.themeMode,
-          metadataEnrichmentEnabled: appSettings.metadataEnrichmentEnabled,
-          atomicNoteRelationThreshold: appSettings.atomicNoteRelationThreshold
-        }),
-        window.app.settings.update({
-          obsidianVaultPath: settings.obsidianVaultPath,
-          managedRoot: settings.managedRoot,
-          obsidianSyncEnabled: settings.obsidianSyncEnabled,
-          obsidianSyncPaused: settings.obsidianSyncPaused,
-          deletionPolicy: settings.deletionPolicy,
-          uploadCopiesEnabled: settings.uploadCopiesEnabled,
-          uploadCopiesFolderPath: settings.uploadCopiesFolderPath
-        })
-      ]);
-      setAppSettings(savedAppSettings);
-      setSettings(savedStorageSettings);
-      setStatus("shell.states.saved");
+      const saved = await window.app.settings.updateApp(update);
+      lastPersistedAppSettings.current = saved;
+      setAppSettings(saved);
+      pushToast(t("shell.toasts.settingsSaved"), "success");
     } catch (error) {
-      const key = error instanceof Error && error.message.startsWith("errors.") ? error.message : "errors.common.unknown";
-      setStatus(key as MessageKey);
-    } finally {
-      setIsSaving(false);
+      if (lastPersistedAppSettings.current) setAppSettings(lastPersistedAppSettings.current);
+      pushToast(errorToastText(error), "error");
     }
   }
 
-  async function selectObsidianVault() {
-    setIsSaving(true);
-    setStatus("shell.states.loading");
-    try {
-      const savedSettings = await window.app.settings.selectObsidianVault();
-      if (savedSettings) {
-        setSettings(savedSettings);
-        setStatus("shell.states.saved");
-      }
-    } catch (error) {
-      const key = error instanceof Error && error.message.startsWith("errors.") ? error.message : "errors.common.unknown";
-      setStatus(key as MessageKey);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function updateAppSettings(update: AppSettingsUpdate) {
+  function updateAppSettings(update: AppSettingsUpdate) {
     setAppSettings((current) =>
       appSettingsSchema.parse({
         ...current,
@@ -267,35 +255,60 @@ export function App({
         updatedAt: new Date().toISOString()
       })
     );
+    pendingAppUpdate.current = { ...pendingAppUpdate.current, ...update };
+    if (appSaveTimer.current) clearTimeout(appSaveTimer.current);
+    appSaveTimer.current = setTimeout(() => void flushAppSettings(), 500);
   }
 
-  async function persistRelationThreshold(atomicNoteRelationThreshold: number) {
+  async function flushStorageSettings() {
+    storageSaveTimer.current = null;
+    const next = pendingStorageSettings.current;
+    pendingStorageSettings.current = null;
+    if (!next) return;
     try {
-      setAppSettings(await window.app.settings.updateApp({ atomicNoteRelationThreshold }));
-      setStatus("shell.states.saved");
-    } catch {
-      setStatus("errors.common.unknown");
-      throw new Error("relation_threshold_update_failed");
+      const saved = await window.app.settings.update({
+        obsidianVaultPath: next.obsidianVaultPath,
+        managedRoot: next.managedRoot,
+        obsidianSyncEnabled: next.obsidianSyncEnabled,
+        obsidianSyncPaused: next.obsidianSyncPaused,
+        deletionPolicy: next.deletionPolicy,
+        uploadCopiesEnabled: next.uploadCopiesEnabled,
+        uploadCopiesFolderPath: next.uploadCopiesFolderPath
+      });
+      lastPersistedSettings.current = saved;
+      setSettings(saved);
+      pushToast(t("shell.toasts.settingsSaved"), "success");
+    } catch (error) {
+      if (lastPersistedSettings.current) setSettings(lastPersistedSettings.current);
+      pushToast(errorToastText(error), "error");
     }
   }
 
-  async function toggleThemeMode() {
-    const previous = appSettings;
-    const nextThemeMode = appSettings.themeMode === "dark" ? "light" : "dark";
-    const nextSettings = appSettingsSchema.parse({
-      ...appSettings,
-      themeMode: nextThemeMode,
-      updatedAt: new Date().toISOString()
-    });
+  function updateStorageSettings(next: StorageSettings) {
+    setSettings(next);
+    pendingStorageSettings.current = next;
+    if (storageSaveTimer.current) clearTimeout(storageSaveTimer.current);
+    storageSaveTimer.current = setTimeout(() => void flushStorageSettings(), 800);
+  }
 
-    setAppSettings(nextSettings);
+  async function selectObsidianVault() {
+    setIsSaving(true);
     try {
-      setAppSettings(await window.app.settings.updateApp({ themeMode: nextThemeMode }));
-      setStatus("shell.states.saved");
-    } catch {
-      setAppSettings(previous);
-      setStatus("errors.common.unknown");
+      const savedSettings = await window.app.settings.selectObsidianVault();
+      if (savedSettings) {
+        lastPersistedSettings.current = savedSettings;
+        setSettings(savedSettings);
+        pushToast(t("shell.toasts.settingsSaved"), "success");
+      }
+    } catch (error) {
+      pushToast(errorToastText(error), "error");
+    } finally {
+      setIsSaving(false);
     }
+  }
+
+  function toggleThemeMode() {
+    updateAppSettings({ themeMode: appSettings.themeMode === "dark" ? "light" : "dark" });
   }
 
   async function setDebugMode(debugMode: boolean) {
@@ -306,8 +319,10 @@ export function App({
       updatedAt: new Date().toISOString()
     }));
     try {
-      setAppSettings(await window.app.settings.updateApp({ debugMode }));
-      setStatus("shell.states.saved");
+      const saved = await window.app.settings.updateApp({ debugMode });
+      lastPersistedAppSettings.current = saved;
+      setAppSettings(saved);
+      pushToast(t("shell.toasts.settingsSaved"), "success");
     } catch (error) {
       setAppSettings(previous);
       throw error;
@@ -455,7 +470,10 @@ export function App({
                     ? "bg-cyan-50 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50"
                     : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
                 )}
-                onClick={() => setActiveView(item.id)}
+                onClick={() => {
+                  if (item.id === "library") setLibraryTarget(null);
+                  setActiveView(item.id);
+                }}
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {t(item.label)}
@@ -469,26 +487,36 @@ export function App({
         <header className="flex h-16 items-center border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
           <h1 className="text-xl font-semibold text-slate-950 dark:text-slate-50">{t(pageTitle)}</h1>
         </header>
-        <div className="min-h-0 flex-1 overflow-auto p-6">
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 flex-1 overflow-auto p-6"
+          onScroll={(event) => {
+            scrollPositions.current[activeView] = event.currentTarget.scrollTop;
+          }}
+        >
           {activeView === "settings" ? (
             <SettingsView
               appSettings={appSettings}
               settings={settings}
-              status={status}
               isSaving={isSaving}
               t={t}
-              onAppSettingsChange={(update) => {
-                void updateAppSettings(update);
-              }}
-              onRelationThresholdChange={persistRelationThreshold}
-              onChange={setSettings}
-              onSave={saveSettings}
+              onAppSettingsChange={updateAppSettings}
+              onChange={updateStorageSettings}
               onSelectObsidianVault={selectObsidianVault}
             />
           ) : activeView === "import" ? (
             <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
           ) : activeView === "search" ? (
-            <SearchView t={t} />
+            <SearchView
+              t={t}
+              state={searchState}
+              onStateChange={setSearchState}
+              onOpenSource={(sourceItemId) => {
+                libraryTargetToken.current += 1;
+                setLibraryTarget({ sourceItemId, token: libraryTargetToken.current });
+                setActiveView("library");
+              }}
+            />
           ) : activeView === "jobs" ? (
             <JobsView t={t} />
           ) : activeView === "review" ? (
@@ -500,12 +528,20 @@ export function App({
               onEnabledChange={setDebugMode}
             />
           ) : activeView === "library" ? (
-            <LibraryView t={t} />
+            <LibraryView
+              t={t}
+              externalTarget={libraryTarget}
+              onExitToSearch={() => {
+                setLibraryTarget(null);
+                setActiveView("search");
+              }}
+            />
           ) : (
             null
           )}
         </div>
       </main>
+      <ToastViewport toasts={toasts} dismissLabel={t("shell.toasts.dismiss")} onDismiss={dismissToast} />
     </div>
   );
 }

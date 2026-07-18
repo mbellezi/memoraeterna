@@ -250,6 +250,9 @@ export function registerIpcHandlers(
     const path = await knowledgeService.resolveAssetPath(z.string().uuid().parse(payload));
     return (await shell.openPath(path)).length === 0;
   });
+  ipcMain.handle(ipcChannels.libraryAssetData, (_event, payload: unknown) =>
+    knowledgeService.getAssetDataUrl(z.string().uuid().parse(payload))
+  );
   ipcMain.handle(ipcChannels.knowledgePendingNotesList, () => knowledgeService.listPendingNotes());
   ipcMain.handle(ipcChannels.knowledgeNoteReview, (_event, payload: unknown) =>
     knowledgeService.reviewNote(atomicNoteReviewInputSchema.parse(payload))

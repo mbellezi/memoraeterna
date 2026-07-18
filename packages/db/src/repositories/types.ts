@@ -208,6 +208,22 @@ export interface SearchEvidenceRecord {
   finalScore: number;
 }
 
+export interface AtomicNoteSearchRecord {
+  noteId: string;
+  sourceItemId: string;
+  sourceTitle: string;
+  sourceType: SourceItemType;
+  breadcrumbs?: Array<{ id: string; title: string }>;
+  title: string;
+  ideaStatement: string;
+  excerpt: string;
+  status: Exclude<AtomicNoteStatus, "rejected">;
+  textScore: number;
+  vectorScore: number;
+  graphScore: number;
+  finalScore: number;
+}
+
 export interface GraphEntityRecord {
   id: string;
   type: string;

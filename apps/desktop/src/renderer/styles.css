@@ -23,3 +23,75 @@ input,
 select {
   font: inherit;
 }
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.motion-fade-in-up {
+  animation: fade-in-up 240ms ease-out both;
+}
+
+.motion-scale-in {
+  animation: scale-in 200ms ease-out both;
+}
+
+.motion-toast-in {
+  animation: toast-in 200ms ease-out both;
+}
+
+.section-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease-out;
+}
+
+.section-collapse > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.section-collapse.section-collapse-open {
+  grid-template-rows: 1fr;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-fade-in-up,
+  .motion-scale-in,
+  .motion-toast-in {
+    animation: none;
+  }
+
+  .section-collapse {
+    transition: none;
+  }
+}

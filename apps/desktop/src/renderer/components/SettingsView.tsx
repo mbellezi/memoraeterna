@@ -15,7 +15,6 @@ import {
   Paintbrush,
   PlugZap,
   RotateCcw,
-  Save,
   ServerCog,
   ShieldCheck,
   Sparkles,
@@ -44,13 +43,10 @@ import { Switch } from "./ui/switch";
 interface SettingsViewProps {
   appSettings: AppSettings;
   settings: StorageSettings;
-  status: MessageKey;
   isSaving: boolean;
   t: (key: MessageKey) => string;
   onAppSettingsChange: (settings: AppSettingsUpdate) => void;
-  onRelationThresholdChange: (threshold: number) => Promise<void>;
   onChange: (settings: StorageSettings) => void;
-  onSave: () => void;
   onSelectObsidianVault: () => Promise<void>;
 }
 
@@ -152,13 +148,10 @@ const scopes: Array<{
 export function SettingsView({
   appSettings,
   settings,
-  status,
   isSaving,
   t,
   onAppSettingsChange,
-  onRelationThresholdChange,
   onChange,
-  onSave,
   onSelectObsidianVault
 }: SettingsViewProps) {
   const [activeScope, setActiveScope] = useState<SettingsScope>("overview");
@@ -197,6 +190,10 @@ export function SettingsView({
             </div>
             <h2 className="text-2xl font-semibold tracking-tight">{t("settings.dashboard.title")}</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t("settings.dashboard.description")}</p>
+            <p className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-300">
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              {t("settings.dashboard.autoSaveHint")}
+            </p>
           </div>
           <div className="grid min-w-[16rem] gap-2 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
             <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
@@ -265,10 +262,11 @@ export function SettingsView({
         </aside>
 
         <div
+          key={activeScope}
           id={`settings-panel-${activeScope}`}
           role="tabpanel"
           aria-labelledby={`settings-tab-${activeScope}`}
-          className="min-w-0"
+          className="motion-fade-in-up min-w-0"
         >
           {activeScope === "overview" ? (
             <OverviewPanel
@@ -288,10 +286,8 @@ export function SettingsView({
                   appSettings={appSettings}
                   t={t}
                   onChange={onAppSettingsChange}
-                  onPersist={onRelationThresholdChange}
                 />
               </div>
-              <SaveBar status={status} isSaving={isSaving} t={t} onSave={onSave} />
             </div>
           ) : null}
 
@@ -320,7 +316,6 @@ export function SettingsView({
                 onUpdate={update}
                 onSelectVault={onSelectObsidianVault}
               />
-              <SaveBar status={status} isSaving={isSaving} t={t} onSave={onSave} />
             </div>
           ) : null}
 
@@ -340,7 +335,6 @@ export function SettingsView({
                 t={t}
                 onReset={resetLibrary}
               />
-              <SaveBar status={status} isSaving={isSaving} t={t} onSave={onSave} />
             </div>
           ) : null}
         </div>
@@ -505,11 +499,10 @@ function AppearanceCard({ appSettings, t, onChange }: {
   );
 }
 
-function MatchingCard({ appSettings, t, onChange, onPersist }: {
+function MatchingCard({ appSettings, t, onChange }: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
-  onPersist: SettingsViewProps["onRelationThresholdChange"];
 }) {
   return (
     <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -537,9 +530,6 @@ function MatchingCard({ appSettings, t, onChange, onPersist }: {
           aria-label={t("settings.matching.minimumScore")}
           className="w-full accent-amber-600"
           onChange={(event) => onChange({ atomicNoteRelationThreshold: Number(event.target.value) })}
-          onPointerUp={(event) => void onPersist(Number(event.currentTarget.value))}
-          onKeyUp={(event) => void onPersist(Number(event.currentTarget.value))}
-          onBlur={(event) => void onPersist(Number(event.currentTarget.value))}
         />
         <div className="mt-2 flex justify-between text-xs font-medium text-slate-500">
           <span>{t("settings.matching.moreRelations")}</span>
@@ -754,23 +744,6 @@ function ToggleCard({ checked, label, description, onChange }: {
         <span className="mt-1 block text-xs leading-4 text-slate-500">{description}</span>
       </span>
     </label>
-  );
-}
-
-function SaveBar({ status, isSaving, t, onSave }: {
-  status: MessageKey;
-  isSaving: boolean;
-  t: SettingsViewProps["t"];
-  onSave: () => void;
-}) {
-  return (
-    <div className="sticky bottom-0 z-10 flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-lg shadow-slate-950/5 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
-      <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{t(status)}</p>
-      <Button type="button" disabled={isSaving} onClick={onSave}>
-        <Save className="h-4 w-4" aria-hidden="true" />
-        {t("shell.actions.save")}
-      </Button>
-    </div>
   );
 }
 

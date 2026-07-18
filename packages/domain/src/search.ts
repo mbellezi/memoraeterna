@@ -48,3 +48,37 @@ export const SearchEvidenceSchema = z
   .strict();
 
 export type SearchEvidence = z.infer<typeof SearchEvidenceSchema>;
+
+export const ChunkSearchResultSchema = SearchEvidenceSchema.extend({
+  kind: z.literal("chunk")
+}).strict();
+
+export type ChunkSearchResult = z.infer<typeof ChunkSearchResultSchema>;
+
+export const AtomicNoteSearchResultSchema = z
+  .object({
+    kind: z.literal("atomic_note"),
+    noteId: StableIdSchema,
+    sourceItemId: StableIdSchema,
+    sourceTitle: z.string().min(1),
+    sourceType: SourceItemTypeSchema,
+    breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
+    title: z.string().min(1),
+    ideaStatement: z.string().min(1),
+    excerpt: z.string(),
+    status: z.enum(["pending_review", "approved", "archived"]),
+    textScore: z.number().min(0).max(1),
+    vectorScore: z.number().min(0).max(1),
+    graphScore: z.number().min(0).max(1),
+    finalScore: z.number().min(0).max(1)
+  })
+  .strict();
+
+export type AtomicNoteSearchResult = z.infer<typeof AtomicNoteSearchResultSchema>;
+
+export const SearchResultSchema = z.discriminatedUnion("kind", [
+  ChunkSearchResultSchema,
+  AtomicNoteSearchResultSchema
+]);
+
+export type SearchResultItem = z.infer<typeof SearchResultSchema>;

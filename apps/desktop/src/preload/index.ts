@@ -283,6 +283,10 @@ const api: DesktopApi = {
     async openAsset(assetId: string) {
       return Boolean(await ipcRenderer.invoke(ipcChannels.libraryAssetOpen, assetId));
     },
+    async getAssetDataUrl(assetId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.libraryAssetData, assetId);
+      return typeof result === "string" ? result : null;
+    },
     async listPendingNotes() {
       return pendingAtomicNoteSchema.array().parse(
         await ipcRenderer.invoke(ipcChannels.knowledgePendingNotesList)

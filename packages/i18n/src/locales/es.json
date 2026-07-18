@@ -30,6 +30,11 @@
       "loading": "Cargando...",
       "empty": "Todavia no hay nada aqui.",
       "saved": "Guardado."
+    },
+    "toasts": {
+      "settingsSaved": "Configuracion guardada.",
+      "settingsError": "No se pudo guardar la configuracion.",
+      "dismiss": "Descartar notificacion"
     }
   },
   "database": {
@@ -223,7 +228,14 @@
   "search": {
     "placeholder": "Buscar fuentes y evidencias", "action": "Buscar", "empty": "No hay evidencias coincidentes.",
     "scope": "Buscar dentro de", "scopeAll": "Toda la biblioteca",
-    "page": "Pagina", "markdownEvidence": "Evidencia Markdown"
+    "page": "Pagina", "markdownEvidence": "Evidencia Markdown",
+    "kinds": {
+      "source": "Fuente",
+      "subitem": "Seccion",
+      "atomicNote": "Nota atomica"
+    },
+    "resultsCount": "{count} resultados",
+    "openHint": "Abrir en la biblioteca"
   },
   "library": {
     "filterByType": "Filtrar por tipo de fuente", "allTypes": "Todos los tipos de fuente",
@@ -241,6 +253,20 @@
       "metadata": "Metadatos", "summary": "Resumen", "document": "Documento Markdown",
       "originals": "Archivos originales", "chunks": "Fragmentos de la fuente",
       "atomicNotes": "Notas atomicas", "relations": "Relaciones entre notas"
+    },
+    "cards": {
+      "openDetail": "Abrir detalles de {title}"
+    },
+    "detail": {
+      "subitems": "Subelementos",
+      "stats": {
+        "documents": "Documentos",
+        "chunks": "Fragmentos",
+        "notes": "Notas atomicas",
+        "relations": "Relaciones"
+      },
+      "rawMetadata": "Metadatos sin procesar",
+      "backToSearch": "Volver a la busqueda"
     }
   },
   "knowledge": {
@@ -311,7 +337,8 @@
       "syncDescriptions": {
         "enabled": "Proyecta las fuentes y notas gestionadas en la boveda configurada.",
         "paused": "Pausa temporalmente la sincronizacion sin eliminar su configuracion."
-      }
+      },
+      "autoSaveHint": "Los cambios se guardan automaticamente."
     },
     "language": {
       "title": "Idioma",

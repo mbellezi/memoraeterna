@@ -30,6 +30,11 @@
       "loading": "Loading...",
       "empty": "Nothing here yet.",
       "saved": "Saved."
+    },
+    "toasts": {
+      "settingsSaved": "Settings saved.",
+      "settingsError": "The settings could not be saved.",
+      "dismiss": "Dismiss notification"
     }
   },
   "database": {
@@ -276,7 +281,14 @@
   "search": {
     "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
     "scope": "Search within", "scopeAll": "Entire library",
-    "page": "Page", "markdownEvidence": "Markdown evidence"
+    "page": "Page", "markdownEvidence": "Markdown evidence",
+    "kinds": {
+      "source": "Source",
+      "subitem": "Section",
+      "atomicNote": "Atomic note"
+    },
+    "resultsCount": "{count} results",
+    "openHint": "Open in library"
   },
   "library": {
     "filterByType": "Filter by source type",
@@ -312,6 +324,20 @@
       "chunks": "Source chunks",
       "atomicNotes": "Atomic notes",
       "relations": "Note relations"
+    },
+    "cards": {
+      "openDetail": "Open details for {title}"
+    },
+    "detail": {
+      "subitems": "Subitems",
+      "stats": {
+        "documents": "Documents",
+        "chunks": "Chunks",
+        "notes": "Atomic notes",
+        "relations": "Relations"
+      },
+      "rawMetadata": "Raw metadata",
+      "backToSearch": "Back to search"
     }
   },
   "knowledge": {
@@ -399,7 +425,8 @@
       "syncDescriptions": {
         "enabled": "Project managed sources and notes into your configured vault.",
         "paused": "Temporarily stop synchronization without removing its configuration."
-      }
+      },
+      "autoSaveHint": "Changes are saved automatically."
     },
     "language": {
       "title": "Language",

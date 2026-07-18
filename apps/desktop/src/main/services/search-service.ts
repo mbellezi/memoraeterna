@@ -3,6 +3,7 @@ import {
   createHierarchicalIngestionRepository,
   createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
+  type AtomicNoteSearchRecord,
   type PgPool,
   type SearchEvidenceRecord
 } from "@app/db";
@@ -12,12 +13,20 @@ import type { AiService } from "./ai-service.js";
 
 const reciprocalRankConstant = 60;
 
-export interface FusedSearchCandidate extends SearchEvidenceRecord {
+interface FusionRanks {
   textRank: number | null;
   vectorRank: number | null;
   graphRank: number | null;
   fusionScore: number;
 }
+
+export type FusedSearchCandidate = SearchEvidenceRecord & FusionRanks;
+
+export type FusedNoteCandidate = AtomicNoteSearchRecord & FusionRanks;
+
+type MergedCandidate =
+  | { kind: "chunk"; candidate: FusedSearchCandidate }
+  | { kind: "atomic_note"; candidate: FusedNoteCandidate };
 
 export class SearchService {
   public constructor(
@@ -79,6 +88,22 @@ export class SearchService {
     } catch (error) {
       graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
     }
+    const noteTextCandidates = await repository.searchNotesText({
+      text: input.text,
+      sourceTypes: input.sourceTypes,
+      sourceItemIds,
+      limit: candidateLimit
+    });
+    const noteVectorCandidates = embedding && embeddingModel
+      ? await repository.searchNotesVector({
+          embedding,
+          embeddingModel,
+          sourceTypes: input.sourceTypes,
+          sourceItemIds,
+          limit: candidateLimit
+        })
+      : [];
+
     const candidates = (input.mode === "hybrid" && vectorCandidates.length > 0) || graphCandidates.length > 0
       ? fuseSearchRankings(textCandidates, vectorCandidates, graphCandidates)
       : textCandidates.map((candidate, index) => ({
@@ -89,32 +114,53 @@ export class SearchService {
           fusionScore: candidate.textScore,
           finalScore: candidate.textScore
         }));
+    const noteCandidates = noteVectorCandidates.length > 0
+      ? fuseRankings((candidate) => candidate.noteId, noteTextCandidates, noteVectorCandidates)
+      : noteTextCandidates.map((candidate, index) => ({
+          ...candidate,
+          textRank: index + 1,
+          vectorRank: null,
+          graphRank: null,
+          fusionScore: candidate.textScore,
+          finalScore: candidate.textScore
+        }));
+    const merged: MergedCandidate[] = [
+      ...candidates.map((candidate) => ({ kind: "chunk" as const, candidate })),
+      ...noteCandidates.map((candidate) => ({ kind: "atomic_note" as const, candidate }))
+    ].sort((left, right) => right.candidate.finalScore - left.candidate.finalScore
+      || mergedCandidateId(left).localeCompare(mergedCandidateId(right)));
 
-    await this.recordDebugRun(pool, input, candidates, {
+    await this.recordDebugRun(pool, input, merged, {
       embeddingModel,
       dimensions: embedding?.length,
       textCandidateCount: textCandidates.length,
       vectorCandidateCount: vectorCandidates.length,
       graphCandidateCount: graphCandidates.length,
+      noteTextCandidateCount: noteTextCandidates.length,
+      noteVectorCandidateCount: noteVectorCandidates.length,
       graphError,
       candidateLimit
     });
 
-    const selected = candidates.slice(0, input.limit);
-    const breadcrumbs = await hierarchy.getBreadcrumbs([...new Set(selected.map((candidate) => candidate.sourceItemId))]);
-    return selected.map((candidate) => toSearchResult({ ...candidate, breadcrumbs: breadcrumbs.get(candidate.sourceItemId) ?? [] }));
+    const selected = merged.slice(0, input.limit);
+    const breadcrumbs = await hierarchy.getBreadcrumbs([...new Set(selected.map(({ candidate }) => candidate.sourceItemId))]);
+    return selected.map((entry) => entry.kind === "chunk"
+      ? toSearchResult({ ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] })
+      : toNoteSearchResult({ ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] }));
   }
 
   private async recordDebugRun(
     pool: PgPool,
     input: SearchInput,
-    candidates: FusedSearchCandidate[],
+    candidates: MergedCandidate[],
     context: {
       embeddingModel: string | undefined;
       dimensions: number | undefined;
       textCandidateCount: number;
       vectorCandidateCount: number;
       graphCandidateCount: number;
+      noteTextCandidateCount: number;
+      noteVectorCandidateCount: number;
       graphError: string | null;
       candidateLimit: number;
     }
@@ -137,29 +183,38 @@ export class SearchService {
           textCandidateCount: context.textCandidateCount,
           vectorCandidateCount: context.vectorCandidateCount,
           graphCandidateCount: context.graphCandidateCount,
+          noteTextCandidateCount: context.noteTextCandidateCount,
+          noteVectorCandidateCount: context.noteVectorCandidateCount,
           graphStatus: context.graphError ? "failed" : context.graphCandidateCount > 0 ? "succeeded" : "no_signal",
           graphError: context.graphError,
           sourceTypes: input.sourceTypes
         },
-        results: candidates.map((candidate, index) => ({
-          targetType: "chunk",
-          targetId: candidate.chunkId,
-          targetLabel: `${candidate.sourceTitle} — ${candidate.excerpt.slice(0, 180)}`,
+        results: candidates.map((entry, index) => ({
+          targetType: entry.kind,
+          targetId: entry.kind === "chunk" ? entry.candidate.chunkId : entry.candidate.noteId,
+          targetLabel: entry.kind === "chunk"
+            ? `${entry.candidate.sourceTitle} — ${entry.candidate.excerpt.slice(0, 180)}`
+            : `${entry.candidate.sourceTitle} — ${entry.candidate.title}`,
           finalRank: index + 1,
-          textRank: candidate.textRank,
-          vectorRank: candidate.vectorRank,
-          graphRank: candidate.graphRank,
-          textScore: candidate.textScore,
-          vectorScore: candidate.vectorScore,
-          graphScore: candidate.graphScore,
-          fusionScore: candidate.fusionScore,
-          finalScore: candidate.finalScore,
-          metadata: {
-            sourceItemId: candidate.sourceItemId,
-            documentId: candidate.documentId,
-            sourceSpanId: candidate.sourceSpanId,
-            page: candidate.page
-          }
+          textRank: entry.candidate.textRank,
+          vectorRank: entry.candidate.vectorRank,
+          graphRank: entry.candidate.graphRank,
+          textScore: entry.candidate.textScore,
+          vectorScore: entry.candidate.vectorScore,
+          graphScore: entry.candidate.graphScore,
+          fusionScore: entry.candidate.fusionScore,
+          finalScore: entry.candidate.finalScore,
+          metadata: entry.kind === "chunk"
+            ? {
+                sourceItemId: entry.candidate.sourceItemId,
+                documentId: entry.candidate.documentId,
+                sourceSpanId: entry.candidate.sourceSpanId,
+                page: entry.candidate.page
+              }
+            : {
+                sourceItemId: entry.candidate.sourceItemId,
+                noteStatus: entry.candidate.status
+              }
         }))
       });
     } catch {
@@ -174,14 +229,22 @@ export class SearchService {
   }
 }
 
-export function fuseSearchRankings(
-  textCandidates: SearchEvidenceRecord[],
-  vectorCandidates: SearchEvidenceRecord[],
-  graphCandidates: SearchEvidenceRecord[] = []
-): FusedSearchCandidate[] {
-  const candidates = new Map<string, FusedSearchCandidate>();
+interface FusableCandidate {
+  textScore: number;
+  vectorScore: number;
+  graphScore: number;
+  finalScore: number;
+}
+
+export function fuseRankings<T extends FusableCandidate>(
+  keyOf: (candidate: T) => string,
+  textCandidates: T[],
+  vectorCandidates: T[],
+  graphCandidates: T[] = []
+): Array<T & FusionRanks> {
+  const candidates = new Map<string, T & FusionRanks>();
   textCandidates.forEach((candidate, index) => {
-    candidates.set(candidate.chunkId, {
+    candidates.set(keyOf(candidate), {
       ...candidate,
       vectorScore: 0,
       graphScore: 0,
@@ -193,8 +256,8 @@ export function fuseSearchRankings(
     });
   });
   vectorCandidates.forEach((candidate, index) => {
-    const current = candidates.get(candidate.chunkId);
-    candidates.set(candidate.chunkId, {
+    const current = candidates.get(keyOf(candidate));
+    candidates.set(keyOf(candidate), {
       ...(current ?? candidate),
       textScore: current?.textScore ?? 0,
       vectorScore: candidate.vectorScore,
@@ -206,8 +269,8 @@ export function fuseSearchRankings(
     });
   });
   graphCandidates.forEach((candidate, index) => {
-    const current = candidates.get(candidate.chunkId);
-    candidates.set(candidate.chunkId, {
+    const current = candidates.get(keyOf(candidate));
+    candidates.set(keyOf(candidate), {
       ...(current ?? candidate),
       textScore: current?.textScore ?? 0,
       vectorScore: current?.vectorScore ?? 0,
@@ -237,11 +300,43 @@ export function fuseSearchRankings(
       || right.vectorScore - left.vectorScore
       || right.graphScore - left.graphScore
       || right.textScore - left.textScore
-      || left.chunkId.localeCompare(right.chunkId));
+      || keyOf(left).localeCompare(keyOf(right)));
+}
+
+export function fuseSearchRankings(
+  textCandidates: SearchEvidenceRecord[],
+  vectorCandidates: SearchEvidenceRecord[],
+  graphCandidates: SearchEvidenceRecord[] = []
+): FusedSearchCandidate[] {
+  return fuseRankings((candidate) => candidate.chunkId, textCandidates, vectorCandidates, graphCandidates);
+}
+
+function mergedCandidateId(entry: MergedCandidate): string {
+  return entry.kind === "chunk" ? entry.candidate.chunkId : entry.candidate.noteId;
+}
+
+function toNoteSearchResult(row: AtomicNoteSearchRecord): SearchResult {
+  return {
+    kind: "atomic_note",
+    noteId: row.noteId,
+    sourceItemId: row.sourceItemId,
+    sourceTitle: row.sourceTitle,
+    sourceType: row.sourceType,
+    breadcrumbs: row.breadcrumbs ?? [],
+    title: row.title,
+    ideaStatement: row.ideaStatement,
+    excerpt: row.excerpt,
+    status: row.status,
+    textScore: row.textScore,
+    vectorScore: row.vectorScore,
+    graphScore: row.graphScore,
+    finalScore: row.finalScore
+  };
 }
 
 function toSearchResult(row: SearchEvidenceRecord): SearchResult {
   return {
+    kind: "chunk",
     sourceItemId: row.sourceItemId,
     sourceTitle: row.sourceTitle,
     sourceType: row.sourceType,
@@ -256,7 +351,9 @@ function toSearchResult(row: SearchEvidenceRecord): SearchResult {
     ...(row.sourceSpanId ? { sourceSpanId: row.sourceSpanId } : {}),
     ...(row.page ? { page: row.page } : {}),
     ...(row.sourceBlockId ? { sourceBlockId: row.sourceBlockId } : {}),
-    ...(row.boundingBox ? { boundingBox: row.boundingBox as SearchResult["boundingBox"] } : {}),
+    ...(row.boundingBox
+      ? { boundingBox: row.boundingBox as Extract<SearchResult, { kind: "chunk" }>["boundingBox"] }
+      : {}),
     ...(row.selector ? { selector: row.selector } : {})
   };
 }
