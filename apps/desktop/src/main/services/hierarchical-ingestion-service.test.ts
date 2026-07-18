@@ -3,11 +3,18 @@ import { describe, expect, it } from "vitest";
 import { createCatalogMetadataChunk, participatesInAtomicNoteMatching } from "./job-supervisor.js";
 import {
   buildCatalogMetadataMarkdown,
+  canReuseArtifactStage,
   catalogMetadataStages,
   splitHierarchicalProcessingTargets
 } from "./hierarchical-ingestion-service.js";
 
 describe("hierarchical processing scope", () => {
+  it("queues root summarization even when a previous hierarchical summary exists", () => {
+    expect(canReuseArtifactStage("summarization", true)).toBe(false);
+    expect(canReuseArtifactStage("summarization", false)).toBe(true);
+    expect(canReuseArtifactStage("embedding", true)).toBe(true);
+  });
+
   it("keeps complete knowledge stages on children and limits the root to catalog embedding and graph", () => {
     const stages = catalogMetadataStages([
       "chunking",

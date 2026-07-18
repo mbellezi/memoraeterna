@@ -24,7 +24,15 @@ import {
 import type { MessageKey, Translator } from "@app/i18n";
 import type { JobRecord, ProcessingBatch } from "../../shared/ipc";
 import { cn } from "../lib/cn";
-import { groupJobs, listActivityJobs, matchesFilter, type JobCardModel, type JobFilter } from "./jobs-view-model";
+import {
+  collapsePreparationStages,
+  groupJobs,
+  listActivityJobs,
+  matchesFilter,
+  preparationStages,
+  type JobCardModel,
+  type JobFilter
+} from "./jobs-view-model";
 import { Button } from "./ui/button";
 
 type IngestionRun = NonNullable<JobRecord["ingestionRun"]>;
@@ -364,11 +372,15 @@ function JobCard({
 }
 
 function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
-  const visibleStages = pipelineStages.filter((stage) => run.effectiveStages.length === 0 || run.effectiveStages.includes(stage));
+  const visibleStages = collapsePreparationStages(
+    pipelineStages.filter((stage) => run.effectiveStages.length === 0 || run.effectiveStages.includes(stage))
+  );
   return <ol className="mt-5 grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
     {visibleStages.map((stage, index) => {
       const checkpoint = run.stagesCheckpoint[stage];
-      const stageStatus = resolveStageStatus(run, stage, checkpoint);
+      const stageStatus = stage === "preparation"
+        ? resolvePreparationStatus(run)
+        : resolveStageStatus(run, stage, checkpoint);
       const Icon = stageStatus === "completed" ? Check : stageStatus === "running" ? LoaderCircle
         : stageStatus === "failed" ? AlertTriangle : Circle;
       return <li key={stage} className="relative min-w-0">
@@ -567,6 +579,14 @@ function resolveStageStatus(run: IngestionRun, stage: string, checkpoint: unknow
   if (run.currentStage === stage && run.status === "failed") return "failed";
   if (run.currentStage === stage && run.status === "canceled") return "canceled";
   return "pending";
+}
+
+function resolvePreparationStatus(run: IngestionRun): string {
+  const statuses = preparationStages.map((stage) => resolveStageStatus(run, stage, run.stagesCheckpoint[stage]));
+  for (const status of ["failed", "running", "canceled"] as const) {
+    if (statuses.includes(status)) return status;
+  }
+  return statuses.every((status) => status === "completed" || status === "skipped") ? "completed" : "pending";
 }
 
 function checkpointStatus(checkpoint: unknown): string {

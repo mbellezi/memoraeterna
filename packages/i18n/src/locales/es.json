@@ -74,6 +74,10 @@
       "doclingUnavailable": "El conversor local de documentos no esta instalado.",
       "doclingFailed": "El conversor local de documentos fallo."
     },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "No se pudo generar el resumen agregado.",
+      "aggregateSummaryMissingSubparts": "El resumen agregado espera los resumenes de todas las subpartes."
+    },
     "ai": {
       "noCompatibleModel": "No hay un modelo compatible configurado.",
       "unsupportedTask": "El modelo seleccionado no puede ejecutar esta tarea.",
@@ -149,7 +153,7 @@
     },
     "currentStage": "Etapa actual: {stage}",
     "stages": {
-      "queued": "En cola", "conversion": "Conversion", "structureDetection": "Deteccion de estructura", "structureReview": "Revision de estructura", "materialization": "Materializacion", "chunking": "Segmentacion",
+      "queued": "En cola", "preparation": "Preparacion de la importacion", "conversion": "Conversion", "structureDetection": "Deteccion de estructura", "structureReview": "Revision de estructura", "materialization": "Materializacion", "chunking": "Segmentacion",
       "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
       "knowledgeGraph": "Grafo de conocimiento",
       "atomicNoteMatching": "Conexion de notas", "obsidianProjection": "Proyeccion en Obsidian", "aggregateSummarization": "Resumen agregado",

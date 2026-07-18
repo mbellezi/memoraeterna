@@ -74,6 +74,10 @@
       "doclingUnavailable": "The local document converter is not installed.",
       "doclingFailed": "The local document converter failed."
     },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "The aggregate summary could not be generated.",
+      "aggregateSummaryMissingSubparts": "The aggregate summary is waiting for summaries from every subpart."
+    },
     "ai": {
       "noCompatibleModel": "No compatible model is configured.",
       "unsupportedTask": "The selected model cannot run this task.",
@@ -159,6 +163,7 @@
     "currentStage": "Current stage: {stage}",
     "stages": {
       "queued": "Queued",
+      "preparation": "Import preparation",
       "conversion": "Conversion",
       "structureDetection": "Structure detection",
       "structureReview": "Structure review",

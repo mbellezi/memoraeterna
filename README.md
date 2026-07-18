@@ -124,6 +124,11 @@ migrations pendentes. O shutdown do app aguarda o pool e o sidecar encerrarem.
 
 As credenciais dos `.env` sao para scripts e fluxos DEV. O runtime do desktop
 gera credenciais por instalacao e guarda a senha via Electron `safeStorage`.
+Quando o desktop roda em DEV (`app.isPackaged === false`), ele tambem grava
+`database/dev-connection.json` dentro de `userData`, com permissao `0600`,
+incluindo host, porta dinamica, database, usuario, senha, connection string e
+caminho do `psql` para diagnosticos locais automatizados. Builds empacotados
+nao criam esse descriptor.
 
 Valide o sidecar instalado:
 

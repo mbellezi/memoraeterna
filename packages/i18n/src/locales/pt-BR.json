@@ -74,6 +74,10 @@
       "doclingUnavailable": "O conversor local de documentos nao esta instalado.",
       "doclingFailed": "O conversor local de documentos falhou."
     },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "Nao foi possivel gerar o resumo consolidado.",
+      "aggregateSummaryMissingSubparts": "O resumo consolidado aguarda os resumos de todas as subpartes."
+    },
     "ai": {
       "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
       "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
@@ -159,6 +163,7 @@
     "currentStage": "Etapa atual: {stage}",
     "stages": {
       "queued": "Na fila",
+      "preparation": "Preparacao da importacao",
       "conversion": "Conversao",
       "structureDetection": "Deteccao da estrutura",
       "structureReview": "Revisao da estrutura",

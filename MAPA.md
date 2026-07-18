@@ -45,7 +45,9 @@ Implementado ate aqui:
   `PG18/v1.7.0-rc0`;
 - runtime do banco no main process do desktop: safeStorage, data dir em
   `userData`, `MEMORA_DATABASE_PORT` com fallback dinamico, migrations no boot
-  e shutdown controlado;
+  e shutdown controlado; em DEV apenas, `database/dev-connection.json` expoe
+  a conexao local com permissao `0600` para diagnosticos automatizados, sem
+  ativacao em builds empacotados;
 - UI de bootstrap que espera o banco local ficar pronto antes de liberar a
   shell principal;
 - preferencias de UI persistidas via settings: idioma inicial vindo do desktop
@@ -107,7 +109,8 @@ Implementado ate aqui:
   `document_divisions.position`, escopo raiz/filhos, processamento posterior,
   etapas ausentes e reingestao que preserva notas revisadas;
 - processing batches, runs normalizadas por etapa, execucao seletiva,
-  barreira de matching por lote e resumo agregado de livros;
+  barreira de matching por lote e resumo agregado de livros, periodicos e
+  papers a partir dos resumos de suas subpartes;
 - quando um lote hierarquico inclui descendentes, resumo, notas atomicas e
   matching rodam somente nos subitens; a raiz usa apenas titulo, criadores,
   metadados e seu resumo atual para o embedding e o grafo catalograficos

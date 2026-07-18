@@ -74,6 +74,10 @@
       "doclingUnavailable": "Le convertisseur local de documents n'est pas installe.",
       "doclingFailed": "Le convertisseur local de documents a echoue."
     },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "Le resume agrege n'a pas pu etre genere.",
+      "aggregateSummaryMissingSubparts": "Le resume agrege attend les resumes de toutes les sous-parties."
+    },
     "ai": {
       "noCompatibleModel": "Aucun modele compatible n'est configure.",
       "unsupportedTask": "Le modele selectionne ne peut pas executer cette tache.",
@@ -149,7 +153,7 @@
     },
     "currentStage": "Etape actuelle : {stage}",
     "stages": {
-      "queued": "En attente", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
+      "queued": "En attente", "preparation": "Preparation de l'importation", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
       "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
       "knowledgeGraph": "Graphe de connaissances",
       "atomicNoteMatching": "Mise en relation", "obsidianProjection": "Projection Obsidian", "aggregateSummarization": "Resume agrege",

@@ -306,10 +306,15 @@ export class JobSupervisor {
     await createJobRepository(pool).reportProgress(job.id, 0.5);
     throwIfAborted(signal);
     const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
+    const aggregateHierarchyRoot = shouldRun("summarization") && this.options.knowledgeService
+      ? await this.options.knowledgeService.isHierarchicalRoot(sourceItemId)
+      : false;
     if (shouldRun("summarization") && summaryCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "summarization");
       this.notify();
-      const summary = this.options.knowledgeService
+      const summary = aggregateHierarchyRoot
+        ? { configured: true, generated: false, aggregate: true }
+        : this.options.knowledgeService
         ? await this.runInlineStageJob(
             "summarization",
             { ingestionRunId, sourceItemId, documentId },
@@ -325,11 +330,22 @@ export class JobSupervisor {
         : { configured: false, generated: false };
       await runs.completeStage(ingestionRunId, "summarization", summary);
       this.notify();
-      if (run.batchId && await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0) {
-        await this.options.knowledgeService?.summarizeBooksForBatch(run.batchId, signal, {
-          jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
-        });
+    }
+    if (aggregateHierarchyRoot && this.options.knowledgeService) {
+      const aggregate = await this.options.knowledgeService.summarizeHierarchiesForBatch(run.batchId, signal, {
+        jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
+      }, sourceItemId, run.runKind === "reingestion");
+      if (aggregate.generatedCount === 0 && aggregate.reusedCount === 0) {
+        const blocked = aggregate.blockedRoots.find((root) => root.sourceItemId === sourceItemId);
+        throw new Error(blocked
+          ? `errors.ingestion.aggregateSummaryMissingSubparts:${blocked.missingSummaryCount}:${blocked.totalSubparts}`
+          : "errors.ingestion.aggregateSummaryUnavailable");
       }
+    } else if (shouldRun("summarization") && run.batchId
+      && await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0) {
+      await this.options.knowledgeService?.summarizeHierarchiesForBatch(run.batchId, signal, {
+        jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
+      });
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.68);

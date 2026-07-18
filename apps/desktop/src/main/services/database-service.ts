@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { safeStorage } from "electron";
 import {
@@ -57,6 +57,7 @@ export class DatabaseService {
   private readonly databaseDir: string;
   private readonly dataDir: string;
   private readonly credentialsPath: string;
+  private readonly developmentConnectionPath: string;
   private status: DatabaseStatus = createStatus("stopped");
   private manager: PostgresSidecarManager | null = null;
   private pool: PgPool | null = null;
@@ -70,6 +71,7 @@ export class DatabaseService {
     this.databaseDir = join(options.userDataPath, "database");
     this.dataDir = join(this.databaseDir, "postgres-data");
     this.credentialsPath = join(this.databaseDir, "credentials.json");
+    this.developmentConnectionPath = join(this.databaseDir, "dev-connection.json");
   }
 
   public getStatus(): DatabaseStatus {
@@ -204,6 +206,9 @@ export class DatabaseService {
         30_000,
         "Database migrations timed out."
       );
+      if (!this.options.isPackaged) {
+        await this.writeDevelopmentConnectionDescriptor(this.connection, sidecarPaths.binDir);
+      }
       this.setStatus("ready");
     } catch (error) {
       await this.closePool();
@@ -268,6 +273,27 @@ export class DatabaseService {
     } catch {
       return null;
     }
+  }
+
+  private async writeDevelopmentConnectionDescriptor(
+    connection: PostgresSidecarConnection,
+    binDir: string
+  ): Promise<void> {
+    const descriptor = {
+      version: 1,
+      developmentOnly: true,
+      host: connection.host,
+      port: connection.port,
+      database: connection.database,
+      user: connection.user,
+      password: connection.password,
+      connectionString: connection.connectionString,
+      psqlPath: join(binDir, process.platform === "win32" ? "psql.exe" : "psql"),
+      updatedAt: new Date().toISOString()
+    };
+    await writeFile(this.developmentConnectionPath, `${JSON.stringify(descriptor, null, 2)}\n`, { mode: 0o600 });
+    await chmod(this.developmentConnectionPath, 0o600);
+    this.logger?.debug(`DEV database connection descriptor: ${this.developmentConnectionPath}`);
   }
 
   private async closePool(): Promise<void> {

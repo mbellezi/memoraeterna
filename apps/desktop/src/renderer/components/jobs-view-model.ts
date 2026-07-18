@@ -2,6 +2,26 @@ import type { JobRecord } from "../../shared/ipc";
 
 export type JobFilter = "all" | "active" | "completed" | "attention";
 
+export const preparationStages = [
+  "conversion",
+  "structureDetection",
+  "structureReview",
+  "materialization"
+] as const;
+
+export function collapsePreparationStages(stages: readonly string[]): string[] {
+  const preparation = new Set<string>(preparationStages);
+  const collapsed: string[] = [];
+  for (const stage of stages) {
+    if (preparation.has(stage)) {
+      if (!collapsed.includes("preparation")) collapsed.push("preparation");
+    } else {
+      collapsed.push(stage);
+    }
+  }
+  return collapsed;
+}
+
 export interface JobCardModel {
   id: string;
   mainJob: JobRecord;

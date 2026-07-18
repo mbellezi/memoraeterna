@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { JobRecord } from "../../shared/ipc";
-import { listActivityJobs, type JobCardModel } from "./jobs-view-model";
+import { collapsePreparationStages, listActivityJobs, type JobCardModel } from "./jobs-view-model";
 
 describe("jobs view model", () => {
   it("does not repeat the root ingestion job in processing activity", () => {
@@ -20,5 +20,16 @@ describe("jobs view model", () => {
     const card = { mainJob: download, jobs: [download] } as JobCardModel;
 
     expect(listActivityJobs(card)).toEqual([download]);
+  });
+
+  it("collapses the completed import preparation stages into one timeline step", () => {
+    expect(collapsePreparationStages([
+      "conversion",
+      "structureDetection",
+      "structureReview",
+      "materialization",
+      "chunking",
+      "summarization"
+    ])).toEqual(["preparation", "chunking", "summarization"]);
   });
 });

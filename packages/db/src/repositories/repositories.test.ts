@@ -36,6 +36,26 @@ class FakeQueryable implements Queryable {
   }
 }
 
+class TransactionalSummaryPool implements Queryable {
+  readonly queries: string[] = [];
+  released = false;
+
+  constructor(private readonly row: QueryResultRow) {}
+
+  async connect() {
+    return {
+      query: this.query.bind(this),
+      release: () => { this.released = true; }
+    };
+  }
+
+  async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
+    this.queries.push(text);
+    const rows = text.startsWith("insert into source_summaries") ? [this.row as T] : [];
+    return { command: "SELECT", rowCount: rows.length, oid: 0, fields: [], rows };
+  }
+}
+
 describe("repositories", () => {
   it("creates source items with parameterized SQL and maps records", async () => {
     const now = new Date("2026-07-05T10:00:00.000Z");
@@ -134,9 +154,10 @@ describe("repositories", () => {
 
   it("records traceable source summaries", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
+    const db = new TransactionalSummaryPool({
         id: "summary-1",
+        generationId: null,
+        isCurrent: true,
         sourceItemId: "source-1",
         summary: "A concise summary.",
         language: "en",
@@ -151,8 +172,7 @@ describe("repositories", () => {
         generatedAt: now,
         metadata: { mapReduce: false },
         createdAt: now
-      }
-    ]]);
+      });
     const summary = await createSourceSummaryRepository(db).create({
       sourceItemId: "source-1",
       summary: "A concise summary.",
@@ -164,7 +184,32 @@ describe("repositories", () => {
       outputHash: "b".repeat(64)
     });
     expect(summary.profileId).toBe("profile-1");
-    expect(db.queries[0]?.text).toContain("insert into source_summaries");
+    expect(db.queries.some((query) => query.startsWith("insert into source_summaries"))).toBe(true);
+  });
+
+  it("replaces the current summary in separate statements inside a source-scoped transaction", async () => {
+    const now = new Date("2026-07-18T20:00:00.000Z");
+    const db = new TransactionalSummaryPool({
+      id: "summary-3", generationId: null, isCurrent: true, sourceItemId: "source-1",
+      summary: "Aggregate summary.", language: "en", profileId: null, aiTaskRunId: null,
+      provider: "test", model: "mock-model", runtime: "remote", promptVersion: "hierarchy-aggregate-v1",
+      inputHash: "e".repeat(64), outputHash: "f".repeat(64), generatedAt: now, metadata: {}, createdAt: now
+    });
+
+    await createSourceSummaryRepository(db).create({
+      sourceItemId: "source-1", summary: "Aggregate summary.", provider: "test", model: "mock-model",
+      runtime: "remote", promptVersion: "hierarchy-aggregate-v1",
+      inputHash: "e".repeat(64), outputHash: "f".repeat(64)
+    });
+
+    expect(db.queries).toEqual([
+      "begin",
+      "select pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+      "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
+      expect.stringContaining("insert into source_summaries"),
+      "commit"
+    ]);
+    expect(db.released).toBe(true);
   });
 
   it("persists an immutable local model descriptor with parameterized SQL", async () => {

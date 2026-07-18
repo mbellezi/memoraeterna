@@ -170,6 +170,9 @@ export class HierarchicalIngestionService {
       const requestedStages = catalogMetadataOnly
         ? effectiveStages.filter((stage) => stage !== "chunking")
         : plan.requestedStages;
+      const aggregateHierarchyRoot = !catalogMetadataOnly
+        && effectiveStages.includes("summarization")
+        && (await hierarchy.listDescendants(sourceItemId)).length > 0;
       if (!catalogMetadataOnly && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
@@ -197,7 +200,8 @@ export class HierarchicalIngestionService {
       }
       if (!catalogMetadataOnly && !plan.forceRegeneration && plan.previousArtifactPolicy === "reuse_valid") {
         for (const stage of executableStages) {
-          if (effectiveStages.includes(stage) && artifactState[stage]) {
+          if (effectiveStages.includes(stage) && artifactState[stage]
+            && canReuseArtifactStage(stage, aggregateHierarchyRoot)) {
             await runs.completeStage(run.id, stage, { reused: true });
           }
         }
@@ -245,6 +249,10 @@ export class HierarchicalIngestionService {
 export function catalogMetadataStages(stages: readonly string[]) {
   const selected = ["embedding", "knowledgeGraph"].filter((stage) => stages.includes(stage));
   return selected.length > 0 ? ["chunking", ...selected] : [];
+}
+
+export function canReuseArtifactStage(stage: string, aggregateHierarchyRoot: boolean): boolean {
+  return stage !== "summarization" || !aggregateHierarchyRoot;
 }
 
 export function splitHierarchicalProcessingTargets(

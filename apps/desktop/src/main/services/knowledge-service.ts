@@ -52,6 +52,14 @@ const atomicNoteVectorCandidateLimit = 30;
 const atomicNoteGraphCandidateLimit = 20;
 const atomicNoteFusedCandidateLimit = 30;
 
+function aggregateSourceLabel(type: SourceItemType): string {
+  if (type === "Book") return "book";
+  if (type === "PeriodicalIssue") return "periodical issue";
+  if (type === "AcademicPaper") return "academic paper";
+  if (type === "StandaloneArticle" || type === "WebArticle") return "article";
+  return "source";
+}
+
 export interface KnowledgeServiceOptions {
   getPool: () => PgPool | null;
   aiService: AiService;
@@ -308,38 +316,70 @@ export class KnowledgeService {
     };
   }
 
-  public async summarizeBooksForBatch(batchId: string, signal?: AbortSignal, logContext: AiTaskLogContext = {}) {
+  public async summarizeHierarchiesForBatch(
+    batchId: string | null,
+    signal?: AbortSignal,
+    logContext: AiTaskLogContext = {},
+    rootSourceItemId: string | null = null,
+    forceRegeneration = false
+  ) {
     const pool = this.requirePool();
     const rows = await pool.query<{
-      rootId: string; rootTitle: string; rootLanguage: string; documentId: string; documentHash: string;
+      rootId: string; rootType: SourceItemType; rootTitle: string; rootLanguage: string;
+      documentId: string; documentHash: string;
       childId: string; childTitle: string; summaryId: string | null; summary: string | null; summaryHash: string | null;
     }>(
-      `select root.id as "rootId", root.title as "rootTitle", root.language as "rootLanguage",
-              document.id as "documentId", document.content_hash as "documentHash",
-              child.id as "childId", child.title as "childTitle", summary.id as "summaryId",
-              summary.summary, summary.output_hash as "summaryHash"
-       from source_items root
-       join source_items child on child.parent_source_item_id = root.id and child.type = 'BookChapter'
-       join documents document on document.source_item_id = root.id
-       left join source_summaries summary on summary.source_item_id = child.id and summary.is_current = true
-       where root.type = 'Book' and exists (
-         select 1 from ingestion_runs run where run.batch_id = $1 and run.source_item_id = child.id
+      `with recursive hierarchy as (
+         select root.id as root_id, root.type as root_type, root.title as root_title,
+                root.language as root_language, document.id as document_id,
+                document.content_hash as document_hash, child.id as child_id,
+                child.title as child_title, child.created_at as child_created_at
+         from source_items root
+         join source_items child on child.parent_source_item_id = root.id
+         join documents document on document.source_item_id = root.id
+         union all
+         select hierarchy.root_id, hierarchy.root_type, hierarchy.root_title,
+                hierarchy.root_language, hierarchy.document_id, hierarchy.document_hash,
+                child.id, child.title, child.created_at
+         from hierarchy
+         join source_items child on child.parent_source_item_id = hierarchy.child_id
        )
-       order by root.id, child.created_at, child.id`,
-      [batchId]
+       select hierarchy.root_id as "rootId", hierarchy.root_type as "rootType",
+              hierarchy.root_title as "rootTitle", hierarchy.root_language as "rootLanguage",
+              hierarchy.document_id as "documentId", hierarchy.document_hash as "documentHash",
+              hierarchy.child_id as "childId", hierarchy.child_title as "childTitle",
+              summary.id as "summaryId", summary.summary, summary.output_hash as "summaryHash"
+       from hierarchy
+       left join source_summaries summary on summary.source_item_id = hierarchy.child_id and summary.is_current = true
+       where hierarchy.root_id = $2::uuid or exists (
+         select 1 from ingestion_runs run
+         where run.batch_id = $1 and run.source_item_id in (hierarchy.root_id, hierarchy.child_id)
+       )
+       order by hierarchy.root_id, hierarchy.child_created_at, hierarchy.child_id`,
+      [batchId, rootSourceItemId]
     );
     const grouped = new Map<string, typeof rows.rows>();
     for (const row of rows.rows) grouped.set(row.rootId, [...(grouped.get(row.rootId) ?? []), row]);
     let generatedCount = 0;
+    let reusedCount = 0;
+    const blockedRoots: Array<{ sourceItemId: string; missingSummaryCount: number; totalSubparts: number }> = [];
     for (const children of grouped.values()) {
       const root = children[0];
-      if (!root || children.some((child) => !child.summary || !child.summaryId || !child.summaryHash)) continue;
+      if (!root) continue;
+      const missingSummaryCount = children.filter((child) => !child.summary || !child.summaryId || !child.summaryHash).length;
+      if (missingSummaryCount > 0) {
+        blockedRoots.push({ sourceItemId: root.rootId, missingSummaryCount, totalSubparts: children.length });
+        continue;
+      }
       const inputHash = sha256(children.map((child) => `${child.childId}:${child.summaryHash}`).join("\n"));
       const current = (await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)).find((summary) => summary.isCurrent);
-      if (current?.inputHash === inputHash) continue;
+      if (!forceRegeneration && current?.inputHash === inputHash) {
+        reusedCount += 1;
+        continue;
+      }
       const prompt = [
-        `Create a coherent aggregate summary of the book "${root.rootTitle}" using every chapter summary below.`,
-        "Preserve disagreements and progression across chapters. Do not introduce facts absent from the summaries.",
+        `Create a coherent aggregate summary of the ${aggregateSourceLabel(root.rootType)} "${root.rootTitle}" using every subpart summary below.`,
+        "Preserve disagreements and progression across subparts. Do not introduce facts absent from the summaries.",
         ...children.map((child, index) => `\n## ${index + 1}. ${child.childTitle}\n${child.summary}`)
       ].join("\n");
       const execution = await this.options.aiService.runDefaultTask(
@@ -361,18 +401,30 @@ export class KnowledgeService {
         ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
         jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
         aiTaskRunId: execution.aiTaskRunId, inputHash,
-        metadata: { promptVersion: "book-aggregate-v1", batchId, childSummaryIds: children.map((child) => child.summaryId!) }
+        metadata: { promptVersion: "hierarchy-aggregate-v1", batchId, childSummaryIds: children.map((child) => child.summaryId!) }
       });
       const persisted = await createSourceSummaryRepository(pool).create({
         sourceItemId: root.rootId, generationId, summary, language: execution.outputLanguage ?? root.rootLanguage,
         profileId: execution.profileId, aiTaskRunId: execution.aiTaskRunId, provider: execution.providerId,
-        model: execution.modelId, runtime: execution.runtime, promptVersion: "book-aggregate-v1", inputHash,
+        model: execution.modelId, runtime: execution.runtime, promptVersion: "hierarchy-aggregate-v1", inputHash,
         outputHash: sha256(summary), metadata: { aggregate: true, batchId, childSummaryIds: children.map((child) => child.summaryId!) }
       });
       await createSourceItemRepository(pool).update(root.rootId, { summary, summaryGeneratedAt: persisted.generatedAt });
       generatedCount += 1;
     }
-    return { generatedCount };
+    return { generatedCount, reusedCount, blockedRoots };
+  }
+
+  public async isHierarchicalRoot(sourceItemId: string): Promise<boolean> {
+    const result = await this.requirePool().query<{ exists: boolean }>(
+      `select exists(
+         select 1 from source_items root
+         join source_items child on child.parent_source_item_id = root.id
+         where root.id = $1
+       ) as exists`,
+      [sourceItemId]
+    );
+    return result.rows[0]?.exists ?? false;
   }
 
   public async generateAtomicNotes(

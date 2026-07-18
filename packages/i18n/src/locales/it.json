@@ -74,6 +74,10 @@
       "doclingUnavailable": "Il convertitore locale di documenti non e installato.",
       "doclingFailed": "Il convertitore locale di documenti non e riuscito."
     },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "Non e stato possibile generare il riepilogo aggregato.",
+      "aggregateSummaryMissingSubparts": "Il riepilogo aggregato attende i riepiloghi di tutte le sottoparti."
+    },
     "ai": {
       "noCompatibleModel": "Nessun modello compatibile e configurato.",
       "unsupportedTask": "Il modello selezionato non puo eseguire questa attivita.",
@@ -149,7 +153,7 @@
     },
     "currentStage": "Fase corrente: {stage}",
     "stages": {
-      "queued": "In coda", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
+      "queued": "In coda", "preparation": "Preparazione dell'importazione", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
       "knowledgeGraph": "Grafo della conoscenza",
       "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian", "aggregateSummarization": "Riepilogo aggregato",
