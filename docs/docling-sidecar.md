@@ -1,20 +1,20 @@
-# Sidecar Docling
+# Docling sidecar runbook
 
-O codigo de integracao da Fase 2 fica em `packages/conversion` e preserva a
-fronteira TypeScript-first do projeto. Python e usado apenas pelo bridge
-`packages/conversion/sidecar/docling_sidecar.py`.
+The Docling integration lives in `packages/conversion`. Python is limited to
+`packages/conversion/sidecar/docling_sidecar.py`; application and domain logic
+remain TypeScript.
 
-## Layout esperado
+## Runtime layout
 
-Em desenvolvimento:
+Development:
 
 ```txt
 vendor/sidecars/docling/<platform>/
-  bin/python3.13          # `python.exe` no Windows
-  ... runtime CPython 3.13.13, wheels e modelos locais
+  bin/python3.13          # python.exe on Windows
+  ... pinned CPython, wheels, and local models
 ```
 
-No app empacotado:
+Packaged application:
 
 ```txt
 resources/
@@ -22,35 +22,27 @@ resources/
   docling/docling_sidecar.py
 ```
 
-O runtime deve conter CPython `3.13.13`, Docling `2.111.0`, wheels e modelos
-resolvidos no build. O app nunca usa o Python do sistema e nunca executa
-`pip install` no runtime.
+The current artifact contains CPython `3.13.13`, Docling `2.111.0`, locked
+wheels, and fixed model revisions. The application never uses system Python and
+never runs `pip install` at runtime.
 
-## Protocolo
+## Protocol
 
-- um objeto JSON versionado por linha em stdin/stdout;
-- `protocolVersion: 3`;
-- request, eventos de progresso e response validados por Zod em
-  `docling-contracts.ts`;
-- nenhuma porta de rede;
-- timeout, cancelamento e encerramento do processo pelo `DoclingClient`;
-- eventos correlacionados por `requestId` informam etapa, fracao concluida e,
-  em PDF, paginas concluidas/total. A contagem observa a fila de saida do
-  pipeline PDF paralelo do Docling, sem fragmentar o arquivo nem reinicializar
-  modelos;
-- resultado com Markdown, blocos, pagina, bounding box, offsets, warnings,
-  qualidade e `DoclingDocument` bruto quando disponivel.
+- Versioned JSONL over stdin/stdout; no network port.
+- Current `protocolVersion`: `3`.
+- Requests, progress events, and responses are validated by Zod in
+  `packages/conversion/src/docling-contracts.ts`.
+- Every event is correlated by `requestId`.
+- PDF progress reports completed and total pages from the actual Docling output
+  pipeline.
+- Results include Markdown, structured blocks, pages, bounding boxes, offsets,
+  warnings, quality data, and raw `DoclingDocument` data when available.
 
-Temporarios sao criados sob `userData/tmp/conversion` e removidos em sucesso,
-erro ou cancelamento. O JSON estruturado retornado e persistido como asset
-derivado pelo `IngestionService`.
+The desktop creates temporary files under `userData/tmp/conversion` and removes
+them after success, error, or cancellation. Useful structured results are
+persisted by the ingestion service as derived assets.
 
-## Estado do artefato
-
-O builder versionado materializa atualmente `darwin-arm64`. Ele baixa uma
-distribuicao CPython imutavel e verifica seu SHA-256, instala exclusivamente as
-versoes de `requirements-darwin-arm64.lock` e pre-baixa os modelos em revisions
-fixadas. O conjunto RapidOCR vem da versao fixada do pacote `rapidocr`.
+## Build and verification
 
 ```bash
 npm run docling:build
@@ -58,19 +50,32 @@ npm run docling:verify
 npm run docling:smoke
 ```
 
-`docling:smoke` cria e converte um PDF com os proxies apontados para loopback
-invalido e com os modos offline de Hugging Face/Transformers ativos. O teste
-tambem exige um evento real de pagina concluida antes da resposta final. Assim,
-ele usa somente o CPython, wheels e modelos do sidecar. Para atualizar o
-artefato, revise primeiro a definicao e o lock e execute
-`npm run docling:build -- --force`; para remover o artefato gerado, use
-`npm run docling:remove`. Nenhuma dessas operacoes acontece no runtime do app.
+`docling:build` currently materializes `darwin-arm64`. It downloads an immutable
+CPython distribution, verifies its SHA-256, installs only packages from
+`requirements-darwin-arm64.lock`, and pre-downloads fixed model revisions.
 
-O builder grava um manifesto do runtime com origem do CPython, hash do lock,
-pacotes, revisions dos modelos, tamanhos e hashes agregados. O staging desktop
-valida novamente todos os arquivos e incorpora os componentes ao SBOM SPDX.
+`docling:verify` checks the generated runtime manifest, package lock, model
+revisions, and required files.
 
-O corpus golden amplo e os benchmarks de todos os formatos continuam como
-validacao de distribuicao. Os artefatos Windows/Linux devem ser adicionados
-somente com origem, locks e testes equivalentes; nao ha fallback para Python do
-sistema.
+`docling:smoke` converts a generated PDF with invalid loopback proxies and
+Hugging Face/Transformers offline modes enabled. The smoke requires a real page
+progress event before the final response, proving that the packaged Python,
+wheels, and models operate without network or system Python.
+
+To rebuild after intentionally changing the runtime definition or lock:
+
+```bash
+npm run docling:build -- --force
+```
+
+To remove the generated development artifact:
+
+```bash
+npm run docling:remove
+```
+
+The builder records CPython origin, lock hash, packages, model revisions, sizes,
+and aggregate hashes. Desktop staging validates the files again and includes
+them in the SPDX SBOM. Any new platform must provide an equivalent lock,
+manifest, offline smoke, and packaging validation; there is no system-Python
+fallback.

@@ -1,84 +1,77 @@
 # Memora Eterna
 
-Memora Eterna e uma aplicacao desktop local-first para organizar fontes,
-documentos, notas, evidencias e memoria de longo prazo. A aplicacao desktop e a
-fonte de verdade local: ela gerencia o banco PostgreSQL embarcado, o pipeline de
-ingestao/indexacao e as integracoes com Chrome e Obsidian.
+Memora Eterna is a local-first desktop application for organizing sources,
+documents, notes, evidence, and long-term knowledge. The Electron desktop owns
+the embedded PostgreSQL database, ingestion/indexing pipeline, AI runtimes, and
+the local integrations used by Chrome and Obsidian.
 
-O MVP usa um monorepo TypeScript com Electron, React, Tailwind, Drizzle e
-PostgreSQL nativo como sidecar.
+The current system includes typed source ingestion, hierarchical books/issues/
+papers, selective processing, hybrid search, summaries, atomic notes, knowledge
+graph projection, a review queue, local and remote AI profiles, Chrome capture,
+YouTube metadata/transcripts, and bidirectional Obsidian synchronization.
 
-A implementacao atual tambem inclui o Integration Gateway local, captura por
-extensao Chrome, YouTube via `youtubei.js`, projecao Markdown e sincronizacao
-bidirecional essencial com o plugin Obsidian.
-
-A fase de fechamento adiciona gerenciamento de modelos locais MLX/GGUF,
-downloads retomaveis e verificados, perfis offline, backup e staging do pacote
-desktop com manifest de runtimes e SBOM.
-
-## Estrutura
+## Repository
 
 ```txt
 apps/
-  desktop/             Aplicacao Electron com renderer React e preload seguro
-  chrome-extension/    Extensao Chrome isolada
-  obsidian-plugin/     Plugin Obsidian isolado
+  desktop/             Electron app, React renderer, preload, and local backend
+  chrome-extension/    Isolated Chrome Manifest V3 capture client
+  obsidian-plugin/     Isolated Obsidian desktop plugin
 packages/
-  ai/                  Adaptadores e contratos internos de IA
-  conversion/          Conversao e normalizacao de conteudo
-  db/                  Schema, migrations, repositorios e sidecar Postgres
-  domain/              Tipos canonicos e schemas Zod
-  i18n/                Locales e helpers de traducao
-  integration-contracts/
+  ai/                  AI contracts, adapters, registry, and local models
+  conversion/          Conversion, structure detection, and normalization
+  db/                  Drizzle schema, migrations, repositories, and sidecar
+  domain/              Canonical types and Zod schemas
+  i18n/                Product messages and translation helpers
+  integration-contracts/  Versioned external-client protocol
+native/
+  mlx-helper/          Swift MLX helper for macOS arm64
+rules/                 Hierarchical engineering specifications
+docs/                  Operational developer runbooks
 ```
 
-## Prerequisitos
+## Prerequisites
 
-- Node.js `24.18.0` LTS.
+- Node.js `24.18.0`.
 - npm `11.16.0`.
-- macOS com Xcode Command Line Tools para instalar/buildar o sidecar:
+- macOS and Xcode Command Line Tools for the currently materialized native
+  development artifacts.
 
 ```bash
 xcode-select --install
 ```
 
-As versoes canonicas ficam em `docs/stack-versions.md`. O `package.json` raiz
-tambem declara os engines esperados.
+Approved technologies and exact versions are in `STACK.md`.
 
-## Bootstrap DEV Inicial
+## Initial development setup
 
-Instale dependencias do monorepo:
+Install workspace dependencies:
 
 ```bash
 npm install
 ```
 
-Crie os `.env` locais e instale o sidecar PostgreSQL para desenvolvimento:
+Create development environment files and install the PostgreSQL sidecar:
 
 ```bash
 npm run setup:dev
 ```
 
-Esse comando executa:
-
-- `scripts/setup-dev-env.mjs`, que cria `.env` e `apps/desktop/.env` com
-  variaveis aleatorias de banco quando ainda nao existem;
-- `scripts/install-postgres-sidecar.mjs`, que instala o PostgreSQL sidecar em
-  `vendor/sidecars/...`.
-
-Para regenerar credenciais DEV:
+This runs `scripts/setup-dev-env.mjs` and
+`scripts/install-postgres-sidecar.mjs`. Local credentials are generated only
+when missing. To intentionally regenerate development credentials:
 
 ```bash
 npm run setup:env -- --force
 ```
 
-Para instalar apenas o sidecar, preservando os `.env` existentes:
+To install only PostgreSQL while preserving existing environment files:
 
 ```bash
 npm run sidecar:install:postgres
 ```
 
-Materialize e valide o sidecar CPython/Docling isolado para a plataforma:
+Build and validate the isolated Docling runtime:
 
 ```bash
 npm run docling:build
@@ -86,266 +79,163 @@ npm run docling:verify
 npm run docling:smoke
 ```
 
-## Sidecars
+See `docs/postgres-sidecar.md` and `docs/docling-sidecar.md` for native runtime
+details.
 
-O sidecar DEV instala:
-
-- PostgreSQL `18.4`;
-- pgvector `0.8.4`;
-- Apache AGE `PG18/v1.7.0-rc0`.
-
-Em desenvolvimento, os binarios ficam em:
-
-```txt
-vendor/sidecars/postgres/darwin-{arch}/postgresql-18.4/
-```
-
-Essa pasta e ignorada pelo Git. Em producao, o app empacotado deve copiar os
-artefatos para:
-
-```txt
-resources/
-  sidecars/
-    postgres/
-      darwin-arm64/
-        postgresql-18.4/
-  drizzle/
-```
-
-No runtime Electron, o banco sobe junto com a aplicacao. A janela abre com uma
-tela de bootstrap, o main process inicia o sidecar em loopback usando
-`MEMORA_DATABASE_PORT` quando disponivel; se a porta estiver invalida ou
-indisponivel, registra warning e cai para uma porta dinamica livre. Depois,
-prepara o banco e so libera a shell quando ele esta pronto. Em banco
-Postgres totalmente vazio, o bootstrap aplica o seed/baseline versionado,
-registra no historico Drizzle as migrations cobertas por esse baseline e entao
-roda migrations pendentes. Em banco existente, o bootstrap roda apenas
-migrations pendentes. O shutdown do app aguarda o pool e o sidecar encerrarem.
-
-As credenciais dos `.env` sao para scripts e fluxos DEV. O runtime do desktop
-gera credenciais por instalacao e guarda a senha via Electron `safeStorage`.
-Quando o desktop roda em DEV (`app.isPackaged === false`), ele tambem grava
-`database/dev-connection.json` dentro de `userData`, com permissao `0600`,
-incluindo host, porta dinamica, database, usuario, senha, connection string e
-caminho do `psql` para diagnosticos locais automatizados. Builds empacotados
-nao criam esse descriptor.
-
-Valide o sidecar instalado:
-
-```bash
-npm run sidecar:spike
-```
-
-O spike cria um data dir temporario, sobe o Postgres, habilita `vector` e `age`,
-executa consultas triviais e encerra o processo.
-
-## Compilar e Validar
-
-Typecheck:
-
-```bash
-npm run typecheck
-```
-
-Testes:
-
-```bash
-npm test
-```
-
-Build:
-
-```bash
-npm run build
-```
-
-Format check:
-
-```bash
-npm run format:check
-```
-
-Fluxo completo recomendado depois do bootstrap:
+## Development commands
 
 ```bash
 npm run typecheck
 npm test
 npm run build
 npm run format:check
-npm run sidecar:spike
 ```
 
-## Rodar o Desktop em DEV
+Run the desktop in development:
 
 ```bash
 npm run dev -w @app/desktop
 ```
 
-## Modelos locais
+Validate the installed PostgreSQL sidecar and its extensions:
 
-Em Macs Apple Silicon, compile o helper MLX nativo:
+```bash
+npm run sidecar:spike
+```
+
+## PostgreSQL and migrations
+
+The desktop embeds PostgreSQL `18.4`, pgvector `0.8.4`, and Apache AGE
+`PG18/v1.7.0-rc0`. Development binaries live under
+`vendor/sidecars/postgres/darwin-{arch}/postgresql-18.4/` and are ignored by
+Git.
+
+At runtime, the main process creates per-installation credentials in Electron
+`safeStorage`, stores data under Electron `userData`, starts PostgreSQL on
+loopback, runs the empty-database baseline or pending migrations as appropriate,
+and releases the UI only after the database is ready. Development CLI `.env`
+credentials are separate from packaged runtime credentials.
+
+After a Drizzle schema change:
+
+```bash
+npm run db:generate
+```
+
+Update `packages/db/seed/baseline.sql` and
+`packages/db/seed/manifest.json` in the same change, then run:
+
+```bash
+npm run db:seed:verify
+npm run db:migrate
+npm run db:verify
+```
+
+Additional real-database verification commands are available for existing
+feature groups:
+
+```bash
+npm run db:phase2:verify
+npm run db:phase3:verify
+npm run db:phase4:verify
+npm run db:phase5:verify
+npm run db:source-ingestion:verify
+npm run phase4:e2e
+```
+
+The baseline applies only to a completely empty database. Existing databases
+run pending migrations only.
+
+## Local models
+
+On Apple Silicon, build the native MLX helper:
 
 ```bash
 npm run mlx:build
 ```
 
-Depois use `Settings > Local models` para filtrar o catalogo, aceitar licencas,
-salvar um token opcional da Hugging Face, baixar/retomar/verificar modelos e
-seleciona-los nos perfis de IA. Plataformas sem MLX mostram a incompatibilidade
-explicitamente. Arquivos GGUF existentes podem ser importados e executados via
-`node-llama-cpp`. O catalogo inclui modelos GGUF de embedding separados
-(Qwen3-Embedding-0.6B e BGE-M3), baixaveis e instalaveis pela
-mesma interface.
+Use **Settings > Local models** to filter the audited catalog, accept required
+licenses, configure an optional Hugging Face token, download/resume/verify
+models, import GGUF files, test installations, and remove unused models.
+Platforms without MLX explicitly mark MLX models as incompatible; supported
+GGUF and remote adapters remain available.
 
-Em `Settings > AI`, cada modelo remoto ou local possui parametros padrao. Cada
-perfil pode sobrescrever esses parametros por tarefa, escolher o idioma das
-respostas (herdando o idioma da interface por padrao) e vincular um unico
-modelo remoto ou local. A secao de roteamento escolhe qual perfil — e portanto
-qual modelo — cada tarefa usa. Modelos locais generativos tambem podem executar
-o reranking baseado em prompt.
+In **Settings > AI**, each remote or local model defines defaults. Profiles bind
+one model, privacy policy, response language, and task-specific overrides. Task
+routes select which profile executes embeddings, summarization, note generation,
+graph generation, reranking, and other AI work.
 
-Detalhes de revisions, checksums, armazenamento e protocolo ficam em
-`docs/local-models-and-packaging.md`.
+See `docs/local-models-and-packaging.md` for catalog, storage, and helper details.
 
-## Backup e pacote desktop
+## Chrome and Obsidian integrations
 
-Settings permite criar um backup datado com `pg_dump` e as pastas gerenciadas
-configuradas. Para preparar e inspecionar um pacote sem instalador:
+The desktop exposes an HTTP/WebSocket gateway on `127.0.0.1`. The default port
+is `47831`; `MEMORA_INTEGRATION_GATEWAY_PORT` requests another port, and the app
+falls back to a free port when needed.
 
-```bash
-npm run package:desktop:dir
-```
-
-Valide duas aberturas e shutdowns limpos contra o mesmo banco temporario:
-
-```bash
-npm run package:desktop:smoke
-```
-
-Para DMG/ZIP no macOS:
-
-```bash
-npm run package:desktop:mac
-```
-
-O staging gera `runtime-manifest.json` com checksums e `sbom.spdx.json`.
-Assinatura/notarizacao exigem credenciais externas e devem ser validadas antes
-da publicacao. O pacote macOS materializado nesta fase e `arm64`; builds para
-outras plataformas exigem sidecars Postgres/AGE e Docling equivalentes.
-
-Durante o boot, a UI mostra o estado do banco local. Se o sidecar ainda estiver
-subindo ou aplicando migrations, a shell principal permanece bloqueada com
-spinner.
-
-Preferencias de interface ficam nos settings locais. Antes de existir uma
-preferencia salva, o idioma inicial vem do desktop com fallback para ingles, e
-o tema inicial e escuro. O cabecalho do menu lateral tem um botao de alternancia
-rapida entre tema escuro e claro.
-
-## Integracoes Chrome e Obsidian
-
-O desktop inicia um gateway HTTP/WebSocket apenas em `127.0.0.1`. A porta
-padrao e `47831`; `MEMORA_INTEGRATION_GATEWAY_PORT` permite configurar outra
-porta e, em conflito, o app escolhe uma porta livre e mostra o endereco real em
-Settings.
-
-Compile os clientes externos:
+Build both clients:
 
 ```bash
 npm run build -w @app/chrome-extension
 npm run build -w @app/obsidian-plugin
 ```
 
-Para Chrome, abra `chrome://extensions`, habilite o modo de desenvolvedor e
-carregue `apps/chrome-extension/dist` como extensao sem compactacao.
+For Chrome, open `chrome://extensions`, enable developer mode, and load
+`apps/chrome-extension/dist` as an unpacked extension.
 
-Para Obsidian, copie o conteudo de `apps/obsidian-plugin/dist` para:
+For Obsidian, copy `apps/obsidian-plugin/dist` into:
 
 ```txt
 <vault>/.obsidian/plugins/memora-eterna/
 ```
 
-Depois habilite o plugin nas configuracoes de Community plugins.
+Enable the plugin under Community plugins.
 
-O pareamento dos dois clientes segue o mesmo fluxo:
+Pair either client from **Settings > Local integration gateway**:
 
-1. abra `Settings > Local integration gateway` no desktop;
-2. escolha o tipo do cliente e crie o pareamento;
-3. copie o Client ID e o token exibido uma unica vez;
-4. informe o endereco do gateway, Client ID e token no popup da extensao ou
-   nas configuracoes do plugin.
+1. choose the client type and create a pairing;
+2. copy the client ID and one-time token;
+3. enter the endpoint, client ID, and token in the extension or plugin.
 
-O banco guarda somente o hash do token. Revogar o cliente no desktop bloqueia
-novos handshakes. O plugin reconcilia arquivos gerenciados na conexao; conflitos
-de hash/versao ficam explicitos e nao sao sobrescritos silenciosamente.
+The database stores only the token hash. Revocation blocks future handshakes.
+Obsidian reconciliation reports version/hash conflicts instead of silently
+overwriting either side.
 
-## Banco e Migrations
+## Backup and desktop package
 
-Gerar migration depois de alterar schema Drizzle:
+Settings can create a dated backup containing a custom-format `pg_dump` and the
+configured managed folders.
 
-```bash
-npm run db:generate
-```
-
-Depois de gerar uma migration nova, mantenha o baseline sincronizado na mesma
-mudanca:
-
-- atualize `packages/db/seed/baseline.sql` com o SQL coberto pelo baseline, na
-  ordem de `packages/db/drizzle/meta/_journal.json`;
-- atualize `packages/db/seed/manifest.json` incluindo a nova migration em
-  `includedMigrations`;
-- valide a sincronizacao:
+Create and smoke-test an unpacked desktop package:
 
 ```bash
-npm run db:seed:verify
+npm run package:desktop:dir
+npm run package:desktop:smoke
 ```
 
-Aplicar migration usando `MEMORA_DATABASE_URL` do `.env`:
+Create macOS DMG/ZIP artifacts:
 
 ```bash
-npm run db:migrate
+npm run package:desktop:mac
 ```
 
-Verificar migration no banco real:
+Staging writes a runtime manifest and SPDX SBOM and fails when a required target
+artifact is absent. The current materialized distribution target is macOS
+arm64. Signing, notarization, and clean-install validation are required before
+publication; credentials are external to the repository.
 
-```bash
-npm run db:verify
-```
+## Engineering specifications
 
-Sincronizar mecanicamente o baseline com o journal e validar as Fases 2, 3 e 4 em
-um sidecar temporario real:
+AI coding agents read only:
 
-```bash
-npm run db:seed:sync
-npm run db:seed:verify
-npm run db:phase2:verify
-npm run db:phase3:verify
-npm run db:phase4:verify
-npm run db:phase5:verify
-npm run phase4:e2e
-```
+1. `RULES.md`;
+2. `STACK.md`;
+3. `rules/index.md`;
+4. the domain rules selected by that index for the task.
 
-Toda mudanca de schema deve ser validada no banco real, incluindo historico em
-`drizzle.__drizzle_migrations` e estrutura esperada em `information_schema` ou
-consulta equivalente.
+Completed implementation plans are intentionally not retained. Durable behavior
+is specified in the routed rule hierarchy, while operational procedures remain
+in `docs/`.
 
-O seed/baseline versionado existe apenas para acelerar e padronizar a criacao
-de bancos Postgres totalmente vazios. Ele deve acompanhar as migrations que
-cobre: ao alterar uma migration estrutural incluida no baseline, atualize tambem
-o baseline e a lista/historico de migrations cobertas. Bancos existentes nunca
-devem receber o seed por cima; seguem somente pelo fluxo de migrations
-pendentes. Inicialmente o seed pode conter apenas estrutura, sem dados de
-dominio.
-
-## Notas Importantes
-
-- Nao commitar `.env`, `apps/*/.env`, `.cache/` ou `vendor/sidecars/`.
-- O renderer nunca acessa banco, filesystem privilegiado ou segredos
-  diretamente; tudo passa por preload seguro e IPC validado por Zod.
-- `MAPA.md` mantem o mapa operacional inicial para agentes e deve ser
-  atualizado quando a estrutura ou fluxos centrais mudarem.
-- O staging do empacotamento copia sidecars, migrations e baseline e gera
-  manifest/SBOM; assinatura e notarizacao continuam dependendo de credenciais
-  externas de distribuicao.
-- O builder Docling fixa CPython, wheels e revisions de modelos, e o smoke
-  offline deve passar antes de empacotar. Consulte `docs/docling-sidecar.md`.
+Do not commit `.env`, `apps/*/.env`, `.cache/`, generated build directories, or
+`vendor/sidecars/`.

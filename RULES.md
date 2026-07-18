@@ -1,447 +1,92 @@
-# Memora Eterna - Regras de Implementacao
+# Memora Eterna core engineering rules
 
-Este arquivo deve ser seguido por qualquer agente ou subagente que implemente codigo neste projeto.
+This is the small specification that applies to every repository task. Read it
+together with `STACK.md` and `rules/index.md`; then load only the domain rules
+selected by the index.
 
-Ele complementa:
+## 1. Specification-driven workflow
 
-- `docs/initial.md`;
-- `docs/mvp-implementation-plan.md`.
+1. Inspect the relevant implementation and tests before changing them.
+2. Use `rules/index.md` to select the smallest applicable rule set.
+3. Treat the selected rules as acceptance criteria, not background reading.
+4. Keep changes scoped to the request and preserve unrelated user work.
+5. Verify the result in proportion to its risk before reporting completion.
 
-Se houver conflito entre este arquivo e uma etapa de algum comand dado ao agente ou etapa de implementação, pare e registre a divergencia antes de implementar.
+When a request conflicts with a rule, the user's explicit request controls the
+implementation and the contradicted rule must be updated in the same change.
+Never leave code and the specification knowingly inconsistent.
 
-## Principios Gerais
+## 2. Agent execution contract
 
-- O projeto e local-first, TypeScript-first e orientado por contratos.
-- Implemente uma etapa por vez, conforme `docs/mvp-implementation-plan.md`.
-- Nao implemente escopo futuro dentro do MVP sem pedido explicito.
-- Taxonomia canonica de `SourceItem`: `PersonalNote`, `DailyNote`, `WebArticle`, `Book`, `BookChapter`, `PeriodicalIssue`, `AcademicPaper`, `DocumentSection`, `StandaloneArticle`, `Video`, `GenericDocument`. Os tres tipos hierarquicos pos-MVP foram aprovados pelo plano de importacao hierarquica e nao devem ser escondidos em `metadata`.
-- Preserve as ideias documentadas, mesmo quando estiverem fora da etapa atual.
-- Evite refactors amplos que nao sejam necessarios para a etapa.
-- Nao reverta alteracoes do usuario ou de outros agentes sem pedido explicito.
-- Nao faca commit final automaticamente.
-- Ao concluir uma etapa, informe arquivos alterados, testes executados, migrations aplicadas e pendencias.
+- State assumptions that materially affect the solution. Ask one concise
+  question when competing interpretations would materially change the result;
+  otherwise make a safe, reversible assumption explicit and proceed.
+- Prefer the simplest complete approach and challenge requests that create
+  unnecessary risk, complexity, or maintenance cost.
+- Define verifiable success criteria and complete the request end to end. Track
+  every item in multi-file or batch work; identify any incomplete part as
+  `[blocked]` with the exact missing input or condition.
+- Ground claims in repository files and actual tool results. Label inferences,
+  never invent evidence, and use a fallback check when retrieval is empty,
+  partial, or suspiciously narrow.
+- Use targeted tools and the repository's dedicated edit/test mechanisms. Ask
+  before irreversible, externally visible, expensive, or production-impacting
+  actions.
+- Match existing style and naming. Remove only unused artifacts introduced by
+  the current change; report unrelated issues instead of silently fixing them.
+- During substantial work, provide concise, outcome-based progress updates
+  without narrating routine tool calls.
+- Before finalizing, check correctness, scope, simplicity, grounding, output
+  format, and safety. Keep the final response concise and report only checks
+  that actually ran.
 
-## Stack Obrigatoria
+## 3. Maintaining the specification
 
-As versoes canonicas ficam em `docs/stack-versions.md`. Antes de criar ou atualizar `package.json`, lockfiles, imagens, binarios sidecar ou scripts de build, siga essa matriz. Quando a ultima versao publicada conflitar com compatibilidade real, prevalece a versao estavel compativel documentada ali.
+A change is **durable** when future work must continue to respect it. Examples
+include a public contract, domain invariant, architectural boundary, persistent
+data behavior, security or privacy policy, workflow semantic, or stack decision.
 
-- Desktop: Electron com `electron-vite`.
-- Renderer: React 19.
-- CSS/UI: Tailwind CSS 4 e `shadcn/ui`.
-- Icones: preferir `lucide-react`.
-- Backend local: Node.js no main process do Electron, alinhado ao baseline LTS de `docs/stack-versions.md`; Python fica restrito ao sidecar local de conversao Docling, controlado pelo main process ou por workers.
-- Banco: PostgreSQL nativo embarcado como sidecar da aplicacao, com binarios por plataforma e `pgvector` incluido, conforme baseline de `docs/stack-versions.md`.
-- ORM/migrations: Drizzle ORM sobre `node-postgres`.
-- Vetores: `pgvector`, incluido nos binarios do sidecar.
-- Grafo: Apache AGE `PG18/v1.7.0-rc0` como alvo do spike macOS, compilado por plataforma e injetado no bundle do sidecar apos validacao; apenas como camada simples de projecao/consulta.
-- Contratos: Zod.
-- Workers: `worker_threads`.
-- Web extraction: Defuddle.
-- Documentos complexos para Markdown e JSON estruturado: Docling em sidecar Python local.
-- Formatos textuais simples para Markdown: conversores TypeScript nativos em `@app/conversion`.
-- YouTube: `youtubei.js`.
-- Runtime local GGUF: `node-llama-cpp`, apenas no main process ou em workers controlados pelo main process.
+- Every new durable decision must be added to the relevant file in `rules/`, or
+  to `STACK.md` when it changes technology or dependency policy.
+- If a durable change contradicts an existing rule, update that rule instead of
+  adding an exception elsewhere.
+- If no domain file fits, create one and add an explicit route to
+  `rules/index.md`.
+- Do not turn temporary plans, implementation diaries, command output, or
+  one-off bug details into rules.
+- Always state in the final response which rules were added or changed. If no
+  rule update was needed, state that no durable specification changed.
+- Project documentation and rules are written in English.
 
-## Fronteiras de Arquitetura
+## 4. System invariants
 
-- Renderer nunca acessa banco, filesystem privilegiado, segredos, `node-llama-cpp` ou APIs nativas diretamente.
-- Renderer fala com o backend local apenas via preload seguro e IPC validado por Zod.
-- Main process concentra acesso a banco, filesystem, secrets, runtime local, workers e Integration Gateway.
-- Extensao Chrome e plugin Obsidian nunca acessam o banco local diretamente.
-- Extensao Chrome e plugin Obsidian se comunicam com desktop apenas por contratos versionados em `@app/integration-contracts`.
-- Transporte do Integration Gateway: servidor HTTP local em loopback no main process, com WebSocket para eventos; clientes externos autorizados por token de pareamento. Native Messaging nao sera usado.
-- `@app/db` nao pode ser importado pela extensao Chrome nem pelo plugin Obsidian.
-- `@app/ai` nao deve ser importado por clientes externos no fluxo padrao.
-- `@app/conversion` nao deve ser importado por clientes externos quando incluir adaptadores dependentes de Node ou filesystem.
-- Codigo do main process do Electron nao deve ser importado pela extensao Chrome nem pelo plugin Obsidian.
+- The product is local-first, TypeScript-first, contract-driven, and auditable.
+- PostgreSQL is the canonical local store. Files, paths, projections, search
+  indexes, embeddings, and AGE graphs are not canonical identity.
+- Stable IDs and source evidence must survive derivation, synchronization, and
+  reprocessing.
+- Privileged work stays outside untrusted UI surfaces. Validate data with Zod
+  whenever it crosses a process, worker, integration, or sidecar boundary.
+- Never expose or log secrets. Remote processing must respect the selected
+  privacy policy and record its effective model, parameters, token usage, and
+  estimated cost when available.
 
-Fluxo padrao:
+## 5. Change discipline
 
-```txt
-Renderer
-  -> Preload API
-  -> IPC
-  -> Main handler
-  -> Zod parse
-  -> Application service
-  -> Repository / Worker / Filesystem
-  -> PostgreSQL (sidecar)
-```
+- Prefer the smallest complete solution. Do not add speculative features or
+  refactor unrelated code.
+- Do not revert changes made by the user or other agents unless explicitly
+  asked.
+- Add or update regression coverage for changed behavior when practical.
+- For UI changes, cover the relevant empty, loading, error, and success states.
+- Do not create a final commit unless the user explicitly requests one.
 
-## Postgres Sidecar
+## 6. Completion report
 
-- O main process e o unico responsavel pelo ciclo de vida do sidecar: initdb no primeiro uso, start, shutdown limpo e recuperacao apos crash.
-- Data dir fica no diretorio de dados do usuario da aplicacao (`userData`), nunca dentro do bundle.
-- Conexao por loopback: usar `MEMORA_DATABASE_PORT` quando configurada; se a
-  porta estiver invalida ou indisponivel, registrar warning e fazer fallback
-  para porta dinamica livre. A senha deve ser gerada por instalacao, ou usar
-  unix socket quando disponivel.
-- A senha local do banco deve ser guardada via armazenamento seguro do SO (Electron `safeStorage`), nunca em texto puro.
-- Detectar e tratar `postmaster.pid` obsoleto e processos orfaos ao iniciar.
-- Nao usar `trust` em TCP.
-- Upgrade de major do Postgres e mudanca planejada com migracao de dados explicita; nao trocar o major sem plano.
-- Workers podem abrir conexoes proprias com o banco; o pool deve ter limites configurados.
-- AGE e o mecanismo de consulta/projecao do grafo. Se uma consulta AGE falhar ou o runtime nao estiver disponivel, o pipeline e a busca continuam sem o score de grafo; nao implementar fallback por CTE relacional.
+Report:
 
-## Monorepo e Pacotes
-
-Estrutura esperada:
-
-- `apps/desktop`
-- `apps/chrome-extension`
-- `apps/obsidian-plugin`
-- `packages/domain`
-- `packages/integration-contracts`
-- `packages/i18n`
-- `packages/db`
-- `packages/ai`
-- `packages/conversion`
-
-Regras:
-
-- `@app/domain` deve conter tipos canonicos e schemas Zod sem dependencias pesadas.
-- `@app/integration-contracts` deve conter apenas contratos externos, eventos, erros e schemas seguros.
-- `@app/db` deve conter schema, migrations, repositorios e queries.
-- `@app/ai` deve conter adaptadores, registry, capabilities, perfis e execucao de tarefas de IA.
-- `@app/conversion` deve conter adaptadores de conversao e normalizacao de Markdown.
-- `@app/i18n` deve conter locales, helpers e tipos compartilhados.
-
-## i18n
-
-- Nunca escreva textos de produto diretamente no codigo.
-- Todo texto visivel ao usuario deve passar por i18n:
-  - labels;
-  - botoes;
-  - menus;
-  - placeholders;
-  - tooltips;
-  - mensagens de erro;
-  - mensagens de sucesso;
-  - status de jobs;
-  - comandos;
-  - estados vazios;
-  - dialogs;
-  - notificacoes.
-- Idioma padrao: `en`.
-- Idiomas iniciais: `en`, `pt-BR`, `it`, `fr`, `es`.
-- Mensagens do backend que aparecem na UI tambem devem usar i18n.
-- Strings tecnicas podem ficar no codigo quando forem ids, enums, nomes de tabelas, rotas internas, event names ou constantes de protocolo.
-
-## UX e Frontend
-
-- Construa a experiencia real, nao landing pages.
-- Use componentes `shadcn/ui` e Tailwind CSS 4.
-- Use icons em botoes de ferramentas quando fizer sentido.
-- Use controles adequados:
-  - toggles/checkboxes para booleanos;
-  - selects/menus para opcoes;
-  - tabs para views;
-  - inputs/sliders/steppers para numeros;
-  - tooltips para icones nao obvios.
-- Nao coloque texto de produto hardcoded dentro de componentes.
-- Evite UI dominada por uma unica familia de cor.
-- Garanta que texto nao sobreponha outros elementos.
-- Garanta dimensoes estaveis para toolbars, listas, grids, boards, botoes e tiles.
-- Prefira telas densas, claras e utilitarias. Este e um app de conhecimento, nao uma pagina de marketing.
-- Teste componentes importantes em estados vazios, carregando, erro e sucesso.
-
-## Banco, Drizzle e Migrations
-
-- Toda mudanca de schema Drizzle exige nova migration via:
-
-```bash
-npm run db:generate
-```
-
-- Apos gerar migration, aplique pelo fluxo padrao do projeto.
-- O projeto deve manter um seed/baseline versionado para inicializar bancos
-  Postgres totalmente vazios. O baseline nao substitui migrations em bancos
-  existentes.
-- Em banco totalmente vazio, o bootstrap deve aplicar o seed/baseline,
-  registrar em `drizzle.__drizzle_migrations` as migrations cobertas por esse
-  baseline e entao executar migrations pendentes normalmente.
-- Em banco existente, com historico Drizzle ou dados da aplicacao, o bootstrap
-  nao deve aplicar seed/baseline; deve rodar apenas migrations pendentes.
-- Seeds/baselines devem ser mantidos atualizados junto com migrations: qualquer
-  migration estrutural coberta pelo baseline exige atualizar o baseline e a
-  lista/historico de migrations cobertas. Inicialmente o seed pode conter apenas
-  estrutura, sem dados de dominio.
-- Ao criar nova migration Drizzle, atualize na mesma mudanca:
-  - `packages/db/seed/baseline.sql`, mantendo o SQL das migrations cobertas pelo
-    baseline na mesma ordem do journal Drizzle;
-  - `packages/db/seed/manifest.json`, incluindo a nova migration em
-    `includedMigrations` na mesma ordem de `packages/db/drizzle/meta/_journal.json`.
-- Nenhuma migration nova deve ser considerada pronta enquanto
-  `npm run db:seed:verify` nao passar.
-- Nao considere a task concluida apenas porque `db:migrate` terminou sem erro.
-- Verifique explicitamente no banco real:
-  - historico em `drizzle.__drizzle_migrations`;
-  - estrutura alterada em `information_schema` ou consulta direta na tabela afetada;
-  - indices, constraints, tipos e extensoes quando aplicavel.
-  - sincronizacao entre baseline seed e migrations com `npm run db:seed:verify`.
-- Inclua no resumo final quais verificacoes foram feitas.
-- Use repositorios do `@app/db`; nao espalhe SQL ad hoc pela UI ou services.
-- Dimensoes de embeddings diferentes devem ficar em tabelas/indices separados; indices pgvector exigem dimensao fixa por coluna.
-- Busca textual usa configuracao `simple` com `unaccent` e `pg_trgm`; o idioma do documento deve ser registrado para evolucao futura.
-- AGE nao e fonte canonica no MVP. Tabelas relacionais continuam canonicas.
-
-## Modelos, Perfis e Parametros de IA
-
-- Modelos de embedding devem ser cadastrados e exibidos separadamente de modelos generativos. A separacao e orientada por `capabilities`; nunca atribua automaticamente `embedding`, geracao e reranking a todo modelo remoto.
-- O catalogo local deve manter modelos de embedding instalaveis pela mesma UI de download dos demais modelos, com revision imutavel, tamanho e SHA-256 auditados antes de entrar no catalogo.
-- Um modelo local so pode declarar `embedding` quando o adapter do runtime realmente gerar vetores. Nao exponha uma capability apenas porque o modelo de origem a documenta.
-- Parametros padrao pertencem a configuracao de cada modelo remoto ou local. Overrides pertencem ao vinculo entre perfil e tarefa em `ai_profile_tasks.parameters`.
-- A precedencia obrigatoria dos parametros em execucao e: defaults internos seguros, depois defaults do modelo, depois overrides do perfil/tarefa.
-- Etapas generativas executadas por perfil usam `maxTokens: 16384` como default
-  interno seguro. Um valor definido nos defaults do modelo ou nos overrides do
-  perfil/tarefa deve prevalecer sobre esse default.
-- Parametros conhecidos devem usar nomes canonicos internos (`contextWindow`, `temperature`, `maxTokens`, `reasoningLevel`, `reasoningMaxTokens`, `topP`, `topK`, `presencePenalty`, `dimensions`, `seed`). Cada adapter converte esses nomes para o contrato do provedor/runtime e nao deve enviar parametros internos desconhecidos diretamente.
-- Cada adapter/modelo deve declarar suas capacidades de parametros, incluindo os niveis de reasoning aceitos e o suporte opcional a `reasoningMaxTokens`. A UI deve exibir somente controles declarados, e a execucao deve normalizar os parametros efetivos contra a mesma descricao antes de chamar o motor.
-- Cada tipo de tarefa de IA deve poder escolher seu proprio perfil ativo pela configuracao persistida de roteamento. Um unico perfil global nao deve ser imposto a todas as tarefas.
-- Cada perfil referencia exatamente um modelo remoto ou local. A escolha de qual modelo executa cada tarefa ocorre indiretamente pelo roteamento de `ai_task_profile_routes`, que seleciona um perfil compativel para a tarefa.
-- Overrides de parametros continuam independentes por perfil/tarefa em `ai_profile_tasks`, respeitando as capabilities do unico modelo do perfil e o `privacyMode`.
-- Cada perfil deve guardar o idioma das respostas. O valor padrao e `ui`, que herda o idioma atual da interface; idiomas fixos iniciais sao `en`, `pt-BR`, `it`, `fr` e `es`.
-- A instrucao de idioma se aplica a tarefas generativas e deve preservar chaves/schemas de saida estruturada. Embeddings nao recebem instrucao de idioma.
-- Toda execucao deve registrar em `ai_task_runs` os parametros efetivos depois do merge, alem de perfil, modelo, provider, runtime e metadados ja exigidos.
-
-## Dados Canonicos e Identidade
-
-- Identidade canonica fica no banco.
-- Paths e nomes de arquivos nao sao identidade.
-- Use ids estaveis para:
-  - source items;
-  - documents;
-  - assets;
-  - chunks;
-  - source spans;
-  - atomic notes;
-  - jobs;
-  - sync files.
-- Evite depender de titulo, slug ou path para reconciliacao.
-- Preserve proveniencia de todo conteudo derivado.
-
-## Obsidian
-
-- O vault Obsidian e uma projecao sincronizada e editavel.
-- O banco continua sendo a fonte canonica da aplicacao.
-- Cada `.md` gerenciado deve ter frontmatter minimo com:
-  - `memora_id`;
-  - `memora_type`;
-  - `memora_source_id` quando aplicavel;
-  - `memora_document_id` quando aplicavel;
-  - `memora_managed`;
-  - `memora_sync_version`;
-  - `memora_content_hash`.
-- O plugin Obsidian pode monitorar arquivos e frontmatter, mas nao pode acessar o banco local diretamente.
-- O banco deve armazenar last modified (mtime) e hash de cada arquivo gerenciado; ao abrir a aplicacao ou reconectar o plugin, executar scan de reconciliacao procurando arquivos criados, modificados, movidos ou removidos enquanto o desktop esteve fechado.
-- Rename/move atualiza path relativo no banco sem mudar `memora_id`.
-- Delete deve seguir politica configurada.
-- Preferir tombstone antes de remocao fisica quando houver risco de perda.
-- Conflitos devem ser explicitos. Nunca sobrescreva silenciosamente.
-- Nome de arquivo deve ser humano e sem id por padrao.
-- Em colisao no mesmo diretorio, usar sufixo curto:
-  - primeira opcao: data curta, por exemplo `titulo--20260510.md`;
-  - se persistir: contador, por exemplo `titulo--20260510-02.md`;
-  - fallback: id curto, por exemplo `titulo--01JABC.md`.
-
-## Arquivos Subidos e Assets
-
-- Pasta de copias de arquivos subidos e opcional.
-- Se configurada, salve copias por hash, nao por nome original.
-- Estrutura recomendada:
-
-```txt
-UploadedFiles/
-  sha256/
-    ab/
-      cd/
-        abcdef1234567890.pdf
-```
-
-- Registrar no banco:
-  - `original_file_name`;
-  - `sha256`;
-  - `mime_type`;
-  - `size_bytes`;
-  - `storage_base`;
-  - `relative_path`;
-  - `role`.
-- Deduplicar arquivos identicos quando possivel.
-- Rejeitar path traversal.
-- Se arquivo externo sumir, detectar inconsistencia e oferecer reparo, recopia ou desvinculo.
-
-## IA, Modelos e Capabilities
-
-- A aplicacao deve chamar IA por `AiModelAdapter`, nao por SDK especifico espalhado pelo codigo.
-- Provedores de IA no MVP: Generic OpenAI-compatible e Google (Gemini). OpenAI, Anthropic e OpenRouter entram em fase seguinte como novos adaptadores.
-- Cada adaptador deve encapsular carregamento, execucao, cancelamento, progresso, streaming e erros.
-- Cada modelo deve declarar capabilities.
-- O pipeline escolhe o perfil ativo por tarefa e usa o unico modelo vinculado ao perfil.
-- Perfis de IA agrupam um modelo, privacidade, idioma e overrides por tarefa.
-- Apenas um perfil deve estar ativo como padrao por vez.
-- Cada artefato gerado deve registrar:
-  - perfil;
-  - tarefa;
-  - modelo;
-  - provedor;
-  - runtime;
-  - parametros;
-  - versao de prompt quando aplicavel.
-- Registrar tokens de entrada/saida, duracao e custo estimado em `ai_task_runs`.
-- Notas atomicas geradas automaticamente nascem com status `pending_review` e passam por fila de revisao.
-- A geracao do grafo de conhecimento usa as notas atomicas da fonte como entrada;
-  o documento completo nao deve ser enviado novamente para essa etapa. Chunks e
-  SourceSpans permanecem como proveniencia herdada das notas.
-- Credenciais nunca ficam em texto puro no banco local.
-- Segredos devem usar Electron `safeStorage` (armazenamento seguro do SO; no Linux depende de keyring disponivel).
-- Logs nunca devem incluir chaves ou tokens. Payloads completos de modelos locais
-  podem ser registrados somente quando o debug estiver habilitado na dashboard,
-  para diagnostico explicito, com aviso de privacidade no evento; essa opcao
-  deve permanecer desabilitada por padrao e nao se aplica a respostas de
-  provedores remotos.
-
-Capabilities iniciais incluem:
-
-- `text-generation`
-- `structured-output`
-- `json-schema-output`
-- `summarization`
-- `entity-extraction`
-- `claim-extraction`
-- `atomic-note-generation`
-- `embedding`
-- `reranking`
-- `image-understanding`
-- `document-ocr`
-- `audio-transcription`
-- `video-understanding`
-- `streaming`
-- `cancellation`
-- `batching`
-- `offline`
-- `local-files`
-- `requires-api-key`
-- `requires-network`
-- `supports-progress-events`
-
-## `node-llama-cpp`
-
-- Deve rodar apenas em workers controlados pelo main process.
-- Nunca importar `node-llama-cpp` no renderer.
-- Nunca importar `node-llama-cpp` na extensao Chrome ou plugin Obsidian.
-- O MVP prepara a interface local GGUF, mas nao exige multimodal local em producao.
-- Trate multimodal local como validacao futura, salvo pedido explicito.
-
-## Sidecar Python e Docling
-
-- Python existe apenas como runtime isolado do sidecar Docling; nao importar bibliotecas Python no renderer, extensao Chrome ou plugin Obsidian.
-- O main process ou um `worker_thread` controlado por ele deve gerenciar start, execucao, cancelamento, timeout e shutdown do sidecar.
-- Nao depender do Python instalado no sistema e nao executar `pip install` em runtime.
-- Empacotar runtime, wheels e modelos por plataforma com versoes, origem, licencas, checksums e SBOM registrados.
-- A comunicacao com o sidecar deve usar stdin/stdout com mensagens JSON versionadas e validadas por Zod; nao expor porta de rede para conversao.
-- O sidecar deve operar offline por padrao. Downloads de runtime ou modelos exigem fluxo explicito, verificacao de hash e consentimento do usuario.
-- Arquivos temporarios devem ficar em diretorio controlado pela aplicacao e ser removidos apos sucesso, falha ou cancelamento.
-- O JSON estruturado produzido pelo Docling deve ser preservado como asset derivado quando houver informacao de layout/proveniencia util.
-
-## Conversion Pipeline
-
-- Paginas web: Defuddle como caminho primario.
-- PDF, DOCX, PPTX, XLSX, EPUB, formatos OpenDocument e imagens que exijam parsing/OCR: Docling como caminho primario.
-- TXT, Markdown, CSV, JSON, XML, RSS, Atom e IPYNB: conversores TypeScript nativos como caminho primario.
-- ZIP e outros containers: extracao segura e roteamento de cada entrada para o conversor apropriado.
-- YouTube: `youtubei.js` para metadados e transcricao quando disponivel.
-- Todo conteudo inserido deve virar Markdown normalizado.
-- O dialeto normalizado aceita GFM, HTML inline para tabelas que Markdown nao representa sem perda, LaTeX para formulas e referencias relativas para assets.
-- Preservar assets originais quando aplicavel.
-- Registrar:
-  - engine;
-  - engine version;
-  - perfil/opcoes de conversao;
-  - warnings;
-  - hashes;
-  - qualidade/confianca quando fornecida;
-  - metadados extraidos.
-- Resultados de documentos complexos devem preservar blocos, ordem de leitura, pagina, bounding box, charspan e mapeamento para offsets no Markdown quando disponiveis.
-- Docling pode aplicar OCR basico automatico em paginas sem texto pesquisavel. OCR customizado, VLM avancado, manuscritos e casos de baixa confianca nao devem bloquear o MVP; marcar `requires_ocr` ou registrar pendencia recuperavel.
-
-## Jobs e Workers
-
-- Processamento pesado deve rodar em `worker_threads`.
-- Jobs devem ser persistidos no banco.
-- A ingestao deve ser orquestrada como maquina de estados persistida (`ingestion_runs`), com etapas e checkpoints; uma execucao interrompida por erro, cancelamento ou reinicio deve poder continuar da etapa em que parou.
-- Jobs devem suportar:
-  - status;
-  - progresso;
-  - erro;
-  - cancelamento quando possivel;
-  - retry simples quando fizer sentido.
-- UI deve acompanhar jobs sem bloquear.
-- Workers nao devem acessar UI.
-- Payloads de workers devem ser validados por Zod quando cruzarem fronteiras.
-
-## Extensao Chrome
-
-- Deve ser app isolado em `apps/chrome-extension`.
-- MVP deve capturar paginas web reais, selecoes e metadados.
-- MVP deve capturar paginas YouTube reais com URL, metadados e transcricao quando disponivel.
-- Usar contratos de `@app/integration-contracts`.
-- Nao acessar banco, repositorios ou codigo do main process.
-- Defuddle pode rodar na pagina quando apropriado, mas resultado deve entrar pelo Integration Gateway.
-- UI da extensao tambem segue i18n.
-
-## Plugin Obsidian
-
-- Deve ser app isolado em `apps/obsidian-plugin`.
-- MVP deve implementar sync bidirecional essencial:
-  - create;
-  - update;
-  - rename/move;
-  - delete.
-- Deve monitorar frontmatter de arquivos gerenciados.
-- Deve comunicar eventos ao desktop por contrato versionado.
-- Nao deve acessar o banco local diretamente.
-- Deve respeitar convencoes visuais e de lifecycle do Obsidian.
-
-## Testes
-
-- Criar testes de regressao sempre que pertinente.
-- Preferir testes de:
-  - dominio;
-  - contratos Zod;
-  - repositorios;
-  - services;
-  - workers;
-  - adapters;
-  - composicao de componentes;
-  - fluxos sem GUI manual.
-- Testes baseados em GUI so quando a natureza do problema exigir.
-- Para extensao e plugin, testar contratos e adaptadores com mocks quando possivel.
-- Para migrations, sempre testar aplicacao e verificacao real no banco.
-
-## Seguranca e Privacidade
-
-- Nao logar segredos.
-- O debug habilitado na dashboard pode registrar o output completo de modelos
-  locais para diagnostico. Trate esses eventos como dados sensiveis, nao os
-  compartilhe sem revisao e desabilite o debug apos o diagnostico.
-- Nao armazenar API keys em texto puro no banco.
-- Validar todos os payloads externos.
-- Integration Gateway deve autenticar/autorizar clientes.
-- Rejeitar paths inseguros.
-- Respeitar politicas de privacidade local/remoto do perfil ativo.
-- Nao enviar conteudo a provedor remoto se o perfil exigir modo offline.
-- Chamadas remotas de IA devem ser transparentes em custo: registrar tokens/custo por execucao e respeitar configuracao de confirmacao para importacoes em lote.
-
-## Entrega de Cada Etapa
-
-Ao terminar uma etapa, informe:
-
-- arquivos criados/alterados;
-- comandos executados;
-- testes executados;
-- migrations geradas;
-- verificacao pos-migration feita;
-- pendencias;
-- se esta pronto para commit.
-
-Nao faca commit automaticamente.
+- changed files or areas;
+- checks and tests actually run;
+- migrations generated, applied, and verified, when applicable;
+- rule or stack specification changes;
+- remaining risks or blockers.

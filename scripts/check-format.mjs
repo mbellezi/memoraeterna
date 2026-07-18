@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
 const [{ stdout: changedStdout }, { stdout: untrackedStdout }] = await Promise.all([
-  execFileAsync("git", ["diff", "--name-only", "HEAD", "--"], { cwd: root }),
+  execFileAsync("git", ["diff", "--name-only", "--diff-filter=ACMR", "HEAD", "--"], { cwd: root }),
   execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: root })
 ]);
 
