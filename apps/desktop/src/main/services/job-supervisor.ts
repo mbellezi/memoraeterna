@@ -651,7 +651,7 @@ export function participatesInAtomicNoteMatching(effectiveStages: readonly unkno
 
 function normalizeWorkerError(error: unknown): string {
   if (!(error instanceof Error)) return "worker_failed";
-  return error.message.slice(0, 500);
+  return error.message;
 }
 
 function readStringArray(value: unknown): string[] {

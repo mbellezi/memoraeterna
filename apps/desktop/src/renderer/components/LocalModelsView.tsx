@@ -20,8 +20,12 @@ import { AiParameterFields } from "./AiParameterFields";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import type { ToastTone } from "./ui/toast";
 
-export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
+export function LocalModelsView({ t, onToast = () => undefined }: {
+  t: (key: MessageKey) => string;
+  onToast?: (message: MessageKey, tone: ToastTone) => void;
+}) {
   const [models, setModels] = useState<LocalModelView[]>([]);
   const [runtime, setRuntime] = useState<"all" | "gguf" | "mlx">("all");
   const [family, setFamily] = useState("all");
@@ -30,8 +34,8 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   const [acceptedLicenses, setAcceptedLicenses] = useState<Set<string>>(new Set());
   const [repositoryToken, setRepositoryToken] = useState("");
   const [hasToken, setHasToken] = useState(false);
-  const [status, setStatus] = useState<MessageKey>("shell.states.ready");
   const [testOutput, setTestOutput] = useState("");
+  const [testStatus, setTestStatus] = useState<MessageKey | null>(null);
   const [testedModelId, setTestedModelId] = useState<string | null>(null);
   const [testingModelId, setTestingModelId] = useState<string | null>(null);
 
@@ -45,7 +49,11 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   }
 
   useEffect(() => {
-    void load().catch(() => setStatus("errors.common.unknown"));
+    let active = true;
+    void load().catch(() => {
+      if (active) onToast("errors.common.unknown", "error");
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -65,16 +73,12 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
   );
 
   async function run(action: () => Promise<unknown>, success: MessageKey = "shell.states.saved") {
-    setStatus("shell.states.loading");
     try {
       await action();
-      setStatus(success);
       await load();
+      onToast(success, "success");
     } catch (error) {
-      const key = error instanceof Error && error.message.startsWith("errors.")
-        ? error.message.split(":")[0]
-        : "errors.common.unknown";
-      setStatus(key as MessageKey);
+      onToast(readErrorMessageKey(error), "error");
     }
   }
 
@@ -84,17 +88,19 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
       await window.app.localModels.setRepositoryToken(repositoryToken);
       setRepositoryToken("");
       setHasToken(true);
-    });
+    }, "shell.toasts.settingsSaved");
   }
 
   async function testModel(model: LocalModelView) {
     setTestedModelId(model.id);
     setTestingModelId(model.id);
     setTestOutput("");
+    setTestStatus("shell.states.loading");
     try {
-      await run(async () => {
-        setTestOutput(await window.app.localModels.test(model.catalogId));
-      }, "localModels.testSucceeded");
+      setTestOutput(await window.app.localModels.test(model.catalogId));
+      setTestStatus("localModels.testSucceeded");
+    } catch (error) {
+      setTestStatus(readErrorMessageKey(error));
     } finally {
       setTestingModelId(null);
     }
@@ -175,7 +181,10 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
               </summary>
               <div className="grid gap-3 border-t border-slate-200 p-4 dark:border-slate-800">
                 <p className="text-xs text-slate-600 dark:text-slate-300">{model.capabilities.join(" · ")}</p>
-                <LocalModelDefaults model={model} t={t} onSave={(parameters) => run(() => window.app.localModels.setDefaults(model.id, parameters))} />
+                <LocalModelDefaults model={model} t={t} onSave={(parameters) => run(
+                  () => window.app.localModels.setDefaults(model.id, parameters),
+                  "shell.toasts.settingsSaved"
+                )} />
                 {model.requiresLicenseAcceptance && !model.licenseAccepted ? (
                   <label className="flex items-start gap-2 text-sm">
                     <input
@@ -212,7 +221,7 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
                 {testedModelId === model.id ? (
                   <div className="grid gap-2" role="status">
                     {testOutput ? <pre className="max-h-40 overflow-auto rounded-md bg-slate-950 p-3 text-xs text-slate-100">{testOutput}</pre> : null}
-                    <p className="text-sm text-slate-600 dark:text-slate-300">{t(status)}</p>
+                    {testStatus ? <p className="text-sm text-slate-600 dark:text-slate-300">{t(testStatus)}</p> : null}
                   </div>
                 ) : null}
               </div>
@@ -221,7 +230,6 @@ export function LocalModelsView({ t }: { t: (key: MessageKey) => string }) {
         })}
       </div>
       {filtered.length === 0 ? <p className="text-sm text-slate-600 dark:text-slate-300">{t("localModels.empty")}</p> : null}
-      <p className="text-sm text-slate-600 dark:text-slate-300" role="status">{t(status)}</p>
     </section>
   );
 }
@@ -304,4 +312,10 @@ function formatEta(seconds: number | null, t: (key: MessageKey) => string): stri
 
 function translateError(error: string, t: (key: MessageKey) => string): string {
   return error.startsWith("errors.") ? t(error.split(":")[0] as MessageKey) : t("errors.common.unknown");
+}
+
+function readErrorMessageKey(error: unknown): MessageKey {
+  return error instanceof Error && error.message.startsWith("errors.")
+    ? error.message.split(":")[0] as MessageKey
+    : "errors.common.unknown";
 }

@@ -5,7 +5,7 @@ import {
   type AiReasoningLevel
 } from "@app/domain";
 
-import { openAiSupportedReasoningLevels } from "./reasoning.js";
+import { openAiCodexSupportedReasoningLevels, openAiSupportedReasoningLevels } from "./reasoning.js";
 
 const contextWindow = { min: 128, max: 2_000_000, step: 1 } as const;
 const maxTokens = { min: 1, max: 1_000_000, step: 1 } as const;
@@ -60,12 +60,10 @@ export function googleParameterCapabilities(input: {
 export function openAiCodexParameterCapabilities(input: {
   modelId: string;
   capabilities: readonly AiCapability[];
-  maxOutputTokens?: number;
 }): AiModelParameterCapabilities {
-  const levels = openAiSupportedReasoningLevels(input.modelId);
+  const levels = openAiCodexSupportedReasoningLevels(input.modelId);
   return parseCapabilities({
     ...(hasGeneration(input.capabilities) ? {
-      maxTokens: { min: 1, ...(input.maxOutputTokens !== undefined ? { max: input.maxOutputTokens } : {}), step: 1 },
       ...(levels ? { reasoning: { levels: [...levels] } } : {})
     } : {}),
     ...(input.capabilities.includes("embedding") ? { dimensions } : {})

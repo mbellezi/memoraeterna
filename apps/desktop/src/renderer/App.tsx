@@ -32,7 +32,11 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
-import { SettingsView } from "./components/SettingsView";
+import {
+  SettingsScopeMenu,
+  SettingsView,
+  type SettingsScope
+} from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
 import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
@@ -106,6 +110,7 @@ export function App({
   initialSystemInfo = null
 }: AppProps) {
   const [activeView, setActiveView] = useState<ViewId>("library");
+  const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
   );
@@ -311,6 +316,12 @@ export function App({
     updateAppSettings({ themeMode: appSettings.themeMode === "dark" ? "light" : "dark" });
   }
 
+  function selectSettingsScope(scope: SettingsScope) {
+    scrollPositions.current.settings = 0;
+    if (scrollContainerRef.current) scrollContainerRef.current.scrollTop = 0;
+    setActiveSettingsScope(scope);
+  }
+
   async function setDebugMode(debugMode: boolean) {
     const previous = appSettings;
     setAppSettings((current) => appSettingsSchema.parse({
@@ -455,7 +466,8 @@ export function App({
             )}
           </button>
         </div>
-        <nav className="grid gap-1 p-3">
+        <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
+          <div className="grid gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.id;
@@ -472,6 +484,7 @@ export function App({
                 )}
                 onClick={() => {
                   if (item.id === "library") setLibraryTarget(null);
+                  if (item.id === "settings") selectSettingsScope("overview");
                   setActiveView(item.id);
                 }}
               >
@@ -480,6 +493,14 @@ export function App({
               </button>
             );
           })}
+          </div>
+          {activeView === "settings" ? (
+            <SettingsScopeMenu
+              activeScope={activeSettingsScope}
+              t={t}
+              onScopeChange={selectSettingsScope}
+            />
+          ) : null}
         </nav>
       </aside>
 
@@ -496,6 +517,7 @@ export function App({
         >
           {activeView === "settings" ? (
             <SettingsView
+              activeScope={activeSettingsScope}
               appSettings={appSettings}
               settings={settings}
               isSaving={isSaving}
@@ -503,6 +525,8 @@ export function App({
               onAppSettingsChange={updateAppSettings}
               onChange={updateStorageSettings}
               onSelectObsidianVault={selectObsidianVault}
+              onScopeChange={selectSettingsScope}
+              onToast={(message, tone) => pushToast(t(message), tone)}
             />
           ) : activeView === "import" ? (
             <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />

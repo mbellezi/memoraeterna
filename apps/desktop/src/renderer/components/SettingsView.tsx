@@ -39,8 +39,10 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
+import type { ToastTone } from "./ui/toast";
 
 interface SettingsViewProps {
+  activeScope: SettingsScope;
   appSettings: AppSettings;
   settings: StorageSettings;
   isSaving: boolean;
@@ -48,9 +50,11 @@ interface SettingsViewProps {
   onAppSettingsChange: (settings: AppSettingsUpdate) => void;
   onChange: (settings: StorageSettings) => void;
   onSelectObsidianVault: () => Promise<void>;
+  onScopeChange: (scope: SettingsScope) => void;
+  onToast: (message: MessageKey, tone: ToastTone) => void;
 }
 
-type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "connections" | "data";
+export type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "connections" | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -145,16 +149,69 @@ const scopes: Array<{
   }
 ];
 
+export function SettingsScopeMenu({ activeScope, t, onScopeChange }: {
+  activeScope: SettingsScope;
+  t: SettingsViewProps["t"];
+  onScopeChange: (scope: SettingsScope) => void;
+}) {
+  return (
+    <div className="mt-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+      <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400">
+        {t("settings.dashboard.navigation.label")}
+      </p>
+      <div className="grid gap-1" role="tablist" aria-label={t("settings.dashboard.navigation.label")}>
+        {scopes.map((scope) => {
+          const Icon = scope.icon;
+          const isActive = activeScope === scope.id;
+          return (
+            <button
+              key={scope.id}
+              id={`settings-tab-${scope.id}`}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`settings-panel-${scope.id}`}
+              className={cn(
+                "group flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                isActive
+                  ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
+                  : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
+              )}
+              onClick={() => onScopeChange(scope.id)}
+            >
+              <span className={cn(
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
+                isActive ? "bg-white/10 dark:bg-slate-950/10" : scope.iconStyle
+              )}>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold">{t(scope.label)}</span>
+                <span className={cn(
+                  "mt-0.5 block truncate text-[0.69rem]",
+                  isActive ? "text-slate-300 dark:text-slate-600" : "text-slate-500"
+                )}>{t(scope.description)}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsView({
+  activeScope,
   appSettings,
   settings,
   isSaving,
   t,
   onAppSettingsChange,
   onChange,
-  onSelectObsidianVault
+  onSelectObsidianVault,
+  onScopeChange,
+  onToast
 }: SettingsViewProps) {
-  const [activeScope, setActiveScope] = useState<SettingsScope>("overview");
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
@@ -190,10 +247,6 @@ export function SettingsView({
             </div>
             <h2 className="text-2xl font-semibold tracking-tight">{t("settings.dashboard.title")}</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t("settings.dashboard.description")}</p>
-            <p className="mt-3 flex items-center gap-2 text-xs font-medium text-emerald-300">
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              {t("settings.dashboard.autoSaveHint")}
-            </p>
           </div>
           <div className="grid min-w-[16rem] gap-2 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
             <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
@@ -216,64 +269,19 @@ export function SettingsView({
         </div>
       </header>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <aside className="overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-slate-950 lg:sticky lg:top-0">
-          <p className="px-3 pb-2 pt-3 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400">
-            {t("settings.dashboard.navigation.label")}
-          </p>
-          <nav className="grid gap-1" role="tablist" aria-label={t("settings.dashboard.navigation.label")}>
-            {scopes.map((scope) => {
-              const Icon = scope.icon;
-              const isActive = activeScope === scope.id;
-              return (
-                <button
-                  key={scope.id}
-                  id={`settings-tab-${scope.id}`}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  aria-controls={`settings-panel-${scope.id}`}
-                  className={cn(
-                    "group flex min-h-14 items-center gap-3 rounded-xl px-3 py-2 text-left transition",
-                    isActive
-                      ? "bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-950"
-                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
-                  )}
-                  onClick={() => setActiveScope(scope.id)}
-                >
-                  <span className={cn(
-                    "grid h-9 w-9 shrink-0 place-items-center rounded-lg transition",
-                    isActive ? "bg-white/10 dark:bg-slate-950/10" : scope.iconStyle
-                  )}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">{t(scope.label)}</span>
-                    <span className={cn(
-                      "mt-0.5 block truncate text-[0.69rem]",
-                      isActive ? "text-slate-300 dark:text-slate-600" : "text-slate-500"
-                    )}>{t(scope.description)}</span>
-                  </span>
-                  <ChevronRight className={cn("h-4 w-4 shrink-0 transition", isActive ? "opacity-100" : "opacity-0 group-hover:opacity-50")} aria-hidden="true" />
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
-
-        <div
-          key={activeScope}
-          id={`settings-panel-${activeScope}`}
-          role="tabpanel"
-          aria-labelledby={`settings-tab-${activeScope}`}
-          className="motion-fade-in-up min-w-0"
-        >
+      <div
+        key={activeScope}
+        id={`settings-panel-${activeScope}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeScope}`}
+        className="motion-fade-in-up min-w-0"
+      >
           {activeScope === "overview" ? (
             <OverviewPanel
               appSettings={appSettings}
               settings={settings}
               t={t}
-              onNavigate={setActiveScope}
+              onNavigate={onScopeChange}
             />
           ) : null}
 
@@ -294,14 +302,14 @@ export function SettingsView({
           {activeScope === "intelligence" ? (
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <AiSettingsView t={t} interfaceLanguage={appSettings.language} />
+              <AiSettingsView t={t} interfaceLanguage={appSettings.language} onToast={onToast} />
             </div>
           ) : null}
 
           {activeScope === "models" ? (
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <LocalModelsView t={t} />
+              <LocalModelsView t={t} onToast={onToast} />
             </div>
           ) : null}
 
@@ -337,7 +345,6 @@ export function SettingsView({
               />
             </div>
           ) : null}
-        </div>
       </div>
     </section>
   );
@@ -535,10 +542,6 @@ function MatchingCard({ appSettings, t, onChange }: {
           <span>{t("settings.matching.moreRelations")}</span>
           <span>{t("settings.matching.fewerRelations")}</span>
         </div>
-      </div>
-      <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
-        <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-        {t("settings.matching.savedAutomatically")}
       </div>
       <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
         <div className="grid gap-1">

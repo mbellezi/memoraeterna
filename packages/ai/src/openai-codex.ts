@@ -3,6 +3,7 @@ import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
 import { readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
+import { providerHttpError } from "./provider-error.js";
 import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
 
 export interface OpenAiCodexAdapterOptions {
@@ -54,7 +55,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
       method: "GET",
       ...(signal ? { signal } : {})
     });
-    if (!response.ok) throw new Error(`AI model discovery failed (${response.status}).`);
+    if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
     const payload = await response.json() as {
       models?: Array<{ slug?: string; display_name?: string; visibility?: string; context_window?: number; max_output_tokens?: number }>;
     };
@@ -69,8 +70,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         modelId: model.slug,
         parameterCapabilities: openAiCodexParameterCapabilities({
           modelId: model.slug,
-          capabilities: this.options.capabilities,
-          ...(model.max_output_tokens !== undefined ? { maxOutputTokens: model.max_output_tokens } : {})
+          capabilities: this.options.capabilities
         }),
         ...(model.display_name ? { displayName: model.display_name } : {}),
         limits
@@ -111,7 +111,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         ...codexGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
       })
     });
-    if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
+    if (!response.ok) throw await providerHttpError(response);
 
     let output = "";
     let inputTokens: number | undefined;
@@ -173,7 +173,6 @@ function codexGenerationParameters(parameters: Record<string, unknown>, modelId:
     : undefined;
   const reasoningEffort = openAiReasoningEffort(reasoningLevel);
   return {
-    ...(typeof parameters.maxTokens === "number" ? { max_output_tokens: parameters.maxTokens } : {}),
     ...(reasoningEffort ? {
       reasoning: reasoningEffort === "none"
         ? { effort: reasoningEffort }

@@ -27,7 +27,9 @@ describe("reasoning parameter compatibility", () => {
     expect(effectiveReasoningLevel("openai-compatible", "openai/o3", "minimal")).toBe("low");
     expect(effectiveReasoningLevel("openai-codex", "gpt-5.6", "max")).toBe("max");
     expect(effectiveReasoningLevel("openai-codex", "gpt-5.6-sol", "minimal")).toBe("low");
+    expect(effectiveReasoningLevel("openai-codex", "gpt-5.6-terra", "off")).toBe("low");
     expect(effectiveReasoningLevel("openai-codex", "gpt-5.6-terra", "max")).toBe("max");
+    expect(effectiveReasoningLevel("openai-codex", "gpt-5.6-luna", "off")).toBe("low");
     expect(effectiveReasoningLevel("openai-codex", "gpt-5.6-luna", "max")).toBe("max");
     expect(effectiveReasoningLevel("openai-codex", "gpt-5.5", "max")).toBe("xhigh");
   });

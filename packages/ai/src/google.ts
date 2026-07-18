@@ -3,6 +3,7 @@ import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
 import { googleParameterCapabilities } from "./parameter-capabilities.js";
 import { parseResponse, readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
+import { providerHttpError } from "./provider-error.js";
 import { googleThinkingConfig } from "./reasoning.js";
 
 export interface GoogleGeminiAdapterOptions {
@@ -45,7 +46,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
 
   public async testConnection(signal?: AbortSignal): Promise<void> {
     const response = await this.fetchImplementation(`${this.baseUrl}/models?key=${encodeURIComponent(this.options.apiKey)}`, signal ? { signal } : {});
-    if (!response.ok) throw new Error(`AI provider connection failed (${response.status}).`);
+    if (!response.ok) throw await providerHttpError(response, "AI provider connection failed");
   }
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {

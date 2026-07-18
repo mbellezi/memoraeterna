@@ -27,7 +27,9 @@ export function effectiveReasoningLevel(
   const usesOpenAiReasoning = providerId === "openai-codex"
     || (providerId === "openai-compatible" && isOpenAiReasoningModel(modelId));
   if (!usesOpenAiReasoning) return level;
-  const supported = openAiSupportedReasoningLevels(modelId);
+  const supported = providerId === "openai-codex"
+    ? openAiCodexSupportedReasoningLevels(modelId)
+    : openAiSupportedReasoningLevels(modelId);
   return supported ? closestSupportedReasoningLevel(level, supported) : level;
 }
 
@@ -135,6 +137,16 @@ export function openAiSupportedReasoningLevels(modelId: string): readonly AiReas
     return ["minimal", "low", "medium", "high"];
   }
   return ["low", "medium", "high"];
+}
+
+export function openAiCodexSupportedReasoningLevels(modelId: string): readonly AiReasoningLevel[] | undefined {
+  const id = unqualifiedModelId(modelId);
+  if (/^gpt-5\.6-(?:sol|terra|luna)$/.test(id)) {
+    // Codex exposes Ultra for Sol and Terra as max reasoning plus subagent orchestration.
+    // This adapter performs a single inference request, so Max is its highest wire-level effort.
+    return ["low", "medium", "high", "xhigh", "max"];
+  }
+  return openAiSupportedReasoningLevels(modelId);
 }
 
 function closestSupportedReasoningLevel(

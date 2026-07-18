@@ -2,15 +2,17 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { createTranslator } from "@app/i18n";
 
-import { AiSettingsView, resolveProviderTestStatus } from "./AiSettingsView";
+import { AiSettingsView, ProfileEditor, resolveProviderTestStatus } from "./AiSettingsView";
 import { AiParameterFields } from "./AiParameterFields";
 import { FileImportProgressCard, ImportView } from "./ImportView";
-import { JobsView } from "./JobsView";
+import { AttemptDetailsDialog, JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
 import {
   appSettingsSchema,
   defaultAppSettings,
   defaultStorageSettings,
+  aiProfileSchema,
+  aiProviderConfigSchema,
   jobRecordSchema,
   librarySourceSchema,
   localModelViewSchema,
@@ -25,7 +27,7 @@ import {
   recommendedParametersForCurrentMode
 } from "./LocalModelsView";
 import { BackupView } from "./BackupView";
-import { SettingsView } from "./SettingsView";
+import { SettingsScopeMenu, SettingsView } from "./SettingsView";
 
 const t = createTranslator("en");
 
@@ -63,12 +65,73 @@ describe("phase 2 renderer views", () => {
     expect(aiSettings).toContain("AI providers and profiles");
     expect(aiSettings).toContain("Load models");
     expect(aiSettings).toContain("ChatGPT subscription (OAuth)");
+    expect(aiSettings).not.toContain(">Ready<");
   });
 
   it("reports remote model connection test results", async () => {
     await expect(resolveProviderTestStatus(async () => true)).resolves.toBe("settings.ai.connectionOk");
     await expect(resolveProviderTestStatus(async () => { throw new Error("errors.ai.oauthRefreshFailed"); })).resolves.toBe("errors.ai.oauthRefreshFailed");
     await expect(resolveProviderTestStatus(async () => { throw new Error("request failed"); })).resolves.toBe("errors.ai.connectionFailed");
+  });
+
+  it("renders all profile task parameters with one compact save action", () => {
+    const providerId = "00000000-0000-4000-8000-000000000011";
+    const profileId = "00000000-0000-4000-8000-000000000012";
+    const capabilities = [
+      "text-generation",
+      "structured-output",
+      "summarization",
+      "knowledge-graph-generation",
+      "atomic-note-generation",
+      "reranking"
+    ] as const;
+    const provider = aiProviderConfigSchema.parse({
+      id: providerId,
+      provider: "openai-compatible",
+      displayName: "Test model",
+      baseUrl: "https://example.com/v1",
+      modelId: "test-model",
+      capabilities,
+      defaultParameters: {},
+      parameterCapabilities: {
+        maxTokens: { min: 1, max: 32_768, step: 1 },
+        reasoning: { levels: ["off", "on"] }
+      },
+      secretConfigured: true,
+      status: "active"
+    });
+    const profile = aiProfileSchema.parse({
+      id: profileId,
+      name: "Focused",
+      description: null,
+      isDefault: false,
+      privacyMode: "allow_remote",
+      outputLanguage: "ui",
+      providerConfigId: providerId,
+      localModelId: null,
+      modelId: "test-model",
+      runtime: "remote",
+      capabilities,
+      status: "active"
+    });
+    const html = renderToString(
+      <ProfileEditor
+        profile={profile}
+        profileTasks={[]}
+        providers={[provider]}
+        localModels={[]}
+        t={t}
+        interfaceLanguage="en"
+        onSave={async () => true}
+        onRemove={() => undefined}
+      />
+    );
+
+    expect(html.match(/Save profile/g)).toHaveLength(1);
+    expect(html).not.toContain(">Save<");
+    expect(html).toContain("Summarization");
+    expect(html).toContain("Atomic note generation");
+    expect(html).toContain("md:grid-cols-[minmax(10rem,0.32fr)_minmax(0,1fr)]");
   });
 
   it("renders only the reasoning controls declared by the model", () => {
@@ -191,9 +254,10 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Reload recommended defaults");
   });
 
-  it("renders settings as scoped dashboard instead of a single configuration list", () => {
+  it("renders settings content without duplicating the scope menu", () => {
     const html = renderToString(
       <SettingsView
+        activeScope="overview"
         appSettings={appSettingsSchema.parse({
           ...defaultAppSettings,
           language: "en",
@@ -208,15 +272,27 @@ describe("phase 2 renderer views", () => {
         onAppSettingsChange={() => undefined}
         onChange={() => undefined}
         onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
       />
     );
 
     expect(html).toContain("Configure your knowledge workspace");
-    expect(html).toContain("Configuration scopes");
+    expect(html).not.toContain("Configuration scopes");
     expect(html).toContain("Appearance &amp; matching");
     expect(html).toContain("Data &amp; safety");
-    expect(html).toContain("Changes are saved automatically.");
+    expect(html).not.toContain("Changes are saved automatically.");
     expect(html).not.toContain(">Save<");
+  });
+
+  it("renders configuration scopes for the main sidebar", () => {
+    const html = renderToString(
+      <SettingsScopeMenu activeScope="intelligence" t={t} onScopeChange={() => undefined} />
+    );
+
+    expect(html).toContain("Configuration scopes");
+    expect(html).toContain("AI &amp; processing");
+    expect(html).toContain('aria-selected="true"');
   });
 
   it("groups a parent ingestion and its AI stage into one file workflow", () => {
@@ -269,6 +345,34 @@ describe("phase 2 renderer views", () => {
       modelId: "gpt-5.4",
       reasoningLevel: "xhigh"
     });
+  });
+
+  it("renders the complete failure reason in the selected attempt dialog", () => {
+    const job = jobRecordSchema.parse({
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "summarization",
+      status: "failed",
+      progress: 0.02,
+      attempts: 1,
+      maxAttempts: 1,
+      canCancel: false,
+      canRetry: true,
+      error: "AI provider request failed (400).\n{\"error\":{\"message\":\"max_output_tokens must be less than or equal to 8192\",\"param\":\"max_output_tokens\"}}",
+      errorHistory: [],
+      createdAt: "2026-07-18T20:12:52.308Z",
+      updatedAt: "2026-07-18T20:12:52.560Z",
+      aiExecution: {
+        provider: "openai-codex",
+        modelId: "gpt-5.6-terra",
+        reasoningLevel: "low"
+      }
+    });
+
+    const html = renderToString(<AttemptDetailsDialog job={job} t={t} onClose={() => undefined} />);
+    expect(html).toContain("Attempt details");
+    expect(html).toContain("Full failure reason");
+    expect(html).toContain("max_output_tokens must be less than or equal to 8192");
+    expect(html).toContain("gpt-5.6-terra");
   });
 
   it("renders the phase 3 library and atomic note review empty states", () => {
@@ -355,8 +459,10 @@ describe("phase 2 renderer views", () => {
   });
 
   it("renders phase 5 local model and backup controls", () => {
-    expect(renderToString(<LocalModelsView t={t} />)).toContain("Local models");
-    expect(renderToString(<LocalModelsView t={t} />)).toContain("Import GGUF");
+    const localModels = renderToString(<LocalModelsView t={t} />);
+    expect(localModels).toContain("Local models");
+    expect(localModels).toContain("Import GGUF");
+    expect(localModels).not.toContain(">Ready<");
     expect(renderToString(<BackupView t={t} />)).toContain("Create backup");
   });
 });

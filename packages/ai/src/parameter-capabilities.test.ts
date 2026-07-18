@@ -4,6 +4,7 @@ import { normalizeAiModelParameters } from "@app/domain";
 import {
   googleParameterCapabilities,
   localParameterCapabilities,
+  openAiCodexParameterCapabilities,
   openAiCompatibleParameterCapabilities
 } from "./parameter-capabilities.js";
 
@@ -58,6 +59,23 @@ describe("model parameter capabilities", () => {
       baseUrl: "https://api.openai.com/v1",
       capabilities: generationCapabilities
     })).not.toHaveProperty("topK");
+  });
+
+  it("exposes only wire-level OAuth controls for GPT-5.6 Terra and Luna", () => {
+    for (const modelId of ["gpt-5.6-terra", "gpt-5.6-luna"]) {
+      const capabilities = openAiCodexParameterCapabilities({
+        modelId,
+        capabilities: generationCapabilities
+      });
+
+      expect(capabilities).toEqual({
+        reasoning: { levels: ["low", "medium", "high", "xhigh", "max"] }
+      });
+      expect(normalizeAiModelParameters({
+        maxTokens: 16_384,
+        reasoningLevel: "off"
+      }, capabilities)).toEqual({ reasoningLevel: "low" });
+    }
   });
 
   it("offers a thinking budget only for Qwen 3.5 served by DashScope", () => {

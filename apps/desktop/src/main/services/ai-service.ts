@@ -409,7 +409,7 @@ export class AiService {
         quantization: selection.quantization,
         parameters,
         durationMs: Date.now() - started, status: "failed",
-        error: redactSensitiveText(error).slice(0, 500), sourceItemIds
+        error: redactSensitiveText(error), sourceItemIds
       });
       if (taskType === "atomic-note-generation") {
         logStructuredError(this.options.logger, "atomic_note_ai_task_failed", {
@@ -514,7 +514,7 @@ export class AiService {
         inputHash: sha256(input),
         durationMs: Date.now() - started,
         status: "failed",
-        error: redactSensitiveText(error).slice(0, 500)
+        error: redactSensitiveText(error)
       });
       throw error;
     }

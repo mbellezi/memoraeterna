@@ -6,6 +6,7 @@ import {
   isQwen35Model,
   openAiCompatibleParameterCapabilities
 } from "./parameter-capabilities.js";
+import { providerHttpError } from "./provider-error.js";
 import { effectiveReasoningLevel, isOpenAiReasoningModel, openAiReasoningEffort } from "./reasoning.js";
 
 export interface OpenAiCompatibleAdapterOptions {
@@ -46,12 +47,12 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
 
   public async testConnection(signal?: AbortSignal): Promise<void> {
     const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
-    if (!response.ok) throw new Error(`AI provider connection failed (${response.status}).`);
+    if (!response.ok) throw await providerHttpError(response, "AI provider connection failed");
   }
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
     const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
-    if (!response.ok) throw new Error(`AI model discovery failed (${response.status}).`);
+    if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
     const payload = await response.json() as { data?: Array<{ id?: string }> };
     return (payload.data ?? []).flatMap((model) => model.id ? [{
       ...this.describe(),
@@ -223,7 +224,7 @@ export function readText(input: unknown): string {
 }
 
 export async function parseResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
+  if (!response.ok) throw await providerHttpError(response);
   return await response.json() as T;
 }
 
@@ -232,7 +233,7 @@ export async function readServerSentEvents(
   onData: (data: string) => void,
   maximumBytes?: number
 ): Promise<void> {
-  if (!response.ok) throw new Error(`AI provider request failed (${response.status}).`);
+  if (!response.ok) throw await providerHttpError(response);
   if (!response.body) throw new Error("AI provider streaming response did not contain a body.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

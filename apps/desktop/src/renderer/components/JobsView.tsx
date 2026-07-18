@@ -5,6 +5,7 @@ import {
   BrainCircuit,
   Check,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Circle,
   Clock3,
@@ -52,6 +53,7 @@ export function JobsView({ t }: { t: Translator }) {
   const [loadError, setLoadError] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [selectedAttempt, setSelectedAttempt] = useState<JobRecord | null>(null);
 
   async function load() {
     try {
@@ -120,7 +122,7 @@ export function JobsView({ t }: { t: Translator }) {
     });
   }
 
-  return <section className="mx-auto grid w-full max-w-[1480px] gap-5">
+  return <><section className="mx-auto grid w-full max-w-[1480px] gap-5">
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="pointer-events-none absolute -right-20 -top-24 h-56 w-56 rounded-full bg-cyan-400/10 blur-3xl" />
       <div className="relative flex flex-wrap items-start justify-between gap-4">
@@ -206,11 +208,14 @@ export function JobsView({ t }: { t: Translator }) {
             t={t}
             onToggle={() => toggleExpanded(card.id)}
             onAction={(action) => void runAction(card.mainJob.id, action)}
+            onSelectAttempt={setSelectedAttempt}
           />)}
         </section>)}
       </div>
     )}
-  </section>;
+  </section>
+  {selectedAttempt ? <AttemptDetailsDialog job={selectedAttempt} t={t} onClose={() => setSelectedAttempt(null)} /> : null}
+  </>;
 }
 
 function JobCard({
@@ -219,7 +224,8 @@ function JobCard({
   busy,
   t,
   onToggle,
-  onAction
+  onAction,
+  onSelectAttempt
 }: {
   card: JobCardModel;
   expanded: boolean;
@@ -227,6 +233,7 @@ function JobCard({
   t: Translator;
   onToggle: () => void;
   onAction: (action: "retry" | "cancel") => void;
+  onSelectAttempt: (job: JobRecord) => void;
 }) {
   const status = statusStyle(card.status);
   const StatusIcon = status.icon;
@@ -334,7 +341,7 @@ function JobCard({
         <div>
           <h4 className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{t("jobs.activity.title")}</h4>
           <ol className="grid gap-2">
-            {activity.map((job) => <ActivityRow key={job.id} job={job} t={t} />)}
+            {activity.map((job) => <ActivityRow key={job.id} job={job} t={t} onSelect={() => onSelectAttempt(job)} />)}
           </ol>
         </div>
         <div>
@@ -410,32 +417,108 @@ function groupCardsByBatch(cards: JobCardModel[], batches: ProcessingBatch[]) {
   return [...groups.values()];
 }
 
-function ActivityRow({ job, t }: { job: JobRecord; t: Translator }) {
+function ActivityRow({ job, t, onSelect }: { job: JobRecord; t: Translator; onSelect: () => void }) {
   const style = statusStyle(job.status);
   const Icon = style.icon;
-  return <li className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/70">
-    <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", style.badge)}>
-      <Icon className={cn("h-3.5 w-3.5", job.status === "running" && "animate-spin")} aria-hidden="true" />
-    </span>
-    <div className="min-w-0 flex-1">
-      <div className="flex items-start justify-between gap-3">
-        <span className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{t(jobTypeMessageKey(job.type))}</span>
-        <div className="flex max-w-[65%] flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-[10px] text-slate-400">
-          <span className="shrink-0">{formatDate(job.createdAt, t.locale)}</span>
-          {job.aiExecution ? <>
-            <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
-            <span className="truncate font-medium text-slate-600 dark:text-slate-300">{job.aiExecution.modelId}</span>
-            <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
-            <span className="shrink-0">{t("jobs.activity.reasoning", { values: { level: job.aiExecution.reasoningLevel ? t(`settings.ai.parameters.reasoning.${job.aiExecution.reasoningLevel}` as MessageKey) : t("jobs.activity.modelDefault") } })}</span>
-          </> : null}
+  const typeLabel = t(jobTypeMessageKey(job.type));
+  return <li>
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left transition hover:border-cyan-300 hover:bg-cyan-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-cyan-800 dark:hover:bg-cyan-950/30"
+      onClick={onSelect}
+      aria-label={t("jobs.attemptDetails.open", { values: { type: typeLabel } })}
+    >
+      <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", style.badge)}>
+        <Icon className={cn("h-3.5 w-3.5", job.status === "running" && "animate-spin")} aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <span className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{typeLabel}</span>
+          <div className="flex max-w-[65%] flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-[10px] text-slate-400">
+            <span className="shrink-0">{formatDate(job.createdAt, t.locale)}</span>
+            {job.aiExecution ? <>
+              <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
+              <span className="truncate font-medium text-slate-600 dark:text-slate-300">{job.aiExecution.modelId}</span>
+              <span className="h-1 w-1 shrink-0 rounded-full bg-slate-300 dark:bg-slate-600" />
+              <span className="shrink-0">{t("jobs.activity.reasoning", { values: { level: job.aiExecution.reasoningLevel ? t(`settings.ai.parameters.reasoning.${job.aiExecution.reasoningLevel}` as MessageKey) : t("jobs.activity.modelDefault") } })}</span>
+            </> : null}
+          </div>
+        </div>
+        <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <div className={cn("h-full rounded-full", job.status === "failed" ? "bg-rose-500" : "bg-cyan-500")} style={{ width: `${Math.round(job.progress * 100)}%` }} />
         </div>
       </div>
-      <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div className={cn("h-full rounded-full", job.status === "failed" ? "bg-rose-500" : "bg-cyan-500")} style={{ width: `${Math.round(job.progress * 100)}%` }} />
+      <span className="w-8 text-right text-[10px] font-semibold text-slate-500">{Math.round(job.progress * 100)}%</span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+    </button>
+  </li>;
+}
+
+export function AttemptDetailsDialog({ job, t, onClose }: { job: JobRecord; t: Translator; onClose: () => void }) {
+  const style = statusStyle(job.status);
+  const StatusIcon = style.icon;
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  return <div
+    className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4 backdrop-blur-sm"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="attempt-details-title"
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}
+  >
+    <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+      <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 id="attempt-details-title" className="text-lg font-semibold text-slate-950 dark:text-white">{t("jobs.attemptDetails.title")}</h2>
+            <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold", style.badge)}>
+              <StatusIcon className={cn("h-3.5 w-3.5", job.status === "running" && "animate-spin")} aria-hidden="true" />
+              {t(`jobs.status.${job.status}` as MessageKey)}
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{t(jobTypeMessageKey(job.type))}</p>
+        </div>
+        <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-white" onClick={onClose} title={t("shell.actions.close")}>
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </header>
+
+      <div className="grid gap-5 overflow-y-auto p-5">
+        <dl className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60 sm:grid-cols-2">
+          <AttemptMetadata label={t("jobs.attemptDetails.attempt")} value={String(job.attempts)} />
+          <AttemptMetadata label={t("jobs.attemptDetails.startedAt")} value={formatDate(job.createdAt, t.locale)} />
+          <AttemptMetadata label={t("jobs.attemptDetails.jobId")} value={job.id} monospace />
+          {job.aiExecution ? <>
+            <AttemptMetadata label={t("jobs.attemptDetails.provider")} value={job.aiExecution.provider} />
+            <AttemptMetadata label={t("jobs.attemptDetails.model")} value={job.aiExecution.modelId} />
+          </> : null}
+        </dl>
+
+        <section>
+          <h3 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{t("jobs.attemptDetails.failureReason")}</h3>
+          <pre className={cn(
+            "mt-2 max-h-[50vh] overflow-auto whitespace-pre-wrap break-words rounded-xl border p-4 font-mono text-xs leading-5",
+            job.error
+              ? "border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100"
+              : "border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+          )}>{job.error ?? t("jobs.attemptDetails.noFailureReason")}</pre>
+        </section>
       </div>
     </div>
-    <span className="w-8 text-right text-[10px] font-semibold text-slate-500">{Math.round(job.progress * 100)}%</span>
-  </li>;
+  </div>;
+}
+
+function AttemptMetadata({ label, value, monospace = false }: { label: string; value: string; monospace?: boolean }) {
+  return <div className="min-w-0">
+    <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</dt>
+    <dd className={cn("mt-1 break-all text-slate-900 dark:text-slate-100", monospace && "font-mono text-xs")}>{value}</dd>
+  </div>;
 }
 
 function StatTile({ icon: Icon, label, value, tone }: {
@@ -581,5 +664,6 @@ function jobErrorLabel(t: Translator, error: string): string {
   if (error.includes("knowledge_graph_unknown_evidence_alias")) return t("jobs.errors.unknownEvidence");
   if (error.includes("knowledge_graph_output_invalid")) return t("jobs.errors.invalidModelOutput");
   const messageKey = error.match(/^errors\.[A-Za-z0-9.]+/)?.[0];
-  return messageKey ? t(messageKey as MessageKey) : t("errors.common.unknown");
+  if (messageKey) return t(messageKey as MessageKey);
+  return error.split(/\r?\n/, 1)[0]?.trim() || t("errors.common.unknown");
 }
