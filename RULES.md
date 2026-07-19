@@ -83,20 +83,19 @@ data behavior, security or privacy policy, workflow semantic, or stack decision.
 
 ## 6. Multi-agent Git workflow
 
-### 6.1 Task isolation
+### 6.1 Checkout and branch coordination
 
-- Every task that may modify tracked files must use a dedicated Git worktree
-  and a dedicated branch named `codex/<task-slug>`.
-- One worktree and branch belong to exactly one active task. Never run two
-  code-changing agents in the same worktree or on the same branch.
-- Before the first edit, record the task's base branch and verify the current
-  worktree and branch.
-- If the task is running in the shared Local checkout, or if the checkout
-  contains unrelated user or agent changes, do not edit, switch branches,
-  stage, commit, stash, or move those changes. Ask the user to hand the task
-  off to a dedicated worktree.
-- A task may run in Local only when the user explicitly requests it and the
-  existing checkout state can be preserved safely.
+- Use the existing Local checkout. Do not create or use Git worktrees for task
+  isolation or integration.
+- Before the first edit, record the current branch and repository status. When
+  a task needs its own branch, name it `codex/<task-slug>` and create or switch
+  to it only when the checkout state can be preserved safely.
+- Only one code-changing task may own the checkout at a time. Other agents may
+  inspect or review concurrently, but they must not edit tracked files, switch
+  branches, stage, commit, or integrate while another task owns the checkout.
+- Preserve unrelated user or agent changes. Do not switch branches, stage,
+  commit, stash, move, or overwrite those changes; continue only when the
+  requested edit can be isolated safely in the current checkout.
 - Keep each task scoped to its assigned files or subsystem. Shared files such
   as lockfiles, migrations, central registries, generated files, and global
   configuration must be coordinated explicitly when multiple tasks are active.
@@ -129,21 +128,21 @@ When the user issues `FINALIZAR TAREFA`, perform the following sequence:
    of both changes. Never resolve conflicts by blindly choosing `ours`,
    `theirs`, or an entire side of a file.
 7. Run the affected checks again after conflict resolution.
-8. Integrate the task into the base branch only from a clean Local checkout or
-   through a designated integration worktree.
+8. From a clean checkout, switch to the base branch and integrate the task
+   according to the repository's merge policy.
 9. Report the task commit, integration result, checks run, and any remaining
    risk.
 
 - Integrations into the same base branch must be serialized. Only one task may
   update the base branch at a time.
-- If the base checkout contains unrelated uncommitted changes, do not modify
-  it. Preserve the task branch and ask the user to clean the checkout or use a
-  designated integration worktree.
+- If the checkout contains unrelated uncommitted changes, do not switch
+  branches or integrate. Preserve the task branch and ask the user to resolve
+  the checkout state.
 - If a conflict represents competing product behavior, schema intent,
   migration order, security policy, or another semantic decision, stop and ask
   the user instead of guessing.
-- Do not push, force-push, open a pull request, delete a worktree, or delete a
-  branch unless the user explicitly authorizes that action.
+- Do not push, force-push, open a pull request, or delete a branch unless the
+  user explicitly authorizes that action.
 
 ## 7. Completion report
 
