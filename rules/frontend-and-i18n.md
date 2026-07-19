@@ -9,6 +9,11 @@ locales.
 - Use React 19, Tailwind CSS 4, vendored shadcn/ui components, and Lucide icons.
 - Prefer dense, clear, utility-oriented layouts with stable dimensions for
   toolbars, lists, trees, grids, buttons, and tiles.
+- Keep the desktop shell constrained to the viewport. The sidebar navigation
+  and active workspace scroll independently without scroll chaining.
+- Library hierarchy navigation participates in browser history so system or
+  mouse back controls traverse source levels, and each opened level starts at
+  the top of the workspace.
 - Use the correct control for the data: toggles/checkboxes for booleans,
   select/menu for choices, tabs for views, and inputs/sliders/steppers for
   numeric values.

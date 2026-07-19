@@ -42,5 +42,8 @@ describe("App", () => {
     expect(html).toContain("Library");
     expect(html).toContain("Review notes");
     expect(html).toContain("Settings");
+    expect(html).toContain("h-screen overflow-hidden");
+    expect(html).toContain("overflow-y-auto overscroll-contain");
+    expect(html).toContain("overflow-auto overscroll-contain");
   });
 });

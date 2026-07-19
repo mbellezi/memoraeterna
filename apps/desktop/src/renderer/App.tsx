@@ -146,6 +146,11 @@ export function App({
     if (container) container.scrollTop = scrollPositions.current[activeView] ?? 0;
   }, [activeView]);
 
+  function scrollActiveViewToTop() {
+    scrollPositions.current[activeView] = 0;
+    scrollContainerRef.current?.scrollTo({ top: 0 });
+  }
+
   async function loadAppData() {
     const [loadedAppSettings, loadedSettings, loadedSystemInfo] = await Promise.all([
       window.app.settings.getApp(),
@@ -442,11 +447,11 @@ export function App({
   return (
     <div
       className={cn(
-        "flex min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50",
+        "flex h-screen overflow-hidden bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50",
         isDarkMode && "dark"
       )}
     >
-      <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
           <Database className="h-6 w-6 text-cyan-700 dark:text-cyan-300" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-base font-semibold tracking-normal">{t("app.title")}</span>
@@ -466,7 +471,7 @@ export function App({
             )}
           </button>
         </div>
-        <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-3">
+        <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3">
           <div className="grid gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -504,13 +509,13 @@ export function App({
         </nav>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
+      <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
           <h1 className="text-xl font-semibold text-slate-950 dark:text-slate-50">{t(pageTitle)}</h1>
         </header>
         <div
           ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-auto p-6"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain p-6"
           onScroll={(event) => {
             scrollPositions.current[activeView] = event.currentTarget.scrollTop;
           }}
@@ -555,6 +560,7 @@ export function App({
             <LibraryView
               t={t}
               externalTarget={libraryTarget}
+              onNavigate={scrollActiveViewToTop}
               onExitToSearch={() => {
                 setLibraryTarget(null);
                 setActiveView("search");

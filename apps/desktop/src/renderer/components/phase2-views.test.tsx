@@ -19,7 +19,14 @@ import {
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchView } from "./SearchView";
-import { breadcrumbChain, childrenOf, LibraryView, orderHierarchically } from "./LibraryView";
+import {
+  breadcrumbChain,
+  childrenOf,
+  createLibraryHistoryState,
+  LibraryView,
+  libraryHistoryEntryFromState,
+  orderHierarchically
+} from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
 import {
   LocalModelDefaults,
@@ -524,6 +531,25 @@ describe("phase 2 renderer views", () => {
     expect(childrenOf(sources, sectionId)).toEqual([]);
     expect(breadcrumbChain(sources, sectionId).map((item) => item.title)).toEqual(["Book", "Chapter", "Section"]);
     expect(breadcrumbChain(sources, rootId).map((item) => item.title)).toEqual(["Book"]);
+  });
+
+  it("restores library hierarchy levels from browser history state", () => {
+    const rootId = "00000000-0000-4000-8000-000000000001";
+    const childId = "00000000-0000-4000-8000-000000000002";
+
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState({
+      view: "library",
+      path: [rootId, childId],
+      fromSearch: false
+    }))).toEqual({ view: "library", path: [rootId, childId], fromSearch: false });
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "search" })))
+      .toEqual({ view: "search" });
+    expect(libraryHistoryEntryFromState({ memoraEternaLibrary: {
+      version: 1,
+      view: "library",
+      path: [rootId, 2],
+      fromSearch: false
+    } })).toBeNull();
   });
 
   it("renders phase 5 local model and backup controls", () => {

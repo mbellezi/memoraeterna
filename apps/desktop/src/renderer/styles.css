@@ -15,7 +15,13 @@
 body {
   margin: 0;
   min-width: 960px;
+  height: 100vh;
+  overflow: hidden;
   background: #020617;
+}
+
+#root {
+  height: 100%;
 }
 
 button,

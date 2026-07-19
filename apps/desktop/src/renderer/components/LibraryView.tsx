@@ -36,6 +36,29 @@ export interface LibraryExternalTarget {
   token: number;
 }
 
+export type LibraryHistoryEntry =
+  | { view: "library"; path: string[]; fromSearch: boolean }
+  | { view: "search" };
+
+const libraryHistoryKey = "memoraEternaLibrary";
+
+export function createLibraryHistoryState(entry: LibraryHistoryEntry): Record<string, unknown> {
+  return { [libraryHistoryKey]: { version: 1, ...entry } };
+}
+
+export function libraryHistoryEntryFromState(state: unknown): LibraryHistoryEntry | null {
+  if (!state || typeof state !== "object") return null;
+  const candidate = (state as Record<string, unknown>)[libraryHistoryKey];
+  if (!candidate || typeof candidate !== "object") return null;
+  const entry = candidate as Record<string, unknown>;
+  if (entry.version !== 1) return null;
+  if (entry.view === "search") return { view: "search" };
+  if (entry.view !== "library" || !Array.isArray(entry.path)
+    || !entry.path.every((id) => typeof id === "string")
+    || typeof entry.fromSearch !== "boolean") return null;
+  return { view: "library", path: entry.path, fromSearch: entry.fromSearch };
+}
+
 const typeIcons: Record<SourceItemType, typeof FileText> = {
   PersonalNote: StickyNote,
   DailyNote: CalendarDays,
@@ -77,9 +100,10 @@ export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translat
   );
 }
 
-export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
+export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSearch }: {
   t: Translator;
   externalTarget?: LibraryExternalTarget | null;
+  onNavigate?: () => void;
   onExitToSearch?: () => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
@@ -92,6 +116,12 @@ export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const consumedTargetToken = useRef<number | null>(null);
+  const historyInitialized = useRef(false);
+  const onNavigateRef = useRef(onNavigate);
+  const onExitToSearchRef = useRef(onExitToSearch);
+
+  onNavigateRef.current = onNavigate;
+  onExitToSearchRef.current = onExitToSearch;
 
   const currentId = stack.at(-1) ?? null;
 
@@ -110,11 +140,42 @@ export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
   useEffect(() => { void load(); }, []);
 
   useEffect(() => {
+    if (!historyInitialized.current) {
+      replaceLibraryHistory(externalTarget
+        ? { view: "search" }
+        : { view: "library", path: [], fromSearch: false });
+      historyInitialized.current = true;
+    }
+
+    function handlePopState(event: PopStateEvent) {
+      const entry = libraryHistoryEntryFromState(event.state);
+      onNavigateRef.current?.();
+
+      if (entry?.view === "search") {
+        setStack([]);
+        setFromSearch(false);
+        onExitToSearchRef.current?.();
+        return;
+      }
+
+      const path = entry?.view === "library" ? entry.path : [];
+      const cameFromSearch = entry?.view === "library" ? entry.fromSearch : false;
+      setStack(path);
+      setFromSearch(cameFromSearch);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
     consumedTargetToken.current = externalTarget.token;
+    pushLibraryHistory({ view: "library", path: [externalTarget.sourceItemId], fromSearch: true });
+    onNavigate?.();
     setFromSearch(true);
     setStack([externalTarget.sourceItemId]);
-  }, [externalTarget]);
+  }, [externalTarget, onNavigate]);
 
   useEffect(() => {
     if (!currentId) {
@@ -136,22 +197,42 @@ export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
   }, [currentId]);
 
   function openSource(id: string) {
-    setStack((current) => [...current, id]);
+    navigateToPath([...stack, id], fromSearch);
   }
 
   function goBack() {
-    if (stack.length === 1 && fromSearch && onExitToSearch) {
-      setStack([]);
-      setFromSearch(false);
-      onExitToSearch();
+    if (libraryHistoryEntryFromState(window.history.state)?.view === "library") {
+      window.history.back();
       return;
     }
-    setStack((current) => current.slice(0, -1));
-    if (stack.length <= 1) setFromSearch(false);
+
+    const nextPath = stack.slice(0, -1);
+    setStack(nextPath);
+    if (nextPath.length === 0) setFromSearch(false);
+    onNavigate?.();
   }
 
   function openPath(ids: string[]) {
-    setStack(ids);
+    navigateToPath(ids, false);
+  }
+
+  function navigateToPath(path: string[], cameFromSearch: boolean) {
+    pushLibraryHistory({ view: "library", path, fromSearch: cameFromSearch });
+    setStack(path);
+    setFromSearch(cameFromSearch);
+    onNavigate?.();
+  }
+
+  function goToLibrary() {
+    navigateToPath([], false);
+  }
+
+  function returnToLibraryAfterDeletion() {
+    replaceLibraryHistory({ view: "library", path: [], fromSearch: false });
+    setStack([]);
+    setFromSearch(false);
+    onNavigate?.();
+    void load();
   }
 
   if (currentId) {
@@ -165,10 +246,10 @@ export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
           t={t}
           onOpen={openSource}
           onOpenPath={openPath}
-          onGoToLibrary={() => { setStack([]); setFromSearch(false); }}
+          onGoToLibrary={goToLibrary}
           onBack={goBack}
           onProcess={() => setProcessingIds([currentId])}
-          onDeleted={() => { setStack([]); setFromSearch(false); void load(); }}
+          onDeleted={returnToLibraryAfterDeletion}
         />
       ) : error ? (
         <div className="grid gap-4">
@@ -230,7 +311,7 @@ export function LibraryView({ t, externalTarget = null, onExitToSearch }: {
                 if (checked) next.add(source.id); else next.delete(source.id);
                 return next;
               })}
-              onOpen={() => { setFromSearch(false); setStack([source.id]); }}
+              onOpen={() => navigateToPath([source.id], false)}
               onProcess={() => setProcessingIds([source.id])}
             />
           </li>)}
@@ -419,11 +500,6 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
 }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
-  const rootRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    rootRef.current?.scrollIntoView({ block: "start" });
-  }, [detail.id]);
 
   const chain = breadcrumbChain(allSources, detail.id);
   const subitems = childrenOf(allSources, detail.id);
@@ -448,7 +524,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
     }
   }
 
-  return <section ref={rootRef} className="motion-fade-in-up grid gap-4">
+  return <section className="motion-fade-in-up grid gap-4">
     <nav className="flex flex-wrap items-center gap-1 text-sm text-slate-500" aria-label={t("shell.navigation.library")}>
       <button type="button" className="rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100" onClick={onGoToLibrary}>
         {t("shell.navigation.library")}
@@ -673,6 +749,19 @@ function StatTile({ icon: Icon, label, value, tone }: {
 
 function StateCard({ children }: { children: string }) {
   return <p className="rounded-md border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{children}</p>;
+}
+
+function currentHistoryState(): Record<string, unknown> {
+  const state = window.history.state;
+  return state && typeof state === "object" ? state as Record<string, unknown> : {};
+}
+
+function pushLibraryHistory(entry: LibraryHistoryEntry) {
+  window.history.pushState({ ...currentHistoryState(), ...createLibraryHistoryState(entry) }, "");
+}
+
+function replaceLibraryHistory(entry: LibraryHistoryEntry) {
+  window.history.replaceState({ ...currentHistoryState(), ...createLibraryHistoryState(entry) }, "");
 }
 
 function processingKey(status: string): MessageKey {
