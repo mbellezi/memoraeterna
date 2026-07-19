@@ -59,6 +59,16 @@ export function libraryHistoryEntryFromState(state: unknown): LibraryHistoryEntr
   return { view: "library", path: entry.path, fromSearch: entry.fromSearch };
 }
 
+export function navigateLibraryHistoryFromMouseButton(
+  button: number,
+  history: Pick<History, "back" | "forward">
+): boolean {
+  if (button === 3) history.back();
+  else if (button === 4) history.forward();
+  else return false;
+  return true;
+}
+
 const typeIcons: Record<SourceItemType, typeof FileText> = {
   PersonalNote: StickyNote,
   DailyNote: CalendarDays,
@@ -166,6 +176,16 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
 
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
+    function handleMouseHistory(event: MouseEvent) {
+      if (!navigateLibraryHistoryFromMouseButton(event.button, window.history)) return;
+      event.preventDefault();
+    }
+
+    window.addEventListener("mouseup", handleMouseHistory);
+    return () => window.removeEventListener("mouseup", handleMouseHistory);
   }, []);
 
   useEffect(() => {

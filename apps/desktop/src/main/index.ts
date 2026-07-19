@@ -18,6 +18,13 @@ import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
+import {
+  navigationDirectionFromAppCommand,
+  navigationDirectionFromInput,
+  navigationDirectionFromSwipe,
+  type WindowNavigationDirection
+} from "./window-navigation.js";
+import { ipcChannels } from "../shared/ipc.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -73,6 +80,25 @@ function createMainWindow(): BrowserWindow {
     if (event.level === "warning" || event.level === "error") {
       console.warn(`Renderer console: ${event.message}`);
     }
+  });
+
+  function sendNavigation(direction: WindowNavigationDirection | null) {
+    if (direction) mainWindow.webContents.send(ipcChannels.windowNavigation, direction);
+  }
+
+  mainWindow.on("app-command", (_event, command) => {
+    sendNavigation(navigationDirectionFromAppCommand(command));
+  });
+
+  mainWindow.on("swipe", (_event, direction) => {
+    sendNavigation(navigationDirectionFromSwipe(direction));
+  });
+
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const direction = navigationDirectionFromInput(input);
+    if (!direction) return;
+    event.preventDefault();
+    sendNavigation(direction);
   });
 
   if (process.env.ELECTRON_RENDERER_URL) {

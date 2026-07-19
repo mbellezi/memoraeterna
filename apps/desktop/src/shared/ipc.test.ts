@@ -7,7 +7,8 @@ import {
   defaultStorageSettings,
   storageSettingsSchema,
   storageSettingsUpdateSchema,
-  systemInfoSchema
+  systemInfoSchema,
+  windowNavigationDirectionSchema
 } from "./ipc";
 import {
   manualIngestionInputSchema,
@@ -61,6 +62,12 @@ describe("desktop IPC contracts", () => {
     ).toMatchObject({
       platform: "darwin"
     });
+  });
+
+  it("validates native window navigation events", () => {
+    expect(windowNavigationDirectionSchema.parse("back")).toBe("back");
+    expect(windowNavigationDirectionSchema.parse("forward")).toBe("forward");
+    expect(() => windowNavigationDirectionSchema.parse("up")).toThrow();
   });
 
   it("accepts partial settings updates and rejects unknown fields", () => {

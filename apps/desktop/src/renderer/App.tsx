@@ -124,6 +124,7 @@ export function App({
   const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
   const [libraryTarget, setLibraryTarget] = useState<LibraryExternalTarget | null>(null);
   const libraryTargetToken = useRef(0);
+  const activeViewRef = useRef(activeView);
   const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastPersistedAppSettings = useRef<AppSettings | null>(initialAppSettings ?? null);
@@ -136,10 +137,18 @@ export function App({
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = appSettings.themeMode === "dark";
 
+  activeViewRef.current = activeView;
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDarkMode);
     document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
   }, [isDarkMode]);
+
+  useEffect(() => window.app.system.subscribeNavigation((direction) => {
+    if (activeViewRef.current !== "library") return;
+    if (direction === "back") window.history.back();
+    else window.history.forward();
+  }), []);
 
   useEffect(() => {
     const container = scrollContainerRef.current;

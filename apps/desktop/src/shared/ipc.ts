@@ -17,6 +17,7 @@ import {
 
 export const ipcChannels = {
   systemGetInfo: "app:system:get-info",
+  windowNavigation: "app:window:navigation",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
   appSettingsGet: "app:settings:app:get",
@@ -121,6 +122,7 @@ export const deletionPolicySchema = z.enum(["tombstone", "archive", "delete"]);
 export const themeModeSchema = z.enum(["dark", "light"]);
 export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
 export const languageCodeSchema = z.enum(appLanguageCodes);
+export const windowNavigationDirectionSchema = z.enum(["back", "forward"]);
 
 export const appSettingsSchema = z.object({
   language: languageCodeSchema,
@@ -868,6 +870,7 @@ export type IntegrationPairingInput = z.infer<typeof integrationPairingInputSche
 export type IntegrationPairingResult = z.infer<typeof integrationPairingResultSchema>;
 export type IntegrationClient = z.infer<typeof integrationClientSchema>;
 export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
+export type WindowNavigationDirection = z.infer<typeof windowNavigationDirectionSchema>;
 
 export const defaultAppSettings = {
   themeMode: "dark",
@@ -890,6 +893,7 @@ export const defaultStorageSettings = {
 export interface DesktopApi {
   system: {
     getInfo: () => Promise<SystemInfo>;
+    subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;
   };
   database: {
     getStatus: () => Promise<DatabaseStatus>;

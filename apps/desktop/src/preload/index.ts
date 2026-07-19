@@ -23,7 +23,8 @@ import type {
   SearchInput,
   StorageSettingsUpdate,
   IntegrationPairingInput,
-  LocalModelDownloadInput
+  LocalModelDownloadInput,
+  WindowNavigationDirection
 } from "../shared/ipc";
 import type { SourceItemType } from "@app/domain";
 import {
@@ -90,7 +91,8 @@ import {
   repositoryTokenInputSchema,
   obsidianSyncStatusSchema,
   similarityDebugRunSchema,
-  similarityDebugClearResultSchema
+  similarityDebugClearResultSchema,
+  windowNavigationDirectionSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
@@ -98,6 +100,14 @@ const api: DesktopApi = {
     async getInfo() {
       const result = await ipcRenderer.invoke(ipcChannels.systemGetInfo);
       return systemInfoSchema.parse(result);
+    },
+    subscribeNavigation(listener: (direction: WindowNavigationDirection) => void) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const direction = windowNavigationDirectionSchema.safeParse(payload);
+        if (direction.success) listener(direction.data);
+      };
+      ipcRenderer.on(ipcChannels.windowNavigation, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.windowNavigation, handler);
     }
   },
   database: {

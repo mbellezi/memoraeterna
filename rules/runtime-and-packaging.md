@@ -56,3 +56,15 @@ desktop packaging; signing; notarization; or distribution.
   outside the repository.
 - Current materialized distribution target is macOS arm64. Adding another
   target requires all native artifacts and equivalent smoke coverage first.
+
+## Development application testing
+
+- Repository implementation and manual UI validation must use only the DEV
+  application started with `npm run dev -w @app/desktop`.
+- Do not open an installed application, an app under `apps/desktop/release/`, a
+  packaged build, or another Electron copy during development testing. A task
+  may launch a packaged app only when the user explicitly requests package or
+  release validation, and it must not run alongside DEV.
+- Run only one Memora Eterna instance at a time. UI automation must target the
+  DEV Electron app by its repository path or `localhost` content, never by an
+  ambiguous display name that could open another copy.

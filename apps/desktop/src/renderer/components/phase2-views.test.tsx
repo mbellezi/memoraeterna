@@ -25,6 +25,7 @@ import {
   createLibraryHistoryState,
   LibraryView,
   libraryHistoryEntryFromState,
+  navigateLibraryHistoryFromMouseButton,
   orderHierarchically
 } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
@@ -550,6 +551,19 @@ describe("phase 2 renderer views", () => {
       path: [rootId, 2],
       fromSearch: false
     } })).toBeNull();
+  });
+
+  it("maps auxiliary mouse buttons to library history navigation", () => {
+    const calls: string[] = [];
+    const history = {
+      back: () => calls.push("back"),
+      forward: () => calls.push("forward")
+    };
+
+    expect(navigateLibraryHistoryFromMouseButton(3, history)).toBe(true);
+    expect(navigateLibraryHistoryFromMouseButton(4, history)).toBe(true);
+    expect(navigateLibraryHistoryFromMouseButton(1, history)).toBe(false);
+    expect(calls).toEqual(["back", "forward"]);
   });
 
   it("renders phase 5 local model and backup controls", () => {
