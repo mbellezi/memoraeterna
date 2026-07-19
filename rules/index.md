@@ -6,6 +6,7 @@ transitive references explicitly named inside a selected rule.
 
 | Request or affected area | Required rule |
 | --- | --- |
+| Project licensing, package license metadata, distribution notices, or third-party license exceptions | `rules/licensing.md` |
 | New app/package, dependency direction, IPC/preload/main boundary, service ownership, or broad refactor | `rules/architecture.md` |
 | Finding ownership, choosing files, moving folders, adding scripts, or changing repository structure | `rules/repository-map.md` |
 | Source types, descriptors, metadata, bibliography, import wizard, duplicates, containers, hierarchy, document revisions, or processing plans | `rules/source-ingestion.md` |

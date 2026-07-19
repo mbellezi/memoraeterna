@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "description": "Memora Eterna desktop application.",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {

@@ -201,6 +201,17 @@ The database stores only the token hash. Revocation blocks future handshakes.
 Obsidian reconciliation reports version/hash conflicts instead of silently
 overwriting either side.
 
+## License
+
+Memora Eterna is licensed under the GNU General Public License version 3 or
+later. See [`LICENSE`](LICENSE).
+
+The Obsidian plugin is separately dual-licensed under your choice of the MIT
+License or Apache License 2.0. Its license texts are in
+[`apps/obsidian-plugin`](apps/obsidian-plugin/). The shared i18n and integration
+contract packages are offered under the same permissive alternatives so the
+plugin and its distributed bundle can use them under compatible terms.
+
 ## Backup and desktop package
 
 Settings can create a dated backup containing a custom-format `pg_dump` and the

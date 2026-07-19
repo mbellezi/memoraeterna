@@ -2,6 +2,7 @@
   "name": "@app/obsidian-plugin",
   "version": "0.0.0",
   "private": true,
+  "license": "(MIT OR Apache-2.0)",
   "type": "module",
   "main": "./dist/main.js",
   "types": "./src/index.ts",
