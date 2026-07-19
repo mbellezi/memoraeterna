@@ -103,7 +103,7 @@ data behavior, security or privacy policy, workflow semantic, or stack decision.
 ### 6.2 Commit authorization
 
 - Do not create a commit merely because an implementation turn has ended.
-- The exact user instruction `FINALIZAR TAREFA` authorizes the agent to verify,
+- The exact user instruction `finalizar` authorizes the agent to verify,
   commit, and request or perform integration for the current task.
 - A separate explicit instruction to commit also counts as authorization, but
   applies only to the files and scope named by the user.
@@ -115,7 +115,7 @@ data behavior, security or privacy policy, workflow semantic, or stack decision.
 
 ### 6.3 Finalization and integration
 
-When the user issues `FINALIZAR TAREFA`, perform the following sequence:
+When the user issues `finalizar`, perform the following sequence:
 
 1. Confirm that the requested behavior is complete.
 2. Inspect the complete task diff and repository status.
