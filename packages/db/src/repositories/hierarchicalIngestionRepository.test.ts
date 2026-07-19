@@ -7,6 +7,15 @@ import {
 } from "./hierarchicalIngestionRepository.js";
 
 describe("hierarchical ingestion repository", () => {
+  it("refreshes the batch total after a run is deleted", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const pool = { query } as unknown as PgPool;
+
+    await createHierarchicalIngestionRepository(pool).refreshBatch("batch-1");
+
+    expect(query.mock.calls[0]?.[0]).toContain("total_items = aggregate.total");
+  });
+
   it("serializes division evidence arrays as JSON", async () => {
     const evidence = [{
       kind: "heading",

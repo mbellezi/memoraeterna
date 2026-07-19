@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canManuallyRetryJob, hasIncompleteIngestionStages } from "./job-retry.js";
+import { canDeleteCanceledJob, canManuallyRetryJob, hasIncompleteIngestionStages } from "./job-retry.js";
 
 const completedStages = {
   chunking: { status: "completed" },
@@ -44,5 +44,20 @@ describe("manual job retry", () => {
     const ingestionRun = { status: "failed" as const, stagesCheckpoint: {} };
     expect(canManuallyRetryJob({ type: "atomic-note-generation", status: "failed" }, ingestionRun)).toBe(false);
     expect(canManuallyRetryJob({ type: "ingestion", status: "running" }, ingestionRun)).toBe(false);
+  });
+
+  it("deletes only an incomplete ingestion explicitly canceled by the user", () => {
+    expect(canDeleteCanceledJob(
+      { type: "ingestion", status: "canceled", cancelRequestedAt: new Date() },
+      { status: "canceled" }
+    )).toBe(true);
+    expect(canDeleteCanceledJob(
+      { type: "ingestion", status: "canceled", cancelRequestedAt: null },
+      { status: "canceled" }
+    )).toBe(false);
+    expect(canDeleteCanceledJob(
+      { type: "ingestion", status: "canceled", cancelRequestedAt: new Date() },
+      { status: "succeeded" }
+    )).toBe(false);
   });
 });

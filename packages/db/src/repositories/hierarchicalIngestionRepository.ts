@@ -446,6 +446,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            from ingestion_runs where batch_id = $1
          )
          update processing_batches batch set
+           total_items = aggregate.total,
            completed_items = aggregate.completed, failed_items = aggregate.failed,
            progress = case when aggregate.total = 0 then 0 else round((aggregate.completed + aggregate.failed)::numeric / aggregate.total * 10000)::int end,
            status = case

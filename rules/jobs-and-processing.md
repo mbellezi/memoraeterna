@@ -41,6 +41,10 @@ worker supervision, progress, cancellation, retry, or restart recovery.
 - Collective stages honor their barriers: note matching waits for selected note
   generation, and root aggregation waits for the required child summaries.
 - Failure in one independent child does not invalidate completed siblings.
+- A user-canceled, incomplete ingestion run may be deleted from the processing
+  dashboard only after explicit confirmation. Deletion is transactional across
+  the root job, its stage jobs, run checkpoints, and an orphaned batch; the
+  imported source and durable library artifacts are preserved.
 
 ## Verification
 

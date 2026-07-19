@@ -166,6 +166,9 @@
     "empty": "Nessuna attivita.",
     "actions": {
       "refresh": "Aggiorna attivita",
+      "delete": "Elimina",
+      "deleteConfirm": "Eliminare questa attivita annullata e tutta la relativa elaborazione? La fonte importata e i contenuti della raccolta verranno conservati.",
+      "actionError": "Non e stato possibile completare l'azione sull'attivita.",
       "clearCompletedOrFailed": "Pulisci completate e non riuscite",
       "clearCompletedOrFailedConfirm": "Rimuovere tutte le attivita completate e non riuscite?"
     }

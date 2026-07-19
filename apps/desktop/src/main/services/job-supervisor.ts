@@ -7,6 +7,7 @@ import {
   createEmbeddingRepository,
   createIngestionRunRepository,
   createJobRepository,
+  createProcessingTaskRepository,
   createHierarchicalIngestionRepository,
   createSourceItemRepository,
   type JobRecord,
@@ -167,6 +168,16 @@ export class JobSupervisor {
     if (job) this.schedule(0);
     if (job) this.notify();
     return job;
+  }
+
+  public async deleteCanceledHierarchy(jobId: string) {
+    const result = await createProcessingTaskRepository(this.requirePool()).deleteCanceledHierarchy(jobId);
+    if (!result) return null;
+    if (result.batchId && !result.deletedBatch) {
+      await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(result.batchId);
+    }
+    this.notify();
+    return { deletedJobs: result.deletedJobs, deletedRuns: result.deletedRuns };
   }
 
   public async list(limit = 100): Promise<JobRecord[]> {

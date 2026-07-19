@@ -166,6 +166,9 @@
     "empty": "Aun no hay tareas.",
     "actions": {
       "refresh": "Actualizar tareas",
+      "delete": "Eliminar",
+      "deleteConfirm": "Eliminar esta tarea cancelada y toda su actividad de procesamiento? La fuente importada y el contenido de la biblioteca se conservaran.",
+      "actionError": "No se pudo completar la accion de la tarea.",
       "clearCompletedOrFailed": "Limpiar completadas y fallidas",
       "clearCompletedOrFailedConfirm": "Eliminar todas las tareas completadas y fallidas?"
     }

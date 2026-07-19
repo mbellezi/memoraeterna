@@ -5,7 +5,7 @@ import { createTranslator } from "@app/i18n";
 import { AiSettingsView, ProfileEditor, resolveProviderTestStatus } from "./AiSettingsView";
 import { AiParameterFields } from "./AiParameterFields";
 import { FileImportProgressCard, ImportView } from "./ImportView";
-import { AttemptDetailsDialog, JobsView } from "./JobsView";
+import { AttemptDetailsDialog, JobCard, JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
 import {
   appSettingsSchema,
@@ -373,6 +373,46 @@ describe("phase 2 renderer views", () => {
       modelId: "gpt-5.4",
       reasoningLevel: "xhigh"
     });
+  });
+
+  it("places Delete beside Retry for a user-canceled incomplete job", () => {
+    const job = jobRecordSchema.parse({
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "ingestion",
+      status: "canceled",
+      progress: 0.42,
+      attempts: 1,
+      maxAttempts: 3,
+      canCancel: false,
+      canRetry: true,
+      canDelete: true,
+      error: null,
+      errorHistory: [],
+      createdAt: "2026-07-18T20:12:52.308Z",
+      updatedAt: "2026-07-18T20:12:52.560Z",
+      aiExecution: null,
+      ingestionRun: {
+        id: "00000000-0000-4000-8000-000000000010",
+        status: "canceled",
+        currentStage: "summarization",
+        effectiveStages: ["chunking", "summarization"],
+        stagesCheckpoint: { chunking: { status: "completed" }, summarization: { status: "canceled" } }
+      }
+    });
+    const card = groupJobs([job])[0]!;
+    const html = renderToString(<JobCard
+      card={card}
+      expanded={false}
+      busy={false}
+      t={t}
+      onToggle={() => undefined}
+      onAction={() => undefined}
+      onSelectAttempt={() => undefined}
+    />);
+
+    expect(html).toContain("Retry");
+    expect(html).toContain("Delete");
+    expect(html.indexOf("Retry")).toBeLessThan(html.indexOf("Delete"));
   });
 
   it("renders the complete failure reason in the selected attempt dialog", () => {

@@ -189,6 +189,9 @@
     "empty": "Nenhuma tarefa ainda.",
     "actions": {
       "refresh": "Atualizar tarefas",
+      "delete": "Apagar",
+      "deleteConfirm": "Apagar esta tarefa cancelada e toda a atividade de processamento dela? A fonte importada e o conteudo da biblioteca serao mantidos.",
+      "actionError": "Nao foi possivel concluir a acao da tarefa.",
       "clearCompletedOrFailed": "Limpar concluidas e falhas",
       "clearCompletedOrFailedConfirm": "Remover todas as tarefas concluidas e que falharam?"
     }

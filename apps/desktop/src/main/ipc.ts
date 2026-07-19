@@ -42,7 +42,7 @@ import type { SettingsService } from "./services/settings-service";
 import type { AiService } from "./services/ai-service.js";
 import type { IngestionService } from "./services/ingestion-service.js";
 import type { JobSupervisor } from "./services/job-supervisor.js";
-import { canManuallyRetryJob } from "./services/job-retry.js";
+import { canDeleteCanceledJob, canManuallyRetryJob } from "./services/job-retry.js";
 import type { SearchService } from "./services/search-service.js";
 import type { KnowledgeService } from "./services/knowledge-service.js";
 import type { IntegrationGateway } from "./services/integration-gateway.js";
@@ -225,6 +225,9 @@ export function registerIpcHandlers(
     const job = await jobSupervisor.retry(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;
   });
+  ipcMain.handle(ipcChannels.jobsDelete, async (_event, payload: unknown) =>
+    jobSupervisor.deleteCanceledHierarchy(z.string().uuid().parse(payload))
+  );
   ipcMain.handle(ipcChannels.jobsClearCompletedOrFailed, async () => ({
     deletedCount: await jobSupervisor.clearCompletedOrFailed()
   }));
@@ -409,6 +412,7 @@ function serializeJob(
     canCancel: (job.type === "ingestion" || isCancelableAiStage(job.type))
       && (job.status === "queued" || job.status === "running"),
     canRetry: canManuallyRetryJob(job, ingestionRun),
+    canDelete: canDeleteCanceledJob(job, ingestionRun),
     error: job.error,
     errorHistory,
     createdAt: job.createdAt.toISOString(),

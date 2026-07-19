@@ -166,6 +166,9 @@
     "empty": "Aucune tache pour le moment.",
     "actions": {
       "refresh": "Actualiser les taches",
+      "delete": "Supprimer",
+      "deleteConfirm": "Supprimer cette tache annulee et toute son activite de traitement ? La source importee et le contenu de la bibliotheque seront conserves.",
+      "actionError": "L'action sur la tache n'a pas pu etre effectuee.",
       "clearCompletedOrFailed": "Effacer les taches terminees et echouees",
       "clearCompletedOrFailedConfirm": "Supprimer toutes les taches terminees et echouees ?"
     }

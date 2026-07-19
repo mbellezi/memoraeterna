@@ -65,6 +65,7 @@ import {
   structureSaveInputSchema,
   jobRecordSchema,
   jobsClearResultSchema,
+  jobsDeleteResultSchema,
   libraryResetResultSchema,
   librarySourceSchema,
   manualIngestionInputSchema,
@@ -255,6 +256,10 @@ const api: DesktopApi = {
     async retry(jobId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.jobsRetry, jobId);
       return result === null ? null : jobRecordSchema.parse(result);
+    },
+    async delete(jobId: string) {
+      const result = await ipcRenderer.invoke(ipcChannels.jobsDelete, jobId);
+      return result === null ? null : jobsDeleteResultSchema.parse(result);
     },
     async clearCompletedOrFailed() {
       return jobsClearResultSchema.parse(

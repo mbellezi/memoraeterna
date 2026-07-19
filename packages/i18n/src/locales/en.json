@@ -189,6 +189,9 @@
     "empty": "No jobs yet.",
     "actions": {
       "refresh": "Refresh jobs",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this canceled job and all of its processing activity? The imported source and library content will be kept.",
+      "actionError": "The job action could not be completed.",
       "clearCompletedOrFailed": "Clear completed and failed",
       "clearCompletedOrFailedConfirm": "Remove all completed and failed jobs?"
     }

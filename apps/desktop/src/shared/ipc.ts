@@ -47,6 +47,7 @@ export const ipcChannels = {
   jobsChanged: "app:jobs:changed",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
+  jobsDelete: "app:jobs:delete",
   jobsClearCompletedOrFailed: "app:jobs:clear-completed-or-failed",
   searchQuery: "app:search:query",
   libraryList: "app:library:list",
@@ -370,6 +371,7 @@ export const jobRecordSchema = z.object({
   maxAttempts: z.number().int().positive(),
   canCancel: z.boolean(),
   canRetry: z.boolean(),
+  canDelete: z.boolean().default(false),
   error: z.string().nullable(),
   errorHistory: z.array(z.object({
     message: z.string().min(1),
@@ -402,6 +404,11 @@ export const jobRecordSchema = z.object({
 
 export const jobsClearResultSchema = z.object({
   deletedCount: z.number().int().nonnegative()
+}).strict();
+
+export const jobsDeleteResultSchema = z.object({
+  deletedJobs: z.number().int().nonnegative(),
+  deletedRuns: z.number().int().nonnegative()
 }).strict();
 
 export const libraryResetResultSchema = z.object({
@@ -828,6 +835,7 @@ export type ProcessingBatch = z.infer<typeof processingBatchSchema>;
 export type SourceSuggestion = z.infer<typeof sourceSuggestionSchema>;
 export type JobRecord = z.infer<typeof jobRecordSchema>;
 export type JobsClearResult = z.infer<typeof jobsClearResultSchema>;
+export type JobsDeleteResult = z.infer<typeof jobsDeleteResultSchema>;
 export type LibraryResetResult = z.infer<typeof libraryResetResultSchema>;
 export type SourceDeletionResult = z.infer<typeof sourceDeletionResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
@@ -926,6 +934,7 @@ export interface DesktopApi {
     subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;
     retry: (jobId: string) => Promise<JobRecord | null>;
+    delete: (jobId: string) => Promise<JobsDeleteResult | null>;
     clearCompletedOrFailed: () => Promise<JobsClearResult>;
   };
   search: {

@@ -61,6 +61,7 @@ export function JobsView({ t }: { t: Translator }) {
   const [loadError, setLoadError] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<JobRecord | null>(null);
 
   async function load() {
@@ -111,11 +112,16 @@ export function JobsView({ t }: { t: Translator }) {
     }
   }
 
-  async function runAction(jobId: string, action: "retry" | "cancel") {
+  async function runAction(jobId: string, action: "retry" | "cancel" | "delete") {
+    if (action === "delete" && !window.confirm(t("jobs.actions.deleteConfirm"))) return;
     setBusyJobId(jobId);
+    setActionError(false);
     try {
-      await window.app.jobs[action](jobId);
+      const result = await window.app.jobs[action](jobId);
+      if (action === "delete" && result === null) throw new Error("job_delete_rejected");
       await load();
+    } catch {
+      setActionError(true);
     } finally {
       setBusyJobId(null);
     }
@@ -202,6 +208,10 @@ export function JobsView({ t }: { t: Translator }) {
       <button type="button" className="font-semibold underline underline-offset-4" onClick={() => void load()}>{t("shell.actions.retry")}</button>
     </div> : null}
 
+    {actionError ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200" role="alert">
+      {t("jobs.actions.actionError")}
+    </div> : null}
+
     {loading && cards.length === 0 ? <LoadingCards /> : filteredCards.length === 0 ? (
       <EmptyState t={t} filtered={cards.length > 0} />
     ) : (
@@ -226,7 +236,7 @@ export function JobsView({ t }: { t: Translator }) {
   </>;
 }
 
-function JobCard({
+export function JobCard({
   card,
   expanded,
   busy,
@@ -240,7 +250,7 @@ function JobCard({
   busy: boolean;
   t: Translator;
   onToggle: () => void;
-  onAction: (action: "retry" | "cancel") => void;
+  onAction: (action: "retry" | "cancel" | "delete") => void;
   onSelectAttempt: (job: JobRecord) => void;
 }) {
   const status = statusStyle(card.status);
@@ -291,6 +301,15 @@ function JobCard({
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             {t("shell.actions.retry")}
+          </Button> : null}
+          {card.mainJob.canDelete ? <Button
+            type="button"
+            className="border-rose-200 bg-white text-rose-700 hover:bg-rose-50 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-200 dark:hover:bg-rose-950"
+            disabled={busy}
+            onClick={() => onAction("delete")}
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            {t("jobs.actions.delete")}
           </Button> : null}
           {card.mainJob.canCancel ? <Button
             type="button"
