@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { SourceItemTypes, type ProcessingPlanRequest, type SourceItemType } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
-import type { LibrarySource, SourceDetail } from "../../shared/ipc";
+import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 import { ImportView, childSourceType } from "./ImportView";
@@ -36,6 +36,7 @@ import { Button } from "./ui/button";
 import { CoverImage } from "./ui/cover-image";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
 import { MarkdownPreview } from "./MarkdownEditor";
+import { SearchResultCard, searchResultId } from "./SearchView";
 
 export interface LibraryExternalTarget {
   sourceItemId: string;
@@ -124,6 +125,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   onExitToSearch?: () => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
+  const [graphResults, setGraphResults] = useState<SearchResult[]>([]);
   const [stack, setStack] = useState<string[]>([]);
   const [detail, setDetail] = useState<SourceDetail | null>(null);
   const [fromSearch, setFromSearch] = useState(false);
@@ -151,10 +153,21 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
     const generation = ++loadGeneration.current;
     setLoading(true); setError(false);
     try {
-      const result = await window.app.knowledge.browseLibrary({ offset, limit: 48,
-        sourceTypes: currentId || filter === "all" ? [] : [filter], query: currentId ? "" : query,
-        ...(currentId ? { parentId: currentId } : !query.trim() && filter === "all" ? { parentId: null } : {}) });
-      if (generation === loadGeneration.current) setSources(result);
+      const sourceTypes = currentId || filter === "all" ? [] : [filter];
+      const [result, graphResult] = await Promise.all([
+        window.app.knowledge.browseLibrary({ offset, limit: 48,
+          sourceTypes, query: currentId ? "" : query,
+          ...(currentId ? { parentId: currentId } : !query.trim() && filter === "all" ? { parentId: null } : {}) }),
+        query.trim() && !currentId
+          ? window.app.search.query({ text: query, sourceTypes, mode: "text", limit: 24 })
+              .then((items) => items.filter((item) => item.kind === "entity" || item.kind === "relation"))
+              .catch(() => [] as SearchResult[])
+          : Promise.resolve([] as SearchResult[])
+      ]);
+      if (generation === loadGeneration.current) {
+        setSources(result);
+        setGraphResults(graphResult);
+      }
     } catch { if (generation === loadGeneration.current) setError(true); }
     finally { if (generation === loadGeneration.current) setLoading(false); }
   }
@@ -338,8 +351,8 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
       <div className="flex gap-2"><Button type="button" onClick={() => setProcessingIds([...selectedIds])}><Play className="h-4 w-4" />{t("library.actions.processSelected")}</Button><button type="button" className="grid h-9 w-9 place-items-center rounded-lg" title={t("library.actions.clearSelection")} onClick={() => setSelectedIds(new Set())}><X className="h-4 w-4" /></button></div>
     </div> : null}
     {error ? <StateCard>{t("library.error")}</StateCard> : loading ? <StateCard>{t("shell.states.loading")}</StateCard>
-      : sources.length === 0 ? <StateCard>{t("library.empty")}</StateCard>
-        : <ol className={cn("grid gap-3", layout === "grid" && "sm:grid-cols-2 xl:grid-cols-3")}>
+      : sources.length === 0 && graphResults.length === 0 ? <StateCard>{t("library.empty")}</StateCard>
+        : sources.length > 0 ? <ol className={cn("grid gap-3", layout === "grid" && "sm:grid-cols-2 xl:grid-cols-3")}>
           {gridSources.map((source) => <li key={source.id} className="motion-fade-in-up">
             <SourceCard
               source={source}
@@ -355,7 +368,15 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
               onProcess={() => setProcessingIds([source.id])}
             />
           </li>)}
-        </ol>}
+        </ol> : null}
+    {!loading && graphResults.length > 0 ? <section className="grid gap-2">
+      <h2 className="text-sm font-semibold">{t("search.graphResults")}</h2>
+      <ol className="grid gap-3">
+        {graphResults.map((result) => <li key={searchResultId(result)} className="motion-fade-in-up">
+          <SearchResultCard result={result} t={t} onOpen={() => navigateToPath([result.sourceItemId], false)} />
+        </li>)}
+      </ol>
+    </section> : null}
     <PageControls offset={offset} count={sources.length} busy={loading} t={t} onPage={setOffset} />
     {processingIds ? <ProcessingDialog sourceIds={processingIds} sources={sources} t={t} onClose={() => setProcessingIds(null)} onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }} /> : null}
   </section>;
@@ -574,6 +595,9 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
   const chain = detail.breadcrumbs.length ? detail.breadcrumbs : breadcrumbChain(allSources, detail.id);
   const subitems = childrenOf(allSources, detail.id);
   const chunkCount = detail.documents.reduce((total, document) => total + document.chunks.length, 0);
+  const graphRelations = groupGraphRelations(detail.graph.relations);
+  const graphEntities = groupGraphEntities(detail.graph.entities);
+  const relatedSourceGroups = groupRelatedSources(detail.graph.sourceConnections);
   const coverAssetId = coverAssetIdFromMetadata(detail.metadata)
     ?? detail.assets.find((asset) => asset.role === "cover")?.id ?? null;
   const Icon = typeIcons[detail.type];
@@ -655,6 +679,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
       { id: "content", label: t("sourceWorkspace.content") },
       { id: "children", label: t("library.detail.subitems") },
       { id: "notes", label: t("library.sections.atomicNotes"), count: detail.atomicNotes.length },
+      { id: "graph", label: t("library.sections.knowledgeGraph"), count: graphEntities.length + graphRelations.length },
       { id: "relations", label: t("library.sections.relations"), count: detail.relations.length },
       { id: "metadata", label: t("import.steps.metadata") },
       { id: "history", label: t("sourceWorkspace.history") }
@@ -748,6 +773,21 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
         : <ol className="grid gap-2">{detail.atomicNotes.map((note) => <li key={note.id}><AtomicNoteCard note={note} t={t} /></li>)}</ol>}
     </CollapsibleSection> : null}
 
+    {tab === "graph" ? <div className="grid gap-4">
+      <CollapsibleSection title={t("knowledge.graph.entities")} count={graphEntities.length} defaultOpen>
+        {graphEntities.length === 0 ? <StateCard>{t("knowledge.graph.empty")}</StateCard>
+          : <ol className="grid gap-2 sm:grid-cols-2">{graphEntities.map((entity) => <li key={entity.id}>
+            <GraphEntityCard entity={entity} relations={graphRelations.filter((relation) => relation.subject === entity.name || relation.object === entity.name)} t={t} />
+          </li>)}</ol>}
+      </CollapsibleSection>
+      <CollapsibleSection title={t("knowledge.graph.relatedSources")} count={relatedSourceGroups.length} defaultOpen>
+        {relatedSourceGroups.length === 0 ? <StateCard>{t("knowledge.graph.noRelatedSources")}</StateCard>
+          : <ol className="grid gap-2">{relatedSourceGroups.map((source) => <li key={source.sourceItemId}>
+            <RelatedSourceCard source={source} t={t} onOpen={() => onOpenPath([source.sourceItemId])} />
+          </li>)}</ol>}
+      </CollapsibleSection>
+    </div> : null}
+
     {tab === "relations" ? <CollapsibleSection title={t("library.sections.relations")} count={detail.relations.length} defaultOpen>
       {detail.relations.length === 0 ? <StateCard>{t("knowledge.relations.empty")}</StateCard>
         : <ol className="grid gap-2">{detail.relations.map((relation) => <li key={relation.id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
@@ -773,6 +813,112 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
     </CollapsibleSection></div> : null}
     </Tabs>
   </section>;
+}
+
+type SourceGraphEntity = SourceDetail["graph"]["entities"][number];
+type SourceGraphRelation = SourceDetail["graph"]["relations"][number];
+type SourceGraphConnection = SourceDetail["graph"]["sourceConnections"][number];
+
+interface RelatedSourceGroup {
+  sourceItemId: string;
+  sourceTitle: string;
+  confidence: number;
+  connections: SourceGraphConnection[];
+}
+
+function GraphEntityCard({ entity, relations, t }: {
+  entity: SourceGraphEntity;
+  relations: SourceGraphRelation[];
+  t: Translator;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+    <button type="button" className="flex w-full items-start justify-between gap-3 p-3 text-left" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+      <strong className="min-w-0 truncate text-sm">{entity.name}</strong>
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{Math.round(entity.confidence * 100)}%</span>
+        <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+      </span>
+    </button>
+    <div className={cn("section-collapse", expanded && "section-collapse-open")}><div><div className="grid gap-2 px-3 pb-3 text-xs text-slate-500 dark:text-slate-400">
+      <p>{entity.type}</p>
+      {relations.length > 0 ? <ul className="grid gap-1 border-t border-slate-200 pt-2 dark:border-slate-800">{relations.map((relation) => <li key={relation.id}>
+        {relation.subject} — {graphPredicateLabel(relation.predicate)} → {relation.object} · {Math.round(relation.confidence * 100)}%
+      </li>)}</ul> : <p>{t("knowledge.graph.noEntityRelations")}</p>}
+    </div></div></div>
+  </article>;
+}
+
+function RelatedSourceCard({ source, t, onOpen }: {
+  source: RelatedSourceGroup;
+  t: Translator;
+  onOpen: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+    <div className="flex items-center justify-between gap-3 p-3">
+      <button type="button" className="min-w-0 truncate text-left text-sm font-semibold hover:text-cyan-700 hover:underline dark:hover:text-cyan-300" title={t("knowledge.graph.openRelatedSource")} onClick={onOpen}>{source.sourceTitle}</button>
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="rounded-full bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200">{Math.round(source.confidence * 100)}%</span>
+        <button type="button" className="grid h-7 w-7 place-items-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-800" aria-expanded={expanded} aria-label={t(expanded ? "knowledge.graph.collapseDetails" : "knowledge.graph.expandDetails")} onClick={() => setExpanded((current) => !current)}>
+          <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+        </button>
+      </span>
+    </div>
+    <div className={cn("section-collapse", expanded && "section-collapse-open")}><div><ul className="grid gap-1 border-t border-slate-200 px-3 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+      {source.connections.map((connection, index) => <li key={`${connection.entityName}:${connection.predicate}:${connection.relatedEntityName}:${index}`}>
+        {connection.predicate === "shared_entity"
+          ? t("knowledge.graph.sharedEntity", { values: { entity: connection.entityName } })
+          : `${connection.entityName} — ${graphPredicateLabel(connection.predicate)} → ${connection.relatedEntityName}`} · {Math.round(connection.confidence * 100)}%
+      </li>)}
+    </ul></div></div>
+  </article>;
+}
+
+export function groupGraphEntities(entities: SourceGraphEntity[]): SourceGraphEntity[] {
+  const grouped = new Map<string, SourceGraphEntity>();
+  for (const entity of entities) {
+    const key = `${entity.type}\0${entity.name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase()}`;
+    const current = grouped.get(key);
+    if (!current || entity.confidence > current.confidence) grouped.set(key, entity);
+  }
+  return [...grouped.values()].toSorted((left, right) => left.name.localeCompare(right.name));
+}
+
+export function groupGraphRelations(relations: SourceGraphRelation[]): SourceGraphRelation[] {
+  const grouped = new Map<string, SourceGraphRelation>();
+  for (const relation of relations) {
+    const key = `${relation.subject}\0${relation.predicate}\0${relation.object}`.toLocaleLowerCase();
+    const current = grouped.get(key);
+    if (!current || relation.confidence > current.confidence) grouped.set(key, relation);
+  }
+  return [...grouped.values()].toSorted((left, right) => left.subject.localeCompare(right.subject)
+    || left.predicate.localeCompare(right.predicate) || left.object.localeCompare(right.object));
+}
+
+export function groupRelatedSources(connections: SourceGraphConnection[]): RelatedSourceGroup[] {
+  const grouped = new Map<string, RelatedSourceGroup>();
+  for (const connection of connections) {
+    const current = grouped.get(connection.sourceItemId) ?? {
+      sourceItemId: connection.sourceItemId,
+      sourceTitle: connection.sourceTitle,
+      confidence: 0,
+      connections: []
+    };
+    const key = `${connection.entityName}\0${connection.predicate}\0${connection.relatedEntityName}`.toLocaleLowerCase();
+    const existingIndex = current.connections.findIndex((candidate) =>
+      `${candidate.entityName}\0${candidate.predicate}\0${candidate.relatedEntityName}`.toLocaleLowerCase() === key
+    );
+    if (existingIndex < 0) current.connections.push(connection);
+    else if (connection.confidence > (current.connections[existingIndex]?.confidence ?? 0)) current.connections[existingIndex] = connection;
+    current.confidence = Math.max(current.confidence, connection.confidence);
+    grouped.set(connection.sourceItemId, current);
+  }
+  return [...grouped.values()].map((source) => ({
+    ...source,
+    connections: source.connections.toSorted((left, right) => left.entityName.localeCompare(right.entityName)
+      || left.predicate.localeCompare(right.predicate) || left.relatedEntityName.localeCompare(right.relatedEntityName))
+  })).toSorted((left, right) => left.sourceTitle.localeCompare(right.sourceTitle));
 }
 
 function AtomicNoteCard({ note, t }: { note: SourceDetail["atomicNotes"][number]; t: Translator }) {
@@ -894,6 +1040,10 @@ function noteStatusKey(status: string): MessageKey {
 
 function relationTypeKey(type: string): MessageKey {
   return (`knowledge.relations.types.${type}` as MessageKey);
+}
+
+function graphPredicateLabel(predicate: string): string {
+  return predicate.replaceAll("_", " ");
 }
 
 function PageControls({ offset, count, busy, t, onPage }: { offset: number; count: number; busy: boolean; t: Translator; onPage: (offset: number) => void }) {

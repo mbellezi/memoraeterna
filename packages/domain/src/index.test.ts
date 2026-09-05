@@ -7,6 +7,7 @@ import {
   DocumentSchema,
   IngestionRunSchema,
   ObsidianSyncFileSchema,
+  SearchResultSchema,
   SourceItemSchema,
   SourceItemTypes,
   StorageSettingsSchema
@@ -124,6 +125,37 @@ describe("@app/domain schemas", () => {
     expect(AtomicNoteGenerationOutputSchema.safeParse({
       notes: [{ title: "Missing evidence", bodyMarkdown: "Body", ideaStatement: "Idea", evidenceChunkIds: [] }]
     }).success).toBe(false);
+  });
+
+  it("distinguishes graph entities and relations in search results", () => {
+    const context = {
+      sourceItemId: "00000000-0000-4000-8000-000000000001",
+      sourceTitle: "Source",
+      sourceType: "WebArticle",
+      breadcrumbs: [],
+      excerpt: "Graph evidence",
+      graphScore: 0.9,
+      finalScore: 0.9
+    } as const;
+    expect(SearchResultSchema.parse({
+      ...context,
+      kind: "entity",
+      entityId: "00000000-0000-4000-8000-000000000002",
+      entityType: "Concept",
+      canonicalName: "Knowledge graph",
+      aliases: [],
+      description: null
+    }).kind).toBe("entity");
+    expect(SearchResultSchema.parse({
+      ...context,
+      kind: "relation",
+      relationId: "00000000-0000-4000-8000-000000000003",
+      subjectEntityId: "00000000-0000-4000-8000-000000000002",
+      subjectName: "Knowledge graph",
+      predicate: "connects",
+      objectEntityId: "00000000-0000-4000-8000-000000000004",
+      objectName: "Source"
+    }).kind).toBe("relation");
   });
 
   it("rejects storage settings that enable paths without configured roots", () => {

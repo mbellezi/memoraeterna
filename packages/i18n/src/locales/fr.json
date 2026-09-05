@@ -268,9 +268,11 @@
     "kinds": {
       "source": "Source",
       "subitem": "Section",
-      "atomicNote": "Note atomique"
+      "atomicNote": "Note atomique",
+      "entity": "Entite du graphe",
+      "relation": "Relation du graphe"
     },
-    "resultsCount": "{count} résultats",
+    "resultsCount": "{count} résultats", "graphResults": "Graphe de connaissances",
     "openHint": "Ouvrir dans la bibliothèque"
   },
   "library": {
@@ -289,7 +291,7 @@
     "sections": {
       "metadata": "Metadonnees", "summary": "Resume", "document": "Document Markdown",
       "originals": "Fichiers originaux", "chunks": "Segments de la source",
-      "atomicNotes": "Notes atomiques", "relations": "Relations entre notes"
+      "atomicNotes": "Notes atomiques", "knowledgeGraph": "Graphe de connaissances", "relations": "Relations entre notes"
     },
     "cards": {
       "openDetail": "Ouvrir les détails de {title}"
@@ -317,6 +319,7 @@
       "emptyForSource": "Cette source n'a pas encore de notes atomiques.",
       "status": { "pending_review": "En attente de revision", "approved": "Approuvee", "rejected": "Rejetee", "archived": "Archivee" }
     },
+    "graph": { "entities": "Entités", "entityRelations": "Relations entre entités", "relatedSources": "Sources associées", "empty": "Cette source ne contient encore aucune entité.", "noRelations": "Cette source ne contient encore aucune relation entre entités.", "noEntityRelations": "Aucune relation pour cette entité.", "noRelatedSources": "Aucune connexion avec d’autres sources n’a été trouvée.", "sharedEntity": "Entité partagée : {entity}", "expandDetails": "Développer les détails", "collapseDetails": "Réduire les détails", "openRelatedSource": "Ouvrir la source associée" },
     "relations": {
       "empty": "Aucune relation pertinente entre les notes.", "pendingInvolved": "Inclut une note en attente de revision",
       "explanations": { "hybrid": "Les notes ont depasse le seuil de similarite hybride.", "reranked": "Les notes ont depasse le seuil de similarite hybride apres le reranking par lot." },
@@ -430,6 +433,7 @@
     },
     "matching": { "title": "Correspondance des connaissances", "description": "Definit le score final minimal requis pour enregistrer une relation entre des notes atomiques.", "minimumScore": "Score minimal de correspondance", "moreRelations": "Plus de relations", "fewerRelations": "Moins de relations, plus strictes", "savedAutomatically": "Cette valeur est appliquée automatiquement lorsqu'elle change." },
     "summarization": { "title": "Génération des résumés", "description": "Évite un appel à l’IA pour les éléments trop courts pour contenir des informations utiles.", "minimumWordCount": "Nombre minimal de mots pour un résumé", "minimumWordCountHint": "Utilisez 0 pour désactiver cette heuristique. Les sections structurelles ou uniquement bibliographiques restent exclues par les instructions de l’IA." },
+    "knowledgeGraphLimits": { "title": "Limites du graphe de connaissances", "description": "Limite l’extraction par document autonome ou sous-élément traitable.", "entities": "Nombre maximal d’entités", "relations": "Nombre maximal de relations", "hint": "Le quota restant est inclus dans chaque prompt IA et le backend applique les mêmes limites avant l’enregistrement." },
     "metadataEnrichment": { "apiKey":"Clé API Google Books","saveKey":"Enregistrer la clé","removeKey":"Supprimer la clé","keySaved":"Clé enregistrée de manière sécurisée.","noKey":"Aucune clé configurée. Les recherches utilisent un accès sans clé.","keyError":"Impossible de lire ou enregistrer la clé de manière sécurisée. Réessayez.", "provider":"Fournisseur de métadonnées des livres","auto":"Automatique (Open Library → Google Books)","providerHint":"Choisissez un service pour les livres. Automatique essaie Google Books si Open Library échoue ou ne trouve rien. Les articles scientifiques utilisent Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Enrichissement automatique des métadonnées", "description": "Recherche les ISBN, DOI, titres et auteurs dans Open Library, Google Books et Crossref. Désactivez cette option pour empêcher toute requête de métadonnées." },
     "reset": { "title": "Reinitialiser la bibliotheque", "description": "Supprime toute la bibliotheque, les fichiers geres, les vecteurs, les taches et les notes atomiques. Les modeles locaux telecharges et les reglages sont conserves.", "action": "Tout reinitialiser", "confirmation": "Supprimer definitivement toute la bibliotheque, les fichiers geres, les vecteurs et les notes atomiques ? Les modeles locaux telecharges seront conserves.", "completed": "Bibliotheque reinitialisee.", "completedWithWarnings": "Bibliotheque reinitialisee, mais certains fichiers geres n'ont pas pu etre supprimes.", "failed": "Impossible de reinitialiser la bibliotheque." },
     "ai": {

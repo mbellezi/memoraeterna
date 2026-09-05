@@ -6,6 +6,7 @@ import {
   AiReasoningLevelSchema,
   DocumentDivisionCandidateSchema,
   EnrichmentCandidateSchema,
+  GraphEntityTypeSchema,
   MetadataEnrichmentQuerySchema,
   ProcessingPlanRequestSchema,
   SearchResultSchema,
@@ -148,6 +149,8 @@ export const appSettingsSchema = z.object({
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
   atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
+  knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
+  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
   updatedAt: z.string().datetime()
 });
 
@@ -160,7 +163,9 @@ export const appSettingsUpdateSchema = z.object({
   keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
   atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
-  summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional()
+  summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional(),
+  knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
+  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional()
 }).strict();
 
 export const storageSettingsSchema = z.object({
@@ -554,6 +559,19 @@ export const sourceDetailSchema = z.object({
     generatedAt: z.string().datetime()
   }).strict()),
   atomicNotes: z.array(atomicNoteViewSchema),
+  graph: z.object({
+    entities: z.array(z.object({
+      id: z.string().uuid(), type: GraphEntityTypeSchema, name: z.string().min(1), confidence: z.number().min(0).max(1)
+    }).strict()),
+    relations: z.array(z.object({
+      id: z.string().uuid(), subject: z.string().min(1), predicate: z.string().min(1),
+      object: z.string().min(1), confidence: z.number().min(0).max(1)
+    }).strict()),
+    sourceConnections: z.array(z.object({
+      sourceItemId: z.string().uuid(), sourceTitle: z.string().min(1), entityName: z.string().min(1),
+      relatedEntityName: z.string().min(1), predicate: z.string().min(1), confidence: z.number().min(0).max(1)
+    }).strict())
+  }).strict().default({ entities: [], relations: [], sourceConnections: [] }),
   relations: z.array(z.object({
     id: z.string().uuid(),
     sourceAtomicNoteId: z.string().uuid(),
@@ -933,7 +951,9 @@ export const defaultAppSettings = {
   keepLocalEmbeddingModelsLoaded: true,
   bookMetadataProvider: "auto",
   atomicNoteRelationThreshold: 0.72,
-  summaryMinimumWordCount: 40
+  summaryMinimumWordCount: 40,
+  knowledgeGraphMaxEntitiesPerSource: 250,
+  knowledgeGraphMaxRelationsPerSource: 500
 } satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {

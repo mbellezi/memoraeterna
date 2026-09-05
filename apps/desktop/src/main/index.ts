@@ -218,6 +218,13 @@ void app.whenReady().then(() => {
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
     getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
+    getKnowledgeGraphLimits: async () => {
+      const settings = await settingsService!.getApp();
+      return {
+        maxEntities: settings.knowledgeGraphMaxEntitiesPerSource,
+        maxRelations: settings.knowledgeGraphMaxRelationsPerSource
+      };
+    },
     logger: console,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });

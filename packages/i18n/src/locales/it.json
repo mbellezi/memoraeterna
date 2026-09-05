@@ -268,9 +268,11 @@
     "kinds": {
       "source": "Fonte",
       "subitem": "Sezione",
-      "atomicNote": "Nota atomica"
+      "atomicNote": "Nota atomica",
+      "entity": "Entita del grafo",
+      "relation": "Relazione del grafo"
     },
-    "resultsCount": "{count} risultati",
+    "resultsCount": "{count} risultati", "graphResults": "Grafo della conoscenza",
     "openHint": "Apri nella libreria"
   },
   "library": {
@@ -289,7 +291,7 @@
     "sections": {
       "metadata": "Metadati", "summary": "Riepilogo", "document": "Documento Markdown",
       "originals": "File originali", "chunks": "Frammenti della fonte",
-      "atomicNotes": "Note atomiche", "relations": "Relazioni tra note"
+      "atomicNotes": "Note atomiche", "knowledgeGraph": "Grafo della conoscenza", "relations": "Relazioni tra note"
     },
     "cards": {
       "openDetail": "Apri i dettagli di {title}"
@@ -317,6 +319,7 @@
       "emptyForSource": "Questa fonte non ha ancora note atomiche.",
       "status": { "pending_review": "In attesa di revisione", "approved": "Approvata", "rejected": "Scartata", "archived": "Archiviata" }
     },
+    "graph": { "entities": "Entità", "entityRelations": "Relazioni tra entità", "relatedSources": "Fonti correlate", "empty": "Questa fonte non contiene ancora entità nel grafo.", "noRelations": "Questa fonte non contiene ancora relazioni tra entità.", "noEntityRelations": "Nessuna relazione per questa entità.", "noRelatedSources": "Non sono state trovate connessioni con altre fonti.", "sharedEntity": "Entità condivisa: {entity}", "expandDetails": "Espandi dettagli", "collapseDetails": "Comprimi dettagli", "openRelatedSource": "Apri fonte correlata" },
     "relations": {
       "empty": "Nessuna relazione rilevante tra note.", "pendingInvolved": "Include una nota in attesa di revisione",
       "explanations": { "hybrid": "Le note hanno superato la soglia di similarita ibrida.", "reranked": "Le note hanno superato la soglia di similarita ibrida dopo il reranking in batch." },
@@ -430,6 +433,7 @@
     },
     "matching": { "title": "Matching della conoscenza", "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.", "minimumScore": "Punteggio minimo del matching", "moreRelations": "Più relazioni", "fewerRelations": "Meno relazioni, più rigorose", "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia." },
     "summarization": { "title": "Generazione dei riassunti", "description": "Evita una chiamata IA per elementi troppo piccoli per contenere informazioni utili.", "minimumWordCount": "Parole minime per un riassunto", "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA." },
+    "knowledgeGraphLimits": { "title": "Limiti del grafo della conoscenza", "description": "Limita l’estrazione per documento autonomo o sottoelemento elaborabile.", "entities": "Entità massime", "relations": "Relazioni massime", "hint": "Il limite residuo viene incluso in ogni prompt IA e il backend applica gli stessi limiti prima del salvataggio." },
     "metadataEnrichment": { "apiKey":"Chiave API Google Books","saveKey":"Salva chiave","removeKey":"Rimuovi chiave","keySaved":"Chiave salvata in modo sicuro.","noKey":"Nessuna chiave configurata. Le ricerche usano accesso senza chiave.","keyError":"Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.", "provider":"Fornitore di metadati dei libri","auto":"Automatico (Open Library → Google Books)","providerHint":"Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },
     "reset": { "title": "Reimposta libreria", "description": "Elimina tutta la libreria, i file gestiti, i vettori, i processi e le note atomiche. I modelli locali scaricati e le impostazioni vengono conservati.", "action": "Reimposta tutto", "confirmation": "Eliminare definitivamente tutta la libreria, i file gestiti, i vettori e le note atomiche? I modelli locali scaricati saranno conservati.", "completed": "Libreria reimpostata.", "completedWithWarnings": "Libreria reimpostata, ma alcuni file gestiti non sono stati rimossi.", "failed": "Impossibile reimpostare la libreria." },
     "ai": {

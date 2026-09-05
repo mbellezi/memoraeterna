@@ -98,6 +98,7 @@ export interface KnowledgeServiceOptions {
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
   getSummaryMinimumWordCount?: () => Promise<number>;
+  getKnowledgeGraphLimits?: () => Promise<{ maxEntities: number; maxRelations: number }>;
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
   userDataPath: string;
@@ -116,6 +117,7 @@ export interface AtomicNoteGenerationLogContext {
 export interface KnowledgeGraphGenerationContext {
   jobId?: string;
   ingestionRunId?: string;
+  includeAtomicNotesGraph?: boolean;
   completedBatches?: unknown;
   onProgress?: (progress: number) => void;
   onBatchCompleted?: (input: {
@@ -210,6 +212,7 @@ export class KnowledgeService {
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);
     const summaries = await createSourceSummaryRepository(pool).listBySourceItem(sourceItemId);
+    const graph = await createKnowledgeGraphRepository(pool).listSourceElements(sourceItemId);
     return {
       history: (await createDocumentRepository(pool).listHistory(source.id)).map((item) => ({ ...item, createdAt: item.createdAt.toISOString() })),
       breadcrumbs: (await createHierarchicalIngestionRepository(pool).getBreadcrumbs([source.id])).get(source.id) ?? [],
@@ -236,6 +239,7 @@ export class KnowledgeService {
         generatedAt: summary.generatedAt.toISOString()
       })),
       atomicNotes: notes.map(serializeNote),
+      graph,
       relations: relations.map((relation) => ({
         id: relation.id,
         sourceAtomicNoteId: relation.sourceAtomicNoteId,
@@ -676,11 +680,27 @@ export class KnowledgeService {
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
     if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
-    const notes = await createAtomicNoteRepository(pool).listGraphInputsBySourceItem(sourceItemId);
-    if (notes.length === 0) {
+    const chunks = await createChunkRepository(pool).listByDocument(documentId);
+    if (chunks.length === 0) {
       return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
     }
-    return this.generateKnowledgeGraphFromInputs(sourceItemId, documentId, notes, context, signal);
+    const notes = context.includeAtomicNotesGraph
+      ? await createAtomicNoteRepository(pool).listGraphInputsBySourceItem(sourceItemId)
+      : [];
+    return this.generateKnowledgeGraphFromInputs(
+      sourceItemId,
+      documentId,
+      chunks.map((chunk, index) => ({
+        id: chunk.id,
+        title: `${source.title} — excerpt ${index + 1}`,
+        ideaStatement: "",
+        bodyMarkdown: chunk.content,
+        evidenceChunkIds: [chunk.id]
+      })),
+      notes,
+      context,
+      signal
+    );
   }
 
   public async generateCatalogKnowledgeGraph(
@@ -707,6 +727,7 @@ export class KnowledgeService {
         bodyMarkdown: chunks.map((chunk) => chunk.content).join("\n\n"),
         evidenceChunkIds: chunks.map((chunk) => chunk.id)
       }],
+      [],
       context,
       signal,
       "catalog_metadata"
@@ -716,7 +737,8 @@ export class KnowledgeService {
   private async generateKnowledgeGraphFromInputs(
     sourceItemId: string,
     documentId: string,
-    notes: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
+    sourceInputs: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
+    atomicNoteInputs: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
     context: KnowledgeGraphGenerationContext,
     signal?: AbortSignal,
     processingMode?: "catalog_metadata"
@@ -725,9 +747,13 @@ export class KnowledgeService {
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
     if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
-    const generated = await generateKnowledgeGraphFromAtomicNotes(
+    const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
+    const extractionLimits = await this.options.getKnowledgeGraphLimits?.()
+      ?? { maxEntities: 250, maxRelations: 500 };
+    let sourceCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
+    const sourceGraph = await generateKnowledgeGraphFromAtomicNotes(
       source,
-      notes,
+      sourceInputs,
       async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "knowledge-graph-generation",
         prompt,
@@ -743,13 +769,61 @@ export class KnowledgeService {
       )),
       this.knowledgeGraphMaxInputCharacters,
       {
-        completedBatches: parseKnowledgeGraphBatchCheckpoints(context.completedBatches),
-        ...(context.onBatchCompleted ? { onBatchCompleted: context.onBatchCompleted } : {})
+        completedBatches,
+        inputKind: processingMode ? "catalog_metadata" : "source_chunks",
+        checkpointNamespace: "source",
+        extractionLimits,
+        ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
+          sourceCheckpoints = checkpoints;
+          const multiplier = atomicNoteInputs.length > 0 ? 2 : 1;
+          await context.onBatchCompleted!({ completed, total: total * multiplier, checkpoints });
+        } } : {})
       }
     );
-    if (!generated) {
+    if (!sourceGraph) {
       return { configured: false, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
     }
+    sourceCheckpoints = sourceGraph.checkpoints;
+    const atomicGraph = atomicNoteInputs.length > 0
+      ? await generateKnowledgeGraphFromAtomicNotes(
+          source,
+          atomicNoteInputs,
+          async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+            "knowledge-graph-generation",
+            prompt,
+            {
+              ...(context.jobId ? { jobId: context.jobId } : {}),
+              ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
+              sourceItemId,
+              documentId,
+              stage: "atomic_note_knowledge_graph_generation",
+              onProgress: (event) => context.onProgress?.(event.progress)
+            },
+            signal
+          )),
+          this.knowledgeGraphMaxInputCharacters,
+          {
+            completedBatches,
+            inputKind: "atomic_notes",
+            checkpointNamespace: "atomic_notes",
+            ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
+              await context.onBatchCompleted!({
+                completed: sourceCheckpoints.length + completed,
+                total: sourceCheckpoints.length + total,
+                checkpoints: [...sourceCheckpoints, ...checkpoints]
+              });
+            } } : {})
+          }
+        )
+      : null;
+    if (atomicNoteInputs.length > 0 && !atomicGraph) {
+      return { configured: false, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+    }
+    const generated = {
+      batches: [...sourceGraph.batches, ...(atomicGraph?.batches ?? [])],
+      executions: [...sourceGraph.executions, ...(atomicGraph?.executions ?? [])],
+      checkpoints: [...sourceGraph.checkpoints, ...(atomicGraph?.checkpoints ?? [])]
+    };
     const finalExecution = generated.executions.at(-1);
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
     const repository = createKnowledgeGraphRepository(pool);
@@ -764,23 +838,23 @@ export class KnowledgeService {
         model: finalExecution.modelId,
         runtime: finalExecution.runtime,
         promptVersion: knowledgeGraphPromptVersion,
+        extractionLimits,
         ...(processingMode ? { processingMode } : {})
       }
     });
-    if (processingMode) {
-      const hierarchy = createHierarchicalIngestionRepository(pool);
-      const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
-      await hierarchy.createKnowledgeGeneration({
-        sourceItemId,
-        documentRevisionId: revisionId,
-        stage: "knowledgeGraph",
-        ingestionRunId: context.ingestionRunId ?? null,
-        jobId: context.jobId ?? null,
-        aiTaskRunId: finalExecution.aiTaskRunId,
-        inputHash: sha256(notes.map((note) => note.bodyMarkdown).join("\n\n")),
-        metadata: { processingMode, promptVersion: knowledgeGraphPromptVersion }
-      });
-    }
+    const hierarchy = createHierarchicalIngestionRepository(pool);
+    const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+    const graphModes = [processingMode ?? "source_chunks", ...(atomicGraph ? ["atomic_notes"] : [])];
+    await hierarchy.createKnowledgeGeneration({
+      sourceItemId,
+      documentRevisionId: revisionId,
+      stage: "knowledgeGraph",
+      ingestionRunId: context.ingestionRunId ?? null,
+      jobId: context.jobId ?? null,
+      aiTaskRunId: finalExecution.aiTaskRunId,
+      inputHash: sha256([...sourceInputs, ...atomicNoteInputs].map((input) => input.bodyMarkdown).join("\n\n")),
+      metadata: { graphModes, extractionLimits, promptVersion: knowledgeGraphPromptVersion }
+    });
     let projected = true;
     let projectionError: string | null = null;
     try {
@@ -806,6 +880,8 @@ export class KnowledgeService {
       projected,
       projectionError,
       batchCount: generated.batches.length,
+      graphModes,
+      extractionLimits,
       ...persisted
     };
   }

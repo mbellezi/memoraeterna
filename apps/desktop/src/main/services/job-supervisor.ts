@@ -476,6 +476,7 @@ export class JobSupervisor {
               {
                 jobId: stageJobId,
                 ingestionRunId,
+                includeAtomicNotesGraph: shouldRun("atomicNotes"),
                 completedBatches: graphMetadata?.completedBatches,
                 onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
                 onBatchCompleted: async ({ completed, total, checkpoints }) => {

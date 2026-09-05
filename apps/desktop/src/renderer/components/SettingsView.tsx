@@ -309,6 +309,11 @@ export function SettingsView({
                   t={t}
                   onChange={onAppSettingsChange}
                 />
+                <KnowledgeGraphLimitsCard
+                  appSettings={appSettings}
+                  t={t}
+                  onChange={onAppSettingsChange}
+                />
               </div>
             </div>
           ) : null}
@@ -663,6 +668,41 @@ function SummarizationCard({ appSettings, t, onChange }: {
           {t("settings.summarization.minimumWordCountHint")}
         </p>
       </div>
+    </section>
+  );
+}
+
+function KnowledgeGraphLimitsCard({ appSettings, t, onChange }: {
+  appSettings: AppSettings;
+  t: SettingsViewProps["t"];
+  onChange: SettingsViewProps["onAppSettingsChange"];
+}) {
+  return (
+    <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+          <Network className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.knowledgeGraphLimits.title")}</h3>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.knowledgeGraphLimits.description")}</p>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Label htmlFor="knowledgeGraphMaxEntitiesPerSource">{t("settings.knowledgeGraphLimits.entities")}</Label>
+          <Input id="knowledgeGraphMaxEntitiesPerSource" type="number" min={1} max={10000} step={1}
+            value={appSettings.knowledgeGraphMaxEntitiesPerSource}
+            onChange={(event) => onChange({ knowledgeGraphMaxEntitiesPerSource: Math.max(1, Math.min(10000, Math.floor(Number(event.target.value)))) })} />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="knowledgeGraphMaxRelationsPerSource">{t("settings.knowledgeGraphLimits.relations")}</Label>
+          <Input id="knowledgeGraphMaxRelationsPerSource" type="number" min={1} max={20000} step={1}
+            value={appSettings.knowledgeGraphMaxRelationsPerSource}
+            onChange={(event) => onChange({ knowledgeGraphMaxRelationsPerSource: Math.max(1, Math.min(20000, Math.floor(Number(event.target.value)))) })} />
+        </div>
+      </div>
+      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("settings.knowledgeGraphLimits.hint")}</p>
     </section>
   );
 }

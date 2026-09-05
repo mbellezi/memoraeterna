@@ -75,12 +75,21 @@ status, and all participating source IDs.
   prompt, and input hashes. Long sources use map-reduce over source chunks.
 - Automatically generated atomic notes start as `pending_review`, use validated
   structured output, and link to source, chunks, and SourceSpans.
-- Knowledge-graph generation consumes non-rejected atomic notes and their
-  evidence, not the full source document. It uses short evidence aliases that
-  the backend resolves to real IDs after validation.
+- Knowledge-graph generation always extracts entities, claims, and relations
+  from the source chunks and their evidence. When atomic-note generation is
+  also selected, a second extraction consumes the non-rejected atomic notes;
+  both extractions are combined without requiring atomic notes for the source
+  graph. Both paths use short evidence aliases that the backend resolves to
+  real IDs after validation.
+- Source-chunk graph extraction is capped per standalone document or processable
+  subitem by user-configurable entity and relation limits (defaults: 250 and
+  500). Every generation prompt receives the remaining allowance, and backend
+  validation enforces the same caps before persistence.
 - Entities, mentions, claims, relationships, and accepted atomic-note relations
   are canonical in SQL and retain evidence. AGE receives an idempotent
-  projection and may contribute an optional ranking signal.
+  projection and may contribute an optional ranking signal. Independently
+  processed sources connect through reused canonical entities and the relations
+  between those entities; each mention and relation retains its source evidence.
 - Atomic-note matching retrieves independent text, vector, metadata, and
   optional graph candidates, combines them with the implemented RRF policy,
   optionally reranks one batch per note, applies the configured threshold, and
@@ -97,6 +106,8 @@ status, and all participating source IDs.
 - Search results include source item, document/revision, chunk, SourceSpan,
   scores, and evidence. Hierarchical child results include breadcrumbs to the
   root; a root filter may include descendants.
+- Library search also returns directly matched graph entities and entity
+  relations as distinct, visibly typed results linked to their source evidence.
 - Graph failure omits graph rank/score and does not block search or matching.
 - Debug capture is opt-in and off by default. Remote provider responses are not
   captured as full debug payloads. Local model payload capture follows

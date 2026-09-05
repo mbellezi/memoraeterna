@@ -4,6 +4,8 @@ import {
   createKnowledgeGraphRepository,
   createSimilarityDebugRepository,
   type AtomicNoteSearchRecord,
+  type GraphEntitySearchRecord,
+  type GraphRelationSearchRecord,
   type PgPool,
   type SearchEvidenceRecord
 } from "@app/db";
@@ -27,6 +29,10 @@ export type FusedNoteCandidate = AtomicNoteSearchRecord & FusionRanks;
 type MergedCandidate =
   | { kind: "chunk"; candidate: FusedSearchCandidate }
   | { kind: "atomic_note"; candidate: FusedNoteCandidate };
+
+type DisplayCandidate = MergedCandidate
+  | { kind: "entity"; candidate: GraphEntitySearchRecord }
+  | { kind: "relation"; candidate: GraphRelationSearchRecord };
 
 export class SearchService {
   public constructor(
@@ -77,6 +83,8 @@ export class SearchService {
         })
       : [];
     let graphCandidates: SearchEvidenceRecord[] = [];
+    let graphEntities: GraphEntitySearchRecord[] = [];
+    let graphRelations: GraphRelationSearchRecord[] = [];
     let graphError: string | null = null;
     try {
       graphCandidates = await createKnowledgeGraphRepository(pool).searchChunks({
@@ -87,6 +95,18 @@ export class SearchService {
       });
     } catch (error) {
       graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+    }
+    try {
+      const elements = await createKnowledgeGraphRepository(pool).searchElements({
+        text: input.text,
+        sourceTypes: input.sourceTypes,
+        sourceItemIds,
+        limit: candidateLimit
+      });
+      graphEntities = elements.entities;
+      graphRelations = elements.relations;
+    } catch (error) {
+      graphError ??= error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
     }
     const noteTextCandidates = await repository.searchNotesText({
       text: input.text,
@@ -129,6 +149,12 @@ export class SearchService {
       ...noteCandidates.map((candidate) => ({ kind: "atomic_note" as const, candidate }))
     ].sort((left, right) => right.candidate.finalScore - left.candidate.finalScore
       || mergedCandidateId(left).localeCompare(mergedCandidateId(right)));
+    const displayCandidates: DisplayCandidate[] = [
+      ...merged,
+      ...graphEntities.map((candidate) => ({ kind: "entity" as const, candidate })),
+      ...graphRelations.map((candidate) => ({ kind: "relation" as const, candidate }))
+    ].sort((left, right) => right.candidate.finalScore - left.candidate.finalScore
+      || displayCandidateId(left).localeCompare(displayCandidateId(right)));
 
     await this.recordDebugRun(pool, input, merged, {
       embeddingModel,
@@ -142,11 +168,15 @@ export class SearchService {
       candidateLimit
     });
 
-    const selected = merged.slice(0, input.limit);
+    const selected = displayCandidates.slice(0, input.limit);
     const breadcrumbs = await hierarchy.getBreadcrumbs([...new Set(selected.map(({ candidate }) => candidate.sourceItemId))]);
-    return selected.map((entry) => entry.kind === "chunk"
-      ? toSearchResult({ ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] })
-      : toNoteSearchResult({ ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] }));
+    return selected.map((entry) => {
+      const candidate = { ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] };
+      if (entry.kind === "chunk") return toSearchResult(candidate as FusedSearchCandidate);
+      if (entry.kind === "atomic_note") return toNoteSearchResult(candidate as FusedNoteCandidate);
+      if (entry.kind === "entity") return toEntitySearchResult(candidate as GraphEntitySearchRecord);
+      return toRelationSearchResult(candidate as GraphRelationSearchRecord);
+    });
   }
 
   private async recordDebugRun(
@@ -315,6 +345,12 @@ function mergedCandidateId(entry: MergedCandidate): string {
   return entry.kind === "chunk" ? entry.candidate.chunkId : entry.candidate.noteId;
 }
 
+function displayCandidateId(entry: DisplayCandidate): string {
+  if (entry.kind === "entity") return entry.candidate.entityId;
+  if (entry.kind === "relation") return entry.candidate.relationId;
+  return mergedCandidateId(entry);
+}
+
 function toNoteSearchResult(row: AtomicNoteSearchRecord): SearchResult {
   return {
     kind: "atomic_note",
@@ -355,5 +391,42 @@ function toSearchResult(row: SearchEvidenceRecord): SearchResult {
       ? { boundingBox: row.boundingBox as Extract<SearchResult, { kind: "chunk" }>["boundingBox"] }
       : {}),
     ...(row.selector ? { selector: row.selector } : {})
+  };
+}
+
+function toEntitySearchResult(row: GraphEntitySearchRecord): SearchResult {
+  return {
+    kind: "entity",
+    entityId: row.entityId,
+    entityType: row.entityType as Extract<SearchResult, { kind: "entity" }>["entityType"],
+    canonicalName: row.canonicalName,
+    aliases: row.aliases,
+    description: row.description,
+    sourceItemId: row.sourceItemId,
+    sourceTitle: row.sourceTitle,
+    sourceType: row.sourceType,
+    breadcrumbs: row.breadcrumbs ?? [],
+    excerpt: row.excerpt,
+    graphScore: row.graphScore,
+    finalScore: row.finalScore
+  };
+}
+
+function toRelationSearchResult(row: GraphRelationSearchRecord): SearchResult {
+  return {
+    kind: "relation",
+    relationId: row.relationId,
+    subjectEntityId: row.subjectEntityId,
+    subjectName: row.subjectName,
+    predicate: row.predicate,
+    objectEntityId: row.objectEntityId,
+    objectName: row.objectName,
+    sourceItemId: row.sourceItemId,
+    sourceTitle: row.sourceTitle,
+    sourceType: row.sourceType,
+    breadcrumbs: row.breadcrumbs ?? [],
+    excerpt: row.excerpt,
+    graphScore: row.graphScore,
+    finalScore: row.finalScore
   };
 }

@@ -100,7 +100,9 @@ describe("desktop IPC contracts", () => {
       language: "pt-BR",
       themeMode: "dark",
       keepLocalEmbeddingModelsLoaded: true,
-      summaryMinimumWordCount: 40
+      summaryMinimumWordCount: 40,
+      knowledgeGraphMaxEntitiesPerSource: 250,
+      knowledgeGraphMaxRelationsPerSource: 500
     });
 
     expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
@@ -109,10 +111,15 @@ describe("desktop IPC contracts", () => {
     expect(appSettingsUpdateSchema.parse({ summaryMinimumWordCount: 75 })).toEqual({
       summaryMinimumWordCount: 75
     });
+    expect(appSettingsUpdateSchema.parse({
+      knowledgeGraphMaxEntitiesPerSource: 125,
+      knowledgeGraphMaxRelationsPerSource: 300
+    })).toEqual({ knowledgeGraphMaxEntitiesPerSource: 125, knowledgeGraphMaxRelationsPerSource: 300 });
     expect(appSettingsUpdateSchema.parse({ keepLocalEmbeddingModelsLoaded: false })).toEqual({
       keepLocalEmbeddingModelsLoaded: false
     });
     expect(() => appSettingsUpdateSchema.parse({ summaryMinimumWordCount: -1 })).toThrow();
+    expect(() => appSettingsUpdateSchema.parse({ knowledgeGraphMaxEntitiesPerSource: 0 })).toThrow();
     expect(() => appSettingsUpdateSchema.parse({ language: "de" })).toThrow();
   });
 
@@ -171,7 +178,7 @@ describe("desktop IPC contracts", () => {
     const id = "00000000-0000-4000-8000-000000000001";
     expect(atomicNoteReviewInputSchema.parse({ id, action: "approve" })).toEqual({ id, action: "approve" });
     expect(() => atomicNoteReviewInputSchema.parse({ id, action: "edit" })).toThrow();
-    expect(sourceDetailSchema.parse({
+    const detail = sourceDetailSchema.parse({
       id,
       type: "PersonalNote",
       title: "Source",
@@ -186,7 +193,9 @@ describe("desktop IPC contracts", () => {
       summaries: [],
       atomicNotes: [],
       relations: []
-    }).title).toBe("Source");
+    });
+    expect(detail.title).toBe("Source");
+    expect(detail.graph).toEqual({ entities: [], relations: [], sourceConnections: [] });
   });
 
   it("validates phase 5 local model commands and profile selections", () => {

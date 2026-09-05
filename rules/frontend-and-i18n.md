@@ -32,6 +32,11 @@ locales.
   matching subitem.
 - Source detail uses keyboard-accessible tabs. Subitems can be added in context
   and selected for one processing batch. Editing saves separately from processing.
+- Source detail includes a knowledge-graph tab for its entities, semantic
+  relations, and connections to other sources. Cross-source connections open
+  the related source through normal Library history navigation. Repeated
+  entities, semantic relations, and related sources are grouped into one
+  expandable card, with the underlying connections shown as compact details.
 - Manual textual intake uses a reusable Markdown editor with write, preview,
   and split views. Hierarchical roots also expose an ordered subitem composer;
   existing materialized children remain independently editable from the Library.

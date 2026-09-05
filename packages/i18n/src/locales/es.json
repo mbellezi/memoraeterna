@@ -268,9 +268,11 @@
     "kinds": {
       "source": "Fuente",
       "subitem": "Seccion",
-      "atomicNote": "Nota atomica"
+      "atomicNote": "Nota atomica",
+      "entity": "Entidad del grafo",
+      "relation": "Relacion del grafo"
     },
-    "resultsCount": "{count} resultados",
+    "resultsCount": "{count} resultados", "graphResults": "Grafo de conocimiento",
     "openHint": "Abrir en la biblioteca"
   },
   "library": {
@@ -289,7 +291,7 @@
     "sections": {
       "metadata": "Metadatos", "summary": "Resumen", "document": "Documento Markdown",
       "originals": "Archivos originales", "chunks": "Fragmentos de la fuente",
-      "atomicNotes": "Notas atomicas", "relations": "Relaciones entre notas"
+      "atomicNotes": "Notas atomicas", "knowledgeGraph": "Grafo de conocimiento", "relations": "Relaciones entre notas"
     },
     "cards": {
       "openDetail": "Abrir detalles de {title}"
@@ -317,6 +319,7 @@
       "emptyForSource": "Esta fuente aun no tiene notas atomicas.",
       "status": { "pending_review": "Pendiente de revision", "approved": "Aprobada", "rejected": "Descartada", "archived": "Archivada" }
     },
+    "graph": { "entities": "Entidades", "entityRelations": "Relaciones entre entidades", "relatedSources": "Fuentes relacionadas", "empty": "Esta fuente aún no tiene entidades en el grafo.", "noRelations": "Esta fuente aún no tiene relaciones entre entidades.", "noEntityRelations": "No hay relaciones para esta entidad.", "noRelatedSources": "No se encontraron conexiones con otras fuentes.", "sharedEntity": "Entidad compartida: {entity}", "expandDetails": "Ampliar detalles", "collapseDetails": "Contraer detalles", "openRelatedSource": "Abrir fuente relacionada" },
     "relations": {
       "empty": "No se encontraron relaciones relevantes entre notas.", "pendingInvolved": "Incluye una nota pendiente de revision",
       "explanations": { "hybrid": "Las notas superaron el umbral de similitud hibrida.", "reranked": "Las notas superaron el umbral de similitud hibrida despues del reranking por lotes." },
@@ -430,6 +433,7 @@
     },
     "matching": { "title": "Coincidencia de conocimiento", "description": "Define la puntuacion final minima necesaria para guardar una relacion entre notas atomicas.", "minimumScore": "Puntuacion minima de coincidencia", "moreRelations": "Mas relaciones", "fewerRelations": "Menos relaciones, mas estrictas", "savedAutomatically": "Este valor se aplica automáticamente al cambiar." },
     "summarization": { "title": "Generación de resúmenes", "description": "Evita una llamada de IA para elementos demasiado pequeños para contener información útil.", "minimumWordCount": "Palabras mínimas para un resumen", "minimumWordCountHint": "Usa 0 para desactivar esta heurística. Las secciones estructurales o solo de referencias siguen excluidas por las instrucciones de IA." },
+    "knowledgeGraphLimits": { "title": "Límites del grafo de conocimiento", "description": "Limita la extracción del grafo por documento único o subelemento procesable.", "entities": "Máximo de entidades", "relations": "Máximo de relaciones", "hint": "El saldo restante se incluye en cada prompt de IA y el backend aplica los mismos límites antes de guardar." },
     "metadataEnrichment": { "apiKey":"Clave de API de Google Books","saveKey":"Guardar clave","removeKey":"Eliminar clave","keySaved":"Clave guardada de forma segura.","noKey":"Sin clave configurada. Las búsquedas usan acceso sin clave.","keyError":"No se pudo acceder a la clave o guardarla de forma segura. Inténtalo de nuevo.", "provider":"Proveedor de metadatos de libros","auto":"Automático (Open Library → Google Books)","providerHint":"Elige un servicio para libros. Automático prueba Google Books si Open Library falla o no encuentra resultados. Los artículos académicos usan Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Enriquecimiento automático de metadatos", "description": "Consulta ISBN, DOI, títulos y autores en Open Library, Google Books y Crossref. Desactívalo para impedir todas las consultas de metadatos." },
     "reset": { "title": "Restablecer biblioteca", "description": "Elimina toda la biblioteca, archivos gestionados, vectores, trabajos y notas atomicas. Se conservan los modelos locales descargados y la configuracion.", "action": "Restablecer todo", "confirmation": "Eliminar permanentemente toda la biblioteca, archivos gestionados, vectores y notas atomicas? Se conservaran los modelos locales descargados.", "completed": "Biblioteca restablecida.", "completedWithWarnings": "Biblioteca restablecida, pero algunos archivos gestionados no se pudieron eliminar.", "failed": "No se pudo restablecer la biblioteca." },
     "ai": {

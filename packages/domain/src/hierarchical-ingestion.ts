@@ -148,7 +148,7 @@ export const processingStageDependencies: Readonly<Record<ProcessingStage, reado
   embedding: ["chunking"],
   summarization: ["chunking"],
   atomicNotes: ["chunking"],
-  knowledgeGraph: ["atomicNotes"],
+  knowledgeGraph: ["chunking"],
   atomicNoteMatching: ["atomicNotes"],
   obsidianProjection: ["materialization"],
   aggregateSummarization: ["summarization"]

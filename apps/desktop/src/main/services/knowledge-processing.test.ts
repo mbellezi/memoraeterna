@@ -12,6 +12,7 @@ import {
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hasMinimumSummaryContent,
+  limitKnowledgeGraphBatches,
   meetsRelationThreshold,
   normalizeSummaryText,
   parseKnowledgeGraphOutput,
@@ -113,7 +114,7 @@ describe("knowledge processing", () => {
   });
 
   it("allows the minimum summary word count to be disabled", async () => {
-    const run = vi.fn(async () => ({
+    const run = vi.fn(async (_prompt: string) => ({
       output: "Short summary.",
       providerId: "test",
       modelId: "mock-model",
@@ -301,6 +302,49 @@ describe("knowledge processing", () => {
     expect(prompt).toContain('only allowed evidence aliases in this batch are: ["c1"]');
     expect(prompt).toContain("must exactly match an entities[].key");
     expect(prompt).not.toContain("00000000-0000-4000-8000-000000000001");
+  });
+
+  it("puts the remaining source extraction limits in the prompt and enforces them", async () => {
+    const inputs = [
+      { id: "chunk-1", title: "One", ideaStatement: "", bodyMarkdown: "A".repeat(80), evidenceChunkIds: ["chunk-1"] },
+      { id: "chunk-2", title: "Two", ideaStatement: "", bodyMarkdown: "B".repeat(80), evidenceChunkIds: ["chunk-2"] }
+    ];
+    const run = vi.fn(async (_prompt: string) => ({
+      output: JSON.stringify({
+        entities: [
+          { key: "e1", type: "Concept", canonicalName: "Allowed", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] },
+          { key: "e2", type: "Concept", canonicalName: "Overflow", aliases: [], confidence: 0.8, evidenceChunkIds: ["c1"] }
+        ],
+        claims: [],
+        relations: []
+      }),
+      providerId: "test", modelId: "mock", runtime: "remote", profileId: "profile-1", aiTaskRunId: "run-1"
+    }));
+
+    const generated = await generateKnowledgeGraphFromAtomicNotes(
+      { title: "Long source", language: "en" }, inputs, run, 100,
+      { inputKind: "source_chunks", extractionLimits: { maxEntities: 1, maxRelations: 2 } }
+    );
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toContain("Source excerpts:");
+    expect(run.mock.calls[0]?.[0]).toContain("at most 1 entities");
+    expect(run.mock.calls[0]?.[0]).toContain("2 relations");
+    expect(generated?.batches.flatMap((batch) => batch.entities).map((entity) => entity.canonicalName)).toEqual(["Allowed"]);
+  });
+
+  it("drops relations whose endpoints exceed the entity cap", () => {
+    const [limited] = limitKnowledgeGraphBatches([{
+      entities: [
+        { key: "e1", type: "Concept", canonicalName: "One", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] },
+        { key: "e2", type: "Concept", canonicalName: "Two", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] }
+      ],
+      claims: [],
+      relations: [{ subjectEntityKey: "e1", predicate: "links", objectEntityKey: "e2", confidence: 1, evidenceChunkIds: ["chunk-1"] }]
+    }], { maxEntities: 1, maxRelations: 10 });
+
+    expect(limited?.entities).toHaveLength(1);
+    expect(limited?.relations).toEqual([]);
   });
 
   it("resumes after completed graph batches instead of executing them again", async () => {

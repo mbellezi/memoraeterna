@@ -3,7 +3,14 @@ import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
 import { asJsonObject, mapTimestamp } from "./sql.js";
-import type { GraphEntityRecord, JsonObject, SearchEvidenceRecord, SourceItemType } from "./types.js";
+import type {
+  GraphEntityRecord,
+  GraphEntitySearchRecord,
+  GraphRelationSearchRecord,
+  JsonObject,
+  SearchEvidenceRecord,
+  SourceItemType
+} from "./types.js";
 
 const graphName = "memora_knowledge";
 
@@ -55,6 +62,25 @@ export interface AtomicNoteGraphCandidate {
   noteId: string;
   graphScore: number;
   pathType: "shared_entity" | "related_entity";
+}
+
+export interface SourceGraphElements {
+  entities: Array<{ id: string; type: string; name: string; confidence: number }>;
+  relations: Array<{
+    id: string;
+    subject: string;
+    predicate: string;
+    object: string;
+    confidence: number;
+  }>;
+  sourceConnections: Array<{
+    sourceItemId: string;
+    sourceTitle: string;
+    entityName: string;
+    relatedEntityName: string;
+    predicate: string;
+    confidence: number;
+  }>;
 }
 
 interface EntityRow extends QueryResultRow {
@@ -171,7 +197,8 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                ) values ($1, $2, $3, $4, $5, $6, $7, $8)
                on conflict (type, normalized_name) do update set
                  canonical_name = excluded.canonical_name,
-                 aliases = excluded.aliases,
+                 aliases = (select coalesce(jsonb_agg(distinct alias), '[]'::jsonb)
+                            from jsonb_array_elements(entities.aliases || excluded.aliases) alias),
                  description = coalesce(excluded.description, entities.description),
                  language = excluded.language,
                  confidence = greatest(entities.confidence, excluded.confidence),
@@ -458,6 +485,86 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       }
     },
 
+    async searchElements(input: {
+      text: string;
+      sourceTypes?: SourceItemType[];
+      sourceItemIds?: string[];
+      limit?: number;
+    }): Promise<{ entities: GraphEntitySearchRecord[]; relations: GraphRelationSearchRecord[] }> {
+      const values = [input.text, input.sourceTypes ?? [], input.sourceItemIds ?? [], input.limit ?? 60];
+      const entities = await pool.query<GraphEntitySearchRecord & QueryResultRow>(
+        `select * from (
+           select distinct on (e.id) e.id as "entityId", e.type as "entityType",
+                  e.canonical_name as "canonicalName", e.aliases, e.description,
+                  source.id as "sourceItemId", source.title as "sourceTitle", source.type as "sourceType",
+                  chunk.content as excerpt,
+                  greatest(
+                    case when strpos(unaccent(lower(e.canonical_name)), unaccent(lower($1))) > 0 then 1 else 0 end,
+                    similarity(unaccent(e.canonical_name), unaccent($1)),
+                    coalesce((select max(similarity(unaccent(alias), unaccent($1)))
+                              from jsonb_array_elements_text(e.aliases) alias), 0)
+                  ) * e.confidence as "graphScore",
+                  greatest(
+                    case when strpos(unaccent(lower(e.canonical_name)), unaccent(lower($1))) > 0 then 1 else 0 end,
+                    similarity(unaccent(e.canonical_name), unaccent($1)),
+                    coalesce((select max(similarity(unaccent(alias), unaccent($1)))
+                              from jsonb_array_elements_text(e.aliases) alias), 0)
+                  ) * e.confidence as "finalScore"
+           from entities e
+           join entity_mentions mention on mention.entity_id = e.id
+           join source_items source on source.id = mention.source_item_id
+           join chunks chunk on chunk.id = mention.chunk_id
+           where (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or source.type = any($2))
+             and (coalesce(array_length($3::uuid[], 1), 0) = 0 or source.id = any($3))
+             and (strpos(unaccent(lower(e.canonical_name)), unaccent(lower($1))) > 0
+               or similarity(unaccent(e.canonical_name), unaccent($1)) >= 0.15
+               or exists(select 1 from jsonb_array_elements_text(e.aliases) alias
+                         where similarity(unaccent(alias), unaccent($1)) >= 0.15))
+           order by e.id, mention.confidence desc
+         ) ranked order by "finalScore" desc, "canonicalName" limit $4`,
+        values
+      );
+      const relations = await pool.query<GraphRelationSearchRecord & QueryResultRow>(
+        `select relation.id as "relationId", subject.id as "subjectEntityId",
+                subject.canonical_name as "subjectName", relation.predicate,
+                object.id as "objectEntityId", object.canonical_name as "objectName",
+                source.id as "sourceItemId", source.title as "sourceTitle", source.type as "sourceType",
+                chunk.content as excerpt,
+                greatest(
+                  case when strpos(unaccent(lower(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name))), unaccent(lower($1))) > 0 then 1 else 0 end,
+                  similarity(unaccent(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name)), unaccent($1))
+                ) * relation.confidence as "graphScore",
+                greatest(
+                  case when strpos(unaccent(lower(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name))), unaccent(lower($1))) > 0 then 1 else 0 end,
+                  similarity(unaccent(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name)), unaccent($1))
+                ) * relation.confidence as "finalScore"
+         from entity_relations relation
+         join entities subject on subject.id = relation.subject_entity_id
+         join entities object on object.id = relation.object_entity_id
+         join source_items source on source.id = relation.source_item_id
+         join chunks chunk on chunk.id = relation.evidence_chunk_id
+         where (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or source.type = any($2))
+           and (coalesce(array_length($3::uuid[], 1), 0) = 0 or source.id = any($3))
+           and (strpos(unaccent(lower(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name))), unaccent(lower($1))) > 0
+             or similarity(unaccent(concat_ws(' ', subject.canonical_name, relation.predicate, object.canonical_name)), unaccent($1)) >= 0.15)
+         order by "finalScore" desc, relation.id limit $4`,
+        values
+      );
+      return {
+        entities: entities.rows.map((row) => ({
+          ...row,
+          aliases: Array.isArray(row.aliases) ? row.aliases.filter((alias): alias is string => typeof alias === "string") : [],
+          graphScore: score(Number(row.graphScore)),
+          finalScore: score(Number(row.finalScore))
+        })),
+        relations: relations.rows.map((row) => ({
+          ...row,
+          graphScore: score(Number(row.graphScore)),
+          finalScore: score(Number(row.finalScore))
+        }))
+      };
+    },
+
     async findAtomicNoteCandidates(noteId: string, limit = 20): Promise<AtomicNoteGraphCandidate[]> {
       const candidates = await scoreAtomicNoteGraphPaths(pool, noteId, null, Math.max(200, limit * 25));
       return [...candidates.entries()]
@@ -529,6 +636,85 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         }
       }
       return result;
+    },
+
+    async listSourceElements(sourceItemId: string): Promise<SourceGraphElements> {
+      const entityRows = await pool.query<{
+        id: string; type: string; name: string; confidence: number;
+      } & QueryResultRow>(
+        `select entity.id, entity.type, entity.canonical_name as name, max(mention.confidence) as confidence
+         from entity_mentions mention join entities entity on entity.id = mention.entity_id
+         where mention.source_item_id = $1
+         group by entity.id, entity.type, entity.canonical_name
+         order by entity.canonical_name`,
+        [sourceItemId]
+      );
+      const relationRows = await pool.query<{
+        id: string; subject: string; predicate: string; object: string; confidence: number;
+      } & QueryResultRow>(
+        `select relation.id, subject.canonical_name as subject, relation.predicate,
+                object.canonical_name as object, relation.confidence
+         from entity_relations relation
+         join entities subject on subject.id = relation.subject_entity_id
+         join entities object on object.id = relation.object_entity_id
+         where relation.source_item_id = $1
+         order by subject.canonical_name, relation.predicate, object.canonical_name`,
+        [sourceItemId]
+      );
+      const sharedRows = await pool.query<{
+        sourceItemId: string; sourceTitle: string; entityName: string; confidence: number;
+      } & QueryResultRow>(
+        `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
+                entity.canonical_name as "entityName",
+                max(least(current_mention.confidence, other_mention.confidence)) as confidence
+         from entity_mentions current_mention
+         join entities entity on entity.id = current_mention.entity_id
+         join entity_mentions other_mention on other_mention.entity_id = entity.id
+           and other_mention.source_item_id <> current_mention.source_item_id
+         join source_items other_source on other_source.id = other_mention.source_item_id
+         where current_mention.source_item_id = $1
+         group by other_source.id, other_source.title, entity.id, entity.canonical_name
+         order by other_source.title, entity.canonical_name`,
+        [sourceItemId]
+      );
+      const relatedRows = await pool.query<{
+        sourceItemId: string; sourceTitle: string; entityName: string; relatedEntityName: string;
+        predicate: string; confidence: number;
+      } & QueryResultRow>(
+        `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
+                subject_entity.canonical_name as "entityName",
+                object_entity.canonical_name as "relatedEntityName", relation.predicate,
+                max(least(current_mention.confidence, relation.confidence, other_mention.confidence)) as confidence
+         from entity_mentions current_mention
+         join entities current_entity on current_entity.id = current_mention.entity_id
+         join entity_relations relation on relation.subject_entity_id = current_entity.id
+           or relation.object_entity_id = current_entity.id
+         join entities subject_entity on subject_entity.id = relation.subject_entity_id
+         join entities object_entity on object_entity.id = relation.object_entity_id
+         join entity_mentions other_mention on other_mention.entity_id = case
+           when relation.subject_entity_id = current_entity.id then relation.object_entity_id
+           else relation.subject_entity_id end
+           and other_mention.source_item_id <> current_mention.source_item_id
+         join source_items other_source on other_source.id = other_mention.source_item_id
+         where current_mention.source_item_id = $1
+         group by other_source.id, other_source.title, subject_entity.id, subject_entity.canonical_name,
+                  object_entity.id, object_entity.canonical_name, relation.predicate
+         order by other_source.title, subject_entity.canonical_name, relation.predicate, object_entity.canonical_name`,
+        [sourceItemId]
+      );
+      return {
+        entities: entityRows.rows.map((row) => ({ ...row, confidence: score(Number(row.confidence)) })),
+        relations: relationRows.rows.map((row) => ({ ...row, confidence: score(Number(row.confidence)) })),
+        sourceConnections: [
+          ...sharedRows.rows.map((row) => ({
+            ...row,
+            relatedEntityName: row.entityName,
+            predicate: "shared_entity",
+            confidence: score(Number(row.confidence))
+          })),
+          ...relatedRows.rows.map((row) => ({ ...row, confidence: score(Number(row.confidence)) }))
+        ]
+      };
     }
   };
 }

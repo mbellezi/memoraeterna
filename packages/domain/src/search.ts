@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { SourceItemTypeSchema } from "./source-item.js";
+import { GraphEntityTypeSchema } from "./graph.js";
 import { StableIdSchema } from "./primitives.js";
 
 export const SearchModeSchema = z.enum(["text", "vector", "hybrid"]);
@@ -76,9 +77,40 @@ export const AtomicNoteSearchResultSchema = z
 
 export type AtomicNoteSearchResult = z.infer<typeof AtomicNoteSearchResultSchema>;
 
+const GraphSearchContextSchema = z.object({
+  sourceItemId: StableIdSchema,
+  sourceTitle: z.string().min(1),
+  sourceType: SourceItemTypeSchema,
+  breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
+  excerpt: z.string(),
+  graphScore: z.number().min(0).max(1),
+  finalScore: z.number().min(0).max(1)
+});
+
+export const GraphEntitySearchResultSchema = GraphSearchContextSchema.extend({
+  kind: z.literal("entity"),
+  entityId: StableIdSchema,
+  entityType: GraphEntityTypeSchema,
+  canonicalName: z.string().min(1),
+  aliases: z.array(z.string().min(1)),
+  description: z.string().nullable()
+}).strict();
+
+export const GraphRelationSearchResultSchema = GraphSearchContextSchema.extend({
+  kind: z.literal("relation"),
+  relationId: StableIdSchema,
+  subjectEntityId: StableIdSchema,
+  subjectName: z.string().min(1),
+  predicate: z.string().min(1),
+  objectEntityId: StableIdSchema,
+  objectName: z.string().min(1)
+}).strict();
+
 export const SearchResultSchema = z.discriminatedUnion("kind", [
   ChunkSearchResultSchema,
-  AtomicNoteSearchResultSchema
+  AtomicNoteSearchResultSchema,
+  GraphEntitySearchResultSchema,
+  GraphRelationSearchResultSchema
 ]);
 
 export type SearchResultItem = z.infer<typeof SearchResultSchema>;

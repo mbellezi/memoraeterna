@@ -13,7 +13,7 @@ export const summaryPromptVersion = "summary-v2";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v3";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v4";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v5";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
@@ -79,8 +79,63 @@ export interface KnowledgeGraphBatchCheckpoint {
   execution: KnowledgeGraphExecutionTrace;
 }
 
+export interface KnowledgeGraphExtractionLimits {
+  maxEntities: number;
+  maxRelations: number;
+}
+
+export function limitKnowledgeGraphBatches(
+  batches: ReadonlyArray<KnowledgeGraphGenerationOutput>,
+  limits: KnowledgeGraphExtractionLimits
+): KnowledgeGraphGenerationOutput[] {
+  const maxEntities = Math.max(0, Math.floor(limits.maxEntities));
+  const maxRelations = Math.max(0, Math.floor(limits.maxRelations));
+  let entityCount = 0;
+  let relationCount = 0;
+  return batches.map((batch) => {
+    const allowedKeys = new Set<string>();
+    const entities = batch.entities.filter((entity) => {
+      if (entityCount >= maxEntities) return false;
+      entityCount += 1;
+      allowedKeys.add(entity.key);
+      return true;
+    });
+    const relations = batch.relations.filter((relation) => {
+      if (relationCount >= maxRelations
+          || !allowedKeys.has(relation.subjectEntityKey)
+          || !allowedKeys.has(relation.objectEntityKey)) return false;
+      relationCount += 1;
+      return true;
+    });
+    return {
+      entities,
+      claims: batch.claims.map((claim) => ({
+        ...claim,
+        relatedEntityKeys: claim.relatedEntityKeys.filter((key) => allowedKeys.has(key))
+      })),
+      relations
+    };
+  });
+}
+
+function remainingGraphLimits(
+  batches: ReadonlyArray<KnowledgeGraphGenerationOutput>,
+  limits?: KnowledgeGraphExtractionLimits
+): KnowledgeGraphExtractionLimits | null {
+  if (!limits) return null;
+  const entities = batches.reduce((total, batch) => total + batch.entities.length, 0);
+  const relations = batches.reduce((total, batch) => total + batch.relations.length, 0);
+  return {
+    maxEntities: Math.max(0, Math.floor(limits.maxEntities) - entities),
+    maxRelations: Math.max(0, Math.floor(limits.maxRelations) - relations)
+  };
+}
+
 export interface KnowledgeGraphGenerationOptions {
   completedBatches?: ReadonlyArray<KnowledgeGraphBatchCheckpoint>;
+  inputKind?: "atomic_notes" | "source_chunks" | "catalog_metadata";
+  checkpointNamespace?: string;
+  extractionLimits?: KnowledgeGraphExtractionLimits;
   onBatchCompleted?: (input: {
     completed: number;
     total: number;
@@ -193,13 +248,31 @@ export async function generateKnowledgeGraphFromAtomicNotes(
   executions: KnowledgeGraphExecutionTrace[];
   checkpoints: KnowledgeGraphBatchCheckpoint[];
 } | null> {
+  const inputKind = options.inputKind ?? "atomic_notes";
+  const checkpointNamespace = options.checkpointNamespace ?? "";
   const groups = groupAtomicNotes(notes.filter((note) => graphNoteContent(note).trim().length > 0), maxInputCharacters);
   if (groups.length === 0) return null;
-  const checkpoints = reusableGraphCheckpoints(groups, options.completedBatches ?? []);
+  const completedBatches = checkpointNamespace
+    ? (options.completedBatches ?? []).filter((checkpoint) => checkpoint.batchKey.startsWith(`${checkpointNamespace}:`))
+    : options.completedBatches ?? [];
+  const reusable = reusableGraphCheckpoints(groups, completedBatches, checkpointNamespace);
+  const limitedReusable = options.extractionLimits
+    ? limitKnowledgeGraphBatches(reusable.map((checkpoint) => checkpoint.batch), options.extractionLimits)
+    : reusable.map((checkpoint) => checkpoint.batch);
+  const checkpoints = reusable.map((checkpoint, index) => ({
+    ...checkpoint,
+    batch: limitedReusable[index] ?? checkpoint.batch
+  }));
   for (let batchIndex = checkpoints.length; batchIndex < groups.length; batchIndex += 1) {
+    const remaining = remainingGraphLimits(checkpoints.map((checkpoint) => checkpoint.batch), options.extractionLimits);
+    if (remaining && remaining.maxEntities <= 0) break;
     const group = groups[batchIndex] ?? [];
     const evidenceAliases = createEvidenceAliases(group);
-    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases));
+    const batchLimits = {
+      maxEntities: Math.min(12, remaining?.maxEntities ?? 12),
+      maxRelations: Math.min(12, remaining?.maxRelations ?? 12)
+    };
+    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits));
     if (!execution) return null;
     let parsed: KnowledgeGraphGenerationOutput;
     let finalExecution = execution;
@@ -211,7 +284,9 @@ export async function generateKnowledgeGraphFromAtomicNotes(
         group,
         evidenceAliases,
         execution.output,
-        initialError
+        initialError,
+        inputKind,
+        batchLimits
       ));
       if (!repaired) throw initialError;
       try {
@@ -221,8 +296,15 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       }
       finalExecution = repaired;
     }
+    if (options.extractionLimits) {
+      const limited = limitKnowledgeGraphBatches(
+        [...checkpoints.map((checkpoint) => checkpoint.batch), parsed],
+        options.extractionLimits
+      );
+      parsed = limited.at(-1) ?? { entities: [], claims: [], relations: [] };
+    }
     checkpoints.push({
-      batchKey: knowledgeGraphBatchKey(group),
+      batchKey: knowledgeGraphBatchKey(group, checkpointNamespace),
       batch: parsed,
       execution: executionTrace(finalExecution)
     });
@@ -242,25 +324,28 @@ export async function generateKnowledgeGraphFromAtomicNotes(
 export function buildKnowledgeGraphPrompt(
   source: { title: string; language: string },
   notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
-  evidenceAliases = createEvidenceAliases(notes)
+  evidenceAliases = createEvidenceAliases(notes),
+  inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata" = "atomic_notes",
+  limits: KnowledgeGraphExtractionLimits = { maxEntities: 12, maxRelations: 12 }
 ): string {
-  return `Extract knowledge graph elements only from the atomic notes below.
+  const inputLabel = graphInputLabel(inputKind);
+  return `Extract knowledge graph elements only from the ${inputLabel} below.
 Return exactly one complete JSON object. Do not use Markdown fences or add commentary.
 Use exactly this compact JSON shape and these property names:
 ${knowledgeGraphJsonContract}
 
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
-Ignore atomic notes that only reproduce navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from them.
+Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
 Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
 Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
 Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
 The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
-Keep the response small: at most 12 entities, 8 claims, and 12 relations. Use empty arrays when no supported items exist.
+This batch may return at most ${limits.maxEntities} entities, 8 claims, and ${limits.maxRelations} relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
 
 Source title: ${source.title}
 Source language: ${source.language}
-Atomic notes:
-${formatAtomicNotesForGraph(notes, evidenceAliases)}`;
+${graphInputHeading(inputKind)}:
+${formatGraphInputs(notes, evidenceAliases, inputKind)}`;
 }
 
 export function parseKnowledgeGraphOutput(
@@ -277,9 +362,11 @@ function buildKnowledgeGraphRepairPrompt(
   notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
   evidenceAliases: ReadonlyMap<string, string>,
   previousOutput: unknown,
-  validationError: unknown
+  validationError: unknown,
+  inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata" = "atomic_notes",
+  limits: KnowledgeGraphExtractionLimits = { maxEntities: 8, maxRelations: 8 }
 ): string {
-  return `The previous knowledge-graph response was invalid or incomplete. Correct it using only the atomic notes below.
+  return `The previous knowledge-graph response was invalid or incomplete. Correct it using only the ${graphInputLabel(inputKind)} below.
 Return one complete compact JSON object only. Do not include reasoning, commentary, or Markdown fences.
 Use exactly this shape and property names:
 ${knowledgeGraphJsonContract}
@@ -288,13 +375,13 @@ Validation problems:
 ${structuredOutputRepairFeedback(validationError)}
 
 Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
-Use at most 8 entities, 5 claims, and 8 relations. Use empty arrays when necessary.
-Do not repair structural or reference-only material into knowledge. If no substantive note remains, return empty entities, claims, and relations arrays.
+Use at most ${Math.min(8, limits.maxEntities)} entities, 5 claims, and ${Math.min(8, limits.maxRelations)} relations. These are hard limits; never exceed them. Use empty arrays when necessary.
+Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities, claims, and relations arrays.
 The only allowed evidence aliases in this batch are: ${JSON.stringify([...evidenceAliases.keys()])}. Never output any other alias.
 Source title: ${source.title}
 Source language: ${source.language}
-Atomic notes:
-${formatAtomicNotesForGraph(notes, evidenceAliases)}
+${graphInputHeading(inputKind)}:
+${formatGraphInputs(notes, evidenceAliases, inputKind)}
 
 Previous invalid output:
 ${serializeOutputForRepair(previousOutput)}`;
@@ -667,9 +754,10 @@ function createEvidenceAliases(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInpu
   return new Map(chunkIds.map((chunkId, index) => [`c${index + 1}`, chunkId]));
 }
 
-function formatAtomicNotesForGraph(
+function formatGraphInputs(
   notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
-  evidenceAliases: ReadonlyMap<string, string>
+  evidenceAliases: ReadonlyMap<string, string>,
+  inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"
 ): string {
   const aliasByChunkId = new Map([...evidenceAliases].map(([alias, chunkId]) => [chunkId, alias]));
   return notes.map((note, index) => {
@@ -677,11 +765,24 @@ function formatAtomicNotesForGraph(
       const alias = aliasByChunkId.get(chunkId);
       return alias ? [alias] : [];
     });
-    return `[n${index + 1}; evidence=${aliases.join(",")}]
+    const prefix = inputKind === "atomic_notes" ? "n" : "s";
+    return `[${prefix}${index + 1}; evidence=${aliases.join(",")}]
 Title: ${note.title}
-Idea: ${note.ideaStatement}
+${inputKind === "atomic_notes" ? `Idea: ${note.ideaStatement}\n` : ""}
 ${note.bodyMarkdown}`;
   }).join("\n\n");
+}
+
+function graphInputLabel(inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"): string {
+  if (inputKind === "atomic_notes") return "atomic notes";
+  if (inputKind === "catalog_metadata") return "source catalog metadata";
+  return "source excerpts";
+}
+
+function graphInputHeading(inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"): string {
+  if (inputKind === "atomic_notes") return "Atomic notes";
+  if (inputKind === "catalog_metadata") return "Source catalog metadata";
+  return "Source excerpts";
 }
 
 function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMap<string, string>): unknown {
@@ -711,7 +812,7 @@ function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMa
   };
 }
 
-function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>): string {
+function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>, namespace = ""): string {
   const hash = createHash("sha256");
   for (const note of notes) {
     hash.update(note.id);
@@ -721,18 +822,20 @@ function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInp
     hash.update([...note.evidenceChunkIds].sort().join(","));
     hash.update("\0");
   }
-  return hash.digest("hex");
+  const digest = hash.digest("hex");
+  return namespace ? `${namespace}:${digest}` : digest;
 }
 
 function reusableGraphCheckpoints(
   groups: ReadonlyArray<ReadonlyArray<KnowledgeGraphAtomicNoteInput>>,
-  completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>
+  completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>,
+  namespace = ""
 ): KnowledgeGraphBatchCheckpoint[] {
   const reusable: KnowledgeGraphBatchCheckpoint[] = [];
   for (let index = 0; index < Math.min(groups.length, completed.length); index += 1) {
     const group = groups[index] ?? [];
     const checkpoint = completed[index];
-    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group)) break;
+    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace)) break;
     reusable.push(checkpoint);
   }
   return reusable;

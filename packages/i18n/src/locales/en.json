@@ -322,9 +322,11 @@
     "kinds": {
       "source": "Source",
       "subitem": "Section",
-      "atomicNote": "Atomic note"
+      "atomicNote": "Atomic note",
+      "entity": "Graph entity",
+      "relation": "Graph relation"
     },
-    "resultsCount": "{count} results",
+    "resultsCount": "{count} results", "graphResults": "Knowledge graph",
     "openHint": "Open in library"
   },
   "library": {
@@ -361,6 +363,7 @@
       "originals": "Original files",
       "chunks": "Source chunks",
       "atomicNotes": "Atomic notes",
+      "knowledgeGraph": "Knowledge graph",
       "relations": "Note relations"
     },
     "cards": {
@@ -396,6 +399,7 @@
         "archived": "Archived"
       }
     },
+    "graph": { "entities": "Entities", "entityRelations": "Entity relations", "relatedSources": "Related sources", "empty": "This source has no graph entities yet.", "noRelations": "This source has no entity relations yet.", "noEntityRelations": "No relations for this entity.", "noRelatedSources": "No connections to other sources were found.", "sharedEntity": "Shared entity: {entity}", "expandDetails": "Expand details", "collapseDetails": "Collapse details", "openRelatedSource": "Open related source" },
     "relations": {
       "empty": "No relevant note relations were found.",
       "pendingInvolved": "Includes a note pending review",
@@ -524,6 +528,7 @@
     },
     "matching": { "title": "Knowledge matching", "description": "Set the minimum final score required to persist a relationship between atomic notes.", "minimumScore": "Minimum match score", "moreRelations": "More relations", "fewerRelations": "Fewer, stricter relations", "savedAutomatically": "This value is applied automatically when changed." },
     "summarization": { "title": "Summary generation", "description": "Avoid spending an AI call on source items that are too small to contain useful content.", "minimumWordCount": "Minimum words for a summary", "minimumWordCountHint": "Use 0 to disable this size heuristic. Structural and reference-only sections are still excluded by the AI instructions." },
+    "knowledgeGraphLimits": { "title": "Knowledge graph limits", "description": "Cap graph extraction for each standalone document or processable subitem.", "entities": "Maximum entities", "relations": "Maximum relations", "hint": "The remaining allowance is included in every AI prompt and the backend enforces the same hard limits before saving." },
     "metadataEnrichment": { "apiKey":"Google Books API key","saveKey":"Save key","removeKey":"Remove key","keySaved":"Key saved securely.","noKey":"No key configured. Searches use unauthenticated access.","keyError":"Could not access or save the key securely. Try again.", "provider":"Book metadata provider","auto":"Automatic (Open Library → Google Books)","providerHint":"Select a service for books. Automatic tries Google Books if Open Library fails or finds nothing. Academic articles use Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Automatic metadata enrichment", "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests." },
     "reset": { "title": "Reset library", "description": "Delete the entire library, managed files, vectors, jobs and atomic notes. Downloaded local models and settings are preserved.", "action": "Reset everything", "confirmation": "Permanently delete the entire library, managed files, vectors and atomic notes? Downloaded local models will be preserved.", "completed": "Library reset completed.", "completedWithWarnings": "Library reset completed, but some managed files could not be removed.", "failed": "The library could not be reset." },
     "ai": {

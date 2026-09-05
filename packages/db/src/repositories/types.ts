@@ -208,6 +208,37 @@ export interface SearchEvidenceRecord {
   finalScore: number;
 }
 
+export interface GraphEntitySearchRecord {
+  entityId: string;
+  entityType: string;
+  canonicalName: string;
+  aliases: string[];
+  description: string | null;
+  sourceItemId: string;
+  sourceTitle: string;
+  sourceType: SourceItemType;
+  breadcrumbs?: Array<{ id: string; title: string }>;
+  excerpt: string;
+  graphScore: number;
+  finalScore: number;
+}
+
+export interface GraphRelationSearchRecord {
+  relationId: string;
+  subjectEntityId: string;
+  subjectName: string;
+  predicate: string;
+  objectEntityId: string;
+  objectName: string;
+  sourceItemId: string;
+  sourceTitle: string;
+  sourceType: SourceItemType;
+  breadcrumbs?: Array<{ id: string; title: string }>;
+  excerpt: string;
+  graphScore: number;
+  finalScore: number;
+}
+
 export interface AtomicNoteSearchRecord {
   noteId: string;
   sourceItemId: string;

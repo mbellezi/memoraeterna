@@ -291,9 +291,11 @@
     "kinds": {
       "source": "Fonte",
       "subitem": "Secao",
-      "atomicNote": "Nota atomica"
+      "atomicNote": "Nota atomica",
+      "entity": "Entidade do grafo",
+      "relation": "Relacao do grafo"
     },
-    "resultsCount": "{count} resultados",
+    "resultsCount": "{count} resultados", "graphResults": "Grafo de conhecimento",
     "openHint": "Abrir na biblioteca"
   },
   "library": {
@@ -330,6 +332,7 @@
       "originals": "Arquivos originais",
       "chunks": "Trechos da fonte",
       "atomicNotes": "Notas atomicas",
+      "knowledgeGraph": "Grafo de conhecimento",
       "relations": "Relações entre notas"
     },
     "cards": {
@@ -365,6 +368,7 @@
         "archived": "Arquivada"
       }
     },
+    "graph": { "entities": "Entidades", "entityRelations": "Relações entre entidades", "relatedSources": "Fontes relacionadas", "empty": "Esta fonte ainda não possui entidades no grafo.", "noRelations": "Esta fonte ainda não possui relações entre entidades.", "noEntityRelations": "Nenhuma relação para esta entidade.", "noRelatedSources": "Nenhuma conexão com outras fontes foi encontrada.", "sharedEntity": "Entidade compartilhada: {entity}", "expandDetails": "Expandir detalhes", "collapseDetails": "Recolher detalhes", "openRelatedSource": "Abrir fonte relacionada" },
     "relations": {
       "empty": "Nenhuma relacao relevante entre notas foi encontrada.",
       "pendingInvolved": "Inclui nota pendente de revisao",
@@ -488,6 +492,7 @@
     },
     "matching": { "title": "Matching de conhecimento", "description": "Define o score final mínimo necessário para persistir uma relação entre notas atômicas.", "minimumScore": "Score mínimo do matching", "moreRelations": "Mais relações", "fewerRelations": "Menos relações, mais rigor", "savedAutomatically": "Este valor é aplicado automaticamente ao ser alterado." },
     "summarization": { "title": "Geração de resumos", "description": "Evita gastar uma chamada de IA em itens pequenos demais para conter conteúdo útil.", "minimumWordCount": "Mínimo de palavras para gerar resumo", "minimumWordCountHint": "Use 0 para desativar esta heurística de tamanho. Partes estruturais ou apenas referenciais continuam excluídas pelas instruções da IA." },
+    "knowledgeGraphLimits": { "title": "Limites do grafo de conhecimento", "description": "Limita a extração do grafo por documento único ou subitem processável.", "entities": "Máximo de entidades", "relations": "Máximo de relações", "hint": "O saldo restante entra em cada prompt da IA e o backend aplica os mesmos limites antes de salvar." },
     "metadataEnrichment": { "apiKey":"Chave de API do Google Books","saveKey":"Salvar chave","removeKey":"Remover chave","keySaved":"Chave salva com segurança.","noKey":"Nenhuma chave configurada. As buscas usam acesso sem chave.","keyError":"Não foi possível acessar ou salvar a chave com segurança. Tente novamente.", "provider":"Provedor de metadados de livros","auto":"Automático (Open Library → Google Books)","providerHint":"Escolha um serviço para livros. Automático tenta Google Books se a Open Library falhar ou não encontrar resultados. Artigos acadêmicos usam Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Enriquecimento automático de metadados", "description": "Consulta ISBNs, DOIs, títulos e autores na Open Library, Google Books e Crossref. Desative para impedir todas as consultas de metadados." },
     "reset": { "title": "Resetar biblioteca", "description": "Apaga toda a biblioteca, arquivos gerenciados, vetores, jobs e notas atomicas. Modelos locais baixados e configuracoes sao preservados.", "action": "Resetar tudo", "confirmation": "Apagar permanentemente toda a biblioteca, arquivos gerenciados, vetores e notas atomicas? Os modelos locais baixados serao preservados.", "completed": "Reset da biblioteca concluido.", "completedWithWarnings": "Reset concluido, mas alguns arquivos gerenciados nao puderam ser removidos.", "failed": "Nao foi possivel resetar a biblioteca." },
     "ai": {

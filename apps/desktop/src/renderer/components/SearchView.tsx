@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { ChevronRight, FileText, Lightbulb, Search, SquareLibrary } from "lucide-react";
+import { ChevronRight, FileText, Lightbulb, Network, Search, Shapes, SquareLibrary } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult } from "../../shared/ipc";
 import { cn } from "../lib/cn";
@@ -86,7 +86,7 @@ export function SearchView({ t, state, onStateChange, onOpenSource }: {
     ) : <>
       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t("search.resultsCount", { values: { count: current.results.length } })}</p>
       <ol className="grid gap-3">
-        {current.results.map((result) => <li key={result.kind === "chunk" ? result.chunkId : result.noteId} className="motion-fade-in-up">
+        {current.results.map((result) => <li key={searchResultId(result)} className="motion-fade-in-up">
           <SearchResultCard result={result} t={t} onOpen={onOpenSource ? () => onOpenSource(result.sourceItemId) : undefined} />
         </li>)}
       </ol>
@@ -94,20 +94,29 @@ export function SearchView({ t, state, onStateChange, onOpenSource }: {
   </section>;
 }
 
-function SearchResultCard({ result, t, onOpen }: {
+export function SearchResultCard({ result, t, onOpen }: {
   result: SearchResult;
   t: Translator;
   onOpen?: (() => void) | undefined;
 }) {
   const isNote = result.kind === "atomic_note";
-  const isSubitem = !isNote && result.breadcrumbs.length > 0;
+  const isEntity = result.kind === "entity";
+  const isRelation = result.kind === "relation";
+  const isSubitem = result.kind === "chunk" && result.breadcrumbs.length > 0;
   const kindStyle = isNote
     ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200"
+    : isEntity
+      ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+      : isRelation
+        ? "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
     : isSubitem
       ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
       : "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200";
-  const KindIcon = isNote ? Lightbulb : isSubitem ? FileText : SquareLibrary;
-  const kindLabel = t(isNote ? "search.kinds.atomicNote" : isSubitem ? "search.kinds.subitem" : "search.kinds.source");
+  const KindIcon = isNote ? Lightbulb : isEntity ? Shapes : isRelation ? Network : isSubitem ? FileText : SquareLibrary;
+  const kindLabel = t(isNote ? "search.kinds.atomicNote"
+    : isEntity ? "search.kinds.entity"
+      : isRelation ? "search.kinds.relation"
+        : isSubitem ? "search.kinds.subitem" : "search.kinds.source");
 
   return (
     <article
@@ -137,8 +146,12 @@ function SearchResultCard({ result, t, onOpen }: {
               </span>)}
             </div>
           ) : null}
-          <h2 className="font-semibold leading-snug">{isNote ? result.title : result.sourceTitle}</h2>
+          <h2 className="font-semibold leading-snug">{isNote ? result.title
+            : isEntity ? result.canonicalName
+              : isRelation ? `${result.subjectName} — ${result.predicate} → ${result.objectName}`
+                : result.sourceTitle}</h2>
           {isNote ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{result.ideaStatement}</p> : null}
+          {isEntity ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{result.entityType}</p> : null}
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           {Math.round(result.finalScore * 100)}%
@@ -146,10 +159,17 @@ function SearchResultCard({ result, t, onOpen }: {
       </div>
       <p className="line-clamp-4 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{result.excerpt}</p>
       <p className="text-xs text-slate-500">
-        {isNote
+        {isNote || isEntity || isRelation
           ? result.sourceTitle
-          : result.page ? `${t("search.page")} ${result.page}` : t("search.markdownEvidence")}
+          : result.kind === "chunk" && result.page ? `${t("search.page")} ${result.page}` : t("search.markdownEvidence")}
       </p>
     </article>
   );
+}
+
+export function searchResultId(result: SearchResult): string {
+  if (result.kind === "chunk") return result.chunkId;
+  if (result.kind === "atomic_note") return result.noteId;
+  if (result.kind === "entity") return result.entityId;
+  return result.relationId;
 }

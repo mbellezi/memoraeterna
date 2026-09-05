@@ -113,6 +113,9 @@ remain useful without AI.
   failed.
 - Matching for a batch waits until all selected atomic-note generation has
   completed so execution order does not bias discovery.
+- Knowledge-graph generation depends on chunking, not atomic-note generation.
+  Selecting both stages generates and combines the source-chunk graph and the
+  atomic-note graph.
 - The embedding stage persists both chunk embeddings and one normalized
   `source_item` embedding. The source vector combines title, safe descriptor
   metadata, current summary, and segmented content; hierarchical roots combine

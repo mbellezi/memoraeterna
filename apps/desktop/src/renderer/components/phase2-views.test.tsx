@@ -24,6 +24,9 @@ import {
   breadcrumbChain,
   childrenOf,
   createLibraryHistoryState,
+  groupGraphEntities,
+  groupGraphRelations,
+  groupRelatedSources,
   LibraryView,
   libraryHistoryEntryFromState,
   navigateLibraryHistoryFromMouseButton,
@@ -383,6 +386,10 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Minimum words for a summary");
     expect(html).toContain('id="summaryMinimumWordCount"');
     expect(html).toContain('value="40"');
+    expect(html).toContain('id="knowledgeGraphMaxEntitiesPerSource"');
+    expect(html).toContain('value="250"');
+    expect(html).toContain('id="knowledgeGraphMaxRelationsPerSource"');
+    expect(html).toContain('value="500"');
     expect(html).not.toContain('id="bookMetadataProvider"');
     expect(html).not.toContain('id="googleBooksApiKey"');
   });
@@ -551,6 +558,24 @@ describe("phase 2 renderer views", () => {
   it("renders the phase 3 library and atomic note review empty states", () => {
     expect(renderToString(<LibraryView t={t} />)).toContain("Filter by source type");
     expect(renderToString(<ReviewQueueView t={t} />)).toContain("Loading");
+  });
+
+  it("collapses repeated graph entities, relations, and related sources", () => {
+    expect(groupGraphEntities([
+      { id: "00000000-0000-4000-8000-000000000001", type: "Concept", name: "Memória", confidence: 0.7 },
+      { id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }
+    ])).toEqual([{ id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }]);
+    expect(groupGraphRelations([
+      { id: "00000000-0000-4000-8000-000000000003", subject: "Memory", predicate: "supports", object: "Recall", confidence: 0.6 },
+      { id: "00000000-0000-4000-8000-000000000004", subject: "Memory", predicate: "supports", object: "Recall", confidence: 0.8 }
+    ])).toHaveLength(1);
+    const sources = groupRelatedSources([
+      { sourceItemId: "00000000-0000-4000-8000-000000000005", sourceTitle: "Related", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: 0.6 },
+      { sourceItemId: "00000000-0000-4000-8000-000000000005", sourceTitle: "Related", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: 0.9 }
+    ]);
+    expect(sources).toHaveLength(1);
+    expect(sources[0]).toMatchObject({ sourceTitle: "Related", confidence: 0.9 });
+    expect(sources[0]?.connections).toHaveLength(1);
   });
 
   it("orders parsed sub-elements by their structural position", () => {

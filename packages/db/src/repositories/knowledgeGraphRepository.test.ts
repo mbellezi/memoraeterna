@@ -83,4 +83,27 @@ describe("knowledge graph repository", () => {
       confidence: 0.92
     }]);
   });
+
+  it("lists source entities, semantic relations, and navigable cross-source connections", async () => {
+    const targetSourceId = "00000000-0000-4000-8000-000000000020";
+    const query = vi.fn(async (text: string) => {
+      if (text.includes("max(mention.confidence)")) return { rows: [{ id: "entity-1", type: "Concept", name: "Memory", confidence: "0.9" }] };
+      if (text.includes("where relation.source_item_id")) return { rows: [{ id: "relation-1", subject: "Memory", predicate: "supports", object: "Recall", confidence: "0.8" }] };
+      if (text.includes("other_mention.entity_id = entity.id")) return { rows: [{ sourceItemId: targetSourceId, sourceTitle: "Other source", entityName: "Memory", confidence: "0.75" }] };
+      if (text.includes("join entity_relations relation on")) return { rows: [{ sourceItemId: targetSourceId, sourceTitle: "Other source", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: "0.7" }] };
+      return { rows: [] };
+    });
+    const pool = { query } as unknown as PgPool;
+
+    const graph = await createKnowledgeGraphRepository(pool).listSourceElements(
+      "00000000-0000-4000-8000-000000000010"
+    );
+
+    expect(graph.entities).toEqual([{ id: "entity-1", type: "Concept", name: "Memory", confidence: 0.9 }]);
+    expect(graph.relations[0]).toMatchObject({ subject: "Memory", predicate: "supports", object: "Recall" });
+    expect(graph.sourceConnections).toEqual([
+      { sourceItemId: targetSourceId, sourceTitle: "Other source", entityName: "Memory", relatedEntityName: "Memory", predicate: "shared_entity", confidence: 0.75 },
+      { sourceItemId: targetSourceId, sourceTitle: "Other source", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: 0.7 }
+    ]);
+  });
 });

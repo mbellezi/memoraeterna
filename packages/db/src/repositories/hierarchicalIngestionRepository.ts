@@ -528,8 +528,13 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
              or exists(select 1 from embeddings_1024 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)) as embedding,
            exists(select 1 from source_summaries where source_item_id = $1 and is_current = true) as summarization,
            exists(select 1 from atomic_notes where created_from_source_item_id = $1 and supersession_status = 'current') as "atomicNotes",
-           exists(select 1 from entity_mentions where source_item_id = $1)
-             or exists(select 1 from claims where source_item_id = $1) as "knowledgeGraph",
+           exists(
+             select 1 from knowledge_generations generation
+             join document_revisions revision on revision.id = generation.document_revision_id
+             where generation.source_item_id = $1 and generation.stage = 'knowledgeGraph'
+               and revision.document_id = $2 and revision.is_current = true
+               and generation.metadata->'graphModes' ?| array['source_chunks', 'catalog_metadata']
+           ) as "knowledgeGraph",
            exists(select 1 from atomic_note_relations relation
              join atomic_notes note on note.id in (relation.source_atomic_note_id, relation.target_atomic_note_id)
              where note.created_from_source_item_id = $1) as "atomicNoteMatching",

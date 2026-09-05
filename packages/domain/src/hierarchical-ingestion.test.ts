@@ -17,9 +17,10 @@ describe("hierarchical ingestion", () => {
       previousArtifactPolicy: "reuse_valid"
     });
     expect(plan.effectiveStages).toEqual([
-      "conversion", "structureDetection", "structureReview", "materialization", "chunking", "atomicNotes", "knowledgeGraph"
+      "conversion", "structureDetection", "structureReview", "materialization", "chunking", "knowledgeGraph"
     ]);
-    expect(plan.automaticallyIncludedStages).toContain("atomicNotes");
+    expect(plan.automaticallyIncludedStages).toContain("chunking");
+    expect(plan.automaticallyIncludedStages).not.toContain("atomicNotes");
   });
 
   it("keeps import-only free from AI stages", () => {
