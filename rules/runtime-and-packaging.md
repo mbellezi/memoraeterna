@@ -44,6 +44,14 @@ desktop packaging; signing; notarization; or distribution.
 - GGUF native bindings and model files remain outside ASAR as required. Smoke
   tests use the same adapters and resource resolution as the desktop.
 
+## Desktop window lifecycle
+
+- The main window opens at 1600 × 1200 logical pixels.
+- Closing the main window quits the application on every platform through the
+  existing graceful service shutdown, including local runtimes and PostgreSQL.
+  Closing must not hide the app in the tray; activation must not reopen a
+  window while shutdown is in progress.
+
 ## Desktop staging and release
 
 - `scripts/prepare-desktop-resources.mjs` stages migrations, baseline,

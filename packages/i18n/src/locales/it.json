@@ -10,7 +10,7 @@
   "shell": {
     "navigation": {
       "library": "Libreria",
-      "import": "Importa",
+      "import": "Aggiungi contenuti",
       "search": "Cerca",
       "review": "Rivedi note",
       "jobs": "Attivita",
@@ -300,7 +300,7 @@
       "eyebrow": "Centro di controllo",
       "title": "Configura il tuo spazio di conoscenza",
       "description": "Gestisci aspetto, intelligenza, integrazioni e dati di Memora Eterna da un unico spazio mirato.",
-      "navigation": {
+      "navigation": { "externalServices": "Servizi esterni", "externalServicesDescription": "Cataloghi, metadati e chiavi API",
         "label": "Ambiti di configurazione",
         "overview": "Panoramica",
         "overviewDescription": "Stato e scorciatoie",
@@ -401,7 +401,7 @@
     },
     "matching": { "title": "Matching della conoscenza", "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.", "minimumScore": "Punteggio minimo del matching", "moreRelations": "Più relazioni", "fewerRelations": "Meno relazioni, più rigorose", "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia." },
     "summarization": { "title": "Generazione dei riassunti", "description": "Evita una chiamata IA per elementi troppo piccoli per contenere informazioni utili.", "minimumWordCount": "Parole minime per un riassunto", "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA." },
-    "metadataEnrichment": { "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },
+    "metadataEnrichment": { "apiKey":"Chiave API Google Books","saveKey":"Salva chiave","removeKey":"Rimuovi chiave","keySaved":"Chiave salvata in modo sicuro.","noKey":"Nessuna chiave configurata. Le ricerche usano accesso senza chiave.","keyError":"Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.", "provider":"Fornitore di metadati dei libri","auto":"Automatico (Open Library → Google Books)","providerHint":"Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },
     "reset": { "title": "Reimposta libreria", "description": "Elimina tutta la libreria, i file gestiti, i vettori, i processi e le note atomiche. I modelli locali scaricati e le impostazioni vengono conservati.", "action": "Reimposta tutto", "confirmation": "Eliminare definitivamente tutta la libreria, i file gestiti, i vettori e le note atomiche? I modelli locali scaricati saranno conservati.", "completed": "Libreria reimpostata.", "completedWithWarnings": "Libreria reimpostata, ma alcuni file gestiti non sono stati rimossi.", "failed": "Impossibile reimpostare la libreria." },
     "ai": {
       "title": "Provider e profili IA", "provider": "Provider", "google": "Google Gemini",
@@ -482,5 +482,44 @@
       "payloadTooLarge": "Il contenuto acquisito e troppo grande.",
       "internal": "Il desktop non ha completato la richiesta di integrazione."
     }
+  },
+  "sourceWorkspace": {
+    "outdated": "Riepilogo da aggiornare",
+    "content": "Contenuto",
+    "history": "Cronologia",
+    "current": "Attuale",
+    "historyHint": "Il contenuto precedente è di sola lettura. Sono elencati fino a 100 documenti recenti; le prove originali sono conservate.",
+    "fetchUrl": "Recupera metadati e contenuto",
+    "edit": "Modifica fonte",
+    "save": "Salva modifiche",
+    "addChild": "Aggiungi sottoelemento",
+    "overview": "Panoramica",
+    "search": "Cerca nella biblioteca",
+    "searchHint": "Titolo, autore, ISBN, DOI, tag — inclusi sottoelementi",
+    "list": "Vista elenco",
+    "grid": "Vista griglia",
+    "subsource": "Sottofonte",
+    "pages": "Paginazione",
+    "previous": "Precedente",
+    "next": "Successiva",
+    "noChildren": "Nessun sottoelemento. Aggiungi il primo per iniziare.",
+    "moreMetadata": "Metadati aggiuntivi",
+    "enrichmentEmpty": "Nessun risultato. Affina il titolo o usa ISBN / DOI. Puoi continuare manualmente.",
+    "enrichmentError": "Il catalogo non è disponibile. Puoi continuare manualmente.",
+    "editHint": "Il salvataggio conserva il contenuto precedente e le prove revisionate. Elabora poi la fonte modificata per aggiornare i risultati.",
+    "stale": "Il contenuto è cambiato. Elabora questa fonte per aggiornare il riepilogo.",
+    "conflict": "Questa fonte è cambiata da quando l’hai aperta. Riaprila prima di salvare.",
+    "processing": "Attendi la fine dell’elaborazione attiva prima di modificare.",
+    "modelDefaults": "Valori del modello",
+    "customizeTask": "Personalizza per attività",
+    "resetTask": "Usa valori del modello",
+    "duplicateProfile": "Duplica profilo",
+    "profileHint": "Inizia con un modello e personalizza solo le attività che richiedono impostazioni diverse.",
+    "effectiveModel": "Modello effettivo",
+    "newModel": "Nuovo modello",
+    "savedPresets": "I miei preset di elaborazione",
+    "presetName": "Nome del preset",
+    "savePreset": "Salva preset",
+    "removePreset": "Rimuovere questo preset?"
   }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Archive,
   Bot,
@@ -9,6 +9,7 @@ import {
   FileX,
   HardDrive,
   FolderOpen,
+  Globe,
   Languages,
   Moon,
   Network,
@@ -54,7 +55,7 @@ interface SettingsViewProps {
   onToast: (message: MessageKey, tone: ToastTone) => void;
 }
 
-export type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "connections" | "data";
+export type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "external-services" | "connections" | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -130,6 +131,14 @@ const scopes: Array<{
     description: "settings.dashboard.navigation.modelsDescription",
     accent: "from-emerald-500/20 via-teal-500/10 to-transparent",
     iconStyle: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+  },
+  {
+    id: "external-services",
+    icon: Globe,
+    label: "settings.dashboard.navigation.externalServices",
+    description: "settings.dashboard.navigation.externalServicesDescription",
+    accent: "from-sky-500/20 via-blue-500/10 to-transparent",
+    iconStyle: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200"
   },
   {
     id: "connections",
@@ -315,6 +324,13 @@ export function SettingsView({
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
               <LocalModelsView t={t} onToast={onToast} />
+            </div>
+          ) : null}
+
+          {activeScope === "external-services" ? (
+            <div className="grid min-w-0 gap-5">
+              <ScopeHeader scope={activeScopeDefinition} t={t} />
+              <ExternalServicesCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
             </div>
           ) : null}
 
@@ -548,12 +564,34 @@ function MatchingCard({ appSettings, t, onChange }: {
           <span>{t("settings.matching.fewerRelations")}</span>
         </div>
       </div>
-      <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-        <div className="grid gap-1">
+
+    </section>
+  );
+}
+
+function ExternalServicesCard({ appSettings, t, onChange }: {
+  appSettings: AppSettings;
+  t: SettingsViewProps["t"];
+  onChange: SettingsViewProps["onAppSettingsChange"];
+}) {
+  return <section className="grid min-w-0 gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex min-w-0 items-start justify-between gap-4">
+        <div className="grid min-w-0 flex-1 gap-1">
           <Label htmlFor="metadataEnrichmentEnabled">{t("settings.metadataEnrichment.title")}</Label>
           <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
             {t("settings.metadataEnrichment.description")}
           </p>
+          <Label htmlFor="bookMetadataProvider" className="mt-3">{t("settings.metadataEnrichment.provider")}</Label>
+          <select id="bookMetadataProvider" value={appSettings.bookMetadataProvider}
+            disabled={!appSettings.metadataEnrichmentEnabled}
+            onChange={(event) => onChange({ bookMetadataProvider: event.target.value as AppSettings["bookMetadataProvider"] })}
+            className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+            <option value="auto">{t("settings.metadataEnrichment.auto")}</option>
+            <option value="open-library">{t("settings.metadataEnrichment.openLibrary")}</option>
+            <option value="google-books">{t("settings.metadataEnrichment.googleBooks")}</option>
+          </select>
+          <p className="text-xs leading-5 text-slate-500">{t("settings.metadataEnrichment.providerHint")}</p>
+          <GoogleBooksKeySettings t={t} />
         </div>
         <Switch
           id="metadataEnrichmentEnabled"
@@ -562,8 +600,7 @@ function MatchingCard({ appSettings, t, onChange }: {
           onChange={(event) => onChange({ metadataEnrichmentEnabled: event.target.checked })}
         />
       </div>
-    </section>
-  );
+  </section>;
 }
 
 function SummarizationCard({ appSettings, t, onChange }: {
@@ -633,17 +670,18 @@ function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
             : "settings.dashboard.states.needsSetup")}
         </span>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="grid gap-2">
+      <div className="grid min-w-0 gap-4 md:grid-cols-2">
+        <div className="grid min-w-0 gap-2">
           <Label htmlFor="obsidianVaultPath">{t("settings.storage.obsidianVaultPath")}</Label>
-          <div className="flex gap-2">
+          <div className="flex min-w-0 flex-wrap gap-2">
             <Input
+              className="min-w-0 flex-1 basis-48"
               id="obsidianVaultPath"
               value={settings.obsidianVaultPath ?? ""}
               onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
             />
-            <Button type="button" disabled={isSaving} onClick={() => void onSelectVault()}>
-              <FolderOpen className="h-4 w-4" aria-hidden="true" />
+            <Button type="button" className="shrink-0 whitespace-nowrap" disabled={isSaving} onClick={() => void onSelectVault()}>
+              <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
               {t("settings.storage.selectObsidianVault")}
             </Button>
           </div>
@@ -814,4 +852,38 @@ function StatusTile({ icon: Icon, label, value, tone }: {
       </span>
     </div>
   );
+}
+
+function GoogleBooksKeySettings({ t }: { t: SettingsViewProps["t"] }) {
+  const [apiKey, setApiKey] = useState("");
+  const [configured, setConfigured] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void window.app.settings.getGoogleBooksKeyStatus().then((status) => {
+      if (active) setConfigured(status.configured);
+    }).catch(() => { if (active) setError(true); }).finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, []);
+  async function update(value: string | null) {
+    setBusy(true); setError(false);
+    try {
+      const status = await window.app.settings.updateGoogleBooksKey({ apiKey: value });
+      setConfigured(status.configured); setApiKey("");
+    } catch { setError(true); }
+    finally { setBusy(false); }
+  }
+  return <div className="mt-3 grid min-w-0 gap-2">
+    <Label htmlFor="googleBooksApiKey">{t("settings.metadataEnrichment.apiKey")}</Label>
+    <div className="flex min-w-0 flex-wrap gap-2">
+      <Input id="googleBooksApiKey" type="password" autoComplete="off" spellCheck={false}
+        className="min-w-0 flex-1 basis-48" value={apiKey} disabled={busy}
+        onChange={(event) => setApiKey(event.target.value)} />
+      <Button className="shrink-0 whitespace-nowrap" disabled={busy || !apiKey.trim()} onClick={() => void update(apiKey.trim())}>{t("settings.metadataEnrichment.saveKey")}</Button>
+      <Button className="shrink-0 whitespace-nowrap" disabled={busy || !configured} onClick={() => void update(null)}>{t("settings.metadataEnrichment.removeKey")}</Button>
+    </div>
+    <p role="status" className="text-xs text-slate-500">{t(busy ? "shell.states.loading" : configured ? "settings.metadataEnrichment.keySaved" : "settings.metadataEnrichment.noKey")}</p>
+    {error ? <p role="alert" className="text-xs text-red-600 dark:text-red-400">{t("settings.metadataEnrichment.keyError")}</p> : null}
+  </div>;
 }

@@ -20,6 +20,8 @@ export const ipcChannels = {
   windowNavigation: "app:window:navigation",
   databaseGetStatus: "app:database:get-status",
   databaseStart: "app:database:start",
+  googleBooksKeyStatus: "app:settings:google-books-key:status",
+  googleBooksKeyUpdate: "app:settings:google-books-key:update",
   appSettingsGet: "app:settings:app:get",
   appSettingsUpdate: "app:settings:app:update",
   settingsGet: "app:settings:get",
@@ -31,6 +33,8 @@ export const ipcChannels = {
   debugSimilarityRunsClear: "app:debug:similarity-runs:clear",
   libraryReset: "app:library:reset",
   ingestionCreateManual: "app:ingestion:create-manual",
+  ingestionPreviewUrl: "app:ingestion:preview-url",
+  ingestionEditSource: "app:ingestion:edit-source",
   ingestionExtractFileMetadata: "app:ingestion:extract-file-metadata",
   ingestionFileProgress: "app:ingestion:file-progress",
   ingestionEnrichMetadata: "app:ingestion:enrich-metadata",
@@ -52,6 +56,8 @@ export const ipcChannels = {
   jobsClearCompletedOrFailed: "app:jobs:clear-completed-or-failed",
   searchQuery: "app:search:query",
   libraryList: "app:library:list",
+  libraryBrowse: "app:library:browse",
+  libraryDocumentGet: "app:library:document:get",
   librarySourceGet: "app:library:source:get",
   librarySourceDelete: "app:library:source:delete",
   libraryAssetOpen: "app:library:asset:open",
@@ -124,21 +130,32 @@ export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
 export const languageCodeSchema = z.enum(appLanguageCodes);
 export const windowNavigationDirectionSchema = z.enum(["back", "forward"]);
 
+export const savedProcessingPresetSchema = z.object({
+  id: z.string().uuid(), name: z.string().trim().min(1).max(100), requestedStages: ProcessingPlanRequestSchema.shape.requestedStages
+}).strict();
+
+export const googleBooksKeyInputSchema = z.object({ apiKey: z.string().trim().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).nullable() }).strict();
+export const googleBooksKeyStatusSchema = z.object({ configured: z.boolean() }).strict();
+
 export const appSettingsSchema = z.object({
+  processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema,
   themeMode: themeModeSchema,
   debugMode: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
+  bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
   atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   updatedAt: z.string().datetime()
 });
 
 export const appSettingsUpdateSchema = z.object({
+  processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema.optional(),
   themeMode: themeModeSchema.optional(),
   debugMode: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
+  bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
   atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional()
 }).strict();
@@ -446,6 +463,23 @@ export const librarySourceSchema = z.object({
   updatedAt: z.string().datetime()
 }).strict();
 
+export const libraryBrowseInputSchema = z.object({
+  sourceTypes: SourceItemTypeSchema.array().default([]), query: z.string().max(500).default(""),
+  parentId: z.string().uuid().nullable().optional(), ids: z.string().uuid().array().max(100).optional(),
+  offset: z.number().int().nonnegative().default(0), limit: z.number().int().min(1).max(100).default(48)
+}).strict();
+export const sourceUrlPreviewInputSchema = z.object({ type: z.enum(["WebArticle", "Video"]), url: z.string().url().max(4000) }).strict();
+export const sourceUrlPreviewSchema = z.object({ draft: SourceDescriptorDraftSchema, markdown: z.string().max(20_000_000) }).strict();
+export const sourceEditInputSchema = z.object({
+  sourceItemId: z.string().uuid(), expectedUpdatedAt: z.string().datetime(), descriptor: SourceDescriptorSchema,
+  content: z.object({ documentId: z.string().uuid().nullable(), markdown: z.string().min(1).max(20_000_000) }).strict().optional()
+}).strict();
+export const sourceEditResultSchema = z.object({
+  sourceItemId: z.string().uuid(), documentId: z.string().uuid().nullable(), contentChanged: z.boolean()
+}).strict();
+export type LibraryBrowseInput = z.input<typeof libraryBrowseInputSchema>;
+export type SourceEditInput = z.infer<typeof sourceEditInputSchema>;
+
 export const atomicNoteViewSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
@@ -466,7 +500,12 @@ export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
   sourceTitle: z.string().nullable()
 }).strict();
 
+export const sourceDocumentInputSchema = z.object({ sourceItemId: z.string().uuid(), documentId: z.string().uuid() }).strict();
+export const sourceDocumentSchema = z.object({ title: z.string(), markdown: z.string() }).strict();
 export const sourceDetailSchema = z.object({
+  history: z.array(z.object({ id: z.string().uuid(), title: z.string(), createdAt: z.string().datetime(), isCurrent: z.boolean() })).default([]),
+  breadcrumbs: z.array(z.object({ id: z.string().uuid(), title: z.string() })).default([]),
+  parentSourceItemId: z.string().uuid().nullable().default(null),
   id: z.string().uuid(),
   type: SourceItemTypeSchema,
   title: z.string().min(1),
@@ -876,6 +915,7 @@ export const defaultAppSettings = {
   themeMode: "dark",
   debugMode: false,
   metadataEnrichmentEnabled: true,
+  bookMetadataProvider: "auto",
   atomicNoteRelationThreshold: 0.72,
   summaryMinimumWordCount: 40
 } satisfies Omit<AppSettingsUpdate, "language">;
@@ -900,6 +940,8 @@ export interface DesktopApi {
     start: () => Promise<DatabaseStatus>;
   };
   settings: {
+    getGoogleBooksKeyStatus: () => Promise<{ configured: boolean }>;
+    updateGoogleBooksKey: (input: { apiKey: string | null }) => Promise<{ configured: boolean }>;
     getApp: () => Promise<AppSettings>;
     updateApp: (settings: AppSettingsUpdate) => Promise<AppSettings>;
     get: () => Promise<StorageSettings>;
@@ -917,6 +959,8 @@ export interface DesktopApi {
   };
   ingestion: {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
+    previewUrl: (input: z.infer<typeof sourceUrlPreviewInputSchema>) => Promise<z.infer<typeof sourceUrlPreviewSchema>>;
+    editSource: (input: SourceEditInput) => Promise<z.infer<typeof sourceEditResultSchema>>;
     extractFileMetadata: (
       input: FileMetadataExtractionInput,
       onProgress?: (progress: FileImportProgress) => void
@@ -946,6 +990,8 @@ export interface DesktopApi {
   };
   knowledge: {
     listLibrary: (sourceTypes?: SourceItemType[]) => Promise<LibrarySource[]>;
+    browseLibrary: (input: LibraryBrowseInput) => Promise<LibrarySource[]>;
+    getSourceDocument: (input: z.infer<typeof sourceDocumentInputSchema>) => Promise<z.infer<typeof sourceDocumentSchema>>;
     getSourceDetail: (sourceItemId: string) => Promise<SourceDetail | null>;
     deleteSource: (sourceItemId: string) => Promise<SourceDeletionResult>;
     openAsset: (assetId: string) => Promise<boolean>;

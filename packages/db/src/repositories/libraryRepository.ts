@@ -41,7 +41,7 @@ interface LibrarySourceRow extends QueryResultRow {
 
 export function createLibraryRepository(db: Queryable) {
   return {
-    async listSources(input: { sourceTypes?: SourceItemType[]; limit?: number } = {}): Promise<LibrarySourceRecord[]> {
+    async listSources(input: { sourceTypes?: SourceItemType[] | undefined; limit?: number | undefined; offset?: number | undefined; query?: string | undefined; parentId?: string | null | undefined; ids?: string[] | undefined } = {}): Promise<LibrarySourceRecord[]> {
       const result = await db.query<LibrarySourceRow>(
         `select source.id, source.parent_source_item_id as "parentSourceItemId",
                 hierarchy.position as "structurePosition",
@@ -67,11 +67,13 @@ export function createLibraryRepository(db: Queryable) {
            order by structure.revision desc
            limit 1
          ) hierarchy on true
-         where coalesce(array_length($1::source_item_type[], 1), 0) = 0
-            or source.type = any($1)
-         order by source.updated_at desc
-         limit $2`,
-        [input.sourceTypes ?? [], input.limit ?? 100]
+         where (coalesce(array_length($1::source_item_type[], 1), 0) = 0 or source.type = any($1))
+           and ($3 = '' or strpos(unaccent(lower(concat_ws(' ', source.title, source.subtitle, source.source_uri, source.metadata->'descriptor'))), unaccent(lower($3))) > 0)
+           and (not $4::boolean or source.parent_source_item_id is not distinct from $5::uuid)
+           and ($7::uuid[] is null or source.id = any($7))
+         order by hierarchy.position nulls last, case when source.parent_source_item_id is not null then source.created_at end asc, source.updated_at desc, source.id
+         limit $2 offset $6`,
+        [input.sourceTypes ?? [], input.limit ?? 100, input.query ?? "", input.parentId !== undefined, input.parentId ?? null, input.offset ?? 0, input.ids ?? null]
       );
       return result.rows.map((row) => ({
         ...row,

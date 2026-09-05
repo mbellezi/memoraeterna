@@ -5,8 +5,12 @@ import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
   databaseStatusSchema,
+  sourceDocumentInputSchema,
+  sourceUrlPreviewInputSchema,
+  libraryBrowseInputSchema, sourceEditInputSchema,
   ipcChannels,
   appSettingsUpdateSchema,
+  googleBooksKeyInputSchema, googleBooksKeyStatusSchema,
   aiProfileCloneSchema,
   aiProfileCreateSchema,
   aiProfileUpdateSchema,
@@ -94,6 +98,12 @@ export function registerIpcHandlers(
 
   ipcMain.handle(ipcChannels.databaseStart, async () => databaseStatusSchema.parse(await databaseService.start()));
 
+  ipcMain.handle(ipcChannels.googleBooksKeyStatus, async () => googleBooksKeyStatusSchema.parse(await metadataEnrichmentService.getGoogleBooksKeyStatus()));
+  ipcMain.handle(ipcChannels.googleBooksKeyUpdate, async (_event, payload: unknown) => {
+    const { apiKey } = googleBooksKeyInputSchema.parse(payload);
+    return googleBooksKeyStatusSchema.parse(await metadataEnrichmentService.updateGoogleBooksKey(apiKey));
+  });
+
   ipcMain.handle(ipcChannels.appSettingsGet, () => settingsService.getApp());
 
   ipcMain.handle(ipcChannels.appSettingsUpdate, (_event, payload: unknown) => {
@@ -135,6 +145,20 @@ export function registerIpcHandlers(
       await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
     }
   });
+
+  ipcMain.handle(ipcChannels.ingestionPreviewUrl, async (_event, payload: unknown) => {
+    if (!(await settingsService.getApp()).metadataEnrichmentEnabled) throw new Error("errors.common.validationFailed");
+    return ingestionService.previewUrl(sourceUrlPreviewInputSchema.parse(payload));
+  });
+  ipcMain.handle(ipcChannels.ingestionEditSource, (_event, payload: unknown) =>
+    ingestionService.editSource(sourceEditInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.libraryDocumentGet, (_event, payload: unknown) =>
+    knowledgeService.getSourceDocument(sourceDocumentInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.libraryBrowse, (_event, payload: unknown) =>
+    knowledgeService.browseLibrary(libraryBrowseInputSchema.parse(payload))
+  );
 
   ipcMain.handle(ipcChannels.ingestionCreateManual, (_event, payload: unknown) =>
     ingestionService.createManual(manualIngestionInputSchema.parse(payload))

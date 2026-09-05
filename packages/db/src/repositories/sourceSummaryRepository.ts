@@ -94,6 +94,7 @@ export function createSourceSummaryRepository(db: TransactionPool) {
             [input.sourceItemId]
           );
           const summary = await insertCurrent(client);
+          await client.query("update source_items set metadata = metadata - 'summaryStale' where id = $1", [input.sourceItemId]);
           await client.query("commit");
           return summary;
         } catch (error) {

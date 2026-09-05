@@ -17,7 +17,7 @@ import {
 
 import type {
   DocumentStructureView, DuplicateCandidate, DuplicatePolicy, EnrichmentCandidate,
-  FileImportProgress, FileMetadataExtractionResult, SourceSuggestion
+  FileImportProgress, FileMetadataExtractionResult, SourceSuggestion, SourceDetail
 } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
@@ -25,6 +25,8 @@ import { StructureReview } from "./StructureReview";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
+import { CoverImage } from "./ui/cover-image";
+import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 
 type ImportOrigin = "manual" | "file";
 type FormValues = Record<string, string>;
@@ -61,19 +63,30 @@ const fileProgressStageKeys = {
   completed: "import.progress.stages.completed"
 } satisfies Record<FileImportProgress["stage"], MessageKey>;
 
-export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Translator; metadataEnrichmentEnabled?: boolean }) {
-  const [step, setStep] = useState(0);
-  const [sourceType, setSourceType] = useState<SourceItemType>("PersonalNote");
+export function ImportView({ t, metadataEnrichmentEnabled = true, editing, parent, onSaved, onCancel }: {
+  t: Translator; metadataEnrichmentEnabled?: boolean; editing?: SourceDetail;
+  parent?: { id: string; title: string; type: SourceItemType; language: string; metadata?: Record<string, unknown> };
+  onSaved?: (sourceItemId: string) => void; onCancel?: () => void;
+}) {
+  const initialType = editing?.type ?? (parent ? childSourceType(parent.type) : null) ?? "PersonalNote";
+  const initialDescriptor = editing && isRecord(editing.metadata.descriptor) ? editing.metadata.descriptor : {};
+  const originalContent = editing?.documents[0]?.canonicalMarkdown ?? "";
+  const formDefaults = () => editing ? { ...initialValues(initialType), ...draftToValues(initialDescriptor), title: editing.title,
+    language: editing.language, ...(editing.parentSourceItemId ? { parentSourceItemId: editing.parentSourceItemId } : {}) }
+    : { ...initialValues(initialType), ...(parent ? { parentSourceItemId: parent.id, parentTitle: parent.title, language: parent.language, ...inheritedParentValues(parent.metadata) } : {}) };
+  const [step, setStep] = useState(editing || parent ? 2 : 0);
+  const [sourceType, setSourceType] = useState<SourceItemType>(initialType);
   const [sourceSearch, setSourceSearch] = useState("");
   const [origin, setOrigin] = useState<ImportOrigin>("manual");
-  const [values, setValues] = useState<FormValues>(() => initialValues("PersonalNote"));
-  const [fieldProvenance, setFieldProvenance] = useState<Record<string, MetadataFieldProvenance>>({});
-  const [content, setContent] = useState("");
+  const [values, setValues] = useState<FormValues>(formDefaults);
+  const [fieldProvenance, setFieldProvenance] = useState<Record<string, MetadataFieldProvenance>>(() => expandProvenance((initialDescriptor.provenance ?? {}) as Record<string, MetadataFieldProvenance>));
+  const [content, setContent] = useState(originalContent);
   const [file, setFile] = useState<FileMetadataExtractionResult | null>(null);
-  const [coverAssetId, setCoverAssetId] = useState<string | null>(null);
-  const [processingPlan, setProcessingPlan] = useState<ProcessingPlanRequest>(() => defaultProcessingPlan("full_knowledge"));
+  const [coverAssetId, setCoverAssetId] = useState<string | null>(editing ? coverAssetIdFromMetadata(editing.metadata) : null);
+  const [processingPlan, setProcessingPlan] = useState<ProcessingPlanRequest>(() => defaultProcessingPlan("import_only"));
   const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>("ignore");
   const [duplicate, setDuplicate] = useState<DuplicateCandidate | null>(null);
+  const [enrichmentState, setEnrichmentState] = useState<"idle" | "loading" | "empty" | "error" | "success">("idle");
   const [candidates, setCandidates] = useState<EnrichmentCandidate[]>([]);
   const [structure, setStructure] = useState<DocumentStructureView | null>(null);
   const [status, setStatus] = useState<MessageKey>("shell.states.ready");
@@ -93,7 +106,10 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     const isbn = values.isbn13 || values.isbn10;
     const doi = values.doi;
     const title = values.title?.trim();
-    if (!isbn && !doi && (!title || title.length < 2)) return;
+    setCandidates([]);
+    if (!isbn && !doi && (!title || title.length < 2)) { setEnrichmentState("idle"); return; }
+    let active = true;
+    setEnrichmentState("loading");
     const timer = window.setTimeout(() => {
       void window.app.ingestion.enrichMetadata({
         sourceType,
@@ -101,20 +117,23 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
         ...(doi ? { doi } : {}),
         ...(title ? { title } : {}),
         ...(parseCreators(values.creators ?? "")[0]?.name ? { author: parseCreators(values.creators ?? "")[0]!.name } : {})
-      }).then(setCandidates).catch(() => setCandidates([]));
-    }, 450);
-    return () => window.clearTimeout(timer);
+      }).then((results) => { if (active) { setCandidates(results); setEnrichmentState(results.length ? "success" : "empty"); } })
+        .catch(() => { if (active) setEnrichmentState("error"); });
+    }, 900);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [metadataEnrichmentEnabled, sourceType, step, values.creators, values.doi, values.isbn10, values.isbn13, values.title]);
 
   useEffect(() => {
-    if (step !== 4 || !descriptor.success) {
+    if (editing || step !== 4 || !descriptor.success) {
       setDuplicate(null);
       return;
     }
+    let active = true;
     void window.app.ingestion.findDuplicate({
       descriptor: descriptor.data,
       ...(origin === "file" && file ? { fileToken: file.fileToken } : { content })
-    }).then(setDuplicate).catch(() => setDuplicate(null));
+    }).then((result) => { if (active) setDuplicate(result); }).catch(() => { if (active) setDuplicate(null); });
+    return () => { active = false; };
   }, [content, descriptor, file, origin, step]);
 
   useEffect(() => {
@@ -136,6 +155,19 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     setCoverAssetId(null);
     setValidationError("");
     setFileProgress(null);
+  }
+
+  async function previewUrl() {
+    if (sourceType !== "WebArticle" && sourceType !== "Video") return;
+    setBusy(true);
+    try {
+      const preview = await window.app.ingestion.previewUrl({ type: sourceType, url: values.url ?? "" });
+      setValues((current) => ({ ...current, ...Object.fromEntries(Object.entries(draftToValues(preview.draft.values))
+        .filter(([key]) => !current[key]?.trim() || fieldProvenance[key]?.source !== "manual")) }));
+      setFieldProvenance((current) => ({ ...expandProvenance(preview.draft.provenance), ...current }));
+      if (!content.trim()) setContent(preview.markdown);
+      setStatus("import.status.metadataExtracted");
+    } catch { setStatus("sourceWorkspace.enrichmentError"); } finally { setBusy(false); }
   }
 
   async function chooseFile() {
@@ -176,11 +208,11 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
       const incoming = draftToValues(candidate.values);
       setValues((current) => ({
         ...current,
-        ...Object.fromEntries(Object.entries(incoming).filter(([key]) => fieldProvenance[key]?.source !== "manual"))
+        ...Object.fromEntries(Object.entries(incoming).filter(([key]) => key === "title" || fieldProvenance[key]?.source !== "manual"))
       }));
       setFieldProvenance((current) => ({
         ...current,
-        ...Object.fromEntries(Object.entries(expandProvenance(candidate.provenance)).filter(([key]) => current[key]?.source !== "manual"))
+        ...Object.fromEntries(Object.entries(expandProvenance(candidate.provenance)).filter(([key]) => key === "title" || current[key]?.source !== "manual"))
       }));
       if (candidate.coverUrl) {
         const cover = await window.app.ingestion.applyEnrichmentCover(candidate.coverUrl);
@@ -188,6 +220,9 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
         setFieldProvenance((current) => ({ ...current, cover: { source: "enriched", provider: candidate.provider } }));
       }
       setCandidates([]);
+      setStatus("import.status.metadataExtracted");
+    } catch {
+      setStatus("errors.common.unknown");
     } finally {
       setBusy(false);
     }
@@ -195,7 +230,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
 
   function next() {
     setValidationError("");
-    if (step === 0) return setStep(1);
+    if (step === 0) { if (origin === "file") void chooseFile(); else setStep(2); return; }
     if (step === 1) {
       if (origin === "file") void chooseFile();
       else setStep(2);
@@ -227,6 +262,14 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
     setBusy(true);
     setStatus("shell.states.loading");
     try {
+      if (editing) {
+        const result = await window.app.ingestion.editSource({
+          sourceItemId: editing.id, expectedUpdatedAt: editing.updatedAt, descriptor: preserveDescriptorDetails(descriptor.data, initialDescriptor, values),
+          ...(content !== originalContent ? { content: { documentId: editing.documents[0]?.id ?? null, markdown: content } } : {})
+        });
+        onSaved?.(result.sourceItemId);
+        return;
+      }
       const result = origin === "file" && file
         ? await window.app.ingestion.importFile({
             fileToken: file.fileToken, descriptor: descriptor.data, duplicatePolicy, processingPlan
@@ -243,7 +286,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
         setStatus("import.status.reviewStructure");
       } else {
         setStatus(result.duplicate ? "import.status.duplicateHandled" : result.jobId ? "import.status.queued" : "import.status.saved");
-        resetWizard();
+        if (onSaved) onSaved(result.sourceItemId); else resetWizard();
       }
     } catch (error) {
       setStatus(errorMessageKey(error));
@@ -292,24 +335,29 @@ export function ImportView({ t, metadataEnrichmentEnabled = true }: { t: Transla
   </div>;
 
   return <section className="grid gap-5">
+    {parent ? <header><p className="text-sm text-slate-500">{parent.title}</p><h2 className="mt-1 text-xl font-semibold">{t("sourceWorkspace.addChild")} · {t(`import.sourceTypes.${sourceType}` as MessageKey)}</h2></header> : null}
     <WizardSteps active={step} t={t} />
     {busy && fileProgress ? <FileImportProgressCard progress={fileProgress} elapsedSeconds={elapsedSeconds} t={t} /> : null}
-    {step === 0 ? <SourceTypeStep t={t} value={sourceType} search={sourceSearch} onSearch={setSourceSearch} onChoose={chooseType} /> : null}
+    {step === 0 ? <><OriginStep t={t} value={origin} onChange={setOrigin} /><SourceTypeStep t={t} value={sourceType} search={sourceSearch} onSearch={setSourceSearch} onChoose={chooseType} /></> : null}
     {step === 1 ? <OriginStep t={t} value={origin} onChange={setOrigin} /> : null}
     {step === 2 ? <section className="grid gap-5">
-      <DescriptorFields t={t} sourceType={sourceType} values={values} onChange={setValues} onFieldChange={(name) => setFieldProvenance((current) => ({ ...current, [name]: { source: "manual" } }))} />
-      {compatibleParents[sourceType] ? <ParentPicker t={t} sourceType={sourceType} values={values} onChange={setValues} /> : null}
-      {metadataEnrichmentEnabled && supportsEnrichment(sourceType) ? <EnrichmentResults t={t} candidates={candidates} busy={busy} onApply={applyCandidate} /> : null}
+      {editing ? <p className="rounded-xl bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100">{t("sourceWorkspace.editHint")}</p> : null}
+      {coverAssetId ? <div className="h-36 w-24 overflow-hidden rounded-lg"><CoverImage assetId={coverAssetId} alt={values.title ?? ""} fallback={<BookOpen />} /></div> : null}
+      {metadataEnrichmentEnabled && (sourceType === "WebArticle" || sourceType === "Video") ? <div className="flex gap-2"><Input aria-label={t("import.metadataFields.url")} placeholder={t("import.metadataFields.url")} value={values.url ?? ""} onChange={(event) => { setValues({ ...values, url: event.target.value }); setFieldProvenance({ ...fieldProvenance, url: { source: "manual" } }); }} /><Button type="button" disabled={busy || !values.url} onClick={() => void previewUrl()}>{t("sourceWorkspace.fetchUrl")}</Button></div> : null}
+      <DescriptorFields t={t} sourceType={sourceType} suggestions={metadataEnrichmentEnabled && supportsEnrichment(sourceType) ? <EnrichmentResults t={t} candidates={candidates} busy={busy} state={enrichmentState} onApply={applyCandidate} /> : null} values={values} onChange={setValues} onFieldChange={(name) => setFieldProvenance((current) => ({ ...current, [name]: { source: "manual" } }))} />
+      {!editing && !parent && compatibleParents[sourceType] ? <ParentPicker t={t} sourceType={sourceType} values={values} onChange={setValues} /> : null}
+      {parent ? <p className="text-sm text-slate-500">{t("import.parent.label")}: {parent.title}</p> : null}
     </section> : null}
     {step === 3 ? <ContentStep t={t} sourceType={sourceType} origin={origin} file={file} content={content} onContent={setContent} onChooseFile={chooseFile} busy={busy} /> : null}
-    {step === 4 && descriptor.success ? <ConfirmationStep t={t} descriptor={descriptor.data} origin={origin} file={file} duplicate={duplicate} policy={duplicatePolicy} onPolicy={setDuplicatePolicy} plan={processingPlan} onPlan={setProcessingPlan} /> : null}
+    {step === 4 && editing ? <div className="rounded-xl border border-slate-200 p-5 dark:border-slate-800"><h2 className="font-semibold">{values.title}</h2><p className="mt-2 text-sm text-slate-500">{t("sourceWorkspace.editHint")}</p></div> : step === 4 && descriptor.success ? <ConfirmationStep t={t} descriptor={descriptor.data} origin={origin} file={file} duplicate={duplicate} policy={duplicatePolicy} onPolicy={setDuplicatePolicy} plan={processingPlan} onPlan={setProcessingPlan} /> : null}
     {validationError ? <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">{validationError}</p> : null}
     <footer className="sticky bottom-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
       <div className="min-w-0"><p className="truncate text-sm text-slate-600 dark:text-slate-300">{t(status)}</p></div>
       <div className="flex gap-2">
-        {step > 0 ? <Button type="button" disabled={busy} onClick={() => setStep((current) => Math.max(0, current - 1))}><ChevronLeft className="h-4 w-4" />{t("import.actions.back")}</Button> : null}
+        {onCancel ? <Button type="button" disabled={busy} onClick={onCancel}>{t("shell.actions.cancel")}</Button> : null}
+        {step > (editing || parent ? 2 : 0) ? <Button type="button" disabled={busy} onClick={() => setStep((current) => current === 2 ? 0 : Math.max(0, current - 1))}><ChevronLeft className="h-4 w-4" />{t("import.actions.back")}</Button> : null}
         {step < 4 ? <Button type="button" disabled={busy} onClick={next}>{step === 1 && origin === "file" ? <FileUp className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}{t(step === 1 && origin === "file" ? "import.actions.chooseFile" : "import.actions.continue")}</Button>
-          : <Button type="button" disabled={busy} onClick={() => void submit()}><Upload className="h-4 w-4" />{t("import.actions.import")}</Button>}
+          : <Button type="button" disabled={busy} onClick={() => void submit()}><Upload className="h-4 w-4" />{t(editing ? "sourceWorkspace.save" : "import.actions.import")}</Button>}
       </div>
     </footer>
   </section>;
@@ -398,16 +446,19 @@ function SourceTypeStep({ t, value, search, onSearch, onChoose }: { t: Translato
 }
 
 function OriginStep({ t, value, onChange }: { t: Translator; value: ImportOrigin; onChange: (value: ImportOrigin) => void }) {
-  return <div className="grid gap-4 md:grid-cols-2">{(["manual", "file"] as const).map((origin) => <button key={origin} type="button" aria-pressed={value === origin} onClick={() => onChange(origin)} className={cn("grid min-h-52 place-items-center gap-3 rounded-2xl border p-7 text-center", value === origin ? "border-cyan-500 bg-cyan-50 ring-2 ring-cyan-500/15 dark:bg-cyan-950/40" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950")}><span className="grid h-14 w-14 place-items-center rounded-2xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">{origin === "manual" ? <StickyNote className="h-6 w-6" /> : <FileUp className="h-6 w-6" />}</span><span><span className="block font-semibold">{t(`import.modes.${origin}` as MessageKey)}</span><span className="mt-2 block text-sm leading-6 text-slate-500">{t(`import.originDescriptions.${origin}` as MessageKey)}</span></span></button>)}</div>;
+  return <div className="grid gap-4 md:grid-cols-2">{(["manual", "file"] as const).map((origin) => <button key={origin} type="button" aria-pressed={value === origin} onClick={() => onChange(origin)} className={cn("flex items-center gap-4 rounded-xl border p-4 text-left", value === origin ? "border-cyan-500 bg-cyan-50 ring-2 ring-cyan-500/15 dark:bg-cyan-950/40" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950")}><span className="grid h-14 w-14 place-items-center rounded-2xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">{origin === "manual" ? <StickyNote className="h-6 w-6" /> : <FileUp className="h-6 w-6" />}</span><span><span className="block font-semibold">{t(`import.modes.${origin}` as MessageKey)}</span><span className="mt-2 block text-sm leading-6 text-slate-500">{t(`import.originDescriptions.${origin}` as MessageKey)}</span></span></button>)}</div>;
 }
 
-function DescriptorFields({ t, sourceType, values, onChange, onFieldChange }: { t: Translator; sourceType: SourceItemType; values: FormValues; onChange: (values: FormValues) => void; onFieldChange?: (name: string) => void }) {
+function DescriptorFields({ t, sourceType, values, onChange, onFieldChange, suggestions }: { t: Translator; sourceType: SourceItemType; values: FormValues; onChange: (values: FormValues) => void; onFieldChange?: (name: string) => void; suggestions?: ReactNode }) {
   const set = (name: string, value: string) => { onChange({ ...values, [name]: value }); onFieldChange?.(name); };
   return <div className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-    <div className="grid gap-4 md:grid-cols-2"><Field required name="title" t={t} values={values} set={set} /><Field name="subtitle" t={t} values={values} set={set} /></div>
+    <Field required name="title" t={t} values={values} set={set} />
+    {suggestions}
     <div className="grid gap-4 md:grid-cols-2"><Field name="creators" multiline t={t} values={values} set={set} /><LanguageField t={t} value={values.language ?? "und"} onChange={(value) => set("language", value)} /></div>
-    <TypeSpecificFields sourceType={sourceType} t={t} values={values} set={set} />
-    <div className="grid gap-4 md:grid-cols-2"><Field name="description" multiline t={t} values={values} set={set} /><Field name="tags" t={t} values={values} set={set} /></div>
+    {sourceType === "DailyNote" ? <Field required name="noteDate" t={t} values={values} set={set} /> : null}
+    {sourceType === "PeriodicalIssue" ? <Field required name="publicationTitle" t={t} values={values} set={set} /> : null}
+    <details className="rounded-lg border border-slate-200 p-4 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t("sourceWorkspace.moreMetadata")}</summary><div className="mt-4 grid gap-4"><Field name="subtitle" t={t} values={values} set={set} /><TypeSpecificFields sourceType={sourceType} t={t} values={values} set={set} /></div></details>
+    <details className="rounded-lg border border-slate-200 p-4 dark:border-slate-800"><summary className="cursor-pointer text-sm font-semibold">{t("import.metadataFields.description")} · {t("import.metadataFields.tags")}</summary><div className="mt-4 grid gap-4 md:grid-cols-2"><Field name="description" multiline t={t} values={values} set={set} /><Field name="tags" t={t} values={values} set={set} /></div></details>
   </div>;
 }
 
@@ -423,7 +474,7 @@ function TypeSpecificFields({ sourceType, t, values, set }: { sourceType: Source
                   : sourceType === "StandaloneArticle" ? ["doi", "periodicalTitle", "volume", "issue", "publicationDate", "pageStart", "pageEnd"]
                     : sourceType === "Video" ? ["url", "channel", "durationSeconds", "platform", "videoId", "publicationDate", "thumbnailUrl"]
                       : ["creationDate", "mimeType"];
-  return <div className="grid gap-4 md:grid-cols-2">{names.map((name) => <Field key={name} name={name} required={(sourceType === "DailyNote" && name === "noteDate") || (sourceType === "PeriodicalIssue" && name === "publicationTitle")} multiline={["abstract"].includes(name)} t={t} values={values} set={set} />)}</div>;
+  return <div className="grid gap-4 md:grid-cols-2">{names.filter((name) => !["noteDate", "publicationTitle"].includes(name)).map((name) => <Field key={name} name={name} required={(sourceType === "DailyNote" && name === "noteDate") || (sourceType === "PeriodicalIssue" && name === "publicationTitle")} multiline={["abstract"].includes(name)} t={t} values={values} set={set} />)}</div>;
 }
 
 function Field({ name, t, values, set, required = false, multiline = false }: { name: string; t: Translator; values: FormValues; set: (name: string, value: string) => void; required?: boolean; multiline?: boolean }) {
@@ -445,10 +496,12 @@ function ParentPicker({ t, sourceType, values, onChange }: { t: Translator; sour
   const [parentValues, setParentValues] = useState<FormValues>(() => initialValues(types[0] ?? "Book"));
 
   useEffect(() => {
-    if (query.trim().length < 2) return setSuggestions([]);
-    const timer = window.setTimeout(() => void window.app.ingestion.lookupSources(query, types).then(setSuggestions), 250);
-    return () => window.clearTimeout(timer);
-  }, [query, types.join("|")]);
+    if (query.trim().length < 2 || values.parentSourceItemId) return setSuggestions([]);
+    let active = true;
+    const timer = window.setTimeout(() => void window.app.ingestion.lookupSources(query, types)
+      .then((results) => { if (active) setSuggestions(results); }).catch(() => { if (active) setSuggestions([]); }), 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [query, types.join("|"), values.parentSourceItemId]);
 
   async function createParent() {
     const type = types[0];
@@ -464,8 +517,8 @@ function ParentPicker({ t, sourceType, values, onChange }: { t: Translator; sour
   return <div className="relative grid gap-2 rounded-xl border border-cyan-200 bg-cyan-50/50 p-4 dark:border-cyan-900 dark:bg-cyan-950/20"><Label htmlFor="parent-source">{t("import.parent.label")}</Label><div className="flex gap-2"><Input id="parent-source" value={query || values.parentTitle || ""} onChange={(event) => { setQuery(event.target.value); onChange({ ...values, parentSourceItemId: "", parentTitle: event.target.value }); }} /><Button type="button" onClick={() => setCreating(true)}>{t("import.parent.create")}</Button></div>{suggestions.length ? <div className="absolute left-4 right-4 top-20 z-10 grid rounded-lg border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-950">{suggestions.map((suggestion) => <button key={suggestion.id} type="button" className="rounded px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-900" onClick={() => { onChange({ ...values, parentSourceItemId: suggestion.id, parentTitle: suggestion.title }); setQuery(suggestion.title); setSuggestions([]); }}>{suggestion.title}</button>)}</div> : null}{creating ? <div role="dialog" aria-modal="true" aria-label={t("import.parent.createTitle")} className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-5"><div className="grid max-h-[85vh] w-full max-w-3xl gap-4 overflow-auto rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-950"><header className="flex items-center justify-between"><h2 className="font-semibold">{t("import.parent.createTitle")}</h2><button type="button" aria-label={t("shell.actions.close")} onClick={() => setCreating(false)}><X className="h-5 w-5" aria-hidden="true" /></button></header><DescriptorFields t={t} sourceType={types[0] ?? "Book"} values={parentValues} onChange={setParentValues} /><Button type="button" onClick={() => void createParent()}>{t("import.parent.create")}</Button></div></div> : null}</div>;
 }
 
-function EnrichmentResults({ t, candidates, busy, onApply }: { t: Translator; candidates: EnrichmentCandidate[]; busy: boolean; onApply: (candidate: EnrichmentCandidate) => Promise<void> }) {
-  return <section className="grid gap-3 rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900 dark:bg-violet-950/20"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-700" /><h3 className="font-semibold">{t("import.enrichment.title")}</h3></div>{candidates.length ? <div className="grid gap-2">{candidates.map((candidate) => <div key={`${candidate.provider}-${candidate.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-white p-3 dark:border-violet-900 dark:bg-slate-950"><div className="flex min-w-0 items-center gap-3">{candidate.coverPreviewDataUrl ? <img src={candidate.coverPreviewDataUrl} alt="" className="h-16 w-11 shrink-0 rounded object-cover" /> : <span className="grid h-16 w-11 shrink-0 place-items-center rounded bg-slate-100 text-slate-400 dark:bg-slate-900"><BookOpen className="h-4 w-4" /></span>}<div className="min-w-0"><p className="font-medium">{candidate.title}</p><p className="text-xs text-slate-500">{candidate.creators.map((creator) => creator.name).join(", ")}{candidate.year ? ` · ${candidate.year}` : ""}{candidate.edition ? ` · ${candidate.edition}` : ""} · {candidate.provider}</p></div></div><Button type="button" disabled={busy} onClick={() => void onApply(candidate)}>{t("import.enrichment.apply")}</Button></div>)}</div> : <p className="text-sm text-slate-500">{t("import.enrichment.waiting")}</p>}</section>;
+function EnrichmentResults({ t, candidates, busy, state, onApply }: { t: Translator; candidates: EnrichmentCandidate[]; busy: boolean; state: "idle" | "loading" | "empty" | "error" | "success"; onApply: (candidate: EnrichmentCandidate) => Promise<void> }) {
+  return <section className="grid gap-3 rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900 dark:bg-violet-950/20"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-700" /><h3 className="font-semibold">{t("import.enrichment.title")}</h3></div>{candidates.length ? <div className="grid gap-2">{candidates.map((candidate) => <div key={`${candidate.provider}-${candidate.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-white p-3 dark:border-violet-900 dark:bg-slate-950"><div className="flex min-w-0 items-center gap-3">{candidate.coverPreviewDataUrl ? <img src={candidate.coverPreviewDataUrl} alt="" className="h-16 w-11 shrink-0 rounded object-cover" /> : <span className="grid h-16 w-11 shrink-0 place-items-center rounded bg-slate-100 text-slate-400 dark:bg-slate-900"><BookOpen className="h-4 w-4" /></span>}<div className="min-w-0"><p className="font-medium">{candidate.title}</p><p className="text-xs text-slate-500">{candidate.creators.map((creator) => creator.name).join(", ")}{candidate.year ? ` · ${candidate.year}` : ""}{candidate.edition ? ` · ${candidate.edition}` : ""} · {candidate.provider}</p></div></div><Button type="button" disabled={busy} onClick={() => void onApply(candidate)}>{t("import.enrichment.apply")}</Button></div>)}</div> : <p className="text-sm text-slate-500">{t(state === "idle" ? "import.enrichment.waiting" : state === "loading" ? "shell.states.loading" : state === "error" ? "sourceWorkspace.enrichmentError" : "sourceWorkspace.enrichmentEmpty")}</p>}</section>;
 }
 
 function ContentStep({ t, sourceType, origin, file, content, onContent, onChooseFile, busy }: { t: Translator; sourceType: SourceItemType; origin: ImportOrigin; file: FileMetadataExtractionResult | null; content: string; onContent: (value: string) => void; onChooseFile: () => Promise<void>; busy: boolean }) {
@@ -482,8 +535,9 @@ function Summary({ label, value }: { label: string; value: string }) { return <d
 function PlanCard({ plan, setPlan, t }: { plan: ProcessingPlanRequest; setPlan: (plan: ProcessingPlanRequest) => void; t: Translator }) { return <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950"><ProcessingPlanPicker value={plan} onChange={setPlan} t={t} /></div>; }
 
 function WizardSteps({ active, t }: { active: number; t: Translator }) {
-  const labels = ["type", "origin", "metadata", "content", "confirm", "structure"] as const;
-  return <ol className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:grid-cols-6">{labels.map((label, index) => <li key={label} className={cn("flex items-center gap-2 px-3 py-3 text-xs", index === active ? "bg-cyan-50 font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full", index < active ? "bg-emerald-600 text-white" : index === active ? "bg-cyan-700 text-white" : "bg-slate-100 dark:bg-slate-800")}>{index < active ? <Check className="h-3.5 w-3.5" /> : index + 1}</span><span className="truncate">{t(`import.steps.${label}` as MessageKey)}</span></li>)}</ol>;
+  const labels = ["type", "metadata", "content", "confirm", "structure"] as const;
+  const activeIndex = active > 0 ? active - 1 : 0;
+  return <ol className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:grid-cols-5">{labels.map((label, index) => <li key={label} className={cn("flex items-center gap-2 px-3 py-3 text-xs", index === activeIndex ? "bg-cyan-50 font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full", index < activeIndex ? "bg-emerald-600 text-white" : index === activeIndex ? "bg-cyan-700 text-white" : "bg-slate-100 dark:bg-slate-800")}>{index < activeIndex ? <Check className="h-3.5 w-3.5" /> : index + 1}</span><span className="truncate">{t(`import.steps.${label}` as MessageKey)}</span></li>)}</ol>;
 }
 
 function initialValues(type: SourceItemType): FormValues {
@@ -553,5 +607,23 @@ function parseCreators(value: string): Creator[] {
 function removeUndefined(input: Record<string, unknown>): Record<string, unknown> { return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)); }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isContainerType(type: SourceItemType): type is "Book" | "PeriodicalIssue" | "AcademicPaper" { return type === "Book" || type === "PeriodicalIssue" || type === "AcademicPaper"; }
-function supportsEnrichment(type: SourceItemType) { return ["Book", "BookChapter", "AcademicPaper", "StandaloneArticle"].includes(type); }
-function errorMessageKey(error: unknown): MessageKey { return error instanceof Error && error.message.startsWith("errors.") ? error.message as MessageKey : "errors.common.unknown"; }
+function supportsEnrichment(type: SourceItemType) { return ["Book", "AcademicPaper", "StandaloneArticle"].includes(type); }
+function errorMessageKey(error: unknown): MessageKey { return error instanceof Error && (error.message.startsWith("errors.") || error.message.startsWith("sourceWorkspace.")) ? error.message as MessageKey : "errors.common.unknown"; }
+
+export function childSourceType(type: SourceItemType): SourceItemType | null {
+  return type === "Book" ? "BookChapter" : type === "AcademicPaper" ? "DocumentSection" : type === "PeriodicalIssue" ? "StandaloneArticle" : null;
+}
+
+// Preserve structured creator identifiers that the text editor does not expose.
+export function preserveDescriptorDetails(descriptor: SourceDescriptor, original: Record<string, unknown>, values: FormValues): SourceDescriptor {
+  const previousValues = draftToValues(original);
+  return SourceDescriptorSchema.parse({ ...descriptor,
+    ...(values.creators === previousValues.creators && original.creators ? { creators: original.creators } : {})
+  });
+}
+
+function inheritedParentValues(metadata?: Record<string, unknown>): FormValues {
+  const descriptor = metadata?.descriptor;
+  if (!isRecord(descriptor)) return {};
+  return draftToValues({ creators: Array.isArray(descriptor.creators) ? descriptor.creators.filter((creator) => isRecord(creator) && creator.role === "author") : [], publicationDate: descriptor.publicationDate });
+}

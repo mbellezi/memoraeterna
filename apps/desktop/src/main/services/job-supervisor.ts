@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 
 import {
   createChunkRepository,
+  createDocumentRepository,
   createAtomicNoteRepository,
   createEmbeddingRepository,
   createIngestionRunRepository,
@@ -247,6 +248,8 @@ export class JobSupervisor {
     let markdown = readString(job.payload, "markdown");
     const catalogMetadataOnly = job.payload.processingMode === "catalog_metadata";
     const pool = this.requirePool();
+    const inputDocument = await createDocumentRepository(pool).findById(documentId);
+    if (inputDocument?.metadata.supersededByDocumentId) throw new Error("errors.common.validationFailed");
     if (catalogMetadataOnly) {
       const source = await createSourceItemRepository(pool).findById(sourceItemId);
       if (source) markdown = buildCatalogMetadataMarkdown(source);

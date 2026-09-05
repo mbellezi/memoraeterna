@@ -20,11 +20,14 @@ type Provider = EnrichmentCandidate["provider"];
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface MetadataEnrichmentServiceOptions {
+  credentials?: { get: (reference: string) => Promise<string>; save: (secret: string, reference: string) => Promise<string>; remove: (reference: string) => Promise<boolean> };
   getPool: () => PgPool | null;
   getEnabled: () => Promise<boolean>;
+  getBookProvider?: () => Promise<"auto" | "open-library" | "google-books">;
   userDataPath: string;
   fetch?: FetchLike;
   timeoutMs?: number;
+  openLibraryIntervalMs?: number;
   cacheTtlMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
 }
@@ -47,6 +50,8 @@ export class MetadataEnrichmentService {
   private readonly assetStorage = new AssetStorageService();
   private readonly coverPreviewCache = new Map<string, { expiresAt: number; dataUrl: string | null }>();
   private cache: CacheFile | null = null;
+  private nextOpenLibraryRequestAt = 0;
+  private readonly pendingJson = new Map<string, Promise<unknown>>();
 
   public constructor(private readonly options: MetadataEnrichmentServiceOptions) {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
@@ -55,18 +60,48 @@ export class MetadataEnrichmentService {
     this.cachePath = join(options.userDataPath, "metadata-enrichment-cache.json");
   }
 
+  private async getGoogleBooksKey(): Promise<string | null> {
+    if (!this.options.credentials) return null;
+    try { return await this.options.credentials.get("metadata:google-books"); }
+    catch (error) {
+      if (error instanceof Error && error.message === "errors.ai.missingCredential") return null;
+      throw new Error("errors.ai.secureStorageUnavailable");
+    }
+  }
+
+  public async getGoogleBooksKeyStatus(): Promise<{ configured: boolean }> {
+    return { configured: Boolean(await this.getGoogleBooksKey()) };
+  }
+
+  public async updateGoogleBooksKey(apiKey: string | null): Promise<{ configured: boolean }> {
+    if (!this.options.credentials) throw new Error("errors.ai.secureStorageUnavailable");
+    try {
+      if (apiKey === null) await this.options.credentials.remove("metadata:google-books");
+      else await this.options.credentials.save(apiKey, "metadata:google-books");
+      return { configured: apiKey !== null };
+    } catch { throw new Error("errors.ai.secureStorageUnavailable"); }
+  }
+
   public async search(input: MetadataEnrichmentQuery): Promise<EnrichmentCandidate[]> {
     const query = MetadataEnrichmentQuerySchema.parse(input);
     if (!(await this.options.getEnabled())) return [];
-    const cacheKey = createCacheKey(query);
+    const bookProvider = await this.options.getBookProvider?.() ?? "auto";
+    const cacheKey = `${bookProvider}:${createCacheKey(query)}`;
     const cached = await this.getCached(cacheKey);
     if (cached) return this.withCoverPreviews(cached);
 
     try {
       let candidates: EnrichmentCandidate[] = [];
       if (query.sourceType === "Book" || query.sourceType === "BookChapter") {
-        candidates = await new OpenLibraryAdapter(this.requestJson.bind(this)).search(query);
-        if (candidates.length === 0) {
+        if (bookProvider !== "google-books") {
+          try {
+            candidates = await new OpenLibraryAdapter(this.requestJson.bind(this)).search(query);
+          } catch (error) {
+            if (bookProvider !== "auto") throw error;
+            this.options.logger?.warn(`metadata_enrichment_failed:${safeErrorCode(error)}`);
+          }
+        }
+        if (bookProvider === "google-books" || (bookProvider === "auto" && candidates.length === 0)) {
           candidates = await new GoogleBooksAdapter(this.requestJson.bind(this)).search(query);
         }
       } else if (["AcademicPaper", "StandaloneArticle", "DocumentSection"].includes(query.sourceType)) {
@@ -113,8 +148,13 @@ export class MetadataEnrichmentService {
   }
 
   private async requestJson(url: URL): Promise<unknown> {
-    const response = await this.request(url);
-    return response.json();
+    const key = url.toString();
+    const pending = this.pendingJson.get(key);
+    if (pending) return pending;
+    const request = this.request(url).then((response) => response.json());
+    this.pendingJson.set(key, request);
+    try { return await request; }
+    finally { if (this.pendingJson.get(key) === request) this.pendingJson.delete(key); }
   }
 
   private async withCoverPreviews(candidates: EnrichmentCandidate[]): Promise<EnrichmentCandidate[]> {
@@ -148,11 +188,35 @@ export class MetadataEnrichmentService {
   }
 
   private async request(url: URL): Promise<Response> {
+    const isOpenLibrary = url.origin === "https://openlibrary.org";
+    if (isOpenLibrary) {
+      const now = Date.now();
+      const startAt = Math.max(now, this.nextOpenLibraryRequestAt);
+      this.nextOpenLibraryRequestAt = startAt + (this.options.openLibraryIntervalMs ?? 1_000);
+      if (startAt > now) await new Promise((resolve) => setTimeout(resolve, startAt - now));
+    }
     this.options.logger?.debug(JSON.stringify({ event: "metadata_enrichment_request", url: url.toString() }));
-    const response = await this.fetch(url, {
-      signal: AbortSignal.timeout(this.timeoutMs),
-      headers: { "User-Agent": "MemoraEterna/0.1 (mailto:metadata@memora.local)" }
-    });
+    const requestUrl = new URL(url);
+    if (requestUrl.origin === "https://www.googleapis.com" && requestUrl.pathname.startsWith("/books/v1/")) {
+      const apiKey = await this.getGoogleBooksKey();
+      if (apiKey) requestUrl.searchParams.set("key", apiKey);
+    }
+    let response: Response;
+    try {
+      response = await this.fetch(requestUrl, {
+        signal: AbortSignal.timeout(isOpenLibrary ? this.options.timeoutMs ?? 15_000 : this.timeoutMs),
+        redirect: requestUrl.searchParams.has("key") ? "error" : "follow",
+        headers: { "User-Agent": "MemoraEterna/0.1 (mailto:metadata@memora.local)" }
+      });
+    } catch (error) {
+      const name = error instanceof Error ? error.name : "";
+      const cause = error instanceof Error ? error.cause : undefined;
+      const code = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined;
+      const reason = name === "TimeoutError" || name === "AbortError" || code === "UND_ERR_CONNECT_TIMEOUT" ? "timeout"
+        : code === "ENOTFOUND" || code === "EAI_AGAIN" ? "dns_error"
+        : code === "ECONNREFUSED" || code === "ECONNRESET" ? "connection_error" : "network_error";
+      throw new Error(`metadata_${reason}`);
+    }
     if (!response.ok) throw new Error(`metadata_http_${response.status}`);
     return response;
   }

@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { Check, ChevronRight, Cloud, Search, Sparkles, WandSparkles } from "lucide-react";
 import {
   ProcessingStages,
@@ -56,9 +59,30 @@ export function ProcessingPlanPicker({
   compact?: boolean;
 }) {
   const resolved = resolveProcessingPlan(value);
+  const [saved, setSaved] = useState<Array<{ id: string; name: string; requestedStages: ProcessingStage[] }>>([]);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    window.app.settings.getApp().then((settings) => { if (active) setSaved(settings.processingPresets ?? []); })
+      .catch(() => { if (active) setError(true); });
+    return () => { active = false; };
+  }, []);
+  async function savePreset(removeId?: string) {
+    setBusy(true); setError(false);
+    try {
+      const current = (await window.app.settings.getApp()).processingPresets ?? [];
+      const presets = removeId ? current.filter((item) => item.id !== removeId)
+        : [...current, { id: crypto.randomUUID(), name: name.trim(), requestedStages: resolved.requestedStages }];
+      const settings = await window.app.settings.updateApp({ processingPresets: presets });
+      setSaved(settings.processingPresets ?? []); setName("");
+    } catch { setError(true); } finally { setBusy(false); }
+  }
 
   function choosePreset(preset: Exclude<ProcessingPreset, "custom">) {
-    onChange(defaultProcessingPlan(preset));
+    onChange({ ...defaultProcessingPlan(preset), scope: value.scope, targetSourceItemIds: value.targetSourceItemIds,
+      forceRegeneration: value.forceRegeneration, previousArtifactPolicy: value.previousArtifactPolicy });
   }
 
   function toggleStage(stage: ProcessingStage) {
@@ -120,6 +144,19 @@ export function ProcessingPlanPicker({
         </button>;
       })}
     </div>
+
+    <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+      <summary className="cursor-pointer text-sm font-semibold">{t("sourceWorkspace.savedPresets")}</summary>
+      <div className="mt-3 grid gap-2">
+        {saved.map((preset) => <div key={preset.id} className="flex items-center gap-2">
+          <Button type="button" className="flex-1 justify-start" onClick={() => onChange({ ...value, preset: "custom", requestedStages: preset.requestedStages })}>{preset.name}</Button>
+          <Button type="button" disabled={busy} aria-label={t("sourceWorkspace.removePreset")} onClick={() => { if (window.confirm(t("sourceWorkspace.removePreset"))) void savePreset(preset.id); }}>×</Button>
+        </div>)}
+        <div className="flex gap-2"><Input aria-label={t("sourceWorkspace.presetName")} placeholder={t("sourceWorkspace.presetName")} value={name} onChange={(event) => setName(event.target.value)} maxLength={100} />
+          <Button type="button" disabled={busy || !name.trim() || saved.length >= 50} onClick={() => void savePreset()}>{t("sourceWorkspace.savePreset")}</Button></div>
+        {error ? <p role="alert" className="text-sm text-rose-700">{t("errors.common.unknown")}</p> : null}
+      </div>
+    </details>
 
     <details open={value.preset === "custom"} className="group rounded-xl border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold">

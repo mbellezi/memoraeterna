@@ -23,7 +23,7 @@ import {
 import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "./ai-service.js";
 import { SourceDeletionService } from "./source-deletion-service.js";
 import { logStructuredError } from "./structured-logging.js";
-import type { StorageSettings } from "../../shared/ipc.js";
+import type { LibraryBrowseInput, StorageSettings } from "../../shared/ipc.js";
 import {
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
@@ -143,12 +143,24 @@ export class KnowledgeService {
     });
   }
 
+  public async browseLibrary(input: LibraryBrowseInput) {
+    return (await createLibraryRepository(this.requirePool()).listSources(input)).map((source) => ({
+      ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()
+    }));
+  }
+
   public async listLibrary(sourceTypes: SourceItemType[] = []) {
     return (await createLibraryRepository(this.requirePool()).listSources({ sourceTypes })).map((source) => ({
       ...source,
       summary: source.summary ? normalizeSummaryText(source.summary) : null,
       updatedAt: source.updatedAt.toISOString()
     }));
+  }
+
+  public async getSourceDocument(input: { sourceItemId: string; documentId: string }) {
+    const document = await createDocumentRepository(this.requirePool()).findById(input.documentId);
+    if (!document || document.sourceItemId !== input.sourceItemId) throw new Error("errors.common.validationFailed");
+    return { title: document.title, markdown: document.canonicalMarkdown };
   }
 
   public async getSourceDetail(sourceItemId: string) {
@@ -179,6 +191,9 @@ export class KnowledgeService {
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);
     const summaries = await createSourceSummaryRepository(pool).listBySourceItem(sourceItemId);
     return {
+      history: (await createDocumentRepository(pool).listHistory(source.id)).map((item) => ({ ...item, createdAt: item.createdAt.toISOString() })),
+      breadcrumbs: (await createHierarchicalIngestionRepository(pool).getBreadcrumbs([source.id])).get(source.id) ?? [],
+      parentSourceItemId: source.parentSourceItemId,
       id: source.id,
       type: source.type,
       title: source.title,
@@ -285,7 +300,7 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    if (!source || !document || document.metadata.supersededByDocumentId || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
     const chunks = await createChunkRepository(pool).listByDocument(documentId);
     const summary = await generateSummaryFromChunks(
       chunks.length > 0

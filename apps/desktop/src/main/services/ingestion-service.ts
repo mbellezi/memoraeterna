@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   createBibliographicRepository,
+  createSourceEditingRepository,
   createDocumentAssetRepository,
   createDocumentRepository,
   createIngestionRunRepository,
@@ -41,6 +42,7 @@ import type {
   ImportObsidianNoteRequest
 } from "@app/integration-contracts";
 import type {
+  SourceEditInput,
   FileImportInput,
   FileImportProgress,
   ContainerSourceInput,
@@ -52,6 +54,7 @@ import type {
   StorageSettings
 } from "../../shared/ipc.js";
 
+import { readPublicHtml, youtubeIdFromUrl } from "./source-url-preview.js";
 import { AssetStorageService } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
@@ -106,11 +109,43 @@ export class IngestionService {
     });
   }
 
+  public async previewUrl(input: { type: "WebArticle" | "Video"; url: string }) {
+    if (input.type === "Video") {
+      const videoId = youtubeIdFromUrl(input.url);
+      if (!videoId) throw new Error("errors.common.validationFailed");
+      const captured = await this.youtube.capture(videoId);
+      return { draft: descriptorDraftFromVideoMetadata({ title: captured.title, url: input.url,
+        metadata: { ...captured.metadata, platform: "youtube", videoId } }), markdown: captured.markdown };
+    }
+    const page = await readPublicHtml(input.url);
+    const converted = await this.router.convert({ data: new TextEncoder().encode(page.html), mimeType: "text/html",
+      fileName: "article.html", sourceUrl: page.url, profile: "standard" });
+    if (!converted.markdown.trim()) throw new Error("errors.common.validationFailed");
+    return { draft: descriptorDraftFromWebMetadata({ title: String(converted.metadata.title ?? page.url), url: page.url, metadata: converted.metadata }), markdown: converted.markdown };
+  }
+
+  public async editSource(input: SourceEditInput) {
+    const source = await createSourceItemRepository(this.requirePool()).findById(input.sourceItemId);
+    if (!source || source.type !== input.descriptor.type || source.parentSourceItemId !== ("parentSourceItemId" in input.descriptor ? input.descriptor.parentSourceItemId ?? null : null)) {
+      throw new Error("errors.common.validationFailed");
+    }
+    const markdown = input.content ? normalizeMarkdown(input.content.markdown) : undefined;
+    if (markdown !== undefined && !markdown.trim()) throw new Error("errors.common.validationFailed");
+    return createSourceEditingRepository(this.requirePool()).save({
+      sourceItemId: source.id, expectedUpdatedAt: input.expectedUpdatedAt,
+      title: input.descriptor.title, subtitle: input.descriptor.subtitle ?? null,
+      language: input.descriptor.language, sourceUri: ["WebArticle", "Video"].includes(source.type) ? descriptorSourceUri(input.descriptor) : source.sourceUri,
+      descriptor: input.descriptor,
+      ...(input.content && markdown !== undefined ? { content: { documentId: input.content.documentId, markdown, hash: sha256(markdown) } } : {})
+    });
+  }
+
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {
     if (input.content.trim().length === 0 && isHierarchicalSourceType(input.descriptor.type)) {
       return this.createContainerSource({ descriptor: input.descriptor, duplicatePolicy: input.duplicatePolicy });
     }
     const markdown = normalizeMarkdown(input.content);
+    if (!markdown.trim()) throw new Error("errors.common.validationFailed");
     const conversion: MarkdownConversionResult = {
       status: "converted",
       markdown,
@@ -143,7 +178,8 @@ export class IngestionService {
     const duplicate = await sources.findDescriptorDuplicate({
       type: descriptor.type,
       title: descriptor.title,
-      identifiers: descriptorIdentifiers(descriptor)
+      identifiers: descriptorIdentifiers(descriptor),
+        parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null
     });
     if (duplicate && input.duplicatePolicy === "ignore") return containerResult(duplicate.id, true);
 
@@ -168,7 +204,8 @@ export class IngestionService {
     const duplicate = byContent ?? await sources.findDescriptorDuplicate({
       type: input.descriptor.type,
       title: input.descriptor.title,
-      identifiers: descriptorIdentifiers(input.descriptor)
+      identifiers: descriptorIdentifiers(input.descriptor),
+      parentSourceItemId: "parentSourceItemId" in input.descriptor ? input.descriptor.parentSourceItemId ?? null : null
     });
     return duplicate ? { id: duplicate.id, title: duplicate.title, type: duplicate.type } : null;
   }
@@ -412,12 +449,18 @@ export class IngestionService {
     const documents = createDocumentRepository(pool);
     const runs = createIngestionRunRepository(pool);
     const descriptor = input.descriptor;
+    if ("parentSourceItemId" in descriptor && descriptor.parentSourceItemId) {
+      const parent = await createSourceItemRepository(this.requirePool()).findById(descriptor.parentSourceItemId);
+      const expected = descriptor.type === "BookChapter" ? "Book" : descriptor.type === "DocumentSection" ? "AcademicPaper" : "PeriodicalIssue";
+      if (!parent || parent.type !== expected) throw new Error("errors.common.validationFailed");
+    }
     const sourceUri = input.sourceUriOverride ?? descriptorSourceUri(descriptor);
     const duplicate = await sources.findDuplicate({ sourceUri, contentHash: input.conversion.contentHash })
       ?? await sources.findDescriptorDuplicate({
         type: descriptor.type,
         title: descriptor.title,
-        identifiers: descriptorIdentifiers(descriptor)
+        identifiers: descriptorIdentifiers(descriptor),
+        parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null
       });
     if (duplicate && input.duplicatePolicy === "ignore") {
       const existingDocuments = await documents.listBySourceItem(duplicate.id);
@@ -439,15 +482,15 @@ export class IngestionService {
       return containerResult(duplicate.id, true);
     }
 
-    let sourceItem = duplicate && input.duplicatePolicy === "update"
-      ? await sources.update(duplicate.id, {
-          ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata),
-          sourceUri
-        })
-      : await sources.create({
-          ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata),
-          sourceUri
-        });
+    const previousDocument = duplicate && input.duplicatePolicy === "update"
+      ? (await documents.listBySourceItem(duplicate.id))[0] : undefined;
+    const editedDuplicate = duplicate && input.duplicatePolicy === "update"
+      ? await this.editSource({ sourceItemId: duplicate.id, expectedUpdatedAt: duplicate.updatedAt.toISOString(), descriptor,
+          content: { documentId: previousDocument?.id ?? null, markdown: input.conversion.markdown } })
+      : null;
+    let sourceItem = editedDuplicate
+      ? await sources.findById(editedDuplicate.sourceItemId)
+      : await sources.create({ ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata), sourceUri });
     sourceItem ??= duplicate;
     if (!sourceItem) throw new Error("Source item persistence failed.");
 
@@ -460,7 +503,7 @@ export class IngestionService {
           canonicalMarkdown: input.conversion.markdown,
           contentHash: input.conversion.contentHash,
           language: descriptor.language,
-          metadata: conversionMetadata(input.conversion)
+          metadata: { ...existingDocuments[0].metadata, ...conversionMetadata(input.conversion) }
         })
       : await documents.create({
           sourceItemId: sourceItem.id,
@@ -488,7 +531,7 @@ export class IngestionService {
     }
     const queued = await this.hierarchical.process({
       plan: { ...input.processingPlan, targetSourceItemIds: [sourceItem.id], scope: "source_only" },
-      runKind: "initial",
+      runKind: editedDuplicate ? "reingestion" : "initial",
       trigger: input.sourceOrigin === "manual" || input.sourceOrigin === "file_upload" ? "interactive_import" : "integration"
     });
     const first = queued.queued[0];

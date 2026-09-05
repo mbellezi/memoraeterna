@@ -10,7 +10,7 @@
   "shell": {
     "navigation": {
       "library": "Bibliotheque",
-      "import": "Importer",
+      "import": "Ajouter du contenu",
       "search": "Rechercher",
       "review": "Reviser les notes",
       "jobs": "Taches",
@@ -300,7 +300,7 @@
       "eyebrow": "Centre de controle",
       "title": "Configurez votre espace de connaissances",
       "description": "Gerez l'apparence, l'intelligence, les integrations et les donnees de Memora Eterna depuis un espace unique et cible.",
-      "navigation": {
+      "navigation": { "externalServices": "Services externes", "externalServicesDescription": "Catalogues, métadonnées et clés API",
         "label": "Domaines de configuration",
         "overview": "Vue d'ensemble",
         "overviewDescription": "Etat et raccourcis",
@@ -401,7 +401,7 @@
     },
     "matching": { "title": "Correspondance des connaissances", "description": "Definit le score final minimal requis pour enregistrer une relation entre des notes atomiques.", "minimumScore": "Score minimal de correspondance", "moreRelations": "Plus de relations", "fewerRelations": "Moins de relations, plus strictes", "savedAutomatically": "Cette valeur est appliquée automatiquement lorsqu'elle change." },
     "summarization": { "title": "Génération des résumés", "description": "Évite un appel à l’IA pour les éléments trop courts pour contenir des informations utiles.", "minimumWordCount": "Nombre minimal de mots pour un résumé", "minimumWordCountHint": "Utilisez 0 pour désactiver cette heuristique. Les sections structurelles ou uniquement bibliographiques restent exclues par les instructions de l’IA." },
-    "metadataEnrichment": { "title": "Enrichissement automatique des métadonnées", "description": "Recherche les ISBN, DOI, titres et auteurs dans Open Library, Google Books et Crossref. Désactivez cette option pour empêcher toute requête de métadonnées." },
+    "metadataEnrichment": { "apiKey":"Clé API Google Books","saveKey":"Enregistrer la clé","removeKey":"Supprimer la clé","keySaved":"Clé enregistrée de manière sécurisée.","noKey":"Aucune clé configurée. Les recherches utilisent un accès sans clé.","keyError":"Impossible de lire ou enregistrer la clé de manière sécurisée. Réessayez.", "provider":"Fournisseur de métadonnées des livres","auto":"Automatique (Open Library → Google Books)","providerHint":"Choisissez un service pour les livres. Automatique essaie Google Books si Open Library échoue ou ne trouve rien. Les articles scientifiques utilisent Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Enrichissement automatique des métadonnées", "description": "Recherche les ISBN, DOI, titres et auteurs dans Open Library, Google Books et Crossref. Désactivez cette option pour empêcher toute requête de métadonnées." },
     "reset": { "title": "Reinitialiser la bibliotheque", "description": "Supprime toute la bibliotheque, les fichiers geres, les vecteurs, les taches et les notes atomiques. Les modeles locaux telecharges et les reglages sont conserves.", "action": "Tout reinitialiser", "confirmation": "Supprimer definitivement toute la bibliotheque, les fichiers geres, les vecteurs et les notes atomiques ? Les modeles locaux telecharges seront conserves.", "completed": "Bibliotheque reinitialisee.", "completedWithWarnings": "Bibliotheque reinitialisee, mais certains fichiers geres n'ont pas pu etre supprimes.", "failed": "Impossible de reinitialiser la bibliotheque." },
     "ai": {
       "title": "Fournisseurs et profils IA", "provider": "Fournisseur", "google": "Google Gemini",
@@ -482,5 +482,44 @@
       "payloadTooLarge": "Le contenu capture est trop volumineux.",
       "internal": "L'application n'a pas pu terminer la requete d'integration."
     }
+  },
+  "sourceWorkspace": {
+    "outdated": "Résumé à actualiser",
+    "content": "Contenu",
+    "history": "Historique",
+    "current": "Actuel",
+    "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
+    "fetchUrl": "Récupérer les métadonnées et le contenu",
+    "edit": "Modifier la source",
+    "save": "Enregistrer",
+    "addChild": "Ajouter un sous-élément",
+    "overview": "Vue générale",
+    "search": "Rechercher dans la bibliothèque",
+    "searchHint": "Titre, auteur, ISBN, DOI, tags — sous-éléments inclus",
+    "list": "Vue liste",
+    "grid": "Vue grille",
+    "subsource": "Sous-source",
+    "pages": "Pagination",
+    "previous": "Précédente",
+    "next": "Suivante",
+    "noChildren": "Aucun sous-élément. Ajoutez le premier pour commencer.",
+    "moreMetadata": "Métadonnées supplémentaires",
+    "enrichmentEmpty": "Aucun résultat. Précisez le titre ou utilisez un ISBN / DOI. Vous pouvez continuer manuellement.",
+    "enrichmentError": "Le catalogue est indisponible. Vous pouvez continuer manuellement.",
+    "editHint": "L’enregistrement conserve le contenu précédent et les preuves révisées. Traitez ensuite la source modifiée pour actualiser les résultats.",
+    "stale": "Le contenu a changé. Traitez cette source pour actualiser le résumé.",
+    "conflict": "Cette source a changé depuis son ouverture. Rouvrez-la avant d’enregistrer.",
+    "processing": "Attendez la fin du traitement actif avant de modifier cette source.",
+    "modelDefaults": "Valeurs du modèle",
+    "customizeTask": "Personnaliser par tâche",
+    "resetTask": "Utiliser les valeurs du modèle",
+    "duplicateProfile": "Dupliquer le profil",
+    "profileHint": "Commencez avec un modèle et personnalisez seulement les tâches nécessitant des réglages différents.",
+    "effectiveModel": "Modèle effectif",
+    "newModel": "Nouveau modèle",
+    "savedPresets": "Mes préréglages de traitement",
+    "presetName": "Nom du préréglage",
+    "savePreset": "Enregistrer le préréglage",
+    "removePreset": "Supprimer ce préréglage ?"
   }
 }

@@ -27,37 +27,37 @@ export function AiParameterFields({ value, onChange, capabilities, t, embeddingO
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-3">
-      {capabilities.contextWindow ? <div className="grid gap-1">
+    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,12rem),1fr))] gap-3">
+      {capabilities.contextWindow ? <div className="grid min-w-0 gap-1">
         <Label>{t("settings.ai.parameters.contextWindow")}</Label>
         <Input type="number" {...rangeProps(capabilities.contextWindow)} value={value.contextWindow ?? ""} onChange={(event) => numberValue("contextWindow", event.target.value)} />
       </div> : null}
       {embeddingOnly ? (
-        capabilities.dimensions ? <div className="grid gap-1">
+        capabilities.dimensions ? <div className="grid min-w-0 gap-1">
           <Label>{t("settings.ai.parameters.dimensions")}</Label>
-          <select value={value.dimensions ?? ""} onChange={(event) => numberValue("dimensions", event.target.value)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+          <select value={value.dimensions ?? ""} onChange={(event) => numberValue("dimensions", event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
             <option value="">{t("settings.ai.parameters.inherit")}</option>
             {capabilities.dimensions.values.map((dimension) => <option key={dimension} value={dimension}>{dimension}</option>)}
           </select>
         </div> : null
       ) : (
         <>
-          {capabilities.temperature ? <div className="grid gap-1">
+          {capabilities.temperature ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.temperature")}</Label>
             <Input type="number" {...rangeProps(capabilities.temperature)} value={value.temperature ?? ""} onChange={(event) => numberValue("temperature", event.target.value)} />
           </div> : null}
-          {capabilities.maxTokens ? <div className="grid gap-1">
+          {capabilities.maxTokens ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.maxTokens")}</Label>
             <Input type="number" {...rangeProps(capabilities.maxTokens)} value={value.maxTokens ?? ""} onChange={(event) => numberValue("maxTokens", event.target.value)} />
           </div> : null}
-          {capabilities.reasoning ? <div className="grid gap-1">
+          {capabilities.reasoning ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.reasoningLevel")}</Label>
-            <select value={value.reasoningLevel ?? ""} onChange={(event) => reasoningValue(event.target.value)} className="h-9 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+            <select value={value.reasoningLevel ?? ""} onChange={(event) => reasoningValue(event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
               <option value="">{t("settings.ai.parameters.inherit")}</option>
               {capabilities.reasoning.levels.map((level) => <option key={level} value={level}>{t(`settings.ai.parameters.reasoning.${level}` as MessageKey)}</option>)}
             </select>
           </div> : null}
-          {capabilities.reasoning?.maxTokens ? <div className="grid gap-1">
+          {capabilities.reasoning?.maxTokens ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.reasoningMaxTokens")}</Label>
             <Input
               type="number"
@@ -67,19 +67,19 @@ export function AiParameterFields({ value, onChange, capabilities, t, embeddingO
               onChange={(event) => numberValue("reasoningMaxTokens", event.target.value)}
             />
           </div> : null}
-          {capabilities.topP ? <div className="grid gap-1">
+          {capabilities.topP ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.topP")}</Label>
             <Input type="number" {...rangeProps(capabilities.topP)} value={value.topP ?? ""} onChange={(event) => numberValue("topP", event.target.value)} />
           </div> : null}
-          {capabilities.topK ? <div className="grid gap-1">
+          {capabilities.topK ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.topK")}</Label>
             <Input type="number" {...rangeProps(capabilities.topK)} value={value.topK ?? ""} onChange={(event) => numberValue("topK", event.target.value)} />
           </div> : null}
-          {capabilities.presencePenalty ? <div className="grid gap-1">
+          {capabilities.presencePenalty ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.presencePenalty")}</Label>
             <Input type="number" {...rangeProps(capabilities.presencePenalty)} value={value.presencePenalty ?? ""} onChange={(event) => numberValue("presencePenalty", event.target.value)} />
           </div> : null}
-          {capabilities.seed ? <div className="grid gap-1">
+          {capabilities.seed ? <div className="grid min-w-0 gap-1">
             <Label>{t("settings.ai.parameters.seed")}</Label>
             <Input type="number" {...rangeProps(capabilities.seed)} value={value.seed ?? ""} onChange={(event) => numberValue("seed", event.target.value)} />
           </div> : null}

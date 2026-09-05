@@ -10,7 +10,7 @@
   "shell": {
     "navigation": {
       "library": "Library",
-      "import": "Import",
+      "import": "Add content",
       "search": "Search",
       "review": "Review notes",
       "jobs": "Jobs",
@@ -389,7 +389,7 @@
       "eyebrow": "Control center",
       "title": "Configure your knowledge workspace",
       "description": "Manage the look, intelligence, integrations and data behind Memora Eterna from one focused workspace.",
-      "navigation": {
+      "navigation": { "externalServices": "External Services", "externalServicesDescription": "Catalogs, metadata and API keys",
         "label": "Configuration scopes",
         "overview": "Overview",
         "overviewDescription": "Health and shortcuts",
@@ -495,7 +495,7 @@
     },
     "matching": { "title": "Knowledge matching", "description": "Set the minimum final score required to persist a relationship between atomic notes.", "minimumScore": "Minimum match score", "moreRelations": "More relations", "fewerRelations": "Fewer, stricter relations", "savedAutomatically": "This value is applied automatically when changed." },
     "summarization": { "title": "Summary generation", "description": "Avoid spending an AI call on source items that are too small to contain useful content.", "minimumWordCount": "Minimum words for a summary", "minimumWordCountHint": "Use 0 to disable this size heuristic. Structural and reference-only sections are still excluded by the AI instructions." },
-    "metadataEnrichment": { "title": "Automatic metadata enrichment", "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests." },
+    "metadataEnrichment": { "apiKey":"Google Books API key","saveKey":"Save key","removeKey":"Remove key","keySaved":"Key saved securely.","noKey":"No key configured. Searches use unauthenticated access.","keyError":"Could not access or save the key securely. Try again.", "provider":"Book metadata provider","auto":"Automatic (Open Library → Google Books)","providerHint":"Select a service for books. Automatic tries Google Books if Open Library fails or finds nothing. Academic articles use Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Automatic metadata enrichment", "description": "Look up ISBNs, DOIs, titles and authors in Open Library, Google Books and Crossref. Turn this off to prevent all metadata requests." },
     "reset": { "title": "Reset library", "description": "Delete the entire library, managed files, vectors, jobs and atomic notes. Downloaded local models and settings are preserved.", "action": "Reset everything", "confirmation": "Permanently delete the entire library, managed files, vectors and atomic notes? Downloaded local models will be preserved.", "completed": "Library reset completed.", "completedWithWarnings": "Library reset completed, but some managed files could not be removed.", "failed": "The library could not be reset." },
     "ai": {
       "title": "AI providers and profiles", "provider": "Provider", "google": "Google Gemini",
@@ -631,5 +631,44 @@
       "payloadTooLarge": "The captured content is too large.",
       "internal": "The desktop could not complete the integration request."
     }
+  },
+  "sourceWorkspace": {
+    "outdated": "Summary needs updating",
+    "content": "Content",
+    "history": "History",
+    "current": "Current",
+    "historyHint": "Earlier content is read-only. Up to 100 recent documents are listed; original evidence remains preserved.",
+    "fetchUrl": "Fetch metadata and content",
+    "edit": "Edit source",
+    "save": "Save changes",
+    "addChild": "Add subitem",
+    "overview": "Overview",
+    "search": "Search the library",
+    "searchHint": "Title, author, ISBN, DOI, tags — including subitems",
+    "list": "List view",
+    "grid": "Grid view",
+    "subsource": "Subsource",
+    "pages": "Pagination",
+    "previous": "Previous",
+    "next": "Next",
+    "noChildren": "No subitems yet. Add the first one to start building this source.",
+    "moreMetadata": "Additional metadata",
+    "enrichmentEmpty": "No matches. Refine the title or use an ISBN / DOI. You can continue manually.",
+    "enrichmentError": "Catalog lookup is unavailable. You can continue manually.",
+    "editHint": "Saving preserves earlier content and reviewed evidence. Process the changed source afterwards to update its generated results.",
+    "stale": "The content has changed. Process this source to update the summary.",
+    "conflict": "This source changed since you opened it. Reopen it before saving.",
+    "processing": "Wait for this source’s active processing to finish before editing.",
+    "modelDefaults": "Model defaults",
+    "customizeTask": "Customize per task",
+    "resetTask": "Use model defaults",
+    "duplicateProfile": "Duplicate profile",
+    "profileHint": "Start with a model, then customize only the tasks that need different settings.",
+    "effectiveModel": "Effective model",
+    "newModel": "New model",
+    "savedPresets": "My processing presets",
+    "presetName": "Preset name",
+    "savePreset": "Save preset",
+    "removePreset": "Remove this preset?"
   }
 }

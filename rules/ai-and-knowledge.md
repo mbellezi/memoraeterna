@@ -18,6 +18,11 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
   displayed according to real capabilities, not provider-wide assumptions.
 - Adapters normalize loading, execution, streaming, cancellation, progress,
   timeouts, and errors.
+- Model adapters and agent harnesses are separate boundaries. Future wiki
+  harnesses must invoke application services through bounded tools and retain
+  existing privacy, evidence, review and job-audit rules. A provider SDK may be
+  implemented behind `AiModelAdapter`; it must not own canonical storage or
+  bypass task routing. No external harness runtime is selected by this decision.
 
 ## Models, profiles, and parameters
 

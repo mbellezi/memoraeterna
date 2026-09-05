@@ -1,3 +1,4 @@
+import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { createTranslator } from "@app/i18n";
@@ -34,8 +35,8 @@ const trayIconDataUrl =
 
 function createMainWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 760,
+    width: 1600,
+    height: 1200,
     minWidth: 960,
     minHeight: 640,
     show: false,
@@ -54,7 +55,7 @@ function createMainWindow(): BrowserWindow {
     }
 
     event.preventDefault();
-    mainWindow.hide();
+    app.quit();
   });
 
   mainWindow.on("closed", () => {
@@ -187,8 +188,10 @@ void app.whenReady().then(() => {
     hierarchicalIngestionService
   });
   metadataEnrichmentService = new MetadataEnrichmentService({
+    credentials: new CredentialService(app.getPath("userData")),
     getPool: () => databaseService?.getPool() ?? null,
     getEnabled: async () => (await settingsService!.getApp()).metadataEnrichmentEnabled,
+    getBookProvider: async () => (await settingsService!.getApp()).bookMetadataProvider,
     userDataPath: app.getPath("userData"),
     logger: console
   });
@@ -282,7 +285,7 @@ void app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  // Keep the app resident in the tray until the explicit quit action runs.
+  if (!isShutdownInProgress && !isQuittingAfterShutdown) app.quit();
 });
 
 app.on("before-quit", (event) => {
@@ -362,6 +365,7 @@ function createTrayIcon() {
 }
 
 function showMainWindow(): void {
+  if (isShutdownInProgress || isQuittingAfterShutdown) return;
   if (activeMainWindow === null || activeMainWindow.isDestroyed()) {
     activeMainWindow = createMainWindow();
   }

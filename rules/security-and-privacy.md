@@ -27,6 +27,10 @@ processing, destructive operations, backups, or sensitive logging.
 - Network adapters use HTTPS allowlists, short timeouts, bounded retries, and
   non-sensitive logs. Metadata enrichment sends only the documented catalog
   query fields and respects global opt-out.
+- User-triggered manual URL previews respect the enrichment opt-out. Web pages
+  use HTTPS, public DNS addresses pinned to the connection, revalidated bounded
+  redirects, timeouts and a response-size limit; they send no browser cookies or
+  local credentials. Video previews accept validated YouTube video identifiers.
 
 ## AI privacy and cost
 

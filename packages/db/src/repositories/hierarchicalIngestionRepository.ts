@@ -533,7 +533,22 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            exists(select 1 from obsidian_sync_files where source_item_id = $1 and status = 'synced') as "obsidianProjection"`,
         [sourceItemId, documentId]
       );
-      return result.rows[0] ?? {};
+      const state = result.rows[0] ?? {};
+      const revision = await pool.query<{ editorial: boolean; checkpoints: Record<string, { status?: string }> | null }>(
+        `select coalesce((document.metadata->>'editorialRevision')::boolean, false) as editorial,
+           run.stages_checkpoint as checkpoints
+         from documents document
+         left join document_revisions revision on revision.document_id = document.id and revision.is_current
+         left join ingestion_runs run on run.input_document_revision_id = revision.id
+         where document.id = $1`, [documentId]
+      );
+      if (revision.rows.some((row) => row.editorial)) {
+        for (const stage of Object.keys(state)) {
+          if (["conversion", "materialization", "chunking", "embedding"].includes(stage)) continue;
+          state[stage] = Boolean(state[stage]) && revision.rows.some((row) => row.checkpoints?.[stage]?.status === "completed");
+        }
+      }
+      return state;
     },
 
     async createKnowledgeGeneration(input: {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  Search, Pencil, Plus, List, LayoutGrid,
   BookMarked,
   BookOpen,
   CalendarDays,
@@ -27,6 +28,9 @@ import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import { ImportView, childSourceType } from "./ImportView";
+import { Tabs } from "./ui/tabs";
+import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { CoverImage } from "./ui/cover-image";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
@@ -110,8 +114,9 @@ export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translat
   );
 }
 
-export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSearch }: {
+export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarget = null, onNavigate, onExitToSearch }: {
   t: Translator;
+  metadataEnrichmentEnabled?: boolean;
   externalTarget?: LibraryExternalTarget | null;
   onNavigate?: () => void;
   onExitToSearch?: () => void;
@@ -120,6 +125,11 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
   const [stack, setStack] = useState<string[]>([]);
   const [detail, setDetail] = useState<SourceDetail | null>(null);
   const [fromSearch, setFromSearch] = useState(false);
+  const [query, setQuery] = useState("");
+  const [offset, setOffset] = useState(0);
+  const [layout, setLayout] = useState<"grid" | "list">("list");
+  const loadGeneration = useRef(0);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [filter, setFilter] = useState<SourceItemType | "all">("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [processingIds, setProcessingIds] = useState<string[] | null>(null);
@@ -136,18 +146,21 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
   const currentId = stack.at(-1) ?? null;
 
   async function load() {
-    setLoading(true);
-    setError(false);
+    const generation = ++loadGeneration.current;
+    setLoading(true); setError(false);
     try {
-      setSources(await window.app.knowledge.listLibrary([]));
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
+      const result = await window.app.knowledge.browseLibrary({ offset, limit: 48,
+        sourceTypes: currentId || filter === "all" ? [] : [filter], query: currentId ? "" : query,
+        ...(currentId ? { parentId: currentId } : !query.trim() && filter === "all" ? { parentId: null } : {}) });
+      if (generation === loadGeneration.current) setSources(result);
+    } catch { if (generation === loadGeneration.current) setError(true); }
+    finally { if (generation === loadGeneration.current) setLoading(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), query ? 250 : 0);
+    return () => { window.clearTimeout(timer); loadGeneration.current++; };
+  }, [query, filter, offset, currentId, refreshKey]);
 
   useEffect(() => {
     if (!historyInitialized.current) {
@@ -214,7 +227,7 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [currentId]);
+  }, [currentId, refreshKey]);
 
   function openSource(id: string) {
     navigateToPath([...stack, id], fromSearch);
@@ -239,6 +252,8 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
   function navigateToPath(path: string[], cameFromSearch: boolean) {
     pushLibraryHistory({ view: "library", path, fromSearch: cameFromSearch });
     setStack(path);
+    setOffset(0);
+    setSelectedIds(new Set());
     setFromSearch(cameFromSearch);
     onNavigate?.();
   }
@@ -261,6 +276,7 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
         <SourceDetailView
           key={detail.id}
           detail={detail}
+          metadataEnrichmentEnabled={metadataEnrichmentEnabled}
           allSources={sources}
           backLabel={stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
           t={t}
@@ -268,7 +284,9 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
           onOpenPath={openPath}
           onGoToLibrary={goToLibrary}
           onBack={goBack}
-          onProcess={() => setProcessingIds([currentId])}
+          onProcess={(ids) => setProcessingIds(ids ?? [currentId])}
+          onRefresh={() => setRefreshKey((key) => key + 1)}
+          onPage={(next) => setOffset(next)} offset={offset} loading={loading} loadError={error}
           onDeleted={returnToLibraryAfterDeletion}
         />
       ) : error ? (
@@ -285,7 +303,7 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
       {processingIds ? (
         <ProcessingDialog
           sourceIds={processingIds}
-          sources={sources}
+          sources={detail ? [...sources, detailAsLibrarySource(detail)] : sources}
           t={t}
           onClose={() => setProcessingIds(null)}
           onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }}
@@ -294,21 +312,20 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
     </>;
   }
 
-  const orderedSources = orderHierarchically(sources);
-  const gridSources = filter === "all"
-    ? orderedSources.filter(({ depth }) => depth === 0).map(({ source }) => source)
-    : orderedSources.filter(({ source }) => source.type === filter).map(({ source }) => source);
+  const gridSources = sources;
 
   return <section className="grid gap-4">
     <div className="flex flex-wrap items-end justify-between gap-3">
+      <label className="grid min-w-64 flex-1 gap-1 text-sm font-medium">{t("sourceWorkspace.search")}<div className="relative"><Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" aria-hidden="true" /><Input className="pl-9" value={query} onChange={(event) => { setQuery(event.target.value); setOffset(0); setSelectedIds(new Set()); }} placeholder={t("sourceWorkspace.searchHint")} /></div></label>
       <label className="grid gap-1 text-sm font-medium">
         {t("library.filterByType")}
-        <select value={filter} onChange={(event) => setFilter(event.target.value as SourceItemType | "all")}
+        <select value={filter} onChange={(event) => { setFilter(event.target.value as SourceItemType | "all"); setOffset(0); setSelectedIds(new Set()); }}
           className="h-9 min-w-52 rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
           <option value="all">{t("library.allTypes")}</option>
           {SourceItemTypes.map((type) => <option key={type} value={type}>{t(`import.sourceTypes.${type}` as MessageKey)}</option>)}
         </select>
       </label>
+      <Button type="button" aria-label={t(layout === "grid" ? "sourceWorkspace.list" : "sourceWorkspace.grid")} onClick={() => setLayout(layout === "grid" ? "list" : "grid")}>{layout === "grid" ? <List className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}</Button>
       <button type="button" className="grid h-9 w-9 place-items-center rounded-md hover:bg-slate-100 dark:hover:bg-slate-900"
         title={t("library.refresh")} onClick={() => void load()}>
         <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -320,10 +337,11 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
     </div> : null}
     {error ? <StateCard>{t("library.error")}</StateCard> : loading ? <StateCard>{t("shell.states.loading")}</StateCard>
       : sources.length === 0 ? <StateCard>{t("library.empty")}</StateCard>
-        : <ol className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        : <ol className={cn("grid gap-3", layout === "grid" && "sm:grid-cols-2 xl:grid-cols-3")}>
           {gridSources.map((source) => <li key={source.id} className="motion-fade-in-up">
             <SourceCard
               source={source}
+              compact={layout === "list"}
               t={t}
               selected={selectedIds.has(source.id)}
               onToggleSelect={(checked) => setSelectedIds((current) => {
@@ -336,12 +354,14 @@ export function LibraryView({ t, externalTarget = null, onNavigate, onExitToSear
             />
           </li>)}
         </ol>}
+    <PageControls offset={offset} count={sources.length} busy={loading} t={t} onPage={setOffset} />
     {processingIds ? <ProcessingDialog sourceIds={processingIds} sources={sources} t={t} onClose={() => setProcessingIds(null)} onQueued={() => { setProcessingIds(null); setSelectedIds(new Set()); void load(); }} /> : null}
   </section>;
 }
 
-function SourceCard({ source, t, selected, onToggleSelect, onOpen, onProcess }: {
+function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOpen, onProcess }: {
   source: LibrarySource;
+  compact?: boolean;
   t: Translator;
   selected: boolean;
   onToggleSelect: (checked: boolean) => void;
@@ -356,10 +376,10 @@ function SourceCard({ source, t, selected, onToggleSelect, onOpen, onProcess }: 
       aria-label={t("library.cards.openDetail", { values: { title: source.title } })}
       className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700"
       onClick={onOpen}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}
+      onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(); } }}
     >
-      <div className="flex gap-4 p-4">
-        <div className="grid h-28 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
+      <div className={cn("flex gap-4", compact ? "p-3" : "p-4")}>
+        <div className={cn("grid shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950", compact ? "h-12 w-9" : "h-28 w-20")}>
           <CoverImage
             assetId={coverAssetIdFromMetadata(source.metadata)}
             alt={source.title}
@@ -372,7 +392,7 @@ function SourceCard({ source, t, selected, onToggleSelect, onOpen, onProcess }: 
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <SourceTypeBadge type={source.type} t={t} />
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium dark:bg-slate-800">
-              {source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}
+              {source.metadata.summaryStale === true ? t("sourceWorkspace.outdated") : source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}
             </span>
           </div>
         </div>
@@ -395,8 +415,9 @@ function SourceCard({ source, t, selected, onToggleSelect, onOpen, onProcess }: 
           </button>
         </div>
       </div>
-      {source.summary ? <p className="line-clamp-2 px-4 pb-3 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
-      <footer className="mt-auto flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500 dark:border-slate-800">
+      {source.parentSourceItemId ? <p className="px-4 pb-2 text-xs text-slate-500">{t("sourceWorkspace.subsource")}</p> : null}
+      {!compact && source.summary ? <p className="line-clamp-2 px-4 pb-3 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
+      <footer className={cn("mt-auto flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500 dark:border-slate-800", compact && "hidden")}>
         <span className="inline-flex items-center gap-1.5">
           <Layers className="h-3.5 w-3.5" aria-hidden="true" />
           {t("library.childCount", { values: { count: source.childCount } })}
@@ -417,26 +438,30 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
     scope: sourceIds.length > 1 ? "selected_items" : sources.find((source) => source.id === sourceIds[0])?.hasDocument ? "source_only" : "children_only"
   }));
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => dialog?.close(); }, []);
   const selected = sources.filter((source) => sourceIds.includes(source.id));
   async function queue() {
     setBusy(true);
     try {
       await window.app.ingestion.process({ plan: { ...plan, targetSourceItemIds: sourceIds }, runKind: plan.forceRegeneration ? "reingestion" : "missing_stages", trigger: "library_action" });
       onQueued();
-    } finally { setBusy(false); }
+    } catch { setFailed(true); } finally { setBusy(false); }
   }
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={t("library.processingDialog.title")}>
+  return <dialog ref={dialogRef} onCancel={(event) => { event.preventDefault(); if (!busy) onClose(); }} className="fixed inset-0 z-50 m-0 grid h-screen max-h-none w-screen max-w-none place-items-center bg-slate-950/55 p-4 text-slate-950 backdrop-blur-sm dark:text-white" aria-modal="true" aria-label={t("library.processingDialog.title")}>
     <div className="motion-scale-in max-h-[92vh] w-full max-w-4xl overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-      <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 className="text-lg font-semibold">{t("library.processingDialog.title")}</h2><p className="mt-1 text-sm text-slate-500">{t("library.processingDialog.description", { values: { count: sourceIds.length } })}</p></div><button type="button" className="grid h-9 w-9 place-items-center rounded-lg" onClick={onClose}><X className="h-4 w-4" /></button></header>
+      <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-800"><div><h2 className="text-lg font-semibold">{t("library.processingDialog.title")}</h2><p className="mt-1 text-sm text-slate-500">{t("library.processingDialog.description", { values: { count: sourceIds.length } })}</p></div><button type="button" className="grid h-9 w-9 place-items-center rounded-lg" aria-label={t("shell.actions.close")} disabled={busy} onClick={onClose}><X className="h-4 w-4" /></button></header>
       <div className="grid gap-5 p-5">
+        {failed ? <p role="alert">{t("library.error")}</p> : null}
         <div className="flex flex-wrap gap-2">{selected.map((source) => <span key={source.id} className="rounded-full bg-slate-100 px-3 py-1 text-xs dark:bg-slate-900">{source.title}</span>)}</div>
         {sourceIds.length === 1 ? <label className="grid gap-2 text-sm font-semibold">{t("library.processingDialog.scope")}<select value={plan.scope} onChange={(event) => setPlan({ ...plan, scope: event.target.value as ProcessingPlanRequest["scope"] })} className="h-10 rounded-lg border border-slate-300 bg-white px-3 font-normal dark:border-slate-700 dark:bg-slate-950"><option value="source_only">{t("library.scopes.source_only")}</option><option value="children_only">{t("library.scopes.children_only")}</option><option value="source_and_children">{t("library.scopes.source_and_children")}</option></select></label> : null}
-        <ProcessingPlanPicker value={plan} onChange={(next) => setPlan({ ...next, targetSourceItemIds: sourceIds, scope: sourceIds.length > 1 ? "selected_items" : next.scope })} t={t} />
+        <ProcessingPlanPicker value={plan} onChange={(next) => setPlan({ ...next, targetSourceItemIds: sourceIds, scope: sourceIds.length > 1 ? "selected_items" : plan.scope })} t={t} />
         <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-600" checked={plan.forceRegeneration} onChange={(event) => setPlan({ ...plan, forceRegeneration: event.target.checked, previousArtifactPolicy: event.target.checked ? "preserve_reviewed_archive_pending" : "reuse_valid" })} /><span><span className="block font-semibold">{t("library.processingDialog.regenerate")}</span><span className="text-xs text-slate-600 dark:text-slate-400">{t("library.processingDialog.regenerateHint")}</span></span></label>
       </div>
-      <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><Button type="button" onClick={onClose}>{t("shell.actions.cancel")}</Button><Button type="button" disabled={busy} onClick={() => void queue()}><Play className="h-4 w-4" />{t("library.actions.queueProcessing")}</Button></footer>
+      <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><Button type="button" disabled={busy} onClick={onClose}>{t("shell.actions.cancel")}</Button><Button type="button" disabled={busy} onClick={() => void queue()}><Play className="h-4 w-4" />{t("library.actions.queueProcessing")}</Button></footer>
     </div>
-  </div>;
+  </dialog>;
 }
 
 function structurePositionComparator(sources: LibrarySource[]) {
@@ -506,8 +531,9 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
   return result;
 }
 
-function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted }: {
+function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled }: {
   detail: SourceDetail;
+  metadataEnrichmentEnabled: boolean;
   allSources: LibrarySource[];
   backLabel: string;
   t: Translator;
@@ -515,17 +541,24 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
   onOpenPath: (ids: string[]) => void;
   onGoToLibrary: () => void;
   onBack: () => void;
-  onProcess: () => void;
+  onProcess: (ids?: string[]) => void;
+  onRefresh: () => void; onPage: (offset: number) => void; offset: number; loading: boolean; loadError: boolean;
   onDeleted: () => void;
 }) {
+  const [historical, setHistorical] = useState<{ title: string; markdown: string } | null>(null);
+  const [historyError, setHistoryError] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [tab, setTab] = useState("overview");
+  const [editor, setEditor] = useState<"edit" | "child" | null>(null);
+  const [selectedChildren, setSelectedChildren] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
 
-  const chain = breadcrumbChain(allSources, detail.id);
+  const chain = detail.breadcrumbs.length ? detail.breadcrumbs : breadcrumbChain(allSources, detail.id);
   const subitems = childrenOf(allSources, detail.id);
   const chunkCount = detail.documents.reduce((total, document) => total + document.chunks.length, 0);
-  const coverAssetId = detail.assets.find((asset) => asset.role === "cover")?.id
-    ?? coverAssetIdFromMetadata(detail.metadata);
+  const coverAssetId = coverAssetIdFromMetadata(detail.metadata)
+    ?? detail.assets.find((asset) => asset.role === "cover")?.id ?? null;
   const Icon = typeIcons[detail.type];
 
   async function deleteSource() {
@@ -544,6 +577,8 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
     }
   }
 
+  if (editor) return <ImportView t={t} metadataEnrichmentEnabled={metadataEnrichmentEnabled} {...(editor === "edit" ? { editing: detail } : { parent: detail })} onCancel={() => setEditor(null)} onSaved={() => { setEditor(null); onRefresh(); }} />;
+
   return <section className="motion-fade-in-up grid gap-4">
     <nav className="flex flex-wrap items-center gap-1 text-sm text-slate-500" aria-label={t("shell.navigation.library")}>
       <button type="button" className="rounded-md px-1.5 py-0.5 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-900 dark:hover:text-slate-100" onClick={onGoToLibrary}>
@@ -560,7 +595,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
       </span>)}
     </nav>
 
-    <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <header className="grid gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div className="flex min-w-0 flex-1 items-start gap-4">
         <div className="grid h-36 w-24 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950">
           <CoverImage
@@ -581,8 +616,10 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" disabled={deleting} onClick={onProcess}>
+      <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <Button type="button" disabled={deleting} onClick={() => setEditor("edit")}><Pencil className="h-4 w-4" />{t("sourceWorkspace.edit")}</Button>
+        {childSourceType(detail.type) ? <Button type="button" onClick={() => setEditor("child")}><Plus className="h-4 w-4" />{t("sourceWorkspace.addChild")}</Button> : null}
+        <Button type="button" disabled={deleting} onClick={() => onProcess()}>
           <Play className="h-4 w-4" aria-hidden="true" />{t("library.actions.process")}
         </Button>
         <Button type="button" disabled={deleting} className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-800 dark:bg-rose-800 dark:hover:bg-rose-700" onClick={() => void deleteSource()}>
@@ -596,18 +633,46 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
 
     {deleteFailed ? <p role="alert" className="rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">{t("library.delete.failed")}</p> : null}
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <Tabs label={detail.title} value={tab} onChange={setTab} items={[
+      { id: "overview", label: t("sourceWorkspace.overview") },
+      { id: "content", label: t("sourceWorkspace.content") },
+      { id: "children", label: t("library.detail.subitems") },
+      { id: "notes", label: t("library.sections.atomicNotes"), count: detail.atomicNotes.length },
+      { id: "relations", label: t("library.sections.relations"), count: detail.relations.length },
+      { id: "metadata", label: t("import.steps.metadata") },
+      { id: "history", label: t("sourceWorkspace.history") }
+    ]}>
+    {tab === "history" ? <div className="grid gap-3">
+      <p className="text-sm text-slate-500">{t("sourceWorkspace.historyHint")}</p>
+      <ol className="grid gap-2">{detail.history.map((item) => <li key={item.id}><Button disabled={historyLoading} onClick={() => {
+        setHistoryLoading(true); setHistoryError(false);
+        window.app.knowledge.getSourceDocument({ sourceItemId: detail.id, documentId: item.id }).then(setHistorical)
+          .catch(() => setHistoryError(true)).finally(() => setHistoryLoading(false));
+      }}>{item.title} · {new Date(item.createdAt).toLocaleString()}{item.isCurrent ? ` · ${t("sourceWorkspace.current")}` : ""}</Button></li>)}</ol>
+      {historyLoading ? <p>{t("shell.states.loading")}</p> : null}
+      {historyError ? <p role="alert">{t("library.error")}</p> : null}
+      {historical ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-800">{historical.markdown}</pre> : null}
+      {detail.summaries.map((summary) => <details key={summary.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t("library.sections.summary")} · {new Date(summary.generatedAt).toLocaleString()} · {summary.model}</summary><p className="mt-3 whitespace-pre-wrap text-sm">{summary.summary}</p></details>)}
+    </div> : null}
+    {tab === "overview" ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <StatTile icon={FileText} label={t("library.detail.stats.documents")} value={detail.documents.length} tone="cyan" />
       <StatTile icon={Layers} label={t("library.detail.stats.chunks")} value={chunkCount} tone="emerald" />
       <StatTile icon={NotebookPen} label={t("library.detail.stats.notes")} value={detail.atomicNotes.length} tone="violet" />
       <StatTile icon={Globe} label={t("library.detail.stats.relations")} value={detail.relations.length} tone="amber" />
-    </div>
+    </div> : null}
 
-    {subitems.length > 0 ? <CollapsibleSection title={t("library.detail.subitems")} count={subitems.length} defaultOpen>
+    {tab === "children" ? <div className="grid gap-3">
+      {childSourceType(detail.type) ? <Button className="w-fit" onClick={() => setEditor("child")}><Plus className="h-4 w-4" />{t("sourceWorkspace.addChild")}</Button> : null}
+      {selectedChildren.length ? <Button className="w-fit" onClick={() => onProcess(selectedChildren)}>{t("library.actions.processSelected")} ({selectedChildren.length})</Button> : null}
+      {loading ? <StateCard>{t("shell.states.loading")}</StateCard> : loadError ? <StateCard>{t("library.error")}</StateCard> : !subitems.length ? <StateCard>{t("sourceWorkspace.noChildren")}</StateCard> : null}
+      <PageControls offset={offset} count={subitems.length} busy={loading} t={t} onPage={(page) => { setSelectedChildren([]); onPage(page); }} />
+    </div> : null}
+    {tab === "children" && subitems.length > 0 ? <CollapsibleSection title={t("library.detail.subitems")} count={subitems.length} defaultOpen>
       <ol className="grid gap-2 sm:grid-cols-2">
         {subitems.map((subitem) => {
           const SubIcon = typeIcons[subitem.type];
-          return <li key={subitem.id}>
+          return <li key={subitem.id} className="flex items-center gap-2">
+            <input type="checkbox" aria-label={t("library.actions.selectSource", { values: { title: subitem.title } })} checked={selectedChildren.includes(subitem.id)} onChange={(event) => setSelectedChildren((ids) => event.target.checked ? [...ids, subitem.id] : ids.filter((id) => id !== subitem.id))} />
             <button
               type="button"
               className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-cyan-400 hover:bg-white dark:border-slate-800 dark:bg-slate-950 dark:hover:border-cyan-700 dark:hover:bg-slate-900"
@@ -630,14 +695,16 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
       </ol>
     </CollapsibleSection> : null}
 
-    <CollapsibleSection title={t("library.sections.summary")} defaultOpen>
+    {tab === "overview" ? <CollapsibleSection title={t("library.sections.summary")} defaultOpen>
       <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-300">{detail.summary ?? t("library.noSummary")}</p>
-    </CollapsibleSection>
+      {detail.metadata.summaryStale === true ? <p className="mt-3 text-sm text-amber-700 dark:text-amber-300">{t("sourceWorkspace.stale")}</p> : null}
+    </CollapsibleSection> : null}
 
-    {detail.documents.length === 0 && subitems.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
+    {tab === "content" && detail.documents.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
 
-    {detail.documents.map((document) => <div key={document.id} className="grid gap-3">
-      <CollapsibleSection title={t("library.sections.document")}>
+    {tab === "content" && detail.assets.filter((asset) => asset.role !== "cover").map((asset) => <Button className="w-fit" key={asset.id} onClick={() => void window.app.knowledge.openAsset(asset.id)}>{asset.originalFileName}</Button>)}
+    {tab === "content" && detail.documents.map((document) => <div key={document.id} className="grid gap-3">
+      <CollapsibleSection title={t("library.sections.document")} defaultOpen>
         <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">{document.canonicalMarkdown}</pre>
         {document.assets.length > 0 ? <div className="mt-3 grid gap-2">
           <h4 className="text-sm font-semibold">{t("library.sections.originals")}</h4>
@@ -657,12 +724,12 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
       </CollapsibleSection>
     </div>)}
 
-    <CollapsibleSection title={t("library.sections.atomicNotes")} count={detail.atomicNotes.length} defaultOpen>
+    {tab === "notes" ? <CollapsibleSection title={t("library.sections.atomicNotes")} count={detail.atomicNotes.length} defaultOpen>
       {detail.atomicNotes.length === 0 ? <StateCard>{t("knowledge.notes.emptyForSource")}</StateCard>
         : <ol className="grid gap-2">{detail.atomicNotes.map((note) => <li key={note.id}><AtomicNoteCard note={note} t={t} /></li>)}</ol>}
-    </CollapsibleSection>
+    </CollapsibleSection> : null}
 
-    <CollapsibleSection title={t("library.sections.relations")} count={detail.relations.length} defaultOpen>
+    {tab === "relations" ? <CollapsibleSection title={t("library.sections.relations")} count={detail.relations.length} defaultOpen>
       {detail.relations.length === 0 ? <StateCard>{t("knowledge.relations.empty")}</StateCard>
         : <ol className="grid gap-2">{detail.relations.map((relation) => <li key={relation.id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex items-start justify-between gap-4">
@@ -673,14 +740,19 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
           <p className="text-sm text-slate-600 dark:text-slate-300">{relation.explanation.startsWith("knowledge.") ? t(relation.explanation as MessageKey) : relation.explanation}</p>
           {relation.sourceStatus === "pending_review" || relation.targetStatus === "pending_review" ? <span className="w-fit rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">{t("knowledge.relations.pendingInvolved")}</span> : null}
         </li>)}</ol>}
-    </CollapsibleSection>
+    </CollapsibleSection> : null}
 
-    <CollapsibleSection title={t("library.detail.rawMetadata")}>
+    {tab === "metadata" ? <div className="grid gap-4">
+      <dl className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
+        {metadataEntries(detail.metadata).map(([key, value]) => <div key={key}><dt className="text-xs text-slate-500">{t(`import.metadataFields.${key}` as MessageKey)}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{value}</dd></div>)}
+      </dl>
+      <CollapsibleSection title={t("library.detail.rawMetadata")}>
       <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>
       {detail.assets.filter((asset) => asset.role === "cover").map((asset) => <button key={asset.id} type="button" className="mt-2 inline-flex w-fit items-center gap-2 text-sm text-cyan-700 hover:underline dark:text-cyan-300" onClick={() => void window.app.knowledge.openAsset(asset.id)}>
         <FileText className="h-4 w-4" aria-hidden="true" />{asset.originalFileName}
       </button>)}
-    </CollapsibleSection>
+    </CollapsibleSection></div> : null}
+    </Tabs>
   </section>;
 }
 
@@ -803,4 +875,29 @@ function noteStatusKey(status: string): MessageKey {
 
 function relationTypeKey(type: string): MessageKey {
   return (`knowledge.relations.types.${type}` as MessageKey);
+}
+
+function PageControls({ offset, count, busy, t, onPage }: { offset: number; count: number; busy: boolean; t: Translator; onPage: (offset: number) => void }) {
+  return <nav aria-label={t("sourceWorkspace.pages")} className="flex items-center justify-end gap-3 text-sm">
+    <span className="tabular-nums text-slate-500">{offset + (count ? 1 : 0)}–{offset + count}</span>
+    <Button disabled={busy || offset === 0} onClick={() => onPage(Math.max(0, offset - 48))}>{t("sourceWorkspace.previous")}</Button>
+    <Button disabled={busy || count < 48} onClick={() => onPage(offset + 48)}>{t("sourceWorkspace.next")}</Button>
+  </nav>;
+}
+
+function detailAsLibrarySource(detail: SourceDetail): LibrarySource {
+  return { ...detail, structurePosition: null, childCount: 0, hasDocument: detail.documents.length > 0,
+    processingStatus: "pending", currentStage: "queued" };
+}
+
+function metadataEntries(metadata: Record<string, unknown>): Array<[string, string]> {
+  const descriptor = metadata.descriptor;
+  if (!descriptor || typeof descriptor !== "object") return [];
+  const values = descriptor as Record<string, unknown>;
+  return ["title", "subtitle", "creators", "language", "publicationDate", "publisher", "edition", "isbn10", "isbn13", "doi", "issn", "venue", "year", "series", "volume", "issue", "chapterNumber", "sectionNumber", "pageCount", "url", "siteName", "platform", "channel", "durationSeconds", "tags", "subjects", "keywords", "abstract", "description"].flatMap((key): Array<[string, string]> => {
+    const value = values[key];
+    if (value === undefined || value === null || value === "") return [];
+    const formatted = Array.isArray(value) ? value.map((item) => typeof item === "object" && item && "name" in item ? String(item.name) : String(item)).join(", ") : String(value);
+    return formatted ? [[key, formatted]] : [];
+  });
 }

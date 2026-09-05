@@ -107,6 +107,7 @@ export function createSourceItemRepository(db: Queryable) {
         },
         returning
       );
+      if (input.parentSourceItemId) await markAncestorSummariesStale(db, input.parentSourceItemId);
       return mapSourceItem(row);
     },
 
@@ -170,12 +171,14 @@ export function createSourceItemRepository(db: Queryable) {
       type: SourceItemType;
       title: string;
       identifiers?: string[];
+      parentSourceItemId?: string | null;
     }): Promise<SourceItemRecord | null> {
       const identifiers = (input.identifiers ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean);
       const result = await db.query<SourceItemRow>(
         `select ${returning}
          from source_items
          where type = $1
+           and (not $4::boolean or parent_source_item_id is not distinct from $5::uuid)
            and (
              unaccent(lower(title)) = unaccent(lower($2))
              or exists (
@@ -186,7 +189,7 @@ export function createSourceItemRepository(db: Queryable) {
            )
          order by updated_at desc
          limit 1`,
-        [input.type, input.title, identifiers]
+        [input.type, input.title, identifiers, input.parentSourceItemId !== undefined, input.parentSourceItemId ?? null]
       );
       const row = result.rows[0];
       return row ? mapSourceItem(row) : null;
@@ -208,4 +211,12 @@ export function createSourceItemRepository(db: Queryable) {
       return result.rows.map(mapSourceItem);
     }
   };
+}
+
+export async function markAncestorSummariesStale(db: Queryable, parentSourceItemId: string): Promise<void> {
+  await db.query(`with recursive ancestors as (
+    select id, parent_source_item_id from source_items where id = $1
+    union select s.id, s.parent_source_item_id from source_items s join ancestors a on s.id = a.parent_source_item_id
+  ) update source_items set metadata = metadata || '{"summaryStale":true}'::jsonb
+    where id in (select id from ancestors)`, [parentSourceItemId]);
 }

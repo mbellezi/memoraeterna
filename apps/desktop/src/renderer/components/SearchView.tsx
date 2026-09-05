@@ -30,23 +30,35 @@ export function SearchView({ t, state, onStateChange, onOpenSource }: {
   const current = state ?? localState;
   const update = onStateChange ?? setLocalState;
   const [sources, setSources] = useState<LibrarySource[]>([]);
+  const [catalog, setCatalog] = useState<LibrarySource[]>([]);
+  const [scopeQuery, setScopeQuery] = useState("");
+  const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => { void window.app.knowledge.listLibrary([]).then(setSources).catch(() => undefined); }, []);
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      window.app.knowledge.browseLibrary({ query: scopeQuery, limit: 48 }).then((items) => { if (active) setSources(items); }).catch(() => undefined);
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [scopeQuery]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setLoading(true);
+    setLoading(true); setFailed(false);
     try {
-      const results = await window.app.search.query({
+      const [catalogResults, evidenceResult] = await Promise.all([
+        window.app.knowledge.browseLibrary({ query: current.query, limit: 48, ...(current.rootSourceItemId ? { parentId: current.rootSourceItemId } : {}) }),
+        window.app.search.query({
         text: current.query,
         sourceTypes: [],
         mode: "hybrid",
         limit: 20,
         ...(current.rootSourceItemId ? { rootSourceItemId: current.rootSourceItemId } : {})
-      });
-      update({ ...current, results, searched: true });
-    } finally {
+      }).then((results) => ({ results, failed: false })).catch(() => ({ results: [] as SearchResult[], failed: true }))]);
+      setCatalog(catalogResults); setFailed(evidenceResult.failed);
+      update({ ...current, results: evidenceResult.results, searched: true });
+    } catch { setFailed(true); } finally {
       setLoading(false);
     }
   }
@@ -59,13 +71,16 @@ export function SearchView({ t, state, onStateChange, onOpenSource }: {
       </div>
       <label className="grid gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
         {t("search.scope")}
+        <Input aria-label={t("sourceWorkspace.search")} placeholder={t("sourceWorkspace.searchHint")} value={scopeQuery} onChange={(event) => setScopeQuery(event.target.value)} />
         <select value={current.rootSourceItemId} onChange={(event) => update({ ...current, rootSourceItemId: event.target.value })}
           className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal dark:border-slate-700 dark:bg-slate-950">
           <option value="">{t("search.scopeAll")}</option>
-          {sources.filter((source) => source.childCount > 0).map((source) => <option key={source.id} value={source.id}>{source.title}</option>)}
+          {sources.map((source) => <option key={source.id} value={source.id}>{source.title}</option>)}
         </select>
       </label>
     </form>
+    {failed ? <p role="alert" className="text-sm text-rose-700">{t("library.error")}</p> : null}
+    {catalog.length > 0 ? <section className="grid gap-2"><h2 className="text-sm font-semibold">{t("shell.navigation.library")}</h2><ol className="grid gap-2">{catalog.map((source) => <li key={source.id}><button type="button" onClick={() => onOpenSource?.(source.id)} disabled={!onOpenSource} className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-left dark:border-slate-800 dark:bg-slate-900"><span><span className="block font-medium">{source.title}</span><span className="text-xs text-slate-500">{t(`import.sourceTypes.${source.type}` as MessageKey)}</span></span><ChevronRight className="h-4 w-4" /></button></li>)}</ol></section> : null}
     {current.results.length === 0 ? (
       <p className="rounded-md border border-dashed border-slate-300 p-8 text-center text-sm text-slate-600 dark:border-slate-700 dark:text-slate-300">{t("search.empty")}</p>
     ) : <>

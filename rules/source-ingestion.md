@@ -34,6 +34,18 @@ Video, GenericDocument
 - Metadata enrichment runs only in the main process through the Open Library,
   Google Books, and Crossref adapters. It supports global opt-out, timeout,
   cache, non-blocking failure, and a separate HTTPS allowlist for cover assets.
+- Book metadata provider selection is persisted: automatic (Open Library then
+  Google Books on empty results or failure), Open Library only, or Google Books
+  only. Explicit selection never falls back to another catalog. Cache entries
+  are isolated by provider selection; academic metadata continues using Crossref.
+- An optional Google Books API key uses the desktop encrypted credential store.
+  Settings expose only configured status and explicit save/remove actions. The
+  key is sent only to the Google Books API, never to covers or other catalogs,
+  and is excluded from logs and error messages. Credentialed requests must not
+  follow redirects.
+- Open Library catalog requests start at most once per second; concurrent
+  identical JSON requests share one fetch. Open Library has a bounded 15-second
+  request timeout, with sanitized timeout/DNS/connection diagnostics.
 - Enrichment results are suggestions. Applying them is an explicit merge and
   cover files are copied into managed storage rather than hotlinked.
 - Duplicate detection proceeds from URI/hash to type-specific title or
@@ -103,6 +115,23 @@ to child summaries make the aggregate stale; history and input IDs/hashes remain
 auditable. Aggregate summaries do not create duplicate root-level atomic notes.
 
 ## Retry, reingestion, and reviewed artifacts
+
+- Library editing is addressed by source ID and an expected `updatedAt` value;
+  stale editors and active processing prevent the save. Metadata edits do not
+  queue AI work. Type and parent changes are outside the editorial update.
+- Editorial content changes create a new document and its initial revision,
+  with explicit `supersedesDocumentId` / `supersededByDocumentId` metadata links.
+  Earlier documents, chunks, notes, assets and SourceSpans remain addressable.
+  Current-document queries and evidence search exclude superseded documents.
+  Source identity and the original file stay stable. Root-content edits do not
+  silently rewrite materialized child boundaries; children are edited separately.
+- A changed child marks ancestor summaries stale. Results from a superseded
+  document cannot satisfy missing stages for its replacement. Successful summary
+  generation clears the stale marker. Regenerating unrelated stages must not
+  archive pending atomic notes.
+- Saved processing presets contain names and requested stages only. Applying a
+  preset preserves the current source selection, scope and regeneration policy.
+  Presets are stored in application preferences and never execute work on save.
 
 - Retry/resume continues the same run from checkpoints.
 - Missing-stage execution reuses valid artifacts and runs only absent work.

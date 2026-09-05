@@ -94,7 +94,7 @@ export function createSearchRepository(db: Queryable) {
            join documents d on d.id = c.document_id
            join source_items s on s.id = c.source_item_id
            left join source_spans sp on sp.id = c.source_span_id
-           where (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))
+           where not (d.metadata ? 'supersededByDocumentId') and (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))
              and (coalesce(array_length($4::uuid[], 1), 0) = 0 or s.id = any($4))
          )
          select * from scored where "textScore" > 0
@@ -119,7 +119,7 @@ export function createSearchRepository(db: Queryable) {
          join documents d on d.id = c.document_id
          join source_items s on s.id = c.source_item_id
          left join source_spans sp on sp.id = c.source_span_id
-         where e.target_type = 'chunk' and e.model = $2
+         where not (d.metadata ? 'supersededByDocumentId') and e.target_type = 'chunk' and e.model = $2
            and (coalesce(array_length($3::source_item_type[], 1), 0) = 0 or s.type = any($3))
            and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
          order by e.embedding <=> $1::vector

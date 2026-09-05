@@ -84,10 +84,17 @@ export function createDocumentRepository(db: Queryable) {
 
     async listBySourceItem(sourceItemId: string): Promise<DocumentRecord[]> {
       const result = await db.query<DocumentRow>(
-        `select ${returning} from documents where source_item_id = $1 order by created_at desc`,
+        `select ${returning} from documents where source_item_id = $1 and not (metadata ? 'supersededByDocumentId') order by created_at desc`,
         [sourceItemId]
       );
       return result.rows.map(mapDocument);
+    },
+
+    async listHistory(sourceItemId: string) {
+      const result = await db.query<{ id: string; title: string; createdAt: Date; isCurrent: boolean }>(
+        `select id, title, created_at as "createdAt", not (metadata ? 'supersededByDocumentId') as "isCurrent"
+         from documents where source_item_id = $1 order by created_at desc limit 100`, [sourceItemId]);
+      return result.rows;
     },
 
     async update(id: string, input: UpdateDocumentInput): Promise<DocumentRecord | null> {

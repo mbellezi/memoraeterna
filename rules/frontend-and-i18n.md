@@ -24,6 +24,24 @@ locales.
 - Important components cover relevant empty, loading, error, partial, and
   success states. Hierarchical trees support keyboard navigation and
   multiselection semantics.
+- Library and subitem browsing use bounded database pages; catalog search
+  includes child sources, creators and identifiers without requiring AI or a
+  document. Breadcrumbs come from canonical ancestry, not a loaded page.
+- Source detail uses keyboard-accessible tabs. Subitems can be added in context
+  and selected for one processing batch. Editing saves separately from processing.
+- Metadata lookup cancels stale UI results, exposes loading/empty/failure states,
+  and keeps manual entry available. Applying a catalog candidate explicitly
+  selects its title; other manually entered fields remain protected.
+- Remote model and AI profile creation are disclosed only after an explicit
+  add action, in a dismissible dialog. AI profile layouts adapt to the available panel width;
+  lists, editors, and actions must stack before their content overlaps.
+- AI profiles start from a selected model. Per-task overrides use progressive
+  disclosure with an explicit reset to inherited model defaults.
+
+- Non-AI external API settings live in the dedicated External Services settings
+  page, including metadata catalogs, provider selection, and Google Books
+  credentials. AI provider/model settings retain their own scopes; local
+  Gateway and Obsidian integration settings remain under Connections.
 
 ## Internationalization
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Bot, Copy, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Route, Save, ServerCog, TestTubeDiagonal, Trash2, Users } from "lucide-react";
 import { normalizeAiModelParameters, type AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
@@ -14,6 +14,7 @@ import {
   type AiProviderConfig,
   type LocalModelView
 } from "../../shared/ipc";
+import { Tabs } from "./ui/tabs";
 import { AiParameterFields } from "./AiParameterFields";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -58,6 +59,8 @@ const purposeCapabilities: Record<ModelPurpose, AiCapability[]> = {
 };
 
 export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => undefined }: AiSettingsViewProps) {
+  const [addingProfile, setAddingProfile] = useState(false);
+  const [addingModel, setAddingModel] = useState(false);
   const [providers, setProviders] = useState<AiProviderConfig[]>([]);
   const [profiles, setProfiles] = useState<AiProfile[]>([]);
   const [profileTasks, setProfileTasks] = useState<AiProfileTask[]>([]);
@@ -76,6 +79,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   const [discoveringModels, setDiscoveringModels] = useState(false);
   const [connectingOpenAiCodex, setConnectingOpenAiCodex] = useState(false);
   const [openAiCodexConnected, setOpenAiCodexConnected] = useState(false);
+  const [profileModel, setProfileModel] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profilePrivacy, setProfilePrivacy] = useState<"allow_remote" | "offline_only">("allow_remote");
   const [profileLanguage, setProfileLanguage] = useState<AiOutputLanguage>("ui");
@@ -161,6 +165,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
       setAvailableModels([]);
       setOpenAiCodexConnected(false);
       setModelDefaults({});
+      setAddingModel(false);
     });
   }
 
@@ -212,7 +217,9 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   }
 
   async function createProfile() {
-    if (!profileName) { onToast("errors.common.missingConfiguration", "error"); return; }
+    const selectedRemote = providers.find((model) => `remote:${model.id}` === profileModel && profilePrivacy !== "offline_only");
+    const selectedLocal = localModels.find((model) => `local:${model.id}` === profileModel);
+    if (!profileName || (!selectedRemote && !selectedLocal)) { onToast("errors.common.missingConfiguration", "error"); return; }
     await run(async () => {
       const profile = await window.app.ai.createProfile({
         name: profileName,
@@ -220,8 +227,15 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
         privacyMode: profilePrivacy,
         outputLanguage: profileLanguage
       });
+      const model = selectedRemote ?? selectedLocal!;
+      await window.app.ai.updateProfile({ id: profile.id,
+        modelId: model.modelId, capabilities: model.capabilities,
+        ...(selectedRemote ? { providerConfigId: selectedRemote.id, runtime: "remote" as const }
+          : { localModelId: selectedLocal!.id, runtime: selectedLocal!.runtime })
+      });
       setSelectedProfileId(profile.id);
       setProfileName("");
+      setAddingProfile(false);
     });
   }
 
@@ -230,67 +244,66 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   const remoteGenerationModels = providers.filter((item) => !item.capabilities.includes("embedding"));
 
   return (
-    <section className="grid gap-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <section className="@container grid min-w-0 gap-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex items-center gap-2">
         <Bot className="h-5 w-5 text-violet-700 dark:text-violet-300" aria-hidden="true" />
         <h2 className="text-lg font-semibold">{t("settings.ai.title")}</h2>
       </div>
 
-      <div className="grid gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-900 sm:grid-cols-3" role="tablist" aria-label={t("settings.ai.title")}>
-        {([
-          { id: "providers", icon: ServerCog },
-          { id: "profiles", icon: Users },
-          { id: "routing", icon: Route }
-        ] as const).map(({ id, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={activeScope === id}
-            className={activeScope === id
-              ? "flex min-h-14 items-center gap-3 rounded-lg bg-white px-4 text-left text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white"
-              : "flex min-h-14 items-center gap-3 rounded-lg px-4 text-left text-slate-600 transition hover:bg-white/60 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-white"}
-            onClick={() => setActiveScope(id)}
-          >
-            <Icon className="h-4 w-4 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
-            <span>
-              <span className="block text-sm font-semibold">{t(`settings.ai.sections.${id}` as MessageKey)}</span>
-              <span className="mt-0.5 block text-xs text-slate-500">{t(`settings.ai.sections.${id}Description` as MessageKey)}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      <p className="text-sm text-slate-500">{t("sourceWorkspace.profileHint")}</p>
+      <Tabs label={t("settings.ai.title")} value={activeScope} onChange={setActiveScope} items={[
+        { id: "providers", label: t("settings.ai.sections.providers") },
+        { id: "profiles", label: t("settings.ai.sections.profiles") },
+        { id: "routing", label: t("settings.ai.sections.routing") }
+      ]} actions={activeScope !== "routing" ? <Button type="button"
+        className="h-8 gap-1 px-2 text-xs"
+        aria-label={t(activeScope === "providers" ? "settings.ai.remoteModels" : "settings.ai.createProfile")}
+        title={t(activeScope === "providers" ? "settings.ai.remoteModels" : "settings.ai.createProfile")}
+        onClick={() => activeScope === "providers" ? setAddingModel(true) : setAddingProfile(true)}>
+        <Plus className="h-4 w-4" aria-hidden="true" />
+        <span className="hidden @4xl:inline">{t(activeScope === "providers" ? "settings.ai.remoteModels" : "settings.ai.createProfile")}</span>
+      </Button> : null}>
 
       {activeScope === "providers" ? <>
+        {addingModel ? <CreationDialog titleId="add-model-title" onClose={() => setAddingModel(false)}>
         <form className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900" onSubmit={saveProvider}>
-          <h3 className="font-medium">{t("settings.ai.remoteModels")}</h3>
-          <div className="grid gap-4 md:grid-cols-3">
+          <h3 id="add-model-title" className="font-medium">{t("settings.ai.remoteModels")}</h3>
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
             <Field label={t("settings.ai.provider")}><select value={provider} disabled={connectingOpenAiCodex} onChange={(event) => changeProvider(event.target.value as typeof provider)} className={selectClass}><option value="google">{t("settings.ai.google")}</option><option value="openai-compatible">{t("settings.ai.openAiCompatible")}</option><option value="openai-codex">{t("settings.ai.openAiCodex")}</option></select></Field>
             <Field label={t("settings.ai.modelPurpose")}><select value={modelPurpose} onChange={(event) => setModelPurpose(event.target.value as ModelPurpose)} className={selectClass}><option value="generation">{t("settings.ai.purposes.generation")}</option><option value="embedding" disabled={provider === "openai-codex"}>{t("settings.ai.purposes.embedding")}</option><option value="reranking">{t("settings.ai.purposes.reranking")}</option></select></Field>
             <Field label={t("settings.ai.displayName")}><Input required value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></Field>
             <Field label={t("settings.ai.baseUrl")}><Input type="url" disabled={provider === "openai-codex"} value={provider === "openai-codex" ? "https://chatgpt.com/backend-api/codex" : baseUrl} onChange={(event) => { setBaseUrl(event.target.value); setAvailableModels([]); }} /></Field>
-            <Field label={t("settings.ai.model")}><div className="grid gap-1"><div className="flex gap-2"><Input required list="remote-model-options" autoComplete="off" value={modelId} onChange={(event) => setModelId(event.target.value)} /><datalist id="remote-model-options">{availableModels.map((model) => <option key={model} value={model} />)}</datalist>{provider !== "openai-codex" ? <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={!apiKey.trim() || discoveringModels} onClick={() => void discoverModels()}>{discoveringModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button> : null}</div>{provider === "openai-codex" ? <p className="text-xs text-slate-500">{t("settings.ai.oauth.modelSelectionHint")}</p> : null}</div></Field>
+            <Field label={t("settings.ai.model")}><div className="grid gap-1"><div className="flex flex-col gap-2"><Input required list="remote-model-options" autoComplete="off" value={modelId} onChange={(event) => setModelId(event.target.value)} /><datalist id="remote-model-options">{availableModels.map((model) => <option key={model} value={model} />)}</datalist>{provider !== "openai-codex" ? <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={!apiKey.trim() || discoveringModels} onClick={() => void discoverModels()}>{discoveringModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button> : null}</div>{provider === "openai-codex" ? <p className="text-xs text-slate-500">{t("settings.ai.oauth.modelSelectionHint")}</p> : null}</div></Field>
             {provider === "openai-codex" ? <Field label={t("settings.ai.oauth.authentication")}><div className="grid gap-1"><div className="flex items-center gap-2"><Button type="button" disabled={connectingOpenAiCodex} onClick={() => void connectOpenAiCodex()}>{connectingOpenAiCodex ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogIn className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.oauth.connect")}</Button>{openAiCodexConnected ? <span className="text-xs text-emerald-700 dark:text-emerald-300">{t("settings.ai.oauth.connected")}</span> : null}</div><p className="text-xs text-slate-500">{t("settings.ai.oauth.description")}</p></div></Field> : <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>}
           </div>
-          <AiParameterFields value={modelDefaults} onChange={setModelDefaults} capabilities={modelParameterCapabilities} t={t} embeddingOnly={modelPurpose === "embedding"} />
-          <div className="flex justify-end"><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
+          <details><summary className="cursor-pointer text-sm font-medium">{t("sourceWorkspace.modelDefaults")}</summary><div className="mt-3"><AiParameterFields value={modelDefaults} onChange={setModelDefaults} capabilities={modelParameterCapabilities} t={t} embeddingOnly={modelPurpose === "embedding"} /></div></details>
+          <div className="flex flex-wrap justify-end gap-2"><Button type="button" onClick={() => setAddingModel(false)}>{t("shell.actions.cancel")}</Button><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
         </form>
+        </CreationDialog> : null}
 
         <ModelGroup title={t("settings.ai.embeddingModels")} models={remoteEmbeddingModels} t={t} onSave={(model, defaults, displayName, nextModelId) => run(() => saveRemoteModel(model, defaults, displayName, nextModelId))} onDelete={(model) => run(() => window.app.ai.deleteProvider(model.id))} onReconnect={(model) => run(() => reconnectOpenAiCodexModel(model))} />
         <ModelGroup title={t("settings.ai.generationModels")} models={remoteGenerationModels} t={t} onSave={(model, defaults, displayName, nextModelId) => run(() => saveRemoteModel(model, defaults, displayName, nextModelId))} onDelete={(model) => run(() => window.app.ai.deleteProvider(model.id))} onReconnect={(model) => run(() => reconnectOpenAiCodexModel(model))} />
       </> : null}
 
-      {activeScope === "profiles" ? <div className="grid gap-4">
-        <h3 className="font-medium">{t("settings.ai.profiles")}</h3>
-        <div className="grid gap-3 md:grid-cols-4">
-          <Input value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={t("settings.ai.profileName")} />
+      {activeScope === "profiles" ? <div className="grid min-w-0 gap-4">
+        {addingProfile ? <CreationDialog titleId="create-profile-title" onClose={() => setAddingProfile(false)}>
+        <form className="grid min-w-0 gap-4 p-4" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}>
+          <h3 id="create-profile-title" className="font-medium">{t("settings.ai.createProfile")}</h3>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <Input aria-label={t("settings.ai.profileName")} value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={t("settings.ai.profileName")} />
           <select value={profilePrivacy} onChange={(event) => setProfilePrivacy(event.target.value as typeof profilePrivacy)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
           <LanguageSelect value={profileLanguage} onChange={setProfileLanguage} t={t} interfaceLanguage={interfaceLanguage} />
-          <Button type="button" onClick={() => void createProfile()}><Plus className="h-4 w-4" aria-hidden="true" />{t("settings.ai.createProfile")}</Button>
-        </div>
-        <div className="grid gap-3 lg:grid-cols-[minmax(12rem,0.28fr)_minmax(0,1fr)]">
-          <div className="grid content-start gap-2">
-            {profiles.map((profile) => <button key={profile.id} type="button" onClick={() => setSelectedProfileId(profile.id)} className={profile.id === selectedProfileId ? "flex items-center justify-between rounded-md border border-cyan-500 bg-cyan-50 px-3 py-2 text-left text-sm dark:bg-cyan-950" : "flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-left text-sm dark:border-slate-800"}><span>{profile.name}{profile.isDefault ? ` · ${t("settings.ai.defaultProfile")}` : ""}</span><Copy className="h-4 w-4" aria-hidden="true" onClick={(event) => { event.stopPropagation(); void run(() => window.app.ai.cloneProfile(profile.id, `${profile.name} 2`)); }} /></button>)}
+          <select aria-label={t("settings.ai.model")} value={profileModel} onChange={(event) => setProfileModel(event.target.value)} className={selectClass}><option value="">{t("settings.ai.selectModel")}</option>{providers.filter(() => profilePrivacy !== "offline_only").map((model) => <option key={model.id} value={`remote:${model.id}`}>{model.displayName}</option>)}{localModels.map((model) => <option key={model.id} value={`local:${model.id}`}>{model.displayName}</option>)}</select>
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" onClick={() => setAddingProfile(false)}>{t("shell.actions.cancel")}</Button>
+            <Button type="submit" disabled={!profileName.trim() || !profileModel}><Plus className="h-4 w-4" aria-hidden="true" />{t("settings.ai.createProfile")}</Button>
+          </div>
+        </form>
+        </CreationDialog> : null}
+        <div className="grid min-w-0 items-start gap-4 @5xl:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+          <div className="grid min-w-0 content-start gap-2 @xl:grid-cols-2 @5xl:grid-cols-1">
+            {profiles.map((profile) => <div key={profile.id} className="flex min-w-0 items-stretch gap-2"><button type="button" onClick={() => setSelectedProfileId(profile.id)} className={profile.id === selectedProfileId ? "min-w-0 flex-1 rounded-lg border border-cyan-500 bg-cyan-50 px-3 py-2 text-left text-sm dark:bg-cyan-950" : "min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-left text-sm dark:border-slate-800"}><span className="block truncate">{profile.name}</span><span className="block truncate text-xs text-slate-500">{profile.modelId ?? t("settings.ai.selectModel")}</span></button><Button type="button" aria-label={t("sourceWorkspace.duplicateProfile")} onClick={() => void run(() => window.app.ai.cloneProfile(profile.id, `${profile.name} 2`))}><Copy className="h-4 w-4" aria-hidden="true" /></Button></div>)}
           </div>
           {selectedProfile ? (
             <ProfileEditor
@@ -328,6 +341,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
           })}
         </div>
       </div> : null}
+      </Tabs>
     </section>
   );
 
@@ -352,6 +366,20 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
     await window.app.ai.connectOpenAiCodex();
     await saveRemoteModel(model, model.defaultParameters);
   }
+}
+
+function CreationDialog({ titleId, onClose, children }: { titleId: string; onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  return <dialog ref={dialogRef} aria-labelledby={titleId}
+    onCancel={(event) => { event.preventDefault(); onClose(); }}
+    className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-y-auto rounded-xl bg-white p-0 text-slate-950 backdrop:bg-slate-950/60 dark:bg-slate-900 dark:text-slate-50">
+    {children}
+  </dialog>;
 }
 
 function ModelGroup({ title, models, t, onSave, onDelete, onReconnect }: { title: string; models: AiProviderConfig[]; t: (key: MessageKey) => string; onSave: (model: AiProviderConfig, defaults: AiModelParameters, displayName?: string, modelId?: string) => Promise<boolean>; onDelete: (model: AiProviderConfig) => Promise<boolean>; onReconnect: (model: AiProviderConfig) => Promise<unknown> }) {
@@ -481,9 +509,10 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   localModels: LocalModelView[];
   t: (key: MessageKey) => string;
   interfaceLanguage: LanguageCode;
-  onSave: (update: { privacyMode: "allow_remote" | "offline_only"; outputLanguage: AiOutputLanguage; providerConfigId?: string; localModelId?: string; modelId: string; runtime: "remote" | "gguf" | "mlx"; capabilities: AiCapability[] }, tasks: AiProfileTaskInput[]) => Promise<boolean>;
+  onSave: (update: { name: string; privacyMode: "allow_remote" | "offline_only"; outputLanguage: AiOutputLanguage; providerConfigId?: string; localModelId?: string; modelId: string; runtime: "remote" | "gguf" | "mlx"; capabilities: AiCapability[] }, tasks: AiProfileTaskInput[]) => Promise<boolean>;
   onRemove: () => void;
 }) {
+  const [name, setName] = useState(profile.name);
   const [privacyMode, setPrivacyMode] = useState(profile.privacyMode as "allow_remote" | "offline_only");
   const [outputLanguage, setOutputLanguage] = useState(profile.outputLanguage);
   const [saving, setSaving] = useState(false);
@@ -512,7 +541,7 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
     try {
       await onSave(
         {
-          privacyMode,
+          name, privacyMode,
           outputLanguage,
           modelId: selected.modelId,
           runtime: selected.runtime,
@@ -534,9 +563,9 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   return (
     <div className="grid min-w-0 gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/50">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3 dark:border-slate-800">
-        <p className="min-w-0 truncate font-semibold">{profile.name}</p>
+        <Input aria-label={t("settings.ai.profileName")} value={name} onChange={(event) => setName(event.target.value)} className="min-w-0 flex-1 basis-60" />
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" disabled={!selected || saving} onClick={() => void saveProfile()}>
+          <Button type="button" disabled={!selected || saving || !name.trim()} onClick={() => void saveProfile()}>
             {saving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
             {t("settings.ai.saveProfile")}
           </Button>
@@ -547,10 +576,10 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.5fr]">
+      <div className="grid min-w-0 gap-3 @xl:grid-cols-2">
         <select value={privacyMode} onChange={(event) => setPrivacyMode(event.target.value as typeof privacyMode)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
         <LanguageSelect value={outputLanguage} onChange={setOutputLanguage} t={t} interfaceLanguage={interfaceLanguage} />
-        <select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className="h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950 sm:col-span-2 xl:col-span-1"><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+        <select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950 @xl:col-span-2"><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
       </div>
 
       <div className="grid gap-2">
@@ -570,7 +599,12 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
 }
 
 function ProfileTaskEditor({ definition, parameters, parameterCapabilities, t, onChange }: { definition: { task: AiConfigurableTask; capabilities: AiCapability[] }; parameters: AiModelParameters; parameterCapabilities: AiModelParameterCapabilities; t: (key: MessageKey) => string; onChange: (parameters: AiModelParameters) => void }) {
-  return <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950 md:grid-cols-[minmax(10rem,0.32fr)_minmax(0,1fr)] md:items-start"><Label className="pt-2">{t(`settings.ai.tasks.${definition.task}` as MessageKey)}</Label><AiParameterFields value={parameters} onChange={onChange} capabilities={parameterCapabilities} t={t} embeddingOnly={definition.task === "embedding"} /></div>;
+  const overrides = Object.keys(parameters).length;
+  return <details className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+    <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm"><span className="font-medium">{t(`settings.ai.tasks.${definition.task}` as MessageKey)}</span><span className="text-xs text-slate-500">{overrides ? t("sourceWorkspace.customizeTask") : t("sourceWorkspace.modelDefaults")}{overrides ? ` (${overrides})` : ""}</span></summary>
+    <div className="mt-4 grid gap-3"><AiParameterFields value={parameters} onChange={onChange} capabilities={parameterCapabilities} t={t} embeddingOnly={definition.task === "embedding"} />
+      <Button type="button" className="w-fit" disabled={!overrides} onClick={() => onChange({})}>{t("sourceWorkspace.resetTask")}</Button></div>
+  </details>;
 }
 
 function supportsTask(profile: AiProfile, definition: { capabilities: AiCapability[] }): boolean {
@@ -598,7 +632,7 @@ function LanguageSelect({ value, onChange, t, interfaceLanguage }: { value: AiOu
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="grid gap-1"><Label>{label}</Label>{children}</div>;
+  return <div className="grid min-w-0 gap-1"><Label>{label}</Label>{children}</div>;
 }
 
 function readErrorMessageKey(error: unknown, fallback: MessageKey): MessageKey {
@@ -615,4 +649,4 @@ export async function resolveProviderTestStatus(action: () => Promise<unknown>):
   }
 }
 
-const selectClass = "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950";
+const selectClass = "h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950";

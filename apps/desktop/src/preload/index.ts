@@ -28,8 +28,12 @@ import type {
 } from "../shared/ipc";
 import type { SourceItemType } from "@app/domain";
 import {
+  sourceDocumentInputSchema, sourceDocumentSchema,
+  sourceUrlPreviewInputSchema, sourceUrlPreviewSchema,
+  libraryBrowseInputSchema, sourceEditInputSchema, sourceEditResultSchema,
   appSettingsSchema,
   appSettingsUpdateSchema,
+  googleBooksKeyInputSchema, googleBooksKeyStatusSchema,
   aiProfileCreateSchema,
   aiProfileUpdateSchema,
   aiProfileTaskInputSchema,
@@ -121,6 +125,12 @@ const api: DesktopApi = {
     }
   },
   settings: {
+    async getGoogleBooksKeyStatus() {
+      return googleBooksKeyStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.googleBooksKeyStatus));
+    },
+    async updateGoogleBooksKey(input) {
+      return googleBooksKeyStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.googleBooksKeyUpdate, googleBooksKeyInputSchema.parse(input)));
+    },
     async getApp() {
       const result = await ipcRenderer.invoke(ipcChannels.appSettingsGet);
       return appSettingsSchema.parse(result);
@@ -168,6 +178,12 @@ const api: DesktopApi = {
     }
   },
   ingestion: {
+    async previewUrl(input) {
+      return sourceUrlPreviewSchema.parse(await ipcRenderer.invoke(ipcChannels.ingestionPreviewUrl, sourceUrlPreviewInputSchema.parse(input)));
+    },
+    async editSource(input) {
+      return sourceEditResultSchema.parse(await ipcRenderer.invoke(ipcChannels.ingestionEditSource, sourceEditInputSchema.parse(input)));
+    },
     async createManual(input: ManualIngestionInput) {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionCreateManual, manualIngestionInputSchema.parse(input));
       return ingestionResultSchema.parse(result);
@@ -283,6 +299,12 @@ const api: DesktopApi = {
     }
   },
   knowledge: {
+    async getSourceDocument(input) {
+      return sourceDocumentSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryDocumentGet, sourceDocumentInputSchema.parse(input)));
+    },
+    async browseLibrary(input) {
+      return librarySourceSchema.array().parse(await ipcRenderer.invoke(ipcChannels.libraryBrowse, libraryBrowseInputSchema.parse(input)));
+    },
     async listLibrary(sourceTypes: SourceItemType[] = []) {
       return librarySourceSchema.array().parse(await ipcRenderer.invoke(ipcChannels.libraryList, sourceTypes));
     },

@@ -173,14 +173,16 @@ export class HierarchicalIngestionService {
       const aggregateHierarchyRoot = !catalogMetadataOnly
         && effectiveStages.includes("summarization")
         && (await hierarchy.listDescendants(sourceItemId)).length > 0;
-      if (!catalogMetadataOnly && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
+      if (!catalogMetadataOnly && effectiveStages.includes("atomicNotes") && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
            where created_from_source_item_id = $1 and status = 'pending_review'`,
           [sourceItemId]
         );
       }
+      const previousRun = runKind === "reingestion" ? (await runs.listBySourceItem(sourceItemId))[0] : undefined;
       const run = await runs.create({
+        supersedesRunId: previousRun?.id ?? null,
         sourceItemId,
         batchId: batch.id,
         runKind,

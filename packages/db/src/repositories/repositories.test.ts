@@ -207,6 +207,7 @@ describe("repositories", () => {
       "select pg_advisory_xact_lock(hashtextextended($1::text, 0))",
       "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
       expect.stringContaining("insert into source_summaries"),
+      "update source_items set metadata = metadata - 'summaryStale' where id = $1",
       "commit"
     ]);
     expect(db.released).toBe(true);

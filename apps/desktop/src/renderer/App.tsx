@@ -4,7 +4,7 @@ import {
   Bug,
   ClipboardCheck,
   Database,
-  Download,
+  FilePlus2,
   Moon,
   RefreshCw,
   Search,
@@ -55,7 +55,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
-  { id: "import", label: "shell.navigation.import", icon: Download },
+  { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
   { id: "search", label: "shell.navigation.search", icon: Search },
   { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
   { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
@@ -568,6 +568,7 @@ export function App({
           ) : activeView === "library" ? (
             <LibraryView
               t={t}
+              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
               externalTarget={libraryTarget}
               onNavigate={scrollActiveViewToTop}
               onExitToSearch={() => {

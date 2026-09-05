@@ -71,8 +71,10 @@ describe("phase 2 renderer views", () => {
     expect(renderToString(<JobsView t={t} />)).toContain("Your processing workspace is ready");
     const aiSettings = renderToString(<AiSettingsView t={t} />);
     expect(aiSettings).toContain("AI providers and profiles");
-    expect(aiSettings).toContain("Load models");
-    expect(aiSettings).toContain("ChatGPT subscription (OAuth)");
+    expect(aiSettings).toContain("Add remote model");
+    expect(aiSettings).not.toContain("Load models");
+    expect(aiSettings).not.toContain("ChatGPT subscription (OAuth)");
+    expect(aiSettings).not.toContain("<form");
     expect(aiSettings).not.toContain(">Ready<");
   });
 
@@ -139,7 +141,8 @@ describe("phase 2 renderer views", () => {
     expect(html).not.toContain(">Save<");
     expect(html).toContain("Summarization");
     expect(html).toContain("Atomic note generation");
-    expect(html).toContain("md:grid-cols-[minmax(10rem,0.32fr)_minmax(0,1fr)]");
+    expect(html).toContain("<details");
+    expect(html).toContain("Use model defaults");
   });
 
   it("renders only the reasoning controls declared by the model", () => {
@@ -319,6 +322,38 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Minimum words for a summary");
     expect(html).toContain('id="summaryMinimumWordCount"');
     expect(html).toContain('value="40"');
+    expect(html).not.toContain('id="bookMetadataProvider"');
+    expect(html).not.toContain('id="googleBooksApiKey"');
+  });
+
+  it("groups catalog settings and Google Books credentials in External Services", () => {
+    const html = renderToString(
+      <SettingsView
+        activeScope="external-services"
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
+      />
+    );
+
+    expect(html).toContain("External Services");
+    expect(html).toContain('id="bookMetadataProvider"');
+    expect(html).toContain('id="googleBooksApiKey"');
+    expect(html).toContain("Crossref");
+    expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 
   it("renders configuration scopes for the main sidebar", () => {
@@ -328,6 +363,7 @@ describe("phase 2 renderer views", () => {
 
     expect(html).toContain("Configuration scopes");
     expect(html).toContain("AI &amp; processing");
+    expect(html).toContain("External Services");
     expect(html).toContain('aria-selected="true"');
   });
 
