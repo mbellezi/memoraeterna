@@ -151,7 +151,7 @@ export function SearchResultCard({ result, t, onOpen }: {
               : isRelation ? `${result.subjectName} — ${result.predicate} → ${result.objectName}`
                 : result.sourceTitle}</h2>
           {isNote ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{result.ideaStatement}</p> : null}
-          {isEntity ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{result.entityType}</p> : null}
+          {isEntity ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{t(`knowledge.graph.entityTypes.${result.entityType}` as MessageKey)}</p> : null}
         </div>
         <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-800 dark:text-slate-300">
           {Math.round(result.finalScore * 100)}%

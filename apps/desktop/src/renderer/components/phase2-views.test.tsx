@@ -18,7 +18,7 @@ import {
   localModelViewSchema,
   storageSettingsSchema
 } from "../../shared/ipc";
-import { SearchView } from "./SearchView";
+import { SearchResultCard, SearchView } from "./SearchView";
 import { LocalEmbeddingLoadDialog } from "./LocalEmbeddingLoadDialog";
 import {
   breadcrumbChain,
@@ -100,6 +100,27 @@ describe("phase 2 renderer views", () => {
     expect(aiSettings).not.toContain("ChatGPT subscription (OAuth)");
     expect(aiSettings).not.toContain("<form");
     expect(aiSettings).not.toContain(">Ready<");
+  });
+
+  it("localizes knowledge-graph entity types in search results", () => {
+    const html = renderToString(<SearchResultCard t={createTranslator("pt-BR")} result={{
+      kind: "entity",
+      entityId: "00000000-0000-4000-8000-000000000001",
+      entityType: "Organization",
+      canonicalName: "OpenAI",
+      aliases: [],
+      description: null,
+      sourceItemId: "00000000-0000-4000-8000-000000000002",
+      sourceTitle: "Fonte",
+      sourceType: "WebArticle",
+      breadcrumbs: [],
+      excerpt: "Evidência",
+      graphScore: 0.9,
+      finalScore: 0.9
+    }} />);
+
+    expect(html).toContain("Organização");
+    expect(html).not.toContain(">Organization<");
   });
 
   it("renders an animated modal while a local embedding model is loading", () => {

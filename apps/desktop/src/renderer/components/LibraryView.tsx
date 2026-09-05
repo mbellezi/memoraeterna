@@ -841,7 +841,7 @@ function GraphEntityCard({ entity, relations, t }: {
       </span>
     </button>
     <div className={cn("section-collapse", expanded && "section-collapse-open")}><div><div className="grid gap-2 px-3 pb-3 text-xs text-slate-500 dark:text-slate-400">
-      <p>{entity.type}</p>
+      <p>{t(`knowledge.graph.entityTypes.${entity.type}` as MessageKey)}</p>
       {relations.length > 0 ? <ul className="grid gap-1 border-t border-slate-200 pt-2 dark:border-slate-800">{relations.map((relation) => <li key={relation.id}>
         {relation.subject} — {graphPredicateLabel(relation.predicate)} → {relation.object} · {Math.round(relation.confidence * 100)}%
       </li>)}</ul> : <p>{t("knowledge.graph.noEntityRelations")}</p>}

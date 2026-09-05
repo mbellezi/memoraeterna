@@ -368,7 +368,7 @@
         "archived": "Arquivada"
       }
     },
-    "graph": { "entities": "Entidades", "entityRelations": "Relações entre entidades", "relatedSources": "Fontes relacionadas", "empty": "Esta fonte ainda não possui entidades no grafo.", "noRelations": "Esta fonte ainda não possui relações entre entidades.", "noEntityRelations": "Nenhuma relação para esta entidade.", "noRelatedSources": "Nenhuma conexão com outras fontes foi encontrada.", "sharedEntity": "Entidade compartilhada: {entity}", "expandDetails": "Expandir detalhes", "collapseDetails": "Recolher detalhes", "openRelatedSource": "Abrir fonte relacionada" },
+    "graph": { "entities": "Entidades", "entityRelations": "Relações entre entidades", "relatedSources": "Fontes relacionadas", "empty": "Esta fonte ainda não possui entidades no grafo.", "noRelations": "Esta fonte ainda não possui relações entre entidades.", "noEntityRelations": "Nenhuma relação para esta entidade.", "noRelatedSources": "Nenhuma conexão com outras fontes foi encontrada.", "sharedEntity": "Entidade compartilhada: {entity}", "expandDetails": "Expandir detalhes", "collapseDetails": "Recolher detalhes", "openRelatedSource": "Abrir fonte relacionada", "entityTypes": { "Person": "Pessoa", "Organization": "Organização", "Place": "Lugar", "Event": "Evento", "Concept": "Conceito", "Work": "Obra", "Publication": "Publicação", "Publisher": "Editora", "Project": "Projeto", "Product": "Produto", "FieldOfStudy": "Área de estudo", "Tag": "Etiqueta", "Collection": "Coleção" } },
     "relations": {
       "empty": "Nenhuma relacao relevante entre notas foi encontrada.",
       "pendingInvolved": "Inclui nota pendente de revisao",

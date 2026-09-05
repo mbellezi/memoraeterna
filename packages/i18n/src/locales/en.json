@@ -399,7 +399,7 @@
         "archived": "Archived"
       }
     },
-    "graph": { "entities": "Entities", "entityRelations": "Entity relations", "relatedSources": "Related sources", "empty": "This source has no graph entities yet.", "noRelations": "This source has no entity relations yet.", "noEntityRelations": "No relations for this entity.", "noRelatedSources": "No connections to other sources were found.", "sharedEntity": "Shared entity: {entity}", "expandDetails": "Expand details", "collapseDetails": "Collapse details", "openRelatedSource": "Open related source" },
+    "graph": { "entities": "Entities", "entityRelations": "Entity relations", "relatedSources": "Related sources", "empty": "This source has no graph entities yet.", "noRelations": "This source has no entity relations yet.", "noEntityRelations": "No relations for this entity.", "noRelatedSources": "No connections to other sources were found.", "sharedEntity": "Shared entity: {entity}", "expandDetails": "Expand details", "collapseDetails": "Collapse details", "openRelatedSource": "Open related source", "entityTypes": { "Person": "Person", "Organization": "Organization", "Place": "Place", "Event": "Event", "Concept": "Concept", "Work": "Work", "Publication": "Publication", "Publisher": "Publisher", "Project": "Project", "Product": "Product", "FieldOfStudy": "Field of study", "Tag": "Tag", "Collection": "Collection" } },
     "relations": {
       "empty": "No relevant note relations were found.",
       "pendingInvolved": "Includes a note pending review",
