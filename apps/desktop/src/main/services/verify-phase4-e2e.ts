@@ -75,6 +75,7 @@ try {
     resourcesPath: workspaceRoot,
     workspaceRoot,
     isPackaged: false,
+    fetchExternalPage: async () => new Response("", { status: 500 }),
     youtubeService: new YouTubeService(async () => ({
       basic_info: { title: "Phase 4 video", author: "Memora channel" },
       getTranscript: async () => ({ transcript: { segments: [

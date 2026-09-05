@@ -28,9 +28,12 @@ processing, destructive operations, backups, or sensitive logging.
   non-sensitive logs. Metadata enrichment sends only the documented catalog
   query fields and respects global opt-out.
 - User-triggered manual URL previews respect the enrichment opt-out. Web pages
-  use HTTPS, public DNS addresses pinned to the connection, revalidated bounded
-  redirects, timeouts and a response-size limit; they send no browser cookies or
-  local credentials. Video previews accept validated YouTube video identifiers.
+  use HTTPS and the Electron Chromium network stack. Public DNS resolution is
+  validated immediately before every request and bounded redirect; requests use
+  explicit timeouts and a response-size limit and send no browser cookies or local
+  credentials. Page requests use a Chrome user agent matching the current desktop
+  platform and packaged Chromium version. Video previews accept validated YouTube
+  video identifiers.
 
 ## AI privacy and cost
 

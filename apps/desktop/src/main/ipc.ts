@@ -106,9 +106,11 @@ export function registerIpcHandlers(
 
   ipcMain.handle(ipcChannels.appSettingsGet, () => settingsService.getApp());
 
-  ipcMain.handle(ipcChannels.appSettingsUpdate, (_event, payload: unknown) => {
+  ipcMain.handle(ipcChannels.appSettingsUpdate, async (_event, payload: unknown) => {
     const settings = appSettingsUpdateSchema.parse(payload);
-    return settingsService.updateApp(settings);
+    const saved = await settingsService.updateApp(settings);
+    if (settings.keepLocalEmbeddingModelsLoaded === false) await aiService.releaseLocalRuntime();
+    return saved;
   });
 
   ipcMain.handle(ipcChannels.settingsGet, () => settingsService.get());

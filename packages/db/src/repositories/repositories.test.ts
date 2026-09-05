@@ -10,6 +10,7 @@ import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
 import { createAiConfigRepository } from "./aiConfigRepository.js";
 import { createIngestionRunRepository } from "./ingestionRunRepository.js";
 import { createLibraryRepository } from "./libraryRepository.js";
+import { createEmbeddingRepository } from "./embeddingRepository.js";
 import type { Queryable } from "./types.js";
 
 class FakeQueryable implements Queryable {
@@ -99,6 +100,34 @@ describe("repositories", () => {
     ]);
   });
 
+  it("invalidates source-level embeddings when searchable source data changes", async () => {
+    const now = new Date("2026-09-06T00:00:00.000Z");
+    const db = new FakeQueryable([[{
+      id: "00000000-0000-4000-8000-000000000001",
+      type: "PersonalNote",
+      title: "Updated source",
+      subtitle: null,
+      sourceOrigin: "manual",
+      sourceUri: null,
+      externalId: null,
+      parentSourceItemId: null,
+      contentHash: null,
+      language: "en",
+      summary: null,
+      summaryGeneratedAt: null,
+      metadata: {},
+      createdAt: now,
+      updatedAt: now
+    }], [], [], []]);
+
+    await createSourceItemRepository(db).update("00000000-0000-4000-8000-000000000001", {
+      title: "Updated source"
+    });
+
+    expect(db.queries.slice(1)).toHaveLength(3);
+    expect(db.queries.slice(1).every((query) => query.text.includes("target_type = 'source_item'"))).toBe(true);
+  });
+
   it("exposes the latest materialized division position to the library", async () => {
     const now = new Date("2026-07-16T10:00:00.000Z");
     const db = new FakeQueryable([[
@@ -127,6 +156,35 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("division.child_source_item_id = source.id");
     expect(db.queries[0]?.text).toContain("structure.status = 'materialized'");
     expect(db.queries[0]?.text).toContain("order by structure.revision desc");
+  });
+
+  it("combines traditional and source-embedding signals in library search", async () => {
+    const db = new FakeQueryable([[]]);
+    await createLibraryRepository(db).listSources({
+      query: "semantic memory",
+      queryEmbedding: Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0),
+      embeddingModel: "embedding-model"
+    });
+
+    expect(db.queries[0]?.text).toContain("source_embedding.target_type = 'source_item'");
+    expect(db.queries[0]?.text).toContain('as "rankingScore"');
+    expect(db.queries[0]?.values[2]).toBe("semantic memory");
+    expect(db.queries[0]?.values[8]).toBe("embedding-model");
+  });
+
+  it("reads stored source embeddings for hierarchical aggregation", async () => {
+    const db = new FakeQueryable([[{
+      targetId: "00000000-0000-4000-8000-000000000001",
+      embedding: "[0.25,-0.5,0.75]"
+    }]]);
+    const rows = await createEmbeddingRepository(db).listSourceEmbeddings(
+      ["00000000-0000-4000-8000-000000000001"],
+      "embedding-model",
+      256
+    );
+
+    expect(rows[0]?.embedding).toEqual([0.25, -0.5, 0.75]);
+    expect(db.queries[0]?.text).toContain("target_type = 'source_item'");
   });
 
   it("upserts settings by key", async () => {

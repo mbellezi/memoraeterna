@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createCatalogMetadataChunk, participatesInAtomicNoteMatching } from "./job-supervisor.js";
+import { aggregateSourceEmbedding, createCatalogMetadataChunk, participatesInAtomicNoteMatching } from "./job-supervisor.js";
 import {
   buildCatalogMetadataMarkdown,
   canReuseArtifactStage,
@@ -83,5 +83,13 @@ describe("hierarchical processing scope", () => {
     expect(chunk.metadata).toEqual({ processingMode: "catalog_metadata" });
     expect(chunk.span.selector).toBe("catalog-metadata");
     expect(chunk.content).toBe(markdown);
+  });
+
+  it("combines metadata and segmented content into one normalized source embedding", () => {
+    const embedding = aggregateSourceEmbedding([[1, 0]], [[0, 1], [0, 1]]);
+    expect(embedding).not.toBeNull();
+    expect(embedding?.[1]).toBeGreaterThan(embedding?.[0] ?? 0);
+    expect(Math.hypot(...(embedding ?? []))).toBeCloseTo(1);
+    expect(aggregateSourceEmbedding([], [])).toBeNull();
   });
 });

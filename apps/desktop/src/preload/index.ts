@@ -92,6 +92,7 @@ import {
   localModelDownloadInputSchema,
   localModelDefaultsInputSchema,
   localModelViewSchema,
+  localEmbeddingLoadStatusSchema,
   repositoryTokenInputSchema,
   obsidianSyncStatusSchema,
   similarityDebugRunSchema,
@@ -338,6 +339,14 @@ const api: DesktopApi = {
     }
   },
   ai: {
+    subscribeLocalEmbeddingLoadStatus(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const status = localEmbeddingLoadStatusSchema.safeParse(payload);
+        if (status.success) listener(status.data);
+      };
+      ipcRenderer.on(ipcChannels.aiLocalEmbeddingLoadStatus, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.aiLocalEmbeddingLoadStatus, handler);
+    },
     async listProviders() {
       return aiProviderConfigSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProvidersList));
     },

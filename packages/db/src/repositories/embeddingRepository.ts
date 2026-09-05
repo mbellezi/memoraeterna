@@ -23,6 +23,11 @@ export interface VectorMatch {
   score: number;
 }
 
+export interface StoredEmbedding {
+  targetId: string;
+  embedding: number[];
+}
+
 function embeddingTable(dimensions: number): string {
   if (dimensions === 256 || dimensions === 768 || dimensions === 1_024) {
     return `embeddings_${dimensions}`;
@@ -86,6 +91,27 @@ export function createEmbeddingRepository(db: Queryable) {
         chunkId: row.chunkId,
         score: Number(row.score)
       }));
+    },
+
+    async listSourceEmbeddings(sourceItemIds: string[], model: string, dimensions: SupportedEmbeddingDimension): Promise<StoredEmbedding[]> {
+      if (sourceItemIds.length === 0) return [];
+      const table = embeddingTable(dimensions);
+      const result = await db.query<QueryResultRow & { targetId: string; embedding: string }>(
+        `select target_id as "targetId", embedding::text as embedding
+         from ${table}
+         where target_type = 'source_item' and target_id = any($1::uuid[]) and model = $2`,
+        [sourceItemIds, model]
+      );
+      return result.rows.map((row) => ({
+        targetId: row.targetId,
+        embedding: parseVector(row.embedding)
+      }));
     }
   };
+}
+
+function parseVector(value: string): number[] {
+  const parsed = value.trim().replace(/^\[/, "").replace(/\]$/, "");
+  if (!parsed) return [];
+  return parsed.split(",").map(Number).filter(Number.isFinite);
 }

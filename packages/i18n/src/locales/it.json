@@ -74,10 +74,19 @@
       "doclingUnavailable": "Il convertitore locale di documenti non e installato.",
       "doclingFailed": "Il convertitore locale di documenti non e riuscito."
     },
-    "ingestion": {
-      "aggregateSummaryUnavailable": "Non e stato possibile generare il riepilogo aggregato.",
-      "aggregateSummaryMissingSubparts": "Il riepilogo aggregato attende i riepiloghi di tutte le sottoparti."
-    },
+  "ingestion": {
+    "aggregateSummaryUnavailable": "Non e stato possibile generare il riepilogo aggregato.",
+    "aggregateSummaryMissingSubparts": "Il riepilogo aggregato attende i riepiloghi di tutte le sottoparti.",
+    "urlInvalid": "Inserisci un indirizzo HTTPS valido.",
+    "urlUnsafe": "Questo indirizzo non può essere caricato in modo sicuro.",
+    "urlTooManyRedirects": "La pagina ha eseguito troppi reindirizzamenti.",
+    "urlAccessDenied": "Il sito ha bloccato l’accesso automatico a questa pagina. Puoi comunque incollare manualmente il contenuto.",
+    "urlNotFound": "La pagina non è stata trovata.",
+    "urlUnsupportedContent": "Questo indirizzo non ha restituito una pagina HTML.",
+    "urlTooLarge": "La pagina è troppo grande per essere importata automaticamente.",
+    "urlTimeout": "Il sito ha impiegato troppo tempo a rispondere.",
+    "urlFetchFailed": "Impossibile caricare la pagina. Controlla l’indirizzo o incolla manualmente il contenuto."
+  },
     "ai": {
       "noCompatibleModel": "Nessun modello compatibile e configurato.",
       "unsupportedTask": "Il modello selezionato non puo eseguire questa attivita.",
@@ -204,10 +213,28 @@
     },
     "parent": { "label": "Fonte principale", "create": "Crea fonte principale", "createTitle": "Crea la fonte principale senza uscire da questa importazione" },
     "enrichment": { "title": "Metadati suggeriti", "waiting": "I suggerimenti appaiono automaticamente con titolo, ISBN o DOI.", "apply": "Applica suggerimento" },
-    "content": { "hint": "Il contenuto Markdown viene conservato come documento fonte.", "containerHint": "Lascia vuoto per creare solo il contenitore o incolla contenuto per rilevarne la struttura." },
+    "content": {
+      "hint": "Il contenuto Markdown viene conservato come documento fonte.",
+      "containerHint": "Componi qui i sottoelementi o passa a un documento unico. Potrai verificare la struttura rilevata prima del salvataggio.",
+      "editingHierarchyHint": "Questa modifica riguarda il documento della fonte corrente. I sottoelementi esistenti mantengono il proprio contenuto e possono essere modificati singolarmente dalla biblioteca.",
+      "modeLabel": "Organizzazione del contenuto",
+      "modes": { "subitems": "Componi sottoelementi", "document": "Documento unico" },
+      "modeDescriptions": { "subitems": "Scrivi separatamente capitoli, articoli o sezioni e organizzane l’ordine.", "document": "Scrivi o incolla un documento Markdown e rileva automaticamente i titoli." },
+      "labels": { "chapters": "Capitoli", "articles": "Articoli", "sections": "Sezioni" },
+      "placeholders": { "chapter": "Titolo del capitolo", "article": "Titolo dell’articolo", "section": "Titolo della sezione" },
+      "subitemsCount": "{count} sottoelementi",
+      "untitledSubitem": "Sottoelemento senza titolo",
+      "addSubitem": "Aggiungi sottoelemento",
+      "subitemTitle": "Titolo del sottoelemento",
+      "subitemContent": "Contenuto del sottoelemento",
+      "moveUp": "Sposta in alto",
+      "moveDown": "Sposta in basso",
+      "removeSubitem": "Rimuovi sottoelemento",
+      "noSubitems": "Aggiungi un sottoelemento o continua con un contenitore di catalogo vuoto."
+    },
     "confirmation": { "origin": "Origine", "content": "Contenuto", "container": "Contenitore con soli metadati" },
     "duplicate": { "found": "Trovato un possibile duplicato: {title}", "none": "Nessun duplicato rilevato.", "ignore": "Mantieni esistente", "update": "Aggiorna esistente", "version": "Crea nuova versione" },
-    "validation": { "chooseFile": "Scegli un file prima di continuare.", "contentRequired": "Questo tipo di fonte richiede contenuto." },
+    "validation": { "chooseFile": "Scegli un file prima di continuare.", "contentRequired": "Questo tipo di fonte richiede contenuto.", "subitemsIncomplete": "Ogni sottoelemento iniziato deve avere titolo e contenuto." },
     "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file", "changeFile": "Cambia file", "back": "Indietro", "continue": "Continua", "import": "Importa fonte" },
     "file": { "title": "Scegli il file originale", "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA." },
     "progress": {
@@ -235,6 +262,7 @@
   },
   "search": {
     "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
+    "localEmbeddingLoading": { "title": "Caricamento del modello di embedding locale", "description": "Preparazione del modello in memoria. La ricerca continuera automaticamente quando sara pronto." },
     "scope": "Cerca in", "scopeAll": "Intera libreria",
     "page": "Pagina", "markdownEvidence": "Evidenza Markdown",
     "kinds": {
@@ -248,7 +276,8 @@
   "library": {
     "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
     "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
-    "empty": "Nessuna fonte nella libreria.", "container": "Contenitore", "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti",
+    "empty": "Nessuna fonte nella libreria.", "container": "Contenitore", "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti", "parentSource": "Da {title}",
+    "searchMatches": { "traditional": "Corrispondenza testuale", "embedding": "Corrispondenza semantica", "combined": "Corrispondenza combinata" },
     "actions": { "selectSource": "Seleziona {title}", "process": "Elabora questa fonte", "processSelected": "Elabora selezionate", "clearSelection": "Cancella selezione", "queueProcessing": "Accoda elaborazione" },
     "processingDialog": { "title": "Elabora fonti della libreria", "description": "Scegli cosa generare per {count} fonti selezionate.", "scope": "Applica a", "regenerate": "Rigenera artefatti esistenti", "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate." },
     "scopes": { "source_only": "Solo questa fonte", "children_only": "Solo elementi figli", "source_and_children": "Questa fonte e tutti i figli" },
@@ -416,6 +445,7 @@
       "createProfile": "Crea profilo", "saveProfile": "Salva profilo", "defaultProfile": "Predefinito", "cloneProfile": "Clona profilo", "removeProfile": "Rimuovi profilo", "removeProfileConfirmation": "Rimuovere questo profilo e i relativi instradamenti? I modelli scaricati saranno conservati.", "selectModel": "Seleziona un modello remoto o locale",
       "remoteModels": "Aggiungi modello remoto", "modelPurpose": "Scopo del modello", "saveModel": "Salva modello",
       "embeddingModels": "Modelli di embedding remoti", "generationModels": "Modelli remoti di generazione e reranking",
+      "keepLocalEmbeddingModelsLoaded": "Mantieni caricati i modelli di embedding locali", "keepLocalEmbeddingModelsLoadedDescription": "Dopo il primo utilizzo, mantieni il modello in memoria fino alla chiusura dell'applicazione per velocizzare le ricerche successive.",
       "noModels": "Nessun modello configurato.", "saveDefaults": "Salva predefiniti", "editModel": "Modifica", "saveModelChanges": "Salva modifiche", "deleteModel": "Elimina", "deleteModelConfirmation": "Eliminare questo modello remoto? I profili collegati verranno mantenuti, ma sara necessario selezionare un altro modello.", "noProfiles": "Crea un profilo per configurare le attivita.",
       "outputLanguage": "Lingua delle risposte", "selectProfile": "Seleziona un profilo", "taskRouting": "Profilo usato per attivita",
       "taskRoutingDescription": "Scegli indipendentemente quale profilo configurato usa ogni attivita IA.",
@@ -483,6 +513,17 @@
       "internal": "Il desktop non ha completato la richiesta di integrazione."
     }
   },
+  "markdown": {
+    "modeLabel": "Vista dell’editor",
+    "modes": { "write": "Scrivi", "preview": "Anteprima", "split": "Diviso" },
+    "previewLabel": "Anteprima Markdown",
+    "emptyPreview": "Inizia a scrivere per vedere l’anteprima.",
+    "placeholder": "Scrivi in Markdown…",
+    "markdownSupported": "Markdown supportato",
+    "stats": "{words} parole · {characters} caratteri",
+    "toolbar": { "heading1": "Titolo principale", "heading2": "Titolo di sezione", "bold": "Grassetto", "italic": "Corsivo", "strikethrough": "Barrato", "link": "Link", "list": "Elenco puntato", "orderedList": "Elenco numerato", "checklist": "Lista attività", "quote": "Citazione", "code": "Codice in linea", "codeBlock": "Blocco di codice", "rule": "Linea orizzontale" },
+    "placeholders": { "heading": "Titolo", "text": "testo", "link": "testo del link", "listItem": "Elemento elenco", "quote": "Citazione", "code": "codice", "codeBlock": "codice" }
+  },
   "sourceWorkspace": {
     "outdated": "Riepilogo da aggiornare",
     "content": "Contenuto",
@@ -491,6 +532,7 @@
     "historyHint": "Il contenuto precedente è di sola lettura. Sono elencati fino a 100 documenti recenti; le prove originali sono conservate.",
     "fetchUrl": "Recupera metadati e contenuto",
     "edit": "Modifica fonte",
+    "editContent": "Modifica contenuto",
     "save": "Salva modifiche",
     "addChild": "Aggiungi sottoelemento",
     "overview": "Panoramica",

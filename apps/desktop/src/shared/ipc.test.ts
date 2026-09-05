@@ -25,6 +25,7 @@ import {
   , similarityDebugRunSchema
   , fileImportProgressSchema
   , fileMetadataExtractionResultSchema
+  , libraryBrowseInputSchema
 } from "./ipc";
 
 describe("desktop IPC contracts", () => {
@@ -78,6 +79,16 @@ describe("desktop IPC contracts", () => {
     expect(() => storageSettingsUpdateSchema.parse({ unknown: true })).toThrow();
   });
 
+  it("defaults library queries to hybrid source search", () => {
+    expect(libraryBrowseInputSchema.parse({ query: "memory" })).toMatchObject({
+      query: "memory",
+      searchMode: "hybrid",
+      limit: 48
+    });
+    expect(libraryBrowseInputSchema.parse({ query: "memory", searchMode: "traditional" }).searchMode)
+      .toBe("traditional");
+  });
+
   it("parses app appearance and language settings", () => {
     expect(
       appSettingsSchema.parse({
@@ -88,6 +99,7 @@ describe("desktop IPC contracts", () => {
     ).toMatchObject({
       language: "pt-BR",
       themeMode: "dark",
+      keepLocalEmbeddingModelsLoaded: true,
       summaryMinimumWordCount: 40
     });
 
@@ -96,6 +108,9 @@ describe("desktop IPC contracts", () => {
     });
     expect(appSettingsUpdateSchema.parse({ summaryMinimumWordCount: 75 })).toEqual({
       summaryMinimumWordCount: 75
+    });
+    expect(appSettingsUpdateSchema.parse({ keepLocalEmbeddingModelsLoaded: false })).toEqual({
+      keepLocalEmbeddingModelsLoaded: false
     });
     expect(() => appSettingsUpdateSchema.parse({ summaryMinimumWordCount: -1 })).toThrow();
     expect(() => appSettingsUpdateSchema.parse({ language: "de" })).toThrow();

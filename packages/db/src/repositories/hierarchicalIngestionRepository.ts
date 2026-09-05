@@ -520,9 +520,12 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            true as conversion,
            exists(select 1 from document_divisions division where division.child_document_id = $2) as materialization,
            exists(select 1 from chunks where document_id = $2) as chunking,
-           exists(select 1 from embeddings_256 embedding join chunks chunk on chunk.id = embedding.chunk_id where chunk.document_id = $2)
+           (exists(select 1 from embeddings_256 embedding join chunks chunk on chunk.id = embedding.chunk_id where chunk.document_id = $2)
              or exists(select 1 from embeddings_768 embedding join chunks chunk on chunk.id = embedding.chunk_id where chunk.document_id = $2)
-             or exists(select 1 from embeddings_1024 embedding join chunks chunk on chunk.id = embedding.chunk_id where chunk.document_id = $2) as embedding,
+             or exists(select 1 from embeddings_1024 embedding join chunks chunk on chunk.id = embedding.chunk_id where chunk.document_id = $2))
+           and (exists(select 1 from embeddings_256 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)
+             or exists(select 1 from embeddings_768 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)
+             or exists(select 1 from embeddings_1024 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)) as embedding,
            exists(select 1 from source_summaries where source_item_id = $1 and is_current = true) as summarization,
            exists(select 1 from atomic_notes where created_from_source_item_id = $1 and supersession_status = 'current') as "atomicNotes",
            exists(select 1 from entity_mentions where source_item_id = $1)

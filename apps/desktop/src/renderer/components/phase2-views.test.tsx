@@ -4,7 +4,7 @@ import { createTranslator } from "@app/i18n";
 
 import { AiSettingsView, ProfileEditor, resolveProviderTestStatus } from "./AiSettingsView";
 import { AiParameterFields } from "./AiParameterFields";
-import { FileImportProgressCard, ImportView } from "./ImportView";
+import { FileImportProgressCard, ImportView, wizardStepAvailability } from "./ImportView";
 import { AttemptDetailsDialog, JobCard, JobsView } from "./JobsView";
 import { groupJobs } from "./jobs-view-model";
 import {
@@ -19,6 +19,7 @@ import {
   storageSettingsSchema
 } from "../../shared/ipc";
 import { SearchView } from "./SearchView";
+import { LocalEmbeddingLoadDialog } from "./LocalEmbeddingLoadDialog";
 import {
   breadcrumbChain,
   childrenOf,
@@ -46,6 +47,26 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Personal note");
     expect(html).toContain("Metadata");
     expect(html).toContain("Continue");
+    expect(html).toContain('<button type="button" aria-current="step"');
+    expect(html).toMatch(/<button type="button"[^>]*>.*Metadata/s);
+    expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*Content/s);
+  });
+
+  it("only enables wizard tabs whose dependencies are satisfied", () => {
+    expect(wizardStepAvailability({
+      busy: false,
+      canChooseType: true,
+      metadataReady: true,
+      descriptorReady: false,
+      contentReady: false
+    })).toEqual({ type: true, metadata: true, content: false, confirm: false, structure: false });
+    expect(wizardStepAvailability({
+      busy: false,
+      canChooseType: false,
+      metadataReady: true,
+      descriptorReady: true,
+      contentReady: true
+    })).toEqual({ type: false, metadata: true, content: true, confirm: true, structure: false });
   });
 
   it("renders real file page progress with elapsed time", () => {
@@ -76,6 +97,19 @@ describe("phase 2 renderer views", () => {
     expect(aiSettings).not.toContain("ChatGPT subscription (OAuth)");
     expect(aiSettings).not.toContain("<form");
     expect(aiSettings).not.toContain(">Ready<");
+  });
+
+  it("renders an animated modal while a local embedding model is loading", () => {
+    const html = renderToString(<LocalEmbeddingLoadDialog
+      status={{ state: "loading", modelId: "embeddinggemma-test" }}
+      t={t}
+    />);
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain("Loading local embedding model");
+    expect(html).toContain("embeddinggemma-test");
+    expect(html).toContain("animate-spin");
+    expect(renderToString(<LocalEmbeddingLoadDialog status={null} t={t} />)).toBe("");
   });
 
   it("reports remote model connection test results", async () => {
@@ -294,6 +328,33 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Data &amp; safety");
     expect(html).not.toContain("Changes are saved automatically.");
     expect(html).not.toContain(">Save<");
+  });
+
+  it("enables persistent local embedding models by default in AI settings", () => {
+    const html = renderToString(
+      <SettingsView
+        activeScope="intelligence"
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
+      />
+    );
+    expect(html).toContain("Keep local embedding models loaded");
+    expect(html).toContain('id="keepLocalEmbeddingModelsLoaded"');
+    expect(html).toContain('checked=""');
   });
 
   it("renders the configurable minimum word count for summaries", () => {

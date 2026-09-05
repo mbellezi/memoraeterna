@@ -144,7 +144,27 @@ export class KnowledgeService {
   }
 
   public async browseLibrary(input: LibraryBrowseInput) {
-    return (await createLibraryRepository(this.requirePool()).listSources(input)).map((source) => ({
+    let queryEmbedding: number[] | undefined;
+    let embeddingModel: string | undefined;
+    if (input.query?.trim() && input.searchMode !== "traditional") {
+      try {
+        const generated = await this.options.aiService.runDefaultTask("embedding", input.query.trim());
+        if (generated && Array.isArray(generated.output)) {
+          const candidate = generated.output.map(Number);
+          if ((candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024)
+              && candidate.every(Number.isFinite)) {
+            queryEmbedding = candidate;
+            embeddingModel = generated.modelId;
+          }
+        }
+      } catch {
+        // Traditional catalog search remains available when vector search is unavailable.
+      }
+    }
+    return (await createLibraryRepository(this.requirePool()).listSources({
+      ...input,
+      ...(queryEmbedding && embeddingModel ? { queryEmbedding, embeddingModel } : {})
+    })).map((source) => ({
       ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()
     }));
   }

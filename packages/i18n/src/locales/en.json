@@ -74,10 +74,19 @@
       "doclingUnavailable": "The local document converter is not installed.",
       "doclingFailed": "The local document converter failed."
     },
-    "ingestion": {
-      "aggregateSummaryUnavailable": "The aggregate summary could not be generated.",
-      "aggregateSummaryMissingSubparts": "The aggregate summary is waiting for summaries from every subpart."
-    },
+  "ingestion": {
+    "aggregateSummaryUnavailable": "The aggregate summary could not be generated.",
+    "aggregateSummaryMissingSubparts": "The aggregate summary is waiting for summaries from every subpart.",
+    "urlInvalid": "Enter a valid HTTPS address.",
+    "urlUnsafe": "This address cannot be loaded securely.",
+    "urlTooManyRedirects": "The page redirected too many times.",
+    "urlAccessDenied": "The site blocked automatic access to this page. You can still paste its content manually.",
+    "urlNotFound": "The page was not found.",
+    "urlUnsupportedContent": "This address did not return an HTML page.",
+    "urlTooLarge": "The page is too large to import automatically.",
+    "urlTimeout": "The site took too long to respond.",
+    "urlFetchFailed": "The page could not be loaded. Check the address or paste its content manually."
+  },
     "ai": {
       "noCompatibleModel": "No compatible model is configured.",
       "unsupportedTask": "The selected model cannot run this task.",
@@ -227,10 +236,28 @@
     },
     "parent": { "label": "Parent source", "create": "Create parent", "createTitle": "Create the parent source without leaving this import" },
     "enrichment": { "title": "Suggested metadata", "waiting": "Suggestions appear automatically when a title, ISBN, or DOI is available.", "apply": "Apply suggestion" },
-    "content": { "hint": "Markdown content is preserved as the source document.", "containerHint": "Leave empty to create a metadata-only container, or paste content to detect its internal structure." },
+    "content": {
+      "hint": "Markdown content is preserved as the source document.",
+      "containerHint": "Compose subitems here or switch to a single document. You will review the detected structure before it is saved.",
+      "editingHierarchyHint": "This edits the current source document. Existing subitems keep their own content and can be edited individually from the library.",
+      "modeLabel": "Content organization",
+      "modes": { "subitems": "Compose subitems", "document": "Single document" },
+      "modeDescriptions": { "subitems": "Write chapters, articles, or sections separately and arrange their order.", "document": "Write or paste one Markdown document and detect headings automatically." },
+      "labels": { "chapters": "Chapters", "articles": "Articles", "sections": "Sections" },
+      "placeholders": { "chapter": "Chapter title", "article": "Article title", "section": "Section title" },
+      "subitemsCount": "{count} subitems",
+      "untitledSubitem": "Untitled subitem",
+      "addSubitem": "Add subitem",
+      "subitemTitle": "Subitem title",
+      "subitemContent": "Subitem content",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "removeSubitem": "Remove subitem",
+      "noSubitems": "Add a subitem or continue with an empty catalog container."
+    },
     "confirmation": { "origin": "Origin", "content": "Content", "container": "Metadata-only container" },
     "duplicate": { "found": "A possible duplicate was found: {title}", "none": "No duplicate was detected.", "ignore": "Keep existing", "update": "Update existing", "version": "Create new version" },
-    "validation": { "chooseFile": "Choose a file before continuing.", "contentRequired": "Content is required for this source type." },
+    "validation": { "chooseFile": "Choose a file before continuing.", "contentRequired": "Content is required for this source type.", "subitemsIncomplete": "Every started subitem needs both a title and content." },
     "actions": { "queue": "Queue import", "chooseFile": "Choose file", "changeFile": "Change file", "back": "Back", "continue": "Continue", "import": "Import source" },
     "file": { "title": "Choose the original file", "description": "The original is preserved. For books, issues, and papers, you review the detected structure before any AI processing starts." },
     "progress": {
@@ -289,6 +316,7 @@
   },
   "search": {
     "placeholder": "Search sources and evidence", "action": "Search", "empty": "No matching evidence yet.",
+    "localEmbeddingLoading": { "title": "Loading local embedding model", "description": "Preparing the model in memory. Search will continue automatically when it is ready." },
     "scope": "Search within", "scopeAll": "Entire library",
     "page": "Page", "markdownEvidence": "Markdown evidence",
     "kinds": {
@@ -307,7 +335,8 @@
     "empty": "No sources in the library yet.",
     "container": "Container",
     "containerHint": "This metadata-only container is ready to receive child sources.",
-    "selectionCount": "{count} sources selected", "childCount": "{count} direct items",
+    "selectionCount": "{count} sources selected", "childCount": "{count} direct items", "parentSource": "From {title}",
+    "searchMatches": { "traditional": "Text match", "embedding": "Semantic match", "combined": "Combined match" },
     "actions": { "selectSource": "Select {title}", "process": "Process this source", "processSelected": "Process selected", "clearSelection": "Clear selection", "queueProcessing": "Queue processing" },
     "processingDialog": { "title": "Process library sources", "description": "Choose what to generate for {count} selected sources.", "scope": "Apply to", "regenerate": "Regenerate existing artifacts", "regenerateHint": "Reviewed notes are preserved; pending generations are archived safely." },
     "scopes": { "source_only": "This source only", "children_only": "Children only", "source_and_children": "This source and all children" },
@@ -510,6 +539,7 @@
       "createProfile": "Create profile", "saveProfile": "Save profile", "defaultProfile": "Default", "cloneProfile": "Clone profile", "removeProfile": "Remove profile", "removeProfileConfirmation": "Remove this profile and its task routes? Downloaded models will be preserved.",
       "selectModel": "Select a remote or local model", "remoteModels": "Add remote model",
       "modelPurpose": "Model purpose", "saveModel": "Save model", "embeddingModels": "Remote embedding models",
+      "keepLocalEmbeddingModelsLoaded": "Keep local embedding models loaded", "keepLocalEmbeddingModelsLoadedDescription": "After first use, keep the model in memory until the application closes to make later searches faster.",
       "generationModels": "Remote generation and reranking models", "noModels": "No models configured.",
       "saveDefaults": "Save defaults", "editModel": "Edit", "saveModelChanges": "Save changes", "deleteModel": "Delete", "deleteModelConfirmation": "Delete this remote model? Linked profiles will be kept but will need another model selected.", "noProfiles": "Create a profile to configure tasks.",
       "outputLanguage": "Response language", "selectProfile": "Select a profile",
@@ -632,6 +662,17 @@
       "internal": "The desktop could not complete the integration request."
     }
   },
+  "markdown": {
+    "modeLabel": "Editor view",
+    "modes": { "write": "Write", "preview": "Preview", "split": "Split" },
+    "previewLabel": "Markdown preview",
+    "emptyPreview": "Start writing to see the preview.",
+    "placeholder": "Write in Markdown…",
+    "markdownSupported": "Markdown supported",
+    "stats": "{words} words · {characters} characters",
+    "toolbar": { "heading1": "Main heading", "heading2": "Section heading", "bold": "Bold", "italic": "Italic", "strikethrough": "Strikethrough", "link": "Link", "list": "Bulleted list", "orderedList": "Numbered list", "checklist": "Checklist", "quote": "Quote", "code": "Inline code", "codeBlock": "Code block", "rule": "Horizontal rule" },
+    "placeholders": { "heading": "Heading", "text": "text", "link": "link text", "listItem": "List item", "quote": "Quote", "code": "code", "codeBlock": "code" }
+  },
   "sourceWorkspace": {
     "outdated": "Summary needs updating",
     "content": "Content",
@@ -640,6 +681,7 @@
     "historyHint": "Earlier content is read-only. Up to 100 recent documents are listed; original evidence remains preserved.",
     "fetchUrl": "Fetch metadata and content",
     "edit": "Edit source",
+    "editContent": "Edit content",
     "save": "Save changes",
     "addChild": "Add subitem",
     "overview": "Overview",

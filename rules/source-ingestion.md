@@ -66,6 +66,11 @@ Video, GenericDocument
   `document_divisions` without becoming source items.
 - Children inherit appropriate language and bibliographic context while
   retaining their own title, creators, pages, selectors, and identifiers.
+- Manual intake for hierarchical roots supports composing ordered chapters,
+  articles, or sections as separate drafts. The drafts are serialized into
+  canonical Markdown and pass through the same structure review and
+  transactional materialization flow as detected file structure; they do not
+  create a parallel persistence model.
 
 ## Structure authority and review
 
@@ -90,6 +95,11 @@ Video, GenericDocument
 Importing, structuring, and processing are distinct operations. An import must
 remain useful without AI.
 
+- Import and edit wizard step headers are keyboard-accessible navigation. A
+  later step is enabled only while all of its input and validation prerequisites
+  are satisfied; fixed-context steps and pre-materialization structure review
+  remain unavailable.
+
 - Mandatory import work preserves the original, identifies metadata, converts
   and normalizes content, reviews structure where applicable, and materializes
   sources/documents.
@@ -103,6 +113,14 @@ remain useful without AI.
   failed.
 - Matching for a batch waits until all selected atomic-note generation has
   completed so execution order does not bias discovery.
+- The embedding stage persists both chunk embeddings and one normalized
+  `source_item` embedding. The source vector combines title, safe descriptor
+  metadata, current summary, and segmented content; hierarchical roots combine
+  their own catalog representation with the source embeddings of their
+  processable descendants after those descendants run in the same batch.
+- Editing source metadata or content, changing a summary, or making an ancestor
+  summary stale invalidates the affected `source_item` embeddings so stale
+  semantic results are never served as current.
 
 When descendants are selected, summarization, atomic-note generation, and note
 matching run on processable children, not on the root's full content. A root may

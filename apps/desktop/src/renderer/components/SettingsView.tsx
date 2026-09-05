@@ -316,6 +316,7 @@ export function SettingsView({
           {activeScope === "intelligence" ? (
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />
+              <LocalEmbeddingRuntimeCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
               <AiSettingsView t={t} interfaceLanguage={appSettings.language} onToast={onToast} />
             </div>
           ) : null}
@@ -369,6 +370,32 @@ export function SettingsView({
       </div>
     </section>
   );
+}
+
+function LocalEmbeddingRuntimeCard({ appSettings, t, onChange }: {
+  appSettings: AppSettings;
+  t: SettingsViewProps["t"];
+  onChange: SettingsViewProps["onAppSettingsChange"];
+}) {
+  return <section className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+    <div className="flex min-w-0 items-start gap-3">
+      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+        <Cpu className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <div>
+        <Label htmlFor="keepLocalEmbeddingModelsLoaded">{t("settings.ai.keepLocalEmbeddingModelsLoaded")}</Label>
+        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+          {t("settings.ai.keepLocalEmbeddingModelsLoadedDescription")}
+        </p>
+      </div>
+    </div>
+    <Switch
+      id="keepLocalEmbeddingModelsLoaded"
+      checked={appSettings.keepLocalEmbeddingModelsLoaded}
+      aria-label={t("settings.ai.keepLocalEmbeddingModelsLoaded")}
+      onChange={(event) => onChange({ keepLocalEmbeddingModelsLoaded: event.target.checked })}
+    />
+  </section>;
 }
 
 function OverviewPanel({ appSettings, settings, t, onNavigate }: {

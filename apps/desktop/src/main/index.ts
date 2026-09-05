@@ -1,6 +1,6 @@
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
@@ -25,7 +25,7 @@ import {
   navigationDirectionFromSwipe,
   type WindowNavigationDirection
 } from "./window-navigation.js";
-import { ipcChannels } from "../shared/ipc.js";
+import { ipcChannels, localEmbeddingLoadStatusSchema } from "../shared/ipc.js";
 
 const configuredUserDataPath = process.env.MEMORA_USER_DATA_DIR?.trim();
 if (configuredUserDataPath) app.setPath("userData", resolve(configuredUserDataPath));
@@ -157,7 +157,14 @@ void app.whenReady().then(() => {
     logger: console,
     openExternal: (url) => shell.openExternal(url),
     getUiLanguage: async () => (await settingsService!.getApp()).language,
-    getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode
+    getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode,
+    getKeepLocalEmbeddingModelsLoaded: async () => (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
+    onLocalEmbeddingLoadStatus: (status) => {
+      const payload = localEmbeddingLoadStatusSchema.parse(status);
+      for (const contents of webContents.getAllWebContents()) {
+        if (!contents.isDestroyed()) contents.send(ipcChannels.aiLocalEmbeddingLoadStatus, payload);
+      }
+    }
   });
   localModelService = new LocalModelService({
     getPool: () => databaseService?.getPool() ?? null,
@@ -185,7 +192,8 @@ void app.whenReady().then(() => {
     resourcesPath: getResourcesPath(),
     workspaceRoot,
     isPackaged: app.isPackaged,
-    hierarchicalIngestionService
+    hierarchicalIngestionService,
+    fetchExternalPage: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true })
   });
   metadataEnrichmentService = new MetadataEnrichmentService({
     credentials: new CredentialService(app.getPath("userData")),
@@ -232,7 +240,10 @@ void app.whenReady().then(() => {
         runtime: result.runtime
       };
     },
-    releaseAiRuntime: () => aiService!.releaseLocalRuntime()
+    releaseAiRuntime: async () => aiService!.releaseLocalRuntime(
+      false,
+      (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
+    )
   });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({

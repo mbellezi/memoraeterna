@@ -65,6 +65,14 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
       && request.requiredCapabilities.every((item) => this.options.capabilities.includes(item));
   }
 
+  public isLoaded(): boolean {
+    return this.runtime?.isLoaded() ?? true;
+  }
+
+  public async ensureLoaded(signal?: AbortSignal): Promise<void> {
+    await this.runtime?.ensureLoaded(signal);
+  }
+
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     const abort = () => { void this.dispose(); };
@@ -313,6 +321,14 @@ class NodeLlamaRuntime {
   private loading: Promise<void> | null = null;
 
   public constructor(private readonly modelPath: string) {}
+
+  public isLoaded(): boolean {
+    return this.model !== null;
+  }
+
+  public async ensureLoaded(signal?: AbortSignal): Promise<void> {
+    await this.load(signal);
+  }
 
   public async generate(input: {
     prompt: string;

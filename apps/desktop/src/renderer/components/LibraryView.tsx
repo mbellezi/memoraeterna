@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCw,
   ScrollText,
+  Sparkles,
   StickyNote,
   Trash2,
   X
@@ -34,6 +35,7 @@ import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { CoverImage } from "./ui/cover-image";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
+import { MarkdownPreview } from "./MarkdownEditor";
 
 export interface LibraryExternalTarget {
   sourceItemId: string;
@@ -374,7 +376,12 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
       role="button"
       tabIndex={0}
       aria-label={t("library.cards.openDetail", { values: { title: source.title } })}
-      className="group flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-400 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-700"
+      className={cn(
+        "group flex h-full flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-900",
+        source.matchKind === "embedding"
+          ? "border-violet-400 ring-2 ring-violet-200/60 hover:border-violet-500 dark:border-violet-700 dark:ring-violet-950"
+          : "border-slate-200 hover:border-cyan-400 dark:border-slate-800 dark:hover:border-cyan-700"
+      )}
       onClick={onOpen}
       onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onOpen(); } }}
     >
@@ -391,6 +398,14 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
           {source.subtitle ? <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{source.subtitle}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <SourceTypeBadge type={source.type} t={t} />
+            {source.matchKind ? <span className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold",
+              source.matchKind === "embedding"
+                ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200"
+                : source.matchKind === "combined"
+                  ? "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
+                  : "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200"
+            )}><Sparkles className="h-3 w-3" aria-hidden="true" />{t(`library.searchMatches.${source.matchKind}` as MessageKey)} · {Math.round(Math.max(source.textScore ?? 0, source.embeddingScore ?? 0) * 100)}%</span> : null}
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium dark:bg-slate-800">
               {source.metadata.summaryStale === true ? t("sourceWorkspace.outdated") : source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}
             </span>
@@ -415,7 +430,9 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
           </button>
         </div>
       </div>
-      {source.parentSourceItemId ? <p className="px-4 pb-2 text-xs text-slate-500">{t("sourceWorkspace.subsource")}</p> : null}
+      {source.parentSourceItemId ? <p className="px-4 pb-2 text-xs text-slate-500">{source.parentTitle
+        ? t("library.parentSource", { values: { title: source.parentTitle } })
+        : t("sourceWorkspace.subsource")}</p> : null}
       {!compact && source.summary ? <p className="line-clamp-2 px-4 pb-3 text-sm text-slate-600 dark:text-slate-300">{source.summary}</p> : null}
       <footer className={cn("mt-auto flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500 dark:border-slate-800", compact && "hidden")}>
         <span className="inline-flex items-center gap-1.5">
@@ -651,7 +668,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
       }}>{item.title} · {new Date(item.createdAt).toLocaleString()}{item.isCurrent ? ` · ${t("sourceWorkspace.current")}` : ""}</Button></li>)}</ol>
       {historyLoading ? <p>{t("shell.states.loading")}</p> : null}
       {historyError ? <p role="alert">{t("library.error")}</p> : null}
-      {historical ? <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-800">{historical.markdown}</pre> : null}
+      {historical ? <div className="max-h-[60vh] overflow-auto rounded-xl border border-slate-200 p-5 dark:border-slate-800"><MarkdownPreview markdown={historical.markdown} emptyLabel={t("markdown.emptyPreview")} /></div> : null}
       {detail.summaries.map((summary) => <details key={summary.id} className="rounded-xl border border-slate-200 p-4 dark:border-slate-800"><summary className="cursor-pointer text-sm">{t("library.sections.summary")} · {new Date(summary.generatedAt).toLocaleString()} · {summary.model}</summary><p className="mt-3 whitespace-pre-wrap text-sm">{summary.summary}</p></details>)}
     </div> : null}
     {tab === "overview" ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -702,10 +719,12 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
 
     {tab === "content" && detail.documents.length === 0 ? <StateCard>{t("library.containerHint")}</StateCard> : null}
 
+    {tab === "content" ? <Button className="w-fit" type="button" onClick={() => setEditor("edit")}><Pencil className="h-4 w-4" />{t("sourceWorkspace.editContent")}</Button> : null}
+
     {tab === "content" && detail.assets.filter((asset) => asset.role !== "cover").map((asset) => <Button className="w-fit" key={asset.id} onClick={() => void window.app.knowledge.openAsset(asset.id)}>{asset.originalFileName}</Button>)}
     {tab === "content" && detail.documents.map((document) => <div key={document.id} className="grid gap-3">
       <CollapsibleSection title={t("library.sections.document")} defaultOpen>
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">{document.canonicalMarkdown}</pre>
+        <div className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-5 dark:bg-slate-950"><MarkdownPreview markdown={document.canonicalMarkdown} emptyLabel={t("markdown.emptyPreview")} /></div>
         {document.assets.length > 0 ? <div className="mt-3 grid gap-2">
           <h4 className="text-sm font-semibold">{t("library.sections.originals")}</h4>
           <ul className="grid gap-1 text-sm">{document.assets.map((asset) => <li key={asset.id}>
@@ -886,8 +905,9 @@ function PageControls({ offset, count, busy, t, onPage }: { offset: number; coun
 }
 
 function detailAsLibrarySource(detail: SourceDetail): LibrarySource {
-  return { ...detail, structurePosition: null, childCount: 0, hasDocument: detail.documents.length > 0,
-    processingStatus: "pending", currentStage: "queued" };
+  return { ...detail, parentTitle: null, structurePosition: null, childCount: 0, hasDocument: detail.documents.length > 0,
+    processingStatus: "pending", currentStage: "queued", textScore: null, embeddingScore: null,
+    rankingScore: null, matchKind: null };
 }
 
 function metadataEntries(metadata: Record<string, unknown>): Array<[string, string]> {

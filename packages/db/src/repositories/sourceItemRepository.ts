@@ -137,6 +137,7 @@ export function createSourceItemRepository(db: Queryable) {
         },
         returning
       );
+      if (row) await deleteSourceEmbeddings(db, [id]);
       return row ? mapSourceItem(row) : null;
     },
 
@@ -214,9 +215,20 @@ export function createSourceItemRepository(db: Queryable) {
 }
 
 export async function markAncestorSummariesStale(db: Queryable, parentSourceItemId: string): Promise<void> {
-  await db.query(`with recursive ancestors as (
+  const ancestors = await db.query<{ id: string }>(`with recursive ancestors as (
     select id, parent_source_item_id from source_items where id = $1
     union select s.id, s.parent_source_item_id from source_items s join ancestors a on s.id = a.parent_source_item_id
   ) update source_items set metadata = metadata || '{"summaryStale":true}'::jsonb
-    where id in (select id from ancestors)`, [parentSourceItemId]);
+    where id in (select id from ancestors) returning id`, [parentSourceItemId]);
+  await deleteSourceEmbeddings(db, ancestors.rows.map((row) => row.id));
+}
+
+async function deleteSourceEmbeddings(db: Queryable, sourceItemIds: string[]): Promise<void> {
+  if (sourceItemIds.length === 0) return;
+  for (const dimensions of [256, 768, 1_024]) {
+    await db.query(
+      `delete from embeddings_${dimensions} where target_type = 'source_item' and target_id = any($1::uuid[])`,
+      [sourceItemIds]
+    );
+  }
 }

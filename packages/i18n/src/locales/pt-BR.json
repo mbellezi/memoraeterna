@@ -74,10 +74,19 @@
       "doclingUnavailable": "O conversor local de documentos nao esta instalado.",
       "doclingFailed": "O conversor local de documentos falhou."
     },
-    "ingestion": {
-      "aggregateSummaryUnavailable": "Nao foi possivel gerar o resumo consolidado.",
-      "aggregateSummaryMissingSubparts": "O resumo consolidado aguarda os resumos de todas as subpartes."
-    },
+  "ingestion": {
+    "aggregateSummaryUnavailable": "Nao foi possivel gerar o resumo consolidado.",
+    "aggregateSummaryMissingSubparts": "O resumo consolidado aguarda os resumos de todas as subpartes.",
+    "urlInvalid": "Informe um endereço HTTPS válido.",
+    "urlUnsafe": "Este endereço não pode ser carregado com segurança.",
+    "urlTooManyRedirects": "A página redirecionou vezes demais.",
+    "urlAccessDenied": "O site bloqueou o acesso automático a esta página. Você ainda pode colar o conteúdo manualmente.",
+    "urlNotFound": "A página não foi encontrada.",
+    "urlUnsupportedContent": "Este endereço não retornou uma página HTML.",
+    "urlTooLarge": "A página é grande demais para importação automática.",
+    "urlTimeout": "O site demorou demais para responder.",
+    "urlFetchFailed": "Não foi possível carregar a página. Confira o endereço ou cole o conteúdo manualmente."
+  },
     "ai": {
       "noCompatibleModel": "Nenhum modelo compativel esta configurado.",
       "unsupportedTask": "O modelo selecionado nao executa esta tarefa.",
@@ -227,10 +236,28 @@
     },
     "parent": { "label": "Fonte-mae", "create": "Criar fonte-mae", "createTitle": "Crie a fonte-mae sem sair desta importacao" },
     "enrichment": { "title": "Metadados sugeridos", "waiting": "As sugestoes aparecem automaticamente quando houver titulo, ISBN ou DOI.", "apply": "Aplicar sugestao" },
-    "content": { "hint": "O conteudo Markdown sera preservado como documento da fonte.", "containerHint": "Deixe vazio para criar apenas o container, ou cole conteudo para detectar sua estrutura interna." },
+    "content": {
+      "hint": "O conteúdo Markdown será preservado como documento da fonte.",
+      "containerHint": "Componha os subitens aqui ou alterne para um documento único. Você revisará a estrutura detectada antes de salvar.",
+      "editingHierarchyHint": "Esta edição altera o documento da fonte atual. Os subitens existentes mantêm conteúdo próprio e podem ser editados individualmente na biblioteca.",
+      "modeLabel": "Organização do conteúdo",
+      "modes": { "subitems": "Compor subitens", "document": "Documento único" },
+      "modeDescriptions": { "subitems": "Escreva capítulos, artigos ou seções separadamente e organize a ordem.", "document": "Escreva ou cole um documento Markdown e detecte os títulos automaticamente." },
+      "labels": { "chapters": "Capítulos", "articles": "Artigos", "sections": "Seções" },
+      "placeholders": { "chapter": "Título do capítulo", "article": "Título do artigo", "section": "Título da seção" },
+      "subitemsCount": "{count} subitens",
+      "untitledSubitem": "Subitem sem título",
+      "addSubitem": "Adicionar subitem",
+      "subitemTitle": "Título do subitem",
+      "subitemContent": "Conteúdo do subitem",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "removeSubitem": "Remover subitem",
+      "noSubitems": "Adicione um subitem ou continue com um container de catálogo vazio."
+    },
     "confirmation": { "origin": "Origem", "content": "Conteudo", "container": "Container somente com metadados" },
     "duplicate": { "found": "Uma possivel duplicata foi encontrada: {title}", "none": "Nenhuma duplicata foi detectada.", "ignore": "Manter existente", "update": "Atualizar existente", "version": "Criar nova versao" },
-    "validation": { "chooseFile": "Escolha um arquivo antes de continuar.", "contentRequired": "Este tipo de fonte exige conteudo." },
+    "validation": { "chooseFile": "Escolha um arquivo antes de continuar.", "contentRequired": "Este tipo de fonte exige conteúdo.", "subitemsIncomplete": "Todo subitem iniciado precisa de título e conteúdo." },
     "actions": { "queue": "Enfileirar importacao", "chooseFile": "Escolher arquivo", "changeFile": "Trocar arquivo", "back": "Voltar", "continue": "Continuar", "import": "Importar fonte" },
     "file": { "title": "Escolha o arquivo original", "description": "O original sera preservado. Em livros, periodicos e artigos, voce revisa a estrutura detectada antes de qualquer processamento com IA." },
     "progress": {
@@ -258,6 +285,7 @@
   },
   "search": {
     "placeholder": "Buscar fontes e evidencias", "action": "Buscar", "empty": "Nenhuma evidencia correspondente.",
+    "localEmbeddingLoading": { "title": "Carregando modelo local de embedding", "description": "Preparando o modelo na memoria. A busca continuara automaticamente quando ele estiver pronto." },
     "scope": "Buscar dentro de", "scopeAll": "Biblioteca inteira",
     "page": "Pagina", "markdownEvidence": "Evidencia no Markdown",
     "kinds": {
@@ -276,7 +304,8 @@
     "empty": "Ainda nao ha fontes na biblioteca.",
     "container": "Container",
     "containerHint": "Este container somente com metadados esta pronto para receber fontes-filhas.",
-    "selectionCount": "{count} fontes selecionadas", "childCount": "{count} itens diretos",
+    "selectionCount": "{count} fontes selecionadas", "childCount": "{count} itens diretos", "parentSource": "Pertence a {title}",
+    "searchMatches": { "traditional": "Correspondencia textual", "embedding": "Correspondencia semantica", "combined": "Correspondencia combinada" },
     "actions": { "selectSource": "Selecionar {title}", "process": "Processar esta fonte", "processSelected": "Processar selecionadas", "clearSelection": "Limpar selecao", "queueProcessing": "Enfileirar processamento" },
     "processingDialog": { "title": "Processar fontes da biblioteca", "description": "Escolha o que gerar para {count} fontes selecionadas.", "scope": "Aplicar a", "regenerate": "Gerar novamente os artefatos existentes", "regenerateHint": "Notas revisadas sao preservadas; geracoes pendentes sao arquivadas com seguranca." },
     "scopes": { "source_only": "Somente esta fonte", "children_only": "Somente os filhos", "source_and_children": "Esta fonte e todos os filhos" },
@@ -474,6 +503,7 @@
       "createProfile": "Criar perfil", "saveProfile": "Salvar perfil", "defaultProfile": "Padrao", "cloneProfile": "Clonar perfil", "removeProfile": "Remover perfil", "removeProfileConfirmation": "Remover este perfil e seus roteamentos de tarefas? Os modelos baixados serao preservados.",
       "selectModel": "Selecione um modelo remoto ou local", "remoteModels": "Adicionar modelo remoto",
       "modelPurpose": "Finalidade do modelo", "saveModel": "Salvar modelo", "embeddingModels": "Modelos remotos de embedding",
+      "keepLocalEmbeddingModelsLoaded": "Manter modelos locais de embedding carregados", "keepLocalEmbeddingModelsLoadedDescription": "Apos o primeiro uso, mantenha o modelo na memoria ate o aplicativo ser fechado para acelerar as proximas buscas.",
       "generationModels": "Modelos remotos de geracao e reranking", "noModels": "Nenhum modelo configurado.",
       "saveDefaults": "Salvar padroes", "editModel": "Editar", "saveModelChanges": "Salvar alteracoes", "deleteModel": "Excluir", "deleteModelConfirmation": "Excluir este modelo remoto? Os perfis vinculados serao mantidos, mas precisarao ter outro modelo selecionado.", "noProfiles": "Crie um perfil para configurar as tarefas.",
       "outputLanguage": "Idioma das respostas", "selectProfile": "Selecione um perfil",
@@ -565,6 +595,17 @@
       "internal": "O desktop nao concluiu a solicitacao de integracao."
     }
   },
+  "markdown": {
+    "modeLabel": "Visualização do editor",
+    "modes": { "write": "Escrever", "preview": "Visualizar", "split": "Dividido" },
+    "previewLabel": "Visualização do Markdown",
+    "emptyPreview": "Comece a escrever para ver a visualização.",
+    "placeholder": "Escreva em Markdown…",
+    "markdownSupported": "Compatível com Markdown",
+    "stats": "{words} palavras · {characters} caracteres",
+    "toolbar": { "heading1": "Título principal", "heading2": "Título de seção", "bold": "Negrito", "italic": "Itálico", "strikethrough": "Tachado", "link": "Link", "list": "Lista com marcadores", "orderedList": "Lista numerada", "checklist": "Lista de tarefas", "quote": "Citação", "code": "Código em linha", "codeBlock": "Bloco de código", "rule": "Linha horizontal" },
+    "placeholders": { "heading": "Título", "text": "texto", "link": "texto do link", "listItem": "Item da lista", "quote": "Citação", "code": "código", "codeBlock": "código" }
+  },
   "sourceWorkspace": {
     "outdated": "Resumo desatualizado",
     "content": "Conteúdo",
@@ -573,6 +614,7 @@
     "historyHint": "O conteúdo anterior é somente leitura. São listados até 100 documentos recentes; as evidências originais são preservadas.",
     "fetchUrl": "Buscar metadados e conteúdo",
     "edit": "Editar fonte",
+    "editContent": "Editar conteúdo",
     "save": "Salvar alterações",
     "addChild": "Adicionar subitem",
     "overview": "Visão geral",

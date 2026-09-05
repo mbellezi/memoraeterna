@@ -65,6 +65,9 @@ status, and all participating source IDs.
 - Embedding models expose only `embedding` plus applicable local/offline
   capabilities. Use the runtime's embedding API, validate requested dimensions,
   and normalize vectors.
+- Local embedding models remain resident after first use until application
+  shutdown by default. An AI setting may opt out, in which case the idle runtime
+  is released after embedding work completes.
 
 ## Derived knowledge
 
@@ -87,6 +90,10 @@ status, and all participating source IDs.
 ## Search
 
 - Text and vector rankings remain independently inspectable before fusion.
+- The Library search combines its existing catalog match with a query embedding
+  against `source_item` embeddings. Ranking retains both scores, favors the
+  stronger signal with a smaller bonus when both agree, and identifies whether
+  text, semantic similarity, or both produced the match.
 - Search results include source item, document/revision, chunk, SourceSpan,
   scores, and evidence. Hierarchical child results include breadcrumbs to the
   root; a root filter may include descendants.

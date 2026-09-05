@@ -64,6 +64,8 @@ export interface AiTaskHandle {
 export interface AiModelAdapter {
   describe(): AiModelDescriptor;
   canHandle(request: AiTaskRequest): boolean;
+  isLoaded?(): boolean;
+  ensureLoaded?(signal?: AbortSignal): Promise<void>;
   run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult>;
   runStreaming?(request: AiTaskRequest, signal: AbortSignal | undefined, onProgress: AiProgressListener): Promise<AiTaskResult>;
   listModels?(signal?: AbortSignal): Promise<AiModelDescriptor[]>;

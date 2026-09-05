@@ -5,6 +5,30 @@ import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
 
 describe("hierarchical aggregate summaries", () => {
+  it("adds the configured embedding to library queries for composite ranking", async () => {
+    const queries: Array<{ text: string; values: unknown[] | undefined }> = [];
+    const pool = {
+      query: async (text: string, values?: unknown[]) => {
+        queries.push({ text, values });
+        return { rows: [] };
+      }
+    } as unknown as PgPool;
+    const embedding = Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0);
+    const service = new KnowledgeService({
+      getPool: () => pool,
+      aiService: { runDefaultTask: vi.fn(async () => ({ output: embedding, modelId: "source-model" })) } as unknown as AiService,
+      userDataPath: "/tmp/memora-test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null
+    });
+
+    await service.browseLibrary({ query: "semantic memory", sourceTypes: [], offset: 0, limit: 48 });
+
+    expect(queries[0]?.text).toContain("source_embedding.target_type = 'source_item'");
+    expect(queries[0]?.values?.[2]).toBe("semantic memory");
+    expect(queries[0]?.values?.[8]).toBe("source-model");
+  });
+
   it("includes descendants of any hierarchical source type when finding completed subpart summaries", async () => {
     const queries: Array<{ text: string; values: unknown[] | undefined }> = [];
     const pool = {

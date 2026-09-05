@@ -1,6 +1,18 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { request } from "node:https";
+
+export type SourceUrlPreviewError =
+  | "errors.ingestion.urlInvalid"
+  | "errors.ingestion.urlUnsafe"
+  | "errors.ingestion.urlTooManyRedirects"
+  | "errors.ingestion.urlAccessDenied"
+  | "errors.ingestion.urlNotFound"
+  | "errors.ingestion.urlUnsupportedContent"
+  | "errors.ingestion.urlTooLarge"
+  | "errors.ingestion.urlTimeout"
+  | "errors.ingestion.urlFetchFailed";
+
+export type ExternalPageFetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export function isPublicAddress(address: string): boolean {
   if (isIP(address) === 4) {
@@ -23,38 +35,87 @@ export function youtubeIdFromUrl(value: string): string | null {
 }
 
 /** Pin DNS results to the HTTPS connection, and revalidate each redirect. */
-export async function readPublicHtml(value: string, redirects = 0): Promise<{ html: string; url: string }> {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443") || redirects > 3) {
-    throw new Error("errors.common.validationFailed");
+export async function readPublicHtml(value: string, fetchExternalPage: ExternalPageFetch, redirects = 0): Promise<{ html: string; url: string }> {
+  if (redirects > 3) throw new Error("errors.ingestion.urlTooManyRedirects");
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("errors.ingestion.urlInvalid"); }
+  if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) {
+    throw new Error("errors.ingestion.urlInvalid");
   }
-  const addresses = await lookup(url.hostname, { all: true });
-  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new Error("errors.common.validationFailed");
-  const response = await new Promise<{ html?: string; redirect?: string }>((resolve, reject) => {
-    const req = request(url, {
-      signal: AbortSignal.timeout(12_000),
-      headers: { Accept: "text/html", "User-Agent": "MemoraEterna/1.0" },
-      lookup: (_hostname, options, callback) => {
-        if (options.all) callback(null, addresses);
-        else callback(null, addresses[0]!.address, addresses[0]!.family);
-      }
-    }, (res) => {
-      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        res.resume(); resolve({ redirect: new URL(res.headers.location, url).toString() }); return;
-      }
-      if (res.statusCode !== 200 || !res.headers["content-type"]?.includes("text/html")) {
-        res.resume(); reject(new Error("errors.common.validationFailed")); return;
-      }
-      const chunks: Buffer[] = []; let bytes = 0;
-      res.on("data", (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > 5 * 1024 * 1024) { res.destroy(new Error("errors.common.validationFailed")); return; }
-        chunks.push(chunk);
-      });
-      res.on("error", reject);
-      res.on("end", () => resolve({ html: Buffer.concat(chunks).toString("utf8") }));
+  let addresses: Array<{ address: string; family: number }>;
+  try { addresses = await lookup(url.hostname, { all: true }); }
+  catch { throw new Error("errors.ingestion.urlFetchFailed"); }
+  if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) throw new Error("errors.ingestion.urlUnsafe");
+  const headers = {
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.8",
+    "User-Agent": chromeUserAgent()
+  };
+  let response: Response;
+  try {
+    response = await fetchExternalPage(url.toString(), {
+      method: "GET", headers, redirect: "manual", credentials: "omit", signal: AbortSignal.timeout(12_000)
     });
-    req.on("error", reject); req.end();
-  });
-  return response.redirect ? readPublicHtml(response.redirect, redirects + 1) : { html: response.html!, url: url.toString() };
+  } catch (error) {
+    throw new Error(error instanceof Error && error.name === "AbortError"
+      ? "errors.ingestion.urlTimeout"
+      : error instanceof Error ? knownUrlError(error) : "errors.ingestion.urlFetchFailed");
+  }
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get("location");
+    if (!location) throw new Error("errors.ingestion.urlFetchFailed");
+    return readPublicHtml(new URL(location, url).toString(), fetchExternalPage, redirects + 1);
+  }
+  const responseError = sourceUrlResponseError(response.status, response.headers.get("content-type") ?? undefined);
+  if (responseError) throw new Error(responseError);
+  return { html: await readBoundedResponseBody(response), url: url.toString() };
+}
+
+export function sourceUrlResponseError(statusCode: number | undefined, contentType: string | undefined): SourceUrlPreviewError | null {
+  if (statusCode === 401 || statusCode === 403 || statusCode === 429) return "errors.ingestion.urlAccessDenied";
+  if (statusCode === 404 || statusCode === 410) return "errors.ingestion.urlNotFound";
+  if (statusCode !== 200) return "errors.ingestion.urlFetchFailed";
+  if (!contentType?.toLowerCase().includes("text/html")) return "errors.ingestion.urlUnsupportedContent";
+  return null;
+}
+
+export function chromeUserAgent(
+  platform: NodeJS.Platform = process.platform,
+  chromeVersion = process.versions.chrome ?? "140.0.0.0"
+): string {
+  const platformToken = platform === "darwin"
+    ? "Macintosh; Intel Mac OS X 10_15_7"
+    : platform === "win32"
+      ? "Windows NT 10.0; Win64; x64"
+      : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${platformToken}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeVersion} Safari/537.36`;
+}
+
+async function readBoundedResponseBody(response: Response): Promise<string> {
+  const declaredSize = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredSize) && declaredSize > 5 * 1024 * 1024) throw new Error("errors.ingestion.urlTooLarge");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > 5 * 1024 * 1024) {
+      await reader.cancel();
+      throw new Error("errors.ingestion.urlTooLarge");
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(bytes);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(body);
+}
+
+function knownUrlError(error: Error): SourceUrlPreviewError {
+  return error.message.startsWith("errors.ingestion.")
+    ? error.message as SourceUrlPreviewError
+    : "errors.ingestion.urlFetchFailed";
 }

@@ -41,7 +41,8 @@ import type {
   AiProviderConfig,
   AiProviderConfigInput,
   AiModelDiscoveryInput,
-  AiParameterCapabilitiesInput
+  AiParameterCapabilitiesInput,
+  LocalEmbeddingLoadStatus
 } from "../../shared/ipc.js";
 import { aiModelParametersSchema } from "../../shared/ipc.js";
 
@@ -66,6 +67,8 @@ export interface AiServiceOptions {
   logger?: Pick<Console, "error" | "info">;
   getDashboardDebugMode?: () => Promise<boolean>;
   getUiLanguage?: () => Promise<string>;
+  getKeepLocalEmbeddingModelsLoaded?: () => Promise<boolean>;
+  onLocalEmbeddingLoadStatus?: (status: LocalEmbeddingLoadStatus) => void;
   openExternal?: (url: string) => Promise<void>;
 }
 
@@ -331,6 +334,9 @@ export class AiService {
     const taskInput = taskType === "embedding"
       ? input
       : withOutputLanguageInstruction(input, outputLanguage);
+    const keepLocalEmbeddingModelLoaded = taskType === "embedding" && selection.localModelId
+      ? await this.options.getKeepLocalEmbeddingModelsLoaded?.() ?? true
+      : true;
     const started = Date.now();
     try {
       const configuredAdapter = selection.localModelId
@@ -365,9 +371,23 @@ export class AiService {
         && (descriptor.capabilities.includes("streaming") || descriptor.capabilities.includes("supports-progress-events"))
         ? adapter.runStreaming(request, signal, progress)
         : adapter.run(request, signal);
+      const runLocal = async () => {
+        const needsLoad = taskType === "embedding" && adapter.isLoaded?.() === false && adapter.ensureLoaded;
+        if (needsLoad) {
+          this.options.onLocalEmbeddingLoadStatus?.({ state: "loading", modelId: selection.modelId });
+          try {
+            await adapter.ensureLoaded?.(signal);
+            this.options.onLocalEmbeddingLoadStatus?.({ state: "ready", modelId: selection.modelId });
+          } catch (error) {
+            this.options.onLocalEmbeddingLoadStatus?.({ state: "failed", modelId: selection.modelId });
+            throw error;
+          }
+        }
+        return run();
+      };
       progress({ progress: 0.02 });
       const result = selection.localModelId
-        ? await this.withLocalModelUsage(selection.localModelId, run)
+        ? await this.withLocalModelUsage(selection.localModelId, runLocal)
         : await run();
       progress({ progress: 1 });
       const aiTaskRunId = await repository.recordTaskRun({
@@ -398,6 +418,11 @@ export class AiService {
           aiTaskRunId
         }, result.output);
       }
+      if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
+        await this.releaseLocalRuntime().catch((error) => {
+          this.options.logger?.error("Failed to release local embedding runtime", error);
+        });
+      }
       return { ...result, profileId: selection.profileId, aiTaskRunId, outputLanguage };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
@@ -423,6 +448,11 @@ export class AiService {
           aiTaskRunId
         }, error, "atomic_note_ai_task_failed");
       }
+      if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
+        await this.releaseLocalRuntime().catch((releaseError) => {
+          this.options.logger?.error("Failed to release local embedding runtime", releaseError);
+        });
+      }
       throw error;
     }
   }
@@ -431,10 +461,11 @@ export class AiService {
     return this.activeLocalModels.has(localModelId);
   }
 
-  public async releaseLocalRuntime(force = false): Promise<void> {
+  public async releaseLocalRuntime(force = false, keepEmbedding = false): Promise<void> {
     const resident = this.residentLocalAdapter;
     if (!resident) return;
     if (!force && this.activeLocalModels.has(resident.localModelId)) return;
+    if (!force && keepEmbedding && resident.adapter.describe().capabilities.includes("embedding")) return;
     this.residentLocalAdapter = null;
     const descriptor = resident.adapter.describe();
     this.registry.unregister(descriptor.providerId, descriptor.modelId);

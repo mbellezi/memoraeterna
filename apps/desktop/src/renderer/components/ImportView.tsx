@@ -22,6 +22,10 @@ import type {
 import { cn } from "../lib/cn";
 import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
 import { StructureReview } from "./StructureReview";
+import {
+  compileManualSubitems, createManualSubitem, ManualContentComposer,
+  validateManualSubitems, type ManualContentMode, type ManualSubitemDraft
+} from "./ManualContentComposer";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -30,6 +34,40 @@ import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 
 type ImportOrigin = "manual" | "file";
 type FormValues = Record<string, string>;
+type WizardStepName = "type" | "metadata" | "content" | "confirm" | "structure";
+
+const wizardStepDefinitions = [
+  { name: "type", step: 0 },
+  { name: "metadata", step: 2 },
+  { name: "content", step: 3 },
+  { name: "confirm", step: 4 },
+  { name: "structure", step: 5 }
+] as const satisfies ReadonlyArray<{ name: WizardStepName; step: number }>;
+
+export function wizardStepAvailability({
+  busy,
+  canChooseType,
+  metadataReady,
+  descriptorReady,
+  contentReady,
+  structureReady = false
+}: {
+  busy: boolean;
+  canChooseType: boolean;
+  metadataReady: boolean;
+  descriptorReady: boolean;
+  contentReady: boolean;
+  structureReady?: boolean;
+}): Record<WizardStepName, boolean> {
+  if (busy) return { type: false, metadata: false, content: false, confirm: false, structure: false };
+  return {
+    type: canChooseType,
+    metadata: metadataReady,
+    content: descriptorReady,
+    confirm: descriptorReady && contentReady,
+    structure: structureReady
+  };
+}
 
 const sourceCards: Array<{ type: SourceItemType; icon: typeof BookOpen; group: "notes" | "publications" | "media" }> = [
   { type: "PersonalNote", icon: StickyNote, group: "notes" },
@@ -81,6 +119,8 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
   const [values, setValues] = useState<FormValues>(formDefaults);
   const [fieldProvenance, setFieldProvenance] = useState<Record<string, MetadataFieldProvenance>>(() => expandProvenance((initialDescriptor.provenance ?? {}) as Record<string, MetadataFieldProvenance>));
   const [content, setContent] = useState(originalContent);
+  const [contentMode, setContentMode] = useState<ManualContentMode>(editing ? "document" : isContainerType(initialType) ? "subitems" : "document");
+  const [manualSubitems, setManualSubitems] = useState<ManualSubitemDraft[]>(() => [createManualSubitem()]);
   const [file, setFile] = useState<FileMetadataExtractionResult | null>(null);
   const [coverAssetId, setCoverAssetId] = useState<string | null>(editing ? coverAssetIdFromMetadata(editing.metadata) : null);
   const [processingPlan, setProcessingPlan] = useState<ProcessingPlanRequest>(() => defaultProcessingPlan("import_only"));
@@ -97,6 +137,21 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const descriptor = useMemo(() => buildDescriptor(sourceType, values, coverAssetId, fieldProvenance), [coverAssetId, fieldProvenance, sourceType, values]);
+  const effectiveContent = useMemo(() => contentMode === "subitems" && isContainerType(sourceType)
+    ? compileManualSubitems(manualSubitems)
+    : content, [content, contentMode, manualSubitems, sourceType]);
+  const contentReady = origin === "file"
+    ? Boolean(file)
+    : contentMode === "subitems"
+      ? validateManualSubitems(manualSubitems)
+      : isContainerType(sourceType) || Boolean(effectiveContent.trim());
+  const availableWizardSteps = wizardStepAvailability({
+    busy,
+    canChooseType: !editing && !parent,
+    metadataReady: origin === "manual" || Boolean(file),
+    descriptorReady: descriptor.success,
+    contentReady
+  });
 
   useEffect(() => {
     if (step !== 2 || !metadataEnrichmentEnabled || !supportsEnrichment(sourceType)) {
@@ -131,10 +186,10 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
     let active = true;
     void window.app.ingestion.findDuplicate({
       descriptor: descriptor.data,
-      ...(origin === "file" && file ? { fileToken: file.fileToken } : { content })
+      ...(origin === "file" && file ? { fileToken: file.fileToken } : { content: effectiveContent })
     }).then((result) => { if (active) setDuplicate(result); }).catch(() => { if (active) setDuplicate(null); });
     return () => { active = false; };
-  }, [content, descriptor, file, origin, step]);
+  }, [descriptor, effectiveContent, file, origin, step]);
 
   useEffect(() => {
     if (!busy || progressStartedAt === null) return;
@@ -151,6 +206,8 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
     setValues(initialValues(type));
     setFieldProvenance({});
     setContent("");
+    setContentMode(isContainerType(type) ? "subitems" : "document");
+    setManualSubitems([createManualSubitem()]);
     setFile(null);
     setCoverAssetId(null);
     setValidationError("");
@@ -159,6 +216,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
 
   async function previewUrl() {
     if (sourceType !== "WebArticle" && sourceType !== "Video") return;
+    setValidationError("");
     setBusy(true);
     try {
       const preview = await window.app.ingestion.previewUrl({ type: sourceType, url: values.url ?? "" });
@@ -167,7 +225,11 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
       setFieldProvenance((current) => ({ ...expandProvenance(preview.draft.provenance), ...current }));
       if (!content.trim()) setContent(preview.markdown);
       setStatus("import.status.metadataExtracted");
-    } catch { setStatus("sourceWorkspace.enrichmentError"); } finally { setBusy(false); }
+    } catch (error) {
+      const key = errorMessageKey(error);
+      setStatus(key);
+      setValidationError(t(key));
+    } finally { setBusy(false); }
   }
 
   async function chooseFile() {
@@ -249,12 +311,23 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
         setValidationError(t("import.validation.chooseFile"));
         return;
       }
-      if (origin === "manual" && !isContainerType(sourceType) && !content.trim()) {
+      if (origin === "manual" && contentMode === "subitems" && !validateManualSubitems(manualSubitems)) {
+        setValidationError(t("import.validation.subitemsIncomplete"));
+        return;
+      }
+      if (origin === "manual" && !isContainerType(sourceType) && !effectiveContent.trim()) {
         setValidationError(t("import.validation.contentRequired"));
         return;
       }
       setStep(4);
     }
+  }
+
+  function navigateToWizardStep(target: number) {
+    const targetDefinition = wizardStepDefinitions.find(({ step: targetStep }) => targetStep === target);
+    if (!targetDefinition || !availableWizardSteps[targetDefinition.name]) return;
+    setValidationError("");
+    setStep(target);
   }
 
   async function submit() {
@@ -265,7 +338,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
       if (editing) {
         const result = await window.app.ingestion.editSource({
           sourceItemId: editing.id, expectedUpdatedAt: editing.updatedAt, descriptor: preserveDescriptorDetails(descriptor.data, initialDescriptor, values),
-          ...(content !== originalContent ? { content: { documentId: editing.documents[0]?.id ?? null, markdown: content } } : {})
+          ...(effectiveContent !== originalContent ? { content: { documentId: editing.documents[0]?.id ?? null, markdown: effectiveContent } } : {})
         });
         onSaved?.(result.sourceItemId);
         return;
@@ -274,10 +347,10 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
         ? await window.app.ingestion.importFile({
             fileToken: file.fileToken, descriptor: descriptor.data, duplicatePolicy, processingPlan
           })
-        : isContainerType(sourceType) && !content.trim()
+        : isContainerType(sourceType) && !effectiveContent.trim()
           ? await window.app.ingestion.createContainerSource({ descriptor: descriptor.data, duplicatePolicy })
           : await window.app.ingestion.createManual({
-              descriptor: descriptor.data, content, duplicatePolicy, processingPlan
+              descriptor: descriptor.data, content: effectiveContent, duplicatePolicy, processingPlan
             });
       if (!result) {
         setStatus("import.status.canceled");
@@ -300,6 +373,8 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
     setValues(initialValues(sourceType));
     setFieldProvenance({});
     setContent("");
+    setContentMode(isContainerType(sourceType) ? "subitems" : "document");
+    setManualSubitems([createManualSubitem()]);
     setFile(null);
     setCoverAssetId(null);
     setDuplicate(null);
@@ -336,19 +411,19 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
 
   return <section className="grid gap-5">
     {parent ? <header><p className="text-sm text-slate-500">{parent.title}</p><h2 className="mt-1 text-xl font-semibold">{t("sourceWorkspace.addChild")} · {t(`import.sourceTypes.${sourceType}` as MessageKey)}</h2></header> : null}
-    <WizardSteps active={step} t={t} />
+    <WizardSteps active={step} available={availableWizardSteps} onNavigate={navigateToWizardStep} t={t} />
     {busy && fileProgress ? <FileImportProgressCard progress={fileProgress} elapsedSeconds={elapsedSeconds} t={t} /> : null}
     {step === 0 ? <><OriginStep t={t} value={origin} onChange={setOrigin} /><SourceTypeStep t={t} value={sourceType} search={sourceSearch} onSearch={setSourceSearch} onChoose={chooseType} /></> : null}
     {step === 1 ? <OriginStep t={t} value={origin} onChange={setOrigin} /> : null}
     {step === 2 ? <section className="grid gap-5">
       {editing ? <p className="rounded-xl bg-cyan-50 p-4 text-sm text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100">{t("sourceWorkspace.editHint")}</p> : null}
       {coverAssetId ? <div className="h-36 w-24 overflow-hidden rounded-lg"><CoverImage assetId={coverAssetId} alt={values.title ?? ""} fallback={<BookOpen />} /></div> : null}
-      {metadataEnrichmentEnabled && (sourceType === "WebArticle" || sourceType === "Video") ? <div className="flex gap-2"><Input aria-label={t("import.metadataFields.url")} placeholder={t("import.metadataFields.url")} value={values.url ?? ""} onChange={(event) => { setValues({ ...values, url: event.target.value }); setFieldProvenance({ ...fieldProvenance, url: { source: "manual" } }); }} /><Button type="button" disabled={busy || !values.url} onClick={() => void previewUrl()}>{t("sourceWorkspace.fetchUrl")}</Button></div> : null}
+      {metadataEnrichmentEnabled && (sourceType === "WebArticle" || sourceType === "Video") ? <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"><Input className="min-w-0" aria-label={t("import.metadataFields.url")} placeholder={t("import.metadataFields.url")} value={values.url ?? ""} onChange={(event) => { setValues({ ...values, url: event.target.value }); setFieldProvenance({ ...fieldProvenance, url: { source: "manual" } }); }} /><Button className="whitespace-nowrap sm:min-w-max" type="button" disabled={busy || !values.url} onClick={() => void previewUrl()}>{t("sourceWorkspace.fetchUrl")}</Button></div> : null}
       <DescriptorFields t={t} sourceType={sourceType} suggestions={metadataEnrichmentEnabled && supportsEnrichment(sourceType) ? <EnrichmentResults t={t} candidates={candidates} busy={busy} state={enrichmentState} onApply={applyCandidate} /> : null} values={values} onChange={setValues} onFieldChange={(name) => setFieldProvenance((current) => ({ ...current, [name]: { source: "manual" } }))} />
       {!editing && !parent && compatibleParents[sourceType] ? <ParentPicker t={t} sourceType={sourceType} values={values} onChange={setValues} /> : null}
       {parent ? <p className="text-sm text-slate-500">{t("import.parent.label")}: {parent.title}</p> : null}
     </section> : null}
-    {step === 3 ? <ContentStep t={t} sourceType={sourceType} origin={origin} file={file} content={content} onContent={setContent} onChooseFile={chooseFile} busy={busy} /> : null}
+    {step === 3 ? <ContentStep t={t} sourceType={sourceType} origin={origin} file={file} content={content} onContent={setContent} onChooseFile={chooseFile} busy={busy} mode={contentMode} onMode={setContentMode} subitems={manualSubitems} onSubitems={setManualSubitems} editing={Boolean(editing)} /> : null}
     {step === 4 && editing ? <div className="rounded-xl border border-slate-200 p-5 dark:border-slate-800"><h2 className="font-semibold">{values.title}</h2><p className="mt-2 text-sm text-slate-500">{t("sourceWorkspace.editHint")}</p></div> : step === 4 && descriptor.success ? <ConfirmationStep t={t} descriptor={descriptor.data} origin={origin} file={file} duplicate={duplicate} policy={duplicatePolicy} onPolicy={setDuplicatePolicy} plan={processingPlan} onPlan={setProcessingPlan} /> : null}
     {validationError ? <p role="alert" className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:bg-rose-950 dark:text-rose-200">{validationError}</p> : null}
     <footer className="sticky bottom-4 flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white/95 p-4 shadow-lg backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
@@ -521,9 +596,9 @@ function EnrichmentResults({ t, candidates, busy, state, onApply }: { t: Transla
   return <section className="grid gap-3 rounded-xl border border-violet-200 bg-violet-50/50 p-4 dark:border-violet-900 dark:bg-violet-950/20"><div className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-violet-700" /><h3 className="font-semibold">{t("import.enrichment.title")}</h3></div>{candidates.length ? <div className="grid gap-2">{candidates.map((candidate) => <div key={`${candidate.provider}-${candidate.id}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-violet-200 bg-white p-3 dark:border-violet-900 dark:bg-slate-950"><div className="flex min-w-0 items-center gap-3">{candidate.coverPreviewDataUrl ? <img src={candidate.coverPreviewDataUrl} alt="" className="h-16 w-11 shrink-0 rounded object-cover" /> : <span className="grid h-16 w-11 shrink-0 place-items-center rounded bg-slate-100 text-slate-400 dark:bg-slate-900"><BookOpen className="h-4 w-4" /></span>}<div className="min-w-0"><p className="font-medium">{candidate.title}</p><p className="text-xs text-slate-500">{candidate.creators.map((creator) => creator.name).join(", ")}{candidate.year ? ` · ${candidate.year}` : ""}{candidate.edition ? ` · ${candidate.edition}` : ""} · {candidate.provider}</p></div></div><Button type="button" disabled={busy} onClick={() => void onApply(candidate)}>{t("import.enrichment.apply")}</Button></div>)}</div> : <p className="text-sm text-slate-500">{t(state === "idle" ? "import.enrichment.waiting" : state === "loading" ? "shell.states.loading" : state === "error" ? "sourceWorkspace.enrichmentError" : "sourceWorkspace.enrichmentEmpty")}</p>}</section>;
 }
 
-function ContentStep({ t, sourceType, origin, file, content, onContent, onChooseFile, busy }: { t: Translator; sourceType: SourceItemType; origin: ImportOrigin; file: FileMetadataExtractionResult | null; content: string; onContent: (value: string) => void; onChooseFile: () => Promise<void>; busy: boolean }) {
+function ContentStep({ t, sourceType, origin, file, content, onContent, onChooseFile, busy, mode, onMode, subitems, onSubitems, editing }: { t: Translator; sourceType: SourceItemType; origin: ImportOrigin; file: FileMetadataExtractionResult | null; content: string; onContent: (value: string) => void; onChooseFile: () => Promise<void>; busy: boolean; mode: ManualContentMode; onMode: (mode: ManualContentMode) => void; subitems: ManualSubitemDraft[]; onSubitems: (items: ManualSubitemDraft[]) => void; editing: boolean }) {
   if (origin === "file") return <div className="grid min-h-64 place-items-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center dark:border-slate-700 dark:bg-slate-950"><div className="grid justify-items-center gap-3"><FileUp className="h-9 w-9 text-cyan-700" /><h2 className="font-semibold">{file?.fileName ?? t("import.file.title")}</h2><p className="text-sm text-slate-500">{file ? file.mimeType : t("import.file.description")}</p><Button type="button" disabled={busy} onClick={() => void onChooseFile()}>{t(file ? "import.actions.changeFile" : "import.actions.chooseFile")}</Button></div></div>;
-  return <div className="grid gap-2 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950"><Label htmlFor="source-content">{t("import.fields.content")}{!isContainerType(sourceType) ? " *" : ""}</Label><textarea id="source-content" value={content} onChange={(event) => onContent(event.target.value)} className="min-h-80 rounded-lg border border-slate-300 bg-white p-3 font-mono text-sm dark:border-slate-700 dark:bg-slate-950" /><p className="text-xs text-slate-500">{t(isContainerType(sourceType) ? "import.content.containerHint" : "import.content.hint")}</p></div>;
+  return <ManualContentComposer t={t} sourceType={sourceType} content={content} onContent={onContent} mode={mode} onMode={onMode} subitems={subitems} onSubitems={onSubitems} editing={editing} />;
 }
 
 function ConfirmationStep({ t, descriptor, origin, file, duplicate, policy, onPolicy, plan, onPlan }: { t: Translator; descriptor: SourceDescriptor; origin: ImportOrigin; file: FileMetadataExtractionResult | null; duplicate: DuplicateCandidate | null; policy: DuplicatePolicy; onPolicy: (value: DuplicatePolicy) => void; plan: ProcessingPlanRequest; onPlan: (value: ProcessingPlanRequest) => void }) {
@@ -534,10 +609,12 @@ function Summary({ label, value }: { label: string; value: string }) { return <d
 
 function PlanCard({ plan, setPlan, t }: { plan: ProcessingPlanRequest; setPlan: (plan: ProcessingPlanRequest) => void; t: Translator }) { return <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950"><ProcessingPlanPicker value={plan} onChange={setPlan} t={t} /></div>; }
 
-function WizardSteps({ active, t }: { active: number; t: Translator }) {
-  const labels = ["type", "metadata", "content", "confirm", "structure"] as const;
+function WizardSteps({ active, available, onNavigate, t }: { active: number; available?: Record<WizardStepName, boolean>; onNavigate?: (step: number) => void; t: Translator }) {
   const activeIndex = active > 0 ? active - 1 : 0;
-  return <ol className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:grid-cols-5">{labels.map((label, index) => <li key={label} className={cn("flex items-center gap-2 px-3 py-3 text-xs", index === activeIndex ? "bg-cyan-50 font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full", index < activeIndex ? "bg-emerald-600 text-white" : index === activeIndex ? "bg-cyan-700 text-white" : "bg-slate-100 dark:bg-slate-800")}>{index < activeIndex ? <Check className="h-3.5 w-3.5" /> : index + 1}</span><span className="truncate">{t(`import.steps.${label}` as MessageKey)}</span></li>)}</ol>;
+  return <ol className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 md:grid-cols-5">{wizardStepDefinitions.map(({ name, step }, index) => {
+    const enabled = Boolean(onNavigate && available?.[name]);
+    return <li key={name} className={cn(index === activeIndex ? "bg-cyan-50 font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><button type="button" disabled={!enabled} aria-current={index === activeIndex ? "step" : undefined} onClick={() => onNavigate?.(step)} className={cn("flex w-full items-center gap-2 px-3 py-3 text-left text-xs transition", enabled ? "cursor-pointer hover:bg-cyan-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-600 dark:hover:bg-cyan-950/60" : "cursor-not-allowed opacity-60")}><span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full", index < activeIndex ? "bg-emerald-600 text-white" : index === activeIndex ? "bg-cyan-700 text-white" : "bg-slate-100 dark:bg-slate-800")}>{index < activeIndex ? <Check className="h-3.5 w-3.5" /> : index + 1}</span><span className="truncate">{t(`import.steps.${name}` as MessageKey)}</span></button></li>;
+  })}</ol>;
 }
 
 function initialValues(type: SourceItemType): FormValues {

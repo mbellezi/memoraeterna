@@ -38,7 +38,7 @@ export function SearchView({ t, state, onStateChange, onOpenSource }: {
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(() => {
-      window.app.knowledge.browseLibrary({ query: scopeQuery, limit: 48 }).then((items) => { if (active) setSources(items); }).catch(() => undefined);
+      window.app.knowledge.browseLibrary({ query: scopeQuery, searchMode: "traditional", limit: 48 }).then((items) => { if (active) setSources(items); }).catch(() => undefined);
     }, 250);
     return () => { active = false; window.clearTimeout(timer); };
   }, [scopeQuery]);

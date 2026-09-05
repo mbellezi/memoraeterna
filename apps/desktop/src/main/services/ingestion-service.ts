@@ -54,7 +54,7 @@ import type {
   StorageSettings
 } from "../../shared/ipc.js";
 
-import { readPublicHtml, youtubeIdFromUrl } from "./source-url-preview.js";
+import { readPublicHtml, youtubeIdFromUrl, type ExternalPageFetch } from "./source-url-preview.js";
 import { AssetStorageService } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
@@ -68,6 +68,7 @@ export interface IngestionServiceOptions {
   isPackaged: boolean;
   youtubeService?: YouTubeService;
   hierarchicalIngestionService?: HierarchicalIngestionService;
+  fetchExternalPage: ExternalPageFetch;
 }
 
 interface PreparedFileImport {
@@ -117,7 +118,7 @@ export class IngestionService {
       return { draft: descriptorDraftFromVideoMetadata({ title: captured.title, url: input.url,
         metadata: { ...captured.metadata, platform: "youtube", videoId } }), markdown: captured.markdown };
     }
-    const page = await readPublicHtml(input.url);
+    const page = await readPublicHtml(input.url, this.options.fetchExternalPage);
     const converted = await this.router.convert({ data: new TextEncoder().encode(page.html), mimeType: "text/html",
       fileName: "article.html", sourceUrl: page.url, profile: "standard" });
     if (!converted.markdown.trim()) throw new Error("errors.common.validationFailed");

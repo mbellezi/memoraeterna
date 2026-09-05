@@ -17,7 +17,8 @@ describe("IngestionService containers", () => {
       userDataPath: "/tmp/memora-ingestion-test",
       resourcesPath: "/tmp/resources",
       workspaceRoot: "/tmp/workspace",
-      isPackaged: false
+      isPackaged: false,
+      fetchExternalPage: async () => new Response("", { status: 500 })
     });
 
     const result = await service.createContainerSource({

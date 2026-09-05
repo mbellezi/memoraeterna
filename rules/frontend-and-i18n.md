@@ -27,8 +27,14 @@ locales.
 - Library and subitem browsing use bounded database pages; catalog search
   includes child sources, creators and identifiers without requiring AI or a
   document. Breadcrumbs come from canonical ancestry, not a loaded page.
+- Library search cards disclose whether text, semantic similarity, or both
+  drove the ranking, show the strongest score, and name the parent source for a
+  matching subitem.
 - Source detail uses keyboard-accessible tabs. Subitems can be added in context
   and selected for one processing batch. Editing saves separately from processing.
+- Manual textual intake uses a reusable Markdown editor with write, preview,
+  and split views. Hierarchical roots also expose an ordered subitem composer;
+  existing materialized children remain independently editable from the Library.
 - Metadata lookup cancels stale UI results, exposes loading/empty/failure states,
   and keeps manual entry available. Applying a catalog candidate explicitly
   selects its title; other manually entered fields remain protected.
@@ -37,6 +43,9 @@ locales.
   lists, editors, and actions must stack before their content overlaps.
 - AI profiles start from a selected model. Per-task overrides use progressive
   disclosure with an explicit reset to inherited model defaults.
+- A cold start of a local embedding model presents an animated, non-dismissible
+  loading dialog and closes it automatically when the runtime reports ready or
+  failed. Already-resident models do not show the dialog.
 
 - Non-AI external API settings live in the dedicated External Services settings
   page, including metadata catalogs, provider selection, and Google Books

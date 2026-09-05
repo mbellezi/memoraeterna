@@ -22,6 +22,7 @@ import type {
   AppSettings,
   AppSettingsUpdate,
   DatabaseStatus,
+  LocalEmbeddingLoadStatus,
   StorageSettings,
   SystemInfo
 } from "../shared/ipc";
@@ -43,6 +44,7 @@ import { defaultSearchViewState, SearchView, type SearchViewState } from "./comp
 import { LibraryView, type LibraryExternalTarget } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
 import { DebugDashboard } from "./components/DebugDashboard";
+import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 
 type ViewId = "library" | "import" | "search" | "review" | "jobs" | "debug" | "settings";
@@ -123,6 +125,7 @@ export function App({
   const [isSaving, setIsSaving] = useState(false);
   const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
   const [libraryTarget, setLibraryTarget] = useState<LibraryExternalTarget | null>(null);
+  const [localEmbeddingLoadStatus, setLocalEmbeddingLoadStatus] = useState<LocalEmbeddingLoadStatus | null>(null);
   const libraryTargetToken = useRef(0);
   const activeViewRef = useRef(activeView);
   const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
@@ -148,6 +151,12 @@ export function App({
     if (activeViewRef.current !== "library") return;
     if (direction === "back") window.history.back();
     else window.history.forward();
+  }), []);
+
+  useEffect(() => window.app.ai.subscribeLocalEmbeddingLoadStatus((status) => {
+    setLocalEmbeddingLoadStatus((current) => status.state === "loading"
+      ? status
+      : current?.modelId === status.modelId ? null : current);
   }), []);
 
   useEffect(() => {
@@ -582,6 +591,7 @@ export function App({
         </div>
       </main>
       <ToastViewport toasts={toasts} dismissLabel={t("shell.toasts.dismiss")} onDismiss={dismissToast} />
+      <LocalEmbeddingLoadDialog status={localEmbeddingLoadStatus} t={t} />
     </div>
   );
 }

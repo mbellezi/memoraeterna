@@ -74,10 +74,19 @@
       "doclingUnavailable": "Le convertisseur local de documents n'est pas installe.",
       "doclingFailed": "Le convertisseur local de documents a echoue."
     },
-    "ingestion": {
-      "aggregateSummaryUnavailable": "Le resume agrege n'a pas pu etre genere.",
-      "aggregateSummaryMissingSubparts": "Le resume agrege attend les resumes de toutes les sous-parties."
-    },
+  "ingestion": {
+    "aggregateSummaryUnavailable": "Le resume agrege n'a pas pu etre genere.",
+    "aggregateSummaryMissingSubparts": "Le resume agrege attend les resumes de toutes les sous-parties.",
+    "urlInvalid": "Saisissez une adresse HTTPS valide.",
+    "urlUnsafe": "Cette adresse ne peut pas être chargée de manière sécurisée.",
+    "urlTooManyRedirects": "La page a été redirigée trop de fois.",
+    "urlAccessDenied": "Le site a bloqué l’accès automatique à cette page. Vous pouvez toujours coller son contenu manuellement.",
+    "urlNotFound": "La page est introuvable.",
+    "urlUnsupportedContent": "Cette adresse n’a pas renvoyé de page HTML.",
+    "urlTooLarge": "La page est trop volumineuse pour être importée automatiquement.",
+    "urlTimeout": "Le site a mis trop de temps à répondre.",
+    "urlFetchFailed": "Impossible de charger la page. Vérifiez l’adresse ou collez son contenu manuellement."
+  },
     "ai": {
       "noCompatibleModel": "Aucun modele compatible n'est configure.",
       "unsupportedTask": "Le modele selectionne ne peut pas executer cette tache.",
@@ -204,10 +213,28 @@
     },
     "parent": { "label": "Source parente", "create": "Creer la source parente", "createTitle": "Creez la source parente sans quitter cet import" },
     "enrichment": { "title": "Metadonnees suggerees", "waiting": "Les suggestions apparaissent automatiquement avec un titre, ISBN ou DOI.", "apply": "Appliquer la suggestion" },
-    "content": { "hint": "Le contenu Markdown est conserve comme document source.", "containerHint": "Laissez vide pour creer uniquement le conteneur, ou collez du contenu pour detecter sa structure." },
+    "content": {
+      "hint": "Le contenu Markdown est conservé comme document source.",
+      "containerHint": "Composez les sous-éléments ici ou passez à un document unique. Vous vérifierez la structure détectée avant l’enregistrement.",
+      "editingHierarchyHint": "Ceci modifie le document de la source actuelle. Les sous-éléments existants conservent leur contenu et peuvent être modifiés individuellement depuis la bibliothèque.",
+      "modeLabel": "Organisation du contenu",
+      "modes": { "subitems": "Composer les sous-éléments", "document": "Document unique" },
+      "modeDescriptions": { "subitems": "Rédigez séparément les chapitres, articles ou sections et organisez leur ordre.", "document": "Rédigez ou collez un document Markdown et détectez automatiquement ses titres." },
+      "labels": { "chapters": "Chapitres", "articles": "Articles", "sections": "Sections" },
+      "placeholders": { "chapter": "Titre du chapitre", "article": "Titre de l’article", "section": "Titre de la section" },
+      "subitemsCount": "{count} sous-éléments",
+      "untitledSubitem": "Sous-élément sans titre",
+      "addSubitem": "Ajouter un sous-élément",
+      "subitemTitle": "Titre du sous-élément",
+      "subitemContent": "Contenu du sous-élément",
+      "moveUp": "Déplacer vers le haut",
+      "moveDown": "Déplacer vers le bas",
+      "removeSubitem": "Supprimer le sous-élément",
+      "noSubitems": "Ajoutez un sous-élément ou continuez avec un conteneur de catalogue vide."
+    },
     "confirmation": { "origin": "Origine", "content": "Contenu", "container": "Conteneur de metadonnees uniquement" },
     "duplicate": { "found": "Un doublon potentiel a ete trouve : {title}", "none": "Aucun doublon detecte.", "ignore": "Conserver l'existant", "update": "Mettre a jour", "version": "Creer une nouvelle version" },
-    "validation": { "chooseFile": "Choisissez un fichier avant de continuer.", "contentRequired": "Ce type de source exige du contenu." },
+    "validation": { "chooseFile": "Choisissez un fichier avant de continuer.", "contentRequired": "Ce type de source exige du contenu.", "subitemsIncomplete": "Chaque sous-élément commencé doit avoir un titre et un contenu." },
     "actions": { "queue": "Mettre l'import en file", "chooseFile": "Choisir un fichier", "changeFile": "Changer de fichier", "back": "Retour", "continue": "Continuer", "import": "Importer la source" },
     "file": { "title": "Choisir le fichier original", "description": "L'original est conserve. Pour les livres, periodiques et articles, revise la structure avant tout traitement par IA." },
     "progress": {
@@ -235,6 +262,7 @@
   },
   "search": {
     "placeholder": "Rechercher des sources et preuves", "action": "Rechercher", "empty": "Aucune preuve correspondante.",
+    "localEmbeddingLoading": { "title": "Chargement du modele d'embedding local", "description": "Preparation du modele en memoire. La recherche continuera automatiquement lorsqu'il sera pret." },
     "scope": "Rechercher dans", "scopeAll": "Toute la bibliotheque",
     "page": "Page", "markdownEvidence": "Preuve Markdown",
     "kinds": {
@@ -248,7 +276,8 @@
   "library": {
     "filterByType": "Filtrer par type de source", "allTypes": "Tous les types de source",
     "refresh": "Actualiser la bibliotheque", "error": "Impossible de charger la bibliotheque.",
-    "empty": "Aucune source dans la bibliotheque.", "container": "Conteneur", "containerHint": "Ce conteneur de metadonnees est pret a recevoir des sources enfants.", "selectionCount": "{count} sources selectionnees", "childCount": "{count} elements directs",
+    "empty": "Aucune source dans la bibliotheque.", "container": "Conteneur", "containerHint": "Ce conteneur de metadonnees est pret a recevoir des sources enfants.", "selectionCount": "{count} sources selectionnees", "childCount": "{count} elements directs", "parentSource": "Dans {title}",
+    "searchMatches": { "traditional": "Correspondance textuelle", "embedding": "Correspondance semantique", "combined": "Correspondance combinee" },
     "actions": { "selectSource": "Selectionner {title}", "process": "Traiter cette source", "processSelected": "Traiter la selection", "clearSelection": "Effacer la selection", "queueProcessing": "Mettre le traitement en file" },
     "processingDialog": { "title": "Traiter les sources", "description": "Choisissez quoi generer pour {count} sources selectionnees.", "scope": "Appliquer a", "regenerate": "Regenerer les artefacts existants", "regenerateHint": "Les notes revisees sont conservees; les generations en attente sont archivees." },
     "scopes": { "source_only": "Cette source uniquement", "children_only": "Enfants uniquement", "source_and_children": "Cette source et tous ses enfants" },
@@ -416,6 +445,7 @@
       "createProfile": "Creer un profil", "saveProfile": "Enregistrer le profil", "defaultProfile": "Par defaut", "cloneProfile": "Cloner le profil", "removeProfile": "Supprimer le profil", "removeProfileConfirmation": "Supprimer ce profil et ses routages de taches ? Les modeles telecharges seront conserves.", "selectModel": "Selectionner un modele distant ou local",
       "remoteModels": "Ajouter un modele distant", "modelPurpose": "Fonction du modele", "saveModel": "Enregistrer le modele",
       "embeddingModels": "Modeles d'embedding distants", "generationModels": "Modeles distants de generation et reranking",
+      "keepLocalEmbeddingModelsLoaded": "Garder les modeles d'embedding locaux charges", "keepLocalEmbeddingModelsLoadedDescription": "Apres la premiere utilisation, gardez le modele en memoire jusqu'a la fermeture de l'application pour accelerer les recherches suivantes.",
       "noModels": "Aucun modele configure.", "saveDefaults": "Enregistrer les valeurs par defaut", "editModel": "Modifier", "saveModelChanges": "Enregistrer les modifications", "deleteModel": "Supprimer", "deleteModelConfirmation": "Supprimer ce modele distant ? Les profils associes seront conserves, mais un autre modele devra etre selectionne.", "noProfiles": "Creez un profil pour configurer les taches.",
       "outputLanguage": "Langue des reponses", "selectProfile": "Selectionner un profil", "taskRouting": "Profil utilise par tache",
       "taskRoutingDescription": "Choisissez independamment le profil configure utilise par chaque tache IA.",
@@ -483,6 +513,17 @@
       "internal": "L'application n'a pas pu terminer la requete d'integration."
     }
   },
+  "markdown": {
+    "modeLabel": "Vue de l’éditeur",
+    "modes": { "write": "Écrire", "preview": "Aperçu", "split": "Partagé" },
+    "previewLabel": "Aperçu Markdown",
+    "emptyPreview": "Commencez à écrire pour afficher l’aperçu.",
+    "placeholder": "Écrivez en Markdown…",
+    "markdownSupported": "Markdown pris en charge",
+    "stats": "{words} mots · {characters} caractères",
+    "toolbar": { "heading1": "Titre principal", "heading2": "Titre de section", "bold": "Gras", "italic": "Italique", "strikethrough": "Barré", "link": "Lien", "list": "Liste à puces", "orderedList": "Liste numérotée", "checklist": "Liste de tâches", "quote": "Citation", "code": "Code en ligne", "codeBlock": "Bloc de code", "rule": "Ligne horizontale" },
+    "placeholders": { "heading": "Titre", "text": "texte", "link": "texte du lien", "listItem": "Élément de liste", "quote": "Citation", "code": "code", "codeBlock": "code" }
+  },
   "sourceWorkspace": {
     "outdated": "Résumé à actualiser",
     "content": "Contenu",
@@ -491,6 +532,7 @@
     "historyHint": "Le contenu précédent est en lecture seule. Jusqu’à 100 documents récents sont affichés ; les preuves originales sont conservées.",
     "fetchUrl": "Récupérer les métadonnées et le contenu",
     "edit": "Modifier la source",
+    "editContent": "Modifier le contenu",
     "save": "Enregistrer",
     "addChild": "Ajouter un sous-élément",
     "overview": "Vue générale",

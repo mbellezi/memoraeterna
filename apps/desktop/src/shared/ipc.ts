@@ -82,6 +82,7 @@ export const ipcChannels = {
   aiProfileTaskSet: "app:ai:profiles:task:set",
   aiTaskRoutesList: "app:ai:task-routes:list",
   aiTaskRouteSet: "app:ai:task-routes:set",
+  aiLocalEmbeddingLoadStatus: "app:ai:local-embedding-load-status",
   localModelsList: "app:local-models:list",
   localModelsDownload: "app:local-models:download",
   localModelsCancel: "app:local-models:cancel",
@@ -143,6 +144,7 @@ export const appSettingsSchema = z.object({
   themeMode: themeModeSchema,
   debugMode: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
+  keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
   atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
@@ -155,6 +157,7 @@ export const appSettingsUpdateSchema = z.object({
   themeMode: themeModeSchema.optional(),
   debugMode: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
+  keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
   atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional()
@@ -448,6 +451,7 @@ export const sourceDeletionResultSchema = z.object({
 export const librarySourceSchema = z.object({
   id: z.string().uuid(),
   parentSourceItemId: z.string().uuid().nullable(),
+  parentTitle: z.string().nullable().default(null),
   structurePosition: z.number().int().nonnegative().nullable(),
   childCount: z.number().int().nonnegative(),
   hasDocument: z.boolean(),
@@ -460,11 +464,16 @@ export const librarySourceSchema = z.object({
   metadata: z.record(z.string(), z.unknown()),
   processingStatus: z.string().min(1),
   currentStage: z.string().min(1),
+  textScore: z.number().min(0).max(1).nullable().default(null),
+  embeddingScore: z.number().min(0).max(1).nullable().default(null),
+  rankingScore: z.number().nonnegative().nullable().default(null),
+  matchKind: z.enum(["traditional", "embedding", "combined"]).nullable().default(null),
   updatedAt: z.string().datetime()
 }).strict();
 
 export const libraryBrowseInputSchema = z.object({
   sourceTypes: SourceItemTypeSchema.array().default([]), query: z.string().max(500).default(""),
+  searchMode: z.enum(["traditional", "hybrid"]).default("hybrid"),
   parentId: z.string().uuid().nullable().optional(), ids: z.string().uuid().array().max(100).optional(),
   offset: z.number().int().nonnegative().default(0), limit: z.number().int().min(1).max(100).default(48)
 }).strict();
@@ -581,6 +590,11 @@ export const searchInputSchema = z.object({
 }).strict();
 
 export const searchResultsSchema = z.array(SearchResultSchema);
+
+export const localEmbeddingLoadStatusSchema = z.object({
+  state: z.enum(["loading", "ready", "failed"]),
+  modelId: z.string().min(1)
+}).strict();
 
 export const similarityDebugResultSchema = z.object({
   id: z.string().uuid(),
@@ -881,6 +895,7 @@ export type LibraryResetResult = z.infer<typeof libraryResetResultSchema>;
 export type SourceDeletionResult = z.infer<typeof sourceDeletionResultSchema>;
 export type SearchInput = z.infer<typeof searchInputSchema>;
 export type SearchResult = z.infer<typeof SearchResultSchema>;
+export type LocalEmbeddingLoadStatus = z.infer<typeof localEmbeddingLoadStatusSchema>;
 export type SimilarityDebugRun = z.infer<typeof similarityDebugRunSchema>;
 export type LibrarySource = z.infer<typeof librarySourceSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;
@@ -915,6 +930,7 @@ export const defaultAppSettings = {
   themeMode: "dark",
   debugMode: false,
   metadataEnrichmentEnabled: true,
+  keepLocalEmbeddingModelsLoaded: true,
   bookMetadataProvider: "auto",
   atomicNoteRelationThreshold: 0.72,
   summaryMinimumWordCount: 40
@@ -1018,6 +1034,7 @@ export interface DesktopApi {
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
     listTaskRoutes: () => Promise<AiTaskRoute[]>;
     setTaskRoute: (input: AiTaskRoute) => Promise<void>;
+    subscribeLocalEmbeddingLoadStatus: (listener: (status: LocalEmbeddingLoadStatus) => void) => () => void;
   };
   localModels: {
     list: () => Promise<LocalModelView[]>;

@@ -15,6 +15,7 @@ import {
   type JsonObject,
   type PgPool
 } from "@app/db";
+import { chunkMarkdown } from "@app/conversion";
 
 import { WorkerSupervisor } from "./worker-supervisor.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
@@ -285,38 +286,6 @@ export class JobSupervisor {
     } else {
       persistedChunks = await createChunkRepository(pool).listByDocument(documentId);
     }
-    const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
-    if (shouldRun("embedding") && embeddingCheckpoint?.status !== "completed") {
-      await runs.beginStage(ingestionRunId, "embedding");
-      this.notify();
-      let embeddedCount = 0;
-      if (this.options.generateEmbedding) {
-        for (const chunk of persistedChunks) {
-          if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
-          const generated = await this.options.generateEmbedding(chunk.content, signal, {
-            jobId: job.id,
-            ingestionRunId,
-            sourceItemId,
-            documentId,
-            stage: "embedding"
-          });
-          if (!generated) break;
-          const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
-          const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
-          await createEmbeddingRepository(pool).upsert({
-            targetType: "chunk", targetId: chunk.id, chunkId: chunk.id,
-            provider: generated.provider, model: generated.model, runtime: generated.runtime,
-            contentHash: chunk.contentHash, embedding
-          });
-          embeddedCount += 1;
-        }
-      }
-      await runs.completeStage(ingestionRunId, "embedding", {
-        embeddedCount,
-        configured: Boolean(this.options.generateEmbedding)
-      });
-      this.notify();
-    }
     await createJobRepository(pool).reportProgress(job.id, 0.5);
     throwIfAborted(signal);
     const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
@@ -356,6 +325,99 @@ export class JobSupervisor {
       await this.options.knowledgeService?.summarizeHierarchiesForBatch(run.batchId, signal, {
         jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
       });
+    }
+    const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
+    if (shouldRun("embedding") && embeddingCheckpoint?.status !== "completed") {
+      await runs.beginStage(ingestionRunId, "embedding");
+      this.notify();
+      let embeddedCount = 0;
+      let sourceEmbedded = false;
+      if (this.options.generateEmbedding) {
+        const embeddings = createEmbeddingRepository(pool);
+        const chunkVectors: number[][] = [];
+        let embeddingIdentity: { provider: string; model: string; runtime: string } | null = null;
+        for (const chunk of persistedChunks) {
+          if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
+          const generated = await this.options.generateEmbedding(chunk.content, signal, {
+            jobId: job.id,
+            ingestionRunId,
+            sourceItemId,
+            documentId,
+            stage: "embedding"
+          });
+          if (!generated) break;
+          const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
+          const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+          await embeddings.upsert({
+            targetType: "chunk", targetId: chunk.id, chunkId: chunk.id,
+            provider: generated.provider, model: generated.model, runtime: generated.runtime,
+            contentHash: chunk.contentHash, embedding
+          });
+          chunkVectors.push(embedding);
+          embeddingIdentity = generated;
+          embeddedCount += 1;
+        }
+
+        const source = await createSourceItemRepository(pool).findById(sourceItemId);
+        if (source) {
+          const header = buildCatalogMetadataMarkdown(source);
+          const headerVectors: number[][] = [];
+          for (const segment of chunkMarkdown(header).map((chunk) => chunk.content)) {
+            const generated = await this.options.generateEmbedding(segment, signal, {
+              jobId: job.id,
+              ingestionRunId,
+              sourceItemId,
+              documentId,
+              stage: "source_embedding"
+            });
+            if (!generated) break;
+            const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
+            const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+            headerVectors.push(embedding);
+            embeddingIdentity = generated;
+          }
+          const descendants = await createHierarchicalIngestionRepository(pool).listDescendants(sourceItemId);
+          let contentVectors = chunkVectors;
+          let hierarchyContentComplete = true;
+          if (descendants.length > 0 && embeddingIdentity) {
+            const dimensions = chunkVectors[0]?.length ?? headerVectors[0]?.length;
+            if (dimensions === 256 || dimensions === 768 || dimensions === 1_024) {
+              const childVectors = await embeddings.listSourceEmbeddings(
+                descendants.map((descendant) => descendant.id),
+                embeddingIdentity.model,
+                dimensions
+              );
+              hierarchyContentComplete = childVectors.length === descendants.length;
+              contentVectors = childVectors.map((item) => item.embedding);
+            }
+          }
+          const sourceEmbedding = hierarchyContentComplete
+            ? aggregateSourceEmbedding(headerVectors, contentVectors)
+            : null;
+          if (sourceEmbedding && embeddingIdentity) {
+            const sourceFingerprint = createHash("sha256").update(header);
+            for (const vector of contentVectors) sourceFingerprint.update(vector.join(","));
+            const sourceContentHash = sourceFingerprint.digest("hex");
+            await embeddings.upsert({
+              targetType: "source_item",
+              targetId: sourceItemId,
+              provider: embeddingIdentity.provider,
+              model: embeddingIdentity.model,
+              runtime: embeddingIdentity.runtime,
+              strategy: "source-composite-centroid-v1",
+              contentHash: sourceContentHash,
+              embedding: sourceEmbedding
+            });
+            sourceEmbedded = true;
+          }
+        }
+      }
+      await runs.completeStage(ingestionRunId, "embedding", {
+        embeddedCount,
+        sourceEmbedded,
+        configured: Boolean(this.options.generateEmbedding)
+      });
+      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.68);
@@ -669,6 +731,30 @@ export function createCatalogMetadataChunk(content: string) {
       metadata: { processingMode: "catalog_metadata" }
     }
   };
+}
+
+export function aggregateSourceEmbedding(headerVectors: number[][], contentVectors: number[][]): number[] | null {
+  const dimensions = headerVectors[0]?.length ?? contentVectors[0]?.length;
+  if (!dimensions) return null;
+  const compatibleHeaders = headerVectors.filter((vector) => vector.length === dimensions);
+  const compatibleContent = contentVectors.filter((vector) => vector.length === dimensions);
+  const header = meanVector(compatibleHeaders);
+  const content = meanVector(compatibleContent);
+  if (!header && !content) return null;
+  const combined = Array.from({ length: dimensions }, (_, index) =>
+    (header?.[index] ?? 0) * (content ? 0.35 : 1)
+      + (content?.[index] ?? 0) * (header ? 0.65 : 1)
+  );
+  const magnitude = Math.sqrt(combined.reduce((sum, value) => sum + value * value, 0));
+  return magnitude > 0 ? combined.map((value) => value / magnitude) : combined;
+}
+
+function meanVector(vectors: number[][]): number[] | null {
+  const dimensions = vectors[0]?.length;
+  if (!dimensions) return null;
+  return Array.from({ length: dimensions }, (_, index) =>
+    vectors.reduce((sum, vector) => sum + (vector[index] ?? 0), 0) / vectors.length
+  );
 }
 
 export function participatesInAtomicNoteMatching(effectiveStages: readonly unknown[]): boolean {
