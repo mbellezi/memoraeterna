@@ -24,6 +24,7 @@ import {
   breadcrumbChain,
   childrenOf,
   createLibraryHistoryState,
+  expandedCardScrollBlock,
   groupGraphEntities,
   groupGraphRelations,
   groupRelatedSources,
@@ -709,6 +710,13 @@ describe("phase 2 renderer views", () => {
     expect(navigateLibraryHistoryFromMouseButton(4, history)).toBe(true);
     expect(navigateLibraryHistoryFromMouseButton(1, history)).toBe(false);
     expect(calls).toEqual(["back", "forward"]);
+  });
+
+  it("scrolls an expanded source card only when it leaves the visible viewport", () => {
+    const viewport = { top: 64, bottom: 764, height: 700 };
+    expect(expandedCardScrollBlock({ top: 100, bottom: 500, height: 400 }, viewport)).toBeNull();
+    expect(expandedCardScrollBlock({ top: 500, bottom: 820, height: 320 }, viewport)).toBe("nearest");
+    expect(expandedCardScrollBlock({ top: 80, bottom: 900, height: 820 }, viewport)).toBe("start");
   });
 
   it("renders phase 5 local model and backup controls", () => {

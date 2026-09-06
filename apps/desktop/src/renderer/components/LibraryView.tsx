@@ -80,6 +80,54 @@ export function navigateLibraryHistoryFromMouseButton(
   return true;
 }
 
+export function expandedCardScrollBlock(
+  card: { top: number; bottom: number; height: number },
+  viewport: { top: number; bottom: number; height: number },
+  margin = 8
+): ScrollLogicalPosition | null {
+  const availableHeight = Math.max(0, viewport.height - margin * 2);
+  if (card.top >= viewport.top + margin && card.bottom <= viewport.bottom - margin) return null;
+  return card.height <= availableHeight ? "nearest" : "start";
+}
+
+function useExpandedCardViewport(expanded: boolean) {
+  const cardRef = useRef<HTMLElement | null>(null);
+  const wasExpanded = useRef(expanded);
+
+  useEffect(() => {
+    const hasJustExpanded = expanded && !wasExpanded.current;
+    wasExpanded.current = expanded;
+    if (!hasJustExpanded) return;
+    const timer = window.setTimeout(() => {
+      const card = cardRef.current;
+      if (!card) return;
+      const cardRect = card.getBoundingClientRect();
+      const scrollViewport = closestVerticalScrollViewport(card);
+      const viewportRect = scrollViewport?.getBoundingClientRect() ?? {
+        top: 0,
+        bottom: window.innerHeight,
+        height: window.innerHeight
+      };
+      const block = expandedCardScrollBlock(cardRect, viewportRect);
+      if (block) card.scrollIntoView({ behavior: "smooth", block, inline: "nearest" });
+    }, 240);
+    return () => window.clearTimeout(timer);
+  }, [expanded]);
+
+  return cardRef;
+}
+
+function closestVerticalScrollViewport(element: HTMLElement): HTMLElement | null {
+  let candidate = element.parentElement;
+  while (candidate) {
+    const overflowY = window.getComputedStyle(candidate).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll")
+        && candidate.scrollHeight > candidate.clientHeight) return candidate;
+    candidate = candidate.parentElement;
+  }
+  return null;
+}
+
 const typeIcons: Record<SourceItemType, typeof FileText> = {
   PersonalNote: StickyNote,
   DailyNote: CalendarDays,
@@ -861,7 +909,8 @@ function GraphEntityCard({ entity, relations, t }: {
   t: Translator;
 }) {
   const [expanded, setExpanded] = useState(false);
-  return <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+  const cardRef = useExpandedCardViewport(expanded);
+  return <article ref={cardRef} className="scroll-my-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
     <button type="button" className="flex w-full items-start justify-between gap-3 p-3 text-left" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
       <strong className="min-w-0 truncate text-sm">{entity.name}</strong>
       <span className="flex shrink-0 items-center gap-2">
@@ -884,7 +933,8 @@ function RelatedSourceCard({ source, t, onOpen }: {
   onOpen: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  return <article className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+  const cardRef = useExpandedCardViewport(expanded);
+  return <article ref={cardRef} className="scroll-my-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
     <div className="flex items-center justify-between gap-3 p-3">
       <button type="button" className="min-w-0 truncate text-left text-sm font-semibold hover:text-cyan-700 hover:underline dark:hover:text-cyan-300" title={t("knowledge.graph.openRelatedSource")} onClick={onOpen}>{source.sourceTitle}</button>
       <span className="flex shrink-0 items-center gap-2">
@@ -952,8 +1002,10 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
 
 function AtomicNoteCard({ note, focused = false, t }: { note: SourceDetail["atomicNotes"][number]; focused?: boolean; t: Translator }) {
   const [expanded, setExpanded] = useState(focused);
+  const cardRef = useExpandedCardViewport(expanded);
   return (
-    <article id={`atomic-note-${note.id}`} tabIndex={-1} className={cn(
+    <article ref={cardRef} id={`atomic-note-${note.id}`} tabIndex={-1} className={cn(
+      "scroll-my-4",
       "rounded-xl border bg-slate-50 outline-none transition dark:bg-slate-950",
       focused ? "border-violet-400 ring-2 ring-violet-300/50 dark:border-violet-500 dark:ring-violet-800/60" : "border-slate-200 dark:border-slate-800"
     )}>
@@ -988,8 +1040,9 @@ function CollapsibleSection({ title, count, defaultOpen = false, children }: {
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const sectionRef = useExpandedCardViewport(open);
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <section ref={sectionRef} className="scroll-my-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <button
         type="button"
         className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-slate-50 dark:hover:bg-slate-950/40"

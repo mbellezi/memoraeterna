@@ -32,6 +32,9 @@ locales.
   matching subitem.
 - Source detail uses keyboard-accessible tabs. Subitems can be added in context
   and selected for one processing batch. Editing saves separately from processing.
+  After a chevron card is expanded, source detail waits for its height transition
+  and scrolls only when needed to fit the entire card in the visible scroll
+  viewport; oversized cards align to the top.
 - Source detail includes a knowledge-graph tab for its entities, semantic
   relations, and connections to other sources. Cross-source connections open
   the related source through normal Library history navigation. Repeated

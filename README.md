@@ -5,10 +5,40 @@ documents, notes, evidence, and long-term knowledge. The Electron desktop owns
 the embedded PostgreSQL database, ingestion/indexing pipeline, AI runtimes, and
 the local integrations used by Chrome and Obsidian.
 
-The current system includes typed source ingestion, hierarchical books/issues/
-papers, selective processing, hybrid search, summaries, atomic notes, knowledge
-graph projection, a review queue, local and remote AI profiles, Chrome capture,
-YouTube metadata/transcripts, and bidirectional Obsidian synchronization.
+## Current capabilities
+
+- **Source intake and editing:** import files, paste or compose Markdown, and
+  preview supported web and YouTube URLs before import. Typed descriptors,
+  duplicate review, provenance-aware metadata, and document revision history
+  preserve the identity and evidence of every source.
+- **Catalogs and hierarchy:** enrich books through Open Library or Google Books
+  and academic papers through Crossref. Books, periodical issues, and papers can
+  be organized into processable chapters, articles, or sections with canonical
+  breadcrumbs and independently editable children.
+- **Auditable AI processing:** choose only the stages needed for a source or
+  batch—chunking, embeddings, summaries, atomic notes, matching, and knowledge
+  graph extraction. Runs are checkpointed, resumable, and trace their model,
+  profile, parameters, evidence, token usage, and estimated cost when available.
+- **Local and remote models:** configure task-specific profiles for Gemini,
+  OpenAI-compatible APIs, ChatGPT/Codex OAuth, GGUF models, and MLX models on
+  Apple Silicon. Local embedding models can remain loaded between jobs to make
+  repeated semantic searches faster.
+- **Search and discovery:** Library search fuses catalog text matches with
+  source-level semantic similarity and identifies whether text, vectors, or both
+  produced a result. Search also surfaces matching knowledge-graph entities and
+  relations with links back to source evidence.
+- **Interactive knowledge graph:** explore global source or atomic-note views
+  with community-aware ForceAtlas2 layout, zoom-dependent detail, node and edge
+  previews, and connection panels that group shared entities and relations.
+  Opening a source or atomic note and returning restores the graph view when its
+  data has not changed.
+- **Review and integrations:** generated atomic notes enter a review queue.
+  Chrome capture, YouTube metadata and transcripts, and bidirectional Obsidian
+  synchronization connect through the local integration gateway.
+- **Operational safety:** credentials use the desktop encrypted store, remote
+  processing follows the selected privacy policy, and user-canceled incomplete
+  runs can be removed from the processing dashboard without deleting imported
+  sources or durable Library artifacts.
 
 ## Repository
 
