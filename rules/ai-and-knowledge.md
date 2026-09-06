@@ -90,6 +90,10 @@ status, and all participating source IDs.
   projection and may contribute an optional ranking signal. Independently
   processed sources connect through reused canonical entities and the relations
   between those entities; each mention and relation retains its source evidence.
+- The global knowledge-graph dashboard has separate source and atomic-note
+  projections. Source edges aggregate shared entities and semantic entity
+  relations; atomic-note edges use persisted, non-rejected note relations.
+  Rejected, archived, and superseded notes are excluded from the dashboard.
 - Atomic-note matching retrieves independent text, vector, metadata, and
   optional graph candidates, combines them with the implemented RRF policy,
   optionally reranks one batch per note, applies the configured threshold, and

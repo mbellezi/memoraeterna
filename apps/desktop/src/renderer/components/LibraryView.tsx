@@ -40,12 +40,15 @@ import { SearchResultCard, searchResultId } from "./SearchView";
 
 export interface LibraryExternalTarget {
   sourceItemId: string;
+  atomicNoteId?: string;
+  origin?: "search" | "knowledgeGraph";
   token: number;
 }
 
 export type LibraryHistoryEntry =
   | { view: "library"; path: string[]; fromSearch: boolean }
-  | { view: "search" };
+  | { view: "search" }
+  | { view: "knowledgeGraph" };
 
 const libraryHistoryKey = "memoraEternaLibrary";
 
@@ -60,6 +63,7 @@ export function libraryHistoryEntryFromState(state: unknown): LibraryHistoryEntr
   const entry = candidate as Record<string, unknown>;
   if (entry.version !== 1) return null;
   if (entry.view === "search") return { view: "search" };
+  if (entry.view === "knowledgeGraph") return { view: "knowledgeGraph" };
   if (entry.view !== "library" || !Array.isArray(entry.path)
     || !entry.path.every((id) => typeof id === "string")
     || typeof entry.fromSearch !== "boolean") return null;
@@ -117,12 +121,13 @@ export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translat
   );
 }
 
-export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarget = null, onNavigate, onExitToSearch }: {
+export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarget = null, onNavigate, onExitToSearch, onExitToKnowledgeGraph }: {
   t: Translator;
   metadataEnrichmentEnabled?: boolean;
   externalTarget?: LibraryExternalTarget | null;
   onNavigate?: () => void;
   onExitToSearch?: () => void;
+  onExitToKnowledgeGraph?: () => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
   const [graphResults, setGraphResults] = useState<SearchResult[]>([]);
@@ -143,9 +148,11 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   const historyInitialized = useRef(false);
   const onNavigateRef = useRef(onNavigate);
   const onExitToSearchRef = useRef(onExitToSearch);
+  const onExitToKnowledgeGraphRef = useRef(onExitToKnowledgeGraph);
 
   onNavigateRef.current = onNavigate;
   onExitToSearchRef.current = onExitToSearch;
+  onExitToKnowledgeGraphRef.current = onExitToKnowledgeGraph;
 
   const currentId = stack.at(-1) ?? null;
 
@@ -180,7 +187,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   useEffect(() => {
     if (!historyInitialized.current) {
       replaceLibraryHistory(externalTarget
-        ? { view: "search" }
+        ? { view: externalTarget.origin ?? "search" }
         : { view: "library", path: [], fromSearch: false });
       historyInitialized.current = true;
     }
@@ -193,6 +200,12 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
         setStack([]);
         setFromSearch(false);
         onExitToSearchRef.current?.();
+        return;
+      }
+      if (entry?.view === "knowledgeGraph") {
+        setStack([]);
+        setFromSearch(false);
+        onExitToKnowledgeGraphRef.current?.();
         return;
       }
 
@@ -219,9 +232,10 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   useEffect(() => {
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
     consumedTargetToken.current = externalTarget.token;
-    pushLibraryHistory({ view: "library", path: [externalTarget.sourceItemId], fromSearch: true });
+    const cameFromSearch = externalTarget.origin !== "knowledgeGraph";
+    pushLibraryHistory({ view: "library", path: [externalTarget.sourceItemId], fromSearch: cameFromSearch });
     onNavigate?.();
-    setFromSearch(true);
+    setFromSearch(cameFromSearch);
     setStack([externalTarget.sourceItemId]);
   }, [externalTarget, onNavigate]);
 
@@ -289,11 +303,14 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
     return <>
       {detail && detail.id === currentId ? (
         <SourceDetailView
-          key={detail.id}
+          key={`${detail.id}:${externalTarget?.token ?? 0}`}
           detail={detail}
+          focusedAtomicNoteId={externalTarget?.sourceItemId === detail.id ? externalTarget.atomicNoteId ?? null : null}
           metadataEnrichmentEnabled={metadataEnrichmentEnabled}
           allSources={sources}
-          backLabel={stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
+          backLabel={stack.length === 1 && externalTarget?.origin === "knowledgeGraph"
+            ? t("knowledgeGraph.backToGraph")
+            : stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
           t={t}
           onOpen={openSource}
           onOpenPath={openPath}
@@ -569,8 +586,9 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
   return result;
 }
 
-function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled }: {
+function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled }: {
   detail: SourceDetail;
+  focusedAtomicNoteId: string | null;
   metadataEnrichmentEnabled: boolean;
   allSources: LibrarySource[];
   backLabel: string;
@@ -586,7 +604,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
   const [historical, setHistorical] = useState<{ title: string; markdown: string } | null>(null);
   const [historyError, setHistoryError] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(focusedAtomicNoteId ? "notes" : "overview");
   const [editor, setEditor] = useState<"edit" | "child" | null>(null);
   const [selectedChildren, setSelectedChildren] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
@@ -601,6 +619,17 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
   const coverAssetId = coverAssetIdFromMetadata(detail.metadata)
     ?? detail.assets.find((asset) => asset.role === "cover")?.id ?? null;
   const Icon = typeIcons[detail.type];
+
+  useEffect(() => {
+    if (!focusedAtomicNoteId) return;
+    setTab("notes");
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(`atomic-note-${focusedAtomicNoteId}`);
+      element?.scrollIntoView({ behavior: "smooth", block: "center" });
+      element?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedAtomicNoteId]);
 
   async function deleteSource() {
     if (!window.confirm(t("library.delete.confirmation", { values: { title: detail.title } }))) return;
@@ -770,7 +799,7 @@ function SourceDetailView({ detail, allSources, backLabel, t, onOpen, onOpenPath
 
     {tab === "notes" ? <CollapsibleSection title={t("library.sections.atomicNotes")} count={detail.atomicNotes.length} defaultOpen>
       {detail.atomicNotes.length === 0 ? <StateCard>{t("knowledge.notes.emptyForSource")}</StateCard>
-        : <ol className="grid gap-2">{detail.atomicNotes.map((note) => <li key={note.id}><AtomicNoteCard note={note} t={t} /></li>)}</ol>}
+        : <ol className="grid gap-2">{detail.atomicNotes.map((note) => <li key={note.id}><AtomicNoteCard note={note} focused={note.id === focusedAtomicNoteId} t={t} /></li>)}</ol>}
     </CollapsibleSection> : null}
 
     {tab === "graph" ? <div className="grid gap-4">
@@ -921,10 +950,13 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
   })).toSorted((left, right) => left.sourceTitle.localeCompare(right.sourceTitle));
 }
 
-function AtomicNoteCard({ note, t }: { note: SourceDetail["atomicNotes"][number]; t: Translator }) {
-  const [expanded, setExpanded] = useState(false);
+function AtomicNoteCard({ note, focused = false, t }: { note: SourceDetail["atomicNotes"][number]; focused?: boolean; t: Translator }) {
+  const [expanded, setExpanded] = useState(focused);
   return (
-    <article className="rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+    <article id={`atomic-note-${note.id}`} tabIndex={-1} className={cn(
+      "rounded-xl border bg-slate-50 outline-none transition dark:bg-slate-950",
+      focused ? "border-violet-400 ring-2 ring-violet-300/50 dark:border-violet-500 dark:ring-violet-800/60" : "border-slate-200 dark:border-slate-800"
+    )}>
       <button
         type="button"
         className="flex w-full items-start justify-between gap-3 p-4 text-left"

@@ -11,6 +11,7 @@ import {
   createHierarchicalIngestionRepository,
   createLibraryRepository,
   createKnowledgeGraphRepository,
+  createKnowledgeGraphDashboardRepository,
   createSimilarityDebugRepository,
   createSourceItemRepository,
   createSourceSummaryRepository,
@@ -169,6 +170,15 @@ export class KnowledgeService {
     })).map((source) => ({
       ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()
     }));
+  }
+
+  public async getGraphDashboard(mode: "sources" | "atomic_notes") {
+    return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode);
+  }
+
+  public async getGraphSourceConnectionDetails(sourceItemId: string, targetSourceItemId: string) {
+    return createKnowledgeGraphDashboardRepository(this.requirePool())
+      .getSourceConnectionDetails(sourceItemId, targetSourceItemId);
   }
 
   public async listLibrary(sourceTypes: SourceItemType[] = []) {

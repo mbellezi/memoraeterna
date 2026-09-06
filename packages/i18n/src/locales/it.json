@@ -14,6 +14,7 @@
       "search": "Cerca",
       "review": "Rivedi note",
       "jobs": "Attivita",
+      "knowledgeGraph": "Grafo della conoscenza",
       "settings": "Impostazioni"
     },
     "actions": {
@@ -35,6 +36,40 @@
       "settingsSaved": "Impostazioni salvate.",
       "settingsError": "Impossibile salvare le impostazioni.",
       "dismiss": "Chiudi notifica"
+    }
+  },
+  "knowledgeGraph": {
+    "viewSelector": "Vista del grafo della conoscenza",
+    "sources": "Fonti",
+    "atomicNotes": "Note atomiche",
+    "searchPlaceholder": "Trova un nodo…",
+    "zoomOut": "Riduci zoom",
+    "zoomIn": "Aumenta zoom",
+    "fit": "Adatta il grafo alla vista",
+    "relayout": "Riorganizza il grafo",
+    "refresh": "Aggiorna il grafo",
+    "backToGraph": "Torna al grafo della conoscenza",
+    "canvasLabel": "Grafo della conoscenza interattivo. Trascina lo sfondo per spostarti, trascina i nodi per riposizionarli e scorri per ingrandire.",
+    "error": "Impossibile caricare il grafo della conoscenza.",
+    "empty": "Non c’è ancora conoscenza collegata da mostrare in questa vista.",
+    "nodeCount": "{count} nodi",
+    "edgeCount": "{count} relazioni",
+    "truncated": "Visualizzazione del sottoinsieme più rilevante",
+    "lod": { "overview": "Comunità", "hubs": "Hub principali", "detail": "Dettaglio completo" },
+    "community": "Comunità",
+    "source": "Fonte",
+    "atomicNote": "Nota atomica",
+    "connections": "Connessioni",
+    "items": "Elementi",
+    "entities": "Entità",
+    "clickToOpen": "Fai clic per aprire",
+    "clickToExplore": "Fai clic per esplorare questa comunità",
+    "confidence": "Affidabilità {value}%",
+    "edgeKinds": {
+      "source_connection": "Connessioni tra fonti",
+      "shared_entity": "Entità condivise",
+      "semantic_relation": "Relazione semantica",
+      "atomic_note_relation": "Relazione tra note atomiche"
     }
   },
   "database": {

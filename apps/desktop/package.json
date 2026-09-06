@@ -26,9 +26,13 @@
     "@app/domain": "0.0.0",
     "@app/i18n": "0.0.0",
     "@app/integration-contracts": "0.0.0",
+    "graphology": "0.26.0",
+    "graphology-communities-louvain": "2.0.2",
+    "graphology-layout-forceatlas2": "0.10.1",
     "lucide-react": "1.23.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "sigma": "3.0.3",
     "ws": "8.21.0",
     "youtubei.js": "17.2.0",
     "zod": "4.4.3"

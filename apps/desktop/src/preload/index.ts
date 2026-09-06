@@ -48,6 +48,10 @@ import {
   aiModelListSchema,
   atomicNoteReviewInputSchema,
   atomicNoteViewSchema,
+  knowledgeGraphDashboardInputSchema,
+  knowledgeGraphDashboardSchema,
+  knowledgeGraphSourceConnectionDetailsInputSchema,
+  knowledgeGraphSourceConnectionDetailsSchema,
   databaseStatusSchema,
   ipcChannels,
   fileImportInputSchema,
@@ -336,6 +340,21 @@ const api: DesktopApi = {
         atomicNoteReviewInputSchema.parse(input)
       );
       return result === null ? null : atomicNoteViewSchema.parse(result);
+    },
+    async getGraphDashboard(mode) {
+      const input = knowledgeGraphDashboardInputSchema.parse({ mode });
+      return knowledgeGraphDashboardSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.knowledgeGraphDashboardGet, input)
+      );
+    },
+    async getGraphSourceConnectionDetails(sourceItemId, targetSourceItemId) {
+      const input = knowledgeGraphSourceConnectionDetailsInputSchema.parse({
+        sourceItemId,
+        targetSourceItemId
+      });
+      return knowledgeGraphSourceConnectionDetailsSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.knowledgeGraphSourceConnectionDetailsGet, input)
+      );
     }
   },
   ai: {

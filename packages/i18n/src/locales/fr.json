@@ -14,6 +14,7 @@
       "search": "Rechercher",
       "review": "Reviser les notes",
       "jobs": "Taches",
+      "knowledgeGraph": "Graphe de connaissances",
       "settings": "Parametres"
     },
     "actions": {
@@ -35,6 +36,40 @@
       "settingsSaved": "Paramètres enregistrés.",
       "settingsError": "Impossible d'enregistrer les paramètres.",
       "dismiss": "Fermer la notification"
+    }
+  },
+  "knowledgeGraph": {
+    "viewSelector": "Vue du graphe de connaissances",
+    "sources": "Sources",
+    "atomicNotes": "Notes atomiques",
+    "searchPlaceholder": "Rechercher un nœud…",
+    "zoomOut": "Faire un zoom arrière",
+    "zoomIn": "Faire un zoom avant",
+    "fit": "Ajuster le graphe à la vue",
+    "relayout": "Réorganiser le graphe",
+    "refresh": "Actualiser le graphe",
+    "backToGraph": "Retour au graphe de connaissances",
+    "canvasLabel": "Graphe de connaissances interactif. Faites glisser l’arrière-plan pour vous déplacer, les nœuds pour les repositionner et utilisez la molette pour zoomer.",
+    "error": "Impossible de charger le graphe de connaissances.",
+    "empty": "Il n’y a pas encore de connaissances connectées à afficher dans cette vue.",
+    "nodeCount": "{count} nœuds",
+    "edgeCount": "{count} relations",
+    "truncated": "Affichage du sous-ensemble le plus pertinent",
+    "lod": { "overview": "Communautés", "hubs": "Principaux hubs", "detail": "Détail complet" },
+    "community": "Communauté",
+    "source": "Source",
+    "atomicNote": "Note atomique",
+    "connections": "Connexions",
+    "items": "Éléments",
+    "entities": "Entités",
+    "clickToOpen": "Cliquer pour ouvrir",
+    "clickToExplore": "Cliquer pour explorer cette communauté",
+    "confidence": "Confiance : {value}%",
+    "edgeKinds": {
+      "source_connection": "Connexions entre sources",
+      "shared_entity": "Entités partagées",
+      "semantic_relation": "Relation sémantique",
+      "atomic_note_relation": "Relation entre notes atomiques"
     }
   },
   "database": {

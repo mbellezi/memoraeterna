@@ -21,6 +21,8 @@ processing, destructive operations, backups, or sensitive logging.
   it.
 - Renderer and external clients never receive privileged filesystem paths,
   secrets, repository handles, or unrestricted native capabilities.
+- Renderer blob workers are allowed only for bundled, local computation such
+  as graph layout; the renderer CSP does not allow remote worker sources.
 - Validate and resolve paths in the main process. Reject traversal, unsafe
   symlinks where relevant, paths outside managed roots, oversized archives, and
   dangerous container expansion.

@@ -14,6 +14,7 @@
       "search": "Search",
       "review": "Review notes",
       "jobs": "Jobs",
+      "knowledgeGraph": "Knowledge graph",
       "settings": "Settings"
     },
     "actions": {
@@ -35,6 +36,40 @@
       "settingsSaved": "Settings saved.",
       "settingsError": "The settings could not be saved.",
       "dismiss": "Dismiss notification"
+    }
+  },
+  "knowledgeGraph": {
+    "viewSelector": "Knowledge graph view",
+    "sources": "Sources",
+    "atomicNotes": "Atomic notes",
+    "searchPlaceholder": "Find a node…",
+    "zoomOut": "Zoom out",
+    "zoomIn": "Zoom in",
+    "fit": "Fit graph to view",
+    "relayout": "Reorganize graph",
+    "refresh": "Refresh graph",
+    "backToGraph": "Back to knowledge graph",
+    "canvasLabel": "Interactive knowledge graph. Drag the background to pan, drag nodes to reposition them, and scroll to zoom.",
+    "error": "The knowledge graph could not be loaded.",
+    "empty": "There is no connected knowledge to show in this view yet.",
+    "nodeCount": "{count} nodes",
+    "edgeCount": "{count} relations",
+    "truncated": "Showing the most relevant subset",
+    "lod": { "overview": "Communities", "hubs": "Main hubs", "detail": "Full detail" },
+    "community": "Community",
+    "source": "Source",
+    "atomicNote": "Atomic note",
+    "connections": "Connections",
+    "items": "Items",
+    "entities": "Entities",
+    "clickToOpen": "Click to open",
+    "clickToExplore": "Click to explore this community",
+    "confidence": "{value}% confidence",
+    "edgeKinds": {
+      "source_connection": "Connections between sources",
+      "shared_entity": "Shared entities",
+      "semantic_relation": "Semantic relation",
+      "atomic_note_relation": "Atomic-note relation"
     }
   },
   "database": {

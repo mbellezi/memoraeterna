@@ -37,6 +37,33 @@ locales.
   the related source through normal Library history navigation. Repeated
   entities, semantic relations, and related sources are grouped into one
   expandable card, with the underlying connections shown as compact details.
+- The global knowledge-graph dashboard uses WebGL rendering, automatic
+  community-aware layout outside the renderer UI thread, and zoom-dependent
+  levels of detail. Community aggregate nodes are exclusive to the overview
+  level; they are not mixed with item nodes. Node and edge emphasis responds
+  immediately with a short transition, while detail previews appear only after
+  one second of pointer inactivity and leave with a short fade. Atomic-note
+  previews include the note body. Item labels wrap, and their opacity plus edge
+  and edge-label opacity increases continuously with zoom. Edge thickness stays
+  stable at a 1.8 screen-pixel default thickness across zoom levels. Relation
+  picking uses a separate invisible 10-pixel interaction stroke so hover does
+  not require pixel-perfect aiming. Labels already revealed while zooming in do not
+  disappear at a closer level. Source pairs render as one unlabeled edge; its
+  detail card lazily loads and groups all represented source-connection details.
+  Atomic-note
+  relation labels use the active locale. When a hovered edge's normal label is
+  outside the viewport, a temporary label follows the pointer. Hover information
+  cards measure their rendered size, flip around the pointer when needed, and
+  remain bounded by the visible graph viewport, including after async content
+  changes. Hovered or dragged nodes render
+  their labels, incident edges, and incident edge labels fully opaque after the
+  short emphasis transition. Dragging a node gives its directly connected visible
+  nodes a damped spring response with visible lag and short release inertia. Nodes remain draggable within a
+  circularly constrained layout. Source clicks open source detail, and
+  atomic-note clicks open and focus that note in its source's Atomic Notes tab.
+  Returning from either destination restores the graph mode, camera position,
+  zoom, and automatic or manually adjusted node positions exactly when the graph
+  data has not changed.
 - Manual textual intake uses a reusable Markdown editor with write, preview,
   and split views. Hierarchical roots also expose an ordered subitem composer;
   existing materialized children remain independently editable from the Library.

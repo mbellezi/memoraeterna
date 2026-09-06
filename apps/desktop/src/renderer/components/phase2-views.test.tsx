@@ -688,6 +688,8 @@ describe("phase 2 renderer views", () => {
     }))).toEqual({ view: "library", path: [rootId, childId], fromSearch: false });
     expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "search" })))
       .toEqual({ view: "search" });
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "knowledgeGraph" })))
+      .toEqual({ view: "knowledgeGraph" });
     expect(libraryHistoryEntryFromState({ memoraEternaLibrary: {
       version: 1,
       view: "library",

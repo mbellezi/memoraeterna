@@ -65,6 +65,8 @@ export const ipcChannels = {
   libraryAssetData: "app:library:asset:data",
   knowledgePendingNotesList: "app:knowledge:notes:pending:list",
   knowledgeNoteReview: "app:knowledge:notes:review",
+  knowledgeGraphDashboardGet: "app:knowledge:graph-dashboard:get",
+  knowledgeGraphSourceConnectionDetailsGet: "app:knowledge:graph-dashboard:source-connection-details:get",
   aiProvidersList: "app:ai:providers:list",
   aiProvidersSave: "app:ai:providers:save",
   aiProvidersDelete: "app:ai:providers:delete",
@@ -510,6 +512,47 @@ export const atomicNoteViewSchema = z.object({
   updatedAt: z.string().datetime()
 }).strict();
 
+export const knowledgeGraphDashboardModeSchema = z.enum(["sources", "atomic_notes"]);
+export const knowledgeGraphDashboardInputSchema = z.object({
+  mode: knowledgeGraphDashboardModeSchema
+}).strict();
+export const knowledgeGraphDashboardNodeSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(["source", "atomic_note"]),
+  title: z.string().min(1),
+  subtitle: z.string().nullable(),
+  content: z.string().max(4_000).nullable(),
+  sourceItemId: z.string().uuid(),
+  sourceType: SourceItemTypeSchema.nullable(),
+  noteStatus: z.enum(["pending_review", "approved", "rejected", "archived"]).nullable(),
+  detailCount: z.number().int().nonnegative()
+}).strict();
+export const knowledgeGraphDashboardEdgeSchema = z.object({
+  id: z.string().min(1),
+  source: z.string().uuid(),
+  target: z.string().uuid(),
+  kind: z.enum(["shared_entity", "semantic_relation", "atomic_note_relation"]),
+  label: z.string().min(1),
+  description: z.string().nullable(),
+  weight: z.number().positive(),
+  confidence: z.number().min(0).max(1),
+  details: z.array(z.string())
+}).strict();
+export const knowledgeGraphDashboardSchema = z.object({
+  mode: knowledgeGraphDashboardModeSchema,
+  nodes: z.array(knowledgeGraphDashboardNodeSchema).max(20_000),
+  edges: z.array(knowledgeGraphDashboardEdgeSchema).max(50_000),
+  truncated: z.boolean()
+}).strict();
+export const knowledgeGraphSourceConnectionDetailsInputSchema = z.object({
+  sourceItemId: z.string().uuid(),
+  targetSourceItemId: z.string().uuid()
+}).strict();
+export const knowledgeGraphSourceConnectionDetailsSchema = z.object({
+  sharedEntities: z.array(z.string().min(1)).max(20_000),
+  semanticRelations: z.array(z.string().min(1)).max(20_000)
+}).strict();
+
 export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
   sourceTitle: z.string().nullable()
 }).strict();
@@ -918,6 +961,9 @@ export type SimilarityDebugRun = z.infer<typeof similarityDebugRunSchema>;
 export type LibrarySource = z.infer<typeof librarySourceSchema>;
 export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type AtomicNoteView = z.infer<typeof atomicNoteViewSchema>;
+export type KnowledgeGraphDashboardMode = z.infer<typeof knowledgeGraphDashboardModeSchema>;
+export type KnowledgeGraphDashboard = z.infer<typeof knowledgeGraphDashboardSchema>;
+export type KnowledgeGraphSourceConnectionDetails = z.infer<typeof knowledgeGraphSourceConnectionDetailsSchema>;
 export type PendingAtomicNote = z.infer<typeof pendingAtomicNoteSchema>;
 export type AtomicNoteReviewInput = z.infer<typeof atomicNoteReviewInputSchema>;
 export type AiProviderConfigInput = z.infer<typeof aiProviderConfigInputSchema>;
@@ -1034,6 +1080,11 @@ export interface DesktopApi {
     getAssetDataUrl: (assetId: string) => Promise<string | null>;
     listPendingNotes: () => Promise<PendingAtomicNote[]>;
     reviewNote: (input: AtomicNoteReviewInput) => Promise<AtomicNoteView | null>;
+    getGraphDashboard: (mode: KnowledgeGraphDashboardMode) => Promise<KnowledgeGraphDashboard>;
+    getGraphSourceConnectionDetails: (
+      sourceItemId: string,
+      targetSourceItemId: string
+    ) => Promise<KnowledgeGraphSourceConnectionDetails>;
   };
   ai: {
     listProviders: () => Promise<AiProviderConfig[]>;

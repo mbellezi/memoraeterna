@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Bug,
@@ -6,6 +6,7 @@ import {
   Database,
   FilePlus2,
   Moon,
+  Network,
   RefreshCw,
   Search,
   Settings,
@@ -23,6 +24,7 @@ import type {
   AppSettingsUpdate,
   DatabaseStatus,
   LocalEmbeddingLoadStatus,
+  KnowledgeGraphDashboardMode,
   StorageSettings,
   SystemInfo
 } from "../shared/ipc";
@@ -46,8 +48,14 @@ import { ReviewQueueView } from "./components/ReviewQueueView";
 import { DebugDashboard } from "./components/DebugDashboard";
 import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog";
 import { ToastViewport, useToasts } from "./components/ui/toast";
+import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
-type ViewId = "library" | "import" | "search" | "review" | "jobs" | "debug" | "settings";
+type ViewId = "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
+
+const KnowledgeGraphDashboard = lazy(async () => {
+  const module = await import("./components/KnowledgeGraphDashboard");
+  return { default: module.KnowledgeGraphDashboard };
+});
 
 interface NavItem {
   id: ViewId;
@@ -61,6 +69,7 @@ const navItems: NavItem[] = [
   { id: "search", label: "shell.navigation.search", icon: Search },
   { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
   { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
+  { id: "knowledgeGraph", label: "shell.navigation.knowledgeGraph", icon: Network },
   { id: "debug", label: "debug.title", icon: Bug },
   { id: "settings", label: "shell.navigation.settings", icon: Settings }
 ];
@@ -69,7 +78,8 @@ const emptyViews: Record<Exclude<ViewId, "settings" | "review" | "debug">, { tit
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
   search: { title: "shell.navigation.search", empty: "shell.states.empty" },
-  jobs: { title: "jobs.title", empty: "shell.states.empty" }
+  jobs: { title: "jobs.title", empty: "shell.states.empty" },
+  knowledgeGraph: { title: "shell.navigation.knowledgeGraph", empty: "shell.states.empty" }
 };
 
 const databasePollIntervalMs = 300;
@@ -125,6 +135,8 @@ export function App({
   const [isSaving, setIsSaving] = useState(false);
   const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
   const [libraryTarget, setLibraryTarget] = useState<LibraryExternalTarget | null>(null);
+  const [knowledgeGraphMode, setKnowledgeGraphMode] = useState<KnowledgeGraphDashboardMode>("sources");
+  const knowledgeGraphViewStates = useRef<Partial<Record<KnowledgeGraphDashboardMode, KnowledgeGraphViewState>>>({});
   const [localEmbeddingLoadStatus, setLocalEmbeddingLoadStatus] = useState<LocalEmbeddingLoadStatus | null>(null);
   const libraryTargetToken = useRef(0);
   const activeViewRef = useRef(activeView);
@@ -139,6 +151,12 @@ export function App({
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = appSettings.themeMode === "dark";
+  const preserveKnowledgeGraphViewState = useCallback((
+    mode: KnowledgeGraphDashboardMode,
+    state: KnowledgeGraphViewState
+  ) => {
+    knowledgeGraphViewStates.current[mode] = state;
+  }, []);
 
   activeViewRef.current = activeView;
 
@@ -568,6 +586,26 @@ export function App({
             <JobsView t={t} />
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
+          ) : activeView === "knowledgeGraph" ? (
+            <Suspense fallback={<div role="status" className="grid h-[calc(100vh-7rem)] place-items-center text-sm text-slate-500">{t("shell.states.loading")}</div>}>
+              <KnowledgeGraphDashboard
+                t={t}
+                mode={knowledgeGraphMode}
+                initialViewState={knowledgeGraphViewStates.current[knowledgeGraphMode]}
+                onViewStateChange={preserveKnowledgeGraphViewState}
+                onModeChange={setKnowledgeGraphMode}
+                onOpenSource={(sourceItemId) => {
+                  libraryTargetToken.current += 1;
+                  setLibraryTarget({ sourceItemId, origin: "knowledgeGraph", token: libraryTargetToken.current });
+                  setActiveView("library");
+                }}
+                onOpenAtomicNote={(sourceItemId, atomicNoteId) => {
+                  libraryTargetToken.current += 1;
+                  setLibraryTarget({ sourceItemId, atomicNoteId, origin: "knowledgeGraph", token: libraryTargetToken.current });
+                  setActiveView("library");
+                }}
+              />
+            </Suspense>
           ) : activeView === "debug" ? (
             <DebugDashboard
               enabled={appSettings.debugMode}
@@ -583,6 +621,10 @@ export function App({
               onExitToSearch={() => {
                 setLibraryTarget(null);
                 setActiveView("search");
+              }}
+              onExitToKnowledgeGraph={() => {
+                setLibraryTarget(null);
+                setActiveView("knowledgeGraph");
               }}
             />
           ) : (

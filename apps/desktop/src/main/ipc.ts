@@ -20,6 +20,8 @@ import {
   aiModelDiscoveryInputSchema,
   aiParameterCapabilitiesInputSchema,
   atomicNoteReviewInputSchema,
+  knowledgeGraphDashboardInputSchema,
+  knowledgeGraphSourceConnectionDetailsInputSchema,
   fileImportInputSchema,
   fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
@@ -286,6 +288,13 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.knowledgeNoteReview, (_event, payload: unknown) =>
     knowledgeService.reviewNote(atomicNoteReviewInputSchema.parse(payload))
   );
+  ipcMain.handle(ipcChannels.knowledgeGraphDashboardGet, (_event, payload: unknown) =>
+    knowledgeService.getGraphDashboard(knowledgeGraphDashboardInputSchema.parse(payload).mode)
+  );
+  ipcMain.handle(ipcChannels.knowledgeGraphSourceConnectionDetailsGet, (_event, payload: unknown) => {
+    const input = knowledgeGraphSourceConnectionDetailsInputSchema.parse(payload);
+    return knowledgeService.getGraphSourceConnectionDetails(input.sourceItemId, input.targetSourceItemId);
+  });
 
   ipcMain.handle(ipcChannels.aiProvidersList, () => aiService.listProviders());
   ipcMain.handle(ipcChannels.aiProvidersSave, (_event, payload: unknown) =>
