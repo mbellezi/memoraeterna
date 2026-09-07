@@ -116,8 +116,10 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
   show a localized pending-description message instead of the internal predicate.
   Atomic-note relation icons and their existing localized legend remain unchanged.
 - The global knowledge-graph dashboard has separate source and atomic-note
-  projections. Source edges aggregate shared entities and semantic entity
-  relations; atomic-note edges use persisted, non-rejected note relations.
+  projections. Sources defaults to persisted conceptual source relationships;
+  the alternative entity view aggregates shared entities and semantic entity
+  relations. Load `rules/source-relations.md` for source matching and its display.
+  Atomic-note edges use persisted, non-rejected note relations.
   Rejected, archived, and superseded notes are excluded from the dashboard.
   Lazy source-connection details include canonical entity IDs and semantic relation
   IDs, directed endpoints and predicates alongside grouped display strings; visual

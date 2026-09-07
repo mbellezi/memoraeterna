@@ -103,6 +103,11 @@
     }
   },
   "errors": {
+    "sourceRelations": {
+      "invalidOutput": "Il modello ha restituito relazioni tra fonti non valide o prive di supporto.",
+      "staleEvidence": "Le evidenze sono cambiate durante l’analisi. Elabora nuovamente la fonte.",
+      "configurationChanged": "La configurazione è cambiata durante l’esecuzione. Avvia un nuovo lotto."
+    },
     "relationTypes": {"embeddingRequired":"Configura un modello di embedding compatibile per canonizzare i tipi di relazione.","invalidEmbedding":"L’embedding della relazione non è valido o ha una dimensione non supportata.","modelChanged":"Il modello di embedding è cambiato durante l’elaborazione. Riprova con una configurazione stabile.","invalidOutput":"L’IA ha restituito una decisione di equivalenza non valida.","catalogChanged":"Il catalogo delle relazioni è cambiato ripetutamente. Riprova."},
     "relationLabels": {"invalidOutput":"L’IA ha restituito descrizioni delle relazioni non valide."},
     "common": {
@@ -206,19 +211,22 @@
       "atomicNoteGeneration": "Generazione di note atomiche",
       "knowledgeGraphGeneration": "Generazione grafo della conoscenza",
       "atomicNoteMatching": "Collegamento note atomiche",
+      "sourceMatching": "Relazioni tra fonti",
       "obsidianSync": "Sincronizzazione Obsidian",
       "assetStorage": "Archiviazione asset", "localModelDownload": "Download modello locale"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
-      "percentComplete": "{percent}% completato"
+      "percentComplete": "{percent}% completato",
+      "sourceRelations": "{completed} di {total} analisi di coppie completate"
     },
     "currentStage": "Fase corrente: {stage}",
     "stages": {
       "queued": "In coda", "preparation": "Preparazione dell'importazione", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
       "knowledgeGraph": "Grafo della conoscenza",
-      "atomicNoteMatching": "Collegamento note", "obsidianProjection": "Proiezione Obsidian", "aggregateSummarization": "Riepilogo aggregato",
+      "atomicNoteMatching": "Collegamento note",
+      "sourceMatching": "Relazioni tra fonti", "obsidianProjection": "Proiezione Obsidian", "aggregateSummarization": "Riepilogo aggregato",
       "completed": "Completata"
     },
     "stageStatus": {
@@ -713,5 +721,40 @@
     "presetName": "Nome del preset",
     "savePreset": "Salva preset",
     "removePreset": "Rimuovere questo preset?"
+  },
+  "sourceRelations": {
+    "openNote": "Apri nota",
+    "detailPanel": "Pannello delle relazioni",
+    "title": "Relazioni tra idee",
+    "entityView": "Connessioni tramite entità",
+    "view": "Vista del grafo delle fonti",
+    "processingHint": "Riutilizza le relazioni delle note esistenti e trova altre connessioni concettuali tramite riassunti e passaggi originali. Non genera nuove note atomiche.",
+    "budgetHint": "I limiti sono condivisi dalla fonte principale e dai capitoli per esecuzione. Limitano le nuove analisi, non le relazioni esistenti. La riserva prudente di token include le correzioni; la preparazione dei riassunti è separata. Le soglie sono valutazioni provvisorie, non probabilità.",
+    "maxCandidates": "Fonti candidate recuperate",
+    "maxPairs": "Coppie di fonti valutate",
+    "maxRelations": "Relazioni generate e ordinate",
+    "maxRelationsPerPair": "Relazioni per coppia di fonti",
+    "maxInputTokens": "Budget dei token in ingresso",
+    "minImportance": "Importanza concettuale minima",
+    "minConfidence": "Attendibilità minima delle evidenze",
+    "includeWeakTypes": "Consenti “menziona” e “correlato” generico",
+    "provenanceHint": "I conteggi indicano connessioni concettuali distinte, non passaggi ripetuti. Note e riassunti possono derivare dalla stessa evidenza.",
+    "loadError": "Impossibile caricare o aggiornare le relazioni. Ricarica e riprova.",
+    "empty": "Nessuna relazione qualificata. Elabora “Relazioni tra fonti” per trovarne.",
+    "pending_review": "Suggerimento IA",
+    "accepted": "Accettata",
+    "rejected": "Rifiutata",
+    "direction": "Direzione della relazione",
+    "both": "Note e analisi delle fonti",
+    "atomicNotes": "Relazioni delle note atomiche",
+    "sourceAnalysis": "Analisi delle fonti",
+    "stale": "Evidenza modificata; rivalidazione necessaria",
+    "evidence": "Idee ed evidenze originali",
+    "accept": "Accetta",
+    "reject": "Rifiuta",
+    "restore": "Ripristina come suggerimento",
+    "previous": "Precedente",
+    "next": "Successiva",
+    "partial": "Copertura parziale: budget di analisi raggiunto. Elabora di nuovo per continuare."
   }
 }

@@ -223,6 +223,7 @@ void app.whenReady().then(() => {
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
+    getSourceRelationSettings: async () => (await settingsService!.getApp()).sourceRelationSettings,
     getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
     getEntityIdentitySimilarityThreshold: async () => (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
     getRelationTypeSimilarityThreshold: async () => (await settingsService!.getApp()).relationTypeSimilarityThreshold,
@@ -254,7 +255,8 @@ void app.whenReady().then(() => {
         embedding: result.output.map(Number),
         provider: result.providerId,
         model: result.modelId,
-        runtime: result.runtime
+        runtime: result.runtime,
+        ...(result.embeddingSpaceKey ? { spaceKey: result.embeddingSpaceKey } : {})
       };
     },
     releaseAiRuntime: async () => aiService!.releaseLocalRuntime(

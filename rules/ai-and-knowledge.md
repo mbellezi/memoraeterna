@@ -18,6 +18,13 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
   displayed according to real capabilities, not provider-wide assumptions.
 - Adapters normalize loading, execution, streaming, cancellation, progress,
   timeouts, and errors.
+- All inference passes through one FIFO execution queue in the main AI service,
+  allowing exactly one active request across sources, batches, tasks, profiles,
+  providers and local/remote models. This includes embeddings, generation,
+  reranking, repairs and local-model tests. Waiting requests do not begin model
+  loading or AI execution telemetry. Cancel queued work without invoking the
+  model; release an active slot only when execution settles, including failure
+  or cancellation. Network discovery and non-inference processing remain separate.
 - Model adapters and agent harnesses are separate boundaries. Future wiki
   harnesses must invoke application services through bounded tools and retain
   existing privacy, evidence, review and job-audit rules. A provider SDK may be
@@ -83,6 +90,9 @@ provider token breakdowns and precise call context, as specified in
 
 - Summaries are versioned and traceable to source revision, model/profile,
   prompt, and input hashes. Long sources use map-reduce over source chunks.
+- Summary map calls also produce grounded conceptual facets for source matching,
+  as specified in `rules/source-relations.md`. Source matching reuses the
+  reranking route, with separate per-root budgets and no unvalidated fallback.
 - Automatically generated atomic notes start as `pending_review`, use validated
   structured output, and link to source, chunks, and SourceSpans.
 - Graph extraction, canonical persistence, projections, and dashboard contracts

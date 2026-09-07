@@ -24,6 +24,8 @@ import {
   aiParameterCapabilitiesInputSchema,
   atomicNoteReviewInputSchema,
   knowledgeGraphDashboardInputSchema,
+  sourceRelationsInputSchema,
+  sourceRelationReviewSchema,
   knowledgeGraphSourceConnectionDetailsInputSchema,
   fileImportInputSchema,
   fileImportProgressSchema,
@@ -304,9 +306,12 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.knowledgeNoteReview, (_event, payload: unknown) =>
     knowledgeService.reviewNote(atomicNoteReviewInputSchema.parse(payload))
   );
-  ipcMain.handle(ipcChannels.knowledgeGraphDashboardGet, (_event, payload: unknown) =>
-    knowledgeService.getGraphDashboard(knowledgeGraphDashboardInputSchema.parse(payload).mode)
-  );
+  ipcMain.handle(ipcChannels.sourceRelationsList, (_event, payload: unknown) => knowledgeService.listSourceRelations(sourceRelationsInputSchema.parse(payload)));
+  ipcMain.handle(ipcChannels.sourceRelationsReview, (_event, payload: unknown) => knowledgeService.reviewSourceRelation(sourceRelationReviewSchema.parse(payload)));
+  ipcMain.handle(ipcChannels.knowledgeGraphDashboardGet, (_event, payload: unknown) => {
+    const input = knowledgeGraphDashboardInputSchema.parse(payload);
+    return knowledgeService.getGraphDashboard(input.mode,input.sourceView);
+  });
   ipcMain.handle(ipcChannels.knowledgeGraphSourceConnectionDetailsGet, (_event, payload: unknown) => {
     const input = knowledgeGraphSourceConnectionDetailsInputSchema.parse(payload);
     return knowledgeService.getGraphSourceConnectionDetails(input.sourceItemId, input.targetSourceItemId);
@@ -526,5 +531,5 @@ function readJobErrorHistory(
 }
 
 function isCancelableAiStage(type: string): boolean {
-  return ["summarization", "atomic-note-generation", "knowledge-graph-generation", "atomic-note-matching"].includes(type);
+  return ["summarization", "atomic-note-generation", "knowledge-graph-generation", "atomic-note-matching", "source-matching"].includes(type);
 }

@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   customType,
   doublePrecision,
   index,
@@ -1195,6 +1196,64 @@ export const atomicNoteRelations = pgTable(
     )
   })
 );
+
+export const sourceRelations = pgTable("source_relations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+  targetSourceItemId: uuid("target_source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+  identityKey: text("identity_key").notNull(),
+  relationType: text("relation_type").notNull(),
+  sourceIdea: text("source_idea").notNull(),
+  targetIdea: text("target_idea").notNull(),
+  explanation: text("explanation").notNull(),
+  importance: doublePrecision("importance").notNull(),
+  confidence: doublePrecision("confidence").notNull(),
+  status: atomicNoteRelationStatus("status").notNull().default("pending_review"),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({
+  identity: uniqueIndex("source_relations_identity_uidx").on(table.identityKey),
+  source: index("source_relations_source_idx").on(table.sourceItemId),
+  target: index("source_relations_target_idx").on(table.targetSourceItemId),
+  endpoints: check("source_relations_distinct_endpoints", sql`${table.sourceItemId} <> ${table.targetSourceItemId}`),
+  scores: check("source_relations_scores", sql`${table.importance} between 0 and 1 and ${table.confidence} between 0 and 1`),
+  type: check("source_relations_type", sql`${table.relationType} in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')`)
+}));
+
+export const sourceRelationEvidence = pgTable("source_relation_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  relationId: uuid("relation_id").notNull().references(() => sourceRelations.id, { onDelete: "cascade" }),
+  evidenceKey: text("evidence_key").notNull(),
+  origin: text("origin").notNull(),
+  sourceChunkId: uuid("source_chunk_id").references(() => chunks.id, { onDelete: "set null" }),
+  targetChunkId: uuid("target_chunk_id").references(() => chunks.id, { onDelete: "set null" }),
+  noteRelationId: uuid("note_relation_id").references(() => atomicNoteRelations.id, { onDelete: "set null" }),
+  sourceNoteId: uuid("source_note_id").references(() => atomicNotes.id, { onDelete: "set null" }),
+  targetNoteId: uuid("target_note_id").references(() => atomicNotes.id, { onDelete: "set null" }),
+  snapshot: jsonb("snapshot").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => ({
+  identity: uniqueIndex("source_relation_evidence_uidx").on(table.relationId, table.evidenceKey),
+  relation: index("source_relation_evidence_relation_idx").on(table.relationId),
+  note: index("source_relation_evidence_note_idx").on(table.noteRelationId),
+  origin: check("source_relation_evidence_origin", sql`${table.origin} in ('atomic_notes', 'source_analysis')`)
+}));
+
+export const sourceMatchingDecisions = pgTable("source_matching_decisions", {
+  key: text("key").primaryKey(),
+  sourceRootId: uuid("source_root_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+  targetRootId: uuid("target_root_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const sourceMatchingRuns = pgTable("source_matching_runs", {
+  key: text("key").primaryKey(),
+  sourceRootId: uuid("source_root_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
+  state: jsonb("state").notNull(),
+  ...timestamps
+});
 
 export const atomicNoteReviewEvents = pgTable(
   "atomic_note_review_events",

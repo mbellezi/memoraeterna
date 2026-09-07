@@ -14,6 +14,9 @@ import {
   SourceDescriptorDraftSchema,
   SourceDescriptorSchema,
   SourceItemTypeSchema,
+  SourceRelationSettingsSchema,
+  SourceRelationsPageSchema,
+  SourceRelationReviewInputSchema,
   type SourceItemType
 } from "@app/domain";
 
@@ -72,6 +75,8 @@ export const ipcChannels = {
   knowledgePendingNotesList: "app:knowledge:notes:pending:list",
   knowledgeNoteReview: "app:knowledge:notes:review",
   knowledgeGraphDashboardGet: "app:knowledge:graph-dashboard:get",
+  sourceRelationsList: "app:knowledge:source-relations:list",
+  sourceRelationsReview: "app:knowledge:source-relations:review",
   knowledgeGraphSourceConnectionDetailsGet: "app:knowledge:graph-dashboard:source-connection-details:get",
   aiProvidersList: "app:ai:providers:list",
   aiProvidersSave: "app:ai:providers:save",
@@ -169,6 +174,7 @@ export const appSettingsSchema = z.object({
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
   knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
+  sourceRelationSettings: SourceRelationSettingsSchema.default(() => SourceRelationSettingsSchema.parse({})),
   updatedAt: z.string().datetime()
 });
 
@@ -188,7 +194,8 @@ export const appSettingsUpdateSchema = z.object({
   entityIdentitySimilarityThreshold: z.number().min(0).max(1).optional(),
   relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
-  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional()
+  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional(),
+  sourceRelationSettings: SourceRelationSettingsSchema.optional()
 }).strict();
 
 export const storageSettingsSchema = z.object({
@@ -540,7 +547,8 @@ export const atomicNoteViewSchema = z.object({
 
 export const knowledgeGraphDashboardModeSchema = z.enum(["sources", "atomic_notes"]);
 export const knowledgeGraphDashboardInputSchema = z.object({
-  mode: knowledgeGraphDashboardModeSchema
+  mode: knowledgeGraphDashboardModeSchema,
+  sourceView: z.enum(["relations", "entities"]).default("relations")
 }).strict();
 export const knowledgeGraphDashboardNodeSchema = z.object({
   id: z.string().uuid(),
@@ -559,7 +567,7 @@ export const knowledgeGraphDashboardEdgeSchema = z.object({
   id: z.string().min(1),
   source: z.string().uuid(),
   target: z.string().uuid(),
-  kind: z.enum(["shared_entity", "semantic_relation", "atomic_note_relation"]),
+  kind: z.enum(["shared_entity", "semantic_relation", "atomic_note_relation", "source_relation"]),
   label: z.string().min(1),
   description: z.string().nullable(),
   weight: z.number().positive(),
@@ -568,6 +576,7 @@ export const knowledgeGraphDashboardEdgeSchema = z.object({
 }).strict();
 export const knowledgeGraphDashboardSchema = z.object({
   mode: knowledgeGraphDashboardModeSchema,
+  sourceView: z.enum(["relations", "entities"]).optional(),
   nodes: z.array(knowledgeGraphDashboardNodeSchema).max(20_000),
   edges: z.array(knowledgeGraphDashboardEdgeSchema).max(50_000),
   truncated: z.boolean()
@@ -586,6 +595,13 @@ export const knowledgeGraphSourceConnectionDetailsSchema = z.object({
 export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
   sourceTitle: z.string().nullable()
 }).strict();
+
+export const sourceRelationsInputSchema = z.object({
+  sourceItemId: z.string().uuid(), targetSourceItemId: z.string().uuid().nullable().default(null),
+  offset: z.number().int().min(0).max(1_000_000).default(0), limit: z.number().int().min(1).max(100).default(30)
+}).strict();
+export const sourceRelationsPageSchema = SourceRelationsPageSchema;
+export const sourceRelationReviewSchema = SourceRelationReviewInputSchema;
 
 export const sourceDocumentInputSchema = z.object({ sourceItemId: z.string().uuid(), documentId: z.string().uuid() }).strict();
 export const sourceDocumentSchema = z.object({ title: z.string(), markdown: z.string() }).strict();
@@ -1034,7 +1050,8 @@ export const defaultAppSettings = {
   entityIdentitySimilarityThreshold: 0.92,
   relationTypeSimilarityThreshold: 0.92,
   knowledgeGraphMaxEntitiesPerSource: 250,
-  knowledgeGraphMaxRelationsPerSource: 500
+  knowledgeGraphMaxRelationsPerSource: 500,
+  sourceRelationSettings: SourceRelationSettingsSchema.parse({})
 } satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {
@@ -1122,7 +1139,9 @@ export interface DesktopApi {
     getAssetDataUrl: (assetId: string) => Promise<string | null>;
     listPendingNotes: () => Promise<PendingAtomicNote[]>;
     reviewNote: (input: AtomicNoteReviewInput) => Promise<AtomicNoteView | null>;
-    getGraphDashboard: (mode: KnowledgeGraphDashboardMode) => Promise<KnowledgeGraphDashboard>;
+    getGraphDashboard: (mode: KnowledgeGraphDashboardMode, sourceView?: "relations" | "entities") => Promise<KnowledgeGraphDashboard>;
+    listSourceRelations: (input: z.input<typeof sourceRelationsInputSchema>) => Promise<z.infer<typeof sourceRelationsPageSchema>>;
+    reviewSourceRelation: (input: z.infer<typeof sourceRelationReviewSchema>) => Promise<boolean>;
     getGraphSourceConnectionDetails: (
       sourceItemId: string,
       targetSourceItemId: string

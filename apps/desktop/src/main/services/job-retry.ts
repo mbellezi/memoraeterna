@@ -18,7 +18,8 @@ type DeletableIngestionRunState = Pick<IngestionRunRecord, "status">;
 export function hasIncompleteIngestionStages(
   ingestionRun: RetryableIngestionRunState
 ): boolean {
-  return ingestionRun.status !== "succeeded" || resumableIngestionStages.some((stage) => {
+  const sourceMatching = ingestionRun.stagesCheckpoint.sourceMatching;
+  return ingestionRun.status !== "succeeded" || (sourceMatching !== undefined && !isCompletedCheckpoint(sourceMatching)) || resumableIngestionStages.some((stage) => {
     const checkpoint = ingestionRun.stagesCheckpoint[stage];
     return !isCompletedCheckpoint(checkpoint);
   });

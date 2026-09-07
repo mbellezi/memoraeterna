@@ -178,6 +178,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   onExitToKnowledgeGraph?: () => void;
 }) {
   const [sources, setSources] = useState<LibrarySource[]>([]);
+  const [relationNoteTarget,setRelationNoteTarget] = useState<{sourceItemId:string;noteId:string} | null>(null);
   const [graphResults, setGraphResults] = useState<SearchResult[]>([]);
   const [stack, setStack] = useState<string[]>([]);
   const [detail, setDetail] = useState<SourceDetail | null>(null);
@@ -353,7 +354,8 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
         <SourceDetailView
           key={`${detail.id}:${externalTarget?.token ?? 0}`}
           detail={detail}
-          focusedAtomicNoteId={externalTarget?.sourceItemId === detail.id ? externalTarget.atomicNoteId ?? null : null}
+          focusedAtomicNoteId={relationNoteTarget?.sourceItemId === detail.id ? relationNoteTarget.noteId
+            : externalTarget?.sourceItemId === detail.id ? externalTarget.atomicNoteId ?? null : null}
           metadataEnrichmentEnabled={metadataEnrichmentEnabled}
           allSources={sources}
           backLabel={stack.length === 1 && externalTarget?.origin === "knowledgeGraph"
@@ -361,6 +363,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
             : stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
           t={t}
           onOpen={openSource}
+          onOpenNote={(sourceItemId,noteId) => { setRelationNoteTarget({sourceItemId,noteId});if(sourceItemId !== currentId)openSource(sourceItemId); }}
           onOpenPath={openPath}
           onGoToLibrary={goToLibrary}
           onBack={goBack}
@@ -651,9 +654,10 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
   return result;
 }
 
-function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled }: {
+function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled, onOpenNote }: {
   detail: SourceDetail;
   focusedAtomicNoteId: string | null;
+  onOpenNote: (sourceItemId:string,noteId:string) => void;
   metadataEnrichmentEnabled: boolean;
   allSources: LibrarySource[];
   backLabel: string;
@@ -868,6 +872,10 @@ function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, 
     </CollapsibleSection> : null}
 
     {tab === "graph" ? <div className="grid gap-4">
+      <section className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+        <h3 className="px-3 pt-3 font-semibold">{t("sourceRelations.title")}</h3>
+        <SourceRelationsList sourceItemId={detail.id} t={t} onOpenNote={onOpenNote} />
+      </section>
       <CollapsibleSection title={t("knowledge.graph.entities")} count={graphEntities.length} defaultOpen>
         {graphEntities.length === 0 ? <StateCard>{t("knowledge.graph.empty")}</StateCard>
           : <ol className="grid gap-2 sm:grid-cols-2">{graphEntities.map((entity) => <li key={entity.id}>
@@ -1131,7 +1139,8 @@ function stageKey(stage: string): MessageKey {
   const normalized = ({
     atomicNotes: "atomicNotes",
     knowledgeGraph: "knowledgeGraph",
-    atomicNoteMatching: "atomicNoteMatching"
+    atomicNoteMatching: "atomicNoteMatching",
+    sourceMatching: "sourceMatching"
   } as Record<string, string>)[stage] ?? stage;
   return (`jobs.stages.${normalized}` as MessageKey);
 }
@@ -1171,3 +1180,4 @@ function metadataEntries(metadata: Record<string, unknown>): Array<[string, stri
     return formatted ? [[key, formatted]] : [];
   });
 }
+import { SourceRelationsList } from "./SourceRelationsList";

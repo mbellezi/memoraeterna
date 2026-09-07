@@ -1,6 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { atomicRelationMessageKeys, atomicRelationLegend, atomicRelationColor, atomicRelationIcon, atomicRelationIconNode, atomicRelationMarkerRadius, formatEdgeLabel } from "./knowledge-relation-icons";
+export { atomicRelationColor, atomicRelationIcon, atomicRelationIconNode, atomicRelationMarkerRadius, formatEdgeLabel } from "./knowledge-relation-icons";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Graph from "graphology";
 import { SourceConnectionGraph } from "./SourceConnectionGraph";
+import { SourceRelationsList } from "./SourceRelationsList";
 import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
 import { defaultGraphForceSettings, graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
 import {
@@ -18,17 +21,9 @@ import {
 import type Sigma from "sigma";
 import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/rendering";
 import {
-  AtSign,
   ArrowLeft,
   Boxes,
-  CircleDot,
-  Check,
-  EqualApproximately,
   Focus,
-  GitBranchPlus,
-  GitCompareArrows,
-  Lightbulb,
-  Link2,
   LoaderCircle,
   Maximize2,
   Minus,
@@ -40,11 +35,10 @@ import {
   SlidersHorizontal,
   Tags,
   Ungroup,
-  Workflow,
   Waypoints,
   X
 } from "lucide-react";
-import type { IconNode, LucideIcon } from "lucide-react";
+import type { IconNode } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import type {
   KnowledgeGraphDashboard as DashboardData,
@@ -66,10 +60,11 @@ import {
   zoomVisualStrength
 } from "./knowledge-graph-view-model";
 
-type SourceRelationKind = "shared_entity" | "semantic_relation";
+type SourceRelationKind = "shared_entity" | "semantic_relation" | "source_relation";
 
 interface SourceRelationGroup {
   kind: SourceRelationKind;
+  relationType?: string;
   weight: number;
   confidence: number;
   details: string[];
@@ -140,6 +135,7 @@ interface GraphBundle {
 }
 
 export interface KnowledgeGraphViewState {
+  sourceView?: "relations" | "entities";
   stateKey: string;
   camera: { x: number; y: number; ratio: number; angle: number };
   nodePositions: Record<string, { x: number; y: number }>;
@@ -247,7 +243,7 @@ export function projectSourceHierarchy(
     if (mappedSource === mappedTarget || !visibleIds.has(mappedSource) || !visibleIds.has(mappedTarget)) continue;
     const source = mappedSource < mappedTarget ? mappedSource : mappedTarget;
     const target = mappedSource < mappedTarget ? mappedTarget : mappedSource;
-    const key = `${edge.kind}:${source}:${target}`;
+    const key = `${edge.kind}:${edge.kind === "source_relation" ? edge.label : ""}:${source}:${target}`;
     const current = groupedEdges.get(key);
     if (!current) {
       groupedEdges.set(key, { ...edge, id: `hierarchy:${key}`, source, target, details: [...edge.details] });
@@ -272,50 +268,6 @@ const noteColors: Record<string, string> = {
   pending_review: "#d97706"
 };
 
-const atomicRelationMessageKeys: Readonly<Record<string, MessageKey>> = {
-  supports: "knowledge.relations.types.supports",
-  contrasts: "knowledge.relations.types.contrasts",
-  extends: "knowledge.relations.types.extends",
-  similar_to: "knowledge.relations.types.similar_to",
-  depends_on: "knowledge.relations.types.depends_on",
-  clarifies: "knowledge.relations.types.clarifies",
-  mentions: "knowledge.relations.types.mentions",
-  related: "knowledge.relations.types.related"
-};
-
-const atomicRelationLegend = [
-  { type: "supports", color: "#34d399", icon: Check },
-  { type: "contrasts", color: "#fb7185", icon: GitCompareArrows },
-  { type: "extends", color: "#60a5fa", icon: GitBranchPlus },
-  { type: "similar_to", color: "#c084fc", icon: EqualApproximately },
-  { type: "depends_on", color: "#fbbf24", icon: Workflow },
-  { type: "clarifies", color: "#facc15", icon: Lightbulb },
-  { type: "mentions", color: "#22d3ee", icon: AtSign },
-  { type: "related", color: "#a78bfa", icon: Link2 }
-] as const;
-
-export function atomicRelationColor(type: string | null): string {
-  return atomicRelationLegend.find((item) => item.type === type)?.color ?? "#cbd5e1";
-}
-
-export const atomicRelationMarkerRadius = 8.8;
-
-function extractLucideIconNode(icon: LucideIcon): IconNode {
-  const element = (icon as unknown as {
-    render: (props: Record<string, never>, ref: null) => ReactElement<{ iconNode: IconNode }>;
-  }).render({}, null);
-  return element.props.iconNode;
-}
-
-export function atomicRelationIconNode(type: string | null): IconNode {
-  const icon = atomicRelationLegend.find((item) => item.type === type)?.icon ?? CircleDot;
-  return extractLucideIconNode(icon);
-}
-
-function atomicRelationIcon(type: string | null): LucideIcon {
-  return atomicRelationLegend.find((item) => item.type === type)?.icon ?? CircleDot;
-}
-
 export function KnowledgeGraphDashboard({
   t,
   mode,
@@ -339,12 +291,16 @@ export function KnowledgeGraphDashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const [pendingSourceRefresh,setPendingSourceRefresh] = useState(false);
   const [query, setQuery] = useState("");
   const [layoutRunning, setLayoutRunning] = useState(false);
   const [layoutError, setLayoutError] = useState(false);
   const [forcesOpen, setForcesOpen] = useState(false);
   const [relationLegendOpen, setRelationLegendOpen] = useState(false);
   const [graphPopup, setGraphPopup] = useState(true);
+  const [sourceView, setSourceView] = useState<"relations" | "entities">(initialViewState?.sourceView ?? "relations");
+  const sourceViewRef = useRef(sourceView);
+  sourceViewRef.current = sourceView;
   const [showAllSubitems, setShowAllSubitems] = useState(initialViewState?.sourceHierarchy?.showAll ?? false);
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(
     () => new Set(initialViewState?.sourceHierarchy?.expandedSourceIds ?? [])
@@ -384,20 +340,29 @@ export function KnowledgeGraphDashboard({
   useEffect(() => { popupInsideRef.current = false; }, [hover?.key, graphPopup]);
 
   useEffect(() => {
-    if (mode !== "atomic_notes") setRelationLegendOpen(false);
-  }, [mode]);
+    const updated = () => setPendingSourceRefresh(true);
+    window.addEventListener("source-relations-updated",updated);
+    return () => window.removeEventListener("source-relations-updated",updated);
+  },[]);
+  useEffect(() => {
+    if (pendingSourceRefresh && !hover && !hierarchyPreviewSourceId) { setPendingSourceRefresh(false);setReloadToken((value) => value + 1); }
+  },[pendingSourceRefresh,hover,hierarchyPreviewSourceId]);
+
+  useEffect(() => {
+    if (mode !== "atomic_notes" && sourceView !== "relations") setRelationLegendOpen(false);
+  }, [mode,sourceView]);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(false);
     setData(null);
-    window.app.knowledge.getGraphDashboard(mode)
+    window.app.knowledge.getGraphDashboard(mode,sourceView)
       .then((result) => { if (active) setData(result); })
       .catch(() => { if (active) setError(true); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [mode, reloadToken]);
+  }, [mode, sourceView, reloadToken]);
 
   const displayedData = useMemo(() => data ? projectSourceHierarchy(data, {
     showAll: showAllSubitems,
@@ -952,7 +917,7 @@ export function KnowledgeGraphDashboard({
         onViewStateChange(mode, {
           ...captureKnowledgeGraphViewState(renderer, graph, graphStateKey),
           forces: forcesRef.current,
-          ...(mode === "sources" ? { sourceHierarchy: {
+          ...(mode === "sources" ? { sourceView:sourceViewRef.current, sourceHierarchy: {
             showAll: sourceHierarchyRef.current.showAll,
             expandedSourceIds: [...sourceHierarchyRef.current.expandedSourceIds]
           } } : {})
@@ -1125,6 +1090,11 @@ export function KnowledgeGraphDashboard({
           </div>
           <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning || loading || !bundle?.rawNodeKeys.length} onClick={rerunLayout} />
           <GraphAction icon={RefreshCw} label={t("knowledgeGraph.refresh")} onClick={() => setReloadToken((current) => current + 1)} />
+          {mode === "sources" ? <select value={sourceView} aria-label={t("sourceRelations.view")}
+            onChange={(event) => { dismissGraphInfoRef.current();setHierarchyPreviewSourceId(null);setSourceView(event.target.value as "relations" | "entities"); }}
+            className="h-8 max-w-52 rounded-lg border border-white/15 bg-slate-900 px-2 text-xs text-slate-200">
+            <option value="relations">{t("sourceRelations.title")}</option><option value="entities">{t("sourceRelations.entityView")}</option>
+          </select> : null}
           {mode === "sources" ? <GraphAction
             icon={showAllSubitems ? Boxes : Ungroup}
             label={t(showAllSubitems ? "knowledgeGraph.subitems.groupAll" : "knowledgeGraph.subitems.showAll")}
@@ -1132,7 +1102,7 @@ export function KnowledgeGraphDashboard({
             pressed={showAllSubitems}
             onClick={toggleAllSubitems}
           /> : null}
-          {mode === "sources" ? <GraphAction icon={Network} label={t("knowledgeGraph.graphPopup")} active={graphPopup} pressed={graphPopup} onClick={() => { setGraphPopup((value) => !value); }} /> : null}
+          {mode === "sources" ? <GraphAction icon={Network} label={t(sourceView === "relations" ? "sourceRelations.detailPanel" : "knowledgeGraph.graphPopup")} active={graphPopup} pressed={graphPopup} onClick={() => { setGraphPopup((value) => !value); }} /> : null}
         </div>
       </header>
 
@@ -1171,7 +1141,7 @@ export function KnowledgeGraphDashboard({
           {data.truncated ? <span className="rounded-full border border-amber-400/30 bg-amber-950/80 px-2.5 py-1 text-amber-200">{t("knowledgeGraph.truncated")}</span> : null}
         </div> : null}
 
-        {mode === "atomic_notes" && !loading && !error && data && data.nodes.length > 0 ? (
+        {(mode === "atomic_notes" || sourceView === "relations") && !loading && !error && data && data.nodes.length > 0 ? (
           <div className="absolute bottom-3 right-3 z-10">
             {relationLegendOpen ? (
               <section
@@ -1217,6 +1187,7 @@ export function KnowledgeGraphDashboard({
           {floatingEdgeLabel.label}
         </div> : null}
         {hover && bundle ? <GraphTooltip key={`${hover.type}:${hover.key}`} hover={hover} graph={bundle.graph} t={t}
+          onOpenNote={onOpenAtomicNote}
           graphPopup={graphPopup} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity}
           onPopupEnter={() => {
             popupInsideRef.current = true;
@@ -1236,6 +1207,7 @@ export function KnowledgeGraphDashboard({
           t={t}
           onClose={() => setHierarchyPreviewSourceId(null)}
           onOpenSource={onOpenSource}
+          onOpenNote={onOpenAtomicNote}
         /> : null}
       </div>
     </section>
@@ -1276,7 +1248,7 @@ function GraphState({ icon: Icon, title, action, onAction, spinning = false }: {
   </div>;
 }
 
-function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces, wheelZoomSensitivity, t, onClose, onOpenSource }: {
+function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces, wheelZoomSensitivity, t, onClose, onOpenSource, onOpenNote }: {
   data: DashboardData;
   sourceItemId: string;
   graphPopup: boolean;
@@ -1284,6 +1256,7 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces,
   wheelZoomSensitivity: number;
   t: Translator;
   onClose: () => void;
+  onOpenNote: (sourceItemId:string,noteId:string) => void;
   onOpenSource: (sourceItemId: string) => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
@@ -1330,7 +1303,7 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces,
         <GraphAction icon={X} label={t("shell.actions.close")} onClick={closeTopView} />
       </header>
       <div className="relative min-h-0 flex-1">
-        <SourceHierarchyPreviewGraph data={data} graphPopup={graphPopup} dismissConnectionRef={dismissConnectionRef} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onOpenSource={onOpenSource} />
+        <SourceHierarchyPreviewGraph data={data} graphPopup={graphPopup} dismissConnectionRef={dismissConnectionRef} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onOpenSource={onOpenSource} onOpenNote={onOpenNote} />
       </div>
     </div>
   </section>;
@@ -1343,10 +1316,11 @@ export function sourceHierarchyRelationTarget(graph: Graph<NodeAttributes, EdgeA
   return target;
 }
 
-function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, forces, wheelZoomSensitivity, t, onOpenSource }: {
+function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, forces, wheelZoomSensitivity, t, onOpenSource, onOpenNote }: {
   data: DashboardData;
   graphPopup: boolean;
   dismissConnectionRef: { current: () => boolean };
+  onOpenNote: (sourceItemId:string,noteId:string) => void;
   forces: GraphForceSettings;
   wheelZoomSensitivity: number;
   t: Translator;
@@ -1654,6 +1628,7 @@ function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, f
     </button>
     {failed ? <GraphState icon={Network} title={t("knowledgeGraph.layoutError")} /> : null}
     {hover ? <GraphTooltip key={`${hover.type}:${hover.key}`} hover={hover} graph={bundle.graph} t={t}
+      onOpenNote={onOpenNote}
       graphPopup={graphPopup} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity}
       manageNavigation={false}
       onPopupEnter={() => enterPopupRef.current()} onPopupLeave={() => dismissHoverRef.current()}
@@ -1702,6 +1677,7 @@ function ViewportTooltip({ hover, className, children }: {
 }
 
 interface GraphPopupOptions {
+  onOpenNote?: ((sourceItemId:string,noteId:string) => void) | undefined;
   manageNavigation?: boolean;
   graphPopup: boolean;
   forces: GraphForceSettings;
@@ -1742,6 +1718,7 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
         sourceItemId={sourceItemId}
         targetSourceItemId={targetSourceItemId}
         summary={edge.sourceRelations}
+        conceptual={edge.sourceRelations.some((relation) => relation.kind === "source_relation")}
         t={t}
       />;
     }
@@ -1763,11 +1740,12 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
   return null;
 }
 
-function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t, graphPopup, forces, wheelZoomSensitivity, onPopupEnter, onPopupLeave, manageNavigation = true }: {
+function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t, graphPopup, forces, wheelZoomSensitivity, onPopupEnter, onPopupLeave, manageNavigation = true, conceptual = false, onOpenNote }: {
   hover: HoverCard;
   sourceItemId: string;
   targetSourceItemId: string;
   summary: SourceRelationGroup[];
+  conceptual?: boolean;
   t: Translator;
 } & GraphPopupOptions) {
   const [details, setDetails] = useState<KnowledgeGraphSourceConnectionDetails | null>(null);
@@ -1813,6 +1791,7 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
   }, [graphPopup, manageNavigation]);
 
   useEffect(() => {
+    if (conceptual) return;
     let active = true;
     setDetails(null);
     setFailed(false);
@@ -1820,7 +1799,23 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
       .then((result) => { if (active) setDetails(result); })
       .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [sourceItemId, targetSourceItemId, retry]);
+  }, [sourceItemId, targetSourceItemId, retry, conceptual]);
+
+  if (conceptual) {
+    if (!graphPopup) return <ViewportTooltip hover={hover} className="w-[28rem]">
+      <h3 className="text-xs font-semibold text-cyan-300">{t("sourceRelations.title")}</h3>
+      <SourceRelationsList sourceItemId={sourceItemId} targetSourceItemId={targetSourceItemId} t={t} compact />
+    </ViewportTooltip>;
+    return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("sourceRelations.title")}
+      className="absolute inset-0 z-20 flex flex-col overflow-hidden bg-slate-950 text-white outline-none">
+      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-900 px-3 py-2">
+        <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.backToGraph")} onClick={onPopupLeave} />
+        <h3 className="min-w-0 flex-1 text-xs font-semibold text-cyan-300">{t("sourceRelations.title")}</h3>
+        <GraphAction icon={X} label={t("shell.actions.close")} onClick={onPopupLeave} />
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><SourceRelationsList sourceItemId={sourceItemId} targetSourceItemId={targetSourceItemId} t={t} onOpenNote={onOpenNote} /></div>
+    </section>;
+  }
 
   if (graphPopup) {
     return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("knowledgeGraph.graphPopup")}
@@ -2172,10 +2167,12 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
     current.details.push(...edge.details);
     current.sourceRelations.push({
       kind: edge.kind as SourceRelationKind,
+      ...(edge.kind === "source_relation" ? { relationType:edge.label } : {}),
       weight: edge.weight,
       confidence: edge.confidence,
       details: edge.details
     });
+    if (edge.kind === "source_relation") current.label = t("sourceRelations.title");
     grouped.set(key, current);
   }
   return [...grouped.values()];
@@ -2340,7 +2337,9 @@ export function reduceEdge(
     };
   }
   const zoomStrength = zoomVisualStrength(cameraRatio);
-  const revealProgress = attributes.label && attributes.labelRevealAt <= 1
+  const hasRelationMarkers = attributes.kind === "source_connection"
+    && attributes.sourceRelations.some((relation) => relation.kind === "source_relation");
+  const revealProgress = hasRelationMarkers ? 1 : attributes.label && attributes.labelRevealAt <= 1
     ? clamp((zoomStrength - attributes.labelRevealAt) / Math.max(0.01, 1 - attributes.labelRevealAt), 0, 1)
     : 0;
   const showRestingLabel = revealProgress > 0;
@@ -2471,7 +2470,7 @@ const drawWrappedNodeLabel: NodeLabelDrawingFunction<NodeAttributes, EdgeAttribu
   context.restore();
 };
 
-const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttributes> = (
+export const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttributes> = (
   context,
   edgeData,
   sourceData,
@@ -2482,6 +2481,16 @@ const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttribut
   const opacity = Number((edgeData as typeof edgeData & { labelOpacity?: number }).labelOpacity ?? 1);
   const x = (sourceData.x + targetData.x) / 2;
   const y = (sourceData.y + targetData.y) / 2;
+  if (edgeData.kind === "source_connection" && (edgeData.sourceRelations as SourceRelationGroup[]).some((relation) => relation.kind === "source_relation")) {
+    const markers = prevalentSourceRelationTypes(edgeData.sourceRelations);
+    const dominant = markers.length > 1 && markers[0]!.count > markers[1]!.count;
+    markers.slice(0,3).forEach((marker,index) => {
+      context.save();context.translate(x + (index - (Math.min(markers.length,3)-1)/2) * 24,y);
+      const scale = index === 0 && dominant ? 1.2 : 1;context.scale(scale,scale);
+      drawAtomicRelationMarker(context,marker.type,0,0,opacity);context.restore();
+    });
+    return;
+  }
   if (edgeData.kind === "atomic_note_relation") {
     drawAtomicRelationMarker(context, edgeData.relationType, x, y, opacity);
     return;
@@ -2499,6 +2508,12 @@ const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttribut
   lines.forEach((line, index) => context.fillText(line, x, y + (index - (lines.length - 1) / 2) * lineHeight));
   context.restore();
 };
+
+export function prevalentSourceRelationTypes(relations: ReadonlyArray<{ relationType?: string; weight: number }>) {
+  const counts = new Map<string,number>();
+  for (const relation of relations) if (relation.relationType) counts.set(relation.relationType,(counts.get(relation.relationType) ?? 0) + relation.weight);
+  return [...counts].map(([type,count]) => ({type,count})).sort((a,b) => b.count - a.count || a.type.localeCompare(b.type));
+}
 
 function drawAtomicRelationMarker(
   context: CanvasRenderingContext2D,
@@ -2606,13 +2621,6 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 
-function formatEdgeLabel(label: string, t: Translator): string {
-  if (label === "shared_entity") return t("knowledgeGraph.edgeKinds.shared_entity");
-  if (label === "semantic_relation") return t("knowledgeGraph.edgeKinds.semantic_relation");
-  const atomicRelationKey = atomicRelationMessageKeys[label];
-  if (atomicRelationKey) return t(atomicRelationKey);
-  return label.replaceAll("_", " ");
-}
 
 function hashFraction(value: string, salt: number): number {
   let hash = 2166136261 ^ salt;

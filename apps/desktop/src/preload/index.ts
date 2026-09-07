@@ -51,6 +51,9 @@ import {
   atomicNoteReviewInputSchema,
   atomicNoteViewSchema,
   knowledgeGraphDashboardInputSchema,
+  sourceRelationsInputSchema,
+  sourceRelationsPageSchema,
+  sourceRelationReviewSchema,
   knowledgeGraphDashboardSchema,
   knowledgeGraphSourceConnectionDetailsInputSchema,
   knowledgeGraphSourceConnectionDetailsSchema,
@@ -355,8 +358,14 @@ const api: DesktopApi = {
       );
       return result === null ? null : atomicNoteViewSchema.parse(result);
     },
-    async getGraphDashboard(mode) {
-      const input = knowledgeGraphDashboardInputSchema.parse({ mode });
+    async listSourceRelations(input) {
+      return sourceRelationsPageSchema.parse(await ipcRenderer.invoke(ipcChannels.sourceRelationsList,sourceRelationsInputSchema.parse(input)));
+    },
+    async reviewSourceRelation(input) {
+      return z.boolean().parse(await ipcRenderer.invoke(ipcChannels.sourceRelationsReview,sourceRelationReviewSchema.parse(input)));
+    },
+    async getGraphDashboard(mode, sourceView = "relations") {
+      const input = knowledgeGraphDashboardInputSchema.parse({ mode, sourceView });
       return knowledgeGraphDashboardSchema.parse(
         await ipcRenderer.invoke(ipcChannels.knowledgeGraphDashboardGet, input)
       );

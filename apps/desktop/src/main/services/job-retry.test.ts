@@ -13,6 +13,10 @@ const completedStages = {
 };
 
 describe("manual job retry", () => {
+  it("allows an interrupted source matching stage without adding that stage to historical runs", () => {
+    expect(hasIncompleteIngestionStages({status:"succeeded",stagesCheckpoint:{...completedStages,sourceMatching:{status:"failed"}}})).toBe(true);
+    expect(hasIncompleteIngestionStages({status:"succeeded",stagesCheckpoint:completedStages})).toBe(false);
+  });
   it("allows a failed ingestion after automatic retries are exhausted", () => {
     expect(canManuallyRetryJob(
       { type: "ingestion", status: "failed" },

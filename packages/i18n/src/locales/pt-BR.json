@@ -103,6 +103,11 @@
     }
   },
   "errors": {
+    "sourceRelations": {
+      "invalidOutput": "O modelo retornou relações entre fontes inválidas ou sem suporte.",
+      "staleEvidence": "A evidência da fonte mudou durante a análise. Processe a fonte novamente.",
+      "configurationChanged": "A configuração de relações mudou durante esta execução. Inicie um novo lote de processamento."
+    },
     "relationTypes": {"embeddingRequired":"Configure um modelo de embeddings compatível para canonizar tipos de relação.","invalidEmbedding":"O embedding da relação é inválido ou tem dimensão não suportada.","modelChanged":"O modelo de embeddings mudou durante o processamento das relações. Tente novamente com uma configuração estável.","invalidOutput":"A IA retornou uma decisão inválida de equivalência entre relações.","catalogChanged":"O catálogo de relações mudou repetidamente. Tente novamente."},
     "relationLabels": {"invalidOutput":"A IA retornou descrições de relações inválidas."},
     "common": {
@@ -214,13 +219,15 @@
       "atomicNoteGeneration": "Geracao de nota atomica",
       "knowledgeGraphGeneration": "Geracao do grafo de conhecimento",
       "atomicNoteMatching": "Conexao de notas atomicas",
+      "sourceMatching": "Relações entre fontes",
       "obsidianSync": "Sincronizacao com Obsidian",
       "assetStorage": "Armazenamento de assets"
       , "localModelDownload": "Download de modelo local"
     },
     "progress": {
       "processingSource": "Processando {title}",
-      "percentComplete": "{percent}% concluido"
+      "percentComplete": "{percent}% concluido",
+      "sourceRelations": "{completed} de {total} análises de pares concluídas"
     },
     "currentStage": "Etapa atual: {stage}",
     "stages": {
@@ -236,6 +243,7 @@
       "atomicNotes": "Notas atomicas",
       "knowledgeGraph": "Grafo de conhecimento",
       "atomicNoteMatching": "Conexao de notas",
+      "sourceMatching": "Relações entre fontes",
       "obsidianProjection": "Projecao no Obsidian",
       "aggregateSummarization": "Resumo consolidado",
       "completed": "Concluida"
@@ -796,5 +804,40 @@
     "presetName": "Nome do preset",
     "savePreset": "Salvar preset",
     "removePreset": "Remover este preset?"
+  },
+  "sourceRelations": {
+    "openNote": "Ver nota",
+    "detailPanel": "Janela de relações",
+    "title": "Relações entre ideias",
+    "entityView": "Conexões por entidades",
+    "view": "Visão do grafo de fontes",
+    "processingHint": "Aproveita relações de notas existentes e busca conexões conceituais adicionais por resumos e trechos originais. Não gera novas notas atômicas.",
+    "budgetHint": "Limites compartilhados pela fonte raiz e seus capítulos em cada execução. Controlam análises novas, sem limitar relações existentes. A entrada usa uma reserva conservadora de tokens, incluindo reparos; preparar resumos tem orçamento separado. Os limiares são avaliações provisórias, não probabilidades.",
+    "maxCandidates": "Fontes candidatas recuperadas",
+    "maxPairs": "Pares de fontes avaliados",
+    "maxRelations": "Relações geradas e ranqueadas",
+    "maxRelationsPerPair": "Relações por par de fontes",
+    "maxInputTokens": "Orçamento de tokens de entrada",
+    "minImportance": "Importância conceitual mínima",
+    "minConfidence": "Confiança mínima nas evidências",
+    "includeWeakTypes": "Permitir “menciona” e “relacionado” genérico",
+    "provenanceHint": "As contagens representam conexões conceituais distintas, não trechos repetidos. Notas e resumos podem derivar da mesma evidência.",
+    "loadError": "Não foi possível carregar ou atualizar as relações. Recarregue e tente novamente.",
+    "empty": "Ainda não há relações qualificadas. Processe “Relações entre fontes” para encontrá-las.",
+    "pending_review": "Sugestão da IA",
+    "accepted": "Aceita",
+    "rejected": "Rejeitada",
+    "direction": "Direção da relação",
+    "both": "Notas e análise das fontes",
+    "atomicNotes": "Relações de notas atômicas",
+    "sourceAnalysis": "Análise das fontes",
+    "stale": "Evidência alterada; precisa de revalidação",
+    "evidence": "Ideias e evidências originais",
+    "accept": "Aceitar",
+    "reject": "Rejeitar",
+    "restore": "Restaurar como sugestão",
+    "previous": "Anterior",
+    "next": "Próxima",
+    "partial": "Cobertura parcial: orçamento de análise atingido. Processe novamente para continuar."
   }
 }

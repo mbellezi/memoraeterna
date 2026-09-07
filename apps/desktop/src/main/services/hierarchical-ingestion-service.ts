@@ -9,6 +9,7 @@ import {
 } from "@app/domain";
 import {
   createDocumentRepository,
+  createEmbeddingRepository,
   createHierarchicalIngestionRepository,
   createIngestionRunRepository,
   createJobRepository,
@@ -24,6 +25,7 @@ const executableStages = [
   "atomicNotes",
   "knowledgeGraph",
   "atomicNoteMatching",
+  "sourceMatching",
   "obsidianProjection"
 ] as const;
 
@@ -197,6 +199,8 @@ export class HierarchicalIngestionService {
       });
       await runs.initializeStages(run.id, effectiveStages, ProcessingStages);
       const artifactState = catalogMetadataOnly ? {} : await hierarchy.getArtifactState(sourceItemId, document.id);
+      if (effectiveStages.includes("sourceMatching") && artifactState.embedding
+        && !await createEmbeddingRepository(pool).hasSourceMatchingCoverage(sourceItemId,document.id)) artifactState.embedding = false;
       for (const stage of ["conversion", "structureDetection", "structureReview", "materialization"] as const) {
         if (effectiveStages.includes(stage)) await runs.completeStage(run.id, stage, { reused: true });
       }
@@ -227,6 +231,7 @@ export class HierarchicalIngestionService {
             documentId: document.id,
             markdown: processingMarkdown,
             effectiveStages,
+            ...(plan.forceRegeneration ? { regenerateSourceRelations:true } : {}),
             processingMode: catalogMetadataOnly ? catalogMetadataProcessingMode : "content"
           }
         });

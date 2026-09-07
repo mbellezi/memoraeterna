@@ -16,6 +16,7 @@ transitive references explicitly named inside a selected rule.
 | Drizzle schema, migrations, repositories, SQL, PostgreSQL lifecycle, pgvector storage, or AGE persistence | `rules/database.md` |
 | AI providers, profiles, model parameters, local models, summaries, atomic notes, matching, or embedding execution | `rules/ai-and-knowledge.md` |
 | Knowledge graph extraction, entities, claims, semantic relations, source connections, AGE projection, or graph dashboard/layout | `rules/knowledge-graph.md` |
+| Conceptual source relationships, reuse of note relationships, source matching/review, or source graph views | `rules/source-relations.md` |
 | Search in sources, Library search, evidence/chunk/note search, retrieval filters, semantic floors, or search ranking | `rules/source-search.md` |
 | Second-brain organization or consultation, wiki pages/hierarchy, organization/harness instruction settings, periodic reorganization/cleanup, or wiki projection/editing in Obsidian | `rules/second-brain.md` |
 | Renderer components, product copy, styles, accessibility, themes, locales, or user-visible backend messages | `rules/frontend-and-i18n.md` |

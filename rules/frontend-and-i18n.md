@@ -67,8 +67,10 @@ locales.
   stable at a 1.8 screen-pixel default thickness across zoom levels. Relation
   picking uses a separate invisible 10-pixel interaction stroke so hover does
   not require pixel-perfect aiming. Labels already revealed while zooming in do not
-  disappear at a closer level. Source pairs render as one unlabeled edge; its
-  detail card lazily loads and groups all represented source-connection details.
+  disappear at a closer level. In the entity view, source pairs render as one
+  unlabeled edge; its detail card lazily loads and groups all represented
+  source-connection details. The default conceptual source view uses the
+  atomic-note icons and stacked relationship cards in `rules/source-relations.md`.
   Atomic-note relations use compact, distinctly colored icon markers instead
   of text on the canvas. A localized Labels badge below the atomic-note graph
   opens a fading icon-to-label legend. Canvas markers and legend entries use

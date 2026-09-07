@@ -27,3 +27,4 @@ export * from "./localModelRepository.js";
 export * from "./hierarchicalIngestionRepository.js";
 export * from "./relationTypeRepository.js";
 export * from "./entityIdentityRepository.js";
+export * from "./sourceRelationRepository.js";

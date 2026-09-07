@@ -103,6 +103,11 @@
     }
   },
   "errors": {
+    "sourceRelations": {
+      "invalidOutput": "Le modèle a renvoyé des relations non valides ou non étayées.",
+      "staleEvidence": "Les preuves ont changé pendant l’analyse. Relancez le traitement de la source.",
+      "configurationChanged": "La configuration a changé pendant cette exécution. Lancez un nouveau lot."
+    },
     "relationTypes": {"embeddingRequired":"Configurez un modèle d’embedding compatible pour canoniser les types de relation.","invalidEmbedding":"L’embedding de la relation est invalide ou sa dimension n’est pas prise en charge.","modelChanged":"Le modèle d’embedding a changé pendant le traitement. Réessayez avec une configuration stable.","invalidOutput":"L’IA a renvoyé une décision d’équivalence invalide.","catalogChanged":"Le catalogue des relations a changé plusieurs fois. Réessayez."},
     "relationLabels": {"invalidOutput":"L’IA a renvoyé des descriptions de relations invalides."},
     "common": {
@@ -206,19 +211,22 @@
       "atomicNoteGeneration": "Generation de note atomique",
       "knowledgeGraphGeneration": "Generation du graphe de connaissances",
       "atomicNoteMatching": "Mise en relation des notes",
+      "sourceMatching": "Relations entre sources",
       "obsidianSync": "Synchronisation Obsidian",
       "assetStorage": "Stockage des assets", "localModelDownload": "Telechargement de modele local"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
-      "percentComplete": "{percent}% termine"
+      "percentComplete": "{percent}% termine",
+      "sourceRelations": "{completed} analyses de paires terminées sur {total}"
     },
     "currentStage": "Etape actuelle : {stage}",
     "stages": {
       "queued": "En attente", "preparation": "Preparation de l'importation", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
       "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
       "knowledgeGraph": "Graphe de connaissances",
-      "atomicNoteMatching": "Mise en relation", "obsidianProjection": "Projection Obsidian", "aggregateSummarization": "Resume agrege",
+      "atomicNoteMatching": "Mise en relation",
+      "sourceMatching": "Relations entre sources", "obsidianProjection": "Projection Obsidian", "aggregateSummarization": "Resume agrege",
       "completed": "Terminee"
     },
     "stageStatus": {
@@ -713,5 +721,40 @@
     "presetName": "Nom du préréglage",
     "savePreset": "Enregistrer le préréglage",
     "removePreset": "Supprimer ce préréglage ?"
+  },
+  "sourceRelations": {
+    "openNote": "Ouvrir la note",
+    "detailPanel": "Panneau des relations",
+    "title": "Relations entre idées",
+    "entityView": "Connexions par entités",
+    "view": "Vue du graphe des sources",
+    "processingHint": "Réutilise les relations des notes existantes et découvre des connexions conceptuelles à partir des résumés et passages originaux. Ne génère pas de nouvelles notes atomiques.",
+    "budgetHint": "Les limites sont partagées par la source principale et ses chapitres pour chaque exécution. Elles limitent les nouvelles analyses, pas les relations existantes. La réserve prudente de tokens inclut les corrections ; la préparation des résumés est séparée. Les seuils sont des évaluations provisoires, pas des probabilités.",
+    "maxCandidates": "Sources candidates récupérées",
+    "maxPairs": "Paires de sources évaluées",
+    "maxRelations": "Relations générées et classées",
+    "maxRelationsPerPair": "Relations par paire de sources",
+    "maxInputTokens": "Budget de tokens en entrée",
+    "minImportance": "Importance conceptuelle minimale",
+    "minConfidence": "Confiance minimale dans les preuves",
+    "includeWeakTypes": "Autoriser « mentionne » et « lié » générique",
+    "provenanceHint": "Les décomptes représentent des connexions conceptuelles distinctes, pas des passages répétés. Notes et résumés peuvent provenir des mêmes preuves.",
+    "loadError": "Impossible de charger ou modifier les relations. Rechargez et réessayez.",
+    "empty": "Aucune relation qualifiée. Lancez « Relations entre sources » pour en découvrir.",
+    "pending_review": "Suggestion IA",
+    "accepted": "Acceptée",
+    "rejected": "Rejetée",
+    "direction": "Sens de la relation",
+    "both": "Notes et analyse des sources",
+    "atomicNotes": "Relations des notes atomiques",
+    "sourceAnalysis": "Analyse des sources",
+    "stale": "Preuve modifiée ; nouvelle validation nécessaire",
+    "evidence": "Idées et preuves originales",
+    "accept": "Accepter",
+    "reject": "Rejeter",
+    "restore": "Rétablir comme suggestion",
+    "previous": "Précédente",
+    "next": "Suivante",
+    "partial": "Couverture partielle : budget atteint. Relancez le traitement pour continuer."
   }
 }

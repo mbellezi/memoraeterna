@@ -44,6 +44,20 @@ function vectorLiteral(values: number[]): string {
 
 export function createEmbeddingRepository(db: Queryable) {
   return {
+    async hasSourceMatchingCoverage(sourceItemId:string,documentId:string): Promise<boolean> {
+      for (const dimensions of [256,768,1024]) {
+        const result=await db.query(`select 1 from embeddings_${dimensions} source
+          where source.target_type = 'source_item' and source.target_id = $1
+            and source.strategy like 'source-composite-centroid-v2:%'
+            and not exists (select 1 from chunks c where c.document_id = $2 and not exists (
+              select 1 from embeddings_${dimensions} e where e.target_type = 'chunk' and e.target_id = c.id
+                and e.content_hash = c.content_hash and e.model = source.model and e.provider = source.provider and e.runtime = source.runtime
+                and e.strategy = replace(source.strategy,'source-composite-centroid-v2:','native-v2:')
+            )) limit 1`,[sourceItemId,documentId]);
+        if(result.rows.length)return true;
+      }
+      return false;
+    },
     async upsert(input: UpsertEmbeddingInput): Promise<string> {
       const table = embeddingTable(input.embedding.length);
       const result = await db.query<QueryResultRow & { id: string }>(
@@ -93,14 +107,14 @@ export function createEmbeddingRepository(db: Queryable) {
       }));
     },
 
-    async listSourceEmbeddings(sourceItemIds: string[], model: string, dimensions: SupportedEmbeddingDimension): Promise<StoredEmbedding[]> {
+    async listSourceEmbeddings(sourceItemIds: string[], model: string, dimensions: SupportedEmbeddingDimension, strategy?: string): Promise<StoredEmbedding[]> {
       if (sourceItemIds.length === 0) return [];
       const table = embeddingTable(dimensions);
       const result = await db.query<QueryResultRow & { targetId: string; embedding: string }>(
         `select target_id as "targetId", embedding::text as embedding
          from ${table}
-         where target_type = 'source_item' and target_id = any($1::uuid[]) and model = $2`,
-        [sourceItemIds, model]
+         where target_type = 'source_item' and target_id = any($1::uuid[]) and model = $2 and ($3::text is null or strategy = $3)`,
+        [sourceItemIds, model, strategy ?? null]
       );
       return result.rows.map((row) => ({
         targetId: row.targetId,

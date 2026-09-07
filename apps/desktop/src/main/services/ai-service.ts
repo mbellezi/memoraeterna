@@ -47,6 +47,7 @@ import type {
 import { aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
+import { AiExecutionQueue } from "./ai-execution-queue.js";
 import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import type { MonitoringService } from "./monitoring-service.js";
 import { logStructuredError } from "./structured-logging.js";
@@ -57,6 +58,8 @@ import {
   type OpenAiCodexCredential
 } from "./openai-codex-oauth.js";
 import { extname, join } from "node:path";
+
+const aiExecutionQueue = new AiExecutionQueue();
 
 export interface AiServiceOptions {
   userDataPath: string;
@@ -326,7 +329,18 @@ export class AiService {
     taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking",
     input: string,
     logContext: AiTaskLogContext = {},
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    limits?: { maxOutputTokens: number }
+  ): Promise<DefaultAiTaskResult | null> {
+    return aiExecutionQueue.run(() => this.executeDefaultTask(taskType,input,logContext,signal,limits),signal);
+  }
+
+  private async executeDefaultTask(
+    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking",
+    input: string,
+    logContext: AiTaskLogContext,
+    signal?: AbortSignal,
+    limits?: { maxOutputTokens: number }
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
@@ -339,6 +353,7 @@ export class AiService {
       { ...selection.modelDefaultParameters, ...selection.parameters },
       Boolean(selection.localModelId)
     ));
+    if (limits) parameters.maxTokens = Math.min(parameters.maxTokens ?? 16384, Math.max(1,Math.floor(limits.maxOutputTokens)));
     const outputLanguage = logContext.contentLanguage ?? await this.options.getContentLanguage?.() ?? "en";
     const taskInput = taskType === "embedding"
       ? withEmbeddingInputInstruction(input, selection.modelId, selection.repository, structuredLogContext.embeddingInputType)
@@ -497,6 +512,10 @@ export class AiService {
   }
 
   public async testLocalModel(localModelId: string): Promise<string> {
+    return aiExecutionQueue.run(() => this.executeLocalModelTest(localModelId));
+  }
+
+  private async executeLocalModelTest(localModelId: string): Promise<string> {
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model) throw new Error("errors.common.notFound");
     const configuredAdapter = await this.createLocalAdapter(localModelId);

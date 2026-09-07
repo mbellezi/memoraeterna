@@ -3,7 +3,7 @@ import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
 import { isInHierarchyActionCorridor } from "./knowledge-graph-view-model";
 import { GraphHoverIntent } from "./knowledge-graph-interaction";
-import { sourceHierarchyRelationTarget } from "./KnowledgeGraphDashboard";
+import { sourceHierarchyRelationTarget, prevalentSourceRelationTypes } from "./KnowledgeGraphDashboard";
 
 import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 
@@ -25,6 +25,52 @@ function nestedHierarchyFixture(): KnowledgeGraphDashboard {
       edge("external-edge", "external", "second-hop", 1)]
   };
 }
+
+describe("conceptual source graph",() => {
+  it("keeps conceptual relation icons visible without hover at every zoom and hierarchy level",() => {
+    const fixture=nestedHierarchyFixture();
+    const conceptual: KnowledgeGraphDashboard={...fixture,sourceView:"relations",edges:[
+      {id:"one",source:"section",target:"external",kind:"source_relation",label:"supports",description:"First idea",weight:1,confidence:0.9,details:[]}
+    ]};
+    for (const showAll of [false,true]) {
+      const data=projectSourceHierarchy(conceptual,{showAll,expandedSourceIds:new Set<string>(),focusSourceId:null});
+      const {graph}=buildGraph(data,((key:string) => key) as Translator);
+      const edge=graph.findEdge((_id,attributes) => attributes.kind === "source_connection")!;
+      for (const ratio of [0.01,0.16,1,5,20]) {
+        const display=reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,null,0);
+        expect(display.forceLabel).toBe(true);
+        expect(display.label).toBeTruthy();
+        expect(display.labelOpacity).toBe(0.9);
+        expect(reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,edge,1).labelOpacity).toBe(1);
+      }
+    }
+  });
+  it("keeps entity-connection descriptions hidden until hover",() => {
+    const {graph}=buildGraph(nestedHierarchyFixture(),((key:string) => key) as Translator);
+    const edge=graph.findEdge((_id,attributes) => attributes.kind === "source_connection")!;
+    const display=reduceEdge(graph,edge,graph.getEdgeAttributes(edge),1,null,0);
+    expect(display.forceLabel).toBe(false);
+    expect(display.label).toBeNull();
+  });
+  it("keeps type prevalence when chapters collapse and retains a single visual edge",() => {
+    const fixture=nestedHierarchyFixture();
+    const conceptual: KnowledgeGraphDashboard = {...fixture,sourceView:"relations",edges:[
+      {id:"one",source:"section",target:"external",kind:"source_relation",label:"supports",description:"First idea",weight:1,confidence:0.9,details:[]},
+      {id:"two",source:"leaf",target:"external",kind:"source_relation",label:"supports",description:"Second idea",weight:1,confidence:0.9,details:[]},
+      {id:"three",source:"external",target:"section",kind:"source_relation",label:"contrasts",description:"Counterpoint",weight:1,confidence:0.9,details:[]}
+    ]};
+    const projected=projectSourceHierarchy(conceptual,{showAll:false,expandedSourceIds:new Set(),focusSourceId:null});
+    expect(projected.edges).toHaveLength(2);
+    const edges=prepareGraphEdges(projected,((key:string) => key) as Translator);
+    expect(edges).toHaveLength(1);
+    expect(prevalentSourceRelationTypes(edges[0]!.sourceRelations)).toEqual([{type:"supports",count:2},{type:"contrasts",count:1}]);
+    expect(edges[0]!.label).not.toBe("");
+  });
+  it("orders ties stably without collapsing distinct relation types",() => {
+    expect(prevalentSourceRelationTypes([{relationType:"supports",weight:1},{relationType:"extends",weight:1},{relationType:"clarifies",weight:1},{relationType:"contrasts",weight:1}]).map((item) => item.type))
+      .toEqual(["clarifies","contrasts","extends","supports"]);
+  });
+});
 
 describe("hierarchy action hover corridor", () => {
   const node = { x: 200, y: 150, radius: 10 };

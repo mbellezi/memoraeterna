@@ -1,10 +1,14 @@
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
+import { matchSources } from "./source-relation-processing.js";
+import { SourceRelationSettingsSchema, type SourceRelationSettings } from "@app/domain";
 import { createRelationTypeResolver, defaultRelationTypeSimilarityThreshold } from "./relation-type-resolution.js";
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
   createAtomicNoteRelationRepository,
+  createSourceRelationRepository,
+  listSourceRelations,
   createAtomicNoteRepository,
   createChunkRepository,
   createDocumentAssetRepository,
@@ -100,6 +104,7 @@ export interface KnowledgeServiceOptions {
   aiService: AiService;
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
+  getSourceRelationSettings?: () => Promise<SourceRelationSettings>;
   getSummaryMinimumWordCount?: () => Promise<number>;
   getContentLanguage?: () => Promise<string>;
   getEntityIdentitySimilarityThreshold?: () => Promise<number>;
@@ -181,8 +186,24 @@ export class KnowledgeService {
     }));
   }
 
-  public async getGraphDashboard(mode: "sources" | "atomic_notes") {
-    return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode);
+  public async getGraphDashboard(mode: "sources" | "atomic_notes", sourceView: "relations" | "entities" = "relations") {
+    return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode, sourceView);
+  }
+
+  public async listSourceRelations(input: { sourceItemId: string; targetSourceItemId: string | null; offset: number; limit: number }) {
+    return listSourceRelations(this.requirePool(), input.sourceItemId, input.targetSourceItemId, input.offset, input.limit);
+  }
+
+  public async reviewSourceRelation(input: { id: string; status: string; expectedUpdatedAt: string }) {
+    return createSourceRelationRepository(this.requirePool()).review(input.id, input.status, input.expectedUpdatedAt);
+  }
+
+  public async matchSourceRelations(sourceIds: string[], runKey: string, signal?: AbortSignal,
+    onProgress?: (progress: number, counts: { completed: number; total: number }) => void | Promise<void>, context: AiTaskLogContext = {}, regenerate = false) {
+    return matchSources({ pool: this.requirePool(), ai: this.options.aiService, sourceIds, runKey,
+      settings: SourceRelationSettingsSchema.parse(await this.options.getSourceRelationSettings?.() ?? {}),
+      contentLanguage: await this.options.getContentLanguage?.() ?? "en", regenerate,
+      ...(signal ? { signal } : {}), ...(onProgress ? { onProgress } : {}), context });
   }
 
   public async getGraphSourceConnectionDetails(sourceItemId: string, targetSourceItemId: string) {
@@ -409,6 +430,7 @@ export class KnowledgeService {
       metadata: {
         mapReduce: summary.mapReduce,
         executionCount: summary.executions.length,
+        concepts: summary.concepts ?? [],
         aiTaskRunIds: summary.executions.map((execution) => execution.aiTaskRunId)
       }
     });

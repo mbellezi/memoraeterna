@@ -1,6 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
+import { currentSourceRelationSql } from "./sourceRelationRepository.js";
 import type { AtomicNoteStatus, SourceItemType } from "./types.js";
 
 export type KnowledgeGraphDashboardMode = "sources" | "atomic_notes";
@@ -23,7 +24,7 @@ export interface KnowledgeGraphDashboardEdgeRecord {
   id: string;
   source: string;
   target: string;
-  kind: "shared_entity" | "semantic_relation" | "atomic_note_relation";
+  kind: "shared_entity" | "semantic_relation" | "atomic_note_relation" | "source_relation";
   label: string;
   description: string | null;
   weight: number;
@@ -33,6 +34,7 @@ export interface KnowledgeGraphDashboardEdgeRecord {
 
 export interface KnowledgeGraphDashboardRecord {
   mode: KnowledgeGraphDashboardMode;
+  sourceView?: "relations" | "entities";
   nodes: KnowledgeGraphDashboardNodeRecord[];
   edges: KnowledgeGraphDashboardEdgeRecord[];
   truncated: boolean;
@@ -96,8 +98,8 @@ function score(value: number): number {
 
 export function createKnowledgeGraphDashboardRepository(pool: PgPool) {
   return {
-    async get(mode: KnowledgeGraphDashboardMode): Promise<KnowledgeGraphDashboardRecord> {
-      return mode === "sources" ? listSourceGraph(pool) : listAtomicNoteGraph(pool);
+    async get(mode: KnowledgeGraphDashboardMode, sourceView: "relations" | "entities" = "entities"): Promise<KnowledgeGraphDashboardRecord> {
+      return mode === "sources" ? listSourceGraph(pool, sourceView) : listAtomicNoteGraph(pool);
     },
     async getSourceConnectionDetails(
       sourceItemId: string,
@@ -179,7 +181,7 @@ async function getSourceConnectionDetails(
   };
 }
 
-async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRecord> {
+async function listSourceGraph(pool: PgPool, sourceView: "relations" | "entities"): Promise<KnowledgeGraphDashboardRecord> {
   const nodeResult = await pool.query<SourceNodeRow>(
     `select source.id, source.type, source.title, source.subtitle,
             source.parent_source_item_id as "parentSourceItemId",
@@ -197,6 +199,19 @@ async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRec
   const selectedRows = nodeResult.rows.slice(0, maxNodes);
   const sourceIds = selectedRows.map((row) => row.id);
   if (sourceIds.length === 0) return { mode: "sources", nodes: [], edges: [], truncated: false };
+
+  if (sourceView === "relations") {
+    const result = await pool.query(`select r.id,r.source_item_id as source,r.target_source_item_id as target,
+      r.relation_type as label,r.explanation as description,r.confidence,r.importance
+      from source_relations r where r.status <> 'rejected' and ${currentSourceRelationSql}
+      and r.source_item_id = any($1::uuid[]) and r.target_source_item_id = any($1::uuid[])
+      order by r.importance desc,r.id limit $2`, [sourceIds,maxEdges + 1]);
+    return { mode:"sources",sourceView,nodes:selectedRows.map((row) => ({id:row.id,kind:"source",title:row.title,subtitle:row.subtitle,
+      content:null,sourceItemId:row.id,sourceType:row.type,noteStatus:null,detailCount:Number(row.entityCount),parentSourceItemId:row.parentSourceItemId,childCount:Number(row.childCount)})),
+      edges:result.rows.slice(0,maxEdges).map((row) => ({id:row.id,source:row.source,target:row.target,kind:"source_relation",label:row.label,
+        description:row.description,confidence:Number(row.confidence),weight:1,details:[row.description]})),
+      truncated:hasMoreNodes || result.rows.length > maxEdges };
+  }
 
   const [sharedResult, semanticResult] = await Promise.all([
     pool.query<SourceEdgeRow>(
@@ -251,6 +266,7 @@ async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRec
   const semanticRows = semanticResult.rows.slice(0, remaining);
   return {
     mode: "sources",
+    sourceView,
     nodes: selectedRows.map((row) => ({
       id: row.id,
       kind: "source",

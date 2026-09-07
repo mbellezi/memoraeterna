@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  summaryConcepts,
   buildAtomicNoteGenerationPrompt,
   buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
@@ -22,6 +23,11 @@ import {
 } from "./knowledge-processing.js";
 
 describe("knowledge processing", () => {
+  it("resolves summary concept aliases to source chunks and drops unsupported evidence", () => {
+    expect(summaryConcepts({summary:"Summary",concepts:[{idea:"Concept with scope",evidenceChunkIds:["c2"]},{idea:"Invented evidence",evidenceChunkIds:["unknown"]}]},[{id:"one"},{id:"two"}]))
+      .toEqual([{idea:"Concept with scope",evidenceChunkIds:["two"]}]);
+    expect(summaryConcepts("Legacy summary",[{id:"one"}])).toEqual([]);
+  });
   it("builds and validates one complete atomic-note reranking batch", () => {
     const prompt = buildBatchRerankPrompt(
       { title: "Source", ideaStatement: "Source idea" },

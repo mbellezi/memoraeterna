@@ -103,6 +103,11 @@
     }
   },
   "errors": {
+    "sourceRelations": {
+      "invalidOutput": "El modelo devolvió relaciones entre fuentes no válidas o sin respaldo.",
+      "staleEvidence": "La evidencia cambió durante el análisis. Procesa la fuente de nuevo.",
+      "configurationChanged": "La configuración cambió durante esta ejecución. Inicia un nuevo lote."
+    },
     "relationTypes": {"embeddingRequired":"Configura un modelo de embeddings compatible para canonizar los tipos de relación.","invalidEmbedding":"El embedding de la relación no es válido o tiene una dimensión no compatible.","modelChanged":"El modelo de embeddings cambió durante el procesamiento. Reintenta con una configuración estable.","invalidOutput":"La IA devolvió una decisión de equivalencia no válida.","catalogChanged":"El catálogo de relaciones cambió repetidamente. Vuelve a intentarlo."},
     "relationLabels": {"invalidOutput":"La IA devolvió descripciones de relaciones no válidas."},
     "common": {
@@ -206,19 +211,22 @@
       "atomicNoteGeneration": "Generacion de nota atomica",
       "knowledgeGraphGeneration": "Generacion del grafo de conocimiento",
       "atomicNoteMatching": "Conexion de notas atomicas",
+      "sourceMatching": "Relaciones entre fuentes",
       "obsidianSync": "Sincronizacion con Obsidian",
       "assetStorage": "Almacenamiento de assets", "localModelDownload": "Descarga de modelo local"
     },
     "progress": {
       "processingSource": "Procesando {title}",
-      "percentComplete": "{percent}% completado"
+      "percentComplete": "{percent}% completado",
+      "sourceRelations": "{completed} de {total} análisis de pares completados"
     },
     "currentStage": "Etapa actual: {stage}",
     "stages": {
       "queued": "En cola", "preparation": "Preparacion de la importacion", "conversion": "Conversion", "structureDetection": "Deteccion de estructura", "structureReview": "Revision de estructura", "materialization": "Materializacion", "chunking": "Segmentacion",
       "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
       "knowledgeGraph": "Grafo de conocimiento",
-      "atomicNoteMatching": "Conexion de notas", "obsidianProjection": "Proyeccion en Obsidian", "aggregateSummarization": "Resumen agregado",
+      "atomicNoteMatching": "Conexion de notas",
+      "sourceMatching": "Relaciones entre fuentes", "obsidianProjection": "Proyeccion en Obsidian", "aggregateSummarization": "Resumen agregado",
       "completed": "Completada"
     },
     "stageStatus": {
@@ -713,5 +721,40 @@
     "presetName": "Nombre del preajuste",
     "savePreset": "Guardar preajuste",
     "removePreset": "¿Eliminar este preajuste?"
+  },
+  "sourceRelations": {
+    "openNote": "Ver nota",
+    "detailPanel": "Panel de relaciones",
+    "title": "Relaciones entre ideas",
+    "entityView": "Conexiones por entidades",
+    "view": "Vista del grafo de fuentes",
+    "processingHint": "Reutiliza relaciones de notas existentes y busca conexiones conceptuales mediante resúmenes y pasajes originales. No genera nuevas notas atómicas.",
+    "budgetHint": "Los límites se comparten entre la fuente raíz y sus capítulos en cada ejecución. Limitan análisis nuevos, no relaciones existentes. La reserva conservadora de tokens incluye reparaciones; preparar resúmenes tiene un presupuesto separado. Los umbrales son valoraciones provisionales, no probabilidades.",
+    "maxCandidates": "Fuentes candidatas recuperadas",
+    "maxPairs": "Pares de fuentes evaluados",
+    "maxRelations": "Relaciones generadas y ordenadas",
+    "maxRelationsPerPair": "Relaciones por par de fuentes",
+    "maxInputTokens": "Presupuesto de tokens de entrada",
+    "minImportance": "Importancia conceptual mínima",
+    "minConfidence": "Confianza mínima en las evidencias",
+    "includeWeakTypes": "Permitir “menciona” y “relacionado” genérico",
+    "provenanceHint": "Los recuentos representan conexiones conceptuales distintas, no pasajes repetidos. Notas y resúmenes pueden derivar de la misma evidencia.",
+    "loadError": "No se pudieron cargar o actualizar las relaciones. Recarga e inténtalo de nuevo.",
+    "empty": "Aún no hay relaciones cualificadas. Procesa “Relaciones entre fuentes” para encontrarlas.",
+    "pending_review": "Sugerencia de IA",
+    "accepted": "Aceptada",
+    "rejected": "Rechazada",
+    "direction": "Dirección de la relación",
+    "both": "Notas y análisis de fuentes",
+    "atomicNotes": "Relaciones de notas atómicas",
+    "sourceAnalysis": "Análisis de fuentes",
+    "stale": "Evidencia modificada; requiere validación",
+    "evidence": "Ideas y evidencias originales",
+    "accept": "Aceptar",
+    "reject": "Rechazar",
+    "restore": "Restaurar como sugerencia",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "partial": "Cobertura parcial: presupuesto de análisis alcanzado. Procesa de nuevo para continuar."
   }
 }

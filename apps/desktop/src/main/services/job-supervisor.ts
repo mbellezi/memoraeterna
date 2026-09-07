@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
+import { runIndividualStageBatch } from "./individual-stage-batch.js";
 import {
   createChunkRepository,
   createDocumentRepository,
@@ -45,6 +46,7 @@ export interface JobSupervisorOptions {
     provider: string;
     model: string;
     runtime: string;
+    spaceKey?: string;
   } | null>;
   knowledgeService?: KnowledgeService;
   obsidianSyncService?: Pick<ObsidianSyncService, "projectSource">;
@@ -354,7 +356,7 @@ export class JobSupervisor {
       if (this.options.generateEmbedding) {
         const embeddings = createEmbeddingRepository(pool);
         const chunkVectors: number[][] = [];
-        let embeddingIdentity: { provider: string; model: string; runtime: string } | null = null;
+        let embeddingIdentity: { provider: string; model: string; runtime: string; spaceKey?: string } | null = null;
         for (const chunk of persistedChunks) {
           if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
           const generated = await this.options.generateEmbedding(chunk.content, signal, {
@@ -367,11 +369,13 @@ export class JobSupervisor {
             embeddingInputType: "document"
           });
           if (!generated) break;
+          if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey) throw new Error("errors.sourceRelations.configurationChanged");
           const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
           const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
           await embeddings.upsert({
             targetType: "chunk", targetId: chunk.id, chunkId: chunk.id,
             provider: generated.provider, model: generated.model, runtime: generated.runtime,
+            strategy: generated.spaceKey ? `native-v2:${generated.spaceKey}` : "native",
             contentHash: chunk.contentHash, embedding
           });
           chunkVectors.push(embedding);
@@ -393,6 +397,7 @@ export class JobSupervisor {
               embeddingInputType: "document"
             });
             if (!generated) break;
+            if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey) throw new Error("errors.sourceRelations.configurationChanged");
             const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
             const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
             headerVectors.push(embedding);
@@ -407,7 +412,8 @@ export class JobSupervisor {
               const childVectors = await embeddings.listSourceEmbeddings(
                 descendants.map((descendant) => descendant.id),
                 embeddingIdentity.model,
-                dimensions
+                dimensions,
+                embeddingIdentity.spaceKey ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}` : undefined
               );
               hierarchyContentComplete = childVectors.length === descendants.length;
               contentVectors = childVectors.map((item) => item.embedding);
@@ -426,7 +432,7 @@ export class JobSupervisor {
               provider: embeddingIdentity.provider,
               model: embeddingIdentity.model,
               runtime: embeddingIdentity.runtime,
-              strategy: "source-composite-centroid-v1",
+              strategy: embeddingIdentity.spaceKey ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}` : "source-composite-centroid-v1",
               contentHash: sourceContentHash,
               embedding: sourceEmbedding
             });
@@ -524,59 +530,113 @@ export class JobSupervisor {
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.89);
-    const matchingCheckpoint = run.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined;
     const batchId = run.batchId ?? optionalString(job.payload.batchId);
-    let matchingDeferred = false;
-    if (shouldRun("atomicNoteMatching") && batchId) {
-      const incompleteNotes = await runs.countIncompleteBatchStage(batchId, "atomicNotes");
-      if (incompleteNotes > 0) {
-        await runs.waitForBatchStage(ingestionRunId, "atomicNoteMatching");
-        matchingDeferred = true;
+    const noteMatchingRuns = batchId
+      ? (await runs.listByBatch(batchId)).filter((item) => participatesInAtomicNoteMatching(item.effectiveStages))
+      : shouldRun("atomicNoteMatching") ? [run] : [];
+    const pendingNoteMatching = noteMatchingRuns.filter((item) => item.sourceItemId
+      && (item.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined)?.status !== "completed");
+    if (pendingNoteMatching.length > 0) {
+      const waiting = batchId ? await runs.countIncompleteBatchStage(batchId,"atomicNotes") > 0 : false;
+      if (waiting) {
+        if (shouldRun("atomicNoteMatching")) await runs.waitForBatchStage(ingestionRunId,"atomicNoteMatching");
       } else {
-        const batchRuns = await runs.listByBatch(batchId);
-        const batchNoteIds = new Set(noteIds);
-        for (const batchRun of batchRuns) {
-          if (!batchRun.sourceItemId || !participatesInAtomicNoteMatching(batchRun.effectiveStages)) continue;
-          for (const note of await createAtomicNoteRepository(pool).listBySourceItem(batchRun.sourceItemId)) {
-            if (note.status !== "rejected") batchNoteIds.add(note.id);
-          }
-        }
-        noteIds = [...batchNoteIds];
+        const failures = await runIndividualStageBatch({
+          runs: pendingNoteMatching, signal,
+          wait: async (item) => {
+            await runs.waitForBatchStage(item.id,"atomicNoteMatching");
+            await runs.update(item.id,{currentStage:"atomicNoteMatching"});
+            this.notify();
+          },
+          start: async (item) => {
+            await runs.updateStageProgress(item.id,"atomicNoteMatching",0,{});
+            this.notify();
+          },
+          process: async (item) => {
+            const itemSourceId = item.sourceItemId!;
+            const itemNoteIds = (await createAtomicNoteRepository(pool).listBySourceItem(itemSourceId))
+              .filter((note) => note.status !== "rejected").map((note) => note.id);
+            const itemDocumentId = item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
+            const itemContext = {ingestionRunId:item.id,sourceItemId:itemSourceId,
+              ...(itemDocumentId ? {documentId:itemDocumentId} : {})};
+            return this.options.knowledgeService && itemNoteIds.length > 0
+              ? this.runInlineStageJob("atomic-note-matching",{...itemContext,noteIds:itemNoteIds},
+                async (stageJobId) => {
+                  await runs.updateStageProgress(item.id,"atomicNoteMatching",0,{completed:0,total:itemNoteIds.length});
+                  const matching = await this.options.knowledgeService!.matchAtomicNotes(itemNoteIds,signal,
+                    async (progress) => {
+                      const completed = Math.min(itemNoteIds.length,Math.floor(progress * itemNoteIds.length));
+                      await createJobRepository(pool).reportProgress(stageJobId,progress);
+                      await runs.updateStageProgress(item.id,"atomicNoteMatching",progress,{completed,total:itemNoteIds.length});
+                      this.notify();
+                    }, {...itemContext,jobId:stageJobId,stage:"atomic_note_matching"});
+                  return {...matching,completed:itemNoteIds.length,total:itemNoteIds.length};
+                },controller)
+              : {persistedCount:0,completed:0,total:0};
+          },
+          complete: async (item,result) => {await runs.completeStage(item.id,"atomicNoteMatching",result);this.notify();},
+          fail: async (item,error) => {await runs.failStage(item.id,"atomicNoteMatching",normalizeWorkerError(error),signal.aborted);this.notify();}
+        });
+        if (failures.has(ingestionRunId)) throw failures.get(ingestionRunId);
       }
-    }
-    if (shouldRun("atomicNoteMatching") && !matchingDeferred && matchingCheckpoint?.status !== "completed") {
-      await runs.beginStage(ingestionRunId, "atomicNoteMatching");
-      this.notify();
-      const matching = this.options.knowledgeService && noteIds.length > 0
-        ? await this.runInlineStageJob(
-            "atomic-note-matching",
-            { ingestionRunId, sourceItemId, documentId, noteIds },
-            (stageJobId) => this.options.knowledgeService!.matchAtomicNotes(
-              noteIds,
-              signal,
-              async (progress) => {
-                const completed = Math.min(noteIds.length, Math.floor(progress * noteIds.length));
-                await Promise.all([
-                  createJobRepository(pool).reportProgress(stageJobId, progress),
-                  createJobRepository(pool).reportProgress(job.id, 0.89 + progress * 0.06),
-                  runs.updateStageProgress(ingestionRunId, "atomicNoteMatching", progress, {
-                    completed,
-                    total: noteIds.length
-                  })
-                ]);
-                this.notify();
-              },
-              { jobId: stageJobId, ingestionRunId, sourceItemId, documentId, stage: "atomic_note_matching" }
-            ),
-            controller
-          )
-        : { persistedCount: 0 };
-      await runs.completeStage(ingestionRunId, "atomicNoteMatching", matching);
-      if (batchId) await runs.completeStageForBatch(batchId, "atomicNoteMatching", matching);
-      this.notify();
     }
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.95);
+    // A collective stage runs after every selected summary/embedding and optional note match.
+    // The final participant may be a catalog job, so inspect the batch rather than only this run.
+    const sourceMatchingRuns = batchId
+      ? (await runs.listByBatch(batchId)).filter((item) => item.effectiveStages.includes("sourceMatching"))
+      : effectiveStages.has("sourceMatching") ? [run] : [];
+    const pendingSourceMatching = sourceMatchingRuns.filter((item) =>
+      (item.stagesCheckpoint.sourceMatching as JsonObject | undefined)?.status !== "completed");
+    if (pendingSourceMatching.length > 0) {
+      const waiting = batchId ? (await Promise.all(["summarization", "embedding", "atomicNotes", "atomicNoteMatching"]
+        .map((stage) => runs.countIncompleteBatchStage(batchId,stage)))).some((count) => count > 0) : false;
+      if (waiting) {
+        if (effectiveStages.has("sourceMatching")) await runs.waitForBatchStage(ingestionRunId,"sourceMatching");
+      } else if (this.options.knowledgeService) {
+        const failures = await runIndividualStageBatch({
+          runs: pendingSourceMatching.filter((item) => item.sourceItemId !== null), signal,
+          wait: async (item) => {
+            await runs.waitForBatchStage(item.id,"sourceMatching");
+            await runs.update(item.id,{currentStage:"sourceMatching"});
+            this.notify();
+          },
+          start: async (item) => {
+            await runs.updateStageProgress(item.id,"sourceMatching",0,{});
+            this.notify();
+          },
+          process: (item) => {
+            const itemSourceId = item.sourceItemId!;
+            const itemDocumentId = item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
+            const itemContext = {ingestionRunId:item.id,sourceItemId:itemSourceId,
+              ...(itemDocumentId ? {documentId:itemDocumentId} : {})};
+            return this.runInlineStageJob("source-matching",itemContext,
+              (stageJobId) => this.options.knowledgeService!.matchSourceRelations(
+                [itemSourceId],batchId ?? item.id,signal,
+                async (progress, counts) => {
+                  await this.reportInlineProgress(stageJobId,progress);
+                  await runs.updateStageProgress(item.id,"sourceMatching",progress,counts);
+                  this.notify();
+                }, {...itemContext,jobId:stageJobId,stage:"sourceMatching"},
+                job.payload.regenerateSourceRelations === true || item.previousArtifactPolicy === "regenerate_selected"
+              ),controller);
+          },
+          complete: async (item,result) => {
+            await runs.completeStage(item.id,"sourceMatching",result);
+            this.notify();
+          },
+          fail: async (item,error) => {
+            await runs.failStage(item.id,"sourceMatching",normalizeWorkerError(error),signal.aborted);
+            this.notify();
+          }
+        });
+        if (failures.has(ingestionRunId)) {
+          await runs.update(ingestionRunId,{currentStage:"sourceMatching"});
+          throw failures.get(ingestionRunId);
+        }
+      }
+    }
     const projectionCheckpoint = run.stagesCheckpoint.obsidianProjection as JsonObject | undefined;
     if (shouldRun("obsidianProjection") && projectionCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "obsidianProjection");

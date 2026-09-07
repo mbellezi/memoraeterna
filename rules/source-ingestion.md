@@ -181,12 +181,15 @@ caller's `requestedStages` directly.
 | `chunking` | `materialization` |
 | `embedding`, `summarization`, `atomicNotes`, `knowledgeGraph` | `chunking` |
 | `atomicNoteMatching` | `atomicNotes` |
+| `sourceMatching` | `summarization`, `embedding` |
 | `obsidianProjection` | `materialization` |
 | `aggregateSummarization` | `summarization` |
 
 - `search_ready` adds chunking/embedding to import; `summary` adds
   chunking/summarization; `full_knowledge` adds chunking, embedding, summary,
-  notes, graph and matching. Projection and aggregate summarization are not
+  notes, graph, note matching and source matching. Source matching has a
+  collective barrier and root budgets defined in `rules/source-relations.md`.
+  Projection and aggregate summarization are not
   explicit stages of `full_knowledge`; root aggregation is coordinated by the
   processing service/supervisor.
 - Scopes are `source_only`, `children_only`, `source_and_children`, and

@@ -103,6 +103,11 @@
     }
   },
   "errors": {
+    "sourceRelations": {
+      "invalidOutput": "The source relationship model returned invalid or unsupported relationships.",
+      "staleEvidence": "Source evidence changed during analysis. Process the source again.",
+      "configurationChanged": "The matching configuration changed during this run. Start a new processing batch."
+    },
     "relationTypes": {"embeddingRequired":"Configure a compatible embedding model to canonicalize relation types.","invalidEmbedding":"The relation embedding is invalid or uses an unsupported dimension.","modelChanged":"The embedding model changed during relation processing. Retry with a stable model configuration.","invalidOutput":"The AI returned an invalid relation equivalence decision.","catalogChanged":"The relation catalog changed repeatedly. Retry the operation."},
     "relationLabels": {"invalidOutput":"The AI returned invalid relation descriptions."},
     "common": {
@@ -214,13 +219,15 @@
       "atomicNoteGeneration": "Atomic note generation",
       "knowledgeGraphGeneration": "Knowledge graph generation",
       "atomicNoteMatching": "Atomic note matching",
+      "sourceMatching": "Relationships between sources",
       "obsidianSync": "Obsidian sync",
       "assetStorage": "Asset storage"
       , "localModelDownload": "Local model download"
     },
     "progress": {
       "processingSource": "Processing {title}",
-      "percentComplete": "{percent}% complete"
+      "percentComplete": "{percent}% complete",
+      "sourceRelations": "{completed} of {total} pair analyses completed"
     },
     "currentStage": "Current stage: {stage}",
     "stages": {
@@ -236,6 +243,7 @@
       "atomicNotes": "Atomic notes",
       "knowledgeGraph": "Knowledge graph",
       "atomicNoteMatching": "Note matching",
+      "sourceMatching": "Relationships between sources",
       "obsidianProjection": "Obsidian projection",
       "aggregateSummarization": "Aggregate summary",
       "completed": "Completed"
@@ -863,5 +871,40 @@
     "presetName": "Preset name",
     "savePreset": "Save preset",
     "removePreset": "Remove this preset?"
+  },
+  "sourceRelations": {
+    "openNote": "Open note",
+    "detailPanel": "Relationship panel",
+    "title": "Relationships between ideas",
+    "entityView": "Connections through entities",
+    "view": "Source graph view",
+    "processingHint": "Reuses existing note relationships and finds additional conceptual connections using summaries and original passages. Does not generate new atomic notes.",
+    "budgetHint": "Limits are shared by a source root and its chapters per execution. They bound new analysis, not existing relationships. Input uses a conservative token reservation including repairs; summary preparation is separate. Thresholds are provisional assessments, not probabilities.",
+    "maxCandidates": "Retrieved source candidates",
+    "maxPairs": "Source pairs evaluated",
+    "maxRelations": "Relationships generated and ranked",
+    "maxRelationsPerPair": "Relationships per source pair",
+    "maxInputTokens": "Input token budget",
+    "minImportance": "Minimum conceptual importance",
+    "minConfidence": "Minimum evidence confidence",
+    "includeWeakTypes": "Allow “mentions” and generic “related”",
+    "provenanceHint": "Counts represent distinct conceptual connections, not repeated passages. Notes and summaries may derive from the same evidence.",
+    "loadError": "Could not load or update relationships. Reload and try again.",
+    "empty": "No qualified relationships yet. Process “Relationships between sources” to discover them.",
+    "pending_review": "AI suggestion",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "direction": "Relationship direction",
+    "both": "Notes and source analysis",
+    "atomicNotes": "Atomic note relationships",
+    "sourceAnalysis": "Source analysis",
+    "stale": "Evidence changed; revalidation needed",
+    "evidence": "Ideas and original evidence",
+    "accept": "Accept",
+    "reject": "Reject",
+    "restore": "Restore as suggestion",
+    "previous": "Previous",
+    "next": "Next",
+    "partial": "Partial coverage: analysis budget reached. Process again to continue."
   }
 }

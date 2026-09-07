@@ -48,6 +48,7 @@ const pipelineStages = [
   "atomicNotes",
   "knowledgeGraph",
   "atomicNoteMatching",
+  "sourceMatching",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
@@ -258,6 +259,7 @@ export function JobCard({
   const SourceIcon = sourceIcon(card.source?.type);
   const progress = Math.round(card.progress * 100);
   const currentStage = card.ingestionRun?.currentStage ?? card.mainJob.type;
+  const relationCounts = sourceRelationCounts(card.ingestionRun?.stagesCheckpoint.sourceMatching);
   const activity = listActivityJobs(card).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
   return <article className={cn(
@@ -325,7 +327,9 @@ export function JobCard({
 
       <div className="mt-5">
         <div className="mb-2 flex items-center justify-between text-xs">
-          <span className="font-medium text-slate-600 dark:text-slate-300">{t("jobs.progress.percentComplete", { values: { percent: progress } })}</span>
+          <span className="font-medium text-slate-600 dark:text-slate-300">{t("jobs.progress.percentComplete", { values: { percent: progress } })}
+            {relationCounts ? <span className="ml-3" role="status">{t("jobs.progress.sourceRelations", {values:relationCounts})}</span> : null}
+          </span>
           {card.status === "running" ? <span className="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-300">
             <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
             {t("jobs.streaming")}
@@ -422,6 +426,9 @@ function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
             stageStatus === "running" ? "text-cyan-700 dark:text-cyan-300" : stageStatus === "completed" ? "text-slate-700 dark:text-slate-300" : "text-slate-400 dark:text-slate-600"
           )}>{t(stageMessageKey(stage))}</span>
           {checkpointSummary(stage, checkpoint) ? <span className="mt-0.5 text-[9px] text-slate-400">{checkpointSummary(stage, checkpoint)}</span> : null}
+          {stage === "sourceMatching" && typeof checkpoint === "object" && checkpoint !== null && "metadata" in checkpoint
+            && (checkpoint.metadata as Record<string,unknown> | undefined)?.partial === true
+            ? <span className="mt-1 text-[10px] text-amber-600" title={t("sourceRelations.partial")}>{t("sourceRelations.partial")}</span> : null}
         </div>
       </li>;
     })}
@@ -620,18 +627,28 @@ function checkpointSummary(stage: string, checkpoint: unknown): string | null {
   const record = metadata as Record<string, unknown>;
   const completed = Number(record.completed);
   const total = Number(record.total);
-  if (Number.isInteger(completed) && Number.isInteger(total) && total > 0) return `${completed}/${total}`;
+  if (Number.isInteger(completed) && Number.isInteger(total) && completed >= 0 && total >= completed) return `${completed}/${total}`;
   const countKey = ({
     chunking: "chunkCount",
     embedding: "embeddedCount",
     atomicNotes: "generatedCount",
     knowledgeGraph: "batchCount",
     atomicNoteMatching: "persistedCount",
+    sourceMatching: "persistedCount",
     obsidianProjection: "projected"
   } as Record<string, string>)[stage];
   const rawCount = countKey ? record[countKey] : undefined;
   const count = typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : undefined;
   return count === undefined ? null : String(count);
+}
+
+function sourceRelationCounts(checkpoint: unknown): { completed: number; total: number } | null {
+  if (!checkpoint || typeof checkpoint !== "object" || !("metadata" in checkpoint)) return null;
+  const metadata = checkpoint.metadata;
+  if (!metadata || typeof metadata !== "object" || !("completed" in metadata) || !("total" in metadata)) return null;
+  const {completed,total} = metadata;
+  return typeof completed === "number" && typeof total === "number" && Number.isInteger(completed) && Number.isInteger(total)
+    && completed >= 0 && total >= completed ? {completed,total} : null;
 }
 
 function statusStyle(status: JobCardModel["status"]) {
@@ -672,6 +689,7 @@ function jobTypeMessageKey(type: string): MessageKey {
     "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
     "relation-labels": "relationLabel.title",
     "atomic-note-matching": "jobs.types.atomicNoteMatching",
+    "source-matching": "jobs.types.sourceMatching",
     "obsidian-sync": "jobs.types.obsidianSync",
     "asset-storage": "jobs.types.assetStorage",
     "local-model-download": "jobs.types.localModelDownload"
@@ -685,6 +703,7 @@ function stageMessageKey(stage: string): MessageKey {
     "atomic-note-generation": "atomicNotes",
     "knowledge-graph-generation": "knowledgeGraph",
     "atomic-note-matching": "atomicNoteMatching",
+    "source-matching": "sourceMatching",
     "obsidian-sync": "obsidianProjection"
   } as Record<string, string>;
   return (`jobs.stages.${aliases[stage] ?? stage}` as MessageKey);

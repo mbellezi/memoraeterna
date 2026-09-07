@@ -91,6 +91,7 @@ export const ProcessingStages = [
   "atomicNotes",
   "knowledgeGraph",
   "atomicNoteMatching",
+  "sourceMatching",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
@@ -150,6 +151,7 @@ export const processingStageDependencies: Readonly<Record<ProcessingStage, reado
   atomicNotes: ["chunking"],
   knowledgeGraph: ["chunking"],
   atomicNoteMatching: ["atomicNotes"],
+  sourceMatching: ["summarization", "embedding"],
   obsidianProjection: ["materialization"],
   aggregateSummarization: ["summarization"]
 };
@@ -160,7 +162,7 @@ export const processingPresetStages: Readonly<Record<Exclude<ProcessingPreset, "
   summary: ["conversion", "structureDetection", "structureReview", "materialization", "chunking", "summarization"],
   full_knowledge: [
     "conversion", "structureDetection", "structureReview", "materialization", "chunking", "embedding",
-    "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching"
+    "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching"
   ]
 };
 

@@ -39,6 +39,12 @@ worker supervision, progress, cancellation, retry, or restart recovery.
 
 - One user action over multiple sources creates one processing batch and
   associated runs, not an unrelated IPC command per selected row.
+- Every stage and all its activity, counters, model-call context and outcomes
+  belong to an individual source run. Batch barriers coordinate prerequisites
+  only. Deferred atomic-note matching and source matching execute separate stage
+  jobs per source in sequence; never combine their inputs or broadcast a shared
+  completion/result to the batch. Cards display the owning checkpoint's waiting,
+  running, failed/canceled or completed state even after the ingestion job ends.
 - Aggregate progress never hides a failed child. Canceling a batch requests
   cancellation for active/pending runs while preserving completed results.
 - Collective stages honor their barriers: note matching waits for selected note

@@ -408,6 +408,15 @@ export function createIngestionRunRepository(db: Queryable) {
       return row ? mapIngestionRun(row) : null;
     },
 
+    async failStage(id: string, stage: string, error: string, canceled = false): Promise<void> {
+      const status = canceled ? "canceled" : "failed";
+      await db.query(`update ingestion_run_stages set status = $3::ingestion_run_stage_status,error = $4,updated_at = now()
+        where ingestion_run_id = $1 and stage = $2`,[id,stage,status,canceled ? null : error]);
+      await db.query(`update ingestion_runs set stages_checkpoint = jsonb_set(stages_checkpoint,array[$2],
+        coalesce(stages_checkpoint->$2,'{}'::jsonb) || jsonb_build_object('status',$3::text,'error',$4::text),true),updated_at = now()
+        where id = $1`,[id,stage,status,canceled ? null : error]);
+    },
+
     async cancel(id: string): Promise<IngestionRunRecord | null> {
       await db.query(
         `update ingestion_run_stages stage set status = 'canceled', updated_at = now()

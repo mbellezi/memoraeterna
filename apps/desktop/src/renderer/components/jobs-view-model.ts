@@ -45,9 +45,10 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
     const ingestionRun = groupedJobs.find((job) => job.ingestionRun)?.ingestionRun ?? null;
     const childErrors = groupedJobs.filter((job) => job.type !== "ingestion").flatMap((job) => job.errorHistory);
     const errors = deduplicateErrors(childErrors.length > 0 ? childErrors : mainJob.errorHistory);
-    const status = mainJob.status === "queued" && mainJob.attempts > 0 && errors.length > 0
+    const matching = deferredStagePresentation(mainJob,ingestionRun);
+    const status = matching?.status ?? (mainJob.status === "queued" && mainJob.attempts > 0 && errors.length > 0
       ? "retrying" as const
-      : mainJob.status;
+      : mainJob.status);
     return {
       id,
       mainJob,
@@ -55,11 +56,34 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
       ingestionRun,
       source: groupedJobs.find((job) => job.source)?.source ?? null,
       status,
-      progress: mainJob.progress,
+      progress: matching?.progress ?? mainJob.progress,
       updatedAt: groupedJobs.map((job) => job.updatedAt).toSorted().at(-1) ?? mainJob.updatedAt,
       errors
     };
   }).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+function deferredStagePresentation(mainJob: JobRecord, run: JobCardModel["ingestionRun"]): {status: JobRecord["status"]; progress:number} | null {
+  if (!run || mainJob.type !== "ingestion") return null;
+  const deferredStages = ["atomicNoteMatching","sourceMatching"];
+  const stage = deferredStages.includes(run.currentStage) ? run.currentStage : mainJob.status === "succeeded"
+    ? deferredStages.find((key) => {
+      const saved = run.stagesCheckpoint[key] as {status?:unknown} | undefined;
+      return saved && !["completed","skipped"].includes(String(saved.status));
+    }) : undefined;
+  if (!stage) return null;
+  const checkpoint = run.stagesCheckpoint[stage];
+  if (!checkpoint || typeof checkpoint !== "object") return null;
+  const state = checkpoint as Record<string,unknown>;
+  const fraction = typeof state.progress === "number" && Number.isFinite(state.progress) ? Math.max(0,Math.min(1,state.progress)) : 0;
+  const base = stage === "sourceMatching" ? 0.95 : 0.89;
+  if (state.status === "waiting_for_batch" || state.status === "pending") return {status:"queued",progress:base};
+  if (state.status === "running" || state.status === "failed" || state.status === "canceled") return {status:state.status,progress:base + fraction * (stage === "sourceMatching" ? 0.04 : 0.06)};
+  if (state.status === "completed" && run.effectiveStages.every((key) => {
+    const other = run.stagesCheckpoint[key] as {status?: unknown} | undefined;
+    return key === stage || other?.status === "completed" || other?.status === "skipped";
+  })) return {status:"succeeded",progress:1};
+  return null;
 }
 
 export function matchesFilter(card: JobCardModel, filter: JobFilter): boolean {

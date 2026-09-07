@@ -468,12 +468,13 @@ describe("phase 2 renderer views", () => {
       />
     );
 
-    expect(html.match(/type="range"/g)).toHaveLength(3);
-    expect(html.match(/title="Restore default value"/g)).toHaveLength(3);
+    expect(html.match(/type="range"/g)).toHaveLength(5);
+    expect(html.match(/title="Restore default value"/g)).toHaveLength(5);
     expect(html).toContain('id="atomicNoteRelationThreshold"');
     expect(html).toContain('id="relationTypeSimilarityThreshold"');
     expect(html).toContain('id="entityIdentitySimilarityThreshold"');
-    expect(html).not.toContain('type="number"');
+    expect(html).toContain('id="sourceRelations-minImportance"');
+    expect(html).toContain('id="sourceRelations-minConfidence"');
     expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 
@@ -568,6 +569,22 @@ describe("phase 2 renderer views", () => {
       modelId: "gpt-5.4",
       reasoningLevel: "xhigh"
     });
+  });
+
+  it.each([
+    ["running",0,8], ["running",3,8], ["failed",3,8], ["canceled",3,8], ["succeeded",8,8], ["succeeded",0,0]
+  ])("shows source-pair counts in the progress card and timeline: %s %s/%s", (status,completed,total) => {
+    const job = jobRecordSchema.parse({
+      id:"00000000-0000-4000-8000-000000000001",type:"ingestion",status,progress:0.95,
+      attempts:1,maxAttempts:3,canCancel:false,canRetry:false,error:null,errorHistory:[],aiExecution:null,
+      createdAt:"2026-07-18T20:12:52.308Z",updatedAt:"2026-07-18T20:12:52.560Z",
+      ingestionRun:{id:"00000000-0000-4000-8000-000000000010",status,currentStage:"sourceMatching",
+        effectiveStages:["sourceMatching"],stagesCheckpoint:{sourceMatching:{status,metadata:{completed,total}}}}
+    });
+    const html=renderToString(<JobCard card={groupJobs([job])[0]!} expanded={false} busy={false} t={t}
+      onToggle={() => undefined} onAction={() => undefined} onSelectAttempt={() => undefined} />);
+    expect(html).toContain(`${completed} of ${total} pair analyses completed`);
+    expect(html).toContain(`${completed}/${total}`);
   });
 
   it("places Delete beside Retry for a user-canceled incomplete job", () => {

@@ -7,6 +7,13 @@ import {
 } from "./hierarchical-ingestion.js";
 
 describe("hierarchical ingestion", () => {
+  it("includes source matching in full knowledge and resolves it without generating notes", () => {
+    const input = {preset:"custom" as const,requestedStages:["sourceMatching" as const],scope:"source_only" as const,targetSourceItemIds:[],forceRegeneration:false,previousArtifactPolicy:"reuse_valid" as const};
+    const plan = resolveProcessingPlan(input);
+    expect(plan.effectiveStages).toContain("summarization");expect(plan.effectiveStages).toContain("embedding");
+    expect(plan.effectiveStages).not.toContain("atomicNotes");expect(plan.effectiveStages).not.toContain("knowledgeGraph");
+    expect(resolveProcessingPlan({...input,preset:"full_knowledge",requestedStages:[]}).effectiveStages).toContain("sourceMatching");
+  });
   it("resolves presets and automatically includes dependencies", () => {
     const plan = resolveProcessingPlan({
       preset: "custom",

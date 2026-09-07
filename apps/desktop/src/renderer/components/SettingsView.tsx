@@ -646,10 +646,39 @@ function MatchingCard({ appSettings, t, onChange }: {
           value={appSettings.entityIdentitySimilarityThreshold} onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })} />
         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
       </div>
-
-
+      <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <div><h3 className="font-semibold">{t("sourceRelations.title")}</h3><p className="mt-1 text-xs leading-5 text-slate-500">{t("sourceRelations.budgetHint")}</p></div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {([
+            ["maxCandidates",1,200],["maxPairs",1,50],["maxRelations",1,200],["maxRelationsPerPair",1,20],["maxInputTokens",2000,200000]
+          ] as const).map(([key,min,max]) => <label key={key} className="grid gap-1 text-xs">
+            {t(`sourceRelations.${key}`)}
+            <SourceRelationLimitInput min={min} max={max} value={appSettings.sourceRelationSettings[key]}
+              onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />
+          </label>)}
+        </div>
+        {(["minImportance","minConfidence"] as const).map((key) => <MatchingSlider key={key} id={`sourceRelations-${key}`}
+          label={t(`sourceRelations.${key}`)} value={appSettings.sourceRelationSettings[key]}
+          defaultValue={defaultAppSettings.sourceRelationSettings[key]} resetLabel={t("settings.matching.resetDefault")}
+          onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />)}
+        <label className="flex items-center justify-between gap-3 text-sm">{t("sourceRelations.includeWeakTypes")}
+          <Switch checked={appSettings.sourceRelationSettings.includeWeakTypes} onChange={(event) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,includeWeakTypes:event.target.checked}})} />
+        </label>
+      </div>
     </section>
   );
+}
+
+function SourceRelationLimitInput({value,min,max,onCommit}:{value:number;min:number;max:number;onCommit:(value:number)=>void}) {
+  const [draft,setDraft]=useState(String(value));
+  useEffect(()=>setDraft(String(value)),[value]);
+  const commit=()=>{
+    const number=Number(draft);
+    const next=draft.trim() && Number.isFinite(number) ? Math.max(min,Math.min(max,Math.floor(number))) : value;
+    setDraft(String(next));if(next!==value)onCommit(next);
+  };
+  return <Input type="number" min={min} max={max} step={1} value={draft} onChange={(event)=>setDraft(event.target.value)} onBlur={commit}
+    onKeyDown={(event)=>{if(event.key==="Enter")event.currentTarget.blur();else if(event.key==="Escape"){event.preventDefault();setDraft(String(value));}}} />;
 }
 
 function ExternalServicesCard({ appSettings, t, onChange }: {
