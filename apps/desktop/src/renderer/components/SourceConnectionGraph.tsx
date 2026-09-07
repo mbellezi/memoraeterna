@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Graph from "graphology";
 import type Sigma from "sigma";
 import { Maximize2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphSourceConnectionDetails } from "../../shared/ipc";
 import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
+import { disposeConnectionGraphRenderer } from "./knowledge-graph-disposal";
 import { graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
 import { GraphHoverIntent, GraphWheelMotion, blendGraphColor, graphHighlightColor, graphMutedColor, boundedGraphWheelRatio, captureGraphWheelEvent, type GraphHoverTarget } from "./knowledge-graph-interaction";
 import { graphNodeSize, graphTypography, relationHitAreaScreenThickness, zoomCompensatedEdgeSize } from "./knowledge-graph-view-model";
@@ -70,7 +71,9 @@ export function SourceConnectionGraph({ details, forces, wheelZoomSensitivity, t
   const [retry, setRetry] = useState(0);
 
   useEffect(() => { layoutRef.current?.configure(forces); }, [forces]);
-  useEffect(() => {
+  // Dispose Sigma's GPU resources while its canvas container is still attached.
+  // Passive cleanup can run after React has removed the inspection panel.
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
     let disposed = false;
@@ -215,7 +218,10 @@ export function SourceConnectionGraph({ details, forces, wheelZoomSensitivity, t
       window.addEventListener("blur", release);
       const resizeObserver = new ResizeObserver(() => { renderer.resize(); scheduleFit(); });
       resizeObserver.observe(container);
+      let cleaned = false;
       cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
         hoverIntent.dispose();
         if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
         resizeObserver.disconnect();
@@ -225,7 +231,7 @@ export function SourceConnectionGraph({ details, forces, wheelZoomSensitivity, t
         window.removeEventListener("blur", release);
         layoutRef.current?.kill(); layoutRef.current = null;
         fitRef.current = () => {};
-        renderer.kill();
+        disposeConnectionGraphRenderer(renderer);
       };
       const nodes = graph.nodes();
       layoutRef.current = new KnowledgeGraphLayout(

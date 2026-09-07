@@ -87,7 +87,14 @@ locales.
   relations and include shared entities even without semantic edges. Only graph
   previews fill the entire graph viewport; textual cards remain compact. Graph
   previews fit all nodes initially and after the fit action until the user interacts,
-  including while physics settles or the viewport resizes. Their edges use a stable
+  including while physics settles or the viewport resizes. Connection previews
+  release their renderer, workers and pending frames before React removes the
+  preview canvas container; teardown must be idempotent. For connection previews,
+  Sigma's forced WebGL context loss is deferred across a paint opportunity after
+  canvas removal, with a bounded fallback when animation frames are suspended.
+  Workers, listeners, animations and renderer programs still stop immediately;
+  context loss is not disabled and GPU resources are not retained indefinitely.
+  Their edges use a stable
   2.1 screen-pixel thickness, with explicit arrowheads that retain readable fixed
   screen dimensions during zoom. Preview nodes use the main graph's degree-based
   size formula and zoom scaling; node and relation typography shares the main
