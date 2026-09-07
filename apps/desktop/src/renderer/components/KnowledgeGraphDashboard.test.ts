@@ -2,12 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
 
-import { prepareGraphEdges } from "./KnowledgeGraphDashboard";
+import { buildGraph, prepareGraphEdges, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 import {
   isLabelOutsideViewport,
-  isNodeVisibleAtLod,
-  linkedNodeSpringForce,
-  lodFromRatio,
+  nodeLabelOpacity,
   positionOverlayWithinViewport,
   relationLabelRevealAt,
   relationHitAreaScreenThickness,
@@ -16,19 +14,80 @@ import {
 } from "./knowledge-graph-view-model";
 
 describe("knowledge graph level of detail", () => {
-  it("moves from communities through hubs to full detail as the camera zooms in", () => {
-    expect(lodFromRatio(2)).toBe("overview");
-    expect(lodFromRatio(0.8)).toBe("hubs");
-    expect(lodFromRatio(0.3)).toBe("detail");
+  it("makes the background nearly transparent and monochrome, highlights relations in light red, and restores the original colors", () => {
+    const data: KnowledgeGraphDashboard = {
+      mode: "sources", truncated: false,
+      nodes: ["a", "b", "c", "orphan"].map((id) => ({
+        id, kind: "source", title: id, subtitle: null, content: null,
+        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0
+      })),
+      edges: [["a", "b"], ["b", "c"]].map(([source, target]) => ({
+        id: `${source}-${target}`, source: source!, target: target!, kind: "shared_entity",
+        label: "", description: null, weight: 1, confidence: 1, details: []
+      }))
+    };
+    const { graph } = buildGraph(data, ((key: string) => key) as Translator);
+    const edgeAB = graph.edges().find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:a"))!;
+    const edgeBC = graph.edges().find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:c"))!;
+    const alpha = (color: string) => Number.parseFloat(color.slice(color.lastIndexOf(",") + 1));
+    const rgb = (color: string) => color.match(/^rgba\((\d+), (\d+), (\d+),/)?.slice(1).map(Number);
+    for (const target of ["item:a", edgeAB]) {
+      const backgroundOpacity = target === "item:a" ? 0.1 : 0.04;
+      const neighbors = new Set(target === "item:a" ? graph.neighbors(target) : graph.extremities(target));
+      const unrelated = graph.getNodeAttributes("item:c");
+      const start = reduceNode("item:c", unrelated, 0.16, target, neighbors, 0, backgroundOpacity);
+      const middle = reduceNode("item:c", unrelated, 0.16, target, neighbors, 0.5, backgroundOpacity);
+      const end = reduceNode("item:c", unrelated, 0.16, target, neighbors, 1, backgroundOpacity);
+      expect(alpha(start.color)).toBe(1);
+      expect(alpha(middle.color)).toBeGreaterThan(alpha(end.color));
+      expect(alpha(end.color)).toBeCloseTo(backgroundOpacity);
+      expect(rgb(end.color)).toEqual([148, 148, 148]);
+      expect(end.labelOpacity).toBeLessThan(0.04);
+      expect(reduceNode("item:b", graph.getNodeAttributes("item:b"), 0.16, target, neighbors, 1).color).toBe(graph.getNodeAttribute("item:b", "color"));
+      const selectedEdge = reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, target, 1);
+      const otherEdge = reduceEdge(graph, edgeBC, graph.getEdgeAttributes(edgeBC), 0.16, target, 1);
+      expect(alpha(selectedEdge.color)).toBe(1);
+      expect(rgb(selectedEdge.color)).toEqual([252, 165, 165]);
+      expect(rgb(otherEdge.color)).toEqual([148, 148, 148]);
+      if (target === "item:a") {
+        expect(alpha(otherEdge.color)).toBeCloseTo(0.1);
+        for (const ratio of [2, 0.08]) {
+          expect(alpha(reduceEdge(graph, edgeBC, graph.getEdgeAttributes(edgeBC), ratio, target, 1).color)).toBeCloseTo(0.1);
+        }
+      } else expect(alpha(otherEdge.color)).toBeLessThan(0.02);
+      expect(rgb(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color)).toEqual([56, 189, 248]);
+      // The reverse fade converges to exactly the resting palette before clearing hover state.
+      expect(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, target, 0).color).toBe(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color);
+      expect(reduceNode("item:c", unrelated, 0.16, null, new Set(), 0).color).toBe(unrelated.color);
+    }
   });
-
-  it("never mixes community aggregates with source or note nodes", () => {
-    expect(isNodeVisibleAtLod("overview", true, 10, 2)).toBe(true);
-    expect(isNodeVisibleAtLod("overview", false, 10, 2)).toBe(false);
-    expect(isNodeVisibleAtLod("hubs", true, 10, 2)).toBe(false);
-    expect(isNodeVisibleAtLod("hubs", false, 10, 2)).toBe(true);
-    expect(isNodeVisibleAtLod("detail", true, 10, 2)).toBe(false);
-    expect(isNodeVisibleAtLod("detail", false, 0, 2)).toBe(true);
+  it("keeps items, orphans and connections visible across the former LOD boundaries", () => {
+    const data: KnowledgeGraphDashboard = {
+      mode: "sources", truncated: false,
+      nodes: ["a", "b", "orphan"].map((id) => ({
+        id, kind: "source", title: id, subtitle: null, content: null,
+        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0
+      })),
+      edges: [{ id: "ab", source: "a", target: "b", kind: "shared_entity", label: "", description: null, weight: 1, confidence: 1, details: [] }]
+    };
+    const { graph } = buildGraph(data, ((key: string) => key) as Translator);
+    expect(graph.nodes()).toEqual(["item:a", "item:b", "item:orphan"]);
+    for (const ratio of [8, 1.251, 1.25, 1.249, 0.521, 0.52, 0.519, 0.08]) {
+      graph.forEachNode((key, attributes) => {
+        expect(reduceNode(key, attributes, ratio, null, new Set()).hidden).toBe(false);
+      });
+      graph.forEachEdge((key, attributes) => {
+        expect(reduceEdge(graph, key, attributes, ratio, null, 0).hidden).toBe(false);
+      });
+    }
+    for (const boundary of [1.25, 0.52]) {
+      expect(Math.abs(nodeLabelOpacity(boundary - 0.001, 5) - nodeLabelOpacity(boundary + 0.001, 5))).toBeLessThan(0.01);
+    }
+    const positions = { "item:a": { x: 12.34, y: 56.78 }, "item:b": { x: 90, y: -10 }, "item:orphan": { x: -88, y: 99 } };
+    const saved = { stateKey: "snapshot", camera: { x: 0.3, y: 0.7, ratio: 0.42, angle: 0 }, nodePositions: positions };
+    expect(restoreKnowledgeGraphViewState(graph, "changed", saved)).toBe(false);
+    expect(restoreKnowledgeGraphViewState(graph, "snapshot", saved)).toBe(true);
+    for (const [node, position] of Object.entries(positions)) expect(graph.getNodeAttributes(node)).toMatchObject(position);
   });
 
   it("increases visual strength continuously while zooming closer", () => {
@@ -51,10 +110,16 @@ describe("knowledge graph level of detail", () => {
     expect(threshold).toBeLessThanOrEqual(0.9);
   });
 
-  it("pulls and pushes connected nodes like a link spring", () => {
-    expect(linkedNodeSpringForce({ x: 0, y: 0 }, { x: 10, y: 0 }, 4).x).toBeGreaterThan(0);
-    expect(linkedNodeSpringForce({ x: 8, y: 0 }, { x: 10, y: 0 }, 4).x).toBeLessThan(0);
-    expect(linkedNodeSpringForce({ x: 6, y: 0 }, { x: 10, y: 0 }, 4)).toEqual({ x: 0, y: 0 });
+  it("reveals labels continuously and monotonically, including orphan labels", () => {
+    for (const degree of [0, 1, 8, 100]) {
+      let previous = 0;
+      for (let ratio = 2; ratio >= 0.08; ratio -= 0.01) {
+        const opacity = nodeLabelOpacity(ratio, degree);
+        expect(opacity).toBeGreaterThanOrEqual(previous);
+        previous = opacity;
+      }
+      expect(nodeLabelOpacity(0.08, degree)).toBe(1);
+    }
   });
 
   it("compensates Sigma camera scaling to keep edge thickness stable on screen", () => {

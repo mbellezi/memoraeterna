@@ -50,7 +50,7 @@ files executed directly by Node.
 | shadcn/ui | Vendored components; CLI baseline `4.13.0` |
 | Icons | `lucide-react` `1.23.0` |
 | Interactive graph rendering | `sigma` `3.0.3` with `graphology` `0.26.0` |
-| Graph communities and layout | `graphology-communities-louvain` `2.0.2`; `graphology-layout-forceatlas2` `0.10.1` |
+| Graph communities and layout | `graphology-communities-louvain` `2.0.2`; `d3-force` `3.0.0` in a renderer Web Worker; `@types/d3-force` `3.0.10` |
 | Desktop packaging | `electron-builder` `26.15.3` |
 
 The product is an Electron desktop application. Do not introduce Next.js or a

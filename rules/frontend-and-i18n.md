@@ -41,10 +41,26 @@ locales.
   entities, semantic relations, and related sources are grouped into one
   expandable card, with the underlying connections shown as compact details.
 - The global knowledge-graph dashboard uses WebGL rendering, automatic
-  community-aware layout outside the renderer UI thread, and zoom-dependent
-  levels of detail. Community aggregate nodes are exclusive to the overview
-  level; they are not mixed with item nodes. Node and edge emphasis responds
-  immediately with a short transition, while detail previews appear only after
+  community-aware d3-force layout in a presentation-only Web Worker, with
+  Zod-validated messages. The same individual nodes remain visible at every
+  zoom level; zoom reveals labels and relation detail continuously without
+  replacing items with community aggregates. Louvain groups guide the physics
+  without adding synthetic nodes or interaction edges to the simulation.
+  Node and edge emphasis starts after a 100 ms dwell on the same target and
+  fades over a short transition. Hovering a node emphasizes it, its neighbors
+  and incident edges; hovering an edge emphasizes only that edge and its
+  endpoints. Emphasized relations transition to light red. All unrelated
+  nodes, edges and labels desaturate to the same neutral gray and fade to
+  near-transparency; leaving the target fades the original palette and opacity
+  back in. During node hover, unrelated nodes and non-incident visible edges
+  finish the fade at an absolute alpha of 0.10, independent of zoom (not 10%
+  of their resting opacity). Connected nodes and incident edges retain their
+  emphasis. Hover behavior remains suspended during drag.
+  Node, hovered-node and edge WebGL programs must premultiply RGB by the
+  corrected alpha in the normal render pass to match Sigma's ONE /
+  ONE_MINUS_SRC_ALPHA blending. Picking colors must remain unmodified. Verify
+  transparency at the rendered-pixel boundary, not only in reducer RGBA strings.
+  Target dwell is independent of pointer movement inside the target, while detail previews appear only after
   one second of pointer inactivity and leave with a short fade. Atomic-note
   previews include the note body. Item labels wrap, and their opacity plus edge
   and edge-label opacity increases continuously with zoom. Edge thickness stays
@@ -58,15 +74,49 @@ locales.
   outside the viewport, a temporary label follows the pointer. Hover information
   cards measure their rendered size, flip around the pointer when needed, and
   remain bounded by the visible graph viewport, including after async content
-  changes. Hovered or dragged nodes render
+  changes. Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
-  short emphasis transition. Dragging a node gives its directly connected visible
-  nodes a damped spring response with visible lag and short release inertia. Nodes remain draggable within a
-  circularly constrained layout. Source clicks open source detail, and
+  short emphasis transition. Node and background dragging cancel all pending
+  hover/preview timers and disable tooltip activation and hover emphasis until
+  release. Dragging pins the node to the pointer and reheats
+  the entire simulation; connected motion propagates through the network and
+  cools with damping after release. Worker snapshots must continue to update
+  other nodes while pointer commands are in flight; stale pointer coordinates
+  must not overwrite the latest dragged position. Physics wakes on the first
+  drag movement, without requiring pointer inactivity.
+  Wheel zoom is anchored at the cursor and driven by bounded velocity impulses
+  in logarithmic scale. It responds on the first animation frame, then decays
+  smoothly to rest when input stops. Normalize delta units continuously without
+  hard device/sensitivity thresholds or an accumulated destination backlog.
+  Input magnitude and cadence determine the current velocity so fast wheel
+  gestures and free-spinning bursts remain proportional while slow gestures
+  retain fine control. High-magnitude input receives a continuous boost of up
+  to approximately 3x without materially changing low-magnitude precision.
+  Do not cumulatively accelerate consecutive wheel events
+  or flatten sustained free-spin input against a velocity ceiling: macOS wheel
+  momentum already arrives as a changing event stream. Limit per-frame travel,
+  use only a brief synthetic decay after input stops, discard catch-up after
+  long stalls, reverse direction immediately, retain Shift precision, and ease
+  into camera bounds. At the zoom-out boundary, center the complete graph and
+  keep its longest visible dimension at approximately 50% of the viewport.
+  Motion is time-based for consistent 60/120 Hz behavior. Wheel zoom has exactly
+  one camera writer: intercept the native wheel event in the DOM capture phase
+  and stop it before Sigma's mouse captor can start its fixed-duration default
+  animation. Sigma's wheel animation must never run concurrently with the custom
+  velocity controller; regression coverage must detect secondary camera updates
+  that overwrite a wheel frame.
+  Repulsion, link attraction, preferred link
+  distance, and center attraction are independently adjustable. Communities
+  form through soft forces; orphan nodes favor a broad peripheral band and
+  circular containment never clamps node coordinates to a hard boundary.
+  Physics sleeps after settling, with a bounded run as a fallback, and wakes
+  for interaction or force changes. Camera normalization remains fixed during
+  simulation and drag. Source clicks open source detail, and
   atomic-note clicks open and focus that note in its source's Atomic Notes tab.
   Returning from either destination restores the graph mode, camera position,
-  zoom, and automatic or manually adjusted node positions exactly when the graph
-  data has not changed.
+  zoom, camera bounds, force settings, and automatic or manually adjusted node
+  positions exactly when the graph data has not changed; restoration does not
+  automatically restart the simulation.
 - Manual textual intake uses a reusable Markdown editor with write, preview,
   and split views. Hierarchical roots also expose an ordered subitem composer;
   existing materialized children remain independently editable from the Library.

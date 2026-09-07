@@ -1,7 +1,19 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Graph from "graphology";
-import louvain from "graphology-communities-louvain";
-import type FA2Layout from "graphology-layout-forceatlas2/worker";
+import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
+import { defaultGraphForceSettings, graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
+import {
+  GraphHoverIntent,
+  GraphWheelMotion,
+  blendGraphColor,
+  boundedGraphWheelRatio,
+  captureGraphWheelEvent,
+  graphHighlightColor,
+  graphMutedColor,
+  graphZoomOutRatio,
+  zoomOutCenteringStrength,
+  type GraphHoverTarget
+} from "./knowledge-graph-interaction";
 import type Sigma from "sigma";
 import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/rendering";
 import {
@@ -25,15 +37,12 @@ import { cn } from "../lib/cn";
 import { Input } from "./ui/input";
 import {
   isLabelOutsideViewport,
-  isNodeVisibleAtLod,
-  linkedNodeSpringForce,
-  lodFromRatio,
+  nodeLabelOpacity,
   positionOverlayWithinViewport,
   relationLabelRevealAt,
   relationHitAreaScreenThickness,
   zoomCompensatedEdgeSize,
-  zoomVisualStrength,
-  type LodLevel
+  zoomVisualStrength
 } from "./knowledge-graph-view-model";
 
 type SourceRelationKind = "shared_entity" | "semantic_relation";
@@ -51,8 +60,7 @@ interface NodeAttributes {
   label: string;
   size: number;
   color: string;
-  kind: "source" | "atomic_note" | "community";
-  lod: "item" | "community";
+  kind: "source" | "atomic_note";
   rawId: string | null;
   sourceItemId: string | null;
   title: string;
@@ -61,23 +69,23 @@ interface NodeAttributes {
   sourceType: string | null;
   noteStatus: string | null;
   detailCount: number;
-  memberCount: number;
   importance: number;
   labelOpacity: number;
+  labelColor?: string;
 }
 
 interface EdgeAttributes {
   label: string;
   size: number;
   color: string;
-  kind: "source_connection" | "atomic_note_relation" | "community" | "support" | "hit_area";
-  lod: "item" | "community" | "support";
+  kind: "source_connection" | "atomic_note_relation" | "hit_area";
   confidence: number;
   weight: number;
   description: string | null;
   details: string[];
   layoutWeight: number;
   labelOpacity: number;
+  labelColor?: string;
   labelRevealAt: number;
   sourceRelations: SourceRelationGroup[];
   interactionTarget: string | null;
@@ -98,25 +106,9 @@ interface FloatingEdgeLabel {
   y: number;
 }
 
-interface CircularBounds {
-  centerX: number;
-  centerY: number;
-  radius: number;
-}
-
-interface ConnectedNodeSpring {
-  node: string;
-  x: number;
-  y: number;
-  restLength: number;
-  velocityX: number;
-  velocityY: number;
-}
-
 interface GraphBundle {
   graph: Graph<NodeAttributes, EdgeAttributes>;
   rawNodeKeys: string[];
-  communityCount: number;
   itemEdgeCount: number;
   stateKey: string;
 }
@@ -125,6 +117,8 @@ export interface KnowledgeGraphViewState {
   stateKey: string;
   camera: { x: number; y: number; ratio: number; angle: number };
   nodePositions: Record<string, { x: number; y: number }>;
+  bounds?: { x: [number, number]; y: [number, number] };
+  forces?: GraphForceSettings;
 }
 
 interface PreparedGraphEdge {
@@ -163,9 +157,6 @@ const atomicRelationMessageKeys: Readonly<Record<string, MessageKey>> = {
   related: "knowledge.relations.types.related"
 };
 
-const mutedNode = "#94a3b8";
-const mutedEdge = "rgb(17, 30, 46)";
-
 export function KnowledgeGraphDashboard({
   t,
   mode,
@@ -188,24 +179,24 @@ export function KnowledgeGraphDashboard({
   const [error, setError] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [query, setQuery] = useState("");
-  const [lod, setLod] = useState<LodLevel>("hubs");
   const [layoutRunning, setLayoutRunning] = useState(false);
+  const [layoutError, setLayoutError] = useState(false);
+  const [forces, setForces] = useState<GraphForceSettings>(initialViewState?.forces ?? defaultGraphForceSettings);
+  const forcesRef = useRef(forces);
   const [hover, setHover] = useState<HoverCard | null>(null);
   const [floatingEdgeLabel, setFloatingEdgeLabel] = useState<FloatingEdgeLabel | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sigmaRef = useRef<Sigma<NodeAttributes, EdgeAttributes> | null>(null);
-  const layoutRef = useRef<FA2Layout<NodeAttributes, EdgeAttributes> | null>(null);
-  const layoutTimerRef = useRef<number | null>(null);
-  const hoverActivationTimerRef = useRef<number | null>(null);
+  const layoutRef = useRef<KnowledgeGraphLayout | null>(null);
   const hoverExitTimerRef = useRef<number | null>(null);
   const focusTimerRef = useRef<number | null>(null);
   const hoverAnimationFrameRef = useRef<number | null>(null);
   const hoverStrengthRef = useRef(0);
   const cameraRatioRef = useRef(1);
-  const circularBoundsRef = useRef<CircularBounds | null>(null);
-  const lodRef = useRef<LodLevel>("hubs");
   const hoveredKeyRef = useRef<string | null>(null);
   const hoveredNeighborsRef = useRef<Set<string>>(new Set());
+  const draggingRef = useRef(false);
+  const cancelWheelRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     let active = true;
@@ -236,7 +227,11 @@ export function KnowledgeGraphDashboard({
     const rawNodeKeys = bundle.rawNodeKeys;
     const graphStateKey = bundle.stateKey;
     const restoredViewState = restoreKnowledgeGraphViewState(graph, graphStateKey, initialViewState);
-    void initializeRenderer();
+    setLayoutError(false);
+    const initialForces = initialViewState?.forces ?? defaultGraphForceSettings;
+    forcesRef.current = initialForces;
+    setForces(initialForces);
+    void initializeRenderer().catch(() => { if (!disposed) { cleanupRenderer(); setLayoutError(true); setLayoutRunning(false); } });
 
     return () => {
       disposed = true;
@@ -244,24 +239,32 @@ export function KnowledgeGraphDashboard({
     };
 
     async function initializeRenderer() {
-      const [{ default: SigmaConstructor }, { default: FA2LayoutConstructor }] = await Promise.all([
+      const [{ default: SigmaConstructor }, { GraphNodeProgram, GraphEdgeProgram }] = await Promise.all([
         import("sigma"),
-        import("graphology-layout-forceatlas2/worker")
+        import("./knowledge-graph-programs")
       ]);
       if (disposed) return;
+      const labels = createSmoothNodeLabels(() => sigmaRef.current?.scheduleRender());
       const renderer = new SigmaConstructor<NodeAttributes, EdgeAttributes>(graph, graphContainer, {
+      nodeProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
+      nodeHoverProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
+      edgeProgramClasses: { line: GraphEdgeProgram<NodeAttributes, EdgeAttributes> },
       allowInvalidContainer: true,
-      defaultDrawNodeHover: drawWrappedNodeLabel,
-      defaultDrawNodeLabel: drawWrappedNodeLabel,
+      defaultDrawNodeHover: (context, node, settings) => {
+        if (!draggingRef.current && hoveredKeyRef.current === node.key && hoverStrengthRef.current > 0) {
+          drawWrappedNodeLabel(context, { ...node, labelOpacity: hoverStrengthRef.current }, settings);
+        }
+      },
+      defaultDrawNodeLabel: labels.draw,
       defaultDrawEdgeLabel: drawFadingEdgeLabel,
       enableEdgeEvents: true,
-      hideEdgesOnMove: graph.size > 12_000,
+      hideEdgesOnMove: false,
       hideLabelsOnMove: false,
       labelColor: { color: "#cbd5e1" },
-      labelDensity: 0.1,
+      labelDensity: 0,
       labelFont: "Inter, ui-sans-serif, system-ui, sans-serif",
       labelGridCellSize: 110,
-      labelRenderedSizeThreshold: 9,
+      labelRenderedSizeThreshold: 0,
       labelSize: 12,
       labelWeight: "500",
       itemSizesReference: "screen",
@@ -270,60 +273,100 @@ export function KnowledgeGraphDashboard({
       stagePadding: 72,
       zIndex: true,
       minCameraRatio: 0.08,
-      maxCameraRatio: 8,
+      maxCameraRatio: null,
+      zoomDuration: 280,
+      zoomingRatio: 1.25,
       nodeReducer: (node, attributes) => reduceNode(
-        graph,
         node,
         attributes,
-        lodRef.current,
         cameraRatioRef.current,
         hoveredKeyRef.current,
-        hoveredNeighborsRef.current
+        hoveredNeighborsRef.current,
+        hoverStrengthRef.current,
+        hoveredKeyRef.current && graph.hasNode(hoveredKeyRef.current) ? 0.1 : 0.04
       ),
       edgeReducer: (edge, attributes) => reduceEdge(
         graph,
         edge,
         attributes,
-        lodRef.current,
         cameraRatioRef.current,
         hoveredKeyRef.current,
         hoverStrengthRef.current
       )
       });
       sigmaRef.current = renderer;
+      renderer.on("beforeRender", labels.beginFrame);
 
     const camera = renderer.getCamera();
+    const radius = graphLayoutRadius(graph.order, initialForces.linkDistance) * 1.4;
+    renderer.setCustomBBox(restoredViewState && initialViewState?.bounds
+      ? initialViewState.bounds : { x: [-radius, radius], y: [-radius, radius] });
     if (restoredViewState && initialViewState) camera.setState(initialViewState.camera);
     const updateCameraDetail = (ratio: number) => {
       cameraRatioRef.current = ratio;
-      const next = lodFromRatio(ratio);
-      if (lodRef.current !== next) {
-        lodRef.current = next;
-        setLod(next);
-      }
       renderer.scheduleRefresh();
     };
     updateCameraDetail(camera.ratio);
     camera.on("updated", ({ ratio }) => updateCameraDetail(ratio));
 
     const mouse = renderer.getMouseCaptor();
-    let pendingHover: Omit<HoverCard, "exiting"> | null = null;
     let draggedNode: string | null = null;
     let dragMoved = false;
     let suppressNextNodeClick = false;
     let floatingEdgeKey: string | null = null;
-    let connectedSprings: ConnectedNodeSpring[] = [];
-    let dragAttractor: { x: number; y: number } | null = null;
-    let connectedSpringFrame: number | null = null;
-    let connectedSpringLastAt = 0;
-    let connectedSpringReleasedAt: number | null = null;
+    let pointerTarget: GraphHoverTarget | null = null;
+    let positionFrame: number | null = null;
+    let targetPositions: Float32Array | null = null;
+    let lastPositionFrame = 0;
+    let simulationRunning = false;
+    const nodeIndices = new Map(rawNodeKeys.map((node, index) => [node, index]));
+
+    const interpolatePositions = (now: number) => {
+      positionFrame = null;
+      if (!targetPositions || disposed) return;
+      const blend = 1 - Math.exp(-Math.min(64, now - (lastPositionFrame || now - 16)) / (draggedNode ? 10 : 32));
+      lastPositionFrame = now;
+      let remaining = 0;
+      graph.updateEachNodeAttributes((node, attributes) => {
+        if (node === draggedNode) return attributes;
+        const index = nodeIndices.get(node)! * 2;
+        const x = targetPositions![index]!;
+        const y = targetPositions![index + 1]!;
+        const distance = Math.hypot(x - attributes.x, y - attributes.y);
+        remaining = Math.max(remaining, distance);
+        return { ...attributes,
+          x: distance < 0.01 ? x : attributes.x + (x - attributes.x) * blend,
+          y: distance < 0.01 ? y : attributes.y + (y - attributes.y) * blend
+        };
+      }, { attributes: ["x", "y"] });
+      if (remaining > 0.01) positionFrame = window.requestAnimationFrame(interpolatePositions);
+      else if (!simulationRunning) setLayoutRunning(false);
+    };
+
+    const startPhysics = () => {
+      layoutRef.current?.kill();
+      const nodes = rawNodeKeys.map((id) => ({ id, x: graph.getNodeAttribute(id, "x"), y: graph.getNodeAttribute(id, "y") }));
+      const edges = graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hit_area").map((edge) => {
+        const [source, target] = graph.extremities(edge);
+        return { source, target, weight: graph.getEdgeAttribute(edge, "layoutWeight") };
+      });
+      layoutRef.current = new KnowledgeGraphLayout(nodes, edges, forcesRef.current, restoredViewState,
+        (positions, running) => {
+          targetPositions = positions;
+          simulationRunning = running;
+          if (positionFrame === null) positionFrame = window.requestAnimationFrame(interpolatePositions);
+        },
+        () => { if (!disposed) { setLayoutError(true); setLayoutRunning(false); } }
+      );
+      setLayoutRunning(!restoredViewState);
+    };
 
     const animateHighlight = (target: number, onComplete?: () => void) => {
       if (hoverAnimationFrameRef.current !== null) window.cancelAnimationFrame(hoverAnimationFrameRef.current);
       const startedAt = performance.now();
       const initial = hoverStrengthRef.current;
       const step = (now: number) => {
-        const progress = Math.min(1, (now - startedAt) / 140);
+        const progress = Math.max(0, Math.min(1, (now - startedAt) / 140));
         hoverStrengthRef.current = initial + (target - initial) * (1 - Math.pow(1 - progress, 3));
         renderer.scheduleRefresh();
         if (progress < 1) hoverAnimationFrameRef.current = window.requestAnimationFrame(step);
@@ -335,206 +378,208 @@ export function KnowledgeGraphDashboard({
       hoverAnimationFrameRef.current = window.requestAnimationFrame(step);
     };
 
-    const clearActivationTimer = () => {
-      if (hoverActivationTimerRef.current !== null) window.clearTimeout(hoverActivationTimerRef.current);
-      hoverActivationTimerRef.current = null;
-    };
     const hidePopup = () => {
-      pendingHover = null;
       floatingEdgeKey = null;
       setFloatingEdgeLabel(null);
-      clearActivationTimer();
       setHover((current) => current ? { ...current, exiting: true } : null);
       if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
       hoverExitTimerRef.current = window.setTimeout(() => setHover(null), 120);
     };
-    const hideHover = () => {
-      hidePopup();
-      animateHighlight(0, () => {
-        hoveredKeyRef.current = null;
-        hoveredNeighborsRef.current = new Set();
-        renderer.scheduleRefresh();
-      });
-    };
-    const scheduleHover = (next: Omit<HoverCard, "exiting">) => {
-      if (hoveredKeyRef.current && hoveredKeyRef.current !== next.key) hideHover();
-      pendingHover = next;
-      clearActivationTimer();
-      hoverActivationTimerRef.current = window.setTimeout(() => {
-        if (!pendingHover || pendingHover.key !== next.key) return;
-        hoveredKeyRef.current = next.key;
-        hoveredNeighborsRef.current = new Set(next.type === "node"
-          ? graph.neighbors(next.key)
-          : graph.extremities(next.key));
+    const hoverIntent = new GraphHoverIntent(
+      (target) => {
+        if (disposed) return;
+        if (!target) {
+          animateHighlight(0, () => {
+            hoveredKeyRef.current = null;
+            hoveredNeighborsRef.current = new Set();
+            renderer.scheduleRefresh();
+          });
+          return;
+        }
+        if (draggingRef.current) return;
+        if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+        hoveredKeyRef.current = target.key;
+        hoveredNeighborsRef.current = new Set(target.type === "node"
+          ? graph.neighbors(target.key) : graph.extremities(target.key));
+        hoverStrengthRef.current = 0;
+        animateHighlight(1);
+        if (target.type === "edge" && edgeLabelFallsOutsideViewport(renderer, graph, target.key)) {
+          floatingEdgeKey = target.key;
+          setFloatingEdgeLabel({
+            edge: target.key, label: graph.getEdgeAttribute(target.key, "label"),
+            ...floatingLabelPosition(renderer, target)
+          });
+        }
+      },
+      (target) => {
+        if (disposed) return;
+        if (!target) { hidePopup(); return; }
+        if (draggingRef.current) return;
+        if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
         floatingEdgeKey = null;
         setFloatingEdgeLabel(null);
-        setHover({ ...pendingHover, exiting: false });
-        pendingHover = null;
-        renderer.scheduleRefresh();
-      }, 1_000);
-    };
-    const queueNode = ({ node, event }: { node: string; event: { x: number; y: number } }) => {
-      graphContainer.style.cursor = "grab";
-      floatingEdgeKey = null;
-      setFloatingEdgeLabel(null);
-      hoveredKeyRef.current = node;
-      hoveredNeighborsRef.current = new Set(graph.neighbors(node));
-      animateHighlight(1);
-      scheduleHover({ type: "node", key: node, x: event.x, y: event.y });
-    };
-    const queueEdge = ({ edge, event }: { edge: string; event: { x: number; y: number } }) => {
-      const interactionTarget = graph.getEdgeAttribute(edge, "interactionTarget");
-      const resolvedEdge = interactionTarget && graph.hasEdge(interactionTarget) ? interactionTarget : edge;
-      const kind = graph.getEdgeAttribute(resolvedEdge, "kind");
-      if (kind === "support" || kind === "community") return;
-      hoveredKeyRef.current = resolvedEdge;
-      hoveredNeighborsRef.current = new Set(graph.extremities(resolvedEdge));
-      animateHighlight(1);
-      if (edgeLabelFallsOutsideViewport(renderer, graph, resolvedEdge)) {
-        floatingEdgeKey = resolvedEdge;
-        setFloatingEdgeLabel({
-          edge: resolvedEdge,
-          label: graph.getEdgeAttribute(resolvedEdge, "label"),
-          ...floatingLabelPosition(renderer, event)
-        });
-      } else {
-        floatingEdgeKey = null;
-        setFloatingEdgeLabel(null);
+        setHover({ ...target, exiting: false });
       }
-      scheduleHover({ type: "edge", key: resolvedEdge, x: event.x, y: event.y });
-    };
-    renderer.on("enterNode", queueNode);
-    renderer.on("leaveNode", () => { if (!draggedNode) graphContainer.style.cursor = "default"; hideHover(); });
-    renderer.on("enterEdge", queueEdge);
-    renderer.on("leaveEdge", hideHover);
-    renderer.on("clickStage", hideHover);
-    renderer.on("downNode", ({ node, event }) => {
-      if (connectedSpringFrame !== null) window.cancelAnimationFrame(connectedSpringFrame);
-      connectedSpringFrame = null;
-      draggedNode = node;
-      dragMoved = false;
-      const draggedLod = graph.getNodeAttribute(node, "lod");
-      const draggedNeighbors = graph.neighbors(node).filter((neighbor) => {
-        const attributes = graph.getNodeAttributes(neighbor);
-        return attributes.lod === draggedLod && isNodeVisibleAtLod(
-          lodRef.current,
-          attributes.lod === "community",
-          attributes.importance,
-          hubThreshold(graph)
-        );
-      });
-      const attributes = graph.getNodeAttributes(node);
-      dragAttractor = { x: attributes.x, y: attributes.y };
-      connectedSprings = draggedNeighbors.map((neighbor) => {
-        const position = graph.getNodeAttributes(neighbor);
-        return {
-          node: neighbor,
-          x: position.x,
-          y: position.y,
-          restLength: Math.max(0.2, Math.hypot(position.x - attributes.x, position.y - attributes.y)),
-          velocityX: 0,
-          velocityY: 0
-        };
-      });
-      connectedSpringReleasedAt = null;
-      hidePopup();
+    );
+    const resolveEdge = (edge: string) => graph.getEdgeAttribute(edge, "interactionTarget") ?? edge;
+    renderer.on("enterNode", ({ node, event }) => {
+      pointerTarget = { type: "node", key: node, x: event.x, y: event.y };
+      if (draggingRef.current) return;
+      graphContainer.style.cursor = "grab";
+      hoverIntent.enter(pointerTarget);
+    });
+    renderer.on("leaveNode", ({ node }) => {
+      if (pointerTarget?.type === "node" && pointerTarget.key === node) pointerTarget = null;
+      if (draggingRef.current) return;
+      graphContainer.style.cursor = "default";
+      hoverIntent.leave("node", node);
+    });
+    renderer.on("enterEdge", ({ edge, event }) => {
+      if (draggingRef.current) return;
+      pointerTarget = { type: "edge", key: resolveEdge(edge), x: event.x, y: event.y };
+      hoverIntent.enter(pointerTarget);
+    });
+    renderer.on("leaveEdge", ({ edge }) => {
+      if (pointerTarget?.type === "edge" && pointerTarget.key === resolveEdge(edge)) pointerTarget = null;
+      if (!draggingRef.current) hoverIntent.leave("edge", resolveEdge(edge));
+    });
+    renderer.on("clickStage", () => hoverIntent.clear());
+    const suspendHover = () => {
+      draggingRef.current = true;
+      hoverIntent.suspend();
+      cancelWheelRef.current();
+      if (camera.isAnimated()) void camera.animate(camera.getState(), { duration: 1 });
+      renderer.setSetting("enableEdgeEvents", false);
       if (hoverAnimationFrameRef.current !== null) window.cancelAnimationFrame(hoverAnimationFrameRef.current);
       hoverAnimationFrameRef.current = null;
-      hoverStrengthRef.current = 1;
-      hoveredKeyRef.current = node;
-      hoveredNeighborsRef.current = new Set(graph.neighbors(node));
-      circularBoundsRef.current = measureCircularBounds(graph, rawNodeKeys);
+      if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
+      if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+      hoverStrengthRef.current = 0;
+      hoveredKeyRef.current = null;
+      hoveredNeighborsRef.current = new Set();
+      setHover(null);
+      setFloatingEdgeLabel(null);
+      renderer.scheduleRefresh();
+    };
+    renderer.on("downStage", () => { pointerTarget = null; suspendHover(); });
+    const wheelMotion = new GraphWheelMotion();
+    let wheelFrame: number | null = null;
+    let wheelAnchor = { x: 0, y: 0 };
+    let knownZoomOutMaximum = Math.max(camera.ratio, measureGraphZoomOutRatio(renderer));
+    let wheelMaximum: number | null = null;
+    cancelWheelRef.current = () => {
+      if (wheelFrame !== null) window.cancelAnimationFrame(wheelFrame);
+      wheelFrame = null;
+      wheelMotion.cancel();
+    };
+    const stepWheel = (now: number) => {
+      wheelFrame = null;
+      if (disposed || draggingRef.current) { wheelMotion.cancel(); return; }
+      const maximum = wheelMaximum ?? knownZoomOutMaximum;
+      const delta = wheelMotion.advance(now, {
+        ratio: camera.ratio,
+        minimum: camera.minRatio ?? 0.08,
+        maximum
+      });
+      if (delta !== 0) {
+        const ratio = boundedGraphWheelRatio(
+          camera.ratio,
+          delta,
+          camera.minRatio ?? 0.08,
+          maximum
+        );
+        if (ratio === camera.ratio) { wheelMotion.cancel(); return; }
+        const zoomed = freshViewportZoomedState(renderer, wheelAnchor, ratio);
+        if (delta > 0) {
+          const center = graphCenter(renderer);
+          const centering = zoomOutCenteringStrength(ratio, maximum);
+          zoomed.x += (center.x - zoomed.x) * centering;
+          zoomed.y += (center.y - zoomed.y) * centering;
+        }
+        camera.setState(zoomed);
+      }
+      if (wheelMotion.active) wheelFrame = window.requestAnimationFrame(stepWheel);
+      else wheelMaximum = null;
+    };
+    const handleGraphWheel = (original: WheelEvent) => {
+      // Sigma starts its own fixed-duration wheel animation after emitting its
+      // captor event. Intercept the native event first so only this controller
+      // is ever allowed to update the camera.
+      captureGraphWheelEvent(original);
+      if (draggingRef.current) return;
+      if (original.deltaY === 0) return;
+      if (wheelFrame === null && camera.isAnimated()) void camera.animate(camera.getState(), { duration: 1 });
+      if (!wheelMotion.active) {
+        const measuredMaximum = measureGraphZoomOutRatio(renderer);
+        if (measuredMaximum >= camera.ratio) knownZoomOutMaximum = measuredMaximum;
+        wheelMaximum = Math.max(camera.ratio, knownZoomOutMaximum);
+      }
+      wheelMotion.push(original, performance.now());
+      const bounds = graphContainer.getBoundingClientRect();
+      wheelAnchor = { x: original.clientX - bounds.left, y: original.clientY - bounds.top };
+      if (wheelFrame === null && wheelMotion.active) wheelFrame = window.requestAnimationFrame(stepWheel);
+    };
+    graphContainer.addEventListener("wheel", handleGraphWheel, { capture: true, passive: false });
+    renderer.on("downNode", ({ node, event }) => {
+      pointerTarget = { type: "node", key: node, x: event.x, y: event.y };
+      draggedNode = node;
+      dragMoved = false;
+      suspendHover();
       camera.disable();
       graphContainer.style.cursor = "grabbing";
       renderer.scheduleRefresh();
       event.preventSigmaDefault();
     });
     mouse.on("mousemove", (event) => {
+      if (draggingRef.current) return;
       if (floatingEdgeKey) {
         const position = floatingLabelPosition(renderer, event);
         setFloatingEdgeLabel((current) => current?.edge === floatingEdgeKey
           ? { ...current, ...position }
           : current);
       }
-      if (!pendingHover || draggedNode) return;
-      scheduleHover({ ...pendingHover, x: event.x, y: event.y });
+      if (pointerTarget) {
+        pointerTarget = { ...pointerTarget, x: event.x, y: event.y };
+        hoverIntent.enter(pointerTarget);
+      }
+    });
+    mouse.on("mouseleave", () => {
+      if (draggingRef.current) return;
+      pointerTarget = null;
+      hoverIntent.clear();
     });
     mouse.on("mousemovebody", (event) => {
       if (!draggedNode) return;
-      if (!dragMoved) stopLayout(false);
       dragMoved = true;
       const position = renderer.viewportToGraph(event);
-      const bounded = circularBoundsRef.current
-        ? clampPointToCircle(position, circularBoundsRef.current)
-        : position;
-      graph.mergeNodeAttributes(draggedNode, bounded);
-      dragAttractor = bounded;
-      startConnectedSpring();
+      graph.mergeNodeAttributes(draggedNode, position);
+      layoutRef.current?.drag(draggedNode, position.x, position.y, false);
+      setLayoutRunning(true);
       event.preventSigmaDefault();
       event.original.preventDefault();
       renderer.scheduleRefresh();
     });
-    mouse.on("mouseup", () => {
+    const releaseDrag = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      hoverIntent.resume();
+      renderer.setSetting("enableEdgeEvents", true);
       if (!draggedNode) return;
       suppressNextNodeClick = dragMoved;
       if (dragMoved) {
-        connectedSpringReleasedAt = performance.now();
-        startConnectedSpring();
+        const position = graph.getNodeAttributes(draggedNode);
+        targetPositions = null;
+        layoutRef.current?.drag(draggedNode, position.x, position.y, true);
         renderer.scheduleRefresh();
-      } else {
-        connectedSprings = [];
-        dragAttractor = null;
       }
       draggedNode = null;
       dragMoved = false;
       camera.enable();
       graphContainer.style.cursor = "default";
-    });
+    };
+    mouse.on("mouseup", releaseDrag);
+    window.addEventListener("blur", releaseDrag);
 
-    function startConnectedSpring() {
-      if (connectedSprings.length === 0 || connectedSpringFrame !== null) return;
-      connectedSpringLastAt = performance.now();
-      connectedSpringFrame = window.requestAnimationFrame(stepConnectedSpring);
-    }
-
-    function stepConnectedSpring(now: number) {
-      if (!dragAttractor) {
-        connectedSpringFrame = null;
-        connectedSprings = [];
-        return;
-      }
-      const frameScale = Math.min(2, Math.max(0.5, (now - connectedSpringLastAt) / 16));
-      let remainingMotion = 0;
-      for (const spring of connectedSprings) {
-        const force = linkedNodeSpringForce(spring, dragAttractor, spring.restLength);
-        spring.velocityX = (spring.velocityX + force.x * frameScale) * Math.pow(0.82, frameScale);
-        spring.velocityY = (spring.velocityY + force.y * frameScale) * Math.pow(0.82, frameScale);
-        spring.x += spring.velocityX * frameScale;
-        spring.y += spring.velocityY * frameScale;
-        const next = circularBoundsRef.current
-          ? clampPointToCircle(spring, circularBoundsRef.current)
-          : { x: spring.x, y: spring.y };
-        spring.x = next.x;
-        spring.y = next.y;
-        graph.mergeNodeAttributes(spring.node, next);
-        const currentLength = Math.hypot(dragAttractor.x - spring.x, dragAttractor.y - spring.y);
-        remainingMotion = Math.max(
-          remainingMotion,
-          Math.abs(currentLength - spring.restLength),
-          Math.hypot(spring.velocityX, spring.velocityY)
-        );
-      }
-      connectedSpringLastAt = now;
-      renderer.scheduleRefresh();
-      const releasedTooLong = connectedSpringReleasedAt !== null && now - connectedSpringReleasedAt > 900;
-      if ((!releasedTooLong && remainingMotion >= 0.001) || draggedNode) {
-        connectedSpringFrame = window.requestAnimationFrame(stepConnectedSpring);
-      } else {
-        connectedSpringFrame = null;
-        connectedSprings = [];
-        dragAttractor = null;
-      }
-    }
     renderer.on("clickNode", ({ node }) => {
       if (suppressNextNodeClick) {
         suppressNextNodeClick = false;
@@ -542,83 +587,52 @@ export function KnowledgeGraphDashboard({
       }
       const attributes = graph.getNodeAttributes(node);
       persistViewState();
-      if (attributes.kind === "community") {
-        const display = renderer.getNodeDisplayData(node);
-        if (display) void camera.animate({ x: display.x, y: display.y, ratio: 0.42 }, { duration: 420 });
-      } else if (attributes.kind === "atomic_note" && attributes.rawId && attributes.sourceItemId) {
+      if (attributes.kind === "atomic_note" && attributes.rawId && attributes.sourceItemId) {
         onOpenAtomicNote(attributes.sourceItemId, attributes.rawId);
       } else if (attributes.sourceItemId) {
         onOpenSource(attributes.sourceItemId);
       }
     });
 
-      if (restoredViewState) {
-        circularBoundsRef.current = measureCircularBounds(graph, rawNodeKeys);
-        setLayoutRunning(false);
-      } else {
-        startLayout(graph);
-      }
       cleanupRenderer = () => {
-        stopLayout(false);
+        layoutRef.current?.kill();
+        layoutRef.current = null;
+        if (positionFrame !== null) window.cancelAnimationFrame(positionFrame);
+        window.removeEventListener("blur", releaseDrag);
+        graphContainer.removeEventListener("wheel", handleGraphWheel, { capture: true });
         persistViewState();
-        clearActivationTimer();
+        hoverIntent.dispose();
+        cancelWheelRef.current();
+        cancelWheelRef.current = () => {};
+        draggingRef.current = false;
         if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
         if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
         if (hoverAnimationFrameRef.current !== null) window.cancelAnimationFrame(hoverAnimationFrameRef.current);
-        if (connectedSpringFrame !== null) window.cancelAnimationFrame(connectedSpringFrame);
         renderer.kill();
         sigmaRef.current = null;
       };
+      startPhysics();
 
       function persistViewState() {
-        onViewStateChange(mode, captureKnowledgeGraphViewState(renderer, graph, graphStateKey));
-      }
-
-      function startLayout(target: Graph<NodeAttributes, EdgeAttributes>) {
-        stopLayout(false);
-        const layout = new FA2LayoutConstructor<NodeAttributes, EdgeAttributes>(target, {
-        getEdgeWeight: (_edge, attributes) => attributes.layoutWeight,
-        settings: {
-          barnesHutOptimize: target.order > 500,
-          barnesHutTheta: 0.6,
-          edgeWeightInfluence: 0.65,
-          gravity: 1.35,
-          linLogMode: true,
-          scalingRatio: target.order > 5_000 ? 14 : 8,
-          slowDown: target.order > 5_000 ? 18 : 10,
-          strongGravityMode: true
-        }
+        onViewStateChange(mode, {
+          ...captureKnowledgeGraphViewState(renderer, graph, graphStateKey),
+          forces: forcesRef.current
         });
-        layoutRef.current = layout;
-        layout.start();
-        setLayoutRunning(true);
-        layoutTimerRef.current = window.setTimeout(() => stopLayout(true), target.order > 5_000 ? 5_000 : 2_800);
-      }
-
-      function stopLayout(applyCircularBoundary = true) {
-        if (layoutTimerRef.current !== null) window.clearTimeout(layoutTimerRef.current);
-        layoutTimerRef.current = null;
-        layoutRef.current?.stop();
-        layoutRef.current?.kill();
-        layoutRef.current = null;
-        if (applyCircularBoundary) {
-          circularBoundsRef.current = constrainGraphToCircle(graph, rawNodeKeys);
-          renderer.setCustomBBox(null);
-          renderer.scheduleRefresh();
-        }
-        if (!disposed) setLayoutRunning(false);
       }
     }
   }, [bundle, initialViewState, mode, onOpenAtomicNote, onOpenSource, onViewStateChange]);
 
   function zoom(factor: number) {
-    const camera = sigmaRef.current?.getCamera();
-    if (!camera) return;
-    if (factor < 1) void camera.animatedZoom({ factor: 1 / factor, duration: 220 });
-    else void camera.animatedUnzoom({ factor, duration: 220 });
+    cancelWheelRef.current();
+    const renderer = sigmaRef.current;
+    if (!renderer) return;
+    const camera = renderer.getCamera();
+    const maximum = Math.max(camera.ratio, measureGraphZoomOutRatio(renderer));
+    void camera.animate({ ratio: clamp(camera.ratio * factor, camera.minRatio ?? 0.08, maximum) }, { duration: 220 });
   }
 
   function focusNode(id: string) {
+    cancelWheelRef.current();
     const renderer = sigmaRef.current;
     const key = `item:${id}`;
     if (!renderer || !renderer.getGraph().hasNode(key)) return;
@@ -626,6 +640,7 @@ export function KnowledgeGraphDashboard({
     if (!display) return;
     void renderer.getCamera().animate({ x: display.x, y: display.y, ratio: 0.24 }, { duration: 420 });
     hoveredKeyRef.current = key;
+    hoverStrengthRef.current = 1;
     hoveredNeighborsRef.current = new Set(renderer.getGraph().neighbors(key));
     renderer.scheduleRefresh();
     setQuery("");
@@ -637,29 +652,33 @@ export function KnowledgeGraphDashboard({
     }, 1_400);
   }
 
-  async function rerunLayout() {
-    const graph = sigmaRef.current?.getGraph();
-    if (!graph || layoutRunning) return;
-    const { default: FA2LayoutConstructor } = await import("graphology-layout-forceatlas2/worker");
-    const layout = new FA2LayoutConstructor<NodeAttributes, EdgeAttributes>(graph, {
-      getEdgeWeight: (_edge, attributes) => attributes.layoutWeight,
-      settings: {
-        barnesHutOptimize: true, barnesHutTheta: 0.6, gravity: 1.35, linLogMode: true,
-        scalingRatio: 10, slowDown: 12, strongGravityMode: true
-      }
-    });
-    layoutRef.current = layout;
-    layout.start();
+  function rerunLayout() {
+    if (!layoutRef.current || layoutError) { setReloadToken((value) => value + 1); return; }
+    layoutRef.current.reheat();
     setLayoutRunning(true);
-    layoutTimerRef.current = window.setTimeout(() => {
-      layout.stop();
-      layout.kill();
-      circularBoundsRef.current = constrainGraphToCircle(graph, graph.nodes().filter((node) => graph.getNodeAttribute(node, "lod") === "item"));
-      sigmaRef.current?.setCustomBBox(null).scheduleRefresh();
-      layoutRef.current = null;
-      layoutTimerRef.current = null;
-      setLayoutRunning(false);
-    }, 2_500);
+  }
+
+  function changeForces(next: GraphForceSettings) {
+    if (!layoutRef.current || layoutError) return;
+    forcesRef.current = next;
+    setForces(next);
+    layoutRef.current?.configure(next);
+    setLayoutRunning(true);
+  }
+
+  function fitGraph() {
+    cancelWheelRef.current();
+    const renderer = sigmaRef.current;
+    if (!renderer) return;
+    // Animate the camera in the same coordinate system instead of renormalizing the graph.
+    const bbox = renderer.getBBox();
+    const center = renderer.viewportToFramedGraph(renderer.graphToViewport({ x: (bbox.x[0] + bbox.x[1]) / 2, y: (bbox.y[0] + bbox.y[1]) / 2 }));
+    const corners = bbox.x.flatMap((x) => bbox.y.map((y) => renderer.graphToViewport({ x, y })));
+    const { width, height } = renderer.getDimensions();
+    const spanX = Math.max(...corners.map((point) => point.x)) - Math.min(...corners.map((point) => point.x));
+    const spanY = Math.max(...corners.map((point) => point.y)) - Math.min(...corners.map((point) => point.y));
+    const ratio = renderer.getCamera().ratio * Math.max(spanX / Math.max(1, width - 144), spanY / Math.max(1, height - 144));
+    void renderer.getCamera().animate({ ...center, ratio: clamp(ratio, 0.08, 8) }, { duration: 350 });
   }
 
   return (
@@ -688,27 +707,45 @@ export function KnowledgeGraphDashboard({
         <div className="flex items-center gap-1">
           <GraphAction icon={Minus} label={t("knowledgeGraph.zoomOut")} onClick={() => zoom(1.45)} />
           <GraphAction icon={Plus} label={t("knowledgeGraph.zoomIn")} onClick={() => zoom(0.7)} />
-          <GraphAction icon={Maximize2} label={t("knowledgeGraph.fit")} onClick={() => void sigmaRef.current?.getCamera().animatedReset({ duration: 350 })} />
-          <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning} onClick={rerunLayout} />
+          <GraphAction icon={Maximize2} label={t("knowledgeGraph.fit")} onClick={fitGraph} />
+          <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning || loading || !bundle?.rawNodeKeys.length} onClick={rerunLayout} />
           <GraphAction icon={RefreshCw} label={t("knowledgeGraph.refresh")} onClick={() => setReloadToken((current) => current + 1)} />
         </div>
       </header>
+
+      <details className="border-b border-white/10 bg-slate-900 px-4 py-2 text-xs text-slate-300">
+        <summary className="cursor-pointer select-none">{t("knowledgeGraph.forces.title")}</summary>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-3 py-3 lg:grid-cols-4">
+          {([
+            { key: "repulsion", min: 10, max: 300, step: 5 },
+            { key: "linkStrength", min: 0.05, max: 1, step: 0.05 },
+            { key: "linkDistance", min: 20, max: 150, step: 5 },
+            { key: "centerStrength", min: 0.005, max: 0.12, step: 0.005 }
+          ] as const).map(({ key, min, max, step }) => <label key={key} className="grid gap-2">
+            <span className="flex justify-between gap-2"><span>{t(`knowledgeGraph.forces.${key}`)}</span><output className="tabular-nums">{forces[key]}</output></span>
+            <input type="range" min={min} max={max} step={step} value={forces[key]} disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
+              className="w-full accent-cyan-400" onChange={(event) => changeForces({ ...forces, [key]: Number(event.target.value) })} />
+          </label>)}
+        </div>
+        <button type="button" className="mb-2 rounded px-2 py-1 text-cyan-300 hover:bg-white/10 disabled:opacity-50" disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
+          onClick={() => changeForces(defaultGraphForceSettings)}>{t("knowledgeGraph.forces.reset")}</button>
+      </details>
 
       <div className="relative min-h-0 flex-1 bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
         <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.canvasLabel")} />
         {loading ? <GraphState icon={LoaderCircle} title={t("shell.states.loading")} spinning /> : null}
         {error ? <GraphState icon={Network} title={t("knowledgeGraph.error")} action={t("shell.actions.retry")} onAction={() => setReloadToken((current) => current + 1)} /> : null}
+        {layoutError && !error ? <GraphState icon={Network} title={t("knowledgeGraph.layoutError")} action={t("shell.actions.retry")} onAction={() => setReloadToken((current) => current + 1)} /> : null}
         {!loading && !error && data?.nodes.length === 0 ? <GraphState icon={Network} title={t("knowledgeGraph.empty")} /> : null}
 
         {!loading && data && data.nodes.length > 0 ? <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-2 text-xs text-slate-300">
           <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t("knowledgeGraph.nodeCount", { values: { count: data.nodes.length } })}</span>
           <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t("knowledgeGraph.edgeCount", { values: { count: bundle?.itemEdgeCount ?? data.edges.length } })}</span>
-          <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t(`knowledgeGraph.lod.${lod}` as MessageKey)}</span>
           {data.truncated ? <span className="rounded-full border border-amber-400/30 bg-amber-950/80 px-2.5 py-1 text-amber-200">{t("knowledgeGraph.truncated")}</span> : null}
         </div> : null}
 
         {floatingEdgeLabel ? <div
-          className="motion-graph-tooltip-in pointer-events-none absolute z-10 max-w-56 rounded-md border border-cyan-300/20 bg-slate-900/92 px-2 py-1 text-xs font-medium leading-snug text-slate-100 shadow-lg backdrop-blur"
+          className="motion-graph-tooltip-in pointer-events-none absolute z-10 max-w-56 rounded-md border border-red-300/20 bg-slate-900/92 px-2 py-1 text-xs font-medium leading-snug text-red-300 shadow-lg backdrop-blur"
           style={{ left: floatingEdgeLabel.x, top: floatingEdgeLabel.y }}
         >
           {floatingEdgeLabel.label}
@@ -795,20 +832,19 @@ function GraphTooltip({ hover, graph, t }: {
   if (hover.type === "node" && graph.hasNode(hover.key)) {
     const node = graph.getNodeAttributes(hover.key);
     return <ViewportTooltip hover={hover} className="w-80">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t(node.kind === "community" ? "knowledgeGraph.community" : node.kind === "source" ? "knowledgeGraph.source" : "knowledgeGraph.atomicNote")}</p>
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t(node.kind === "source" ? "knowledgeGraph.source" : "knowledgeGraph.atomicNote")}</p>
       <h3 className="mt-1 text-sm font-semibold leading-snug">{node.title}</h3>
       {node.subtitle ? <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-300">{node.subtitle}</p> : null}
       {node.kind === "atomic_note" && node.content ? <p className="mt-2 max-h-48 overflow-hidden whitespace-pre-wrap border-t border-white/10 pt-2 text-xs leading-relaxed text-slate-200">{node.content}</p> : null}
       <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-300">
         <div><dt className="text-slate-500">{t("knowledgeGraph.connections")}</dt><dd>{node.importance}</dd></div>
-        <div><dt className="text-slate-500">{t(node.kind === "community" ? "knowledgeGraph.items" : "knowledgeGraph.entities")}</dt><dd>{node.kind === "community" ? node.memberCount : node.detailCount}</dd></div>
+        <div><dt className="text-slate-500">{t("knowledgeGraph.entities")}</dt><dd>{node.detailCount}</dd></div>
       </dl>
-      {node.kind !== "community" ? <p className="mt-2 text-[11px] text-cyan-300">{t("knowledgeGraph.clickToOpen")}</p> : <p className="mt-2 text-[11px] text-cyan-300">{t("knowledgeGraph.clickToExplore")}</p>}
+      <p className="mt-2 text-[11px] text-cyan-300">{t("knowledgeGraph.clickToOpen")}</p>
     </ViewportTooltip>;
   }
   if (hover.type === "edge" && graph.hasEdge(hover.key)) {
     const edge = graph.getEdgeAttributes(hover.key);
-    if (edge.kind === "support" || edge.kind === "community") return null;
     if (edge.kind === "source_connection") {
       const [source, target] = graph.extremities(hover.key);
       const sourceItemId = graph.getNodeAttribute(source, "rawId");
@@ -885,7 +921,7 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
   </ViewportTooltip>;
 }
 
-function buildGraph(data: DashboardData, t: Translator): GraphBundle {
+export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
   const graph = new Graph<NodeAttributes, EdgeAttributes>({ type: "undirected", multi: true, allowSelfLoops: false });
   for (const node of data.nodes) {
     const angle = hashFraction(node.id, 0) * Math.PI * 2;
@@ -897,7 +933,6 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       size: 4,
       color: node.kind === "source" ? sourceColors[node.sourceType ?? ""] ?? "#0891b2" : noteColors[node.noteStatus ?? ""] ?? "#7c3aed",
       kind: node.kind,
-      lod: "item",
       rawId: node.id,
       sourceItemId: node.sourceItemId,
       title: node.title,
@@ -906,7 +941,6 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       sourceType: node.sourceType,
       noteStatus: node.noteStatus,
       detailCount: node.detailCount,
-      memberCount: 1,
       importance: 0,
       labelOpacity: 0.8
     });
@@ -924,7 +958,6 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
         ? "rgba(167, 139, 250, 0.16)"
         : "rgba(56, 189, 248, 0.08)",
       kind: edge.kind,
-      lod: "item",
       confidence: edge.confidence,
       weight: edge.weight,
       description: edge.description,
@@ -946,84 +979,10 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
     graph.updateNodeAttribute(node, "size", () => Math.min(13, 3.5 + Math.log2(degree + 1) * 1.8));
   }
   if (rawNodeKeys.length === 0) {
-    return { graph, rawNodeKeys, communityCount: 0, itemEdgeCount: preparedEdges.length, stateKey };
+    return { graph, rawNodeKeys, itemEdgeCount: preparedEdges.length, stateKey };
   }
 
-  const mapping = graph.size > 0
-    ? louvain(graph, { getEdgeWeight: (_edge, attributes) => attributes.layoutWeight, rng: seededRandom(41) })
-    : Object.fromEntries(rawNodeKeys.map((node, index) => [node, index]));
-  const communities = new Map<number, string[]>();
-  for (const node of rawNodeKeys) {
-    const community = mapping[node] ?? communities.size;
-    communities.set(community, [...(communities.get(community) ?? []), node]);
-  }
-  const orderedCommunities = [...communities.entries()].toSorted((left, right) => right[1].length - left[1].length || left[0] - right[0]);
-  const nodeCommunity = new Map<string, string>();
-  orderedCommunities.forEach(([community, members], index) => {
-    const communityKey = `community:${community}`;
-    const angle = index * 2.399963;
-    const radius = 5 * Math.sqrt(index + 1);
-    graph.addNode(communityKey, {
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
-      label: `${members.length}`,
-      size: Math.min(24, 7 + Math.log2(members.length + 1) * 3),
-      color: index % 2 === 0 ? "#22d3ee" : "#818cf8",
-      kind: "community",
-      lod: "community",
-      rawId: null,
-      sourceItemId: null,
-      title: String(members.length),
-      subtitle: null,
-      content: null,
-      sourceType: null,
-      noteStatus: null,
-      detailCount: 0,
-      memberCount: members.length,
-      importance: members.reduce((sum, member) => sum + graph.degree(member), 0),
-      labelOpacity: 0.25
-    });
-    members.forEach((member) => {
-      nodeCommunity.set(member, communityKey);
-      graph.addEdge(communityKey, member, {
-        label: "", size: 0, color: "rgba(0,0,0,0)", kind: "support", lod: "support",
-        confidence: 0, weight: 1, description: null, details: [], layoutWeight: 0.32,
-        labelOpacity: 0, labelRevealAt: 2, sourceRelations: [], interactionTarget: null
-      });
-    });
-  });
-
-  const aggregated = new Map<string, { source: string; target: string; weight: number }>();
-  for (const edge of graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "lod") === "item")) {
-    const [rawSource, rawTarget] = graph.extremities(edge);
-    const source = nodeCommunity.get(rawSource);
-    const target = nodeCommunity.get(rawTarget);
-    if (!source || !target || source === target) continue;
-    const key = [source, target].sort().join("|");
-    const current = aggregated.get(key) ?? { source, target, weight: 0 };
-    current.weight += graph.getEdgeAttribute(edge, "layoutWeight");
-    aggregated.set(key, current);
-  }
-  for (const [key, edge] of aggregated) {
-    graph.addEdgeWithKey(`community-edge:${key}`, edge.source, edge.target, {
-      label: "", size: Math.min(1.2, 0.3 + Math.log2(edge.weight + 1) * 0.2), color: "rgba(34, 211, 238, 0.08)",
-      kind: "community", lod: "community", confidence: 0, weight: edge.weight,
-      description: null, details: [], layoutWeight: Math.max(0.15, Math.log2(edge.weight + 1) * 0.18),
-      labelOpacity: 0, labelRevealAt: 2, sourceRelations: [], interactionTarget: null
-    });
-  }
-  for (const [index, [, members]] of orderedCommunities.entries()) {
-    const centerAngle = index * 2.399963;
-    const centerRadius = 5 * Math.sqrt(index + 1);
-    const centerX = Math.cos(centerAngle) * centerRadius;
-    const centerY = Math.sin(centerAngle) * centerRadius;
-    for (const member of members) {
-      const localAngle = hashFraction(member, 2) * Math.PI * 2;
-      const localRadius = 0.8 + hashFraction(member, 3) * Math.max(2, Math.sqrt(members.length));
-      graph.mergeNodeAttributes(member, { x: centerX + Math.cos(localAngle) * localRadius, y: centerY + Math.sin(localAngle) * localRadius });
-    }
-  }
-  const interactionEdges = graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "lod") === "item");
+  const interactionEdges = graph.edges();
   for (const edge of interactionEdges) {
     const [source, target] = graph.extremities(edge);
     graph.addEdgeWithKey(`hit:${edge}`, source, target, {
@@ -1031,7 +990,6 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       size: relationHitAreaScreenThickness,
       color: "rgba(0, 0, 0, 0)",
       kind: "hit_area",
-      lod: "item",
       confidence: 0,
       weight: 1,
       description: null,
@@ -1046,7 +1004,6 @@ function buildGraph(data: DashboardData, t: Translator): GraphBundle {
   return {
     graph,
     rawNodeKeys,
-    communityCount: communities.size,
     itemEdgeCount: preparedEdges.length,
     stateKey
   };
@@ -1102,8 +1059,8 @@ function knowledgeGraphStateKey(data: DashboardData, edges: PreparedGraphEdge[])
     }
   };
   data.nodes.forEach((node) => include(node.id));
-  edges.forEach((edge) => include(edge.id));
-  return `${data.mode}:${data.nodes.length}:${edges.length}:${hash >>> 0}`;
+  edges.forEach((edge) => include(`${edge.id}:${edge.source}:${edge.target}:${edge.weight}:${edge.confidence}`));
+  return `force-v1:${data.mode}:${data.nodes.length}:${edges.length}:${hash >>> 0}`;
 }
 
 function captureKnowledgeGraphViewState(
@@ -1119,18 +1076,79 @@ function captureKnowledgeGraphViewState(
   return {
     stateKey,
     camera: { x: camera.x, y: camera.y, ratio: camera.ratio, angle: camera.angle },
-    nodePositions
+    nodePositions,
+    bounds: renderer.getCustomBBox() ?? renderer.getBBox()
   };
 }
 
-function restoreKnowledgeGraphViewState(
+function graphCenter(renderer: Sigma<NodeAttributes, EdgeAttributes>) {
+  const bbox = renderer.getBBox();
+  const graphPoint = { x: (bbox.x[0] + bbox.x[1]) / 2, y: (bbox.y[0] + bbox.y[1]) / 2 };
+  const cameraState = renderer.getCamera().getState();
+  return renderer.viewportToFramedGraph(
+    renderer.graphToViewport(graphPoint, { cameraState }),
+    { cameraState }
+  );
+}
+
+function measureGraphZoomOutRatio(renderer: Sigma<NodeAttributes, EdgeAttributes>): number {
+  const bbox = renderer.getBBox();
+  const cameraState = renderer.getCamera().getState();
+  // Force Sigma to recompute from the current camera state. Its cached matrix can
+  // still describe the previous frame while inertial zoom schedules the next one.
+  const corners = bbox.x.flatMap((x) => bbox.y.map((y) => renderer.graphToViewport(
+    { x, y },
+    { cameraState }
+  )));
+  const span = {
+    width: Math.max(...corners.map((point) => point.x)) - Math.min(...corners.map((point) => point.x)),
+    height: Math.max(...corners.map((point) => point.y)) - Math.min(...corners.map((point) => point.y))
+  };
+  const maximumNodeDiameter = renderer.getGraph().nodes().reduce((maximum, node) => {
+    const size = renderer.getNodeDisplayData(node)?.size ?? 0;
+    return Math.max(maximum, size * 2);
+  }, 0);
+  return Math.max(0.08, graphZoomOutRatio(
+    renderer.getCamera().ratio,
+    span,
+    renderer.getDimensions(),
+    maximumNodeDiameter + 24
+  ));
+}
+
+function freshViewportZoomedState(
+  renderer: Sigma<NodeAttributes, EdgeAttributes>,
+  viewportTarget: { x: number; y: number },
+  newRatio: number
+) {
+  const cameraState = renderer.getCamera().getState();
+  const override = { cameraState };
+  const graphTarget = renderer.viewportToFramedGraph(viewportTarget, override);
+  const viewport = renderer.getDimensions();
+  const graphCenterPoint = renderer.viewportToFramedGraph(
+    { x: viewport.width / 2, y: viewport.height / 2 },
+    override
+  );
+  const ratioDifference = newRatio / cameraState.ratio;
+  return {
+    angle: cameraState.angle,
+    x: (graphTarget.x - graphCenterPoint.x) * (1 - ratioDifference) + cameraState.x,
+    y: (graphTarget.y - graphCenterPoint.y) * (1 - ratioDifference) + cameraState.y,
+    ratio: newRatio
+  };
+}
+
+export function restoreKnowledgeGraphViewState(
   graph: Graph<NodeAttributes, EdgeAttributes>,
   stateKey: string,
   state?: KnowledgeGraphViewState
 ): boolean {
   if (!state || state.stateKey !== stateKey) return false;
   const nodes = graph.nodes();
-  if (!nodes.every((node) => state.nodePositions[node])) return false;
+  if (!nodes.every((node) => {
+    const point = state.nodePositions[node];
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y);
+  })) return false;
   for (const node of nodes) {
     const position = state.nodePositions[node];
     if (position) graph.mergeNodeAttributes(node, position);
@@ -1138,45 +1156,41 @@ function restoreKnowledgeGraphViewState(
   return true;
 }
 
-function reduceNode(
-  graph: Graph<NodeAttributes, EdgeAttributes>,
+export function reduceNode(
   node: string,
   attributes: NodeAttributes,
-  lod: LodLevel,
   cameraRatio: number,
   hovered: string | null,
-  neighbors: Set<string>
+  neighbors: Set<string>,
+  hoverStrength = 1,
+  backgroundOpacity = 0.1
 ) {
-  const isCommunity = attributes.lod === "community";
-  const visible = isNodeVisibleAtLod(lod, isCommunity, attributes.importance, hubThreshold(graph));
-  if (!visible) return { ...attributes, hidden: true };
-  const zoomStrength = zoomVisualStrength(cameraRatio);
+  const opacity = nodeLabelOpacity(cameraRatio, attributes.importance);
   if (!hovered) return {
     ...attributes,
     hidden: false,
-    forceLabel: lod === "detail" ? attributes.importance >= 4 : false,
+    forceLabel: true,
     label: attributes.label,
-    labelOpacity: isCommunity
-      ? 0.18 + zoomStrength * 0.32
-      : 0.14 + zoomStrength * 0.86
+    labelColor: "#cbd5e1",
+    labelOpacity: opacity
   };
   const emphasized = node === hovered || neighbors.has(node);
   return {
     ...attributes,
     hidden: false,
-    color: emphasized ? attributes.color : mutedNode,
-    forceLabel: emphasized,
-    label: emphasized && !isCommunity ? attributes.label : null,
-    labelOpacity: emphasized ? 1 : 0.16,
+    color: emphasized ? attributes.color : blendGraphColor(attributes.color, graphMutedColor, hoverStrength, 1 + (backgroundOpacity - 1) * hoverStrength),
+    forceLabel: true,
+    label: attributes.label,
+    labelColor: emphasized ? "#cbd5e1" : blendGraphColor("#cbd5e1", graphMutedColor, hoverStrength),
+    labelOpacity: emphasized ? opacity + (1 - opacity) * hoverStrength : opacity * (1 - hoverStrength * 0.98),
     zIndex: emphasized ? 2 : 0
   };
 }
 
-function reduceEdge(
+export function reduceEdge(
   graph: Graph<NodeAttributes, EdgeAttributes>,
   edge: string,
   attributes: EdgeAttributes,
-  lod: LodLevel,
   cameraRatio: number,
   hovered: string | null,
   hoverStrength: number
@@ -1184,7 +1198,7 @@ function reduceEdge(
   if (attributes.kind === "hit_area") {
     return {
       ...attributes,
-      hidden: lod === "overview",
+      hidden: false,
       color: "rgba(0, 0, 0, 0)",
       size: zoomCompensatedEdgeSize(cameraRatio, relationHitAreaScreenThickness),
       forceLabel: false,
@@ -1193,16 +1207,13 @@ function reduceEdge(
       zIndex: 10
     };
   }
-  const visible = attributes.lod === (lod === "overview" ? "community" : "item");
-  if (attributes.lod === "support" || !visible) return { ...attributes, hidden: true };
   const zoomStrength = zoomVisualStrength(cameraRatio);
   const revealProgress = attributes.label && attributes.labelRevealAt <= 1
     ? clamp((zoomStrength - attributes.labelRevealAt) / Math.max(0.01, 1 - attributes.labelRevealAt), 0, 1)
     : 0;
   const showRestingLabel = revealProgress > 0;
-  const restingLabelOpacity = showRestingLabel ? 0.08 + revealProgress * 0.82 : 0;
-  const screenThickness = attributes.kind === "community" ? 1.4 : 1.8;
-  const compensatedSize = zoomCompensatedEdgeSize(cameraRatio, screenThickness);
+  const restingLabelOpacity = revealProgress * 0.9;
+  const compensatedSize = zoomCompensatedEdgeSize(cameraRatio);
   if (!hovered) return {
     ...attributes,
     hidden: false,
@@ -1210,31 +1221,36 @@ function reduceEdge(
     size: compensatedSize,
     forceLabel: showRestingLabel,
     label: showRestingLabel ? attributes.label : null,
+    labelColor: "#94a3b8",
     labelOpacity: restingLabelOpacity
   };
   const incident = hovered === edge || graph.extremities(edge).includes(hovered);
   return {
     ...attributes,
     hidden: false,
-    color: incident ? highlightedEdgeColor(attributes.kind, hoverStrength) : mutedEdge,
+    color: hoveredEdgeColor(attributes.kind, hoverStrength, zoomStrength, incident, graph.hasNode(hovered) ? 0.1 : undefined),
     size: compensatedSize,
-    forceLabel: incident && Boolean(attributes.label) && (hoverStrength > 0.05 || showRestingLabel),
-    label: incident && attributes.label ? attributes.label : null,
-    labelOpacity: incident ? Math.max(hoverStrength, restingLabelOpacity) : 0.18,
+    forceLabel: Boolean(attributes.label) && (showRestingLabel || incident),
+    label: attributes.label,
+    labelColor: blendGraphColor("#94a3b8", incident ? graphHighlightColor : graphMutedColor, hoverStrength),
+    labelOpacity: incident ? restingLabelOpacity + (1 - restingLabelOpacity) * hoverStrength : restingLabelOpacity * (1 - hoverStrength * 0.97),
     zIndex: incident ? 2 : 0
   };
 }
 
 function restingEdgeColor(kind: EdgeAttributes["kind"], strength: number): string {
-  if (kind === "community") return `rgba(34, 211, 238, ${0.05 + strength * 0.18})`;
   if (kind === "atomic_note_relation") return `rgba(167, 139, 250, ${0.06 + strength * 0.42})`;
   return `rgba(56, 189, 248, ${0.04 + strength * 0.38})`;
 }
 
-function highlightedEdgeColor(kind: EdgeAttributes["kind"], strength: number): string {
-  const opacity = 0.08 + 0.92 * strength;
-  if (kind === "atomic_note_relation") return `rgba(196, 181, 253, ${opacity})`;
-  return `rgba(125, 211, 252, ${opacity})`;
+function hoveredEdgeColor(kind: EdgeAttributes["kind"], strength: number, zoomStrength: number, emphasized: boolean, backgroundOpacity?: number): string {
+  const base = kind === "atomic_note_relation" ? 0.06 + zoomStrength * 0.42 : 0.04 + zoomStrength * 0.38;
+  return blendGraphColor(
+    kind === "atomic_note_relation" ? "#a78bfa" : "#38bdf8",
+    emphasized ? graphHighlightColor : graphMutedColor,
+    strength,
+    emphasized ? base + (1 - base) * strength : base + ((backgroundOpacity ?? base * 0.03) - base) * strength
+  );
 }
 
 function edgeLabelFallsOutsideViewport(
@@ -1266,12 +1282,49 @@ function floatingLabelPosition(
   };
 }
 
+function createSmoothNodeLabels(schedule: () => void) {
+  type Rectangle = { left: number; right: number; top: number; bottom: number };
+  let occupied: Rectangle[] = [];
+  let now = 0;
+  const history = new Map<string, { opacity: number; at: number }>();
+  const measurements = new Map<string, { width: number; height: number }>();
+  const draw: NodeLabelDrawingFunction<NodeAttributes, EdgeAttributes> = (context, data, settings) => {
+    if (!data.label) return;
+    const key = String(data.key);
+    const desired = Number(data.labelOpacity ?? 1);
+    const previous = history.get(key);
+    if (desired < 0.001 && (!previous || previous.opacity < 0.001)) return;
+    const cacheKey = `${settings.labelSize}:${data.label}`;
+    let measurement = measurements.get(cacheKey);
+    if (!measurement) {
+      context.font = `${settings.labelWeight} ${settings.labelSize}px ${settings.labelFont}`;
+      const lines = wrapCanvasText(context, data.label, 190, 3);
+      measurement = { width: Math.max(...lines.map((line) => context.measureText(line).width)), height: lines.length * settings.labelSize * 1.18 };
+      measurements.set(cacheKey, measurement);
+    }
+    const rectangle = {
+      left: data.x - measurement.width / 2 - 5, right: data.x + measurement.width / 2 + 5,
+      top: data.y + data.size + 2, bottom: data.y + data.size + measurement.height + 8
+    };
+    const overlaps = occupied.some((other) => rectangle.left < other.right && rectangle.right > other.left && rectangle.top < other.bottom && rectangle.bottom > other.top);
+    const target = overlaps || occupied.length >= 350 ? 0 : desired;
+    if (target > 0) occupied.push(rectangle);
+    const elapsed = previous ? Math.min(64, now - previous.at) : 16;
+    const before = previous?.opacity ?? 0;
+    const opacity = Math.abs(target - before) < 0.005 ? target : before + (target - before) * (1 - Math.exp(-elapsed / 100));
+    history.set(key, { opacity, at: now });
+    if (Math.abs(opacity - target) > 0.005) schedule();
+    if (opacity > 0.001) drawWrappedNodeLabel(context, { ...data, labelOpacity: opacity }, settings);
+  };
+  return { draw, beginFrame() { occupied = []; now = performance.now(); } };
+}
+
 const drawWrappedNodeLabel: NodeLabelDrawingFunction<NodeAttributes, EdgeAttributes> = (context, data, settings) => {
   if (!data.label) return;
   const opacity = Number((data as typeof data & { labelOpacity?: number }).labelOpacity ?? 1);
-  const color = settings.labelColor.attribute
+  const color = data.labelColor ?? (settings.labelColor.attribute
     ? String(data[settings.labelColor.attribute] ?? settings.labelColor.color ?? "#cbd5e1")
-    : settings.labelColor.color;
+    : settings.labelColor.color);
   context.save();
   context.globalAlpha = opacity;
   context.fillStyle = color ?? "#cbd5e1";
@@ -1296,7 +1349,7 @@ const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttribut
   const opacity = Number((edgeData as typeof edgeData & { labelOpacity?: number }).labelOpacity ?? 1);
   context.save();
   context.globalAlpha = opacity;
-  context.fillStyle = (settings.edgeLabelColor.attribute
+  context.fillStyle = edgeData.labelColor ?? (settings.edgeLabelColor.attribute
     ? String(edgeData[settings.edgeLabelColor.attribute] ?? settings.edgeLabelColor.color ?? "#cbd5e1")
     : settings.edgeLabelColor.color) ?? "#94a3b8";
   context.font = `${settings.edgeLabelWeight} ${settings.edgeLabelSize}px ${settings.edgeLabelFont}`;
@@ -1352,74 +1405,11 @@ function ellipsizeCanvasText(context: CanvasRenderingContext2D, text: string, ma
   return `${result.trimEnd()}…`;
 }
 
-function measureCircularBounds(
-  graph: Graph<NodeAttributes, EdgeAttributes>,
-  rawNodeKeys: string[]
-): CircularBounds {
-  const nodes = rawNodeKeys.filter((node) => graph.hasNode(node));
-  if (nodes.length === 0) return { centerX: 0, centerY: 0, radius: 1 };
-  const centerX = nodes.reduce((sum, node) => sum + graph.getNodeAttribute(node, "x"), 0) / nodes.length;
-  const centerY = nodes.reduce((sum, node) => sum + graph.getNodeAttribute(node, "y"), 0) / nodes.length;
-  const radii = nodes.map((node) => {
-    const attributes = graph.getNodeAttributes(node);
-    return Math.hypot(attributes.x - centerX, attributes.y - centerY);
-  }).sort((left, right) => left - right);
-  const percentile = radii[Math.min(radii.length - 1, Math.floor(radii.length * 0.92))] ?? 1;
-  return { centerX, centerY, radius: Math.max(1, percentile * 1.18) };
-}
-
-function constrainGraphToCircle(
-  graph: Graph<NodeAttributes, EdgeAttributes>,
-  rawNodeKeys: string[]
-): CircularBounds {
-  const nodes = rawNodeKeys.filter((node) => graph.hasNode(node));
-  if (nodes.length === 0) return { centerX: 0, centerY: 0, radius: 1 };
-  const measured = measureCircularBounds(graph, nodes);
-  const varianceX = nodes.reduce((sum, node) => {
-    const value = graph.getNodeAttribute(node, "x") - measured.centerX;
-    return sum + value * value;
-  }, 0) / nodes.length;
-  const varianceY = nodes.reduce((sum, node) => {
-    const value = graph.getNodeAttribute(node, "y") - measured.centerY;
-    return sum + value * value;
-  }, 0) / nodes.length;
-  const targetSpread = Math.sqrt((varianceX + varianceY) / 2) || 1;
-  const scaleX = clamp(targetSpread / (Math.sqrt(varianceX) || 1), 0.45, 2.4);
-  const scaleY = clamp(targetSpread / (Math.sqrt(varianceY) || 1), 0.45, 2.4);
-  for (const node of graph.nodes()) {
-    const attributes = graph.getNodeAttributes(node);
-    graph.mergeNodeAttributes(node, {
-      x: (attributes.x - measured.centerX) * scaleX,
-      y: (attributes.y - measured.centerY) * scaleY
-    });
-  }
-  const normalizedBounds = measureCircularBounds(graph, nodes);
-  const bounds = { centerX: normalizedBounds.centerX, centerY: normalizedBounds.centerY, radius: normalizedBounds.radius };
-  for (const node of graph.nodes()) {
-    const attributes = graph.getNodeAttributes(node);
-    graph.mergeNodeAttributes(node, clampPointToCircle(attributes, bounds));
-  }
-  return bounds;
-}
-
-function clampPointToCircle(point: { x: number; y: number }, bounds: CircularBounds): { x: number; y: number } {
-  const deltaX = point.x - bounds.centerX;
-  const deltaY = point.y - bounds.centerY;
-  const distance = Math.hypot(deltaX, deltaY);
-  if (distance <= bounds.radius || distance === 0) return { x: point.x, y: point.y };
-  const ratio = bounds.radius / distance;
-  return { x: bounds.centerX + deltaX * ratio, y: bounds.centerY + deltaY * ratio };
-}
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-function hubThreshold(graph: Graph<NodeAttributes, EdgeAttributes>): number {
-  if (graph.order < 250) return 2;
-  if (graph.order < 2_000) return 4;
-  return 7;
-}
 
 function formatEdgeLabel(label: string, t: Translator): string {
   if (label === "shared_entity") return t("knowledgeGraph.edgeKinds.shared_entity");
@@ -1436,12 +1426,4 @@ function hashFraction(value: string, salt: number): number {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0) / 4294967295;
-}
-
-function seededRandom(seed: number): () => number {
-  let state = seed >>> 0;
-  return () => {
-    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
-    return state / 4294967296;
-  };
 }

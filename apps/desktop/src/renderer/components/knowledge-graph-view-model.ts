@@ -1,11 +1,3 @@
-export type LodLevel = "overview" | "hubs" | "detail";
-
-export function lodFromRatio(ratio: number): LodLevel {
-  if (ratio >= 1.25) return "overview";
-  if (ratio >= 0.52) return "hubs";
-  return "detail";
-}
-
 export function zoomVisualStrength(ratio: number): number {
   const farRatio = 1.25;
   const nearRatio = 0.16;
@@ -32,18 +24,11 @@ export function relationLabelRevealAt(edgeKey: string, confidence: number, edgeC
   return Math.max(0.22, Math.min(0.9, 0.72 - confidence * 0.22 + stableFraction(edgeKey, 31) * 0.34));
 }
 
-export function linkedNodeSpringForce(
-  node: { x: number; y: number },
-  attractor: { x: number; y: number },
-  restLength: number,
-  stiffness = 0.065
-): { x: number; y: number } {
-  const deltaX = attractor.x - node.x;
-  const deltaY = attractor.y - node.y;
-  const distance = Math.hypot(deltaX, deltaY);
-  if (distance < 0.0001) return { x: 0, y: 0 };
-  const magnitude = (distance - restLength) * stiffness;
-  return { x: deltaX / distance * magnitude, y: deltaY / distance * magnitude };
+export function nodeLabelOpacity(cameraRatio: number, importance: number): number {
+  const strength = zoomVisualStrength(cameraRatio);
+  const start = Math.max(0.05, 0.62 - Math.log2(importance + 1) * 0.1);
+  const progress = Math.max(0, Math.min(1, (strength - start) / (1 - start)));
+  return progress * progress * (3 - 2 * progress);
 }
 
 export function zoomCompensatedEdgeSize(cameraRatio: number, screenThickness = 1.8): number {
@@ -78,15 +63,4 @@ function stableFraction(value: string, salt: number): number {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0) / 4294967295;
-}
-
-export function isNodeVisibleAtLod(
-  lod: LodLevel,
-  isCommunity: boolean,
-  importance: number,
-  hubThreshold: number
-): boolean {
-  if (lod === "overview") return isCommunity;
-  if (isCommunity) return false;
-  return lod === "detail" || importance >= hubThreshold;
 }

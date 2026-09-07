@@ -25,6 +25,9 @@ Renderer
 - Main-process handlers validate requests before invoking application services.
 - Heavy processing runs in `worker_threads` or a supervised sidecar/helper.
   Workers never access UI state.
+- Presentation-only graph layout and community detection run in a renderer
+  Web Worker over validated graph snapshots. This worker has no privileged
+  application, storage, or domain-processing responsibilities.
 - Payloads crossing IPC, worker, sidecar, or integration boundaries are
   versioned where compatibility matters and validated with Zod.
 

@@ -39,6 +39,15 @@
     }
   },
   "knowledgeGraph": {
+    "layoutError": "The graph layout could not be calculated. Retry to resume interaction.",
+    "forces": {
+      "title": "Graph forces",
+      "repulsion": "Repulsion",
+      "linkStrength": "Link attraction",
+      "linkDistance": "Link distance",
+      "centerStrength": "Center attraction",
+      "reset": "Restore default forces"
+    },
     "viewSelector": "Knowledge graph view",
     "sources": "Sources",
     "atomicNotes": "Atomic notes",

@@ -39,6 +39,15 @@
     }
   },
   "knowledgeGraph": {
+    "layoutError": "No se pudo calcular la disposición del grafo. Inténtalo de nuevo para reanudar la interacción.",
+    "forces": {
+      "title": "Fuerzas del grafo",
+      "repulsion": "Repulsión",
+      "linkStrength": "Atracción de los enlaces",
+      "linkDistance": "Distancia de los enlaces",
+      "centerStrength": "Atracción al centro",
+      "reset": "Restaurar fuerzas predeterminadas"
+    },
     "viewSelector": "Vista del grafo de conocimiento",
     "sources": "Fuentes",
     "atomicNotes": "Notas atómicas",
