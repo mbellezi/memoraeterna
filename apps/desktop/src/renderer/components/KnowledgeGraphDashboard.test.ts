@@ -1,8 +1,51 @@
 import { describe, expect, it } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
+import { isInHierarchyActionCorridor } from "./knowledge-graph-view-model";
 
-import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+
+function nestedHierarchyFixture(): KnowledgeGraphDashboard {
+  const source = (id: string, parentSourceItemId: string | null, childCount = 0) => ({
+    id, kind: "source" as const, title: id, subtitle: null, content: null,
+    sourceItemId: id, sourceType: "Book" as const, noteStatus: null,
+    detailCount: 1, parentSourceItemId, childCount
+  });
+  const edge = (id: string, source: string, target: string, weight: number) => ({
+    id, source, target, kind: "shared_entity" as const, label: "shared_entity",
+    description: null, weight, confidence: 0.8, details: [id]
+  });
+  return {
+    mode: "sources", truncated: false,
+    nodes: [source("root", null, 4), source("chapter", "root", 2), source("section", "chapter", 1),
+      source("leaf", "section"), source("sibling", "root"), source("external", null), source("second-hop", null)],
+    edges: [edge("section-edge", "section", "external", 2), edge("leaf-edge", "leaf", "external", 3),
+      edge("external-edge", "external", "second-hop", 1)]
+  };
+}
+
+describe("hierarchy action hover corridor", () => {
+  const node = { x: 200, y: 150, radius: 10 };
+  const actions = { left: 170, right: 230, top: 105, bottom: 133 };
+
+  it("protects slow and diagonal paths to either button, including pauses in the gap", () => {
+    for (const targetX of [175, 225]) {
+      for (let step = 0; step <= 20; step += 1) {
+        const progress = step / 20;
+        const pointer = { x: 200 + (targetX - 200) * progress, y: 150 - 30 * progress };
+        expect(isInHierarchyActionCorridor(pointer, node, actions)).toBe(true);
+      }
+    }
+    expect(isInHierarchyActionCorridor({ x: 200, y: 137 }, node, actions)).toBe(true);
+    expect(isInHierarchyActionCorridor({ x: 200, y: 120 }, node, actions)).toBe(true);
+  });
+
+  it("allows dismissal outside the node, buttons and connecting corridor", () => {
+    for (const pointer of [{ x: 250, y: 137 }, { x: 150, y: 137 }, { x: 200, y: 175 }, { x: 200, y: 90 }]) {
+      expect(isInHierarchyActionCorridor(pointer, node, actions)).toBe(false);
+    }
+  });
+});
 import {
   isLabelOutsideViewport,
   nodeLabelOpacity,
@@ -250,6 +293,63 @@ describe("knowledge graph level of detail", () => {
     ]);
     expect(focused.nodes.map((node) => node.id)).not.toContain("second-hop");
     expect(focused.edges.some((item) => item.id.includes("b1-second"))).toBe(false);
+  });
+
+  it("expands each depth independently and collapses entire nested branches without losing connections", () => {
+    const data = nestedHierarchyFixture();
+    const project = (expanded: string[], showAll = false, focusSourceId: string | null = null) => projectSourceHierarchy(data, {
+      expandedSourceIds: new Set(expanded), showAll, focusSourceId
+    });
+    expect(project(["root"]).nodes.map((node) => node.id)).toEqual(["root", "chapter", "sibling", "external", "second-hop"]);
+    const collapsed = project(["root", "section"]);
+    expect(collapsed.nodes.map((node) => node.id)).not.toContain("leaf");
+    expect(collapsed.nodes.find((node) => node.id === "chapter")?.detailCount).toBe(3);
+    expect(collapsed.edges).toContainEqual(expect.objectContaining({ source: "chapter", target: "external", weight: 5, details: ["section-edge", "leaf-edge"] }));
+    const all = project([], true);
+    expect(all.nodes).toHaveLength(data.nodes.length);
+    expect(project(["root", "chapter", "section"]).nodes).toEqual(all.nodes);
+    const collapsedRoot = project(["chapter", "section"]);
+    expect(collapsedRoot.nodes.map((node) => node.id)).toEqual(["root", "external", "second-hop"]);
+    expect(collapsedRoot.nodes.find((node) => node.id === "root")?.detailCount).toBe(5);
+    expect(collapsedRoot.edges).toContainEqual(expect.objectContaining({ source: "external", target: "root", weight: 5 }));
+    const focused = project([], false, "chapter");
+    expect(focused.nodes.map((node) => node.id)).toEqual(["chapter", "section", "leaf", "external"]);
+    expect(focused.edges).toHaveLength(2);
+  });
+
+  it("reconciles repeated nested expansion in the live graph with nearby seeds and exact surviving positions", () => {
+    const data = nestedHierarchyFixture();
+    const project = (expanded: string[]) => buildGraph(projectSourceHierarchy(data, {
+      expandedSourceIds: new Set(expanded), showAll: false, focusSourceId: null
+    }), ((key: string) => key) as Translator).graph;
+    const graph = project([]);
+    graph.mergeNodeAttributes("item:root", { x: 200, y: -150 });
+    graph.mergeNodeAttributes("item:external", { x: -300, y: 240 });
+    for (const expanded of [["root"], ["root", "chapter"], ["root", "chapter", "section"], ["root", "section"], [], ["root", "chapter", "section"]]) {
+      const before = new Map(graph.mapNodes((id, { x, y }) => [id, { x, y }] as const));
+      const next = project(expanded);
+      reconcileGraphProjection(graph, next, 55);
+      expect(graph.nodes().sort()).toEqual(next.nodes().sort());
+      expect(graph.edges().sort()).toEqual(next.edges().sort());
+      graph.forEachNode((id, attributes) => {
+        if (before.has(id)) expect({ x: attributes.x, y: attributes.y }).toEqual(before.get(id));
+        else {
+          const parent = graph.getNodeAttributes(`item:${attributes.parentSourceItemId}`);
+          const distance = Math.hypot(attributes.x - parent.x, attributes.y - parent.y);
+          expect(distance).toBeGreaterThan(10);
+          expect(distance).toBeLessThan(31);
+        }
+        expect(attributes.visibleChildCount).toBe(next.getNodeAttribute(id, "visibleChildCount"));
+        expect(attributes.detailCount).toBe(next.getNodeAttribute(id, "detailCount"));
+      });
+      graph.forEachEdge((id, attributes) => expect(attributes).toEqual(next.getEdgeAttributes(id)));
+      // Simulate positions changed by physics before the next projection.
+      graph.updateEachNodeAttributes((_id, attributes) => ({ ...attributes, x: attributes.x + 20, y: attributes.y - 10 }));
+    }
+    const empty = buildGraph({ mode: "sources", nodes: [], edges: [], truncated: false }, ((key: string) => key) as Translator).graph;
+    reconcileGraphProjection(graph, empty, 55);
+    expect(graph.order).toBe(0);
+    expect(graph.size).toBe(0);
   });
 
   it("localizes canonical atomic-note relation codes for display", () => {

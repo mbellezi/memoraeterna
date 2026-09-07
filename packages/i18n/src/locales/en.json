@@ -386,7 +386,7 @@
     "container": "Container",
     "containerHint": "This metadata-only container is ready to receive child sources.",
     "selectionCount": "{count} sources selected", "childCount": "{count} direct items", "parentSource": "From {title}",
-    "searchMatches": { "traditional": "Text match", "embedding": "Semantic match", "combined": "Combined match" },
+    "searchMatches": { "traditional": "Text match", "embedding": "Vector similarity", "graph": "Knowledge graph match", "combined": "Combined match", "embeddingNeedsRefresh": "Reprocess embedding" },
     "actions": { "selectSource": "Select {title}", "process": "Process this source", "processSelected": "Process selected", "clearSelection": "Clear selection", "queueProcessing": "Queue processing" },
     "processingDialog": { "title": "Process library sources", "description": "Choose what to generate for {count} selected sources.", "scope": "Apply to", "regenerate": "Regenerate existing artifacts", "regenerateHint": "Reviewed notes are preserved; pending generations are archived safely." },
     "scopes": { "source_only": "This source only", "children_only": "Children only", "source_and_children": "This source and all children" },

@@ -466,6 +466,8 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
         "group flex h-full flex-col overflow-hidden rounded-2xl border bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:bg-slate-900",
         source.matchKind === "embedding"
           ? "border-violet-400 ring-2 ring-violet-200/60 hover:border-violet-500 dark:border-violet-700 dark:ring-violet-950"
+          : source.matchKind === "graph"
+            ? "border-emerald-400 ring-2 ring-emerald-200/60 hover:border-emerald-500 dark:border-emerald-700 dark:ring-emerald-950"
           : "border-slate-200 hover:border-cyan-400 dark:border-slate-800 dark:hover:border-cyan-700"
       )}
       onClick={onOpen}
@@ -488,14 +490,21 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
               "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold",
               source.matchKind === "embedding"
                 ? "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-200"
+                : source.matchKind === "graph"
+                  ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
                 : source.matchKind === "combined"
                   ? "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
                   : "bg-cyan-100 text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200"
-            )}><Sparkles className="h-3 w-3" aria-hidden="true" />{t(`library.searchMatches.${source.matchKind}` as MessageKey)} · {Math.round(Math.max(source.textScore ?? 0, source.embeddingScore ?? 0) * 100)}%</span> : null}
+            )}><Sparkles className="h-3 w-3" aria-hidden="true" />{t(`library.searchMatches.${source.matchKind}` as MessageKey)} · {Math.round(Math.max(source.textScore ?? 0, source.embeddingScore ?? 0, source.graphScore ?? 0) * 100)}%</span> : null}
+            {source.embeddingNeedsRefresh ? <span className="rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200">{t("library.searchMatches.embeddingNeedsRefresh")}</span> : null}
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium dark:bg-slate-800">
               {source.metadata.summaryStale === true ? t("sourceWorkspace.outdated") : source.hasDocument ? t(processingKey(source.processingStatus)) : t("library.container")}
             </span>
           </div>
+          {source.matchExcerpt ? <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            {source.matchLocation ? <span className="font-semibold text-slate-600 dark:text-slate-300">{source.matchLocation}: </span> : null}
+            {source.matchExcerpt}
+          </p> : null}
         </div>
         <div className="flex flex-col items-center justify-between gap-2">
           <input
@@ -536,10 +545,18 @@ function SourceCard({ source, t, compact = false, selected, onToggleSelect, onOp
 }
 
 function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { sourceIds: string[]; sources: LibrarySource[]; t: Translator; onClose: () => void; onQueued: () => void }) {
-  const [plan, setPlan] = useState<ProcessingPlanRequest>(() => ({
-    ...defaultProcessingPlan("search_ready"), targetSourceItemIds: sourceIds,
-    scope: sourceIds.length > 1 ? "selected_items" : sources.find((source) => source.id === sourceIds[0])?.hasDocument ? "source_only" : "children_only"
-  }));
+  const [plan, setPlan] = useState<ProcessingPlanRequest>(() => {
+    const needsEmbeddingRefresh = sources.some((source) =>
+      sourceIds.includes(source.id) && source.embeddingNeedsRefresh
+    );
+    return {
+      ...defaultProcessingPlan("search_ready"),
+      targetSourceItemIds: sourceIds,
+      scope: sourceIds.length > 1 ? "selected_items" : sources.find((source) => source.id === sourceIds[0])?.hasDocument ? "source_only" : "children_only",
+      forceRegeneration: needsEmbeddingRefresh,
+      previousArtifactPolicy: needsEmbeddingRefresh ? "regenerate_selected" : "reuse_valid"
+    };
+  });
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -1142,7 +1159,8 @@ function PageControls({ offset, count, busy, t, onPage }: { offset: number; coun
 function detailAsLibrarySource(detail: SourceDetail): LibrarySource {
   return { ...detail, parentTitle: null, structurePosition: null, childCount: 0, hasDocument: detail.documents.length > 0,
     processingStatus: "pending", currentStage: "queued", textScore: null, embeddingScore: null,
-    rankingScore: null, matchKind: null };
+    graphScore: null, rankingScore: null, matchKind: null, matchExcerpt: null, matchLocation: null,
+    embeddingNeedsRefresh: false };
 }
 
 function metadataEntries(metadata: Record<string, unknown>): Array<[string, string]> {

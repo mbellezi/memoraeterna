@@ -9,9 +9,15 @@ import { createJobRepository } from "./jobRepository.js";
 import { createAtomicNoteRepository } from "./atomicNoteRepository.js";
 import { createAiConfigRepository } from "./aiConfigRepository.js";
 import { createIngestionRunRepository } from "./ingestionRunRepository.js";
-import { createLibraryRepository } from "./libraryRepository.js";
+import {
+  createLibraryRepository,
+  librarySemanticCandidateFloor,
+  librarySemanticStandaloneFloor,
+  qualifiesLibrarySemanticMatch
+} from "./libraryRepository.js";
 import { createEmbeddingRepository } from "./embeddingRepository.js";
 import type { Queryable } from "./types.js";
+import { librarySearchEvaluationCases } from "./__fixtures__/library-search-evaluation.js";
 
 class FakeQueryable implements Queryable {
   readonly queries: Array<{ text: string; values: readonly unknown[] }> = [];
@@ -167,9 +173,24 @@ describe("repositories", () => {
     });
 
     expect(db.queries[0]?.text).toContain("source_embedding.target_type = 'source_item'");
+    expect(db.queries[0]?.text).toContain("limit 3");
+    expect(db.queries[0]?.text).toContain("entity_mentions");
+    expect(db.queries[0]?.text).toContain("chunk_scores.best_score * 0.7");
     expect(db.queries[0]?.text).toContain('as "rankingScore"');
     expect(db.queries[0]?.values[2]).toBe("semantic memory");
     expect(db.queries[0]?.values[8]).toBe("embedding-model");
+    expect(db.queries[0]?.values[9]).toBe(librarySemanticStandaloneFloor);
+    expect(db.queries[0]?.values[10]).toBe(librarySemanticCandidateFloor);
+  });
+
+  it("keeps the synthetic library-search calibration set correctly classified", () => {
+    expect(librarySearchEvaluationCases).toHaveLength(30);
+    for (const evaluation of librarySearchEvaluationCases) {
+      expect(
+        qualifiesLibrarySemanticMatch(evaluation.embeddingScore, evaluation.corroborated),
+        `${evaluation.query} -> ${evaluation.candidate}`
+      ).toBe(evaluation.expectedRelevant);
+    }
   });
 
   it("reads stored source embeddings for hierarchical aggregation", async () => {

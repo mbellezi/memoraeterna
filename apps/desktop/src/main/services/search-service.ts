@@ -52,7 +52,10 @@ export class SearchService {
     let embeddingModel: string | undefined;
     if (input.mode === "hybrid") {
       try {
-        const generated = await this.aiService.runDefaultTask("embedding", input.text);
+        const generated = await this.aiService.runDefaultTask("embedding", input.text, {
+          stage: "knowledge_search",
+          embeddingInputType: "query"
+        });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
           if ((candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024)

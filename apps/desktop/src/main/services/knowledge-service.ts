@@ -147,11 +147,15 @@ export class KnowledgeService {
   }
 
   public async browseLibrary(input: LibraryBrowseInput) {
+    const query = input.query?.trim() ?? "";
     let queryEmbedding: number[] | undefined;
     let embeddingModel: string | undefined;
-    if (input.query?.trim() && input.searchMode !== "traditional") {
+    if (query && input.searchMode !== "traditional") {
       try {
-        const generated = await this.options.aiService.runDefaultTask("embedding", input.query.trim());
+        const generated = await this.options.aiService.runDefaultTask("embedding", query, {
+          stage: "library_search",
+          embeddingInputType: "query"
+        });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
           if ((candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024)
@@ -165,7 +169,7 @@ export class KnowledgeService {
       }
     }
     return (await createLibraryRepository(this.requirePool()).listSources({
-      ...input,
+      ...input, query,
       ...(queryEmbedding && embeddingModel ? { queryEmbedding, embeddingModel } : {})
     })).map((source) => ({
       ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()

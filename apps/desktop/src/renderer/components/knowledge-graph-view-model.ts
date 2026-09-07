@@ -11,6 +11,23 @@ export function graphNodeSize(degree: number): number {
   return Math.min(13, 3.5 + Math.log2(degree + 1) * 1.8);
 }
 
+/** Includes the node, both actions and the corridor between them, without a hitbox over the canvas. */
+export function isInHierarchyActionCorridor(
+  pointer: { x: number; y: number },
+  node: { x: number; y: number; radius: number },
+  actions: { left: number; right: number; top: number; bottom: number }
+): boolean {
+  const margin = 6;
+  if (Math.hypot(pointer.x - node.x, pointer.y - node.y) <= node.radius + margin) return true;
+  if (pointer.y >= actions.top - margin && pointer.y <= actions.bottom + margin
+    && pointer.x >= actions.left - margin && pointer.x <= actions.right + margin) return true;
+  if (pointer.y < actions.bottom || pointer.y > node.y) return false;
+  const progress = (pointer.y - actions.bottom) / Math.max(1, node.y - actions.bottom);
+  const left = actions.left + (node.x - node.radius - actions.left) * progress - margin;
+  const right = actions.right + (node.x + node.radius - actions.right) * progress + margin;
+  return pointer.x >= left && pointer.x <= right;
+}
+
 export function zoomVisualStrength(ratio: number): number {
   const farRatio = 1.25;
   const nearRatio = 0.16;

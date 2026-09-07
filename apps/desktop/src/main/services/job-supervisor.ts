@@ -35,6 +35,7 @@ export interface JobSupervisorOptions {
     sourceItemId: string;
     documentId: string;
     stage: string;
+    embeddingInputType: "document";
   }) => Promise<{
     embedding: number[];
     provider: string;
@@ -343,7 +344,8 @@ export class JobSupervisor {
             ingestionRunId,
             sourceItemId,
             documentId,
-            stage: "embedding"
+            stage: "embedding",
+            embeddingInputType: "document"
           });
           if (!generated) break;
           const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
@@ -368,7 +370,8 @@ export class JobSupervisor {
               ingestionRunId,
               sourceItemId,
               documentId,
-              stage: "source_embedding"
+              stage: "source_embedding",
+              embeddingInputType: "document"
             });
             if (!generated) break;
             const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });

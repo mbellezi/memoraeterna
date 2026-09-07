@@ -327,7 +327,7 @@
     "filterByType": "Filtrer par type de source", "allTypes": "Tous les types de source",
     "refresh": "Actualiser la bibliotheque", "error": "Impossible de charger la bibliotheque.",
     "empty": "Aucune source dans la bibliotheque.", "container": "Conteneur", "containerHint": "Ce conteneur de metadonnees est pret a recevoir des sources enfants.", "selectionCount": "{count} sources selectionnees", "childCount": "{count} elements directs", "parentSource": "Dans {title}",
-    "searchMatches": { "traditional": "Correspondance textuelle", "embedding": "Correspondance semantique", "combined": "Correspondance combinee" },
+    "searchMatches": { "traditional": "Correspondance textuelle", "embedding": "Similarite vectorielle", "graph": "Correspondance dans le graphe", "combined": "Correspondance combinee", "embeddingNeedsRefresh": "Recalculer l'embedding" },
     "actions": { "selectSource": "Selectionner {title}", "process": "Traiter cette source", "processSelected": "Traiter la selection", "clearSelection": "Effacer la selection", "queueProcessing": "Mettre le traitement en file" },
     "processingDialog": { "title": "Traiter les sources", "description": "Choisissez quoi generer pour {count} sources selectionnees.", "scope": "Appliquer a", "regenerate": "Regenerer les artefacts existants", "regenerateHint": "Les notes revisees sont conservees; les generations en attente sont archivees." },
     "scopes": { "source_only": "Cette source uniquement", "children_only": "Enfants uniquement", "source_and_children": "Cette source et tous ses enfants" },

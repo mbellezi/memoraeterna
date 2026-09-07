@@ -327,7 +327,7 @@
     "filterByType": "Filtrar por tipo de fuente", "allTypes": "Todos los tipos de fuente",
     "refresh": "Actualizar biblioteca", "error": "No se pudo cargar la biblioteca.",
     "empty": "Aun no hay fuentes en la biblioteca.", "container": "Contenedor", "containerHint": "Este contenedor de metadatos esta listo para recibir fuentes hijas.", "selectionCount": "{count} fuentes seleccionadas", "childCount": "{count} elementos directos", "parentSource": "De {title}",
-    "searchMatches": { "traditional": "Coincidencia textual", "embedding": "Coincidencia semantica", "combined": "Coincidencia combinada" },
+    "searchMatches": { "traditional": "Coincidencia textual", "embedding": "Similitud vectorial", "graph": "Coincidencia en el grafo", "combined": "Coincidencia combinada", "embeddingNeedsRefresh": "Reprocesar embedding" },
     "actions": { "selectSource": "Seleccionar {title}", "process": "Procesar esta fuente", "processSelected": "Procesar seleccionadas", "clearSelection": "Limpiar seleccion", "queueProcessing": "Poner procesamiento en cola" },
     "processingDialog": { "title": "Procesar fuentes de la biblioteca", "description": "Elige que generar para {count} fuentes seleccionadas.", "scope": "Aplicar a", "regenerate": "Regenerar artefactos existentes", "regenerateHint": "Las notas revisadas se conservan; las generaciones pendientes se archivan." },
     "scopes": { "source_only": "Solo esta fuente", "children_only": "Solo elementos hijos", "source_and_children": "Esta fuente y todos sus hijos" },

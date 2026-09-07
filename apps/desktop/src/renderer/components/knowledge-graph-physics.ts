@@ -55,7 +55,7 @@ export function createGraphPhysics(inputNodes: GraphLayoutNode[], edges: GraphLa
       node.y = Math.sin(angle) * distance;
     });
   }
-  const simulation = forceSimulation(nodes).stop().alphaDecay(0.018).alphaMin(0.002).velocityDecay(0.35);
+  const simulation = forceSimulation(nodes).stop().alpha(restored ? 0 : 1).alphaDecay(0.018).alphaMin(0.002).velocityDecay(0.35);
   function configure(next: GraphForceSettings) {
     settings = next;
     radius = graphLayoutRadius(nodes.length, settings.linkDistance);

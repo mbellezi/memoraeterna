@@ -79,6 +79,24 @@ describe("knowledge graph physics", () => {
     }
   });
 
+  it("reheats changed topology from the visible positions without community reseeding", () => {
+    const nodes = [{ id: "parent", x: 90, y: 40 }, { id: "child", x: 105, y: 50 }, { id: "neighbor", x: 145, y: 40 }];
+    const physics = createGraphPhysics(nodes, [
+      { source: "parent", target: "child", weight: 3 },
+      { source: "child", target: "neighbor", weight: 1 }
+    ], defaultGraphForceSettings, true);
+    expect(physics.nodes.map(({ id, x, y }) => ({ id, x, y }))).toEqual(nodes);
+    expect(physics.simulation.alpha()).toBe(0);
+    physics.reheat();
+    expect(physics.simulation.alpha()).toBe(0.45);
+    physics.tick();
+    physics.nodes.forEach((node, index) => {
+      expect(Math.hypot(node.x - nodes[index]!.x, node.y - nodes[index]!.y)).toBeLessThan(10);
+    });
+    expect(settle(physics)).toBeGreaterThan(1);
+    expect(physics.positions().every(Number.isFinite)).toBe(true);
+  });
+
   it("validates both worker boundaries", () => {
     expect(graphLayoutCommandSchema.safeParse({ type: "configure", settings: { ...defaultGraphForceSettings, repulsion: -100 } }).success).toBe(false);
     expect(graphLayoutEventSchema.safeParse({ type: "positions", positions: new Float32Array([NaN, 1]), running: false, sequence: 0 }).success).toBe(false);

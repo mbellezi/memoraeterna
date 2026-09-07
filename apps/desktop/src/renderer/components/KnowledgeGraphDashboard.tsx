@@ -55,6 +55,7 @@ import { cn } from "../lib/cn";
 import { Input } from "./ui/input";
 import {
   isLabelOutsideViewport,
+  isInHierarchyActionCorridor,
   graphNodeSize,
   graphTypography,
   nodeLabelOpacity,
@@ -185,33 +186,35 @@ export function projectSourceHierarchy(
 ): DashboardData {
   if (data.mode !== "sources") return data;
   const nodeById = new Map(data.nodes.map((node) => [node.id, node]));
-  const rootCache = new Map<string, string>();
-  const rootFor = (nodeId: string): string => {
-    const cached = rootCache.get(nodeId);
-    if (cached) return cached;
+  const ancestorsFor = (nodeId: string): string[] => {
     const visited = new Set<string>();
+    const ancestors: string[] = [];
     let current = nodeById.get(nodeId);
     while (current?.parentSourceItemId && nodeById.has(current.parentSourceItemId) && !visited.has(current.id)) {
       visited.add(current.id);
+      ancestors.push(current.parentSourceItemId);
       current = nodeById.get(current.parentSourceItemId);
     }
-    const rootId = current?.id ?? nodeId;
-    for (const visitedId of visited) rootCache.set(visitedId, rootId);
-    rootCache.set(nodeId, rootId);
-    return rootId;
+    return ancestors;
   };
-  const roots = new Set(data.nodes.map((node) => rootFor(node.id)));
+  const ancestors = new Map(data.nodes.map((node) => [node.id, ancestorsFor(node.id)]));
   const expanded = options.showAll
-    ? roots
-    : new Set([...options.expandedSourceIds].filter((id) => roots.has(id)));
-  if (options.focusSourceId && roots.has(options.focusSourceId)) expanded.add(options.focusSourceId);
-  const mappedId = (nodeId: string) => expanded.has(rootFor(nodeId)) ? nodeId : rootFor(nodeId);
-  const resolvedFocusId = options.focusSourceId && roots.has(options.focusSourceId)
+    ? new Set(nodeById.keys())
+    : options.expandedSourceIds;
+  const resolvedFocusId = options.focusSourceId && nodeById.has(options.focusSourceId)
     ? options.focusSourceId
     : null;
   const focusMembers = resolvedFocusId
-    ? new Set(data.nodes.filter((node) => rootFor(node.id) === resolvedFocusId).map((node) => node.id))
+    ? new Set(data.nodes.filter((node) => node.id === resolvedFocusId || ancestors.get(node.id)!.includes(resolvedFocusId)).map((node) => node.id))
     : null;
+  const mappedId = (nodeId: string) => {
+    if (focusMembers?.has(nodeId)) return nodeId;
+    let visibleId = nodeId;
+    for (const parentId of ancestors.get(nodeId) ?? []) {
+      if (!expanded.has(parentId)) visibleId = parentId;
+    }
+    return visibleId;
+  };
   const visibleIds = new Set<string>();
   if (focusMembers) {
     for (const nodeId of focusMembers) visibleIds.add(nodeId);
@@ -223,20 +226,17 @@ export function projectSourceHierarchy(
     }
   } else {
     for (const node of data.nodes) {
-      const rootId = rootFor(node.id);
-      if (node.id === rootId || expanded.has(rootId)) visibleIds.add(node.id);
+      visibleIds.add(mappedId(node.id));
     }
   }
 
   const aggregatedDetailCounts = new Map<string, number>();
   for (const node of data.nodes) {
-    const rootId = rootFor(node.id);
-    aggregatedDetailCounts.set(rootId, (aggregatedDetailCounts.get(rootId) ?? 0) + node.detailCount);
+    const visibleId = mappedId(node.id);
+    aggregatedDetailCounts.set(visibleId, (aggregatedDetailCounts.get(visibleId) ?? 0) + node.detailCount);
   }
   const nodes = data.nodes.filter((node) => visibleIds.has(node.id)).map((node) => {
-    const rootId = rootFor(node.id);
-    if (node.id !== rootId || expanded.has(rootId)) return node;
-    return { ...node, detailCount: aggregatedDetailCounts.get(rootId) ?? node.detailCount };
+    return { ...node, detailCount: aggregatedDetailCounts.get(node.id) ?? node.detailCount };
   });
 
   const groupedEdges = new Map<string, DashboardData["edges"][number]>();
@@ -379,6 +379,7 @@ export function KnowledgeGraphDashboard({
   const hierarchyActionExitTimerRef = useRef<number | null>(null);
   const hideHierarchyActionsRef = useRef<(immediate?: boolean) => void>(() => {});
   const freezeGraphRef = useRef<() => void>(() => {});
+  const updateProjectionRef = useRef<(next: GraphBundle) => void>(() => {});
 
   useEffect(() => { popupInsideRef.current = false; }, [hover?.key, graphPopup]);
 
@@ -404,6 +405,8 @@ export function KnowledgeGraphDashboard({
     focusSourceId: null
   }) : null, [data, expandedSourceIds, showAllSubitems]);
   const bundle = useMemo(() => displayedData ? buildGraph(displayedData, t) : null, [displayedData, t]);
+  const bundleRef = useRef(bundle);
+  bundleRef.current = bundle;
   const hierarchyPreviewData = useMemo(() => data && hierarchyPreviewSourceId
     ? projectSourceHierarchy(data, {
       showAll: false,
@@ -419,14 +422,15 @@ export function KnowledgeGraphDashboard({
 
   useEffect(() => {
     const container = containerRef.current;
+    const bundle = bundleRef.current;
     if (!container || !bundle || bundle.rawNodeKeys.length === 0) return;
     const graphContainer = container;
     let disposed = false;
     let cleanupRenderer = () => {};
     const graph = bundle.graph;
-    const rawNodeKeys = bundle.rawNodeKeys;
-    const graphStateKey = bundle.stateKey;
-    const hierarchyGroups = bundle.hierarchyGroups;
+    let rawNodeKeys = bundle.rawNodeKeys;
+    let graphStateKey = bundle.stateKey;
+    const hierarchyGroups = [...bundle.hierarchyGroups];
     const restoredViewState = restoreKnowledgeGraphViewState(graph, graphStateKey, initialViewState);
     setLayoutError(false);
     const initialForces = initialViewState?.forces ?? defaultGraphForceSettings;
@@ -520,6 +524,20 @@ export function KnowledgeGraphDashboard({
     let lastPositionFrame = 0;
     let simulationRunning = false;
     const nodeIndices = new Map(rawNodeKeys.map((node, index) => [node, index]));
+    let hierarchyPointer: { x: number; y: number } | null = null;
+    const pointerInHierarchyCorridor = () => {
+      const node = hierarchyActionNodeKeyRef.current;
+      const element = hierarchyNodeActionsRef.current;
+      if (!hierarchyPointer || !element || !node || !graph.hasNode(node)) return false;
+      const display = renderer.getNodeDisplayData(node);
+      if (!display) return false;
+      const position = renderer.graphToViewport(graph.getNodeAttributes(node));
+      const viewport = graphContainer.getBoundingClientRect();
+      return isInHierarchyActionCorridor(hierarchyPointer, {
+        x: viewport.left + position.x, y: viewport.top + position.y,
+        radius: renderer.scaleSize(display.size)
+      }, element.getBoundingClientRect());
+    };
     const clearHierarchyActions = () => {
       if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
       hierarchyActionExitTimerRef.current = null;
@@ -528,11 +546,26 @@ export function KnowledgeGraphDashboard({
       setHierarchyNodeActions(null);
     };
     const hideHierarchyActions = (immediate = false) => {
-      if (hierarchyActionInsideRef.current && !immediate) return;
-      if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
       if (immediate) { clearHierarchyActions(); return; }
-      hierarchyActionExitTimerRef.current = window.setTimeout(clearHierarchyActions, 240);
+      if (hierarchyActionInsideRef.current || pointerInHierarchyCorridor()) {
+        if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
+        hierarchyActionExitTimerRef.current = null;
+        return;
+      }
+      if (hierarchyActionExitTimerRef.current !== null) return;
+      hierarchyActionExitTimerRef.current = window.setTimeout(() => {
+        hierarchyActionExitTimerRef.current = null;
+        if (!hierarchyActionInsideRef.current && !pointerInHierarchyCorridor()) clearHierarchyActions();
+      }, 240);
     };
+    const trackHierarchyPointer = (event: PointerEvent) => {
+      hierarchyPointer = { x: event.clientX, y: event.clientY };
+      if (hierarchyActionNodeKeyRef.current) hideHierarchyActions();
+    };
+    const leaveHierarchyWindow = () => { hierarchyPointer = null; clearHierarchyActions(); };
+    window.addEventListener("pointermove", trackHierarchyPointer, true);
+    window.addEventListener("blur", leaveHierarchyWindow);
+    document.documentElement.addEventListener("pointerleave", leaveHierarchyWindow);
     hideHierarchyActionsRef.current = hideHierarchyActions;
     const syncHierarchyActions = () => {
       const element = hierarchyNodeActionsRef.current;
@@ -601,14 +634,18 @@ export function KnowledgeGraphDashboard({
       else if (!simulationRunning) setLayoutRunning(false);
     };
 
-    const startPhysics = () => {
+    const startPhysics = (preservePositions = restoredViewState, reheat = false) => {
       layoutRef.current?.kill();
+      targetPositions = null;
+      if (positionFrame !== null) window.cancelAnimationFrame(positionFrame);
+      positionFrame = null;
+      lastPositionFrame = 0;
       const nodes = rawNodeKeys.map((id) => ({ id, x: graph.getNodeAttribute(id, "x"), y: graph.getNodeAttribute(id, "y") }));
       const edges = graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hit_area").map((edge) => {
         const [source, target] = graph.extremities(edge);
         return { source, target, weight: graph.getEdgeAttribute(edge, "layoutWeight") };
       });
-      layoutRef.current = new KnowledgeGraphLayout(nodes, edges, forcesRef.current, restoredViewState,
+      layoutRef.current = new KnowledgeGraphLayout(nodes, edges, forcesRef.current, preservePositions,
         (positions, running) => {
           targetPositions = positions;
           simulationRunning = running;
@@ -616,7 +653,8 @@ export function KnowledgeGraphDashboard({
         },
         () => { if (!disposed) { setLayoutError(true); setLayoutRunning(false); } }
       );
-      setLayoutRunning(!restoredViewState);
+      if (reheat) layoutRef.current.reheat();
+      setLayoutRunning(!preservePositions || reheat);
     };
 
     const animateHighlight = (target: number, onComplete?: () => void) => {
@@ -869,6 +907,9 @@ export function KnowledgeGraphDashboard({
         layoutRef.current = null;
         if (positionFrame !== null) window.cancelAnimationFrame(positionFrame);
         window.removeEventListener("blur", releaseDrag);
+        window.removeEventListener("pointermove", trackHierarchyPointer, true);
+        window.removeEventListener("blur", leaveHierarchyWindow);
+        document.documentElement.removeEventListener("pointerleave", leaveHierarchyWindow);
         graphContainer.removeEventListener("wheel", handleGraphWheel, { capture: true });
         persistViewState();
         hoverIntent.dispose();
@@ -877,6 +918,7 @@ export function KnowledgeGraphDashboard({
         dismissGraphInfoRef.current = () => {};
         hideHierarchyActionsRef.current = () => {};
         freezeGraphRef.current = () => {};
+        updateProjectionRef.current = () => {};
         clearHierarchyActions();
         draggingRef.current = false;
         if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
@@ -886,6 +928,25 @@ export function KnowledgeGraphDashboard({
         sigmaRef.current = null;
       };
       startPhysics();
+      updateProjectionRef.current = (next) => {
+        if (next.graph === graph) return;
+        cancelWheelRef.current();
+        suspendHover();
+        releaseDrag();
+        pointerTarget = null;
+        floatingEdgeKey = null;
+        reconcileGraphProjection(graph, next.graph, forcesRef.current.linkDistance);
+        rawNodeKeys = next.rawNodeKeys;
+        graphStateKey = next.stateKey;
+        hierarchyGroups.splice(0, hierarchyGroups.length, ...next.hierarchyGroups);
+        nodeIndices.clear();
+        rawNodeKeys.forEach((node, index) => nodeIndices.set(node, index));
+        setLayoutError(false);
+        startPhysics(true, true);
+        renderer.refresh();
+      };
+      // A hierarchy toggle can arrive while Sigma's modules are still loading.
+      if (bundleRef.current) updateProjectionRef.current(bundleRef.current);
 
       function persistViewState() {
         onViewStateChange(mode, {
@@ -898,7 +959,11 @@ export function KnowledgeGraphDashboard({
         });
       }
     }
-  }, [bundle, initialViewState, mode, onOpenAtomicNote, onOpenSource, onViewStateChange, wheelZoomSensitivity]);
+  }, [data, t, initialViewState, mode, onOpenAtomicNote, onOpenSource, onViewStateChange, wheelZoomSensitivity]);
+
+  useEffect(() => {
+    if (bundle) updateProjectionRef.current(bundle);
+  }, [bundle]);
 
   function zoom(factor: number) {
     dismissGraphInfoRef.current();
@@ -1807,14 +1872,53 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
   };
 }
 
+/** Reconcile topology without replacing the live graph or moving surviving nodes. */
+export function reconcileGraphProjection(
+  graph: Graph<NodeAttributes, EdgeAttributes>,
+  next: Graph<NodeAttributes, EdgeAttributes>,
+  linkDistance: number
+) {
+  const positions = new Map<string, { x: number; y: number }>();
+  graph.forEachNode((id, { x, y }) => positions.set(id, { x, y }));
+  const positionFor = (id: string, visiting = new Set<string>()): { x: number; y: number } => {
+    const existing = positions.get(id);
+    if (existing) return existing;
+    const attributes = next.getNodeAttributes(id);
+    const parent = attributes.parentSourceItemId ? `item:${attributes.parentSourceItemId}` : null;
+    visiting.add(id);
+    const origin = parent && next.hasNode(parent) && !visiting.has(parent)
+      ? positionFor(parent, visiting) : attributes;
+    const angle = hashFraction(id, 0) * Math.PI * 2;
+    const radius = linkDistance * (0.3 + hashFraction(id, 1) * 0.25);
+    const position = { x: origin.x + Math.cos(angle) * radius, y: origin.y + Math.sin(angle) * radius };
+    positions.set(id, position);
+    return position;
+  };
+  graph.edges().forEach((edge) => {
+    if (!next.hasEdge(edge)) graph.dropEdge(edge);
+  });
+  graph.nodes().forEach((node) => {
+    if (!next.hasNode(node)) graph.dropNode(node);
+  });
+  next.forEachNode((node, attributes) => {
+    const updated = { ...attributes, ...positionFor(node) };
+    if (graph.hasNode(node)) graph.replaceNodeAttributes(node, updated);
+    else graph.addNode(node, updated);
+  });
+  next.forEachEdge((edge, attributes, source, target) => {
+    if (graph.hasEdge(edge)) graph.replaceEdgeAttributes(edge, { ...attributes });
+    else graph.addEdgeWithKey(edge, source, target, { ...attributes });
+  });
+}
+
 function installHierarchyContainerLayer(
   renderer: Sigma<NodeAttributes, EdgeAttributes>,
   graph: Graph<NodeAttributes, EdgeAttributes>,
   groups: GraphBundle["hierarchyGroups"]
 ) {
-  const canvas = groups.length > 0 ? renderer.createCanvas("hierarchy-containers", {
+  const canvas = renderer.createCanvas("hierarchy-containers", {
     beforeLayer: "edges", style: { inset: "0", pointerEvents: "none", zIndex: "0" }
-  }) : null;
+  });
   const context = canvas?.getContext("2d") ?? null;
   const badgeCanvas = renderer.createCanvas("hierarchy-count-badges", {
     beforeLayer: "mouse", style: { inset: "0", pointerEvents: "none", zIndex: "8" }

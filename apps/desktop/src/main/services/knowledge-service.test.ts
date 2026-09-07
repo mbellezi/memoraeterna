@@ -14,9 +14,10 @@ describe("hierarchical aggregate summaries", () => {
       }
     } as unknown as PgPool;
     const embedding = Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0);
+    const runDefaultTask = vi.fn(async () => ({ output: embedding, modelId: "source-model" }));
     const service = new KnowledgeService({
       getPool: () => pool,
-      aiService: { runDefaultTask: vi.fn(async () => ({ output: embedding, modelId: "source-model" })) } as unknown as AiService,
+      aiService: { runDefaultTask } as unknown as AiService,
       userDataPath: "/tmp/memora-test",
       getStorageSettings: async () => ({}) as never,
       getUploadedFilesBasePath: async () => null
@@ -27,6 +28,10 @@ describe("hierarchical aggregate summaries", () => {
     expect(queries[0]?.text).toContain("source_embedding.target_type = 'source_item'");
     expect(queries[0]?.values?.[2]).toBe("semantic memory");
     expect(queries[0]?.values?.[8]).toBe("source-model");
+    expect(runDefaultTask).toHaveBeenCalledWith("embedding", "semantic memory", {
+      stage: "library_search",
+      embeddingInputType: "query"
+    });
   });
 
   it("includes descendants of any hierarchical source type when finding completed subpart summaries", async () => {

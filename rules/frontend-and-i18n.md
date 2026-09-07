@@ -107,12 +107,23 @@ locales.
   default. A collapsed root displays its descendant count and aggregates descendant
   connections without losing their weights or details. The count appears in a small
   badge on the source node. Hover information cards remain informational; two compact
-  node-anchored actions expand or collapse that root in place and open its hierarchy
+  node-anchored actions expand or collapse that source in place and open its hierarchy
   with only directly connected source neighbors in a separate overlay graph. The
-  overlay keeps the main graph mounted and frozen so closing it restores the exact
+  pointer corridor between the source node and both actions keeps the actions open
+  indefinitely, including during pauses; leaving that region restores delayed
+  dismissal. This corridor must not intercept node clicks or canvas dragging.
+  The overlay keeps the main graph mounted and frozen so closing it restores the exact
   camera and node positions. The user can also switch the entire graph between grouped
   and fully expanded source projections. Hierarchy grouping is explicit UI state and
-  never changes automatically with zoom.
+  never changes automatically with zoom. Each hierarchy level expands its direct
+  children independently; collapsing a source hides all its descendants, including
+  expanded nested branches, and aggregates their connections and detail counts into
+  that source. Nested expansion choices survive an ancestor's collapse. In-place
+  projection changes keep the live renderer, camera, normalization bounds, force
+  settings and surviving node positions; newly visible children start near their
+  parent and physics reheats from those coordinates so the network adjusts smoothly.
+  Hierarchy previews also accept nested sources and show their complete subtree
+  with only directly connected external neighbors.
   Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
   short emphasis transition. Node and background dragging cancel all pending

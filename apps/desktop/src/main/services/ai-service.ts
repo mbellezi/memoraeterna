@@ -79,6 +79,7 @@ export interface AiTaskLogContext {
   sourceItemIds?: string[];
   documentId?: string;
   stage?: string;
+  embeddingInputType?: "query" | "document";
   onProgress?: (event: AiProgressEvent) => void;
 }
 
@@ -332,7 +333,7 @@ export class AiService {
       ? await this.options.getUiLanguage?.() ?? "en"
       : selection.outputLanguage;
     const taskInput = taskType === "embedding"
-      ? input
+      ? withEmbeddingInputInstruction(input, selection.modelId, selection.repository, structuredLogContext.embeddingInputType)
       : withOutputLanguageInstruction(input, outputLanguage);
     const keepLocalEmbeddingModelLoaded = taskType === "embedding" && selection.localModelId
       ? await this.options.getKeepLocalEmbeddingModelsLoaded?.() ?? true
@@ -812,6 +813,19 @@ function withOutputLanguageInstruction(input: string, language: string): string 
     es: "Spanish"
   } as Record<string, string>)[language] ?? language;
   return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly.\n\n${input}`;
+}
+
+export function withEmbeddingInputInstruction(
+  input: string,
+  modelId: string,
+  repository: string | null,
+  inputType: AiTaskLogContext["embeddingInputType"]
+): string {
+  if (inputType !== "query") return input;
+  const identity = `${modelId} ${repository ?? ""}`.toLowerCase();
+  if (!identity.includes("qwen3-embedding")) return input;
+  return "Instruct: Retrieve sources that are substantially about the person, work, concept, or topic named by the user.\n"
+    + `Query: ${input}`;
 }
 
 function createProgressReporter(listener?: (event: AiProgressEvent) => void): (event: AiProgressEvent) => void {

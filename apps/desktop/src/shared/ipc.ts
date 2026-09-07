@@ -475,8 +475,12 @@ export const librarySourceSchema = z.object({
   currentStage: z.string().min(1),
   textScore: z.number().min(0).max(1).nullable().default(null),
   embeddingScore: z.number().min(0).max(1).nullable().default(null),
+  graphScore: z.number().min(0).max(1).nullable().default(null),
   rankingScore: z.number().nonnegative().nullable().default(null),
-  matchKind: z.enum(["traditional", "embedding", "combined"]).nullable().default(null),
+  matchKind: z.enum(["traditional", "embedding", "graph", "combined"]).nullable().default(null),
+  matchExcerpt: z.string().nullable().default(null),
+  matchLocation: z.string().nullable().default(null),
+  embeddingNeedsRefresh: z.boolean().default(false),
   updatedAt: z.string().datetime()
 }).strict();
 

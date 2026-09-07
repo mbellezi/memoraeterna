@@ -355,7 +355,7 @@
     "container": "Container",
     "containerHint": "Este container somente com metadados esta pronto para receber fontes-filhas.",
     "selectionCount": "{count} fontes selecionadas", "childCount": "{count} itens diretos", "parentSource": "Pertence a {title}",
-    "searchMatches": { "traditional": "Correspondencia textual", "embedding": "Correspondencia semantica", "combined": "Correspondencia combinada" },
+    "searchMatches": { "traditional": "Correspondencia textual", "embedding": "Similaridade vetorial", "graph": "Correspondencia no grafo", "combined": "Correspondencia combinada", "embeddingNeedsRefresh": "Reprocessar embedding" },
     "actions": { "selectSource": "Selecionar {title}", "process": "Processar esta fonte", "processSelected": "Processar selecionadas", "clearSelection": "Limpar selecao", "queueProcessing": "Enfileirar processamento" },
     "processingDialog": { "title": "Processar fontes da biblioteca", "description": "Escolha o que gerar para {count} fontes selecionadas.", "scope": "Aplicar a", "regenerate": "Gerar novamente os artefatos existentes", "regenerateHint": "Notas revisadas sao preservadas; geracoes pendentes sao arquivadas com seguranca." },
     "scopes": { "source_only": "Somente esta fonte", "children_only": "Somente os filhos", "source_and_children": "Esta fonte e todos os filhos" },

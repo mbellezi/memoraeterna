@@ -107,9 +107,22 @@ status, and all participating source IDs.
 
 - Text and vector rankings remain independently inspectable before fusion.
 - The Library search combines its existing catalog match with a query embedding
-  against `source_item` embeddings. Ranking retains both scores, favors the
-  stronger signal with a smaller bonus when both agree, and identifies whether
-  text, semantic similarity, or both produced the match.
+  against current-model chunk and `source_item` embeddings. Source vector rank
+  aggregates the best three current-document chunks, favoring the best chunk,
+  and uses the composite source vector as a smaller supporting signal. A
+  vector-only result must meet the calibrated standalone floor; a weaker vector
+  may contribute only when text or an exact graph entity corroborates it.
+  Ranking retains text, vector, and graph scores independently, favors the
+  strongest signal with a smaller agreement bonus, and identifies which signals
+  produced the match.
+- Exact canonical graph entities and aliases promote their evidenced source in
+  Library results. Cards show the best evidence excerpt when the match came from
+  a chunk or graph element, call raw cosine output vector similarity rather than
+  confidence, and flag sources that lack embeddings for the active model.
+- Instruction-aware embedding models receive retrieval instructions on query
+  inputs only; stored document, chunk, and source inputs remain document text.
+  Calibrated Library floors are covered by a synthetic, versioned evaluation set;
+  private real-library calibration corpora remain local.
 - Search results include source item, document/revision, chunk, SourceSpan,
   scores, and evidence. Hierarchical child results include breadcrumbs to the
   root; a root filter may include descendants.

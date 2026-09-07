@@ -327,7 +327,7 @@
     "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
     "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
     "empty": "Nessuna fonte nella libreria.", "container": "Contenitore", "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti", "parentSource": "Da {title}",
-    "searchMatches": { "traditional": "Corrispondenza testuale", "embedding": "Corrispondenza semantica", "combined": "Corrispondenza combinata" },
+    "searchMatches": { "traditional": "Corrispondenza testuale", "embedding": "Similarita vettoriale", "graph": "Corrispondenza nel grafo", "combined": "Corrispondenza combinata", "embeddingNeedsRefresh": "Rielabora embedding" },
     "actions": { "selectSource": "Seleziona {title}", "process": "Elabora questa fonte", "processSelected": "Elabora selezionate", "clearSelection": "Cancella selezione", "queueProcessing": "Accoda elaborazione" },
     "processingDialog": { "title": "Elabora fonti della libreria", "description": "Scegli cosa generare per {count} fonti selezionate.", "scope": "Applica a", "regenerate": "Rigenera artefatti esistenti", "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate." },
     "scopes": { "source_only": "Solo questa fonte", "children_only": "Solo elementi figli", "source_and_children": "Questa fonte e tutti i figli" },
