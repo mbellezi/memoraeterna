@@ -57,6 +57,7 @@
     "zoomIn": "Zoom in",
     "fit": "Fit graph to view",
     "graphPopup": "Interactive relation popup",
+    "subitems": { "showAll": "Show all subitems", "groupAll": "Group subitems by source", "expand": "Expand {count} subitems", "collapse": "Collapse subitems", "focus": "Open hierarchy graph", "closeFocus": "Back to the main graph", "focusDescription": "Source hierarchy and directly connected sources" },
     "relayout": "Reorganize graph",
     "refresh": "Refresh graph",
     "backToGraph": "Back to knowledge graph",

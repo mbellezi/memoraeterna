@@ -527,7 +527,9 @@ export const knowledgeGraphDashboardNodeSchema = z.object({
   sourceItemId: z.string().uuid(),
   sourceType: SourceItemTypeSchema.nullable(),
   noteStatus: z.enum(["pending_review", "approved", "rejected", "archived"]).nullable(),
-  detailCount: z.number().int().nonnegative()
+  detailCount: z.number().int().nonnegative(),
+  parentSourceItemId: z.string().uuid().nullable(),
+  childCount: z.number().int().nonnegative()
 }).strict();
 export const knowledgeGraphDashboardEdgeSchema = z.object({
   id: z.string().min(1),

@@ -42,8 +42,8 @@ locales.
   expandable card, with the underlying connections shown as compact details.
 - The global knowledge-graph dashboard uses WebGL rendering, automatic
   community-aware d3-force layout in a presentation-only Web Worker, with
-  Zod-validated messages. The same individual nodes remain visible at every
-  zoom level; zoom reveals labels and relation detail continuously without
+  Zod-validated messages. The same individual nodes in the active projection
+  remain visible at every zoom level; zoom reveals labels and relation detail continuously without
   replacing items with community aggregates. Louvain groups guide the physics
   without adding synthetic nodes or interaction edges to the simulation.
   Node and edge emphasis starts after a 100 ms dwell on the same target and
@@ -103,6 +103,16 @@ locales.
   preview gestures never zoom the parent or dismiss the preview. Previews stay open
   when the pointer leaves and close through top-bar Back/Close buttons, Escape, or
   the system/mouse Back action, returning to the underlying graph.
+  In Sources mode, hierarchical source items are grouped by their root source by
+  default. A collapsed root displays its descendant count and aggregates descendant
+  connections without losing their weights or details. The count appears in a small
+  badge on the source node. Hover information cards remain informational; two compact
+  node-anchored actions expand or collapse that root in place and open its hierarchy
+  with only directly connected source neighbors in a separate overlay graph. The
+  overlay keeps the main graph mounted and frozen so closing it restores the exact
+  camera and node positions. The user can also switch the entire graph between grouped
+  and fully expanded source projections. Hierarchy grouping is explicit UI state and
+  never changes automatically with zoom.
   Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
   short emphasis transition. Node and background dragging cancel all pending

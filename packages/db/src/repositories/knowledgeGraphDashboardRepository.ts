@@ -15,6 +15,8 @@ export interface KnowledgeGraphDashboardNodeRecord {
   sourceType: SourceItemType | null;
   noteStatus: AtomicNoteStatus | null;
   detailCount: number;
+  parentSourceItemId: string | null;
+  childCount: number;
 }
 
 export interface KnowledgeGraphDashboardEdgeRecord {
@@ -52,6 +54,8 @@ interface SourceNodeRow extends QueryResultRow {
   title: string;
   subtitle: string | null;
   entityCount: number;
+  parentSourceItemId: string | null;
+  childCount: number;
 }
 
 interface SourceEdgeRow extends QueryResultRow {
@@ -111,19 +115,38 @@ async function getSourceConnectionDetails(
 ): Promise<KnowledgeGraphSourceConnectionDetailsRecord> {
   const [sharedResult, semanticResult] = await Promise.all([
     pool.query<SourceConnectionDetailRow & { id: string }>(
-      `select distinct entity.id, entity.canonical_name as detail
+      `with recursive source_tree(id) as (
+         select id from source_items where id = $1
+         union all
+         select child.id from source_items child join source_tree parent on child.parent_source_item_id = parent.id
+       ), target_tree(id) as (
+         select id from source_items where id = $2
+         union all
+         select child.id from source_items child join target_tree parent on child.parent_source_item_id = parent.id
+       )
+       select distinct entity.id, entity.canonical_name as detail
        from entity_mentions source_mention
        join entity_mentions target_mention on target_mention.entity_id = source_mention.entity_id
        join entities entity on entity.id = source_mention.entity_id
-       where source_mention.source_item_id = $1 and target_mention.source_item_id = $2
+       where source_mention.source_item_id in (select id from source_tree)
+         and target_mention.source_item_id in (select id from target_tree)
        order by detail`,
       [sourceItemId, targetSourceItemId]
     ),
     pool.query<SourceConnectionDetailRow & { id: string; source: string; target: string; sourceLabel: string; targetLabel: string; label: string }>(
-      `with mentions as (
+      `with recursive source_tree(id) as (
+         select id from source_items where id = $1
+         union all
+         select child.id from source_items child join source_tree parent on child.parent_source_item_id = parent.id
+       ), target_tree(id) as (
+         select id from source_items where id = $2
+         union all
+         select child.id from source_items child join target_tree parent on child.parent_source_item_id = parent.id
+       ), mentions as (
          select distinct source_item_id, entity_id
          from entity_mentions
-         where source_item_id in ($1, $2)
+         where source_item_id in (select id from source_tree)
+            or source_item_id in (select id from target_tree)
        )
        select distinct relation.id, relation.subject_entity_id as source, relation.object_entity_id as target,
          subject_entity.canonical_name as "sourceLabel", object_entity.canonical_name as "targetLabel",
@@ -134,8 +157,10 @@ async function getSourceConnectionDetails(
        join mentions object_mention on object_mention.entity_id = relation.object_entity_id
        join entities subject_entity on subject_entity.id = relation.subject_entity_id
        join entities object_entity on object_entity.id = relation.object_entity_id
-       where (subject_mention.source_item_id = $1 and object_mention.source_item_id = $2)
-          or (subject_mention.source_item_id = $2 and object_mention.source_item_id = $1)
+       where (subject_mention.source_item_id in (select id from source_tree)
+          and object_mention.source_item_id in (select id from target_tree))
+          or (subject_mention.source_item_id in (select id from target_tree)
+          and object_mention.source_item_id in (select id from source_tree))
        order by detail`,
       [sourceItemId, targetSourceItemId]
     )
@@ -157,9 +182,12 @@ async function getSourceConnectionDetails(
 async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRecord> {
   const nodeResult = await pool.query<SourceNodeRow>(
     `select source.id, source.type, source.title, source.subtitle,
-            count(distinct mention.entity_id)::int as "entityCount"
+            source.parent_source_item_id as "parentSourceItemId",
+            count(distinct mention.entity_id)::int as "entityCount",
+            count(distinct child.id)::int as "childCount"
      from source_items source
      left join entity_mentions mention on mention.source_item_id = source.id
+     left join source_items child on child.parent_source_item_id = source.id
      group by source.id
      order by source.updated_at desc, source.id
      limit $1`,
@@ -232,7 +260,9 @@ async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRec
       sourceItemId: row.id,
       sourceType: row.type,
       noteStatus: null,
-      detailCount: Number(row.entityCount)
+      detailCount: Number(row.entityCount),
+      parentSourceItemId: row.parentSourceItemId,
+      childCount: Number(row.childCount)
     })),
     edges: [
       ...sharedRows.map((row, index) => ({
@@ -307,7 +337,9 @@ async function listAtomicNoteGraph(pool: PgPool): Promise<KnowledgeGraphDashboar
       sourceItemId: row.sourceItemId,
       sourceType: null,
       noteStatus: row.status,
-      detailCount: Number(row.entityCount)
+      detailCount: Number(row.entityCount),
+      parentSourceItemId: null,
+      childCount: 0
     })),
     edges: edgeResult.rows.slice(0, maxEdges).map((row) => ({
       id: row.id,

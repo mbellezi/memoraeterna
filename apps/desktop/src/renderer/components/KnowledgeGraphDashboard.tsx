@@ -20,6 +20,7 @@ import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/r
 import {
   AtSign,
   ArrowLeft,
+  Boxes,
   CircleDot,
   Check,
   EqualApproximately,
@@ -38,6 +39,7 @@ import {
   Search,
   SlidersHorizontal,
   Tags,
+  Ungroup,
   Workflow,
   Waypoints,
   X
@@ -87,6 +89,9 @@ interface NodeAttributes {
   sourceType: string | null;
   noteStatus: string | null;
   detailCount: number;
+  parentSourceItemId: string | null;
+  childCount: number;
+  visibleChildCount: number;
   importance: number;
   labelOpacity: number;
   labelColor?: string;
@@ -96,7 +101,7 @@ interface EdgeAttributes {
   label: string;
   size: number;
   color: string;
-  kind: "source_connection" | "atomic_note_relation" | "hit_area";
+  kind: "source_connection" | "atomic_note_relation" | "hierarchy_link" | "hit_area";
   confidence: number;
   weight: number;
   description: string | null;
@@ -130,6 +135,7 @@ interface GraphBundle {
   rawNodeKeys: string[];
   itemEdgeCount: number;
   stateKey: string;
+  hierarchyGroups: Array<{ root: string; children: string[]; title: string }>;
 }
 
 export interface KnowledgeGraphViewState {
@@ -138,6 +144,19 @@ export interface KnowledgeGraphViewState {
   nodePositions: Record<string, { x: number; y: number }>;
   bounds?: { x: [number, number]; y: [number, number] };
   forces?: GraphForceSettings;
+  sourceHierarchy?: {
+    showAll: boolean;
+    expandedSourceIds: string[];
+  };
+}
+
+interface HierarchyNodeActions {
+  node: string;
+  sourceItemId: string;
+  childCount: number;
+  expanded: boolean;
+  x: number;
+  y: number;
 }
 
 interface PreparedGraphEdge {
@@ -152,6 +171,93 @@ interface PreparedGraphEdge {
   details: string[];
   sourceRelations: SourceRelationGroup[];
   relationType: string | null;
+}
+
+interface SourceHierarchyProjectionOptions {
+  showAll: boolean;
+  expandedSourceIds: ReadonlySet<string>;
+  focusSourceId: string | null;
+}
+
+export function projectSourceHierarchy(
+  data: DashboardData,
+  options: SourceHierarchyProjectionOptions
+): DashboardData {
+  if (data.mode !== "sources") return data;
+  const nodeById = new Map(data.nodes.map((node) => [node.id, node]));
+  const rootCache = new Map<string, string>();
+  const rootFor = (nodeId: string): string => {
+    const cached = rootCache.get(nodeId);
+    if (cached) return cached;
+    const visited = new Set<string>();
+    let current = nodeById.get(nodeId);
+    while (current?.parentSourceItemId && nodeById.has(current.parentSourceItemId) && !visited.has(current.id)) {
+      visited.add(current.id);
+      current = nodeById.get(current.parentSourceItemId);
+    }
+    const rootId = current?.id ?? nodeId;
+    for (const visitedId of visited) rootCache.set(visitedId, rootId);
+    rootCache.set(nodeId, rootId);
+    return rootId;
+  };
+  const roots = new Set(data.nodes.map((node) => rootFor(node.id)));
+  const expanded = options.showAll
+    ? roots
+    : new Set([...options.expandedSourceIds].filter((id) => roots.has(id)));
+  if (options.focusSourceId && roots.has(options.focusSourceId)) expanded.add(options.focusSourceId);
+  const mappedId = (nodeId: string) => expanded.has(rootFor(nodeId)) ? nodeId : rootFor(nodeId);
+  const resolvedFocusId = options.focusSourceId && roots.has(options.focusSourceId)
+    ? options.focusSourceId
+    : null;
+  const focusMembers = resolvedFocusId
+    ? new Set(data.nodes.filter((node) => rootFor(node.id) === resolvedFocusId).map((node) => node.id))
+    : null;
+  const visibleIds = new Set<string>();
+  if (focusMembers) {
+    for (const nodeId of focusMembers) visibleIds.add(nodeId);
+    for (const edge of data.edges) {
+      const sourceFocused = focusMembers.has(edge.source);
+      const targetFocused = focusMembers.has(edge.target);
+      if (sourceFocused === targetFocused) continue;
+      visibleIds.add(mappedId(sourceFocused ? edge.target : edge.source));
+    }
+  } else {
+    for (const node of data.nodes) {
+      const rootId = rootFor(node.id);
+      if (node.id === rootId || expanded.has(rootId)) visibleIds.add(node.id);
+    }
+  }
+
+  const aggregatedDetailCounts = new Map<string, number>();
+  for (const node of data.nodes) {
+    const rootId = rootFor(node.id);
+    aggregatedDetailCounts.set(rootId, (aggregatedDetailCounts.get(rootId) ?? 0) + node.detailCount);
+  }
+  const nodes = data.nodes.filter((node) => visibleIds.has(node.id)).map((node) => {
+    const rootId = rootFor(node.id);
+    if (node.id !== rootId || expanded.has(rootId)) return node;
+    return { ...node, detailCount: aggregatedDetailCounts.get(rootId) ?? node.detailCount };
+  });
+
+  const groupedEdges = new Map<string, DashboardData["edges"][number]>();
+  for (const edge of data.edges) {
+    if (focusMembers && !focusMembers.has(edge.source) && !focusMembers.has(edge.target)) continue;
+    const mappedSource = mappedId(edge.source);
+    const mappedTarget = mappedId(edge.target);
+    if (mappedSource === mappedTarget || !visibleIds.has(mappedSource) || !visibleIds.has(mappedTarget)) continue;
+    const source = mappedSource < mappedTarget ? mappedSource : mappedTarget;
+    const target = mappedSource < mappedTarget ? mappedTarget : mappedSource;
+    const key = `${edge.kind}:${source}:${target}`;
+    const current = groupedEdges.get(key);
+    if (!current) {
+      groupedEdges.set(key, { ...edge, id: `hierarchy:${key}`, source, target, details: [...edge.details] });
+      continue;
+    }
+    current.weight += edge.weight;
+    current.confidence = Math.max(current.confidence, edge.confidence);
+    current.details = [...new Set([...current.details, ...edge.details])].slice(0, 6);
+  }
+  return { ...data, nodes, edges: [...groupedEdges.values()] };
 }
 
 const sourceColors: Record<string, string> = {
@@ -239,6 +345,14 @@ export function KnowledgeGraphDashboard({
   const [forcesOpen, setForcesOpen] = useState(false);
   const [relationLegendOpen, setRelationLegendOpen] = useState(false);
   const [graphPopup, setGraphPopup] = useState(true);
+  const [showAllSubitems, setShowAllSubitems] = useState(initialViewState?.sourceHierarchy?.showAll ?? false);
+  const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(
+    () => new Set(initialViewState?.sourceHierarchy?.expandedSourceIds ?? [])
+  );
+  const [hierarchyPreviewSourceId, setHierarchyPreviewSourceId] = useState<string | null>(null);
+  const [hierarchyNodeActions, setHierarchyNodeActions] = useState<HierarchyNodeActions | null>(null);
+  const sourceHierarchyRef = useRef({ showAll: showAllSubitems, expandedSourceIds });
+  sourceHierarchyRef.current = { showAll: showAllSubitems, expandedSourceIds };
   const popupInsideRef = useRef(false);
   const [forces, setForces] = useState<GraphForceSettings>(initialViewState?.forces ?? defaultGraphForceSettings);
   const forcesRef = useRef(forces);
@@ -259,6 +373,12 @@ export function KnowledgeGraphDashboard({
   const draggingRef = useRef(false);
   const cancelWheelRef = useRef<() => void>(() => {});
   const dismissGraphInfoRef = useRef<() => void>(() => {});
+  const hierarchyNodeActionsRef = useRef<HTMLDivElement | null>(null);
+  const hierarchyActionNodeKeyRef = useRef<string | null>(null);
+  const hierarchyActionInsideRef = useRef(false);
+  const hierarchyActionExitTimerRef = useRef<number | null>(null);
+  const hideHierarchyActionsRef = useRef<(immediate?: boolean) => void>(() => {});
+  const freezeGraphRef = useRef<() => void>(() => {});
 
   useEffect(() => { popupInsideRef.current = false; }, [hover?.key, graphPopup]);
 
@@ -278,7 +398,19 @@ export function KnowledgeGraphDashboard({
     return () => { active = false; };
   }, [mode, reloadToken]);
 
-  const bundle = useMemo(() => data ? buildGraph(data, t) : null, [data, t]);
+  const displayedData = useMemo(() => data ? projectSourceHierarchy(data, {
+    showAll: showAllSubitems,
+    expandedSourceIds,
+    focusSourceId: null
+  }) : null, [data, expandedSourceIds, showAllSubitems]);
+  const bundle = useMemo(() => displayedData ? buildGraph(displayedData, t) : null, [displayedData, t]);
+  const hierarchyPreviewData = useMemo(() => data && hierarchyPreviewSourceId
+    ? projectSourceHierarchy(data, {
+      showAll: false,
+      expandedSourceIds: new Set([hierarchyPreviewSourceId]),
+      focusSourceId: hierarchyPreviewSourceId
+    })
+    : null, [data, hierarchyPreviewSourceId]);
   const searchResults = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized || !data) return [];
@@ -294,6 +426,7 @@ export function KnowledgeGraphDashboard({
     const graph = bundle.graph;
     const rawNodeKeys = bundle.rawNodeKeys;
     const graphStateKey = bundle.stateKey;
+    const hierarchyGroups = bundle.hierarchyGroups;
     const restoredViewState = restoreKnowledgeGraphViewState(graph, graphStateKey, initialViewState);
     setLayoutError(false);
     const initialForces = initialViewState?.forces ?? defaultGraphForceSettings;
@@ -361,6 +494,7 @@ export function KnowledgeGraphDashboard({
       )
       });
       sigmaRef.current = renderer;
+      installHierarchyContainerLayer(renderer, graph, hierarchyGroups);
       renderer.on("beforeRender", labels.beginFrame);
 
     const camera = renderer.getCamera();
@@ -386,6 +520,64 @@ export function KnowledgeGraphDashboard({
     let lastPositionFrame = 0;
     let simulationRunning = false;
     const nodeIndices = new Map(rawNodeKeys.map((node, index) => [node, index]));
+    const clearHierarchyActions = () => {
+      if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
+      hierarchyActionExitTimerRef.current = null;
+      hierarchyActionNodeKeyRef.current = null;
+      hierarchyActionInsideRef.current = false;
+      setHierarchyNodeActions(null);
+    };
+    const hideHierarchyActions = (immediate = false) => {
+      if (hierarchyActionInsideRef.current && !immediate) return;
+      if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
+      if (immediate) { clearHierarchyActions(); return; }
+      hierarchyActionExitTimerRef.current = window.setTimeout(clearHierarchyActions, 240);
+    };
+    hideHierarchyActionsRef.current = hideHierarchyActions;
+    const syncHierarchyActions = () => {
+      const element = hierarchyNodeActionsRef.current;
+      const node = hierarchyActionNodeKeyRef.current;
+      if (!element || !node || !graph.hasNode(node)) return;
+      const display = renderer.getNodeDisplayData(node);
+      if (!display) return;
+      const position = renderer.graphToViewport(graph.getNodeAttributes(node));
+      element.style.left = `${position.x}px`;
+      element.style.top = `${position.y - renderer.scaleSize(display.size) - 7}px`;
+    };
+    renderer.on("afterRender", syncHierarchyActions);
+    const showHierarchyActions = (node: string) => {
+      const attributes = graph.getNodeAttributes(node);
+      if (attributes.kind !== "source" || attributes.childCount === 0 || !attributes.sourceItemId) {
+        hideHierarchyActions();
+        return;
+      }
+      const display = renderer.getNodeDisplayData(node);
+      if (!display) return;
+      const position = renderer.graphToViewport(attributes);
+      if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
+      hierarchyActionExitTimerRef.current = null;
+      hierarchyActionNodeKeyRef.current = node;
+      setHierarchyNodeActions({
+        node,
+        sourceItemId: attributes.sourceItemId,
+        childCount: attributes.childCount,
+        expanded: attributes.visibleChildCount > 0,
+        x: position.x,
+        y: position.y - renderer.scaleSize(display.size) - 7
+      });
+      renderer.scheduleRender();
+      window.requestAnimationFrame(syncHierarchyActions);
+    };
+    freezeGraphRef.current = () => {
+      layoutRef.current?.kill();
+      layoutRef.current = null;
+      targetPositions = null;
+      simulationRunning = false;
+      if (positionFrame !== null) window.cancelAnimationFrame(positionFrame);
+      positionFrame = null;
+      setLayoutRunning(false);
+      renderer.scheduleRefresh();
+    };
 
     const interpolatePositions = (now: number) => {
       positionFrame = null;
@@ -499,12 +691,14 @@ export function KnowledgeGraphDashboard({
       pointerTarget = { type: "node", key: node, x: event.x, y: event.y };
       if (draggingRef.current) return;
       graphContainer.style.cursor = "grab";
+      showHierarchyActions(node);
       hoverIntent.enter(pointerTarget);
     });
     renderer.on("leaveNode", ({ node }) => {
       if (pointerTarget?.type === "node" && pointerTarget.key === node) pointerTarget = null;
       if (draggingRef.current) return;
       graphContainer.style.cursor = "default";
+      if (hierarchyActionNodeKeyRef.current === node) hideHierarchyActions();
       hoverIntent.leave("node", node);
     });
     renderer.on("enterEdge", ({ edge, event }) => {
@@ -516,7 +710,7 @@ export function KnowledgeGraphDashboard({
       if (pointerTarget?.type === "edge" && pointerTarget.key === resolveEdge(edge)) pointerTarget = null;
       if (!draggingRef.current) hoverIntent.leave("edge", resolveEdge(edge));
     });
-    renderer.on("clickStage", () => hoverIntent.clear());
+    renderer.on("clickStage", () => { hideHierarchyActions(true); hoverIntent.clear(); });
     const suspendHover = () => {
       draggingRef.current = true;
       hoverIntent.suspend();
@@ -532,6 +726,7 @@ export function KnowledgeGraphDashboard({
       hoveredNeighborsRef.current = new Set();
       setHover(null);
       setFloatingEdgeLabel(null);
+      hideHierarchyActions(true);
       renderer.scheduleRefresh();
     };
     renderer.on("downStage", () => { pointerTarget = null; suspendHover(); });
@@ -582,6 +777,7 @@ export function KnowledgeGraphDashboard({
       if (draggingRef.current) return;
       if (original.deltaY === 0) return;
       hoverIntent.clear();
+      hideHierarchyActions(true);
       if (wheelFrame === null && camera.isAnimated()) void camera.animate(camera.getState(), { duration: 1 });
       if (!wheelMotion.active) {
         const measuredMaximum = measureGraphZoomOutRatio(renderer);
@@ -679,6 +875,9 @@ export function KnowledgeGraphDashboard({
         cancelWheelRef.current();
         cancelWheelRef.current = () => {};
         dismissGraphInfoRef.current = () => {};
+        hideHierarchyActionsRef.current = () => {};
+        freezeGraphRef.current = () => {};
+        clearHierarchyActions();
         draggingRef.current = false;
         if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
         if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
@@ -691,7 +890,11 @@ export function KnowledgeGraphDashboard({
       function persistViewState() {
         onViewStateChange(mode, {
           ...captureKnowledgeGraphViewState(renderer, graph, graphStateKey),
-          forces: forcesRef.current
+          forces: forcesRef.current,
+          ...(mode === "sources" ? { sourceHierarchy: {
+            showAll: sourceHierarchyRef.current.showAll,
+            expandedSourceIds: [...sourceHierarchyRef.current.expandedSourceIds]
+          } } : {})
         });
       }
     }
@@ -757,6 +960,34 @@ export function KnowledgeGraphDashboard({
     const spanY = Math.max(...corners.map((point) => point.y)) - Math.min(...corners.map((point) => point.y));
     const ratio = renderer.getCamera().ratio * Math.max(spanX / Math.max(1, width - 144), spanY / Math.max(1, height - 144));
     void renderer.getCamera().animate({ ...center, ratio: clamp(ratio, 0.08, 8) }, { duration: 350 });
+  }
+
+  function toggleSourceHierarchy(sourceItemId: string) {
+    hideHierarchyActionsRef.current(true);
+    if (showAllSubitems) {
+      setExpandedSourceIds(new Set(
+        data?.nodes.filter((node) => node.childCount > 0 && node.id !== sourceItemId).map((node) => node.id) ?? []
+      ));
+      setShowAllSubitems(false);
+      return;
+    }
+    setExpandedSourceIds((current) => {
+      const next = new Set(current);
+      if (next.has(sourceItemId)) next.delete(sourceItemId);
+      else next.add(sourceItemId);
+      return next;
+    });
+  }
+
+  function openSourceHierarchyPreview(sourceItemId: string) {
+    freezeGraphRef.current();
+    dismissGraphInfoRef.current();
+    hideHierarchyActionsRef.current(true);
+    setHierarchyPreviewSourceId(sourceItemId);
+  }
+
+  function toggleAllSubitems() {
+    setShowAllSubitems((current) => !current);
   }
 
   return (
@@ -829,19 +1060,48 @@ export function KnowledgeGraphDashboard({
           </div>
           <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning || loading || !bundle?.rawNodeKeys.length} onClick={rerunLayout} />
           <GraphAction icon={RefreshCw} label={t("knowledgeGraph.refresh")} onClick={() => setReloadToken((current) => current + 1)} />
+          {mode === "sources" ? <GraphAction
+            icon={showAllSubitems ? Boxes : Ungroup}
+            label={t(showAllSubitems ? "knowledgeGraph.subitems.groupAll" : "knowledgeGraph.subitems.showAll")}
+            active={showAllSubitems}
+            pressed={showAllSubitems}
+            onClick={toggleAllSubitems}
+          /> : null}
           {mode === "sources" ? <GraphAction icon={Network} label={t("knowledgeGraph.graphPopup")} active={graphPopup} pressed={graphPopup} onClick={() => { setGraphPopup((value) => !value); }} /> : null}
         </div>
       </header>
 
       <div className="relative min-h-0 flex-1 bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
         <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.canvasLabel")} />
+        {mode === "sources" && hierarchyNodeActions
+          && Number.isFinite(hierarchyNodeActions.x) && Number.isFinite(hierarchyNodeActions.y) ? <div
+          ref={hierarchyNodeActionsRef}
+          className="absolute z-20 flex -translate-x-1/2 -translate-y-full items-center gap-1"
+          style={{ left: hierarchyNodeActions.x, top: hierarchyNodeActions.y }}
+          onPointerEnter={() => {
+            hierarchyActionInsideRef.current = true;
+            if (hierarchyActionExitTimerRef.current !== null) window.clearTimeout(hierarchyActionExitTimerRef.current);
+            hierarchyActionExitTimerRef.current = null;
+          }}
+          onPointerLeave={() => {
+            hierarchyActionInsideRef.current = false;
+            hideHierarchyActionsRef.current();
+          }}
+        >
+          <button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-violet-300/30 bg-slate-950/95 text-violet-200 shadow-lg backdrop-blur transition hover:bg-violet-400/25 hover:text-white" aria-label={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} title={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} onClick={() => toggleSourceHierarchy(hierarchyNodeActions.sourceItemId)}>
+            {hierarchyNodeActions.expanded ? <Minus className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
+          </button>
+          <button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-cyan-300/30 bg-slate-950/95 text-cyan-200 shadow-lg backdrop-blur transition hover:bg-cyan-400/25 hover:text-white" aria-label={t("knowledgeGraph.subitems.focus")} title={t("knowledgeGraph.subitems.focus")} onClick={() => openSourceHierarchyPreview(hierarchyNodeActions.sourceItemId)}>
+            <Focus className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div> : null}
         {loading ? <GraphState icon={LoaderCircle} title={t("shell.states.loading")} spinning /> : null}
         {error ? <GraphState icon={Network} title={t("knowledgeGraph.error")} action={t("shell.actions.retry")} onAction={() => setReloadToken((current) => current + 1)} /> : null}
         {layoutError && !error ? <GraphState icon={Network} title={t("knowledgeGraph.layoutError")} action={t("shell.actions.retry")} onAction={() => setReloadToken((current) => current + 1)} /> : null}
         {!loading && !error && data?.nodes.length === 0 ? <GraphState icon={Network} title={t("knowledgeGraph.empty")} /> : null}
 
         {!loading && data && data.nodes.length > 0 ? <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-2 text-xs text-slate-300">
-          <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t("knowledgeGraph.nodeCount", { values: { count: data.nodes.length } })}</span>
+          <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t("knowledgeGraph.nodeCount", { values: { count: bundle?.rawNodeKeys.length ?? data.nodes.length } })}</span>
           <span className="rounded-full border border-white/10 bg-slate-950/75 px-2.5 py-1 backdrop-blur">{t("knowledgeGraph.edgeCount", { values: { count: bundle?.itemEdgeCount ?? data.edges.length } })}</span>
           {data.truncated ? <span className="rounded-full border border-amber-400/30 bg-amber-950/80 px-2.5 py-1 text-amber-200">{t("knowledgeGraph.truncated")}</span> : null}
         </div> : null}
@@ -897,8 +1157,19 @@ export function KnowledgeGraphDashboard({
             popupInsideRef.current = true;
             cancelWheelRef.current();
             if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
+            hoverExitTimerRef.current = null;
+            setHover((current) => current ? { ...current, exiting: false } : current);
           }}
           onPopupLeave={() => { popupInsideRef.current = false; dismissGraphInfoRef.current(); }}
+        /> : null}
+        {mode === "sources" && hierarchyPreviewData && hierarchyPreviewSourceId ? <SourceHierarchyPreviewOverlay
+          data={hierarchyPreviewData}
+          sourceItemId={hierarchyPreviewSourceId}
+          forces={forces}
+          wheelZoomSensitivity={wheelZoomSensitivity}
+          t={t}
+          onClose={() => setHierarchyPreviewSourceId(null)}
+          onOpenSource={onOpenSource}
         /> : null}
       </div>
     </section>
@@ -936,6 +1207,263 @@ function GraphState({ icon: Icon, title, action, onAction, spinning = false }: {
       <p className="text-sm text-slate-200">{title}</p>
       {action && onAction ? <button type="button" className="rounded-lg bg-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950" onClick={onAction}>{action}</button> : null}
     </div>
+  </div>;
+}
+
+function SourceHierarchyPreviewOverlay({ data, sourceItemId, forces, wheelZoomSensitivity, t, onClose, onOpenSource }: {
+  data: DashboardData;
+  sourceItemId: string;
+  forces: GraphForceSettings;
+  wheelZoomSensitivity: number;
+  t: Translator;
+  onClose: () => void;
+  onOpenSource: (sourceItemId: string) => void;
+}) {
+  const panelRef = useRef<HTMLElement>(null);
+  const source = data.nodes.find((node) => node.id === sourceItemId);
+  useLayoutEffect(() => {
+    const previousFocus = document.activeElement;
+    panelRef.current?.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    const mouseBack = (event: MouseEvent) => {
+      if (event.button !== 3) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener("keydown", keydown, true);
+    window.addEventListener("mouseup", mouseBack, true);
+    const unsubscribe = window.app.system.subscribeNavigation((direction) => {
+      if (direction === "back") onClose();
+    });
+    return () => {
+      window.removeEventListener("keydown", keydown, true);
+      window.removeEventListener("mouseup", mouseBack, true);
+      unsubscribe();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, [onClose]);
+
+  return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("knowledgeGraph.subitems.focus")}
+    className="absolute inset-0 z-30 flex flex-col bg-slate-950/55 p-3 text-white outline-none backdrop-blur-[2px]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-violet-300/20 bg-slate-950/96 shadow-2xl">
+      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-900/95 px-3 py-2">
+        <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.subitems.closeFocus")} onClick={onClose} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-semibold text-violet-200">{source?.title ?? t("knowledgeGraph.source")}</p>
+          <p className="truncate text-[11px] text-slate-400">{t("knowledgeGraph.subitems.focusDescription")}</p>
+        </div>
+        <GraphAction icon={X} label={t("shell.actions.close")} onClick={onClose} />
+      </header>
+      <div className="relative min-h-0 flex-1">
+        <SourceHierarchyPreviewGraph data={data} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onOpenSource={onOpenSource} />
+      </div>
+    </div>
+  </section>;
+}
+
+function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, onOpenSource }: {
+  data: DashboardData;
+  forces: GraphForceSettings;
+  wheelZoomSensitivity: number;
+  t: Translator;
+  onOpenSource: (sourceItemId: string) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const layoutRef = useRef<KnowledgeGraphLayout | null>(null);
+  const fitRef = useRef<() => void>(() => {});
+  const [failed, setFailed] = useState(false);
+  const bundle = useMemo(() => buildGraph(data, t), [data, t]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || bundle.rawNodeKeys.length === 0) return;
+    let disposed = false;
+    let cleanup = () => {};
+    setFailed(false);
+    void initialize().catch(() => { cleanup(); if (!disposed) setFailed(true); });
+    return () => { disposed = true; cleanup(); };
+
+    async function initialize() {
+      const [{ default: SigmaConstructor }, { GraphNodeProgram, GraphEdgeProgram }] = await Promise.all([
+        import("sigma"), import("./knowledge-graph-programs")
+      ]);
+      if (disposed || !container) return;
+      const graph = bundle.graph;
+      const labels = createSmoothNodeLabels(() => renderer?.scheduleRender());
+      let cameraRatio = 1;
+      let renderer: Sigma<NodeAttributes, EdgeAttributes> | null = new SigmaConstructor<NodeAttributes, EdgeAttributes>(graph, container, {
+        nodeProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
+        nodeHoverProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
+        edgeProgramClasses: { line: GraphEdgeProgram<NodeAttributes, EdgeAttributes> },
+        allowInvalidContainer: true,
+        defaultDrawNodeLabel: labels.draw,
+        defaultDrawEdgeLabel: drawFadingEdgeLabel,
+        enableEdgeEvents: false,
+        hideEdgesOnMove: false,
+        hideLabelsOnMove: false,
+        labelColor: { color: "#cbd5e1" },
+        labelDensity: 0,
+        ...graphTypography,
+        labelGridCellSize: 110,
+        labelRenderedSizeThreshold: 0,
+        itemSizesReference: "screen",
+        minEdgeThickness: 1.2,
+        renderEdgeLabels: true,
+        stagePadding: 64,
+        zIndex: true,
+        minCameraRatio: 0.04,
+        maxCameraRatio: 10,
+        nodeReducer: (node, attributes) => reduceNode(node, attributes, cameraRatio, null, new Set(), 0),
+        edgeReducer: (edge, attributes) => reduceEdge(graph, edge, attributes, cameraRatio, null, 0)
+      });
+      installHierarchyContainerLayer(renderer, graph, bundle.hierarchyGroups);
+      renderer.on("beforeRender", labels.beginFrame);
+      const radius = graphLayoutRadius(graph.order, forces.linkDistance) * 1.4;
+      renderer.setCustomBBox({ x: [-radius, radius], y: [-radius, radius] });
+      const camera = renderer.getCamera();
+      cameraRatio = camera.ratio;
+      camera.on("updated", ({ ratio }) => { cameraRatio = ratio; renderer?.scheduleRefresh(); });
+      let interacted = false;
+      let draggedNode: string | null = null;
+      let dragMoved = false;
+      let suppressNextClick = false;
+      let wheelFrame: number | null = null;
+      let fitFrame: number | null = null;
+      let wheelAnchor = { x: 0, y: 0 };
+      const wheelMotion = new GraphWheelMotion(wheelZoomSensitivity);
+      const cancelWheel = () => {
+        wheelMotion.cancel();
+        if (wheelFrame !== null) window.cancelAnimationFrame(wheelFrame);
+        wheelFrame = null;
+      };
+      const fit = () => {
+        if (!renderer) return;
+        renderer.refresh();
+        const cameraState = camera.getState();
+        const points = graph.nodes().map((id) => renderer!.graphToViewport(graph.getNodeAttributes(id), { cameraState }));
+        if (points.length === 0) return;
+        const left = Math.min(...points.map((point) => point.x));
+        const right = Math.max(...points.map((point) => point.x));
+        const top = Math.min(...points.map((point) => point.y));
+        const bottom = Math.max(...points.map((point) => point.y));
+        const center = renderer.viewportToFramedGraph({ x: (left + right) / 2, y: (top + bottom) / 2 }, { cameraState });
+        const { width, height } = renderer.getDimensions();
+        const ratio = camera.ratio * Math.max((right - left) / Math.max(1, width - 160), (bottom - top) / Math.max(1, height - 120));
+        camera.setState({ ...center, ratio: clamp(ratio || 0.2, 0.04, 10) });
+      };
+      fitRef.current = () => { interacted = false; cancelWheel(); fit(); };
+      const scheduleFit = () => {
+        if (!interacted && fitFrame === null) fitFrame = window.requestAnimationFrame(() => {
+          fitFrame = null;
+          if (!interacted) fit();
+        });
+      };
+      const stepWheel = (now: number) => {
+        wheelFrame = null;
+        if (!renderer) return;
+        const delta = wheelMotion.advance(now, { ratio: camera.ratio, minimum: 0.04, maximum: 10 });
+        if (delta !== 0) {
+          const ratio = boundedGraphWheelRatio(camera.ratio, delta, 0.04, 10);
+          const state = camera.getState();
+          const before = renderer.viewportToFramedGraph(wheelAnchor, { cameraState: state });
+          const after = renderer.viewportToFramedGraph(wheelAnchor, { cameraState: { ...state, ratio } });
+          camera.setState({ ratio, x: state.x + before.x - after.x, y: state.y + before.y - after.y });
+        }
+        if (wheelMotion.active) wheelFrame = window.requestAnimationFrame(stepWheel);
+      };
+      const handleWheel = (event: WheelEvent) => {
+        captureGraphWheelEvent(event);
+        interacted = true;
+        if (draggedNode || !renderer) return;
+        const bounds = container.getBoundingClientRect();
+        wheelAnchor = { x: event.clientX - bounds.left, y: event.clientY - bounds.top };
+        wheelMotion.push(event, performance.now());
+        if (wheelFrame === null && wheelMotion.active) wheelFrame = window.requestAnimationFrame(stepWheel);
+      };
+      container.addEventListener("wheel", handleWheel, { capture: true, passive: false });
+      renderer.on("downStage", () => { interacted = true; cancelWheel(); });
+      renderer.on("downNode", ({ node, event }) => {
+        interacted = true;
+        cancelWheel();
+        draggedNode = node;
+        dragMoved = false;
+        camera.disable();
+        event.preventSigmaDefault();
+      });
+      renderer.getMouseCaptor().on("mousemovebody", (event) => {
+        if (!draggedNode || !renderer) return;
+        dragMoved = true;
+        const point = renderer.viewportToGraph(event);
+        graph.mergeNodeAttributes(draggedNode, point);
+        layoutRef.current?.drag(draggedNode, point.x, point.y, false);
+        event.preventSigmaDefault();
+        event.original.preventDefault();
+        renderer.scheduleRefresh();
+      });
+      const releaseDrag = () => {
+        if (!draggedNode) return;
+        suppressNextClick = dragMoved;
+        const point = graph.getNodeAttributes(draggedNode);
+        layoutRef.current?.drag(draggedNode, point.x, point.y, true);
+        draggedNode = null;
+        dragMoved = false;
+        camera.enable();
+      };
+      renderer.getMouseCaptor().on("mouseup", releaseDrag);
+      window.addEventListener("blur", releaseDrag);
+      renderer.on("clickNode", ({ node }) => {
+        if (suppressNextClick) { suppressNextClick = false; return; }
+        const sourceItemId = graph.getNodeAttribute(node, "sourceItemId");
+        if (sourceItemId) onOpenSource(sourceItemId);
+      });
+      const resizeObserver = new ResizeObserver(() => { renderer?.resize(); scheduleFit(); });
+      resizeObserver.observe(container);
+      const nodes = bundle.rawNodeKeys;
+      layoutRef.current = new KnowledgeGraphLayout(
+        nodes.map((id) => ({ id, x: graph.getNodeAttribute(id, "x"), y: graph.getNodeAttribute(id, "y") })),
+        graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hit_area").map((edge) => {
+          const [source, target] = graph.extremities(edge);
+          return { source, target, weight: graph.getEdgeAttribute(edge, "layoutWeight") };
+        }),
+        forces,
+        false,
+        (positions) => {
+          nodes.forEach((id, index) => {
+            if (id !== draggedNode) graph.mergeNodeAttributes(id, { x: positions[index * 2]!, y: positions[index * 2 + 1]! });
+          });
+          renderer?.scheduleRefresh();
+          scheduleFit();
+        },
+        () => { if (!disposed) setFailed(true); }
+      );
+      scheduleFit();
+      cleanup = () => {
+        cancelWheel();
+        if (fitFrame !== null) window.cancelAnimationFrame(fitFrame);
+        container.removeEventListener("wheel", handleWheel, { capture: true });
+        window.removeEventListener("blur", releaseDrag);
+        resizeObserver.disconnect();
+        layoutRef.current?.kill();
+        layoutRef.current = null;
+        fitRef.current = () => {};
+        renderer?.kill();
+        renderer = null;
+      };
+    }
+  }, [bundle, forces, onOpenSource, wheelZoomSensitivity]);
+
+  return <div className="relative h-full overflow-hidden bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
+    <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.subitems.focusDescription")} />
+    <button type="button" className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-slate-950/80 text-slate-200 shadow-lg transition hover:bg-white/10 hover:text-white" aria-label={t("knowledgeGraph.fit")} title={t("knowledgeGraph.fit")} onClick={() => fitRef.current()}>
+      <Maximize2 className="h-4 w-4" aria-hidden="true" />
+    </button>
+    {failed ? <GraphState icon={Network} title={t("knowledgeGraph.layoutError")} /> : null}
   </div>;
 }
 
@@ -1150,6 +1678,14 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
 
 export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
   const graph = new Graph<NodeAttributes, EdgeAttributes>({ type: "undirected", multi: true, allowSelfLoops: false });
+  const visibleNodeIds = new Set(data.nodes.map((node) => node.id));
+  const visibleChildren = new Map<string, string[]>();
+  for (const node of data.nodes) {
+    if (!node.parentSourceItemId || !visibleNodeIds.has(node.parentSourceItemId)) continue;
+    const children = visibleChildren.get(node.parentSourceItemId) ?? [];
+    children.push(node.id);
+    visibleChildren.set(node.parentSourceItemId, children);
+  }
   for (const node of data.nodes) {
     const angle = hashFraction(node.id, 0) * Math.PI * 2;
     const radius = 4 + hashFraction(node.id, 1) * 8;
@@ -1168,6 +1704,9 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       sourceType: node.sourceType,
       noteStatus: node.noteStatus,
       detailCount: node.detailCount,
+      parentSourceItemId: node.parentSourceItemId,
+      childCount: node.childCount,
+      visibleChildCount: visibleChildren.get(node.id)?.length ?? 0,
       importance: 0,
       labelOpacity: 0.8
     });
@@ -1200,17 +1739,46 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
     });
   }
 
+  const hierarchyGroups = [...visibleChildren.entries()].map(([rootId, childIds]) => ({
+    root: `item:${rootId}`,
+    children: childIds.map((id) => `item:${id}`),
+    title: data.nodes.find((node) => node.id === rootId)?.title ?? ""
+  }));
+  for (const group of hierarchyGroups) {
+    for (const child of group.children) {
+      const key = `hierarchy:${group.root}:${child}`;
+      if (!graph.hasNode(group.root) || !graph.hasNode(child) || graph.hasEdge(key)) continue;
+      graph.addEdgeWithKey(key, group.root, child, {
+        label: "",
+        size: 0,
+        color: "rgba(0, 0, 0, 0)",
+        kind: "hierarchy_link",
+        confidence: 1,
+        weight: 1,
+        description: null,
+        details: [],
+        layoutWeight: 3,
+        labelOpacity: 0,
+        labelRevealAt: 2,
+        relationType: null,
+        sourceRelations: [],
+        interactionTarget: null
+      });
+    }
+  }
+
   const rawNodeKeys = graph.nodes();
   for (const node of rawNodeKeys) {
     const degree = graph.degree(node);
     graph.updateNodeAttribute(node, "importance", () => degree);
-    graph.updateNodeAttribute(node, "size", () => graphNodeSize(degree));
+    graph.updateNodeAttribute(node, "size", () => graphNodeSize(degree)
+      + Math.min(5, Math.log2(graph.getNodeAttribute(node, "childCount") + 1) * 1.5));
   }
   if (rawNodeKeys.length === 0) {
-    return { graph, rawNodeKeys, itemEdgeCount: preparedEdges.length, stateKey };
+    return { graph, rawNodeKeys, itemEdgeCount: preparedEdges.length, stateKey, hierarchyGroups };
   }
 
-  const interactionEdges = graph.edges();
+  const interactionEdges = graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hierarchy_link");
   for (const edge of interactionEdges) {
     const [source, target] = graph.extremities(edge);
     graph.addEdgeWithKey(`hit:${edge}`, source, target, {
@@ -1234,8 +1802,103 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
     graph,
     rawNodeKeys,
     itemEdgeCount: preparedEdges.length,
-    stateKey
+    stateKey,
+    hierarchyGroups
   };
+}
+
+function installHierarchyContainerLayer(
+  renderer: Sigma<NodeAttributes, EdgeAttributes>,
+  graph: Graph<NodeAttributes, EdgeAttributes>,
+  groups: GraphBundle["hierarchyGroups"]
+) {
+  const canvas = groups.length > 0 ? renderer.createCanvas("hierarchy-containers", {
+    beforeLayer: "edges", style: { inset: "0", pointerEvents: "none", zIndex: "0" }
+  }) : null;
+  const context = canvas?.getContext("2d") ?? null;
+  const badgeCanvas = renderer.createCanvas("hierarchy-count-badges", {
+    beforeLayer: "mouse", style: { inset: "0", pointerEvents: "none", zIndex: "8" }
+  });
+  const badgeContext = badgeCanvas.getContext("2d");
+  if (!badgeContext) return;
+  const draw = () => {
+    const { width, height } = renderer.getDimensions();
+    const pixelRatio = window.devicePixelRatio || 1;
+    const canvasWidth = Math.max(1, Math.round(width * pixelRatio));
+    const canvasHeight = Math.max(1, Math.round(height * pixelRatio));
+    for (const layer of [canvas, badgeCanvas]) {
+      if (!layer || layer.width === canvasWidth && layer.height === canvasHeight) continue;
+      layer.width = canvasWidth;
+      layer.height = canvasHeight;
+      layer.style.width = `${width}px`;
+      layer.style.height = `${height}px`;
+    }
+    if (context) {
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      for (const group of groups) {
+        if (!graph.hasNode(group.root)) continue;
+        const members = [group.root, ...group.children].filter((node) => graph.hasNode(node));
+        const points = members.map((node) => renderer.graphToViewport(graph.getNodeAttributes(node)));
+        if (points.length < 2) continue;
+        const minX = Math.min(...points.map((point) => point.x));
+        const maxX = Math.max(...points.map((point) => point.x));
+        const minY = Math.min(...points.map((point) => point.y));
+        const maxY = Math.max(...points.map((point) => point.y));
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const radiusX = Math.max(58, (maxX - minX) / 2 + 38);
+        const radiusY = Math.max(48, (maxY - minY) / 2 + 34);
+        context.beginPath();
+        context.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, Math.PI * 2);
+        context.fillStyle = "rgba(124, 58, 237, 0.09)";
+        context.fill();
+        context.save();
+        context.setLineDash([5, 5]);
+        context.lineWidth = 1.25;
+        context.strokeStyle = "rgba(196, 181, 253, 0.46)";
+        context.stroke();
+        context.restore();
+        const rootPoint = points[0]!;
+        context.beginPath();
+        for (const childPoint of points.slice(1)) {
+          context.moveTo(rootPoint.x, rootPoint.y);
+          context.lineTo(childPoint.x, childPoint.y);
+        }
+        context.lineWidth = 1;
+        context.strokeStyle = "rgba(196, 181, 253, 0.28)";
+        context.stroke();
+        context.font = "600 11px Inter, ui-sans-serif, system-ui, sans-serif";
+        context.fillStyle = "rgba(221, 214, 254, 0.92)";
+        context.fillText(group.title, centerX - radiusX + 12, centerY - radiusY + 18, Math.max(80, radiusX * 2 - 24));
+      }
+    }
+    badgeContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    badgeContext.clearRect(0, 0, width, height);
+    graph.forEachNode((node, attributes) => {
+      if (attributes.kind !== "source" || attributes.childCount === 0) return;
+      const display = renderer.getNodeDisplayData(node);
+      if (!display) return;
+      const position = renderer.graphToViewport(attributes);
+      const size = renderer.scaleSize(display.size);
+      const x = position.x - size * 0.68;
+      const y = position.y - size * 0.68;
+      const radius = attributes.childCount > 99 ? 11 : 9.5;
+      badgeContext.beginPath();
+      badgeContext.arc(x, y, radius, 0, Math.PI * 2);
+      badgeContext.fillStyle = "rgba(2, 6, 23, 0.96)";
+      badgeContext.fill();
+      badgeContext.lineWidth = 1.5;
+      badgeContext.strokeStyle = attributes.color;
+      badgeContext.stroke();
+      badgeContext.fillStyle = "#f8fafc";
+      badgeContext.font = `${attributes.childCount > 99 ? 7 : 9}px Inter, ui-sans-serif, system-ui, sans-serif`;
+      badgeContext.textAlign = "center";
+      badgeContext.textBaseline = "middle";
+      badgeContext.fillText(String(attributes.childCount), x, y + 0.5);
+    });
+  };
+  renderer.on("afterRender", draw);
 }
 
 export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedGraphEdge[] {
@@ -1426,6 +2089,7 @@ export function reduceEdge(
   hovered: string | null,
   hoverStrength: number
 ) {
+  if (attributes.kind === "hierarchy_link") return { ...attributes, hidden: true, forceLabel: false };
   if (attributes.kind === "hit_area") {
     return {
       ...attributes,

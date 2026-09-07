@@ -18,18 +18,22 @@ class FakeGraphPool {
 describe("knowledge graph dashboard repository", () => {
   it("builds the source projection from shared entities and semantic relations", async () => {
     const pool = new FakeGraphPool([
-      [{ id: "source-1", type: "Book", title: "One", subtitle: null, entityCount: 3 }],
+      [{ id: "source-1", type: "Book", title: "One", subtitle: null, entityCount: 3, parentSourceItemId: null, childCount: 2 }],
       [{ source: "source-1", target: "source-2", weight: 2, confidence: 0.8, details: ["Ada"] }],
       [{ source: "source-1", target: "source-3", weight: 1, confidence: 0.7, details: ["Ada · wrote · Notes"] }]
     ]);
 
     const result = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool).get("sources");
 
-    expect(result.nodes[0]).toMatchObject({ kind: "source", sourceItemId: "source-1", content: null, detailCount: 3 });
+    expect(result.nodes[0]).toMatchObject({
+      kind: "source", sourceItemId: "source-1", content: null, detailCount: 3,
+      parentSourceItemId: null, childCount: 2
+    });
     expect(result.edges.map((edge) => edge.kind)).toEqual(["shared_entity", "semantic_relation"]);
     expect(pool.queries).toHaveLength(3);
     expect(pool.queries[1]).toContain("entity_mentions");
     expect(pool.queries[2]).toContain("entity_relations");
+    expect(pool.queries[0]).toContain("child.parent_source_item_id = source.id");
   });
 
   it("builds the atomic-note projection from current visible notes and non-rejected relations", async () => {
@@ -47,7 +51,8 @@ describe("knowledge graph dashboard repository", () => {
     const result = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool).get("atomic_notes");
 
     expect(result.nodes[0]).toMatchObject({
-      kind: "atomic_note", noteStatus: "approved", content: "The full atomic note.", detailCount: 4
+      kind: "atomic_note", noteStatus: "approved", content: "The full atomic note.", detailCount: 4,
+      parentSourceItemId: null, childCount: 0
     });
     expect(result.edges[0]).toMatchObject({ kind: "atomic_note_relation", label: "supports", confidence: 0.92 });
     expect(pool.queries[0]).toContain("supersession_status = 'current'");
@@ -72,5 +77,7 @@ describe("knowledge graph dashboard repository", () => {
     expect(pool.queries).toHaveLength(2);
     expect(pool.queries[0]).toContain("select distinct entity.id");
     expect(pool.queries[1]).toContain("select distinct relation.id");
+    expect(pool.queries[0]).toContain("with recursive source_tree");
+    expect(pool.queries[1]).toContain("child.parent_source_item_id = parent.id");
   });
 });

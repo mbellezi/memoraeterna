@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
 
-import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 import {
   isLabelOutsideViewport,
   nodeLabelOpacity,
@@ -19,7 +19,8 @@ describe("knowledge graph level of detail", () => {
       mode: "sources", truncated: false,
       nodes: ["a", "b", "c", "orphan"].map((id) => ({
         id, kind: "source", title: id, subtitle: null, content: null,
-        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0
+        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0,
+        parentSourceItemId: null, childCount: 0
       })),
       edges: [["a", "b"], ["b", "c"]].map(([source, target]) => ({
         id: `${source}-${target}`, source: source!, target: target!, kind: "shared_entity",
@@ -66,7 +67,8 @@ describe("knowledge graph level of detail", () => {
       mode: "sources", truncated: false,
       nodes: ["a", "b", "orphan"].map((id) => ({
         id, kind: "source", title: id, subtitle: null, content: null,
-        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0
+        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0,
+        parentSourceItemId: null, childCount: 0
       })),
       edges: [{ id: "ab", source: "a", target: "b", kind: "shared_entity", label: "", description: null, weight: 1, confidence: 1, details: [] }]
     };
@@ -188,6 +190,66 @@ describe("knowledge graph level of detail", () => {
       "shared_entity",
       "semantic_relation"
     ]);
+  });
+
+  it("groups hierarchical sources, expands them in place, and limits focus to one hop", () => {
+    const source = (id: string, parentSourceItemId: string | null, childCount = 0, detailCount = 1) => ({
+      id, kind: "source" as const, title: id, subtitle: null, content: null,
+      sourceItemId: id, sourceType: parentSourceItemId ? "BookChapter" as const : "Book" as const,
+      noteStatus: null, detailCount, parentSourceItemId, childCount
+    });
+    const edge = (id: string, source: string, target: string, weight = 1) => ({
+      id, source, target, kind: "shared_entity" as const, label: "shared_entity",
+      description: null, weight, confidence: 0.8, details: [id]
+    });
+    const data = {
+      mode: "sources" as const,
+      nodes: [
+        source("root-a", null, 2), source("child-a1", "root-a"), source("child-a2", "root-a"),
+        source("root-b", null, 1), source("child-b1", "root-b"), source("standalone", null),
+        source("second-hop", null)
+      ],
+      edges: [
+        edge("a1-b1", "child-a1", "child-b1", 2),
+        edge("a2-standalone", "child-a2", "standalone"),
+        edge("b1-second", "child-b1", "second-hop")
+      ],
+      truncated: false
+    } satisfies KnowledgeGraphDashboard;
+
+    const grouped = projectSourceHierarchy(data, {
+      showAll: false, expandedSourceIds: new Set(), focusSourceId: null
+    });
+    expect(grouped.nodes.map((node) => node.id)).toEqual(["root-a", "root-b", "standalone", "second-hop"]);
+    expect(grouped.nodes.find((node) => node.id === "root-a")?.detailCount).toBe(3);
+    expect(grouped.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "root-a", target: "root-b", weight: 2 }),
+      expect.objectContaining({ source: "root-a", target: "standalone" })
+    ]));
+
+    const expanded = projectSourceHierarchy(data, {
+      showAll: false, expandedSourceIds: new Set(["root-a"]), focusSourceId: null
+    });
+    expect(expanded.nodes.map((node) => node.id)).toContain("child-a1");
+    expect(expanded.nodes.map((node) => node.id)).not.toContain("child-b1");
+    expect(expanded.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "child-a1", target: "root-b" })
+    ]));
+    const graph = buildGraph(expanded, ((key: string) => key) as Translator);
+    expect(graph.hierarchyGroups).toEqual([{
+      root: "item:root-a",
+      children: ["item:child-a1", "item:child-a2"],
+      title: "root-a"
+    }]);
+
+    const focused = projectSourceHierarchy(data, {
+      showAll: false, expandedSourceIds: new Set(), focusSourceId: "root-a"
+    });
+    expect(focused.nodes.map((node) => node.id)).toEqual([
+      "root-a", "child-a1", "child-a2", "root-b", "standalone"
+    ]);
+    expect(focused.nodes.map((node) => node.id)).not.toContain("second-hop");
+    expect(focused.edges.some((item) => item.id.includes("b1-second"))).toBe(false);
   });
 
   it("localizes canonical atomic-note relation codes for display", () => {

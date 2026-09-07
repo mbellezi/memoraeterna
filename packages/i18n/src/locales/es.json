@@ -57,6 +57,7 @@
     "zoomIn": "Acercar",
     "fit": "Ajustar el grafo a la vista",
     "graphPopup": "Grafo interactivo en la vista emergente de relaciones",
+    "subitems": { "showAll": "Mostrar todos los subelementos", "groupAll": "Agrupar subelementos por fuente", "expand": "Expandir {count} subelementos", "collapse": "Contraer subelementos", "focus": "Abrir grafo de la jerarquía", "closeFocus": "Volver al grafo principal", "focusDescription": "Jerarquía de la fuente y fuentes conectadas directamente" },
     "relayout": "Reorganizar el grafo",
     "refresh": "Actualizar el grafo",
     "backToGraph": "Volver al grafo de conocimiento",

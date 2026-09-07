@@ -57,6 +57,7 @@
     "zoomIn": "Faire un zoom avant",
     "fit": "Ajuster le graphe à la vue",
     "graphPopup": "Graphe interactif dans l’aperçu des relations",
+    "subitems": { "showAll": "Afficher tous les sous-éléments", "groupAll": "Regrouper les sous-éléments par source", "expand": "Développer {count} sous-éléments", "collapse": "Réduire les sous-éléments", "focus": "Ouvrir le graphe de la hiérarchie", "closeFocus": "Revenir au graphe principal", "focusDescription": "Hiérarchie de la source et sources directement connectées" },
     "relayout": "Réorganiser le graphe",
     "refresh": "Actualiser le graphe",
     "backToGraph": "Retour au graphe de connaissances",

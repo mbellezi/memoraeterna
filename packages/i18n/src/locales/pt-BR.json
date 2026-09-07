@@ -57,6 +57,7 @@
     "zoomIn": "Aumentar zoom",
     "fit": "Ajustar grafo à tela",
     "graphPopup": "Grafo interativo no popup de relações",
+    "subitems": { "showAll": "Mostrar todos os subitens", "groupAll": "Agrupar subitens por fonte", "expand": "Expandir {count} subitens", "collapse": "Recolher subitens", "focus": "Abrir grafo da hierarquia", "closeFocus": "Voltar ao grafo principal", "focusDescription": "Hierarquia da fonte e fontes diretamente conectadas" },
     "relayout": "Reorganizar grafo",
     "refresh": "Atualizar grafo",
     "backToGraph": "Voltar ao grafo do conhecimento",
