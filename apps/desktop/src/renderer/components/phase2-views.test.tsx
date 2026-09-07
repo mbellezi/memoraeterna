@@ -349,7 +349,8 @@ describe("phase 2 renderer views", () => {
 
     expect(html).toContain("Configure your knowledge workspace");
     expect(html).not.toContain("Configuration scopes");
-    expect(html).toContain("Appearance &amp; matching");
+    expect(html).toContain("Appearance");
+    expect(html).toContain("Matching");
     expect(html).toContain("Data &amp; safety");
     expect(html).not.toContain("Changes are saved automatically.");
     expect(html).not.toContain(">Save<");
@@ -442,6 +443,38 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain('value="500"');
     expect(html).not.toContain('id="bookMetadataProvider"');
     expect(html).not.toContain('id="googleBooksApiKey"');
+  });
+
+  it("groups all matching thresholds as sliders in their own dashboard", () => {
+    const html = renderToString(
+      <SettingsView
+        activeScope="matching"
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
+      />
+    );
+
+    expect(html.match(/type="range"/g)).toHaveLength(3);
+    expect(html.match(/title="Restore default value"/g)).toHaveLength(3);
+    expect(html).toContain('id="atomicNoteRelationThreshold"');
+    expect(html).toContain('id="relationTypeSimilarityThreshold"');
+    expect(html).toContain('id="entityIdentitySimilarityThreshold"');
+    expect(html).not.toContain('type="number"');
+    expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 
   it("groups catalog settings and Google Books credentials in External Services", () => {

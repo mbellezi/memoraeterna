@@ -389,8 +389,10 @@
         "label": "Ambiti di configurazione",
         "overview": "Panoramica",
         "overviewDescription": "Stato e scorciatoie",
-        "personalization": "Aspetto e corrispondenza",
-        "personalizationDescription": "Interfaccia e collegamenti di conoscenza",
+        "personalization": "Aspetto",
+        "personalizationDescription": "Interfaccia e visualizzazione",
+        "matching": "Corrispondenza",
+        "matchingDescription": "Collegamenti di conoscenza e soglie di similarità",
         "intelligence": "IA ed elaborazione",
         "intelligenceDescription": "Provider, profili e instradamento",
         "models": "Modelli locali",
@@ -490,7 +492,8 @@
       "obsidianPlugin": "Plugin Obsidian",
       "states": { "stopped": "Arrestato", "starting": "Avvio", "ready": "Pronto", "failed": "Errore" }
     },
-    "matching": { "title": "Matching della conoscenza", "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.", "minimumScore": "Punteggio minimo del matching", "moreRelations": "Più relazioni", "fewerRelations": "Meno relazioni, più rigorose", "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia." },
+    "matching": {
+      "resetDefault": "Ripristina il valore predefinito", "title": "Matching della conoscenza", "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.", "minimumScore": "Punteggio minimo del matching", "moreRelations": "Più relazioni", "fewerRelations": "Meno relazioni, più rigorose", "savedAutomatically": "Questo valore viene applicato automaticamente quando cambia." },
     "summarization": { "title": "Generazione dei riassunti", "description": "Evita una chiamata IA per elementi troppo piccoli per contenere informazioni utili.", "minimumWordCount": "Parole minime per un riassunto", "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA." },
     "knowledgeGraphLimits": { "title": "Limiti del grafo della conoscenza", "description": "Limita l’estrazione per documento autonomo o sottoelemento elaborabile.", "entities": "Entità massime", "relations": "Relazioni massime", "hint": "Il limite residuo viene incluso in ogni prompt IA e il backend applica gli stessi limiti prima del salvataggio." },
     "metadataEnrichment": { "apiKey":"Chiave API Google Books","saveKey":"Salva chiave","removeKey":"Rimuovi chiave","keySaved":"Chiave salvata in modo sicuro.","noKey":"Nessuna chiave configurata. Le ricerche usano accesso senza chiave.","keyError":"Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.", "provider":"Fornitore di metadati dei libri","auto":"Automatico (Open Library → Google Books)","providerHint":"Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },

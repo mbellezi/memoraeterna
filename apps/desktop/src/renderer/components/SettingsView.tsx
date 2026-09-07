@@ -30,13 +30,14 @@ import type {
   StorageSettings,
   ThemeMode
 } from "../../shared/ipc";
-import { appLanguageCodes } from "../../shared/ipc";
+import { appLanguageCodes, defaultAppSettings } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { AiSettingsView } from "./AiSettingsView";
 import { BackupView } from "./BackupView";
 import { IntegrationGatewaySettings } from "./IntegrationGatewaySettings";
 import { LocalModelsView } from "./LocalModelsView";
 import { ObsidianSyncStatusCard } from "./ObsidianSyncStatusCard";
+import { MatchingSlider } from "./MatchingSlider";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -56,7 +57,7 @@ interface SettingsViewProps {
   onToast: (message: MessageKey, tone: ToastTone) => void;
 }
 
-export type SettingsScope = "overview" | "personalization" | "intelligence" | "models" | "external-services" | "connections" | "data";
+export type SettingsScope = "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -116,6 +117,14 @@ const scopes: Array<{
     description: "settings.dashboard.navigation.personalizationDescription",
     accent: "from-violet-500/20 via-fuchsia-500/10 to-transparent",
     iconStyle: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
+  },
+  {
+    id: "matching",
+    icon: Network,
+    label: "settings.dashboard.navigation.matching",
+    description: "settings.dashboard.navigation.matchingDescription",
+    accent: "from-amber-500/20 via-orange-500/10 to-transparent",
+    iconStyle: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
   },
   {
     id: "intelligence",
@@ -246,38 +255,40 @@ export function SettingsView({
 
   return (
     <section className="mx-auto grid w-full max-w-[1480px] gap-5">
-      <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-sm dark:border-slate-800">
-        <div className="pointer-events-none absolute -right-14 -top-28 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
-        <div className="pointer-events-none absolute bottom-[-8rem] left-1/3 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" />
-        <div className="relative flex flex-wrap items-start justify-between gap-5">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              {t("settings.dashboard.eyebrow")}
+      {activeScope === "overview" ? (
+        <header className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 p-6 text-white shadow-sm dark:border-slate-800">
+          <div className="pointer-events-none absolute -right-14 -top-28 h-72 w-72 rounded-full bg-cyan-400/20 blur-3xl" />
+          <div className="pointer-events-none absolute bottom-[-8rem] left-1/3 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" />
+          <div className="relative flex flex-wrap items-start justify-between gap-5">
+            <div className="max-w-2xl">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
+                {t("settings.dashboard.eyebrow")}
+              </div>
+              <h2 className="text-2xl font-semibold tracking-tight">{t("settings.dashboard.title")}</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t("settings.dashboard.description")}</p>
             </div>
-            <h2 className="text-2xl font-semibold tracking-tight">{t("settings.dashboard.title")}</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t("settings.dashboard.description")}</p>
+            <div className="grid min-w-[16rem] gap-2 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
+              <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
+                <span>{t("settings.dashboard.summary.interface")}</span>
+                <strong className="text-white">{t(`settings.language.languages.${appSettings.language}` as MessageKey)}</strong>
+              </div>
+              <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
+                <span>{t("settings.dashboard.summary.knowledgeMatching")}</span>
+                <strong className="text-amber-300">{appSettings.atomicNoteRelationThreshold.toFixed(2)}</strong>
+              </div>
+              <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
+                <span>{t("settings.dashboard.summary.obsidian")}</span>
+                <strong className={settings.obsidianSyncEnabled && settings.obsidianVaultPath ? "text-emerald-300" : "text-slate-400"}>
+                  {t(settings.obsidianSyncEnabled && settings.obsidianVaultPath
+                    ? "settings.dashboard.states.active"
+                    : "settings.dashboard.states.needsSetup")}
+                </strong>
+              </div>
+            </div>
           </div>
-          <div className="grid min-w-[16rem] gap-2 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
-            <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
-              <span>{t("settings.dashboard.summary.interface")}</span>
-              <strong className="text-white">{t(`settings.language.languages.${appSettings.language}` as MessageKey)}</strong>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
-              <span>{t("settings.dashboard.summary.knowledgeMatching")}</span>
-              <strong className="text-amber-300">{appSettings.atomicNoteRelationThreshold.toFixed(2)}</strong>
-            </div>
-            <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
-              <span>{t("settings.dashboard.summary.obsidian")}</span>
-              <strong className={settings.obsidianSyncEnabled && settings.obsidianVaultPath ? "text-emerald-300" : "text-slate-400"}>
-                {t(settings.obsidianSyncEnabled && settings.obsidianVaultPath
-                  ? "settings.dashboard.states.active"
-                  : "settings.dashboard.states.needsSetup")}
-              </strong>
-            </div>
-          </div>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <div
         key={activeScope}
@@ -300,11 +311,6 @@ export function SettingsView({
               <ScopeHeader scope={activeScopeDefinition} t={t} />
               <div className="grid gap-5 xl:grid-cols-2">
                 <AppearanceCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-                <MatchingCard
-                  appSettings={appSettings}
-                  t={t}
-                  onChange={onAppSettingsChange}
-                />
                 <SummarizationCard
                   appSettings={appSettings}
                   t={t}
@@ -316,6 +322,13 @@ export function SettingsView({
                   onChange={onAppSettingsChange}
                 />
               </div>
+            </div>
+          ) : null}
+
+          {activeScope === "matching" ? (
+            <div className="grid gap-5">
+              <ScopeHeader scope={activeScopeDefinition} t={t} />
+              <MatchingCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
             </div>
           ) : null}
 
@@ -605,26 +618,35 @@ function MatchingCard({ appSettings, t, onChange }: {
             <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.matching.description")}</p>
           </div>
         </div>
-        <span className="rounded-xl bg-amber-100 px-3 py-2 text-xl font-bold tabular-nums text-amber-950 dark:bg-amber-950 dark:text-amber-100">
-          {appSettings.atomicNoteRelationThreshold.toFixed(2)}
-        </span>
       </div>
       <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900">
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
+        <MatchingSlider
+          id="atomicNoteRelationThreshold"
+          label={t("settings.matching.minimumScore")}
+          defaultValue={defaultAppSettings.atomicNoteRelationThreshold} resetLabel={t("settings.matching.resetDefault")}
           value={appSettings.atomicNoteRelationThreshold}
-          aria-label={t("settings.matching.minimumScore")}
-          className="w-full accent-amber-600"
-          onChange={(event) => onChange({ atomicNoteRelationThreshold: Number(event.target.value) })}
+          onCommit={(value) => onChange({ atomicNoteRelationThreshold: value })}
         />
         <div className="mt-2 flex justify-between text-xs font-medium text-slate-500">
           <span>{t("settings.matching.moreRelations")}</span>
           <span>{t("settings.matching.fewerRelations")}</span>
         </div>
       </div>
+      <div className="grid gap-2">
+        <Label htmlFor="relationTypeSimilarityThreshold">{t("relationTypes.threshold")}</Label>
+        <MatchingSlider id="relationTypeSimilarityThreshold" label={t("relationTypes.threshold")}
+          defaultValue={defaultAppSettings.relationTypeSimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
+          value={appSettings.relationTypeSimilarityThreshold} onCommit={(value) => onChange({ relationTypeSimilarityThreshold: value })} />
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("relationTypes.thresholdHint")}</p>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="entityIdentitySimilarityThreshold">{t("entityIdentity.threshold")}</Label>
+        <MatchingSlider id="entityIdentitySimilarityThreshold" label={t("entityIdentity.threshold")}
+          defaultValue={defaultAppSettings.entityIdentitySimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
+          value={appSettings.entityIdentitySimilarityThreshold} onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })} />
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
+      </div>
+
 
     </section>
   );
@@ -730,20 +752,6 @@ function KnowledgeGraphLimitsCard({ appSettings, t, onChange }: {
             value={appSettings.knowledgeGraphMaxRelationsPerSource}
             onChange={(event) => onChange({ knowledgeGraphMaxRelationsPerSource: Math.max(1, Math.min(20000, Math.floor(Number(event.target.value)))) })} />
         </div>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="relationTypeSimilarityThreshold">{t("relationTypes.threshold")}</Label>
-        <Input id="relationTypeSimilarityThreshold" type="number" min={0} max={1} step={0.01}
-          value={appSettings.relationTypeSimilarityThreshold}
-          onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value)) onChange({ relationTypeSimilarityThreshold: Math.max(0, Math.min(1, value)) }); }} />
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("relationTypes.thresholdHint")}</p>
-      </div>
-      <div className="grid gap-2">
-        <Label htmlFor="entityIdentitySimilarityThreshold">{t("entityIdentity.threshold")}</Label>
-        <Input id="entityIdentitySimilarityThreshold" type="number" min={0} max={1} step={0.01}
-          value={appSettings.entityIdentitySimilarityThreshold}
-          onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value)) onChange({ entityIdentitySimilarityThreshold: Math.max(0, Math.min(1, value)) }); }} />
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
       </div>
       <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("settings.knowledgeGraphLimits.hint")}</p>
     </section>

@@ -227,3 +227,17 @@ job statuses, or user-visible backend errors.
   user.
 - Obsidian UI follows host conventions. Chrome UI stays appropriate for an
   extension surface. Shared visual language must not break the host platform.
+
+## Settings navigation
+
+- The introductory settings card and global status summary appear only in the
+  Overview dashboard. Other settings dashboards start with their own scope header.
+
+## Matching settings
+
+- Knowledge-note matching, relation-type similarity, and entity-identity
+  similarity thresholds live in their own Matching settings dashboard.
+- Every matching threshold uses a slider with a visible draft value. Persist
+  only when the pointer is released or a keyboard adjustment ends; canceled
+  pointer gestures discard the draft. Each slider has an accessible compact
+  action that restores and saves its canonical application default.
