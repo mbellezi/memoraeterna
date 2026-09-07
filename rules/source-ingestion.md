@@ -165,8 +165,86 @@ auditable. Aggregate summaries do not create duplicate root-level atomic notes.
   revision. Superseding pending notes requires an explicit policy and remains
   auditable.
 
+## Processing contract reference
+
+`resolveProcessingPlan` owns dependency expansion and canonical stage ordering;
+UI code and integrations must not maintain a separate DAG. Plan version is `1`.
+For named presets the preset determines requested stages; only `custom` uses the
+caller's `requestedStages` directly.
+
+| Stage | Direct prerequisite |
+| --- | --- |
+| `conversion` | None |
+| `structureDetection` | `conversion` |
+| `structureReview` | `structureDetection` |
+| `materialization` | `structureReview` |
+| `chunking` | `materialization` |
+| `embedding`, `summarization`, `atomicNotes`, `knowledgeGraph` | `chunking` |
+| `atomicNoteMatching` | `atomicNotes` |
+| `obsidianProjection` | `materialization` |
+| `aggregateSummarization` | `summarization` |
+
+- `search_ready` adds chunking/embedding to import; `summary` adds
+  chunking/summarization; `full_knowledge` adds chunking, embedding, summary,
+  notes, graph and matching. Projection and aggregate summarization are not
+  explicit stages of `full_knowledge`; root aggregation is coordinated by the
+  processing service/supervisor.
+- Scopes are `source_only`, `children_only`, `source_and_children`, and
+  `selected_items`. Child scopes expand descendants; a selected ancestor with
+  a selected descendant is assigned catalog processing instead of duplicating
+  descendant content processing.
+- Artifact policies are `reuse_valid`, `regenerate_selected`, and
+  `preserve_reviewed_archive_pending`. The last policy archives pending notes
+  only during reingestion that includes `atomicNotes`. Same-document chunks
+  remain reusable even when other stages are regenerated.
+- The queue records a batch and runs even when there is no executable optional
+  work; a run can complete with `jobId: null`. Container-only creation returns
+  null document/run/job identifiers. Consumers must distinguish these cases.
+- Structure review returns before queueing optional work. Confirmation saves,
+  confirms and materializes the draft before queueing selected child processing
+  and applicable root catalog work.
+
+## Implementation boundaries and current limits
+
+| Responsibility | Entry point |
+| --- | --- |
+| Descriptor and plan contracts | `packages/domain/src/source-descriptor.ts`, `hierarchical-ingestion.ts` |
+| Intake, duplicates, original assets and bibliography | `apps/desktop/src/main/services/ingestion-service.ts` |
+| Structure review, scope expansion and run creation | `apps/desktop/src/main/services/hierarchical-ingestion-service.ts` |
+| Execution order, cancellation and collective barriers | `apps/desktop/src/main/services/job-supervisor.ts` |
+| Structure transactions and artifact lookup | `packages/db/src/repositories/hierarchicalIngestionRepository.ts` |
+| Run checkpoints | `packages/db/src/repositories/ingestionRunRepository.ts` |
+| Conversion and chunk provenance | `packages/conversion/src/` |
+
+For conversion details load `rules/conversion.md`; for execution/recovery load
+`rules/jobs-and-processing.md`; for graph stages load `rules/knowledge-graph.md`;
+for consumption of embeddings load `rules/source-search.md`.
+
+The following boundaries describe current behavior rather than relaxing the
+preservation and validation requirements above:
+
+- Confirmation currently filters out `empty_range` validation issues, and
+  materialization skips empty Markdown slices. Empty divisions therefore do not
+  currently block confirmation or produce child sources. Changes to structure
+  validation must reconcile this with the stricter acceptance rule above and
+  cover the service and repository together.
+- Artifact reuse currently consults `getArtifactState` for the current document
+  and completed checkpoints. Do not assume that the full model/parameter/hash
+  compatibility requirement in `jobs-and-processing.md` is automatically
+  established by artifact existence.
+- The supervisor owns ingestion orchestration. The minimal
+  `workers/ingestion.worker.ts` acknowledgment is not the pipeline implementation.
+
 ## Required coverage
 
 Changes in this domain cover descriptor parsing, provenance merge, duplicate
 policy, container behavior, hierarchy validation/materialization, processing
 plan dependencies, and preservation of reviewed artifacts as applicable.
+
+Existing focused suites: `packages/domain/src/hierarchical-ingestion.test.ts`,
+`apps/desktop/src/main/services/ingestion-service.test.ts`,
+`apps/desktop/src/main/services/hierarchical-ingestion-service.test.ts`,
+`packages/db/src/repositories/hierarchicalIngestionRepository.test.ts`, and
+`packages/db/src/repositories/repositories.test.ts`. For transaction, hierarchy,
+or persistence changes also use `npm run db:source-ingestion:verify` with a
+configured test PostgreSQL instance; unit tests are not a substitute for it.

@@ -50,3 +50,19 @@ worker supervision, progress, cancellation, retry, or restart recovery.
 
 Relevant changes cover atomic claiming, progress, cancellation, retry limits,
 checkpoint recovery, application restart, stage state, and batch aggregation.
+
+## Implementation navigation
+
+- `apps/desktop/src/main/services/job-supervisor.ts` owns ingestion execution,
+  inline stage jobs, cancellation signals, and batch barriers. It coordinates
+  the controlled workers and `KnowledgeService`; the ingestion worker alone
+  does not implement the pipeline.
+- `packages/db/src/repositories/jobRepository.ts` owns persisted claiming and
+  retry state; `ingestionRunRepository.ts` owns stage checkpoints;
+  `hierarchicalIngestionRepository.ts` owns batches and artifact-state lookup.
+- Graph extraction records validated batches inside the `knowledgeGraph`
+  checkpoint metadata through `updateStageProgress`. Progress updates must
+  merge metadata without discarding completed batches. See
+  `rules/knowledge-graph.md` for batch identity and repair semantics.
+- Repository recovery/retry cases are in `repositories.test.ts`; retry policy
+  is also covered by `apps/desktop/src/main/services/job-retry.test.ts`.

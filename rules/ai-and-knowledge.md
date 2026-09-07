@@ -1,4 +1,4 @@
-# AI, search, and knowledge rules
+# AI and derived knowledge rules
 
 Load this rule for model providers, profiles, parameters, local models,
 embeddings, summaries, atomic notes, knowledge graph, matching, or search.
@@ -75,60 +75,17 @@ status, and all participating source IDs.
   prompt, and input hashes. Long sources use map-reduce over source chunks.
 - Automatically generated atomic notes start as `pending_review`, use validated
   structured output, and link to source, chunks, and SourceSpans.
-- Knowledge-graph generation always extracts entities, claims, and relations
-  from the source chunks and their evidence. When atomic-note generation is
-  also selected, a second extraction consumes the non-rejected atomic notes;
-  both extractions are combined without requiring atomic notes for the source
-  graph. Both paths use short evidence aliases that the backend resolves to
-  real IDs after validation.
-- Source-chunk graph extraction is capped per standalone document or processable
-  subitem by user-configurable entity and relation limits (defaults: 250 and
-  500). Every generation prompt receives the remaining allowance, and backend
-  validation enforces the same caps before persistence.
-- Entities, mentions, claims, relationships, and accepted atomic-note relations
-  are canonical in SQL and retain evidence. AGE receives an idempotent
-  projection and may contribute an optional ranking signal. Independently
-  processed sources connect through reused canonical entities and the relations
-  between those entities; each mention and relation retains its source evidence.
-- The global knowledge-graph dashboard has separate source and atomic-note
-  projections. Source edges aggregate shared entities and semantic entity
-  relations; atomic-note edges use persisted, non-rejected note relations.
-  Rejected, archived, and superseded notes are excluded from the dashboard.
-  Lazy source-connection details include canonical entity IDs and semantic relation
-  IDs, directed endpoints and predicates alongside grouped display strings; visual
-  previews must never reconstruct graph identity by parsing those strings.
+- Graph extraction, canonical persistence, projections, and dashboard contracts
+  are defined in `rules/knowledge-graph.md`; load it when changing those areas.
 - Atomic-note matching retrieves independent text, vector, metadata, and
   optional graph candidates, combines them with the implemented RRF policy,
   optionally reranks one batch per note, applies the configured threshold, and
   persists only qualified canonical relationships with their signals.
 - Generated content never silently overwrites human-reviewed artifacts.
 
-## Search
+## Search and related rules
 
-- Text and vector rankings remain independently inspectable before fusion.
-- The Library search combines its existing catalog match with a query embedding
-  against current-model chunk and `source_item` embeddings. Source vector rank
-  aggregates the best three current-document chunks, favoring the best chunk,
-  and uses the composite source vector as a smaller supporting signal. A
-  vector-only result must meet the calibrated standalone floor; a weaker vector
-  may contribute only when text or an exact graph entity corroborates it.
-  Ranking retains text, vector, and graph scores independently, favors the
-  strongest signal with a smaller agreement bonus, and identifies which signals
-  produced the match.
-- Exact canonical graph entities and aliases promote their evidenced source in
-  Library results. Cards show the best evidence excerpt when the match came from
-  a chunk or graph element, call raw cosine output vector similarity rather than
-  confidence, and flag sources that lack embeddings for the active model.
-- Instruction-aware embedding models receive retrieval instructions on query
-  inputs only; stored document, chunk, and source inputs remain document text.
-  Calibrated Library floors are covered by a synthetic, versioned evaluation set;
-  private real-library calibration corpora remain local.
-- Search results include source item, document/revision, chunk, SourceSpan,
-  scores, and evidence. Hierarchical child results include breadcrumbs to the
-  root; a root filter may include descendants.
-- Library search also returns directly matched graph entities and entity
-  relations as distinct, visibly typed results linked to their source evidence.
-- Graph failure omits graph rank/score and does not block search or matching.
-- Debug capture is opt-in and off by default. Remote provider responses are not
-  captured as full debug payloads. Local model payload capture follows
-  `rules/security-and-privacy.md`.
+- Load `rules/source-search.md` for Library search, evidence search, ranking,
+  result contracts, and retrieval degradation.
+- Load `rules/source-ingestion.md` for source/chunk embedding construction and
+  invalidation, and `rules/jobs-and-processing.md` for generation checkpoints.

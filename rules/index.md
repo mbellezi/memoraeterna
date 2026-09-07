@@ -13,7 +13,10 @@ transitive references explicitly named inside a selected rule.
 | File/web conversion, Markdown normalization, structure detection, Docling protocol, OCR, chunks, SourceSpans, or assets | `rules/conversion.md` |
 | Jobs, processing batches, ingestion runs/stages, worker supervisor, retries, cancellation, checkpoints, or recovery | `rules/jobs-and-processing.md` |
 | Drizzle schema, migrations, repositories, SQL, PostgreSQL lifecycle, pgvector storage, or AGE persistence | `rules/database.md` |
-| AI providers, profiles, model parameters, local models, summaries, atomic notes, knowledge graph, matching, embeddings, or search ranking | `rules/ai-and-knowledge.md` |
+| AI providers, profiles, model parameters, local models, summaries, atomic notes, matching, or embedding execution | `rules/ai-and-knowledge.md` |
+| Knowledge graph extraction, entities, claims, semantic relations, source connections, AGE projection, or graph dashboard/layout | `rules/knowledge-graph.md` |
+| Search in sources, Library search, evidence/chunk/note search, retrieval filters, semantic floors, or search ranking | `rules/source-search.md` |
+| Second-brain organization or consultation, wiki pages/hierarchy, organization/harness instruction settings, periodic reorganization/cleanup, or wiki projection/editing in Obsidian | `rules/second-brain.md` |
 | Renderer components, product copy, styles, accessibility, themes, locales, or user-visible backend messages | `rules/frontend-and-i18n.md` |
 | Integration Gateway, Chrome extension, YouTube capture, Obsidian plugin, vault projection, pairing, or sync | `rules/integrations.md` |
 | Secrets, external input, filesystem access, network access, remote AI, deletion, backups, logs, or privacy-sensitive behavior | `rules/security-and-privacy.md` |
@@ -23,6 +26,10 @@ transitive references explicitly named inside a selected rule.
 
 - A new import UI reads `source-ingestion.md` and `frontend-and-i18n.md`; add
   `conversion.md` only if conversion behavior changes.
+- Graph generation reads `knowledge-graph.md` and `ai-and-knowledge.md`; add
+  `jobs-and-processing.md` for ingestion checkpoint changes.
+- Library/evidence search reads `source-search.md`; add `database.md` for SQL
+  changes and `knowledge-graph.md` for graph traversal changes.
 - A schema change for AI profiles reads `database.md` and
   `ai-and-knowledge.md`.
 - An Obsidian deletion fix reads `integrations.md` and

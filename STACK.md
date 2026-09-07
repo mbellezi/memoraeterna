@@ -70,6 +70,22 @@ separate web application unless explicitly requested and specified.
 Use Drizzle over `node-postgres`. Relational tables remain canonical; pgvector
 and AGE are query and projection layers.
 
+## Second-brain harness
+
+- The initial harness is an application-specific TypeScript state executor
+  using the existing Zod contracts, PostgreSQL jobs/checkpoints and supervised
+  workers. Model execution remains behind `AiModelAdapter`.
+- LangGraph.js is the preferred external executor alternative if the M2 spike
+  demonstrates that branching/recovery requires an overly general custom
+  runtime. Evaluate it against the same acceptance cases before adoption;
+  record exact dependency versions and checkpoint ownership in a subsequent
+  stack decision. It is not a selected dependency today.
+- Vercel AI SDK is a candidate for remote-provider adapter implementation,
+  independently of the harness. It must not own domain persistence, approval
+  policy or task routing; evaluating it is not a prerequisite for the wiki.
+- DeepSeek Harness remains an experimental candidate, not the initial runtime.
+  This decision adds no external agent framework or dependency.
+
 ## Conversion and integrations
 
 | Capability | Required implementation |
