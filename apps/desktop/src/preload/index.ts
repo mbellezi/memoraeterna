@@ -1,3 +1,4 @@
+import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
@@ -171,6 +172,11 @@ const api: DesktopApi = {
     async getSyncStatus() {
       return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStatus));
     }
+  },
+  monitoring: {
+    async list(input) { return monitoringPageSchema.parse(await ipcRenderer.invoke(ipcChannels.monitoringList, monitoringQuerySchema.parse(input))); },
+    async detail(id) { return monitoringDetailSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.monitoringDetail, z.string().uuid().parse(id))); },
+    async prune(input) { return monitoringPruneResultSchema.parse(await ipcRenderer.invoke(ipcChannels.monitoringPrune, monitoringPruneSchema.parse(input))); }
   },
   debug: {
     async listSimilarityRuns() {

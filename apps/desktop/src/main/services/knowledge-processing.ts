@@ -56,7 +56,8 @@ export interface KnowledgeAiExecution {
   outputLanguage?: string;
 }
 
-export type KnowledgeAiRunner = (input: string) => Promise<KnowledgeAiExecution | null>;
+export interface KnowledgeCallContext { operation: string; promptVersion: string; batchIndex: number; attempt: number; chunkIds: string[] }
+export type KnowledgeAiRunner = (input: string, context: KnowledgeCallContext) => Promise<KnowledgeAiExecution | null>;
 
 export interface KnowledgeGraphAtomicNoteInput {
   id: string;
@@ -194,7 +195,7 @@ export async function generateSummaryFromChunks(
   const groups = groupChunks(nonEmptyChunks, maxInputCharacters);
   const executions: KnowledgeAiExecution[] = [];
   if (groups.length === 1) {
-    const execution = await run(summaryPrompt(groups[0] ?? [], false));
+    const execution = await run(summaryPrompt(groups[0] ?? [], false), { operation: "summary", promptVersion: summaryPromptVersion, batchIndex: 0, attempt: 0, chunkIds: (groups[0] ?? []).map((chunk) => chunk.id) });
     if (!execution) return null;
     executions.push(execution);
     const summary = normalizeSummaryText(execution.output);
@@ -207,8 +208,8 @@ export async function generateSummaryFromChunks(
   }
 
   const partials: string[] = [];
-  for (const group of groups) {
-    const execution = await run(summaryPrompt(group, true));
+  for (const [batchIndex, group] of groups.entries()) {
+    const execution = await run(summaryPrompt(group, true), { operation: "summary_map", promptVersion: summaryPromptVersion, batchIndex, attempt: 0, chunkIds: group.map((chunk) => chunk.id) });
     if (!execution) return null;
     executions.push(execution);
     const partial = normalizeSummaryText(execution.output);
@@ -217,7 +218,7 @@ export async function generateSummaryFromChunks(
   if (partials.length === 0) {
     return { summary: "", mapReduce: true, executions, skippedReason: "non_content" };
   }
-  const reduction = await run(summaryReductionPrompt(partials));
+  const reduction = await run(summaryReductionPrompt(partials), { operation: "summary_reduce", promptVersion: summaryPromptVersion, batchIndex: groups.length, attempt: 0, chunkIds: nonEmptyChunks.map((chunk) => chunk.id) });
   if (!reduction) return null;
   executions.push(reduction);
   const summary = normalizeSummaryText(reduction.output);
@@ -276,7 +277,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       maxEntities: Math.min(12, remaining?.maxEntities ?? 12),
       maxRelations: Math.min(12, remaining?.maxRelations ?? 12)
     };
-    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits));
+    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits), { operation: `graph_${inputKind}`, promptVersion: knowledgeGraphPromptVersion, batchIndex, attempt: 0, chunkIds: [...evidenceAliases.values()] });
     if (!execution) return null;
     let parsed: KnowledgeGraphGenerationOutput;
     let finalExecution = execution;
@@ -291,7 +292,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
         initialError,
         inputKind,
         batchLimits
-      ));
+      ), { operation: `graph_${inputKind}_repair`, promptVersion: knowledgeGraphPromptVersion, batchIndex, attempt: 1, chunkIds: [...evidenceAliases.values()] });
       if (!repaired) throw initialError;
       try {
         parsed = parseKnowledgeGraphOutput(repaired.output, evidenceAliases);
@@ -473,7 +474,7 @@ export async function generateAtomicNoteCandidates(
   run: KnowledgeAiRunner
 ): Promise<{ output: AtomicNoteGenerationOutput; execution: KnowledgeAiExecution } | null> {
   const allowedChunkIds = new Set(chunks.map((chunk) => chunk.id));
-  const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks));
+  const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), { operation: "atomic_note_generation", promptVersion: atomicNotePromptVersion, batchIndex: 0, attempt: 0, chunkIds: [...allowedChunkIds] });
   if (!execution) return null;
   try {
     return {
@@ -485,7 +486,7 @@ export async function generateAtomicNoteCandidates(
       execution.output,
       [...allowedChunkIds],
       initialError
-    ));
+    ), { operation: "atomic_note_repair", promptVersion: atomicNotePromptVersion, batchIndex: 0, attempt: 1, chunkIds: [...allowedChunkIds] });
     if (!repairedExecution) throw initialError;
     return {
       output: parseAtomicNoteGenerationOutput(repairedExecution.output, allowedChunkIds),

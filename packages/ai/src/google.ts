@@ -1,3 +1,4 @@
+import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
@@ -81,10 +82,10 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
           })
         }
       );
-      const payload = await parseResponse<{ embedding?: { values?: number[] } }>(response);
+      const payload = await parseResponse<{ embedding?: { values?: number[] }; usageMetadata?: Record<string, unknown> }>(response);
       if (!payload.embedding?.values) throw new Error("AI embedding response did not contain a vector.");
       return { taskType: request.taskType, output: payload.embedding.values, providerId: "google", modelId,
-        runtime: "remote", durationMs: Math.round(performance.now() - startedAt) };
+        runtime: "remote", durationMs: Math.round(performance.now() - startedAt), tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google") };
     }
     const response = await this.fetchImplementation(
       `${this.baseUrl}/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(this.options.apiKey)}`,
@@ -103,13 +104,14 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     );
     const payload = await parseResponse<{
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      usageMetadata?: Record<string, unknown> & { promptTokenCount?: number; candidatesTokenCount?: number };
     }>(response);
     const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
     if (output === undefined) throw new Error("AI generation response did not contain content.");
     return {
       taskType: request.taskType, output, providerId: "google", modelId, runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
+      tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google"),
       ...(payload.usageMetadata?.promptTokenCount !== undefined ? { inputTokens: payload.usageMetadata.promptTokenCount } : {}),
       ...(payload.usageMetadata?.candidatesTokenCount !== undefined ? { outputTokens: payload.usageMetadata.candidatesTokenCount } : {})
     };
@@ -139,14 +141,16 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
       }
     );
     let output = "";
+    let tokenUsage: Record<string, number> = {};
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     await readServerSentEvents(response, (data) => {
       const event = JSON.parse(data) as {
         candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+        usageMetadata?: Record<string, unknown> & { promptTokenCount?: number; candidatesTokenCount?: number };
       };
       output += event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
       inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
       outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
       onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
@@ -156,6 +160,7 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     return {
       taskType: request.taskType, output, providerId: "google", modelId, runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
+      tokenUsage,
       ...(inputTokens !== undefined ? { inputTokens } : {}),
       ...(outputTokens !== undefined ? { outputTokens } : {})
     };

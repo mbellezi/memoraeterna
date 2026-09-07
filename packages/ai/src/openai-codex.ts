@@ -1,3 +1,4 @@
+import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
@@ -114,6 +115,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     if (!response.ok) throw await providerHttpError(response);
 
     let output = "";
+    let tokenUsage: Record<string, number> = {};
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     let streamError: string | undefined;
@@ -124,7 +126,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         delta?: string;
         message?: string;
         error?: { message?: string };
-        response?: { error?: { message?: string }; usage?: { input_tokens?: number; output_tokens?: number } };
+        response?: { error?: { message?: string }; usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number } };
       };
       if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
         output += event.delta;
@@ -133,6 +135,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
       if (event.type === "error" || event.type === "response.failed") {
         streamError = event.message ?? event.error?.message ?? event.response?.error?.message ?? "AI provider request failed.";
       }
+      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.response?.usage) };
       inputTokens = event.response?.usage?.input_tokens ?? inputTokens;
       outputTokens = event.response?.usage?.output_tokens ?? outputTokens;
     }, 16 * 1024 * 1024);
@@ -146,6 +149,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
       modelId: request.modelId ?? this.options.modelId,
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
+      tokenUsage,
       ...(inputTokens !== undefined ? { inputTokens } : {}),
       ...(outputTokens !== undefined ? { outputTokens } : {})
     };

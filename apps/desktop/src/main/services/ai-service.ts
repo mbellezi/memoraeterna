@@ -48,7 +48,7 @@ import { aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
 import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
-import { isLocalModelOutputDebugEnabled, logLocalModelOutput } from "./local-model-output-debug.js";
+import type { MonitoringService } from "./monitoring-service.js";
 import { logStructuredError } from "./structured-logging.js";
 import {
   loginOpenAiCodex,
@@ -65,7 +65,7 @@ export interface AiServiceOptions {
   resourcesPath: string;
   isPackaged: boolean;
   logger?: Pick<Console, "error" | "info">;
-  getDashboardDebugMode?: () => Promise<boolean>;
+  monitoring?: MonitoringService;
   getContentLanguage?: () => Promise<string>;
   getUiLanguage?: () => Promise<string>;
   getKeepLocalEmbeddingModelsLoaded?: () => Promise<boolean>;
@@ -80,6 +80,14 @@ export interface AiTaskLogContext {
   sourceItemIds?: string[];
   documentId?: string;
   stage?: string;
+  operation?: string;
+  origin?: string;
+  promptVersion?: string;
+  chunkId?: string;
+  chunkIds?: string[];
+  atomicNoteId?: string;
+  batchIndex?: number;
+  attempt?: number;
   contentLanguage?: string;
   embeddingInputType?: "query" | "document";
   onProgress?: (event: AiProgressEvent) => void;
@@ -339,6 +347,15 @@ export class AiService {
       ? await this.options.getKeepLocalEmbeddingModelsLoaded?.() ?? true
       : true;
     const started = Date.now();
+    const capture = await this.options.monitoring?.start({
+      kind: "ai", operation: logContext.operation ?? logContext.stage ?? taskType, taskType,
+      stage: logContext.stage ?? taskType,
+      context: { ...structuredLogContext, origin: logContext.origin ?? (logContext.ingestionRunId ? "ingestion" : logContext.jobId ? "job" : "interactive"), sourceItemIds,
+        providerConfigId: selection.providerConfigId, localModelId: selection.localModelId,
+        repository: selection.repository, revision: selection.revision, quantization: selection.quantization },
+      sourceItemIds, provider: selection.provider, modelId: selection.modelId, runtime: selection.runtime,
+      profileId: selection.profileId, parameters, input: taskInput
+    });
     try {
       const configuredAdapter = selection.localModelId
         ? await this.createLocalAdapter(selection.localModelId)
@@ -406,19 +423,11 @@ export class AiService {
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
         durationMs: result.durationMs, status: "succeeded", sourceItemIds
       });
-      if (selection.localModelId) {
-        const debugOutputEnabled = await isLocalModelOutputDebugEnabled(this.options.getDashboardDebugMode);
-        logLocalModelOutput(this.options.logger, debugOutputEnabled, {
-          ...structuredLogContext,
-          stage: structuredLogContext.stage ?? "ai_execution",
-          taskType,
-          profileId: selection.profileId,
-          providerId: result.providerId,
-          modelId: result.modelId,
-          runtime: result.runtime,
-          aiTaskRunId
-        }, result.output);
-      }
+      await this.options.monitoring?.finish(capture, {
+        status: "succeeded", aiTaskRunId, durationMs: Date.now() - started,
+        tokenUsage: monitoringUsage(result), parameters, output: result.output,
+        ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {})
+      });
       if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
         await this.releaseLocalRuntime().catch((error) => {
           this.options.logger?.error("Failed to release local embedding runtime", error);
@@ -437,6 +446,10 @@ export class AiService {
         parameters,
         durationMs: Date.now() - started, status: "failed",
         error: redactSensitiveText(error), sourceItemIds
+      });
+      await this.options.monitoring?.finish(capture, {
+        status: signal?.aborted ? "canceled" : "failed", aiTaskRunId, durationMs: Date.now() - started,
+        error: redactSensitiveText(error), parameters
       });
       if (taskType === "atomic-note-generation") {
         logStructuredError(this.options.logger, "atomic_note_ai_task_failed", {
@@ -457,6 +470,11 @@ export class AiService {
       }
       throw error;
     }
+  }
+
+  public async traceOperation<T>(operation: string, context: AiTaskLogContext, run: () => Promise<T>, details: Record<string, unknown> = {}): Promise<T> {
+    const { onProgress: _progress, ...metadata } = context;
+    return this.options.monitoring ? this.options.monitoring.operation(operation, metadata, run, details) : run();
   }
 
   public isLocalModelInUse(localModelId: string): boolean {
@@ -501,6 +519,9 @@ export class AiService {
       true
     )), descriptor.parameterCapabilities);
     const started = Date.now();
+    const capture = await this.options.monitoring?.start({ kind: "ai", operation: "local_model_test", taskType,
+      stage: "local_model_test", context: { origin: "settings", localModelId }, sourceItemIds: [],
+      provider: descriptor.providerId, modelId: model.modelId, runtime: model.runtime, parameters, input });
     try {
       const result = await this.withLocalModelUsage(localModelId, () => adapter.run({
         taskType,
@@ -510,7 +531,7 @@ export class AiService {
         parameters,
         metadata: { purpose: "local-model-test" }
       }));
-      await repository.recordTaskRun({
+      const aiTaskRunId = await repository.recordTaskRun({
         taskType,
         provider: result.providerId,
         modelId: result.modelId,
@@ -529,11 +550,13 @@ export class AiService {
         durationMs: result.durationMs,
         status: "succeeded"
       });
+      await this.options.monitoring?.finish(capture, { status: "succeeded", aiTaskRunId,
+        durationMs: Date.now() - started, tokenUsage: monitoringUsage(result), costEstimate: 0, output: result.output });
       return Array.isArray(result.output)
         ? `Embedding generated (${result.output.length} dimensions)`
         : typeof result.output === "string" ? result.output : JSON.stringify(result.output);
     } catch (error) {
-      await repository.recordTaskRun({
+      const aiTaskRunId = await repository.recordTaskRun({
         taskType,
         provider: `local-${model.runtime}`,
         modelId: model.modelId,
@@ -549,6 +572,8 @@ export class AiService {
         status: "failed",
         error: redactSensitiveText(error)
       });
+      await this.options.monitoring?.finish(capture, { status: "failed", aiTaskRunId,
+        durationMs: Date.now() - started, error: redactSensitiveText(error) });
       throw error;
     }
   }
@@ -849,4 +874,16 @@ function taskSourceItemIds(context: Omit<AiTaskLogContext, "onProgress">): strin
     ...(context.sourceItemId ? [context.sourceItemId] : []),
     ...(context.sourceItemIds ?? [])
   ])];
+}
+
+function monitoringUsage(result: AiTaskResult): Record<string, number> {
+  const usage = {
+    ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
+    ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
+    ...result.tokenUsage
+  } as Record<string, number>;
+  if (usage.totalTokens === undefined && usage.inputTokens !== undefined && (usage.outputTokens !== undefined || result.taskType === "embedding")) {
+    usage.totalTokens = usage.inputTokens + (usage.outputTokens ?? 0);
+  }
+  return usage;
 }

@@ -1,3 +1,5 @@
+import type { MonitoringService } from "./services/monitoring-service.js";
+import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
 import type { IpcMain } from "electron";
 import { app, dialog, shell, webContents } from "electron";
@@ -82,8 +84,12 @@ export function registerIpcHandlers(
   backupService: BackupService,
   libraryResetService: LibraryResetService,
   similarityDebugService: SimilarityDebugService,
-  obsidianSyncService: ObsidianSyncService
+  obsidianSyncService: ObsidianSyncService,
+  monitoringService?: MonitoringService
 ): void {
+  ipcMain.handle(ipcChannels.monitoringList, (_event, payload: unknown) => monitoringService!.list(monitoringQuerySchema.parse(payload)));
+  ipcMain.handle(ipcChannels.monitoringDetail, (_event, payload: unknown) => monitoringService!.detail(z.string().uuid().parse(payload)));
+  ipcMain.handle(ipcChannels.monitoringPrune, (_event, payload: unknown) => monitoringService!.prune(monitoringPruneSchema.parse(payload)));
   const t = createTranslator(app.getLocale());
   ipcMain.handle(ipcChannels.relationLabelsStart, async (_event, payload: unknown) => {
     const input = relationLabelsInputSchema.parse(payload);

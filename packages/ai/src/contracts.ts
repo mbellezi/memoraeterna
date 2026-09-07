@@ -43,6 +43,7 @@ export const aiTaskResultSchema = z.object({
   durationMs: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative().optional(),
   outputTokens: z.number().int().nonnegative().optional(),
+  tokenUsage: z.record(z.string(), z.number().finite().nonnegative()).optional(),
   costEstimate: z.number().nonnegative().optional()
 }).strict();
 export type AiTaskResult = z.infer<typeof aiTaskResultSchema>;

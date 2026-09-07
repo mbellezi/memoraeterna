@@ -161,6 +161,9 @@ describe("knowledge processing", () => {
 
     expect(result).toMatchObject({ summary: "Reduced summary", mapReduce: true });
     expect(run).toHaveBeenCalledTimes(3);
+    expect(run).toHaveBeenNthCalledWith(1, expect.any(String), expect.objectContaining({ operation: "summary_map", batchIndex: 0, attempt: 0, chunkIds: ["chunk-1"] }));
+    expect(run).toHaveBeenNthCalledWith(2, expect.any(String), expect.objectContaining({ operation: "summary_map", batchIndex: 1, chunkIds: ["chunk-2"] }));
+    expect(run).toHaveBeenNthCalledWith(3, expect.any(String), expect.objectContaining({ operation: "summary_reduce", chunkIds: ["chunk-1", "chunk-2"] }));
   });
 
   it("parses graph knowledge with traceable entities, claims, and relations", async () => {
@@ -230,6 +233,8 @@ describe("knowledge processing", () => {
     expect(result?.executions[0]?.aiTaskRunId).toBe("run-repaired");
     expect(run).toHaveBeenCalledTimes(2);
     expect(run.mock.calls[1]?.[0]).toContain("Previous invalid output");
+    expect(run.mock.calls[0]?.[1]).toMatchObject({ operation: "graph_atomic_notes", batchIndex: 0, attempt: 0, chunkIds: ["chunk-1"] });
+    expect(run.mock.calls[1]?.[1]).toMatchObject({ operation: "graph_atomic_notes_repair", batchIndex: 0, attempt: 1, chunkIds: ["chunk-1"] });
     expect(run.mock.calls[1]?.[0]).toContain('{"entities":[{"key":"e1"');
     expect(run.mock.calls[1]?.[0]).toContain("not valid JSON");
   });

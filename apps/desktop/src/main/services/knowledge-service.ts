@@ -349,11 +349,12 @@ export class KnowledgeService {
       chunks.length > 0
         ? chunks.map((chunk) => ({ id: chunk.id, content: chunk.content }))
         : [{ id: document.id, content: document.canonicalMarkdown }],
-      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+      async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "summarization",
         prompt,
         {
           ...withAiSourceItems(logContext, [sourceItemId]),
+          ...callContext,
           documentId,
           onProgress: (event) => onProgress?.(event.progress)
         },
@@ -516,6 +517,7 @@ export class KnowledgeService {
         prompt,
         {
           ...withAiSourceItems(logContext, [root.rootId, ...children.map((child) => child.childId)]),
+          operation: "hierarchy_summary", promptVersion: hierarchyAggregateSummaryPromptVersion,
           sourceItemId: root.rootId,
           documentId: root.documentId
         },
@@ -598,15 +600,16 @@ export class KnowledgeService {
       const generatedResult = await generateAtomicNoteCandidates(
         source,
         chunks,
-        async (prompt) => {
+        async (prompt, callContext) => {
           execution = toKnowledgeExecution(await this.options.aiService.runDefaultTask(
             "atomic-note-generation",
             prompt,
             {
               ...structuredLogContext,
+              ...callContext,
               sourceItemId,
               documentId,
-              stage: "ai_execution",
+              stage: "atomic_note_generation",
               onProgress: (event) => onProgress?.(event.progress)
             },
             signal
@@ -782,12 +785,17 @@ export class KnowledgeService {
       context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
       ...(signal ? { signal } : {})
     });
-    const resolveRelations = async (batch: Parameters<typeof resolveTypes>[0]) => resolveTypes(await resolveEntities(batch));
+    const trace = <T>(operation: string, run: () => Promise<T>, details: Record<string, unknown> = {}) =>
+      this.options.aiService.traceOperation?.(operation, { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) }, run, details) ?? run();
+    const resolveRelations = async (batch: Parameters<typeof resolveTypes>[0]) => {
+      const entities = await trace("entity_canonicalization", () => resolveEntities(batch), { entities: batch.entities.length });
+      return trace("relation_canonicalization", () => resolveTypes(entities), { relations: batch.relations.length });
+    };
     let sourceCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
     const sourceGraph = await generateKnowledgeGraphFromAtomicNotes(
       source,
       sourceInputs,
-      async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+      async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
         "knowledge-graph-generation",
         prompt,
         {
@@ -796,6 +804,7 @@ export class KnowledgeService {
           sourceItemId,
           documentId,
           contentLanguage,
+          ...callContext,
           stage: "knowledge_graph_generation",
           onProgress: (event) => context.onProgress?.(event.progress)
         },
@@ -824,7 +833,7 @@ export class KnowledgeService {
       ? await generateKnowledgeGraphFromAtomicNotes(
           source,
           atomicNoteInputs,
-          async (prompt) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+          async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
             "knowledge-graph-generation",
             prompt,
             {
@@ -833,6 +842,7 @@ export class KnowledgeService {
               sourceItemId,
               documentId,
               contentLanguage,
+              ...callContext,
               stage: "atomic_note_knowledge_graph_generation",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
@@ -866,7 +876,7 @@ export class KnowledgeService {
     const finalExecution = generated.executions.at(-1);
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
     const repository = createKnowledgeGraphRepository(pool);
-    const persisted = await repository.replaceSourceExtraction({
+    const persisted = await trace("graph_relations_persistence", () => repository.replaceSourceExtraction({
       sourceItemId,
       language: source.language,
       batches: generated.batches,
@@ -881,7 +891,7 @@ export class KnowledgeService {
         extractionLimits,
         ...(processingMode ? { processingMode } : {})
       }
-    });
+    }));
     const hierarchy = createHierarchicalIngestionRepository(pool);
     const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
     const graphModes = [processingMode ?? "source_chunks", ...(atomicGraph ? ["atomic_notes"] : [])];
@@ -947,7 +957,7 @@ export class KnowledgeService {
         "embedding",
         `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
         signal,
-        withAiSourceItems(logContext, [note.createdFromSourceItemId])
+        withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" }, [note.createdFromSourceItemId])
       );
       const embedding = readEmbedding(embeddingExecution?.output);
       if (embedding && embeddingExecution) {
@@ -1028,7 +1038,7 @@ export class KnowledgeService {
               title: candidate.note.title,
               ideaStatement: candidate.note.ideaStatement
             }))),
-            withAiSourceItems(logContext, [
+            withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_reranking" }, [
               note.createdFromSourceItemId,
               ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
             ]),
@@ -1111,7 +1121,7 @@ export class KnowledgeService {
           }
         });
         if (passedThreshold) {
-          await relations.upsert({
+          const persistRelation = () => relations.upsert({
             sourceAtomicNoteId: note.id,
             targetAtomicNoteId: candidate.note.id,
             relationType,
@@ -1138,6 +1148,9 @@ export class KnowledgeService {
               pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
             }
           });
+          await (this.options.aiService.traceOperation?.("atomic_note_relation_creation",
+            withAiSourceItems({ ...logContext, atomicNoteId: note.id }, [note.createdFromSourceItemId, candidate.note.createdFromSourceItemId]),
+            persistRelation, { targetAtomicNoteId: candidate.note.id, relationType, finalScore, threshold: relationThreshold }) ?? persistRelation());
           persistedCount += 1;
         }
         await onProgress?.(calculateAtomicNoteMatchingProgress({

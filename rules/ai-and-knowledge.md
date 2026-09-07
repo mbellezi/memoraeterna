@@ -58,6 +58,10 @@ Every task run records effective parameters, profile, model, provider, runtime,
 prompt version where applicable, input/output tokens, duration, estimated cost,
 status, and all participating source IDs.
 
+AI execution also publishes independently prunable monitoring telemetry with
+provider token breakdowns and precise call context, as specified in
+`rules/monitoring.md`. Local-model output is no longer dumped to the console.
+
 ## Local models
 
 - Catalog entries use immutable repository revisions, explicit files, sizes,

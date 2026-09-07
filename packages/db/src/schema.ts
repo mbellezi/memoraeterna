@@ -1007,6 +1007,33 @@ export const aiTaskRuns = pgTable(
   (table) => ({ taskIdx: index("ai_task_runs_task_type_idx").on(table.taskType) })
 );
 
+// Retain canonical task audit independently from user-prunable monitoring data.
+export const monitoringOperations = pgTable("monitoring_operations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  kind: text("kind").notNull(),
+  operation: text("operation").notNull(),
+  taskType: text("task_type"),
+  stage: text("stage").notNull(),
+  context: jsonb("context").notNull().default(sql`'{}'::jsonb`),
+  sources: jsonb("sources").notNull().default(sql`'[]'::jsonb`),
+  provider: text("provider"), modelId: text("model_id"), runtime: text("runtime"),
+  profileId: uuid("profile_id"),
+  aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+  status: text("status").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  durationMs: integer("duration_ms"),
+  tokenUsage: jsonb("token_usage").notNull().default(sql`'{}'::jsonb`),
+  costEstimate: doublePrecision("cost_estimate"),
+  parameters: jsonb("parameters").notNull().default(sql`'{}'::jsonb`),
+  details: jsonb("details").notNull().default(sql`'{}'::jsonb`),
+  debugRecorded: boolean("debug_recorded").notNull().default(false),
+  input: jsonb("input"), output: jsonb("output"), error: text("error")
+}, (table) => ({
+  startedIdx: index("monitoring_operations_started_idx").on(table.startedAt, table.id),
+  kindStatusIdx: index("monitoring_operations_kind_status_idx").on(table.kind, table.status, table.startedAt)
+}));
+
 export const aiTaskRunSources = pgTable(
   "ai_task_run_sources",
   {

@@ -1,3 +1,4 @@
+import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
 import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
@@ -73,7 +74,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
           dimensions: typeof request.parameters.dimensions === "number" ? request.parameters.dimensions : 768
         })
       });
-      const payload = await parseResponse<{ data?: Array<{ embedding?: number[] }>; usage?: { prompt_tokens?: number; total_tokens?: number } }>(response);
+      const payload = await parseResponse<{ data?: Array<{ embedding?: number[] }>; usage?: Record<string, unknown> & { prompt_tokens?: number; total_tokens?: number } }>(response);
       const embedding = payload.data?.[0]?.embedding;
       if (!embedding) throw new Error("AI embedding response did not contain a vector.");
       return {
@@ -83,6 +84,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         modelId: request.modelId ?? this.options.modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        tokenUsage: normalizeTokenUsage(payload.usage),
         ...(payload.usage?.prompt_tokens !== undefined ? { inputTokens: payload.usage.prompt_tokens } : {})
       };
     }
@@ -100,7 +102,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
     });
     const payload = await parseResponse<{
       choices?: Array<{ message?: { content?: string } }>;
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
     }>(response);
     const output = payload.choices?.[0]?.message?.content;
     if (output === undefined) throw new Error("AI generation response did not contain content.");
@@ -111,6 +113,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       modelId: request.modelId ?? this.options.modelId,
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
+      tokenUsage: normalizeTokenUsage(payload.usage),
       ...(payload.usage?.prompt_tokens !== undefined ? { inputTokens: payload.usage.prompt_tokens } : {}),
       ...(payload.usage?.completion_tokens !== undefined ? { outputTokens: payload.usage.completion_tokens } : {})
     };
@@ -138,15 +141,17 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       })
     });
     let output = "";
+    let tokenUsage: Record<string, number> = {};
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     await readServerSentEvents(response, (data) => {
       if (data === "[DONE]") return;
       const event = JSON.parse(data) as {
         choices?: Array<{ delta?: { content?: string } }>;
-        usage?: { prompt_tokens?: number; completion_tokens?: number };
+        usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
       };
       output += event.choices?.[0]?.delta?.content ?? "";
+      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usage) };
       inputTokens = event.usage?.prompt_tokens ?? inputTokens;
       outputTokens = event.usage?.completion_tokens ?? outputTokens;
       onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
@@ -160,6 +165,7 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       modelId: request.modelId ?? this.options.modelId,
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
+      tokenUsage,
       ...(inputTokens !== undefined ? { inputTokens } : {}),
       ...(outputTokens !== undefined ? { outputTokens } : {})
     };

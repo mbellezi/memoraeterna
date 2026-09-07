@@ -6,6 +6,7 @@ transitive references explicitly named inside a selected rule.
 
 | Request or affected area | Required rule |
 | --- | --- |
+| Monitoring dashboard, AI usage telemetry, diagnostic capture, prompts/outputs, or log retention | `rules/monitoring.md` |
 | Project licensing, package license metadata, distribution notices, or third-party license exceptions | `rules/licensing.md` |
 | New app/package, dependency direction, IPC/preload/main boundary, service ownership, or broad refactor | `rules/architecture.md` |
 | Finding ownership, choosing files, moving folders, adding scripts, or changing repository structure | `rules/repository-map.md` |

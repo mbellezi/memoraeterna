@@ -1,3 +1,4 @@
+import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
@@ -149,7 +150,9 @@ void app.whenReady().then(() => {
     desktopLocale: app.getLocale()
   });
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+  const monitoringService = new MonitoringService(() => databaseService?.getPool() ?? null, () => settingsService!.getApp());
   aiService = new AiService({
+    monitoring: monitoringService,
     userDataPath: app.getPath("userData"),
     getPool: () => databaseService?.getPool() ?? null,
     workspaceRoot,
@@ -159,7 +162,6 @@ void app.whenReady().then(() => {
     openExternal: (url) => shell.openExternal(url),
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
-    getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode,
     getKeepLocalEmbeddingModelsLoaded: async () => (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
     onLocalEmbeddingLoadStatus: (status) => {
       const payload = localEmbeddingLoadStatusSchema.parse(status);
@@ -188,6 +190,7 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null
   });
   ingestionService = new IngestionService({
+    traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData"),
@@ -238,6 +241,7 @@ void app.whenReady().then(() => {
     getStorageSettings: () => settingsService!.get()
   });
   jobSupervisor = new JobSupervisor({
+    traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) => processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),
     getPool: () => databaseService?.getPool() ?? null,
     logger: console,
@@ -284,12 +288,14 @@ void app.whenReady().then(() => {
     backupService,
     libraryResetService,
     similarityDebugService,
-    obsidianSyncService
+    obsidianSyncService,
+    monitoringService
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
   serviceStartupPromise = databaseService.start().then(async (status) => {
     if (status.state === "ready") {
+      await monitoringService.recover();
       await Promise.all([
         localModelService?.start(),
         jobSupervisor?.start(),

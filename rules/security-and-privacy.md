@@ -43,10 +43,15 @@ processing, destructive operations, backups, or sensitive logging.
   offline/local processing.
 - Remote calls record provider/model, effective parameters, tokens, duration,
   and estimated cost. Batch operations respect configured cost confirmation.
-- Full remote-provider responses are never written to debug logs. Full local
-  model output may be captured only through the explicit dashboard debug switch,
-  off by default, with a privacy warning; treat resulting events as sensitive
-  and disable capture after diagnosis.
+- Monitoring retains usage and provenance independently of debug. Operation
+  diagnostics and full-content capture have separate switches, off by default.
+  Full prompts and outputs from both local and remote models may be stored in
+  the local monitoring database only when both switches are enabled, after a
+  confirmation popup explaining content retention and disk usage. Disabling
+  debug disables full capture; in-flight outputs respect the current switches.
+  Content remains available until explicitly cleaned. Never capture transport
+  credentials, authentication headers or secrets; ordinary console logs remain
+  sanitized. See `rules/monitoring.md` for retention and presentation.
 
 ## Deletion, reset, and backup
 

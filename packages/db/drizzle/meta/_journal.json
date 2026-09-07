@@ -148,6 +148,13 @@
       "when": 1788794733881,
       "tag": "0020_light_stick",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788798832697,
+      "tag": "0021_small_supernaut",
+      "breakpoints": true
     }
   ]
 }

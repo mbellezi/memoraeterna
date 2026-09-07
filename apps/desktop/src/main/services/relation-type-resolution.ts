@@ -68,7 +68,7 @@ export function createRelationTypeResolver(options: {
       for (let attempt = 0; attempt < 2; attempt++) {
         options.signal?.throwIfAborted();
         const execution = await options.ai.runDefaultTask("knowledge-graph-generation", prompt + (attempt ? "\nPrevious output was invalid. Include every input key exactly once and only its allowed candidate or null." : ""),
-          { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], contentLanguage: "en", stage: "relation_type_resolution" }, options.signal);
+          { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], attempt, promptVersion: relationTypeResolutionVersion, contentLanguage: "en", stage: "relation_type_resolution" }, options.signal);
         if (!execution) throw new Error("errors.ai.noCompatibleModel");
         try {
           const matches = parseRelationMatches(execution.output, group);

@@ -8,6 +8,7 @@ import { ObsidianSyncStatusCard } from "./ObsidianSyncStatusCard";
 
 interface DebugDashboardProps {
   enabled: boolean;
+  embedded?: boolean;
   t: (key: MessageKey) => string;
   onEnabledChange: (enabled: boolean) => Promise<void>;
 }
@@ -25,6 +26,7 @@ const scoreStyles = {
 
 export function DebugDashboard({
   enabled,
+  embedded = false,
   t,
   onEnabledChange
 }: DebugDashboardProps) {
@@ -32,6 +34,7 @@ export function DebugDashboard({
   const [filter, setFilter] = useState<RunFilter>("all");
   const [loading, setLoading] = useState(false);
   const [changing, setChanging] = useState(false);
+  const [error, setError] = useState(false);
   const filteredRuns = useMemo(
     () => filter === "all" ? runs : runs.filter((run) => run.kind === filter),
     [filter, runs]
@@ -45,6 +48,9 @@ export function DebugDashboard({
     setLoading(true);
     try {
       setRuns(await window.app.debug.listSimilarityRuns());
+      setError(false);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -54,6 +60,8 @@ export function DebugDashboard({
     setChanging(true);
     try {
       await onEnabledChange(next);
+    } catch {
+      setError(true);
     } finally {
       setChanging(false);
     }
@@ -61,8 +69,13 @@ export function DebugDashboard({
 
   async function clear() {
     if (!window.confirm(t("debug.clearConfirmation"))) return;
-    await window.app.debug.clearSimilarityRuns();
-    setRuns([]);
+    try {
+      await window.app.debug.clearSimilarityRuns();
+      setRuns([]);
+      setError(false);
+    } catch {
+      setError(true);
+    }
   }
 
   useEffect(() => {
@@ -71,8 +84,9 @@ export function DebugDashboard({
 
   return (
     <div className="grid gap-6">
-      <ObsidianSyncStatusCard available t={t} />
-      <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{t("monitoring.error")}</p>}
+      {!embedded && <ObsidianSyncStatusCard available t={t} />}
+      {!embedded && <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-fuchsia-100 p-2 text-fuchsia-800 dark:bg-fuchsia-950 dark:text-fuchsia-200">
@@ -90,7 +104,7 @@ export function DebugDashboard({
             </span>
           </label>
         </div>
-      </section>
+      </section>}
 
       <section className="grid gap-4">
         <div className="grid gap-3 sm:grid-cols-3">

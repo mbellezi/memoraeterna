@@ -60,6 +60,7 @@ import { YouTubeService } from "./youtube-service.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 
 export interface IngestionServiceOptions {
+  traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
   getPool: () => PgPool | null;
   getStorageSettings: () => Promise<StorageSettings>;
   userDataPath: string;
@@ -110,6 +111,18 @@ export class IngestionService {
     });
   }
 
+  private async normalizeWithMonitoring(markdown: string, context: Record<string, unknown>) {
+    const run = async () => normalizeMarkdown(markdown);
+    return this.options.traceOperation?.("markdown_normalization", context, run) ?? run();
+  }
+
+  private async convertWithMonitoring(...args: Parameters<ConversionRouter["convert"]>) {
+    const run = () => this.router.convert(...args);
+    return this.options.traceOperation?.("conversion_and_normalization", {
+      origin: "ingestion_preview", fileName: args[0].fileName, mimeType: args[0].mimeType
+    }, run) ?? run();
+  }
+
   public async previewUrl(input: { type: "WebArticle" | "Video"; url: string }) {
     if (input.type === "Video") {
       const videoId = youtubeIdFromUrl(input.url);
@@ -119,7 +132,7 @@ export class IngestionService {
         metadata: { ...captured.metadata, platform: "youtube", videoId } }), markdown: captured.markdown };
     }
     const page = await readPublicHtml(input.url, this.options.fetchExternalPage);
-    const converted = await this.router.convert({ data: new TextEncoder().encode(page.html), mimeType: "text/html",
+    const converted = await this.convertWithMonitoring({ data: new TextEncoder().encode(page.html), mimeType: "text/html",
       fileName: "article.html", sourceUrl: page.url, profile: "standard" });
     if (!converted.markdown.trim()) throw new Error("errors.common.validationFailed");
     return { draft: descriptorDraftFromWebMetadata({ title: String(converted.metadata.title ?? page.url), url: page.url, metadata: converted.metadata }), markdown: converted.markdown };
@@ -130,7 +143,7 @@ export class IngestionService {
     if (!source || source.type !== input.descriptor.type || source.parentSourceItemId !== ("parentSourceItemId" in input.descriptor ? input.descriptor.parentSourceItemId ?? null : null)) {
       throw new Error("errors.common.validationFailed");
     }
-    const markdown = input.content ? normalizeMarkdown(input.content.markdown) : undefined;
+    const markdown = input.content ? await this.normalizeWithMonitoring(input.content.markdown, { sourceItemId: source.id, documentId: input.content.documentId, origin: "source_edit" }) : undefined;
     if (markdown !== undefined && !markdown.trim()) throw new Error("errors.common.validationFailed");
     return createSourceEditingRepository(this.requirePool()).save({
       sourceItemId: source.id, expectedUpdatedAt: input.expectedUpdatedAt,
@@ -145,7 +158,7 @@ export class IngestionService {
     if (input.content.trim().length === 0 && isHierarchicalSourceType(input.descriptor.type)) {
       return this.createContainerSource({ descriptor: input.descriptor, duplicatePolicy: input.duplicatePolicy });
     }
-    const markdown = normalizeMarkdown(input.content);
+    const markdown = await this.normalizeWithMonitoring(input.content, { sourceTitle: input.descriptor.title, origin: "manual_ingestion" });
     if (!markdown.trim()) throw new Error("errors.common.validationFailed");
     const conversion: MarkdownConversionResult = {
       status: "converted",
@@ -235,7 +248,7 @@ export class IngestionService {
       progress: 0.08,
       ...(totalPages ? { totalPages } : {})
     });
-    const conversion = await this.router.convert(
+    const conversion = await this.convertWithMonitoring(
       { data, sourcePath: path, fileName, mimeType, profile: "standard" },
       undefined,
       (progress) => reportFileImportProgress(
@@ -337,7 +350,7 @@ export class IngestionService {
     const conversion = input.markdown
       ? markdownResult(input.markdown, "chrome-defuddle")
       : input.html
-        ? await this.router.convert({
+        ? await this.convertWithMonitoring({
             data: new TextEncoder().encode(input.html),
             fileName: "capture.html",
             mimeType: "text/html",

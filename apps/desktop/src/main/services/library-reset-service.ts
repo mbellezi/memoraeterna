@@ -42,7 +42,7 @@ export class LibraryResetService {
     await createKnowledgeGraphRepository(pool).clearProjection();
 
     await pool.query(`truncate table
-      similarity_debug_results, similarity_debug_runs,
+      monitoring_operations, similarity_debug_results, similarity_debug_runs,
       atomic_note_review_events, atomic_note_relations, atomic_note_entity_links, atomic_note_source_links, atomic_notes,
       claim_entity_links, claims, entity_relations, entity_mentions, entities,
       entity_identity_keys, entity_identity_embeddings_256, entity_identity_embeddings_768, entity_identity_embeddings_1024,

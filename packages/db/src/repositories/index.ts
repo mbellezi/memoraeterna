@@ -13,6 +13,7 @@ export * from "./chunkRepository.js";
 export * from "./embeddingRepository.js";
 export * from "./searchRepository.js";
 export * from "./similarityDebugRepository.js";
+export * from "./monitoringRepository.js";
 export * from "./knowledgeGraphRepository.js";
 export * from "./knowledgeGraphDashboardRepository.js";
 export * from "./bibliographicRepository.js";

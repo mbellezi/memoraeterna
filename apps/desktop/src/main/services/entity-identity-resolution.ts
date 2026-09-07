@@ -30,7 +30,7 @@ export function createEntityIdentityResolver(options: {
         options.signal?.throwIfAborted();
         const execution = await options.ai.runDefaultTask("knowledge-graph-generation", buildRelationMatchPrompt(group, true)
           + (attempt ? "\nRepair: include every supplied input key exactly once, selecting only its candidates or null." : ""),
-        { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], contentLanguage: "en", stage: "entity_identity_resolution" }, options.signal);
+        { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], attempt, promptVersion: entityIdentityResolutionVersion, contentLanguage: "en", stage: "entity_identity_resolution" }, options.signal);
         if (!execution) throw new Error("errors.ai.noCompatibleModel");
         try {
           for (const [key, candidate] of parseRelationMatches(execution.output, group)) result.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });

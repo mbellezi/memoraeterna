@@ -1,3 +1,4 @@
+import type { MonitoringQuery, MonitoringPage, MonitoringDetail, MonitoringPrune } from "./monitoring.js";
 import { z } from "zod";
 import {
   AiCapabilitySchema,
@@ -30,6 +31,9 @@ export const ipcChannels = {
   settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
   obsidianSyncStart: "app:obsidian:sync:start",
   obsidianSyncStatus: "app:obsidian:sync:status",
+  monitoringList: "app:monitoring:list",
+  monitoringDetail: "app:monitoring:detail",
+  monitoringPrune: "app:monitoring:prune",
   debugSimilarityRunsList: "app:debug:similarity-runs:list",
   debugSimilarityRunsClear: "app:debug:similarity-runs:clear",
   libraryReset: "app:library:reset",
@@ -155,6 +159,7 @@ export const appSettingsSchema = z.object({
   themeMode: themeModeSchema,
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).default(1),
   debugMode: z.boolean().default(false),
+  debugFullCapture: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
   keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
@@ -174,6 +179,7 @@ export const appSettingsUpdateSchema = z.object({
   themeMode: themeModeSchema.optional(),
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
   debugMode: z.boolean().optional(),
+  debugFullCapture: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
   keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
@@ -1019,6 +1025,7 @@ export const defaultAppSettings = {
   themeMode: "dark",
   graphWheelZoomSensitivity: 1,
   debugMode: false,
+  debugFullCapture: false,
   metadataEnrichmentEnabled: true,
   keepLocalEmbeddingModelsLoaded: true,
   bookMetadataProvider: "auto",
@@ -1062,6 +1069,11 @@ export interface DesktopApi {
   obsidian: {
     startSync: () => Promise<ObsidianSyncStatus>;
     getSyncStatus: () => Promise<ObsidianSyncStatus>;
+  };
+  monitoring: {
+    list: (input: MonitoringQuery) => Promise<MonitoringPage>;
+    detail: (id: string) => Promise<MonitoringDetail | null>;
+    prune: (input: MonitoringPrune) => Promise<{ cutoff: string; count: number }>;
   };
   debug: {
     listSimilarityRuns: () => Promise<SimilarityDebugRun[]>;

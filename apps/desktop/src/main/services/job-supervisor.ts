@@ -27,6 +27,7 @@ import { canManuallyRetryJob } from "./job-retry.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
+  traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
   getPool: () => PgPool | null;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
@@ -38,6 +39,7 @@ export interface JobSupervisorOptions {
     documentId: string;
     stage: string;
     embeddingInputType: "document";
+    chunkId?: string;
   }) => Promise<{
     embedding: number[];
     provider: string;
@@ -98,7 +100,7 @@ export class JobSupervisor {
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const result = job.type === "relation-labels"
+      const execute = async () => job.type === "relation-labels"
         ? await this.options.processRelationLabels!(job, controller.signal)
         : job.type === "ingestion"
         ? await this.executeIngestion(job, controller)
@@ -106,6 +108,7 @@ export class JobSupervisor {
             signal: controller.signal,
             onProgress: (progress) => this.trackProgress(repository.reportProgress(job.id, progress))
           });
+      const result = await (this.options.traceOperation?.(job.type, { jobId: job.id, ingestionRunId: job.payload.ingestionRunId, sourceItemId: job.payload.sourceItemId, documentId: job.payload.documentId, origin: "job", attempt: job.attempts }, execute) ?? execute());
       const updated = await repository.update(job.id, {
         status: controller.signal.aborted ? "canceled" : "succeeded",
         progress: controller.signal.aborted ? job.progress : 1,
@@ -360,6 +363,7 @@ export class JobSupervisor {
             sourceItemId,
             documentId,
             stage: "embedding",
+            chunkId: chunk.id,
             embeddingInputType: "document"
           });
           if (!generated) break;
@@ -623,7 +627,7 @@ export class JobSupervisor {
     this.notify();
     if (controller) this.controllers.set(job.id, controller);
     try {
-      const result = await run(job.id);
+      const result = await (this.options.traceOperation?.(type, { jobId: job.id, ingestionRunId: payload.ingestionRunId, sourceItemId: payload.sourceItemId, documentId: payload.documentId, origin: "ingestion" }, () => run(job.id)) ?? run(job.id));
       await repository.update(job.id, {
         status: "succeeded",
         progress: 1,

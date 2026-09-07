@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
-  Bug,
+  Activity,
   ClipboardCheck,
   Database,
   FilePlus2,
@@ -45,7 +45,7 @@ import { JobsView } from "./components/JobsView";
 import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
 import { LibraryView, type LibraryExternalTarget } from "./components/LibraryView";
 import { ReviewQueueView } from "./components/ReviewQueueView";
-import { DebugDashboard } from "./components/DebugDashboard";
+import { MonitoringDashboard } from "./components/MonitoringDashboard";
 import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog";
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
@@ -70,7 +70,7 @@ const navItems: NavItem[] = [
   { id: "review", label: "shell.navigation.review", icon: ClipboardCheck },
   { id: "jobs", label: "shell.navigation.jobs", icon: BriefcaseBusiness },
   { id: "knowledgeGraph", label: "shell.navigation.knowledgeGraph", icon: Network },
-  { id: "debug", label: "debug.title", icon: Bug },
+  { id: "debug", label: "debug.title", icon: Activity },
   { id: "settings", label: "shell.navigation.settings", icon: Settings }
 ];
 
@@ -363,15 +363,15 @@ export function App({
     setActiveSettingsScope(scope);
   }
 
-  async function setDebugMode(debugMode: boolean) {
+  async function setMonitoringCapture(capture: { debugMode: boolean; debugFullCapture: boolean }) {
     const previous = appSettings;
     setAppSettings((current) => appSettingsSchema.parse({
       ...current,
-      debugMode,
+      ...capture,
       updatedAt: new Date().toISOString()
     }));
     try {
-      const saved = await window.app.settings.updateApp({ debugMode });
+      const saved = await window.app.settings.updateApp(capture);
       lastPersistedAppSettings.current = saved;
       setAppSettings(saved);
       pushToast(t("shell.toasts.settingsSaved"), "success");
@@ -608,10 +608,16 @@ export function App({
               />
             </Suspense>
           ) : activeView === "debug" ? (
-            <DebugDashboard
+            <MonitoringDashboard
               enabled={appSettings.debugMode}
               t={t}
-              onEnabledChange={setDebugMode}
+              fullCapture={appSettings.debugFullCapture}
+              onCaptureChange={setMonitoringCapture}
+              onOpenSource={(sourceItemId) => {
+                libraryTargetToken.current += 1;
+                setLibraryTarget({ sourceItemId, token: libraryTargetToken.current });
+                setActiveView("library");
+              }}
             />
           ) : activeView === "library" ? (
             <LibraryView
