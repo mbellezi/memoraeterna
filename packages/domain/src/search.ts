@@ -102,6 +102,7 @@ export const GraphRelationSearchResultSchema = GraphSearchContextSchema.extend({
   subjectEntityId: StableIdSchema,
   subjectName: z.string().min(1),
   predicate: z.string().min(1),
+  displayLabel: z.string().max(300).optional(),
   objectEntityId: StableIdSchema,
   objectName: z.string().min(1)
 }).strict();

@@ -66,6 +66,7 @@ export interface AiServiceOptions {
   isPackaged: boolean;
   logger?: Pick<Console, "error" | "info">;
   getDashboardDebugMode?: () => Promise<boolean>;
+  getContentLanguage?: () => Promise<string>;
   getUiLanguage?: () => Promise<string>;
   getKeepLocalEmbeddingModelsLoaded?: () => Promise<boolean>;
   onLocalEmbeddingLoadStatus?: (status: LocalEmbeddingLoadStatus) => void;
@@ -79,6 +80,7 @@ export interface AiTaskLogContext {
   sourceItemIds?: string[];
   documentId?: string;
   stage?: string;
+  contentLanguage?: string;
   embeddingInputType?: "query" | "document";
   onProgress?: (event: AiProgressEvent) => void;
 }
@@ -329,9 +331,7 @@ export class AiService {
       { ...selection.modelDefaultParameters, ...selection.parameters },
       Boolean(selection.localModelId)
     ));
-    const outputLanguage = selection.outputLanguage === "ui"
-      ? await this.options.getUiLanguage?.() ?? "en"
-      : selection.outputLanguage;
+    const outputLanguage = logContext.contentLanguage ?? await this.options.getContentLanguage?.() ?? "en";
     const taskInput = taskType === "embedding"
       ? withEmbeddingInputInstruction(input, selection.modelId, selection.repository, structuredLogContext.embeddingInputType)
       : withOutputLanguageInstruction(input, outputLanguage);
@@ -812,7 +812,7 @@ function withOutputLanguageInstruction(input: string, language: string): string 
     fr: "French",
     es: "Spanish"
   } as Record<string, string>)[language] ?? language;
-  return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly.\n\n${input}`;
+  return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly. All internal identifiers, enum values and relation predicates must remain in English; translate only user-visible natural-language content.\n\n${input}`;
 }
 
 export function withEmbeddingInputInstruction(

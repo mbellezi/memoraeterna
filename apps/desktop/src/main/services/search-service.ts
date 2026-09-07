@@ -422,6 +422,7 @@ function toRelationSearchResult(row: GraphRelationSearchRecord): SearchResult {
     subjectEntityId: row.subjectEntityId,
     subjectName: row.subjectName,
     predicate: row.predicate,
+    displayLabel: row.displayLabel ?? "",
     objectEntityId: row.objectEntityId,
     objectName: row.objectName,
     sourceItemId: row.sourceItemId,

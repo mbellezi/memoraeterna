@@ -81,7 +81,8 @@ export const ExtractedClaimSchema = z.object({
 
 export const ExtractedEntityRelationSchema = z.object({
   subjectEntityKey: z.string().trim().min(1).max(120),
-  predicate: z.string().trim().min(1).max(120),
+  predicate: z.string().trim().min(1).max(120).regex(/^[a-z]+(?:_[a-z]+)*$/),
+  displayLabel: z.string().trim().min(1).max(300),
   objectEntityKey: z.string().trim().min(1).max(120),
   confidence: ConfidenceScoreSchema,
   evidenceChunkIds: z.array(StableIdSchema).min(1).max(50)

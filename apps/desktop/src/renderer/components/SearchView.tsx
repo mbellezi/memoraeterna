@@ -148,7 +148,7 @@ export function SearchResultCard({ result, t, onOpen }: {
           ) : null}
           <h2 className="font-semibold leading-snug">{isNote ? result.title
             : isEntity ? result.canonicalName
-              : isRelation ? `${result.subjectName} — ${result.predicate} → ${result.objectName}`
+              : isRelation ? `${result.subjectName} — ${result.displayLabel || t("relationLabel.missing")} → ${result.objectName}`
                 : result.sourceTitle}</h2>
           {isNote ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{result.ideaStatement}</p> : null}
           {isEntity ? <p className="mt-0.5 text-sm font-medium text-slate-700 dark:text-slate-300">{t(`knowledge.graph.entityTypes.${result.entityType}` as MessageKey)}</p> : null}

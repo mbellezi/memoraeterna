@@ -1,3 +1,4 @@
+import { RelationLabelsCard, ContentLanguageSelect } from "./RelationLabelsCard";
 import { useEffect, useState } from "react";
 import {
   Archive,
@@ -363,6 +364,7 @@ export function SettingsView({
                 showAction
                 t={t}
               />
+              <RelationLabelsCard appSettings={appSettings} onChange={onAppSettingsChange} t={t} />
               <BackupView t={t} />
               <ResetCard
                 isResetting={isResetting}
@@ -533,6 +535,7 @@ function AppearanceCard({ appSettings, t, onChange }: {
         </select>
       </div>
       <div className="grid gap-2">
+        <ContentLanguageSelect appSettings={appSettings} onChange={onChange} t={t} />
         <Label>{t("settings.appearance.themeMode")}</Label>
         <div className="grid grid-cols-2 gap-2">
           {themeModes.map(({ mode, icon: Icon, label }) => (

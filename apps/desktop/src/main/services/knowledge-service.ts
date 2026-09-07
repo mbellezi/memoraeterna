@@ -99,6 +99,7 @@ export interface KnowledgeServiceOptions {
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
   getSummaryMinimumWordCount?: () => Promise<number>;
+  getContentLanguage?: () => Promise<string>;
   getKnowledgeGraphLimits?: () => Promise<{ maxEntities: number; maxRelations: number }>;
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
@@ -761,6 +762,7 @@ export class KnowledgeService {
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
     if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    const contentLanguage = await this.options.getContentLanguage?.() ?? "en";
     const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
     const extractionLimits = await this.options.getKnowledgeGraphLimits?.()
       ?? { maxEntities: 250, maxRelations: 500 };
@@ -776,6 +778,7 @@ export class KnowledgeService {
           ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
           sourceItemId,
           documentId,
+          contentLanguage,
           stage: "knowledge_graph_generation",
           onProgress: (event) => context.onProgress?.(event.progress)
         },
@@ -786,6 +789,7 @@ export class KnowledgeService {
         completedBatches,
         inputKind: processingMode ? "catalog_metadata" : "source_chunks",
         checkpointNamespace: "source",
+        contentLanguage,
         extractionLimits,
         ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
           sourceCheckpoints = checkpoints;
@@ -810,6 +814,7 @@ export class KnowledgeService {
               ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
               sourceItemId,
               documentId,
+              contentLanguage,
               stage: "atomic_note_knowledge_graph_generation",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
@@ -820,6 +825,7 @@ export class KnowledgeService {
             completedBatches,
             inputKind: "atomic_notes",
             checkpointNamespace: "atomic_notes",
+            contentLanguage,
             ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
               await context.onBatchCompleted!({
                 completed: sourceCheckpoints.length + completed,
@@ -852,6 +858,7 @@ export class KnowledgeService {
         model: finalExecution.modelId,
         runtime: finalExecution.runtime,
         promptVersion: knowledgeGraphPromptVersion,
+        displayLanguage: finalExecution.outputLanguage ?? "en",
         extractionLimits,
         ...(processingMode ? { processingMode } : {})
       }

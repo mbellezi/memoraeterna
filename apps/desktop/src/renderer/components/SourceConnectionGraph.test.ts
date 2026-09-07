@@ -61,3 +61,16 @@ describe("source connection graph preview", () => {
     }
   });
 });
+
+it("shows generated phrases verbatim and localizes only the absent-description placeholder", () => {
+  const graph = buildSourceConnectionGraph({
+    sharedEntities: [], semanticRelations: [],
+    entities: [{ id: "a", label: "Evidence", shared: false }, { id: "b", label: "Person", shared: false }],
+    relations: [
+      { id: "translated", source: "a", target: "b", label: "Foi usado para acusar" },
+      { id: "missing", source: "a", target: "b", label: "relationLabel.missing" }
+    ]
+  }, "Descrição ainda não gerada");
+  expect(graph.getEdgeAttribute("translated", "label")).toBe("Foi usado para acusar");
+  expect(graph.getEdgeAttribute("missing", "label")).toBe("Descrição ainda não gerada");
+});

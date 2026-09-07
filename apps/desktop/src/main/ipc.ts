@@ -4,6 +4,7 @@ import { app, dialog, shell, webContents } from "electron";
 import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
+  relationLabelsInputSchema,
   databaseStatusSchema,
   sourceDocumentInputSchema,
   sourceUrlPreviewInputSchema,
@@ -84,6 +85,15 @@ export function registerIpcHandlers(
   obsidianSyncService: ObsidianSyncService
 ): void {
   const t = createTranslator(app.getLocale());
+  ipcMain.handle(ipcChannels.relationLabelsStart, async (_event, payload: unknown) => {
+    const input = relationLabelsInputSchema.parse(payload);
+    await settingsService.updateApp({ contentLanguage: input.contentLanguage });
+    return jobSupervisor.queueRelationLabels(input);
+  });
+  ipcMain.handle(ipcChannels.relationLabelsStatus, async () => {
+    const job = await jobSupervisor.relationLabelsStatus();
+    return job ? serializeJob(job) : null;
+  });
 
   ipcMain.handle(ipcChannels.systemGetInfo, () => ({
     appName: t("app.title"),
@@ -444,10 +454,11 @@ function serializeJob(
     progress: job.progress,
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
-    canCancel: (job.type === "ingestion" || isCancelableAiStage(job.type))
+    canCancel: (job.type === "relation-labels" || job.type === "ingestion" || isCancelableAiStage(job.type))
       && (job.status === "queued" || job.status === "running"),
     canRetry: canManuallyRetryJob(job, ingestionRun),
     canDelete: canDeleteCanceledJob(job, ingestionRun),
+    labelResult: job.type === "relation-labels" ? { updated: Number(job.result?.updated ?? 0), contentLanguage: String(job.payload.contentLanguage ?? "en") } : null,
     error: job.error,
     errorHistory,
     createdAt: job.createdAt.toISOString(),

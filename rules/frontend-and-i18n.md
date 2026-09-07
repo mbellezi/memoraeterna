@@ -213,6 +213,11 @@ job statuses, or user-visible backend errors.
 
 - All product copy goes through `@app/i18n`.
 - Supported locales are `en` (fallback/default), `pt-BR`, `it`, `fr`, and `es`.
+- The content-generation language is separate from interface language. Both initially
+  follow the supported OS locale with English fallback; subsequent changes are independent.
+  Display settings and the Data and Security relation-description card expose the global
+  content language. The card offers missing-only and full description regeneration,
+  persisted status/counts, cancellation, retry, and empty/error/success feedback.
 - Add or update every locale in the same change. Preserve typed key parity.
 - Technical identifiers—protocol names, event IDs, enum values, table names,
   routes, and internal constants—are not product copy unless displayed to the

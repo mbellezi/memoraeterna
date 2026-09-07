@@ -150,7 +150,7 @@ async function getSourceConnectionDetails(
        )
        select distinct relation.id, relation.subject_entity_id as source, relation.object_entity_id as target,
          subject_entity.canonical_name as "sourceLabel", object_entity.canonical_name as "targetLabel",
-         relation.predicate as label, subject_entity.canonical_name || ' · ' || relation.predicate || ' · '
+         coalesce(nullif(relation.metadata->>'displayLabel', ''), 'relationLabel.missing') as label, subject_entity.canonical_name || ' · ' || coalesce(nullif(relation.metadata->>'displayLabel', ''), 'relationLabel.missing') || ' · '
          || object_entity.canonical_name as detail
        from entity_relations relation
        join mentions subject_mention on subject_mention.entity_id = relation.subject_entity_id
@@ -230,8 +230,8 @@ async function listSourceGraph(pool: PgPool): Promise<KnowledgeGraphDashboardRec
               greatest(subject_mention.source_item_id, object_mention.source_item_id) as target,
               count(distinct relation.id)::int as weight,
               max(least(subject_mention.confidence, object_mention.confidence, relation.confidence)) as confidence,
-              (array_agg(distinct subject_entity.canonical_name || ' · ' || relation.predicate || ' · ' || object_entity.canonical_name
-                order by subject_entity.canonical_name || ' · ' || relation.predicate || ' · ' || object_entity.canonical_name))[1:6] as details
+              (array_agg(distinct subject_entity.canonical_name || ' · ' || coalesce(nullif(relation.metadata->>'displayLabel', ''), 'relationLabel.missing') || ' · ' || object_entity.canonical_name
+                order by subject_entity.canonical_name || ' · ' || coalesce(nullif(relation.metadata->>'displayLabel', ''), 'relationLabel.missing') || ' · ' || object_entity.canonical_name))[1:6] as details
        from entity_relations relation
        join mentions subject_mention on subject_mention.entity_id = relation.subject_entity_id
        join mentions object_mention on object_mention.entity_id = relation.object_entity_id

@@ -43,8 +43,17 @@ export interface SettingsServiceOptions {
 function createDefaultAppSettings(locale: string | null | undefined): AppSettings {
   return withAppTimestamp({
     ...defaultAppSettings,
+    contentLanguage: normalizeLanguageCode(locale),
     language: normalizeLanguageCode(locale)
   });
+}
+
+export function parseSavedAppSettings(value: unknown): AppSettings {
+  const saved = appSettingsSchema.parse(value);
+  if (typeof value === "object" && value !== null && !("contentLanguage" in value)) {
+    return { ...saved, contentLanguage: normalizeLanguageCode(saved.language) };
+  }
+  return saved;
 }
 
 function withAppTimestamp(settings: AppSettingsUpdate): AppSettings {
@@ -96,7 +105,7 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
     async getAppSettings() {
       try {
         const raw = await readFile(appSettingsPath, "utf8");
-        return appSettingsSchema.parse(JSON.parse(raw));
+        return parseSavedAppSettings(JSON.parse(raw));
       } catch {
         return null;
       }
@@ -129,7 +138,7 @@ function createDbSettingsRepository(pool: Queryable, dispose?: () => Promise<voi
   return {
     async getAppSettings() {
       const value = await appRepository.get(appSettingsKey);
-      return value ? appSettingsSchema.parse(value) : null;
+      return value ? parseSavedAppSettings(value) : null;
     },
     async saveAppSettings(settings) {
       await appRepository.set(appSettingsKey, settings);
@@ -199,7 +208,8 @@ export class SettingsService {
 
   public async getApp(): Promise<AppSettings> {
     const repository = await this.getRepository();
-    return (await repository.getAppSettings()) ?? createDefaultAppSettings(this.defaultLocale);
+    const saved = await repository.getAppSettings();
+    return saved ?? repository.saveAppSettings(createDefaultAppSettings(this.defaultLocale));
   }
 
   public async updateApp(update: AppSettingsUpdate): Promise<AppSettings> {

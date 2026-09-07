@@ -13,7 +13,7 @@ export const summaryPromptVersion = "summary-v2";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v3";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v5";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v6";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
@@ -23,10 +23,12 @@ const atomicNoteGenerationJsonSchema = JSON.stringify(
   2
 );
 
+const relationLanguageInstruction = "Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.";
+
 const knowledgeGraphJsonContract = `{
   "entities": [{"key":"e1","type":"Concept","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
   "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
-  "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
+  "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }`;
 
 const knowledgeGraphExecutionTraceSchema = z.object({
@@ -135,6 +137,7 @@ export interface KnowledgeGraphGenerationOptions {
   completedBatches?: ReadonlyArray<KnowledgeGraphBatchCheckpoint>;
   inputKind?: "atomic_notes" | "source_chunks" | "catalog_metadata";
   checkpointNamespace?: string;
+  contentLanguage?: string;
   extractionLimits?: KnowledgeGraphExtractionLimits;
   onBatchCompleted?: (input: {
     completed: number;
@@ -255,7 +258,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
   const completedBatches = checkpointNamespace
     ? (options.completedBatches ?? []).filter((checkpoint) => checkpoint.batchKey.startsWith(`${checkpointNamespace}:`))
     : options.completedBatches ?? [];
-  const reusable = reusableGraphCheckpoints(groups, completedBatches, checkpointNamespace);
+  const reusable = reusableGraphCheckpoints(groups, completedBatches, checkpointNamespace, options.contentLanguage);
   const limitedReusable = options.extractionLimits
     ? limitKnowledgeGraphBatches(reusable.map((checkpoint) => checkpoint.batch), options.extractionLimits)
     : reusable.map((checkpoint) => checkpoint.batch);
@@ -304,7 +307,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       parsed = limited.at(-1) ?? { entities: [], claims: [], relations: [] };
     }
     checkpoints.push({
-      batchKey: knowledgeGraphBatchKey(group, checkpointNamespace),
+      batchKey: knowledgeGraphBatchKey(group, checkpointNamespace, options.contentLanguage),
       batch: parsed,
       execution: executionTrace(finalExecution)
     });
@@ -333,6 +336,7 @@ export function buildKnowledgeGraphPrompt(
 Return exactly one complete JSON object. Do not use Markdown fences or add commentary.
 Use exactly this compact JSON shape and these property names:
 ${knowledgeGraphJsonContract}
+${relationLanguageInstruction}
 
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
 Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
@@ -370,6 +374,7 @@ function buildKnowledgeGraphRepairPrompt(
 Return one complete compact JSON object only. Do not include reasoning, commentary, or Markdown fences.
 Use exactly this shape and property names:
 ${knowledgeGraphJsonContract}
+${relationLanguageInstruction}
 
 Validation problems:
 ${structuredOutputRepairFeedback(validationError)}
@@ -812,8 +817,9 @@ function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMa
   };
 }
 
-function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>, namespace = ""): string {
+function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>, namespace = "", contentLanguage = "en"): string {
   const hash = createHash("sha256");
+  hash.update(`${knowledgeGraphPromptVersion}\0${contentLanguage}\0`);
   for (const note of notes) {
     hash.update(note.id);
     hash.update("\0");
@@ -829,13 +835,14 @@ function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInp
 function reusableGraphCheckpoints(
   groups: ReadonlyArray<ReadonlyArray<KnowledgeGraphAtomicNoteInput>>,
   completed: ReadonlyArray<KnowledgeGraphBatchCheckpoint>,
-  namespace = ""
+  namespace = "",
+  contentLanguage = "en"
 ): KnowledgeGraphBatchCheckpoint[] {
   const reusable: KnowledgeGraphBatchCheckpoint[] = [];
   for (let index = 0; index < Math.min(groups.length, completed.length); index += 1) {
     const group = groups[index] ?? [];
     const checkpoint = completed[index];
-    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace)) break;
+    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace, contentLanguage)) break;
     reusable.push(checkpoint);
   }
   return reusable;

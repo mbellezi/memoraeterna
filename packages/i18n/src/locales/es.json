@@ -1,4 +1,5 @@
 {
+  "relationLabel": {"title":"Descripciones de relaciones","description":"Usa el perfil de IA del grafo para generar las descripciones que faltan o reescribirlas todas en el idioma seleccionado. Se conservan los identificadores y las evidencias existentes. Si el perfil usa un modelo remoto, se le enviarán los nombres de las relaciones y sus entidades y podrán generarse costes.","generateMissing":"Generar descripciones faltantes","regenerate":"Regenerar todas las descripciones","ready":"Aún no se ha solicitado ningún procesamiento.","updated":"Descripciones actualizadas","failed":"El procesamiento falló. Comprueba el perfil de IA del grafo y vuelve a intentarlo; se conservan las descripciones completadas.","missing":"Descripción aún no generada"},
   "app": {
     "title": "Memora Eterna",
     "tagline": "Memoria local-first para fuentes, notas y evidencias.",
@@ -100,6 +101,7 @@
     }
   },
   "errors": {
+    "relationLabels": {"invalidOutput":"La IA devolvió descripciones de relaciones no válidas."},
     "common": {
       "unknown": "Algo salio mal.",
       "network": "La solicitud de red fallo.",
@@ -429,6 +431,8 @@
       "autoSaveHint": "Los cambios se guardan automaticamente."
     },
     "language": {
+      "contentLocale": "Idioma de generación de contenido",
+      "contentDescription": "Todo el contenido generado usa este idioma, independientemente de la interfaz y del perfil de IA. Los identificadores internos permanecen en inglés. El contenido existente solo cambia al regenerarse.",
       "title": "Idioma",
       "uiLocale": "Idioma de la interfaz",
       "languages": {

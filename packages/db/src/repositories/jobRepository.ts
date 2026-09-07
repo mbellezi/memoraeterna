@@ -115,6 +115,11 @@ export function createJobRepository(db: Queryable) {
       return mapJob(row);
     },
 
+    async latestByType(type: string): Promise<JobRecord | null> {
+      const result = await db.query<JobRow>(`select ${returning} from jobs where type = $1 order by (status in ('queued', 'running')) desc, created_at desc limit 1`, [type]);
+      return result.rows[0] ? mapJob(result.rows[0]) : null;
+    },
+
     async findById(id: string): Promise<JobRecord | null> {
       const row = await findById<JobRow>(db, "jobs", id, returning);
       return row ? mapJob(row) : null;

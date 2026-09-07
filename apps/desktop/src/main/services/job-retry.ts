@@ -28,6 +28,7 @@ export function canManuallyRetryJob(
   job: RetryableJobState,
   ingestionRun?: RetryableIngestionRunState | null
 ): boolean {
+  if (job.type === "relation-labels") return job.status === "failed" || job.status === "canceled";
   if (job.type !== "ingestion" || !ingestionRun) return false;
   if (job.status === "queued" || job.status === "running") return false;
   return job.status !== "succeeded" || hasIncompleteIngestionStages(ingestionRun);

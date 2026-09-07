@@ -1756,7 +1756,7 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
         <span>{edge.label}</span>
       </p>
       {edge.description ? <p className="mt-1 line-clamp-4 text-xs leading-relaxed text-slate-300">{edge.description}</p> : null}
-      {edge.details.length > 0 ? <ul className="mt-2 grid gap-1 text-xs text-slate-300">{edge.details.slice(0, 4).map((detail) => <li key={detail}>• {detail}</li>)}</ul> : null}
+      {edge.details.length > 0 ? <ul className="mt-2 grid gap-1 text-xs text-slate-300">{edge.details.slice(0, 4).map((detail) => <li key={detail}>• {detail.replaceAll("relationLabel.missing", t("relationLabel.missing"))}</li>)}</ul> : null}
       <p className="mt-2 text-[11px] tabular-nums text-slate-400">{t("knowledgeGraph.confidence", { values: { value: Math.round(edge.confidence * 100) } })}</p>
     </ViewportTooltip>;
   }

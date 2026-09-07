@@ -228,6 +228,7 @@ export interface GraphRelationSearchRecord {
   subjectEntityId: string;
   subjectName: string;
   predicate: string;
+  displayLabel?: string;
   objectEntityId: string;
   objectName: string;
   sourceItemId: string;

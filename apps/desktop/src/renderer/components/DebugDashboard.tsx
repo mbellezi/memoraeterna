@@ -266,7 +266,7 @@ function GraphElementsPanel({ title, value, t }: {
         <p className="text-xs font-semibold uppercase tracking-wide text-blue-800 dark:text-blue-300">{t("debug.relations")}</p>
         <ul className="grid gap-1 text-sm text-slate-700 dark:text-slate-300">{elements.relations.map((relation, index) => (
           <li key={`${relation.subject}:${relation.predicate}:${relation.object}:${index}`}>
-            {relation.subject} → {relation.predicate} → {relation.object} <span className="text-xs text-slate-500">({formatScore(relation.confidence)})</span>
+            {relation.subject} → {relation.displayLabel || t("relationLabel.missing")} → {relation.object} <span className="text-xs text-slate-500">({formatScore(relation.confidence)})</span>
           </li>
         ))}</ul>
       </div>}
@@ -277,7 +277,7 @@ function GraphElementsPanel({ title, value, t }: {
 function readGraphElements(value: unknown): {
   entities: Array<{ name: string; type: string; confidence: number }>;
   claims: Array<{ text: string; confidence: number }>;
-  relations: Array<{ subject: string; predicate: string; object: string; confidence: number }>;
+  relations: Array<{ subject: string; predicate: string; displayLabel?: string; object: string; confidence: number }>;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -296,7 +296,7 @@ function readGraphElements(value: unknown): {
       const predicate = readString(item.predicate);
       const object = readString(item.object);
       return subject && predicate && object
-        ? { subject, predicate, object, confidence: readConfidence(item.confidence) }
+        ? { subject, predicate, displayLabel: readString(item.displayLabel) ?? "", object, confidence: readConfidence(item.confidence) }
         : null;
     })
   };

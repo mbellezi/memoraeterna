@@ -23,8 +23,20 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
   processed sources connect through reused canonical entities and the relations
   between those entities; each mention and relation retains its source evidence.
 - The shared extractor accepts source chunks, atomic notes, or catalog metadata.
-  Its current prompt version is `knowledge-graph-v5`. Its historical function
+  Its current prompt version is `knowledge-graph-v6`. Its historical function
   name, `generateKnowledgeGraphFromAtomicNotes`, does not restrict it to notes.
+- New semantic relations require a concise English snake_case `predicate`,
+  preserving direction, negation, tense and modality, and a nonempty natural-language
+  `displayLabel` in the global content language. Store the phrase and its
+  `displayLanguage` in relation metadata; identity and control fields remain English.
+  Graph batch keys include the prompt version and snapshotted content language.
+- Data and Security offers missing-description generation and regeneration of all
+  descriptions using the knowledge-graph model route. These operations preserve
+  existing predicates (including legacy ones), relation IDs, endpoints, confidence,
+  evidence and unrelated metadata; they do not regenerate source knowledge.
+  Persist a job with its target language and creation cutoff. Process bounded batches,
+  atomically saving labels with a job marker and model/prompt audit metadata so
+  retry or restart skips saved batches. Support cancellation, progress and failures.
 - Validate structured output: unique batch entity keys, known claim/relation
   endpoints, different relation endpoints, and evidence from the supplied input.
   Evidence aliases must resolve before persistence; model-produced identifiers
@@ -65,6 +77,10 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
 
 ## Dashboard and interaction
 
+- Every semantic relation display uses its stored natural-language description,
+  including source details, search, graph previews and debug elements. When missing,
+  show a localized pending-description message instead of the internal predicate.
+  Atomic-note relation icons and their existing localized legend remain unchanged.
 - The global knowledge-graph dashboard has separate source and atomic-note
   projections. Source edges aggregate shared entities and semantic entity
   relations; atomic-note edges use persisted, non-rejected note relations.

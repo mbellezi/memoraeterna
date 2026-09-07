@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AiProfileCreate,
@@ -72,6 +73,7 @@ import {
   processingRequestSchema,
   structureConfirmInputSchema,
   structureSaveInputSchema,
+  relationLabelsInputSchema,
   jobRecordSchema,
   jobsClearResultSchema,
   jobsDeleteResultSchema,
@@ -304,6 +306,12 @@ const api: DesktopApi = {
     }
   },
   knowledge: {
+    async startRelationLabels(input) {
+      return z.string().uuid().parse(await ipcRenderer.invoke(ipcChannels.relationLabelsStart, relationLabelsInputSchema.parse(input)));
+    },
+    async relationLabelsStatus() {
+      return jobRecordSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.relationLabelsStatus));
+    },
     async getSourceDocument(input) {
       return sourceDocumentSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryDocumentGet, sourceDocumentInputSchema.parse(input)));
     },

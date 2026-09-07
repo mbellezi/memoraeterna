@@ -3,7 +3,6 @@ import { Bot, Copy, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Route, Save, S
 import { normalizeAiModelParameters, type AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
-  appLanguageCodes,
   type AiConfigurableTask,
   type AiModelParameterCapabilities,
   type AiModelParameters,
@@ -82,7 +81,6 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   const [profileModel, setProfileModel] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profilePrivacy, setProfilePrivacy] = useState<"allow_remote" | "offline_only">("allow_remote");
-  const [profileLanguage, setProfileLanguage] = useState<AiOutputLanguage>("ui");
   const [activeScope, setActiveScope] = useState<AiSettingsScope>("providers");
 
   async function load() {
@@ -225,7 +223,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
         name: profileName,
         isDefault: profiles.length === 0,
         privacyMode: profilePrivacy,
-        outputLanguage: profileLanguage
+        outputLanguage: "ui"
       });
       const model = selectedRemote ?? selectedLocal!;
       await window.app.ai.updateProfile({ id: profile.id,
@@ -292,7 +290,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
           <Input aria-label={t("settings.ai.profileName")} value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={t("settings.ai.profileName")} />
           <select value={profilePrivacy} onChange={(event) => setProfilePrivacy(event.target.value as typeof profilePrivacy)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
-          <LanguageSelect value={profileLanguage} onChange={setProfileLanguage} t={t} interfaceLanguage={interfaceLanguage} />
+          <p className="text-sm text-slate-500">{t("settings.language.contentDescription")}</p>
           <select aria-label={t("settings.ai.model")} value={profileModel} onChange={(event) => setProfileModel(event.target.value)} className={selectClass}><option value="">{t("settings.ai.selectModel")}</option>{providers.filter(() => profilePrivacy !== "offline_only").map((model) => <option key={model.id} value={`remote:${model.id}`}>{model.displayName}</option>)}{localModels.map((model) => <option key={model.id} value={`local:${model.id}`}>{model.displayName}</option>)}</select>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
@@ -514,7 +512,7 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
 }) {
   const [name, setName] = useState(profile.name);
   const [privacyMode, setPrivacyMode] = useState(profile.privacyMode as "allow_remote" | "offline_only");
-  const [outputLanguage, setOutputLanguage] = useState(profile.outputLanguage);
+  const outputLanguage = profile.outputLanguage;
   const [saving, setSaving] = useState(false);
   const options = useMemo<ModelOption[]>(() => [
     ...providers.filter(() => privacyMode !== "offline_only").map((model) => ({ value: `remote:${model.id}`, label: `${model.displayName} · ${model.modelId}`, modelId: model.modelId, runtime: "remote" as const, providerConfigId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities })),
@@ -525,7 +523,6 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   const [taskParameters, setTaskParameters] = useState<ProfileTaskParameters>(() => profileTaskParameters(profile.id, profileTasks));
   useEffect(() => {
     setPrivacyMode(profile.privacyMode as typeof privacyMode);
-    setOutputLanguage(profile.outputLanguage);
     setSelection(existingValue);
     setTaskParameters(profileTaskParameters(profile.id, profileTasks));
   }, [existingValue, profile.id, profile.outputLanguage, profile.privacyMode, profileTasks]);
@@ -578,7 +575,7 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
 
       <div className="grid min-w-0 gap-3 @xl:grid-cols-2">
         <select value={privacyMode} onChange={(event) => setPrivacyMode(event.target.value as typeof privacyMode)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
-        <LanguageSelect value={outputLanguage} onChange={setOutputLanguage} t={t} interfaceLanguage={interfaceLanguage} />
+          <p className="text-sm text-slate-500">{t("settings.language.contentDescription")}</p>
         <select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950 @xl:col-span-2"><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
       </div>
 
@@ -627,9 +624,6 @@ function validUrl(value: string): boolean {
   }
 }
 
-function LanguageSelect({ value, onChange, t, interfaceLanguage }: { value: AiOutputLanguage; onChange: (value: AiOutputLanguage) => void; t: (key: MessageKey) => string; interfaceLanguage: LanguageCode }) {
-  return <select aria-label={t("settings.ai.outputLanguage")} value={value} onChange={(event) => onChange(event.target.value as AiOutputLanguage)} className={selectClass}><option value="ui">{t("settings.ai.languages.interface")} ({t(`settings.language.languages.${interfaceLanguage}` as MessageKey)})</option>{appLanguageCodes.map((language) => <option key={language} value={language}>{t(`settings.language.languages.${language}` as MessageKey)}</option>)}</select>;
-}
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="grid min-w-0 gap-1"><Label>{label}</Label>{children}</div>;

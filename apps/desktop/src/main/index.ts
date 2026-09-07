@@ -1,3 +1,4 @@
+import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
 import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
@@ -156,6 +157,7 @@ void app.whenReady().then(() => {
     isPackaged: app.isPackaged,
     logger: console,
     openExternal: (url) => shell.openExternal(url),
+    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
     getDashboardDebugMode: async () => (await settingsService!.getApp()).debugMode,
     getKeepLocalEmbeddingModelsLoaded: async () => (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
@@ -210,6 +212,7 @@ void app.whenReady().then(() => {
   );
   const relationThreshold = readRelationThreshold(process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD);
   knowledgeService = new KnowledgeService({
+    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
     aiService,
     userDataPath: app.getPath("userData"),
@@ -233,6 +236,7 @@ void app.whenReady().then(() => {
     getStorageSettings: () => settingsService!.get()
   });
   jobSupervisor = new JobSupervisor({
+    processRelationLabels: (job, signal) => processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),
     getPool: () => databaseService?.getPool() ?? null,
     logger: console,
     knowledgeService,

@@ -38,7 +38,7 @@ export function sourceConnectionEmphasis(graph: Graph, type: "node" | "edge", ke
   };
 }
 
-export function buildSourceConnectionGraph(details: KnowledgeGraphSourceConnectionDetails) {
+export function buildSourceConnectionGraph(details: KnowledgeGraphSourceConnectionDetails, missingLabel = "") {
   const graph = new Graph({ type: "directed", multi: true });
   details.entities.forEach((entity, index) => {
     const angle = index * 2.399963229728653;
@@ -49,7 +49,7 @@ export function buildSourceConnectionGraph(details: KnowledgeGraphSourceConnecti
   for (const relation of details.relations) {
     if (graph.hasNode(relation.source) && graph.hasNode(relation.target)) {
       graph.addDirectedEdgeWithKey(relation.id, relation.source, relation.target,
-        { label: relation.label, size: sourceConnectionEdgeThickness, color: "#94a3b8", type: "arrow", forceLabel: true });
+        { label: relation.label === "relationLabel.missing" ? missingLabel : relation.label, size: sourceConnectionEdgeThickness, color: "#94a3b8", type: "arrow", forceLabel: true });
     }
   }
   graph.forEachNode((id) => graph.setNodeAttribute(id, "size", graphNodeSize(graph.degree(id))));
@@ -87,7 +87,7 @@ export function SourceConnectionGraph({ details, forces, wheelZoomSensitivity, t
         import("sigma"), import("./knowledge-graph-programs"), import("sigma/rendering")
       ]);
       if (disposed || !container) return;
-      const graph = buildSourceConnectionGraph(details);
+      const graph = buildSourceConnectionGraph(details, t("relationLabel.missing"));
       addSourceConnectionHitAreas(graph);
       let cameraRatio = 1;
       let target: GraphHoverTarget | null = null;

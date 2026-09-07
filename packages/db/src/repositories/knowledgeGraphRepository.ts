@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
+import { createJobRepository } from "./jobRepository.js";
 import { asJsonObject, mapTimestamp } from "./sql.js";
 import type {
   GraphEntityRecord,
@@ -34,6 +35,7 @@ export interface ExtractedClaimInput {
 export interface ExtractedRelationInput {
   subjectEntityKey: string;
   predicate: string;
+  displayLabel?: string | undefined;
   objectEntityKey: string;
   confidence: number;
   evidenceChunkIds: string[];
@@ -55,7 +57,7 @@ export interface ReplaceKnowledgeGraphInput {
 export interface AtomicNoteGraphElements {
   entities: Array<{ id: string; type: string; name: string; confidence: number }>;
   claims: Array<{ id: string; text: string; confidence: number }>;
-  relations: Array<{ id: string; subject: string; predicate: string; object: string; confidence: number }>;
+  relations: Array<{ id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number }>;
 }
 
 export interface AtomicNoteGraphCandidate {
@@ -69,7 +71,7 @@ export interface SourceGraphElements {
   relations: Array<{
     id: string;
     subject: string;
-    predicate: string;
+    predicate: string; displayLabel?: string;
     object: string;
     confidence: number;
   }>;
@@ -78,7 +80,7 @@ export interface SourceGraphElements {
     sourceTitle: string;
     entityName: string;
     relatedEntityName: string;
-    predicate: string;
+    predicate: string; displayLabel?: string;
     confidence: number;
   }>;
 }
@@ -150,6 +152,75 @@ const entityReturning = `id, type, canonical_name as "canonicalName", normalized
 
 export function createKnowledgeGraphRepository(pool: PgPool) {
   return {
+    async queueRelationLabels(payload: { mode: "missing" | "all"; contentLanguage: string }): Promise<string> {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        await client.query("select pg_advisory_xact_lock(hashtext('relation-labels'))");
+        const repository = createJobRepository(client);
+        const latest = await repository.latestByType("relation-labels");
+        const job = latest && ["queued", "running"].includes(latest.status) ? latest
+          : await repository.create({ type: "relation-labels", payload: { ...payload, before: new Date().toISOString() } });
+        await client.query("commit");
+        return job.id;
+      } catch (error) { await client.query("rollback"); throw error; }
+      finally { client.release(); }
+    },
+
+    async countRelationLabels(input: { jobId: string; mode: "missing" | "all"; before: string }): Promise<number> {
+      const result = await pool.query<{ count: string }>(
+        `select count(*)::text as count from entity_relations r
+         where r.created_at <= $1::timestamptz
+           and coalesce(r.metadata->>'labelJobId', '') <> $2
+           and ($3 = 'all' or coalesce(trim(r.metadata->>'displayLabel'), '') = '')`,
+        [input.before, input.jobId, input.mode]
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    },
+
+    async listRelationLabels(input: { jobId: string; mode: "missing" | "all"; before: string }) {
+      const result = await pool.query<{
+        id: string; predicate: string; subject: string; object: string; sourceItemId: string | null;
+      }>(
+        `select r.id, r.predicate, s.canonical_name as subject, o.canonical_name as object,
+                r.source_item_id as "sourceItemId"
+         from entity_relations r join entities s on s.id = r.subject_entity_id
+         join entities o on o.id = r.object_entity_id
+         where r.created_at <= $1::timestamptz
+           and coalesce(r.metadata->>'labelJobId', '') <> $2
+           and ($3 = 'all' or coalesce(trim(r.metadata->>'displayLabel'), '') = '')
+         order by r.id limit 20`, [input.before, input.jobId, input.mode]
+      );
+      return result.rows;
+    },
+
+    async saveRelationLabels(labels: Array<{ id: string; displayLabel: string }>, metadata: JsonObject) {
+      const client = await pool.connect();
+      try {
+        await client.query("begin");
+        let updated = 0;
+        for (const label of labels) {
+          const result = await client.query(
+            `update entity_relations set metadata = metadata || $2::jsonb, updated_at = now() where id = $1`,
+            [label.id, { ...metadata, displayLabel: label.displayLabel }]
+          );
+          updated += result.rowCount ?? 0;
+        }
+        await client.query("commit");
+        return updated;
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally { client.release(); }
+    },
+
+    async relationLabelProgress(jobId: string): Promise<number> {
+      const result = await pool.query<{ count: string }>(
+        "select count(*)::text as count from entity_relations where metadata->>'labelJobId' = $1", [jobId]
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    },
+
     async clearProjection(): Promise<void> {
       const client = await pool.connect();
       try {
@@ -282,7 +353,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                  on conflict (source_item_id, subject_entity_id, predicate, object_entity_id, evidence_chunk_id)
                  do update set confidence = excluded.confidence, metadata = excluded.metadata, updated_at = now()
                  returning id`,
-                [subjectId, relation.predicate, objectId, input.sourceItemId, relation.confidence, input.generation, chunkId]
+                [subjectId, relation.predicate, objectId, input.sourceItemId, relation.confidence, { ...input.generation, ...(relation.displayLabel ? { displayLabel: relation.displayLabel } : {}) }, chunkId]
               );
               relationCount += result.rowCount ?? 0;
             }
@@ -526,7 +597,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       );
       const relations = await pool.query<GraphRelationSearchRecord & QueryResultRow>(
         `select relation.id as "relationId", subject.id as "subjectEntityId",
-                subject.canonical_name as "subjectName", relation.predicate,
+                subject.canonical_name as "subjectName", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 object.id as "objectEntityId", object.canonical_name as "objectName",
                 source.id as "sourceItemId", source.title as "sourceTitle", source.type as "sourceType",
                 chunk.content as excerpt,
@@ -606,10 +677,10 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         result.get(row.noteId)?.claims.push({ ...row, confidence: Number(row.confidence) });
       }
       const relationRows = await pool.query<{
-        noteId: string; id: string; subject: string; predicate: string; object: string; confidence: number;
+        noteId: string; id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number;
       }>(
         `select distinct l.atomic_note_id as "noteId", r.id,
-                subject.canonical_name as subject, r.predicate,
+                subject.canonical_name as subject, r.predicate, coalesce(r.metadata->>'displayLabel', '') as "displayLabel",
                 object.canonical_name as object, r.confidence
          from atomic_note_source_links l
          join entity_relations r on r.evidence_chunk_id = l.chunk_id
@@ -650,9 +721,9 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         [sourceItemId]
       );
       const relationRows = await pool.query<{
-        id: string; subject: string; predicate: string; object: string; confidence: number;
+        id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number;
       } & QueryResultRow>(
-        `select relation.id, subject.canonical_name as subject, relation.predicate,
+        `select relation.id, subject.canonical_name as subject, relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 object.canonical_name as object, relation.confidence
          from entity_relations relation
          join entities subject on subject.id = relation.subject_entity_id
@@ -679,11 +750,11 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       );
       const relatedRows = await pool.query<{
         sourceItemId: string; sourceTitle: string; entityName: string; relatedEntityName: string;
-        predicate: string; confidence: number;
+        predicate: string; displayLabel?: string; confidence: number;
       } & QueryResultRow>(
         `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
                 subject_entity.canonical_name as "entityName",
-                object_entity.canonical_name as "relatedEntityName", relation.predicate,
+                object_entity.canonical_name as "relatedEntityName", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 max(least(current_mention.confidence, relation.confidence, other_mention.confidence)) as confidence
          from entity_mentions current_mention
          join entities current_entity on current_entity.id = current_mention.entity_id
@@ -698,7 +769,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          join source_items other_source on other_source.id = other_mention.source_item_id
          where current_mention.source_item_id = $1
          group by other_source.id, other_source.title, subject_entity.id, subject_entity.canonical_name,
-                  object_entity.id, object_entity.canonical_name, relation.predicate
+                  object_entity.id, object_entity.canonical_name, relation.predicate, relation.metadata->>'displayLabel'
          order by other_source.title, subject_entity.canonical_name, relation.predicate, object_entity.canonical_name`,
         [sourceItemId]
       );

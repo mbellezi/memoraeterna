@@ -938,7 +938,7 @@ function GraphEntityCard({ entity, relations, t }: {
     <div className={cn("section-collapse", expanded && "section-collapse-open")}><div><div className="grid gap-2 px-3 pb-3 text-xs text-slate-500 dark:text-slate-400">
       <p>{t(`knowledge.graph.entityTypes.${entity.type}` as MessageKey)}</p>
       {relations.length > 0 ? <ul className="grid gap-1 border-t border-slate-200 pt-2 dark:border-slate-800">{relations.map((relation) => <li key={relation.id}>
-        {relation.subject} — {graphPredicateLabel(relation.predicate)} → {relation.object} · {Math.round(relation.confidence * 100)}%
+        {relation.subject} — {relation.displayLabel || t("relationLabel.missing")} → {relation.object} · {Math.round(relation.confidence * 100)}%
       </li>)}</ul> : <p>{t("knowledge.graph.noEntityRelations")}</p>}
     </div></div></div>
   </article>;
@@ -965,7 +965,7 @@ function RelatedSourceCard({ source, t, onOpen }: {
       {source.connections.map((connection, index) => <li key={`${connection.entityName}:${connection.predicate}:${connection.relatedEntityName}:${index}`}>
         {connection.predicate === "shared_entity"
           ? t("knowledge.graph.sharedEntity", { values: { entity: connection.entityName } })
-          : `${connection.entityName} — ${graphPredicateLabel(connection.predicate)} → ${connection.relatedEntityName}`} · {Math.round(connection.confidence * 100)}%
+          : `${connection.entityName} — ${connection.displayLabel || t("relationLabel.missing")} → ${connection.relatedEntityName}`} · {Math.round(connection.confidence * 100)}%
       </li>)}
     </ul></div></div>
   </article>;
@@ -1144,9 +1144,6 @@ function relationTypeKey(type: string): MessageKey {
   return (`knowledge.relations.types.${type}` as MessageKey);
 }
 
-function graphPredicateLabel(predicate: string): string {
-  return predicate.replaceAll("_", " ");
-}
 
 function PageControls({ offset, count, busy, t, onPage }: { offset: number; count: number; busy: boolean; t: Translator; onPage: (offset: number) => void }) {
   return <nav aria-label={t("sourceWorkspace.pages")} className="flex items-center justify-end gap-3 text-sm">

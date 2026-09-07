@@ -8,6 +8,7 @@ import {
   createEmbeddingRepository,
   createIngestionRunRepository,
   createJobRepository,
+  createKnowledgeGraphRepository,
   createProcessingTaskRepository,
   createHierarchicalIngestionRepository,
   createSourceItemRepository,
@@ -27,6 +28,7 @@ import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
   getPool: () => PgPool | null;
+  processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
   logger?: Pick<Console, "error" | "warn">;
   generateEmbedding?: (text: string, signal?: AbortSignal, context?: {
@@ -47,8 +49,8 @@ export interface JobSupervisorOptions {
   releaseAiRuntime?: () => Promise<void>;
 }
 
-const supportedJobTypes = new Set<WorkerTask["type"]>([
-  "ingestion", "markdown-conversion", "chunking", "embedding",
+const supportedJobTypes = new Set<string>([
+  "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
   "atomic-note-generation", "obsidian-sync", "asset-storage"
 ]);
 
@@ -96,7 +98,9 @@ export class JobSupervisor {
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const result = job.type === "ingestion"
+      const result = job.type === "relation-labels"
+        ? await this.options.processRelationLabels!(job, controller.signal)
+        : job.type === "ingestion"
         ? await this.executeIngestion(job, controller)
         : await this.workers.execute(job.type as WorkerTask["type"], job.payload, {
             signal: controller.signal,
@@ -148,6 +152,17 @@ export class JobSupervisor {
     } finally {
       this.controllers.delete(job.id);
     }
+  }
+
+  public async queueRelationLabels(payload: { mode: "missing" | "all"; contentLanguage: string }): Promise<string> {
+    const id = await createKnowledgeGraphRepository(this.requirePool()).queueRelationLabels(payload);
+    this.schedule(0);
+    this.notify();
+    return id;
+  }
+
+  public async relationLabelsStatus() {
+    return createJobRepository(this.requirePool()).latestByType("relation-labels");
   }
 
   public async requestCancel(jobId: string): Promise<JobRecord | null> {

@@ -670,6 +670,7 @@ function jobTypeMessageKey(type: string): MessageKey {
     summarization: "jobs.types.summarization",
     "atomic-note-generation": "jobs.types.atomicNoteGeneration",
     "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
+    "relation-labels": "relationLabel.title",
     "atomic-note-matching": "jobs.types.atomicNoteMatching",
     "obsidian-sync": "jobs.types.obsidianSync",
     "asset-storage": "jobs.types.assetStorage",

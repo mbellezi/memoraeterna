@@ -53,6 +53,10 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
 
 ## Implementation navigation
 
+- Relation-description maintenance uses a persisted `relation-labels` job. Main-process
+  orchestration invokes the existing controlled AI adapter path in batches of at most
+  20 relations. A target-language snapshot and creation cutoff bound the operation;
+  metadata markers checkpoint committed batches. Admission deduplicates active jobs.
 - `apps/desktop/src/main/services/job-supervisor.ts` owns ingestion execution,
   inline stage jobs, cancellation signals, and batch barriers. It coordinates
   the controlled workers and `KnowledgeService`; the ingestion worker alone

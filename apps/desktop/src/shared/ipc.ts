@@ -49,6 +49,8 @@ export const ipcChannels = {
   ingestionStructureConfirm: "app:ingestion:structure:confirm",
   ingestionProcess: "app:ingestion:process",
   ingestionBatchesList: "app:ingestion:batches:list",
+  relationLabelsStart: "app:knowledge:relation-labels:start",
+  relationLabelsStatus: "app:knowledge:relation-labels:status",
   jobsList: "app:jobs:list",
   jobsChanged: "app:jobs:changed",
   jobsCancel: "app:jobs:cancel",
@@ -141,9 +143,15 @@ export const savedProcessingPresetSchema = z.object({
 export const googleBooksKeyInputSchema = z.object({ apiKey: z.string().trim().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).nullable() }).strict();
 export const googleBooksKeyStatusSchema = z.object({ configured: z.boolean() }).strict();
 
+export const relationLabelsInputSchema = z.object({ mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema }).strict();
+export const relationLabelJobPayloadSchema = z.object({
+  mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema, before: z.string().datetime()
+});
+
 export const appSettingsSchema = z.object({
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema,
+  contentLanguage: languageCodeSchema.default("en"),
   themeMode: themeModeSchema,
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).default(1),
   debugMode: z.boolean().default(false),
@@ -160,6 +168,7 @@ export const appSettingsSchema = z.object({
 export const appSettingsUpdateSchema = z.object({
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema.optional(),
+  contentLanguage: languageCodeSchema.optional(),
   themeMode: themeModeSchema.optional(),
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
   debugMode: z.boolean().optional(),
@@ -394,6 +403,7 @@ export const sourceLookupInputSchema = z.object({
 }).strict();
 
 export const jobRecordSchema = z.object({
+  labelResult: z.object({ updated: z.number().int().nonnegative(), contentLanguage: languageCodeSchema }).nullable().optional(),
   id: z.string().uuid(),
   type: z.string().min(1),
   status: z.enum(["queued", "running", "succeeded", "failed", "canceled"]),
@@ -617,12 +627,12 @@ export const sourceDetailSchema = z.object({
       id: z.string().uuid(), type: GraphEntityTypeSchema, name: z.string().min(1), confidence: z.number().min(0).max(1)
     }).strict()),
     relations: z.array(z.object({
-      id: z.string().uuid(), subject: z.string().min(1), predicate: z.string().min(1),
+      id: z.string().uuid(), subject: z.string().min(1), predicate: z.string().min(1), displayLabel: z.string().max(300).optional(),
       object: z.string().min(1), confidence: z.number().min(0).max(1)
     }).strict()),
     sourceConnections: z.array(z.object({
       sourceItemId: z.string().uuid(), sourceTitle: z.string().min(1), entityName: z.string().min(1),
-      relatedEntityName: z.string().min(1), predicate: z.string().min(1), confidence: z.number().min(0).max(1)
+      relatedEntityName: z.string().min(1), predicate: z.string().min(1), displayLabel: z.string().max(300).optional(), confidence: z.number().min(0).max(1)
     }).strict())
   }).strict().default({ entities: [], relations: [], sourceConnections: [] }),
   relations: z.array(z.object({
@@ -1001,6 +1011,7 @@ export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
 export type WindowNavigationDirection = z.infer<typeof windowNavigationDirectionSchema>;
 
 export const defaultAppSettings = {
+  contentLanguage: "en",
   themeMode: "dark",
   graphWheelZoomSensitivity: 1,
   debugMode: false,
@@ -1082,6 +1093,8 @@ export interface DesktopApi {
     query: (input: SearchInput) => Promise<SearchResult[]>;
   };
   knowledge: {
+    startRelationLabels: (input: z.infer<typeof relationLabelsInputSchema>) => Promise<string>;
+    relationLabelsStatus: () => Promise<JobRecord | null>;
     listLibrary: (sourceTypes?: SourceItemType[]) => Promise<LibrarySource[]>;
     browseLibrary: (input: LibraryBrowseInput) => Promise<LibrarySource[]>;
     getSourceDocument: (input: z.infer<typeof sourceDocumentInputSchema>) => Promise<z.infer<typeof sourceDocumentSchema>>;

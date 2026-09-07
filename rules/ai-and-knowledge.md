@@ -27,7 +27,7 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
 ## Models, profiles, and parameters
 
 - Each profile references exactly one remote or local model and defines privacy
-  mode, response language, and task-specific overrides.
+  mode and task-specific overrides.
 - Each AI task has a persisted profile route. The single default profile is a
   fallback only when no explicit route exists. Validate required capabilities
   before execution.
@@ -43,10 +43,16 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
 - The adapter/model parameter descriptor controls both UI fields and runtime
   normalization. Expose only supported reasoning levels and expose
   `reasoningMaxTokens` only when the engine implements a separate budget.
-- Profile response language defaults to `ui`, otherwise one of `en`, `pt-BR`,
-  `it`, `fr`, or `es`. Apply language instructions only to generative tasks and
-  preserve structured-output keys/schemas. Embeddings receive no language
-  instruction.
+- Global `app.preferences.contentLanguage` controls generated user-visible content,
+  independently of the interface and AI profile. On first launch, both languages
+  initialize from the supported OS locale, with English fallback; existing
+  preferences without contentLanguage inherit their saved interface language.
+  Persist the initial selection; subsequent changes are independent. Supported
+  values are `en`, `pt-BR`, `it`, `fr`, and `es`. Legacy profile outputLanguage fields
+  remain readable but no longer override generation. Apply language instructions
+  only to generative tasks. Internal identifiers, relation predicates, keys and
+  enums remain English; embeddings receive no language instruction. Existing
+  content changes only through regeneration.
 
 Every task run records effective parameters, profile, model, provider, runtime,
 prompt version where applicable, input/output tokens, duration, estimated cost,

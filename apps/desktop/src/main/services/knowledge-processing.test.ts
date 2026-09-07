@@ -170,7 +170,7 @@ describe("knowledge processing", () => {
         { key: "vector", type: "Concept", canonicalName: "Vector search", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] }
       ],
       claims: [{ text: "PostgreSQL supports vector search.", confidence: 0.9, evidenceChunkIds: ["c1"], relatedEntityKeys: ["postgres", "vector"] }],
-      relations: [{ subjectEntityKey: "postgres", predicate: "supports", objectEntityKey: "vector", confidence: 0.88, evidenceChunkIds: ["c1"] }]
+      relations: [{ subjectEntityKey: "postgres", predicate: "supports", displayLabel: "supports", objectEntityKey: "vector", confidence: 0.88, evidenceChunkIds: ["c1"] }]
     };
     const resolved = {
       ...output,
@@ -242,7 +242,7 @@ describe("knowledge processing", () => {
     const invalid = JSON.stringify({
       entities: [entity], claims: [],
       relations: [{
-        subjectEntityKey: "e1", predicate: "involves", objectEntityKey: "co-presença",
+        subjectEntityKey: "e1", predicate: "involves", displayLabel: "involves", objectEntityKey: "co-presença",
         confidence: 0.9, evidenceChunkIds: ["c1"]
       }]
     });
@@ -340,7 +340,7 @@ describe("knowledge processing", () => {
         { key: "e2", type: "Concept", canonicalName: "Two", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] }
       ],
       claims: [],
-      relations: [{ subjectEntityKey: "e1", predicate: "links", objectEntityKey: "e2", confidence: 1, evidenceChunkIds: ["chunk-1"] }]
+      relations: [{ subjectEntityKey: "e1", predicate: "links", displayLabel: "links", objectEntityKey: "e2", confidence: 1, evidenceChunkIds: ["chunk-1"] }]
     }], { maxEntities: 1, maxRelations: 10 });
 
     expect(limited?.entities).toHaveLength(1);
@@ -552,4 +552,26 @@ describe("knowledge processing", () => {
       rerankScore: 0.8
     })).toBeCloseTo(0.767);
   });
+});
+
+it("requires a display phrase and English identifier syntax for new relations", () => {
+  const chunkId = "00000000-0000-4000-8000-000000000001";
+  const output = {
+    entities: ["e1", "e2"].map((key) => ({ key, type: "Concept", canonicalName: key, confidence: 0.9, evidenceChunkIds: [chunkId] })),
+    claims: [],
+    relations: [{ subjectEntityKey: "e1", objectEntityKey: "e2", predicate: "used_to_accuse", displayLabel: "Foi usado para acusar", confidence: 0.9, evidenceChunkIds: [chunkId] }]
+  };
+  expect(parseKnowledgeGraphOutput(output).relations[0]).toMatchObject({ predicate: "used_to_accuse", displayLabel: "Foi usado para acusar" });
+  expect(() => parseKnowledgeGraphOutput({ ...output, relations: [{ ...output.relations[0], displayLabel: undefined }] })).toThrow();
+  expect(() => parseKnowledgeGraphOutput({ ...output, relations: [{ ...output.relations[0], predicate: "Foi usado para acusar" }] })).toThrow();
+  expect(buildKnowledgeGraphPrompt({ title: "Evidence", language: "pt-BR" }, [])).toContain("preserving the full meaning, direction, negation and modality");
+});
+
+it("regenerates cached graph batches when the content language changes", async () => {
+  const notes = [{ id: "note-1", title: "Evidence", ideaStatement: "A substantive idea", bodyMarkdown: "Some substantive evidence", evidenceChunkIds: ["00000000-0000-4000-8000-000000000001"] }];
+  const run = vi.fn().mockResolvedValue({ output: { entities: [], claims: [], relations: [] }, providerId: "test", modelId: "test", runtime: "remote", profileId: "test", aiTaskRunId: "test" });
+  const first = await generateKnowledgeGraphFromAtomicNotes({ title: "Evidence", language: "en" }, notes, run, 12_000, { contentLanguage: "en" });
+  run.mockClear();
+  await generateKnowledgeGraphFromAtomicNotes({ title: "Evidence", language: "en" }, notes, run, 12_000, { contentLanguage: "pt-BR", completedBatches: first!.checkpoints });
+  expect(run).toHaveBeenCalledOnce();
 });

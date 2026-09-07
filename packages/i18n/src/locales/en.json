@@ -1,4 +1,5 @@
 {
+  "relationLabel": {"title":"Relation descriptions","description":"Use the knowledge-graph AI profile to generate missing descriptions or rewrite all descriptions in the selected content language. Existing relation identifiers and evidence are preserved. If this profile uses a remote model, relation names and their endpoints will be sent to it and may incur costs.","generateMissing":"Generate missing descriptions","regenerate":"Regenerate all descriptions","ready":"No processing requested yet.","updated":"Descriptions updated","failed":"Processing failed. Check the knowledge-graph AI profile and retry; completed descriptions are preserved.","missing":"Description not generated yet"},
   "app": {
     "title": "Memora Eterna",
     "tagline": "Local-first memory for sources, notes, and evidence.",
@@ -100,6 +101,7 @@
     }
   },
   "errors": {
+    "relationLabels": {"invalidOutput":"The AI returned invalid relation descriptions."},
     "common": {
       "unknown": "Something went wrong.",
       "network": "The network request failed.",
@@ -519,6 +521,8 @@
       "autoSaveHint": "Changes are saved automatically."
     },
     "language": {
+      "contentLocale": "Content generation language",
+      "contentDescription": "All generated content uses this language, independently of the interface and AI profile. Internal identifiers remain in English. Existing content changes only when regenerated.",
       "title": "Language",
       "uiLocale": "Interface language",
       "languages": {
