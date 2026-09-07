@@ -69,12 +69,19 @@ locales.
   not require pixel-perfect aiming. Labels already revealed while zooming in do not
   disappear at a closer level. Source pairs render as one unlabeled edge; its
   detail card lazily loads and groups all represented source-connection details.
-  Atomic-note
-  relation labels use the active locale. When a hovered edge's normal label is
+  Atomic-note relations use compact, distinctly colored icon markers instead
+  of text on the canvas. A localized Labels badge below the atomic-note graph
+  opens a fading icon-to-label legend. Canvas markers and legend entries use
+  the same Lucide icon geometry and color for every canonical relation type;
+  the supports marker uses a plain check because the marker supplies the circle.
+  Marker circles have an approximately 17.6-pixel diameter so Lucide icons retain clear internal spacing.
+  Relation information cards repeat that icon before the translated label.
+  Labels use the active locale in the legend and relation details. When a hovered edge's normal label is
   outside the viewport, a temporary label follows the pointer. Hover information
   cards measure their rendered size, flip around the pointer when needed, and
   remain bounded by the visible graph viewport, including after async content
-  changes. Hovered nodes render
+  changes. Any wheel, button, fit, or focus zoom dismisses pending and visible
+  node or relation information cards without closing the relation legend. Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
   short emphasis transition. Node and background dragging cancel all pending
   hover/preview timers and disable tooltip activation and hover emphasis until
@@ -105,6 +112,10 @@ locales.
   animation. Sigma's wheel animation must never run concurrently with the custom
   velocity controller; regression coverage must detect secondary camera updates
   that overwrite a wheel frame.
+  Display settings expose a persistent wheel-zoom sensitivity from 0.5x to
+  1.5x; its 1x midpoint preserves the calibrated default graph behavior.
+  Graph force controls are hidden by default and open as a fading popover from
+  a sliders button immediately to the right of the fit-to-view action.
   Repulsion, link attraction, preferred link
   distance, and center attraction are independently adjustable. Communities
   form through soft forces; orphan nodes favor a broad peripheral band and

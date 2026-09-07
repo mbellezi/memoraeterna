@@ -555,6 +555,32 @@ function AppearanceCard({ appSettings, t, onChange }: {
           ))}
         </div>
       </div>
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-4">
+          <Label htmlFor="graphWheelZoomSensitivity">{t("settings.appearance.graphWheelZoomSensitivity")}</Label>
+          <output className="text-sm font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+            {appSettings.graphWheelZoomSensitivity.toLocaleString(appSettings.language, { maximumFractionDigits: 2 })}×
+          </output>
+        </div>
+        <input
+          id="graphWheelZoomSensitivity"
+          type="range"
+          min="0.5"
+          max="1.5"
+          step="0.05"
+          value={appSettings.graphWheelZoomSensitivity}
+          aria-describedby="graphWheelZoomSensitivityDescription"
+          className="h-2 w-full cursor-pointer accent-violet-600"
+          onChange={(event) => onChange({ graphWheelZoomSensitivity: event.currentTarget.valueAsNumber })}
+        />
+        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400" aria-hidden="true">
+          <span>{t("settings.appearance.zoomSensitivitySlower")}</span>
+          <span>{t("settings.appearance.zoomSensitivityFaster")}</span>
+        </div>
+        <p id="graphWheelZoomSensitivityDescription" className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+          {t("settings.appearance.graphWheelZoomSensitivityDescription")}
+        </p>
+      </div>
     </section>
   );
 }

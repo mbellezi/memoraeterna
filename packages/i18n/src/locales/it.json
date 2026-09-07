@@ -79,7 +79,8 @@
       "shared_entity": "Entità condivise",
       "semantic_relation": "Relazione semantica",
       "atomic_note_relation": "Relazione tra note atomiche"
-    }
+    },
+    "relationLegend": { "trigger": "Etichette", "title": "Etichette delle relazioni" }
   },
   "database": {
     "startup": {
@@ -438,6 +439,10 @@
     "appearance": {
       "title": "Aspetto",
       "themeMode": "Tema",
+      "graphWheelZoomSensitivity": "Sensibilita dello zoom del grafo",
+      "graphWheelZoomSensitivityDescription": "Controlla la velocita dello zoom nel grafo della conoscenza quando usi la rotellina o il trackpad.",
+      "zoomSensitivitySlower": "Piu lento",
+      "zoomSensitivityFaster": "Piu veloce",
       "themeModes": {
         "dark": "Scuro",
         "light": "Chiaro"

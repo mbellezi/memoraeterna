@@ -79,7 +79,8 @@
       "shared_entity": "Shared entities",
       "semantic_relation": "Semantic relation",
       "atomic_note_relation": "Atomic-note relation"
-    }
+    },
+    "relationLegend": { "trigger": "Labels", "title": "Relation labels" }
   },
   "database": {
     "startup": {
@@ -528,6 +529,10 @@
     "appearance": {
       "title": "Appearance",
       "themeMode": "Theme",
+      "graphWheelZoomSensitivity": "Graph wheel zoom sensitivity",
+      "graphWheelZoomSensitivityDescription": "Controls how quickly the knowledge graph zooms when you use the mouse wheel or trackpad.",
+      "zoomSensitivitySlower": "Slower",
+      "zoomSensitivityFaster": "Faster",
       "themeModes": {
         "dark": "Dark",
         "light": "Light"

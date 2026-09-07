@@ -99,6 +99,7 @@ describe("desktop IPC contracts", () => {
     ).toMatchObject({
       language: "pt-BR",
       themeMode: "dark",
+      graphWheelZoomSensitivity: 1,
       keepLocalEmbeddingModelsLoaded: true,
       summaryMinimumWordCount: 40,
       knowledgeGraphMaxEntitiesPerSource: 250,
@@ -108,6 +109,10 @@ describe("desktop IPC contracts", () => {
     expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
       themeMode: "light"
     });
+    expect(appSettingsUpdateSchema.parse({ graphWheelZoomSensitivity: 1.25 })).toEqual({
+      graphWheelZoomSensitivity: 1.25
+    });
+    expect(() => appSettingsUpdateSchema.parse({ graphWheelZoomSensitivity: 1.51 })).toThrow();
     expect(appSettingsUpdateSchema.parse({ summaryMinimumWordCount: 75 })).toEqual({
       summaryMinimumWordCount: 75
     });

@@ -591,6 +591,7 @@ export function App({
               <KnowledgeGraphDashboard
                 t={t}
                 mode={knowledgeGraphMode}
+                wheelZoomSensitivity={appSettings.graphWheelZoomSensitivity}
                 initialViewState={knowledgeGraphViewStates.current[knowledgeGraphMode]}
                 onViewStateChange={preserveKnowledgeGraphViewState}
                 onModeChange={setKnowledgeGraphMode}

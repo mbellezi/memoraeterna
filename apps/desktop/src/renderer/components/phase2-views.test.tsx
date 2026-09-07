@@ -382,6 +382,34 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain('checked=""');
   });
 
+  it("renders graph wheel zoom sensitivity at the current default midpoint", () => {
+    const html = renderToString(
+      <SettingsView
+        activeScope="personalization"
+        appSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        })}
+        settings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        isSaving={false}
+        t={t}
+        onAppSettingsChange={() => undefined}
+        onChange={() => undefined}
+        onSelectObsidianVault={async () => undefined}
+        onScopeChange={() => undefined}
+        onToast={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Graph wheel zoom sensitivity");
+    expect(html).toContain('id="graphWheelZoomSensitivity"');
+    expect(html).toContain('value="1"');
+  });
+
   it("renders the configurable minimum word count for summaries", () => {
     const html = renderToString(
       <SettingsView

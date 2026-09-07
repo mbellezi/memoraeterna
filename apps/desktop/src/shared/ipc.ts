@@ -145,6 +145,7 @@ export const appSettingsSchema = z.object({
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema,
   themeMode: themeModeSchema,
+  graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).default(1),
   debugMode: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
   keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
@@ -160,6 +161,7 @@ export const appSettingsUpdateSchema = z.object({
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema.optional(),
   themeMode: themeModeSchema.optional(),
+  graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
   debugMode: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
   keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
@@ -992,6 +994,7 @@ export type WindowNavigationDirection = z.infer<typeof windowNavigationDirection
 
 export const defaultAppSettings = {
   themeMode: "dark",
+  graphWheelZoomSensitivity: 1,
   debugMode: false,
   metadataEnrichmentEnabled: true,
   keepLocalEmbeddingModelsLoaded: true,

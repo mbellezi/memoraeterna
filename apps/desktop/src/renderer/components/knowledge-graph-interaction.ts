@@ -78,6 +78,8 @@ export class GraphWheelMotion {
   private readonly decayTime = 55;
   private readonly maxFrameTravel = 5.04;
 
+  constructor(private readonly sensitivity = 1) {}
+
   get active() { return Math.abs(this.velocity) >= 0.00004; }
 
   push(event: GraphWheelInput, now: number) {
@@ -89,7 +91,7 @@ export class GraphWheelMotion {
     const speedBoost = 1 + 2 * Math.abs(adjustedPixels) / (Math.abs(adjustedPixels) + 80);
     const travel = Math.sign(adjustedPixels) * 0.006 * Math.pow(Math.abs(adjustedPixels), 0.88)
       * speedBoost * (event.shiftKey ? 0.25 : 1);
-    const measuredVelocity = travel / elapsedInput;
+    const measuredVelocity = travel * this.sensitivity / elapsedInput;
     if (!this.active || this.lastFrameAt === null || now - this.lastFrameAt > 120) {
       this.lastFrameAt = now;
     }

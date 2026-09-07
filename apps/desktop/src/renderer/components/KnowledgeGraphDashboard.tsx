@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import Graph from "graphology";
 import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
 import { defaultGraphForceSettings, graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
@@ -17,16 +17,29 @@ import {
 import type Sigma from "sigma";
 import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/rendering";
 import {
+  AtSign,
+  CircleDot,
+  Check,
+  EqualApproximately,
   Focus,
+  GitBranchPlus,
+  GitCompareArrows,
+  Lightbulb,
+  Link2,
   LoaderCircle,
   Maximize2,
   Minus,
   Network,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
+  SlidersHorizontal,
+  Tags,
+  Workflow,
   Waypoints
 } from "lucide-react";
+import type { IconNode, LucideIcon } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 import type {
   KnowledgeGraphDashboard as DashboardData,
@@ -87,6 +100,7 @@ interface EdgeAttributes {
   labelOpacity: number;
   labelColor?: string;
   labelRevealAt: number;
+  relationType: string | null;
   sourceRelations: SourceRelationGroup[];
   interactionTarget: string | null;
 }
@@ -132,6 +146,7 @@ interface PreparedGraphEdge {
   confidence: number;
   details: string[];
   sourceRelations: SourceRelationGroup[];
+  relationType: string | null;
 }
 
 const sourceColors: Record<string, string> = {
@@ -157,9 +172,43 @@ const atomicRelationMessageKeys: Readonly<Record<string, MessageKey>> = {
   related: "knowledge.relations.types.related"
 };
 
+const atomicRelationLegend = [
+  { type: "supports", color: "#34d399", icon: Check },
+  { type: "contrasts", color: "#fb7185", icon: GitCompareArrows },
+  { type: "extends", color: "#60a5fa", icon: GitBranchPlus },
+  { type: "similar_to", color: "#c084fc", icon: EqualApproximately },
+  { type: "depends_on", color: "#fbbf24", icon: Workflow },
+  { type: "clarifies", color: "#facc15", icon: Lightbulb },
+  { type: "mentions", color: "#22d3ee", icon: AtSign },
+  { type: "related", color: "#a78bfa", icon: Link2 }
+] as const;
+
+export function atomicRelationColor(type: string | null): string {
+  return atomicRelationLegend.find((item) => item.type === type)?.color ?? "#cbd5e1";
+}
+
+export const atomicRelationMarkerRadius = 8.8;
+
+function extractLucideIconNode(icon: LucideIcon): IconNode {
+  const element = (icon as unknown as {
+    render: (props: Record<string, never>, ref: null) => ReactElement<{ iconNode: IconNode }>;
+  }).render({}, null);
+  return element.props.iconNode;
+}
+
+export function atomicRelationIconNode(type: string | null): IconNode {
+  const icon = atomicRelationLegend.find((item) => item.type === type)?.icon ?? CircleDot;
+  return extractLucideIconNode(icon);
+}
+
+function atomicRelationIcon(type: string | null): LucideIcon {
+  return atomicRelationLegend.find((item) => item.type === type)?.icon ?? CircleDot;
+}
+
 export function KnowledgeGraphDashboard({
   t,
   mode,
+  wheelZoomSensitivity,
   initialViewState,
   onViewStateChange,
   onModeChange,
@@ -168,6 +217,7 @@ export function KnowledgeGraphDashboard({
 }: {
   t: Translator;
   mode: KnowledgeGraphDashboardMode;
+  wheelZoomSensitivity: number;
   initialViewState: KnowledgeGraphViewState | undefined;
   onViewStateChange: (mode: KnowledgeGraphDashboardMode, state: KnowledgeGraphViewState) => void;
   onModeChange: (mode: KnowledgeGraphDashboardMode) => void;
@@ -181,6 +231,8 @@ export function KnowledgeGraphDashboard({
   const [query, setQuery] = useState("");
   const [layoutRunning, setLayoutRunning] = useState(false);
   const [layoutError, setLayoutError] = useState(false);
+  const [forcesOpen, setForcesOpen] = useState(false);
+  const [relationLegendOpen, setRelationLegendOpen] = useState(false);
   const [forces, setForces] = useState<GraphForceSettings>(initialViewState?.forces ?? defaultGraphForceSettings);
   const forcesRef = useRef(forces);
   const [hover, setHover] = useState<HoverCard | null>(null);
@@ -197,6 +249,11 @@ export function KnowledgeGraphDashboard({
   const hoveredNeighborsRef = useRef<Set<string>>(new Set());
   const draggingRef = useRef(false);
   const cancelWheelRef = useRef<() => void>(() => {});
+  const dismissGraphInfoRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    if (mode !== "atomic_notes") setRelationLegendOpen(false);
+  }, [mode]);
 
   useEffect(() => {
     let active = true;
@@ -421,6 +478,7 @@ export function KnowledgeGraphDashboard({
         setHover({ ...target, exiting: false });
       }
     );
+    dismissGraphInfoRef.current = () => hoverIntent.clear();
     const resolveEdge = (edge: string) => graph.getEdgeAttribute(edge, "interactionTarget") ?? edge;
     renderer.on("enterNode", ({ node, event }) => {
       pointerTarget = { type: "node", key: node, x: event.x, y: event.y };
@@ -462,7 +520,7 @@ export function KnowledgeGraphDashboard({
       renderer.scheduleRefresh();
     };
     renderer.on("downStage", () => { pointerTarget = null; suspendHover(); });
-    const wheelMotion = new GraphWheelMotion();
+    const wheelMotion = new GraphWheelMotion(wheelZoomSensitivity);
     let wheelFrame: number | null = null;
     let wheelAnchor = { x: 0, y: 0 };
     let knownZoomOutMaximum = Math.max(camera.ratio, measureGraphZoomOutRatio(renderer));
@@ -508,6 +566,7 @@ export function KnowledgeGraphDashboard({
       captureGraphWheelEvent(original);
       if (draggingRef.current) return;
       if (original.deltaY === 0) return;
+      hoverIntent.clear();
       if (wheelFrame === null && camera.isAnimated()) void camera.animate(camera.getState(), { duration: 1 });
       if (!wheelMotion.active) {
         const measuredMaximum = measureGraphZoomOutRatio(renderer);
@@ -604,6 +663,7 @@ export function KnowledgeGraphDashboard({
         hoverIntent.dispose();
         cancelWheelRef.current();
         cancelWheelRef.current = () => {};
+        dismissGraphInfoRef.current = () => {};
         draggingRef.current = false;
         if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
         if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
@@ -620,9 +680,10 @@ export function KnowledgeGraphDashboard({
         });
       }
     }
-  }, [bundle, initialViewState, mode, onOpenAtomicNote, onOpenSource, onViewStateChange]);
+  }, [bundle, initialViewState, mode, onOpenAtomicNote, onOpenSource, onViewStateChange, wheelZoomSensitivity]);
 
   function zoom(factor: number) {
+    dismissGraphInfoRef.current();
     cancelWheelRef.current();
     const renderer = sigmaRef.current;
     if (!renderer) return;
@@ -632,6 +693,7 @@ export function KnowledgeGraphDashboard({
   }
 
   function focusNode(id: string) {
+    dismissGraphInfoRef.current();
     cancelWheelRef.current();
     const renderer = sigmaRef.current;
     const key = `item:${id}`;
@@ -667,6 +729,7 @@ export function KnowledgeGraphDashboard({
   }
 
   function fitGraph() {
+    dismissGraphInfoRef.current();
     cancelWheelRef.current();
     const renderer = sigmaRef.current;
     if (!renderer) return;
@@ -708,28 +771,51 @@ export function KnowledgeGraphDashboard({
           <GraphAction icon={Minus} label={t("knowledgeGraph.zoomOut")} onClick={() => zoom(1.45)} />
           <GraphAction icon={Plus} label={t("knowledgeGraph.zoomIn")} onClick={() => zoom(0.7)} />
           <GraphAction icon={Maximize2} label={t("knowledgeGraph.fit")} onClick={fitGraph} />
+          <div className="relative">
+            <GraphAction
+              icon={SlidersHorizontal}
+              label={t("knowledgeGraph.forces.title")}
+              active={forcesOpen}
+              controls="graphForcesPopover"
+              onClick={() => setForcesOpen((open) => !open)}
+            />
+            {forcesOpen ? (
+              <section
+                id="graphForcesPopover"
+                className="motion-graph-tooltip-in absolute right-0 top-11 z-30 w-96 max-w-[calc(100vw-2rem)] rounded-xl border border-white/15 bg-slate-900/95 p-4 text-xs text-slate-300 shadow-2xl backdrop-blur"
+                aria-label={t("knowledgeGraph.forces.title")}
+              >
+                <h3 className="mb-3 font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {t("knowledgeGraph.forces.title")}
+                </h3>
+                <div className="grid grid-cols-2 gap-x-5 gap-y-3">
+                  {([
+                    { key: "repulsion", min: 10, max: 300, step: 5 },
+                    { key: "linkStrength", min: 0.05, max: 1, step: 0.05 },
+                    { key: "linkDistance", min: 20, max: 150, step: 5 },
+                    { key: "centerStrength", min: 0.005, max: 0.12, step: 0.005 }
+                  ] as const).map(({ key, min, max, step }) => <label key={key} className="grid gap-2">
+                    <span className="flex justify-between gap-2"><span>{t(`knowledgeGraph.forces.${key}`)}</span><output className="tabular-nums">{forces[key]}</output></span>
+                    <input type="range" min={min} max={max} step={step} value={forces[key]} disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
+                      className="w-full accent-cyan-400" onChange={(event) => changeForces({ ...forces, [key]: Number(event.target.value) })} />
+                  </label>)}
+                </div>
+                <button
+                  type="button"
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-medium text-cyan-300 transition hover:border-cyan-300/30 hover:bg-white/10 disabled:opacity-50"
+                  disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
+                  onClick={() => changeForces(defaultGraphForceSettings)}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t("knowledgeGraph.forces.reset")}
+                </button>
+              </section>
+            ) : null}
+          </div>
           <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning || loading || !bundle?.rawNodeKeys.length} onClick={rerunLayout} />
           <GraphAction icon={RefreshCw} label={t("knowledgeGraph.refresh")} onClick={() => setReloadToken((current) => current + 1)} />
         </div>
       </header>
-
-      <details className="border-b border-white/10 bg-slate-900 px-4 py-2 text-xs text-slate-300">
-        <summary className="cursor-pointer select-none">{t("knowledgeGraph.forces.title")}</summary>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 py-3 lg:grid-cols-4">
-          {([
-            { key: "repulsion", min: 10, max: 300, step: 5 },
-            { key: "linkStrength", min: 0.05, max: 1, step: 0.05 },
-            { key: "linkDistance", min: 20, max: 150, step: 5 },
-            { key: "centerStrength", min: 0.005, max: 0.12, step: 0.005 }
-          ] as const).map(({ key, min, max, step }) => <label key={key} className="grid gap-2">
-            <span className="flex justify-between gap-2"><span>{t(`knowledgeGraph.forces.${key}`)}</span><output className="tabular-nums">{forces[key]}</output></span>
-            <input type="range" min={min} max={max} step={step} value={forces[key]} disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
-              className="w-full accent-cyan-400" onChange={(event) => changeForces({ ...forces, [key]: Number(event.target.value) })} />
-          </label>)}
-        </div>
-        <button type="button" className="mb-2 rounded px-2 py-1 text-cyan-300 hover:bg-white/10 disabled:opacity-50" disabled={!bundle?.rawNodeKeys.length || loading || layoutError}
-          onClick={() => changeForces(defaultGraphForceSettings)}>{t("knowledgeGraph.forces.reset")}</button>
-      </details>
 
       <div className="relative min-h-0 flex-1 bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
         <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.canvasLabel")} />
@@ -744,6 +830,45 @@ export function KnowledgeGraphDashboard({
           {data.truncated ? <span className="rounded-full border border-amber-400/30 bg-amber-950/80 px-2.5 py-1 text-amber-200">{t("knowledgeGraph.truncated")}</span> : null}
         </div> : null}
 
+        {mode === "atomic_notes" && !loading && !error && data && data.nodes.length > 0 ? (
+          <div className="absolute bottom-3 right-3 z-10">
+            {relationLegendOpen ? (
+              <section
+                id="atomicRelationLegend"
+                className="motion-graph-tooltip-in absolute bottom-10 right-0 w-56 rounded-xl border border-white/15 bg-slate-900/95 p-3 text-white shadow-2xl backdrop-blur"
+                aria-label={t("knowledgeGraph.relationLegend.title")}
+              >
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  {t("knowledgeGraph.relationLegend.title")}
+                </h3>
+                <ul className="grid gap-1.5">
+                  {atomicRelationLegend.map(({ type, color, icon: Icon }) => (
+                    <li key={type} className="flex items-center gap-2 text-xs text-slate-200">
+                      <span
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-slate-950"
+                        style={{ borderColor: `${color}99`, color }}
+                      >
+                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <span>{t(atomicRelationMessageKeys[type]!)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-slate-950/85 px-3 py-1.5 text-xs font-medium text-slate-200 shadow-lg backdrop-blur transition hover:border-violet-300/50 hover:text-white"
+              aria-expanded={relationLegendOpen}
+              aria-controls="atomicRelationLegend"
+              onClick={() => setRelationLegendOpen((open) => !open)}
+            >
+              <Tags className="h-3.5 w-3.5 text-violet-300" aria-hidden="true" />
+              {t("knowledgeGraph.relationLegend.trigger")}
+            </button>
+          </div>
+        ) : null}
+
         {floatingEdgeLabel ? <div
           className="motion-graph-tooltip-in pointer-events-none absolute z-10 max-w-56 rounded-md border border-red-300/20 bg-slate-900/92 px-2 py-1 text-xs font-medium leading-snug text-red-300 shadow-lg backdrop-blur"
           style={{ left: floatingEdgeLabel.x, top: floatingEdgeLabel.y }}
@@ -756,14 +881,19 @@ export function KnowledgeGraphDashboard({
   );
 }
 
-function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = false }: {
+function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = false, active = false, controls }: {
   icon: typeof Focus;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   spinning?: boolean;
+  active?: boolean;
+  controls?: string;
 }) {
-  return <button type="button" disabled={disabled} className="grid h-9 w-9 place-items-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50" aria-label={label} title={label} onClick={onClick}>
+  return <button type="button" disabled={disabled} className={cn(
+    "grid h-9 w-9 place-items-center rounded-lg border text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50",
+    active ? "border-cyan-300/50 bg-cyan-400/15 text-cyan-200" : "border-white/10 bg-white/5"
+  )} aria-label={label} title={label} aria-expanded={controls ? active : undefined} aria-controls={controls} onClick={onClick}>
     <Icon className={cn("h-4 w-4", spinning && "animate-spin")} aria-hidden="true" />
   </button>;
 }
@@ -858,9 +988,16 @@ function GraphTooltip({ hover, graph, t }: {
         t={t}
       />;
     }
+    const RelationIcon = atomicRelationIcon(edge.relationType);
+    const relationColor = atomicRelationColor(edge.relationType);
     return <ViewportTooltip hover={hover} className="w-80">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t(`knowledgeGraph.edgeKinds.${edge.kind}` as MessageKey)}</p>
-      <p className="mt-1 text-sm font-medium">{edge.label}</p>
+      <p className="mt-1 flex items-center gap-2 text-sm font-medium">
+        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-slate-950" style={{ borderColor: `${relationColor}99`, color: relationColor }}>
+          <RelationIcon className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <span>{edge.label}</span>
+      </p>
       {edge.description ? <p className="mt-1 line-clamp-4 text-xs leading-relaxed text-slate-300">{edge.description}</p> : null}
       {edge.details.length > 0 ? <ul className="mt-2 grid gap-1 text-xs text-slate-300">{edge.details.slice(0, 4).map((detail) => <li key={detail}>• {detail}</li>)}</ul> : null}
       <p className="mt-2 text-[11px] tabular-nums text-slate-400">{t("knowledgeGraph.confidence", { values: { value: Math.round(edge.confidence * 100) } })}</p>
@@ -967,6 +1104,7 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       labelRevealAt: edge.kind === "atomic_note_relation"
         ? relationLabelRevealAt(edge.id, edge.confidence, preparedEdges.length)
         : 2,
+      relationType: edge.relationType,
       sourceRelations: edge.sourceRelations,
       interactionTarget: null
     });
@@ -997,6 +1135,7 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       layoutWeight: 0,
       labelOpacity: 0,
       labelRevealAt: 2,
+      relationType: null,
       sourceRelations: [],
       interactionTarget: edge
     });
@@ -1015,6 +1154,7 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       ...edge,
       kind: "atomic_note_relation",
       label: formatEdgeLabel(edge.label, t),
+      relationType: edge.label,
       sourceRelations: []
     }));
   }
@@ -1034,7 +1174,8 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       weight: 0,
       confidence: 0,
       details: [],
-      sourceRelations: []
+      sourceRelations: [],
+      relationType: null
     };
     current.weight += edge.weight;
     current.confidence = Math.max(current.confidence, edge.confidence);
@@ -1258,6 +1399,7 @@ function edgeLabelFallsOutsideViewport(
   graph: Graph<NodeAttributes, EdgeAttributes>,
   edge: string
 ): boolean {
+  if (graph.getEdgeAttribute(edge, "kind") === "atomic_note_relation") return false;
   if (!graph.getEdgeAttribute(edge, "label")) return false;
   const [source, target] = graph.extremities(edge);
   const sourceData = renderer.getNodeDisplayData(source);
@@ -1347,6 +1489,12 @@ const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttribut
 ) => {
   if (!edgeData.label) return;
   const opacity = Number((edgeData as typeof edgeData & { labelOpacity?: number }).labelOpacity ?? 1);
+  const x = (sourceData.x + targetData.x) / 2;
+  const y = (sourceData.y + targetData.y) / 2;
+  if (edgeData.kind === "atomic_note_relation") {
+    drawAtomicRelationMarker(context, edgeData.relationType, x, y, opacity);
+    return;
+  }
   context.save();
   context.globalAlpha = opacity;
   context.fillStyle = edgeData.labelColor ?? (settings.edgeLabelColor.attribute
@@ -1355,13 +1503,69 @@ const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeAttribut
   context.font = `${settings.edgeLabelWeight} ${settings.edgeLabelSize}px ${settings.edgeLabelFont}`;
   context.textAlign = "center";
   context.textBaseline = "middle";
-  const x = (sourceData.x + targetData.x) / 2;
-  const y = (sourceData.y + targetData.y) / 2;
   const lines = wrapCanvasText(context, edgeData.label, 120, 2);
   const lineHeight = settings.edgeLabelSize * 1.12;
   lines.forEach((line, index) => context.fillText(line, x, y + (index - (lines.length - 1) / 2) * lineHeight));
   context.restore();
 };
+
+function drawAtomicRelationMarker(
+  context: CanvasRenderingContext2D,
+  relationType: string | null,
+  x: number,
+  y: number,
+  opacity: number
+) {
+  const color = atomicRelationColor(relationType);
+  context.save();
+  context.globalAlpha = opacity;
+  context.fillStyle = "#0f172a";
+  context.strokeStyle = color;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.arc(x, y, atomicRelationMarkerRadius, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.translate(x - 6, y - 6);
+  context.scale(0.5, 0.5);
+  context.lineWidth = 2;
+  for (const node of atomicRelationIconNode(relationType)) drawLucideCanvasNode(context, node);
+  context.restore();
+}
+
+function drawLucideCanvasNode(context: CanvasRenderingContext2D, [element, attributes]: IconNode[number]) {
+  context.beginPath();
+  if (element === "path") {
+    context.stroke(new Path2D(attributes.d));
+    return;
+  }
+  if (element === "circle") {
+    context.arc(Number(attributes.cx), Number(attributes.cy), Number(attributes.r), 0, Math.PI * 2);
+  } else if (element === "line") {
+    context.moveTo(Number(attributes.x1), Number(attributes.y1));
+    context.lineTo(Number(attributes.x2), Number(attributes.y2));
+  } else if (element === "rect") {
+    context.roundRect(
+      Number(attributes.x ?? 0),
+      Number(attributes.y ?? 0),
+      Number(attributes.width),
+      Number(attributes.height),
+      Number(attributes.rx ?? 0)
+    );
+  } else if (element === "polyline" || element === "polygon") {
+    const points = (attributes.points ?? "").trim().split(/\s+/u).map((point) => point.split(",").map(Number));
+    points.forEach(([pointX, pointY], index) => {
+      if (index === 0) context.moveTo(pointX!, pointY!);
+      else context.lineTo(pointX!, pointY!);
+    });
+    if (element === "polygon") context.closePath();
+  } else if (element === "ellipse") {
+    context.ellipse(Number(attributes.cx), Number(attributes.cy), Number(attributes.rx), Number(attributes.ry), 0, 0, Math.PI * 2);
+  }
+  context.stroke();
+}
 
 function wrapCanvasText(
   context: CanvasRenderingContext2D,

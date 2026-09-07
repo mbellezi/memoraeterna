@@ -151,6 +151,17 @@ describe("inertial graph wheel motion", () => {
     expect(firstFrame(0)).toBe(0);
   });
 
+  it("scales wheel travel around the current sensitivity at the slider midpoint", () => {
+    const firstFrame = (sensitivity: number) => {
+      const motion = new GraphWheelMotion(sensitivity);
+      motion.push(wheel, 0);
+      return Math.abs(motion.advance(16));
+    };
+    const current = firstFrame(1);
+    expect(firstFrame(0.5)).toBeCloseTo(current * 0.5);
+    expect(firstFrame(1.5)).toBeCloseTo(current * 1.5);
+  });
+
   it("accelerates high-cadence input while preserving gentle low-delta control", () => {
     const slow = new GraphWheelMotion();
     slow.push({ ...wheel, deltaY: -0.5 }, 0);

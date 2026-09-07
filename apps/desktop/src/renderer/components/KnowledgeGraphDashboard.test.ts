@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
 
-import { buildGraph, prepareGraphEdges, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 import {
   isLabelOutsideViewport,
   nodeLabelOpacity,
@@ -211,6 +211,23 @@ describe("knowledge graph level of detail", () => {
       ? "Sustenta"
       : key) as Translator;
 
-    expect(prepareGraphEdges(data, translator)[0]?.label).toBe("Sustenta");
+    expect(prepareGraphEdges(data, translator)[0]).toMatchObject({
+      label: "Sustenta",
+      relationType: "supports"
+    });
+  });
+
+  it("assigns a distinct icon color to every canonical atomic-note relation", () => {
+    const types = ["supports", "contrasts", "extends", "similar_to", "depends_on", "clarifies", "mentions", "related"];
+    const colors = types.map(atomicRelationColor);
+    expect(new Set(colors)).toHaveLength(types.length);
+    expect(new Set(types.map((type) => JSON.stringify(atomicRelationIconNode(type))))).toHaveLength(types.length);
+    expect(types.every((type) => atomicRelationIconNode(type).length > 0)).toBe(true);
+    expect(atomicRelationColor("unknown")).toBe("#cbd5e1");
+    expect(atomicRelationIconNode("unknown").length).toBeGreaterThan(0);
+  });
+
+  it("gives relation icons ten percent more room inside their marker", () => {
+    expect(atomicRelationMarkerRadius).toBeCloseTo(8 * 1.1);
   });
 });
