@@ -45,6 +45,8 @@ export class LibraryResetService {
       similarity_debug_results, similarity_debug_runs,
       atomic_note_review_events, atomic_note_relations, atomic_note_entity_links, atomic_note_source_links, atomic_notes,
       claim_entity_links, claims, entity_relations, entity_mentions, entities,
+      entity_identity_keys, entity_identity_embeddings_256, entity_identity_embeddings_768, entity_identity_embeddings_1024,
+      relation_type_aliases, relation_type_embeddings_256, relation_type_embeddings_768, relation_type_embeddings_1024, relation_types,
       source_summaries, embeddings_256, embeddings_768, embeddings_1024, chunks, source_spans,
       document_assets, documents, source_item_bibliographic_links, bibliographic_instances,
       bibliographic_works, obsidian_sync_files, ingestion_runs, ai_task_run_sources, ai_task_runs, source_items, jobs

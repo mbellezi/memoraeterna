@@ -871,7 +871,7 @@ function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, 
       <CollapsibleSection title={t("knowledge.graph.entities")} count={graphEntities.length} defaultOpen>
         {graphEntities.length === 0 ? <StateCard>{t("knowledge.graph.empty")}</StateCard>
           : <ol className="grid gap-2 sm:grid-cols-2">{graphEntities.map((entity) => <li key={entity.id}>
-            <GraphEntityCard entity={entity} relations={graphRelations.filter((relation) => relation.subject === entity.name || relation.object === entity.name)} t={t} />
+            <GraphEntityCard entity={entity} relations={graphRelations.filter((relation) => relation.subjectEntityId === entity.id || relation.objectEntityId === entity.id)} t={t} />
           </li>)}</ol>}
       </CollapsibleSection>
       <CollapsibleSection title={t("knowledge.graph.relatedSources")} count={relatedSourceGroups.length} defaultOpen>
@@ -974,7 +974,7 @@ function RelatedSourceCard({ source, t, onOpen }: {
 export function groupGraphEntities(entities: SourceGraphEntity[]): SourceGraphEntity[] {
   const grouped = new Map<string, SourceGraphEntity>();
   for (const entity of entities) {
-    const key = `${entity.type}\0${entity.name.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase()}`;
+    const key = entity.id;
     const current = grouped.get(key);
     if (!current || entity.confidence > current.confidence) grouped.set(key, entity);
   }
@@ -984,7 +984,7 @@ export function groupGraphEntities(entities: SourceGraphEntity[]): SourceGraphEn
 export function groupGraphRelations(relations: SourceGraphRelation[]): SourceGraphRelation[] {
   const grouped = new Map<string, SourceGraphRelation>();
   for (const relation of relations) {
-    const key = `${relation.subject}\0${relation.predicate}\0${relation.object}`.toLocaleLowerCase();
+    const key = `${relation.subjectEntityId ?? relation.subject}\0${relation.predicate}\0${relation.objectEntityId ?? relation.object}`.toLocaleLowerCase();
     const current = grouped.get(key);
     if (!current || relation.confidence > current.confidence) grouped.set(key, relation);
   }
@@ -1001,9 +1001,9 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
       confidence: 0,
       connections: []
     };
-    const key = `${connection.entityName}\0${connection.predicate}\0${connection.relatedEntityName}`.toLocaleLowerCase();
+    const key = `${connection.entityId ?? connection.entityName}\0${connection.predicate}\0${connection.relatedEntityId ?? connection.relatedEntityName}`.toLocaleLowerCase();
     const existingIndex = current.connections.findIndex((candidate) =>
-      `${candidate.entityName}\0${candidate.predicate}\0${candidate.relatedEntityName}`.toLocaleLowerCase() === key
+      `${candidate.entityId ?? candidate.entityName}\0${candidate.predicate}\0${candidate.relatedEntityId ?? candidate.relatedEntityName}`.toLocaleLowerCase() === key
     );
     if (existingIndex < 0) current.connections.push(connection);
     else if (connection.confidence > (current.connections[existingIndex]?.confidence ?? 0)) current.connections[existingIndex] = connection;

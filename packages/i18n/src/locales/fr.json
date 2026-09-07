@@ -1,4 +1,6 @@
 {
+  "entityIdentity": {"threshold":"Seuil de similarité d’identité des entités","hint":"L’IA vérifie les candidats du même type avec leurs noms et faits distinctifs. Un nom identique ne suffit jamais à autoriser une fusion. Les identités ambiguës restent séparées. Défaut : 0,92 (provisoire). Les noms exacts et alias sont aussi vérifiés. Les entités existantes sont réutilisées après confirmation ; les doublons historiques ne sont pas fusionnés en masse."},
+  "relationTypes": {"threshold":"Seuil de similarité des types de relation","thresholdHint":"Les candidats au-dessus du seuil sont vérifiés ensemble par l’IA pour une équivalence exacte. Un seuil plus élevé réduit les candidats. Ce n’est pas un pourcentage de certitude. Valeur par défaut : 0,92 (provisoire). Utilise les profils d’embedding et du graphe ; les types inconnus nécessitent un modèle d’embedding."},
   "relationLabel": {"title":"Descriptions des relations","description":"Utilisez le profil IA du graphe pour générer les descriptions manquantes ou toutes les réécrire dans la langue sélectionnée. Les identifiants et les preuves existants sont conservés. Si le profil utilise un modèle distant, les noms des relations et des entités lui seront envoyés et pourront entraîner des frais.","generateMissing":"Générer les descriptions manquantes","regenerate":"Régénérer toutes les descriptions","ready":"Aucun traitement demandé pour le moment.","updated":"Descriptions mises à jour","failed":"Échec du traitement. Vérifiez le profil IA du graphe et réessayez ; les descriptions terminées sont conservées.","missing":"Description pas encore générée"},
   "app": {
     "title": "Memora Eterna",
@@ -101,6 +103,7 @@
     }
   },
   "errors": {
+    "relationTypes": {"embeddingRequired":"Configurez un modèle d’embedding compatible pour canoniser les types de relation.","invalidEmbedding":"L’embedding de la relation est invalide ou sa dimension n’est pas prise en charge.","modelChanged":"Le modèle d’embedding a changé pendant le traitement. Réessayez avec une configuration stable.","invalidOutput":"L’IA a renvoyé une décision d’équivalence invalide.","catalogChanged":"Le catalogue des relations a changé plusieurs fois. Réessayez."},
     "relationLabels": {"invalidOutput":"L’IA a renvoyé des descriptions de relations invalides."},
     "common": {
       "unknown": "Une erreur est survenue.",

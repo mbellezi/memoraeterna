@@ -612,7 +612,7 @@ describe("phase 2 renderer views", () => {
 
   it("collapses repeated graph entities, relations, and related sources", () => {
     expect(groupGraphEntities([
-      { id: "00000000-0000-4000-8000-000000000001", type: "Concept", name: "Memória", confidence: 0.7 },
+      { id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memória", confidence: 0.7 },
       { id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }
     ])).toEqual([{ id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }]);
     expect(groupGraphRelations([
@@ -754,4 +754,11 @@ describe("phase 2 renderer views", () => {
     expect(localModels).not.toContain(">Ready<");
     expect(renderToString(<BackupView t={t} />)).toContain("Create backup");
   });
+});
+
+it("keeps homonymous canonical entities and their endpoint relations separate", () => {
+  const a = "00000000-0000-4000-8000-000000000001", b = "00000000-0000-4000-8000-000000000002";
+  expect(groupGraphEntities([a, b].map((id) => ({ id, type: "Person", name: "John Smith", confidence: 0.9 })))).toHaveLength(2);
+  expect(groupGraphRelations([a, b].map((id) => ({ id, subjectEntityId: id, objectEntityId: "00000000-0000-4000-8000-000000000003",
+    subject: "John Smith", object: "University", predicate: "works_at", confidence: 0.9 })))).toHaveLength(2);
 });

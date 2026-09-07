@@ -424,7 +424,8 @@ export class AiService {
           this.options.logger?.error("Failed to release local embedding runtime", error);
         });
       }
-      return { ...result, profileId: selection.profileId, aiTaskRunId, outputLanguage };
+      return { ...result, profileId: selection.profileId, aiTaskRunId, outputLanguage,
+        embeddingSpaceKey: sha256(JSON.stringify({ providerConfigId: selection.providerConfigId, baseUrl: selection.baseUrl, localModelId: selection.localModelId, repository: selection.repository, quantization: selection.quantization, model: result.modelId, provider: result.providerId, runtime: result.runtime, revision: selection.revision, parameters })) };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
         profileId: selection.profileId, taskType, provider: selection.provider,
@@ -705,6 +706,7 @@ export interface DefaultAiTaskResult extends AiTaskResult {
   profileId: string;
   aiTaskRunId: string;
   outputLanguage: string;
+  embeddingSpaceKey?: string;
 }
 
 function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[] {

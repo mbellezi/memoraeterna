@@ -127,6 +127,27 @@
       "when": 1784155136096,
       "tag": "0017_wooden_thunderbird",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788794100172,
+      "tag": "0018_fair_golden_guardian",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788794501785,
+      "tag": "0019_vengeful_wasp",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788794733881,
+      "tag": "0020_light_stick",
+      "breakpoints": true
     }
   ]
 }

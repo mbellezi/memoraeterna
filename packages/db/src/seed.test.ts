@@ -60,7 +60,10 @@ describe("baseline seed", () => {
       "0014_living_typhoid_mary",
       "0015_chunky_marvel_apes",
       "0016_awesome_dragon_man",
-      "0017_wooden_thunderbird"
+      "0017_wooden_thunderbird",
+      "0018_fair_golden_guardian",
+      "0019_vengeful_wasp",
+      "0020_light_stick"
     ]);
   });
 
@@ -96,7 +99,10 @@ describe("baseline seed", () => {
         "0014_living_typhoid_mary",
         "0015_chunky_marvel_apes",
         "0016_awesome_dragon_man",
-        "0017_wooden_thunderbird"
+        "0017_wooden_thunderbird",
+      "0018_fair_golden_guardian",
+      "0019_vengeful_wasp",
+      "0020_light_stick"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -13,7 +13,7 @@ export const summaryPromptVersion = "summary-v2";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v3";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v6";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v7";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
@@ -23,12 +23,12 @@ const atomicNoteGenerationJsonSchema = JSON.stringify(
   2
 );
 
-const relationLanguageInstruction = "Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.";
+const relationLanguageInstruction = "Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.";
 
 const knowledgeGraphJsonContract = `{
-  "entities": [{"key":"e1","type":"Concept","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
+  "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
   "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
-  "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
+  "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }`;
 
 const knowledgeGraphExecutionTraceSchema = z.object({
@@ -138,6 +138,7 @@ export interface KnowledgeGraphGenerationOptions {
   inputKind?: "atomic_notes" | "source_chunks" | "catalog_metadata";
   checkpointNamespace?: string;
   contentLanguage?: string;
+  resolveRelations?: (batch: KnowledgeGraphGenerationOutput) => Promise<KnowledgeGraphGenerationOutput>;
   extractionLimits?: KnowledgeGraphExtractionLimits;
   onBatchCompleted?: (input: {
     completed: number;
@@ -306,6 +307,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       );
       parsed = limited.at(-1) ?? { entities: [], claims: [], relations: [] };
     }
+    if (options.resolveRelations) parsed = await options.resolveRelations(parsed);
     checkpoints.push({
       batchKey: knowledgeGraphBatchKey(group, checkpointNamespace, options.contentLanguage),
       batch: parsed,
@@ -338,6 +340,7 @@ Use exactly this compact JSON shape and these property names:
 ${knowledgeGraphJsonContract}
 ${relationLanguageInstruction}
 
+For each entity, supply identityDescription in English with only identifying facts actually stated in the evidence: roles, dates, locations, affiliations or explicit identifiers. Never infer missing facts. If identifying context is absent say "Insufficient identifying context." This internal field is always English, independently of display language.
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
 Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
 Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
@@ -358,7 +361,12 @@ export function parseKnowledgeGraphOutput(
 ): KnowledgeGraphGenerationOutput {
   const value = parseJsonOutput(output);
   const resolved = evidenceAliases ? resolveGraphEvidenceAliases(value, evidenceAliases) : value;
-  return KnowledgeGraphGenerationOutputSchema.parse(resolved);
+  const parsed = KnowledgeGraphGenerationOutputSchema.parse(resolved);
+  if (parsed.entities.some((entity) => entity.canonicalEntityId !== undefined)) throw new Error("knowledge_graph_model_supplied_canonical_identity");
+  if (parsed.relations.some((relation) => relation.relationTypeId !== undefined || relation.originalPredicate !== undefined)) {
+    throw new Error("knowledge_graph_model_supplied_canonical_identity");
+  }
+  return parsed;
 }
 
 function buildKnowledgeGraphRepairPrompt(
@@ -379,6 +387,7 @@ ${relationLanguageInstruction}
 Validation problems:
 ${structuredOutputRepairFeedback(validationError)}
 
+identityDescription must contain English identifying facts grounded in the evidence; use "Insufficient identifying context." when absent.
 Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
 Use at most ${Math.min(8, limits.maxEntities)} entities, 5 claims, and ${Math.min(8, limits.maxRelations)} relations. These are hard limits; never exceed them. Use empty arrays when necessary.
 Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities, claims, and relations arrays.

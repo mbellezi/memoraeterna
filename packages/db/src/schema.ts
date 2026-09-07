@@ -358,10 +358,50 @@ export const entities = pgTable(
     ...timestamps
   },
   (table) => ({
-    typeNameUidx: uniqueIndex("entities_type_normalized_name_uidx").on(table.type, table.normalizedName),
+    typeNameIdx: index("entities_type_normalized_name_idx").on(table.type, table.normalizedName),
     canonicalNameIdx: index("entities_canonical_name_idx").on(table.canonicalName)
   })
 );
+
+export const entityIdentityKeys = pgTable("entity_identity_keys", {
+  fingerprint: text("fingerprint").primaryKey(),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  sourceItemId: uuid("source_item_id").references(() => sourceItems.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const entityIdentityEmbeddings256 = pgTable("entity_identity_embeddings_256", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(), model: text("model").notNull(), runtime: text("runtime").notNull(),
+  embedding: vector256("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ entitySpaceUidx: uniqueIndex("entity_identity_embeddings_256_entity_space_uidx").on(table.entityId, table.spaceKey) }));
+
+export const entityIdentityEmbeddings768 = pgTable("entity_identity_embeddings_768", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(), model: text("model").notNull(), runtime: text("runtime").notNull(),
+  embedding: vector768("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ entitySpaceUidx: uniqueIndex("entity_identity_embeddings_768_entity_space_uidx").on(table.entityId, table.spaceKey) }));
+
+export const entityIdentityEmbeddings1024 = pgTable("entity_identity_embeddings_1024", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  entityId: uuid("entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(), model: text("model").notNull(), runtime: text("runtime").notNull(),
+  embedding: vector1024("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ entitySpaceUidx: uniqueIndex("entity_identity_embeddings_1024_entity_space_uidx").on(table.entityId, table.spaceKey) }));
 
 export const entityMentions = pgTable(
   "entity_mentions",
@@ -417,12 +457,67 @@ export const claimEntityLinks = pgTable(
   })
 );
 
+export const relationTypes = pgTable("relation_types", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  predicate: text("predicate").notNull(),
+  definition: text("definition").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ predicateUidx: uniqueIndex("relation_types_predicate_uidx").on(table.predicate) }));
+
+export const relationTypeAliases = pgTable("relation_type_aliases", {
+  alias: text("alias").primaryKey(),
+  relationTypeId: uuid("relation_type_id").notNull().references(() => relationTypes.id, { onDelete: "cascade" }),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+});
+
+export const relationTypeEmbeddings256 = pgTable("relation_type_embeddings_256", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  relationTypeId: uuid("relation_type_id").notNull().references(() => relationTypes.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  runtime: text("runtime").notNull(),
+  embedding: vector256("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ typeSpaceUidx: uniqueIndex("relation_type_embeddings_256_type_space_uidx").on(table.relationTypeId, table.spaceKey) }));
+
+export const relationTypeEmbeddings768 = pgTable("relation_type_embeddings_768", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  relationTypeId: uuid("relation_type_id").notNull().references(() => relationTypes.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  runtime: text("runtime").notNull(),
+  embedding: vector768("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ typeSpaceUidx: uniqueIndex("relation_type_embeddings_768_type_space_uidx").on(table.relationTypeId, table.spaceKey) }));
+
+export const relationTypeEmbeddings1024 = pgTable("relation_type_embeddings_1024", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  relationTypeId: uuid("relation_type_id").notNull().references(() => relationTypes.id, { onDelete: "cascade" }),
+  spaceKey: text("space_key").notNull(),
+  contentHash: text("content_hash").notNull(),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  runtime: text("runtime").notNull(),
+  embedding: vector1024("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
+  ...timestamps
+}, (table) => ({ typeSpaceUidx: uniqueIndex("relation_type_embeddings_1024_type_space_uidx").on(table.relationTypeId, table.spaceKey) }));
+
 export const entityRelations = pgTable(
   "entity_relations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     subjectEntityId: uuid("subject_entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
     predicate: text("predicate").notNull(),
+    relationTypeId: uuid("relation_type_id").references(() => relationTypes.id, { onDelete: "restrict" }),
     objectEntityId: uuid("object_entity_id").notNull().references(() => entities.id, { onDelete: "cascade" }),
     sourceItemId: uuid("source_item_id").notNull().references(() => sourceItems.id, { onDelete: "cascade" }),
     evidenceChunkId: uuid("evidence_chunk_id").notNull().references(() => chunks.id, { onDelete: "cascade" }),

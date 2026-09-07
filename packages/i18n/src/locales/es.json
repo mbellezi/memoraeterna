@@ -1,4 +1,6 @@
 {
+  "entityIdentity": {"threshold":"Umbral de similitud de identidad de entidades","hint":"La IA verifica candidatos del mismo tipo usando nombres y datos identificativos. Un nombre igual por sí solo nunca autoriza una unión. Las identidades ambiguas permanecen separadas. Predeterminado: 0,92 (provisional). También se verifican nombres exactos y alias. Se reutilizan entidades existentes tras confirmar su identidad; no se fusionan duplicados históricos en masa."},
+  "relationTypes": {"threshold":"Umbral de similitud de los tipos de relación","thresholdHint":"Los candidatos que superan el umbral se verifican juntos por IA para confirmar equivalencia exacta. Los valores altos recuperan menos candidatos. No es un porcentaje de certeza. Predeterminado: 0,92 (provisional). Usa los perfiles de embeddings y del grafo; los tipos desconocidos requieren un modelo de embeddings."},
   "relationLabel": {"title":"Descripciones de relaciones","description":"Usa el perfil de IA del grafo para generar las descripciones que faltan o reescribirlas todas en el idioma seleccionado. Se conservan los identificadores y las evidencias existentes. Si el perfil usa un modelo remoto, se le enviarán los nombres de las relaciones y sus entidades y podrán generarse costes.","generateMissing":"Generar descripciones faltantes","regenerate":"Regenerar todas las descripciones","ready":"Aún no se ha solicitado ningún procesamiento.","updated":"Descripciones actualizadas","failed":"El procesamiento falló. Comprueba el perfil de IA del grafo y vuelve a intentarlo; se conservan las descripciones completadas.","missing":"Descripción aún no generada"},
   "app": {
     "title": "Memora Eterna",
@@ -101,6 +103,7 @@
     }
   },
   "errors": {
+    "relationTypes": {"embeddingRequired":"Configura un modelo de embeddings compatible para canonizar los tipos de relación.","invalidEmbedding":"El embedding de la relación no es válido o tiene una dimensión no compatible.","modelChanged":"El modelo de embeddings cambió durante el procesamiento. Reintenta con una configuración estable.","invalidOutput":"La IA devolvió una decisión de equivalencia no válida.","catalogChanged":"El catálogo de relaciones cambió repetidamente. Vuelve a intentarlo."},
     "relationLabels": {"invalidOutput":"La IA devolvió descripciones de relaciones no válidas."},
     "common": {
       "unknown": "Algo salio mal.",

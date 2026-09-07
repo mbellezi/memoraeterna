@@ -23,7 +23,7 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
   processed sources connect through reused canonical entities and the relations
   between those entities; each mention and relation retains its source evidence.
 - The shared extractor accepts source chunks, atomic notes, or catalog metadata.
-  Its current prompt version is `knowledge-graph-v6`. Its historical function
+  Its current prompt version is `knowledge-graph-v7`. Its historical function
   name, `generateKnowledgeGraphFromAtomicNotes`, does not restrict it to notes.
 - New semantic relations require a concise English snake_case `predicate`,
   preserving direction, negation, tense and modality, and a nonempty natural-language
@@ -55,9 +55,43 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
 
 ## Canonical persistence and projection
 
-- Canonical entities are reused by `(type, normalized_name)`. Merge aliases and
-  retain the strongest confidence on upsert. This is name normalization, not
-  an embedding-based entity-resolution or human merge workflow.
+- Entity names are candidate-retrieval signals, never canonical identity. Homonyms
+  of the same type may have distinct IDs. Extraction supplies a grounded English
+  `identityDescription`; absent identifying facts must be stated as insufficient.
+  Resolve candidates of the same type using names/aliases and model-specific vectors,
+  followed by conservative LLM identity confirmation. Names or similarity alone never
+  authorize reuse: people, organizations and places require shared distinguishing facts
+  without conflicts; concepts require equivalent definitions. Ambiguity creates a new
+  entity. Preserve canonical names, merge observed aliases, and retain strongest confidence.
+  Exact source/evidence/identity fingerprints reuse previously validated decisions on retry.
+  Source persistence upserts by the resolved entity ID; model output cannot provide that ID.
+  Renderer grouping and relation-to-entity association use canonical IDs, so homonyms
+  remain distinct in source details as well as graph previews.
+- Relation types have stable IDs, concise English predicates, English definitions and
+  confirmed aliases in SQL. Exact known predicates/aliases bypass AI. Unknown types
+  retrieve up to three candidates through exact cosine search over name plus definition;
+  only explicit LLM equivalence authorizes an alias. Preserve direction, tense, negation,
+  modality and specificity. Newly extracted types in the same batch are also compared.
+  Occurrences retain evidence, display phrases and original predicates; existing historical
+  relations are not rewritten by migration. Legacy entities participate in candidate lookup;
+  this is prospective identity reuse, not a bulk merge of historical duplicates.
+- Both confirmation stages reuse the knowledge-graph AI route and send bounded batches
+  of at most 12 inputs and approximately 12,000 prompt characters. Candidate descriptions
+  are included once per request. Output is only `{"matches":[["r1","c1"],["r2",null]]}`,
+  with exactly one decision per input and only its supplied candidates. No prose or
+  LLM-generated scores. Invalid output gets one repair; two failures stop persistence.
+  Within-batch references point only backward, preventing identity cycles.
+- Configurable relation-type and entity-identity similarity thresholds default to 0.92,
+  a provisional retrieval threshold rather than a probability of correctness. Exact entity
+  names/aliases are also candidates regardless of score, but still require confirmation.
+  Unknown identities require the configured embedding route. Embeddings use separate
+  256/768/1024 stores with provider/model/runtime/revision/parameter/strategy identity;
+  missing vectors are rebuilt in bounded batches and never compared across model spaces.
+- Catalog commits use transactions, advisory locks and optimistic revisions; concurrent
+  changes cause bounded re-resolution. Canonical decisions precede extraction checkpoints,
+  so restart reuses completed batches. Entity identity fingerprints handle retries before
+  a checkpoint is saved. Model-produced canonical IDs are rejected. Relations whose two
+  endpoints resolve to the same entity are omitted. Library reset clears the catalogs.
 - `replaceSourceExtraction` transactionally replaces the source's mentions,
   claims, entity relations, and atomic-note entity links, retaining global
   entity identities. Current extraction rows are a replaceable snapshot, not

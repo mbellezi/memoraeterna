@@ -731,6 +731,20 @@ function KnowledgeGraphLimitsCard({ appSettings, t, onChange }: {
             onChange={(event) => onChange({ knowledgeGraphMaxRelationsPerSource: Math.max(1, Math.min(20000, Math.floor(Number(event.target.value)))) })} />
         </div>
       </div>
+      <div className="grid gap-2">
+        <Label htmlFor="relationTypeSimilarityThreshold">{t("relationTypes.threshold")}</Label>
+        <Input id="relationTypeSimilarityThreshold" type="number" min={0} max={1} step={0.01}
+          value={appSettings.relationTypeSimilarityThreshold}
+          onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value)) onChange({ relationTypeSimilarityThreshold: Math.max(0, Math.min(1, value)) }); }} />
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("relationTypes.thresholdHint")}</p>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="entityIdentitySimilarityThreshold">{t("entityIdentity.threshold")}</Label>
+        <Input id="entityIdentitySimilarityThreshold" type="number" min={0} max={1} step={0.01}
+          value={appSettings.entityIdentitySimilarityThreshold}
+          onChange={(event) => { const value = event.target.valueAsNumber; if (Number.isFinite(value)) onChange({ entityIdentitySimilarityThreshold: Math.max(0, Math.min(1, value)) }); }} />
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
+      </div>
       <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("settings.knowledgeGraphLimits.hint")}</p>
     </section>
   );

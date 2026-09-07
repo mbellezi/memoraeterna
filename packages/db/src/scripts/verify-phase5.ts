@@ -71,7 +71,7 @@ try {
        'local_models_catalog_id_uidx','local_model_files_model_path_uidx','local_model_downloads_job_id_uidx',
        'ai_task_profile_routes_task_uidx','ai_task_profile_routes_profile_id_idx',
        'ai_task_run_sources_run_source_uidx','ai_task_run_sources_source_item_id_idx',
-       'entities_type_normalized_name_uidx','entity_relations_evidence_uidx'
+       'entities_type_normalized_name_idx','entity_relations_evidence_uidx'
      )`
   );
   if (indexes.rows.length !== 9) throw new Error("AI configuration or knowledge graph indexes are missing.");

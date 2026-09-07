@@ -212,6 +212,9 @@ names, notifications, dialogs, toasts, placeholders, tooltips, empty states,
 job statuses, or user-visible backend errors.
 
 - All product copy goes through `@app/i18n`.
+- Graph processing settings expose separate similarity thresholds for relation types and
+  entity identities, explain their provisional defaults and distinguish similarity from
+  certainty. Explain the embedding requirement and conservative identity confirmation.
 - Supported locales are `en` (fallback/default), `pt-BR`, `it`, `fr`, and `es`.
 - The content-generation language is separate from interface language. Both initially
   follow the supported OS locale with English fallback; subsequent changes are independent.

@@ -1,4 +1,6 @@
 {
+  "entityIdentity": {"threshold":"Entity identity similarity threshold","hint":"AI verifies candidates of the same type using names and identifying facts. Equal names alone never authorize a merge. Ambiguous identities remain separate. Default: 0.92 (provisional). Exact names and known aliases are also checked. Existing entities are reused when identity is confirmed; historical duplicates are not merged in bulk."},
+  "relationTypes": {"threshold":"Relation type similarity threshold","thresholdHint":"Candidates above this similarity are checked together by AI for exact equivalence. Higher values retrieve fewer candidates. This is not a confidence percentage. Default: 0.92 (provisional). Uses the embedding and knowledge-graph profiles; previously unseen types require an embedding model."},
   "relationLabel": {"title":"Relation descriptions","description":"Use the knowledge-graph AI profile to generate missing descriptions or rewrite all descriptions in the selected content language. Existing relation identifiers and evidence are preserved. If this profile uses a remote model, relation names and their endpoints will be sent to it and may incur costs.","generateMissing":"Generate missing descriptions","regenerate":"Regenerate all descriptions","ready":"No processing requested yet.","updated":"Descriptions updated","failed":"Processing failed. Check the knowledge-graph AI profile and retry; completed descriptions are preserved.","missing":"Description not generated yet"},
   "app": {
     "title": "Memora Eterna",
@@ -101,6 +103,7 @@
     }
   },
   "errors": {
+    "relationTypes": {"embeddingRequired":"Configure a compatible embedding model to canonicalize relation types.","invalidEmbedding":"The relation embedding is invalid or uses an unsupported dimension.","modelChanged":"The embedding model changed during relation processing. Retry with a stable model configuration.","invalidOutput":"The AI returned an invalid relation equivalence decision.","catalogChanged":"The relation catalog changed repeatedly. Retry the operation."},
     "relationLabels": {"invalidOutput":"The AI returned invalid relation descriptions."},
     "common": {
       "unknown": "Something went wrong.",

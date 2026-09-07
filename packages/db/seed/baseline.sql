@@ -1101,3 +1101,134 @@ ALTER TABLE "bibliographic_instances" ADD COLUMN "creators" jsonb DEFAULT '[]'::
 ALTER TABLE "bibliographic_instances" ADD COLUMN "page_count" integer;--> statement-breakpoint
 ALTER TABLE "bibliographic_instances" ADD COLUMN "series" text;--> statement-breakpoint
 ALTER TABLE "bibliographic_works" ADD COLUMN "creators" jsonb DEFAULT '[]'::jsonb NOT NULL;
+
+CREATE TABLE "relation_type_aliases" (
+	"alias" text PRIMARY KEY NOT NULL,
+	"relation_type_id" uuid NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "relation_type_embeddings_1024" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"relation_type_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(1024) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "relation_type_embeddings_256" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"relation_type_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(256) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "relation_type_embeddings_768" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"relation_type_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(768) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "relation_types" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"predicate" text NOT NULL,
+	"definition" text NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "entity_relations" ADD COLUMN "relation_type_id" uuid;--> statement-breakpoint
+ALTER TABLE "relation_type_aliases" ADD CONSTRAINT "relation_type_aliases_relation_type_id_relation_types_id_fk" FOREIGN KEY ("relation_type_id") REFERENCES "public"."relation_types"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "relation_type_embeddings_1024" ADD CONSTRAINT "relation_type_embeddings_1024_relation_type_id_relation_types_id_fk" FOREIGN KEY ("relation_type_id") REFERENCES "public"."relation_types"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "relation_type_embeddings_256" ADD CONSTRAINT "relation_type_embeddings_256_relation_type_id_relation_types_id_fk" FOREIGN KEY ("relation_type_id") REFERENCES "public"."relation_types"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "relation_type_embeddings_768" ADD CONSTRAINT "relation_type_embeddings_768_relation_type_id_relation_types_id_fk" FOREIGN KEY ("relation_type_id") REFERENCES "public"."relation_types"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "relation_type_embeddings_1024_type_space_uidx" ON "relation_type_embeddings_1024" USING btree ("relation_type_id","space_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "relation_type_embeddings_256_type_space_uidx" ON "relation_type_embeddings_256" USING btree ("relation_type_id","space_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "relation_type_embeddings_768_type_space_uidx" ON "relation_type_embeddings_768" USING btree ("relation_type_id","space_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "relation_types_predicate_uidx" ON "relation_types" USING btree ("predicate");--> statement-breakpoint
+ALTER TABLE "entity_relations" ADD CONSTRAINT "entity_relations_relation_type_id_relation_types_id_fk" FOREIGN KEY ("relation_type_id") REFERENCES "public"."relation_types"("id") ON DELETE restrict ON UPDATE no action;
+
+CREATE TABLE "entity_identity_embeddings_1024" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(1024) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "entity_identity_embeddings_256" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(256) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "entity_identity_embeddings_768" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"space_key" text NOT NULL,
+	"content_hash" text NOT NULL,
+	"provider" text NOT NULL,
+	"model" text NOT NULL,
+	"runtime" text NOT NULL,
+	"embedding" vector(768) NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+DROP INDEX "entities_type_normalized_name_uidx";--> statement-breakpoint
+ALTER TABLE "entity_identity_embeddings_1024" ADD CONSTRAINT "entity_identity_embeddings_1024_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entity_identity_embeddings_256" ADD CONSTRAINT "entity_identity_embeddings_256_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entity_identity_embeddings_768" ADD CONSTRAINT "entity_identity_embeddings_768_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "entity_identity_embeddings_1024_entity_space_uidx" ON "entity_identity_embeddings_1024" USING btree ("entity_id","space_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "entity_identity_embeddings_256_entity_space_uidx" ON "entity_identity_embeddings_256" USING btree ("entity_id","space_key");--> statement-breakpoint
+CREATE UNIQUE INDEX "entity_identity_embeddings_768_entity_space_uidx" ON "entity_identity_embeddings_768" USING btree ("entity_id","space_key");--> statement-breakpoint
+CREATE INDEX "entities_type_normalized_name_idx" ON "entities" USING btree ("type","normalized_name");
+
+CREATE TABLE "entity_identity_keys" (
+	"fingerprint" text PRIMARY KEY NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"source_item_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "entity_identity_keys" ADD CONSTRAINT "entity_identity_keys_entity_id_entities_id_fk" FOREIGN KEY ("entity_id") REFERENCES "public"."entities"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "entity_identity_keys" ADD CONSTRAINT "entity_identity_keys_source_item_id_source_items_id_fk" FOREIGN KEY ("source_item_id") REFERENCES "public"."source_items"("id") ON DELETE cascade ON UPDATE no action;

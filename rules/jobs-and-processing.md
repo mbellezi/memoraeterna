@@ -31,6 +31,9 @@ worker supervision, progress, cancellation, retry, or restart recovery.
 - Reuse an artifact only when its source revision, input hashes, generation,
   parameters, and required dependencies still match. Invalidation is explicit
   and limited to affected downstream artifacts.
+- Graph batch checkpoints contain validated canonical entity/type IDs. Resolve identities
+  before saving the checkpoint, preserve completed batches on retry, and use source-evidence
+  identity fingerprints to recover decisions committed before a checkpoint write failed.
 
 ## Batches and coordination
 

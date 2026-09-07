@@ -166,11 +166,11 @@ describe("knowledge processing", () => {
   it("parses graph knowledge with traceable entities, claims, and relations", async () => {
     const output = {
       entities: [
-        { key: "postgres", type: "Product", canonicalName: "PostgreSQL", aliases: [], confidence: 0.98, evidenceChunkIds: ["c1"] },
-        { key: "vector", type: "Concept", canonicalName: "Vector search", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] }
+        { key: "postgres", type: "Product", canonicalName: "PostgreSQL", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 0.98, evidenceChunkIds: ["c1"] },
+        { key: "vector", type: "Concept", canonicalName: "Vector search", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] }
       ],
       claims: [{ text: "PostgreSQL supports vector search.", confidence: 0.9, evidenceChunkIds: ["c1"], relatedEntityKeys: ["postgres", "vector"] }],
-      relations: [{ subjectEntityKey: "postgres", predicate: "supports", displayLabel: "supports", objectEntityKey: "vector", confidence: 0.88, evidenceChunkIds: ["c1"] }]
+      relations: [{ subjectEntityKey: "postgres", predicate: "supports", displayLabel: "supports", definition: "The subject supports the object.", objectEntityKey: "vector", confidence: 0.88, evidenceChunkIds: ["c1"] }]
     };
     const resolved = {
       ...output,
@@ -203,7 +203,7 @@ describe("knowledge processing", () => {
   it("regenerates a compact graph response after truncated JSON", async () => {
     const valid = JSON.stringify({
       entities: [{
-        key: "e1", type: "Concept", canonicalName: "Local-first", aliases: [],
+        key: "e1", type: "Concept", canonicalName: "Local-first", identityDescription: "A concept defined in the supplied evidence.", aliases: [],
         confidence: 0.9, evidenceChunkIds: ["c1"]
       }],
       claims: [],
@@ -236,13 +236,13 @@ describe("knowledge processing", () => {
 
   it("tells the repair model to replace free-text relation endpoints with entity keys", async () => {
     const entity = {
-      key: "e1", type: "Concept", canonicalName: "Imantação", aliases: [],
+      key: "e1", type: "Concept", canonicalName: "Imantação", identityDescription: "A concept defined in the supplied evidence.", aliases: [],
       confidence: 0.9, evidenceChunkIds: ["c1"]
     };
     const invalid = JSON.stringify({
       entities: [entity], claims: [],
       relations: [{
-        subjectEntityKey: "e1", predicate: "involves", displayLabel: "involves", objectEntityKey: "co-presença",
+        subjectEntityKey: "e1", predicate: "involves", displayLabel: "involves", definition: "The subject supports the object.", objectEntityKey: "co-presença",
         confidence: 0.9, evidenceChunkIds: ["c1"]
       }]
     });
@@ -312,8 +312,8 @@ describe("knowledge processing", () => {
     const run = vi.fn(async (_prompt: string) => ({
       output: JSON.stringify({
         entities: [
-          { key: "e1", type: "Concept", canonicalName: "Allowed", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] },
-          { key: "e2", type: "Concept", canonicalName: "Overflow", aliases: [], confidence: 0.8, evidenceChunkIds: ["c1"] }
+          { key: "e1", type: "Concept", canonicalName: "Allowed", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 0.9, evidenceChunkIds: ["c1"] },
+          { key: "e2", type: "Concept", canonicalName: "Overflow", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 0.8, evidenceChunkIds: ["c1"] }
         ],
         claims: [],
         relations: []
@@ -336,11 +336,11 @@ describe("knowledge processing", () => {
   it("drops relations whose endpoints exceed the entity cap", () => {
     const [limited] = limitKnowledgeGraphBatches([{
       entities: [
-        { key: "e1", type: "Concept", canonicalName: "One", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] },
-        { key: "e2", type: "Concept", canonicalName: "Two", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] }
+        { key: "e1", type: "Concept", canonicalName: "One", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] },
+        { key: "e2", type: "Concept", canonicalName: "Two", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 1, evidenceChunkIds: ["chunk-1"] }
       ],
       claims: [],
-      relations: [{ subjectEntityKey: "e1", predicate: "links", displayLabel: "links", objectEntityKey: "e2", confidence: 1, evidenceChunkIds: ["chunk-1"] }]
+      relations: [{ subjectEntityKey: "e1", predicate: "links", displayLabel: "links", definition: "The subject supports the object.", objectEntityKey: "e2", confidence: 1, evidenceChunkIds: ["chunk-1"] }]
     }], { maxEntities: 1, maxRelations: 10 });
 
     expect(limited?.entities).toHaveLength(1);
@@ -353,7 +353,7 @@ describe("knowledge processing", () => {
       { id: "note-2", title: "Two", ideaStatement: "B".repeat(60), bodyMarkdown: "Body", evidenceChunkIds: ["chunk-2"] }
     ];
     const output = (alias: string) => JSON.stringify({
-      entities: [{ key: "e1", type: "Concept", canonicalName: "Concept", aliases: [], confidence: 0.9, evidenceChunkIds: [alias] }],
+      entities: [{ key: "e1", type: "Concept", canonicalName: "Concept", identityDescription: "A concept defined in the supplied evidence.", aliases: [], confidence: 0.9, evidenceChunkIds: [alias] }],
       claims: [], relations: []
     });
     const firstRun = vi.fn()
@@ -557,11 +557,11 @@ describe("knowledge processing", () => {
 it("requires a display phrase and English identifier syntax for new relations", () => {
   const chunkId = "00000000-0000-4000-8000-000000000001";
   const output = {
-    entities: ["e1", "e2"].map((key) => ({ key, type: "Concept", canonicalName: key, confidence: 0.9, evidenceChunkIds: [chunkId] })),
+    entities: ["e1", "e2"].map((key) => ({ key, type: "Concept", canonicalName: key, identityDescription: "A concept defined in the supplied evidence.", confidence: 0.9, evidenceChunkIds: [chunkId] })),
     claims: [],
-    relations: [{ subjectEntityKey: "e1", objectEntityKey: "e2", predicate: "used_to_accuse", displayLabel: "Foi usado para acusar", confidence: 0.9, evidenceChunkIds: [chunkId] }]
+    relations: [{ subjectEntityKey: "e1", objectEntityKey: "e2", predicate: "used_to_accuse", displayLabel: "Foi usado para acusar", definition: "The subject was used to accuse the object.", confidence: 0.9, evidenceChunkIds: [chunkId] }]
   };
-  expect(parseKnowledgeGraphOutput(output).relations[0]).toMatchObject({ predicate: "used_to_accuse", displayLabel: "Foi usado para acusar" });
+  expect(parseKnowledgeGraphOutput(output).relations[0]).toMatchObject({ predicate: "used_to_accuse", displayLabel: "Foi usado para acusar", definition: "The subject was used to accuse the object." });
   expect(() => parseKnowledgeGraphOutput({ ...output, relations: [{ ...output.relations[0], displayLabel: undefined }] })).toThrow();
   expect(() => parseKnowledgeGraphOutput({ ...output, relations: [{ ...output.relations[0], predicate: "Foi usado para acusar" }] })).toThrow();
   expect(buildKnowledgeGraphPrompt({ title: "Evidence", language: "pt-BR" }, [])).toContain("preserving the full meaning, direction, negation and modality");

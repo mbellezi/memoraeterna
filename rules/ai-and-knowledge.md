@@ -83,6 +83,11 @@ status, and all participating source IDs.
   structured output, and link to source, chunks, and SourceSpans.
 - Graph extraction, canonical persistence, projections, and dashboard contracts
   are defined in `rules/knowledge-graph.md`; load it when changing those areas.
+- Graph canonicalization uses the embedding route for retrieval and the graph-generation
+  route for compact batch confirmation. Internal relation definitions and entity identity
+  facts are always English. User-visible descriptions keep the global content language.
+  Record embedding and confirmation runs with source IDs and effective model parameters;
+  persist the threshold, model-space identity and accepted decision with the catalog.
 - Atomic-note matching retrieves independent text, vector, metadata, and
   optional graph candidates, combines them with the implemented RRF policy,
   optionally reranks one batch per note, applies the configured threshold, and

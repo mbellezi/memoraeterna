@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
@@ -17,6 +17,7 @@ const graphName = "memora_knowledge";
 
 export interface ExtractedEntityInput {
   key: string;
+  canonicalEntityId?: string | undefined;
   type: string;
   canonicalName: string;
   aliases: string[];
@@ -36,6 +37,8 @@ export interface ExtractedRelationInput {
   subjectEntityKey: string;
   predicate: string;
   displayLabel?: string | undefined;
+  relationTypeId?: string | undefined;
+  originalPredicate?: string | undefined;
   objectEntityKey: string;
   confidence: number;
   evidenceChunkIds: string[];
@@ -57,7 +60,7 @@ export interface ReplaceKnowledgeGraphInput {
 export interface AtomicNoteGraphElements {
   entities: Array<{ id: string; type: string; name: string; confidence: number }>;
   claims: Array<{ id: string; text: string; confidence: number }>;
-  relations: Array<{ id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number }>;
+  relations: Array<{ id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number }>;
 }
 
 export interface AtomicNoteGraphCandidate {
@@ -70,7 +73,7 @@ export interface SourceGraphElements {
   entities: Array<{ id: string; type: string; name: string; confidence: number }>;
   relations: Array<{
     id: string;
-    subject: string;
+    subject: string; subjectEntityId?: string; objectEntityId?: string;
     predicate: string; displayLabel?: string;
     object: string;
     confidence: number;
@@ -78,6 +81,7 @@ export interface SourceGraphElements {
   sourceConnections: Array<{
     sourceItemId: string;
     sourceTitle: string;
+    entityId?: string; relatedEntityId?: string;
     entityName: string;
     relatedEntityName: string;
     predicate: string; displayLabel?: string;
@@ -180,7 +184,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
 
     async listRelationLabels(input: { jobId: string; mode: "missing" | "all"; before: string }) {
       const result = await pool.query<{
-        id: string; predicate: string; subject: string; object: string; sourceItemId: string | null;
+        id: string; predicate: string; subject: string; subjectEntityId?: string; objectEntityId?: string; object: string; sourceItemId: string | null;
       }>(
         `select r.id, r.predicate, s.canonical_name as subject, o.canonical_name as object,
                 r.source_item_id as "sourceItemId"
@@ -264,21 +268,20 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
             const normalizedName = normalizeEntityName(entity.canonicalName);
             const result = await client.query<EntityRow>(
               `insert into entities (
-                 type, canonical_name, normalized_name, aliases, description, language, confidence, metadata
-               ) values ($1, $2, $3, $4, $5, $6, $7, $8)
-               on conflict (type, normalized_name) do update set
-                 canonical_name = excluded.canonical_name,
+                 id, type, canonical_name, normalized_name, aliases, description, language, confidence, metadata
+               ) values ($9, $1, $2, $3, $4, $5, $6, $7, $8)
+               on conflict (id) do update set
                  aliases = (select coalesce(jsonb_agg(distinct alias), '[]'::jsonb)
                             from jsonb_array_elements(entities.aliases || excluded.aliases) alias),
-                 description = coalesce(excluded.description, entities.description),
+                 description = coalesce(entities.description, excluded.description),
                  language = excluded.language,
                  confidence = greatest(entities.confidence, excluded.confidence),
                  metadata = entities.metadata || excluded.metadata,
                  updated_at = now()
                returning ${entityReturning}`,
               [
-                entity.type, entity.canonicalName, normalizedName, JSON.stringify(entity.aliases),
-                entity.description ?? null, input.language, entity.confidence, input.generation
+                entity.type, entity.canonicalName, normalizedName, JSON.stringify([...new Set([entity.canonicalName, ...entity.aliases])]),
+                entity.description ?? null, input.language, entity.confidence, input.generation, entity.canonicalEntityId ?? randomUUID()
               ]
             );
             const row = result.rows[0];
@@ -347,13 +350,14 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
               const result = await client.query(
                 `insert into entity_relations (
                    subject_entity_id, predicate, object_entity_id, source_item_id,
-                   evidence_chunk_id, source_span_id, confidence, metadata
-                 ) select $1, $2, $3, $4, c.id, c.source_span_id, $5, $6
+                   evidence_chunk_id, source_span_id, confidence, metadata, relation_type_id
+                 ) select $1, $2, $3, $4, c.id, c.source_span_id, $5, $6, $8
                    from chunks c where c.id = $7 and c.source_item_id = $4
                  on conflict (source_item_id, subject_entity_id, predicate, object_entity_id, evidence_chunk_id)
-                 do update set confidence = excluded.confidence, metadata = excluded.metadata, updated_at = now()
+                 do update set confidence = greatest(entity_relations.confidence, excluded.confidence),
+                   relation_type_id = excluded.relation_type_id, metadata = excluded.metadata, updated_at = now()
                  returning id`,
-                [subjectId, relation.predicate, objectId, input.sourceItemId, relation.confidence, { ...input.generation, ...(relation.displayLabel ? { displayLabel: relation.displayLabel } : {}) }, chunkId]
+                [subjectId, relation.predicate, objectId, input.sourceItemId, relation.confidence, { ...input.generation, ...(relation.originalPredicate ? { originalPredicate: relation.originalPredicate } : {}), ...(relation.displayLabel ? { displayLabel: relation.displayLabel } : {}) }, chunkId, relation.relationTypeId ?? null]
               );
               relationCount += result.rowCount ?? 0;
             }
@@ -677,10 +681,10 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         result.get(row.noteId)?.claims.push({ ...row, confidence: Number(row.confidence) });
       }
       const relationRows = await pool.query<{
-        noteId: string; id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number;
+        noteId: string; id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number;
       }>(
         `select distinct l.atomic_note_id as "noteId", r.id,
-                subject.canonical_name as subject, r.predicate, coalesce(r.metadata->>'displayLabel', '') as "displayLabel",
+                subject.canonical_name as subject, subject.id as "subjectEntityId", object.id as "objectEntityId", r.predicate, coalesce(r.metadata->>'displayLabel', '') as "displayLabel",
                 object.canonical_name as object, r.confidence
          from atomic_note_source_links l
          join entity_relations r on r.evidence_chunk_id = l.chunk_id
@@ -695,7 +699,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         const elements = result.get(row.noteId);
         if (!elements) continue;
         const relation = { ...row, confidence: Number(row.confidence) };
-        const relationKey = `${row.subject}\0${row.predicate}\0${row.object}`;
+        const relationKey = `${row.subjectEntityId ?? row.subject}\0${row.predicate}\0${row.objectEntityId ?? row.object}`;
         const indexes = relationIndexes.get(row.noteId) ?? new Map<string, number>();
         relationIndexes.set(row.noteId, indexes);
         const existingIndex = indexes.get(relationKey);
@@ -721,9 +725,9 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         [sourceItemId]
       );
       const relationRows = await pool.query<{
-        id: string; subject: string; predicate: string; displayLabel?: string; object: string; confidence: number;
+        id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number;
       } & QueryResultRow>(
-        `select relation.id, subject.canonical_name as subject, relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
+        `select relation.id, subject.canonical_name as subject, subject.id as "subjectEntityId", object.id as "objectEntityId", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 object.canonical_name as object, relation.confidence
          from entity_relations relation
          join entities subject on subject.id = relation.subject_entity_id
@@ -733,10 +737,10 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         [sourceItemId]
       );
       const sharedRows = await pool.query<{
-        sourceItemId: string; sourceTitle: string; entityName: string; confidence: number;
+        sourceItemId: string; sourceTitle: string; entityId?: string; relatedEntityId?: string; entityName: string; confidence: number;
       } & QueryResultRow>(
         `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
-                entity.canonical_name as "entityName",
+                entity.canonical_name as "entityName", entity.id as "entityId", entity.id as "relatedEntityId",
                 max(least(current_mention.confidence, other_mention.confidence)) as confidence
          from entity_mentions current_mention
          join entities entity on entity.id = current_mention.entity_id
@@ -753,7 +757,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         predicate: string; displayLabel?: string; confidence: number;
       } & QueryResultRow>(
         `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
-                subject_entity.canonical_name as "entityName",
+                subject_entity.canonical_name as "entityName", subject_entity.id as "entityId", object_entity.id as "relatedEntityId",
                 object_entity.canonical_name as "relatedEntityName", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 max(least(current_mention.confidence, relation.confidence, other_mention.confidence)) as confidence
          from entity_mentions current_mention

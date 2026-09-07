@@ -1,3 +1,5 @@
+import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
+import { createRelationTypeResolver, defaultRelationTypeSimilarityThreshold } from "./relation-type-resolution.js";
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
@@ -100,6 +102,8 @@ export interface KnowledgeServiceOptions {
   getRelationThreshold?: () => Promise<number>;
   getSummaryMinimumWordCount?: () => Promise<number>;
   getContentLanguage?: () => Promise<string>;
+  getEntityIdentitySimilarityThreshold?: () => Promise<number>;
+  getRelationTypeSimilarityThreshold?: () => Promise<number>;
   getKnowledgeGraphLimits?: () => Promise<{ maxEntities: number; maxRelations: number }>;
   summaryMaxInputCharacters?: number;
   knowledgeGraphMaxInputCharacters?: number;
@@ -766,6 +770,19 @@ export class KnowledgeService {
     const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
     const extractionLimits = await this.options.getKnowledgeGraphLimits?.()
       ?? { maxEntities: 250, maxRelations: 500 };
+    const resolveTypes = createRelationTypeResolver({
+      pool, ai: this.options.aiService,
+      threshold: await this.options.getRelationTypeSimilarityThreshold?.() ?? defaultRelationTypeSimilarityThreshold,
+      context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
+      ...(signal ? { signal } : {})
+    });
+    const resolveEntities = createEntityIdentityResolver({
+      pool, ai: this.options.aiService, language: contentLanguage,
+      threshold: await this.options.getEntityIdentitySimilarityThreshold?.() ?? 0.92,
+      context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
+      ...(signal ? { signal } : {})
+    });
+    const resolveRelations = async (batch: Parameters<typeof resolveTypes>[0]) => resolveTypes(await resolveEntities(batch));
     let sourceCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
     const sourceGraph = await generateKnowledgeGraphFromAtomicNotes(
       source,
@@ -788,6 +805,7 @@ export class KnowledgeService {
       {
         completedBatches,
         inputKind: processingMode ? "catalog_metadata" : "source_chunks",
+        resolveRelations,
         checkpointNamespace: "source",
         contentLanguage,
         extractionLimits,
@@ -824,6 +842,7 @@ export class KnowledgeService {
           {
             completedBatches,
             inputKind: "atomic_notes",
+            resolveRelations,
             checkpointNamespace: "atomic_notes",
             contentLanguage,
             ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {

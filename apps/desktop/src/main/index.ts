@@ -221,6 +221,8 @@ void app.whenReady().then(() => {
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
     getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
+    getEntityIdentitySimilarityThreshold: async () => (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
+    getRelationTypeSimilarityThreshold: async () => (await settingsService!.getApp()).relationTypeSimilarityThreshold,
     getKnowledgeGraphLimits: async () => {
       const settings = await settingsService!.getApp();
       return {

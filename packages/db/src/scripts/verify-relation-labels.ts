@@ -23,13 +23,14 @@ try {
   const sources = createSourceItemRepository(pool);
   const source = await sources.create({ type: "PersonalNote", title: "Evidence source" });
   const other = await sources.create({ type: "PersonalNote", title: "Other evidence" });
+  const entityIds = [randomUUID(), randomUUID()];
   for (const item of [source, other]) {
     const doc = await createDocumentRepository(pool).create({ sourceItemId: item.id, title: item.title, canonicalMarkdown: "Evidence was used to accuse a person.", contentHash: "a".repeat(64) });
     const chunkId = randomUUID(), spanId = randomUUID();
     await createChunkRepository(pool).replaceDocumentChunks(doc.id, item.id, [{ id: chunkId, sourceSpanId: spanId,
       chunkIndex: 0, content: doc.canonicalMarkdown, contentHash: "a".repeat(64), span: { id: spanId, startOffset: 0, endOffset: 36 } }]);
     await graph.replaceSourceExtraction({ sourceItemId: item.id, language: "pt-BR", generation: { displayLanguage: "pt-BR", promptVersion: "knowledge-graph-v6", retained: "evidence" }, batches: [{
-      entities: ["Evidence", "Person"].map((name, index) => ({ key: `e${index + 1}`, type: "Concept", canonicalName: name, aliases: [], confidence: 0.9, evidenceChunkIds: [chunkId] })),
+      entities: ["Evidence", "Person"].map((name, index) => ({ key: `e${index + 1}`, canonicalEntityId: entityIds[index]!, type: "Concept", canonicalName: name, aliases: [], confidence: 0.9, evidenceChunkIds: [chunkId] })),
       claims: [], relations: [{ subjectEntityKey: "e1", predicate: "used_to_accuse", displayLabel: "Foi usado para acusar", objectEntityKey: "e2", confidence: 0.9, evidenceChunkIds: [chunkId] }]
     }] });
   }

@@ -64,6 +64,8 @@ export type Relation = z.infer<typeof RelationSchema>;
 
 export const ExtractedGraphEntitySchema = z.object({
   key: z.string().trim().min(1).max(120),
+  identityDescription: z.string().trim().min(1).max(600),
+  canonicalEntityId: StableIdSchema.optional(),
   type: GraphEntityTypeSchema,
   canonicalName: NonEmptyStringSchema,
   aliases: z.array(NonEmptyStringSchema).max(20).default([]),
@@ -83,6 +85,9 @@ export const ExtractedEntityRelationSchema = z.object({
   subjectEntityKey: z.string().trim().min(1).max(120),
   predicate: z.string().trim().min(1).max(120).regex(/^[a-z]+(?:_[a-z]+)*$/),
   displayLabel: z.string().trim().min(1).max(300),
+  definition: z.string().trim().min(1).max(400),
+  relationTypeId: StableIdSchema.optional(),
+  originalPredicate: z.string().optional(),
   objectEntityKey: z.string().trim().min(1).max(120),
   confidence: ConfidenceScoreSchema,
   evidenceChunkIds: z.array(StableIdSchema).min(1).max(50)
