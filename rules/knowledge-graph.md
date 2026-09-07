@@ -131,6 +131,11 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
 - Hover highlighting and information-card intent are independent: highlight
   after 100 ms of dwell and preview after 1 second of pointer inactivity.
   Suspend hover during interactions and dispose timers on teardown.
+- Connection previews allocate one label row per relation sharing the same canonical
+  source and target IDs in the same direction. Rows have stable ordering and screen-pixel
+  spacing across zoom and hover; opposite directions use opposite sides of the edge.
+  Labels stay upright along the edge and retain individual highlight/fade colors.
+  Label layout never merges edges or changes arrows, picking identities or physics.
 - Wheel motion is bounded and normalized across delta units; stop animation
   catch-up after background stalls. Dispose Sigma, workers, and animation work
   when leaving the view. Connection preview WebGL context loss is deferred

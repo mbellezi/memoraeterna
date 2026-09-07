@@ -1,3 +1,4 @@
+import { assignSourceConnectionLabelRows, drawSourceConnectionLabel } from "./source-connection-labels";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Graph from "graphology";
 import type Sigma from "sigma";
@@ -53,6 +54,7 @@ export function buildSourceConnectionGraph(details: KnowledgeGraphSourceConnecti
     }
   }
   graph.forEachNode((id) => graph.setNodeAttribute(id, "size", graphNodeSize(graph.degree(id))));
+  assignSourceConnectionLabelRows(graph);
   return graph;
 }
 
@@ -106,6 +108,7 @@ export function SourceConnectionGraph({ details, forces, wheelZoomSensitivity, t
         },
         ...graphTypography,
         labelRenderedSizeThreshold: 0,
+        defaultDrawEdgeLabel: drawSourceConnectionLabel,
         renderEdgeLabels: true, stagePadding: 40, minCameraRatio: 0.02, maxCameraRatio: 12,
         minEdgeThickness: 1.2,
         nodeReducer: (node, attributes) => ({ ...attributes, ...sourceConnectionEmphasis(graph, "node", node, target, hoverStrength) }),
