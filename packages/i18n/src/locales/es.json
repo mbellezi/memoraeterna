@@ -39,6 +39,7 @@
     }
   },
   "knowledgeGraph": {
+    "backToGraph": "Volver al grafo",
     "layoutError": "No se pudo calcular la disposición del grafo. Inténtalo de nuevo para reanudar la interacción.",
     "forces": {
       "title": "Fuerzas del grafo",
@@ -55,6 +56,7 @@
     "zoomOut": "Alejar",
     "zoomIn": "Acercar",
     "fit": "Ajustar el grafo a la vista",
+    "graphPopup": "Grafo interactivo en la vista emergente de relaciones",
     "relayout": "Reorganizar el grafo",
     "refresh": "Actualizar el grafo",
     "backToGraph": "Volver al grafo de conocimiento",

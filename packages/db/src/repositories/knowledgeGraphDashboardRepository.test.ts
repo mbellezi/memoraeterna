@@ -56,8 +56,8 @@ describe("knowledge graph dashboard repository", () => {
 
   it("loads every source-connection detail only when its card is opened", async () => {
     const pool = new FakeGraphPool([
-      [{ detail: "Entity A" }, { detail: "Entity B" }],
-      [{ detail: "Entity A · supports · Entity B" }]
+      [{ id: "a", detail: "Entity A" }, { id: "b", detail: "Entity B" }],
+      [{ id: "ab", source: "a", target: "b", sourceLabel: "Entity A", targetLabel: "Entity B", label: "supports", detail: "Entity A · supports · Entity B" }]
     ]);
 
     const details = await createKnowledgeGraphDashboardRepository(pool as unknown as PgPool)
@@ -65,10 +65,12 @@ describe("knowledge graph dashboard repository", () => {
 
     expect(details).toEqual({
       sharedEntities: ["Entity A", "Entity B"],
-      semanticRelations: ["Entity A · supports · Entity B"]
+      semanticRelations: ["Entity A · supports · Entity B"],
+      entities: [{ id: "a", label: "Entity A", shared: true }, { id: "b", label: "Entity B", shared: true }],
+      relations: [{ id: "ab", source: "a", target: "b", label: "supports" }]
     });
     expect(pool.queries).toHaveLength(2);
-    expect(pool.queries[0]).toContain("select distinct entity.canonical_name");
-    expect(pool.queries[1]).toContain("select distinct subject_entity.canonical_name");
+    expect(pool.queries[0]).toContain("select distinct entity.id");
+    expect(pool.queries[1]).toContain("select distinct relation.id");
   });
 });

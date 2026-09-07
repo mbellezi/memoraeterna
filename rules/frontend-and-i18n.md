@@ -81,7 +81,29 @@ locales.
   cards measure their rendered size, flip around the pointer when needed, and
   remain bounded by the visible graph viewport, including after async content
   changes. Any wheel, button, fit, or focus zoom dismisses pending and visible
-  node or relation information cards without closing the relation legend. Hovered nodes render
+  node or relation information cards without closing the relation legend. In Sources mode,
+  a toolbar toggle selects an interactive graph preview (default) or the previous
+  grouped text card. Graph previews use canonical entity IDs and directed semantic
+  relations and include shared entities even without semantic edges. Only graph
+  previews fill the entire graph viewport; textual cards remain compact. Graph
+  previews fit all nodes initially and after the fit action until the user interacts,
+  including while physics settles or the viewport resizes. Their edges use a stable
+  2.1 screen-pixel thickness, with explicit arrowheads that retain readable fixed
+  screen dimensions during zoom. Preview nodes use the main graph's degree-based
+  size formula and zoom scaling; node and relation typography shares the main
+  graph's font families, weights and sizes. They use
+  the same hover dwell and fade as the main graph: nodes emphasize neighbors and
+  incident relations; relations emphasize only their endpoints. Other nodes, edges,
+  arrowheads and labels desaturate and fade. Relations have the same invisible
+  10-pixel picking stroke, excluded from physics and node sizing. Dragging suspends
+  emphasis, and leaving the target restores the resting palette.
+  They use
+  the main graph's worker physics and force settings with independent node dragging,
+  pan and cursor-anchored wheel zoom. Entering a preview cancels parent wheel momentum;
+  preview gestures never zoom the parent or dismiss the preview. Previews stay open
+  when the pointer leaves and close through top-bar Back/Close buttons, Escape, or
+  the system/mouse Back action, returning to the underlying graph.
+  Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
   short emphasis transition. Node and background dragging cancel all pending
   hover/preview timers and disable tooltip activation and hover emphasis until

@@ -39,6 +39,7 @@
     }
   },
   "knowledgeGraph": {
+    "backToGraph": "Revenir au graphe",
     "layoutError": "Impossible de calculer la disposition du graphe. Réessayez pour reprendre l’interaction.",
     "forces": {
       "title": "Forces du graphe",
@@ -55,6 +56,7 @@
     "zoomOut": "Faire un zoom arrière",
     "zoomIn": "Faire un zoom avant",
     "fit": "Ajuster le graphe à la vue",
+    "graphPopup": "Graphe interactif dans l’aperçu des relations",
     "relayout": "Réorganiser le graphe",
     "refresh": "Actualiser le graphe",
     "backToGraph": "Retour au graphe de connaissances",

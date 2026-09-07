@@ -1,3 +1,16 @@
+export const graphTypography = {
+  labelFont: "Inter, ui-sans-serif, system-ui, sans-serif",
+  labelSize: 12,
+  labelWeight: "500",
+  edgeLabelFont: "Arial",
+  edgeLabelSize: 14,
+  edgeLabelWeight: "normal"
+};
+
+export function graphNodeSize(degree: number): number {
+  return Math.min(13, 3.5 + Math.log2(degree + 1) * 1.8);
+}
+
 export function zoomVisualStrength(ratio: number): number {
   const farRatio = 1.25;
   const nearRatio = 0.16;

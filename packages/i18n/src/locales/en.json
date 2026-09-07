@@ -39,6 +39,7 @@
     }
   },
   "knowledgeGraph": {
+    "backToGraph": "Back to graph",
     "layoutError": "The graph layout could not be calculated. Retry to resume interaction.",
     "forces": {
       "title": "Graph forces",
@@ -55,6 +56,7 @@
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "fit": "Fit graph to view",
+    "graphPopup": "Interactive relation popup",
     "relayout": "Reorganize graph",
     "refresh": "Refresh graph",
     "backToGraph": "Back to knowledge graph",

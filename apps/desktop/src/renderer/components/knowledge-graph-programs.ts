@@ -1,4 +1,4 @@
-import { EdgeRectangleProgram, NodeCircleProgram } from "sigma/rendering";
+import { EdgeRectangleProgram, NodeCircleProgram, createEdgeArrowHeadProgram, createEdgeClampedProgram, createEdgeCompoundProgram } from "sigma/rendering";
 import type { Attributes } from "graphology-types";
 
 /** Sigma 3 uses ONE / ONE_MINUS_SRC_ALPHA blending, but its stock programs emit straight RGB. */
@@ -25,4 +25,24 @@ export class GraphEdgeProgram<N extends Attributes = Attributes, E extends Attri
     const definition = super.getDefinition();
     return { ...definition, VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE) };
   }
+}
+
+export function createGraphArrowProgram(options: { lengthToThicknessRatio: number; widenessToThicknessRatio: number }): ReturnType<typeof createEdgeCompoundProgram> {
+  // Sigma's factory type erases the concrete EdgeProgram methods.
+  const Shaft = createEdgeClampedProgram(options) as typeof EdgeRectangleProgram;
+  const Head = createEdgeArrowHeadProgram(options) as typeof EdgeRectangleProgram;
+  return createEdgeCompoundProgram([
+    class extends Shaft {
+      override getDefinition() {
+        const definition = super.getDefinition();
+        return { ...definition, VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE) };
+      }
+    },
+    class extends Head {
+      override getDefinition() {
+        const definition = super.getDefinition();
+        return { ...definition, VERTEX_SHADER_SOURCE: premultipliedVertexShader(definition.VERTEX_SHADER_SOURCE) };
+      }
+    }
+  ]);
 }

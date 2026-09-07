@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import Graph from "graphology";
+import { SourceConnectionGraph } from "./SourceConnectionGraph";
 import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
 import { defaultGraphForceSettings, graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
 import {
@@ -18,6 +19,7 @@ import type Sigma from "sigma";
 import type { EdgeLabelDrawingFunction, NodeLabelDrawingFunction } from "sigma/rendering";
 import {
   AtSign,
+  ArrowLeft,
   CircleDot,
   Check,
   EqualApproximately,
@@ -37,7 +39,8 @@ import {
   SlidersHorizontal,
   Tags,
   Workflow,
-  Waypoints
+  Waypoints,
+  X
 } from "lucide-react";
 import type { IconNode, LucideIcon } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
@@ -50,6 +53,8 @@ import { cn } from "../lib/cn";
 import { Input } from "./ui/input";
 import {
   isLabelOutsideViewport,
+  graphNodeSize,
+  graphTypography,
   nodeLabelOpacity,
   positionOverlayWithinViewport,
   relationLabelRevealAt,
@@ -233,9 +238,13 @@ export function KnowledgeGraphDashboard({
   const [layoutError, setLayoutError] = useState(false);
   const [forcesOpen, setForcesOpen] = useState(false);
   const [relationLegendOpen, setRelationLegendOpen] = useState(false);
+  const [graphPopup, setGraphPopup] = useState(true);
+  const popupInsideRef = useRef(false);
   const [forces, setForces] = useState<GraphForceSettings>(initialViewState?.forces ?? defaultGraphForceSettings);
   const forcesRef = useRef(forces);
   const [hover, setHover] = useState<HoverCard | null>(null);
+  const interactivePreviewRef = useRef(false);
+  interactivePreviewRef.current = graphPopup && mode === "sources" && hover?.type === "edge";
   const [floatingEdgeLabel, setFloatingEdgeLabel] = useState<FloatingEdgeLabel | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sigmaRef = useRef<Sigma<NodeAttributes, EdgeAttributes> | null>(null);
@@ -250,6 +259,8 @@ export function KnowledgeGraphDashboard({
   const draggingRef = useRef(false);
   const cancelWheelRef = useRef<() => void>(() => {});
   const dismissGraphInfoRef = useRef<() => void>(() => {});
+
+  useEffect(() => { popupInsideRef.current = false; }, [hover?.key, graphPopup]);
 
   useEffect(() => {
     if (mode !== "atomic_notes") setRelationLegendOpen(false);
@@ -319,11 +330,9 @@ export function KnowledgeGraphDashboard({
       hideLabelsOnMove: false,
       labelColor: { color: "#cbd5e1" },
       labelDensity: 0,
-      labelFont: "Inter, ui-sans-serif, system-ui, sans-serif",
+      ...graphTypography,
       labelGridCellSize: 110,
       labelRenderedSizeThreshold: 0,
-      labelSize: 12,
-      labelWeight: "500",
       itemSizesReference: "screen",
       minEdgeThickness: 1.2,
       renderEdgeLabels: true,
@@ -436,9 +445,10 @@ export function KnowledgeGraphDashboard({
     };
 
     const hidePopup = () => {
+      if (popupInsideRef.current || interactivePreviewRef.current) return;
       floatingEdgeKey = null;
       setFloatingEdgeLabel(null);
-      setHover((current) => current ? { ...current, exiting: true } : null);
+      setHover((current) => current ? { ...current, exiting: true } : current);
       if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
       hoverExitTimerRef.current = window.setTimeout(() => setHover(null), 120);
     };
@@ -471,6 +481,7 @@ export function KnowledgeGraphDashboard({
       (target) => {
         if (disposed) return;
         if (!target) { hidePopup(); return; }
+        if (popupInsideRef.current || interactivePreviewRef.current) return;
         if (draggingRef.current) return;
         if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
         floatingEdgeKey = null;
@@ -478,7 +489,11 @@ export function KnowledgeGraphDashboard({
         setHover({ ...target, exiting: false });
       }
     );
-    dismissGraphInfoRef.current = () => hoverIntent.clear();
+    dismissGraphInfoRef.current = () => {
+      popupInsideRef.current = false;
+      hoverIntent.clear();
+      setHover(null);
+    };
     const resolveEdge = (edge: string) => graph.getEdgeAttribute(edge, "interactionTarget") ?? edge;
     renderer.on("enterNode", ({ node, event }) => {
       pointerTarget = { type: "node", key: node, x: event.x, y: event.y };
@@ -814,6 +829,7 @@ export function KnowledgeGraphDashboard({
           </div>
           <GraphAction icon={layoutRunning ? LoaderCircle : Waypoints} label={t("knowledgeGraph.relayout")} spinning={layoutRunning} disabled={layoutRunning || loading || !bundle?.rawNodeKeys.length} onClick={rerunLayout} />
           <GraphAction icon={RefreshCw} label={t("knowledgeGraph.refresh")} onClick={() => setReloadToken((current) => current + 1)} />
+          {mode === "sources" ? <GraphAction icon={Network} label={t("knowledgeGraph.graphPopup")} active={graphPopup} pressed={graphPopup} onClick={() => { setGraphPopup((value) => !value); }} /> : null}
         </div>
       </header>
 
@@ -875,13 +891,21 @@ export function KnowledgeGraphDashboard({
         >
           {floatingEdgeLabel.label}
         </div> : null}
-        {hover && bundle ? <GraphTooltip hover={hover} graph={bundle.graph} t={t} /> : null}
+        {hover && bundle ? <GraphTooltip key={`${hover.type}:${hover.key}`} hover={hover} graph={bundle.graph} t={t}
+          graphPopup={graphPopup} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity}
+          onPopupEnter={() => {
+            popupInsideRef.current = true;
+            cancelWheelRef.current();
+            if (hoverExitTimerRef.current !== null) window.clearTimeout(hoverExitTimerRef.current);
+          }}
+          onPopupLeave={() => { popupInsideRef.current = false; dismissGraphInfoRef.current(); }}
+        /> : null}
       </div>
     </section>
   );
 }
 
-function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = false, active = false, controls }: {
+function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = false, active = false, controls, pressed }: {
   icon: typeof Focus;
   label: string;
   onClick: () => void;
@@ -889,11 +913,12 @@ function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = 
   spinning?: boolean;
   active?: boolean;
   controls?: string;
+  pressed?: boolean;
 }) {
   return <button type="button" disabled={disabled} className={cn(
     "grid h-9 w-9 place-items-center rounded-lg border text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50",
     active ? "border-cyan-300/50 bg-cyan-400/15 text-cyan-200" : "border-white/10 bg-white/5"
-  )} aria-label={label} title={label} aria-expanded={controls ? active : undefined} aria-controls={controls} onClick={onClick}>
+  )} aria-label={label} title={label} aria-pressed={pressed} aria-expanded={controls ? active : undefined} aria-controls={controls} onClick={onClick}>
     <Icon className={cn("h-4 w-4", spinning && "animate-spin")} aria-hidden="true" />
   </button>;
 }
@@ -954,11 +979,19 @@ function ViewportTooltip({ hover, className, children }: {
   </aside>;
 }
 
-function GraphTooltip({ hover, graph, t }: {
+interface GraphPopupOptions {
+  graphPopup: boolean;
+  forces: GraphForceSettings;
+  wheelZoomSensitivity: number;
+  onPopupEnter: () => void;
+  onPopupLeave: () => void;
+}
+
+function GraphTooltip({ hover, graph, t, ...popupOptions }: {
   hover: HoverCard;
   graph: Graph<NodeAttributes, EdgeAttributes>;
   t: Translator;
-}) {
+} & GraphPopupOptions) {
   if (hover.type === "node" && graph.hasNode(hover.key)) {
     const node = graph.getNodeAttributes(hover.key);
     return <ViewportTooltip hover={hover} className="w-80">
@@ -981,6 +1014,7 @@ function GraphTooltip({ hover, graph, t }: {
       const targetSourceItemId = graph.getNodeAttribute(target, "rawId");
       if (!sourceItemId || !targetSourceItemId) return null;
       return <SourceConnectionTooltip
+        {...popupOptions}
         hover={hover}
         sourceItemId={sourceItemId}
         targetSourceItemId={targetSourceItemId}
@@ -1006,22 +1040,78 @@ function GraphTooltip({ hover, graph, t }: {
   return null;
 }
 
-function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t }: {
+function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t, graphPopup, forces, wheelZoomSensitivity, onPopupEnter, onPopupLeave }: {
   hover: HoverCard;
   sourceItemId: string;
   targetSourceItemId: string;
   summary: SourceRelationGroup[];
   t: Translator;
-}) {
+} & GraphPopupOptions) {
   const [details, setDetails] = useState<KnowledgeGraphSourceConnectionDetails | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const closeRef = useRef(onPopupLeave);
+  const enterRef = useRef(onPopupEnter);
+  closeRef.current = onPopupLeave;
+  enterRef.current = onPopupEnter;
+  const panelRef = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    if (!graphPopup) return;
+    enterRef.current();
+    const previousFocus = document.activeElement;
+    panelRef.current?.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeRef.current();
+    };
+    const mouseBack = (event: MouseEvent) => {
+      if (event.button !== 3) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeRef.current();
+    };
+    window.addEventListener("keydown", keydown, true);
+    window.addEventListener("mouseup", mouseBack, true);
+    const unsubscribe = window.app.system.subscribeNavigation((direction) => {
+      if (direction === "back") closeRef.current();
+    });
+    return () => {
+      window.removeEventListener("keydown", keydown, true);
+      window.removeEventListener("mouseup", mouseBack, true);
+      unsubscribe();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, [graphPopup]);
 
   useEffect(() => {
     let active = true;
+    setDetails(null);
+    setFailed(false);
     window.app.knowledge.getGraphSourceConnectionDetails(sourceItemId, targetSourceItemId)
       .then((result) => { if (active) setDetails(result); })
-      .catch(() => { /* Keep the bounded dashboard summary as a fallback. */ });
+      .catch(() => { if (active) setFailed(true); });
     return () => { active = false; };
-  }, [sourceItemId, targetSourceItemId]);
+  }, [sourceItemId, targetSourceItemId, retry]);
+
+  if (graphPopup) {
+    return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("knowledgeGraph.graphPopup")}
+      className="absolute inset-0 z-20 flex flex-col overflow-hidden bg-slate-950 text-white outline-none">
+      <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-900 px-3 py-2">
+        <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.backToGraph")} onClick={onPopupLeave} />
+        <p className="min-w-0 flex-1 truncate text-xs font-semibold text-cyan-300">{t("knowledgeGraph.edgeKinds.source_connection")}</p>
+        <GraphAction icon={X} label={t("shell.actions.close")} onClick={onPopupLeave} />
+      </header>
+      <div className="relative min-h-0 flex-1">
+        {failed ? <GraphState icon={Network} title={t("knowledgeGraph.error")} action={t("shell.actions.retry")} onAction={() => setRetry((value) => value + 1)} />
+          : !details ? <GraphState icon={LoaderCircle} title={t("shell.states.loading")} spinning />
+          : details.entities.length === 0 ? <GraphState icon={Network} title={t("knowledgeGraph.empty")} />
+          : <SourceConnectionGraph details={details} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} />}
+      </div>
+    </section>;
+  }
 
   const groups = details ? [
     {
@@ -1114,7 +1204,7 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
   for (const node of rawNodeKeys) {
     const degree = graph.degree(node);
     graph.updateNodeAttribute(node, "importance", () => degree);
-    graph.updateNodeAttribute(node, "size", () => Math.min(13, 3.5 + Math.log2(degree + 1) * 1.8));
+    graph.updateNodeAttribute(node, "size", () => graphNodeSize(degree));
   }
   if (rawNodeKeys.length === 0) {
     return { graph, rawNodeKeys, itemEdgeCount: preparedEdges.length, stateKey };

@@ -39,6 +39,8 @@ export interface KnowledgeGraphDashboardRecord {
 export interface KnowledgeGraphSourceConnectionDetailsRecord {
   sharedEntities: string[];
   semanticRelations: string[];
+  entities: { id: string; label: string; shared: boolean }[];
+  relations: { id: string; source: string; target: string; label: string }[];
 }
 
 const maxNodes = 20_000;
@@ -108,8 +110,8 @@ async function getSourceConnectionDetails(
   targetSourceItemId: string
 ): Promise<KnowledgeGraphSourceConnectionDetailsRecord> {
   const [sharedResult, semanticResult] = await Promise.all([
-    pool.query<SourceConnectionDetailRow>(
-      `select distinct entity.canonical_name as detail
+    pool.query<SourceConnectionDetailRow & { id: string }>(
+      `select distinct entity.id, entity.canonical_name as detail
        from entity_mentions source_mention
        join entity_mentions target_mention on target_mention.entity_id = source_mention.entity_id
        join entities entity on entity.id = source_mention.entity_id
@@ -117,13 +119,15 @@ async function getSourceConnectionDetails(
        order by detail`,
       [sourceItemId, targetSourceItemId]
     ),
-    pool.query<SourceConnectionDetailRow>(
+    pool.query<SourceConnectionDetailRow & { id: string; source: string; target: string; sourceLabel: string; targetLabel: string; label: string }>(
       `with mentions as (
          select distinct source_item_id, entity_id
          from entity_mentions
          where source_item_id in ($1, $2)
        )
-       select distinct subject_entity.canonical_name || ' · ' || relation.predicate || ' · '
+       select distinct relation.id, relation.subject_entity_id as source, relation.object_entity_id as target,
+         subject_entity.canonical_name as "sourceLabel", object_entity.canonical_name as "targetLabel",
+         relation.predicate as label, subject_entity.canonical_name || ' · ' || relation.predicate || ' · '
          || object_entity.canonical_name as detail
        from entity_relations relation
        join mentions subject_mention on subject_mention.entity_id = relation.subject_entity_id
@@ -136,9 +140,17 @@ async function getSourceConnectionDetails(
       [sourceItemId, targetSourceItemId]
     )
   ]);
+  const entities = new Map<string, { id: string; label: string; shared: boolean }>();
+  for (const row of sharedResult.rows) entities.set(row.id, { id: row.id, label: row.detail, shared: true });
+  for (const row of semanticResult.rows) {
+    if (!entities.has(row.source)) entities.set(row.source, { id: row.source, label: row.sourceLabel, shared: false });
+    if (!entities.has(row.target)) entities.set(row.target, { id: row.target, label: row.targetLabel, shared: false });
+  }
   return {
-    sharedEntities: sharedResult.rows.map((row) => row.detail),
-    semanticRelations: semanticResult.rows.map((row) => row.detail)
+    sharedEntities: [...new Set(sharedResult.rows.map((row) => row.detail))],
+    semanticRelations: [...new Set(semanticResult.rows.map((row) => row.detail))],
+    entities: [...entities.values()],
+    relations: semanticResult.rows.map(({ id, source, target, label }) => ({ id, source, target, label }))
   };
 }
 

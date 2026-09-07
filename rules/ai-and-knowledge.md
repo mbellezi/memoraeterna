@@ -94,6 +94,9 @@ status, and all participating source IDs.
   projections. Source edges aggregate shared entities and semantic entity
   relations; atomic-note edges use persisted, non-rejected note relations.
   Rejected, archived, and superseded notes are excluded from the dashboard.
+  Lazy source-connection details include canonical entity IDs and semantic relation
+  IDs, directed endpoints and predicates alongside grouped display strings; visual
+  previews must never reconstruct graph identity by parsing those strings.
 - Atomic-note matching retrieves independent text, vector, metadata, and
   optional graph candidates, combines them with the implemented RRF policy,
   optionally reranks one batch per note, applies the configured threshold, and

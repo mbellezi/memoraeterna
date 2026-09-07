@@ -552,7 +552,9 @@ export const knowledgeGraphSourceConnectionDetailsInputSchema = z.object({
 }).strict();
 export const knowledgeGraphSourceConnectionDetailsSchema = z.object({
   sharedEntities: z.array(z.string().min(1)).max(20_000),
-  semanticRelations: z.array(z.string().min(1)).max(20_000)
+  semanticRelations: z.array(z.string().min(1)).max(20_000),
+  entities: z.array(z.object({ id: z.string().uuid(), label: z.string().min(1), shared: z.boolean() }).strict()).max(60_000),
+  relations: z.array(z.object({ id: z.string().uuid(), source: z.string().uuid(), target: z.string().uuid(), label: z.string().min(1) }).strict()).max(20_000)
 }).strict();
 
 export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
