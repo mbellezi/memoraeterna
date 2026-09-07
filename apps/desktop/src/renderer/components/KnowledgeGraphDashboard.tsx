@@ -1230,6 +1230,7 @@ export function KnowledgeGraphDashboard({
         {mode === "sources" && hierarchyPreviewData && hierarchyPreviewSourceId ? <SourceHierarchyPreviewOverlay
           data={hierarchyPreviewData}
           sourceItemId={hierarchyPreviewSourceId}
+          graphPopup={graphPopup}
           forces={forces}
           wheelZoomSensitivity={wheelZoomSensitivity}
           t={t}
@@ -1275,9 +1276,10 @@ function GraphState({ icon: Icon, title, action, onAction, spinning = false }: {
   </div>;
 }
 
-function SourceHierarchyPreviewOverlay({ data, sourceItemId, forces, wheelZoomSensitivity, t, onClose, onOpenSource }: {
+function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces, wheelZoomSensitivity, t, onClose, onOpenSource }: {
   data: DashboardData;
   sourceItemId: string;
+  graphPopup: boolean;
   forces: GraphForceSettings;
   wheelZoomSensitivity: number;
   t: Translator;
@@ -1285,6 +1287,8 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, forces, wheelZoomSe
   onOpenSource: (sourceItemId: string) => void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const dismissConnectionRef = useRef<() => boolean>(() => false);
+  const closeTopView = () => { if (!dismissConnectionRef.current()) onClose(); };
   const source = data.nodes.find((node) => node.id === sourceItemId);
   useLayoutEffect(() => {
     const previousFocus = document.activeElement;
@@ -1293,18 +1297,18 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, forces, wheelZoomSe
       if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      onClose();
+      if (!dismissConnectionRef.current()) onClose();
     };
     const mouseBack = (event: MouseEvent) => {
       if (event.button !== 3) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      onClose();
+      if (!dismissConnectionRef.current()) onClose();
     };
     window.addEventListener("keydown", keydown, true);
     window.addEventListener("mouseup", mouseBack, true);
     const unsubscribe = window.app.system.subscribeNavigation((direction) => {
-      if (direction === "back") onClose();
+      if (direction === "back" && !dismissConnectionRef.current()) onClose();
     });
     return () => {
       window.removeEventListener("keydown", keydown, true);
@@ -1318,22 +1322,31 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, forces, wheelZoomSe
     className="absolute inset-0 z-30 flex flex-col bg-slate-950/55 p-3 text-white outline-none backdrop-blur-[2px]">
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-violet-300/20 bg-slate-950/96 shadow-2xl">
       <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-900/95 px-3 py-2">
-        <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.subitems.closeFocus")} onClick={onClose} />
+        <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.subitems.closeFocus")} onClick={closeTopView} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-semibold text-violet-200">{source?.title ?? t("knowledgeGraph.source")}</p>
           <p className="truncate text-[11px] text-slate-400">{t("knowledgeGraph.subitems.focusDescription")}</p>
         </div>
-        <GraphAction icon={X} label={t("shell.actions.close")} onClick={onClose} />
+        <GraphAction icon={X} label={t("shell.actions.close")} onClick={closeTopView} />
       </header>
       <div className="relative min-h-0 flex-1">
-        <SourceHierarchyPreviewGraph data={data} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onOpenSource={onOpenSource} />
+        <SourceHierarchyPreviewGraph data={data} graphPopup={graphPopup} dismissConnectionRef={dismissConnectionRef} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onOpenSource={onOpenSource} />
       </div>
     </div>
   </section>;
 }
 
-function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, onOpenSource }: {
+export function sourceHierarchyRelationTarget(graph: Graph<NodeAttributes, EdgeAttributes>, edge: string): string | null {
+  if (!graph.hasEdge(edge)) return null;
+  const target = graph.getEdgeAttribute(edge, "interactionTarget") ?? edge;
+  if (!graph.hasEdge(target) || graph.getEdgeAttribute(target, "kind") !== "source_connection") return null;
+  return target;
+}
+
+function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, forces, wheelZoomSensitivity, t, onOpenSource }: {
   data: DashboardData;
+  graphPopup: boolean;
+  dismissConnectionRef: { current: () => boolean };
   forces: GraphForceSettings;
   wheelZoomSensitivity: number;
   t: Translator;
@@ -1343,6 +1356,10 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
   const layoutRef = useRef<KnowledgeGraphLayout | null>(null);
   const fitRef = useRef<() => void>(() => {});
   const [failed, setFailed] = useState(false);
+  const [hover, setHover] = useState<HoverCard | null>(null);
+  const popupOpenRef = useRef(false);
+  const dismissHoverRef = useRef<() => void>(() => {});
+  const enterPopupRef = useRef<() => void>(() => {});
   const bundle = useMemo(() => buildGraph(data, t), [data, t]);
 
   useEffect(() => {
@@ -1362,6 +1379,12 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
       const graph = bundle.graph;
       const labels = createSmoothNodeLabels(() => renderer?.scheduleRender());
       let cameraRatio = 1;
+      let hovered: GraphHoverTarget | null = null;
+      let neighbors = new Set<string>();
+      let strength = 0;
+      let highlightFrame: number | null = null;
+      let exitTimer: number | null = null;
+      let dragging = false;
       let renderer: Sigma<NodeAttributes, EdgeAttributes> | null = new SigmaConstructor<NodeAttributes, EdgeAttributes>(graph, container, {
         nodeProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
         nodeHoverProgramClasses: { circle: GraphNodeProgram<NodeAttributes, EdgeAttributes> },
@@ -1369,7 +1392,7 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         allowInvalidContainer: true,
         defaultDrawNodeLabel: labels.draw,
         defaultDrawEdgeLabel: drawFadingEdgeLabel,
-        enableEdgeEvents: false,
+        enableEdgeEvents: true,
         hideEdgesOnMove: false,
         hideLabelsOnMove: false,
         labelColor: { color: "#cbd5e1" },
@@ -1384,16 +1407,88 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         zIndex: true,
         minCameraRatio: 0.04,
         maxCameraRatio: 10,
-        nodeReducer: (node, attributes) => reduceNode(node, attributes, cameraRatio, null, new Set(), 0),
-        edgeReducer: (edge, attributes) => reduceEdge(graph, edge, attributes, cameraRatio, null, 0)
+        nodeReducer: (node, attributes) => reduceNode(node, attributes, cameraRatio, hovered?.key ?? null, neighbors, strength, hovered?.type === "node" ? 0.1 : 0.04),
+        edgeReducer: (edge, attributes) => reduceEdge(graph, edge, attributes, cameraRatio, hovered?.key ?? null, strength)
       });
+      const animateHighlight = (target: GraphHoverTarget | null) => {
+        if (highlightFrame !== null) window.cancelAnimationFrame(highlightFrame);
+        if (target) {
+          hovered = target;
+          neighbors = new Set(target.type === "node" ? graph.neighbors(target.key) : graph.extremities(target.key));
+        }
+        const initial = strength;
+        const startedAt = performance.now();
+        const step = (now: number) => {
+          highlightFrame = null;
+          const progress = Math.min(1, (now - startedAt) / 140);
+          strength = initial + ((target ? 1 : 0) - initial) * (1 - Math.pow(1 - progress, 3));
+          if (progress === 1 && !target) { hovered = null; neighbors.clear(); }
+          renderer?.scheduleRefresh();
+          if (progress < 1) highlightFrame = window.requestAnimationFrame(step);
+        };
+        highlightFrame = window.requestAnimationFrame(step);
+      };
+      const hoverIntent = new GraphHoverIntent(animateHighlight, (target) => {
+        if (popupOpenRef.current) return;
+        if (exitTimer !== null) window.clearTimeout(exitTimer);
+        exitTimer = null;
+        if (target) {
+          if (graphPopup && target.type === "edge") popupOpenRef.current = true;
+          setHover({ ...target, exiting: false });
+        } else {
+          setHover((current) => current ? { ...current, exiting: true } : null);
+          exitTimer = window.setTimeout(() => { setHover(null); exitTimer = null; }, 120);
+        }
+      });
+      const dismissHover = () => {
+        const wasOpen = popupOpenRef.current;
+        popupOpenRef.current = false;
+        hoverIntent.clear();
+        if (exitTimer !== null) window.clearTimeout(exitTimer);
+        exitTimer = null;
+        setHover(null);
+        if (wasOpen && !disposed) startLayout(true);
+      };
+      dismissHoverRef.current = dismissHover;
+      dismissConnectionRef.current = () => {
+        if (!popupOpenRef.current) return false;
+        dismissHover();
+        return true;
+      };
+      const resolveEdge = (edge: string) => sourceHierarchyRelationTarget(graph, edge);
+      renderer.on("enterNode", ({ node, event }) => {
+        if (!dragging && !popupOpenRef.current) {
+          interacted = true;
+          hoverIntent.enter({ type: "node", key: node, x: event.x, y: event.y });
+        }
+      });
+      renderer.on("leaveNode", ({ node }) => hoverIntent.leave("node", node));
+      renderer.on("enterEdge", ({ edge, event }) => {
+        const key = resolveEdge(edge);
+        if (key && !dragging && !popupOpenRef.current) {
+          interacted = true;
+          hoverIntent.enter({ type: "edge", key, x: event.x, y: event.y });
+        }
+      });
+      renderer.on("leaveEdge", ({ edge }) => {
+        const key = resolveEdge(edge);
+        if (key) hoverIntent.leave("edge", key);
+      });
+      renderer.getMouseCaptor().on("mousemove", (event) => {
+        if (!dragging && !popupOpenRef.current) hoverIntent.move(event);
+      });
+      renderer.getMouseCaptor().on("mouseleave", () => hoverIntent.clear());
       installHierarchyContainerLayer(renderer, graph, bundle.hierarchyGroups);
       renderer.on("beforeRender", labels.beginFrame);
       const radius = graphLayoutRadius(graph.order, forces.linkDistance) * 1.4;
       renderer.setCustomBBox({ x: [-radius, radius], y: [-radius, radius] });
       const camera = renderer.getCamera();
       cameraRatio = camera.ratio;
-      camera.on("updated", ({ ratio }) => { cameraRatio = ratio; renderer?.scheduleRefresh(); });
+      camera.on("updated", ({ ratio }) => {
+        if (ratio !== cameraRatio && !popupOpenRef.current) dismissHover();
+        cameraRatio = ratio;
+        renderer?.scheduleRefresh();
+      });
       let interacted = false;
       let draggedNode: string | null = null;
       let dragMoved = false;
@@ -1406,6 +1501,12 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         wheelMotion.cancel();
         if (wheelFrame !== null) window.cancelAnimationFrame(wheelFrame);
         wheelFrame = null;
+      };
+      enterPopupRef.current = () => {
+        interacted = true;
+        cancelWheel();
+        layoutRef.current?.kill();
+        layoutRef.current = null;
       };
       const fit = () => {
         if (!renderer) return;
@@ -1422,7 +1523,7 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         const ratio = camera.ratio * Math.max((right - left) / Math.max(1, width - 160), (bottom - top) / Math.max(1, height - 120));
         camera.setState({ ...center, ratio: clamp(ratio || 0.2, 0.04, 10) });
       };
-      fitRef.current = () => { interacted = false; cancelWheel(); fit(); };
+      fitRef.current = () => { dismissHover(); interacted = false; cancelWheel(); fit(); };
       const scheduleFit = () => {
         if (!interacted && fitFrame === null) fitFrame = window.requestAnimationFrame(() => {
           fitFrame = null;
@@ -1444,6 +1545,7 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
       };
       const handleWheel = (event: WheelEvent) => {
         captureGraphWheelEvent(event);
+        dismissHover();
         interacted = true;
         if (draggedNode || !renderer) return;
         const bounds = container.getBoundingClientRect();
@@ -1452,10 +1554,17 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         if (wheelFrame === null && wheelMotion.active) wheelFrame = window.requestAnimationFrame(stepWheel);
       };
       container.addEventListener("wheel", handleWheel, { capture: true, passive: false });
-      renderer.on("downStage", () => { interacted = true; cancelWheel(); });
+      const suspendHover = () => {
+        dragging = true;
+        dismissHover();
+        hoverIntent.suspend();
+        renderer?.setSetting("enableEdgeEvents", false);
+      };
+      renderer.on("downStage", () => { interacted = true; cancelWheel(); suspendHover(); });
       renderer.on("downNode", ({ node, event }) => {
         interacted = true;
         cancelWheel();
+        suspendHover();
         draggedNode = node;
         dragMoved = false;
         camera.disable();
@@ -1472,6 +1581,9 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         renderer.scheduleRefresh();
       });
       const releaseDrag = () => {
+        dragging = false;
+        hoverIntent.resume();
+        renderer?.setSetting("enableEdgeEvents", true);
         if (!draggedNode) return;
         suppressNextClick = dragMoved;
         const point = graph.getNodeAttributes(draggedNode);
@@ -1490,25 +1602,37 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
       const resizeObserver = new ResizeObserver(() => { renderer?.resize(); scheduleFit(); });
       resizeObserver.observe(container);
       const nodes = bundle.rawNodeKeys;
-      layoutRef.current = new KnowledgeGraphLayout(
-        nodes.map((id) => ({ id, x: graph.getNodeAttribute(id, "x"), y: graph.getNodeAttribute(id, "y") })),
-        graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hit_area").map((edge) => {
-          const [source, target] = graph.extremities(edge);
-          return { source, target, weight: graph.getEdgeAttribute(edge, "layoutWeight") };
-        }),
-        forces,
-        false,
-        (positions) => {
-          nodes.forEach((id, index) => {
-            if (id !== draggedNode) graph.mergeNodeAttributes(id, { x: positions[index * 2]!, y: positions[index * 2 + 1]! });
-          });
-          renderer?.scheduleRefresh();
-          scheduleFit();
-        },
-        () => { if (!disposed) setFailed(true); }
-      );
+      const startLayout = (restored: boolean) => {
+        layoutRef.current?.kill();
+        layoutRef.current = new KnowledgeGraphLayout(
+          nodes.map((id) => ({ id, x: graph.getNodeAttribute(id, "x"), y: graph.getNodeAttribute(id, "y") })),
+          graph.edges().filter((edge) => graph.getEdgeAttribute(edge, "kind") !== "hit_area").map((edge) => {
+            const [source, target] = graph.extremities(edge);
+            return { source, target, weight: graph.getEdgeAttribute(edge, "layoutWeight") };
+          }),
+          forces,
+          restored,
+          (positions) => {
+            if (popupOpenRef.current) return;
+            nodes.forEach((id, index) => {
+              if (id !== draggedNode) graph.mergeNodeAttributes(id, { x: positions[index * 2]!, y: positions[index * 2 + 1]! });
+            });
+            renderer?.scheduleRefresh();
+            scheduleFit();
+          },
+          () => { if (!disposed) setFailed(true); }
+        );
+      };
+      startLayout(false);
       scheduleFit();
       cleanup = () => {
+        hoverIntent.dispose();
+        if (highlightFrame !== null) window.cancelAnimationFrame(highlightFrame);
+        if (exitTimer !== null) window.clearTimeout(exitTimer);
+        popupOpenRef.current = false;
+        dismissConnectionRef.current = () => false;
+        dismissHoverRef.current = () => {};
+        enterPopupRef.current = () => {};
         cancelWheel();
         if (fitFrame !== null) window.cancelAnimationFrame(fitFrame);
         container.removeEventListener("wheel", handleWheel, { capture: true });
@@ -1521,7 +1645,7 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
         renderer = null;
       };
     }
-  }, [bundle, forces, onOpenSource, wheelZoomSensitivity]);
+  }, [bundle, forces, onOpenSource, wheelZoomSensitivity, graphPopup, dismissConnectionRef]);
 
   return <div className="relative h-full overflow-hidden bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
     <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.subitems.focusDescription")} />
@@ -1529,6 +1653,11 @@ function SourceHierarchyPreviewGraph({ data, forces, wheelZoomSensitivity, t, on
       <Maximize2 className="h-4 w-4" aria-hidden="true" />
     </button>
     {failed ? <GraphState icon={Network} title={t("knowledgeGraph.layoutError")} /> : null}
+    {hover ? <GraphTooltip key={`${hover.type}:${hover.key}`} hover={hover} graph={bundle.graph} t={t}
+      graphPopup={graphPopup} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity}
+      manageNavigation={false}
+      onPopupEnter={() => enterPopupRef.current()} onPopupLeave={() => dismissHoverRef.current()}
+    /> : null}
   </div>;
 }
 
@@ -1573,6 +1702,7 @@ function ViewportTooltip({ hover, className, children }: {
 }
 
 interface GraphPopupOptions {
+  manageNavigation?: boolean;
   graphPopup: boolean;
   forces: GraphForceSettings;
   wheelZoomSensitivity: number;
@@ -1633,7 +1763,7 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
   return null;
 }
 
-function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t, graphPopup, forces, wheelZoomSensitivity, onPopupEnter, onPopupLeave }: {
+function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summary, t, graphPopup, forces, wheelZoomSensitivity, onPopupEnter, onPopupLeave, manageNavigation = true }: {
   hover: HoverCard;
   sourceItemId: string;
   targetSourceItemId: string;
@@ -1654,6 +1784,9 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
     enterRef.current();
     const previousFocus = document.activeElement;
     panelRef.current?.focus({ preventScroll: true });
+    if (!manageNavigation) return () => {
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+    };
     const keydown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
       event.preventDefault();
@@ -1677,7 +1810,7 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
       unsubscribe();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, [graphPopup]);
+  }, [graphPopup, manageNavigation]);
 
   useEffect(() => {
     let active = true;

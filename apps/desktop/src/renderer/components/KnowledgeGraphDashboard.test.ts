@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
 import { isInHierarchyActionCorridor } from "./knowledge-graph-view-model";
+import { GraphHoverIntent } from "./knowledge-graph-interaction";
+import { sourceHierarchyRelationTarget } from "./KnowledgeGraphDashboard";
 
 import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 
@@ -43,6 +45,48 @@ describe("hierarchy action hover corridor", () => {
   it("allows dismissal outside the node, buttons and connecting corridor", () => {
     for (const pointer of [{ x: 250, y: 137 }, { x: 150, y: 137 }, { x: 200, y: 175 }, { x: 200, y: 90 }]) {
       expect(isInHierarchyActionCorridor(pointer, node, actions)).toBe(false);
+    }
+  });
+});
+
+describe("source hierarchy relation hover", () => {
+  it("resolves wide picking strokes to semantic connections for emphasis and delayed details", () => {
+    vi.useFakeTimers();
+    const highlight = vi.fn();
+    const preview = vi.fn();
+    const intent = new GraphHoverIntent(highlight, preview);
+    try {
+      const data = projectSourceHierarchy(nestedHierarchyFixture(), {
+        showAll: false, expandedSourceIds: new Set(), focusSourceId: "chapter"
+      });
+      const { graph } = buildGraph(data, ((key: string) => key) as Translator);
+      const edge = graph.findEdge((_id, attributes) => attributes.kind === "source_connection")!;
+      const key = sourceHierarchyRelationTarget(graph, `hit:${edge}`)!;
+      expect(key).toBe(edge);
+      expect(sourceHierarchyRelationTarget(graph, edge)).toBe(key);
+      const target = { type: "edge" as const, key, x: 100, y: 120 };
+      intent.enter(target);
+      vi.advanceTimersByTime(100);
+      expect(highlight).toHaveBeenLastCalledWith(target);
+      const emphasized = reduceEdge(graph, key, graph.getEdgeAttributes(key), 1, key, 1);
+      expect(emphasized.color).toBe("rgba(252, 165, 165, 1)");
+      vi.advanceTimersByTime(900);
+      expect(preview).toHaveBeenLastCalledWith(target);
+      expect(graph.extremities(key).map((id) => graph.getNodeAttribute(id, "rawId"))).toEqual(expect.arrayContaining(["external"]));
+      const hierarchy = graph.findEdge((_id, attributes) => attributes.kind === "hierarchy_link")!;
+      expect(sourceHierarchyRelationTarget(graph, hierarchy)).toBeNull();
+      expect(sourceHierarchyRelationTarget(graph, "missing")).toBeNull();
+      intent.suspend();
+      intent.enter(target);
+      vi.advanceTimersByTime(1200);
+      expect(preview).toHaveBeenLastCalledWith(null);
+      intent.resume();
+      intent.enter(target);
+      vi.advanceTimersByTime(1000);
+      expect(preview).toHaveBeenLastCalledWith(target);
+    } finally {
+      intent.dispose();
+      vi.useRealTimers();
     }
   });
 });

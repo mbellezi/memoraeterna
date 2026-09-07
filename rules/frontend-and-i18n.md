@@ -124,6 +124,13 @@ locales.
   parent and physics reheats from those coordinates so the network adjusts smoothly.
   Hierarchy previews also accept nested sources and show their complete subtree
   with only directly connected external neighbors.
+  Their semantic connections use the same wide relation picking, hover dwell,
+  emphasis and lazy details as the main graph, honoring the graph/text preview
+  setting. Structural hierarchy links do not open semantic relation details.
+  Opening connection details keeps the hierarchy renderer mounted and freezes its
+  camera and positions. Close, Escape and Back dismiss only the innermost open
+  view: connection details return to the source hierarchy, and closing that
+  hierarchy returns to the main graph. Each return preserves the previous view.
   Hovered nodes render
   their labels, incident edges, and incident edge labels fully opaque after the
   short emphasis transition. Node and background dragging cancel all pending
