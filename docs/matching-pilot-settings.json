@@ -1,0 +1,65 @@
+{
+  "version": "matching-pilot-reference-v1",
+  "savedAt": "2026-09-08T20:19:57.669Z",
+  "settings": {
+    "atomicNoteRelationThreshold": 0.6,
+    "entityIdentitySimilarityThreshold": 0.92,
+    "relationTypeSimilarityThreshold": 0.92,
+    "atomicNoteMatchingSettings": {
+      "textCandidateLimit": 30,
+      "vectorCandidateLimit": 30,
+      "graphCandidateLimit": 20,
+      "fusedCandidateLimit": 30,
+      "minimumGraphOnlyCandidates": 5,
+      "reciprocalRankConstant": 60,
+      "withEmbeddingAndGraph": {
+        "vector": 0.45,
+        "text": 0.25,
+        "graph": 0.2,
+        "metadata": 0.1
+      },
+      "withEmbedding": {
+        "vector": 0.55,
+        "text": 0.3,
+        "metadata": 0.15
+      },
+      "withGraph": {
+        "text": 0.55,
+        "graph": 0.3,
+        "metadata": 0.15
+      },
+      "textAndMetadata": {
+        "text": 0.7,
+        "metadata": 0.3
+      },
+      "rerankerWeight": 0.4,
+      "minRerankScore": 0.65,
+      "requireReranking": true,
+      "includeWeakTypes": false,
+      "maxRelationsPerNote": 10,
+      "maxRerankOutputTokens": 4096
+    },
+    "canonicalMatchingSettings": {
+      "relationTypeCandidateLimit": 3,
+      "entityCandidateLimit": 3,
+      "confirmationBatchSize": 12,
+      "confirmationMaxCharacters": 12000
+    },
+    "sourceRelationSettings": {
+      "reciprocalRankConstant": 60,
+      "evidenceChunksPerSource": 3,
+      "evidenceMaxCharacters": 1000,
+      "summaryMaxCharacters": 1200,
+      "noteRelationsPerPair": 6,
+      "maxOutputTokens": 4096,
+      "maxCandidates": 40,
+      "maxPairs": 8,
+      "maxRelations": 10,
+      "maxRelationsPerPair": 4,
+      "maxInputTokens": 60000,
+      "minImportance": 0.8,
+      "minConfidence": 0.8,
+      "includeWeakTypes": false
+    }
+  }
+}

@@ -114,3 +114,54 @@ provider token breakdowns and precise call context, as specified in
   result contracts, and retrieval degradation.
 - Load `rules/source-ingestion.md` for source/chunk embedding construction and
   invalidation, and `rules/jobs-and-processing.md` for generation checkpoints.
+
+## Matching calibration controls
+
+- Advanced matching settings are validated in `packages/domain/src/matching-settings.ts`
+  and persisted in application preferences. Missing fields load canonical defaults.
+  Snapshot effective settings in note-relation metadata and similarity diagnostics.
+- Note retrieval exposes independent text/vector/graph limits (30/30/20), fused
+  candidate limit (30, maximum 100), graph-only reservation (5), and RRF constant
+  (60). Zero graph candidates disables that signal. Reservation cannot exceed
+  the fused shortlist. The reranking envelope accepts the same maximum of 100.
+- Base weights are configurable separately for the four available-signal groups.
+  Normalize each group by its positive weight sum; all-zero groups are invalid.
+  The AI share defaults to 0.4, with remaining weight assigned to the base score.
+- Note persistence requires the final threshold and, when an AI result exists,
+  a strictly positive validation score meeting the separate minimum (0.65).
+  Other signals cannot override an AI rejection. Successful AI validation is
+  required by default; unavailable/invalid reranking fails the stage visibly.
+  Generic `mentions`/`related` types are disabled by default, independently from
+  source matching. Explicitly disabling required validation only permits fallback
+  when its type and score satisfy the other configured gates.
+- Exclude already persisted note pairs, including reviewed/rejected ones, before
+  reranking and do not consume their generation allowance or overwrite them.
+  Persist up to the configured number of new pairs per note and execution (10),
+  ordered by final score with stable ID ties. This is not a total graph-degree cap.
+  Reranking has a configurable output limit (4096) bounded by the profile maximum.
+- The versioned synthetic DEV pilot lives in `scripts/fixtures/matching-pilot.json`.
+  Expected ideas and relationship labels never enter AI prompts. The explicit
+  unpackaged DEV runner uses normal ingestion services and the existing AI routes,
+  requires an empty library on first preparation, resumes its saved manifest,
+  and never resets a library automatically. Reports retain settings, models,
+  candidates, evidence, token availability and separate stage usage. Its reported
+  token stop may overshoot by in-flight work; it is not a guaranteed provider cap.
+  Pair-level screening labels never substitute for semantic/evidence review.
+
+- An explicit DEV pilot rematch may replace only the manifest's unreviewed
+  synthetic matching relationships and decision caches after successful baseline
+  completion and a full backup. Refuse unrelated source IDs, active ingestion or
+  reviewed relationships. Preserve canonical source/note/summary/entity data,
+  profiles, the original audit, and the accumulated token allowance. Rebuild the
+  AGE projection from canonical data before the new matching pass. This is a
+  test-only workflow, never an automatic library cleanup.
+
+- The expanded synthetic benchmark keeps 40 tuning roots (including the pilot)
+  and 20 held-out roots in `scripts/fixtures/matching-benchmark.json`. Holdout
+  content is not imported until the chosen settings and training-result hash
+  are frozen. Candidate/context presets share acceptance and identity safeguards.
+  Warm all selected note embeddings before comparisons, snapshot canonical
+  extraction, and verify its preservation across matching-only passes. Back up
+  each reset and require the exact fixture source-ID set; retain the pilot
+  configuration separately. Accumulate reported usage across preparation,
+  comparisons and validation under the explicitly authorized experiment limit.

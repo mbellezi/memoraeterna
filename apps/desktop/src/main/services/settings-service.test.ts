@@ -23,3 +23,25 @@ describe("content language preference", () => {
     expect(parseSavedAppSettings({ ...legacy, language: "pt-BR", updatedAt: new Date().toISOString() }).contentLanguage).toBe("pt-BR");
   });
 });
+
+describe("advanced matching preferences", () => {
+  it("loads defaults for legacy preferences and persists custom controls across restart", async () => {
+    const { atomicNoteMatchingSettings: _notes, canonicalMatchingSettings: _canonical, ...legacy } = defaultAppSettings;
+    expect(parseSavedAppSettings({ ...legacy, language: "en", updatedAt: new Date().toISOString() })).toMatchObject({
+      atomicNoteMatchingSettings: { requireReranking: true, textCandidateLimit: 30 },
+      canonicalMatchingSettings: { entityCandidateLimit: 3 }
+    });
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-matching-settings-")); paths.push(path);
+    const service = new SettingsService(path);
+    const before = await service.getApp();
+    await service.updateApp({ atomicNoteMatchingSettings: { ...before.atomicNoteMatchingSettings, textCandidateLimit: 12, minRerankScore: 0.8 },
+      canonicalMatchingSettings: { ...before.canonicalMatchingSettings, entityCandidateLimit: 5 },
+      sourceRelationSettings: { ...before.sourceRelationSettings, evidenceChunksPerSource: 2 } });
+    const after = await new SettingsService(path).getApp();
+    expect(after).toMatchObject({ atomicNoteMatchingSettings: { textCandidateLimit: 12, minRerankScore: 0.8 },
+      canonicalMatchingSettings: { entityCandidateLimit: 5 }, sourceRelationSettings: { evidenceChunksPerSource: 2 }, language: before.language });
+    await expect(service.updateApp({ atomicNoteMatchingSettings: { ...after.atomicNoteMatchingSettings, fusedCandidateLimit: 101 } })).rejects.toThrow();
+    expect((await service.getApp()).atomicNoteMatchingSettings.fusedCandidateLimit).toBe(after.atomicNoteMatchingSettings.fusedCandidateLimit);
+  });
+});

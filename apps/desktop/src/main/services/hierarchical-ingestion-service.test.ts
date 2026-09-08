@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { aggregateSourceEmbedding, createCatalogMetadataChunk, participatesInAtomicNoteMatching } from "./job-supervisor.js";
+import { aggregateSourceEmbedding, createCatalogMetadataChunk, participatesInAtomicNoteMatching, persistCatalogMetadataChunk } from "./job-supervisor.js";
 import {
   buildCatalogMetadataMarkdown,
   canReuseArtifactStage,
@@ -9,6 +9,17 @@ import {
 } from "./hierarchical-ingestion-service.js";
 
 describe("hierarchical processing scope", () => {
+  it("preserves catalog chunk and evidence identifiers when reprocessing unchanged metadata", async () => {
+    const chunk = { ...createCatalogMetadataChunk("unchanged catalog"), documentId: "document", sourceItemId: "source", language: "und", createdAt: new Date() };
+    const repository = { listByDocument: vi.fn().mockResolvedValue([chunk]), replaceDocumentChunks: vi.fn() };
+    const reused = await persistCatalogMetadataChunk(repository, "document", "source", "unchanged catalog");
+    expect(reused).toEqual([chunk]);
+    expect(repository.replaceDocumentChunks).not.toHaveBeenCalled();
+    await persistCatalogMetadataChunk(repository, "document", "source", "changed catalog");
+    expect(repository.replaceDocumentChunks).toHaveBeenCalledOnce();
+    expect(repository.replaceDocumentChunks).toHaveBeenCalledWith("document", "source", [expect.objectContaining({ content: "changed catalog" })]);
+  });
+
   it("queues root summarization even when a previous hierarchical summary exists", () => {
     expect(canReuseArtifactStage("summarization", true)).toBe(false);
     expect(canReuseArtifactStage("summarization", false)).toBe(true);
@@ -30,6 +41,8 @@ describe("hierarchical processing scope", () => {
     expect(stages).not.toContain("atomicNotes");
     expect(stages).not.toContain("atomicNoteMatching");
     expect(participatesInAtomicNoteMatching(stages)).toBe(false);
+    expect(participatesInAtomicNoteMatching(["chunking", "atomicNotes", "knowledgeGraph"])).toBe(false);
+    expect(participatesInAtomicNoteMatching(["atomicNoteMatching"])).toBe(true);
     expect(participatesInAtomicNoteMatching(["atomicNotes", "atomicNoteMatching"])).toBe(true);
   });
 

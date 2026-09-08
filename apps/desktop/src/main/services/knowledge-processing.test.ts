@@ -586,3 +586,37 @@ it("regenerates cached graph batches when the content language changes", async (
   await generateKnowledgeGraphFromAtomicNotes({ title: "Evidence", language: "en" }, notes, run, 12_000, { contentLanguage: "pt-BR", completedBatches: first!.checkpoints });
   expect(run).toHaveBeenCalledOnce();
 });
+
+describe("advanced note matching calibration", () => {
+  it("normalizes custom weights and applies the configured AI share", async () => {
+    const { AtomicNoteMatchingSettingsSchema } = await import("@app/domain");
+    const settings = AtomicNoteMatchingSettingsSchema.parse({ textAndMetadata: { text: 0.2, metadata: 0.2 }, rerankerWeight: 0.8 });
+    expect(calculateRelationScore({ textScore: 1, metadataScore: 0, vectorScore: 0, hasEmbedding: false, settings })).toBeCloseTo(0.5);
+    expect(calculateRelationScore({ textScore: 1, metadataScore: 0, vectorScore: 0, hasEmbedding: false, rerankScore: 1, settings })).toBeCloseTo(0.9);
+  });
+  it("never compensates an AI rejection with a high base score", async () => {
+    const { AtomicNoteMatchingSettingsSchema } = await import("@app/domain");
+    const { qualifiesAtomicNoteRelation } = await import("./knowledge-processing.js");
+    const settings = AtomicNoteMatchingSettingsSchema.parse({});
+    const input = { finalScore: 0.99, threshold: 0.6, relationType: "supports", settings };
+    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.3 })).toBe(false);
+    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: null })).toBe(false);
+    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.9 })).toBe(true);
+    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0.9, relationType: "related" })).toBe(false);
+    expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0, settings: { ...settings, minRerankScore: 0 } })).toBe(false);
+  });
+  it("supports increased candidate batches and configurable graph reservation", () => {
+    const results = Array.from({ length: 45 }, (_, i) => ({ candidateAlias: `c${i + 1}`, score: 0.8, relationType: "supports" }));
+    expect(parseBatchRerankOutput({ results }, new Set(results.map((r) => r.candidateAlias))).size).toBe(45);
+    const ranked = [{ noteId: "text", score: 1 }];
+    expect(fuseAtomicNoteCandidateRankings(ranked, ranked, [{ noteId: "graph", score: 1 }], 1, 0, 10)[0]?.noteId).toBe("text");
+    expect(fuseAtomicNoteCandidateRankings(ranked, ranked, [{ noteId: "graph", score: 1 }], 1, 1, 10)[0]?.noteId).toBe("graph");
+  });
+});
+
+it("defines relation semantics and rejects homonym-only clarification in note reranking", () => {
+  const prompt = buildBatchRerankPrompt({title:"A",ideaStatement:"A"},[]);
+  expect(prompt).toContain("Merely distinguishing homonyms or unrelated senses");
+  expect(prompt).toContain("must receive score 0.0");
+  expect(prompt).toContain("incompatible positions on the same question");
+});

@@ -26,6 +26,9 @@ worker supervision, progress, cancellation, retry, or restart recovery.
   without repeating already validated stages.
 - A stage records `completed`, `skipped`, `failed`, or `canceled`. Unrequested
   stages are `skipped` with `not_requested` rather than appearing pending.
+- Atomic-note generation alone does not enroll a run in deferred note matching.
+  The batch participant filter requires `atomicNoteMatching` in that run's
+  effective stages, just as source matching requires its own explicit stage.
 - Retry/resume, execution of missing stages, and reingestion retain the distinct
   semantics defined in `rules/source-ingestion.md`.
 - Reuse an artifact only when its source revision, input hashes, generation,
@@ -79,3 +82,8 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   `rules/knowledge-graph.md` for batch identity and repair semantics.
 - Repository recovery/retry cases are in `repositories.test.ts`; retry policy
   is also covered by `apps/desktop/src/main/services/job-retry.test.ts`.
+
+- The supervisor owns one queue drain at a time. Retry/enqueue wakeups while a
+  drain is active are coalesced and scheduled after it settles; they must never
+  start concurrent ingestion orchestrators or duplicate collective matching.
+  Shutdown clears deferred wakeups and waits for the active drain.

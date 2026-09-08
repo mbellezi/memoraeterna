@@ -58,6 +58,15 @@ function mapRelation(row: AtomicNoteRelationRow): AtomicNoteRelationRecord {
 
 export function createAtomicNoteRelationRepository(db: Queryable) {
   return {
+    async existingTargets(noteId: string, candidateIds: string[]): Promise<Set<string>> {
+      if (!candidateIds.length) return new Set();
+      const result = await db.query<{ target: string }>(`select case when source_atomic_note_id = $1
+        then target_atomic_note_id else source_atomic_note_id end as target
+        from atomic_note_relations where
+          (source_atomic_note_id = $1 and target_atomic_note_id = any($2::uuid[]))
+          or (target_atomic_note_id = $1 and source_atomic_note_id = any($2::uuid[]))`, [noteId, candidateIds]);
+      return new Set(result.rows.map((row) => row.target));
+    },
     async upsert(input: {
       sourceAtomicNoteId: string;
       targetAtomicNoteId: string;

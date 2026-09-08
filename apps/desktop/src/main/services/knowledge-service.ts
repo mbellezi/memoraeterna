@@ -1,6 +1,6 @@
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
-import { SourceRelationSettingsSchema, type SourceRelationSettings } from "@app/domain";
+import { AtomicNoteMatchingSettingsSchema, CanonicalMatchingSettingsSchema, type AtomicNoteMatchingSettings, type CanonicalMatchingSettings, SourceRelationSettingsSchema, type SourceRelationSettings } from "@app/domain";
 import { createRelationTypeResolver, defaultRelationTypeSimilarityThreshold } from "./relation-type-resolution.js";
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
@@ -44,7 +44,7 @@ import {
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hierarchyAggregateSummaryPromptVersion,
-  meetsRelationThreshold,
+  qualifiesAtomicNoteRelation,
   normalizeSummaryText,
   parseBatchRerankOutput,
   scoreMetadataOverlap,
@@ -57,10 +57,6 @@ import {
 } from "./knowledge-processing.js";
 
 const maxInlineAssetBytes = 5 * 1024 * 1024;
-const atomicNoteTextCandidateLimit = 30;
-const atomicNoteVectorCandidateLimit = 30;
-const atomicNoteGraphCandidateLimit = 20;
-const atomicNoteFusedCandidateLimit = 30;
 
 function aggregateSourceLabel(type: SourceItemType): string {
   if (type === "Book") return "book";
@@ -104,6 +100,8 @@ export interface KnowledgeServiceOptions {
   aiService: AiService;
   relationThreshold?: number;
   getRelationThreshold?: () => Promise<number>;
+  getAtomicNoteMatchingSettings?: () => Promise<AtomicNoteMatchingSettings>;
+  getCanonicalMatchingSettings?: () => Promise<CanonicalMatchingSettings>;
   getSourceRelationSettings?: () => Promise<SourceRelationSettings>;
   getSummaryMinimumWordCount?: () => Promise<number>;
   getContentLanguage?: () => Promise<string>;
@@ -795,13 +793,16 @@ export class KnowledgeService {
     const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
     const extractionLimits = await this.options.getKnowledgeGraphLimits?.()
       ?? { maxEntities: 250, maxRelations: 500 };
+    const canonicalSettings = CanonicalMatchingSettingsSchema.parse(await this.options.getCanonicalMatchingSettings?.() ?? {});
     const resolveTypes = createRelationTypeResolver({
+      settings: canonicalSettings,
       pool, ai: this.options.aiService,
       threshold: await this.options.getRelationTypeSimilarityThreshold?.() ?? defaultRelationTypeSimilarityThreshold,
       context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
       ...(signal ? { signal } : {})
     });
     const resolveEntities = createEntityIdentityResolver({
+      settings: canonicalSettings,
       pool, ai: this.options.aiService, language: contentLanguage,
       threshold: await this.options.getEntityIdentitySimilarityThreshold?.() ?? 0.92,
       context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
@@ -968,6 +969,7 @@ export class KnowledgeService {
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
     const relationThreshold = clamp(await this.options.getRelationThreshold?.() ?? this.relationThreshold);
+    const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(await this.options.getAtomicNoteMatchingSettings?.() ?? {});
     let persistedCount = 0;
     for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
@@ -997,21 +999,21 @@ export class KnowledgeService {
       }
       const textCandidates = await notes.findTextMatchingCandidates({
         noteId,
-        limit: atomicNoteTextCandidateLimit
+        limit: matchingSettings.textCandidateLimit
       });
       const vectorCandidates = embedding
         ? await notes.findVectorMatchingCandidates({
             noteId,
             embedding,
             ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
-            limit: atomicNoteVectorCandidateLimit
+            limit: matchingSettings.vectorCandidateLimit
           })
         : [];
       const graphRepository = createKnowledgeGraphRepository(pool);
       let graphCandidates: Awaited<ReturnType<typeof graphRepository.findAtomicNoteCandidates>> = [];
       let graphError: string | null = null;
       try {
-        graphCandidates = await graphRepository.findAtomicNoteCandidates(noteId, atomicNoteGraphCandidateLimit);
+        graphCandidates = matchingSettings.graphCandidateLimit > 0 ? await graphRepository.findAtomicNoteCandidates(noteId, matchingSettings.graphCandidateLimit) : [];
       } catch (error) {
         graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
       }
@@ -1019,7 +1021,9 @@ export class KnowledgeService {
         textCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.textScore })),
         vectorCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.vectorScore })),
         graphCandidates.map((candidate) => ({ noteId: candidate.noteId, score: candidate.graphScore })),
-        atomicNoteFusedCandidateLimit
+        matchingSettings.fusedCandidateLimit,
+        matchingSettings.minimumGraphOnlyCandidates,
+        matchingSettings.reciprocalRankConstant
       );
       const scoredCandidates = await notes.scoreMatchingCandidates({
         noteId,
@@ -1029,7 +1033,8 @@ export class KnowledgeService {
       });
       const scoresById = new Map(scoredCandidates.map((candidate) => [candidate.note.id, candidate]));
       const graphPathsById = new Map(graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType]));
-      const candidates = fusedCandidates.flatMap((candidate) => {
+      const existingTargets = await relations.existingTargets(noteId, fusedCandidates.map((candidate) => candidate.noteId));
+      const candidates = fusedCandidates.filter((candidate) => !existingTargets.has(candidate.noteId)).flatMap((candidate) => {
         const scored = scoresById.get(candidate.noteId);
         return scored ? [{
           ...candidate,
@@ -1060,11 +1065,12 @@ export class KnowledgeService {
               title: candidate.note.title,
               ideaStatement: candidate.note.ideaStatement
             }))),
-            withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_reranking" }, [
+            withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_reranking", promptVersion: atomicNoteMatchingVersion }, [
               note.createdFromSourceItemId,
               ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
             ]),
-            signal
+            signal,
+            { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
           );
           if (rerankExecution) {
             rerankResults = parseBatchRerankOutput(
@@ -1080,6 +1086,20 @@ export class KnowledgeService {
           // The batch is atomic: any invalid or incomplete output discards all reranking results.
         }
       }
+      if (candidates.length > 0 && matchingSettings.requireReranking && !rerankExecution) {
+        throw new Error(rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel");
+      }
+      candidates.sort((left, right) => {
+        const score = (candidate: typeof left) => calculateRelationScore({
+          vectorScore: candidate.vectorScore, textScore: candidate.textScore,
+          metadataScore: scoreMetadataOverlap(note.metadata, candidate.note.metadata),
+          graphScore: candidate.graphScore, hasEmbedding: Boolean(embedding),
+          rerankScore: rerankResults.get(rerankAliases.get(candidate.note.id)!)?.score ?? null,
+          settings: matchingSettings
+        });
+        return score(right) - score(left) || left.note.id.localeCompare(right.note.id);
+      });
+      let notePersistedCount = 0;
       const debugResults: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"] = [];
       for (const [candidateIndex, candidate] of candidates.entries()) {
         const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
@@ -1089,7 +1109,8 @@ export class KnowledgeService {
           textScore: candidate.textScore,
           metadataScore,
           graphScore,
-          hasEmbedding: Boolean(embedding)
+          hasEmbedding: Boolean(embedding),
+          settings: matchingSettings
         });
         let finalScore = baseScore;
         let relationType = "related";
@@ -1105,12 +1126,13 @@ export class KnowledgeService {
             metadataScore,
             graphScore,
             hasEmbedding: Boolean(embedding),
-            rerankScore: reranked.score
+            rerankScore: reranked.score,
+            settings: matchingSettings
           });
           relationType = reranked.relationType;
           explanation = "knowledge.relations.explanations.reranked";
         }
-        const passedThreshold = meetsRelationThreshold(finalScore, relationThreshold);
+        const passedThreshold = qualifiesAtomicNoteRelation({ finalScore, threshold: relationThreshold, rerankScore, relationType, settings: matchingSettings });
         debugResults.push({
           targetType: "atomic_note",
           targetId: candidate.note.id,
@@ -1130,6 +1152,7 @@ export class KnowledgeService {
           explanation,
           metadata: {
             baseScore,
+            skippedByRelationLimit: passedThreshold && notePersistedCount >= matchingSettings.maxRelationsPerNote,
             relationType,
             graphError,
             graphStatus: graphError ? "failed" : graphCandidates.length > 0 ? "succeeded" : "no_signal",
@@ -1142,7 +1165,7 @@ export class KnowledgeService {
             candidateStatus: candidate.note.status
           }
         });
-        if (passedThreshold) {
+        if (passedThreshold && notePersistedCount < matchingSettings.maxRelationsPerNote) {
           const persistRelation = () => relations.upsert({
             sourceAtomicNoteId: note.id,
             targetAtomicNoteId: candidate.note.id,
@@ -1156,6 +1179,7 @@ export class KnowledgeService {
             matchingModel: rerankExecution?.modelId ?? null,
             metadata: {
               version: atomicNoteMatchingVersion,
+              settings: matchingSettings,
               threshold: relationThreshold,
               textScore: candidate.textScore,
               metadataScore,
@@ -1174,6 +1198,7 @@ export class KnowledgeService {
             withAiSourceItems({ ...logContext, atomicNoteId: note.id }, [note.createdFromSourceItemId, candidate.note.createdFromSourceItemId]),
             persistRelation, { targetAtomicNoteId: candidate.note.id, relationType, finalScore, threshold: relationThreshold }) ?? persistRelation());
           persistedCount += 1;
+          notePersistedCount += 1;
         }
         await onProgress?.(calculateAtomicNoteMatchingProgress({
           noteIndex,
@@ -1189,6 +1214,7 @@ export class KnowledgeService {
         dimensions: embedding?.length ?? null,
         hasEmbedding: Boolean(embedding),
         relationThreshold,
+        matchingSettings,
         sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
         results: debugResults
       });
@@ -1218,11 +1244,13 @@ export class KnowledgeService {
     dimensions: number | null;
     hasEmbedding: boolean;
     relationThreshold: number;
+    matchingSettings: AtomicNoteMatchingSettings;
     sourceGraphElements: AtomicNoteGraphElements;
     results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
   }): Promise<void> {
     try {
       if (!await this.options.isDebugEnabled?.()) return;
+      const matchingSettings = input.matchingSettings;
       await createSimilarityDebugRepository(this.requirePool()).record({
         kind: "atomic_note_matching",
         queryText: input.queryText,
@@ -1230,24 +1258,19 @@ export class KnowledgeService {
         mode: input.hasEmbedding ? "hybrid" : "text_metadata",
         model: input.embeddingModel,
         dimensions: input.dimensions,
-        requestedLimit: atomicNoteFusedCandidateLimit,
+        requestedLimit: matchingSettings.fusedCandidateLimit,
         strategy: "text_vector_graph_rrf_with_batch_reranking",
         metadata: {
           threshold: input.relationThreshold,
           retrievalLimits: {
-            text: atomicNoteTextCandidateLimit,
-            vector: atomicNoteVectorCandidateLimit,
-            graph: atomicNoteGraphCandidateLimit,
-            fused: atomicNoteFusedCandidateLimit
+            text: matchingSettings.textCandidateLimit,
+            vector: matchingSettings.vectorCandidateLimit,
+            graph: matchingSettings.graphCandidateLimit,
+            fused: matchingSettings.fusedCandidateLimit
           },
-          fusion: { strategy: "rrf", reciprocalRankConstant: 60 },
-          baseWeights: {
-            withEmbeddingAndGraph: { vector: 0.45, text: 0.25, graph: 0.2, metadata: 0.1 },
-            withEmbedding: { vector: 0.55, text: 0.3, metadata: 0.15 },
-            withGraph: { text: 0.55, graph: 0.3, metadata: 0.15 },
-            textAndMetadata: { text: 0.7, metadata: 0.3 }
-          },
-          rerankWeights: { base: 0.6, reranker: 0.4 },
+          fusion: { strategy: "rrf", reciprocalRankConstant: matchingSettings.reciprocalRankConstant },
+          settings: matchingSettings,
+          rerankWeights: { base: 1 - matchingSettings.rerankerWeight, reranker: matchingSettings.rerankerWeight },
           rerankMode: "single_atomic_batch",
           sourceGraphElements: input.sourceGraphElements
         },

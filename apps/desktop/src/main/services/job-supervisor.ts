@@ -65,6 +65,7 @@ export class JobSupervisor {
   private running = false;
   private stopping = false;
   private drainPromise: Promise<void> | null = null;
+  private nextDrainDelay: number | null = null;
   private readonly pendingProgressUpdates = new Set<Promise<unknown>>();
   private readonly listeners = new Set<() => void>();
   private readonly workerId = `${hostname()}:${process.pid}`;
@@ -84,6 +85,7 @@ export class JobSupervisor {
   public async stop(): Promise<void> {
     this.stopping = true;
     this.running = false;
+    this.nextDrainDelay = null;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     for (const controller of this.controllers.values()) controller.abort();
@@ -253,12 +255,21 @@ export class JobSupervisor {
 
   private schedule(delay: number): void {
     if (!this.running || this.stopping) return;
+    if (this.drainPromise) {
+      this.nextDrainDelay = Math.min(this.nextDrainDelay ?? delay, delay);
+      return;
+    }
     if (this.timer) clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       this.timer = null;
       this.drainPromise = this.drain()
         .catch((error: unknown) => this.options.logger?.error(normalizeWorkerError(error)))
-        .finally(() => { this.drainPromise = null; });
+        .finally(() => {
+          this.drainPromise = null;
+          const next = this.nextDrainDelay;
+          this.nextDrainDelay = null;
+          if (next !== null) this.schedule(next);
+        });
     }, delay);
   }
 
@@ -294,15 +305,12 @@ export class JobSupervisor {
     if (shouldRun("chunking") && checkpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "chunking");
       this.notify();
-      const chunks = catalogMetadataOnly
-        ? [createCatalogMetadataChunk(markdown)]
-        : await this.createContentChunks(job, markdown, signal);
-      persistedChunks = await createChunkRepository(pool).replaceDocumentChunks(
-        documentId,
-        sourceItemId,
-        chunks
-      );
-      await runs.completeStage(ingestionRunId, "chunking", { chunkCount: chunks.length });
+      const chunkRepository = createChunkRepository(pool);
+      persistedChunks = catalogMetadataOnly
+        ? await persistCatalogMetadataChunk(chunkRepository, documentId, sourceItemId, markdown)
+        : await chunkRepository.replaceDocumentChunks(documentId, sourceItemId,
+          await this.createContentChunks(job, markdown, signal));
+      await runs.completeStage(ingestionRunId, "chunking", { chunkCount: persistedChunks.length });
       this.notify();
     } else {
       persistedChunks = await createChunkRepository(pool).listByDocument(documentId);
@@ -793,6 +801,22 @@ function parseWorkerChunk(raw: unknown) {
   };
 }
 
+export async function persistCatalogMetadataChunk(
+  repository: Pick<ReturnType<typeof createChunkRepository>, "listByDocument" | "replaceDocumentChunks">,
+  documentId: string,
+  sourceItemId: string,
+  content: string
+) {
+  const chunk = createCatalogMetadataChunk(content);
+  const existing = await repository.listByDocument(documentId);
+  // Replacing identical catalog chunks cascades to graph evidence even when only embedding was requested.
+  if (existing.length === 1 && existing[0]!.sourceItemId === sourceItemId
+    && existing[0]!.content === content && existing[0]!.contentHash === chunk.contentHash
+    && existing[0]!.chunkingVersion === chunk.chunkingVersion
+    && existing[0]!.metadata.processingMode === "catalog_metadata") return existing;
+  return repository.replaceDocumentChunks(documentId, sourceItemId, [chunk]);
+}
+
 export function createCatalogMetadataChunk(content: string) {
   const id = randomUUID();
   const sourceSpanId = randomUUID();
@@ -841,7 +865,7 @@ function meanVector(vectors: number[][]): number[] | null {
 }
 
 export function participatesInAtomicNoteMatching(effectiveStages: readonly unknown[]): boolean {
-  return effectiveStages.includes("atomicNotes");
+  return effectiveStages.includes("atomicNoteMatching");
 }
 
 function normalizeWorkerError(error: unknown): string {

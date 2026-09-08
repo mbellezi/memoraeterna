@@ -31,6 +31,7 @@ export function MatchingSlider({ id, label, value, defaultValue, resetLabel, onC
   }
 
   return <div className="grid gap-2">
+    <label htmlFor={id} className="text-sm font-medium">{label}</label>
     <div className="flex items-center justify-end gap-3">
       <output htmlFor={id} className="font-bold tabular-nums text-amber-700 dark:text-amber-300">{draft.toFixed(2)}</output>
       <button type="button" title={resetLabel} aria-label={`${label}: ${resetLabel}`}

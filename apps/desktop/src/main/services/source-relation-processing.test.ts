@@ -235,3 +235,9 @@ describe("source matching budget and recovery",() => {
     expect(states.get("run:root-A")).toMatchObject({completed:["done",expect.any(String)],proposals:1,attempts:{failed:2}});
   });
 });
+
+it("forbids lexical disambiguation and proper-name reinterpretation as conceptual clarification", () => {
+  const prompt = sourceRelationPrompt(context,4,false);
+  expect(prompt).toContain("Merely distinguishing homonyms or unrelated senses");
+  expect(prompt).toContain("must never be reinterpreted as an abstract definition");
+});

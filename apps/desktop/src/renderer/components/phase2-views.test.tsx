@@ -468,13 +468,16 @@ describe("phase 2 renderer views", () => {
       />
     );
 
-    expect(html.match(/type="range"/g)).toHaveLength(5);
-    expect(html.match(/title="Restore default value"/g)).toHaveLength(5);
+    expect(html.match(/type="range"/g)).toHaveLength(6);
+    expect(html.match(/title="Restore default value"/g)).toHaveLength(6);
     expect(html).toContain('id="atomicNoteRelationThreshold"');
     expect(html).toContain('id="relationTypeSimilarityThreshold"');
     expect(html).toContain('id="entityIdentitySimilarityThreshold"');
     expect(html).toContain('id="sourceRelations-minImportance"');
     expect(html).toContain('id="sourceRelations-minConfidence"');
+    expect(html).toContain("Advanced matching");
+    expect(html).toContain('id="matching-minRerankScore"');
+    expect(html).toContain("Characters per evidence passage");
     expect(html).not.toContain('id="summaryMinimumWordCount"');
   });
 

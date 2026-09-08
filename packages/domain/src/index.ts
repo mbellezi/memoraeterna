@@ -14,3 +14,5 @@ export * from "./source-item.js";
 export * from "./source-descriptor.js";
 export * from "./storage.js";
 export * from "./source-relations.js";
+
+export * from "./matching-settings.js";

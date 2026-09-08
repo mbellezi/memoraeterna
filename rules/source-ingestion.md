@@ -54,6 +54,10 @@ Video, GenericDocument
 
 ## Containers and bibliography
 
+- Reprocessing unchanged catalog metadata must preserve its chunk and span IDs.
+  Replacing identical chunks cascades to entity mentions, claims and graph
+  evidence, even when the selected plan only requests embeddings or matching.
+
 - `Book`, `PeriodicalIssue`, and `AcademicPaper` may exist as catalog containers
   without a `documents` or `ingestion_runs` row.
 - Container-aware Library, deletion, processing, search navigation, and
@@ -156,6 +160,15 @@ auditable. Aggregate summaries do not create duplicate root-level atomic notes.
 
 - Retry/resume continues the same run from checkpoints.
 - Missing-stage execution reuses valid artifacts and runs only absent work.
+- A successful atomic-note generation that returns zero notes is an artifact,
+  not missing work. Reuse requires a recorded generation on the current document
+  revision with matching content hashes and a completed, configured stage whose
+  generated count is zero. Failed/unconfigured attempts and changed documents
+  do not qualify. Explicit regeneration still reruns the selected stage.
+- A completed, configured summary stage classified as `non_content` is likewise
+  reusable for the same current revision and content hash. A `too_short` outcome
+  remains subject to the current word-count policy rather than becoming a
+  permanent content classification. Unconfigured attempts never qualify.
 - Reingestion is a new intentional run with new input hashes and a link to the
   superseded run.
 - Reviewed or edited summaries, notes, relationships, and evidence are never

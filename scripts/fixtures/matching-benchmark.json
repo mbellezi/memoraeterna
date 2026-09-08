@@ -1,0 +1,1707 @@
+{
+  "version": "matching-benchmark-v1",
+  "description": "Synthetic DEV calibration: 40 tuning roots (including 12 pilot roots), 20 held-out roots imported only after configuration freeze. All scenarios and named people/projects are fictional. Labels are evaluation-only.",
+  "sources": [
+    {
+      "key": "P01",
+      "title": "Aprendizagem por recuperação",
+      "chapters": [
+        {
+          "key": "P01a",
+          "title": "Recordar antes de consultar",
+          "content": "Em um curso fictício de história, a aprendizagem foi organizada em tentativas de recordar uma explicação sem consultar o material. Depois de cada tentativa, os participantes podiam conferir a resposta. O mecanismo proposto é que recuperar uma informação exige reconstruir o caminho que permite acessá-la mais tarde. A simples sensação de familiaridade durante a releitura não demonstra que o estudante consegue produzir a resposta sozinho.\n\nA conclusão se restringe à retenção das explicações estudadas: tentativas de recuperação acompanhadas de correção favorecem a lembrança posterior em comparação com releitura passiva. O texto não afirma que toda pergunta difícil melhora a aprendizagem, nem que avaliações sob pressão têm o mesmo efeito. Recordar não significa memorizar a posição de uma frase na página. A atividade deve exigir a ideia, sem pistas que entreguem a resposta.",
+          "ideas": [
+            "Recuperação ativa acompanhada de correção favorece retenção em relação à releitura passiva.",
+            "Familiaridade na releitura não demonstra capacidade de recordar sozinho."
+          ]
+        },
+        {
+          "key": "P01b",
+          "title": "Feedback após uma tentativa",
+          "content": "Quando uma tentativa de recordação produz uma resposta incorreta, o feedback precisa mostrar qual explicação é compatível com o material e por que a alternativa falhou. Sem essa comparação, repetir a mesma resposta errada pode consolidar o erro em vez de corrigi-lo. A tentativa inicial permite identificar a lacuna; a comparação posterior fornece uma oportunidade concreta de revisão.\n\nA recomendação é permitir primeiro uma resposta do estudante e oferecer em seguida uma explicação corretiva. Mostrar a solução antes da tentativa elimina parte do esforço de recuperação que a atividade pretendia criar. Neste procedimento, o objetivo não é premiar velocidade. A correção deve preservar as condições da afirmação original e evitar substituir uma resposta equivocada por uma regra absoluta. O benefício descrito depende de o estudante considerar a explicação recebida.",
+          "ideas": [
+            "Feedback após a tentativa ajuda a corrigir erros identificados na recuperação.",
+            "Repetição de respostas erradas sem feedback pode consolidar erros."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P02",
+      "title": "Evocação com correção no estudo",
+      "content": "Uma atividade de estudo pode pedir que o aluno produza de memória uma explicação e depois confronte sua resposta com uma referência. Neste texto, evocação significa produzir a informação sem vê-la; é o mesmo procedimento chamado de recuperação ativa em outros materiais. A comparação posterior revela tanto omissões quanto interpretações incorretas.\n\nA proposta é que essa combinação favoreça retenção posterior, enquanto reler uma página pode produzir familiaridade sem garantir recordação independente. A facilidade percebida durante a leitura não equivale à capacidade de explicar o conteúdo em outro momento. Se o aluno repete uma resposta incorreta e nunca recebe esclarecimento, a atividade pode reforçar o erro. Portanto, o benefício atribuído à evocação inclui oportunidade de correção. Essa afirmação não garante resultados em qualquer ambiente, sob qualquer pressão ou com material que o aluno nunca compreendeu.",
+      "ideas": [
+        "Evocação é equivalente à recuperação ativa.",
+        "Evocação com correção favorece retenção e corrige erros; familiaridade não basta."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P03",
+      "title": "Limites da recuperação sob pressão",
+      "content": "Em uma situação fictícia, participantes foram obrigados a responder questões difíceis imediatamente, sob ameaça de avaliação pública e sem receber feedback. Nessa condição, as tentativas de recuperação não produziram vantagem de retenção sobre a releitura. A pressão desviou a atenção para a possibilidade de errar diante do grupo. O resultado mostra um limite de aplicação da prática, e não uma negação de qualquer benefício da recuperação ativa.\n\nÉ necessário distinguir esse procedimento de tentativas em ambiente de estudo com oportunidade de correção. A afirmação de que recuperar sempre melhora a memória extrapolaria as condições descritas. A recomendação é remover a ameaça social e fornecer feedback antes de transferir para esse ambiente conclusões obtidas com recuperação acompanhada de correção. O texto não demonstra que a pressão é a única causa do resultado, porque a ausência de feedback também faz parte da situação.",
+      "ideas": [
+        "Recuperação sob pressão e sem feedback pode não superar releitura.",
+        "A ausência de benefício nessas condições não nega o benefício da recuperação com correção."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P04",
+      "title": "Memória e recuperação de buffers",
+      "content": "Um buffer de memória mantém temporariamente bytes recebidos por um processo de computador. Quando o processo termina, a região pode ser devolvida ao alocador para reutilização. Recuperar essa região significa disponibilizar capacidade para uma alocação futura; não envolve lembrar uma explicação nem corrigir uma resposta de estudante.\n\nO contrato deste sistema determina que nenhuma rotina leia bytes depois de liberar a região que os contém. Manter um ponteiro antigo não preserva a propriedade da memória. Para evitar acesso a dados inválidos, o componente que recebe a região também recebe a responsabilidade por controlar seu tempo de vida. A descrição trata de propriedade e segurança de buffers, sem propor um mecanismo de armazenamento de respostas para acelerar consultas. O uso das palavras memória e recuperação não estabelece equivalência com processos de aprendizagem humana.",
+      "ideas": [
+        "Liberar buffers encerra a validade de acesso à região; ponteiros antigos não preservam propriedade."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P05",
+      "title": "Memória, o nome de uma exposição",
+      "content": "Memória é o nome próprio de uma exposição fictícia de vasos do Museu do Vale. As peças são identificadas por códigos de inventário e apresentadas por sala. A ficha de cada objeto descreve sua origem documental e a posição prevista no percurso de visita. O título da exposição não designa um processo psicológico nem uma região de armazenamento computacional.\n\nA curadora registra a entrada e a saída de cada peça para manter a rastreabilidade do acervo. Uma mudança de sala altera o registro de localização, mas não o código que identifica o objeto. Dois vasos com a mesma descrição visual podem ter códigos diferentes e histórias distintas. Este catálogo não descreve fabricação, secagem ou queima das peças. Sua finalidade é controlar identidade documental e localização de objetos já existentes, sem apresentar experimentos sobre retenção ou aprendizagem.",
+      "ideas": [
+        "Identificadores de acervo permanecem estáveis quando a localização muda.",
+        "Semelhança visual não demonstra identidade de objetos do acervo."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P06",
+      "title": "Consistência de caches",
+      "chapters": [
+        {
+          "key": "P06a",
+          "title": "Validade temporal de respostas",
+          "content": "Um cache armazena uma resposta calculada para reutilizá-la em consultas posteriores. O tempo de vida, também chamado TTL, determina por quanto tempo a cópia pode ser servida sem nova verificação. Reduzir esse intervalo diminui a janela de possível desatualização, mas aumenta a frequência de consultas ao serviço de origem.\n\nUm TTL ainda não vencido não prova que o dado permanece correto: a origem pode mudar antes do prazo. O contrato precisa especificar quanto atraso é aceitável para cada informação. Respostas de disponibilidade de estoque podem exigir tolerância menor que descrições de categorias. O mecanismo discutido equilibra atualização e custo de consulta; ele não trata de retenção de conteúdo por estudantes. A escolha de prazo precisa considerar o ritmo de mudança da origem e o impacto de servir uma resposta antiga.",
+          "ideas": [
+            "TTL menor reduz a janela de desatualização e aumenta consultas à origem.",
+            "TTL não vencido não garante que o dado não mudou."
+          ]
+        },
+        {
+          "key": "P06b",
+          "title": "Invalidação orientada por mudanças",
+          "content": "Quando a origem de uma resposta muda, um evento de atualização pode invalidar a entrada correspondente no cache antes de o TTL vencer. Para funcionar, o evento precisa identificar quais entradas dependem do dado alterado. Invalidar todas as entradas seria simples, mas eliminaria respostas ainda úteis e aumentaria consultas desnecessárias.\n\nA invalidação seletiva depende de um mapa de dependências correto. Se uma dependência não estiver registrada, uma entrada antiga pode continuar sendo servida mesmo depois do evento. Um TTL finito limita a duração desse erro residual, embora não substitua a identificação das dependências. Por isso, invalidação por evento e expiração temporal podem atuar em conjunto. O texto descreve coerência entre cópias computacionais e dados de origem, sem estabelecer uma analogia causal com memória humana.",
+          "ideas": [
+            "Invalidação por evento pode remover entradas antes do TTL vencer.",
+            "Invalidação seletiva exige dependências corretas; TTL finito limita erros residuais."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P07",
+      "title": "Expiração e eventos em respostas reutilizadas",
+      "content": "Na aplicação fictícia Prisma, respostas calculadas são guardadas para reduzir consultas repetidas. Uma duração curta de validade exige mais acessos à origem, mas reduz quanto tempo uma cópia antiga pode ser usada. O prazo é conhecido como tempo de vida ou TTL. Uma alteração na origem pode ocorrer antes de seu término, portanto a validade temporal não é garantia de igualdade com o estado atual.\n\nO sistema combina expiração com notificações de mudança. Cada notificação invalida somente respostas que dependem do registro alterado. Essa seleção exige conhecer as dependências: uma resposta esquecida no mapa pode permanecer antiga. A expiração finita oferece um limite posterior para esse problema. Assim, notificações e prazo de validade se complementam, sem exigir descarte indiscriminado de todas as respostas. A proposta se refere a consultas computacionais reutilizadas, não à liberação de regiões de memória.",
+      "ideas": [
+        "Expiração curta troca menor desatualização por mais consultas.",
+        "Notificações de mudança e TTL finito se complementam na consistência de caches."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P08",
+      "title": "Secagem e queima de cerâmica",
+      "chapters": [
+        {
+          "key": "P08a",
+          "title": "Secagem uniforme da argila",
+          "content": "Na oficina fictícia Barro Claro, peças de argila de espessura desigual secam em ritmos diferentes. As regiões finas perdem água primeiro e se contraem enquanto as partes espessas ainda estão úmidas. Essa diferença pode produzir tensões e fissuras antes da entrada no forno.\n\nA orientação da oficina é buscar espessura mais uniforme e reduzir diferenças de exposição ao ar durante a secagem. Aumentar a temperatura do forno posteriormente não desfaz uma fissura já formada na secagem. O mecanismo descrito depende da distribuição de umidade e da contração da argila; não explica qualquer rachadura em qualquer material. Neste procedimento, registrar a localização das fissuras antes da queima ajuda a distinguir problemas surgidos na secagem de danos provocados na etapa seguinte.",
+          "ideas": [
+            "Secagem desigual e contração diferencial podem gerar fissuras antes da queima.",
+            "Espessura uniforme e exposição semelhante ao ar reduzem diferenças de secagem."
+          ]
+        },
+        {
+          "key": "P08b",
+          "title": "Umidade residual no forno",
+          "content": "Uma peça pode parecer seca na superfície e ainda conter água no interior. No início da queima, aquecimento rápido pode transformar essa água em vapor mais depressa do que ele consegue escapar. O aumento de pressão pode romper a peça. Esse mecanismo difere das fissuras por contração diferencial que aparecem antes de a peça entrar no forno.\n\nA oficina usa uma etapa inicial de aquecimento gradual para favorecer a saída da umidade residual. O procedimento reduz o risco associado a essa umidade, mas não repara defeitos estruturais já existentes. O operador deve verificar a condição da peça e registrar em qual etapa o dano apareceu. Um forno mais quente não é automaticamente um forno mais adequado: a velocidade de aquecimento importa quando há água retida no interior da argila.",
+          "ideas": [
+            "Aquecimento rápido de água residual pode gerar pressão e romper a peça.",
+            "Aquecimento inicial gradual favorece saída de umidade, sem reparar fissuras anteriores."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P09",
+      "title": "Diagnóstico de fissuras em peças de argila",
+      "content": "O diagnóstico de uma peça rachada precisa considerar quando o dano apareceu. Fissuras presentes antes da queima podem resultar de secagem desigual: regiões com umidades diferentes se contraem em momentos diferentes. Espessuras semelhantes e exposição equilibrada ao ar ajudam a reduzir essa diferença.\n\nJá uma ruptura no início da queima pode ocorrer quando a água interna vira vapor rapidamente e não encontra saída suficiente. Nessa situação, aquecer gradualmente no início permite que a umidade residual escape. Os dois mecanismos não são equivalentes e exigem observações distintas. Uma superfície aparentemente seca não garante ausência de água interna. O procedimento diagnóstico mantém separadas a contração durante a secagem e a pressão de vapor durante o aquecimento, evitando atribuir toda fissura a um único problema do forno.",
+      "ideas": [
+        "Fissuras por secagem desigual e rupturas por vapor têm mecanismos distintos.",
+        "Superfície seca não garante ausência de umidade interna."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P10",
+      "title": "Projeto Aurora de germinação",
+      "chapters": [
+        {
+          "key": "P10a",
+          "title": "Luz e germinação no viveiro",
+          "content": "Ana Costa é uma botânica fictícia do Instituto de Sementes do Vale e coordena o Projeto Aurora de germinação. Neste projeto, lotes de uma única espécie são comparados sob condições de iluminação distintas, com substrato e irrigação mantidos iguais. O objetivo é verificar uma resposta à luz sem atribuir ao tratamento diferenças causadas pela quantidade de água.\n\nA conclusão metodológica é que variar um fator enquanto se controlam os demais facilita interpretar diferenças entre grupos. Isso não elimina toda fonte de variação, pois sementes individuais continuam diferentes. A identidade de Ana Costa neste documento inclui profissão, instituição e responsabilidade pelo viveiro. O Projeto Aurora citado aqui é uma pesquisa botânica local; não se refere a observação de estrelas nem a um instrumento astronômico.",
+          "ideas": [
+            "Controlar irrigação e substrato ajuda a interpretar diferenças associadas à iluminação."
+          ]
+        },
+        {
+          "key": "P10b",
+          "title": "Distribuição aleatória dos lotes",
+          "content": "No Projeto Aurora do Instituto de Sementes do Vale, Ana Costa distribui sementes entre os grupos por sorteio. A distribuição aleatória reduz a possibilidade de concentrar deliberadamente sementes maiores em uma condição de luz. Ela complementa o controle de substrato e irrigação adotado no viveiro.\n\nO sorteio não garante grupos perfeitamente iguais em uma amostra pequena. A interpretação precisa considerar essa limitação e registrar o número de sementes observadas. A botânica Ana Costa coordena esse procedimento no mesmo projeto de germinação descrito no plano do viveiro. O documento não identifica qualquer observatório astronômico como participante e não transfere conclusões sobre germinação para luminosidade de estrelas. A proposta é melhorar a comparação de tratamentos dentro da pesquisa botânica delimitada.",
+          "ideas": [
+            "Distribuição aleatória reduz viés de seleção, mas não garante equilíbrio em amostras pequenas."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P11",
+      "title": "Projeto Aurora de observação estelar",
+      "content": "Ana Costa é uma astrônoma fictícia do Observatório da Serra e coordena o Projeto Aurora de observação estelar. A equipe compara imagens sucessivas da mesma região do céu para identificar variações de brilho. Um aumento aparente na imagem pode resultar tanto do objeto quanto de alterações na sensibilidade do detector.\n\nO procedimento exige verificar a calibração do detector antes de atribuir a mudança à estrela. Corrigir a resposta instrumental ajuda a separar comportamento do equipamento e variação do objeto observado. A identidade de Ana Costa neste documento inclui sua atividade no observatório e a responsabilidade por medidas astronômicas. Trata-se de pessoa e projeto distintos dos homônimos do Instituto de Sementes do Vale; ela não coordena ensaios de germinação. A coincidência dos nomes não indica colaboração ou equivalência entre as pesquisas.",
+      "ideas": [
+        "Calibração do detector ajuda a distinguir variação instrumental de mudança no brilho estelar."
+      ],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "P12",
+      "title": "Índice de assuntos e referências",
+      "content": "# Índice\n\n- Memória\n- Recuperação\n- Feedback\n- Argila\n- Cache\n- Aurora\n\n# Referências\n\n- Aprendizagem por recuperação.\n- Consistência de caches.\n- Secagem e queima de cerâmica.\n- Projeto Aurora de germinação.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "pilot"
+    },
+    {
+      "key": "Q1",
+      "title": "Recibos perdidos na fila de entregas — caderno",
+      "chapters": [
+        {
+          "key": "Q1a",
+          "title": "Recibos perdidos na fila de entregas",
+          "content": "No serviço fictício Ponte, uma mensagem é removida da fila somente quando o remetente recebe um recibo de conclusão. Se a resposta se perde na rede depois que o destinatário executou o pedido, o remetente não consegue distinguir execução concluída de pedido perdido. Por contrato, ele repete o envio após esperar. Isso preserva a possibilidade de entrega, mas permite executar o mesmo pedido mais de uma vez.\n\nCada tentativa conserva a chave original da operação. O destinatário registra a chave junto com o resultado antes de responder. Quando a mesma chave reaparece, devolve o resultado registrado sem aplicar novamente a alteração. Criar uma chave diferente em cada tentativa impede reconhecer que as duas mensagens representam o mesmo pedido. O mecanismo protege o efeito da operação; ele não torna a transmissão da rede única.",
+          "ideas": [
+            "Perda do recibo pode provocar reenvio de uma operação já executada.",
+            "Chave estável com resultado registrado evita repetir o efeito."
+          ]
+        },
+        {
+          "key": "Q1b",
+          "title": "Prazo de retenção dos recibos",
+          "content": "O serviço Ponte conserva os resultados das operações por um intervalo finito. A equipe definiu que o histórico deve durar pelo menos tanto quanto a janela em que um remetente ainda pode repetir uma mensagem. Quando o registro de uma chave já foi apagado, o destinatário trata sua chegada como um pedido novo e pode aplicar novamente a alteração.\n\nA ausência de duplicação observada em testes curtos não demonstra segurança para repetições tardias. O protocolo precisa alinhar o prazo de repetição com a retenção do histórico. O mesmo resultado pode ser devolvido a vários envios sem criar vários efeitos, desde que a chave seja conservada e seu registro ainda exista. O texto não promete essa propriedade após o descarte dos recibos.",
+          "ideas": [
+            "Retenção do registro deve cobrir a janela de repetição.",
+            "Reenvio após descarte do registro pode duplicar efeito."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Message delivery"
+    },
+    {
+      "key": "Q2",
+      "title": "Uma entrega, várias tentativas",
+      "content": "Na central fictícia Travessia, um pedido pode chegar ao operador, ser concluído e ter sua confirmação perdida. O cliente então o transmite outra vez. A central associa todas as tentativas ao identificador do primeiro pedido e guarda o desfecho. Ao receber uma repetição, consulta esse histórico em vez de repetir a mudança solicitada.\n\nA garantia depende de duas condições: o identificador não muda entre tentativas e o desfecho continua no histórico. Se o cliente inventa um novo número, a central não reconhece a repetição. Se o histórico é descartado cedo demais, uma tentativa antiga volta a parecer inédita. O número de transmissões pode exceder um mesmo quando o efeito ocorre somente uma vez.",
+      "ideas": [
+        "Identificador persistente e histórico permitem reapresentar o resultado sem repetir a alteração."
+      ],
+      "partition": "tuning",
+      "family": "Message delivery"
+    },
+    {
+      "key": "Q3",
+      "title": "Quando uma repetição tardia volta a ser nova",
+      "content": "Um ensaio do serviço Ponte encerrou a janela de guarda de recibos antes de desativar a repetição de mensagens. Depois do descarte, um cliente reenviou uma operação que já havia terminado. O destinatário não encontrou o identificador no histórico e aplicou a alteração uma segunda vez.\n\nO ensaio delimita a garantia de idempotência do serviço. Guardar uma chave só durante a primeira tentativa não basta para impedir repetições posteriores. A equipe passou a tratar a janela de reenvio e a duração do registro como parte do mesmo contrato. O resultado não demonstra que chaves estáveis sejam inúteis: demonstra que seu reconhecimento depende da retenção.",
+      "ideas": [
+        "Retenção curta invalida a proteção contra duplicação tardia."
+      ],
+      "partition": "tuning",
+      "family": "Message delivery"
+    },
+    {
+      "key": "Q4",
+      "title": "Fila de Entregas, programa de uma performance",
+      "content": "Fila de Entregas é o título de uma performance fictícia apresentada no Teatro Rubro. O programa registra abertura com violoncelo, intervalo e encerramento com coro. A palavra recibo aparece no nome do segundo movimento, composto por Elisa Prado.\n\nAs três apresentações previstas ocorrem em salas diferentes. Este programa contém os nomes das obras, seus intérpretes e sua ordem no palco. Ponte é o sobrenome artístico de uma cantora convidada. Não há pedidos processados por computadores, resultados de operações ou regras para repetição de transmissões neste documento.",
+      "ideas": [
+        "O programa organiza os movimentos de uma performance."
+      ],
+      "partition": "tuning",
+      "family": "Message delivery"
+    },
+    {
+      "key": "Q5",
+      "title": "Comprovantes que retornam sem repetir uma alteração",
+      "content": "Um balcão digital fictício permite que o solicitante repita uma solicitação quando não recebe comprovante. O comprovante pode desaparecer mesmo quando o atendente terminou a alteração. Por isso, cada reapresentação leva o mesmo código, e o atendente mantém uma tabela de códigos com o desfecho já produzido.\n\nUm código encontrado nessa tabela gera uma cópia do comprovante, não uma nova alteração. Para manter essa propriedade, a tabela só pode esquecer o código depois de terminar o período permitido para reapresentações. O protocolo separa a repetição do transporte da repetição do efeito, sem pressupor que uma rede sempre entregue respostas.",
+      "ideas": [
+        "Código preservado e retenção suficiente permitem repetir comprovantes sem repetir efeitos."
+      ],
+      "partition": "holdout",
+      "family": "Message delivery"
+    },
+    {
+      "key": "Q6",
+      "title": "Catálogo de canções Recibos",
+      "content": "Recibos é uma coletânea fictícia de canções do selo Ponte. O catálogo relaciona os títulos Fila, Travessia e Entrega, com os nomes dos intérpretes. A edição ilustrada traz uma reprodução da pintura Janela.\n\nO encarte apenas credita autoria musical e design gráfico. As expressões prazo e repetição pertencem aos versos de uma canção, sem descrever seu conteúdo ou formular uma regra de funcionamento. Não há protocolo técnico apresentado no catálogo.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Message delivery"
+    },
+    {
+      "key": "W1",
+      "title": "Faixas vegetadas no modelo de encosta — caderno",
+      "chapters": [
+        {
+          "key": "W1a",
+          "title": "Faixas vegetadas no modelo de encosta",
+          "content": "Em uma maquete fictícia de encosta, água com partículas de argila escorre por uma superfície inclinada. Uma faixa de hastes flexíveis atravessa a encosta. Ao passar entre as hastes, o escoamento perde velocidade e parte das partículas se deposita antes de alcançar o reservatório inferior. O experimento compara a quantidade de sedimento transportado, não a pureza química da água.\n\nA equipe mantém iguais a inclinação, o volume aplicado e a massa inicial de partículas ao comparar uma faixa com a superfície livre. No modelo, a redução do transporte depende da água atravessar a faixa. Desviar a água por um canal lateral elimina esse contato, mesmo quando a área ocupada pelas hastes é grande.",
+          "ideas": [
+            "Contato com a faixa reduz velocidade e favorece deposição de sedimentos."
+          ]
+        },
+        {
+          "key": "W1b",
+          "title": "Caminhos que contornam a barreira",
+          "content": "A maquete de encosta recebeu um sulco contínuo ao lado da faixa de hastes. Parte da água passou pelo sulco e chegou ao reservatório sem cruzar a vegetação simulada. Nesse trajeto, a faixa não provocou a redução de velocidade observada no escoamento que a atravessou.\n\nA área total de cobertura, isoladamente, não informa qual fração da água encontrou a barreira. O relatório recomenda registrar os caminhos do fluxo além de medir a área das faixas. Acrescentar hastes numa região que a água não alcança não corrige o desvio. O mecanismo estudado é retenção física de partículas; a maquete não mede compostos dissolvidos.",
+          "ideas": [
+            "Desvio do fluxo pode limitar retenção apesar de grande cobertura."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Watershed model"
+    },
+    {
+      "key": "W2",
+      "title": "Retenção de partículas em uma superfície com hastes",
+      "content": "Um simulador de escoamento fictício conduz água turva através de uma faixa de vegetação artificial. O contato com as hastes desacelera o fluxo e aumenta a deposição de partículas transportadas. A quantidade de partículas que alcança a saída cai em relação a um trajeto livre com a mesma inclinação.\n\nEsse efeito requer passagem pela faixa. Quando a entrada alimenta um canal que a contorna, o material suspenso alcança a saída sem aquela oportunidade de deposição. Medir apenas a proporção da superfície coberta omite essa diferença de percurso. O resultado concerne sedimentos suspensos, sem afirmar que a faixa remove substâncias dissolvidas.",
+      "ideas": [
+        "A trajetória do escoamento determina o contato com a faixa e a retenção física."
+      ],
+      "partition": "tuning",
+      "family": "Watershed model"
+    },
+    {
+      "key": "W3",
+      "title": "Cobertura sem interceptação do escoamento",
+      "content": "No segundo ensaio da maquete, a equipe aumentou a superfície coberta por hastes, mas deixou aberto o sulco lateral que transportava a maior parte da água. O transporte de sedimentos na saída pouco mudou. O resultado contradiz a regra simplificada de que aumentar qualquer área vegetada sempre reduz o sedimento exportado.\n\nA interpretação proposta considera a posição da faixa em relação aos caminhos do fluxo. A desaceleração só atua sobre água que encontra as hastes. O ensaio não invalida a deposição observada quando o trajeto cruza a barreira; mostra por que cobertura e interceptação não são medidas equivalentes.",
+      "ideas": [
+        "Mais cobertura fora do percurso não assegura menor transporte de sedimentos."
+      ],
+      "partition": "tuning",
+      "family": "Watershed model"
+    },
+    {
+      "key": "W4",
+      "title": "Encosta e Sedimento no festival de poesia",
+      "content": "Encosta e Sedimento são títulos de dois poemas publicados num folheto fictício do Festival do Vale. A capa mostra hastes desenhadas em tinta azul. O folheto informa os autores, a tipografia escolhida e a ordem das leituras.\n\nFaixa é o nome de uma seção editorial que reúne poemas curtos. Nenhum resultado de maquete, medida de escoamento ou hipótese de retenção de partículas é apresentado. O documento serve como programa de leitura literária.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Watershed model"
+    },
+    {
+      "key": "W5",
+      "title": "Percurso da enxurrada em um tabuleiro experimental",
+      "content": "Em um tabuleiro fictício, um jato de água carregado de grãos finos atravessa uma linha de filamentos. Os filamentos tornam o movimento mais lento e deixam parte dos grãos no tabuleiro. Ao abrir uma passagem paralela lisa, os grãos que seguem por essa passagem deixam de encontrar o obstáculo.\n\nA equipe conclui que o posicionamento da linha em relação aos trajetos é tão relevante quanto sua extensão. Uma linha extensa situada fora do caminho principal intercepta pouco material. A conclusão vale para transporte e deposição das partículas do ensaio, sem estender a remoção a componentes dissolvidos.",
+      "ideas": [
+        "Interceptar o trajeto permite desacelerar o fluxo e reter partículas."
+      ],
+      "partition": "holdout",
+      "family": "Watershed model"
+    },
+    {
+      "key": "W6",
+      "title": "Índice da mostra Encosta",
+      "content": "# Obras da mostra\n\n- Encosta, gravura de Lia Moura.\n- Hastes, desenho de Rui Leme.\n- Sedimento, fotografia de Lara Reis.\n- Reservatório, aquarela de Bia Luz.\n\n# Créditos\n\nCuradoria: Galeria da Ponte. Projeto gráfico: Estúdio Faixa.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Watershed model"
+    },
+    {
+      "key": "F1",
+      "title": "Alertas verdadeiros no simulador de inspeção — caderno",
+      "chapters": [
+        {
+          "key": "F1a",
+          "title": "Alertas verdadeiros no simulador de inspeção",
+          "content": "O simulador fictício Íris examina peças virtuais e emite um alerta quando suspeita de uma marca defeituosa. A taxa de falsos alarmes descreve quantas peças sem marca ainda recebem alerta. A taxa de detecção descreve quantas peças marcadas são apontadas. Essas taxas condicionam o resultado ao estado real da peça.\n\nA pergunta do operador é outra: entre as peças alertadas, quantas realmente têm marca? Para respondê-la, também é necessário saber com que frequência a marca ocorre no lote. Um lote com muitas peças sem marca pode produzir muitos falsos alertas mesmo com uma taxa de falso alarme pequena. As três proporções não são intercambiáveis.",
+          "ideas": [
+            "Precisão entre alertas depende também da frequência do evento no lote."
+          ]
+        },
+        {
+          "key": "F1b",
+          "title": "Mudança de composição do lote",
+          "content": "No simulador Íris, o detector manteve o mesmo comportamento sobre cada tipo de peça, mas a equipe mudou a composição dos lotes. No lote em que marcas verdadeiras eram raras, uma parcela maior dos alertas vinha das peças sem marca. No lote com marcas frequentes, a parcela de alertas verdadeiros aumentou.\n\nA mudança não exige que o detector tenha piorado ou melhorado. A composição altera a mistura de alertas verdadeiros e falsos. Avaliar uma instalação nova usando apenas a porcentagem de acertos publicada para outra composição pode produzir uma expectativa inadequada. O relatório mantém separadas sensibilidade, falso alarme e proporção de verdadeiros entre alertas.",
+          "ideas": [
+            "Mudança na frequência altera a composição dos alertas sem mudar o detector."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "F2",
+      "title": "De onde vêm os avisos de uma triagem fictícia",
+      "content": "Uma triagem de objetos virtuais sinaliza alguns itens comuns por engano e detecta parte dos itens especiais. A quantidade final de avisos reúne essas duas origens. Quando os especiais são muito raros, os comuns continuam numerosos e seus erros podem dominar os avisos.\n\nPor isso, a proporção de itens especiais entre os sinalizados não pode ser inferida apenas da taxa de detecção. Ela depende também dos falsos avisos sobre itens comuns e da mistura original dos dois grupos. Alterar essa mistura modifica a utilidade dos avisos mesmo quando as taxas condicionais do algoritmo permanecem iguais.",
+      "ideas": [
+        "Proporção correta entre avisos depende da mistura original e dos dois tipos de resposta."
+      ],
+      "partition": "tuning",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "F3",
+      "title": "Um detector estável com avisos menos informativos",
+      "content": "Dois conjuntos virtuais foram analisados com o mesmo detector Íris. O segundo continha muito menos peças marcadas, mas a taxa de falso alarme sobre as peças sem marca permaneceu igual. Ao conferir os alertas, a equipe encontrou uma fração menor de marcas reais no segundo conjunto.\n\nO resultado limita a interpretação de um número único de desempenho. A queda na proporção de alertas corretos não prova alteração no algoritmo. Para comparar os conjuntos, é necessário acompanhar a frequência das marcas e distinguir essa proporção das taxas condicionadas ao estado verdadeiro de cada peça.",
+      "ideas": [
+        "Menor precisão dos alertas pode decorrer de menor frequência, sem deterioração do algoritmo."
+      ],
+      "partition": "tuning",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "F4",
+      "title": "Íris, catálogo de estampas",
+      "content": "Íris é o nome de uma coleção fictícia de estampas. O catálogo enumera as peças Alerta, Marca e Lote. Cada ilustração recebe um crédito de autoria e uma descrição das cores usadas.\n\nA palavra detector aparece no título de uma fotografia reproduzida na contracapa. O texto não apresenta algoritmo de inspeção nem medições de desempenho. As páginas são uma relação de obras visuais e respectivos autores.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "F5",
+      "title": "Avisos em duas populações de objetos",
+      "content": "Um sistema imaginário procura objetos azuis entre objetos cinzentos. Ele deixa passar uma parte dos azuis e também sinaliza por engano uma parte dos cinzentos. Sem alterar essas duas taxas, o administrador passa de uma população rica em azuis para outra em que azuis são raros.\n\nNa população nova, a grande quantidade de cinzentos aumenta sua participação nos avisos. Assim, encontrar um aviso deixa de sugerir um azul com a mesma frequência anterior. O relatório distingue a chance de aviso dado que o objeto é azul da chance de objeto azul dado que houve aviso. Para interpretar a segunda, a composição da população é indispensável.",
+      "ideas": [
+        "Frequência de verdadeiros entre avisos varia com a composição da população."
+      ],
+      "partition": "holdout",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "F6",
+      "title": "Referências do ensaio fotográfico Alerta",
+      "content": "# Fotografias\n\n- Íris.\n- Detector.\n- Marca rara.\n- Objetos azuis.\n\n# Referências editoriais\n\n- Coleção Lote, volume 2.\n- Catálogo de estampas do Estúdio Norte.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Screening simulator"
+    },
+    {
+      "key": "L1",
+      "title": "Sentidos locais no glossário de tradução — caderno",
+      "chapters": [
+        {
+          "key": "L1a",
+          "title": "Sentidos locais no glossário de tradução",
+          "content": "A tradutora fictícia Marina Lopes trabalha com um glossário em que cada entrada inclui palavra, domínio e definição. A palavra banco pode designar um assento num manual de mobiliário e uma instituição financeira num contrato. Escolher a tradução apenas pela grafia ignora a diferença de sentido.\n\nO procedimento consulta as frases próximas e o domínio declarado antes de selecionar a entrada. Uma tradução adequada no manual não deve substituir automaticamente a expressão encontrada no contrato. A identidade lexical da palavra não torna equivalentes as definições, e a consistência desejada é consistência de sentido dentro de um contexto.",
+          "ideas": [
+            "Tradução de palavra polissêmica depende do domínio e do contexto local."
+          ]
+        },
+        {
+          "key": "L1b",
+          "title": "Limites de um glossário sem domínio",
+          "content": "O primeiro glossário usado por Marina Lopes guardava uma única tradução para cada grafia. Ao processar documentos de áreas distintas, ele aplicava a escolha mais recente a todas as ocorrências da palavra. A equipe separou as entradas por domínio e acrescentou uma definição curta para cada acepção.\n\nA separação permite repetir uma tradução quando o sentido é o mesmo e manter traduções distintas quando as definições divergem. Um trecho insuficiente para escolher a acepção fica pendente de contexto adicional. O mecanismo não presume que toda diferença de redação represente um novo sentido; definições equivalentes podem compartilhar a mesma entrada.",
+          "ideas": [
+            "Glossário por domínio evita propagar uma acepção a contextos incompatíveis."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Terminology context"
+    },
+    {
+      "key": "L2",
+      "title": "A mesma grafia em documentos diferentes",
+      "content": "Um editor fictício recebeu um catálogo de assentos e um texto sobre instituições financeiras. Ambos continham banco. O editor escolheu expressões distintas na língua de destino porque as frases descreviam objetos diferentes. A coincidência da grafia foi usada para localizar opções, não para decidir que os sentidos eram iguais.\n\nO registro terminológico passou a guardar definições associadas ao domínio. Quando dois trechos expressam a mesma definição, a escolha pode ser reutilizada apesar de variação de redação. Quando falta contexto para decidir, a revisão permanece aberta em vez de impor uma única tradução global.",
+      "ideas": [
+        "Definições e contexto autorizam reutilização; coincidência gráfica não basta."
+      ],
+      "partition": "tuning",
+      "family": "Terminology context"
+    },
+    {
+      "key": "L3",
+      "title": "Uma tradução consistente no contexto errado",
+      "content": "Um lote de documentos fictícios recebeu a tradução de banco usada num manual de mobiliário. O mesmo termo apareceu depois num contrato financeiro e herdou automaticamente a escolha anterior. A repetição era consistente na grafia, mas inadequada ao objeto descrito.\n\nA revisão introduziu domínio e definição como parte da chave terminológica. Esse caso mostra um limite da substituição global de palavras: ela só é segura quando preserva a acepção. A equipe não concluiu que glossários fossem dispensáveis; manteve o reaproveitamento para os contextos em que a definição coincide.",
+      "ideas": [
+        "Substituição global pode ser lexicalmente consistente e semanticamente incorreta."
+      ],
+      "partition": "tuning",
+      "family": "Terminology context"
+    },
+    {
+      "key": "L4",
+      "title": "Glossário, recital de Marina Lopes",
+      "content": "Marina Lopes é uma cantora fictícia do Conservatório do Lago. Seu recital Glossário inclui as canções Banco, Contrato e Mobiliário. O folheto informa o acompanhamento de piano e o nome do cenógrafo.\n\nA intérprete não é a tradutora homônima que prepara registros terminológicos. Este documento identifica uma atividade musical e apresenta apenas o repertório do recital. Não descreve um método de tradução ou reutilização de definições.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Terminology context"
+    },
+    {
+      "key": "L5",
+      "title": "Escolhas terminológicas para duas acepções de rede",
+      "content": "Uma equipe fictícia traduz rede em dois documentos: um descreve um objeto de descanso entre suportes, e outro descreve computadores conectados. Uma tabela que guarda só a palavra oferece a mesma substituição para ambos, perdendo a diferença entre os objetos.\n\nA equipe associa a opção a uma definição e ao domínio do trecho. Passagens diferentes que mantêm a mesma acepção podem reutilizar a escolha; passagens sem informação suficiente aguardam esclarecimento. A uniformidade buscada acompanha o significado, em vez de impor uma única forma para toda ocorrência gráfica.",
+      "ideas": [
+        "Definição e domínio distinguem acepções e orientam reutilização de tradução."
+      ],
+      "partition": "holdout",
+      "family": "Terminology context"
+    },
+    {
+      "key": "L6",
+      "title": "Repertório Rede do Conservatório",
+      "content": "# Recital Rede\n\nIntérprete: Marina Lopes, Conservatório do Lago.\n\n1. Banco.\n2. Sentido.\n3. Definição.\n4. Tradução.\n\nAcompanhamento: piano. Cenografia: Ateliê Linha. O documento contém somente créditos e ordem das canções.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Terminology context"
+    },
+    {
+      "key": "A1",
+      "title": "Reflexões numa câmara sonora simulada — caderno",
+      "chapters": [
+        {
+          "key": "A1a",
+          "title": "Reflexões numa câmara sonora simulada",
+          "content": "Uma simulação fictícia envia um pulso sonoro para uma câmara. Parte da energia encontra as paredes e volta ao interior. Ao substituir uma superfície refletora por um revestimento absorvente no modelo, a energia das reflexões internas diminui e o pulso persiste por menos tempo depois de cessar a emissão.\n\nA equipe mede o decaimento dentro da mesma câmara. Essa medida descreve as reflexões internas, não a quantidade de energia que chega a uma câmara vizinha através da divisória. O ensaio separa a condição interna do caminho de transmissão entre ambientes.",
+          "ideas": [
+            "Revestimento absorvente reduz reflexões internas e duração do pulso."
+          ]
+        },
+        {
+          "key": "A1b",
+          "title": "Transmissão entre duas câmaras",
+          "content": "O modelo acústico inclui uma divisória entre duas câmaras e uma pequena abertura que permite passagem de energia. A equipe acrescentou revestimento absorvente dentro da primeira câmara sem alterar a abertura. As reflexões internas diminuíram, mas o caminho direto para a segunda câmara continuou disponível.\n\nPor isso, um decaimento mais curto no primeiro ambiente não demonstra, sozinho, que o ambiente vizinho recebeu menos som por todos os caminhos. O experimento exige medir separadamente o campo interno e a transmissão pela divisória. Tratar reverberação e isolamento como nomes para a mesma propriedade perde essa distinção.",
+          "ideas": [
+            "Menor reverberação não garante bloqueio de transmissão por uma abertura."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "A2",
+      "title": "Decaimento interno e passagem para o ambiente vizinho",
+      "content": "Num modelo fictício de duas salas, um revestimento reduz a energia que retorna das paredes para a sala de origem. O som interno desaparece mais rapidamente após a fonte parar. Uma passagem que liga as salas, porém, continua transmitindo parte da energia para a sala vizinha.\n\nO relatório distingue absorção dentro de uma sala de isolamento entre salas. A melhora da primeira medida não permite concluir automaticamente a melhora da segunda. Para afirmar menor transmissão, é necessário avaliar os caminhos que atravessam a separação, e não apenas a persistência do som no ambiente emissor.",
+      "ideas": [
+        "Absorção interna e isolamento entre ambientes são propriedades distintas."
+      ],
+      "partition": "tuning",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "A3",
+      "title": "Uma sala menos reverberante com uma passagem aberta",
+      "content": "A equipe de uma simulação reduziu a reflexão nas paredes, mas manteve inalterada uma abertura para outra câmara. A primeira câmara passou a apresentar menor persistência do pulso. A existência desse resultado não eliminou o caminho de propagação pela abertura.\n\nO caso contraria a promessa de que qualquer material que reduza reverberação também assegura isolamento completo. O revestimento atua nas reflexões que o encontram. A passagem entre os ambientes deve ser examinada como outra parte do modelo, com observação própria da energia transmitida.",
+      "ideas": [
+        "Reduzir reflexões não elimina um caminho de transmissão que permaneceu aberto."
+      ],
+      "partition": "tuning",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "A4",
+      "title": "Câmara, catálogo de fotografias",
+      "content": "Câmara é uma mostra fictícia de fotografias de Joana Vidal. Suas obras se chamam Reflexo, Divisória, Pulso e Passagem. O catálogo apresenta os formatos das impressões e os créditos da montagem.\n\nRevestimento é o nome da imagem escolhida para a capa. O texto enumera obras e participantes, sem descrever experimento acústico, decaimento sonoro ou energia transmitida entre ambientes.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "A5",
+      "title": "Eco reduzido sem vedar a comunicação entre compartimentos",
+      "content": "Em uma animação experimental fictícia, o emissor produz um sinal breve num compartimento. Um forro que dissipa parte do sinal reduz suas voltas dentro desse espaço. Ao mesmo tempo, uma fenda na separação permite que parte do sinal alcance outro compartimento.\n\nA rapidez com que o eco termina informa o comportamento das voltas internas. Ela não prova que a comunicação pela fenda foi interrompida. O relatório exige distinguir o efeito sobre o eco do efeito sobre a passagem do sinal, mesmo quando ambos são discutidos sob o tema geral de tratamento sonoro.",
+      "ideas": [
+        "Dissipação do eco interno não equivale a interromper transmissão pela separação."
+      ],
+      "partition": "holdout",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "A6",
+      "title": "Créditos da exposição Reflexo",
+      "content": "# Reflexo\n\nFotografias: Joana Vidal.\nMontagem: Grupo Câmara.\nProjeto gráfico: Estúdio Pulso.\n\nObras: Forro, Eco, Fenda e Compartimento. Este folheto contém apenas créditos e títulos.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Acoustic chamber model"
+    },
+    {
+      "key": "R1",
+      "title": "Identidade e versões no arquivo Aurora — caderno",
+      "chapters": [
+        {
+          "key": "R1a",
+          "title": "Identidade e versões no arquivo Aurora",
+          "content": "O arquivo fictício Aurora atribui um identificador permanente a cada obra e outro identificador a cada versão de seu texto. Quando uma correção é aceita, o arquivo cria uma nova versão vinculada à anterior, mantendo o identificador da obra. Uma citação que aponta para uma versão continua encontrando o texto daquela versão.\n\nO título pode mudar sem criar uma obra diferente. Ao mesmo tempo, duas obras independentes podem ter títulos iguais. O sistema usa a identidade cadastrada e a cadeia de versões para distinguir esses casos. Comparar somente títulos não permite decidir se houve correção de uma obra existente ou inclusão de outra obra.",
+          "ideas": [
+            "Identidade da obra permanece enquanto correções criam versões identificáveis."
+          ]
+        },
+        {
+          "key": "R1b",
+          "title": "Citações que preservam o texto consultado",
+          "content": "Uma pesquisadora fictícia cita a versão inicial de um ensaio do arquivo Aurora. Depois, a equipe corrige uma passagem e publica outra versão. O endereço da obra passa a apresentar a versão atual, mas a referência específica à versão inicial ainda resolve para o texto efetivamente consultado.\n\nSe o arquivo sobrescrevesse a versão inicial, a mesma citação passaria a mostrar palavras que a pesquisadora nunca leu. A separação entre identidade da obra e identidade de versão preserva esse contexto. A correção altera o texto corrente sem apagar o percurso das revisões.",
+          "ideas": [
+            "Versões imutáveis preservam o conteúdo consultado por uma citação."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "R2",
+      "title": "Uma obra com vários estados textuais",
+      "content": "Um repositório fictício mantém um código para o trabalho intelectual e códigos distintos para seus estados publicados. Corrigir uma frase acrescenta um novo estado e registra de qual estado ele deriva. O código do trabalho não muda por causa da correção ou de uma mudança de título.\n\nReferências a um estado específico continuam mostrando sua redação original. Referências apenas ao trabalho podem conduzir ao estado atual. Essa diferença permite atualizar o material sem alterar silenciosamente o conteúdo a que uma citação antiga se referia. Títulos semelhantes não substituem os códigos de identidade.",
+      "ideas": [
+        "Códigos separados para trabalho e estado textual preservam citações e histórico."
+      ],
+      "partition": "tuning",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "R3",
+      "title": "A citação que mudou depois de uma correção",
+      "content": "Num teste do arquivo Aurora, uma versão textual foi sobrescrita em vez de receber uma sucessora. Uma referência registrada antes da correção passou a abrir um texto diferente. O código continuava igual, mas já não identificava de maneira estável a redação consultada.\n\nO teste motivou a regra de criar versões novas para correções. Manter o identificador da obra não exige reutilizar o identificador da versão. A obra reúne sua história; cada versão fixa um estado dessa história. Essa distinção evita tratar estabilidade de endereço como prova de estabilidade do conteúdo.",
+      "ideas": [
+        "Sobrescrever uma versão altera retroativamente o conteúdo de citações antigas."
+      ],
+      "partition": "tuning",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "R4",
+      "title": "Aurora, programa do grupo de dança",
+      "content": "Aurora é um grupo fictício de dança. O programa da temporada reúne as coreografias Arquivo, Versão e Citação. O diretor artístico é Paulo Nunes, da Companhia do Litoral.\n\nO folheto relaciona intérpretes e ordem dos números. Revisão é o título do encerramento, sem explicação de um processo documental. O programa não descreve um repositório de textos ou um sistema de identificadores.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "R5",
+      "title": "Endereço do trabalho e endereço da edição consultada",
+      "content": "Uma biblioteca digital fictícia oferece um endereço para cada trabalho e endereços próprios para suas edições textuais. Uma emenda cria uma edição sucessora. O endereço geral pode apresentar essa edição nova, enquanto a edição citada num estudo conserva a redação usada pelo autor do estudo.\n\nO projeto distingue continuidade do trabalho de imutabilidade de cada estado textual. Alterações no título não bastam para criar outra identidade de trabalho, e títulos idênticos não bastam para fundir trabalhos independentes. Essa separação sustenta correções com rastreabilidade das referências anteriores.",
+      "ideas": [
+        "Identidade geral e edição imutável permitem corrigir sem reescrever a evidência citada."
+      ],
+      "partition": "holdout",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "R6",
+      "title": "Índice musical Edição",
+      "content": "# Edição\n\n1. Trabalho — quarteto de cordas.\n2. Estado — piano solo.\n3. Citação — duo de vozes.\n4. Arquivo — coro.\n\nProdução: Grupo Aurora. Este encarte registra somente repertório e formação instrumental.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Archive revisions"
+    },
+    {
+      "key": "M1",
+      "title": "Deriva do sensor no simulador de manutenção — caderno",
+      "chapters": [
+        {
+          "key": "M1a",
+          "title": "Deriva do sensor no simulador de manutenção",
+          "content": "O simulador fictício Farol possui uma máquina virtual cujo estado é conhecido pelo programa e um sensor que estima esse estado. Em um ensaio, a máquina permaneceu constante enquanto um deslocamento gradual foi acrescentado à leitura do sensor. O valor medido atravessou o limite de manutenção sem que o estado real da máquina mudasse.\n\nEsse desenho permite distinguir deterioração simulada de deriva da medição. O alarme depende da leitura, portanto pode refletir o deslocamento do sensor. A equipe compara a leitura com uma referência estável antes de interpretar o crescimento como mudança da máquina.",
+          "ideas": [
+            "Deriva da medição pode acionar alarme sem deterioração do objeto."
+          ]
+        },
+        {
+          "key": "M1b",
+          "title": "Referência independente para conferir a leitura",
+          "content": "No simulador Farol, a verificação usa uma referência cujo valor é mantido constante pelo programa. Quando o sensor passa a indicar mudança tanto na máquina estável quanto na referência, a equipe encontra evidência de deslocamento da leitura. Ajustar a interpretação evita atribuir automaticamente esse deslocamento à máquina.\n\nA referência só ajuda enquanto sua estabilidade é conhecida. Comparar dois sinais que podem derivar juntos não fornece a mesma separação. O procedimento trata a medição como uma cadeia que pode introduzir variação própria, além da variação do objeto observado.",
+          "ideas": [
+            "Referência estável ajuda a distinguir deriva do sensor de mudança do objeto."
+          ]
+        }
+      ],
+      "partition": "tuning",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "M2",
+      "title": "Um aviso produzido pela escala de medição",
+      "content": "Uma simulação fictícia mantém fixo o estado de um equipamento e altera aos poucos a origem da escala usada pelo indicador. O painel passa a mostrar crescimento e emite um aviso ao ultrapassar seu limite. Como o estado do equipamento foi mantido constante por construção, o aviso não demonstra desgaste real no ensaio.\n\nA comparação com um padrão independente e estável permite identificar o deslocamento da escala. O relatório recomenda separar mudanças do objeto de mudanças do instrumento antes de interpretar séries de leituras. Um segundo indicador sujeito ao mesmo deslocamento não substitui esse padrão.",
+      "ideas": [
+        "Mudança da escala pode produzir aviso sem mudança do equipamento."
+      ],
+      "partition": "tuning",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "M3",
+      "title": "Dois indicadores que erram juntos",
+      "content": "No ensaio Farol, dois indicadores compartilham o mesmo componente que introduz um deslocamento na leitura. Ambos passam a indicar crescimento, embora a máquina virtual continue estável. A concordância entre eles não elimina a hipótese de um erro comum da medição.\n\nO teste delimita o uso de redundância como verificação. Para distinguir deslocamento instrumental de deterioração, é necessário um contraste com estabilidade independente, não apenas repetir a leitura pelo mesmo caminho. A equipe preserva a diferença entre número de indicadores e independência das referências.",
+      "ideas": [
+        "Concordância de sensores com erro comum não prova mudança real."
+      ],
+      "partition": "tuning",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "M4",
+      "title": "Farol, fichário de figurinos",
+      "content": "Farol é o nome de um espetáculo fictício. O fichário de figurinos lista os personagens Sensor, Máquina e Referência, com tecidos e cores de suas roupas. O responsável pelo desenho é Caio Reis.\n\nO documento reúne descrições visuais para a montagem teatral. Deriva é o nome de um tecido estampado escolhido para um casaco. Não há simulação de manutenção, série de medidas ou teste de instrumentos descrito.",
+      "ideas": [],
+      "partition": "tuning",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "M5",
+      "title": "Um padrão que revela o deslocamento do medidor",
+      "content": "Num laboratório virtual, um mostrador acompanha uma peça cujo estado permanece fixo. Um viés crescente é aplicado ao mostrador e faz sua leitura parecer pior. Ao medir um padrão de valor constante, o mesmo desvio aparece. A comparação permite localizar a alteração na medição, em vez de atribuí-la à peça.\n\nA utilidade da comparação depende da estabilidade independente do padrão. Dois mostradores que compartilham o viés podem concordar e ainda assim se afastar do valor real. O relatório trata a origem da variação como uma questão distinta da simples repetição do sinal observado.",
+      "ideas": [
+        "Padrão estável separa viés do medidor de alteração do objeto."
+      ],
+      "partition": "holdout",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "M6",
+      "title": "Programa de cena Referência",
+      "content": "# Referência\n\nPersonagens: Sensor, Padrão e Máquina.\nFigurinos: Caio Reis.\nCenário: Estúdio Farol.\n\nAto inicial: Deriva. Ato final: Medida. O programa contém somente créditos e títulos dos atos.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "Maintenance simulator"
+    },
+    {
+      "key": "V01",
+      "title": "Reconstrução de uma explicação antes da consulta",
+      "content": "Num curso fictício, o estudante tenta reconstruir uma explicação sem olhar o material. Em seguida, compara o que produziu com uma referência e examina por que eventuais erros não correspondem à explicação original. O procedimento diferencia essa produção independente da impressão de facilidade ao reconhecer frases já vistas.\n\nA proposta combina esforço de evocação com oportunidade de corrigir a resposta. Repetir uma formulação incorreta sem comparação pode manter o erro. As conclusões do curso dizem respeito a estudo com tempo para revisão; não demonstram a mesma vantagem em perguntas feitas sob ameaça pública e sem esclarecimento posterior.",
+      "ideas": [
+        "Produção independente com correção difere de familiaridade por releitura."
+      ],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    },
+    {
+      "key": "V02",
+      "title": "Cópias calculadas e o limite de sua validade",
+      "content": "Uma aplicação fictícia reaproveita resultados de consulta até atingir um prazo. O prazo curto aumenta a frequência de consultas e reduz quanto tempo uma cópia antiga pode permanecer em uso. Entretanto, o dado original pode mudar antes do término desse intervalo, e o resultado ainda válido pelo relógio pode já estar desatualizado.\n\nA aplicação também reage a avisos de alteração, descartando somente resultados que dependem do registro alterado. Isso exige identificar corretamente as dependências. Um prazo finito continua útil para limitar a duração de uma cópia esquecida no mapa de dependências. Os dois mecanismos se complementam.",
+      "ideas": [
+        "Prazo finito e invalidação seletiva por dependências limitam desatualização."
+      ],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    },
+    {
+      "key": "V03",
+      "title": "Danos antes e durante o aquecimento da argila",
+      "content": "Uma oficina fictícia registra danos antes de aquecer peças de argila. Partes de espessuras distintas podem perder umidade em velocidades diferentes e contrair de forma desigual, criando fissuras ainda na secagem. Uniformidade de espessura e de exposição reduz essa diferença.\n\nUm dano que aparece no início do aquecimento pode ter outra origem: água retida transforma-se em vapor mais rapidamente do que consegue sair. Aquecer gradualmente nessa etapa favorece a saída da umidade, mas não desfaz uma fissura formada antes. A aparência seca da superfície não assegura que o interior também esteja seco.",
+      "ideas": [
+        "Contração desigual e vapor interno são mecanismos distintos, com medidas preventivas distintas."
+      ],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    },
+    {
+      "key": "V04",
+      "title": "Índice da coletânea Recordação",
+      "content": "# Sumário\n\n1. Memória.\n2. Evocação.\n3. Resposta.\n4. Correção.\n5. Releitura.\n\n# Créditos\n\nEdição: Selo Vale. Capa: Estúdio Tentativa. Este índice não reproduz os capítulos nem apresenta suas conclusões.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    },
+    {
+      "key": "V05",
+      "title": "Cache, créditos de uma instalação",
+      "content": "Cache é o nome próprio de uma instalação fictícia da Galeria Prisma. A obra tem três módulos chamados Prazo, Evento e Dependência. O folheto lista seus autores e os materiais usados em cada módulo.\n\nExpiração é o título de uma projeção de vídeo que acompanha a instalação. O documento não descreve armazenamento de respostas ou processamento de consultas: apresenta somente créditos e a disposição das obras.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    },
+    {
+      "key": "V06",
+      "title": "Cerâmica, programa de uma leitura",
+      "content": "# Cerâmica\n\nLeitura de poemas no Auditório Claro.\n\n- Umidade, de Lia Pires.\n- Vapor, de Rui Melo.\n- Fissura, de Bia Reis.\n- Forno, de Caio Leme.\n\nO programa relaciona títulos e autores, sem reproduzir os poemas ou ensinar procedimentos de fabricação.",
+      "ideas": [],
+      "partition": "holdout",
+      "family": "pilot transfer"
+    }
+  ],
+  "expectedRootPairs": [
+    {
+      "pair": [
+        "P01",
+        "P02"
+      ],
+      "partition": "tuning",
+      "rationale": "Pilot substantive relationship; inspect the original expected ideas."
+    },
+    {
+      "pair": [
+        "P01",
+        "P03"
+      ],
+      "partition": "tuning",
+      "rationale": "Pilot substantive relationship; inspect the original expected ideas."
+    },
+    {
+      "pair": [
+        "P02",
+        "P03"
+      ],
+      "partition": "tuning",
+      "rationale": "Pilot substantive relationship; inspect the original expected ideas."
+    },
+    {
+      "pair": [
+        "P06",
+        "P07"
+      ],
+      "partition": "tuning",
+      "rationale": "Pilot substantive relationship; inspect the original expected ideas."
+    },
+    {
+      "pair": [
+        "P08",
+        "P09"
+      ],
+      "partition": "tuning",
+      "rationale": "Pilot substantive relationship; inspect the original expected ideas."
+    },
+    {
+      "pair": [
+        "Q1",
+        "Q2"
+      ],
+      "partition": "tuning",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "Q1",
+        "Q3"
+      ],
+      "partition": "tuning",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "Q2",
+        "Q3"
+      ],
+      "partition": "tuning",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "Q1",
+        "Q5"
+      ],
+      "partition": "holdout",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "Q2",
+        "Q5"
+      ],
+      "partition": "holdout",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "Q3",
+        "Q5"
+      ],
+      "partition": "holdout",
+      "rationale": "Lost acknowledgments require retries; stable operation keys suppress duplicate effects only while retained."
+    },
+    {
+      "pair": [
+        "W1",
+        "W2"
+      ],
+      "partition": "tuning",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "W1",
+        "W3"
+      ],
+      "partition": "tuning",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "W2",
+        "W3"
+      ],
+      "partition": "tuning",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "W1",
+        "W5"
+      ],
+      "partition": "holdout",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "W2",
+        "W5"
+      ],
+      "partition": "holdout",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "W3",
+        "W5"
+      ],
+      "partition": "holdout",
+      "rationale": "Vegetation strips slow runoff and trap suspended sediment, but a channel bypass reduces their effect."
+    },
+    {
+      "pair": [
+        "F1",
+        "F2"
+      ],
+      "partition": "tuning",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "F1",
+        "F3"
+      ],
+      "partition": "tuning",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "F2",
+        "F3"
+      ],
+      "partition": "tuning",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "F1",
+        "F5"
+      ],
+      "partition": "holdout",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "F2",
+        "F5"
+      ],
+      "partition": "holdout",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "F3",
+        "F5"
+      ],
+      "partition": "holdout",
+      "rationale": "The proportion of real events among alerts depends on event frequency as well as detector false positives."
+    },
+    {
+      "pair": [
+        "L1",
+        "L2"
+      ],
+      "partition": "tuning",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "L1",
+        "L3"
+      ],
+      "partition": "tuning",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "L2",
+        "L3"
+      ],
+      "partition": "tuning",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "L1",
+        "L5"
+      ],
+      "partition": "holdout",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "L2",
+        "L5"
+      ],
+      "partition": "holdout",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "L3",
+        "L5"
+      ],
+      "partition": "holdout",
+      "rationale": "Translation of a polysemous word depends on its local domain; a domain-keyed glossary avoids overgeneralizing a sense."
+    },
+    {
+      "pair": [
+        "A1",
+        "A2"
+      ],
+      "partition": "tuning",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "A1",
+        "A3"
+      ],
+      "partition": "tuning",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "A2",
+        "A3"
+      ],
+      "partition": "tuning",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "A1",
+        "A5"
+      ],
+      "partition": "holdout",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "A2",
+        "A5"
+      ],
+      "partition": "holdout",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "A3",
+        "A5"
+      ],
+      "partition": "holdout",
+      "rationale": "Absorptive lining reduces reflected sound in a chamber but does not guarantee blocking transmission to the adjacent chamber."
+    },
+    {
+      "pair": [
+        "R1",
+        "R2"
+      ],
+      "partition": "tuning",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "R1",
+        "R3"
+      ],
+      "partition": "tuning",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "R2",
+        "R3"
+      ],
+      "partition": "tuning",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "R1",
+        "R5"
+      ],
+      "partition": "holdout",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "R2",
+        "R5"
+      ],
+      "partition": "holdout",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "R3",
+        "R5"
+      ],
+      "partition": "holdout",
+      "rationale": "Stable work identity and immutable revision identifiers separate correction history from the identity of the work."
+    },
+    {
+      "pair": [
+        "M1",
+        "M2"
+      ],
+      "partition": "tuning",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "M1",
+        "M3"
+      ],
+      "partition": "tuning",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "M2",
+        "M3"
+      ],
+      "partition": "tuning",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "M1",
+        "M5"
+      ],
+      "partition": "holdout",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "M2",
+        "M5"
+      ],
+      "partition": "holdout",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "M3",
+        "M5"
+      ],
+      "partition": "holdout",
+      "rationale": "A sensor drifting from its reference may trigger maintenance alerts without actual machine deterioration; compare with a stable reference."
+    },
+    {
+      "pair": [
+        "P01",
+        "V01"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P02",
+        "V01"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P03",
+        "V01"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P06",
+        "V02"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P07",
+        "V02"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P08",
+        "V03"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    },
+    {
+      "pair": [
+        "P09",
+        "V03"
+      ],
+      "partition": "holdout",
+      "rationale": "Unseen paraphrase preserves the mechanism and its explicit conditions."
+    }
+  ],
+  "forbiddenRootPairs": [
+    {
+      "pair": [
+        "P01",
+        "P04"
+      ],
+      "partition": "tuning",
+      "rationale": "Lexical overlap alone; distinct substantive subject matter."
+    },
+    {
+      "pair": [
+        "P01",
+        "P05"
+      ],
+      "partition": "tuning",
+      "rationale": "Lexical overlap alone; distinct substantive subject matter."
+    },
+    {
+      "pair": [
+        "P04",
+        "P06"
+      ],
+      "partition": "tuning",
+      "rationale": "Lexical overlap alone; distinct substantive subject matter."
+    },
+    {
+      "pair": [
+        "P05",
+        "P08"
+      ],
+      "partition": "tuning",
+      "rationale": "Lexical overlap alone; distinct substantive subject matter."
+    },
+    {
+      "pair": [
+        "Q1",
+        "Q4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "Q2",
+        "Q4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "Q3",
+        "Q4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "Q1",
+        "Q6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "Q2",
+        "Q6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "Q3",
+        "Q6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "Q5",
+        "Q6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "W1",
+        "W4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "W2",
+        "W4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "W3",
+        "W4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "W1",
+        "W6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "W2",
+        "W6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "W3",
+        "W6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "W5",
+        "W6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "F1",
+        "F4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "F2",
+        "F4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "F3",
+        "F4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "F1",
+        "F6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "F2",
+        "F6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "F3",
+        "F6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "F5",
+        "F6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "L1",
+        "L4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "L2",
+        "L4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "L3",
+        "L4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "L1",
+        "L6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "L2",
+        "L6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "L3",
+        "L6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "L5",
+        "L6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "A1",
+        "A4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "A2",
+        "A4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "A3",
+        "A4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "A1",
+        "A6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "A2",
+        "A6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "A3",
+        "A6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "A5",
+        "A6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "R1",
+        "R4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "R2",
+        "R4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "R3",
+        "R4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "R1",
+        "R6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "R2",
+        "R6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "R3",
+        "R6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "R5",
+        "R6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "M1",
+        "M4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "M2",
+        "M4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "M3",
+        "M4"
+      ],
+      "partition": "tuning",
+      "rationale": "Names and titles in a program/catalog do not explain the mechanism."
+    },
+    {
+      "pair": [
+        "M1",
+        "M6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "M2",
+        "M6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "M3",
+        "M6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "M5",
+        "M6"
+      ],
+      "partition": "holdout",
+      "rationale": "Reference-only content contains no substantive connection to the mechanism."
+    },
+    {
+      "pair": [
+        "P01",
+        "V04"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P02",
+        "V04"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P03",
+        "V04"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P06",
+        "V05"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P07",
+        "V05"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P08",
+        "V06"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    },
+    {
+      "pair": [
+        "P09",
+        "V06"
+      ],
+      "partition": "holdout",
+      "rationale": "Index/catalog-only text has no substantive mechanism."
+    }
+  ],
+  "ambiguousRootPairs": [
+    {
+      "pair": [
+        "P10",
+        "P11"
+      ],
+      "reason": "Distinct identities but potentially useful methodological comparison; not an identity-merge test."
+    }
+  ],
+  "zeroNoteSources": [
+    "P12",
+    "Q6",
+    "W4",
+    "W6",
+    "F4",
+    "F6",
+    "L4",
+    "L6",
+    "A4",
+    "A6",
+    "R4",
+    "R6",
+    "M4",
+    "M6",
+    "V04",
+    "V05",
+    "V06"
+  ],
+  "identityChecks": [
+    {
+      "name": "Ana Costa",
+      "same": [
+        "P10a",
+        "P10b"
+      ],
+      "different": [
+        "P11"
+      ]
+    },
+    {
+      "name": "Marina Lopes",
+      "same": [
+        "L1a",
+        "L1b"
+      ],
+      "different": [
+        "L4",
+        "L6"
+      ]
+    }
+  ],
+  "evaluationNotes": "Expected and forbidden pairs are screening checks, not exhaustive semantic gold. Do not score unlabelled bridges as false without evidence review. Shared domain-independent mechanisms may be useful. Numeric precision/recall must explicitly identify its labelled denominator. Preserve original pilot labels separately."
+}

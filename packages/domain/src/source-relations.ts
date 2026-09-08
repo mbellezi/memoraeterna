@@ -2,6 +2,12 @@ import { z } from "zod";
 import { AtomicNoteRelationStatusSchema, AtomicNoteRelationTypeSchema } from "./knowledge.js";
 
 export const SourceRelationSettingsSchema = z.object({
+  reciprocalRankConstant: z.number().int().min(1).max(200).default(60),
+  evidenceChunksPerSource: z.number().int().min(1).max(12).default(3),
+  evidenceMaxCharacters: z.number().int().min(300).max(6000).default(1000),
+  summaryMaxCharacters: z.number().int().min(300).max(6000).default(1200),
+  noteRelationsPerPair: z.number().int().min(0).max(30).default(6),
+  maxOutputTokens: z.number().int().min(512).max(16384).default(4096),
   maxCandidates: z.number().int().min(1).max(200).default(40),
   maxPairs: z.number().int().min(1).max(50).default(8),
   maxRelations: z.number().int().min(1).max(200).default(10),

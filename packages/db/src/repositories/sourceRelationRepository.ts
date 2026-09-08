@@ -222,7 +222,14 @@ export function createSourceRelationRepository(pool: PgPool) {
         if (semantic[index]) direct.push(semantic[index]!);
         if (result.rows[index]) direct.push(result.rows[index] as SourceRelationChunk);
       }
-      return [...new Map([...notes,...direct.slice(0,limit * 2)].map((chunk) => [chunk.id, chunk])).values()];
+      const perRoot = new Map<string, number>();
+      return [...new Map([...notes,...direct].map((chunk) => [chunk.id, chunk])).values()].filter((chunk) => {
+        if (![left, right].includes(chunk.rootId)) return false;
+        const count = perRoot.get(chunk.rootId) ?? 0;
+        if (count >= limit) return false;
+        perRoot.set(chunk.rootId, count + 1);
+        return true;
+      });
     },
 
     async existing(left: string, right: string) {

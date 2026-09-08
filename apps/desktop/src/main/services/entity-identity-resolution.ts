@@ -1,3 +1,4 @@
+import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
 import { createHash } from "node:crypto";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
 import { createEntityIdentityRepository, normalizeIdentityName, type EntityIdentityDecision, type PgPool, type RelationTypeVector } from "@app/db";
@@ -11,8 +12,10 @@ type Entity = KnowledgeGraphGenerationOutput["entities"][number];
 type Candidate = { sourceItemIds?: string[]; key: string; predicate: string; definition: string; score: number; target: NonNullable<EntityIdentityDecision["target"]> };
 
 export function createEntityIdentityResolver(options: {
+  settings?: CanonicalMatchingSettings;
   pool: PgPool; ai: Pick<AiService, "runDefaultTask">; threshold: number; language: string; context: AiTaskLogContext; signal?: AbortSignal;
 }) {
+  const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createEntityIdentityRepository(options.pool);
   const fingerprint = (entity: Entity) => createHash("sha256").update(JSON.stringify({ sourceItemId: options.context.sourceItemId, key: entity.key, type: entity.type, name: entity.canonicalName, identityDescription: entity.identityDescription, evidence: [...entity.evidenceChunkIds].sort(), version: entityIdentityResolutionVersion })).digest("hex");
   const embed = createCanonicalEmbedder({ ...options, strategy: entityIdentityResolutionVersion });
@@ -21,8 +24,8 @@ export function createEntityIdentityResolver(options: {
     const pending = [...rows];
     while (pending.length) {
       const group: RelationMatchRow[] = [];
-      while (pending.length && group.length < 12) {
-        if (group.length && buildRelationMatchPrompt([...group, pending[0]!], true).length > 12_000) break;
+      while (pending.length && group.length < settings.confirmationBatchSize) {
+        if (group.length && buildRelationMatchPrompt([...group, pending[0]!], true).length > settings.confirmationMaxCharacters) break;
         group.push(pending.shift()!);
       }
       let valid = false;
@@ -63,7 +66,7 @@ export function createEntityIdentityResolver(options: {
             if (!missing.length) break;
             for (const item of missing) await repository.saveVector(item.id, await embed(identityText(item), item.sourceItemIds));
           }
-          const candidates: Candidate[] = (await repository.candidates({ type: entity.type, names: [entity.canonicalName, ...entity.aliases], vector, threshold: options.threshold })).map((candidate) => ({
+          const candidates: Candidate[] = (await repository.candidates({ type: entity.type, names: [entity.canonicalName, ...entity.aliases], vector, threshold: options.threshold, limit: settings.entityCandidateLimit })).map((candidate) => ({
             key: `id:${candidate.id}`, predicate: `${candidate.type}: ${candidate.canonicalName}`, definition: candidate.identityDescription,
             sourceItemIds: candidate.sourceItemIds ?? [], score: candidate.score, target: { id: candidate.id }
           }));
@@ -75,7 +78,7 @@ export function createEntityIdentityResolver(options: {
             if (sameName || score >= options.threshold) candidates.push({ key: `new:${previous.entity.key}`, predicate: `${previous.entity.type}: ${previous.entity.canonicalName}`,
               definition: previous.entity.identityDescription, score, target: { key: previous.entity.key } });
           }
-          const selected = candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, 3).map((candidate) => {
+          const selected = candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, settings.entityCandidateLimit).map((candidate) => {
             if (!candidateKeys.has(candidate.key)) candidateKeys.set(candidate.key, `c${candidateKeys.size + 1}`);
             return { ...candidate, key: candidateKeys.get(candidate.key)! };
           });
@@ -88,7 +91,7 @@ export function createEntityIdentityResolver(options: {
           const match = matches.get(`r${index + 1}`);
           const candidate = candidatesByRow.get(`r${index + 1}`)!.find((item) => item.key === match?.candidate);
           return { ...entity, fingerprint: fingerprint(entity), sourceItemId: options.context.sourceItemId ?? null, language: options.language, target: candidate?.target ?? null, vector: embedded[index]!.vector,
-            metadata: { promptVersion: entityIdentityResolutionVersion, threshold: options.threshold,
+            metadata: { settings, promptVersion: entityIdentityResolutionVersion, threshold: options.threshold,
               method: candidate ? "llm_same_identity" : "new_identity", ...(match ? { aiTaskRunId: match.aiTaskRunId } : {}),
               ...(candidate ? { score: candidate.score } : {}), embeddingSpaceKey: embedded[index]!.vector.spaceKey } };
         });

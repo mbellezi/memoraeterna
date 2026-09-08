@@ -1,3 +1,4 @@
+import { AdvancedMatchingSettings } from "./AdvancedMatchingSettings";
 import { RelationLabelsCard, ContentLanguageSelect } from "./RelationLabelsCard";
 import { useEffect, useState } from "react";
 import {
@@ -633,19 +634,18 @@ function MatchingCard({ appSettings, t, onChange }: {
         </div>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="relationTypeSimilarityThreshold">{t("relationTypes.threshold")}</Label>
         <MatchingSlider id="relationTypeSimilarityThreshold" label={t("relationTypes.threshold")}
           defaultValue={defaultAppSettings.relationTypeSimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
           value={appSettings.relationTypeSimilarityThreshold} onCommit={(value) => onChange({ relationTypeSimilarityThreshold: value })} />
         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("relationTypes.thresholdHint")}</p>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="entityIdentitySimilarityThreshold">{t("entityIdentity.threshold")}</Label>
         <MatchingSlider id="entityIdentitySimilarityThreshold" label={t("entityIdentity.threshold")}
           defaultValue={defaultAppSettings.entityIdentitySimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
           value={appSettings.entityIdentitySimilarityThreshold} onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })} />
         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
       </div>
+      <AdvancedMatchingSettings settings={appSettings} onChange={onChange} t={t} />
       <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
         <div><h3 className="font-semibold">{t("sourceRelations.title")}</h3><p className="mt-1 text-xs leading-5 text-slate-500">{t("sourceRelations.budgetHint")}</p></div>
         <div className="grid gap-3 sm:grid-cols-2">

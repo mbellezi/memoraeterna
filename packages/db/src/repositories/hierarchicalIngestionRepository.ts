@@ -526,8 +526,32 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            and (exists(select 1 from embeddings_256 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)
              or exists(select 1 from embeddings_768 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)
              or exists(select 1 from embeddings_1024 embedding where embedding.target_type = 'source_item' and embedding.target_id = $1)) as embedding,
-           exists(select 1 from source_summaries where source_item_id = $1 and is_current = true) as summarization,
-           exists(select 1 from atomic_notes where created_from_source_item_id = $1 and supersession_status = 'current') as "atomicNotes",
+           (exists(select 1 from source_summaries where source_item_id = $1 and is_current = true)
+             or exists(
+               select 1 from ingestion_runs run
+               join document_revisions revision on revision.id = run.input_document_revision_id
+               join documents document on document.id = revision.document_id
+               where run.source_item_id = $1 and document.id = $2 and revision.is_current
+                 and revision.content_hash = document.content_hash
+                 and run.input_hashes->>'contentHash' = document.content_hash
+                 and run.stages_checkpoint #>> '{summarization,status}' = 'completed'
+                 and run.stages_checkpoint #>> '{summarization,metadata,configured}' = 'true'
+                 and run.stages_checkpoint #>> '{summarization,metadata,generated}' = 'false'
+                 and run.stages_checkpoint #>> '{summarization,metadata,skippedReason}' = 'non_content'
+             )) as summarization,
+           (exists(select 1 from atomic_notes where created_from_source_item_id = $1 and supersession_status = 'current')
+             or exists(
+               select 1 from knowledge_generations generation
+               join document_revisions revision on revision.id = generation.document_revision_id
+               join documents document on document.id = revision.document_id
+               join ingestion_runs run on run.id = generation.ingestion_run_id
+               where generation.source_item_id = $1 and generation.stage = 'atomicNotes'
+                 and document.id = $2 and revision.is_current
+                 and revision.content_hash = document.content_hash and generation.input_hash = document.content_hash
+                 and run.stages_checkpoint #>> '{atomicNotes,status}' = 'completed'
+                 and run.stages_checkpoint #>> '{atomicNotes,metadata,configured}' = 'true'
+                 and run.stages_checkpoint #>> '{atomicNotes,metadata,generatedCount}' = '0'
+             )) as "atomicNotes",
            exists(
              select 1 from knowledge_generations generation
              join document_revisions revision on revision.id = generation.document_revision_id

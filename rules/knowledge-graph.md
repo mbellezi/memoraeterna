@@ -69,14 +69,15 @@ also load `rules/ai-and-knowledge.md`; for SQL/AGE changes load
   remain distinct in source details as well as graph previews.
 - Relation types have stable IDs, concise English predicates, English definitions and
   confirmed aliases in SQL. Exact known predicates/aliases bypass AI. Unknown types
-  retrieve up to three candidates through exact cosine search over name plus definition;
+  retrieve a configurable number of candidates (default three) through exact cosine search over name plus definition;
   only explicit LLM equivalence authorizes an alias. Preserve direction, tense, negation,
   modality and specificity. Newly extracted types in the same batch are also compared.
   Occurrences retain evidence, display phrases and original predicates; existing historical
   relations are not rewritten by migration. Legacy entities participate in candidate lookup;
   this is prospective identity reuse, not a bulk merge of historical duplicates.
 - Both confirmation stages reuse the knowledge-graph AI route and send bounded batches
-  of at most 12 inputs and approximately 12,000 prompt characters. Candidate descriptions
+  with configurable batch size (at most 12 inputs) and a prompt character target
+  (default approximately 12,000). Candidate descriptions
   are included once per request. Output is only `{"matches":[["r1","c1"],["r2",null]]}`,
   with exactly one decision per input and only its supplied candidates. No prose or
   LLM-generated scores. Invalid output gets one repair; two failures stop persistence.
@@ -161,3 +162,11 @@ Relevant changes must preserve the cases in `knowledge-processing.test.ts`,
 `knowledge-graph-*.test.ts` suites. For WebGL/program/lifecycle changes also run
 `npm run test:graph-webgl`. Mock repository tests do not verify real AGE behavior;
 SQL/projection changes need the database verification required by `database.md`.
+
+- Advanced matching exposes separate candidate limits for entity identities and
+  relation types (default 3, maximum 20), confirmation batch size (default and
+  maximum 12), and a prompt character target (default 12,000). A single input is
+  retained intact even when it exceeds that target. These controls never bypass
+  explicit identity/equivalence confirmation. Persist effective settings with
+  accepted catalog decisions; configurable candidate limits reach SQL retrieval
+  and within-batch candidate selection consistently.

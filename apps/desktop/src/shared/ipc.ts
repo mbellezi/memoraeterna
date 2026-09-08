@@ -15,6 +15,8 @@ import {
   SourceDescriptorSchema,
   SourceItemTypeSchema,
   SourceRelationSettingsSchema,
+  AtomicNoteMatchingSettingsSchema,
+  CanonicalMatchingSettingsSchema,
   SourceRelationsPageSchema,
   SourceRelationReviewInputSchema,
   type SourceItemType
@@ -174,6 +176,8 @@ export const appSettingsSchema = z.object({
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
   knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
+  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault({}),
+  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.prefault({}),
   sourceRelationSettings: SourceRelationSettingsSchema.default(() => SourceRelationSettingsSchema.parse({})),
   updatedAt: z.string().datetime()
 });
@@ -195,6 +199,8 @@ export const appSettingsUpdateSchema = z.object({
   relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
   knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional(),
+  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.optional(),
+  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.optional(),
   sourceRelationSettings: SourceRelationSettingsSchema.optional()
 }).strict();
 
@@ -1051,6 +1057,8 @@ export const defaultAppSettings = {
   relationTypeSimilarityThreshold: 0.92,
   knowledgeGraphMaxEntitiesPerSource: 250,
   knowledgeGraphMaxRelationsPerSource: 500,
+  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.parse({}),
+  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.parse({}),
   sourceRelationSettings: SourceRelationSettingsSchema.parse({})
 } satisfies Omit<AppSettingsUpdate, "language">;
 

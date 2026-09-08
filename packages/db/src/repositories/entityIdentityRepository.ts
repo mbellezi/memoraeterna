@@ -38,14 +38,14 @@ export function createEntityIdentityRepository(pool: PgPool) {
         order by e.id limit 16`, [vector.spaceKey, types])).rows;
     },
     async saveVector(id: string, vector: RelationTypeVector) { await saveVector(pool, id, vector); },
-    async candidates(input: { type: string; names: string[]; vector: RelationTypeVector; threshold: number }): Promise<Array<EntityIdentity & { score: number }>> {
+    async candidates(input: { type: string; names: string[]; vector: RelationTypeVector; threshold: number; limit?: number }): Promise<Array<EntityIdentity & { score: number }>> {
       const result = await pool.query<EntityIdentity & { score: number }>(`select ${identityFields}, 1 - (v.embedding <=> $1::vector) as score
         from entities e join ${tableFor(input.vector.embedding)} v on v.entity_id = e.id and v.space_key = $2
         where e.type = $3 and (1 - (v.embedding <=> $1::vector) >= $4
           or e.normalized_name = any($5::text[])
           or exists (select 1 from jsonb_array_elements_text(e.aliases) a where lower(unaccent(a)) = any($5::text[])))
-        order by (e.normalized_name = any($5::text[])) desc, v.embedding <=> $1::vector, e.id limit 3`,
-      [`[${input.vector.embedding.join(",")}]`, input.vector.spaceKey, input.type, input.threshold, input.names.map(normalizeIdentityName)]);
+        order by (e.normalized_name = any($5::text[])) desc, v.embedding <=> $1::vector, e.id limit $6`,
+      [`[${input.vector.embedding.join(",")}]`, input.vector.spaceKey, input.type, input.threshold, input.names.map(normalizeIdentityName), Math.max(1, Math.min(20, Math.floor(input.limit ?? 3)))]);
       return result.rows.map((row) => ({ ...row, score: Number(row.score) }));
     },
     async commit(decisions: EntityIdentityDecision[], expectedRevision: string): Promise<Map<string, string> | null> {

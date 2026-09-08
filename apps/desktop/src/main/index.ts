@@ -223,6 +223,8 @@ void app.whenReady().then(() => {
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
+    getAtomicNoteMatchingSettings: async () => (await settingsService!.getApp()).atomicNoteMatchingSettings,
+    getCanonicalMatchingSettings: async () => (await settingsService!.getApp()).canonicalMatchingSettings,
     getSourceRelationSettings: async () => (await settingsService!.getApp()).sourceRelationSettings,
     getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
     getEntityIdentitySimilarityThreshold: async () => (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
@@ -304,6 +306,20 @@ void app.whenReady().then(() => {
         integrationGateway?.start(),
         obsidianSyncService?.reconcileVault()
       ]);
+      if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
+        void import("./services/matching-pilot.js").then(({ runMatchingPilot }) => runMatchingPilot({
+          mode: process.env.MEMORA_MATCHING_PILOT!, isPackaged: app.isPackaged,
+          userDataPath: app.getPath("userData"), workspaceRoot, pool: databaseService!.getPool()!,
+          ingestion: ingestionService!, hierarchy: hierarchicalIngestionService!, settings: settingsService!, jobs: jobSupervisor!, backup: backupService!
+        })).catch((error: unknown) => console.error("MATCHING_PILOT failed:", error instanceof Error ? error.message : String(error)));
+      }
+      if (!app.isPackaged && process.env.MEMORA_MATCHING_BENCHMARK) {
+        void import("./services/matching-benchmark.js").then(({ runMatchingBenchmark }) => runMatchingBenchmark({
+          mode: "benchmark", isPackaged: app.isPackaged, userDataPath: app.getPath("userData"), workspaceRoot,
+          pool: databaseService!.getPool()!, ingestion: ingestionService!, hierarchy: hierarchicalIngestionService!,
+          settings: settingsService!, jobs: jobSupervisor!, backup: backupService!, ai: aiService!
+        })).catch((error: unknown) => console.error("MATCHING_BENCHMARK failed:", error instanceof Error ? error.message : String(error)));
+      }
       const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
       if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
     }

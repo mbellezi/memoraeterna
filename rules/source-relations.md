@@ -63,7 +63,7 @@ review, or the conceptual source graph. Also load `ai-and-knowledge.md`,
   malformed conceptual references never become evidence. Summary preparation is
   separately audited from the bounded matching stage.
 - Retrieve independent text, vector, canonical-concept and note-link rankings,
-  fuse with RRF (k=60), and interleave note-linked and other sources so every
+  fuse with RRF (configurable k, default 60), and interleave note-linked and other sources so every
   shortlist prefix reserves discovery capacity. Search summaries/concepts and
   chunks; composite source vectors are not the only semantic representation.
   Resolve selected subitems to their source roots and exclude that entire root
@@ -85,9 +85,9 @@ review, or the conceptual source graph. Also load `ai-and-knowledge.md`,
   Use source/chunk/note/existing-relation aliases and validate ownership, type,
   direction, distinct roots, merge targets and output allowance in the backend.
   A failed model never falls back to a generic relationship.
-- Source matching uses `source-relations-v3`. Prompts expose shared root aliases
+- Source matching uses `source-relations-v4`. Prompts expose shared root aliases
   for chapters/sections and explicitly forbid same-root connections. A same-root
-  rejection gives specific repair feedback. Upgrading a v1/v2 checkpoint with
+  rejection gives specific repair feedback. Upgrading a v1/v2/v3 checkpoint with
   otherwise unchanged configuration preserves spent budgets and completed work;
   the new prompt fingerprint invalidates old pair-decision reuse.
 - Settings defaults per root and execution: 40 retrieved candidates, 8 evaluated
@@ -147,3 +147,16 @@ review, or the conceptual source graph. Also load `ai-and-knowledge.md`,
   `packages/db/src/scripts/verify-source-relations.ts`. Verify populated upgrade
   and empty baseline, both origins, direction, stale evidence, review preservation,
   deduplication, vector-space isolation, pagination, rollback and checkpoints.
+
+- Advanced source matching exposes the RRF constant (default 60), evidence
+  passages per source in each pair (3), passage character limit (1000), summary
+  character limit (1200), reused note relations per pair (6), and output token
+  ceiling (4096, also bounded by the profile). These settings participate in
+  configuration fingerprints and cache invalidation. Zero reused note relations
+  leaves direct source discovery available. Input token budgets remain separate
+  from output and all preparation/other-stage usage; UI copy must describe the
+  reported-usage stop, including the possibility of one-call overshoot.
+
+- Clarification requires explaining a substantive claim. Disambiguating unrelated
+  homonyms or senses alone never creates a relation, and proper names must not
+  be rewritten as abstract definitions. The note reranker follows the same rule.

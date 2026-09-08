@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createPgPool, closePgPool, PostgresSidecarManager, resolvePostgresSidecarPaths, runMigrations,
   createSourceItemRepository, createDocumentRepository, createChunkRepository, createSourceRelationRepository,
+  createEntityIdentityRepository, createRelationTypeRepository,
   createAtomicNoteRelationRepository, createKnowledgeGraphDashboardRepository, createEmbeddingRepository,
   listSourceRelations, type SourceRelationChunk, type SourceRelationWrite } from "../index.js";
 import { createIngestionRunRepository } from "../repositories/ingestionRunRepository.js";
@@ -85,6 +86,11 @@ try {
     values ($1::uuid,$2,$2,$2,$3,$4,'test','test','local','test',$1::uuid::text)`,[noteIds[index],c.content,c.sourceItemId,c.id]);
   const noteRelation = await createAtomicNoteRelationRepository(pool).upsert({sourceAtomicNoteId:noteIds[0]!,targetAtomicNoteId:noteIds[1]!,relationType:"supports",finalScore:0.95,explanation:"test",
     metadata:{semanticSourceAtomicNoteId:noteIds[0]!,semanticTargetAtomicNoteId:noteIds[1]!}});
+  assert.deepEqual(await createAtomicNoteRelationRepository(pool).existingTargets(noteIds[0]!, [noteIds[1]!]), new Set([noteIds[1]!]));
+  assert.deepEqual(await createAtomicNoteRelationRepository(pool).existingTargets(noteIds[1]!, [noteIds[0]!]), new Set([noteIds[0]!]));
+  const boundedEvidence = await repository.pairChunks(book.id,b.id,[ac.id,sc.id,bc.id],1);
+  assert.equal(boundedEvidence.filter((chunk)=>chunk.rootId===book.id).length,1);
+  assert.equal(boundedEvidence.filter((chunk)=>chunk.rootId===b.id).length,1);
   const notes = await repository.pairNotes(book.id,b.id);
   assert.equal(notes[0]?.sourceItemId,a.id,"The semantic direction survives sorted UUID storage");
   await pool.query("update atomic_note_relations set relation_type = 'contrasts' where id = $1",[noteRelation.id]);
@@ -132,6 +138,21 @@ try {
   const failed=await runs.findById(run.id);
   assert.equal(failed?.status,"succeeded","A collective stage must not reactivate a finished participant's job");
   assert.equal((failed?.stagesCheckpoint.sourceMatching as {status:string}).status,"failed");
+  const entityCatalog = createEntityIdentityRepository(pool), typeCatalog = createRelationTypeRepository(pool);
+  for (const dimensions of [256,768,1024]) {
+    const vector = { embedding: Array.from({length:dimensions},(_,i)=>i===0?1:0), spaceKey: "matching-calibration", contentHash: "fixture", provider: "test", model: "test", runtime: "local", metadata: {} };
+    for (let i=0;i<5;i++) {
+      const entityId=randomUUID(),typeId=randomUUID();
+      await pool.query("insert into entities (id,type,canonical_name,normalized_name,confidence) values ($1,'Concept',$2,$2,1)",[entityId,`candidate-${dimensions}-${i}`]);
+      await entityCatalog.saveVector(entityId,vector);
+      await pool.query("insert into relation_types (id,predicate,definition) values ($1,$2,'A synthetic calibration definition')",[typeId,`candidate_${dimensions}_${i}`]);
+      await typeCatalog.saveVector(typeId,vector);
+    }
+    assert.equal((await entityCatalog.candidates({type:"Concept",names:[],vector,threshold:0.5,limit:1})).length,1);
+    assert.equal((await entityCatalog.candidates({type:"Concept",names:[],vector,threshold:0.5,limit:5})).length,5);
+    assert.equal((await typeCatalog.candidates(vector,0.5,1)).length,1);
+    assert.equal((await typeCatalog.candidates(vector,0.5,5)).length,5);
+  }
   await pool.query("create database relations_empty");
   const url = new URL(connection.connectionString);url.pathname="/relations_empty";
   emptyPool=createPgPool({connectionString:url.toString(),max:2});
@@ -139,7 +160,7 @@ try {
   assert.equal((await emptyPool.query("select count(*)::int as n from drizzle.__drizzle_migrations")).rows[0].n,journal.entries.length);
   await pool.query("delete from source_items where id = any($1::uuid[])",[[book.id,a.id,sibling.id]]);
   assert.equal((await pool.query("select count(*)::int as n from source_relations")).rows[0].n,0);
-  console.log("Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion.");
+  console.log("Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup and per-root evidence caps.");
 } finally {
   if (emptyPool) await closePgPool(emptyPool);if (pool) await closePgPool(pool);
   await manager.stop();await rm(workDir,{recursive:true,force:true});

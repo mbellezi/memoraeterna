@@ -1,3 +1,4 @@
+import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { z } from "zod";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
@@ -39,8 +40,10 @@ export function relationTypeCosine(left: number[], right: number[]): number {
 function embeddingText(input: { predicate: string; definition: string }): string { return `${input.predicate.replaceAll("_", " ")}\n${input.definition}`; }
 
 export function createRelationTypeResolver(options: {
+  settings?: CanonicalMatchingSettings;
   pool: PgPool; ai: Pick<AiService, "runDefaultTask">; threshold: number; context: AiTaskLogContext; signal?: AbortSignal;
 }) {
+  const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createRelationTypeRepository(options.pool);
   const embedText = createCanonicalEmbedder({ ...options, strategy: relationTypeResolutionVersion });
   const embed = (input: { predicate: string; definition: string; sourceItemIds?: string[] }) => embedText(embeddingText(input), input.sourceItemIds);
@@ -58,9 +61,9 @@ export function createRelationTypeResolver(options: {
     let pending = [...rows];
     while (pending.length) {
       const group: RelationMatchRow[] = [];
-      while (pending.length && group.length < 12) {
+      while (pending.length && group.length < settings.confirmationBatchSize) {
         const next = pending[0]!;
-        if (group.length && buildRelationMatchPrompt([...group, next]).length > 12_000) break;
+        if (group.length && buildRelationMatchPrompt([...group, next]).length > settings.confirmationMaxCharacters) break;
         group.push(pending.shift()!);
       }
       const prompt = buildRelationMatchPrompt(group);
@@ -100,14 +103,14 @@ export function createRelationTypeResolver(options: {
         for (const [index, relation] of unknown.entries()) {
           const vector = await embed(relation);
           await indexMissing(vector);
-          const candidates: Candidate[] = (await repository.candidates(vector, options.threshold)).map((candidate) => ({
+          const candidates: Candidate[] = (await repository.candidates(vector, options.threshold, settings.relationTypeCandidateLimit)).map((candidate) => ({
             ...candidate, key: `id:${candidate.id}`, target: { id: candidate.id }
           }));
           for (const previous of embedded) {
             const score = relationTypeCosine(vector.embedding, previous.vector.embedding);
             if (score >= options.threshold) candidates.push({ ...previous, key: `new:${previous.predicate}`, score, target: { predicate: previous.predicate } });
           }
-          const selected = candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, 3).map((candidate) => {
+          const selected = candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, settings.relationTypeCandidateLimit).map((candidate) => {
             if (!candidateKeys.has(candidate.key)) candidateKeys.set(candidate.key, `c${candidateKeys.size + 1}`);
             return { ...candidate, key: candidateKeys.get(candidate.key)! };
           });
@@ -120,7 +123,7 @@ export function createRelationTypeResolver(options: {
           const key = `r${index + 1}`, match = matches.get(key);
           const candidate = candidatesByRow.get(key)!.find((item) => item.key === match?.candidate);
           return { predicate: relation.predicate, definition: relation.definition, target: candidate?.target ?? null, vector: embedded[index]!.vector,
-            metadata: { sourceItemIds: [...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : [])], promptVersion: relationTypeResolutionVersion, threshold: options.threshold, method: candidate ? "llm_equivalent" : "new_type",
+            metadata: { sourceItemIds: [...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : [])], settings, promptVersion: relationTypeResolutionVersion, threshold: options.threshold, method: candidate ? "llm_equivalent" : "new_type",
               ...(match ? { aiTaskRunId: match.aiTaskRunId } : {}), ...(candidate ? { score: candidate.score } : {}), embeddingSpaceKey: embedded[index]!.vector.spaceKey } };
         });
         options.signal?.throwIfAborted();

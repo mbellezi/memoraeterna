@@ -49,13 +49,13 @@ export function createRelationTypeRepository(pool: PgPool) {
       return result.rows;
     },
     async saveVector(id: string, vector: RelationTypeVector) { await saveVector(pool, id, vector); },
-    async candidates(vector: RelationTypeVector, threshold: number): Promise<Array<CanonicalRelationType & { score: number }>> {
+    async candidates(vector: RelationTypeVector, threshold: number, limit = 3): Promise<Array<CanonicalRelationType & { score: number }>> {
       if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) throw new Error("errors.common.validationFailed");
       const result = await pool.query<CanonicalRelationType & { score: number }>(
         `select t.id, t.predicate, t.definition, coalesce(t.metadata->'sourceItemIds', '[]'::jsonb) as "sourceItemIds", 1 - (e.embedding <=> $1::vector) as score
          from ${tableFor(vector.embedding)} e join relation_types t on t.id = e.relation_type_id
          where e.space_key = $2 and 1 - (e.embedding <=> $1::vector) >= $3
-         order by e.embedding <=> $1::vector, t.id limit 3`, [literal(vector.embedding), vector.spaceKey, threshold]);
+         order by e.embedding <=> $1::vector, t.id limit $4`, [literal(vector.embedding), vector.spaceKey, threshold, Math.max(1, Math.min(20, Math.floor(limit)))]);
       return result.rows.map((row) => ({ ...row, score: Number(row.score) }));
     },
     async commit(decisions: RelationTypeDecision[], expectedRevision: number): Promise<Map<string, CanonicalRelationType> | null> {

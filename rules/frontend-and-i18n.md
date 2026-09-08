@@ -243,3 +243,11 @@ job statuses, or user-visible backend errors.
   only when the pointer is released or a keyboard adjustment ends; canceled
   pointer gestures discard the draft. Each slider has an accessible compact
   action that restores and saves its canonical application default.
+
+- Matching includes a collapsed Advanced matching section for note candidate
+  limits, graph-only reservation, RRF, signal weights, validation policy and
+  per-execution/output limits; identity confirmation candidates/batching; and
+  source evidence/context/output limits. Each group provides a default reset.
+  Numeric fields commit on blur/Enter and discard edits on Escape. Reject
+  all-zero weight groups with visible feedback. Every slider has a visible
+  text label as well as its accessible name and numeric value.
