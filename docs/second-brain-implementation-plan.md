@@ -2,11 +2,14 @@
 
 Status: proposed implementation plan; no second-brain feature is implemented by
 this document. The initial harness technology decision in section 7 is accepted;
-M2 validates it before expanding the workflows. Baseline inspected on
-2026-09-07. The agreed product constraints
-are recorded in [the second-brain rules](../rules/second-brain.md). Table names,
-service names, numerical budgets, layouts, and milestone boundaries below are
-planning proposals, to be validated during implementation.
+M2 validates it before expanding the workflows. Baseline reviewed on
+2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
+pipeline. The agreed product constraints are recorded in
+[the second-brain rules](../rules/second-brain.md); existing matching behavior
+is governed by [the source relationship rules](../rules/source-relations.md).
+New table/service names, wiki budgets, layouts and milestone boundaries below
+are planning proposals. Existing source relationship contracts and settings
+are reuse constraints, not new wiki implementation work.
 
 ## Contents
 
@@ -33,10 +36,11 @@ read a synthesis across sources, examine disagreements, and follow every
 derived assertion back to its evidence. Useful discoveries can become durable
 knowledge instead of disappearing into a conversation.
 
-The first presentation is a wiki. Atomic notes, source documents, canonical
-entities, and their relationships remain independently useful. The wiki is an
-editorial layer over these objects, not a replacement for them. PostgreSQL
-remains canonical; AGE, embeddings, rendered pages, and Obsidian files are
+The first presentation is a wiki. Atomic notes, source documents, conceptual
+source relationships, canonical entities, and entity relations remain
+independently useful. The wiki is an editorial layer over these objects, not
+a replacement for them. PostgreSQL remains canonical; AGE, embeddings,
+rendered pages, and Obsidian files are
 projections or retrieval aids.
 
 Success includes a useful experience with no atomic notes, no graph extraction,
@@ -51,6 +55,7 @@ for the new wiki content is a second release, designed into the first.
 | --- | --- |
 | Catalog coverage | Every imported source remains discoverable, including metadata-only containers and sources without notes. |
 | Atomic notes | Optional per source or processing selection. Wiki work never enables note generation implicitly. |
+| Source relationships | Reuse persisted conceptual connections as optional organization/retrieval context, with original evidence from both endpoints. Source matching and entity extraction remain separate selections. |
 | Evidence | Synthesis can cite source revision/chunk/SourceSpan directly; notes and graph elements are optional additional context. |
 | AI autonomy | Proposed default: create/update unreviewed AI drafts; propose changes to human-edited or reviewed content. |
 | Consultation | Search and questions are read-only; saving a useful answer is an explicit action. |
@@ -68,12 +73,15 @@ have been validated in a running desktop or an actual Obsidian vault.
 
 | Existing area | Reuse | Required extension or correction |
 | --- | --- | --- |
-| [Processing DAG](../packages/domain/src/hierarchical-ingestion.ts) | Notes and graph extraction are independently selectable; graph requires chunks, not notes. | Add explicit organization selection without changing import-only semantics. |
-| [Knowledge service](../apps/desktop/src/main/services/knowledge-service.ts) | Summaries, note generation, graph extraction, matching, source evidence. | Add cross-source page maintenance and impact discovery above these services. |
+| [Processing DAG](../packages/domain/src/hierarchical-ingestion.ts) | Independent notes/entity graph; `sourceMatching` depends on summaries and embeddings, not notes or entity extraction, and belongs to new `full_knowledge` plans. | Add explicit organization selection without expanding saved immutable plans or changing import-only semantics. |
+| [Knowledge service](../apps/desktop/src/main/services/knowledge-service.ts) | Summaries with grounded concepts, note generation/matching, entity extraction, source matching and source evidence. | Add cross-source page maintenance and impact discovery above these services. |
+| [Source matching](../apps/desktop/src/main/services/source-relation-processing.ts) | Bounded cross-root discovery, note-link validation, RRF diversity, one repair, positive/negative decision reuse and resumable per-root budgets. | Consume its qualified results; do not create a competing wiki matcher or silently schedule matching. |
+| [Source relationship persistence](../packages/db/src/repositories/sourceRelationRepository.ts) and [contracts](../packages/domain/src/source-relations.ts) | Canonical directed idea connections, two-sided evidence snapshots, independent review with optimistic timestamps, currentness and paginated details. | Add scoped wiki read adapters, section dependencies and transactional change notifications; keep canonical ownership here. |
 | [Knowledge contracts](../packages/domain/src/knowledge.ts) | Notes, note relations, questions, review states, source links. | Version editorial bodies and protect human edits independently of review status. |
-| [Canonical schema](../packages/db/src/schema.ts) | Sources, revisions, chunks, claims, entities, notes, jobs, AI audit, sync records. | Add pages, page revisions, evidence/dependency records, organization runs and change sets. |
-| [Search service](../apps/desktop/src/main/services/search-service.ts) | Text/vector/graph retrieval with typed results and source breadcrumbs. | Add page/section retrieval, common scopes, mixed-type ranking evaluation, and read-only answers. |
-| [Graph dashboard](../apps/desktop/src/renderer/components/KnowledgeGraphDashboard.tsx) | Source/note projections, interaction, worker layout, contextual navigation. | Add an explicit page projection and scoped neighborhoods while retaining existing behavior. |
+| [Canonical schema](../packages/db/src/schema.ts) | Sources, revisions, chunks, entities/claims, notes, `source_relations`, `source_relation_evidence`, `source_matching_decisions`, `source_matching_runs`, jobs, AI audit and sync. | Add wiki records and organization state; reference existing source relationship records rather than duplicate them. |
+| [Search service](../apps/desktop/src/main/services/search-service.ts) | Text/vector/AGE-assisted evidence retrieval and typed results; its current `relation` kind denotes entity relations. | Add page/section and distinct conceptual relationship results, common scope/review/freshness filtering and cited answers. |
+| [Graph dashboard](../apps/desktop/src/renderer/components/KnowledgeGraphDashboard.tsx) and [relation list](../apps/desktop/src/renderer/components/SourceRelationsList.tsx) | Sources defaults to conceptual connections; entity connections are an alternative. Reuse hierarchy collapse/expand, type icons, evidence/review cards, pagination and contextual navigation. | Add page projection and scoped neighborhoods while retaining the existing source/note views. |
+| [AI execution queue](../apps/desktop/src/main/services/ai-execution-queue.ts) and [monitoring](../apps/desktop/src/main/services/monitoring-service.ts) | One FIFO inference queue, canonical task audit and independently prunable operation telemetry. | Route wiki calls through the same AI service; add organization context without a second inference queue or audit store. |
 | [Editorial source save](../packages/db/src/repositories/sourceEditingRepository.ts) | Optimistic concurrency and new documents/revisions preserve earlier evidence. | Share this application behavior with plugin-originated source edits. |
 | [Obsidian projection](../apps/desktop/src/main/services/obsidian-projection.ts) | Managed identity frontmatter, human-readable paths, hierarchy paths, relation links. | Add wiki pages/indexes, catalog-only references, section anchors, and portable citation links. |
 | [Obsidian sync](../apps/desktop/src/main/services/obsidian-sync-service.ts) | Projection hash checks, conflict detection, present-file reconciliation, explicit deletion handling. | Add revision-aware wiki targets, durable apply/acknowledgment state, and safe generated/editorial region handling. |
@@ -82,14 +90,18 @@ have been validated in a running desktop or an actual Obsidian vault.
 
 ### Prerequisites that must not be hidden by new UI
 
-1. `atomicNoteRelationRepository.upsert` sorts note IDs into one pair and stores
-   semantic direction in metadata supplied by matching. Define directed
-   endpoints explicitly for asymmetric predicates. Decide uniqueness per
-   directed pair/predicate; preserve ambiguous legacy edges for review rather
-   than guessing their direction during migration.
+1. `atomicNoteRelationRepository.upsert` still sorts note IDs into one pair;
+   semantic direction comes from matching metadata. Define explicit directed
+   note endpoints and uniqueness before expanding note relation editing. This
+   limitation does not apply to `source_relations`, which already stores actual
+   directed source/chapter endpoints and multiple idea connections per pair.
+   Reuse the existing metadata resolver for safe note-to-source consumption;
+   preserve ambiguous legacy links for review instead of guessing from UUIDs.
 2. Note generation updates records whose status is `pending_review`. A human
    edit can leave that status unchanged. Add explicit editorial protection and
-   revision checks. Relation upserts also need protection for curated records.
+   revision checks. Atomic-note relation upserts also need protection for
+   curated wording. Source relationship reruns already preserve saved
+   propositions/status; a general editable relation revision API is still absent.
 3. Current Obsidian source import updates `canonicalMarkdown` in place and
    creates an ingestion job. Before extending reverse sync, route it through
    the source editorial service: preserve old documents/evidence and separate
@@ -101,9 +113,53 @@ have been validated in a running desktop or an actual Obsidian vault.
 5. Current source projection skips metadata-only containers. A wiki catalog
    must include those containers and export a useful reference without
    manufacturing a document or requesting AI.
-6. Current relation matching explains results with generic labels. Contextual
-   "why connected" explanations need actual evidence and an explicit inference
-   label; similarity is not logical support.
+6. Atomic-note matching still uses generic explanation keys in some paths.
+   Source relationships already include `sourceIdea`, `targetIdea`, explanation,
+   original excerpts, origin and review/currentness. Reuse these for "why
+   connected"; shared-entity connections and raw similarity must remain clearly
+   distinguishable from a validated conceptual connection.
+7. Current search contracts do not expose conceptual source relationships or
+   uniform current-only/reviewed-only filtering across all knowledge types.
+   In particular, evidence note search can include archived/superseded notes.
+   Implement the wiki filters at each repository boundary before using them for
+   synthesis; dashboard eligibility alone is not sufficient.
+8. Source relationship currentness is computed on reads. Wiki dependency
+   invalidation and durable notifications on relationship persistence/review
+   are new work; existing graph refresh events do not provide that guarantee.
+
+### Source relationship baseline to retain
+
+- A conceptual connection joins specific ideas in different source roots while
+  retaining the actual chapter/section owners. Several distinct ideas, including
+  the same type, may join one pair. Chapters of one work are not eligible
+  source-matching endpoints; wiki synthesis can still cite several chapters.
+- The vocabulary is `supports`, `contrasts`, `extends`, `similar_to`,
+  `depends_on`, `clarifies`, `mentions`, `related`; the last two are disabled
+  for automatic generation by default. Entity predicates remain a separate,
+  open-ended catalog. Scores are provisional assessments, not probabilities.
+- Both direct source analysis and qualified atomic-note reuse require original
+  chunks on both sides and model validation. Summaries/concepts guide retrieval;
+  shared entities, topic overlap and note links alone are not proof. Zero
+  output is valid, and derivatives of one passage are not extra corroboration.
+- Existing connections, including rejected ones, are exclusion references in
+  matching, not enrichment/reranking candidates. Preserve their propositions,
+  direction and review, and keep distinct new ideas eligible. Positive and
+  negative pair decisions are reused only while their fingerprints match.
+- `summary-v3` supplies a readable summary plus up to six grounded concepts per
+  map batch; `source-relations-v3` validates pairs through the `reranking` route.
+  The current settings per root/execution are 40 candidates, 8 pairs, 10
+  proposals, 4 per pair and 20,000 reported input tokens, with importance 0.75
+  and confidence 0.8. Summary/embedding preparation is separate work and cost.
+- Source matching validates full embedding-space identity, including provider,
+  runtime, model, dimensions and strategy/space key. Old incompatible vectors
+  do not contribute to this signal. Its input budget counts reported usage,
+  including repairs; it permits a call at the limit and blocks the next only
+  after actual usage exceeds it. Never retrofit estimated reservations through
+  the wiki wrapper. See the owning rules for full cache and recovery semantics.
+
+These facilities exist in code and focused tests. This review does not certify
+runtime quality, PostgreSQL upgrades or desktop behavior; the verification gate
+in section 12 remains required when implementing their wiki integration.
 
 ## 3. Participation and processing semantics
 
@@ -114,7 +170,8 @@ have been validated in a running desktop or an actual Obsidian vault.
 | Metadata-only container | Yes | Metadata only, or eligible descendant evidence | No | Show catalog facts and children; do not invent substantive claims. |
 | Imported, no AI processing | Yes | After organization is selected | No | Source content is readable; deterministic/manual navigation remains available. |
 | Summary only | Yes | Yes, with underlying source evidence when making substantive assertions | No | Summary helps navigation; it does not replace evidence verification. |
-| Graph only | Yes | Yes | No | Entities and relationships improve candidate discovery. |
+| Source matching, no notes/entity graph | Yes | Yes, under explicit organization selection/policy | No | Reuse summary concepts and current conceptual connections with original evidence; matching already prepares summaries/embeddings. |
+| Entity graph only | Yes | Yes | No | Canonical entities and entity relations improve candidate discovery; shared entities alone do not establish conceptual support. |
 | Atomic notes only | Yes | Yes | Already selected explicitly | Use non-rejected notes under the chosen review policy and retain their provenance. |
 | Notes and graph | Yes | Yes | Already selected explicitly | Combine inputs without counting repeated evidence as independent support. |
 
@@ -125,16 +182,23 @@ and content. Optional editorial commentary is stored separately from metadata.
 
 Add an `organizeKnowledge` selection to processing plans/presets. It requires
 usable content segmentation when content analysis is requested, but it does
-not depend on summaries, embeddings, notes, or graph generation. Reuse valid
-artifacts when present. Missing optional stages are disclosed, not silently
-scheduled. Import-only still creates no AI work.
+not depend on summaries, embeddings, notes, source matching, or entity graph
+generation. Reuse valid artifacts when present. Missing optional stages are
+disclosed, not silently scheduled. Import-only still creates no AI work.
 
 Persist organization as a separate run linked to the ingestion/batch, because
 it can touch existing pages and sources outside one imported document. When
 selected together, wait for the selected relevant derivations to reach a
 terminal state, then snapshot the usable inputs. A failed optional graph stage
 can yield a disclosed partial organization run; it cannot hide the batch's
-failure or block catalog access. Matching keeps its existing note-batch barrier.
+failure or block catalog access. Preserve both existing matching barriers:
+note matching waits for selected note generation; source matching waits for
+selected summaries, embeddings, notes and note matching across the batch.
+The last participant can be a catalog job. Each deferred source stage retains
+its own job, checkpoint, counts and outcome; a batch barrier is not a combined
+analysis run. Organization must inspect those checkpoints, not infer readiness
+from the parent ingestion job ending, and record any failed/canceled/partial
+inputs it omits. It never resumes or force-regenerates matching implicitly.
 
 Policy choices: manual organization; organize newly processed sources within
 an explicitly enabled scope; pause organization. Saved preferences specify
@@ -142,16 +206,19 @@ scope, profile, draft policy and budgets. Applying a preset does not run it.
 
 ## 4. Knowledge model and editorial hierarchy
 
-### Four complementary layers
+### Evidence, optional derivations and editorial pages
 
 ```mermaid
 flowchart LR
     S[Source revisions and evidence] --> N[Optional atomic notes]
     S --> G[Optional entities, claims and relations]
+    S --> R[Optional conceptual source relationships]
+    N --> R
     N --> G
     S --> W[Wiki pages and sections]
     N --> W
     G --> W
+    R --> W
     W --> V[Reading, lists, maps and comparisons]
     W --> O[Obsidian Markdown projection]
 ```
@@ -168,6 +235,11 @@ Start with these page kinds:
 Open questions can initially be typed page sections or linked existing question
 objects. Avoid a new generalized content framework just to represent them.
 Source reference views and atomic notes retain their existing object types.
+
+Use conceptual relationships to identify useful agreements, disagreements and
+page candidates. Do not create one wiki page per edge or require a connected
+graph to place a source. A page can synthesize isolated sources from direct
+evidence, and publishing a page does not create or approve a source relation.
 
 ### Hierarchy without duplicate knowledge
 
@@ -188,13 +260,21 @@ Distinguish three types of links in both data and UI:
 | --- | --- | --- |
 | Structural | Contains, appears in collection, primary parent | Navigation, not semantic evidence. |
 | Evidential | Derived from, cites, attributed to | Must identify exact evidence/revision and the supported passage. |
-| Semantic | Supports, contrasts, depends on, clarifies, related | Preserve direction, provenance, review state and whether it is an inference. |
+| Semantic | Existing conceptual source relations, note relations, entity relations or proposed page links | Preserve the target's distinct type/ID, vocabulary, direction, provenance and review state; do not treat these relation systems as interchangeable. |
 
 Automatic notes remain `pending_review`. An exploratory view can include them
 with a visible label; reviewed-only consultation excludes them. An AI page
 using pending notes remains unreviewed until the evidence and wording have
 been assessed. A source passage remains eligible even if a derived note is
 rejected; the rejected note itself must not be reused as accepted knowledge.
+
+Apply an explicit source-relation review filter too: exploratory consultation
+can show current `pending_review` relations as hypotheses; reviewed-only
+consultation uses `accepted` relations. Exclude rejected or wholly stale
+relations from new synthesis inputs, while retaining them in history/review.
+Source and note review are independent. A page citing a relation must retain
+the actual evidence contributions used on both sides; a surviving current
+contribution does not make every historical contribution current.
 
 ### Minimal persistence proposal
 
@@ -207,7 +287,8 @@ Use concrete domain records, not a universal node table replacing existing SQL.
 | Section | Stable section key across page revisions, kind, order, Markdown body, provenance and editorial protection. |
 | Page links/memberships | Typed target ID, optional section key, direction/order and origin; no identity extracted from display text. |
 | Evidence links | Page/note revision and section, source ID, document/revision ID, chunk/SourceSpan, optional quote selector, direct/derived attribution. |
-| Dependencies | Exact input revision/hash, consuming revision/section, dependency kind and stale reason. |
+| Source relationship references | Existing relation ID and evidence-occurrence IDs plus a consumed proposition/review snapshot; resolve both source revision/chunk/SourceSpan sides. No duplicate source-relation table and no relation ID as a substitute for source citations. |
+| Dependencies | Exact input revision/hash or relation fingerprint, consuming revision/section, dependency kind and stale reason. Track relationship wording/review and each consumed evidence contribution separately. |
 | Organization run/steps | Job link, trigger, policy snapshot, input snapshot, read/write scopes, checkpoints, limits, audit references and terminal status. |
 | Harness configuration/revision | Stable ID, function/domain binding, editable guidance/prompt slots, immutable version/hash, inheritance, validation and activation history. |
 | Maintenance schedule | Function/domain scope, cadence/timezone, execution window, enabled/paused state, limits, policy, due/last-run state and idempotent occurrence identity. |
@@ -217,9 +298,14 @@ Use concrete domain records, not a universal node table replacing existing SQL.
 
 Reuse existing knowledge generations and AI task runs as audit references;
 do not duplicate model telemetry. Introduce note body revisions and typed
-relation revisions where needed for editorial protection. A cross-source note
-can reuse source-link records, but must not be falsely owned by one arbitrary
-source for deletion/cascade purposes. Before enabling cross-source note
+relation revisions only where editorial changes require them. Existing source
+relations have review history and evidence snapshots, not a general immutable
+proposition revision API; initial wiki consumption stores its own input snapshot
+and expected timestamp/fingerprint. Entity extraction relations/mentions are
+replaceable snapshots, so resolve their original source evidence and invalidate
+consumers on replacement rather than promise stable extraction IDs. A
+cross-source note can reuse source-link records, but must not be falsely owned
+by one arbitrary source for deletion/cascade purposes. Before enabling cross-source note
 creation, define ownership and deletion behavior: removal of one supporting
 source invalidates its links, not the entire reviewed note.
 
@@ -237,7 +323,8 @@ page/topic when opened in context, with an obvious switch to the whole library.
 Carry scope between reading, search, comparison and map views. Show active
 scope as removable chips; never infer permission from a natural-language query.
 
-Return typed groups: pages, sources, notes, entities and relations. Show a title,
+Return typed groups: pages, sources, notes, entities and relations, with distinct
+discriminants for conceptual source connections and entity relations. Show a title,
 short matching passage, breadcrumb, provenance/review state and why it matched.
 Exact title/alias matches should make known-item lookup reliable. The UI offers
 simple filters for type, source collection/root, language, date and review state;
@@ -263,17 +350,29 @@ Support these interactions without requiring query syntax:
    in the backend before retrieval. Include descendant sources only when the
    selected scope says so. Scope applies to counts and graph expansion too.
 2. Retrieve catalog/title/alias, full-text page sections and source chunks,
-   existing note matches, optional vectors, and optional graph candidates
-   independently. Preserve the origin of every signal.
+   summary concepts, existing note matches, current conceptual source relations,
+   optional vectors, and optional entity-graph candidates independently.
+   Preserve the origin of every signal. Read conceptual relations through a
+   bounded SQL adapter with review/freshness filters; apply scope/privacy to
+   both endpoints, explanations and excerpts before exposing them. An edge
+   must never widen the authorized scope or leak its excluded endpoint.
 3. Fuse ranked lists using a measured extension of the existing RRF approach.
    Evaluate cross-type ranking rather than compare raw cosine and text scores.
    Reserve useful diversity across sources; repeated derivatives cannot crowd
    out their originals or alternative perspectives. Optional reranking is
    bounded and uses the selected profile.
+   Keep this query path read-only: do not invoke `matchSourceRelations` or its
+   decision cache to answer a question. Neither current Library nor evidence
+   search runs generative reranking; any wiki query reranker is new, separately
+   selected functionality. Reuse ranking techniques without sharing matching
+   budgets, generation side effects or cross-root exclusion rules with search.
 4. For a question, read the relevant wiki sections plus direct source evidence.
    Treat the wiki as a reusable synthesis and retrieval aid; return to sources
    for factual support, recent changes and disagreements. Do not stuff the
    entire library into context.
+   A saved source relation supplies a candidate interpretation of two ideas,
+   not an independently corroborating source. Resolve its exact supporting
+   passages before presenting support, contradiction or dependency as an answer.
 5. Generate a structured answer with citation handles, attribution, uncertainty
    and explicit evidence gaps. A valid ID alone does not establish support.
 6. Render citations and an "Evidence used" inspector. Display partial coverage
@@ -289,10 +388,12 @@ If mixed-scope content cannot be safely separated, use an eligible local route
 or ask the user to narrow the scope; never silently select a remote fallback.
 
 Text/catalog search works without a model. Missing embeddings remove the
-vector signal. AGE failure removes graph traversal/rank and leaves text/vector
-and direct relational records available; do not introduce a hidden SQL
-traversal fallback. Cross-language semantic lookup depends on the selected
-model and must be disclosed and evaluated, not assumed from translated UI.
+vector signal. AGE failure removes entity-graph traversal/rank and leaves
+text/vector and canonical conceptual source connections available. Their
+existing SQL projection is an independent supported query, not an AGE fallback;
+do not introduce a hidden SQL traversal fallback. Cross-language semantic lookup
+depends on the selected model and must be disclosed and evaluated, not assumed
+from translated UI.
 
 ## 6. Visual experience
 
@@ -357,6 +458,17 @@ for Pages, Sources and Atomic notes, then optional entity details. Structural
 links and semantic links use different styles and legends. Every graph view
 has a keyboard-accessible list/table alternative and a "why connected" action.
 
+The Sources switch retains its current conceptual default and explicit entity
+alternative. Reuse its grouped pair edge, up to three prevalent relation-type
+icons and larger unique leader, counted by distinct connections rather than
+evidence occurrences. Preserve icons and type counts when collapsing chapters.
+The detail card/list shows the actual directed chapter endpoints, both ideas,
+explanation, origin, review/currentness and original evidence with pagination.
+Resolve stored `<source-ref>` tags through safe typed rendering with consistent
+numbered endpoint markers; do not display raw model aliases or parse prose to
+recover identity. Page membership and same-book navigation cannot manufacture
+conceptual source edges.
+
 Preserve the current graph interaction contract: explicit projection switches,
 no replacement of nodes by zoom-dependent community aggregates, stable camera
 and positions on return, worker-based layout, and canonical directed identity.
@@ -375,6 +487,11 @@ and after, why the change was proposed, evidence, affected links and source
 freshness. Allow section-level acceptance only when dependencies can still be
 applied coherently; otherwise accept/reject the atomic group. Rejecting records
 the reason so the same proposal is not immediately recreated without new input.
+
+Source relation acceptance/rejection continues through its own optimistic
+review command. Accepting a page/change set does not approve its source or note
+relations. Offer links to those reviews and reflect their changes in affected
+sections without silently applying new wording.
 
 Represent these dimensions separately: authored/reviewed state; fresh/stale
 evidence; queued/running/failed organization; synced/pending/conflicted files.
@@ -406,7 +523,7 @@ approach, with an evidence-based decision gate at M2.
 | Model-callable tools | Zod-validated action contracts routed to application services. |
 | Execution state and recovery | Existing PostgreSQL jobs extended with organization runs, persisted steps and checkpoints. |
 | Heavy execution | Existing supervised workers/controlled model runtimes. |
-| Local and remote inference | Existing `AiModelAdapter` and task/profile routing. |
+| Local and remote inference | Existing AI service, single FIFO execution queue, `AiModelAdapter` and task/profile routing. No parallel wiki inference path. |
 | Instructions | Versioned function/domain configurations in PostgreSQL. |
 | Weekly/monthly dispatch | A persisted scheduler to implement over existing jobs; independent of the model loop. |
 | Canonical edits and projections | Existing repositories extended with revisions, change sets and outbox delivery. |
@@ -441,7 +558,10 @@ canonical wiki/note storage. Record exact versions, packaging impact and any
 checkpoint migration in `STACK.md` before adoption.
 
 M2 uses synthetic sources, exactly three tools, one page and both an eligible
-local model and a remote model tested in separately authorized runs. The
+local model and a remote model tested in separately authorized runs. Compare
+direct-evidence-only inputs with a scoped, service-preloaded source-relation
+snapshot; both original passages still pass through the same evidence tools.
+This does not add a fourth tool or run source matching inside the spike. The
 executor decision report must cover:
 
 1. A complete cited proposal, revision validation and policy-controlled apply.
@@ -516,6 +636,12 @@ Offer examples such as "Prefer broad topics with linked subtopics", "Keep
 disagreements attributed to each author", and "Avoid a page for every named
 entity". Users can write their own guidance instead of only selecting presets.
 Atomic-note instructions apply only when note generation has been selected.
+For the initial wiki release, relation guidance controls how organization uses
+existing connections. Source matching thresholds/budgets remain in the existing
+Matching settings and its model route remains `reranking`. Do not expose a
+second matcher configuration or change `source-relations-v3` by editing a wiki
+prompt. Editable matching prompts require their own versioning/cache acceptance
+work if added later.
 
 ### Instruction resolution and lifecycle
 
@@ -523,7 +649,10 @@ Resolve editable slots in this order: built-in defaults, global user defaults,
 function overrides, domain defaults, domain/function overrides. Show the origin
 of every effective slot. Overrides replace their slot; do not concatenate
 contradictory full system prompts. Mandatory application contracts stay outside
-this chain. Preserve the existing profile's response-language/parameter policy.
+this chain. Preserve the global `app.preferences.contentLanguage` policy for
+generated prose, independently of UI language, and the existing model/profile
+parameter precedence. Pin content language with the run; internal identifiers
+and relation enums remain English.
 
 Cross-domain work resolves one explicit policy context: normally the target
 page's selected domain, with authorized cross-domain evidence. For a cross-domain
@@ -574,7 +703,8 @@ reference resolution, not authorization by itself: validate against the
 server-side run scope on every call.
 
 Later capabilities are added one at a time with separate acceptance tests:
-read a page/note snapshot, obtain a bounded graph neighborhood, propose note
+read a page/note snapshot, read scoped conceptual connections with both evidence
+sides, obtain a bounded entity-graph neighborhood, propose note
 revisions/relations, and propose editorial placement. There is no generic
 `execute`, arbitrary code tool, provider-selected tool registry, or direct
 write-to-database capability. Native tool calling is optional: a validated
@@ -600,15 +730,24 @@ step, its input/output artifact references, effective instruction revision/hash,
 prompt/tool versions, effective
 profile/model, tokens, duration and estimated cost through existing audit
 records. Sensitive artifacts are not full provider-response debug logs.
+Use existing monitoring operation context for organization steps and canonical
+`ai_task_runs` for provenance; pruning monitoring must not remove dependencies,
+review or run state. The FIFO queue serializes all actual model calls, including
+query embeddings, matching and repairs. Track queue waiting separately from
+active inference and persist known usage before checking late cancellation.
 
 Proposed initial upper bounds for the synthetic spike: 12 total tool calls,
 one page, six section operations, one repair attempt, 20 retrieved excerpts
 per search, and a five-minute execution deadline. These are tunable ceilings,
-not promises or reasons to truncate evidence silently. Token/context and cost
-budgets are resolved from the model/profile and enforced across the whole run,
-including retries. If cost cannot be estimated, enforce token/call ceilings
-and disclose the unavailable estimate. Reserve budget before each call and
-stop when the next call cannot fit.
+not promises or reasons to truncate evidence silently. Resolve context/output
+limits from the model/profile and persist cumulative reported usage across
+the organization run, including retries. Keep organization allowances distinct
+from existing per-root source-matching allowances; do not charge consumption
+again when reading saved relations or negative decisions. Proposed organization
+admission uses tool/call/time limits plus a reported-input stop rule, with no
+invented token reservations; a call may overshoot that input allowance. Record
+available cost estimates and disclose unavailable usage/cost. Calibrate wiki
+limits at M2, including queue wait and canceled calls, before enabling schedules.
 
 Cancellation stops new calls and rejects late results before apply. Check
 cancellation and optimistic revisions in the commit boundary. A transaction
@@ -654,8 +793,10 @@ Persist an outbox event with the content transaction so a restart cannot lose
 the trigger. Coalesce overlapping work by scope and input generation.
 
 The service first finds exact dependents, then a bounded set of candidates
-through shared entities and text/vector search. No full-library rewrite after
-each import. Pin the available revisions and carry a causal origin/run ID;
+through eligible conceptual source relationships, summary concepts and
+text/vector search, with entities as optional additional discovery. No
+full-library rewrite after each import. Pin the available revisions and carry
+a causal origin/run ID;
 generated page writes do not recursively schedule the same organization run.
 
 Track dependencies per section. When a source changes, keep the old citation
@@ -664,6 +805,17 @@ sections are protected. Rejected or archived notes are removed from new
 generation inputs; historical page revisions retain their provenance. Deleted
 evidence becomes unavailable/stale under the source deletion policy, never a
 silently reassigned citation.
+
+Add transactional outbox events at the existing source-relation commit/review
+boundaries and consume source/note revision events as well. Relationship
+currentness is computed at read time and can change without a relation-row
+update, so an outbox for that row alone is insufficient: index the exact
+source/note/evidence dependencies and recheck eligibility at read/apply time.
+Invalidate only consumers of the changed contribution; retain any other
+current contribution and preserve the relation's independent review state.
+Negative pair decisions, exhausted coverage and a relation's absence do not
+prove that no conceptual connection exists. Maintenance must not clear matching
+caches, resurrect rejected relations or restart AI matching to fill a wiki gap.
 
 New notes express one useful idea, with an informative title, context sufficient
 to stand alone, and concrete evidence. Avoid generating notes from every chunk
@@ -840,6 +992,7 @@ safely; navigation links can update independently of physical relocation.
 | Atomic notes | Existing note files, linked from page sections and topic indexes. |
 | Source evidence | Footnotes/links to source projections and stable block anchors where available; show revision and locator. |
 | Relation meaning | Human-readable typed link groups with provenance; Obsidian's native graph does not preserve all edge semantics. |
+| Conceptual source connection | Existing relation ID, directed source/chapter links, both ideas, explanation, review/freshness and citations to both sides; a generated read-only block in release 1. |
 | Questions, disagreements | Normal Markdown sections with attributed supporting references. |
 | Saved dynamic view | An explicitly dated materialized index with refresh metadata. |
 | Interactive app graph | Portable links; do not promise identical Sigma layout or interaction. Optional Canvas export is later. |
@@ -849,6 +1002,13 @@ A citation to an old source revision must not point silently to changed current
 text. For such references, use a managed revision excerpt projection containing
 the cited passage and original locator, or an explicit app link when a portable
 excerpt is unavailable. Scope/privacy settings govern these exports too.
+
+Format conceptual relationship references from canonical IDs and registered
+paths. Convert stored `<source-ref>` tags into readable source links through
+the managed serializer; no unresolved aliases or raw internal tags in Markdown.
+Do not copy one source relation into independent editable relationships on
+several pages. Each projection references its existing identity and refreshes
+when the supporting/review state changes, subject to local-edit protection.
 
 ### Round-trip format decisions required now
 
@@ -959,15 +1119,18 @@ and report partial failures rather than claim a filesystem transaction.
 
 The two product releases contain smaller implementation milestones. Do not
 start with an unrestricted autonomous agent or a full graph redesign.
+Source matching, its canonical tables, review and conceptual source graph are
+an implemented baseline to integrate. None of M0–M6 is marked complete merely
+because those prerequisites now exist.
 
 | Milestone | Deliverable | Main ownership | Exit criteria |
 | --- | --- | --- | --- |
-| M0: contracts and safety prerequisites | Protection/revision semantics, directed relation design, page/query/sync contracts, versioned function/domain instructions and synthetic fixtures. | `packages/domain`, `packages/db`, integration contracts and application services. | Human edits survive regeneration; ambiguous legacy relations remain reviewable; configuration precedence and migration/backfill strategy documented. |
-| M1: non-AI workspace | Catalog of all sources, manually editable pages/placement, page revisions, text search, evidence inspector and navigation history. | New focused desktop wiki services/repositories, renderer components, shared IPC/preload, i18n. | Sources without notes/graphs are visible; manual pages work without any model; no duplicate source identity. |
-| M2: restricted wiki spike and executor gate | Initial TypeScript executor, three tools, one page, local/remote trials, persisted steps/change sets, Organization and harnesses settings, prompt preview/test/versioning, review and recovery. | Organization service/worker, settings UI, job supervisor, existing AI service/adapters. | Section 7 executor cases pass; evidence-based decision to retain the executor or evaluate LangGraph.js; no scope escape/duplicate mutation/remote call in local-only runs. |
-| M3: useful mixed-source organization | Cross-source topic pages, optional note/graph reuse, domain instructions, impact discovery, dependencies and read-only cited questions. | Search/knowledge services, repositories, renderer and AI task routing. | Mixed processing selections participate; overrides are predictable; updates affect only relevant drafts; curated text is protected; saving answers is explicit. |
+| M0: contracts and safety prerequisites | Page/query/sync contracts, human protection, scoped source-relation read/dependency snapshots, note-direction compatibility design, versioned instructions and fixtures. | `packages/domain`, `packages/db`, integration contracts and application services. | Human edits survive regeneration; both relation evidence owners and review/currentness validate; no duplicate relationship store; ambiguous note direction is excluded/reviewable; configuration precedence and migration strategy documented. |
+| M1: non-AI workspace | Catalog, manual pages/placement/revisions, text search, evidence inspector, navigation and access to existing source relationship details/review. | Focused desktop wiki services/repositories, renderer, shared IPC/preload, i18n. | Works with no notes, graph, source matching or model; saved conceptual connections remain readable without AI/AGE; review targets retain independent identities. |
+| M2: restricted wiki spike and executor gate | TypeScript executor, three tools, one page, local/remote trials, persisted proposals, settings, review and recovery through the shared AI queue. | Organization service/worker, settings UI, job supervisor, AI service/adapters. | Section 7 cases pass with direct evidence and with existing relation context; both evidence sides resolve; no scope escape, duplicate mutation or implicit matching; executor decision documented. |
+| M3: useful mixed-source organization | Topic pages using source concepts/relations and optional notes/entities, scoped retrieval, domain instructions, impact events/dependencies and read-only cited answers. | Search/organization services, source relation repositories, jobs, renderer and AI routing. | Mixed plans participate; both matching barriers and partial results remain truthful; review/evidence changes invalidate exact consumers; answers never write relations or rerun matching. |
 | M3b: recurring maintenance | Weekly/monthly scheduler, diagnostics, bounded tree-rebalance/cleanup proposals, settings and before/after previews. | Organization scheduler/jobs, harness functions, settings/review UI and repositories. | No duplicate/catch-up storm; paused scopes stay idle; unchanged trees do not churn; structural/archive changes require review by default; no canonical hard deletion. |
-| M4: Obsidian projection — release 1 | Wiki hierarchy, linked source/note catalog, section citations, configured export and divergence protection. | Projection/sync services, managed workers, shared format contracts. | Useful plain Markdown without plugin; old plugin cannot import wiki as source/note; local edits survive; catalog-only roots export correctly. |
+| M4: Obsidian projection — release 1 | Wiki hierarchy, linked catalog, section citations, source relationship blocks, configured export and divergence protection. | Projection/sync services, managed workers, shared format contracts. | Useful plain Markdown without plugin; old plugin cannot import wiki as source/note; local edits survive; catalog-only roots and both relationship evidence sides export correctly. |
 | M5: reverse editing — release 2 | Durable plugin queue, revision-aware edits, shared source editorial save, acknowledgment, conflict UI and echo prevention. | Obsidian plugin/client, gateway, sync repositories/services and desktop review UI. | Parent/child/page prose edits round-trip; offline/restart/concurrent-edit cases preserve both sides; saving does not imply AI processing. |
 | M6: advanced organization and views | Reviewed note merge/split, cross-source note ownership, comparison workspace, richer maps and optional timeline/export views. | Knowledge model/services, renderer and projections. | Quality evaluation demonstrates usefulness; IDs/evidence/history survive reorganization; existing graph interaction stays stable. |
 
@@ -977,11 +1140,21 @@ application stays in M6. M5 depends on M4's stored base and conflict model. M6 i
 after the first useful release; no need to finish every advanced view before
 shipping the core second brain.
 
+The note-direction migration gates new note-relation editing, not consumption
+of already qualified source relations or manual wiki pages. Before any workflow
+writes notes/relations, complete its editorial protection and concurrency work.
+Source matching remains optional in every milestone; its existing schema and
+graph UI do not need replacement before beginning M1/M2.
+
 Use proposed service boundaries such as `WikiService`, `KnowledgeQueryService`,
 `KnowledgeOrganizationService` and a focused `WikiRepository`. Keep orchestration
 in desktop main/controlled workers; avoid growing `KnowledgeService` into the
 only owner of every workflow. Repository methods remain persistence boundaries.
-Expose only typed IPC/preload and gateway operations. Provider SDK experiments
+Expose only typed IPC/preload and gateway operations. Reuse
+`createSourceRelationRepository`/`listSourceRelations` behind scoped application
+methods; their current detail-list contract needs extension for wiki-wide scopes
+and filters. Keep matching checkpoints owned by the matching stage and
+organization checkpoints owned by organization runs. Provider SDK experiments
 remain separate from these milestones and behind `AiModelAdapter`; no AI SDK
 migration is required before the three-tool spike. Resolve the M2 executor gate
 before expanding organization workflows in M3/M3b.
@@ -999,12 +1172,20 @@ container, two articles with overlapping and conflicting claims, an edited
 personal source, one multilingual source, sources with each optional processing
 combination, and malicious text in bodies/titles/frontmatter/derived notes.
 Add larger synthetic sets for bounded-query and visual performance checks.
+Include two distinct works with several chapter-to-chapter connections, two
+chapters of one work that must not match each other, a pending and a rejected
+source relation, mixed evidence origins and a connection whose last current
+contribution becomes stale. Reuse existing synthetic matching fixtures rather
+than relying on a private library or a fresh paid generation.
 
 | Area | Required scenarios |
 | --- | --- |
 | Participation | Import-only/no-notes/no-graph sources stay cataloged; organize without notes; graph failure degrades; metadata-only content never invents claims. |
+| Source relationship reuse | Matching without notes/entity extraction; organization without matching; distinct ideas between one pair; same-root exclusion only in matching; pending/accepted/rejected policy; source review independent of note/page review. |
 | Retrieval | Known-item lookup; exact source excerpt; cross-source question; disagreement; filters preserved across views; restricted and stale content handled correctly. |
+| Relationship retrieval | Canonical SQL connections survive AGE outage; distinguish entity/shared-topic signals; filter both endpoints before exposing text/counts; no hidden matcher calls or cache invalidation from a question. |
 | Evidence quality | Every citation resolves to the actual supplied revision; no evidence laundering or circular support; changed prose loses invalid associations. |
+| Relationship dependencies | Direct and note-derived occurrences of one idea do not count twice; one surviving current occurrence versus the exact occurrence consumed by a page; note review/edit, source supersession and relation review invalidate affected sections; historical evidence remains inspectable. |
 | Harness containment | Forged IDs, oversized outputs, cross-scope search, arbitrary tool requests, policy-changing source text and injection copied into a wiki page. |
 | Executor decision | Same three-tool workflow with local/remote models; JSON/native action validation; restart while awaiting review or after commit; concurrent edits; one checkpoint owner if LangGraph.js is evaluated. |
 | Harness settings | Free guidance, function/domain overrides, effective preview, invalid placeholders, proposal-only sample, activation/restore history, mixed-domain resolution and pinned versions in queued/running jobs. |
@@ -1013,8 +1194,11 @@ Add larger synthetic sets for bounded-query and visual performance checks.
 | Rebalance and cleanup | Deep/wide/overlapping topics, pinned/manual branches, orphan-but-useful notes, stable IDs/redirects, rejected proposal cooldown, reversible archival and no canonical deletion. |
 | Editorial protection | Pending-but-human-edited note; approved relation regeneration; concurrent page edit; rejected proposal recurrence; merge/split identity preservation. |
 | Jobs | Cancel before/during call/apply, worker crash, restart after commit before checkpoint, overlapping triggers, exhausted budgets and retry idempotency. |
+| Matching integration | Catalog job releases the barrier; per-source stage/checkpoint ownership; completed siblings remain complete; unchanged negative decisions reuse; full-space embedding incompatibility; actual usage/repair limits preserved; organization does not inherit or reset matching allowances. |
+| Shared AI execution | Concurrent ingestion, questions and organization still execute one model request at a time; queued cancellation invokes no model; waiting versus active inference remains visible; monitoring cleanup preserves canonical provenance. |
 | UI | Empty/partial/error states, no AI available, keyboard-only task completion, narrow window, themes, reduced motion, graph/list parity and Back restoration. |
 | Projection stage 1 | Disabled/unconfigured/paused sync, old/no plugin, catalog-only parent, duplicate titles, Unicode paths, missing target and changed local file. |
+| Source connection projection | Two-sided evidence and actual chapter direction, safe source-reference links, rejected/stale transitions, old source revisions and divergent local edits; generated blocks cannot write or approve canonical relations. |
 | Reverse sync stage 2 | Edit wiki leaf/index/parent introduction, source chapter and note; offline edits; lost acknowledgment; duplicate events; concurrent edits; folder moves; duplicate IDs; delete then reconnect. |
 | Projection recovery | Crash before/after write/receipt, disk full, pause/revoke mid-run, generated-region tampering, malformed anchors, stale evidence links and edits racing projection. |
 | Privacy | Mixed-scope derived page, remote fallback attempt, metadata/query leakage, exported evidence scope and absence of sensitive logs. |
@@ -1039,9 +1223,27 @@ work, desktop visual smoke tests for UI work and a real plugin/vault smoke test
 before declaring either Obsidian release complete. Mocked gateway tests alone
 do not prove file-event ordering or active-editor safety.
 
+For source-relationship integration, retain the focused baselines in
+[source processing tests](../apps/desktop/src/main/services/source-relation-processing.test.ts),
+[plan dependencies](../packages/domain/src/hierarchical-ingestion.test.ts),
+[individual stage coordination](../apps/desktop/src/main/services/individual-stage-batch.test.ts),
+[graph repository tests](../packages/db/src/repositories/knowledgeGraphDashboardRepository.test.ts),
+[source-reference rendering](../apps/desktop/src/renderer/components/SourceRelationReferenceText.test.tsx)
+and [AI queue tests](../apps/desktop/src/main/services/ai-execution-queue.test.ts).
+Extend them at the actual changed boundaries rather than duplicate the matcher
+suite in wiki tests. When persistence/projection changes, run the isolated
+[PostgreSQL source relationship verifier](../packages/db/src/scripts/verify-source-relations.ts)
+for populated upgrade and empty baseline, and the applicable graph/UI checks.
+These existing checks establish the reused baseline, not wiki feature completion.
+
 ## 13. Decisions to validate during the first milestones
 
-These do not block documenting or beginning the scoped M0/M1 work:
+No new blocking product decision was identified in this revision. Retain the
+agreed two-release scope and optional processing. Source relationship storage,
+vocabulary, cross-root matching, review, budgets and default graph projection
+are already specified and do not need to be decided again for the wiki.
+
+The following validations do not block beginning the scoped M0/M1 work:
 
 - Validate the selected TypeScript executor at M2 against section 7; evaluate
   LangGraph.js only if concrete branching/recovery complexity warrants it.
@@ -1056,12 +1258,25 @@ These do not block documenting or beginning the scoped M0/M1 work:
   Obsidian editor before promising reverse-sync behavior.
 - Calibrate retrieval diversity and page creation thresholds; topic growth
   should follow useful knowledge, not one page per extracted entity.
+- Validate how exploratory versus reviewed-only consultation presents pending
+  source relations; neither page acceptance nor note acceptance propagates to
+  source review. A stricter default is a product choice to validate with the
+  prototype, not a prerequisite for documenting the separate states.
+- Evaluate page quality with and without existing conceptual relations, mixed
+  origins and missing/stale connections. Calibrate their ranking contribution
+  without changing source-matching thresholds or forcing disconnected sources
+  to run additional AI stages.
 
 Implementation completion must update the owning rules when a durable detail
 is accepted, while keeping milestone status and temporary choices in this plan.
 
 ## 14. Design references
 
+- [Conceptual source relationship rules](../rules/source-relations.md): canonical
+  connection meaning, retrieval/generation, budgets, review and graph behavior.
+- [Knowledge graph rules](../rules/knowledge-graph.md) and
+  [search rules](../rules/source-search.md): entity projection boundaries and
+  existing retrieval contracts that wiki integration must preserve.
 - [Project harness direction](ai-harness-direction.md): adapter and workflow
   boundaries, three-tool spike and audit/privacy expectations.
 - [Karpathy's LLM Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
