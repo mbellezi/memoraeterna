@@ -373,3 +373,87 @@ database, jobs or frontend rules when those boundaries are affected.
   available/included context counts; original passages are never truncated to fit.
   Deferred organization failures show the owning stage and localized checkpoint
   cause even when the original ingestion job already succeeded.
+
+## Persisted recurring maintenance
+
+- `MaintenanceService` owns weekly, monthly and custom-cadence inspection through
+  the existing `maintenance` supervisor job. Routines are disabled by default;
+  diagnostic-only routines need no model profile. Run now is an explicit bounded
+  admission and bypasses only the optional idle preference. Scheduled work runs
+  only in the open desktop, normally after one minute of inactivity. Imports,
+  foreground AI and pending/conflicting synchronization defer work visibly.
+- `maintenance_schedules`, occurrence identities and due windows prevent duplicate
+  dispatch. Missed occurrences coalesce into one catch-up. Compatible simultaneous
+  weekly/monthly routines share one inspection and pin both effective instruction
+  texts, with monthly shown as the broader effective routine. Different profiles,
+  privacy, domains, categories, budgets or effective instruction contexts cannot
+  silently inherit another active run. Scope normalization is independent of JSON
+  property order and ignores irrelevant whole-library selections.
+- Selected wiki trees expand only their explicit descendants. Citation provenance
+  never broadens a page selection into other consumers of the same source. A
+  source-only selection excludes mixed-source page prose; excluded page branches
+  remain excluded. Domain membership constrains admission and never grants a
+  model authority to widen scope.
+- Calendar days missing from a month clamp to its last valid day. A daylight-saving
+  gap advances to the first valid local minute, and a fold uses its earlier instant
+  only. Changing a schedule, including its timezone, cancels pending authority and
+  computes the next future occurrence. The preview uses the chosen timezone and
+  interface locale. Paused/canceled occurrences are not replayed automatically.
+- The run snapshot pins configuration, profile/privacy, language, categories,
+  review policy and bounds. `maintenance_runs.checkpoint` owns the resumable
+  inspection cursor, bounded candidates, coverage and cumulative call state.
+  Later occurrences continue unfinished inspection before starting a new sweep.
+  Canonical mutations and receipts remain transactional with expected revisions;
+  late progress must never resurrect a settled run.
+- Inspect deterministic page/source/note diagnostics before invoking a model.
+  Current citation loss/dependency invalidation, uncited generated sections,
+  empty/unplaced pages, duplicate titles/aliases, unused catalog material, notes
+  without wiki connections and branch/page size are review signals. Citation
+  `needs_review` alone does not prove changed or unsupported prose. Isolation or
+  age alone never makes material disposable. Source/note diagnostics are not
+  included in the structural model payload; no note provenance shortcut bypasses
+  the M3 manifest boundary. A byte-bounded ranked subset of wiki candidates may
+  reach the existing FIFO, with current page revisions rechecked there.
+- The M3b model proposal schema permits only reparenting, adding collection
+  navigation and recoverable archival of eligible empty generated drafts. Every
+  operation requires human review, a reason, minimum expected benefit and exact
+  page/destination revisions. Human placements, pinned/reviewed pages and protected
+  content remain intact. Archival additionally rechecks live children and incoming
+  collection navigation while holding the wiki placement lock. It never erases
+  canonical content, evidence, history, assets or vault files. Merge/split and new
+  cross-source note editing are later workflows.
+- Per-run and UTC calendar-month allowances cover calls, total tokens, inspection
+  and proposed/applied changes. Persist reservations atomically with occurrence
+  admission. Work crossing a month boundary must also reserve capacity in that
+  month before execution or approval; reservation release must not erase known
+  usage. Known unspent model capacity is released on a no-call completion or
+  cancellation. Unknown/interrupted calls retain conservative capacity and do not
+  automatically replay. A strict monetary cap defers model analysis when no reliable
+  execution-cost bound is available; uncapped cost remains unknown, never zero.
+- Maintenance calls use `AiService.runOrganizationTask`, the same FIFO/adapters
+  and canonical `ai_task_runs`. Its audit insert and `maintenance_steps` reference
+  commit together. Monitoring cleanup cannot remove schedules, proposals,
+  occurrence/budget records, decisions or mutation receipts.
+- Stable input/configuration/model fingerprints prevent repeated analysis, while
+  recent proposed/applied/rejected decisions and configurable cooldown prevent
+  oscillation. Settings expose weekly/monthly/cleanup guidance and domain overrides.
+  Version 3 explicitly opts new functions into advanced inheritance; each changed
+  effective advanced function/domain prompt needs its own successful bounded sample.
+  Samples never apply canonical edits or count as real-model quality acceptance.
+- Maintenance history distinguishes inspected coverage, findings, omitted/deferred
+  work, model usage availability and errors. Review requests, failures and budget
+  limitations receive visible in-app attention; unchanged completed inspections
+  remain quiet. Tree previews compose all proposed moves and retain IDs, aliases,
+  expected revisions and the before/after navigation paths.
+
+- Structural prompt permissions distinguish the changed `pageId` from unchanged
+  destinations. `eligibleMove` protects the former; supplied current non-archived
+  pages may receive children, and collections may receive navigation links, even
+  when human/protected/pinned/reviewed. Explicit destination capabilities never
+  authorize moving or editing the destination itself.
+- Maintenance decision identities include the bounded inspection/destination
+  context before cooldown and byte pruning. Record only mutation candidates
+  actually supplied to the model. An exact unchanged no-change result is quiet;
+  changed context may reopen it. Recent proposed/applied/rejected operations keep
+  their conservative page-level cooldown. Supplied candidates with no proposed
+  operation retain a no-change outcome, independently of other proposed targets.

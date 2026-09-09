@@ -3,7 +3,7 @@
 Status: implementation in progress. M1's non-AI workspace and M2's restricted
 organization executor are accepted; their validation records are below.
 M3 is accepted after paired real-model trials and coordinator validation;
-M3b–M6 remain pending. The section 7 TypeScript executor decision passed the M2
+M3b is accepted after reviewed maintenance/restore trials; M4–M6 remain pending. The section 7 TypeScript executor decision passed the M2
 gate with Luna as the semantic reference and local models evaluated on a
 best-effort basis. Baseline reviewed on
 2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
@@ -1280,6 +1280,38 @@ save/review/apply with unchanged AI audit counts, and one topic organization run
 per selected Library batch. Luna passed semantic acceptance; the local tool-loop
 failure was contained and recorded as best effort. M3 is accepted; the original
 synthetic corpus is preserved. Detailed runs, fixes and receipts are in the report.
+
+### M3b implementation and deterministic validation record (2026-09-09)
+
+Recurring maintenance is implemented on `codex/second-brain-m3b`: opt-in
+persisted schedules and occurrences, calendar/timezone policy, compatible
+catch-up coalescing, resumable deterministic inspection, aggregate UTC-month
+reservations, bounded model proposals, reviewed structural apply/receipts and
+recoverable archival. Organization instructions now expose guarded weekly,
+monthly and cleanup functions with domain overrides. The existing supervisor,
+AI FIFO, adapters and canonical task audit remain authoritative.
+
+An externally created intermediate commit `a1988db` is preserved; its committed
+`0026_broad_celestials` remains unchanged. Additive generated migration
+`0027_curvy_doomsday` adds persisted schedule deferral errors. The 28-migration
+baseline covers empty startup, populated M3 upgrade and already-applied 0026
+with retained schedule data. The deterministic workspace suite passed
+92 suites / 566 tests, whole-workspace build and typecheck passed, and the
+isolated PostgreSQL maintenance verifier passed. No DEV corpus reset or real
+model execution was performed by the implementation agent.
+
+The [M3b report](second-brain-m3b-report.md) records scope, persistence,
+verification and coordinator real-model/desktop acceptance. Local and Luna
+both proposed the same useful navigation move after destination-contract
+clarification; Luna was reviewed/applied with exact text/citation preservation.
+Local archival output was invalid and contained; Luna archival and manual
+restoration preserved all revisions. Both monthly instruction samples passed.
+The normal 1600 × 1200 UI passed scoped scheduling, pause, before/after, history,
+no-change explanation, restore confirmation and keyboard focus checks. All seven
+acceptance schedules are disabled. Original sources/notes/relations and five
+existing wiki pages remain unchanged. Root repeated 92 suites / 566 tests,
+build/typecheck/format/seed and the expanded real PostgreSQL verifier. **M3b is
+accepted.** M4–M6 remain pending.
 
 ## 12. Evaluation and acceptance scenarios
 

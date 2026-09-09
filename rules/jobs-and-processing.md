@@ -104,3 +104,11 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   One ineligible organization batch must not starve unrelated queued jobs.
   Generic ingestion retry cannot restart a settled parent while its linked
   organization checkpoint is pending, waiting for the batch or running.
+
+- Maintenance uses the existing supervisor after foreground jobs. Its admission,
+  per-period reservations, cursor, model state and review receipt are persisted.
+  A paused/changed schedule revokes its pending runs and aborts active execution;
+  generic job retry and completed-job cleanup cannot reset maintenance limits or
+  remove its audit links. An uncertain interrupted inference is not replayed.
+  Run now can queue during user activity but still respects imports/sync conflicts
+  and the shared inference FIFO. Due schedules retain a visible deferral reason.

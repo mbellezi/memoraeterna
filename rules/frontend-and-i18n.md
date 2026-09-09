@@ -324,3 +324,18 @@ job statuses, or user-visible backend errors.
   Source selections stay visible/removable across picker search and pagination,
   and descendant inclusion is an explicit control. Advanced instructions show
   the selected function and effective domain inheritance.
+
+- Maintenance settings use the existing Organization settings, native modal focus
+  and Escape behavior, localizable controls and normal window size. Calendar input
+  remains safe while an invalid timezone is being edited. Display next occurrences
+  in the selected timezone using the interface locale. Explain open-desktop-only
+  execution, explicit model permission, UTC monthly budgets and mandatory review.
+  Simultaneous structural proposals render their composed final tree, not separate
+  moves against stale parent paths. Unknown model usage/cost stays unavailable.
+
+- Maintenance no-change results with a model call show the bounded model
+  explanation as escaped text; internal no-model status prose is not product
+  copy. Background refresh success must not clear a review/restore action error.
+  The optional maintenance source picker is collapsed with a selected count and
+  uses its own source-selection hint, preserving the organization picker's
+  existing default guidance elsewhere.

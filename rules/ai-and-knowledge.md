@@ -215,3 +215,10 @@ provider token breakdowns and precise call context, as specified in
   callers can revalidate scoped evidence inside FIFO admission and immediately
   before adapter execution. Explicit answer saves reference existing canonical
   AI audits instead of creating duplicate inference or billing records.
+
+- The local resource ceiling applies universally across the application, standalone
+  scripts, helpers and real-model trials: exactly one local inference execution
+  at a time, including embeddings. Keeping one generative model and one embedding
+  model resident does not authorize concurrent inference. Real model comparisons
+  run sequentially through the shared application FIFO; never start a duplicate
+  helper/runtime to accelerate a test.

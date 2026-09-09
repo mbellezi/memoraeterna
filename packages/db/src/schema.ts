@@ -1469,7 +1469,7 @@ export const knowledgeImpactEvents = pgTable("knowledge_impact_events", {
 
 export const maintenanceSchedules = pgTable("maintenance_schedules", {
   id: uuid("id").primaryKey().defaultRandom(), revision: integer("revision").notNull().default(1),
-  policy: jsonb("policy").notNull(), nextAt: timestamp("next_at", { withTimezone: true }).notNull(), lastRunId: uuid("last_run_id"),
+  policy: jsonb("policy").notNull(), lastError:text("last_error"), nextAt: timestamp("next_at", { withTimezone: true }).notNull(), lastRunId: uuid("last_run_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, t => [index("maintenance_schedules_due_idx").on(t.nextAt)]);
 export const maintenanceRuns = pgTable("maintenance_runs", {

@@ -36,7 +36,7 @@ export const MaintenancePolicySchema = z.object({
 }).strict().superRefine((p,c) => { if(p.modelEnabled&&!p.profileId)c.addIssue({code:"custom",path:["profileId"],message:"maintenance.errors.model"}); for (const k of ["calls","tokens","spend","inspected","changes"] as const) if(p.periodBudget[k]!==null && (p.budget[k]===null || p.budget[k]!>p.periodBudget[k]!)) c.addIssue({code:"custom",path:["periodBudget",k],message:"maintenance.errors.budget"}); });
 export type MaintenancePolicy = z.infer<typeof MaintenancePolicySchema>;
 export type MaintenanceCadence = z.infer<typeof MaintenanceCadenceSchema>;
-export const MaintenanceScheduleSchema = z.object({ id:z.string().uuid(), revision:z.number().int(), policy:MaintenancePolicySchema, nextAt:z.string(), lastRunId:z.string().uuid().nullable(), updatedAt:z.string() }).strict();
+export const MaintenanceScheduleSchema = z.object({ id:z.string().uuid(), revision:z.number().int(), policy:MaintenancePolicySchema, nextAt:z.string(), lastRunId:z.string().uuid().nullable(), lastError:z.string().nullable().default(null), updatedAt:z.string() }).strict();
 export type MaintenanceSchedule = z.infer<typeof MaintenanceScheduleSchema>;
 export const MaintenanceObjectSchema = z.object({
   id:z.string().uuid(), kind:z.enum(["page","source","note"]), revisionId:z.string().uuid().nullable(), title:z.string(),
@@ -53,7 +53,7 @@ export const MaintenanceOperationSchema = z.discriminatedUnion("type",[
 ]);
 export const MaintenanceProposalSchema=z.object({operations:z.array(MaintenanceOperationSchema).max(10),explanation:z.string().trim().min(1).max(2000)}).strict();
 export type MaintenanceProposal=z.infer<typeof MaintenanceProposalSchema>;
-export const MaintenanceSnapshotSchema=z.object({version:z.literal("wiki-maintenance-v1"),policy:MaintenancePolicySchema,configurationId:z.string().uuid().nullable(),configurationHash:z.string(),instructions:z.object({slots:z.object({guidance:z.string(),advanced:z.string()}),origins:z.object({guidance:z.string(),advanced:z.string()}),domainId:z.string().uuid().nullable()}),profile:OrganizationProfileSchema.nullable(),language:z.enum(["en","pt-BR","it","fr","es"]),scopeKey:z.string(),period:z.string(),cutoff:z.string(),sample:z.boolean().default(false)}).strict();
+export const MaintenanceSnapshotSchema=z.object({version:z.literal("wiki-maintenance-v1"),policy:MaintenancePolicySchema,configurationId:z.string().uuid().nullable(),configurationHash:z.string(),instructions:z.object({slots:z.object({guidance:z.string(),advanced:z.string()}),origins:z.object({guidance:z.string(),advanced:z.string()}),domainId:z.string().uuid().nullable()}),profile:OrganizationProfileSchema.nullable(),language:z.enum(["en","pt-BR","it","fr","es"]),scopeKey:z.string(),period:z.string(),cutoff:z.string(),sample:z.boolean().default(false),manual:z.boolean().default(false)}).strict();
 export type MaintenanceSnapshot=z.infer<typeof MaintenanceSnapshotSchema>;
 export const MaintenanceCheckpointSchema=z.object({
   cursor:z.object({kind:z.enum(["page","source","note","done"]),id:z.string().uuid().nullable()}).default({kind:"page",id:null}),

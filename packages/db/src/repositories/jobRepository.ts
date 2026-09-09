@@ -167,6 +167,7 @@ export function createJobRepository(db: Queryable) {
       return rows.map(mapJob);
     },
 
+    async nextQueuedOfType(type:string):Promise<JobRecord|null>{const row=(await db.query<JobRow>(`select ${returning} from jobs where type=$1 and status='queued' and run_after<=now() order by priority desc,run_after asc limit 1`,[type])).rows[0];return row?mapJob(row):null;},
     async claimNext(workerId: string, allowedTypes?: readonly string[]): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `with candidate as (

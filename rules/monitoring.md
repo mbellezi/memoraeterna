@@ -35,3 +35,8 @@
 - Validate monitoring inputs and outputs across IPC/preload with Zod. Regression
   coverage includes usage normalization, capture gating, errors, date cutoffs,
   pagination/aggregation, retention and preservation of canonical audit.
+
+- Maintenance model calls link canonical AI audits to `maintenance_steps` in the
+  audit insert transaction. Inspection-only/no-change runs do not manufacture AI
+  activity. Pending/unknown calls keep their reservation and availability state;
+  diagnostic history and review receipts are independent of monitoring retention.

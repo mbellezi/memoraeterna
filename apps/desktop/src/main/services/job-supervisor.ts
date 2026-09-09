@@ -107,7 +107,7 @@ export class JobSupervisor {
     const repository = createJobRepository(this.requirePool());
     await this.options.maintenanceTick?.();
     let job = await repository.claimNext(this.workerId, [...supportedJobTypes].filter(t=>t!=="maintenance"));
-    if(!job){const pending=(await repository.list(200)).find(j=>j.type==="maintenance"&&j.status==="queued");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
+    if(!job){const pending=await repository.nextQueuedOfType("maintenance");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
     if (!job) return null;
     this.notify();
     const controller = new AbortController();

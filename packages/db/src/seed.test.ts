@@ -68,7 +68,9 @@ describe("baseline seed", () => {
       "0022_even_alex_wilder",
       "0023_graceful_carnage",
       "0024_awesome_mole_man",
-      "0025_clean_the_spike"
+      "0025_clean_the_spike",
+      "0026_broad_celestials",
+      "0027_curvy_doomsday"
     ]);
   });
 
@@ -112,7 +114,9 @@ describe("baseline seed", () => {
       "0022_even_alex_wilder",
       "0023_graceful_carnage",
       "0024_awesome_mole_man",
-      "0025_clean_the_spike"
+      "0025_clean_the_spike",
+      "0026_broad_celestials",
+      "0027_curvy_doomsday"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
