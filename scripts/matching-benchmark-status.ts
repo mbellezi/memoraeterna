@@ -2,9 +2,12 @@ import { readFile, stat } from "node:fs/promises";
 const path=".cache/matching-benchmark/progress.json";
 const progress=JSON.parse(await readFile(path,"utf8"));
 const runs=progress.runs as Array<Record<string,any>>;
+const corpus=JSON.parse(await readFile("scripts/fixtures/matching-benchmark.json","utf8"));
+const partition=["baseline","economy","coverage"].includes(progress.phase)?"tuning":progress.phase==="validate"?"holdout":null;
+const planned=partition?corpus.sources.filter((s:any)=>s.partition===partition).reduce((sum:number,s:any)=>sum+(s.chapters?.length??1),0):0;
 const stage=(name:string)=>{
   const selected=runs.filter(r=>r.stages_checkpoint?.[name]&&r.stages_checkpoint[name].status!=="skipped");
-  return {completed:selected.filter(r=>r.stages_checkpoint[name].status==="completed").length,total:selected.length,
+  return {completed:selected.filter(r=>r.stages_checkpoint[name].status==="completed").length,total:Math.max(planned,selected.length),
     active:selected.filter(r=>r.stages_checkpoint[name].status==="running").map(r=>r.title)};
 };
 console.log(JSON.stringify({phase:progress.phase,updatedAt:(await stat(path)).mtime.toISOString(),reportedTokens:Number(progress.usage.reported_tokens??0),

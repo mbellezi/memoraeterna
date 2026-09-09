@@ -504,7 +504,22 @@
       "states": { "stopped": "Arrestato", "starting": "Avvio", "ready": "Pronto", "failed": "Errore" }
     },
     "matching": {
-      "resetDefault": "Ripristina il valore predefinito",
+      "resetDefault": "Ripristina valore consigliato",
+      "presets": {
+        "title": "Preset di matching",
+        "recommended": "Equilibrato — consigliato",
+        "recommendedHint": "Parametri di matching convalidati. Duplica questo preset per modificarlo. Ogni ripristino usa il valore consigliato.",
+        "customHint": "Le modifiche vengono salvate in questo preset. I profili IA sono gestiti separatamente.",
+        "previous": "Impostazioni personalizzate",
+        "copy": "copia",
+        "duplicate": "Duplica preset",
+        "rename": "Rinomina",
+        "name": "Nome del preset",
+        "save": "Salva preset",
+        "cancel": "Annulla",
+        "invalidName": "Inserisci un nome da 1 a 100 caratteri.",
+        "limit": "È stato raggiunto il limite di 50 preset personalizzati."
+      },
       "title": "Matching della conoscenza",
       "description": "Imposta il punteggio finale minimo necessario per salvare una relazione tra note atomiche.",
       "minimumScore": "Punteggio minimo del matching",

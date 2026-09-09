@@ -67,6 +67,11 @@ The original ambiguous botany/astronomy pair is separately documented.
 Freeze the selected settings, timestamp, configuration name and SHA-256 hash of
 its training results in `selection.json`. Restore that configuration's unreviewed
 graph with `node --import tsx scripts/select-matching-benchmark.ts <configuration>`.
+An optional final numeric argument raises the source importance floor using the
+observed training scores. Lowering it is refused because rejected source proposals
+were not exported. The command filters source relations and their evidence before
+restoration, records that post-processing separately and freezes the new floor for
+actual holdout execution. It does not claim to simulate new discovery or ordering.
 This command verifies the extraction fingerprint, backs up the current state,
 and restores the chosen
 matching graph transactionally from its saved snapshot if another variant is

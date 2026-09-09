@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { MatchingConfigurationSchema, matchingConfigurationsEqual, recommendedMatchingConfiguration, recommendedMatchingPresetId } from "@app/domain";
 import {
   closePgPool,
   createPgPool,
@@ -50,6 +52,20 @@ function createDefaultAppSettings(locale: string | null | undefined): AppSetting
 
 export function parseSavedAppSettings(value: unknown): AppSettings {
   const saved = appSettingsSchema.parse(value);
+  const configuration = MatchingConfigurationSchema.parse(saved);
+  const active = saved.matchingPresets.find((preset) => preset.id === saved.activeMatchingPresetId);
+  if (active) {
+    // The effective fields remain authoritative for compatibility with older writers.
+    active.settings = configuration;
+  } else if (matchingConfigurationsEqual(configuration, recommendedMatchingConfiguration)) {
+    saved.activeMatchingPresetId = recommendedMatchingPresetId;
+  } else {
+    const id = "00000000-0000-4000-8000-000000000001";
+    const previous = saved.matchingPresets.find((preset) => preset.id === id);
+    if (previous) previous.settings = configuration;
+    else saved.matchingPresets.push({ id, name: null, settings: configuration });
+    saved.activeMatchingPresetId = id;
+  }
   if (typeof value === "object" && value !== null && !("contentLanguage" in value)) {
     return { ...saved, contentLanguage: normalizeLanguageCode(saved.language) };
   }
@@ -197,6 +213,7 @@ async function createEnvDbSettingsRepository(): Promise<SettingsRepository | nul
 
 export class SettingsService {
   private repository: SettingsRepository | null = null;
+  private appUpdateQueue: Promise<unknown> = Promise.resolve();
   private readonly defaultLocale: string | undefined;
 
   public constructor(
@@ -213,14 +230,33 @@ export class SettingsService {
   }
 
   public async updateApp(update: AppSettingsUpdate): Promise<AppSettings> {
-    const current = await this.getApp();
     const parsedUpdate = appSettingsUpdateSchema.parse(update);
-    const next = withAppTimestamp({
-      ...current,
-      ...parsedUpdate
+    const operation = this.appUpdateQueue.then(async () => {
+      const current = await this.getApp();
+      const next = withAppTimestamp({ ...current, ...parsedUpdate });
+      const configuration = MatchingConfigurationSchema.parse(next);
+      if (parsedUpdate.matchingPresets !== undefined || parsedUpdate.activeMatchingPresetId !== undefined) {
+        const selected = next.activeMatchingPresetId === recommendedMatchingPresetId
+          ? recommendedMatchingConfiguration
+          : next.matchingPresets.find((preset) => preset.id === next.activeMatchingPresetId)?.settings;
+        if (!selected) throw new Error("errors.common.validationFailed");
+        const hasMatchingPatch = Object.keys(MatchingConfigurationSchema.shape).some((key) => key in parsedUpdate);
+        if (hasMatchingPatch && !matchingConfigurationsEqual(configuration, selected)) throw new Error("errors.common.validationFailed");
+        Object.assign(next, structuredClone(selected));
+      } else if (!matchingConfigurationsEqual(configuration, MatchingConfigurationSchema.parse(current))) {
+        const active = next.matchingPresets.find((preset) => preset.id === next.activeMatchingPresetId);
+        if (active) active.settings = configuration;
+        else {
+          const id = randomUUID();
+          next.matchingPresets.push({ id, name: null, settings: configuration });
+          next.activeMatchingPresetId = id;
+        }
+      }
+      const validated = appSettingsSchema.parse(next);
+      return (await this.getRepository()).saveAppSettings(validated);
     });
-
-    return this.getRepository().then((repository) => repository.saveAppSettings(next));
+    this.appUpdateQueue = operation.catch(() => undefined);
+    return operation;
   }
 
   public async get(): Promise<StorageSettings> {

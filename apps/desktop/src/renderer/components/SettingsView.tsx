@@ -1,3 +1,6 @@
+import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
+import { MatchingPresetControls } from "./MatchingPresetControls";
+import { MatchingResetButton } from "./MatchingResetButton";
 import { AdvancedMatchingSettings } from "./AdvancedMatchingSettings";
 import { RelationLabelsCard, ContentLanguageSelect } from "./RelationLabelsCard";
 import { useEffect, useState } from "react";
@@ -602,11 +605,18 @@ function AppearanceCard({ appSettings, t, onChange }: {
   );
 }
 
-function MatchingCard({ appSettings, t, onChange }: {
+function MatchingCard({ appSettings, t, onChange: saveSettings }: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
 }) {
+  const isRecommended = appSettings.activeMatchingPresetId === recommendedMatchingPresetId;
+  const onChange = (update: AppSettingsUpdate) => {
+    if (isRecommended) return;
+    const configuration = MatchingConfigurationSchema.parse({ ...appSettings, ...update });
+    saveSettings({ ...configuration, activeMatchingPresetId: appSettings.activeMatchingPresetId,
+      matchingPresets: appSettings.matchingPresets.map((preset) => preset.id === appSettings.activeMatchingPresetId ? { ...preset, settings: configuration } : preset) });
+  };
   return (
     <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex items-start justify-between gap-4">
@@ -620,6 +630,8 @@ function MatchingCard({ appSettings, t, onChange }: {
           </div>
         </div>
       </div>
+      <MatchingPresetControls settings={appSettings} onChange={saveSettings} t={t} />
+      <fieldset key={appSettings.activeMatchingPresetId} disabled={isRecommended} className="grid min-w-0 gap-5">
       <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900">
         <MatchingSlider
           id="atomicNoteRelationThreshold"
@@ -652,7 +664,7 @@ function MatchingCard({ appSettings, t, onChange }: {
           {([
             ["maxCandidates",1,200],["maxPairs",1,50],["maxRelations",1,200],["maxRelationsPerPair",1,20],["maxInputTokens",2000,200000]
           ] as const).map(([key,min,max]) => <label key={key} className="grid gap-1 text-xs">
-            {t(`sourceRelations.${key}`)}
+            <span className="flex items-center justify-between gap-2">{t(`sourceRelations.${key}`)}<MatchingResetButton label={`${t(`sourceRelations.${key}`)}: ${t("settings.matching.resetDefault")}`} onReset={() => onChange({ sourceRelationSettings: { ...appSettings.sourceRelationSettings, [key]: defaultAppSettings.sourceRelationSettings[key] } })} /></span>
             <SourceRelationLimitInput min={min} max={max} value={appSettings.sourceRelationSettings[key]}
               onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />
           </label>)}
@@ -662,9 +674,10 @@ function MatchingCard({ appSettings, t, onChange }: {
           defaultValue={defaultAppSettings.sourceRelationSettings[key]} resetLabel={t("settings.matching.resetDefault")}
           onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />)}
         <label className="flex items-center justify-between gap-3 text-sm">{t("sourceRelations.includeWeakTypes")}
-          <Switch checked={appSettings.sourceRelationSettings.includeWeakTypes} onChange={(event) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,includeWeakTypes:event.target.checked}})} />
+          <span className="flex items-center gap-2"><MatchingResetButton label={`${t("sourceRelations.includeWeakTypes")}: ${t("settings.matching.resetDefault")}`} onReset={() => onChange({ sourceRelationSettings: { ...appSettings.sourceRelationSettings, includeWeakTypes: defaultAppSettings.sourceRelationSettings.includeWeakTypes } })} /><Switch checked={appSettings.sourceRelationSettings.includeWeakTypes} onChange={(event) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,includeWeakTypes:event.target.checked}})} /></span>
         </label>
       </div>
+      </fieldset>
     </section>
   );
 }

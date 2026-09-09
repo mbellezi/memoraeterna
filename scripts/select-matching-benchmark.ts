@@ -18,6 +18,13 @@ for(const phase of ["baseline","economy","coverage"])if(manifest.phases[phase]?.
 const text=await readFile(join(directory,configuration,"results.json"),"utf8");
 const snapshot=JSON.parse(text);
 const settings=appSettingsSchema.parse(await read(join(directory,configuration,"settings.json")));
+const generatedMinimumImportance=settings.sourceRelationSettings.minImportance;
+const minimumImportance=process.argv[3]===undefined?generatedMinimumImportance:z.coerce.number().min(generatedMinimumImportance).max(1).parse(process.argv[3]);
+const originalSourceRelations=snapshot.sourceRelations.length;
+settings.sourceRelationSettings={...settings.sourceRelationSettings,minImportance:minimumImportance};
+snapshot.sourceRelations=snapshot.sourceRelations.filter((r:{importance:number})=>r.importance>=minimumImportance);
+const retainedSourceRelations=new Set(snapshot.sourceRelations.map((r:{id:string})=>r.id));
+snapshot.sourceEvidence=snapshot.sourceEvidence.filter((r:{relation_id:string})=>retainedSourceRelations.has(r.relation_id));
 const trainingResultsHash=sha256(text);
 const userData=join(homedir(),"Library/Application Support/@app/desktop");
 const descriptor=z.object({developmentOnly:z.literal(true),connectionString:z.string(),psqlPath:z.string()}).parse(await read(join(userData,"database/dev-connection.json")));
@@ -28,9 +35,9 @@ try {
   const repository=createMatchingEvaluationRepository(pool),ids=Object.values(manifest.ids) as string[];
   const canonical=await repository.canonicalFingerprint(ids);
   if(JSON.stringify(canonical)!==JSON.stringify(await read(join(directory,"canonical-reference.json"))))throw Error("Canonical training artifacts changed");
-  const selection={frozenAt:new Date().toISOString(),configuration,settings,trainingResultsHash};
+  const selection={frozenAt:new Date().toISOString(),configuration,settings,trainingResultsHash,postProcessing:{generatedMinimumImportance,minimumImportance,discardedSourceRelations:originalSourceRelations-snapshot.sourceRelations.length}};
   try {await writeFile(join(directory,"selection.json"),JSON.stringify(selection,null,2),{flag:"wx"});}
-  catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw error;const existing=await read(join(directory,"selection.json"));if(existing.configuration!==configuration||existing.trainingResultsHash!==trainingResultsHash)throw Error("A different selection is already frozen");}
+  catch(error){if((error as NodeJS.ErrnoException).code!=="EEXIST")throw error;const existing=await read(join(directory,"selection.json"));if(existing.configuration!==configuration||existing.trainingResultsHash!==trainingResultsHash||JSON.stringify(benchmarkConfiguration(existing.settings,"baseline"))!==JSON.stringify(benchmarkConfiguration(settings,"baseline")))throw Error("A different selection is already frozen");}
   const service=new SettingsService(userData,{getDatabasePool:()=>pool,requireDatabase:true});
   const backup=await new BackupService({getDatabaseContext:()=>({connection:{host:url.hostname,port:Number(url.port),database:decodeURIComponent(url.pathname.slice(1)),user:decodeURIComponent(url.username),password:decodeURIComponent(url.password),connectionString:descriptor.connectionString},pgDumpPath:join(dirname(descriptor.psqlPath),"pg_dump")}),getStorageSettings:()=>service.get()}).create(directory);
   await repository.resetPilotMatching(ids,62,snapshot);
@@ -43,6 +50,6 @@ try {
   const graph=createKnowledgeGraphRepository(pool);await graph.clearProjection();for(const id of ids)await graph.projectSource(id);
   const saved=await service.updateApp(benchmarkConfiguration(settings,"baseline"));
   await writeFile(join(directory,"settings-selected.json"),JSON.stringify(saved,null,2));
-  await writeFile(join(directory,"validation-ready.json"),JSON.stringify({configuration,trainingResultsHash,verifiedAt:new Date().toISOString(),backup:backup.path,counts:{notes:snapshot.noteRelations.length,sources:snapshot.sourceRelations.length,evidence:snapshot.sourceEvidence.length}},null,2));
+  await writeFile(join(directory,"validation-ready.json"),JSON.stringify({configuration,trainingResultsHash,minimumImportance,verifiedAt:new Date().toISOString(),backup:backup.path,counts:{notes:snapshot.noteRelations.length,sources:snapshot.sourceRelations.length,evidence:snapshot.sourceEvidence.length}},null,2));
   console.log({configuration,trainingResultsHash,relations:{notes:snapshot.noteRelations.length,sources:snapshot.sourceRelations.length},backup:backup.path});
 }finally{await closePgPool(pool);}

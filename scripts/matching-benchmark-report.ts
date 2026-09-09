@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { createPgPool, closePgPool, createMatchingEvaluationRepository } from "../packages/db/src/index.ts";
+import { SettingsService } from "../apps/desktop/src/main/services/settings-service.ts";
 
 const directory=resolve(".cache/matching-benchmark");
 const manifest=JSON.parse(await readFile(join(directory,"manifest.json"),"utf8"));
@@ -18,7 +19,9 @@ try {
   const snapshot=await repository.snapshot(Object.values(manifest.ids) as string[],since);
   const progress=await repository.progress(state.batchId??"00000000-0000-0000-0000-000000000000",manifest.startedAt);
   const target=join(directory,phase);await mkdir(target,{recursive:true});
-  await writeFile(join(target,"results.json"),JSON.stringify({capturedAt:new Date().toISOString(),...snapshot},null,2));
+  await writeFile(join(target,"results.json"),JSON.stringify({capturedAt:new Date().toISOString(),phaseVerified:Boolean(state.verifiedAt),...snapshot},null,2));
+  const settings=await new SettingsService(join(homedir(),"Library/Application Support/@app/desktop"),{getDatabasePool:()=>pool,requireDatabase:true}).getApp();
+  await writeFile(join(target,"settings.json"),JSON.stringify(settings,null,2));
   await writeFile(join(target,"progress.json"),JSON.stringify(progress,null,2));
   console.log(JSON.stringify({phase,counts:Object.fromEntries(Object.entries(snapshot).map(([k,v])=>[k,v.length])),totalUsage:progress.usage}));
 } finally {await closePgPool(pool);}

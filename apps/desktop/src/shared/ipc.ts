@@ -16,6 +16,10 @@ import {
   SourceItemTypeSchema,
   SourceRelationSettingsSchema,
   AtomicNoteMatchingSettingsSchema,
+  MatchingPresetsSchema,
+  MatchingPresetIdSchema,
+  recommendedMatchingConfiguration,
+  recommendedMatchingPresetId,
   CanonicalMatchingSettingsSchema,
   SourceRelationsPageSchema,
   SourceRelationReviewInputSchema,
@@ -160,6 +164,8 @@ export const relationLabelJobPayloadSchema = z.object({
 });
 
 export const appSettingsSchema = z.object({
+  matchingPresets: MatchingPresetsSchema.default([]),
+  activeMatchingPresetId: MatchingPresetIdSchema.optional(),
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema,
   contentLanguage: languageCodeSchema.default("en"),
@@ -170,19 +176,21 @@ export const appSettingsSchema = z.object({
   metadataEnrichmentEnabled: z.boolean().default(true),
   keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
-  atomicNoteRelationThreshold: z.number().min(0).max(1).default(0.72),
+  atomicNoteRelationThreshold: z.number().min(0).max(1).default(recommendedMatchingConfiguration.atomicNoteRelationThreshold),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1).default(0.92),
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
   knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
-  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault({}),
-  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.prefault({}),
-  sourceRelationSettings: SourceRelationSettingsSchema.default(() => SourceRelationSettingsSchema.parse({})),
+  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault(recommendedMatchingConfiguration.atomicNoteMatchingSettings),
+  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.prefault(recommendedMatchingConfiguration.canonicalMatchingSettings),
+  sourceRelationSettings: SourceRelationSettingsSchema.default(() => structuredClone(recommendedMatchingConfiguration.sourceRelationSettings)),
   updatedAt: z.string().datetime()
 });
 
 export const appSettingsUpdateSchema = z.object({
+  matchingPresets: MatchingPresetsSchema.optional(),
+  activeMatchingPresetId: MatchingPresetIdSchema.optional(),
   processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
   language: languageCodeSchema.optional(),
   contentLanguage: languageCodeSchema.optional(),
@@ -1051,15 +1059,12 @@ export const defaultAppSettings = {
   metadataEnrichmentEnabled: true,
   keepLocalEmbeddingModelsLoaded: true,
   bookMetadataProvider: "auto",
-  atomicNoteRelationThreshold: 0.72,
   summaryMinimumWordCount: 40,
-  entityIdentitySimilarityThreshold: 0.92,
-  relationTypeSimilarityThreshold: 0.92,
   knowledgeGraphMaxEntitiesPerSource: 250,
   knowledgeGraphMaxRelationsPerSource: 500,
-  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.parse({}),
-  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.parse({}),
-  sourceRelationSettings: SourceRelationSettingsSchema.parse({})
+  ...recommendedMatchingConfiguration,
+  matchingPresets: [],
+  activeMatchingPresetId: recommendedMatchingPresetId
 } satisfies Omit<AppSettingsUpdate, "language">;
 
 export const defaultStorageSettings = {

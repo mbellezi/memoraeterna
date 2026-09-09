@@ -5,7 +5,8 @@ import { benchmarkConfiguration } from "./matching-benchmark.js";
 
 describe("larger matching benchmark",()=>{
   it("compares bounded retrieval/context presets without changing acceptance or identity safeguards",()=>{
-    const reference=appSettingsSchema.parse({...defaultAppSettings,language:"pt-BR",updatedAt:new Date().toISOString(),atomicNoteRelationThreshold:0.6,sourceRelationSettings:{...defaultAppSettings.sourceRelationSettings,minImportance:0.8}});
+    const pilot=JSON.parse(readFileSync("docs/matching-pilot-settings.json","utf8"));
+    const reference=appSettingsSchema.parse({...defaultAppSettings,...pilot.settings,language:"pt-BR",updatedAt:new Date().toISOString()});
     for(const variant of ["baseline","economy","coverage"] as const){
       const settings=appSettingsUpdateSchema.parse(benchmarkConfiguration(reference,variant));
       expect(settings.atomicNoteRelationThreshold).toBe(0.6);

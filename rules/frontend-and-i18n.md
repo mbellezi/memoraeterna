@@ -237,12 +237,22 @@ job statuses, or user-visible backend errors.
 
 ## Matching settings
 
+- The Matching dashboard starts with a preset selector. The recommended preset
+  is visibly identified and its values are read-only; users duplicate it or any
+  custom preset, name the copy, and edit or rename custom presets. Existing custom
+  matching values remain available. Cover invalid names, save failure rollback,
+  the custom-preset limit and the absence of custom presets. Preset changes apply
+  all matching fields together; delayed save responses must not replace newer edits.
+- Every matching variable has a compact accessible reset action, including
+  numeric limits, signal weights and toggles. Each reset restores that variable's
+  value from the built-in recommendation; group resets use the same snapshot.
+
 - Knowledge-note matching, relation-type similarity, and entity-identity
   similarity thresholds live in their own Matching settings dashboard.
 - Every matching threshold uses a slider with a visible draft value. Persist
   only when the pointer is released or a keyboard adjustment ends; canceled
   pointer gestures discard the draft. Each slider has an accessible compact
-  action that restores and saves its canonical application default.
+  action that restores and saves its recommended value.
 
 - Matching includes a collapsed Advanced matching section for note candidate
   limits, graph-only reservation, RRF, signal weights, validation policy and

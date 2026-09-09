@@ -599,7 +599,22 @@
       }
     },
     "matching": {
-      "resetDefault": "Restore default value",
+      "resetDefault": "Restore recommended value",
+      "presets": {
+        "title": "Matching preset",
+        "recommended": "Balanced — recommended",
+        "recommendedHint": "Validated matching settings. Duplicate this preset to edit it. Every reset restores its recommended value.",
+        "customHint": "Changes are saved to this preset. AI profiles are managed separately.",
+        "previous": "Custom settings",
+        "copy": "copy",
+        "duplicate": "Duplicate preset",
+        "rename": "Rename",
+        "name": "Preset name",
+        "save": "Save preset",
+        "cancel": "Cancel",
+        "invalidName": "Enter a name with 1 to 100 characters.",
+        "limit": "The limit of 50 custom presets has been reached."
+      },
       "title": "Knowledge matching",
       "description": "Set the minimum final score required to persist a relationship between atomic notes.",
       "minimumScore": "Minimum match score",

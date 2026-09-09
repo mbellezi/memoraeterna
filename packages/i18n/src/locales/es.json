@@ -504,7 +504,22 @@
       "states": { "stopped": "Detenido", "starting": "Iniciando", "ready": "Listo", "failed": "Error" }
     },
     "matching": {
-      "resetDefault": "Restaurar el valor predeterminado",
+      "resetDefault": "Restaurar valor recomendado",
+      "presets": {
+        "title": "Preset de matching",
+        "recommended": "Equilibrado — recomendado",
+        "recommendedHint": "Parámetros de matching validados. Duplica este preset para editarlo. Cada restablecimiento recupera el valor recomendado.",
+        "customHint": "Los cambios se guardan en este preset. Los perfiles de IA se gestionan por separado.",
+        "previous": "Configuración personalizada",
+        "copy": "copia",
+        "duplicate": "Duplicar preset",
+        "rename": "Renombrar",
+        "name": "Nombre del preset",
+        "save": "Guardar preset",
+        "cancel": "Cancelar",
+        "invalidName": "Introduce un nombre de 1 a 100 caracteres.",
+        "limit": "Se alcanzó el límite de 50 presets personalizados."
+      },
       "title": "Coincidencia de conocimiento",
       "description": "Define la puntuacion final minima necesaria para guardar una relacion entre notas atomicas.",
       "minimumScore": "Puntuacion minima de coincidencia",

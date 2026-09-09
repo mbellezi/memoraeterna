@@ -117,6 +117,26 @@ provider token breakdowns and precise call context, as specified in
 
 ## Matching calibration controls
 
+- Matching presets snapshot all three thresholds plus atomic-note, canonical
+  identity/type and source matching settings. They do not change AI profiles,
+  routes, languages or extraction settings. Store custom presets and their active
+  identity together with effective settings in `app.preferences`; validate unique
+  UUIDs, names, complete snapshots and the selected preset before a single write.
+- The built-in `recommended-v1` preset is immutable and uses the frozen benchmark
+  values in `packages/domain/src/matching-presets.ts`: note threshold 0.60,
+  retrieval 20/20/10, shortlist 20, graph reserve 3; source candidates 30, pairs 6,
+  importance 0.85, confidence 0.80, input ceiling 60,000 and economy evidence
+  limits. New installations select it. Existing different effective settings are
+  preserved as a custom preset; matching values already equal to the recommendation
+  select the built-in. Persist this compatibility initialization on the next write.
+- Duplicates have independent identities and snapshots. Editing or renaming a
+  custom preset retains its identity; switching applies its complete snapshot.
+  Direct legacy settings updates synchronize the active custom snapshot or create
+  a custom copy, never modifying the built-in. Serialize preference writes.
+  All matching resets use the recommended snapshot, including individual weights,
+  booleans and numeric limits. Low-level schema defaults remain compatibility
+  fallbacks, distinct from the versioned UI recommendation.
+
 - Advanced matching settings are validated in `packages/domain/src/matching-settings.ts`
   and persisted in application preferences. Missing fields load canonical defaults.
   Snapshot effective settings in note-relation metadata and similarity diagnostics.

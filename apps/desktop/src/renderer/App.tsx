@@ -146,6 +146,8 @@ export function App({
   const lastPersistedSettings = useRef<StorageSettings | null>(initialSettings ?? null);
   const pendingAppUpdate = useRef<AppSettingsUpdate>({});
   const appSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const appSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const appSettingsRevision = useRef(0);
   const pendingStorageSettings = useRef<StorageSettings | null>(null);
   const storageSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -282,18 +284,25 @@ export function App({
     const update = pendingAppUpdate.current;
     pendingAppUpdate.current = {};
     if (Object.keys(update).length === 0) return;
-    try {
-      const saved = await window.app.settings.updateApp(update);
-      lastPersistedAppSettings.current = saved;
-      setAppSettings(saved);
-      pushToast(t("shell.toasts.settingsSaved"), "success");
-    } catch (error) {
-      if (lastPersistedAppSettings.current) setAppSettings(lastPersistedAppSettings.current);
-      pushToast(errorToastText(error), "error");
-    }
+    const revision = appSettingsRevision.current;
+    appSaveQueue.current = appSaveQueue.current.then(async () => {
+      try {
+        const saved = await window.app.settings.updateApp(update);
+        lastPersistedAppSettings.current = saved;
+        if (revision === appSettingsRevision.current) {
+          setAppSettings(saved);
+          pushToast(t("shell.toasts.settingsSaved"), "success");
+        }
+      } catch (error) {
+        if (revision === appSettingsRevision.current && lastPersistedAppSettings.current) setAppSettings(lastPersistedAppSettings.current);
+        pushToast(errorToastText(error), "error");
+      }
+    });
+    await appSaveQueue.current;
   }
 
   function updateAppSettings(update: AppSettingsUpdate) {
+    appSettingsRevision.current++;
     setAppSettings((current) =>
       appSettingsSchema.parse({
         ...current,

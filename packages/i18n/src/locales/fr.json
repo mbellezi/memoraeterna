@@ -504,7 +504,22 @@
       "states": { "stopped": "Arretee", "starting": "Demarrage", "ready": "Prete", "failed": "Echec" }
     },
     "matching": {
-      "resetDefault": "Rétablir la valeur par défaut",
+      "resetDefault": "Restaurer la valeur recommandée",
+      "presets": {
+        "title": "Préréglage de matching",
+        "recommended": "Équilibré — recommandé",
+        "recommendedHint": "Paramètres de matching validés. Dupliquez ce préréglage pour le modifier. Chaque réinitialisation restaure la valeur recommandée.",
+        "customHint": "Les modifications sont enregistrées dans ce préréglage. Les profils IA sont gérés séparément.",
+        "previous": "Paramètres personnalisés",
+        "copy": "copie",
+        "duplicate": "Dupliquer le préréglage",
+        "rename": "Renommer",
+        "name": "Nom du préréglage",
+        "save": "Enregistrer le préréglage",
+        "cancel": "Annuler",
+        "invalidName": "Saisissez un nom de 1 à 100 caractères.",
+        "limit": "La limite de 50 préréglages personnalisés est atteinte."
+      },
       "title": "Correspondance des connaissances",
       "description": "Definit le score final minimal requis pour enregistrer une relation entre des notes atomiques.",
       "minimumScore": "Score minimal de correspondance",

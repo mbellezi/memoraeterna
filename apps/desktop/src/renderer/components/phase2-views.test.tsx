@@ -469,7 +469,7 @@ describe("phase 2 renderer views", () => {
     );
 
     expect(html.match(/type="range"/g)).toHaveLength(6);
-    expect(html.match(/title="Restore default value"/g)).toHaveLength(6);
+    expect(html.match(/title="Restore recommended value"/g)).toHaveLength(6);
     expect(html).toContain('id="atomicNoteRelationThreshold"');
     expect(html).toContain('id="relationTypeSimilarityThreshold"');
     expect(html).toContain('id="entityIdentitySimilarityThreshold"');

@@ -1,0 +1,82 @@
+{
+  "version": "matching-benchmark-selected-v1",
+  "savedAt": "2026-09-09T00:42:16.720Z",
+  "configuration": "economy",
+  "trainingResultsHash": "bf2b731a77b6f43f287b03fba9f74dd9a241bba6fad798d9fe71ae6672be56cd",
+  "postProcessing": {
+    "generatedMinimumImportance": 0.8,
+    "minimumImportance": 0.85,
+    "discardedSourceRelations": 26
+  },
+  "settings": {
+    "atomicNoteRelationThreshold": 0.6,
+    "entityIdentitySimilarityThreshold": 0.92,
+    "relationTypeSimilarityThreshold": 0.92,
+    "atomicNoteMatchingSettings": {
+      "textCandidateLimit": 20,
+      "vectorCandidateLimit": 20,
+      "graphCandidateLimit": 10,
+      "fusedCandidateLimit": 20,
+      "minimumGraphOnlyCandidates": 3,
+      "reciprocalRankConstant": 60,
+      "withEmbeddingAndGraph": {
+        "vector": 0.45,
+        "text": 0.25,
+        "graph": 0.2,
+        "metadata": 0.1
+      },
+      "withEmbedding": {
+        "vector": 0.55,
+        "text": 0.3,
+        "metadata": 0.15
+      },
+      "withGraph": {
+        "text": 0.55,
+        "graph": 0.3,
+        "metadata": 0.15
+      },
+      "textAndMetadata": {
+        "text": 0.7,
+        "metadata": 0.3
+      },
+      "rerankerWeight": 0.4,
+      "minRerankScore": 0.65,
+      "requireReranking": true,
+      "includeWeakTypes": false,
+      "maxRelationsPerNote": 10,
+      "maxRerankOutputTokens": 4096
+    },
+    "canonicalMatchingSettings": {
+      "relationTypeCandidateLimit": 3,
+      "entityCandidateLimit": 3,
+      "confirmationBatchSize": 12,
+      "confirmationMaxCharacters": 12000
+    },
+    "sourceRelationSettings": {
+      "reciprocalRankConstant": 60,
+      "evidenceChunksPerSource": 2,
+      "evidenceMaxCharacters": 800,
+      "summaryMaxCharacters": 1000,
+      "noteRelationsPerPair": 4,
+      "maxOutputTokens": 4096,
+      "maxCandidates": 30,
+      "maxPairs": 6,
+      "maxRelations": 10,
+      "maxRelationsPerPair": 4,
+      "maxInputTokens": 60000,
+      "minImportance": 0.85,
+      "minConfidence": 0.8,
+      "includeWeakTypes": false
+    }
+  },
+  "validation": {
+    "completedAt": "2026-09-09T01:18:15.113Z",
+    "heldOutRoots": 20,
+    "expectedPairs": 28,
+    "notePairsFound": 27,
+    "sourcePairsFound": 27,
+    "combinedPairsFound": 28,
+    "forbiddenPairsFound": 0,
+    "reportedBenchmarkTokens": 3601186
+  }
+}
