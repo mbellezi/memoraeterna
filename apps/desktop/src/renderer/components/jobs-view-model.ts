@@ -30,6 +30,8 @@ export interface JobCardModel {
   source: NonNullable<JobRecord["source"]> | null;
   status: JobRecord["status"] | "retrying";
   progress: number;
+  currentStage:string;
+  stageError:string|null;
   updatedAt: string;
   errors: JobRecord["errorHistory"];
 }
@@ -57,15 +59,17 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
       source: groupedJobs.find((job) => job.source)?.source ?? null,
       status,
       progress: matching?.progress ?? mainJob.progress,
+      currentStage:matching?.stage??ingestionRun?.currentStage??mainJob.type,
+      stageError:matching?.status==="failed"?matching.error:null,
       updatedAt: groupedJobs.map((job) => job.updatedAt).toSorted().at(-1) ?? mainJob.updatedAt,
       errors
     };
   }).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
-function deferredStagePresentation(mainJob: JobRecord, run: JobCardModel["ingestionRun"]): {status: JobRecord["status"]; progress:number} | null {
+function deferredStagePresentation(mainJob: JobRecord, run: JobCardModel["ingestionRun"]): {status: JobRecord["status"]; progress:number;stage:string;error:string|null} | null {
   if (!run || mainJob.type !== "ingestion") return null;
-  const deferredStages = ["atomicNoteMatching","sourceMatching"];
+  const deferredStages = ["atomicNoteMatching","sourceMatching","organizeKnowledge"];
   const stage = deferredStages.includes(run.currentStage) ? run.currentStage : mainJob.status === "succeeded"
     ? deferredStages.find((key) => {
       const saved = run.stagesCheckpoint[key] as {status?:unknown} | undefined;
@@ -76,13 +80,14 @@ function deferredStagePresentation(mainJob: JobRecord, run: JobCardModel["ingest
   if (!checkpoint || typeof checkpoint !== "object") return null;
   const state = checkpoint as Record<string,unknown>;
   const fraction = typeof state.progress === "number" && Number.isFinite(state.progress) ? Math.max(0,Math.min(1,state.progress)) : 0;
-  const base = stage === "sourceMatching" ? 0.95 : 0.89;
-  if (state.status === "waiting_for_batch" || state.status === "pending") return {status:"queued",progress:base};
-  if (state.status === "running" || state.status === "failed" || state.status === "canceled") return {status:state.status,progress:base + fraction * (stage === "sourceMatching" ? 0.04 : 0.06)};
+  const error=typeof state.error==="string"?state.error:null;
+  const base = stage === "organizeKnowledge" ? 0.98 : stage === "sourceMatching" ? 0.95 : 0.89;
+  if (state.status === "waiting_for_batch" || state.status === "pending") return {status:"queued",progress:base,stage,error};
+  if (state.status === "running" || state.status === "failed" || state.status === "canceled") return {status:state.status,progress:base + fraction * (stage === "organizeKnowledge"?0.02:stage === "sourceMatching" ? 0.04 : 0.06),stage,error};
   if (state.status === "completed" && run.effectiveStages.every((key) => {
     const other = run.stagesCheckpoint[key] as {status?: unknown} | undefined;
     return key === stage || other?.status === "completed" || other?.status === "skipped";
-  })) return {status:"succeeded",progress:1};
+  })) return {status:"succeeded",progress:1,stage,error};
   return null;
 }
 

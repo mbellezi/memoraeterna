@@ -340,10 +340,15 @@ export class AiService {
     return OrganizationProfileSchema.parse({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,provider:selection.provider,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,privacy:effectivePrivacy,parameters,identityHash,contextWindow:parameters.contextWindow??null});
   }
 
-  public async runOrganizationTask(profile: OrganizationProfile, input: string, context: AiTaskLogContext, signal: AbortSignal, maxOutputTokens: number): Promise<DefaultAiTaskResult> {
+  public async runConsultationEmbedding(text:string,privacy:'offline_only'|'allow_remote',sourceItemIds:string[],signal:AbortSignal){
+    return aiExecutionQueue.run(()=>this.executeDefaultTask('embedding',text,{stage:'wiki_consultation',embeddingInputType:'query',sourceItemIds},signal,undefined,undefined,privacy),signal);
+  }
+
+  public async runOrganizationTask(profile: OrganizationProfile, input: string, context: AiTaskLogContext, signal: AbortSignal, maxOutputTokens: number, beforeExecute?:()=>Promise<void>): Promise<DefaultAiTaskResult> {
     const pinned=OrganizationProfileSchema.parse(profile);
     return aiExecutionQueue.run(async()=>{
-      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned);
+      await beforeExecute?.(); signal.throwIfAborted();
+      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned,undefined,beforeExecute);
       if(!result)throw new Error("organization.errors.model");
       return result;
     },signal);
@@ -365,7 +370,9 @@ export class AiService {
     logContext: AiTaskLogContext,
     signal?: AbortSignal,
     limits?: { maxOutputTokens: number },
-    pinned?: OrganizationProfile
+    pinned?: OrganizationProfile,
+    consultationPrivacy?: 'offline_only'|'allow_remote',
+    beforeProvider?:()=>Promise<void>
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
@@ -373,6 +380,7 @@ export class AiService {
     await repository.ensureRemoteRerankingCapabilities();
     const selection = await repository.getDefaultTask(taskType, pinned?.profileId);
     if (!selection) { if(pinned) throw new Error("organization.errors.model"); return null; }
+    if(consultationPrivacy==='offline_only'&&!selection.localModelId)return null;
     if(selection.privacyMode === "offline_only" && !selection.localModelId) throw new Error("organization.errors.privacy");
     if(pinned){
       const current=await this.pinOrganizationProfile(pinned.profileId,pinned.privacy);
@@ -430,10 +438,14 @@ export class AiService {
         requiredCapabilities, parameters, metadata: {}
       };
       const progress = createProgressReporter(onProgress);
-      const run = () => adapter.runStreaming
+      const run = async () => {
+        await beforeProvider?.();signal?.throwIfAborted();
+        if(pinned&&(await this.pinOrganizationProfile(pinned.profileId,pinned.privacy)).identityHash!==pinned.identityHash)throw new Error("organization.errors.modelChanged");
+        return adapter.runStreaming
         && (descriptor.capabilities.includes("streaming") || descriptor.capabilities.includes("supports-progress-events"))
         ? adapter.runStreaming(request, signal, progress)
         : adapter.run(request, signal);
+      };
       const runLocal = async () => {
         const needsLoad = taskType === "embedding" && adapter.isLoaded?.() === false && adapter.ensureLoaded;
         if (needsLoad) {

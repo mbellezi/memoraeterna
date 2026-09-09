@@ -1,4 +1,32 @@
 {
+  "consultation": {
+    "contextCoverage": "Contexto opcional: {included} de {available} elementos caben en el presupuesto del modelo. Los pasajes originales siguen disponibles.",
+    "sourceCount": "Fuentes en el ámbito: {count}",
+    "title": "Respuestas con fuentes",
+    "ask": "Preguntar",
+    "question": "Tu pregunta",
+    "function": "Función",
+    "readOnly": "Las respuestas leen el material seleccionado sin editar el conocimiento ni ejecutar correspondencias. Guardar crea una propuesta para revisar.",
+    "pageScope": "Página actual",
+    "libraryScope": "Toda la biblioteca",
+    "descendants": "Incluir subelementos de las fuentes",
+    "optional": "Usar conceptos, notas y entidades existentes",
+    "hybrid": "Añadir búsqueda semántica disponible",
+    "answering": "Leyendo las fuentes y preparando una respuesta citada…",
+    "coverage": "{selected} pasajes usados · {total} recuperados · {sources} fuentes en el ámbito",
+    "partial": "Cobertura parcial: se usó una selección limitada del material disponible.",
+    "complete": "Entradas seleccionadas completadas",
+    "stale": "El material de apoyo cambió. Revisa estas afirmaciones antes de reutilizarlas.",
+    "gaps": "Lagunas y límites de las pruebas",
+    "save": "Guardar como propuesta de página",
+    "saved": "Propuesta guardada para revisión",
+    "textOnly": "Texto, títulos y conceptos fundamentados; no se solicitó embedding.",
+    "vectorAvailable": "Recuperación semántica compatible disponible",
+    "vectorUnavailable": "Recuperación semántica no disponible o excluida por privacidad; la búsqueda textual sigue disponible.",
+    "processingHint": "Organiza el lote en un tema después del procesamiento elegido. Reutiliza un título o alias apto y revisa antes de aplicar. Notas, grafo y correspondencias siguen siendo opcionales.",
+    "processingRequired": "Elige un título de tema y un perfil de modelo antes de procesar.",
+    "cancelBatch": "Cancelar lote y organización"
+  },
   "organization": {
     "waitingModel": "Esperando la cola de IA compartida",
     "modelCalls": "Llamadas al modelo",
@@ -73,6 +101,7 @@
     "canceled": "Cancelada",
     "failed": "Fallida",
     "errors": {
+      "topicScope": "Ya existe un tema coincidente fuera del ámbito. Ábrelo y selecciona todas las fuentes necesarias para evitar duplicados.",
       "wait": "La llamada cancelada todavía está terminando. Espera antes de reintentar.",
       "invalid": "La acción o configuración no es válida. Revisa los campos y reintenta.",
       "placeholder": "Solo se admiten {{title}} y {{language}}.",
@@ -322,6 +351,7 @@
     },
     "currentStage": "Etapa actual: {stage}",
     "stages": {
+      "organizeKnowledge": "Organizar conocimiento",
       "queued": "En cola", "preparation": "Preparacion de la importacion", "conversion": "Conversion", "structureDetection": "Deteccion de estructura", "structureReview": "Revision de estructura", "materialization": "Materializacion", "chunking": "Segmentacion",
       "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
       "knowledgeGraph": "Grafo de conocimiento",
@@ -1019,6 +1049,6 @@
     "catalogOnly": "Solo catálogo",
     "scopeSource": "Explorar esta fuente",
     "verifyEvidence": "He revisado estas citas",
-    "needsEvidenceReview": "El texto cambió. Revise estas citas antes de considerarlas evidencia verificada."
+    "needsEvidenceReview": "Revisa estas citas antes de considerar la evidencia verificada."
   }
 }

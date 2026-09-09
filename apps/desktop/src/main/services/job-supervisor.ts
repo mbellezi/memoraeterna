@@ -31,6 +31,7 @@ import type { WorkerTask } from "../workers/worker-contracts.js";
 export interface JobSupervisorOptions {
   traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
   getPool: () => PgPool | null;
+  reconcileOrganization?:()=>Promise<void>;
   processOrganization?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
@@ -98,6 +99,7 @@ export class JobSupervisor {
   }
 
   public async runOnce(): Promise<JobRecord | null> {
+    try{await this.options.reconcileOrganization?.();}catch{this.options.logger?.warn("Organization reconciliation is temporarily unavailable");}
     const repository = createJobRepository(this.requirePool());
     const job = await repository.claimNext(this.workerId, [...supportedJobTypes]);
     if (!job) return null;
@@ -178,7 +180,20 @@ export class JobSupervisor {
     return createJobRepository(this.requirePool()).latestByType("relation-labels");
   }
 
+  public async cancelBatch(batchId:string):Promise<null>{
+    const pool=this.requirePool(),ids=await createOrganizationRepository(pool).cancelBatch(batchId);
+    for(const id of ids)await this.requestCancel(id);
+    const runs=createIngestionRunRepository(pool);
+    for(const run of await runs.listByBatch(batchId)){
+      if(['pending','running'].includes(run.status))await runs.cancel(run.id);
+      if(run.effectiveStages.includes('organizeKnowledge')&&(run.stagesCheckpoint.organizeKnowledge as {status?:string}|undefined)?.status!=='completed')await runs.failStage(run.id,'organizeKnowledge','organization.errors.canceled',true);
+    }
+    await createHierarchicalIngestionRepository(pool).refreshBatch(batchId);this.notify();return null;
+  }
+
   public async requestCancel(jobId: string): Promise<JobRecord | null> {
+    const before=await createJobRepository(this.requirePool()).findById(jobId);
+    if(before?.type==="ingestion"&&typeof before.payload.ingestionRunId==="string")for(const linked of await createOrganizationRepository(this.requirePool()).jobsForIngestion(before.payload.ingestionRunId))await this.requestCancel(linked);
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
     if (job?.type === "organization" && typeof job.payload.organizationRunId === "string") await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
@@ -667,6 +682,7 @@ export class JobSupervisor {
       this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
+    if(effectiveStages.has("organizeKnowledge"))await runs.waitForBatchStage(ingestionRunId,"organizeKnowledge");
     await runs.complete(ingestionRunId);
     this.notify();
     return { ingestionRunId, documentId, sourceItemId };

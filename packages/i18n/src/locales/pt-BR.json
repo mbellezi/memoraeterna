@@ -1,4 +1,32 @@
 {
+  "consultation": {
+    "contextCoverage": "Contexto opcional: {included} de {available} itens couberam no orçamento do modelo. Os trechos originais continuam disponíveis.",
+    "sourceCount": "Fontes no escopo: {count}",
+    "title": "Respostas com fontes",
+    "ask": "Perguntar",
+    "question": "Sua pergunta",
+    "function": "Função",
+    "readOnly": "As respostas leem o material selecionado. Elas não editam o conhecimento nem executam correspondências. Salvar cria uma proposta separada para revisão.",
+    "pageScope": "Página atual",
+    "libraryScope": "Biblioteca inteira",
+    "descendants": "Incluir subitens das fontes",
+    "optional": "Usar conceitos, notas e entidades existentes",
+    "hybrid": "Adicionar busca semântica disponível",
+    "answering": "Lendo as evidências selecionadas e preparando uma resposta citada…",
+    "coverage": "{selected} trechos usados · {total} recuperados · {sources} fontes no escopo",
+    "partial": "Cobertura parcial: apenas uma seleção limitada do material disponível foi usada.",
+    "complete": "Entradas selecionadas concluídas",
+    "stale": "O material de apoio mudou. Revise estas afirmações antes de reutilizá-las.",
+    "gaps": "Lacunas e limites das evidências",
+    "save": "Salvar como proposta de página",
+    "saved": "Proposta salva para revisão",
+    "textOnly": "Texto, títulos e conceitos fundamentados; nenhum embedding de consulta solicitado.",
+    "vectorAvailable": "Recuperação semântica compatível disponível",
+    "vectorUnavailable": "Recuperação semântica indisponível ou excluída pela privacidade; a busca textual permanece disponível.",
+    "processingHint": "Organize este lote em um tópico após o processamento selecionado. Reutilize um título ou alias elegível e revise antes de aplicar. Notas, grafo e correspondências continuam opcionais.",
+    "processingRequired": "Escolha um título de tópico e um perfil de modelo antes de processar.",
+    "cancelBatch": "Cancelar lote e organização"
+  },
   "organization": {
     "waitingModel": "Aguardando a fila compartilhada de IA",
     "modelCalls": "Chamadas de modelo",
@@ -73,6 +101,7 @@
     "canceled": "Cancelada",
     "failed": "Falhou",
     "errors": {
+      "topicScope": "Já existe um tópico correspondente fora deste escopo. Abra-o e selecione explicitamente todas as fontes necessárias para evitar duplicação.",
       "wait": "A chamada cancelada ainda está terminando. Aguarde antes de tentar novamente.",
       "invalid": "A ação ou configuração é inválida. Revise os campos e tente novamente.",
       "placeholder": "Somente {{title}} e {{language}} são aceitos.",
@@ -331,6 +360,7 @@
     },
     "currentStage": "Etapa atual: {stage}",
     "stages": {
+      "organizeKnowledge": "Organizar conhecimento",
       "queued": "Na fila",
       "preparation": "Preparacao da importacao",
       "conversion": "Conversao",
@@ -1102,6 +1132,6 @@
     "catalogOnly": "Somente catálogo",
     "scopeSource": "Explorar esta fonte",
     "verifyEvidence": "Revisei estas citações",
-    "needsEvidenceReview": "O texto mudou. Revise estas citações antes de considerá-las evidências verificadas."
+    "needsEvidenceReview": "Revise estas citações antes de considerar as evidências verificadas."
   }
 }

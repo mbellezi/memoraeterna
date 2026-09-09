@@ -94,3 +94,13 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   receipts are reconciled independently of job restart recovery. Completed-job
   cleanup preserves organization jobs, and generic ingestion retry must not
   reset organization attempts or cumulative model/tool budgets.
+
+- Organization participation reconciles selected stage checkpoints and active
+  per-stage jobs before admission; succeeded parent jobs are insufficient. Batch
+  counters and source cards retain pending/failed organization and any failed
+  selected checkpoint. Batch cancellation reaches linked organization jobs and
+  review proposals, blocks late apply, and preserves completed derivations. A
+  source-card cancellation also cancels its currently linked cross-source run.
+  One ineligible organization batch must not starve unrelated queued jobs.
+  Generic ingestion retry cannot restart a settled parent while its linked
+  organization checkpoint is pending, waiting for the batch or running.

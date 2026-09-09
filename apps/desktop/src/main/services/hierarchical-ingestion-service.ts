@@ -26,6 +26,7 @@ const executableStages = [
   "knowledgeGraph",
   "atomicNoteMatching",
   "sourceMatching",
+  "organizeKnowledge",
   "obsidianProjection"
 ] as const;
 
@@ -147,6 +148,7 @@ export class HierarchicalIngestionService {
     const documents = createDocumentRepository(pool);
     const sources = createSourceItemRepository(pool);
     const catalogStages = catalogMetadataStages(plan.effectiveStages);
+    if(plan.effectiveStages.includes("organizeKnowledge")&&!plan.organization)throw new Error("organization.errors.model");
     const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
     const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
     const batch = await hierarchy.createBatch({
@@ -206,7 +208,7 @@ export class HierarchicalIngestionService {
       }
       if (!catalogMetadataOnly && !plan.forceRegeneration && plan.previousArtifactPolicy === "reuse_valid") {
         for (const stage of executableStages) {
-          if (effectiveStages.includes(stage) && artifactState[stage]
+          if (effectiveStages.includes(stage) && (artifactState as Record<string,boolean|undefined>)[stage]
             && canReuseArtifactStage(stage, aggregateHierarchyRoot)) {
             await runs.completeStage(run.id, stage, { reused: true });
           }

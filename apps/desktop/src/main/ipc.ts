@@ -263,6 +263,7 @@ export function registerIpcHandlers(
       if (!contents.isDestroyed()) contents.send(ipcChannels.jobsChanged);
     }
   });
+  ipcMain.handle(ipcChannels.jobsCancelBatch,(_event,id:unknown)=>jobSupervisor.cancelBatch(z.string().uuid().parse(id)));
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
     const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;

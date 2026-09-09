@@ -1,4 +1,32 @@
 {
+  "consultation": {
+    "contextCoverage": "Contexte facultatif : {included} éléments sur {available} tiennent dans le budget du modèle. Les passages originaux restent disponibles.",
+    "sourceCount": "Sources dans le périmètre : {count}",
+    "title": "Réponses sourcées",
+    "ask": "Poser une question",
+    "question": "Votre question",
+    "function": "Fonction",
+    "readOnly": "Les réponses lisent les documents sélectionnés sans modifier les connaissances ni lancer de rapprochement. Enregistrer crée une proposition à examiner.",
+    "pageScope": "Page actuelle",
+    "libraryScope": "Toute la bibliothèque",
+    "descendants": "Inclure les sous-éléments des sources",
+    "optional": "Utiliser les concepts, notes et entités existants",
+    "hybrid": "Ajouter la recherche sémantique disponible",
+    "answering": "Lecture des preuves et préparation de la réponse sourcée…",
+    "coverage": "{selected} passages utilisés · {total} récupérés · {sources} sources dans le périmètre",
+    "partial": "Couverture partielle : une sélection limitée des documents a été utilisée.",
+    "complete": "Entrées sélectionnées terminées",
+    "stale": "Les éléments justificatifs ont changé. Réexaminez ces affirmations avant de les réutiliser.",
+    "gaps": "Lacunes et limites des preuves",
+    "save": "Enregistrer comme proposition de page",
+    "saved": "Proposition enregistrée pour examen",
+    "textOnly": "Texte, titres et concepts sourcés ; aucun embedding demandé.",
+    "vectorAvailable": "Recherche sémantique compatible disponible",
+    "vectorUnavailable": "Recherche sémantique indisponible ou exclue par la confidentialité ; la recherche textuelle reste disponible.",
+    "processingHint": "Organisez ce lot en un sujet après le traitement choisi. Réutilisez un titre ou alias admissible et examinez avant application. Notes, graphe et rapprochements restent facultatifs.",
+    "processingRequired": "Choisissez un titre et un profil de modèle avant le traitement.",
+    "cancelBatch": "Annuler le lot et l’organisation"
+  },
   "organization": {
     "waitingModel": "En attente de la file IA partagée",
     "modelCalls": "Appels au modèle",
@@ -73,6 +101,7 @@
     "canceled": "Annulée",
     "failed": "Échec",
     "errors": {
+      "topicScope": "Un sujet correspondant existe hors du périmètre. Ouvrez-le et sélectionnez toutes les sources nécessaires pour éviter un doublon.",
       "wait": "L’appel annulé est encore en cours d’arrêt. Attendez avant de réessayer.",
       "invalid": "Action ou paramètres invalides. Vérifiez les champs et réessayez.",
       "placeholder": "Seuls {{title}} et {{language}} sont acceptés.",
@@ -322,6 +351,7 @@
     },
     "currentStage": "Etape actuelle : {stage}",
     "stages": {
+      "organizeKnowledge": "Organiser les connaissances",
       "queued": "En attente", "preparation": "Preparation de l'importation", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
       "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
       "knowledgeGraph": "Graphe de connaissances",
@@ -1019,6 +1049,6 @@
     "catalogOnly": "Catalogue uniquement",
     "scopeSource": "Explorer cette source",
     "verifyEvidence": "J’ai vérifié ces citations",
-    "needsEvidenceReview": "Le texte a changé. Vérifiez ces citations avant de les considérer comme des preuves validées."
+    "needsEvidenceReview": "Révisez ces citations avant de considérer les preuves comme vérifiées."
   }
 }

@@ -1,4 +1,32 @@
 {
+  "consultation": {
+    "contextCoverage": "Optional context: {included} of {available} items fit the model budget. Original passages remain available.",
+    "sourceCount": "Sources in scope: {count}",
+    "title": "Cited answers",
+    "ask": "Ask",
+    "question": "Your question",
+    "function": "Function",
+    "readOnly": "Answers read your selected material. They never edit knowledge or run matching. Saving creates a separate proposal for review.",
+    "pageScope": "Current page",
+    "libraryScope": "Whole library",
+    "descendants": "Include source descendants",
+    "optional": "Use existing concepts, notes and entities",
+    "hybrid": "Add available semantic search",
+    "answering": "Reading selected evidence and preparing a cited answer…",
+    "coverage": "{selected} passages used · {total} retrieved · {sources} sources in scope",
+    "partial": "Partial coverage: only a bounded selection of available material was used.",
+    "complete": "Selected inputs completed",
+    "stale": "Supporting material changed. Review these claims before reuse.",
+    "gaps": "Evidence gaps and limitations",
+    "save": "Save as a page proposal",
+    "saved": "Proposal saved for review",
+    "textOnly": "Text, titles and grounded concepts; no query embedding requested.",
+    "vectorAvailable": "Compatible semantic retrieval available",
+    "vectorUnavailable": "Semantic retrieval unavailable or excluded by privacy; textual retrieval remains available.",
+    "processingHint": "Organize this batch into one topic after selected processing finishes. Reuse an eligible title or alias; review changes before applying. Notes, graph and matching remain optional.",
+    "processingRequired": "Choose a topic title and model profile before starting processing.",
+    "cancelBatch": "Cancel batch and organization"
+  },
   "organization": {
     "waitingModel": "Waiting for the shared model queue",
     "modelCalls": "Model calls",
@@ -73,6 +101,7 @@
     "canceled": "Canceled",
     "failed": "Failed",
     "errors": {
+      "topicScope": "A matching topic already exists outside this source scope. Open it and explicitly select all required sources instead of creating a duplicate.",
       "wait": "The canceled model call is still settling. Wait for it to finish before retrying.",
       "invalid": "The action or settings are invalid. Review the fields and try again.",
       "placeholder": "Only {{title}} and {{language}} placeholders are supported.",
@@ -331,6 +360,7 @@
     },
     "currentStage": "Current stage: {stage}",
     "stages": {
+      "organizeKnowledge": "Organize knowledge",
       "queued": "Queued",
       "preparation": "Import preparation",
       "conversion": "Conversion",
@@ -1169,6 +1199,6 @@
     "catalogOnly": "Catalog only",
     "scopeSource": "Explore this source",
     "verifyEvidence": "I reviewed these citations",
-    "needsEvidenceReview": "The text changed. Review these citations before treating them as verified evidence."
+    "needsEvidenceReview": "Review these citations before treating the evidence as verified."
   }
 }

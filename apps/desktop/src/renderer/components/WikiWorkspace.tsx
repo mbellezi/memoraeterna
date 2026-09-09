@@ -1,3 +1,4 @@
+import { ConsultationDialog } from "./ConsultationDialog";
 import { OrganizationDialog } from "./OrganizationView";
 import { wikiNavigationOrder } from "./wiki-navigation";
 import { SourceTypeBadge } from "./LibraryView";
@@ -16,6 +17,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
   t: Translator;
   onOpenSource: (id: string, noteId?: string) => void;
 }) {
+  const [consultationOpen,setConsultationOpen]=useState(false);
   const [organizationOpen,setOrganizationOpen]=useState(false);
   const [pages, setPages] = useState<PageSummary[]>([]), [page, setPage] = useState<WikiPage | null>(null);
   const [mode, setMode] = useState<"home" | "sources" | "page" | "search">("home");
@@ -58,6 +60,11 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
       }), 180);
     return () => { active = false; clearTimeout(timer); };
   }, [query, kind, scope, reviewed, current, mode, offset, pickSection, sourceScope, searchRetry]);
+  useEffect(()=>{
+    if(!active||editing||mode!=="page"||!page)return;
+    const id=page.id,timer=setInterval(()=>{if(document.hidden)return;void window.app.wiki.get(id).then(next=>{if(next)setPage(current=>current?.id===id?next:current);}).catch(()=>undefined);},3000);
+    return()=>clearInterval(timer);
+  },[active,editing,mode,page?.id]);
   const closeOrganization = useCallback(() => {
     setOrganizationOpen(false);
     void reload().catch(fail);
@@ -230,8 +237,10 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
   </div>;
   return <div className="flex h-[calc(100vh-7.5rem)] min-h-80 flex-col overflow-hidden text-slate-900 dark:text-slate-100">
 
+    {consultationOpen&&<ConsultationDialog initialSourceIds={sourceScope?[sourceScope.id]:[]} initialPageId={scope??(mode==="page"?page?.id??null:null)} initialReviewed={reviewed} active={active} t={t} page={mode==="page"?page:null} initialQuestion={query} onClose={()=>{setConsultationOpen(false);void reload().catch(fail);}} onOpenSource={onOpenSource}/>}
     {organizationOpen&&<OrganizationDialog t={t} page={mode==="page"?page:null} onClose={closeOrganization}/>}
     <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
+      <button disabled={editing} className={control} onClick={()=>setConsultationOpen(true)}>{t("consultation.ask")}</button>
       <button disabled={editing} className={control} onClick={()=>setOrganizationOpen(true)}>{t("organization.organize")}</button>
       <div className="mr-auto">
         <h2 className="flex items-center gap-2 text-xl font-semibold">
@@ -545,6 +554,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
                 {t(`wiki.provenanceTypes.${s.provenance}`)}
               </span>
             </div>
+            {page.impacts?.some(i=>i.sectionId===s.id)&&<details className="mb-3 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"><summary className="cursor-pointer">{t("consultation.stale")}</summary>{page.impacts.filter(i=>i.sectionId===s.id).map(i=><p key={i.id} className="mt-2 text-xs">{i.kind} · {new Date(i.changedAt).toLocaleString()}</p>)}</details>}
             <MarkdownPreview markdown={s.markdown} emptyLabel={t("wiki.emptySection")} />
             {s.evidenceReview === "needs_review" ? <p className="mt-3 text-xs text-amber-600">
               {t("wiki.needsEvidenceReview")}

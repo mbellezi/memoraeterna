@@ -439,9 +439,9 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
     async refreshBatch(batchId: string): Promise<ProcessingBatchRecord | null> {
       const result = await pool.query<BatchRow>(
         `with aggregate as (
-           select count(*) filter (where status = 'succeeded')::int as completed,
-                  count(*) filter (where status = 'failed')::int as failed,
-                  count(*) filter (where status in ('pending', 'running'))::int as active,
+           select count(*) filter (where status = 'succeeded' and not exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed') and (not (effective_stages ? 'organizeKnowledge') or stages_checkpoint->'organizeKnowledge'->>'status'='completed'))::int as completed,
+                  count(*) filter (where status = 'failed' or exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed'))::int as failed,
+                  count(*) filter (where status in ('pending', 'running') or (effective_stages ? 'organizeKnowledge' and coalesce(stages_checkpoint->'organizeKnowledge'->>'status','pending') not in('completed','failed','canceled')))::int as active,
                   count(*)::int as total
            from ingestion_runs where batch_id = $1
          )
@@ -450,6 +450,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            completed_items = aggregate.completed, failed_items = aggregate.failed,
            progress = case when aggregate.total = 0 then 0 else round((aggregate.completed + aggregate.failed)::numeric / aggregate.total * 10000)::int end,
            status = case
+             when batch.metadata->>'organizationCanceled'='true' then 'canceled'::processing_batch_status
              when aggregate.active > 0 then 'running'::processing_batch_status
              when aggregate.failed > 0 and aggregate.completed > 0 then 'partial'::processing_batch_status
              when aggregate.failed > 0 then 'failed'::processing_batch_status

@@ -1,3 +1,6 @@
+import { ProfilePicker } from "./OrganizationView";
+import type { AiProfile } from "../../shared/ipc";
+import { OrganizationSettingsSchema, type OrganizationConfiguration } from "@app/domain";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -38,6 +41,7 @@ export function defaultProcessingPlan(preset: ProcessingPreset = "import_only"):
 
 export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
+    ...(plan.organization?{organization:plan.organization}:{}),
     preset: plan.preset,
     requestedStages: plan.requestedStages,
     scope: plan.scope,
@@ -180,9 +184,10 @@ export function ProcessingPlanPicker({
       </div>
     </details>
 
+    {resolved.effectiveStages.includes("organizeKnowledge")&&<ProcessingOrganizationOptions value={value} onChange={onChange} t={t}/>}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
       <span>{t("processing.stageCount", { values: { count: resolved.effectiveStages.length } })}</span>
-      {resolved.effectiveStages.some((stage) => ["embedding", "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching"].includes(stage))
+      {resolved.effectiveStages.some((stage) => ["embedding", "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching", "organizeKnowledge"].includes(stage))
         ? <span className="inline-flex items-center gap-1.5"><Cloud className="h-3.5 w-3.5" aria-hidden="true" />{t("processing.profileNotice")}</span>
         : <span>{t("processing.noAiNotice")}</span>}
     </div>
@@ -204,4 +209,11 @@ function presetSurface(tone: string): string {
     violet: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
     amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
   } as Record<string, string>)[tone] ?? "bg-slate-100 text-slate-800";
+}
+
+function ProcessingOrganizationOptions({value,onChange,t}:{value:ProcessingPlanRequest;onChange:(v:ProcessingPlanRequest)=>void;t:Translator}){
+  const [profiles,setProfiles]=useState<AiProfile[]>([]),[domains,setDomains]=useState<OrganizationConfiguration['domains']>([]),[title,setTitle]=useState(value.organization?.title??''),[profile,setProfile]=useState(value.organization?.profileId??''),[privacy,setPrivacy]=useState<'offline_only'|'allow_remote'>(value.organization?.privacy??'offline_only'),[domainId,setDomainId]=useState<string|null>(value.organization?.domainId??null),[failed,setFailed]=useState(false);
+  useEffect(()=>{void Promise.all([window.app.ai.listProfiles(),window.app.organization.command({command:'settings'})]).then(([p,c])=>{setProfiles(p);const s=OrganizationSettingsSchema.parse(c);setDomains(s.revisions.find(r=>r.id===s.activeId)?.configuration.domains??[]);}).catch(()=>setFailed(true));},[]);
+  function update(patch:Partial<{title:string;profileId:string;privacy:typeof privacy;domainId:string|null}>){const next={title,profileId:profile,privacy,domainId,...patch};setTitle(next.title);setProfile(next.profileId);setPrivacy(next.privacy);setDomainId(next.domainId);onChange({...value,organization:next.title.trim()&&next.profileId?next:undefined});}
+  return <div className="grid gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4"><p className="text-sm leading-6">{t('consultation.processingHint')}</p><label className="grid gap-1 text-sm">{t('wiki.pageTitle')}<Input value={title} onChange={e=>update({title:e.target.value})}/></label><ProfilePicker profiles={profiles} value={profile} onChange={profileId=>update({profileId})} privacy={privacy} onPrivacy={privacy=>update({privacy})} t={t}/><label className="grid gap-1 text-sm">{t('organization.domains')}<select className="rounded-lg border bg-transparent p-2" value={domainId??''} onChange={e=>update({domainId:e.target.value||null})}><option value="">{t('organization.global')}</option>{domains.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{(!value.organization||failed)&&<p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('consultation.processingRequired')}</p>}</div>;
 }

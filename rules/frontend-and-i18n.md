@@ -314,3 +314,13 @@ job statuses, or user-visible backend errors.
   exact original passages, pinned instruction provenance and bounded execution
   details. Reuse the safe source-reference renderer and independent canonical
   source-relationship review component; generated reference tags are inert.
+
+- Cited-answer controls inherit current source/page/review filters and expose an
+  explicit page/whole-library switch. Retain the actual answered question and
+  scope beside the result after later form edits. Collapse setup after submission;
+  retain visible loading/cancellation, partial/stale/empty/error and saved-proposal
+  states. Citations focus a bounded evidence inspector, with a side-by-side layout
+  when space permits; source navigation and Back preserve the answer and selection.
+  Source selections stay visible/removable across picker search and pagination,
+  and descendant inclusion is an explicit control. Advanced instructions show
+  the selected function and effective domain inheritance.

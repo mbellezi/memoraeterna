@@ -19,3 +19,5 @@ export * from "./matching-settings.js";
 export * from "./matching-presets.js";
 export * from "./wiki.js";
 export * from "./organization.js";
+
+export * from "./consultation.js";

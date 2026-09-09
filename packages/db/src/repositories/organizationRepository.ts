@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PgPool, PgClient } from "../client.js";
+import { addWikiDependency, validateWikiDependencies } from "./wikiContextRepository.js";
 import { createWikiRepository } from "./wikiRepository.js";
 import { currentSourceRelationEvidenceSql, sourceRelationEvidenceJoins } from "./sourceRelationRepository.js";
 
@@ -22,12 +23,13 @@ export function createOrganizationRepository(pool:PgPool) {
     },
     async configuration(id:string){return (await pool.query('select id,configuration,hash from organization_settings_revisions where id=$1',[id])).rows[0]??null;},
     async saveDraft(configuration:unknown){return (await pool.query('insert into organization_settings_revisions(configuration,hash) values($1,$2) returning id',[configuration,hash(configuration)])).rows[0]!.id as string;},
-    async activate(id:string,expectedActiveId:string|null,requiredPrompts:string[]){
+    async activate(id:string,expectedActiveId:string|null,requiredPrompts:string[],requiredConsultationPrompts:string[]=[]){
       return transaction(async db=>{
         await db.query("select pg_advisory_xact_lock(hashtextextended('organization-settings',0))");
         const active=(await db.query(`select ${activeSql} as id`)).rows[0]?.id??null;
         if(active!==expectedActiveId)throw new Error('organization.errors.conflict');
         for(const prompt of requiredPrompts)if(!(await db.query("select id from organization_runs where status='sample_passed' and snapshot->>'configurationId'=$1 and snapshot->'instructions'->'slots'->>'advanced'=$2 limit 1",[id,prompt])).rows.length)throw new Error('organization.errors.sample');
+        for(const prompt of requiredConsultationPrompts)if(!(await db.query("select id from organization_runs where status='sample_passed' and snapshot->>'configurationId'=$1 and snapshot->>'functionName'='consultation' and snapshot->'instructions'->'slots'->>'advanced'=$2 limit 1",[id,prompt])).rows.length)throw new Error('organization.errors.sample');
         await db.query('insert into organization_settings_activations(revision_id,created_at) values($1,clock_timestamp())',[id]);
         await db.query("insert into settings(key,value) values('organization.active',$1) on conflict(key) do update set value=excluded.value,updated_at=now()",[{revisionId:id}]);
       });
@@ -44,6 +46,10 @@ export function createOrganizationRepository(pool:PgPool) {
       if(rows.length>200||rows.some(r=>r.excerpt.length>12000))throw new Error('organization.errors.scopeLimit');
       return rows.map((r,i)=>({...r,documentCreatedAt:stamp(r.documentCreatedAt),handle:`e${i+1}`}));
     },
+    async validateEvidence(evidence:Array<{chunkId:string;sourceItemId:string;documentId:string;sourceSpanId:string|null;contentHash:string}>){
+      const current=(await pool.query(`select c.id,c.source_item_id,c.document_id,c.source_span_id,c.content_hash from chunks c join documents d on d.id=c.document_id where c.id=any($1::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.chunking_version<>'catalog-metadata-v1' and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata'`,[evidence.map(e=>e.chunkId)])).rows;
+      if(evidence.some(e=>!current.some(c=>c.id===e.chunkId&&c.source_item_id===e.sourceItemId&&c.document_id===e.documentId&&c.source_span_id===e.sourceSpanId&&c.content_hash===e.contentHash)))throw new Error('organization.errors.evidence');
+    },
     async relations(sourceIds:string[]){
       return (await pool.query(`select distinct on(r.id) r.id,e.id as "evidenceId",md5(e.snapshot::text) as fingerprint,r.source_item_id as "sourceItemId",r.target_source_item_id as "targetSourceItemId",r.status as review,r.updated_at as "updatedAt",r.source_idea as "sourceIdea",r.target_idea as "targetIdea",r.explanation,e.source_chunk_id as "sourceChunkId",e.target_chunk_id as "targetChunkId"
         from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins}
@@ -57,9 +63,42 @@ export function createOrganizationRepository(pool:PgPool) {
         if(!current||current.fingerprint!==relation.fingerprint||current.status!==relation.review||stamp(current.updated_at)!==relation.updatedAt)throw new Error('organization.errors.evidence');
       }
     },
+    async jobsForIngestion(runId:string){return (await pool.query("select job_id from organization_runs where snapshot->'participation'->'ingestionRunIds' ? $1 and status in('queued','analyzing','awaiting_review')",[runId])).rows.map(r=>r.job_id as string);},
+    async cancelBatch(batchId:string){return transaction(async db=>{
+      await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['organization-batch:'+batchId]);
+      await db.query("update processing_batches set metadata=metadata||'{\"organizationCanceled\":true}'::jsonb where id=$1",[batchId]);
+      const runs=(await db.query("update organization_runs set status='canceled',updated_at=now() where snapshot->'participation'->>'batchId'=$1 and status not in('applied','rejected','sample_passed') and not exists(select 1 from organization_receipts where run_id=organization_runs.id) returning job_id",[batchId])).rows;
+      const jobs=(await db.query("select distinct j.id from jobs j left join ingestion_runs r on j.id=r.job_id or j.payload->>'ingestionRunId'=r.id::text where (r.batch_id=$1 or j.payload->>'batchId'=$1::text) and j.status in('queued','running')",[batchId])).rows;
+      return [...new Set([...runs.map(r=>r.job_id),...jobs.map(j=>j.id)])] as string[];
+    });},
+    async topicTarget(title:string,sourceIds:string[]){
+      const rows=(await pool.query(`select p.id,not exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id<>all($2::uuid[]) and exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->'evidenceIds' ? e.id::text)) as allowed from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived and (unaccent(lower(p.title))=unaccent(lower($1)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') a where unaccent(lower(a))=unaccent(lower($1)))) order by p.id limit 2`,[title,sourceIds])).rows;
+      if(rows.length>1||rows.some(r=>!r.allowed))throw new Error('organization.errors.topicScope');return rows[0]?.id as string|undefined;
+    },
+    async participatingBatches(){return (await pool.query(`select b.id,b.effective_plan as plan,exists(select 1 from ingestion_runs r join jobs j on j.id=r.job_id or j.payload->>'ingestionRunId'=r.id::text where r.batch_id=b.id and j.status in('queued','running')) as active from processing_batches b where b.effective_plan->'effectiveStages' ? 'organizeKnowledge' and b.metadata->>'organizationCanceled' is distinct from 'true' and b.metadata->>'organizationAdmissionFailed' is distinct from 'true' and exists(select 1 from ingestion_runs r where r.batch_id=b.id and r.effective_stages ? 'organizeKnowledge' and coalesce(r.stages_checkpoint->'organizeKnowledge'->>'status','pending') not in('completed','failed','canceled')) order by b.created_at limit 20`)).rows;},
+    async participationRun(batchId:string){const row=(await pool.query(`${runSelect} where r.snapshot->'participation'->>'batchId'=$1 order by r.created_at limit 1`,[batchId])).rows[0];return row??null;},
+    async participationFailed(batchId:string){await pool.query("update processing_batches set metadata=metadata||'{\"organizationAdmissionFailed\":true}'::jsonb where id=$1",[batchId]);},
+    async createAnswerProposal(snapshot:Record<string,any>,checkpoint:unknown,proposal:unknown,requestId:string){
+      return transaction(async db=>{
+        await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-answer:'+requestId]);
+        const prior=(await db.query("select id from organization_runs where snapshot->>'originRequestId'=$1",[requestId])).rows[0];if(prior)return prior.id as string;
+        for(const evidence of snapshot.sample?[]:snapshot.evidence){
+          const current=(await db.query(`select c.content_hash,c.document_id from chunks c join documents d on d.id=c.document_id where c.id=$1 and d.metadata->>'supersededByDocumentId' is null for share of c,d`,[evidence.chunkId])).rows[0];
+          if(!current||current.content_hash!==evidence.contentHash||current.document_id!==evidence.documentId)throw new Error('organization.errors.evidence');
+        }
+        await validateWikiDependencies(db,[...(snapshot.contexts??[]),...(snapshot.relations??[])].flatMap(c=>c.dependencies??[]),true);
+        const id=randomUUID(),job=(await db.query("insert into jobs(type,payload,status,progress,finished_at) values('organization',$1,'succeeded',1,now()) returning id",[{organizationRunId:id,origin:'consultation_save'}])).rows[0]!.id;
+        await db.query("insert into organization_runs(id,job_id,status,snapshot,checkpoint) values($1,$2,'awaiting_review',$3,$4)",[id,job,{...snapshot,originRequestId:requestId},checkpoint]);
+        await db.query('insert into organization_proposals(run_id,proposal) values($1,$2)',[id,proposal]);
+        for(const [index,auditId] of (snapshot.queryAuditIds??[]).entries())await db.query('insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) values($1,$2,$3,$4)',[id,index+1,auditId,{origin:'consultation',reusedAudit:true}]);
+        return id;
+      });
+    },
     async create(snapshot:unknown,checkpoint:unknown){
       return transaction(async db=>{
-        const id=randomUUID();const job=(await db.query("insert into jobs(type,payload,max_attempts) values('organization',$1,3) returning id",[{organizationRunId:id}])).rows[0]!.id;
+        const batchId=(snapshot as {participation?:{batchId:string}|null}).participation?.batchId;
+        if(batchId){await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['organization-batch:'+batchId]);if((await db.query("select id from processing_batches where id=$1 and metadata->>'organizationCanceled'='true'",[batchId])).rows.length)throw new Error('organization.errors.canceled');const existing=(await db.query("select id from organization_runs where snapshot->'participation'->>'batchId'=$1",[batchId])).rows[0];if(existing)return existing.id as string;}
+        const id=randomUUID();const job=(await db.query("insert into jobs(type,payload,max_attempts) values('organization',$1,3) returning id",[{organizationRunId:id,...(batchId?{batchId}:{}),sourceItemIds:(snapshot as {sourceIds:string[]}).sourceIds}])).rows[0]!.id;
         await db.query('insert into organization_runs(id,job_id,snapshot,checkpoint) values($1,$2,$3,$4)',[id,job,snapshot,checkpoint]);return id;
       });
     },
@@ -134,8 +173,17 @@ export function createOrganizationRepository(pool:PgPool) {
           const saved=(await db.query('select snapshot from wiki_evidence where page_id=$1 and chunk_id=$2',[run.snapshot.targetId,chunkId])).rows[0];
           if(saved&&saved.snapshot.contentHash!==original.contentHash)throw new Error('organization.errors.evidence');
         }
+        const contexts=run.snapshot.contexts??[];
+        const consumed=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>proposal.sections.some((s:{contextIds?:string[]})=>s.contextIds?s.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id)));
+        await validateWikiDependencies(db,consumed.flatMap((c:{dependencies?:Array<{kind:string;id:string;fingerprint:string}>})=>c.dependencies??[]),true);
         await createWikiRepository(pool).save(input,{transaction:db,origin:'organization',humanApproved:human,allocatedTarget:run.snapshot.expectedRevisionId===null});
         const revision=(await db.query('select current_revision_id from wiki_pages where id=$1',[run.snapshot.targetId])).rows[0]!.current_revision_id;
+        for(let index=0;index<proposal.sections.length;index++){
+          const op=proposal.sections[index];
+          const sectionId=op.sectionId??input.content.sections[run.snapshot.baseContent.sections.length+proposal.sections.slice(0,index).filter((s:{sectionId:string|null})=>!s.sectionId).length]!.id;
+          const selected=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>op.contextIds?op.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id));
+          for(const context of selected) for(const dep of context.dependencies??[]) await addWikiDependency(db,revision,sectionId,dep,context);
+        }
         await db.query('insert into organization_receipts(run_id,revision_id) values($1,$2)',[id,revision]);
         await db.query("update organization_proposals set decision=$2,decided_at=now() where run_id=$1",[id,human?'accept':'policy']);
         // The receipt is canonical; completion may be checkpointed after this transaction.

@@ -20,10 +20,11 @@ export const OrganizationSlotsSchema = z.object({
 export const OrganizationDomainSchema = z.object({
   id: z.string().uuid(), name: z.string().trim().min(1).max(100),
   sourceIds: z.array(z.string().uuid()).max(100), pageIds: z.array(z.string().uuid()).max(100),
-  slots: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema
+  slots: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional()
 }).strict();
 export const OrganizationConfigurationSchema = z.object({
-  global: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema,
+  functionsVersion:z.literal(2).optional(),
+  global: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional(),
   domains: z.array(OrganizationDomainSchema).max(30)
 }).strict().superRefine((v,ctx)=>{
   if(new Set(v.domains.map(d=>d.id)).size!==v.domains.length) ctx.addIssue({code:"custom",message:"organization.errors.invalid"});
@@ -33,16 +34,18 @@ export const builtInOrganizationSlots = {
   guidance: "Preserve attribution, disagreements and uncertainty. Prefer a concise synthesis grounded in original passages. Keep useful human interpretation intact.",
   advanced: "Synthesize {{title}} in {{language}}. Search original evidence, read relevant revisions, then propose one coherent page change. Cite only passages you read. Existing conceptual relationships are interpretations, not independent evidence."
 };
-export function resolveOrganizationInstructions(config: z.infer<typeof OrganizationConfigurationSchema>, domainId: string | null, title: string, language: string) {
+export const builtInConsultationSlots={guidance:"Attribute claims to their original sources; distinguish uncertainty, disagreements and missing evidence.",advanced:"Answer {{title}} in {{language}} from supplied original evidence. Keep the response read-only, cite each factual paragraph, and disclose limits of the selected material."};
+export function resolveOrganizationInstructions(config: z.infer<typeof OrganizationConfigurationSchema>, domainId: string | null, title: string, language: string, functionName:"pageSynthesis"|"consultation"="pageSynthesis") {
   const domain = domainId ? config.domains.find(d=>d.id===domainId) : null;
   if (domainId && !domain) throw new Error("organization.errors.scope");
-  const slots = { ...builtInOrganizationSlots }, origins = { guidance: "built_in", advanced: "built_in" };
-  for (const [origin, layer] of [["global",config.global],["function",config.pageSynthesis],["domain",domain?.slots],["domain_function",domain?.pageSynthesis]] as const) {
-    for (const key of ["guidance","advanced"] as const) if(layer?.[key]!==undefined) { slots[key]=layer[key]; origins[key]=origin; }
+  const slots = { ...(functionName==="consultation"?builtInConsultationSlots:builtInOrganizationSlots) }, origins = { guidance: "built_in", advanced: "built_in" };
+  for (const [origin, layer] of [["global",config.global],["function",config[functionName]],["domain",domain?.slots],["domain_function",domain?.[functionName]]] as const) {
+    for (const key of ["guidance","advanced"] as const) if(layer?.[key]!==undefined && !(functionName==="consultation"&&key==="advanced"&&config.functionsVersion!==2)) { slots[key]=layer[key]; origins[key]=origin; }
   }
   return { slots: { guidance: slots.guidance.replaceAll("{{title}}",title).replaceAll("{{language}}",language), advanced: slots.advanced.replaceAll("{{title}}",title).replaceAll("{{language}}",language) }, origins, domainId };
 }
 export const OrganizationStartSchema = z.object({
+  pageKind: z.enum(["topic","synthesis"]).default("topic"), optionalContext: z.boolean().default(true), reviewedOnly: z.boolean().default(false),
   targetPageId: z.string().uuid().nullable().default(null), title: z.string().trim().min(1).max(300),
   sourceIds: z.array(z.string().uuid()).min(1).max(100), includeDescendants: z.boolean().default(false),
   profileId: z.string().uuid().optional(), privacy: z.enum(["offline_only","allow_remote"]).default("offline_only"),
@@ -56,6 +59,7 @@ export const OrganizationActionSchema = z.discriminatedUnion("tool", [
   z.object({tool:z.literal("proposePageChange"), target:z.literal("page"), expectedRevisionId:z.string().uuid().nullable(),
     explanation:z.string().trim().min(1).max(2000), sections:z.array(z.object({
       sectionId:z.string().uuid().nullable(), title:z.string().trim().max(300), markdown:z.string().trim().min(1).max(12000),
+      contextIds:z.array(z.string().uuid()).max(20).optional(),
       citations:z.array(z.string().regex(/^e\d{1,3}$/)).min(1).max(20).refine(v=>new Set(v).size===v.length,{message:'organization.errors.evidence'})
     }).strict()).min(1).max(6)
   }).strict()
@@ -75,14 +79,25 @@ export const OrganizationEvidenceSchema = z.object({
   handle:z.string(), chunkId:z.string().uuid(),sourceItemId:z.string().uuid(),documentId:z.string().uuid(),sourceSpanId:z.string().uuid().nullable(),
   contentHash:z.string(),excerpt:z.string().max(12000),sourceTitle:z.string(),documentCreatedAt:z.string(),locator:z.string().nullable()
 }).strict();
+export const OrganizationContextSchema = z.object({
+  id:z.string().uuid(),kind:z.enum(['summary','atomic_note','entity_mention','wiki_section']),pageId:z.string().uuid().optional(),revisionId:z.string().uuid().optional(),sourceItemId:z.string().uuid(),text:z.string().max(6000),review:z.string().nullable(),fingerprint:z.string(),
+  handles:z.array(z.string()),dependencies:z.array(z.object({kind:z.string(),id:z.string().uuid(),fingerprint:z.string()}))
+}).strict();
+export const OrganizationParticipationSchema=z.object({ingestionRunIds:z.array(z.string().uuid()),batchId:z.string().uuid().nullable(),omissions:z.array(z.object({sourceItemId:z.string().uuid().nullable(),stage:z.string(),status:z.string()}))}).strict();
 export const OrganizationSnapshotSchema = z.object({
   version:z.literal(organizationVersion), targetId:z.string().uuid(), expectedRevisionId:z.string().uuid().nullable(),
   targetHuman:z.boolean(),baseContent:WikiPageContentSchema, sourceIds:z.array(z.string().uuid()), profile:OrganizationProfileSchema,
   contentLanguage:z.enum(["en","pt-BR","it","fr","es"]),configurationId:z.string().uuid().nullable(), configurationHash:z.string(),
   instructions:z.object({slots:z.object({guidance:z.string(),advanced:z.string()}),origins:z.object({guidance:z.string(),advanced:z.string()}),domainId:z.string().uuid().nullable()}),
   limits:OrganizationLimitsSchema, policy:z.enum(["human_review","apply_unprotected"]),sample:z.boolean(),
+  contextCoverage:z.object({available:z.number().int().nonnegative(),included:z.number().int().nonnegative()}).nullable().default(null),
+  functionName:z.enum(["pageSynthesis","consultation"]).default("pageSynthesis"),
+  queryAuditIds:z.array(z.string().uuid()).max(3).default([]),
+  originRequestId:z.string().uuid().nullable().default(null),
+  contexts:z.array(OrganizationContextSchema).max(60).default([]), participation:OrganizationParticipationSchema.nullable().default(null),
   evidence:z.array(OrganizationEvidenceSchema).max(200), relations:z.array(z.object({
     id:z.string().uuid(),evidenceId:z.string().uuid(),fingerprint:z.string(),sourceItemId:z.string().uuid(),targetSourceItemId:z.string().uuid(),review:z.string(),updatedAt:z.string(),
+    dependencies:z.array(z.object({kind:z.string(),id:z.string().uuid(),fingerprint:z.string()})).default([]),
     sourceIdea:z.string(),targetIdea:z.string(),explanation:z.string(),sourceHandle:z.string(),targetHandle:z.string()
   }).strict()).max(20)
 }).strict();
@@ -113,7 +128,7 @@ export const OrganizationCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("settings")}).strict(),
   z.object({command:z.literal("saveDraft"),configuration:OrganizationConfigurationSchema}).strict(),
   z.object({command:z.literal("activate"),revisionId:z.string().uuid(),expectedActiveId:z.string().uuid().nullable()}).strict(),
-  z.object({command:z.literal("sample"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
+  z.object({command:z.literal("sample"),functionName:z.enum(["pageSynthesis","consultation"]).default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
   z.object({command:z.literal("start"),input:OrganizationStartSchema}).strict(),
   z.object({command:z.literal("list")}).strict(),
   z.object({command:z.literal("get"),id:z.string().uuid()}).strict(),

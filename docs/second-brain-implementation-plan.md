@@ -2,7 +2,8 @@
 
 Status: implementation in progress. M1's non-AI workspace and M2's restricted
 organization executor are accepted; their validation records are below.
-M3–M6 remain pending. The section 7 TypeScript executor decision passed the M2
+M3 is accepted after paired real-model trials and coordinator validation;
+M3b–M6 remain pending. The section 7 TypeScript executor decision passed the M2
 gate with Luna as the semantic reference and local models evaluated on a
 best-effort basis. Baseline reviewed on
 2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
@@ -1262,6 +1263,23 @@ typecheck, real PostgreSQL organization verifier, 25-migration seed check,
 format/diff checks and normal-size navigation/evidence/Back/Escape/focus smoke.
 M2 is accepted; the coordinator owns the authorized local commit. This record
 does not claim M3–M6 completion.
+
+### M3 implementation and deterministic validation record (2026-09-09)
+
+The mixed-source topic workflow, explicit processing participation, read-only
+cited answers, separate consultation instructions, scoped retrieval and exact
+section impacts are implemented. The owning boundaries and deterministic
+verification are recorded in [the M3 report](second-brain-m3-report.md).
+Migration `0025_clean_the_spike` preserves populated M2 history and adds exact
+consumer/event records; the baseline covers 26 migrations. Isolated real
+PostgreSQL wiki, organization and M3 verifiers passed with deterministic model
+fixtures. The coordinator additionally passed 90 suites / 546 tests, full build,
+typecheck, format/diff and the 26-migration seed verifier. Normal-size DEV trials
+confirmed cited consultation, retained answers across source navigation, explicit
+save/review/apply with unchanged AI audit counts, and one topic organization run
+per selected Library batch. Luna passed semantic acceptance; the local tool-loop
+failure was contained and recorded as best effort. M3 is accepted; the original
+synthetic corpus is preserved. Detailed runs, fixes and receipts are in the report.
 
 ## 12. Evaluation and acceptance scenarios
 

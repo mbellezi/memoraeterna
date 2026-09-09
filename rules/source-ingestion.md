@@ -193,6 +193,7 @@ caller's `requestedStages` directly.
 | `materialization` | `structureReview` |
 | `chunking` | `materialization` |
 | `embedding`, `summarization`, `atomicNotes`, `knowledgeGraph` | `chunking` |
+| `organizeKnowledge` | `chunking` |
 | `atomicNoteMatching` | `atomicNotes` |
 | `sourceMatching` | `summarization`, `embedding` |
 | `obsidianProjection` | `materialization` |
@@ -264,3 +265,8 @@ Existing focused suites: `packages/domain/src/hierarchical-ingestion.test.ts`,
 `packages/db/src/repositories/repositories.test.ts`. For transaction, hierarchy,
 or persistence changes also use `npm run db:source-ingestion:verify` with a
 configured test PostgreSQL instance; unit tests are not a substitute for it.
+
+- Explicit `organizeKnowledge` selection stores topic/profile/privacy/domain options
+  in the immutable plan and remains independent of all optional derivations. It
+  is not added to existing named presets. Its separate cross-source batch run,
+  terminal barriers and review contracts are specified in `second-brain.md`.

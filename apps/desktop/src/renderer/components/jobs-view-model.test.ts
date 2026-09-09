@@ -5,7 +5,7 @@ import { collapsePreparationStages, groupJobs, listActivityJobs, type JobCardMod
 import { jobRecordSchema } from "../../shared/ipc";
 
 describe("jobs view model", () => {
-  it.each(["atomicNoteMatching","sourceMatching"])("keeps %s cards independent after ingestion jobs finish",(stage) => {
+  it.each(["atomicNoteMatching","sourceMatching","organizeKnowledge"])("keeps %s cards independent after ingestion jobs finish",(stage) => {
     const jobs=["completed","running","waiting_for_batch","failed","canceled"].map((status,index) => jobRecordSchema.parse({
       id:`00000000-0000-4000-8000-00000000000${index}`,type:"ingestion",status:"succeeded",progress:1,
       attempts:1,maxAttempts:3,canCancel:false,canRetry:true,error:null,errorHistory:[],aiExecution:null,
@@ -18,6 +18,10 @@ describe("jobs view model", () => {
     expect(cards[0]?.progress).toBe(1);
     expect(cards[1]!.progress).toBeLessThan(1);
     expect(cards[2]!.progress).toBeLessThan(cards[1]!.progress);
+  });
+  it("shows the organization checkpoint cause instead of completed parent stage or an empty error report",()=>{
+    const job=jobRecordSchema.parse({id:'00000000-0000-4000-8000-000000000001',type:'ingestion',status:'succeeded',progress:1,attempts:1,maxAttempts:3,canCancel:false,canRetry:false,error:null,errorHistory:[],aiExecution:null,createdAt:'2026-09-09T18:00:00Z',updatedAt:'2026-09-09T18:00:00Z',ingestionRun:{id:'00000000-0000-4000-8000-000000000002',status:'succeeded',currentStage:'completed',effectiveStages:['chunking','organizeKnowledge'],stagesCheckpoint:{chunking:{status:'completed'},organizeKnowledge:{status:'failed',error:'organization.errors.context'}}}});
+    expect(groupJobs([job])[0]).toMatchObject({status:'failed',currentStage:'organizeKnowledge',stageError:'organization.errors.context'});
   });
   it("does not repeat the root ingestion job in processing activity", () => {
     const ingestion = { id: "ingestion-job", type: "ingestion" } as JobRecord;

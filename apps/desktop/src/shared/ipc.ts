@@ -1,3 +1,4 @@
+import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
 import type { OrganizationCommand } from "@app/domain";
 import type { WikiPage, WikiSaveInput, WikiQuery, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import type { MonitoringQuery, MonitoringPage, MonitoringDetail, MonitoringPrune } from "./monitoring.js";
@@ -29,6 +30,7 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
+  consultationAsk:"app:consultation:ask",consultationCancel:"app:consultation:cancel",consultationSave:"app:consultation:save",
   organizationCommand: "app:organization:command",
   wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
@@ -70,6 +72,7 @@ export const ipcChannels = {
   relationLabelsStatus: "app:knowledge:relation-labels:status",
   jobsList: "app:jobs:list",
   jobsChanged: "app:jobs:changed",
+  jobsCancelBatch:"app:jobs:cancel-batch",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
   jobsDelete: "app:jobs:delete",
@@ -1083,6 +1086,7 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
+  consultation:{ask:(input:ConsultationInput)=>Promise<ConsultationResult>;cancel:(id:string)=>Promise<null>;save:(id:string)=>Promise<OrganizationRun>};
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
   wiki: { list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {
@@ -1137,6 +1141,7 @@ export interface DesktopApi {
     listBatches: () => Promise<ProcessingBatch[]>;
   };
   jobs: {
+    cancelBatch:(id:string)=>Promise<null>;
     list: () => Promise<JobRecord[]>;
     subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;

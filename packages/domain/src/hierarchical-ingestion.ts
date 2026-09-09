@@ -92,6 +92,7 @@ export const ProcessingStages = [
   "knowledgeGraph",
   "atomicNoteMatching",
   "sourceMatching",
+  "organizeKnowledge",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
@@ -122,6 +123,7 @@ export const PreviousArtifactPolicySchema = z.enum([
 ]);
 
 export const ProcessingPlanRequestSchema = z.object({
+  organization: z.object({title:z.string().trim().min(1).max(300),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"]),domainId:z.string().uuid().nullable().default(null)}).strict().optional(),
   preset: ProcessingPresetSchema,
   requestedStages: z.array(ProcessingStageSchema),
   scope: ProcessingScopeSchema.default("source_only"),
@@ -152,6 +154,7 @@ export const processingStageDependencies: Readonly<Record<ProcessingStage, reado
   knowledgeGraph: ["chunking"],
   atomicNoteMatching: ["atomicNotes"],
   sourceMatching: ["summarization", "embedding"],
+  organizeKnowledge: ["chunking"],
   obsidianProjection: ["materialization"],
   aggregateSummarization: ["summarization"]
 };

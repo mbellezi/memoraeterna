@@ -124,3 +124,10 @@ contract specified in `rules/second-brain.md`. Its stricter current/review filte
 are enforced in SQL for every result kind and do not silently change the older
 Library/evidence-search contracts above. Conceptual `source_relation` and
 extracted `entity_relation` results have distinct identities and review semantics.
+
+The optional cited-answer path uses `ConsultationService` and
+`consultationRepository`, retaining the wiki scope/review/provenance boundary.
+Its bounded independent signals, original-chunk fusion, full embedding identity
+checks, context packing and no-matching contract are specified in
+`rules/second-brain.md`; this does not change Library or legacy evidence-search
+ranking.

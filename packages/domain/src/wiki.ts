@@ -34,6 +34,7 @@ export const WikiPageContentSchema = z.object({
 export const WikiPageSchema = WikiPageContentSchema.safeExtend({
   id: z.string().uuid(), revisionId: z.string().uuid(), revisionNumber: z.number().int(),
   updatedAt: z.string(), evidence: z.array(WikiEvidenceSchema),
+  impacts: z.array(z.object({id:z.string().uuid(),sectionId:z.string().uuid(),kind:z.string(),inputId:z.string().uuid(),reason:z.string(),changedAt:z.string()})).default([]),
   breadcrumbs: z.array(z.object({ id: z.string().uuid(), title: z.string() }))
 });
 export const WikiSaveInputSchema = z.object({

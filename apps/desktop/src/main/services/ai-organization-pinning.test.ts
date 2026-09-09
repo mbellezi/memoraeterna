@@ -21,6 +21,13 @@ describe('organization profile pinning and shared inference queue',()=>{
     const controller=new AbortController();const canceled=s.runOrganizationTask(pinned,'must not execute',{},controller.signal,4096);const rejected=expect(canceled).rejects.toBeDefined();controller.abort();await rejected;
     const two=s.runOrganizationTask(pinned,'second',{},new AbortController().signal,4096);state.selection.parameters={temperature:1.9,maxTokens:1000};release();await Promise.all([one,two]);expect(run).toHaveBeenCalledTimes(2);expect(requests[1].parameters).toMatchObject({temperature:.2,maxTokens:4096});expect(state.record).toHaveBeenCalledTimes(2);
   });
+  it('checks consultation input freshness inside FIFO before adapter exposure and suppresses ineligible query embeddings',async()=>{
+    const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),adapter=vi.spyOn(s as any,'createAdapter');
+    const guard=vi.fn(async()=>{throw new Error('organization.errors.evidence');});
+    await expect(s.runOrganizationTask(pinned,'question',{},new AbortController().signal,2048,guard)).rejects.toThrow('organization.errors.evidence');expect(guard).toHaveBeenCalledOnce();expect(adapter).not.toHaveBeenCalled();
+    state.selection.requiredCapabilities=['embedding'];
+    expect(await s.runConsultationEmbedding('private query','offline_only',[],new AbortController().signal)).toBeNull();expect(adapter).not.toHaveBeenCalled();
+  });
   it('rejects changed model identity before creating an adapter',async()=>{
     const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),adapter=vi.spyOn(s as any,'createAdapter');state.selection.modelId='replacement';await expect(s.runOrganizationTask(pinned,'private prompt',{},new AbortController().signal,4096)).rejects.toThrow('organization.errors.modelChanged');expect(adapter).not.toHaveBeenCalled();
   });

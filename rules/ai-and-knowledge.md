@@ -208,3 +208,10 @@ provider token breakdowns and precise call context, as specified in
   local generative model plus one embedding model, including across DEV and
   standalone test processes. Dispose the active generative runtime before
   switching real local models. Deterministic model mocks do not load runtimes.
+
+- Cited consultation and its optional query embedding use the existing FIFO and
+  adapters. The explicit query privacy applies to embedding admission as well as
+  generation; ineligible embeddings degrade to text. Organization/consultation
+  callers can revalidate scoped evidence inside FIFO admission and immediately
+  before adapter execution. Explicit answer saves reference existing canonical
+  AI audits instead of creating duplicate inference or billing records.

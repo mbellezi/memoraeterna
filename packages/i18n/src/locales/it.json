@@ -1,4 +1,32 @@
 {
+  "consultation": {
+    "contextCoverage": "Contesto facoltativo: {included} di {available} elementi rientrano nel budget del modello. I passaggi originali restano disponibili.",
+    "sourceCount": "Fonti nell’ambito: {count}",
+    "title": "Risposte con fonti",
+    "ask": "Chiedi",
+    "question": "La tua domanda",
+    "function": "Funzione",
+    "readOnly": "Le risposte leggono il materiale selezionato senza modificare la conoscenza né avviare confronti. Salvare crea una proposta da rivedere.",
+    "pageScope": "Pagina attuale",
+    "libraryScope": "Intera biblioteca",
+    "descendants": "Includi sottoelementi delle fonti",
+    "optional": "Usa concetti, note ed entità esistenti",
+    "hybrid": "Aggiungi ricerca semantica disponibile",
+    "answering": "Lettura delle fonti e preparazione della risposta…",
+    "coverage": "{selected} passaggi usati · {total} recuperati · {sources} fonti nell’ambito",
+    "partial": "Copertura parziale: è stata usata una selezione limitata del materiale.",
+    "complete": "Input selezionati completati",
+    "stale": "Il materiale di supporto è cambiato. Rivedi le affermazioni prima di riutilizzarle.",
+    "gaps": "Lacune e limiti delle prove",
+    "save": "Salva come proposta di pagina",
+    "saved": "Proposta salvata da rivedere",
+    "textOnly": "Testo, titoli e concetti documentati; nessun embedding richiesto.",
+    "vectorAvailable": "Ricerca semantica compatibile disponibile",
+    "vectorUnavailable": "Ricerca semantica indisponibile o esclusa dalla privacy; resta disponibile la ricerca testuale.",
+    "processingHint": "Organizza il lotto in un argomento dopo l’elaborazione selezionata. Riutilizza un titolo o alias idoneo e rivedi prima di applicare. Note, grafo e confronti restano facoltativi.",
+    "processingRequired": "Scegli titolo e profilo del modello prima di elaborare.",
+    "cancelBatch": "Annulla lotto e organizzazione"
+  },
   "organization": {
     "waitingModel": "In attesa della coda IA condivisa",
     "modelCalls": "Chiamate al modello",
@@ -73,6 +101,7 @@
     "canceled": "Annullata",
     "failed": "Non riuscita",
     "errors": {
+      "topicScope": "Esiste un argomento corrispondente fuori da questo ambito. Aprilo e seleziona tutte le fonti necessarie per evitare duplicati.",
       "wait": "La chiamata annullata sta ancora terminando. Attendi prima di riprovare.",
       "invalid": "Azione o impostazioni non valide. Controlla i campi e riprova.",
       "placeholder": "Sono supportati solo {{title}} e {{language}}.",
@@ -322,6 +351,7 @@
     },
     "currentStage": "Fase corrente: {stage}",
     "stages": {
+      "organizeKnowledge": "Organizza conoscenza",
       "queued": "In coda", "preparation": "Preparazione dell'importazione", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
       "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
       "knowledgeGraph": "Grafo della conoscenza",
@@ -1019,6 +1049,6 @@
     "catalogOnly": "Solo catalogo",
     "scopeSource": "Esplora questa fonte",
     "verifyEvidence": "Ho verificato queste citazioni",
-    "needsEvidenceReview": "Il testo è cambiato. Rivedi queste citazioni prima di considerarle prove verificate."
+    "needsEvidenceReview": "Rivedi queste citazioni prima di considerare le prove verificate."
   }
 }

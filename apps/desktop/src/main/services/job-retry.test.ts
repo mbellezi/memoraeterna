@@ -13,6 +13,14 @@ const completedStages = {
 };
 
 describe("manual job retry", () => {
+  it("does not restart a settled parent while its linked organization is active", () => {
+    for (const status of ["pending", "waiting_for_batch", "running"]) {
+      expect(canManuallyRetryJob({ type: "ingestion", status: "succeeded" }, {
+        status: "succeeded",
+        stagesCheckpoint: { chunking: { status: "completed" }, organizeKnowledge: { status, metadata: { organizationRunId: "linked-run" } } }
+      })).toBe(false);
+    }
+  });
   it("allows an interrupted source matching stage without adding that stage to historical runs", () => {
     expect(hasIncompleteIngestionStages({status:"succeeded",stagesCheckpoint:{...completedStages,sourceMatching:{status:"failed"}}})).toBe(true);
     expect(hasIncompleteIngestionStages({status:"succeeded",stagesCheckpoint:completedStages})).toBe(false);

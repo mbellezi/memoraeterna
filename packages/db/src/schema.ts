@@ -1449,3 +1449,20 @@ export const organizationReceipts = pgTable("organization_receipts", {
   revisionId:uuid("revision_id").notNull().references(()=>wikiPageRevisions.id,{onDelete:"restrict"}),
   createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow()
 });
+
+// Exact section consumers survive deletion of their original inputs.
+export const wikiDependencies = pgTable("wiki_dependencies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  revisionId: uuid("revision_id").notNull().references(() => wikiPageRevisions.id, { onDelete: "restrict" }),
+  sectionId: uuid("section_id").notNull(),
+  kind: text("kind").notNull(), inputId: uuid("input_id").notNull(),
+  fingerprint: text("fingerprint").notNull(), snapshot: jsonb("snapshot").notNull(),
+  staleReason: text("stale_reason"), changedAt: timestamp("changed_at", { withTimezone: true })
+}, t => [uniqueIndex("wiki_dependencies_consumer_idx").on(t.revisionId,t.sectionId,t.kind,t.inputId),
+  index("wiki_dependencies_input_idx").on(t.kind,t.inputId), index("wiki_dependencies_revision_idx").on(t.revisionId)]);
+export const knowledgeImpactEvents = pgTable("knowledge_impact_events", {
+  id: uuid("id").primaryKey().defaultRandom(), kind: text("kind").notNull(), inputId: uuid("input_id").notNull(),
+  operation: text("operation").notNull(), fingerprint: text("fingerprint").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true })
+},t=>[index("knowledge_impact_events_pending_idx").on(t.consumedAt,t.createdAt),index("knowledge_impact_events_input_idx").on(t.kind,t.inputId)]);

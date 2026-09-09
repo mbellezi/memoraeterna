@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createWikiContextRepository } from "./wikiContextRepository.js";
 import type { PgPool, PgClient } from "../client.js";
 import { currentSourceRelationSql } from "./sourceRelationRepository.js";
 
@@ -36,7 +37,7 @@ export function createWikiRepository(pool: PgPool) {
         select id,parent_id,title,0 as depth from wiki_pages where id=$1 union all
         select p.id,p.parent_id,p.title,a.depth+1 from wiki_pages p join ancestors a on p.id=a.parent_id where a.depth<100
         ) select id,title from ancestors order by depth desc`, [id])).rows;
-      return { ...flatten(row), evidence: evidence.filter((e) => ids.has(e.id)), breadcrumbs };
+      return { ...flatten(row), evidence: evidence.filter((e) => ids.has(e.id)), breadcrumbs, impacts: await createWikiContextRepository(pool).impacts(id) };
     },
     async history(id: string) {
       return (await pool.query(`select id,number,created_at as "createdAt",origin,content from wiki_page_revisions where page_id=$1 order by number desc limit 100`, [id])).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
@@ -92,6 +93,19 @@ export function createWikiRepository(pool: PgPool) {
           [revisionId, id, input.expectedRevisionId, (current?.number ?? 0) + 1, content, createHash("sha256").update(JSON.stringify(content)).digest("hex"), authority?.origin ?? "human"]);
         await db.query(`update wiki_pages set current_revision_id=$2,title=$3,kind=$4,parent_id=$5,position=$6,archived=$7,updated_at=now() where id=$1`,
           [id, revisionId, content.title, content.kind, content.parentId, content.position, content.archived]);
+        for (const section of content.sections) {
+          const previous=(current?.content as Content|undefined)?.sections.find(s=>s.id===section.id);
+          if(previous&&previous.markdown===section.markdown&&JSON.stringify(previous.evidenceIds)===JSON.stringify(section.evidenceIds))await db.query(`insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 on conflict do nothing`,[revisionId,input.expectedRevisionId,section.id]);
+          for (const evidenceId of section.evidenceIds) {
+            const item = evidence.find(e=>e.id===evidenceId)!;
+            for (const [kind,inputId] of [['source',item.sourceItemId],['document',item.documentId],['chunk',item.chunkId]]) {
+              await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) values($1,$2,$3,$4,$5,$6,$7,$8) on conflict do nothing',
+                [revisionId,section.id,kind,inputId,item.snapshot.contentHash,item.snapshot,item.current?null:'evidence_unavailable',item.current?null:new Date()]);
+            }
+          }
+          if(previous&&previous.markdown===section.markdown) await db.query(`insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at)
+            select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 and kind not in('source','document','chunk') on conflict do nothing`,[revisionId,input.expectedRevisionId,section.id]);
+        }
         if (!authority) await db.query("commit"); return id;
       } catch (error) { if (!authority) await db.query("rollback"); throw error; } finally { if (!authority) db.release(); }
     },
@@ -107,7 +121,7 @@ export function createWikiRepository(pool: PgPool) {
       const textMatch = (value: string) => `($1='' or unaccent(lower(${value})) like '%' || unaccent(lower($1)) || '%')`;
       const rows = await pool.query(`${scope}
         select p.id,'page' as kind,p.title,coalesce((select sec->>'markdown' from jsonb_array_elements(r.content->'sections') sec where $1='' or unaccent(lower(sec->>'markdown')) like '%'||unaccent(lower($1))||'%' limit 1),'') as excerpt,null::uuid as "sourceItemId",null::uuid as "targetSourceItemId",
-          r.content->>'review' as review,not exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->>'evidenceReview'='needs_review') and not exists(select 1 from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=p.id and (c.id is null or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null) and exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->'evidenceIds' ? e.id::text)) as current,p.title as breadcrumb,unaccent(lower(p.title))=unaccent(lower($1)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') alias where unaccent(lower(alias))=unaccent(lower($1))) as exact
+          r.content->>'review' as review,not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.stale_reason is not null) and not exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->>'evidenceReview'='needs_review') and not exists(select 1 from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=p.id and (c.id is null or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null) and exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->'evidenceIds' ? e.id::text)) as current,p.title as breadcrumb,unaccent(lower(p.title))=unaccent(lower($1)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') alias where unaccent(lower(alias))=unaccent(lower($1))) as exact
         from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived
           and (not $5 or r.content->>'review'='reviewed') and ${textMatch("p.title || ' ' || r.content::text")}
           and (($4::uuid is null and cardinality($2::uuid[])=0) or p.id=$4 or exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id in(select id from scoped)))

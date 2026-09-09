@@ -1,3 +1,4 @@
+import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
 import { WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
@@ -113,6 +114,7 @@ import {
 } from "../shared/ipc";
 
 const api: DesktopApi = {
+  consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
   organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
@@ -293,6 +295,7 @@ const api: DesktopApi = {
     }
   },
   jobs: {
+    cancelBatch:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.jobsCancelBatch,z.string().uuid().parse(id))),
     async list() {
       return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
     },

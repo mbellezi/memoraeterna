@@ -49,6 +49,7 @@ const pipelineStages = [
   "knowledgeGraph",
   "atomicNoteMatching",
   "sourceMatching",
+  "organizeKnowledge",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
@@ -258,7 +259,7 @@ export function JobCard({
   const StatusIcon = status.icon;
   const SourceIcon = sourceIcon(card.source?.type);
   const progress = Math.round(card.progress * 100);
-  const currentStage = card.ingestionRun?.currentStage ?? card.mainJob.type;
+  const currentStage = card.currentStage;
   const relationCounts = sourceRelationCounts(card.ingestionRun?.stagesCheckpoint.sourceMatching);
   const activity = listActivityJobs(card).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
@@ -348,6 +349,7 @@ export function JobCard({
         </div>
       </div>
 
+      {card.stageError&&<p role="alert" className="mt-4 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-700 dark:text-rose-300">{jobErrorLabel(t,card.stageError)}</p>}
       {card.ingestionRun ? <PipelineTimeline run={card.ingestionRun} t={t} /> : null}
     </div>
 
@@ -361,8 +363,8 @@ export function JobCard({
         <span className="flex items-center gap-2">
           <Layers3 className="h-4 w-4" aria-hidden="true" />
           {t("jobs.details", { values: { count: activity.length } })}
-          {card.errors.length > 0 ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] text-rose-700 dark:bg-rose-950 dark:text-rose-200">
-            {t("jobs.errorCount", { values: { count: card.errors.length } })}
+          {card.errors.length > 0||card.stageError ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] text-rose-700 dark:bg-rose-950 dark:text-rose-200">
+            {t("jobs.errorCount", { values: { count: card.errors.length+(card.stageError?1:0) } })}
           </span> : null}
         </span>
         {expanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
@@ -377,7 +379,8 @@ export function JobCard({
         </div>
         <div>
           <h4 className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">{t("jobs.errors.title")}</h4>
-          {card.errors.length === 0 ? <div className="rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          {card.stageError&&<p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-100">{jobErrorLabel(t,card.stageError)}</p>}
+          {card.errors.length === 0 && !card.stageError ? <div className="rounded-xl border border-dashed border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400">
             {t("jobs.errors.empty")}
           </div> : <ol className="grid max-h-64 gap-2 overflow-auto pr-1">
             {card.errors.toReversed().map((error, index) => <li key={`${error.occurredAt}-${index}`} className="rounded-xl border border-rose-200 bg-rose-50 p-3 dark:border-rose-900 dark:bg-rose-950/40">
@@ -436,10 +439,11 @@ function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
 }
 
 function BatchHeader({ batch, t }: { batch: ProcessingBatch; t: Translator }) {
+  const [canceling,setCanceling]=useState(false),[cancelError,setCancelError]=useState(false);
   const percent = Math.round(batch.progress > 1 ? batch.progress / 100 : batch.progress * 100);
   const preset = typeof batch.effectivePlan.preset === "string" ? batch.effectivePlan.preset : "custom";
   return <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/40">
-    <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">{t("jobs.batch.label")}</p><p className="mt-1 text-sm font-semibold">{t("jobs.batch.plan", { values: { plan: preset === "custom" ? t("jobs.batch.custom") : t(`processing.presets.${preset}.title` as MessageKey) } })}</p></div>
+    <div>{batch.effectivePlan.effectiveStages instanceof Array&&batch.effectivePlan.effectiveStages.includes("organizeKnowledge")&&<><button disabled={canceling} className="mb-2 rounded-lg border px-3 py-1 text-xs focus-visible:ring-2" onClick={()=>{setCanceling(true);void window.app.jobs.cancelBatch(batch.id).catch(()=>setCancelError(true)).finally(()=>setCanceling(false));}}>{t("consultation.cancelBatch")}</button>{cancelError&&<p role="alert">{t("organization.errors.failed")}</p>}</>}<p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">{t("jobs.batch.label")}</p><p className="mt-1 text-sm font-semibold">{t("jobs.batch.plan", { values: { plan: preset === "custom" ? t("jobs.batch.custom") : t(`processing.presets.${preset}.title` as MessageKey) } })}</p></div>
     <div className="min-w-56"><div className="flex justify-between text-xs text-slate-600 dark:text-slate-300"><span>{t("jobs.batch.items", { values: { completed: batch.completedItems, total: batch.totalItems } })}</span><span>{percent}%</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white dark:bg-slate-900"><div className="h-full rounded-full bg-violet-500" style={{ width: `${percent}%` }} /></div></div>
   </header>;
 }
@@ -723,7 +727,7 @@ function formatDate(value: string, locale: string): string {
 function jobErrorLabel(t: Translator, error: string): string {
   if (error.includes("knowledge_graph_unknown_evidence_alias")) return t("jobs.errors.unknownEvidence");
   if (error.includes("knowledge_graph_output_invalid")) return t("jobs.errors.invalidModelOutput");
-  const messageKey = error.match(/^errors\.[A-Za-z0-9.]+/)?.[0];
+  const messageKey = error.match(/^(?:organization\.)?errors\.[A-Za-z0-9.]+/)?.[0];
   if (messageKey) return t(messageKey as MessageKey);
   return error.split(/\r?\n/, 1)[0]?.trim() || t("errors.common.unknown");
 }

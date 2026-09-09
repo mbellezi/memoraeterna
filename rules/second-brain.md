@@ -235,7 +235,7 @@ database, jobs or frontend rules when those boundaries are affected.
 - `organization_settings_revisions` stores immutable full configurations;
   `organization_settings_activations` records deliberate activation history.
   Resolve each editable slot by built-in, global, function, domain and
-  domain/function replacement. Only page synthesis is active in this release.
+  domain/function replacement. Page synthesis and read-only consultation have separate implemented slots.
   Advanced templates support only `{{title}}` and `{{language}}`, with no
   executable template language or includes. Advanced activation requires a
   successful proposal-only synthetic run for each changed effective advanced
@@ -270,3 +270,106 @@ database, jobs or frontend rules when those boundaries are affected.
   and convert them to the same displayed citation order before canonical save.
   Render new-section proposals at full reading width; show before/after columns
   only when an existing section is being replaced.
+
+## Mixed-source organization, consultation and impacts
+
+- `organizeKnowledge` is an explicit processing stage with only `chunking` as
+  its direct prerequisite. Existing named presets and saved effective plans do
+  not acquire it retroactively. Its saved plan options require a topic title,
+  profile, privacy and optional domain; one batch produces one cross-source
+  organization run. Reuse an exact normalized existing title/alias only when
+  all current cited sources fit the authorized scope. Ambiguous matches or an
+  existing topic outside scope require a visible scope conflict, never a duplicate
+  topic or an implicit scope expansion. Placement and protected sections stay
+  under the existing wiki revision/review rules.
+- Admission inspects every selected derivation checkpoint and active parent and
+  per-stage jobs. Idle or succeeded parent jobs do not release pending matching.
+  After a terminal upstream failure/cancellation, unreachable selected work is
+  explicitly skipped on its own checkpoint with `upstream_failed_or_canceled`;
+  organization snapshots preserve those omissions. Do not rerun matching to
+  satisfy organization. Keep the original batch failure and successful siblings.
+- Summary-v3 concepts, current non-rejected/non-archived notes and scoped entity
+  mentions are optional context. Admit complete original provenance in scope;
+  summaries with ungrounded/legacy concept strings are not synthesis support.
+  Notes also pin a digest of their complete source-link manifest. Entity context
+  exposes scoped names/mentions, not unrestricted global descriptions. A proposed
+  section's `contextIds` binds consumed interpretations to that section and
+  requires every supporting original handle in its citations/read set.
+- `ConsultationService` owns transient, read-only cited answers and has no matching,
+  relation-write or page-apply method. Text/title, grounded concepts, eligible
+  notes, canonical relationships, scoped wiki sections with verified citation associations and entity names provide
+  independent lexical signals. Optional vectors use the existing embedding route
+  through the same FIFO with privacy checked before input is exposed. Match the
+  entire provider/model/runtime/dimension/space identity and original content hash.
+  No compatible vectors means explicit textual degradation, not document generation.
+- Query fusion uses RRF with `k=60`, one contribution per original chunk per
+  signal, and reserves other source roots before filling with additional chapters.
+  Chapters remain eligible. Reuse the existing 0.48 standalone / 0.40 corroborated
+  vector floors; these remain provisional retrieval thresholds, not probabilities.
+  Zero-relevance candidates cannot supply an answer. Fetch up to 200 lexical and
+  100 independently hydrated vector candidates in at most 500 scoped sources.
+  Pack at most 12 complete original passages and eligible optional contexts into
+  the selected profile budget before inference; disclose omitted coverage.
+- Answers use strict paragraph/citation/context manifests, at most two model calls
+  (one repair), 2,048 output tokens per call and a two-minute deadline including
+  FIFO waits. Reported input over 30,000 stops a repair; actual usage can overshoot.
+  Recheck originals and context at FIFO admission and immediately before the
+  provider call, then report changes detected while answering as stale. Do not
+  hold a database transaction across inference. Canonical AI audits retain every
+  call, including failed/canceled work and unknown usage/cost.
+- Unsaved answers are session state, bounded to 20 entries and 30 minutes. Explicit
+  save creates an awaiting-review proposal and a settled dispatch job atomically;
+  it cannot enqueue another model call. A transaction-scoped request identity
+  deduplicates concurrent saves/lost acknowledgments. Link existing query audit IDs,
+  preserve the original manifest/profile/instructions and store the validated
+  proposal checkpoint so cancel/retry returns to review without inference. Apply
+  uses the existing guarded wiki transaction and receipt; a question never applies.
+- Consultation has its own global/function/domain/domain-function instruction
+  resolution and advanced sample coverage. Legacy configurations without
+  `functionsVersion: 2` retain built-in consultation advanced instructions while
+  inheriting eligible free guidance; their old synthesis samples cannot authorize
+  the new function. A deliberate draft save upgrades the configuration, and every
+  changed consultation advanced prompt requires a consultation sample before
+  activation. Saving/activation still never launches organization.
+- `wiki_dependencies` records exact revision/section consumers, typed original
+  inputs, consumed fingerprints/snapshots and independent stale reasons.
+  `knowledge_impact_events` records committed input changes in the same transaction
+  through database triggers, covering every canonical writer and source deletion
+  cascades. Do not reinterpret these events as permission to run AI. Source
+  processing progress/status and administrative timestamps alone do not stale
+  evidence. Note source-link changes invalidate their consumers, and relationship
+  dependencies include the exact occurrence and any originating note relationship.
+- Wiki sections depend on exact consumed section content, not unrelated sibling
+  edits. Source relation currentness alone cannot refresh a stale consumed
+  occurrence. Never invalidate unrelated sections merely because a page was
+  touched. Unchanged sections carry their previous dependency snapshots and stale
+  reasons into new manual revisions; deleted/superseded originals stay readable
+  in historical citations. M3 does not add note generation/editing, note merge/split,
+  relationship editing, automatic reorganization or a hard-deletion capability.
+- `scripts/verify-second-brain-m3.ts` verifies real PostgreSQL populated M2-history
+  upgrades, empty baselines, scopes, exact impacts, read-only/save concurrency,
+  optional provenance and processing barriers with deterministic model fixtures.
+  Real local/Luna quality and normal-size desktop smoke are separate coordinator
+  acceptance evidence.
+
+- Saving a cited answer retains every explicit evidence gap/limitation in its
+  generated Markdown, with a content-language heading and the originating
+  citation/context provenance. Distribute bounded limitations across existing
+  sections (or one additional eligible section) without exceeding six operations
+  or 12,000 characters per operation. Never silently discard uncertainty on save.
+- Saved/sample query checkpoints retain known per-call token/cost totals and
+  per-field availability counts. Unknown remote pricing is not zero. The read
+  service reconciles totals and incompleteness against linked canonical AI audits,
+  including older saved proposals whose initial checkpoint omitted those values.
+- Transactional note-context validation locks the note parent `FOR UPDATE` and
+  existing source-link rows `FOR SHARE` before recomputing the complete manifest.
+  This serializes new FK links and link updates/deletions with dependency writes;
+  later committed changes invalidate the newly committed consumer. Use stable
+  dependency lock order and never hold these locks across inference.
+- Organizer prompts omit dependency fingerprints and other internal bookkeeping
+  while immutable snapshots retain them for validation. Before admission, pack
+  optional relations/concepts/notes/entities into the profile budget while
+  reserving room for search and two complete original reads. Record and display
+  available/included context counts; original passages are never truncated to fit.
+  Deferred organization failures show the owning stage and localized checkpoint
+  cause even when the original ingestion job already succeeded.
