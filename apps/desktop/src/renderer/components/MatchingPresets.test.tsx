@@ -16,15 +16,18 @@ describe("matching preset interface", () => {
   it("keeps the built-in recommendation visible and protected, with individual reset actions for every variable", () => {
     const html = render(false);
     expect(html).toContain("Balanced — recommended");
+    expect(html).toContain("Create preset");
     expect(html).toContain("Duplicate preset");
+    expect(html).not.toContain("Delete preset");
     expect(html).toContain('<fieldset disabled=""');
     expect(html.match(/aria-label="[^"]+: Restore recommended value"/g)).toHaveLength(45);
     expect(html).toContain('value="0.85"');
   });
-  it("makes copies editable and exposes rename", () => {
+  it("makes custom presets editable and exposes rename and deletion", () => {
     const html = render(true);
     expect(html).toContain("My preset");
     expect(html).toContain("Rename");
+    expect(html).toContain("Delete preset");
     expect(html).not.toContain('<fieldset disabled=""');
   });
 });

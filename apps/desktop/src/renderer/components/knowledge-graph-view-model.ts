@@ -67,6 +67,28 @@ export function zoomCompensatedEdgeSize(cameraRatio: number, screenThickness = 1
 
 export const relationHitAreaScreenThickness = 10;
 
+/** The convex corridor between the hover anchor and the card, in viewport coordinates. */
+export function isInGraphPopupCorridor(
+  pointer: { x: number; y: number },
+  anchor: { x: number; y: number },
+  card: { left: number; right: number; top: number; bottom: number }
+): boolean {
+  const margin = 8;
+  const left = card.left - margin, right = card.right + margin;
+  const top = card.top - margin, bottom = card.bottom + margin;
+  if (pointer.x >= left && pointer.x <= right && pointer.y >= top && pointer.y <= bottom) return true;
+  if (Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y) <= margin) return true;
+  const corners = [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+  const cross = (a: typeof pointer, b: typeof pointer, p: typeof pointer) =>
+    (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  return corners.some((a, index) => {
+    const b = corners[(index + 1) % 4]!;
+    if (Math.abs(cross(anchor, a, b)) < 0.001) return false;
+    const signs = [cross(anchor, a, pointer), cross(a, b, pointer), cross(b, anchor, pointer)];
+    return signs.every((value) => value >= 0) || signs.every((value) => value <= 0);
+  });
+}
+
 export function positionOverlayWithinViewport(
   anchor: { x: number; y: number },
   overlay: { width: number; height: number },

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AtomicNoteRelationReferenceText } from "./AtomicNoteRelationReferenceText";
+import { SourceReferenceBadge } from "./SourceRelationReferenceText";
 import {
   ArrowLeft,
   Search, Pencil, Plus, List, LayoutGrid,
@@ -894,11 +896,11 @@ function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, 
       {detail.relations.length === 0 ? <StateCard>{t("knowledge.relations.empty")}</StateCard>
         : <ol className="grid gap-2">{detail.relations.map((relation) => <li key={relation.id} className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex items-start justify-between gap-4">
-            <p className="text-sm font-medium">{relation.sourceTitle} ↔ {relation.targetTitle}</p>
+            <p className="text-sm font-medium"><SourceReferenceBadge number={1} title={relation.sourceTitle} />{relation.sourceTitle} ↔ <SourceReferenceBadge number={2} title={relation.targetTitle} />{relation.targetTitle}</p>
             <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-semibold tabular-nums dark:bg-slate-800">{Math.round(relation.finalScore * 100)}%</span>
           </div>
           <p className="text-sm">{t(relationTypeKey(relation.relationType))}</p>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{relation.explanation.startsWith("knowledge.") ? t(relation.explanation as MessageKey) : relation.explanation}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300"><AtomicNoteRelationReferenceText text={relation.explanation.startsWith("knowledge.") ? t(relation.explanation as MessageKey) : relation.explanation} sourceId={relation.sourceAtomicNoteId} targetId={relation.targetAtomicNoteId} sourceTitle={relation.sourceTitle} targetTitle={relation.targetTitle} /></p>
           {relation.sourceStatus === "pending_review" || relation.targetStatus === "pending_review" ? <span className="w-fit rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-900 dark:bg-amber-950 dark:text-amber-200">{t("knowledge.relations.pendingInvolved")}</span> : null}
         </li>)}</ol>}
     </CollapsibleSection> : null}

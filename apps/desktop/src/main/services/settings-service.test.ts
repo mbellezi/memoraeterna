@@ -70,6 +70,8 @@ describe("matching preset persistence", () => {
     expect(await restarted.getApp()).toMatchObject({ atomicNoteRelationThreshold: 0.67, sourceRelationSettings: { maxPairs: 9 } });
     await restarted.updateApp({ matchingPresets: [{ ...edited.matchingPresets[0]!, name: "Renamed" }] });
     expect((await new SettingsService(path).getApp()).matchingPresets[0]?.name).toBe("Renamed");
+    await restarted.updateApp({ matchingPresets: [], activeMatchingPresetId: recommendedMatchingPresetId });
+    expect(await new SettingsService(path).getApp()).toMatchObject({ matchingPresets: [], activeMatchingPresetId: recommendedMatchingPresetId });
   });
   it("preserves legacy custom values and isolates direct edits from the built-in recommendation", async () => {
     const { matchingPresets: _presets, activeMatchingPresetId: _active, ...legacy } = defaultAppSettings;

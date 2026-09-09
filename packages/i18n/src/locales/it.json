@@ -42,6 +42,7 @@
     }
   },
   "knowledgeGraph": {
+    "openSourceEntities": "Apri il grafo delle entità della fonte",
     "backToGraph": "Torna al grafo",
     "layoutError": "Impossibile calcolare la disposizione del grafo. Riprova per riprendere l’interazione.",
     "forces": {
@@ -86,7 +87,7 @@
       "semantic_relation": "Relazione semantica",
       "atomic_note_relation": "Relazione tra note atomiche"
     },
-    "relationLegend": { "trigger": "Etichette", "title": "Etichette delle relazioni" }
+    "relationLegend": { "trigger": "Filtri", "title": "Filtri delle connessioni" }
   },
   "database": {
     "startup": {
@@ -508,12 +509,15 @@
       "presets": {
         "title": "Preset di matching",
         "recommended": "Equilibrato — consigliato",
-        "recommendedHint": "Parametri di matching convalidati. Duplica questo preset per modificarlo. Ogni ripristino usa il valore consigliato.",
+        "recommendedHint": "Parametri di matching convalidati. Crea o duplica un preset per modificarlo. Ogni ripristino usa il valore consigliato.",
         "customHint": "Le modifiche vengono salvate in questo preset. I profili IA sono gestiti separatamente.",
         "previous": "Impostazioni personalizzate",
         "copy": "copia",
+        "create": "Crea preset",
         "duplicate": "Duplica preset",
         "rename": "Rinomina",
+        "delete": "Elimina preset",
+        "deleteConfirm": "Eliminare questo preset? L'azione non può essere annullata.",
         "name": "Nome del preset",
         "save": "Salva preset",
         "cancel": "Annulla",

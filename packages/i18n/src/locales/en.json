@@ -42,6 +42,7 @@
     }
   },
   "knowledgeGraph": {
+    "openSourceEntities": "Open source entity graph",
     "backToGraph": "Back to graph",
     "layoutError": "The graph layout could not be calculated. Retry to resume interaction.",
     "forces": {
@@ -86,7 +87,7 @@
       "semantic_relation": "Semantic relation",
       "atomic_note_relation": "Atomic-note relation"
     },
-    "relationLegend": { "trigger": "Labels", "title": "Relation labels" }
+    "relationLegend": { "trigger": "Filters", "title": "Connection filters" }
   },
   "database": {
     "startup": {
@@ -603,12 +604,15 @@
       "presets": {
         "title": "Matching preset",
         "recommended": "Balanced — recommended",
-        "recommendedHint": "Validated matching settings. Duplicate this preset to edit it. Every reset restores its recommended value.",
+        "recommendedHint": "Validated matching settings. Create or duplicate a preset to edit it. Every reset restores its recommended value.",
         "customHint": "Changes are saved to this preset. AI profiles are managed separately.",
         "previous": "Custom settings",
         "copy": "copy",
+        "create": "Create preset",
         "duplicate": "Duplicate preset",
         "rename": "Rename",
+        "delete": "Delete preset",
+        "deleteConfirm": "Delete this preset? This cannot be undone.",
         "name": "Preset name",
         "save": "Save preset",
         "cancel": "Cancel",

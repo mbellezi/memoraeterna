@@ -1,18 +1,20 @@
 import { SourceReferenceBadge, SourceRelationReferenceText } from "./SourceRelationReferenceText";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { ArrowRight, Check, ChevronDown, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { SourceRelationView } from "@app/domain";
 import { atomicRelationIcon, atomicRelationColor, formatEdgeLabel } from "./knowledge-relation-icons";
 
-export function SourceRelationsList({ sourceItemId, targetSourceItemId = null, t, compact = false, onOpenNote }: {
+export function SourceRelationsList({ sourceItemId, targetSourceItemId = null, t, compact = false, onOpenNote, onReadyChange }: {
   sourceItemId: string; targetSourceItemId?: string | null; t: Translator; compact?: boolean;
   onOpenNote?: ((sourceItemId:string,noteId:string) => void) | undefined;
+  onReadyChange?: (ready: boolean) => void;
 }) {
   const [relations,setRelations] = useState<SourceRelationView[]>([]);
   const [loading,setLoading] = useState(true),[failed,setFailed] = useState(false),[retry,setRetry] = useState(0);
   const [offset,setOffset] = useState(0),[hasMore,setHasMore] = useState(false),[total,setTotal] = useState(0);
   const [busy,setBusy] = useState<string | null>(null);
+  useLayoutEffect(() => { onReadyChange?.(!loading); }, [loading, onReadyChange]);
   useEffect(() => { setOffset(0);setRelations([]); },[sourceItemId,targetSourceItemId]);
   useEffect(() => {
     let active = true;setLoading(true);setFailed(false);

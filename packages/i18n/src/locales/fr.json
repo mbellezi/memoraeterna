@@ -42,6 +42,7 @@
     }
   },
   "knowledgeGraph": {
+    "openSourceEntities": "Ouvrir le graphe des entités de la source",
     "backToGraph": "Revenir au graphe",
     "layoutError": "Impossible de calculer la disposition du graphe. Réessayez pour reprendre l’interaction.",
     "forces": {
@@ -86,7 +87,7 @@
       "semantic_relation": "Relation sémantique",
       "atomic_note_relation": "Relation entre notes atomiques"
     },
-    "relationLegend": { "trigger": "Libellés", "title": "Libellés des relations" }
+    "relationLegend": { "trigger": "Filtres", "title": "Filtres des connexions" }
   },
   "database": {
     "startup": {
@@ -508,12 +509,15 @@
       "presets": {
         "title": "Préréglage de matching",
         "recommended": "Équilibré — recommandé",
-        "recommendedHint": "Paramètres de matching validés. Dupliquez ce préréglage pour le modifier. Chaque réinitialisation restaure la valeur recommandée.",
+        "recommendedHint": "Paramètres de matching validés. Créez ou dupliquez un préréglage pour le modifier. Chaque réinitialisation restaure la valeur recommandée.",
         "customHint": "Les modifications sont enregistrées dans ce préréglage. Les profils IA sont gérés séparément.",
         "previous": "Paramètres personnalisés",
         "copy": "copie",
+        "create": "Créer un préréglage",
         "duplicate": "Dupliquer le préréglage",
         "rename": "Renommer",
+        "delete": "Supprimer le préréglage",
+        "deleteConfirm": "Supprimer ce préréglage ? Cette action est irréversible.",
         "name": "Nom du préréglage",
         "save": "Enregistrer le préréglage",
         "cancel": "Annuler",

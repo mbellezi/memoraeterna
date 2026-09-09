@@ -1,11 +1,51 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Translator } from "@app/i18n";
 import type { KnowledgeGraphDashboard } from "../../shared/ipc";
-import { isInHierarchyActionCorridor } from "./knowledge-graph-view-model";
-import { GraphHoverIntent } from "./knowledge-graph-interaction";
-import { sourceHierarchyRelationTarget, prevalentSourceRelationTypes } from "./KnowledgeGraphDashboard";
+import { isInHierarchyActionCorridor, isInGraphPopupCorridor } from "./knowledge-graph-view-model";
 
-import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+describe("popup pointer corridor", () => {
+  it("protects slow diagonal paths to cards on either side and rejects movement away", () => {
+    const anchor = { x: 200, y: 200 };
+    for (const card of [
+      { left: 220, right: 500, top: 220, bottom: 400 },
+      { left: 0, right: 180, top: 0, bottom: 180 }
+    ]) {
+      const target = { x: (card.left + card.right) / 2, y: (card.top + card.bottom) / 2 };
+      for (let step = 0; step <= 30; step++) {
+        const fraction = step / 30;
+        expect(isInGraphPopupCorridor({ x: anchor.x + (target.x - anchor.x) * fraction,
+          y: anchor.y + (target.y - anchor.y) * fraction }, anchor, card)).toBe(true);
+      }
+      expect(isInGraphPopupCorridor({ x: 600, y: 20 }, anchor, card)).toBe(false);
+    }
+  });
+});
+import { GraphHoverIntent } from "./knowledge-graph-interaction";
+import { sourceHierarchyRelationTarget, prevalentSourceRelationTypes, isGraphConnectionEnabled } from "./KnowledgeGraphDashboard";
+
+describe("connection type filters", () => {
+  it("retains grouped source edges while another type is enabled", () => {
+    const attributes = { kind: "source_connection" as const, relationType: null,
+      sourceRelations: ["supports", "contrasts"].map((relationType) => ({ kind: "source_relation" as const, relationType, weight: 1, confidence: 1, details: [] })) };
+    expect(isGraphConnectionEnabled(attributes, new Set(["supports"]))).toBe(true);
+    expect(isGraphConnectionEnabled(attributes, new Set(["supports", "contrasts"]))).toBe(false);
+    expect(isGraphConnectionEnabled(attributes, new Set())).toBe(true);
+  });
+
+  it("fades edges without altering their RGB and disables picking once hidden", () => {
+    const { graph } = buildGraph(nestedHierarchyFixture(), ((key: string) => key) as Translator);
+    const edge = graph.findEdge((_id, attributes) => attributes.kind === "source_connection")!;
+    const attrs = graph.getEdgeAttributes(edge);
+    const original = reduceEdge(graph, edge, attrs, 1, null, 0);
+    const fading = reduceEdge(graph, edge, { ...attrs, filterOpacity: 0.5 }, 1, null, 0);
+    expect(fading.color).toContain("rgba(56, 189, 248,");
+    expect(fading.hidden).toBe(false);
+    expect(fading.labelOpacity).toBe(original.labelOpacity * 0.5);
+    expect(reduceEdge(graph, edge, { ...attrs, filterOpacity: 0 }, 1, null, 0).hidden).toBe(true);
+  });
+});
+
+import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, formatAtomicRelationExplanation, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
 
 function nestedHierarchyFixture(): KnowledgeGraphDashboard {
   const source = (id: string, parentSourceItemId: string | null, childCount = 0) => ({
@@ -27,7 +67,7 @@ function nestedHierarchyFixture(): KnowledgeGraphDashboard {
 }
 
 describe("conceptual source graph",() => {
-  it("keeps conceptual relation icons visible without hover at every zoom and hierarchy level",() => {
+  it("reveals conceptual relation icons with zoom like atomic notes at every hierarchy level",() => {
     const fixture=nestedHierarchyFixture();
     const conceptual: KnowledgeGraphDashboard={...fixture,sourceView:"relations",edges:[
       {id:"one",source:"section",target:"external",kind:"source_relation",label:"supports",description:"First idea",weight:1,confidence:0.9,details:[]}
@@ -36,11 +76,19 @@ describe("conceptual source graph",() => {
       const data=projectSourceHierarchy(conceptual,{showAll,expandedSourceIds:new Set<string>(),focusSourceId:null});
       const {graph}=buildGraph(data,((key:string) => key) as Translator);
       const edge=graph.findEdge((_id,attributes) => attributes.kind === "source_connection")!;
-      for (const ratio of [0.01,0.16,1,5,20]) {
+      let previousOpacity = 0;
+      for (const ratio of [20,5,1,0.8,0.6,0.4,0.16,0.01]) {
         const display=reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,null,0);
-        expect(display.forceLabel).toBe(true);
-        expect(display.label).toBeTruthy();
-        expect(display.labelOpacity).toBe(0.9);
+        expect(display.labelOpacity).toBeGreaterThanOrEqual(previousOpacity);
+        previousOpacity = display.labelOpacity;
+        if (ratio >= 1.25) {
+          expect(display.forceLabel).toBe(false);
+          expect(display.label).toBeNull();
+          expect(display.labelOpacity).toBe(0);
+        }
+        if (ratio <= 0.16) expect(display.labelOpacity).toBe(0.9);
+        const atomicAttributes = { ...graph.getEdgeAttributes(edge), kind: "atomic_note_relation" as const, sourceRelations: [] };
+        expect(display.labelOpacity).toBe(reduceEdge(graph,edge,atomicAttributes,ratio,null,0).labelOpacity);
         expect(reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,edge,1).labelOpacity).toBe(1);
       }
     }
@@ -69,6 +117,33 @@ describe("conceptual source graph",() => {
   it("orders ties stably without collapsing distinct relation types",() => {
     expect(prevalentSourceRelationTypes([{relationType:"supports",weight:1},{relationType:"extends",weight:1},{relationType:"clarifies",weight:1},{relationType:"contrasts",weight:1}]).map((item) => item.type))
       .toEqual(["clarifies","contrasts","extends","supports"]);
+  });
+});
+
+describe("atomic-note relation explanations", () => {
+  const t = ((key: string) => `translated:${key}`) as Translator;
+
+  it("localizes stored explanation keys and preserves generated prose", () => {
+    expect(formatAtomicRelationExplanation("knowledge.relations.explanations.reranked", t))
+      .toBe("translated:knowledge.relations.explanations.reranked");
+    expect(formatAtomicRelationExplanation("The second note supplies the missing premise.", t))
+      .toBe("The second note supplies the missing premise.");
+    expect(formatAtomicRelationExplanation(null, t)).toBeNull();
+  });
+
+  it("prepares the persisted explanation for the hover card", () => {
+    const data: KnowledgeGraphDashboard = {
+      mode: "atomic_notes",
+      truncated: false,
+      nodes: [],
+      edges: [{
+        id: "relation", source: "one", target: "two", kind: "atomic_note_relation",
+        label: "supports", description: "knowledge.relations.explanations.hybrid",
+        weight: 1, confidence: 0.82, details: []
+      }]
+    };
+    expect(prepareGraphEdges(data, t)[0]?.description)
+      .toBe("translated:knowledge.relations.explanations.hybrid");
   });
 });
 

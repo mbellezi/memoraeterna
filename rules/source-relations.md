@@ -134,8 +134,10 @@ review, or the conceptual source graph. Also load `ai-and-knowledge.md`,
   explicit alternative. Both projections query canonical SQL independently of AGE.
 - One visual edge groups a pair. Show up to three prevalent canonical relation
   icons using the atomic-note geometry/colors, with a unique leader 20% larger.
-  Conceptual relation icons remain visible without hover at every zoom level,
-  including collapsed and expanded source hierarchies; hover retains emphasis.
+  Conceptual relation icons use the atomic-note progressive zoom reveal and
+  density sampling in collapsed and expanded source hierarchies. Zooming out
+  fades them to hidden and reduces marker size and spacing; zooming in restores
+  them. Hover reveals incident markers and retains emphasis.
   Count distinct connections, not evidence occurrences. Keep ties stable and
   type counts intact when chapters collapse into their ancestors.
 - Connection previews support compact cards or a stacked, scrollable relation

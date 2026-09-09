@@ -4,6 +4,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import Graph from "graphology";
 import { SourceConnectionGraph } from "./SourceConnectionGraph";
 import { SourceRelationsList } from "./SourceRelationsList";
+import { AtomicNoteRelationReferenceText } from "./AtomicNoteRelationReferenceText";
+import { SourceReferenceBadge } from "./SourceRelationReferenceText";
 import { KnowledgeGraphLayout } from "./knowledge-graph-layout";
 import { defaultGraphForceSettings, graphLayoutRadius, type GraphForceSettings } from "./knowledge-graph-layout-contract";
 import {
@@ -50,6 +52,7 @@ import { Input } from "./ui/input";
 import {
   isLabelOutsideViewport,
   isInHierarchyActionCorridor,
+  isInGraphPopupCorridor,
   graphNodeSize,
   graphTypography,
   nodeLabelOpacity,
@@ -71,6 +74,7 @@ interface SourceRelationGroup {
 }
 
 interface NodeAttributes {
+  filterOpacity?: number;
   x: number;
   y: number;
   label: string;
@@ -94,6 +98,9 @@ interface NodeAttributes {
 }
 
 interface EdgeAttributes {
+  filterOpacity?: number;
+  disabledRelationTypes?: string[];
+  relationTypeOpacities?: Record<string, number>;
   label: string;
   size: number;
   color: string;
@@ -297,8 +304,13 @@ export function KnowledgeGraphDashboard({
   const [layoutError, setLayoutError] = useState(false);
   const [forcesOpen, setForcesOpen] = useState(false);
   const [relationLegendOpen, setRelationLegendOpen] = useState(false);
-  const [graphPopup, setGraphPopup] = useState(true);
+  const [disabledRelationTypes, setDisabledRelationTypes] = useState<Set<string>>(() => new Set());
+  const [rendererRevision, setRendererRevision] = useState(0);
+  const [popupPreferences, setPopupPreferences] = useState({ relations: false, entities: true });
   const [sourceView, setSourceView] = useState<"relations" | "entities">(initialViewState?.sourceView ?? "relations");
+  const graphPopup = popupPreferences[sourceView];
+  const setGraphPopup = (update: (value: boolean) => boolean) => setPopupPreferences((current) => ({ ...current, [sourceView]: update(current[sourceView]) }));
+  const [entityPreviewSourceId, setEntityPreviewSourceId] = useState<string | null>(null);
   const sourceViewRef = useRef(sourceView);
   sourceViewRef.current = sourceView;
   const [showAllSubitems, setShowAllSubitems] = useState(initialViewState?.sourceHierarchy?.showAll ?? false);
@@ -345,8 +357,8 @@ export function KnowledgeGraphDashboard({
     return () => window.removeEventListener("source-relations-updated",updated);
   },[]);
   useEffect(() => {
-    if (pendingSourceRefresh && !hover && !hierarchyPreviewSourceId) { setPendingSourceRefresh(false);setReloadToken((value) => value + 1); }
-  },[pendingSourceRefresh,hover,hierarchyPreviewSourceId]);
+    if (pendingSourceRefresh && !hover && !hierarchyPreviewSourceId && !entityPreviewSourceId) { setPendingSourceRefresh(false);setReloadToken((value) => value + 1); }
+  },[pendingSourceRefresh,hover,hierarchyPreviewSourceId,entityPreviewSourceId]);
 
   useEffect(() => {
     if (mode !== "atomic_notes" && sourceView !== "relations") setRelationLegendOpen(false);
@@ -463,6 +475,7 @@ export function KnowledgeGraphDashboard({
       )
       });
       sigmaRef.current = renderer;
+      setRendererRevision((value) => value + 1);
       installHierarchyContainerLayer(renderer, graph, hierarchyGroups);
       renderer.on("beforeRender", labels.beginFrame);
 
@@ -545,7 +558,7 @@ export function KnowledgeGraphDashboard({
     renderer.on("afterRender", syncHierarchyActions);
     const showHierarchyActions = (node: string) => {
       const attributes = graph.getNodeAttributes(node);
-      if (attributes.kind !== "source" || attributes.childCount === 0 || !attributes.sourceItemId) {
+      if (attributes.kind !== "source" || (attributes.childCount === 0 && sourceViewRef.current !== "relations") || !attributes.sourceItemId) {
         hideHierarchyActions();
         return;
       }
@@ -930,6 +943,50 @@ export function KnowledgeGraphDashboard({
     if (bundle) updateProjectionRef.current(bundle);
   }, [bundle]);
 
+  useEffect(() => {
+    const renderer = sigmaRef.current;
+    if (!renderer || !bundle) return;
+    dismissGraphInfoRef.current();
+    hideHierarchyActionsRef.current(true);
+    const graph = renderer.getGraph();
+    const enabledNodes = new Set<string>();
+    const targets = new Map<string, number>();
+    graph.forEachEdge((edge, attributes, source, target) => {
+      if (attributes.kind === "hit_area" || attributes.kind === "hierarchy_link") return;
+      const active = isGraphConnectionEnabled(attributes, disabledRelationTypes);
+      targets.set(edge, active ? 1 : 0);
+      graph.setEdgeAttribute(edge, "disabledRelationTypes", [...disabledRelationTypes]);
+      if (active) { enabledNodes.add(source); enabledNodes.add(target); }
+    });
+    const filtering = disabledRelationTypes.size > 0 && (mode === "atomic_notes" || sourceView === "relations");
+    const nodeStarts = new Map(graph.nodes().map((id) => [id, Number(graph.getNodeAttribute(id, "filterOpacity") ?? 1)]));
+    const edgeStarts = new Map(graph.edges().map((id) => [id, Number(graph.getEdgeAttribute(id, "filterOpacity") ?? 1)]));
+    const typeStarts = new Map(graph.edges().map((id) => [id, graph.getEdgeAttribute(id, "relationTypeOpacities") ?? {}]));
+    let frame = 0;
+    const start = performance.now();
+    const animate = (now: number) => {
+      const progress = Math.min(1, (now - start) / 220);
+      const eased = progress * progress * (3 - 2 * progress);
+      graph.forEachNode((id) => {
+        const to = !filtering || enabledNodes.has(id) ? 1 : 0;
+        graph.setNodeAttribute(id, "filterOpacity", nodeStarts.get(id)! + (to - nodeStarts.get(id)!) * eased);
+      });
+      graph.forEachEdge((id, attributes, source, target) => {
+        const to = attributes.kind === "hit_area" ? targets.get(attributes.interactionTarget!) ?? 0
+          : attributes.kind === "hierarchy_link" ? Number(enabledNodes.has(source) && enabledNodes.has(target)) : targets.get(id) ?? 1;
+        graph.setEdgeAttribute(id, "filterOpacity", edgeStarts.get(id)! + ((filtering ? to : 1) - edgeStarts.get(id)!) * eased);
+        graph.setEdgeAttribute(id, "relationTypeOpacities", Object.fromEntries(atomicRelationLegend.map(({ type }) => {
+          const from = typeStarts.get(id)?.[type] ?? 1;
+          return [type, from + ((filtering && disabledRelationTypes.has(type) ? 0 : 1) - from) * eased];
+        })));
+      });
+      renderer.refresh();
+      if (progress < 1) frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [disabledRelationTypes, bundle, mode, sourceView, rendererRevision]);
+
   function zoom(factor: number) {
     dismissGraphInfoRef.current();
     cancelWheelRef.current();
@@ -1123,12 +1180,18 @@ export function KnowledgeGraphDashboard({
             hideHierarchyActionsRef.current();
           }}
         >
-          <button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-violet-300/30 bg-slate-950/95 text-violet-200 shadow-lg backdrop-blur transition hover:bg-violet-400/25 hover:text-white" aria-label={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} title={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} onClick={() => toggleSourceHierarchy(hierarchyNodeActions.sourceItemId)}>
+          {hierarchyNodeActions.childCount > 0 ? <><button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-violet-300/30 bg-slate-950/95 text-violet-200 shadow-lg backdrop-blur transition hover:bg-violet-400/25 hover:text-white" aria-label={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} title={t(hierarchyNodeActions.expanded ? "knowledgeGraph.subitems.collapse" : "knowledgeGraph.subitems.expand", { values: { count: hierarchyNodeActions.childCount } })} onClick={() => toggleSourceHierarchy(hierarchyNodeActions.sourceItemId)}>
             {hierarchyNodeActions.expanded ? <Minus className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
           </button>
           <button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-cyan-300/30 bg-slate-950/95 text-cyan-200 shadow-lg backdrop-blur transition hover:bg-cyan-400/25 hover:text-white" aria-label={t("knowledgeGraph.subitems.focus")} title={t("knowledgeGraph.subitems.focus")} onClick={() => openSourceHierarchyPreview(hierarchyNodeActions.sourceItemId)}>
             <Focus className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          </button></> : null}
+          {sourceView === "relations" ? <button type="button" className="grid h-7 w-7 place-items-center rounded-full border border-cyan-300/30 bg-slate-950/95 text-cyan-200 shadow-lg backdrop-blur transition hover:bg-cyan-400/25 hover:text-white" aria-label={t("knowledgeGraph.openSourceEntities")} title={t("knowledgeGraph.openSourceEntities")} onClick={() => {
+            freezeGraphRef.current();
+            dismissGraphInfoRef.current();
+            hideHierarchyActionsRef.current(true);
+            setEntityPreviewSourceId(hierarchyNodeActions.sourceItemId);
+          }}><Network className="h-3.5 w-3.5" aria-hidden="true" /></button> : null}
         </div> : null}
         {loading ? <GraphState icon={LoaderCircle} title={t("shell.states.loading")} spinning /> : null}
         {error ? <GraphState icon={Network} title={t("knowledgeGraph.error")} action={t("shell.actions.retry")} onAction={() => setReloadToken((current) => current + 1)} /> : null}
@@ -1154,15 +1217,21 @@ export function KnowledgeGraphDashboard({
                 </h3>
                 <ul className="grid gap-1.5">
                   {atomicRelationLegend.map(({ type, color, icon: Icon }) => (
-                    <li key={type} className="flex items-center gap-2 text-xs text-slate-200">
+                    <li key={type}><button type="button" role="switch" aria-checked={!disabledRelationTypes.has(type)}
+                      className={cn("flex w-full items-center gap-2 rounded-lg px-1 py-1 text-left text-xs transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300", disabledRelationTypes.has(type) ? "text-slate-500" : "text-slate-200")}
+                      onClick={() => setDisabledRelationTypes((current) => {
+                        const next = new Set(current);
+                        if (next.has(type)) next.delete(type); else next.add(type);
+                        return next;
+                      })}>
                       <span
                         className="grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-slate-950"
-                        style={{ borderColor: `${color}99`, color }}
+                        style={{ borderColor: disabledRelationTypes.has(type) ? "#64748b66" : `${color}99`, color: disabledRelationTypes.has(type) ? "#64748b" : color }}
                       >
                         <Icon className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <span>{t(atomicRelationMessageKeys[type]!)}</span>
-                    </li>
+                    </button></li>
                   ))}
                 </ul>
               </section>
@@ -1198,6 +1267,7 @@ export function KnowledgeGraphDashboard({
           }}
           onPopupLeave={() => { popupInsideRef.current = false; dismissGraphInfoRef.current(); }}
         /> : null}
+        {entityPreviewSourceId ? <SourceEntityPreview sourceItemId={entityPreviewSourceId} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} onClose={() => setEntityPreviewSourceId(null)} /> : null}
         {mode === "sources" && hierarchyPreviewData && hierarchyPreviewSourceId ? <SourceHierarchyPreviewOverlay
           data={hierarchyPreviewData}
           sourceItemId={hierarchyPreviewSourceId}
@@ -1212,6 +1282,68 @@ export function KnowledgeGraphDashboard({
       </div>
     </section>
   );
+}
+
+function SourceEntityPreview({ sourceItemId, forces, wheelZoomSensitivity, t, onClose }: {
+  sourceItemId: string; forces: GraphForceSettings; wheelZoomSensitivity: number; t: Translator; onClose: () => void;
+}) {
+  const panelRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const [details, setDetails] = useState<KnowledgeGraphSourceConnectionDetails | null>(null);
+  const [title, setTitle] = useState("");
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setDetails(null); setFailed(false);
+    window.app.knowledge.getSourceDetail(sourceItemId).then((source) => {
+      if (!active) return;
+      if (!source) throw new Error("Source unavailable");
+      setTitle(source.title);
+      setDetails({
+        sharedEntities: [], semanticRelations: [],
+        entities: source.graph.entities.map((entity) => ({ id: entity.id, label: entity.name, shared: false })),
+        relations: source.graph.relations.flatMap((relation) => relation.subjectEntityId && relation.objectEntityId
+          ? [{ id: relation.id, source: relation.subjectEntityId, target: relation.objectEntityId, label: relation.displayLabel || "relationLabel.missing" }] : [])
+      });
+    }).catch(() => { if (active) setFailed(true); });
+    return () => { active = false; };
+  }, [sourceItemId, retry]);
+  useLayoutEffect(() => {
+    const previousFocus = document.activeElement;
+    panelRef.current?.focus({ preventScroll: true });
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
+      event.preventDefault(); event.stopImmediatePropagation(); closeRef.current();
+    };
+    const mouseBack = (event: MouseEvent) => {
+      if (event.button !== 3) return;
+      event.preventDefault(); event.stopImmediatePropagation(); closeRef.current();
+    };
+    window.addEventListener("keydown", keydown, true);
+    window.addEventListener("mouseup", mouseBack, true);
+    const unsubscribe = window.app.system.subscribeNavigation((direction) => { if (direction === "back") closeRef.current(); });
+    return () => {
+      window.removeEventListener("keydown", keydown, true);
+      window.removeEventListener("mouseup", mouseBack, true);
+      unsubscribe();
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
+  return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("knowledgeGraph.openSourceEntities")} className="absolute inset-0 z-30 flex flex-col bg-slate-950 p-3 text-white outline-none">
+    <header className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-900 px-3 py-2">
+      <GraphAction icon={ArrowLeft} label={t("knowledgeGraph.backToGraph")} onClick={onClose} />
+      <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold text-cyan-300">{title}</p><p className="text-xs text-slate-400">{t("knowledgeGraph.openSourceEntities")}</p></div>
+      <GraphAction icon={X} label={t("shell.actions.close")} onClick={onClose} />
+    </header>
+    <div className="relative min-h-0 flex-1">
+      {failed ? <GraphState icon={Network} title={t("knowledgeGraph.error")} action={t("shell.actions.retry")} onAction={() => setRetry((value) => value + 1)} />
+        : !details ? <GraphState icon={LoaderCircle} title={t("shell.states.loading")} spinning />
+        : !details.entities.length ? <GraphState icon={Network} title={t("knowledgeGraph.empty")} />
+        : <SourceConnectionGraph details={details} forces={forces} wheelZoomSensitivity={wheelZoomSensitivity} t={t} />}
+    </div>
+  </section>;
 }
 
 function GraphAction({ icon: Icon, label, onClick, disabled = false, spinning = false, active = false, controls, pressed }: {
@@ -1477,6 +1609,10 @@ function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, f
         wheelFrame = null;
       };
       enterPopupRef.current = () => {
+        popupOpenRef.current = true;
+        if (exitTimer !== null) window.clearTimeout(exitTimer);
+        exitTimer = null;
+        setHover((current) => current ? { ...current, exiting: false } : current);
         interacted = true;
         cancelWheel();
         layoutRef.current?.kill();
@@ -1636,13 +1772,42 @@ function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, f
   </div>;
 }
 
-function ViewportTooltip({ hover, className, children }: {
+function ViewportTooltip({ hover, className, children, ready = true, onPopupEnter, onPopupLeave }: {
   hover: HoverCard;
   className: string;
   children: ReactNode;
+  ready?: boolean;
+  onPopupEnter: () => void;
+  onPopupLeave: () => void;
 }) {
   const tooltipRef = useRef<HTMLElement | null>(null);
-  const [position, setPosition] = useState({ x: hover.x + 14, y: hover.y + 14 });
+  const [position, setPosition] = useState<{ x: number; y: number; measured: boolean }>({ x: 0, y: 0, measured: false });
+  const popupCallbacks = useRef({ onPopupEnter, onPopupLeave });
+  popupCallbacks.current = { onPopupEnter, onPopupLeave };
+  useEffect(() => {
+    if (!ready || !position.measured) return;
+    const tooltip = tooltipRef.current;
+    const viewport = tooltip?.offsetParent;
+    if (!tooltip || !(viewport instanceof HTMLElement)) return;
+    let protectedPath = false;
+    const track = (event: PointerEvent) => {
+      const bounds = viewport.getBoundingClientRect();
+      const inside = isInGraphPopupCorridor(
+        { x: event.clientX, y: event.clientY },
+        { x: bounds.left + hover.x, y: bounds.top + hover.y },
+        tooltip.getBoundingClientRect()
+      );
+      if (inside) {
+        if (!protectedPath) popupCallbacks.current.onPopupEnter();
+        protectedPath = true;
+      } else if (protectedPath) {
+        protectedPath = false;
+        popupCallbacks.current.onPopupLeave();
+      }
+    };
+    window.addEventListener("pointermove", track, true);
+    return () => window.removeEventListener("pointermove", track, true);
+  }, [ready, position.measured, hover.x, hover.y]);
 
   useLayoutEffect(() => {
     const tooltip = tooltipRef.current;
@@ -1654,23 +1819,39 @@ function ViewportTooltip({ hover, className, children }: {
         { width: tooltip.offsetWidth, height: tooltip.offsetHeight },
         { width: viewport.clientWidth, height: viewport.clientHeight }
       );
-      setPosition((current) => current.x === next.x && current.y === next.y ? current : next);
+      // Apply observer updates before paint, avoiding a frame at the old position.
+      tooltip.style.left = `${next.x}px`;
+      tooltip.style.top = `${next.y}px`;
+      setPosition((current) => current.x === next.x && current.y === next.y && current.measured ? current : { ...next, measured: true });
     };
     updatePosition();
     const observer = new ResizeObserver(updatePosition);
     observer.observe(tooltip);
     observer.observe(viewport);
     return () => observer.disconnect();
-  }, [hover.x, hover.y]);
+  }, [hover.x, hover.y, ready]);
 
   return <aside
     ref={tooltipRef}
     className={cn(
-      "pointer-events-none absolute z-10 max-h-[calc(100%-1rem)] max-w-[calc(100%-1rem)] overflow-y-auto rounded-xl border border-white/15 bg-slate-900/95 p-3 text-white shadow-2xl backdrop-blur",
+      "pointer-events-auto absolute z-10 max-h-[calc(100%-1rem)] max-w-[calc(100%-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-slate-900/95 p-3 text-white shadow-2xl backdrop-blur",
       className,
-      hover.exiting ? "motion-graph-tooltip-out" : "motion-graph-tooltip-in"
+      ready && position.measured ? hover.exiting ? "motion-graph-tooltip-out" : "motion-graph-tooltip-in" : undefined
     )}
-    style={{ left: position.x, top: position.y }}
+    style={{ left: position.x, top: position.y, visibility: ready && position.measured ? "visible" : "hidden" }}
+    aria-hidden={!ready || !position.measured}
+    onPointerEnter={onPopupEnter}
+    onPointerLeave={(event) => {
+      const tooltip = tooltipRef.current;
+      const viewport = tooltip?.offsetParent;
+      if (!tooltip || !(viewport instanceof HTMLElement)) return onPopupLeave();
+      const bounds = viewport.getBoundingClientRect();
+      if (!isInGraphPopupCorridor({ x: event.clientX, y: event.clientY },
+        { x: bounds.left + hover.x, y: bounds.top + hover.y }, tooltip.getBoundingClientRect())) onPopupLeave();
+    }}
+    onPointerMove={(event) => event.stopPropagation()}
+    onPointerDown={(event) => event.stopPropagation()}
+    onWheelCapture={(event) => event.stopPropagation()}
   >
     {children}
   </aside>;
@@ -1693,11 +1874,11 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
 } & GraphPopupOptions) {
   if (hover.type === "node" && graph.hasNode(hover.key)) {
     const node = graph.getNodeAttributes(hover.key);
-    return <ViewportTooltip hover={hover} className="w-80">
+    return <ViewportTooltip hover={hover} className="w-80" onPopupEnter={popupOptions.onPopupEnter} onPopupLeave={popupOptions.onPopupLeave}>
       <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t(node.kind === "source" ? "knowledgeGraph.source" : "knowledgeGraph.atomicNote")}</p>
       <h3 className="mt-1 text-sm font-semibold leading-snug">{node.title}</h3>
       {node.subtitle ? <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-slate-300">{node.subtitle}</p> : null}
-      {node.kind === "atomic_note" && node.content ? <p className="mt-2 max-h-48 overflow-hidden whitespace-pre-wrap border-t border-white/10 pt-2 text-xs leading-relaxed text-slate-200">{node.content}</p> : null}
+      {node.kind === "atomic_note" && node.content ? <p className="mt-2 max-h-48 overflow-y-auto overscroll-contain whitespace-pre-wrap border-t border-white/10 pt-2 text-xs leading-relaxed text-slate-200">{node.content}</p> : null}
       <dl className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-300">
         <div><dt className="text-slate-500">{t("knowledgeGraph.connections")}</dt><dd>{node.importance}</dd></div>
         <div><dt className="text-slate-500">{t("knowledgeGraph.entities")}</dt><dd>{node.detailCount}</dd></div>
@@ -1724,17 +1905,25 @@ function GraphTooltip({ hover, graph, t, ...popupOptions }: {
     }
     const RelationIcon = atomicRelationIcon(edge.relationType);
     const relationColor = atomicRelationColor(edge.relationType);
-    return <ViewportTooltip hover={hover} className="w-80">
+    const [source, target] = graph.extremities(hover.key);
+    const sourceTitle = graph.getNodeAttribute(source, "title");
+    const targetTitle = graph.getNodeAttribute(target, "title");
+    return <ViewportTooltip hover={hover} className="w-[28rem]" onPopupEnter={popupOptions.onPopupEnter} onPopupLeave={popupOptions.onPopupLeave}>
       <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">{t(`knowledgeGraph.edgeKinds.${edge.kind}` as MessageKey)}</p>
-      <p className="mt-1 flex items-center gap-2 text-sm font-medium">
-        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border bg-slate-950" style={{ borderColor: `${relationColor}99`, color: relationColor }}>
-          <RelationIcon className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <span>{edge.label}</span>
-      </p>
-      {edge.description ? <p className="mt-1 line-clamp-4 text-xs leading-relaxed text-slate-300">{edge.description}</p> : null}
-      {edge.details.length > 0 ? <ul className="mt-2 grid gap-1 text-xs text-slate-300">{edge.details.slice(0, 4).map((detail) => <li key={detail}>• {detail.replaceAll("relationLabel.missing", t("relationLabel.missing"))}</li>)}</ul> : null}
-      <p className="mt-2 text-[11px] tabular-nums text-slate-400">{t("knowledgeGraph.confidence", { values: { value: Math.round(edge.confidence * 100) } })}</p>
+      <article className="mt-2 grid min-w-0 gap-2 rounded-xl border border-current/15 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <RelationIcon className="h-4 w-4 shrink-0" style={{ color: relationColor }} aria-hidden="true" />
+          <strong className="text-sm">{edge.label}</strong>
+          <span className="ml-auto text-[11px] tabular-nums text-slate-400">{t("knowledgeGraph.confidence", { values: { value: Math.round(edge.confidence * 100) } })}</span>
+        </div>
+        <p className="flex min-w-0 items-center gap-1 text-xs text-slate-400">
+          <span className="min-w-0 flex-1 truncate"><SourceReferenceBadge number={1} title={sourceTitle} />{sourceTitle}</span>
+          <span className="shrink-0" aria-hidden="true">↔</span>
+          <span className="min-w-0 flex-1 truncate"><SourceReferenceBadge number={2} title={targetTitle} />{targetTitle}</span>
+        </p>
+        {edge.description ? <p className="whitespace-pre-wrap break-words text-sm font-medium leading-relaxed text-slate-200"><AtomicNoteRelationReferenceText text={edge.description} sourceId={graph.getNodeAttribute(source, "rawId")!} targetId={graph.getNodeAttribute(target, "rawId")!} sourceTitle={sourceTitle} targetTitle={targetTitle} /></p> : null}
+        {edge.details.length > 0 ? <ul className="grid gap-1 text-xs text-slate-300">{edge.details.slice(0, 4).map((detail) => <li key={detail}>• {detail.replaceAll("relationLabel.missing", t("relationLabel.missing"))}</li>)}</ul> : null}
+      </article>
     </ViewportTooltip>;
   }
   return null;
@@ -1750,6 +1939,7 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
 } & GraphPopupOptions) {
   const [details, setDetails] = useState<KnowledgeGraphSourceConnectionDetails | null>(null);
   const [failed, setFailed] = useState(false);
+  const [relationsReady, setRelationsReady] = useState(false);
   const [retry, setRetry] = useState(0);
   const closeRef = useRef(onPopupLeave);
   const enterRef = useRef(onPopupEnter);
@@ -1802,9 +1992,9 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
   }, [sourceItemId, targetSourceItemId, retry, conceptual]);
 
   if (conceptual) {
-    if (!graphPopup) return <ViewportTooltip hover={hover} className="w-[28rem]">
+    if (!graphPopup) return <ViewportTooltip hover={hover} className="w-[28rem]" ready={relationsReady} onPopupEnter={onPopupEnter} onPopupLeave={onPopupLeave}>
       <h3 className="text-xs font-semibold text-cyan-300">{t("sourceRelations.title")}</h3>
-      <SourceRelationsList sourceItemId={sourceItemId} targetSourceItemId={targetSourceItemId} t={t} compact />
+      <SourceRelationsList sourceItemId={sourceItemId} targetSourceItemId={targetSourceItemId} t={t} compact onReadyChange={setRelationsReady} />
     </ViewportTooltip>;
     return <section ref={panelRef} tabIndex={-1} role="dialog" aria-label={t("sourceRelations.title")}
       className="absolute inset-0 z-20 flex flex-col overflow-hidden bg-slate-950 text-white outline-none">
@@ -1847,7 +2037,7 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
     }
   ].filter((group) => group.details.length > 0) : summary;
 
-  return <ViewportTooltip hover={hover} className="w-96">
+  return <ViewportTooltip hover={hover} className="w-96" ready={Boolean(details) || failed} onPopupEnter={onPopupEnter} onPopupLeave={onPopupLeave}>
     <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">
       {t("knowledgeGraph.edgeKinds.source_connection")}
     </p>
@@ -1923,7 +2113,7 @@ export function buildGraph(data: DashboardData, t: Translator): GraphBundle {
       details: edge.details,
       layoutWeight: Math.max(0.2, Math.log2(edge.weight + 1) * edge.confidence),
       labelOpacity: 0.2,
-      labelRevealAt: edge.kind === "atomic_note_relation"
+      labelRevealAt: edge.kind === "atomic_note_relation" || edge.sourceRelations.some((relation) => relation.kind === "source_relation")
         ? relationLabelRevealAt(edge.id, edge.confidence, preparedEdges.length)
         : 2,
       relationType: edge.relationType,
@@ -2070,7 +2260,10 @@ function installHierarchyContainerLayer(
       context.clearRect(0, 0, width, height);
       for (const group of groups) {
         if (!graph.hasNode(group.root)) continue;
-        const members = [group.root, ...group.children].filter((node) => graph.hasNode(node));
+        const groupOpacity = graph.getNodeAttribute(group.root, "filterOpacity") ?? 1;
+        if (groupOpacity <= 0.001) continue;
+        context.globalAlpha = groupOpacity;
+        const members = [group.root, ...group.children].filter((node) => graph.hasNode(node) && (graph.getNodeAttribute(node, "filterOpacity") ?? 1) > 0.001);
         const points = members.map((node) => renderer.graphToViewport(graph.getNodeAttributes(node)));
         if (points.length < 2) continue;
         const minX = Math.min(...points.map((point) => point.x));
@@ -2104,6 +2297,7 @@ function installHierarchyContainerLayer(
         context.fillStyle = "rgba(221, 214, 254, 0.92)";
         context.fillText(group.title, centerX - radiusX + 12, centerY - radiusY + 18, Math.max(80, radiusX * 2 - 24));
       }
+      context.globalAlpha = 1;
     }
     badgeContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     badgeContext.clearRect(0, 0, width, height);
@@ -2111,13 +2305,21 @@ function installHierarchyContainerLayer(
       if (attributes.kind !== "source" || attributes.childCount === 0) return;
       const display = renderer.getNodeDisplayData(node);
       if (!display) return;
+      const opacity = Number((display as typeof display & { labelOpacity?: number }).labelOpacity
+        ?? nodeLabelOpacity(renderer.getCamera().ratio, attributes.importance));
+      if (opacity <= 0.001) return;
+      const badgeScale = 0.5 + 0.5 * opacity;
       const position = renderer.graphToViewport(attributes);
       const size = renderer.scaleSize(display.size);
       const x = position.x - size * 0.68;
       const y = position.y - size * 0.68;
       const radius = attributes.childCount > 99 ? 11 : 9.5;
+      badgeContext.save();
+      badgeContext.globalAlpha = opacity;
+      badgeContext.translate(x, y);
+      badgeContext.scale(badgeScale, badgeScale);
       badgeContext.beginPath();
-      badgeContext.arc(x, y, radius, 0, Math.PI * 2);
+      badgeContext.arc(0, 0, radius, 0, Math.PI * 2);
       badgeContext.fillStyle = "rgba(2, 6, 23, 0.96)";
       badgeContext.fill();
       badgeContext.lineWidth = 1.5;
@@ -2127,7 +2329,8 @@ function installHierarchyContainerLayer(
       badgeContext.font = `${attributes.childCount > 99 ? 7 : 9}px Inter, ui-sans-serif, system-ui, sans-serif`;
       badgeContext.textAlign = "center";
       badgeContext.textBaseline = "middle";
-      badgeContext.fillText(String(attributes.childCount), x, y + 0.5);
+      badgeContext.fillText(String(attributes.childCount), 0, 0.5);
+      badgeContext.restore();
     });
   };
   renderer.on("afterRender", draw);
@@ -2139,6 +2342,7 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
       ...edge,
       kind: "atomic_note_relation",
       label: formatEdgeLabel(edge.label, t),
+      description: formatAtomicRelationExplanation(edge.description, t),
       relationType: edge.label,
       sourceRelations: []
     }));
@@ -2176,6 +2380,14 @@ export function prepareGraphEdges(data: DashboardData, t: Translator): PreparedG
     grouped.set(key, current);
   }
   return [...grouped.values()];
+}
+
+export function formatAtomicRelationExplanation(explanation: string | null, t: Translator): string | null {
+  if (explanation === "knowledge.relations.explanations.hybrid"
+    || explanation === "knowledge.relations.explanations.reranked") {
+    return t(explanation);
+  }
+  return explanation;
 }
 
 function knowledgeGraphStateKey(data: DashboardData, edges: PreparedGraphEdge[]): string {
@@ -2284,7 +2496,29 @@ export function restoreKnowledgeGraphViewState(
   return true;
 }
 
-export function reduceNode(
+export function isGraphConnectionEnabled(attributes: Pick<EdgeAttributes, "kind" | "relationType" | "sourceRelations">, disabled: ReadonlySet<string>): boolean {
+  return attributes.kind === "atomic_note_relation"
+    ? !disabled.has(attributes.relationType ?? "related")
+    : attributes.sourceRelations.some((relation) => !relation.relationType || !disabled.has(relation.relationType));
+}
+
+export function reduceNode(...args: Parameters<typeof reduceNodeBase>) {
+  return applyRelationFilterFade(reduceNodeBase(...args), args[1].filterOpacity ?? 1);
+}
+
+function applyRelationFilterFade<T extends { color: string; labelOpacity: number; hidden: boolean }>(display: T, opacity: number): T {
+  if (opacity === 1) return display;
+  const rgba = /^rgba?\(([^)]+)\)$/.exec(display.color);
+  const channels = rgba?.[1]?.split(",").map(Number);
+  const color = channels
+    ? `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${(channels[3] ?? 1) * opacity})`
+    : blendGraphColor(display.color, display.color, 0, opacity);
+  return { ...display, hidden: display.hidden || opacity <= 0.001,
+    color,
+    labelOpacity: display.labelOpacity * opacity };
+}
+
+function reduceNodeBase(
   node: string,
   attributes: NodeAttributes,
   cameraRatio: number,
@@ -2315,7 +2549,12 @@ export function reduceNode(
   };
 }
 
-export function reduceEdge(
+export function reduceEdge(...args: Parameters<typeof reduceEdgeBase>) {
+  const display = reduceEdgeBase(...args);
+  return applyRelationFilterFade(display, args[2].filterOpacity ?? 1);
+}
+
+function reduceEdgeBase(
   graph: Graph<NodeAttributes, EdgeAttributes>,
   edge: string,
   attributes: EdgeAttributes,
@@ -2337,9 +2576,7 @@ export function reduceEdge(
     };
   }
   const zoomStrength = zoomVisualStrength(cameraRatio);
-  const hasRelationMarkers = attributes.kind === "source_connection"
-    && attributes.sourceRelations.some((relation) => relation.kind === "source_relation");
-  const revealProgress = hasRelationMarkers ? 1 : attributes.label && attributes.labelRevealAt <= 1
+  const revealProgress = attributes.label && attributes.labelRevealAt <= 1
     ? clamp((zoomStrength - attributes.labelRevealAt) / Math.max(0.01, 1 - attributes.labelRevealAt), 0, 1)
     : 0;
   const showRestingLabel = revealProgress > 0;
@@ -2482,12 +2719,14 @@ export const drawFadingEdgeLabel: EdgeLabelDrawingFunction<NodeAttributes, EdgeA
   const x = (sourceData.x + targetData.x) / 2;
   const y = (sourceData.y + targetData.y) / 2;
   if (edgeData.kind === "source_connection" && (edgeData.sourceRelations as SourceRelationGroup[]).some((relation) => relation.kind === "source_relation")) {
-    const markers = prevalentSourceRelationTypes(edgeData.sourceRelations);
+    const markers = prevalentSourceRelationTypes((edgeData.sourceRelations as SourceRelationGroup[])
+      .filter((relation) => (edgeData.relationTypeOpacities?.[relation.relationType ?? ""] ?? 1) > 0.001));
     const dominant = markers.length > 1 && markers[0]!.count > markers[1]!.count;
+    const revealScale = 0.5 + 0.5 * Math.min(1, opacity / 0.9);
     markers.slice(0,3).forEach((marker,index) => {
-      context.save();context.translate(x + (index - (Math.min(markers.length,3)-1)/2) * 24,y);
-      const scale = index === 0 && dominant ? 1.2 : 1;context.scale(scale,scale);
-      drawAtomicRelationMarker(context,marker.type,0,0,opacity);context.restore();
+      context.save();context.translate(x + (index - (Math.min(markers.length,3)-1)/2) * 24 * revealScale,y);
+      const scale = revealScale * (index === 0 && dominant ? 1.2 : 1);context.scale(scale,scale);
+      drawAtomicRelationMarker(context,marker.type,0,0,opacity * (edgeData.relationTypeOpacities?.[marker.type] ?? 1));context.restore();
     });
     return;
   }

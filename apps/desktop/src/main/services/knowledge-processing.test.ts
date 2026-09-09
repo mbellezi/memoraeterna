@@ -19,10 +19,24 @@ import {
   parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
   parseBatchRerankOutput,
+  resolveAtomicNoteReferences,
   scoreMetadataOverlap
 } from "./knowledge-processing.js";
 
 describe("knowledge processing", () => {
+  it("requires substantive explanation output and resolves only the evaluated note pair", () => {
+    const source = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const target = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    expect(resolveAtomicNoteReferences("c12 supports s1; s1 needs that evidence.", source, "c12", target))
+      .toBe(`<note-ref id="${target}" /> supports <note-ref id="${source}" />; <note-ref id="${source}" /> needs that evidence.`);
+    expect(resolveAtomicNoteReferences("Independent prose.", source, "c12", target)).toBe("Independent prose.");
+    for (const text of ["c1 supports s1", "s2 supports c12", '<note-ref id="invented" />']) {
+      expect(() => resolveAtomicNoteReferences(text, source, "c12", target)).toThrow("atomic_note_rerank_invalid_reference");
+    }
+    for (const explanation of [undefined, "", "   ", "a".repeat(701)]) {
+      expect(() => parseBatchRerankOutput({ results: [{ candidateAlias: "c1", score: 0.9, relationType: "supports", explanation }] }, new Set(["c1"]))).toThrow();
+    }
+  });
   it("resolves summary concept aliases to source chunks and drops unsupported evidence", () => {
     expect(summaryConcepts({summary:"Summary",concepts:[{idea:"Concept with scope",evidenceChunkIds:["c2"]},{idea:"Invented evidence",evidenceChunkIds:["unknown"]}]},[{id:"one"},{id:"two"}]))
       .toEqual([{idea:"Concept with scope",evidenceChunkIds:["two"]}]);
@@ -38,11 +52,12 @@ describe("knowledge processing", () => {
     );
     expect(prompt).toContain("source note -> candidate note");
     expect(prompt).toContain("[c1]");
-    expect(prompt).not.toContain("explanation");
+    expect(prompt).toContain("explanation");
+    expect(prompt).toContain("Source note [s1]");
 
     const parsed = parseBatchRerankOutput(JSON.stringify({ results: [
-      { candidateAlias: "c1", score: 0.9, relationType: "supports" },
-      { candidateAlias: "c2", score: 0.2, relationType: "related" }
+      { candidateAlias: "c1", score: 0.9, relationType: "supports", explanation: "c1 provides evidence for s1." },
+      { candidateAlias: "c2", score: 0.2, relationType: "related", explanation: "The claims address different conditions." }
     ] }), new Set(["c1", "c2"]));
     expect(parsed.get("c1")).toMatchObject({ score: 0.9, relationType: "supports" });
     expect(() => parseBatchRerankOutput(JSON.stringify({ results: [
@@ -606,7 +621,7 @@ describe("advanced note matching calibration", () => {
     expect(qualifiesAtomicNoteRelation({ ...input, rerankScore: 0, settings: { ...settings, minRerankScore: 0 } })).toBe(false);
   });
   it("supports increased candidate batches and configurable graph reservation", () => {
-    const results = Array.from({ length: 45 }, (_, i) => ({ candidateAlias: `c${i + 1}`, score: 0.8, relationType: "supports" }));
+    const results = Array.from({ length: 45 }, (_, i) => ({ candidateAlias: `c${i + 1}`, score: 0.8, relationType: "supports", explanation: "The candidate provides evidence for the source claim." }));
     expect(parseBatchRerankOutput({ results }, new Set(results.map((r) => r.candidateAlias))).size).toBe(45);
     const ranked = [{ noteId: "text", score: 1 }];
     expect(fuseAtomicNoteCandidateRankings(ranked, ranked, [{ noteId: "graph", score: 1 }], 1, 0, 10)[0]?.noteId).toBe("text");

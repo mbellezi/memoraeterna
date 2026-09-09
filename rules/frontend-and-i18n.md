@@ -72,16 +72,38 @@ locales.
   source-connection details. The default conceptual source view uses the
   atomic-note icons and stacked relationship cards in `rules/source-relations.md`.
   Atomic-note relations use compact, distinctly colored icon markers instead
-  of text on the canvas. A localized Labels badge below the atomic-note graph
-  opens a fading icon-to-label legend. Canvas markers and legend entries use
+  of text on the canvas. A localized Filters badge below the conceptual-source
+  and atomic-note graphs opens the icon-to-label panel with full-row switches.
+  Use colored icons for enabled types and gray icons for disabled types, without
+  visible checkboxes. Expose switch state to assistive technology and support
+  keyboard activation and visible focus.
+  Filtering uses loaded data, fades disabled connections and nodes with no active
+  connections over 220 ms, and restores them when enabled. Preserve graph topology,
+  positions and camera; hidden items cannot be picked. Grouped edges remain when
+  another relation type is active. Canvas markers and filter entries use
   the same Lucide icon geometry and color for every canonical relation type;
   the supports marker uses a plain check because the marker supplies the circle.
   Marker circles have an approximately 17.6-pixel diameter so Lucide icons retain clear internal spacing.
   Relation information cards repeat that icon before the translated label.
-  Labels use the active locale in the legend and relation details. When a hovered edge's normal label is
+  Atomic-note relation hover cards use the same compact visual hierarchy as
+  source-relation cards and show the persisted explanation, localizing known
+  explanation keys while preserving generated prose.
+  Note-reference tags render as safe numbered cyan/violet badges matching
+  the displayed endpoints in both graph cards and the Library relation list;
+  resolve by canonical ID, never by alias or UUID sort order. Labels use the active
+  locale in the legend and relation details. When a hovered edge's normal label is
   outside the viewport, a temporary label follows the pointer. Hover information
-  cards measure their rendered size, flip around the pointer when needed, and
-  remain bounded by the visible graph viewport, including after async content
+  cards mount invisibly for measurement and start their entrance animation only
+  after their final position is calculated. Async relation cards wait for loaded,
+  empty or error content before revealing; apply resize positioning before paint.
+  Cards measure their rendered size, flip around the pointer when needed, and
+  accept pointer interaction. Entering a card cancels pending dismissal and keeps
+  it open while the pointer remains inside. Wheel events scroll overflowing card
+  content natively. A protected pointer corridor from the original hover anchor
+  to the measured card prevents dismissal, including slow movement and pauses
+  across the gap; leaving the corridor releases the popup.
+  Wheel events never propagate into graph zoom; contain scroll chaining.
+  Cards remain bounded by the visible graph viewport, including after async content
   changes. Any wheel, button, fit, or focus zoom dismisses pending and visible
   node or relation information cards without closing the relation legend. In Sources mode,
   a toolbar toggle selects an interactive graph preview (default) or the previous
@@ -115,7 +137,9 @@ locales.
   In Sources mode, hierarchical source items are grouped by their root source by
   default. A collapsed root displays its descendant count and aggregates descendant
   connections without losing their weights or details. The count appears in a small
-  badge on the source node. Hover information cards remain informational; two compact
+  badge on the source node. Subitem-count badges follow the node label's zoom
+  reveal and hover opacity, shrinking and fading out when zooming out and
+  returning to full size on emphasis. Hover information cards remain informational; two compact
   node-anchored actions expand or collapse that source in place and open its hierarchy
   with only directly connected source neighbors in a separate overlay graph. The
   pointer corridor between the source node and both actions keeps the actions open
@@ -232,17 +256,28 @@ job statuses, or user-visible backend errors.
 
 ## Settings navigation
 
+- In the conceptual source graph, the relation window defaults to disabled;
+  the entity-connection view keeps its independent enabled default. Every source
+  in the conceptual view exposes a node-anchored entity-graph action, including
+  sources without children. It opens the source's canonical entities and directed
+  relations in the existing interactive preview renderer. Keep the underlying
+  graph mounted and frozen; Back, Escape and Close dismiss the top preview and
+  preserve the previous camera and node positions. Support loading, empty and
+  retryable error states.
+
 - The introductory settings card and global status summary appear only in the
   Overview dashboard. Other settings dashboards start with their own scope header.
 
 ## Matching settings
 
 - The Matching dashboard starts with a preset selector. The recommended preset
-  is visibly identified and its values are read-only; users duplicate it or any
-  custom preset, name the copy, and edit or rename custom presets. Existing custom
-  matching values remain available. Cover invalid names, save failure rollback,
-  the custom-preset limit and the absence of custom presets. Preset changes apply
-  all matching fields together; delayed save responses must not replace newer edits.
+  is visibly identified and its values are read-only; users create a preset from
+  the recommendation, duplicate any preset, and edit, rename, or delete custom
+  presets. Deletion requires confirmation and the built-in recommendation cannot
+  be deleted. Existing custom matching values remain available. Cover invalid
+  names, save failure rollback, the custom-preset limit and the absence of custom
+  presets. Preset changes apply all matching fields together; delayed save
+  responses must not replace newer edits.
 - Every matching variable has a compact accessible reset action, including
   numeric limits, signal weights and toggles. Each reset restores that variable's
   value from the built-in recommendation; group resets use the same snapshot.

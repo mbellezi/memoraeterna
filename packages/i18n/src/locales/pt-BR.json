@@ -42,6 +42,7 @@
     }
   },
   "knowledgeGraph": {
+    "openSourceEntities": "Abrir grafo de entidades da fonte",
     "backToGraph": "Voltar ao grafo",
     "layoutError": "Não foi possível calcular a disposição do grafo. Tente novamente para retomar a interação.",
     "forces": {
@@ -86,7 +87,7 @@
       "semantic_relation": "Relação semântica",
       "atomic_note_relation": "Relação entre notas atômicas"
     },
-    "relationLegend": { "trigger": "Rótulos", "title": "Rótulos das relações" }
+    "relationLegend": { "trigger": "Filtros", "title": "Filtros de conexões" }
   },
   "database": {
     "startup": {
@@ -567,12 +568,15 @@
       "presets": {
         "title": "Preset de matching",
         "recommended": "Equilibrado — recomendado",
-        "recommendedHint": "Parâmetros validados de matching. Duplique este preset para editar. Cada reset restaura o valor recomendado.",
+        "recommendedHint": "Parâmetros validados de matching. Crie ou duplique um preset para editar. Cada reset restaura o valor recomendado.",
         "customHint": "As alterações são salvas neste preset. Os profiles de IA são gerenciados separadamente.",
         "previous": "Configurações personalizadas",
         "copy": "cópia",
+        "create": "Criar preset",
         "duplicate": "Duplicar preset",
         "rename": "Renomear",
+        "delete": "Apagar preset",
+        "deleteConfirm": "Apagar este preset? Esta ação não pode ser desfeita.",
         "name": "Nome do preset",
         "save": "Salvar preset",
         "cancel": "Cancelar",

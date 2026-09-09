@@ -47,6 +47,7 @@ import {
   qualifiesAtomicNoteRelation,
   normalizeSummaryText,
   parseBatchRerankOutput,
+  resolveAtomicNoteReferences,
   scoreMetadataOverlap,
   knowledgeGraphPromptVersion,
   parseKnowledgeGraphBatchCheckpoints,
@@ -1077,6 +1078,10 @@ export class KnowledgeService {
               rerankExecution.output,
               new Set(rerankAliases.values())
             );
+            for (const candidate of candidates) {
+              const result = rerankResults.get(rerankAliases.get(candidate.note.id)!)!;
+              result.explanation = resolveAtomicNoteReferences(result.explanation, note.id, result.candidateAlias, candidate.note.id);
+            }
           }
         } catch (error) {
           if (signal?.aborted) throw error;
@@ -1130,7 +1135,7 @@ export class KnowledgeService {
             settings: matchingSettings
           });
           relationType = reranked.relationType;
-          explanation = "knowledge.relations.explanations.reranked";
+          explanation = reranked.explanation;
         }
         const passedThreshold = qualifiesAtomicNoteRelation({ finalScore, threshold: relationThreshold, rerankScore, relationType, settings: matchingSettings });
         debugResults.push({
