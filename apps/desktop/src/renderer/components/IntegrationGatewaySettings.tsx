@@ -83,6 +83,7 @@ export function IntegrationGatewaySettings({ t }: { t: (key: MessageKey) => stri
           {t("settings.integrations.createPairing")}
         </Button>
       </div>
+      {clientType === "obsidian-plugin" && <p className="text-sm text-slate-600 dark:text-slate-400">{t("obsidianEditing.scopeHint")}</p>}
       {pairing ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/40">
           <p className="text-sm font-medium text-amber-950 dark:text-amber-100">{t("integrations.clientId")}</p>

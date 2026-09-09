@@ -42,7 +42,7 @@ export function createWikiRepository(pool: PgPool) {
     async history(id: string) {
       return (await pool.query(`select id,number,created_at as "createdAt",origin,content from wiki_page_revisions where page_id=$1 order by number desc limit 100`, [id])).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
     },
-    async save(input: { id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }, authority?: { transaction: PgClient; origin: "organization"; allocatedTarget: boolean; humanApproved: boolean }) {
+    async save(input: { id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }, authority?: { transaction: PgClient; origin: "organization" | "human"; allocatedTarget: boolean; humanApproved: boolean }) {
       const db = authority?.transaction ?? await pool.connect();
       try {
         if (!authority) await db.query("begin");
@@ -65,10 +65,10 @@ export function createWikiRepository(pool: PgPool) {
         if (content.entityId && !(await db.query("select id from entities where id=$1", [content.entityId])).rows.length) throw new Error("wiki.errors.invalid");
         // Every desktop edit is human protected, independently of review state.
         for (const section of content.sections) {
-          if (!authority) section.protected = true;
+          if (!authority || authority.origin === "human") section.protected = true;
           else if (!authority.humanApproved && (current?.content as Content | undefined)?.sections.some(s => s.id === section.id && s.protected && JSON.stringify(s) !== JSON.stringify(section))) throw new Error("organization.errors.protected");
           const previous = (current?.content as Content | undefined)?.sections.find((s) => s.id === section.id);
-          if (previous && previous.markdown !== section.markdown && section.evidenceIds.length) section.evidenceReview = "needs_review";
+          if (previous && (previous.markdown !== section.markdown || previous.title !== section.title) && section.evidenceIds.length) section.evidenceReview = "needs_review";
         }
         // Retain previous titles as lookup aliases without rewriting prior revisions.
         content.aliases = [...new Set([...content.aliases, ...(current && current.title !== content.title ? [current.title] : [])])].slice(0, 50);

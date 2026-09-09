@@ -312,6 +312,7 @@ export class KnowledgeService {
   }
 
   public async reviewNote(input: {
+    expectedUpdatedAt?: string | undefined;
     id: string;
     action: "approve" | "edit" | "discard";
     title?: string | undefined;

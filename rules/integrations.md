@@ -58,8 +58,8 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   validated identity/version/path.
 - Conflicts are explicit and never resolved by silent overwrite. Prefer
   tombstones or recoverable deletion when data loss is possible.
-- Editing synchronized source Markdown triggers the defined document revision
-  and reprocessing behavior; preserve reviewed artifacts and provenance.
+- Editing synchronized source Markdown uses the shared editorial revision flow.
+  Preserve reviewed artifacts and provenance; saving never implies AI processing.
 
 ## Wiki projection release 1
 
@@ -127,7 +127,8 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   observed intended hash before clearing a guard. Recovery files are excluded
   from reconciliation and are removed only by explicit library reset when
   their registered delivery and managed identity validate ownership.
-- Negotiate `obsidian-wiki-projection-v1`. New plugins skip outward files and
+- The release-1 protocol negotiates `obsidian-wiki-projection-v1`. Clients without
+  separately granted editorial capability skip outward files and
   refuse unsupported managed manual imports. The gateway also rejects reserved
   raw Markdown when an older plugin omits its unrecognized frontmatter object.
   Source/note import, move and delete routes cannot reinterpret registered wiki,
@@ -158,6 +159,106 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   navigation request epoch; a delayed response cannot replace a linked
   historical revision, even when both responses have the same page ID.
 - The Obsidian plugin's loadable JavaScript is the Vite CommonJS bundle.
+  Its build first compiles integration contracts and translations so workspace
+  build ordering cannot embed stale protocol schemas or product copy.
   Type checking emits declarations only and must never replace that bundle
   with unbundled ES modules. Verify the built artifact remains loadable after
   a subsequent workspace type check.
+
+## Editorial synchronization
+
+- `obsidian-editorial-v1` is a separately granted pairing capability. Existing
+  pairings are not silently upgraded. A compatible plugin requires an explicit
+  Obsidian pairing with editorial scope, a persistent vault UUID and the current
+  vault/root binding. Binding is first-write-wins; a different vault or root
+  needs a new pairing. Recheck the grant, target registry, original admitted
+  source/page scope and binding before commit. Scope never comes from Markdown.
+- The plugin persists versioned operations before delivery, retaining original
+  operation IDs, exact observed file bytes and their acknowledged bases across
+  restarts. Serialize durable transitions, restore them on persistence failure,
+  deduplicate identical captures inside that transition, and serialize target
+  replay. Bound the queue to 1,000 operations and 20 million content characters;
+  failures remain visible and never silently discard local text. HTTP requests
+  have a ten-second timeout and only use the loopback gateway.
+- The manifest is cursor-paged over registered files, 25 per page. Missing files
+  during scans never imply deletion. Explicit file/folder moves and deletions
+  produce separate durable operations; folder operations retain per-file results.
+  A move changes registered placement only, not a source parent or wiki parent.
+  Copying an existing identity to another path produces a conflict.
+- The editorial service uses the M4 per-target write coordinator and a receipt
+  transaction, with current canonical locks and expected revisions. That same
+  transaction saves human revisions, invalidates dependents, updates the sync
+  base and records an immutable operation/receipt. Replaying an applied ID with
+  the same request returns its receipt; reusing an ID with different data fails.
+  Serialize editorial admission to avoid exhausting the shared PostgreSQL pool.
+- Sources use `SourceEditorialService`, also used by the Library. Saving replaces
+  a current document through an editorial revision, preserves previous documents,
+  chunks and spans, and never creates ingestion/AI jobs. Body-only projection
+  edits preserve catalog metadata, bibliography and child boundaries. Legacy
+  source edits reject superseded documents and keep the new document identity;
+  the legacy input hash may normalize whitespace, but stored text never does.
+- Page H1 titles and UUID-anchored sections are editable. The plugin's explicit
+  Add human section command can wrap an empty page/index introduction or append a
+  new section. Added sections are human/protected and have no invented evidence.
+  Reordered, missing or ambiguous anchors require manual reconciliation with the
+  exact retained base. Reserved metadata, generated evidence, relation blocks,
+  source relationships and navigation are not a mutation language. User YAML is
+  retained as local metadata; it cannot change permissions or canonical review.
+- Merge only independent anchored section/title changes with intact structure
+  and unchanged generated regions. Use parser offsets, never equal body strings,
+  to identify a section. Overlap, unsupported structure and changed generated
+  bytes retain base/local/app text for explicit keep-local, keep-app or manual
+  merge in Obsidian or Connections. Confirmation rechecks canonical revisions
+  and current local bytes. Review failures remain visible in the dialog.
+- A receipt does not grant permission to overwrite a newer local file/editor.
+  The plugin uses the supported host `Vault.process` API and compares the active
+  Markdown editor; desktop resolutions use the managed CAS/recovery writer.
+  Rebased queued wire content retains its separate original observed bytes.
+  A later queued deletion can eliminate the need to reproject an earlier save;
+  the final tombstone retains the latest local content. Delivery acknowledgments
+  verify the actual file hash and never clear a newer pending operation.
+- Explicit deletion creates a recoverable projection tombstone, never a source,
+  note or cited-object cascade. Connections can restore it through the same
+  reviewed receipt flow. Pending payloads remain inspectable in the plugin even
+  if canonical data is removed separately. Acknowledged plugin payloads are
+  removed after durable receipt processing; PostgreSQL receipts/bases and note
+  revisions remain audit history until explicit library reset.
+- New editorial targets are excluded from legacy automatic import/move/delete
+  mutation paths. Projection echoes are recognized through exact acknowledged
+  content and registered versions; a newer outward version is reconciled before
+  being treated as a local edit. No-plugin and incompatible-plugin divergence
+  retains the M4 recovery behavior.
+- A duplicate-copy conflict can be explicitly detached in the plugin: retain its
+  prose/user YAML as an unmanaged local copy, remove its reserved identity fields
+  with a local CAS, and dismiss the conflict only after the backend verifies that
+  the copied path is no longer managed. The original registry identity is kept.
+- Fresh comparisons are read-only; applied receipts remain immutable. Explicit
+  resolution supersedes earlier queued snapshots of that file only after checking
+  its current observed bytes. Plugin unloading stops late queue transitions and
+  file writes; pending operations remain replayable on the next load.
+- Move, deletion and restoration receipts invalidate generated navigation in the
+  same transaction. Tombstoned targets retain their paths for restoration but
+  generated links fall back to validated application navigation. Every rendered
+  wiki change advances its sync version, including generated-only link changes
+  whose canonical page revision is unchanged.
+- Replay follows contiguous explicit move events to the final observed path;
+  intermediate paths need not exist. A legacy dirty move first persists a
+  separate editorial save while retaining the original move operation ID.
+  Generated regions rebase only when their bytes equal the accepted prior input;
+  divergent generated text remains available for conflict review.
+- Resolution receipts retain the exact locally confirmed bytes. Desktop
+  keep-local applies those bytes; plugin replay supersedes only edit snapshots
+  through that observed boundary, preserving subsequent edits and every separate
+  move/delete event. A missing local file invalidates plugin confirmation rather
+  than implicitly restoring it. Byte-identical files at different paths still
+  require duplicate-identity reconciliation.
+- Failed resolution retries reference the original conflict family. A successful
+  resolution hides only earlier attempts with the same client, target and vault
+  binding; immutable receipts remain history. The manifest identifies the exact
+  retired attempt IDs so the plugin can reconcile a replaced original without
+  dropping later drafts or independent conflicts.
+- Files and successful resolutions are separately paged, 25 each, through the
+  manifest cursor until both are exhausted. The plugin sends its stable snapshot
+  of at most 1,000 pending operation IDs in the POST body for all pages. Filter
+  resolution history and retired attempt IDs by that snapshot, so long history
+  cannot crowd out an older operation still pending on an offline client.

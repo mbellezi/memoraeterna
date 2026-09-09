@@ -222,3 +222,17 @@ provider token breakdowns and precise call context, as specified in
   model resident does not authorize concurrent inference. Real model comparisons
   run sequentially through the shared application FIFO; never start a duplicate
   helper/runtime to accelerate a test.
+
+## Human atomic-note revisions
+
+- Desktop and Obsidian note edits use the same optimistic review repository.
+  Require the expected timestamp for desktop edits, retain complete before/after
+  snapshots in `atomic_note_revisions`, preserve independent review status and
+  original evidence links, and mark changed prose as needing evidence review.
+  Human edits set `metadata.humanProtected`, invalidate derived note embeddings
+  and existing dependency fingerprints, and never start inference. Revision
+  timestamps advance by at least one millisecond.
+- Generated upserts and pending-note archival during reingestion preserve human
+  protected notes, including pending-review notes. A protected upsert also leaves
+  its evidence links untouched. Existing edit-audit events conservatively backfill
+  protection; do not fabricate historic text absent from the earlier audit.

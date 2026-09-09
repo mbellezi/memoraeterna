@@ -1,4 +1,4 @@
-import type { PgPool } from "../client.js";
+import type { PgPool, PgClient } from "../client.js";
 import { createDocumentRepository } from "./documentRepository.js";
 import { createSourceItemRepository, markAncestorSummariesStale } from "./sourceItemRepository.js";
 import type { JsonObject } from "./types.js";
@@ -9,11 +9,12 @@ export function createSourceEditingRepository(pool: PgPool) {
     async save(input: {
       sourceItemId: string; expectedUpdatedAt: string; title: string; subtitle: string | null;
       language: string; sourceUri: string | null; descriptor: JsonObject;
+      contentOnly?: boolean;
       content?: { documentId: string | null; markdown: string; hash: string };
-    }) {
-      const client = await pool.connect();
+    }, transaction?: PgClient) {
+      const client = transaction ?? await pool.connect();
       try {
-        await client.query("begin");
+        if (!transaction) await client.query("begin");
         const locked = await client.query<{ updatedAt: Date }>(
           'select updated_at as "updatedAt" from source_items where id = $1 for update', [input.sourceItemId]
         );
@@ -54,13 +55,14 @@ export function createSourceEditingRepository(pool: PgPool) {
         }
         await sources.update(source.id, { title: input.title, subtitle: input.subtitle, language: input.language,
           sourceUri: input.sourceUri, ...(contentChanged ? { contentHash: input.content!.hash } : {}),
-          metadata: { ...source.metadata, descriptor: input.descriptor,
+          metadata: { ...source.metadata, ...(!input.contentOnly ? { descriptor: input.descriptor } : {}),
             ...(contentChanged ? { contentChangedAt: new Date().toISOString(), summaryStale: true } : {}) } });
         for (const document of await documents.listBySourceItem(source.id)) {
           if (document.title !== input.title || document.language !== input.language) {
             await documents.update(document.id, { title: input.title, language: input.language });
           }
         }
+        if (!input.contentOnly) {
         // Child links refer to the parent's work: never rename that work when editing a child.
         const descriptor = input.descriptor;
         if (!source.parentSourceItemId) {
@@ -91,15 +93,17 @@ export function createSourceEditingRepository(pool: PgPool) {
             where id = $2 and (source_item_id is null or source_item_id = $1) returning id`, [source.id, cover.assetId]);
           if (!asset.rows.length) throw new Error("errors.common.validationFailed");
         }
+        }
         if (contentChanged && source.parentSourceItemId) {
           await markAncestorSummariesStale(client, source.parentSourceItemId);
         }
-        await client.query("commit");
+        await client.query("update source_items set updated_at=greatest(updated_at,$2::timestamptz+interval '1 millisecond') where id=$1",[source.id,input.expectedUpdatedAt]);
+        if (!transaction) await client.query("commit");
         return { sourceItemId: source.id, documentId, contentChanged };
       } catch (error) {
-        await client.query("rollback").catch(() => undefined);
+        if (!transaction) await client.query("rollback").catch(() => undefined);
         throw error;
-      } finally { client.release(); }
+      } finally { if (!transaction) client.release(); }
     }
   };
 }

@@ -7,6 +7,7 @@
   "main": "./dist/main.js",
   "types": "./src/index.ts",
   "scripts": {
+    "prebuild": "npm run build -w @app/integration-contracts && npm run build -w @app/i18n",
     "build": "vite build",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run"

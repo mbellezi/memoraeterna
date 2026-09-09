@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,12 +34,13 @@ try {
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
+  const migrationCount = JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8")).entries.length;
   await runMigrations(pool, migrationsFolder);
 
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 18) {
+  if (Number(history.rows[0]?.count) !== migrationCount) {
     throw new Error("Unexpected source-ingestion migration history.");
   }
 
@@ -99,7 +100,7 @@ try {
   seedUrl.pathname = "/memora_source_ingestion_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 18) {
+  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== migrationCount) {
     throw new Error("Empty database did not apply the complete source-ingestion baseline.");
   }
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {

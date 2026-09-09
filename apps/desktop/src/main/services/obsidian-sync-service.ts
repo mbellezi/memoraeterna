@@ -1,3 +1,5 @@
+import { SourceEditorialService } from "./source-editorial-service.js";
+import { ObsidianEditorialService } from "./obsidian-editorial-service.js";
 import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
 import { isOutwardProjection, parseObsidianMarkdown, serializeManagedFrontmatter, normalizeProjectionText } from "@app/integration-contracts";
 import { ObsidianWikiProjection } from "./obsidian-wiki-projection.js";
@@ -8,9 +10,8 @@ import { randomUUID } from "node:crypto";
 import {
   createAtomicNoteRelationRepository,
   createAtomicNoteRepository,
+  createChunkRepository,
   createDocumentRepository,
-  createIngestionRunRepository,
-  createJobRepository,
   createObsidianSyncRepository,
   createSourceItemRepository,
   type AtomicNoteRecord,
@@ -20,7 +21,7 @@ import {
   type PgPool,
   type SourceItemRecord
 } from "@app/db";
-import { createTextBlocks, normalizeMarkdown, sha256 } from "@app/conversion";
+import { normalizeMarkdown as normalizeLegacyMarkdown, sha256 } from "@app/conversion";
 import type {
   ImportObsidianNoteRequest,
   IntegrationCommandResult,
@@ -61,8 +62,10 @@ export class ObsidianSyncService {
   private synchronizationStatus: ObsidianSyncStatus = createIdleSynchronizationStatus();
 
   public readonly wiki: ObsidianWikiProjection;
+  public readonly editorial: ObsidianEditorialService;
   public constructor(private readonly options: ObsidianSyncServiceOptions) {
     this.wiki = new ObsidianWikiProjection({...options, projectSource:(id,notes,binding)=>this.projectSource(id,notes,binding),write:(input)=>this.writeProjection(input)});
+    this.editorial = new ObsidianEditorialService({...options,wiki:this.wiki,write:input=>this.writeProjection(input)});
   }
 
   public async shutdown(): Promise<void> {
@@ -108,6 +111,11 @@ export class ObsidianSyncService {
     const pool = this.requirePool();
     const syncFiles = createObsidianSyncRepository(pool);
     const existing = await syncFiles.findByMemoraId(input.frontmatter.memoraId);
+    if(existing?.metadata.projectionWrite)return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
+    if(!existing || existing.memoraType!==input.frontmatter.memoraType || input.frontmatter.memoraSourceId!==existing.sourceItemId || input.frontmatter.memoraDocumentId!==existing.documentId)throw new Error('obsidianWiki.errors.binding');
+    const admitted=await this.wiki.sourceAdmission(settings);
+    await this.wiki.assertSourceExport(settings,admitted,existing.sourceItemId!,existing.memoraType==='atomic_note'?[existing.memoraId]:[]);
+    if (existing?.metadata.editorialBase || existing?.metadata.editorialPending) return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
     if (existing?.metadata.projectionWrite) return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
     if (existing && isOutwardProjection(existing.memoraType)) return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
     if (existing && existing.relativePath !== relativePath) {
@@ -122,9 +130,9 @@ export class ObsidianSyncService {
       });
       return { requestId: input.requestId, accepted: false, syncStatus: "conflict" };
     }
-    const body = normalizeMarkdown(input.markdown);
+    const body = normalizeProjectionText(input.markdown);
     const contentHash = sha256(body);
-    if (contentHash !== stripHashPrefix(input.contentHash)) throw new Error("obsidian_content_hash_mismatch");
+    if (contentHash !== stripHashPrefix(input.contentHash) && sha256(normalizeLegacyMarkdown(body)) !== stripHashPrefix(input.contentHash)) throw new Error("obsidian_content_hash_mismatch");
     if (existing?.contentHash === contentHash) {
       await syncFiles.update(existing.id, {
         relativePath,
@@ -137,17 +145,19 @@ export class ObsidianSyncService {
     const sourceItemId = input.frontmatter.memoraSourceId
       ?? (input.frontmatter.memoraType === "source_item" ? input.frontmatter.memoraId : existing?.sourceItemId)
       ?? null;
-    const documentId = input.frontmatter.memoraDocumentId ?? existing?.documentId ?? null;
+    let documentId = input.frontmatter.memoraDocumentId ?? existing?.documentId ?? null;
     if (input.frontmatter.memoraType === "source_item") {
       if (!sourceItemId || !documentId) throw new Error("obsidian_source_identity_missing");
-      await this.updateSourceDocument(sourceItemId, documentId, body, contentHash);
+      documentId = await this.updateSourceDocument(sourceItemId, documentId, body);
     } else {
       const notes = createAtomicNoteRepository(pool);
       const note = await notes.findById(input.frontmatter.memoraId);
       if (!note) throw new Error("atomic_note_not_found");
+      if(existing.lastSyncedAt && note.updatedAt>existing.lastSyncedAt)return {requestId:input.requestId,accepted:false,syncStatus:"conflict"};
       await notes.review({
         id: note.id,
         action: "edit",
+        expectedUpdatedAt: note.updatedAt.toISOString(),
         bodyMarkdown: stripProjectedTitle(stripObsidianRelations(body), note.title)
       });
     }
@@ -194,7 +204,7 @@ export class ObsidianSyncService {
     if (!vaultPath || !await pathExists(vaultPath)) throw new Error("obsidian_vault_unavailable");
     const repository = createObsidianSyncRepository(this.requirePool());
     const record = await repository.findByMemoraId(event.memoraId);
-    if (!record || record.metadata.projectionWrite || isOutwardProjection(record.memoraType)) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
+    if (!isSyncActive(settings) || !record || record.metadata.editorialBase || record.metadata.editorialPending || record.metadata.projectionWrite || isOutwardProjection(record.memoraType)) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
     if (record.relativePath !== previousRelativePath || event.syncVersion !== record.syncVersion) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
@@ -247,25 +257,6 @@ export class ObsidianSyncService {
       deletedAt,
       metadata: { ...record.metadata, deletePolicy: settings.deletionPolicy, tombstonedAt: deletedAt.toISOString() }
     });
-    if (record.memoraType === "atomic_note") {
-      const notes = createAtomicNoteRepository(pool);
-      if (settings.deletionPolicy === "delete") await notes.review({ id: record.entityId, action: "discard" });
-      if (settings.deletionPolicy === "archive") await notes.setStatus(record.entityId, "archived");
-    } else if (record.sourceItemId) {
-      const sources = createSourceItemRepository(pool);
-      const source = await sources.findById(record.sourceItemId);
-      if (source && settings.deletionPolicy === "delete") {
-        await sources.remove(source.id);
-      } else if (source && settings.deletionPolicy === "archive") {
-        await sources.update(source.id, {
-          metadata: { ...source.metadata, obsidianArchivedAt: deletedAt.toISOString() }
-        });
-      } else if (source) {
-        await sources.update(source.id, {
-          metadata: { ...source.metadata, obsidianTombstonedAt: deletedAt.toISOString() }
-        });
-      }
-    }
     return { requestId: event.eventId, accepted: true, syncStatus: "deleted" };
   }
 
@@ -339,7 +330,7 @@ export class ObsidianSyncService {
         snapshots.push({
           relativePath: relative(vaultPath, fullPath).split(sep).join("/"),
           frontmatter: parsed.frontmatter,
-          contentHash: sha256(normalizeMarkdown(parsed.bodyMarkdown)),
+          contentHash: sha256(normalizeProjectionText(parsed.bodyMarkdown)),
           mtimeMs: Math.trunc(file.mtimeMs),
           markdown: parsed.bodyMarkdown
         });
@@ -464,6 +455,8 @@ export class ObsidianSyncService {
     relatedNotes: ObsidianRelatedNote[],
     admittedBinding:string
   ): Promise<number> {
+    const evidenceChunk=await createChunkRepository(this.requirePool()).findById(note.evidenceChunkId);
+    if(!evidenceChunk)throw new Error('obsidianWiki.errors.binding');
     return this.writeEntity(settings, {
       admittedBinding,
       exportNoteIds:[note.id,...relatedNotes.flatMap(r=>r.noteId?[r.noteId]:[])],
@@ -472,7 +465,7 @@ export class ObsidianSyncService {
       entityType: "atomic_note",
       entityId: note.id,
       sourceItemId: source.id,
-      documentId: document.id,
+      documentId: evidenceChunk.documentId,
       title: note.title,
       bodyMarkdown: appendObsidianRelations(
         `# ${note.title}\n\n${note.bodyMarkdown}`,
@@ -506,7 +499,7 @@ export class ObsidianSyncService {
       const target = syncFile.relativePath
         ? normalizeRelativePath(syncFile.relativePath).replace(/\.md$/i, "")
         : slugify(title).replace(/\.md$/i, "");
-      relatedNotes.push({ relationType: relation.relationType, title, target,noteId:relatedId });
+      relatedNotes.push({ relationType: relation.relationType, title, target,noteId:relatedId,...((syncFile.metadata.editorialTombstone||syncFile.status==='deleted')&&syncFile.sourceItemId?{appSourceId:syncFile.sourceItemId}:{}) });
     }
     return relatedNotes;
   }
@@ -536,19 +529,20 @@ export class ObsidianSyncService {
     const pool = this.requirePool();
     const repository = createObsidianSyncRepository(pool);
     let existing = await repository.findByMemoraId(input.memoraId);
+    if(existing?.metadata.editorialTombstone || existing?.metadata.editorialPending) return 0;
     if(existing?.metadata.projectionWrite){
       const pending=existing.metadata.projectionWrite as {renderedHash?:string;contentHash?:string;syncVersion?:number};
       const target=await safeVaultPath(settings.obsidianVaultPath!,validateManagedRelativePath(settings,existing.relativePath));
       if(await pathExists(target)){
         if((await stat(target)).size>2_000_000)throw new Error('obsidianWiki.errors.limit');
-        const raw=await readFile(target,'utf8'),parsed=parseManagedMarkdown(raw),actual=parsed?sha256(normalizeMarkdown(parsed.bodyMarkdown)):null;
+        const raw=await readFile(target,'utf8'),parsed=parseManagedMarkdown(raw),actual=parsed?sha256(normalizeProjectionText(parsed.bodyMarkdown)):null;
         const written=sha256(normalizeProjectionText(raw))===pending.renderedHash&&actual===pending.contentHash&&parsed?.frontmatter.memoraSyncVersion===pending.syncVersion;
         if(!parsed||parsed.frontmatter.memoraId!==input.memoraId||(!written&&actual!==existing.contentHash))throw new Error('obsidian_projection_target_conflict');
         const {projectionWrite:_pending,...metadata}=existing.metadata;
         existing=(await repository.update(existing.id,{...(written?{contentHash:actual!,syncVersion:pending.syncVersion!}:{}),metadata,status:'synced',lastSyncedAt:new Date()}))!;
       }
     }
-    const bodyMarkdown = normalizeMarkdown(input.bodyMarkdown);
+    const bodyMarkdown = normalizeProjectionText(input.bodyMarkdown);
     const contentHash = sha256(bodyMarkdown);
     const syncVersion = existing ? existing.syncVersion + (existing.contentHash === contentHash ? 0 : 1) : 1;
     const rendered = renderObsidianProjection({
@@ -590,7 +584,7 @@ export class ObsidianSyncService {
       const fullParsed = parseObsidianMarkdown(raw);
       if(fullParsed?.userFrontmatter) rendered.markdown=serializeManagedFrontmatter(rendered.frontmatter,fullParsed.userFrontmatter)+"\n"+bodyMarkdown;
       const parsed = parseManagedMarkdown(raw);
-      const actualContentHash = parsed ? sha256(normalizeMarkdown(parsed.bodyMarkdown)) : null;
+      const actualContentHash = parsed ? sha256(normalizeProjectionText(parsed.bodyMarkdown)) : null;
       if (!parsed || parsed.frontmatter.memoraId !== input.memoraId || actualContentHash !== existing.contentHash) {
         await repository.update(existing.id, {
           status: "conflict",
@@ -624,7 +618,7 @@ export class ObsidianSyncService {
       status: "synced" as const,
       lastSyncedAt: new Date(),
       deletedAt: null,
-      metadata: settledMetadata
+      metadata: {...settledMetadata,...(settledMetadata.editorialBase?{editorialBase:{content:rendered.markdown,revision:input.date.toISOString(),version:syncVersion,hash:sha256(rendered.markdown)},editorialBinding:sha256(JSON.stringify([vaultPath,settings.managedRoot]))}:{})}
     };
     if (existing) await repository.update(existing.id, persistence);
     else await repository.create(persistence);
@@ -666,33 +660,17 @@ export class ObsidianSyncService {
     return { mtimeMs: result.mtimeMs };
   }
 
-  private async updateSourceDocument(sourceItemId: string, documentId: string, markdown: string, contentHash: string): Promise<void> {
+  private async updateSourceDocument(sourceItemId: string, documentId: string, markdown: string): Promise<string> {
     const pool = this.requirePool();
     const sources = createSourceItemRepository(pool);
     const documents = createDocumentRepository(pool);
     const source = await sources.findById(sourceItemId);
     const document = await documents.findById(documentId);
     if (!source || !document || document.sourceItemId !== sourceItemId) throw new Error("obsidian_source_not_found");
-    await documents.update(documentId, { canonicalMarkdown: markdown, contentHash });
-    await sources.update(sourceItemId, { contentHash });
-    const run = await createIngestionRunRepository(pool).create({
-      sourceItemId,
-      currentStage: "chunking",
-      stagesCheckpoint: {
-        conversion: { status: "completed", completedAt: new Date().toISOString(), metadata: { engine: "obsidian" } }
-      }
-    });
-    const job = await createJobRepository(pool).create({
-      type: "ingestion",
-      payload: {
-        ingestionRunId: run.id,
-        sourceItemId,
-        documentId,
-        markdown,
-        blocks: createTextBlocks(markdown)
-      }
-    });
-    await createIngestionRunRepository(pool).update(run.id, { jobId: job.id });
+    if(document.metadata.supersededByDocumentId)throw new Error('sourceWorkspace.conflict');
+    const result=await new SourceEditorialService(pool).saveProjected(sourceItemId, source.updatedAt.toISOString(), markdown);
+    if(!result.documentId)throw new Error("sourceWorkspace.conflict");
+    return result.documentId;
   }
 
   private requirePool(): PgPool {

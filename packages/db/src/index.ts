@@ -11,3 +11,4 @@ export * from "./repositories/wikiContextRepository.js";
 export * from "./repositories/consultationRepository.js";
 export { createMaintenanceRepository } from "./repositories/maintenanceRepository.js";
 export * from "./repositories/obsidianWikiRepository.js";
+export * from "./repositories/obsidianEditorialRepository.js";

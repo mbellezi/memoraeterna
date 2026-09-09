@@ -1,3 +1,5 @@
+import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, type ObsidianEditReceipt } from "@app/integration-contracts";
+export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { MaintenanceCommand } from "@app/domain";
 import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
@@ -49,6 +51,9 @@ export const ipcChannels = {
   settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
   obsidianDeepLink: "app:obsidian:open",
   obsidianDeepLinkPending: "app:obsidian:open:pending",
+  obsidianEditorialConflicts: "app:obsidian:editorial:conflicts",
+  obsidianEditorialComparison: "app:obsidian:editorial:comparison",
+  obsidianEditorialResolve: "app:obsidian:editorial:resolve",
   obsidianWikiStatus: "app:obsidian:wiki:status",
   obsidianWikiScope: "app:obsidian:wiki:scope",
   obsidianWikiDiff: "app:obsidian:wiki:diff",
@@ -711,12 +716,14 @@ export const sourceDetailSchema = z.object({
 }).strict();
 
 export const atomicNoteReviewInputSchema = z.object({
+  expectedUpdatedAt: z.string().datetime().optional(),
   id: z.string().uuid(),
   action: z.enum(["approve", "edit", "discard"]),
   title: z.string().trim().min(1).optional(),
-  bodyMarkdown: z.string().trim().min(1).optional(),
+  bodyMarkdown: z.string().min(1).refine(value=>Boolean(value.trim())).optional(),
   ideaStatement: z.string().trim().min(1).optional()
 }).strict().superRefine((input, context) => {
+  if(input.action==='edit'&&!input.expectedUpdatedAt)context.addIssue({code:'custom',message:'Edit requires its expected revision.',path:['expectedUpdatedAt']});
   if (input.action === "edit" && input.title === undefined
       && input.bodyMarkdown === undefined && input.ideaStatement === undefined) {
     context.addIssue({ code: "custom", message: "Edit requires content.", path: ["action"] });
@@ -1124,6 +1131,9 @@ export interface DesktopApi {
   obsidian: {
     onOpen: (listener:(target:ObsidianDeepLink)=>void)=>()=>void;
     pendingOpen: ()=>Promise<ObsidianDeepLink|null>;
+    editorialConflicts: () => Promise<z.infer<typeof obsidianEditorialConflictsSchema>>;
+    editorialComparison: (id:string) => Promise<ObsidianEditReceipt>;
+    resolveEditorial: (input:z.infer<typeof obsidianResolveInputSchema>) => Promise<ObsidianEditReceipt>;
     wikiStatus: () => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
     saveWikiScope: (input: z.infer<typeof obsidianWikiScopeSchema>) => Promise<z.infer<typeof obsidianWikiScopeSchema>>;
     wikiDiff: (id:string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;

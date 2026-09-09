@@ -60,7 +60,7 @@ export default defineConfig({
   },
   preload: {
     json: { stringify: false },
-    plugins: [externalizeDepsPlugin({ exclude: ["@app/domain", "zod"] })],
+    plugins: [externalizeDepsPlugin({ exclude: ["@app/domain", "@app/integration-contracts", "zod"] })],
     build: {
       rollupOptions: {
         output: {
@@ -73,6 +73,7 @@ export default defineConfig({
       alias: {
         "@app/i18n": i18nPackage,
         "@app/domain": domainPackage,
+        "@app/integration-contracts": integrationContractsPackage,
         "@desktop": srcDir
       }
     }

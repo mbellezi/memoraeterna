@@ -204,6 +204,13 @@
       "when": 1788982638259,
       "tag": "0028_elite_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788988745651,
+      "tag": "0029_slow_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

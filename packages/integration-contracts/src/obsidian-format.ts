@@ -66,7 +66,7 @@ export function parseWikiRegions(body: string) {
     const sections = [...maskedEditorial.matchAll(/<!-- memora:section:([0-9a-f-]{36}):start -->\n([\s\S]*?)\n<!-- memora:section:\1:end -->/g)];
     if (new Set(sections.map(s => s[1])).size !== sections.length || (maskedEditorial.match(/<!-- memora:section:/g)?.length ?? 0) !== sections.length * 2)
         return null;
-    return { editorial, generated, sections: sections.map(s => ({ id: s[1]!, markdown: editorial.slice(s.index! + sectionStart(s[1]!).length + 1, s.index! + s[0].length - sectionEnd(s[1]!).length - 1) })) };
+    return { editorial, generated, sections: sections.map(s => ({ id: s[1]!, start: s.index!, end: s.index! + s[0].length, markdown: editorial.slice(s.index! + sectionStart(s[1]!).length + 1, s.index! + s[0].length - sectionEnd(s[1]!).length - 1) })) };
 }
 export function safeWikiLabel(text: string) { return text.replace(/[\r\n\[\]|#<>]/g, " "); }
 export function wikiLink(path: string | undefined, title: string, id: string, kind = "source") {

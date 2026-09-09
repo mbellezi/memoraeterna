@@ -1,3 +1,4 @@
+import { obsidianEditingCapability, obsidianEditOperationSchema } from "@app/integration-contracts";
 import { hasReservedObsidianContent, wikiProjectionCapability } from "@app/integration-contracts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -68,7 +69,7 @@ export interface IntegrationGatewayOptions {
   obsidianSyncService: Pick<
     ObsidianSyncService,
     "handleChanged" | "handleMoved" | "handleDeleted" | "reconcileSnapshot" | "reconcileVault"
-  > & Partial<Pick<ObsidianSyncService,"assertUnmanagedImport">>;
+  > & Partial<Pick<ObsidianSyncService,"assertUnmanagedImport" | "editorial">>;
   jobSupervisor: Pick<JobSupervisor, "list">;
   preferredPort?: number;
   clientStore?: IntegrationClientStore;
@@ -256,6 +257,21 @@ export class IntegrationGateway {
         this.sendJson(response, 202, { requestId: input.requestId, accepted: true, ...result });
         return;
       }
+      if (path === "/v1/obsidian/editorial/manifest") {
+        requireCapability(session, obsidianEditingCapability);
+        const input = z.object({vaultId:z.string().uuid(),cursor:z.number().int().min(0).max(10000).default(0),pendingOperationIds:z.array(z.string().uuid()).max(1000).optional()}).strict().parse(body);
+        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.manifest(session.clientId,input.vaultId,input.cursor,input.pendingOperationIds)); return;
+      }
+      if(path==='/v1/obsidian/editorial/compare'){requireCapability(session,obsidianEditingCapability);const input=z.object({operationId:z.string().uuid(),content:z.string().max(2_000_000)}).strict().parse(body);this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.compare(session.clientId,input.operationId,input.content));return;}
+      if (path === "/v1/obsidian/editorial/acknowledge") {
+        requireCapability(session, obsidianEditingCapability);
+        const input=z.object({operationId:z.string().uuid(),vaultId:z.string().uuid()}).strict().parse(body);
+        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.acknowledge(session.clientId,input.operationId,input.vaultId)); return;
+      }
+      if (path === "/v1/obsidian/editorial/operation") {
+        requireCapability(session, obsidianEditingCapability);
+        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.apply(session.clientId,obsidianEditOperationSchema.parse(body))); return;
+      }
       if (path === "/v1/obsidian/file-changed") {
         requireCapability(session, "watch-obsidian-files");
         this.sendJson(response, 200, await this.options.obsidianSyncService.handleChanged(obsidianFileChangedEventSchema.parse(body)));
@@ -341,7 +357,7 @@ export class IntegrationGateway {
       capabilities
     }));
     if (client.clientType === "obsidian-plugin") {
-      void this.options.obsidianSyncService.reconcileVault().catch(() => undefined);
+      if (!capabilities.includes(obsidianEditingCapability)) void this.options.obsidianSyncService.reconcileVault().catch(() => undefined);
     }
   }
 
@@ -429,6 +445,7 @@ function gatewayError(error: unknown): { status: number; body: IntegrationError 
   if (error instanceof GatewayError) {
     return { status: error.status, body: { code: error.code, messageKey: error.messageKey, retryable: error.retryable } };
   }
+  if(error instanceof Error && ['obsidianEditing.paused','obsidianWiki.errors.limit','obsidianWiki.errors.binding','obsidianWiki.errors.conflict','obsidianWiki.errors.format'].includes(error.message))return {status:409,body:{code:'conflict',messageKey:error.message,retryable:false}};
   if (error instanceof z.ZodError) return { status: 400, body: normalizeIntegrationError(error) };
   return { status: 500, body: normalizeIntegrationError(error) };
 }
@@ -442,7 +459,7 @@ function requireCapability(session: Session, capability: IntegrationCapability):
 function capabilitiesForClient(kind: "chrome-extension" | "obsidian-plugin"): IntegrationCapability[] {
   return kind === "chrome-extension"
     ? ["capture-web-page", "capture-selection", "capture-youtube-video", "receive-job-progress"]
-    : ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability];
+    : ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability, obsidianEditingCapability];
 }
 
 function hashToken(token: string): string {

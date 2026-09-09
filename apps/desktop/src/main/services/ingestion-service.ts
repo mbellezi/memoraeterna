@@ -1,3 +1,4 @@
+import { SourceEditorialService } from "./source-editorial-service.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve } from "node:path";
@@ -5,7 +6,6 @@ import { randomUUID } from "node:crypto";
 
 import {
   createBibliographicRepository,
-  createSourceEditingRepository,
   createDocumentAssetRepository,
   createDocumentRepository,
   createIngestionRunRepository,
@@ -139,19 +139,7 @@ export class IngestionService {
   }
 
   public async editSource(input: SourceEditInput) {
-    const source = await createSourceItemRepository(this.requirePool()).findById(input.sourceItemId);
-    if (!source || source.type !== input.descriptor.type || source.parentSourceItemId !== ("parentSourceItemId" in input.descriptor ? input.descriptor.parentSourceItemId ?? null : null)) {
-      throw new Error("errors.common.validationFailed");
-    }
-    const markdown = input.content ? await this.normalizeWithMonitoring(input.content.markdown, { sourceItemId: source.id, documentId: input.content.documentId, origin: "source_edit" }) : undefined;
-    if (markdown !== undefined && !markdown.trim()) throw new Error("errors.common.validationFailed");
-    return createSourceEditingRepository(this.requirePool()).save({
-      sourceItemId: source.id, expectedUpdatedAt: input.expectedUpdatedAt,
-      title: input.descriptor.title, subtitle: input.descriptor.subtitle ?? null,
-      language: input.descriptor.language, sourceUri: ["WebArticle", "Video"].includes(source.type) ? descriptorSourceUri(input.descriptor) : source.sourceUri,
-      descriptor: input.descriptor,
-      ...(input.content && markdown !== undefined ? { content: { documentId: input.content.documentId, markdown, hash: sha256(markdown) } } : {})
-    });
+    return new SourceEditorialService(this.requirePool()).save(input);
   }
 
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {

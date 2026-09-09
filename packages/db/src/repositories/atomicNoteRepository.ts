@@ -1,3 +1,4 @@
+import type { PgClient } from "../client.js";
 import { createHash } from "node:crypto";
 
 import type { QueryResultRow } from "pg";
@@ -135,7 +136,7 @@ export function createAtomicNoteRepository(db: Queryable) {
              generation_runtime = excluded.generation_runtime,
              metadata = excluded.metadata,
              updated_at = now()
-           where atomic_notes.status = 'pending_review'
+           where atomic_notes.status = 'pending_review' and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
            returning ${returning}`,
           [
             input.title,
@@ -166,7 +167,7 @@ export function createAtomicNoteRepository(db: Queryable) {
           row = existing.rows[0];
         }
         if (!row) throw new Error("Atomic note upsert returned no row.");
-        for (const link of input.evidenceLinks) {
+        for (const link of result.rows.length ? input.evidenceLinks : []) {
           await connection.query(
             `insert into atomic_note_source_links (
                atomic_note_id, source_item_id, chunk_id, source_span_id, relation_type, confidence
@@ -241,19 +242,22 @@ export function createAtomicNoteRepository(db: Queryable) {
       title?: string | undefined;
       bodyMarkdown?: string | undefined;
       ideaStatement?: string | undefined;
-    }): Promise<AtomicNoteRecord | null> {
-      const connection = await acquireConnection(db);
+      expectedUpdatedAt?: string | undefined;
+    }, transaction?: PgClient): Promise<AtomicNoteRecord | null> {
+      if(input.action==='edit' && ((input.title!==undefined&&!input.title.trim())||(input.bodyMarkdown!==undefined&&!input.bodyMarkdown.trim())))throw new Error("errors.common.validationFailed");
+      const connection: Queryable & { release?: () => void } = transaction ?? await acquireConnection(db);
       try {
-        await connection.query("begin");
+        if (!transaction) await connection.query("begin");
         const before = await connection.query<AtomicNoteRow>(
           `select ${returning} from atomic_notes where id = $1 for update`,
           [input.id]
         );
         const current = before.rows[0];
         if (!current) {
-          await connection.query("rollback");
+          if (!transaction) await connection.query("rollback");
           return null;
         }
+        if (input.expectedUpdatedAt && mapTimestamp(current.updatedAt).toISOString() !== input.expectedUpdatedAt) throw new Error("sourceWorkspace.conflict");
         const nextStatus: AtomicNoteStatus = input.action === "approve"
           ? "approved"
           : input.action === "discard"
@@ -265,8 +269,9 @@ export function createAtomicNoteRepository(db: Queryable) {
              body_markdown = coalesce($3, body_markdown),
              idea_statement = coalesce($4, idea_statement),
              status = $5,
+             metadata = case when $6::text = 'edit' then metadata || '{"humanProtected":true,"evidenceReview":"needs_review"}'::jsonb else metadata end,
              reviewed_at = case when $6::text in ('approve', 'discard') then now() else reviewed_at end,
-             updated_at = now()
+             updated_at = greatest(clock_timestamp(), date_trunc('milliseconds',updated_at)+interval '1 millisecond')
            where id = $1 returning ${returning}`,
           [input.id, input.title ?? null, input.bodyMarkdown ?? null, input.ideaStatement ?? null, nextStatus, input.action]
         );
@@ -286,14 +291,16 @@ export function createAtomicNoteRepository(db: Queryable) {
             }
           ]
         );
-        await connection.query("commit");
+        if(input.action==='edit')for(const dimensions of [256,768,1024])await connection.query(`delete from embeddings_${dimensions} where target_type='atomic_note' and target_id=$1`,[input.id]);
+        if (input.action === "edit") await connection.query("insert into atomic_note_revisions(note_id,previous,current) values($1,$2,$3)", [input.id, current, updated.rows[0]]);
+        if (!transaction) await connection.query("commit");
         const row = updated.rows[0];
         return row ? mapNote(row) : null;
       } catch (error) {
-        await connection.query("rollback").catch(() => undefined);
+        if (!transaction) await connection.query("rollback").catch(() => undefined);
         throw error;
       } finally {
-        connection.release?.();
+        if (!transaction) connection.release?.();
       }
     },
 

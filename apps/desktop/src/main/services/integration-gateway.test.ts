@@ -59,6 +59,15 @@ describe("IntegrationGateway", () => {
     expect(captureWebPage).toHaveBeenCalledOnce();
   });
 
+  it('requires an explicit editorial grant rather than upgrading old Obsidian pairings',async()=>{
+    const store=createMemoryStore(),gateway=createGateway(vi.fn(async()=>result),store);gateways.push(gateway);const status=await gateway.start();
+    const pairing=await gateway.createPairing({clientType:'obsidian-plugin',displayName:'Obsidian'}),record=await store.findById(pairing.clientId);
+    const request=()=>fetch(status.baseUrl+'/v1/handshake',{method:'POST',headers:{authorization:'Bearer '+pairing.token,'content-type':'application/json'},body:JSON.stringify({contractVersion:integrationContractVersion,clientId:pairing.clientId,client:{kind:'obsidian-plugin',name:'Obsidian',contractVersion:integrationContractVersion},capabilities:['obsidian-editorial-v1']})});
+    const granted=[...record!.scopes];record!.scopes=granted.filter(scope=>scope!=='obsidian-editorial-v1');expect((await request()).status).toBe(403);
+    record!.scopes=granted;expect((await request()).status).toBe(200);
+    await store.setStatus(pairing.clientId,'revoked');expect((await request()).status).toBe(401);
+  });
+
   it("delivers events after a WebSocket reconnect", async () => {
     const gateway = createGateway(vi.fn(async () => result));
     gateways.push(gateway);
@@ -83,11 +92,11 @@ describe("IntegrationGateway", () => {
   });
 });
 
-function createGateway(captureWebPage: (input: never) => Promise<typeof result>): IntegrationGateway {
+function createGateway(captureWebPage: (input: never) => Promise<typeof result>, store = createMemoryStore()): IntegrationGateway {
   return new IntegrationGateway({
     getPool: () => null,
     preferredPort: 0,
-    clientStore: createMemoryStore(),
+    clientStore: store,
     ingestionService: {
       captureWebPage,
       captureSelection: async () => result,

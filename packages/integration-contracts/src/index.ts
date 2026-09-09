@@ -25,7 +25,8 @@ export const integrationCapabilitySchema = z.enum([
   "watch-obsidian-files",
   "reconcile-obsidian-vault",
   "receive-job-progress",
-  "obsidian-wiki-projection-v1"
+  "obsidian-wiki-projection-v1",
+  "obsidian-editorial-v1"
 ]);
 export type IntegrationCapability = z.infer<typeof integrationCapabilitySchema>;
 
@@ -283,3 +284,5 @@ export function normalizeIntegrationError(error: unknown): IntegrationError {
     retryable: true
   };
 }
+
+export * from "./obsidian-editing.js";

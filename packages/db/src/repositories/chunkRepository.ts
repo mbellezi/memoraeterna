@@ -71,6 +71,10 @@ function mapChunk(row: ChunkRow): ChunkRecord {
 
 export function createChunkRepository(db: Queryable) {
   return {
+    async findById(id:string):Promise<ChunkRecord|null>{
+      const result=await db.query<ChunkRow>(`select ${chunkReturning} from chunks where id=$1`,[id]);
+      return result.rows[0]?mapChunk(result.rows[0]):null;
+    },
     async replaceDocumentChunks(
       documentId: string,
       sourceItemId: string,

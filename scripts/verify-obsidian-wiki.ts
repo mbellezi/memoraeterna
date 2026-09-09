@@ -101,7 +101,7 @@ try {
     assert.ok(raw.includes('# Application rename'));
     assert.ok((await readdir(join(vault, 'Memora', '.memora-recovery'))).some(p => p.endsWith('.before.md')));
     const beforeGenerated = raw;
-    await writeFile(join(vault, pageFile.relativePath), raw.replace('Wiki edits remain local', 'Tampered navigation'));
+    await writeFile(join(vault, pageFile.relativePath), raw.replace('<!-- memora:generated:start -->', '<!-- memora:generated:start -->\nTampered navigation'));
     assert.ok((await run()).conflicts > 0);
     assert.equal((await service.wiki.diff((await service.wiki.status()).conflicts.find(c => c.memora_id === pageId)!.id)).base, beforeGenerated);
     // Stage one never imports wiki edits or deletes canonical pages through plugin/scanner events.
@@ -155,10 +155,10 @@ try {
     await run();
     assert.equal((await sync.findByMemoraId(pageId))!.relativePath, pageFile.relativePath);
     // Optional ingestion progression keeps the same registered source reference path.
-    const bookDocument=await documents.create({sourceItemId:book.id,title:book.title,canonicalMarkdown:'# Book\n\nNow there is substantive source text.',contentHash:projectionHash('Now there is substantive source text.')});
+    let bookDocument=await documents.create({sourceItemId:book.id,title:book.title,canonicalMarkdown:'# Book\n\nNow there is substantive source text.',contentHash:projectionHash('Now there is substantive source text.')});
     await run();let promoted=(await sync.findByMemoraId(book.id))!;assert.equal(promoted.relativePath,catalogFile.relativePath);assert.equal(promoted.memoraType,'source_item');assert.equal(promoted.documentId,bookDocument.id);
     let promotedRaw=await readFile(join(vault,promoted.relativePath),'utf8');const parsedPromoted=parseObsidianMarkdown(promotedRaw)!;const importedBody=parsedPromoted.bodyMarkdown.replace('substantive source text','human source edit');await writeFile(join(vault,promoted.relativePath),promotedRaw.replace(parsedPromoted.bodyMarkdown,importedBody));
-    const {normalizeMarkdown}=await import('@app/conversion');await service.importNote({requestId:randomUUID(),relativePath:promoted.relativePath,frontmatter:parsedPromoted.frontmatter,markdown:importedBody,contentHash:projectionHash(normalizeMarkdown(importedBody)),mtimeMs:1});await run();assert.ok((await documents.findById(bookDocument.id))!.canonicalMarkdown.includes('human source edit'));assert.equal((await sync.findByMemoraId(book.id))!.status,'synced');
+    const priorBookDocument=bookDocument;const {normalizeMarkdown}=await import('@app/conversion');await service.importNote({requestId:randomUUID(),relativePath:promoted.relativePath,frontmatter:parsedPromoted.frontmatter,markdown:importedBody,contentHash:projectionHash(normalizeMarkdown(importedBody)),mtimeMs:1});bookDocument=(await documents.listBySourceItem(book.id))[0]!;assert.notEqual(bookDocument.id,priorBookDocument.id);assert.equal((await documents.findById(priorBookDocument.id))!.canonicalMarkdown,priorBookDocument.canonicalMarkdown);await run();assert.ok(bookDocument.canonicalMarkdown.includes('human source edit'));assert.equal((await sync.findByMemoraId(book.id))!.status,'synced');
     promotedRaw=await readFile(join(vault,promoted.relativePath),'utf8');await writeFile(join(vault,promoted.relativePath),promotedRaw+'\nlocal tail');await pool.query("update documents set metadata=jsonb_build_object('processingMode','catalog_metadata') where id=$1",[bookDocument.id]);assert.ok((await run()).conflicts>0);assert.ok((await readFile(join(vault,promoted.relativePath),'utf8')).includes('local tail'));const sourceConflict=(await service.wiki.status()).conflicts.find(c=>c.memora_id===book.id)!;const sourceDiff=await service.wiki.diff(sourceConflict.id);await service.wiki.recover(sourceConflict.id,sourceDiff.localHash);assert.equal((await sync.findByMemoraId(book.id))!.memoraType,'source_reference');assert.equal((await sync.findByMemoraId(book.id))!.documentId,null);
     const legacyBefore=(await sync.findByMemoraId(b.id))!;await documents.update(bc.documentId,{canonicalMarkdown:'Source version two',contentHash:projectionHash('Source version two')});afterWriteFailure=true;await assert.rejects(run(),/simulated/);await documents.update(bc.documentId,{canonicalMarkdown:'Source version three',contentHash:projectionHash('Source version three')});await run();const legacyAfter=(await sync.findByMemoraId(b.id))!;assert.equal(legacyAfter.syncVersion,legacyBefore.syncVersion+2,'Lost receipt is reconciled before assigning newer source version');assert.ok((await readFile(join(vault,legacyAfter.relativePath),'utf8')).includes('Source version three'));
     // Revoke scope inside awaited source reads and between source/note writes.
@@ -209,7 +209,7 @@ try {
     emptyPool = createPgPool({ connectionString: url.toString(), max: 2 });
     assert.equal((await runMigrations(emptyPool, migrations, { seedFolder })).seed.applied, true);
     assert.equal((await emptyPool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
-    assert.equal((await emptyPool.query('select generation from obsidian_projection_clock')).rows[0].generation, '1');
+    assert.equal((await emptyPool.query('select generation from obsidian_projection_clock')).rows[0].generation, '2');
     await service.shutdown();
     console.log('M4 verified: real PostgreSQL populated upgrade and empty baseline; trigger rollback, bounded queued projection, canonical catalog-only reference, Unicode/collisions/hierarchy, exact evidence, source links, independent local conflicts/recovery, shared fenced format, archive/restore, lost receipt, pause/scope changes, no wiki writeback, symlink containment. No model, real DEV or user vault used.');
 }

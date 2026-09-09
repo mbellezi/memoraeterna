@@ -21,6 +21,7 @@ const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
 
 export interface ObsidianRelatedNote {
   noteId?:string;
+  appSourceId?:string;
   relationType: string;
   title: string;
   target: string;
@@ -68,13 +69,13 @@ export function renderObsidianProjection(input: ObsidianProjectionInput): Render
     memoraContentHash: input.contentHash
   };
   const frontmatterText = serializeFrontmatter(frontmatter);
-  const body = input.bodyMarkdown.trim();
+  const body = input.bodyMarkdown;
   return {
     relativeDirectory: projectionDirectory(input),
     baseFileName: input.isHierarchyRoot ? "index.md" : `${slugify(input.title)}.md`,
     frontmatter,
     frontmatterText,
-    markdown: `${frontmatterText}\n${body}\n`
+    markdown: `${frontmatterText}\n${body}`
   };
 }
 
@@ -96,11 +97,11 @@ export function appendObsidianRelations(
       const heading = key ? translate(locale, key) : relationType;
       const links = entries
         .sort((left, right) => left.title.localeCompare(right.title) || left.target.localeCompare(right.target))
-        .map((entry) => `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`);
+        .map((entry) => entry.appSourceId ? `- [${escapeWikilink(entry.title)}](memora://open/source/${entry.appSourceId})` : `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`);
       return `### ${heading}\n\n${links.join("\n")}`;
     });
   return [
-    bodyMarkdown.trim(),
+    bodyMarkdown,
     relationsStartMarker,
     `## ${translate(locale, "library.sections.relations")}`,
     ...(sections.length > 0 ? sections : [translate(locale, "knowledge.relations.empty")]),
@@ -131,7 +132,7 @@ export function parseManagedMarkdown(markdown: string): {
   bodyMarkdown: string;
 } | null {
   const parsed = parseObsidianMarkdown(markdown);
-  return parsed ? { frontmatter: parsed.frontmatter, bodyMarkdown: parsed.frontmatter.memoraWikiSchema ? parsed.bodyMarkdown : parsed.bodyMarkdown.trim() } : null;
+  return parsed ? { frontmatter: parsed.frontmatter, bodyMarkdown: parsed.bodyMarkdown } : null;
 }
 
 function serializeFrontmatter(frontmatter: ObsidianManagedFrontmatter): string {

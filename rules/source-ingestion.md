@@ -270,3 +270,10 @@ configured test PostgreSQL instance; unit tests are not a substitute for it.
   in the immutable plan and remains independent of all optional derivations. It
   is not added to existing named presets. Its separate cross-source batch run,
   terminal barriers and review contracts are specified in `second-brain.md`.
+
+- Library and Obsidian editorial saves share `SourceEditorialService`. Normalize
+  line endings only, preserving hard breaks, indentation, fences and trailing
+  content. Projected body edits do not rewrite descriptor or bibliography fields,
+  including legacy catalog records without a complete descriptor. Source revision
+  timestamps advance by at least one millisecond so IPC timestamps remain valid
+  optimistic revisions. Saving content creates no processing jobs.

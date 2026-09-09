@@ -180,7 +180,7 @@ export class HierarchicalIngestionService {
       if (!catalogMetadataOnly && effectiveStages.includes("atomicNotes") && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
-           where created_from_source_item_id = $1 and status = 'pending_review'`,
+           where created_from_source_item_id = $1 and status = 'pending_review' and metadata->>'humanProtected' is distinct from 'true'`,
           [sourceItemId]
         );
       }

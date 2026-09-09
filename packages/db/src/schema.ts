@@ -1510,3 +1510,15 @@ export const obsidianProjectionRevisions = pgTable("obsidian_projection_revision
   beforeContent: text("before_content"), status: text("status").notNull().default("pending"),
   error: text("error"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, table => [index("obsidian_projection_target_idx").on(table.memoraId, table.createdAt), index("obsidian_projection_pending_idx").on(table.status)]);
+
+export const obsidianEditorialOperations = pgTable("obsidian_editorial_operations", {
+  id: uuid("id").primaryKey(), clientId: uuid("client_id").notNull(), vaultId: uuid("vault_id").notNull(),
+  bindingHash: text("binding_hash").notNull(), targetId: uuid("target_id").notNull(),
+  requestHash: text("request_hash").notNull(), request: jsonb("request").notNull(), receipt: jsonb("receipt").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, table => [index("obsidian_editorial_target_idx").on(table.targetId, table.createdAt)]);
+export const atomicNoteRevisions = pgTable("atomic_note_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(), noteId: uuid("note_id").notNull().references(() => atomicNotes.id, { onDelete: "cascade" }),
+  previous: jsonb("previous").notNull(), current: jsonb("current").notNull(),
+  origin: text("origin").notNull().default("human"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, table => [index("atomic_note_revisions_note_idx").on(table.noteId, table.createdAt)]);

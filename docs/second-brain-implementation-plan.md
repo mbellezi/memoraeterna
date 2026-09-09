@@ -3,7 +3,7 @@
 Status: implementation in progress. M1's non-AI workspace and M2's restricted
 organization executor are accepted; their validation records are below.
 M3 is accepted after paired real-model trials and coordinator validation;
-M3b is accepted after reviewed maintenance/restore trials; M4 is accepted after real Obsidian projection/recovery tests. M5–M6 remain pending. The section 7 TypeScript executor decision passed the M2
+M3b is accepted after reviewed maintenance/restore trials; M4 is accepted after real Obsidian projection/recovery tests. M5 is accepted after actual editorial sync, restart and conflict tests; M6 is deferred. The section 7 TypeScript executor decision passed the M2
 gate with Luna as the semantic reference and local models evaluated on a
 best-effort basis. Baseline reviewed on
 2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
@@ -1457,3 +1457,25 @@ historical navigation races and CommonJS artifact preservation were corrected.
 **M4 is accepted.** QA sync is paused and DEV stopped; the authorized temporary
 vault/pairing is retained for M5, after which its access and storage binding must
 be cleaned up. No reverse editing or M6 completion is claimed here.
+
+### M5 implementation and acceptance record (2026-09-09–10)
+
+Implemented on `codex/second-brain-m5`: separately granted editorial capability,
+vault-bound durable plugin operations/receipts, shared no-inference source editing,
+protected atomic-note history, wiki/source parent/child prose and title/section
+editing, conservative anchored merges, native and desktop three-version review,
+explicit moves and recoverable deletion, independent replay results and guarded
+acknowledgment/reprojection. Additive migration `0029_slow_valeria_richards` extends
+the baseline to 30 migrations. See [the M5 report](second-brain-m5-report.md) for
+implementation boundaries, deterministic checks and the actual QA recipe.
+
+The coordinator accepted M5 after actual Obsidian 1.8.10/DEV title/prose edits,
+parent/child introductions, independent and overlapping edits, stale confirmation,
+manual merging, offline restart/replay, successive file/folder moves, duplicate
+recovery and tombstone restoration. Original benchmark row hashes remained
+unchanged; no inference ran. Final checks passed: 99 suites/611 tests, full
+build/typecheck, baseline 30, M4/M5 PostgreSQL and source regression verifiers.
+The temporary QA pairings were revoked, credentials cleared and original storage
+settings restored with DEV stopped. See the M5 report for evidence and limits.
+**M5 is accepted and locally committed. M6 is deferred and must not start:**
+the user requested stopping at this phase.

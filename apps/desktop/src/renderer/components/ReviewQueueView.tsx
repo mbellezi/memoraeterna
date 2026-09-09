@@ -9,9 +9,11 @@ import { Label } from "./ui/label";
 export function ReviewQueueView({ t }: { t: Translator }) {
   const [notes, setNotes] = useState<PendingAtomicNote[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editBase, setEditBase] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [idea, setIdea] = useState("");
   const [body, setBody] = useState("");
+  const [saveError, setSaveError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -32,28 +34,34 @@ export function ReviewQueueView({ t }: { t: Translator }) {
 
   function beginEdit(note: PendingAtomicNote) {
     setEditing(note.id);
+    setEditBase(note.updatedAt);
     setTitle(note.title);
     setIdea(note.ideaStatement);
     setBody(note.bodyMarkdown);
   }
 
   async function saveEdit(note: PendingAtomicNote) {
+    setSaveError(false);
+    if(!editBase){setSaveError(true);return;}
+    try {
     await window.app.knowledge.reviewNote({
       id: note.id,
       action: "edit",
+      expectedUpdatedAt: editBase,
       title,
       ideaStatement: idea,
       bodyMarkdown: body
     });
     setEditing(null);
     await load();
+    } catch {setSaveError(true);}
   }
 
   if (loading) return <QueueState>{t("shell.states.loading")}</QueueState>;
   if (error) return <QueueState>{t("knowledge.review.error")}</QueueState>;
   if (notes.length === 0) return <QueueState>{t("knowledge.review.empty")}</QueueState>;
 
-  return <section className="grid gap-4">{notes.map((note) => <article key={note.id} className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+  return <section className="grid gap-4">{saveError && <p role="alert" className="text-sm text-red-600">{t("obsidianEditing.stale")}</p>}{notes.map((note) => <article key={note.id} className="grid gap-4 rounded-md border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
     <div><p className="text-xs text-slate-500">{note.sourceTitle ?? t("knowledge.review.unknownSource")}</p><h2 className="font-semibold">{note.title}</h2></div>
     {editing === note.id ? <div className="grid gap-3">
       <div className="grid gap-1"><Label htmlFor={`title-${note.id}`}>{t("knowledge.review.fields.title")}</Label><Input id={`title-${note.id}`} value={title} onChange={(event) => setTitle(event.target.value)} /></div>

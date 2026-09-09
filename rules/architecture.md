@@ -22,6 +22,9 @@ Renderer
   Electron main code, `@app/db`, `node:fs`, secrets, or native AI runtimes.
 - The preload surface is small, explicit, typed, and treated as an internal
   public API.
+- Browser-safe internal schemas used by the sandboxed preload must be bundled
+  into its CommonJS artifact. Do not externalize workspace contract packages
+  that the sandbox cannot resolve at runtime; verify the built preload loads.
 - Main-process handlers validate requests before invoking application services.
 - Heavy processing runs in `worker_threads` or a supervised sidecar/helper.
   Workers never access UI state.

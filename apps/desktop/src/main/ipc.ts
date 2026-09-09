@@ -1,3 +1,4 @@
+import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
 import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
@@ -154,6 +155,9 @@ export function registerIpcHandlers(
     return settings;
   });
 
+  ipcMain.handle(ipcChannels.obsidianEditorialConflicts, async()=>obsidianEditorialConflictsSchema.parse(await obsidianSyncService.editorial.conflicts()));
+  ipcMain.handle(ipcChannels.obsidianEditorialComparison, async(_event,id:unknown)=>obsidianEditReceiptSchema.parse(await obsidianSyncService.editorial.compareDesktop(z.string().uuid().parse(id))));
+  ipcMain.handle(ipcChannels.obsidianEditorialResolve, async(_event,input:unknown)=>obsidianEditReceiptSchema.parse(await obsidianSyncService.editorial.resolveDesktop(obsidianResolveInputSchema.parse(input))));
   ipcMain.handle(ipcChannels.obsidianWikiStatus, async()=>obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.status()));
   ipcMain.handle(ipcChannels.obsidianWikiScope, async(_event,input:unknown)=>obsidianWikiScopeSchema.parse(await obsidianSyncService.wiki.saveScope(input)));
   ipcMain.handle(ipcChannels.obsidianWikiDiff, async(_event,id:unknown)=>obsidianWikiDiffSchema.parse(await obsidianSyncService.wiki.diff(z.string().uuid().parse(id))));

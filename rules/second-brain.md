@@ -467,7 +467,13 @@ database, jobs or frontend rules when those boundaries are affected.
   historical original evidence sides; generated summaries cannot approve or
   alter relationships. Metadata-only catalog references never require notes,
   graph output, AI execution or fabricated original documents.
-- Obsidian-originated wiki prose remains local in this release. Protect and
-  surface all divergence, including generated-region and frontmatter changes,
-  even when no plugin is installed. Recovery is a deliberate outward replacement
-  with preserved local/base copies; reverse editing remains a separate release.
+- Without an authorized compatible editorial plugin, Obsidian prose remains
+  local. Preserve every divergence, including generated regions and frontmatter.
+  Authorized reverse editing follows the editorial synchronization contract in
+  `rules/integrations.md`: human-origin revisions, protected changed sections,
+  independent review, retained historical evidence, exact merge bases and explicit
+  conflict resolution. Source relationships cannot be approved through prose.
+- A new human section has a stable UUID and no fabricated evidence. Changed
+  assertions retain their historical evidence associations but need evidence
+  review. An explicit navigation command in the application owns semantic
+  reparenting/reordering; moving a vault folder does not grant that authority.
