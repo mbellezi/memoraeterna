@@ -43,14 +43,15 @@ import { SearchResultCard, searchResultId } from "./SearchView";
 export interface LibraryExternalTarget {
   sourceItemId: string;
   atomicNoteId?: string;
-  origin?: "search" | "knowledgeGraph";
+  origin?: "search" | "knowledgeGraph" | "wiki";
   token: number;
 }
 
 export type LibraryHistoryEntry =
   | { view: "library"; path: string[]; fromSearch: boolean }
   | { view: "search" }
-  | { view: "knowledgeGraph" };
+  | { view: "knowledgeGraph" }
+  | { view: "wiki" };
 
 const libraryHistoryKey = "memoraEternaLibrary";
 
@@ -64,6 +65,7 @@ export function libraryHistoryEntryFromState(state: unknown): LibraryHistoryEntr
   if (!candidate || typeof candidate !== "object") return null;
   const entry = candidate as Record<string, unknown>;
   if (entry.version !== 1) return null;
+  if (entry.view === "wiki") return { view: "wiki" };
   if (entry.view === "search") return { view: "search" };
   if (entry.view === "knowledgeGraph") return { view: "knowledgeGraph" };
   if (entry.view !== "library" || !Array.isArray(entry.path)
@@ -171,11 +173,12 @@ export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translat
   );
 }
 
-export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarget = null, onNavigate, onExitToSearch, onExitToKnowledgeGraph }: {
+export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarget = null, onNavigate, onExitToSearch, onExitToKnowledgeGraph, onExitToWiki }: {
   t: Translator;
   metadataEnrichmentEnabled?: boolean;
   externalTarget?: LibraryExternalTarget | null;
   onNavigate?: () => void;
+  onExitToWiki?: () => void;
   onExitToSearch?: () => void;
   onExitToKnowledgeGraph?: () => void;
 }) {
@@ -198,6 +201,8 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   const consumedTargetToken = useRef<number | null>(null);
   const historyInitialized = useRef(false);
   const onNavigateRef = useRef(onNavigate);
+  const onExitToWikiRef = useRef(onExitToWiki);
+  onExitToWikiRef.current = onExitToWiki;
   const onExitToSearchRef = useRef(onExitToSearch);
   const onExitToKnowledgeGraphRef = useRef(onExitToKnowledgeGraph);
 
@@ -247,6 +252,9 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
       const entry = libraryHistoryEntryFromState(event.state);
       onNavigateRef.current?.();
 
+      if (entry?.view === "wiki") {
+        setStack([]); setFromSearch(false); onExitToWikiRef.current?.(); return;
+      }
       if (entry?.view === "search") {
         setStack([]);
         setFromSearch(false);
@@ -283,7 +291,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
   useEffect(() => {
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
     consumedTargetToken.current = externalTarget.token;
-    const cameFromSearch = externalTarget.origin !== "knowledgeGraph";
+    const cameFromSearch = externalTarget.origin !== "knowledgeGraph" && externalTarget.origin !== "wiki";
     pushLibraryHistory({ view: "library", path: [externalTarget.sourceItemId], fromSearch: cameFromSearch });
     onNavigate?.();
     setFromSearch(cameFromSearch);
@@ -362,6 +370,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
           allSources={sources}
           backLabel={stack.length === 1 && externalTarget?.origin === "knowledgeGraph"
             ? t("knowledgeGraph.backToGraph")
+            : stack.length === 1 && externalTarget?.origin === "wiki" ? t("wiki.backToWiki")
             : stack.length === 1 && fromSearch ? t("library.detail.backToSearch") : t("library.back")}
           t={t}
           onOpen={openSource}

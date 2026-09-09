@@ -116,3 +116,11 @@ repository tests, and `packages/db/src/repositories/repositories.test.ts` for
 ranking changes. Extend coverage for changed mode/filter/failure semantics;
 existing fusion and mocked SQL tests alone do not prove end-to-end retrieval
 quality. Calibrate floor changes against the versioned synthetic cases.
+
+## Wiki text consultation
+
+The manual wiki uses the separate `WikiService.search` / `wikiRepository.search`
+contract specified in `rules/second-brain.md`. Its stricter current/review filters
+are enforced in SQL for every result kind and do not silently change the older
+Library/evidence-search contracts above. Conceptual `source_relation` and
+extracted `entity_relation` results have distinct identities and review semantics.

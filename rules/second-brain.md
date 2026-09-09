@@ -128,3 +128,54 @@ database, jobs or frontend rules when those boundaries are affected.
   content. Retries are idempotent; offline edits and conflicting versions remain
   recoverable. Absence during reconciliation is never proof of deletion.
 - Never cascade a wiki file deletion into deletion of its cited sources or notes.
+
+## Manual workspace persistence and retrieval
+
+- `WikiService` and `createWikiRepository` own the non-AI workspace. Manual
+  operations have no AI, matching, ingestion or graph dependency. `wiki_pages`
+  stores independent placement/identity, `wiki_page_revisions` stores immutable
+  content snapshots, and `wiki_evidence` stores original passage snapshots.
+- A save requires the expected current revision. It creates a human-origin
+  revision, protects each section independently of page review, and serializes
+  placement changes with a transaction-scoped advisory lock. Primary parent
+  cycles, missing parents, self-membership and invalid collection/entity targets
+  are rejected atomically. Renaming retains the old title as a lookup alias.
+- Sections keep UUIDs across edits and reordering. Their citation IDs resolve
+  only to evidence owned by that page. New citation handles resolve validated
+  original chunk IDs to page-owned evidence IDs inside the save transaction.
+  Persist source ID, document ID, chunk/SourceSpan, content hash, original title,
+  locator and exact excerpt. Source deletion or supersession cannot redirect or
+  erase saved excerpts. Historical content remains available after restoration;
+  restoration itself creates another revision.
+- Catalog-only/generated metadata chunks (`processingMode: catalog_metadata`
+  or `catalog-metadata-v1`) are not original substantive evidence. Exclude them
+  from the passage picker and reject them during citation persistence while
+  keeping their canonical source discoverable with a catalog-only disclosure.
+- Changing cited section prose marks its evidence association `needs_review`;
+  retain historical associations and show the warning. Human verification of
+  unchanged revised prose is a separate deliberate editorial action. Page
+  review, section protection, citation validation and source freshness remain
+  independent fields.
+- Wiki consultation has a separate bounded text-only contract with distinct
+  `page`, `source`, `chunk`, `atomic_note`, `entity`, `entity_relation` and
+  `source_relation` result kinds. Exact normalized title/alias matches precede
+  other matches. Original source metadata participates without a document.
+- Explicit source scopes expand descendants only when requested. A page scope
+  intersects the allowed source scope and uses only citations in its current
+  revision. Never expose a mixed-scope page's prose, a note with excluded source
+  links, or a conceptual relationship unless both endpoints are in scope.
+  Scoped entity results omit global descriptions whose provenance is not scoped.
+- Current-only retrieval checks exact consumed wiki evidence, citation review,
+  source document supersession, note supersession plus primary/linked evidence
+  documents, and canonical conceptual relationship currentness. Rejected and
+  archived notes remain excluded. Reviewed-only retrieval uses page review,
+  approved notes and accepted conceptual relationships; extracted entities and
+  entity relations have no equivalent human review state and are excluded.
+  Direct catalog facts and source passages do not acquire a synthetic review state.
+- Manual wiki navigation preserves the workspace when opening existing source
+  details, including native Back to the wiki. Relationship review continues to
+  target its canonical source-relation ID, independently of page/note review.
+  Restricted source inspectors must not open an unrestricted relationship list.
+- `node --import tsx scripts/verify-wiki.ts` exercises isolated real PostgreSQL
+  upgrade/baseline paths and these invariants. UI verification uses the normal
+  application opening size, never a maximized/fullscreen 4K window.

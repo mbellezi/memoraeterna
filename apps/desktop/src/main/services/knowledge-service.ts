@@ -189,8 +189,8 @@ export class KnowledgeService {
     return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode, sourceView);
   }
 
-  public async listSourceRelations(input: { sourceItemId: string; targetSourceItemId: string | null; offset: number; limit: number }) {
-    return listSourceRelations(this.requirePool(), input.sourceItemId, input.targetSourceItemId, input.offset, input.limit);
+  public async listSourceRelations(input: { sourceItemId: string; targetSourceItemId: string | null; offset: number; limit: number; relationId?: string | undefined }) {
+    return listSourceRelations(this.requirePool(), input.sourceItemId, input.targetSourceItemId, input.offset, input.limit, input.relationId);
   }
 
   public async reviewSourceRelation(input: { id: string; status: string; expectedUpdatedAt: string }) {

@@ -1,3 +1,4 @@
+import { WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
@@ -111,6 +112,13 @@ import {
 } from "../shared/ipc";
 
 const api: DesktopApi = {
+  wiki: {
+    list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
+    get: async (id, revisionId) => WikiPageSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })),
+    save: async (input) => WikiPageSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiSave, WikiSaveInputSchema.parse(input))),
+    search: async (input) => WikiResultsSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiSearch, WikiQuerySchema.parse(input))),
+    history: async (id) => WikiHistorySchema.parse(await ipcRenderer.invoke(ipcChannels.wikiHistory, id))
+  },
   system: {
     async getInfo() {
       const result = await ipcRenderer.invoke(ipcChannels.systemGetInfo);

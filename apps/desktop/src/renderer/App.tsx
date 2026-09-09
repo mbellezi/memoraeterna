@@ -1,3 +1,4 @@
+import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
@@ -50,7 +51,7 @@ import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog"
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
-type ViewId = "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
+type ViewId = "wiki" | "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
@@ -64,6 +65,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { id: "wiki", label: "wiki.title", icon: SquareLibrary },
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
   { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
   { id: "search", label: "shell.navigation.search", icon: Search },
@@ -75,6 +77,7 @@ const navItems: NavItem[] = [
 ];
 
 const emptyViews: Record<Exclude<ViewId, "settings" | "review" | "debug">, { title: MessageKey; empty: MessageKey }> = {
+  wiki: { title: "wiki.title", empty: "wiki.empty" },
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
   search: { title: "shell.navigation.search", empty: "shell.states.empty" },
@@ -565,6 +568,9 @@ export function App({
             scrollPositions.current[activeView] = event.currentTarget.scrollTop;
           }}
         >
+          <div hidden={activeView !== "wiki"}>
+            <WikiWorkspace active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
+          </div>
           {activeView === "settings" ? (
             <SettingsView
               activeScope={activeSettingsScope}
@@ -580,6 +586,7 @@ export function App({
             />
           ) : activeView === "import" ? (
             <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
+          ) : activeView === "wiki" ? (null
           ) : activeView === "search" ? (
             <SearchView
               t={t}
@@ -634,6 +641,7 @@ export function App({
               metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
               externalTarget={libraryTarget}
               onNavigate={scrollActiveViewToTop}
+              onExitToWiki={() => { setLibraryTarget(null); setActiveView("wiki"); }}
               onExitToSearch={() => {
                 setLibraryTarget(null);
                 setActiveView("search");

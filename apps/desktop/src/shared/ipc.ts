@@ -1,3 +1,4 @@
+import type { WikiPage, WikiSaveInput, WikiQuery, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import type { MonitoringQuery, MonitoringPage, MonitoringDetail, MonitoringPrune } from "./monitoring.js";
 import { z } from "zod";
 import {
@@ -27,6 +28,7 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
+  wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   databaseGetStatus: "app:database:get-status",
@@ -611,6 +613,7 @@ export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
 }).strict();
 
 export const sourceRelationsInputSchema = z.object({
+  relationId: z.string().uuid().optional(),
   sourceItemId: z.string().uuid(), targetSourceItemId: z.string().uuid().nullable().default(null),
   offset: z.number().int().min(0).max(1_000_000).default(0), limit: z.number().int().min(1).max(100).default(30)
 }).strict();
@@ -1078,6 +1081,7 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
+  wiki: { list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {
     getInfo: () => Promise<SystemInfo>;
     subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;

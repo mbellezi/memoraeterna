@@ -65,7 +65,8 @@ describe("baseline seed", () => {
       "0019_vengeful_wasp",
       "0020_light_stick",
       "0021_small_supernaut",
-      "0022_even_alex_wilder"
+      "0022_even_alex_wilder",
+      "0023_graceful_carnage"
     ]);
   });
 
@@ -106,7 +107,8 @@ describe("baseline seed", () => {
       "0019_vengeful_wasp",
       "0020_light_stick",
       "0021_small_supernaut",
-      "0022_even_alex_wilder"
+      "0022_even_alex_wilder",
+      "0023_graceful_carnage"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

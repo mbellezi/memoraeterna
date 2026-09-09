@@ -17,3 +17,4 @@ export * from "./source-relations.js";
 
 export * from "./matching-settings.js";
 export * from "./matching-presets.js";
+export * from "./wiki.js";

@@ -299,7 +299,7 @@ async function persistRelation(db: Queryable, relation: SourceRelationWrite, met
   }
 }
 
-export async function listSourceRelations(pool: PgPool, sourceId: string, targetId: string | null, offset = 0, limit = 30) {
+export async function listSourceRelations(pool: PgPool, sourceId: string, targetId: string | null, offset = 0, limit = 30, relationId?: string) {
   const result = await pool.query(`with recursive source_scope as (
       select id from source_items where id = $1 union all select child.id from source_items child join source_scope parent on child.parent_source_item_id = parent.id
     ), target_scope as (
@@ -310,10 +310,10 @@ export async function listSourceRelations(pool: PgPool, sourceId: string, target
       r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.explanation,r.importance,r.confidence,r.status,
       ${currentSourceRelationSql} as current,r.updated_at as "updatedAt",count(*) over()::int as total
     from source_relations r join source_items a on a.id = r.source_item_id join source_items b on b.id = r.target_source_item_id
-    where (r.source_item_id in (select id from source_scope) or r.target_source_item_id in (select id from source_scope))
+    where ($5::uuid is null or r.id=$5) and (r.source_item_id in (select id from source_scope) or r.target_source_item_id in (select id from source_scope))
       and ($2::uuid is null or (r.source_item_id in (select id from source_scope) and r.target_source_item_id in (select id from target_scope))
         or (r.target_source_item_id in (select id from source_scope) and r.source_item_id in (select id from target_scope)))
-    order by (r.status = 'rejected'), r.importance desc,r.id limit $3 offset $4`, [sourceId,targetId,limit + 1,offset]);
+    order by (r.status = 'rejected'), r.importance desc,r.id limit $3 offset $4`, [sourceId,targetId,limit + 1,offset,relationId ?? null]);
   const rows = result.rows.slice(0,limit);
   const relations = [];
   for (const row of rows) {

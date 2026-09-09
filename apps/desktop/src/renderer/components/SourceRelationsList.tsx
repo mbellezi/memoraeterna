@@ -5,8 +5,8 @@ import type { Translator } from "@app/i18n";
 import type { SourceRelationView } from "@app/domain";
 import { atomicRelationIcon, atomicRelationColor, formatEdgeLabel } from "./knowledge-relation-icons";
 
-export function SourceRelationsList({ sourceItemId, targetSourceItemId = null, t, compact = false, onOpenNote, onReadyChange }: {
-  sourceItemId: string; targetSourceItemId?: string | null; t: Translator; compact?: boolean;
+export function SourceRelationsList({ sourceItemId, targetSourceItemId = null, relationId, t, compact = false, onOpenNote, onReadyChange }: {
+  sourceItemId: string; targetSourceItemId?: string | null; relationId?: string; t: Translator; compact?: boolean;
   onOpenNote?: ((sourceItemId:string,noteId:string) => void) | undefined;
   onReadyChange?: (ready: boolean) => void;
 }) {
@@ -18,11 +18,11 @@ export function SourceRelationsList({ sourceItemId, targetSourceItemId = null, t
   useEffect(() => { setOffset(0);setRelations([]); },[sourceItemId,targetSourceItemId]);
   useEffect(() => {
     let active = true;setLoading(true);setFailed(false);
-    window.app.knowledge.listSourceRelations({sourceItemId,targetSourceItemId,offset,limit:compact ? 3 : 30})
+    window.app.knowledge.listSourceRelations({sourceItemId,targetSourceItemId,offset,limit:compact ? 3 : 30,...(relationId ? {relationId} : {})})
       .then((result) => { if (active) { setRelations(result.relations);setHasMore(result.hasMore);setTotal(result.total); } })
       .catch(() => {if (active) setFailed(true);}).finally(() => {if (active) setLoading(false);});
     return () => { active = false; };
-  },[sourceItemId,targetSourceItemId,offset,retry,compact]);
+  },[sourceItemId,targetSourceItemId,offset,retry,compact,relationId]);
   async function review(relation: SourceRelationView, status: "accepted" | "rejected" | "pending_review") {
     setBusy(relation.id);setFailed(false);
     try {

@@ -1,3 +1,5 @@
+import { WikiService } from "./services/wiki-service.js";
+import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
@@ -67,7 +69,11 @@ function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+    if (!app.isPackaged && process.env.MEMORA_DEV_BACKGROUND === "1") {
+      mainWindow.showInactive();
+    } else {
+      mainWindow.show();
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -213,6 +219,7 @@ void app.whenReady().then(() => {
     aiService,
     async () => (await settingsService!.getApp()).debugMode
   );
+  registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
   const relationThreshold = readRelationThreshold(process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD);
   knowledgeService = new KnowledgeService({
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,

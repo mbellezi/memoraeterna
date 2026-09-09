@@ -1392,3 +1392,31 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
 export const jobsRelations = relations(jobs, ({ many }) => ({
   ingestionRuns: many(ingestionRuns)
 }));
+
+// Wiki identities are independent from source hierarchy and derived graph records.
+export const wikiPages = pgTable("wiki_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  currentRevisionId: uuid("current_revision_id"),
+  parentId: uuid("parent_id").references((): AnyPgColumn => wikiPages.id, { onDelete: "restrict" }),
+  title: text("title").notNull(), kind: text("kind").notNull(),
+  position: integer("position").notNull().default(0),
+  archived: boolean("archived").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [index("wiki_pages_parent_position_idx").on(table.parentId, table.position),
+  check("wiki_pages_not_self_parent", sql`${table.parentId} is distinct from ${table.id}`)]);
+export const wikiPageRevisions = pgTable("wiki_page_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pageId: uuid("page_id").notNull().references(() => wikiPages.id, { onDelete: "restrict" }),
+  parentRevisionId: uuid("parent_revision_id"), number: integer("number").notNull(),
+  origin: text("origin").notNull(), content: jsonb("content").notNull(),
+  contentHash: text("content_hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [uniqueIndex("wiki_page_revisions_number_idx").on(table.pageId, table.number)]);
+export const wikiEvidence = pgTable("wiki_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  pageId: uuid("page_id").notNull().references(() => wikiPages.id, { onDelete: "restrict" }),
+  sourceItemId: uuid("source_item_id").notNull(), documentId: uuid("document_id").notNull(),
+  chunkId: uuid("chunk_id").notNull(), sourceSpanId: uuid("source_span_id"),
+  snapshot: jsonb("snapshot").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, (table) => [uniqueIndex("wiki_evidence_page_chunk_idx").on(table.pageId, table.chunkId), index("wiki_evidence_source_idx").on(table.sourceItemId)]);

@@ -127,6 +127,10 @@ Run the desktop in development:
 npm run dev -w @app/desktop
 ```
 
+For visual verification without taking focus from another application, launch
+with `MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop`. This development-only
+option shows the window inactive at its normal opening size (1600 × 1200).
+
 Validate the installed PostgreSQL sidecar and its extensions:
 
 ```bash

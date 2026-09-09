@@ -5,6 +5,10 @@ locales.
 
 ## Product interface
 
+- Desktop visual checks use the normal opening window size. Test relaunches
+  use `MEMORA_DEV_BACKGROUND=1` to show the DEV window without taking focus
+  from the user's other applications.
+
 - Build the working knowledge-management experience, not marketing pages.
 - Use React 19, Tailwind CSS 4, vendored shadcn/ui components, and Lucide icons.
 - Prefer dense, clear, utility-oriented layouts with stable dimensions for
@@ -296,3 +300,9 @@ job statuses, or user-visible backend errors.
   Numeric fields commit on blur/Enter and discard edits on Escape. Reject
   all-zero weight groups with visible feedback. Every slider has a visible
   text label as well as its accessible name and numeric value.
+
+- The second-brain workspace reuses Library source-type badges, MarkdownEditor,
+  source relationship review cards and the project theme. Keep the wiki mounted
+  across source-detail navigation to preserve reading/search/draft context;
+  only the active workspace handles Escape and native navigation. Sources without
+  original documents remain visible with an explicit catalog-only badge.

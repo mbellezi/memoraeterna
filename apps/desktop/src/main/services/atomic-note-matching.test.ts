@@ -32,9 +32,9 @@ beforeEach(() => {
   mocks.graph.listAtomicNoteElements.mockResolvedValue(new Map());
   mocks.relations.existingTargets.mockResolvedValue(new Set());
   mocks.run.mockImplementation(async (task) => task === "embedding" ? execution(Array.from({ length: 256 }, () => 0.1)) : execution({ results: [
-    { candidateAlias: "c1", score: 0.1, relationType: "supports" },
-    { candidateAlias: "c2", score: 0.7, relationType: "supports" },
-    { candidateAlias: "c3", score: 0.95, relationType: "extends" }
+    { candidateAlias: "c1", score: 0.1, relationType: "supports", explanation: "The candidate supplies only weak support for the source idea." },
+    { candidateAlias: "c2", score: 0.7, relationType: "supports", explanation: "The candidate reinforces the central claim of the source idea." },
+    { candidateAlias: "c3", score: 0.95, relationType: "extends", explanation: "The candidate adds a further condition to the source idea." }
   ] }));
 });
 

@@ -29,3 +29,4 @@ export * from "./relationTypeRepository.js";
 export * from "./entityIdentityRepository.js";
 export * from "./sourceRelationRepository.js";
 export * from "./matchingEvaluationRepository.js";
+export * from "./wikiRepository.js";
