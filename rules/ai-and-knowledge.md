@@ -194,3 +194,17 @@ provider token breakdowns and precise call context, as specified in
   each reset and require the exact fixture source-ID set; retain the pilot
   configuration separately. Accumulate reported usage across preparation,
   comparisons and validation under the explicitly authorized experiment limit.
+
+- Organization uses an explicit pinned profile through the same `AiService`
+  inference queue. It records a canonical AI task and organization-step link
+  atomically. A queued run keeps its original effective model parameters and
+  content language after settings edits. Recheck immutable provider/model,
+  endpoint, runtime/revision and privacy compatibility before adapter creation;
+  revoked or incompatible identity fails visibly. A local-only run or profile
+  cannot invoke a remote adapter or use a fallback profile.
+
+- Runtime and validation work must never load two local generative models or
+  duplicate real helper instances simultaneously. The resource ceiling is one
+  local generative model plus one embedding model, including across DEV and
+  standalone test processes. Dispose the active generative runtime before
+  switching real local models. Deterministic model mocks do not load runtimes.

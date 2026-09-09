@@ -1,3 +1,4 @@
+import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
 import { WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
 import { z } from "zod";
@@ -112,6 +113,7 @@ import {
 } from "../shared/ipc";
 
 const api: DesktopApi = {
+  organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
     get: async (id, revisionId) => WikiPageSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })),

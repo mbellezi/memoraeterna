@@ -37,21 +37,21 @@ const noteFingerprint = `md5(concat_ws('|',n.id::text,n.relation_type,n.status::
   least(${noteFacts("a")},${noteFacts("b")}),greatest(${noteFacts("a")},${noteFacts("b")})))`;
 
 // Currentness is derived at read time, so edits and review changes never leave live stale edges.
-const evidenceJoins = `left join chunks sc on sc.id = e.source_chunk_id
+export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.source_chunk_id
   left join chunks tc on tc.id = e.target_chunk_id
   left join documents sd on sd.id = sc.document_id left join documents td on td.id = tc.document_id
   left join atomic_note_relations n on n.id = e.note_relation_id
   left join atomic_notes a on a.id = e.source_note_id
   left join atomic_notes b on b.id = e.target_note_id`;
-const currentEvidence = `(sc.id is not null and tc.id is not null
+export const currentSourceRelationEvidenceSql = `(sc.id is not null and tc.id is not null
   and sd.metadata->>'supersededByDocumentId' is null and td.metadata->>'supersededByDocumentId' is null
   and sc.content_hash = e.snapshot->>'sourceHash' and tc.content_hash = e.snapshot->>'targetHash'
   and (e.origin = 'source_analysis' or (n.id is not null and n.status <> 'rejected'
     and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
     and a.supersession_status = 'current' and b.supersession_status = 'current'
     and ${noteFingerprint} = e.snapshot->>'noteFingerprint')))`;
-export const currentSourceRelationSql = `exists (select 1 from source_relation_evidence e ${evidenceJoins}
-  where e.relation_id = r.id and ${currentEvidence})`;
+export const currentSourceRelationSql = `exists (select 1 from source_relation_evidence e ${sourceRelationEvidenceJoins}
+  where e.relation_id = r.id and ${currentSourceRelationEvidenceSql})`;
 
 export function createSourceRelationRepository(pool: PgPool) {
   return {
@@ -321,8 +321,8 @@ export async function listSourceRelations(pool: PgPool, sourceId: string, target
       coalesce(e.target_chunk_id::text,e.snapshot->>'targetId') as "targetChunkId",
       e.snapshot->>'sourceSpanId' as "sourceSpanId", e.snapshot->>'targetSpanId' as "targetSpanId",
       e.snapshot->>'sourceExcerpt' as "sourceExcerpt", e.snapshot->>'targetExcerpt' as "targetExcerpt",
-      e.source_note_id as "sourceNoteId",e.target_note_id as "targetNoteId",e.note_relation_id as "noteRelationId",${currentEvidence} as current
-      from source_relation_evidence e ${evidenceJoins} where e.relation_id = $1 order by current desc,e.created_at,e.id limit 100`, [row.id]);
+      e.source_note_id as "sourceNoteId",e.target_note_id as "targetNoteId",e.note_relation_id as "noteRelationId",${currentSourceRelationEvidenceSql} as current
+      from source_relation_evidence e ${sourceRelationEvidenceJoins} where e.relation_id = $1 order by current desc,e.created_at,e.id limit 100`, [row.id]);
     const { total: _total, ...value } = row;
     relations.push({ ...value, updatedAt: new Date(row.updatedAt).toISOString(), evidence: evidence.rows });
   }

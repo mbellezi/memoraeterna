@@ -306,3 +306,11 @@ job statuses, or user-visible backend errors.
   across source-detail navigation to preserve reading/search/draft context;
   only the active workspace handles Escape and native navigation. Sources without
   original documents remain visible with an explicit catalog-only badge.
+
+- Organization settings and scoped run dialogs use the same themed cards,
+  Markdown editor and native modal focus/escape conventions as AI settings.
+  Evidence selectors search and paginate canonical sources while retaining
+  selections across pages. Proposal review shows selected sections before/after,
+  exact original passages, pinned instruction provenance and bounded execution
+  details. Reuse the safe source-reference renderer and independent canonical
+  source-relationship review component; generated reference tags are inert.

@@ -27,6 +27,8 @@ import {
 } from "@app/db";
 import {
   AiCapabilitySchema,
+  OrganizationProfileSchema,
+  type OrganizationProfile,
   normalizeAiModelParameters,
   type AiCapability,
   type AiModelParameterCapabilities
@@ -77,6 +79,8 @@ export interface AiServiceOptions {
 }
 
 export interface AiTaskLogContext {
+  organizationRunId?: string;
+  organizationStep?: number;
   jobId?: string;
   ingestionRunId?: string;
   sourceItemId?: string;
@@ -325,8 +329,28 @@ export class AiService {
     });
   }
 
+  public async pinOrganizationProfile(profileId: string | undefined, privacy: "offline_only" | "allow_remote"): Promise<OrganizationProfile> {
+    const repository=createAiConfigRepository(this.requirePool());
+    const selection=await repository.getDefaultTask("structured-output",profileId);
+    if(!selection || !selection.requiredCapabilities.includes("structured-output"))throw new Error("organization.errors.model");
+    const effectivePrivacy=privacy==="offline_only"||selection.privacyMode==="offline_only"?"offline_only":"allow_remote";
+    if(effectivePrivacy==="offline_only"&&!selection.localModelId)throw new Error("organization.errors.privacy");
+    const parameters=aiModelParametersSchema.parse(withAiTaskParameterDefaults("structured-output",{...selection.modelDefaultParameters,...selection.parameters},Boolean(selection.localModelId)));
+    const identityHash=sha256(JSON.stringify({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,baseUrl:selection.baseUrl,privacy:effectivePrivacy}));
+    return OrganizationProfileSchema.parse({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,provider:selection.provider,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,privacy:effectivePrivacy,parameters,identityHash,contextWindow:parameters.contextWindow??null});
+  }
+
+  public async runOrganizationTask(profile: OrganizationProfile, input: string, context: AiTaskLogContext, signal: AbortSignal, maxOutputTokens: number): Promise<DefaultAiTaskResult> {
+    const pinned=OrganizationProfileSchema.parse(profile);
+    return aiExecutionQueue.run(async()=>{
+      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned);
+      if(!result)throw new Error("organization.errors.model");
+      return result;
+    },signal);
+  }
+
   public async runDefaultTask(
-    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking",
+    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
     input: string,
     logContext: AiTaskLogContext = {},
     signal?: AbortSignal,
@@ -336,21 +360,27 @@ export class AiService {
   }
 
   private async executeDefaultTask(
-    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking",
+    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
     input: string,
     logContext: AiTaskLogContext,
     signal?: AbortSignal,
-    limits?: { maxOutputTokens: number }
+    limits?: { maxOutputTokens: number },
+    pinned?: OrganizationProfile
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     await repository.ensureRemoteRerankingCapabilities();
-    const selection = await repository.getDefaultTask(taskType);
-    if (!selection) return null;
+    const selection = await repository.getDefaultTask(taskType, pinned?.profileId);
+    if (!selection) { if(pinned) throw new Error("organization.errors.model"); return null; }
+    if(selection.privacyMode === "offline_only" && !selection.localModelId) throw new Error("organization.errors.privacy");
+    if(pinned){
+      const current=await this.pinOrganizationProfile(pinned.profileId,pinned.privacy);
+      if(current.identityHash!==pinned.identityHash)throw new Error("organization.errors.modelChanged");
+    }
     let parameters = aiModelParametersSchema.parse(withAiTaskParameterDefaults(
       taskType,
-      { ...selection.modelDefaultParameters, ...selection.parameters },
+      pinned?.parameters ?? { ...selection.modelDefaultParameters, ...selection.parameters },
       Boolean(selection.localModelId)
     ));
     if (limits) parameters.maxTokens = Math.min(parameters.maxTokens ?? 16384, Math.max(1,Math.floor(limits.maxOutputTokens)));
@@ -424,6 +454,7 @@ export class AiService {
         : await run();
       progress({ progress: 1 });
       const aiTaskRunId = await repository.recordTaskRun({
+        ...(logContext.organizationRunId?{organizationRunId:logContext.organizationRunId,organizationStep:logContext.organizationStep}:{}),
         profileId: selection.profileId, taskType, provider: result.providerId, modelId: result.modelId,
         runtime: selection.localModelId ? selection.runtime : result.runtime,
         capabilitiesUsed: requiredCapabilities,
@@ -452,6 +483,7 @@ export class AiService {
         embeddingSpaceKey: sha256(JSON.stringify({ providerConfigId: selection.providerConfigId, baseUrl: selection.baseUrl, localModelId: selection.localModelId, repository: selection.repository, quantization: selection.quantization, model: result.modelId, provider: result.providerId, runtime: result.runtime, revision: selection.revision, parameters })) };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
+        ...(logContext.organizationRunId?{organizationRunId:logContext.organizationRunId,organizationStep:logContext.organizationStep}:{}),
         profileId: selection.profileId, taskType, provider: selection.provider,
         modelId: selection.modelId, runtime: selection.runtime,
         adapter: selection.localModelId ? localAdapterName(selection.runtime) : selection.provider,
@@ -483,6 +515,7 @@ export class AiService {
           this.options.logger?.error("Failed to release local embedding runtime", releaseError);
         });
       }
+      if (pinned && error instanceof Error) Object.assign(error, { aiTaskRunId });
       throw error;
     }
   }
@@ -759,6 +792,7 @@ function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[
     summarization: ["summarization"],
     "knowledge-graph-generation": ["structured-output"],
     "atomic-note-generation": ["atomic-note-generation", "structured-output"],
+    "structured-output": ["structured-output"],
     reranking: ["reranking"]
   } as Partial<Record<AiTaskRequest["taskType"], AiCapability[]>>)[taskType] ?? [];
 }

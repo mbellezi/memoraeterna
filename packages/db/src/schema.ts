@@ -1420,3 +1420,32 @@ export const wikiEvidence = pgTable("wiki_evidence", {
   chunkId: uuid("chunk_id").notNull(), sourceSpanId: uuid("source_span_id"),
   snapshot: jsonb("snapshot").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => [uniqueIndex("wiki_evidence_page_chunk_idx").on(table.pageId, table.chunkId), index("wiki_evidence_source_idx").on(table.sourceItemId)]);
+
+export const organizationSettingsRevisions = pgTable("organization_settings_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(), configuration: jsonb("configuration").notNull(), hash: text("hash").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+export const organizationSettingsActivations = pgTable("organization_settings_activations", {
+  id: uuid("id").primaryKey().defaultRandom(), revisionId: uuid("revision_id").notNull().references(() => organizationSettingsRevisions.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+export const organizationRuns = pgTable("organization_runs", {
+  id: uuid("id").primaryKey().defaultRandom(), jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  status: text("status").notNull().default("queued"), snapshot: jsonb("snapshot").notNull(),checkpoint: jsonb("checkpoint").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+},t=>[uniqueIndex("organization_runs_job_idx").on(t.jobId),index("organization_runs_status_idx").on(t.status),
+  check("organization_runs_status_check",sql`${t.status} in ('queued','analyzing','awaiting_review','applied','sample_passed','rejected','canceled','failed')`)]);
+export const organizationSteps = pgTable("organization_steps", {
+  id: uuid("id").primaryKey().defaultRandom(),runId: uuid("run_id").notNull().references(()=>organizationRuns.id,{onDelete:"restrict"}),
+  sequence: integer("sequence").notNull(),aiTaskRunId: uuid("ai_task_run_id").references(()=>aiTaskRuns.id,{onDelete:"restrict"}),
+  artifact:jsonb("artifact").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow()
+},t=>[uniqueIndex("organization_steps_sequence_idx").on(t.runId,t.sequence)]);
+export const organizationProposals = pgTable("organization_proposals", {
+  runId:uuid("run_id").primaryKey().references(()=>organizationRuns.id,{onDelete:"restrict"}),proposal:jsonb("proposal").notNull(),
+  decision:text("decision"),decidedAt:timestamp("decided_at",{withTimezone:true}),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow()
+});
+export const organizationReceipts = pgTable("organization_receipts", {
+  runId:uuid("run_id").primaryKey().references(()=>organizationRuns.id,{onDelete:"restrict"}),
+  revisionId:uuid("revision_id").notNull().references(()=>wikiPageRevisions.id,{onDelete:"restrict"}),
+  createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow()
+});

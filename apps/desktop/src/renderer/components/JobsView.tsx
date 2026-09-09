@@ -687,6 +687,7 @@ function jobTypeMessageKey(type: string): MessageKey {
     summarization: "jobs.types.summarization",
     "atomic-note-generation": "jobs.types.atomicNoteGeneration",
     "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",
+    "organization": "organization.pageSynthesis",
     "relation-labels": "relationLabel.title",
     "atomic-note-matching": "jobs.types.atomicNoteMatching",
     "source-matching": "jobs.types.sourceMatching",

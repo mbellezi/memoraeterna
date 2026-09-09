@@ -1,3 +1,5 @@
+import { OrganizationService } from "./services/organization-service.js";
+import { registerOrganizationIpc } from "./services/organization-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { MonitoringService } from "./services/monitoring-service.js";
@@ -250,7 +252,10 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
+  const organizationService = new OrganizationService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:(id)=>jobSupervisor!.requestCancel(id)});
+  registerOrganizationIpc(ipcMain,organizationService);
   jobSupervisor = new JobSupervisor({
+    processOrganization:(job,signal)=>organizationService.execute(job,signal),
     traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) => processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),
     getPool: () => databaseService?.getPool() ?? null,

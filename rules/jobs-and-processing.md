@@ -87,3 +87,10 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   drain is active are coalesced and scheduled after it settles; they must never
   start concurrent ingestion orchestrators or duplicate collective matching.
   Shutdown clears deferred wakeups and waits for the active drain.
+
+- Organization jobs are claimed by the existing supervisor alongside ingestion
+  and relation maintenance. Their run checkpoint owns analysis/review state;
+  dispatch jobs may succeed while a proposal awaits review. Canonical mutation
+  receipts are reconciled independently of job restart recovery. Completed-job
+  cleanup preserves organization jobs, and generic ingestion retry must not
+  reset organization attempts or cumulative model/tool budgets.

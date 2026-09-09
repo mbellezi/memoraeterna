@@ -300,8 +300,9 @@ export function createAiConfigRepository(db: Queryable) {
       );
     },
 
-    async getDefaultTask(task: string): Promise<{
+    async getDefaultTask(task: string, explicitProfileId?: string): Promise<{
       profileId: string;
+      privacyMode: string;
       providerConfigId: string | null;
       localModelId: string | null;
       provider: string;
@@ -322,11 +323,12 @@ export function createAiConfigRepository(db: Queryable) {
       const result = await db.query<QueryResultRow & Record<string, unknown>>(
         `with chosen_profile as (
            select coalesce(
+             $2::uuid,
              (select profile_id from ai_task_profile_routes where task = $1),
              (select id from ai_profile_sets where is_default = true and status = 'active' limit 1)
            ) as id
          )
-         select p.id as "profileId", p.provider_config_id as "providerConfigId",
+         select p.id as "profileId", p.privacy_mode as "privacyMode", p.provider_config_id as "providerConfigId",
                 p.local_model_id as "localModelId", coalesce(c.provider, 'local-' || lm.runtime) as provider,
                 c.credential_ref as "credentialRef", c.base_url as "baseUrl",
                 p.model_id as "modelId", p.runtime, p.capabilities as "requiredCapabilities", t.parameters,
@@ -335,18 +337,19 @@ export function createAiConfigRepository(db: Queryable) {
                 lm.managed_path as "managedPath", lm.repository, lm.revision, lm.quantization
          from ai_profile_sets p
          join chosen_profile selected on selected.id = p.id
-         join ai_profile_tasks t on t.profile_id = p.id
+         left join ai_profile_tasks t on t.profile_id = p.id and t.task = $1
          left join ai_provider_configs c on c.id = p.provider_config_id
          left join local_models lm on lm.id = p.local_model_id and lm.status = 'ready'
-         where p.status = 'active' and t.status = 'active' and t.task = $1
+         where p.status = 'active' and (($2::uuid is not null and (t.status is null or t.status='active')) or (t.status = 'active' and t.task = $1))
            and (c.id is not null or lm.id is not null)
          limit 1`,
-        [task]
+        [task, explicitProfileId ?? null]
       );
       const row = result.rows[0];
       if (!row) return null;
       return {
         profileId: String(row.profileId),
+        privacyMode: String(row.privacyMode),
         providerConfigId: row.providerConfigId === null ? null : String(row.providerConfigId),
         localModelId: row.localModelId === null ? null : String(row.localModelId),
         provider: String(row.provider), credentialRef: row.credentialRef === null ? null : String(row.credentialRef),
@@ -385,6 +388,7 @@ export function createAiConfigRepository(db: Queryable) {
       outputHash?: string | null; inputTokens?: number | null; outputTokens?: number | null;
       costEstimate?: number | null; durationMs: number; status: string; error?: string | null;
       sourceItemIds?: string[];
+      organizationRunId?: string; organizationStep?: number;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
         `with inserted_run as (
@@ -402,6 +406,7 @@ export function createAiConfigRepository(db: Queryable) {
            on conflict (ai_task_run_id, source_item_id) do nothing
            returning id
          )
+         ${input.organizationRunId ? ", inserted_organization_step as (insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) select $21::uuid,$22::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
          select id from inserted_run
          where (select count(*) from inserted_sources) >= 0`,
         [input.profileId ?? null, input.taskType, input.provider, input.modelId, input.runtime,
@@ -409,7 +414,7 @@ export function createAiConfigRepository(db: Queryable) {
           input.parameters ?? {}, JSON.stringify(input.capabilitiesUsed ?? []), input.inputHash ?? null,
           input.outputHash ?? null, input.inputTokens ?? null, input.outputTokens ?? null,
           input.costEstimate ?? null, input.durationMs, input.status, input.error ?? null,
-          [...new Set(input.sourceItemIds ?? [])]]
+          [...new Set(input.sourceItemIds ?? [])], ...(input.organizationRunId ? [input.organizationRunId,input.organizationStep] : [])]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI task run insert returned no row.");

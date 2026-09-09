@@ -169,6 +169,13 @@
       "when": 1788964614852,
       "tag": "0023_graceful_carnage",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1788967787329,
+      "tag": "0024_awesome_mole_man",
+      "breakpoints": true
     }
   ]
 }

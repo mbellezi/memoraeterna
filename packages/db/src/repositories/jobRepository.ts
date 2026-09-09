@@ -242,7 +242,7 @@ export function createJobRepository(db: Queryable) {
     async clearCompletedOrFailed(): Promise<number> {
       const result = await db.query(
         `delete from jobs
-         where status in ('succeeded', 'failed')`
+         where status in ('succeeded', 'failed') and type <> 'organization'`
       );
       return result.rowCount ?? 0;
     },

@@ -1,3 +1,4 @@
+import type { OrganizationCommand } from "@app/domain";
 import type { WikiPage, WikiSaveInput, WikiQuery, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import type { MonitoringQuery, MonitoringPage, MonitoringDetail, MonitoringPrune } from "./monitoring.js";
 import { z } from "zod";
@@ -28,6 +29,7 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
+  organizationCommand: "app:organization:command",
   wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
@@ -1081,6 +1083,7 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
+  organization: { command: (input: OrganizationCommand) => Promise<unknown> };
   wiki: { list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {
     getInfo: () => Promise<SystemInfo>;

@@ -3,6 +3,7 @@ import { hostname } from "node:os";
 
 import { runIndividualStageBatch } from "./individual-stage-batch.js";
 import {
+  createOrganizationRepository,
   createChunkRepository,
   createDocumentRepository,
   createAtomicNoteRepository,
@@ -30,6 +31,7 @@ import type { WorkerTask } from "../workers/worker-contracts.js";
 export interface JobSupervisorOptions {
   traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
   getPool: () => PgPool | null;
+  processOrganization?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
   logger?: Pick<Console, "error" | "warn">;
@@ -54,7 +56,7 @@ export interface JobSupervisorOptions {
 }
 
 const supportedJobTypes = new Set<string>([
-  "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
+  "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
   "atomic-note-generation", "obsidian-sync", "asset-storage"
 ]);
 
@@ -104,7 +106,9 @@ export class JobSupervisor {
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const execute = async () => job.type === "relation-labels"
+      const execute = async () => job.type === "organization"
+        ? await this.options.processOrganization!(job, controller.signal)
+        : job.type === "relation-labels"
         ? await this.options.processRelationLabels!(job, controller.signal)
         : job.type === "ingestion"
         ? await this.executeIngestion(job, controller)
@@ -128,7 +132,7 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
-      const shouldRetry = !wasCanceled && job.attempts < job.maxAttempts;
+      const shouldRetry = !wasCanceled && job.attempts < job.maxAttempts && (job.type !== "organization" || /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
         const runs = createIngestionRunRepository(this.requirePool());
         if (wasCanceled) {
@@ -161,6 +165,8 @@ export class JobSupervisor {
     }
   }
 
+  public wake(): void { this.schedule(0); this.notify(); }
+
   public async queueRelationLabels(payload: { mode: "missing" | "all"; contentLanguage: string }): Promise<string> {
     const id = await createKnowledgeGraphRepository(this.requirePool()).queueRelationLabels(payload);
     this.schedule(0);
@@ -175,6 +181,7 @@ export class JobSupervisor {
   public async requestCancel(jobId: string): Promise<JobRecord | null> {
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
+    if (job?.type === "organization" && typeof job.payload.organizationRunId === "string") await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
     this.notify();
     return job;
   }
@@ -183,7 +190,7 @@ export class JobSupervisor {
     const pool = this.requirePool();
     const repository = createJobRepository(pool);
     const current = await repository.findById(jobId);
-    if (!current) return null;
+    if (!current || current.type === "organization") return null;
     const ingestionRunId = optionalString(current.payload.ingestionRunId);
     const ingestionRun = ingestionRunId
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)

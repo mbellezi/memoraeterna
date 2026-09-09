@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { PgPool } from "../client.js";
+import type { PgPool, PgClient } from "../client.js";
 import { currentSourceRelationSql } from "./sourceRelationRepository.js";
 
 interface Content {
@@ -41,15 +41,15 @@ export function createWikiRepository(pool: PgPool) {
     async history(id: string) {
       return (await pool.query(`select id,number,created_at as "createdAt",origin,content from wiki_page_revisions where page_id=$1 order by number desc limit 100`, [id])).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
     },
-    async save(input: { id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }) {
-      const db = await pool.connect();
+    async save(input: { id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }, authority?: { transaction: PgClient; origin: "organization"; allocatedTarget: boolean; humanApproved: boolean }) {
+      const db = authority?.transaction ?? await pool.connect();
       try {
-        await db.query("begin");
+        if (!authority) await db.query("begin");
         // Serializes all placement mutations, including concurrent reciprocal moves.
         await db.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");
         const id = input.id ?? randomUUID();
         const current = (await db.query("select p.*,r.content,r.number from wiki_pages p left join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1 for update of p", [id])).rows[0];
-        if ((input.id && !current) || (current?.current_revision_id ?? null) !== input.expectedRevisionId) throw new Error("wiki.errors.conflict");
+        if ((input.id && !current && !authority?.allocatedTarget) || (current?.current_revision_id ?? null) !== input.expectedRevisionId) throw new Error("wiki.errors.conflict");
         const content = structuredClone(input.content);
         if (content.parentId) {
           const ancestors = (await db.query(`with recursive a as (select id,parent_id from wiki_pages where id=$1 union all
@@ -64,7 +64,8 @@ export function createWikiRepository(pool: PgPool) {
         if (content.entityId && !(await db.query("select id from entities where id=$1", [content.entityId])).rows.length) throw new Error("wiki.errors.invalid");
         // Every desktop edit is human protected, independently of review state.
         for (const section of content.sections) {
-          section.protected = true;
+          if (!authority) section.protected = true;
+          else if (!authority.humanApproved && (current?.content as Content | undefined)?.sections.some(s => s.id === section.id && s.protected && JSON.stringify(s) !== JSON.stringify(section))) throw new Error("organization.errors.protected");
           const previous = (current?.content as Content | undefined)?.sections.find((s) => s.id === section.id);
           if (previous && previous.markdown !== section.markdown && section.evidenceIds.length) section.evidenceReview = "needs_review";
         }
@@ -87,12 +88,12 @@ export function createWikiRepository(pool: PgPool) {
           return item.id as string;
         }))];
         const revisionId = randomUUID();
-        await db.query(`insert into wiki_page_revisions(id,page_id,parent_revision_id,number,origin,content,content_hash) values($1,$2,$3,$4,'human',$5,$6)`,
-          [revisionId, id, input.expectedRevisionId, (current?.number ?? 0) + 1, content, createHash("sha256").update(JSON.stringify(content)).digest("hex")]);
+        await db.query(`insert into wiki_page_revisions(id,page_id,parent_revision_id,number,origin,content,content_hash) values($1,$2,$3,$4,$7,$5,$6)`,
+          [revisionId, id, input.expectedRevisionId, (current?.number ?? 0) + 1, content, createHash("sha256").update(JSON.stringify(content)).digest("hex"), authority?.origin ?? "human"]);
         await db.query(`update wiki_pages set current_revision_id=$2,title=$3,kind=$4,parent_id=$5,position=$6,archived=$7,updated_at=now() where id=$1`,
           [id, revisionId, content.title, content.kind, content.parentId, content.position, content.archived]);
-        await db.query("commit"); return id;
-      } catch (error) { await db.query("rollback"); throw error; } finally { db.release(); }
+        if (!authority) await db.query("commit"); return id;
+      } catch (error) { if (!authority) await db.query("rollback"); throw error; } finally { if (!authority) db.release(); }
     },
     async search(query: Query) {
       const scope = `with recursive allowed as (

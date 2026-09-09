@@ -179,3 +179,94 @@ database, jobs or frontend rules when those boundaries are affected.
 - `node --import tsx scripts/verify-wiki.ts` exercises isolated real PostgreSQL
   upgrade/baseline paths and these invariants. UI verification uses the normal
   application opening size, never a maximized/fullscreen 4K window.
+
+## Restricted page synthesis executor
+
+- `OrganizationService` owns the initial page-synthesis workflow. The existing
+  `JobSupervisor` claims `organization` jobs and supplies cancellation; every
+  inference and repair uses `AiService.runOrganizationTask` and the shared FIFO.
+  The model-facing structured JSON envelope exposes exactly `searchEvidence`,
+  `readRevision` and `proposePageChange`. No native tool transport is claimed
+  until a concrete adapter validates it against the same action contract.
+- Admission pins one existing target revision or one preallocated new page ID,
+  explicit source IDs (descendants only on request), content language, privacy,
+  model identity and effective parameters, instruction revision/hash and policy.
+  Target prose cannot be exposed if its cited sources escape the selected scope.
+  A domain is an explicit policy context bound to selected sources or wiki pages;
+  cross-domain evidence never blends instructions or expands authorization.
+- The initial spike accepts at most 200 substantive original chunks, each no
+  larger than 12,000 characters. Reject an oversized or empty evidence scope
+  visibly; do not silently truncate source passages. Search returns at most 20
+  snippets. Only `readRevision` with the complete bounded passage adds its handle
+  to the actual read set. Search results and relationship interpretations are
+  not citation support. Revalidate ownership, exact revision/hash and freshness
+  before proposal and transactionally before apply.
+- Optional service-preloaded conceptual relationships retain their canonical
+  relation ID, exact evidence-occurrence ID/fingerprint, independent review and
+  update snapshot, directed owners and both original passage handles. Require
+  both originals in the actual read set. Bound preload by the tool budget and
+  recheck the consumed occurrence, not merely whether another occurrence keeps
+  the overall relationship current. Accepting a page never reviews a relation.
+- Upper bounds are 12 tools, 13 admitted model calls, six section operations,
+  one repair and a five-minute execution deadline including inference queue
+  waits. Persist reported input/output and known costs; stop new model calls
+  after reported input exceeds the configured allowance. Calls can overshoot
+  that allowance. Unknown usage/cost remains explicitly incomplete. Retries
+  retain cumulative limits and the original execution deadline.
+- `organization_runs.checkpoint` is the only workflow checkpoint authority.
+  `organization_steps` references existing canonical `ai_task_runs`; the AI
+  audit insert atomically records that reference before returning a model
+  result. Do not create a parallel telemetry or inference queue. Monitoring
+  cleanup cannot remove configuration, proposals, checkpoints or receipts.
+- Proposal steps are durable before entering review. Resume a validated saved
+  proposal without calling the model again. A canonical apply transaction
+  locks cancellation, expected revision and supporting dependencies, preserves
+  unrelated sections, appends an immutable organization-origin wiki revision
+  and records one `organization_receipts` row per run. Receipt reconciliation
+  displays committed edits accurately even when the completion checkpoint or
+  acknowledgment was lost. Provider calls after an uncertain interruption can
+  repeat; canonical mutations cannot. Never promise exactly-once billing.
+- Human review may approve changes to explicitly selected protected sections;
+  keep their protection and previous revisions. Automatic application is
+  limited to unprotected AI drafts. Human-created pages (including empty ones),
+  reviewed pages and protected changes always pause for deliberate review.
+  Generated citation associations remain `needs_review` until a separate
+  evidence verification action. Omitted sections are preserved, never deleted.
+- `organization_settings_revisions` stores immutable full configurations;
+  `organization_settings_activations` records deliberate activation history.
+  Resolve each editable slot by built-in, global, function, domain and
+  domain/function replacement. Only page synthesis is active in this release.
+  Advanced templates support only `{{title}}` and `{{language}}`, with no
+  executable template language or includes. Advanced activation requires a
+  successful proposal-only synthetic run for each changed effective advanced
+  prompt; identical inherited prompts may share coverage. A global sample
+  cannot authorize distinct, untested domain instructions. Saving, resetting,
+  restoring or activating never starts organization. Restoration creates a new
+  draft/activation rather than rewriting history. Retain the active revision
+  even when it falls outside the bounded recent-history page.
+- `scripts/verify-organization.ts` uses isolated populated-upgrade and empty
+  PostgreSQL databases to exercise containment, review, cancellation, exact
+  evidence and recovery. Its deterministic model fixtures are explicitly
+  separate from real local/remote trial evidence in the implementation plan.
+
+- The existing `settings` table key `organization.active` is the serialized
+  active-configuration pointer; activation timestamps alone do not decide which
+  concurrent settings operation is current. Activity lists return bounded
+  summaries without evidence bodies. Load full run snapshots on deliberate
+  expansion. Derive per-field usage availability from canonical AI task links,
+  and never display an absent cost estimate as zero. Schema repair diagnostics
+  retain bounded issue codes/paths, not unvalidated full provider output.
+- Retry admission requires a terminal dispatch job as well as a retryable run.
+  A cancellation request does not mean the active model has settled; reject
+  immediate retry while the original job still owns execution. Validation,
+  scope, stale-evidence and budget failures require a fresh run rather than
+  bypassing the single repair through supervisor retries.
+
+- Structured-output transport may normalize one complete outer JSON or
+  unlabeled code fence, then applies the same strict action schema. Reject
+  arbitrary prose prefixes/suffixes, multiple blocks and unknown keys; never
+  extract a convenient JSON substring from mixed output. Citation handle lists
+  are unique. Validate inline run handles against that section's citation list
+  and convert them to the same displayed citation order before canonical save.
+  Render new-section proposals at full reading width; show before/after columns
+  only when an existing section is being replaced.

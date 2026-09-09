@@ -1,9 +1,10 @@
 # Hybrid second brain: implementation plan
 
-Status: implementation in progress. M1 now has a non-AI desktop wiki workspace;
-its validation record is below. M2–M6 remain pending. The initial harness
-technology decision in section 7 is accepted;
-M2 validates it before expanding the workflows. Baseline reviewed on
+Status: implementation in progress. M1's non-AI workspace and M2's restricted
+organization executor are accepted; their validation records are below.
+M3–M6 remain pending. The section 7 TypeScript executor decision passed the M2
+gate with Luna as the semantic reference and local models evaluated on a
+best-effort basis. Baseline reviewed on
 2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
 pipeline. The agreed product constraints are recorded in
 [the second-brain rules](../rules/second-brain.md); existing matching behavior
@@ -1216,6 +1217,51 @@ for the generated catalog JSON. M1 is accepted. Subsequent test relaunches use
 `MEMORA_DEV_BACKGROUND=1` to show the standard-size window without taking focus.
 This record does not claim M2–M6,
 real model trials, Obsidian projection/writeback or broad organization quality.
+
+### M2 implementation and validation record (2026-09-09)
+
+Implemented on `codex/second-brain-m2`: application-specific TypeScript executor,
+exactly three model-callable tools, one preallocated target per run, scoped
+original evidence and separately preloaded canonical relationship occurrences,
+persisted proposals/review/apply receipts, cumulative checkpoints and bounded
+recovery through the existing supervisor and AI FIFO. Human approval and
+unprotected-draft policy use the M1 transactional revision/evidence service;
+source relationship review remains independent. No matching stage, external
+executor dependency, native transport claim or second AI queue was added.
+
+M0 configuration prerequisites completed in this slice: dedicated Organization
+and harnesses settings, global/function/domain slot inheritance, immutable
+revision and activation history, active pointer, effective before/after preview,
+free guidance, guarded advanced templates, applicable proposal-only synthetic
+sample coverage, restoration and pinned content language/model/privacy/limits.
+Only page synthesis is active. Saving or activating instructions never enqueues
+organization. Source selection is searchable and paged; activity lists contain
+summaries and load evidence only when a run is opened.
+
+Migration `0024_awesome_mole_man.sql` is append-only and synchronized to the
+25-migration baseline/manifest. Real empty and populated PostgreSQL validation
+passed through `scripts/verify-organization.ts`, along with the unchanged M1
+wiki and canonical source-relation verifiers. A complete regression pass reached
+89 suites / 530 tests; subsequent parser/citation/UI patches passed focused
+checks. The coordinator owns the final full regression/build/UI acceptance and
+local commit. The detailed model/usage and recovery record is in
+[the M2 executor report](second-brain-m2-executor-report.md).
+
+The user designated Luna as the semantic reference and local models as best
+effort during these milestones. Contained local structured-output failures are
+reported individually and do not justify widening tools or blocking subsequent
+milestones. Real trials therefore separate deterministic executor safety from
+model-specific output quality. Only one local generative runtime may be loaded
+at a time (plus one embedding model); trials use the DEV application sequentially.
+The final scoped context pair completed: local malformed JSON was contained,
+Luna read both original passages and produced a reviewed proposal that was
+applied once with a canonical receipt. The original 82-source benchmark corpus
+was preserved. The executor gate retains the TypeScript executor. The coordinator independently
+passed the full 89-suite / 530-test regression suite, whole-workspace build and
+typecheck, real PostgreSQL organization verifier, 25-migration seed check,
+format/diff checks and normal-size navigation/evidence/Back/Escape/focus smoke.
+M2 is accepted; the coordinator owns the authorized local commit. This record
+does not claim M3–M6 completion.
 
 ## 12. Evaluation and acceptance scenarios
 

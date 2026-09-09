@@ -1,3 +1,4 @@
+import { OrganizationSettingsView } from "./OrganizationView";
 import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
 import { MatchingPresetControls } from "./MatchingPresetControls";
 import { MatchingResetButton } from "./MatchingResetButton";
@@ -27,7 +28,7 @@ import {
   Sun,
   Trash2
 } from "lucide-react";
-import type { MessageKey } from "@app/i18n";
+import type { MessageKey, Translator } from "@app/i18n";
 import type {
   AppSettings,
   AppSettingsUpdate,
@@ -61,7 +62,7 @@ interface SettingsViewProps {
   onToast: (message: MessageKey, tone: ToastTone) => void;
 }
 
-export type SettingsScope = "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
+export type SettingsScope = "organization" | "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -122,6 +123,7 @@ const scopes: Array<{
     accent: "from-violet-500/20 via-fuchsia-500/10 to-transparent",
     iconStyle: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
   },
+  {id:"organization",icon:Sparkles,label:"organization.title",description:"organization.description",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
   {
     id: "matching",
     icon: Network,
@@ -329,6 +331,7 @@ export function SettingsView({
             </div>
           ) : null}
 
+          {activeScope === "organization" ? <OrganizationSettingsView t={t as Translator} contentLanguage={appSettings.contentLanguage}/> : null}
           {activeScope === "matching" ? (
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />

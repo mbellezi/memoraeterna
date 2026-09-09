@@ -1,3 +1,4 @@
+import { OrganizationDialog } from "./OrganizationView";
 import { wikiNavigationOrder } from "./wiki-navigation";
 import { SourceTypeBadge } from "./LibraryView";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
   t: Translator;
   onOpenSource: (id: string, noteId?: string) => void;
 }) {
+  const [organizationOpen,setOrganizationOpen]=useState(false);
   const [pages, setPages] = useState<PageSummary[]>([]), [page, setPage] = useState<WikiPage | null>(null);
   const [mode, setMode] = useState<"home" | "sources" | "page" | "search">("home");
   const [editing, setEditing] = useState(false), [draft, setDraft] = useState<WikiPageContent>(newContent);
@@ -56,7 +58,19 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
       }), 180);
     return () => { active = false; clearTimeout(timer); };
   }, [query, kind, scope, reviewed, current, mode, offset, pickSection, sourceScope, searchRetry]);
+  const closeOrganization = useCallback(() => {
+    setOrganizationOpen(false);
+    void reload().catch(fail);
+    const id = page?.id;
+    if (id) {
+      lastPageRequest.current = id;
+      void window.app.wiki.get(id).then((result) => {
+        if (lastPageRequest.current === id) setPage((current) => current?.id === id ? result : current);
+      }).catch(fail);
+    }
+  }, [page?.id, reload]);
   const goBack = useCallback(async () => {
+    if (organizationOpen) { closeOrganization(); return; }
     if (inspector) {
       setInspector(null);
       return;
@@ -78,7 +92,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
       setScope(target.pageId);
       setPage(target.pageId ? await window.app.wiki.get(target.pageId) : null);
     }
-  }, [inspector, pickSection, history, editing, historyStack]);
+  }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization]);
   useEffect(() => {
     if (!active)
       return;
@@ -216,7 +230,9 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
   </div>;
   return <div className="flex h-[calc(100vh-7.5rem)] min-h-80 flex-col overflow-hidden text-slate-900 dark:text-slate-100">
 
+    {organizationOpen&&<OrganizationDialog t={t} page={mode==="page"?page:null} onClose={closeOrganization}/>}
     <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
+      <button disabled={editing} className={control} onClick={()=>setOrganizationOpen(true)}>{t("organization.organize")}</button>
       <div className="mr-auto">
         <h2 className="flex items-center gap-2 text-xl font-semibold">
           <BookOpen className="h-5 w-5 text-cyan-500" />
