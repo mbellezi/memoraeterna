@@ -21,3 +21,4 @@ export * from "./wiki.js";
 export * from "./organization.js";
 
 export * from "./consultation.js";
+export * from "./maintenance.js";

@@ -81,7 +81,7 @@ export function organizationCheckpointWithUsage(checkpoint:OrganizationCheckpoin
  return {...checkpoint,reportedInputTokens:Math.max(checkpoint.reportedInputTokens,usage.inputTokens),reportedOutputTokens:Math.max(checkpoint.reportedOutputTokens,usage.outputTokens),costEstimate:Math.max(checkpoint.costEstimate,usage.costEstimate),usageCounts:{input:usage.knownInputCalls,output:usage.knownOutputCalls,cost:usage.knownCostCalls},usageIncomplete:checkpoint.usageIncomplete||usage.incomplete||usage.knownInputCalls<checkpoint.calls||usage.knownOutputCalls<checkpoint.calls||usage.knownCostCalls<checkpoint.calls};
 }
 export class OrganizationService {
-  constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleConsultation?:(revisionId:string,profileId:string,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
+  constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleMaintenance?:(revisionId:string,profileId:string,privacy:"offline_only"|"allow_remote",domainId:string|null,routine:"weekly"|"monthly"|"cleanup")=>Promise<string>;validateMaintenanceActivation?:(id:string,config:import("@app/domain").OrganizationConfiguration,previous:import("@app/domain").OrganizationConfiguration,language:string)=>Promise<void>;sampleConsultation?:(revisionId:string,profileId:string,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
   private repo(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createOrganizationRepository(pool);}
   private wiki(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createWikiRepository(pool);}
   async settings(){return OrganizationSettingsSchema.parse(await this.repo().settings());}
@@ -95,7 +95,7 @@ export class OrganizationService {
     const c=OrganizationCommandSchema.parse(raw);
     switch(c.command){
       case 'settings':return this.settings();case 'list':return this.list();case 'get':return this.get(c.id);
-      case 'saveDraft':return this.repo().saveDraft({...c.configuration,functionsVersion:2});
+      case 'saveDraft':return this.repo().saveDraft({...c.configuration,functionsVersion:3});
       case 'activate':{
         const revision=await this.repo().configuration(c.revisionId);if(!revision)throw new Error('organization.errors.invalid');
         const config=OrganizationConfigurationSchema.parse(revision.configuration);
@@ -107,9 +107,10 @@ export class OrganizationService {
         const requiredPrompts=[...new Set(required.map(id=>resolveOrganizationInstructions(config,id,'Retrieval and feedback',language).slots.advanced))];
         const queryRequired=contexts.filter(id=>resolveOrganizationInstructions(config,id,'sample','en','consultation').slots.advanced!==resolveOrganizationInstructions(previous,previous.domains.some(d=>d.id===id)?id:null,'sample','en','consultation').slots.advanced);
         const queryPrompts=[...new Set(queryRequired.map(id=>resolveOrganizationInstructions(config,id,'Retrieval and feedback',language,'consultation').slots.advanced))];
+        await this.options.validateMaintenanceActivation?.(c.revisionId,config,previous,language);
         await this.repo().activate(c.revisionId,c.expectedActiveId,requiredPrompts,queryPrompts);return this.settings();
       }
-      case 'sample':if(c.functionName==='consultation'){if(!this.options.sampleConsultation)throw new Error('organization.errors.model');return this.options.sampleConsultation(c.revisionId,c.profileId,c.privacy,c.domainId);}return this.sample(c.revisionId,c.profileId,c.privacy,c.domainId);
+      case 'sample':if(c.functionName==='weekly'||c.functionName==='monthly'||c.functionName==='cleanup'){if(!this.options.sampleMaintenance)throw new Error('organization.errors.model');return this.options.sampleMaintenance(c.revisionId,c.profileId,c.privacy,c.domainId,c.functionName);}if(c.functionName==='consultation'){if(!this.options.sampleConsultation)throw new Error('organization.errors.model');return this.options.sampleConsultation(c.revisionId,c.profileId,c.privacy,c.domainId);}return this.sample(c.revisionId,c.profileId,c.privacy,c.domainId);
       case 'start':return this.start(c.input);
       case 'cancel':{const run=await this.get(c.id);if(!run)throw new Error('organization.errors.invalid');await this.repo().cancel(c.id);if(run.jobId)await this.options.cancelJob(run.jobId);return this.get(c.id);}
       case 'retry':await this.repo().retry(c.id);this.options.wake();return this.get(c.id);

@@ -1,3 +1,4 @@
+import { MaintenanceCommandSchema,MaintenanceResponseSchema } from "@app/domain";
 import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
 import { WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
@@ -115,6 +116,7 @@ import {
 
 const api: DesktopApi = {
   consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
+  maintenance:{command:async(input)=>MaintenanceResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.maintenanceCommand,MaintenanceCommandSchema.parse(input)))},
   organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),

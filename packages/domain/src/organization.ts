@@ -17,14 +17,16 @@ export const OrganizationSlotsSchema = z.object({
     if (/\{\{|\}\}/.test(remaining)) ctx.addIssue({ code: "custom", path: [key], message: "organization.errors.placeholder" });
   }
 });
+export const OrganizationFunctionSchema=z.enum(["pageSynthesis","consultation","weekly","monthly","cleanup"]);
+export type OrganizationFunction=z.infer<typeof OrganizationFunctionSchema>;
 export const OrganizationDomainSchema = z.object({
   id: z.string().uuid(), name: z.string().trim().min(1).max(100),
   sourceIds: z.array(z.string().uuid()).max(100), pageIds: z.array(z.string().uuid()).max(100),
-  slots: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional()
+  slots: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional(), weekly:OrganizationSlotsSchema.optional(), monthly:OrganizationSlotsSchema.optional(), cleanup:OrganizationSlotsSchema.optional()
 }).strict();
 export const OrganizationConfigurationSchema = z.object({
-  functionsVersion:z.literal(2).optional(),
-  global: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional(),
+  functionsVersion:z.union([z.literal(2),z.literal(3)]).optional(),
+  global: OrganizationSlotsSchema, pageSynthesis: OrganizationSlotsSchema, consultation:OrganizationSlotsSchema.optional(), weekly:OrganizationSlotsSchema.optional(), monthly:OrganizationSlotsSchema.optional(), cleanup:OrganizationSlotsSchema.optional(),
   domains: z.array(OrganizationDomainSchema).max(30)
 }).strict().superRefine((v,ctx)=>{
   if(new Set(v.domains.map(d=>d.id)).size!==v.domains.length) ctx.addIssue({code:"custom",message:"organization.errors.invalid"});
@@ -35,12 +37,17 @@ export const builtInOrganizationSlots = {
   advanced: "Synthesize {{title}} in {{language}}. Search original evidence, read relevant revisions, then propose one coherent page change. Cite only passages you read. Existing conceptual relationships are interpretations, not independent evidence."
 };
 export const builtInConsultationSlots={guidance:"Attribute claims to their original sources; distinguish uncertainty, disagreements and missing evidence.",advanced:"Answer {{title}} in {{language}} from supplied original evidence. Keep the response read-only, cite each factual paragraph, and disclose limits of the selected material."};
-export function resolveOrganizationInstructions(config: z.infer<typeof OrganizationConfigurationSchema>, domainId: string | null, title: string, language: string, functionName:"pageSynthesis"|"consultation"="pageSynthesis") {
+export const builtInMaintenanceSlots={
+ weekly:{guidance:"Improve discoverability while preserving deliberate outliers, human placements and historical material.",advanced:"Review {{title}} in {{language}}. Use supplied diagnostics to propose only useful bounded navigation changes. Return no changes when benefit is uncertain."},
+ monthly:{guidance:"Favor conceptual coherence and clear navigation; branch depth and width are signals, never balance targets.",advanced:"Assess {{title}} in {{language}}. Propose a small reviewed tree change only when it improves navigation. Preserve identities, aliases, evidence and human decisions."},
+ cleanup:{guidance:"Preserve original content and historical evidence. Isolation or age alone is never grounds for archival.",advanced:"Inspect {{title}} in {{language}}. Propose recoverable archival only for explicitly eligible empty obsolete generated drafts, or safe navigation changes. No deletion or prose rewriting."}
+};
+export function resolveOrganizationInstructions(config: z.infer<typeof OrganizationConfigurationSchema>, domainId: string | null, title: string, language: string, functionName:OrganizationFunction="pageSynthesis") {
   const domain = domainId ? config.domains.find(d=>d.id===domainId) : null;
   if (domainId && !domain) throw new Error("organization.errors.scope");
-  const slots = { ...(functionName==="consultation"?builtInConsultationSlots:builtInOrganizationSlots) }, origins = { guidance: "built_in", advanced: "built_in" };
+  const slots = { ...(functionName==="consultation"?builtInConsultationSlots:functionName==="pageSynthesis"?builtInOrganizationSlots:builtInMaintenanceSlots[functionName]) }, origins = { guidance: "built_in", advanced: "built_in" };
   for (const [origin, layer] of [["global",config.global],["function",config[functionName]],["domain",domain?.slots],["domain_function",domain?.[functionName]]] as const) {
-    for (const key of ["guidance","advanced"] as const) if(layer?.[key]!==undefined && !(functionName==="consultation"&&key==="advanced"&&config.functionsVersion!==2)) { slots[key]=layer[key]; origins[key]=origin; }
+    for (const key of ["guidance","advanced"] as const) if(layer?.[key]!==undefined && !(key==="advanced"&&((functionName==="consultation"&&(config.functionsVersion??0)<2)||(["weekly","monthly","cleanup"].includes(functionName)&&(config.functionsVersion??0)<3)))) { slots[key]=layer[key]; origins[key]=origin; }
   }
   return { slots: { guidance: slots.guidance.replaceAll("{{title}}",title).replaceAll("{{language}}",language), advanced: slots.advanced.replaceAll("{{title}}",title).replaceAll("{{language}}",language) }, origins, domainId };
 }
@@ -128,7 +135,7 @@ export const OrganizationCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("settings")}).strict(),
   z.object({command:z.literal("saveDraft"),configuration:OrganizationConfigurationSchema}).strict(),
   z.object({command:z.literal("activate"),revisionId:z.string().uuid(),expectedActiveId:z.string().uuid().nullable()}).strict(),
-  z.object({command:z.literal("sample"),functionName:z.enum(["pageSynthesis","consultation"]).default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
+  z.object({command:z.literal("sample"),functionName:OrganizationFunctionSchema.default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
   z.object({command:z.literal("start"),input:OrganizationStartSchema}).strict(),
   z.object({command:z.literal("list")}).strict(),
   z.object({command:z.literal("get"),id:z.string().uuid()}).strict(),

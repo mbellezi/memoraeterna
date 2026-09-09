@@ -1,3 +1,5 @@
+import { MaintenanceService } from "./services/maintenance-service.js";
+import { MaintenanceCommandSchema } from "@app/domain";
 import { reconcileOrganizationParticipation } from "./services/organization-participation.js";
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
@@ -9,7 +11,7 @@ import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
+import { app, powerMonitor, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
@@ -256,10 +258,13 @@ void app.whenReady().then(() => {
     getStorageSettings: () => settingsService!.get()
   });
   const consultationService=new ConsultationService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake()});
-  const organizationService = new OrganizationService({sampleConsultation:(revisionId,profileId,privacy,domainId)=>consultationService.sample(revisionId,profileId,privacy,domainId),getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:(id)=>jobSupervisor!.requestCancel(id)});
+  const maintenanceService=new MaintenanceService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:id=>jobSupervisor!.requestCancel(id),idleSeconds:()=>powerMonitor.getSystemIdleTime(),aiBusy:()=>aiService!.isBusy()});
+  ipcMain.handle(ipcChannels.maintenanceCommand,(_event,input:unknown)=>maintenanceService.command(MaintenanceCommandSchema.parse(input)));
+  const organizationService = new OrganizationService({sampleMaintenance:(...args)=>maintenanceService.sample(...args),validateMaintenanceActivation:(...args)=>maintenanceService.validateActivation(...args),sampleConsultation:(revisionId,profileId,privacy,domainId)=>consultationService.sample(revisionId,profileId,privacy,domainId),getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:(id)=>jobSupervisor!.requestCancel(id)});
   registerOrganizationIpc(ipcMain,organizationService);
   registerConsultationIpc(ipcMain,consultationService);
   jobSupervisor = new JobSupervisor({
+    maintenanceTick:()=>maintenanceService.tick(),maintenanceReady:job=>maintenanceService.ready(job),processMaintenance:(job,signal)=>maintenanceService.execute(job,signal),
     reconcileOrganization:()=>reconcileOrganizationParticipation(databaseService!.getPool()!,organizationService),
     processOrganization:(job,signal)=>organizationService.execute(job,signal),
     traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),

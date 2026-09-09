@@ -1,3 +1,4 @@
+import type { MaintenanceCommand } from "@app/domain";
 import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
 import type { OrganizationCommand } from "@app/domain";
 import type { WikiPage, WikiSaveInput, WikiQuery, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
@@ -31,6 +32,7 @@ import {
 
 export const ipcChannels = {
   consultationAsk:"app:consultation:ask",consultationCancel:"app:consultation:cancel",consultationSave:"app:consultation:save",
+  maintenanceCommand:"app:maintenance:command",
   organizationCommand: "app:organization:command",
   wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
@@ -1087,6 +1089,7 @@ export const defaultStorageSettings = {
 
 export interface DesktopApi {
   consultation:{ask:(input:ConsultationInput)=>Promise<ConsultationResult>;cancel:(id:string)=>Promise<null>;save:(id:string)=>Promise<OrganizationRun>};
+  maintenance:{command:(input:MaintenanceCommand)=>Promise<unknown>};
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
   wiki: { list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {

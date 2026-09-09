@@ -79,6 +79,8 @@ export interface AiServiceOptions {
 }
 
 export interface AiTaskLogContext {
+  maintenanceRunId?: string;
+  maintenanceStep?: number;
   organizationRunId?: string;
   organizationStep?: number;
   jobId?: string;
@@ -101,6 +103,7 @@ export interface AiTaskLogContext {
 }
 
 export class AiService {
+  public isBusy(): boolean { return aiExecutionQueue.busy; }
   private readonly credentials: CredentialService;
   private readonly activeLocalModels = new Set<string>();
   private readonly registry = new AiModelRegistry();
@@ -466,6 +469,7 @@ export class AiService {
         : await run();
       progress({ progress: 1 });
       const aiTaskRunId = await repository.recordTaskRun({
+        ...(logContext.maintenanceRunId?{maintenanceRunId:logContext.maintenanceRunId,maintenanceStep:logContext.maintenanceStep}:{}),
         ...(logContext.organizationRunId?{organizationRunId:logContext.organizationRunId,organizationStep:logContext.organizationStep}:{}),
         profileId: selection.profileId, taskType, provider: result.providerId, modelId: result.modelId,
         runtime: selection.localModelId ? selection.runtime : result.runtime,
@@ -495,6 +499,7 @@ export class AiService {
         embeddingSpaceKey: sha256(JSON.stringify({ providerConfigId: selection.providerConfigId, baseUrl: selection.baseUrl, localModelId: selection.localModelId, repository: selection.repository, quantization: selection.quantization, model: result.modelId, provider: result.providerId, runtime: result.runtime, revision: selection.revision, parameters })) };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
+        ...(logContext.maintenanceRunId?{maintenanceRunId:logContext.maintenanceRunId,maintenanceStep:logContext.maintenanceStep}:{}),
         ...(logContext.organizationRunId?{organizationRunId:logContext.organizationRunId,organizationStep:logContext.organizationStep}:{}),
         profileId: selection.profileId, taskType, provider: selection.provider,
         modelId: selection.modelId, runtime: selection.runtime,

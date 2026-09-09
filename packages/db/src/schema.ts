@@ -1466,3 +1466,33 @@ export const knowledgeImpactEvents = pgTable("knowledge_impact_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   consumedAt: timestamp("consumed_at", { withTimezone: true })
 },t=>[index("knowledge_impact_events_pending_idx").on(t.consumedAt,t.createdAt),index("knowledge_impact_events_input_idx").on(t.kind,t.inputId)]);
+
+export const maintenanceSchedules = pgTable("maintenance_schedules", {
+  id: uuid("id").primaryKey().defaultRandom(), revision: integer("revision").notNull().default(1),
+  policy: jsonb("policy").notNull(), nextAt: timestamp("next_at", { withTimezone: true }).notNull(), lastRunId: uuid("last_run_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, t => [index("maintenance_schedules_due_idx").on(t.nextAt)]);
+export const maintenanceRuns = pgTable("maintenance_runs", {
+  id: uuid("id").primaryKey().defaultRandom(), jobId: uuid("job_id").notNull().references(() => jobs.id, { onDelete: "restrict" }),
+  scopeKey: text("scope_key").notNull(), period: text("period").notNull(), scheduleIds: jsonb("schedule_ids").notNull(),
+  status: text("status").notNull().default("queued"), snapshot: jsonb("snapshot").notNull(), checkpoint: jsonb("checkpoint").notNull(), proposal: jsonb("proposal"),
+  reservation: jsonb("reservation").notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+}, t => [uniqueIndex("maintenance_runs_job_idx").on(t.jobId), index("maintenance_runs_period_idx").on(t.scopeKey,t.period), check("maintenance_runs_status_check",sql`${t.status} in ('queued','inspecting','analyzing','awaiting_review','no_change','applied','rejected','canceled','failed','sample_passed')`)]);
+export const maintenanceOccurrencesTable = pgTable("maintenance_occurrences", {
+  id: uuid("id").primaryKey().defaultRandom(), scheduleId: uuid("schedule_id").notNull().references(() => maintenanceSchedules.id, { onDelete: "restrict" }),
+  occurrenceKey: text("occurrence_key").notNull(), dueFrom: timestamp("due_from", { withTimezone: true }).notNull(), dueUntil: timestamp("due_until", { withTimezone: true }).notNull(),
+  runId: uuid("run_id").notNull().references(() => maintenanceRuns.id, { onDelete: "restrict" })
+}, t=>[uniqueIndex("maintenance_occurrences_identity_idx").on(t.scheduleId,t.occurrenceKey)]);
+export const maintenanceSteps = pgTable("maintenance_steps", {
+  id: uuid("id").primaryKey().defaultRandom(), runId: uuid("run_id").notNull().references(() => maintenanceRuns.id, { onDelete: "restrict" }),
+  sequence: integer("sequence").notNull(), aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "restrict" }), artifact: jsonb("artifact").notNull()
+},t=>[uniqueIndex("maintenance_steps_sequence_idx").on(t.runId,t.sequence)]);
+export const maintenanceReceipts = pgTable("maintenance_receipts", {
+  runId: uuid("run_id").notNull().references(() => maintenanceRuns.id, { onDelete: "restrict" }), pageId: uuid("page_id").notNull().references(() => wikiPages.id, { onDelete: "restrict" }), revisionId:uuid("revision_id").notNull().references(()=>wikiPageRevisions.id,{onDelete:"restrict"})
+},t=>[uniqueIndex("maintenance_receipts_run_page_idx").on(t.runId,t.pageId)]);
+export const maintenanceDecisions = pgTable("maintenance_decisions", {
+  key: text("key").primaryKey(), pageId:uuid("page_id").notNull(), runId:uuid("run_id").notNull().references(()=>maintenanceRuns.id,{onDelete:"restrict"}), outcome:text("outcome").notNull(),createdAt:timestamp("created_at",{withTimezone:true}).notNull().defaultNow()
+},t=>[index("maintenance_decisions_page_idx").on(t.pageId,t.createdAt)]);
+export const maintenanceBudgetReservations = pgTable("maintenance_budget_reservations", {
+  runId:uuid("run_id").notNull().references(()=>maintenanceRuns.id,{onDelete:"restrict"}), scopeKey:text("scope_key").notNull(),period:text("period").notNull(),reservation:jsonb("reservation").notNull()
+},t=>[uniqueIndex("maintenance_budget_run_period_idx").on(t.runId,t.period),index("maintenance_budget_scope_period_idx").on(t.scopeKey,t.period)]);

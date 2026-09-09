@@ -4,6 +4,7 @@ import { hostname } from "node:os";
 import { runIndividualStageBatch } from "./individual-stage-batch.js";
 import {
   createOrganizationRepository,
+  createMaintenanceRepository,
   createChunkRepository,
   createDocumentRepository,
   createAtomicNoteRepository,
@@ -31,6 +32,9 @@ import type { WorkerTask } from "../workers/worker-contracts.js";
 export interface JobSupervisorOptions {
   traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
   getPool: () => PgPool | null;
+  maintenanceTick?:()=>Promise<void>;
+  maintenanceReady?:(job:JobRecord)=>Promise<boolean>;
+  processMaintenance?:(job:JobRecord,signal:AbortSignal)=>Promise<JsonObject>;
   reconcileOrganization?:()=>Promise<void>;
   processOrganization?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
@@ -57,7 +61,7 @@ export interface JobSupervisorOptions {
 }
 
 const supportedJobTypes = new Set<string>([
-  "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
+  "maintenance", "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
   "atomic-note-generation", "obsidian-sync", "asset-storage"
 ]);
 
@@ -101,14 +105,18 @@ export class JobSupervisor {
   public async runOnce(): Promise<JobRecord | null> {
     try{await this.options.reconcileOrganization?.();}catch{this.options.logger?.warn("Organization reconciliation is temporarily unavailable");}
     const repository = createJobRepository(this.requirePool());
-    const job = await repository.claimNext(this.workerId, [...supportedJobTypes]);
+    await this.options.maintenanceTick?.();
+    let job = await repository.claimNext(this.workerId, [...supportedJobTypes].filter(t=>t!=="maintenance"));
+    if(!job){const pending=(await repository.list(200)).find(j=>j.type==="maintenance"&&j.status==="queued");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
     if (!job) return null;
     this.notify();
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const execute = async () => job.type === "organization"
+      const execute = async () => job.type === "maintenance"
+        ? await this.options.processMaintenance!(job,controller.signal)
+        : job.type === "organization"
         ? await this.options.processOrganization!(job, controller.signal)
         : job.type === "relation-labels"
         ? await this.options.processRelationLabels!(job, controller.signal)
@@ -134,7 +142,7 @@ export class JobSupervisor {
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
-      const shouldRetry = !wasCanceled && job.attempts < job.maxAttempts && (job.type !== "organization" || /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
+      const shouldRetry = job.type !== "maintenance" && !wasCanceled && job.attempts < job.maxAttempts && (job.type !== "organization" || /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
         const runs = createIngestionRunRepository(this.requirePool());
         if (wasCanceled) {
@@ -196,6 +204,7 @@ export class JobSupervisor {
     if(before?.type==="ingestion"&&typeof before.payload.ingestionRunId==="string")for(const linked of await createOrganizationRepository(this.requirePool()).jobsForIngestion(before.payload.ingestionRunId))await this.requestCancel(linked);
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
+    if(job?.type === "maintenance" && typeof job.payload.maintenanceRunId === "string") await createMaintenanceRepository(this.requirePool()).cancel(job.payload.maintenanceRunId);
     if (job?.type === "organization" && typeof job.payload.organizationRunId === "string") await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
     this.notify();
     return job;
@@ -205,7 +214,7 @@ export class JobSupervisor {
     const pool = this.requirePool();
     const repository = createJobRepository(pool);
     const current = await repository.findById(jobId);
-    if (!current || current.type === "organization") return null;
+    if (!current || ["organization","maintenance"].includes(current.type)) return null;
     const ingestionRunId = optionalString(current.payload.ingestionRunId);
     const ingestionRun = ingestionRunId
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)
