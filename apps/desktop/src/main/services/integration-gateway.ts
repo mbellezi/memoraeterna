@@ -1,3 +1,4 @@
+import { hasReservedObsidianContent, wikiProjectionCapability } from "@app/integration-contracts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
@@ -67,7 +68,7 @@ export interface IntegrationGatewayOptions {
   obsidianSyncService: Pick<
     ObsidianSyncService,
     "handleChanged" | "handleMoved" | "handleDeleted" | "reconcileSnapshot" | "reconcileVault"
-  >;
+  > & Partial<Pick<ObsidianSyncService,"assertUnmanagedImport">>;
   jobSupervisor: Pick<JobSupervisor, "list">;
   preferredPort?: number;
   clientStore?: IntegrationClientStore;
@@ -263,6 +264,7 @@ export class IntegrationGateway {
       if (path === "/v1/obsidian/import") {
         requireCapability(session, "import-obsidian-note");
         const input = importObsidianNoteRequestSchema.parse(body);
+        if (!input.frontmatter && hasReservedObsidianContent(input.markdown)) throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
         if (input.frontmatter) {
           this.sendJson(response, 200, await this.options.obsidianSyncService.handleChanged({
             eventId: input.requestId,
@@ -271,6 +273,7 @@ export class IntegrationGateway {
             note: { ...input, frontmatter: input.frontmatter }
           }));
         } else {
+          await this.options.obsidianSyncService.assertUnmanagedImport?.(input.relativePath);
           const result = await this.options.ingestionService.importObsidianNote(input);
           this.sendJson(response, 202, { requestId: input.requestId, accepted: true, ...result });
         }
@@ -313,6 +316,7 @@ export class IntegrationGateway {
       throw new GatewayError("incompatible_contract", "integrations.errors.incompatibleContract", false, 409);
     }
     const allowed = new Set(client.scopes);
+    if (client.clientType === "obsidian-plugin") allowed.add(wikiProjectionCapability);
     const capabilities = input.capabilities.filter((capability) => allowed.has(capability));
     if (capabilities.length !== input.capabilities.length) {
       throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
@@ -438,7 +442,7 @@ function requireCapability(session: Session, capability: IntegrationCapability):
 function capabilitiesForClient(kind: "chrome-extension" | "obsidian-plugin"): IntegrationCapability[] {
   return kind === "chrome-extension"
     ? ["capture-web-page", "capture-selection", "capture-youtube-video", "receive-job-progress"]
-    : ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress"];
+    : ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability];
 }
 
 function hashToken(token: string): string {

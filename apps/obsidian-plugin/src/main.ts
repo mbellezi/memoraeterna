@@ -8,7 +8,7 @@ import {
 } from "obsidian";
 import { createTranslator, type LanguageCode, type Translator } from "@app/i18n";
 
-import type { ObsidianManagedFrontmatter } from "@app/integration-contracts";
+import { hasReservedObsidianContent, isOutwardProjection, type ObsidianManagedFrontmatter } from "@app/integration-contracts";
 import { hashMarkdown, parseManagedNote } from "./frontmatter.js";
 import { ObsidianGatewayClient } from "./integration-client.js";
 
@@ -99,6 +99,9 @@ export default class MemoraObsidianPlugin extends Plugin {
     if (!file) return;
     const content = await this.app.vault.read(file);
     const parsed = parseManagedNote(content);
+    if ((!parsed && hasReservedObsidianContent(content)) || (parsed && isOutwardProjection(parsed.frontmatter.memoraType))) {
+      new Notice(this.t("obsidianWiki.readOnly")); return;
+    }
     const markdown = parsed?.markdown ?? content;
     await this.client.importNote({
       requestId: crypto.randomUUID(),
@@ -183,7 +186,8 @@ export default class MemoraObsidianPlugin extends Plugin {
   }
 
   private async readManaged(file: TFile) {
-    return parseManagedNote(await this.app.vault.read(file));
+    const note = parseManagedNote(await this.app.vault.read(file));
+    return note && !isOutwardProjection(note.frontmatter.memoraType) ? note : null;
   }
 }
 

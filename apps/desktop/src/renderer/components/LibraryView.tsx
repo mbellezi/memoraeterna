@@ -43,6 +43,7 @@ import { SearchResultCard, searchResultId } from "./SearchView";
 export interface LibraryExternalTarget {
   sourceItemId: string;
   atomicNoteId?: string;
+  sourceRelationId?: string;
   origin?: "search" | "knowledgeGraph" | "wiki";
   token: number;
 }
@@ -364,6 +365,7 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
         <SourceDetailView
           key={`${detail.id}:${externalTarget?.token ?? 0}`}
           detail={detail}
+          focusedSourceRelationId={externalTarget?.sourceItemId===detail.id?externalTarget.sourceRelationId:undefined}
           focusedAtomicNoteId={relationNoteTarget?.sourceItemId === detail.id ? relationNoteTarget.noteId
             : externalTarget?.sourceItemId === detail.id ? externalTarget.atomicNoteId ?? null : null}
           metadataEnrichmentEnabled={metadataEnrichmentEnabled}
@@ -665,9 +667,10 @@ export function orderHierarchically(sources: LibrarySource[]): Array<{ source: L
   return result;
 }
 
-function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled, onOpenNote }: {
+function SourceDetailView({ detail, focusedAtomicNoteId, focusedSourceRelationId, allSources, backLabel, t, onOpen, onOpenPath, onGoToLibrary, onBack, onProcess, onDeleted, onRefresh, onPage, offset, loading, loadError, metadataEnrichmentEnabled, onOpenNote }: {
   detail: SourceDetail;
   focusedAtomicNoteId: string | null;
+  focusedSourceRelationId?: string | undefined;
   onOpenNote: (sourceItemId:string,noteId:string) => void;
   metadataEnrichmentEnabled: boolean;
   allSources: LibrarySource[];
@@ -684,7 +687,7 @@ function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, 
   const [historical, setHistorical] = useState<{ title: string; markdown: string } | null>(null);
   const [historyError, setHistoryError] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [tab, setTab] = useState(focusedAtomicNoteId ? "notes" : "overview");
+  const [tab, setTab] = useState(focusedSourceRelationId?"graph":focusedAtomicNoteId ? "notes" : "overview");
   const [editor, setEditor] = useState<"edit" | "child" | null>(null);
   const [selectedChildren, setSelectedChildren] = useState<string[]>([]);
   const [deleting, setDeleting] = useState(false);
@@ -885,7 +888,7 @@ function SourceDetailView({ detail, focusedAtomicNoteId, allSources, backLabel, 
     {tab === "graph" ? <div className="grid gap-4">
       <section className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <h3 className="px-3 pt-3 font-semibold">{t("sourceRelations.title")}</h3>
-        <SourceRelationsList sourceItemId={detail.id} t={t} onOpenNote={onOpenNote} />
+        <SourceRelationsList sourceItemId={detail.id} {...(focusedSourceRelationId?{relationId:focusedSourceRelationId}:{})} t={t} onOpenNote={onOpenNote} />
       </section>
       <CollapsibleSection title={t("knowledge.graph.entities")} count={graphEntities.length} defaultOpen>
         {graphEntities.length === 0 ? <StateCard>{t("knowledge.graph.empty")}</StateCard>

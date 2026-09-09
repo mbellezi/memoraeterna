@@ -169,3 +169,12 @@ function createMemoryStore(): IntegrationClientStore {
 }
 
 void createHash;
+
+it('rejects the old plugin manual-import fallback before ordinary source ingestion',async()=>{
+  const gateway=createGateway(async()=>result);gateways.push(gateway);const status=await gateway.start();const pairing=await gateway.createPairing({clientType:'obsidian-plugin',displayName:'Old plugin fixture'});
+  const handshake=await fetch(`${status.baseUrl}/v1/handshake`,{method:'POST',headers:{authorization:`Bearer ${pairing.token}`,'content-type':'application/json'},body:JSON.stringify({contractVersion:'1.0.0',clientId:pairing.clientId,client:{kind:'obsidian-plugin',name:'M3b plugin',contractVersion:'1.0.0'},capabilities:['import-obsidian-note','watch-obsidian-files','reconcile-obsidian-vault']})});expect(handshake.status).toBe(200);const session=await handshake.json() as IntegrationHandshakeResponse;
+  // The old parser returns null for wiki types; its actual fallback shape omits frontmatter entirely.
+  for(const markdown of [`---\nmemora_id: "${randomUUID()}"\nmemora_type: "wiki_page"\nmemora_managed: true\n---\n# My wiki`,`---\n"memora_type": "future_wiki"\n---\n# Future page`]){
+    const response=await fetch(`${status.baseUrl}/v1/obsidian/import`,{method:'POST',headers:{authorization:`Bearer ${session.sessionToken}`,'content-type':'application/json'},body:JSON.stringify({requestId:randomUUID(),relativePath:'Memora/Wiki/page.md',title:'Wiki',markdown,contentHash:createHash('sha256').update(markdown).digest('hex'),mtimeMs:1})});expect(response.status).toBe(403);
+  }
+});

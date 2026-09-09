@@ -3,7 +3,7 @@
 Status: implementation in progress. M1's non-AI workspace and M2's restricted
 organization executor are accepted; their validation records are below.
 M3 is accepted after paired real-model trials and coordinator validation;
-M3b is accepted after reviewed maintenance/restore trials; M4–M6 remain pending. The section 7 TypeScript executor decision passed the M2
+M3b is accepted after reviewed maintenance/restore trials; M4 is accepted after real Obsidian projection/recovery tests. M5–M6 remain pending. The section 7 TypeScript executor decision passed the M2
 gate with Luna as the semantic reference and local models evaluated on a
 best-effort basis. Baseline reviewed on
 2026-09-08 against commit `a0ee57a`, including the conceptual source relationship
@@ -1433,3 +1433,27 @@ is accepted, while keeping milestone status and temporary choices in this plan.
   memories and incremental organization; this plan does not adopt its runtime.
 - [OWASP prompt injection prevention](https://cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html):
   least privilege and treating source/tool content as untrusted.
+
+### M4 implementation and acceptance record (2026-09-09)
+
+Implemented on `codex/second-brain-m4`: scoped persisted outward wiki projection,
+transactional invalidation, bounded supervisor jobs, shared format/capability
+negotiation, hierarchy and linked catalog, canonical two-sided source connections,
+historical excerpts, exact bases/hashes, divergence review/recovery and source/note
+write-event guards. Metadata references promote to source documents at the same
+identity/path when substantive content arrives. Wiki writeback remains disabled.
+Generated additive migration `0028_elite_preak` and its trigger supplement are
+included in the 29-migration baseline. See [the M4 report](second-brain-m4-report.md)
+for boundaries, deterministic checks, limitations and real-vault smoke procedure.
+The implementation agent used only synthetic isolated PostgreSQL/vault fixtures.
+The coordinator accepted M4 after actual default-window Obsidian tests with no
+plugin, the pre-M4 plugin and the current plugin; native edits/conflict recovery,
+historical evidence, source updates with an open editor, rename/archive/restore,
+single-instance deep links and restart. Original synthetic corpus hashes remained
+unchanged and no model calls ran. Final checks passed: 95 suites / 574 tests,
+typecheck, full build, formatting, 29-migration seed verification, and both isolated
+PostgreSQL projection/source-relationship verifiers. Scope races, receipt versions,
+historical navigation races and CommonJS artifact preservation were corrected.
+**M4 is accepted.** QA sync is paused and DEV stopped; the authorized temporary
+vault/pairing is retained for M5, after which its access and storage binding must
+be cleaned up. No reverse editing or M6 completion is claimed here.

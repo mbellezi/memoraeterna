@@ -1,3 +1,4 @@
+import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -124,6 +125,8 @@ export function App({
   initialSettings,
   initialSystemInfo = null
 }: AppProps) {
+  const [obsidianTarget,setObsidianTarget]=useState<(ObsidianDeepLink&{token:number})|null>(null);
+  useEffect(()=>{const open=(target:ObsidianDeepLink)=>{if(target.kind==='wiki'){setObsidianTarget({...target,token:Date.now()});setActiveView('wiki');}else if(target.kind==='source'){libraryTargetToken.current+=1;setLibraryTarget({sourceItemId:target.id,origin:'wiki',...(target.relation?{sourceRelationId:target.relation}:{}),token:libraryTargetToken.current});setActiveView('library');}};const off=window.app.obsidian.onOpen(open);void window.app.obsidian.pendingOpen().then(target=>{if(target)open(target);});return off;},[]);
   const [activeView, setActiveView] = useState<ViewId>("library");
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
@@ -569,7 +572,7 @@ export function App({
           }}
         >
           <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
+            <WikiWorkspace externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
           </div>
           {activeView === "settings" ? (
             <SettingsView

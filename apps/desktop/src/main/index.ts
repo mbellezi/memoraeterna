@@ -1,3 +1,4 @@
+import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { MaintenanceService } from "./services/maintenance-service.js";
 import { MaintenanceCommandSchema } from "@app/domain";
 import { reconcileOrganizationParticipation } from "./services/organization-participation.js";
@@ -148,8 +149,19 @@ let shutdownPromise: Promise<void> | null = null;
 let isShutdownInProgress = false;
 let isQuittingAfterShutdown = false;
 
+const primaryInstance=app.requestSingleInstanceLock();
+if(!primaryInstance)app.quit();
+let pendingObsidianOpen:ObsidianDeepLink|null=null;
+function receiveObsidianOpen(raw:string){const target=parseObsidianDeepLink(raw);if(!target)return;pendingObsidianOpen=target;for(const window of BrowserWindow.getAllWindows()){if(!window.webContents.isLoading())window.webContents.send(ipcChannels.obsidianDeepLink,target);}}
+app.on('open-url',(event,url)=>{event.preventDefault();receiveObsidianOpen(url);});
+app.on('second-instance',(_event,args)=>{for(const arg of args)if(arg.startsWith('memora:'))receiveObsidianOpen(arg);});
+for(const arg of process.argv)if(arg.startsWith('memora:'))receiveObsidianOpen(arg);
+ipcMain.handle(ipcChannels.obsidianDeepLinkPending,()=>{const target=pendingObsidianOpen;pendingObsidianOpen=null;return target;});
+
 void app.whenReady().then(() => {
+  if(!primaryInstance)return;
   app.setName(createTranslator(app.getLocale())("app.title"));
+  if(app.isPackaged)app.setAsDefaultProtocolClient("memora");
   databaseService = new DatabaseService({
     userDataPath: app.getPath("userData"),
     cwd: process.cwd(),
@@ -254,6 +266,7 @@ void app.whenReady().then(() => {
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
   obsidianSyncService = new ObsidianSyncService({
+    getLocale:async()=>(await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get()
   });

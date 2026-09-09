@@ -1,0 +1,12 @@
+import { describe, it, expect } from 'vitest';
+import { parseObsidianMarkdown, serializeManagedFrontmatter, normalizeProjectionText, parseWikiRegions, sectionStart, sectionEnd, wikiGeneratedStart, wikiGeneratedEnd, hasReservedObsidianContent } from './index.js';
+const id = 'b14cde4a-ce8d-41b8-804f-6412779354f2';
+const fm = { memoraId: id, memoraType: 'wiki_page' as const, memoraManaged: true as const, memoraSyncVersion: 1, memoraContentHash: 'a'.repeat(64), memoraWikiSchema: 1 as const, memoraRevisionId: id };
+describe('shared Obsidian wiki v1 format', () => {
+    it('preserves code, Unicode, hard breaks, trailing whitespace and user fields with only line ending normalization', () => { const prose = 'Café 日本語  \nNext\n\n```markdown\n<!-- memora:generated:start -->\n\n```\n\t'; const body = `# Title\n\n${sectionStart(id)}\n${prose}\n${sectionEnd(id)}\n\n${wikiGeneratedStart}\nlinks\n${wikiGeneratedEnd}\n`; const raw = serializeManagedFrontmatter(fm, 'tags: ["a", "b"]\ncustom: |\n  multi-line') + '\n' + body; const parsed = parseObsidianMarkdown(raw.replace(/\n/g, '\r\n'))!; expect(parsed.bodyMarkdown).toBe(body); expect(parsed.userFrontmatter).toContain('  multi-line'); expect(parseWikiRegions(parsed.bodyMarkdown)?.sections[0]?.markdown).toBe(prose); expect(normalizeProjectionText(prose)).not.toBe(normalizeProjectionText(prose.trim())); });
+    it('rejects duplicate, malformed and future reserved identities without unmanaged fallback', () => { const header = serializeManagedFrontmatter(fm); for (const raw of [header.replace('memora_id:', `memora_id: "${id}"\nmemora_id:`), header.replace('memora_wiki_schema: 1', 'memora_wiki_schema: 99'), header.replace('memora_id:', '"memora_id":'), header.replace('memora_id:', 'memora_unknown:')]) {
+        expect(parseObsidianMarkdown(raw + '\nbody')).toBeNull();
+        expect(hasReservedObsidianContent(raw + '\nbody')).toBe(true);
+    } });
+    it('rejects malformed and duplicate actual control regions', () => { const body = `${sectionStart(id)}\ntext\n${sectionEnd(id)}\n${wikiGeneratedStart}\n${wikiGeneratedEnd}\n`; expect(parseWikiRegions(body)).not.toBeNull(); expect(parseWikiRegions(body + wikiGeneratedEnd)).toBeNull(); expect(parseWikiRegions(body.replace(sectionEnd(id), sectionEnd('00000000-0000-4000-8000-000000000001')))).toBeNull(); expect(parseWikiRegions(body.replace(wikiGeneratedStart, `${sectionStart(id)}\ntext\n${sectionEnd(id)}\n${wikiGeneratedStart}`))).toBeNull(); });
+});

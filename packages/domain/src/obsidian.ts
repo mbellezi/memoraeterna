@@ -22,7 +22,11 @@ export const ObsidianSyncEntityTypeSchema = z.enum([
   "source_item",
   "document",
   "atomic_note",
-  "source_summary"
+  "source_summary",
+  "wiki_page",
+  "wiki_index",
+  "source_reference",
+  "source_relation"
 ]);
 
 export type ObsidianSyncEntityType = z.infer<

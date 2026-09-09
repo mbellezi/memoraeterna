@@ -34,7 +34,7 @@ export class LibraryResetService {
     const settings = await this.options.getStorageSettings();
     const [assets, syncFiles, sourceCount, noteCount] = await Promise.all([
       pool.query<AssetPathRow>("select storage_base, relative_path from document_assets"),
-      pool.query<SyncPathRow>("select memora_id, relative_path from obsidian_sync_files"),
+      pool.query<SyncPathRow>(`select memora_id,relative_path from obsidian_sync_files union all select p.memora_id,$1::text || '/.memora-recovery/' || p.id::text || suffix from obsidian_projection_revisions p cross join unnest(array['.before.md','.after.md','.before.md.captured']) suffix`,[settings.managedRoot]),
       pool.query<{ count: string }>("select count(*)::text as count from source_items"),
       pool.query<{ count: string }>("select count(*)::text as count from atomic_notes")
     ]);
@@ -42,7 +42,7 @@ export class LibraryResetService {
     await createKnowledgeGraphRepository(pool).clearProjection();
 
     await pool.query(`truncate table
-      monitoring_operations, similarity_debug_results, similarity_debug_runs,
+      obsidian_projection_revisions, monitoring_operations, similarity_debug_results, similarity_debug_runs,
       atomic_note_review_events, atomic_note_relations, atomic_note_entity_links, atomic_note_source_links, atomic_notes,
       claim_entity_links, claims, entity_relations, entity_mentions, entities,
       entity_identity_keys, entity_identity_embeddings_256, entity_identity_embeddings_768, entity_identity_embeddings_1024,

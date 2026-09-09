@@ -1326,5 +1326,46 @@
       "idle": "Waiting for the configured idle window."
     },
     "restored": "Page restored as a new revision. The archive history is preserved."
+  },
+  "obsidianWiki": {
+    "title": "Wiki projection",
+    "catalog": "Source catalog",
+    "connections": "Source connections",
+    "catalogOnly": "Catalog reference — no original document",
+    "current": "Current evidence",
+    "historical": "Historical evidence",
+    "protected": "Protected prose",
+    "openApp": "Open in Memora Eterna",
+    "unavailable": "Unavailable reference",
+    "readOnly": "Wiki edits remain local in this release. Navigation, evidence and connections are generated.",
+    "scope": "Projection scope",
+    "allSources": "All sources (leave selection empty)",
+    "allPages": "All wiki pages (leave selection empty)",
+    "descendants": "Include source descendants",
+    "saveScope": "Save scope",
+    "pending": "Local edits pending",
+    "review": "Review changes",
+    "base": "Last synchronized version",
+    "local": "Vault version",
+    "proposed": "Application version",
+    "recover": "Preserve local copy and use application version",
+    "recoveryHint": "Recovery keeps your vault version in .memora-recovery and projection history before writing the application version. Wiki edits are not imported.",
+    "saved": "Scope saved",
+    "empty": "No pending wiki edits.",
+    "loading": "Loading projection…",
+    "pageIds": "Wiki pages",
+    "sourceIds": "Sources",
+    "queued": "Projection updates run through the job queue.",
+    "errors": {
+      "conflict": "The vault file changed. Review the local edits before projecting again.",
+      "binding": "The vault or projection scope changed. Start synchronization again.",
+      "paused": "Obsidian synchronization is paused or unavailable.",
+      "limit": "This projection exceeds its size limit. Select a smaller scope.",
+      "format": "A managed projection has invalid or unsupported content markers.",
+      "write": "The vault write failed. Your previous content remains recoverable.",
+      "load": "Unable to load wiki projection."
+    },
+    "historicalPage": "Historical revision · read only",
+    "finishDraft": "Finish or cancel your draft to open the incoming Obsidian link."
   }
 }

@@ -70,7 +70,8 @@ describe("baseline seed", () => {
       "0024_awesome_mole_man",
       "0025_clean_the_spike",
       "0026_broad_celestials",
-      "0027_curvy_doomsday"
+      "0027_curvy_doomsday",
+      "0028_elite_preak"
     ]);
   });
 
@@ -116,7 +117,8 @@ describe("baseline seed", () => {
       "0024_awesome_mole_man",
       "0025_clean_the_spike",
       "0026_broad_celestials",
-      "0027_curvy_doomsday"
+      "0027_curvy_doomsday",
+      "0028_elite_preak"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

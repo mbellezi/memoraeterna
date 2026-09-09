@@ -56,12 +56,12 @@ export interface JobSupervisorOptions {
     spaceKey?: string;
   } | null>;
   knowledgeService?: KnowledgeService;
-  obsidianSyncService?: Pick<ObsidianSyncService, "projectSource">;
+  obsidianSyncService?: Pick<ObsidianSyncService, "projectSource"> & { wiki?: ObsidianSyncService["wiki"] };
   releaseAiRuntime?: () => Promise<void>;
 }
 
 const supportedJobTypes = new Set<string>([
-  "maintenance", "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
+  "obsidian-wiki", "maintenance", "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
   "atomic-note-generation", "obsidian-sync", "asset-storage"
 ]);
 
@@ -105,6 +105,7 @@ export class JobSupervisor {
   public async runOnce(): Promise<JobRecord | null> {
     try{await this.options.reconcileOrganization?.();}catch{this.options.logger?.warn("Organization reconciliation is temporarily unavailable");}
     const repository = createJobRepository(this.requirePool());
+    await this.options.obsidianSyncService?.wiki?.enqueue();
     await this.options.maintenanceTick?.();
     let job = await repository.claimNext(this.workerId, [...supportedJobTypes].filter(t=>t!=="maintenance"));
     if(!job){const pending=await repository.nextQueuedOfType("maintenance");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
@@ -114,7 +115,9 @@ export class JobSupervisor {
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const execute = async () => job.type === "maintenance"
+      const execute = async () => job.type === "obsidian-wiki"
+        ? await this.options.obsidianSyncService!.wiki!.execute(job,controller.signal)
+        : job.type === "maintenance"
         ? await this.options.processMaintenance!(job,controller.signal)
         : job.type === "organization"
         ? await this.options.processOrganization!(job, controller.signal)

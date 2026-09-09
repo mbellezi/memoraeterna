@@ -1,5 +1,6 @@
 import {
   integrationContractVersion,
+  wikiProjectionCapability,
   integrationHandshakeResponseSchema,
   type IntegrationCommandResult,
   type IntegrationEvent,
@@ -39,12 +40,13 @@ export class ObsidianGatewayClient {
         contractVersion: integrationContractVersion,
         clientId: settings.clientId,
         client: { kind: "obsidian-plugin", name: "Memora Obsidian", contractVersion: integrationContractVersion },
-        capabilities: ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress"],
+        capabilities: ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability],
         instanceId: "obsidian"
       })
     });
     if (!response.ok) throw await responseError(response);
     const handshake = integrationHandshakeResponseSchema.parse(await response.json());
+    if (!handshake.capabilities.includes(wikiProjectionCapability)) throw new Error("unsupported_wiki_projection");
     this.shouldReconnect = true;
     this.sessionToken = handshake.sessionToken;
     this.eventUrl = handshake.eventUrl;

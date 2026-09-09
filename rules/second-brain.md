@@ -457,3 +457,17 @@ database, jobs or frontend rules when those boundaries are affected.
   changed context may reopen it. Recent proposed/applied/rejected operations keep
   their conservative page-level cooldown. Supplied candidates with no proposed
   operation retain a no-change outcome, independently of other proposed targets.
+
+## Outward wiki synchronization
+
+- Wiki release 1 uses the persisted outward format and safe delivery contracts
+  in `rules/integrations.md`. Canonical revision, evidence, review, section
+  protection, scope and hierarchy remain independent from sync state.
+- Source-relationship projections reuse canonical relation identity and both
+  historical original evidence sides; generated summaries cannot approve or
+  alter relationships. Metadata-only catalog references never require notes,
+  graph output, AI execution or fabricated original documents.
+- Obsidian-originated wiki prose remains local in this release. Protect and
+  surface all divergence, including generated-region and frontmatter changes,
+  even when no plugin is installed. Recovery is a deliberate outward replacement
+  with preserved local/base copies; reverse editing remains a separate release.

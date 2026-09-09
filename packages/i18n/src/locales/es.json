@@ -1176,5 +1176,46 @@
       "idle": "Esperando el período de inactividad configurado."
     },
     "restored": "Página restaurada como una nueva revisión. Se conserva el historial de archivo."
+  },
+  "obsidianWiki": {
+    "title": "Proyección de la wiki",
+    "catalog": "Catálogo de fuentes",
+    "connections": "Conexiones entre fuentes",
+    "catalogOnly": "Referencia de catálogo — sin documento original",
+    "current": "Evidencia actual",
+    "historical": "Evidencia histórica",
+    "protected": "Texto protegido",
+    "openApp": "Abrir en Memora Eterna",
+    "unavailable": "Referencia no disponible",
+    "readOnly": "Las ediciones de la wiki permanecen locales. La navegación, las evidencias y las conexiones se generan.",
+    "scope": "Alcance de la proyección",
+    "allSources": "Todas las fuentes (selección vacía)",
+    "allPages": "Todas las páginas (selección vacía)",
+    "descendants": "Incluir descendientes",
+    "saveScope": "Guardar alcance",
+    "pending": "Ediciones locales pendientes",
+    "review": "Revisar cambios",
+    "base": "Última versión sincronizada",
+    "local": "Versión de la bóveda",
+    "proposed": "Versión de la aplicación",
+    "recover": "Conservar copia local y usar versión de la aplicación",
+    "recoveryHint": "La recuperación conserva la versión local en .memora-recovery y en el historial antes de escribir la versión de la aplicación. No se importan ediciones de la wiki.",
+    "saved": "Alcance guardado",
+    "empty": "No hay ediciones pendientes.",
+    "loading": "Cargando proyección…",
+    "pageIds": "Páginas de la wiki",
+    "sourceIds": "Fuentes",
+    "queued": "Las actualizaciones usan la cola de tareas.",
+    "errors": {
+      "conflict": "El archivo cambió. Revise las ediciones locales.",
+      "binding": "La bóveda o el alcance cambió. Reinicie la sincronización.",
+      "paused": "La sincronización está pausada o no disponible.",
+      "limit": "Se excedió el límite. Seleccione un alcance menor.",
+      "format": "La proyección contiene marcadores no válidos.",
+      "write": "Falló la escritura. El contenido anterior se puede recuperar.",
+      "load": "No se pudo cargar la proyección."
+    },
+    "historicalPage": "Revisión histórica · solo lectura",
+    "finishDraft": "Guarde o cancele el borrador para abrir el enlace de Obsidian."
   }
 }

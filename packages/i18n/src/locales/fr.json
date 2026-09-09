@@ -1176,5 +1176,46 @@
       "idle": "En attente de la période d’inactivité configurée."
     },
     "restored": "Page restaurée dans une nouvelle révision. L’historique de l’archivage est conservé."
+  },
+  "obsidianWiki": {
+    "title": "Projection du wiki",
+    "catalog": "Catalogue des sources",
+    "connections": "Liens entre sources",
+    "catalogOnly": "Référence du catalogue — sans document original",
+    "current": "Preuve actuelle",
+    "historical": "Preuve historique",
+    "protected": "Texte protégé",
+    "openApp": "Ouvrir dans Memora Eterna",
+    "unavailable": "Référence indisponible",
+    "readOnly": "Les modifications du wiki restent locales. Navigation, preuves et liens sont générés.",
+    "scope": "Périmètre de projection",
+    "allSources": "Toutes les sources (sélection vide)",
+    "allPages": "Toutes les pages (sélection vide)",
+    "descendants": "Inclure les descendants",
+    "saveScope": "Enregistrer le périmètre",
+    "pending": "Modifications locales en attente",
+    "review": "Examiner les modifications",
+    "base": "Dernière version synchronisée",
+    "local": "Version du coffre",
+    "proposed": "Version de l’application",
+    "recover": "Conserver la copie locale et utiliser la version de l’application",
+    "recoveryHint": "La récupération conserve la version locale dans .memora-recovery et dans l’historique avant d’écrire la version de l’application. Les modifications du wiki ne sont pas importées.",
+    "saved": "Périmètre enregistré",
+    "empty": "Aucune modification en attente.",
+    "loading": "Chargement de la projection…",
+    "pageIds": "Pages du wiki",
+    "sourceIds": "Sources",
+    "queued": "Les mises à jour utilisent la file de tâches.",
+    "errors": {
+      "conflict": "Le fichier a changé. Examinez les modifications locales.",
+      "binding": "Le coffre ou le périmètre a changé. Relancez la synchronisation.",
+      "paused": "La synchronisation est suspendue ou indisponible.",
+      "limit": "La limite est dépassée. Réduisez le périmètre.",
+      "format": "La projection contient des marqueurs non valides.",
+      "write": "L’écriture a échoué. Le contenu précédent reste récupérable.",
+      "load": "Impossible de charger la projection."
+    },
+    "historicalPage": "Version historique · lecture seule",
+    "finishDraft": "Enregistrez ou annulez le brouillon pour ouvrir le lien Obsidian."
   }
 }

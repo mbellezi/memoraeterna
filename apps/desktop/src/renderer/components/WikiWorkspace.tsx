@@ -1,3 +1,5 @@
+import { createWikiPageRequests } from "./wiki-page-requests";
+import type { ObsidianDeepLink } from "../../shared/obsidian-deep-link.js";
 import { ConsultationDialog } from "./ConsultationDialog";
 import { OrganizationDialog } from "./OrganizationView";
 import { wikiNavigationOrder } from "./wiki-navigation";
@@ -12,11 +14,15 @@ type PageSummary = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
 const control = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
 const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const newContent = (): WikiPageContent => ({ title: "", kind: "topic", aliases: [], parentId: null, position: 0, collectionIds: [], entityId: null, pinned: false, archived: false, review: "draft", sections: [] });
-export function WikiWorkspace({ t, onOpenSource, active = true }: {
+export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }: {
+  externalTarget?: (ObsidianDeepLink&{token:number})|null;
   active?: boolean;
   t: Translator;
   onOpenSource: (id: string, noteId?: string) => void;
 }) {
+  const pageRequests=useRef(createWikiPageRequests());
+  const processedExternal=useRef<number|null>(null);
+  const [historicalRevision,setHistoricalRevision]=useState<string|undefined>();
   const [consultationOpen,setConsultationOpen]=useState(false);
   const [organizationOpen,setOrganizationOpen]=useState(false);
   const [pages, setPages] = useState<PageSummary[]>([]), [page, setPage] = useState<WikiPage | null>(null);
@@ -37,6 +43,8 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
     pageId: string | null;
   }>>([]);
   const fail = (e: unknown) => { const message = String(e); setError(message.includes("wiki.errors.conflict") ? "wiki.errors.conflict" : message.includes("wiki.errors.cycle") ? "wiki.errors.cycle" : message.includes("wiki.errors.evidence") ? "wiki.errors.evidence" : "wiki.errors.generic"); };
+  useEffect(()=>{if(!externalTarget||editing||organizationOpen||consultationOpen||history||processedExternal.current===externalTarget.token)return;const isCurrent=pageRequests.current.begin();let live=true;void window.app.wiki.get(externalTarget.id,externalTarget.revision).then(value=>{if(!live||!isCurrent())return;processedExternal.current=externalTarget.token;setHistoricalRevision(externalTarget.revision);setPage(value);setMode('page');setInspector(value?.evidence.find(e=>e.id===externalTarget.evidence)??null);}).catch(fail);return()=>{live=false;};},[externalTarget,editing,organizationOpen,consultationOpen,history]);
+
   const reload = useCallback(async () => { setPages(await window.app.wiki.list()); }, []);
   useEffect(() => { if (!active) return; setLoading(true); reload().catch(fail).finally(() => setLoading(false)); }, [reload, active]);
   useEffect(() => {
@@ -61,18 +69,19 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
     return () => { active = false; clearTimeout(timer); };
   }, [query, kind, scope, reviewed, current, mode, offset, pickSection, sourceScope, searchRetry]);
   useEffect(()=>{
-    if(!active||editing||mode!=="page"||!page)return;
-    const id=page.id,timer=setInterval(()=>{if(document.hidden)return;void window.app.wiki.get(id).then(next=>{if(next)setPage(current=>current?.id===id?next:current);}).catch(()=>undefined);},3000);
-    return()=>clearInterval(timer);
-  },[active,editing,mode,page?.id]);
+    if(!active||editing||historicalRevision||mode!=="page"||!page)return;
+    const isCurrent=pageRequests.current.capture();let live=true;const id=page.id,timer=setInterval(()=>{if(document.hidden||!live||!isCurrent())return;void window.app.wiki.get(id).then(next=>{if(next&&live&&isCurrent())setPage(current=>live&&isCurrent()&&current?.id===id?next:current);}).catch(()=>undefined);},3000);
+    return()=>{live=false;clearInterval(timer);};
+  },[active,editing,mode,page?.id,historicalRevision]);
   const closeOrganization = useCallback(() => {
     setOrganizationOpen(false);
     void reload().catch(fail);
     const id = page?.id;
     if (id) {
       lastPageRequest.current = id;
+      const isCurrent=pageRequests.current.capture();
       void window.app.wiki.get(id).then((result) => {
-        if (lastPageRequest.current === id) setPage((current) => current?.id === id ? result : current);
+        if (isCurrent()&&lastPageRequest.current === id) setPage((current) => isCurrent()&&current?.id === id ? result : current);
       }).catch(fail);
     }
   }, [page?.id, reload]);
@@ -97,7 +106,10 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
       setHistoryStack((s) => s.slice(0, -1));
       setMode(target.mode);
       setScope(target.pageId);
-      setPage(target.pageId ? await window.app.wiki.get(target.pageId) : null);
+      setHistoricalRevision(undefined);
+      const isCurrent=pageRequests.current.begin();
+      const nextPage=target.pageId ? await window.app.wiki.get(target.pageId) : null;
+      if(isCurrent())setPage(nextPage);
     }
   }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization]);
   useEffect(() => {
@@ -120,8 +132,11 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
       return;
     setLoading(true);
     setError(null);
+    setHistoricalRevision(undefined);
+    const isCurrent=pageRequests.current.begin();
     try {
       const result = await window.app.wiki.get(id);
+      if(!isCurrent())return;
       if (!result)
         throw new Error();
       setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]);
@@ -140,12 +155,12 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
   }
   function navigate(next: "home" | "sources") {
     if (editing)
-      return; setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]); setMode(next); setScope(null); setSourceScope(null); setQuery(""); setOffset(0); setInspector(null);
+      return; pageRequests.current.invalidate();setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]); setMode(next); setScope(null); setSourceScope(null); setQuery(""); setOffset(0); setInspector(null);
   }
-  function createPage() { setDraft(newContent()); setPage(null); setMode("page"); setEditing(true); setChunks([]); setHistory(null); }
+  function createPage() { pageRequests.current.invalidate();setHistoricalRevision(undefined);setDraft(newContent()); setPage(null); setMode("page"); setEditing(true); setChunks([]); setHistory(null); }
   function editPage() {
     if (!page)
-      return; setDraft(WikiPageContentSchema.strip().parse(page)); setEditing(true); setChunks([]); setHistory(null);
+      return; pageRequests.current.invalidate();setDraft(WikiPageContentSchema.strip().parse(page)); setEditing(true); setChunks([]); setHistory(null);
   }
   async function save(content = draft) {
     setBusy(true);
@@ -241,7 +256,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
     {organizationOpen&&<OrganizationDialog t={t} page={mode==="page"?page:null} onClose={closeOrganization}/>}
     <header className="flex flex-wrap items-center gap-3 border-b border-slate-200 pb-4 dark:border-slate-800">
       <button disabled={editing} className={control} onClick={()=>setConsultationOpen(true)}>{t("consultation.ask")}</button>
-      <button disabled={editing} className={control} onClick={()=>setOrganizationOpen(true)}>{t("organization.organize")}</button>
+      <button disabled={editing||!!historicalRevision} className={control} onClick={()=>setOrganizationOpen(true)}>{t("organization.organize")}</button>
       <div className="mr-auto">
         <h2 className="flex items-center gap-2 text-xl font-semibold">
           <BookOpen className="h-5 w-5 text-cyan-500" />
@@ -377,6 +392,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
           </div>
           {resultCards}
         </section> : editing ? <section className="grid gap-4">
+          {externalTarget&&processedExternal.current!==externalTarget.token&&<p role="status" className="text-sm text-amber-700 dark:text-amber-300">{t("obsidianWiki.finishDraft")}</p>}
           <div className="flex items-center gap-2">
             <h3 className="mr-auto font-semibold">
               {t(page ? "wiki.edit" : "wiki.create")}
@@ -501,14 +517,15 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
                 {page.title}
               </h1>
             </div>
-            <button disabled={busy} className={control} aria-label={t("wiki.pinned")} onClick={() => void save({ ...WikiPageContentSchema.strip().parse(page), pinned: !page.pinned })}>
+            <button disabled={busy||!!historicalRevision} className={control} aria-label={t("wiki.pinned")} onClick={() => void save({ ...WikiPageContentSchema.strip().parse(page), pinned: !page.pinned })}>
               <Pin className={`h-4 w-4 ${page.pinned ? "fill-amber-400 text-amber-500" : ""}`} />
             </button>
-            <button className={`${control} flex items-center gap-1`} onClick={editPage}>
+            <button disabled={!!historicalRevision} className={`${control} flex items-center gap-1`} onClick={editPage}>
               <Pencil className="h-4 w-4" />
               {t("wiki.edit")}
             </button>
           </div>
+          {historicalRevision&&<p role="status" className="mt-3 text-sm text-amber-700 dark:text-amber-300">{t("obsidianWiki.historicalPage")} · {page.revisionNumber}</p>}
           <div className="mb-7 mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="flex items-center gap-1">
               <ShieldCheck className="h-3.5 w-3.5" />
@@ -540,7 +557,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true }: {
               <div className="my-3 text-sm">
                 {r.content.sections.map((s) => <MarkdownPreview key={s.id} markdown={s.markdown} emptyLabel={t("wiki.emptySection")} />)}
               </div>
-              <button className={control} disabled={busy || r.id === page.revisionId} onClick={() => void save(r.content)}>
+              <button className={control} disabled={busy || !!historicalRevision || r.id === page.revisionId} onClick={() => void save(r.content)}>
                 {t("wiki.restore")}
               </button>
             </details>)}

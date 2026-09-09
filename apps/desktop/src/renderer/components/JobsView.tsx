@@ -696,6 +696,7 @@ function jobTypeMessageKey(type: string): MessageKey {
     "atomic-note-matching": "jobs.types.atomicNoteMatching",
     "source-matching": "jobs.types.sourceMatching",
     "obsidian-sync": "jobs.types.obsidianSync",
+    "obsidian-wiki": "obsidianWiki.title",
     "asset-storage": "jobs.types.assetStorage",
     "local-model-download": "jobs.types.localModelDownload"
   } as Record<string, MessageKey>)[type] ?? "jobs.types.ingestion";

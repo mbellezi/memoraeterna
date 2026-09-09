@@ -1,3 +1,4 @@
+import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { MaintenanceCommand } from "@app/domain";
 import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
 import type { OrganizationCommand } from "@app/domain";
@@ -46,6 +47,12 @@ export const ipcChannels = {
   settingsGet: "app:settings:get",
   settingsUpdate: "app:settings:update",
   settingsSelectObsidianVault: "app:settings:select-obsidian-vault",
+  obsidianDeepLink: "app:obsidian:open",
+  obsidianDeepLinkPending: "app:obsidian:open:pending",
+  obsidianWikiStatus: "app:obsidian:wiki:status",
+  obsidianWikiScope: "app:obsidian:wiki:scope",
+  obsidianWikiDiff: "app:obsidian:wiki:diff",
+  obsidianWikiRecover: "app:obsidian:wiki:recover",
   obsidianSyncStart: "app:obsidian:sync:start",
   obsidianSyncStatus: "app:obsidian:sync:status",
   monitoringList: "app:monitoring:list",
@@ -237,6 +244,10 @@ export const storageSettingsUpdateSchema = storageSettingsSchema
   .partial()
   .strict();
 
+export const obsidianWikiScopeSchema = z.object({sourceIds:z.array(z.string().uuid()).max(100).default([]),pageIds:z.array(z.string().uuid()).max(100).default([]),includeDescendants:z.boolean().default(true)}).strict();
+export const obsidianWikiStatusSchema = z.object({active:z.boolean(),job:z.object({status:z.enum(["queued","running","succeeded","failed","canceled","retrying"]),error:z.string().nullable()}).nullable(),scope:obsidianWikiScopeSchema,conflicts:z.array(z.object({id:z.string().uuid(),memora_id:z.string().uuid(),relative_path:z.string(),status:z.string(),error:z.string().nullable()}))}).strict();
+export const obsidianWikiDiffSchema = z.object({id:z.string().uuid(),relativePath:z.string(),base:z.string(),local:z.string(),proposed:z.string(),localHash:z.string().nullable()}).strict();
+export const obsidianWikiRecoverSchema = z.object({id:z.string().uuid(),expectedHash:z.string().nullable()}).strict();
 export const obsidianSyncStatusSchema = z.object({
   state: z.enum(["idle", "running", "completed", "failed"]),
   stage: z.enum(["idle", "reconciling", "projecting", "completed", "failed"]),
@@ -1111,6 +1122,12 @@ export interface DesktopApi {
     resetLibrary: () => Promise<LibraryResetResult>;
   };
   obsidian: {
+    onOpen: (listener:(target:ObsidianDeepLink)=>void)=>()=>void;
+    pendingOpen: ()=>Promise<ObsidianDeepLink|null>;
+    wikiStatus: () => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
+    saveWikiScope: (input: z.infer<typeof obsidianWikiScopeSchema>) => Promise<z.infer<typeof obsidianWikiScopeSchema>>;
+    wikiDiff: (id:string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;
+    recoverWiki: (input:z.infer<typeof obsidianWikiRecoverSchema>) => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
     startSync: () => Promise<ObsidianSyncStatus>;
     getSyncStatus: () => Promise<ObsidianSyncStatus>;
   };

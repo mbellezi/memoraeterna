@@ -15,7 +15,7 @@ const command=(input:OrganizationCommand)=>window.app.organization.command(input
 const errorKey=(e:unknown):MessageKey=>String(e).match(/organization\.errors\.[A-Za-z]+/)?.[0] as MessageKey??'organization.errors.failed';
 type Settings=z.infer<typeof OrganizationSettingsSchema>;
 type PageSummary=Omit<WikiPage,'sections'|'evidence'|'breadcrumbs'>;
-export function EvidenceScopePicker({selected,onChange,t,hint="organization.scopeHint"}:{selected:string[];onChange:(ids:string[])=>void;t:Translator;hint?:MessageKey}){
+export function EvidenceScopePicker({selected,onChange,t,hint="organization.scopeHint"}:{selected:string[];onChange:(ids:string[])=>void;t:(key:MessageKey)=>string;hint?:MessageKey}){
   const [labels,setLabels]=useState<Record<string,string>>({});
   const [items,setItems]=useState<WikiResult[]>([]),[query,setQuery]=useState(''),[offset,setOffset]=useState(0),[more,setMore]=useState(false),[loading,setLoading]=useState(true),[failed,setFailed]=useState(false),[retry,setRetry]=useState(0);
   useEffect(()=>{let current=true;setLoading(true);setFailed(false);const timer=setTimeout(()=>void window.app.wiki.search({kind:'source',text:query,offset,limit:30}).then(result=>{if(current){setItems(result.items);setLabels(old=>({...old,...Object.fromEntries(result.items.map(i=>[i.id,i.title]))}));setMore(result.hasMore);}}).catch(()=>{if(current)setFailed(true);}).finally(()=>{if(current)setLoading(false);}),150);return()=>{current=false;clearTimeout(timer);};},[query,offset,retry]);

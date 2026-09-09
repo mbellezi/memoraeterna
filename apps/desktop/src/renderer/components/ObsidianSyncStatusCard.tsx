@@ -1,3 +1,4 @@
+import { ObsidianWikiCard } from "./ObsidianWikiCard";
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
@@ -6,7 +7,7 @@ import { Button } from "./ui/button";
 
 interface ObsidianSyncStatusCardProps {
   available: boolean;
-  t: (key: MessageKey) => string;
+  t: (key:MessageKey)=>string;
   showAction?: boolean;
 }
 
@@ -32,6 +33,7 @@ export function ObsidianSyncStatusCard({ available, t, showAction = false }: Obs
   const stageKey = `obsidianSync.stages.${status?.stage ?? "idle"}` as MessageKey;
 
   return (
+    <>
     <section className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -67,5 +69,7 @@ export function ObsidianSyncStatusCard({ available, t, showAction = false }: Obs
         </>
       )}
     </section>
+    {showAction && <ObsidianWikiCard t={t}/>}
+    </>
   );
 }

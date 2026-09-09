@@ -24,7 +24,8 @@ export const integrationCapabilitySchema = z.enum([
   "import-obsidian-note",
   "watch-obsidian-files",
   "reconcile-obsidian-vault",
-  "receive-job-progress"
+  "receive-job-progress",
+  "obsidian-wiki-projection-v1"
 ]);
 export type IntegrationCapability = z.infer<typeof integrationCapabilitySchema>;
 
@@ -118,7 +119,7 @@ export const captureYouTubeVideoRequestSchema = z
   .strict();
 export type CaptureYouTubeVideoRequest = z.infer<typeof captureYouTubeVideoRequestSchema>;
 
-export const obsidianMemoraTypeSchema = z.enum(["source_item", "atomic_note"]);
+export const obsidianMemoraTypeSchema = z.enum(["source_item", "atomic_note", "wiki_page", "wiki_index", "source_reference", "source_relation"]);
 export const obsidianManagedFrontmatterSchema = z
   .object({
     memoraId: z.string().uuid(),
@@ -128,12 +129,16 @@ export const obsidianManagedFrontmatterSchema = z
     memoraRootSourceId: z.string().uuid().optional(),
     memoraDivisionId: z.string().min(1).optional(),
     memoraDocumentRevisionId: z.string().uuid().optional(),
+    memoraWikiSchema: z.literal(1).optional(),
+    memoraRevisionId: z.string().min(1).optional(),
     memoraManaged: z.literal(true),
     memoraSyncVersion: z.number().int().nonnegative(),
     memoraContentHash: sha256Schema
   })
   .strict();
 export type ObsidianManagedFrontmatter = z.infer<typeof obsidianManagedFrontmatterSchema>;
+
+export * from "./obsidian-format.js";
 
 export const importObsidianNoteRequestSchema = z
   .object({

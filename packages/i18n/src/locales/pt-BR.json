@@ -1259,5 +1259,46 @@
       "idle": "Aguardando o período de inatividade configurado."
     },
     "restored": "Página restaurada como nova revisão. O histórico do arquivamento foi preservado."
+  },
+  "obsidianWiki": {
+    "title": "Projeção da wiki",
+    "catalog": "Catálogo de fontes",
+    "connections": "Conexões entre fontes",
+    "catalogOnly": "Referência de catálogo — sem documento original",
+    "current": "Evidência atual",
+    "historical": "Evidência histórica",
+    "protected": "Texto protegido",
+    "openApp": "Abrir no Memora Eterna",
+    "unavailable": "Referência indisponível",
+    "readOnly": "As edições da wiki permanecem locais nesta versão. Navegação, evidências e conexões são geradas.",
+    "scope": "Escopo da projeção",
+    "allSources": "Todas as fontes (seleção vazia)",
+    "allPages": "Todas as páginas (seleção vazia)",
+    "descendants": "Incluir descendentes das fontes",
+    "saveScope": "Salvar escopo",
+    "pending": "Edições locais pendentes",
+    "review": "Revisar alterações",
+    "base": "Última versão sincronizada",
+    "local": "Versão do cofre",
+    "proposed": "Versão do aplicativo",
+    "recover": "Preservar cópia local e usar versão do aplicativo",
+    "recoveryHint": "A recuperação preserva a versão do cofre em .memora-recovery e no histórico antes de gravar a versão do aplicativo. Edições da wiki não são importadas.",
+    "saved": "Escopo salvo",
+    "empty": "Nenhuma edição da wiki pendente.",
+    "loading": "Carregando projeção…",
+    "pageIds": "Páginas da wiki",
+    "sourceIds": "Fontes",
+    "queued": "As atualizações da projeção usam a fila de tarefas.",
+    "errors": {
+      "conflict": "O arquivo do cofre mudou. Revise as edições locais.",
+      "binding": "O cofre ou o escopo mudou. Reinicie a sincronização.",
+      "paused": "A sincronização está pausada ou indisponível.",
+      "limit": "A projeção excede o limite. Selecione um escopo menor.",
+      "format": "A projeção contém marcadores inválidos ou incompatíveis.",
+      "write": "A gravação falhou. O conteúdo anterior permanece recuperável.",
+      "load": "Não foi possível carregar a projeção."
+    },
+    "historicalPage": "Revisão histórica · somente leitura",
+    "finishDraft": "Salve ou cancele o rascunho para abrir o link do Obsidian."
   }
 }

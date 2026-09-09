@@ -2,7 +2,7 @@ import { posix } from "node:path";
 
 import { translate, type MessageKey } from "@app/i18n";
 import {
-  obsidianManagedFrontmatterSchema,
+  parseObsidianMarkdown,
   type ObsidianManagedFrontmatter
 } from "@app/integration-contracts";
 
@@ -20,6 +20,7 @@ const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
 };
 
 export interface ObsidianRelatedNote {
+  noteId?:string;
   relationType: string;
   title: string;
   target: string;
@@ -129,34 +130,8 @@ export function parseManagedMarkdown(markdown: string): {
   frontmatter: ObsidianManagedFrontmatter;
   bodyMarkdown: string;
 } | null {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(markdown);
-  if (!match) return null;
-  const header = match[1];
-  const body = match[2];
-  if (header === undefined || body === undefined) return null;
-  const values: Record<string, string> = {};
-  for (const line of header.split(/\r?\n/)) {
-    const separator = line.indexOf(":");
-    if (separator < 1) continue;
-    const key = line.slice(0, separator).trim();
-    const raw = line.slice(separator + 1).trim();
-    values[key] = unquoteYaml(raw);
-  }
-  const parsed = {
-    memoraId: values.memora_id,
-    memoraType: values.memora_type,
-    ...(values.memora_source_id ? { memoraSourceId: values.memora_source_id } : {}),
-    ...(values.memora_document_id ? { memoraDocumentId: values.memora_document_id } : {}),
-    ...(values.memora_root_source_id ? { memoraRootSourceId: values.memora_root_source_id } : {}),
-    ...(values.memora_division_id ? { memoraDivisionId: values.memora_division_id } : {}),
-    ...(values.memora_document_revision_id ? { memoraDocumentRevisionId: values.memora_document_revision_id } : {}),
-    memoraManaged: values.memora_managed === "true",
-    memoraSyncVersion: Number(values.memora_sync_version),
-    memoraContentHash: values.memora_content_hash
-  };
-  const frontmatter = obsidianManagedFrontmatterSchema.safeParse(parsed);
-  if (!frontmatter.success) return null;
-  return { frontmatter: frontmatter.data, bodyMarkdown: body.trim() };
+  const parsed = parseObsidianMarkdown(markdown);
+  return parsed ? { frontmatter: parsed.frontmatter, bodyMarkdown: parsed.frontmatter.memoraWikiSchema ? parsed.bodyMarkdown : parsed.bodyMarkdown.trim() } : null;
 }
 
 function serializeFrontmatter(frontmatter: ObsidianManagedFrontmatter): string {
@@ -228,13 +203,6 @@ function compactDate(date: Date): string {
 
 function yamlString(value: string): string {
   return JSON.stringify(value);
-}
-
-function unquoteYaml(value: string): string {
-  if (value.startsWith('"') && value.endsWith('"')) {
-    try { return JSON.parse(value) as string; } catch { return value.slice(1, -1); }
-  }
-  return value;
 }
 
 function escapeWikilink(value: string): string {

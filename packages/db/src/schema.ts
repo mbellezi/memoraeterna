@@ -1496,3 +1496,17 @@ export const maintenanceDecisions = pgTable("maintenance_decisions", {
 export const maintenanceBudgetReservations = pgTable("maintenance_budget_reservations", {
   runId:uuid("run_id").notNull().references(()=>maintenanceRuns.id,{onDelete:"restrict"}), scopeKey:text("scope_key").notNull(),period:text("period").notNull(),reservation:jsonb("reservation").notNull()
 },t=>[uniqueIndex("maintenance_budget_run_period_idx").on(t.runId,t.period),index("maintenance_budget_scope_period_idx").on(t.scopeKey,t.period)]);
+
+/** Transactional invalidation coalesces canonical changes; delivery history is the filesystem outbox/base. */
+export const obsidianProjectionClock = pgTable("obsidian_projection_clock", {
+  id: integer("id").primaryKey(), generation: bigint("generation", { mode: "number" }).notNull().default(1)
+});
+export const obsidianProjectionRevisions = pgTable("obsidian_projection_revisions", {
+  id: uuid("id").primaryKey().defaultRandom(), memoraId: uuid("memora_id").notNull(),
+  revisionId: text("revision_id").notNull(), bindingHash: text("binding_hash").notNull(),
+  relativePath: text("relative_path").notNull(), content: text("content").notNull(),
+  editableHash: text("editable_hash").notNull(), generatedHash: text("generated_hash").notNull(),
+  renderedHash: text("rendered_hash").notNull(), baseHash: text("base_hash"),
+  beforeContent: text("before_content"), status: text("status").notNull().default("pending"),
+  error: text("error"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+}, table => [index("obsidian_projection_target_idx").on(table.memoraId, table.createdAt), index("obsidian_projection_pending_idx").on(table.status)]);

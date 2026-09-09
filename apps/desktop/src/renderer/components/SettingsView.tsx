@@ -1,3 +1,4 @@
+import { ObsidianWikiCard } from "./ObsidianWikiCard";
 import { OrganizationSettingsView } from "./OrganizationView";
 import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
 import { MatchingPresetControls } from "./MatchingPresetControls";
@@ -372,6 +373,7 @@ export function SettingsView({
                 onUpdate={update}
                 onSelectVault={onSelectObsidianVault}
               />
+              <ObsidianWikiCard t={t} />
             </div>
           ) : null}
 

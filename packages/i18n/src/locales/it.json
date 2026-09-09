@@ -1176,5 +1176,46 @@
       "idle": "In attesa del periodo di inattività configurato."
     },
     "restored": "Pagina ripristinata come nuova revisione. La cronologia di archiviazione è conservata."
+  },
+  "obsidianWiki": {
+    "title": "Proiezione della wiki",
+    "catalog": "Catalogo delle fonti",
+    "connections": "Connessioni tra fonti",
+    "catalogOnly": "Riferimento di catalogo — senza documento originale",
+    "current": "Evidenza attuale",
+    "historical": "Evidenza storica",
+    "protected": "Testo protetto",
+    "openApp": "Apri in Memora Eterna",
+    "unavailable": "Riferimento non disponibile",
+    "readOnly": "Le modifiche della wiki restano locali. Navigazione, evidenze e connessioni sono generate.",
+    "scope": "Ambito della proiezione",
+    "allSources": "Tutte le fonti (selezione vuota)",
+    "allPages": "Tutte le pagine (selezione vuota)",
+    "descendants": "Includi discendenti",
+    "saveScope": "Salva ambito",
+    "pending": "Modifiche locali in attesa",
+    "review": "Esamina modifiche",
+    "base": "Ultima versione sincronizzata",
+    "local": "Versione del vault",
+    "proposed": "Versione dell’applicazione",
+    "recover": "Conserva copia locale e usa la versione dell’applicazione",
+    "recoveryHint": "Il ripristino conserva la versione locale in .memora-recovery e nella cronologia prima di scrivere la versione dell’applicazione. Le modifiche della wiki non vengono importate.",
+    "saved": "Ambito salvato",
+    "empty": "Nessuna modifica in attesa.",
+    "loading": "Caricamento proiezione…",
+    "pageIds": "Pagine della wiki",
+    "sourceIds": "Fonti",
+    "queued": "Gli aggiornamenti usano la coda delle attività.",
+    "errors": {
+      "conflict": "Il file è cambiato. Esamina le modifiche locali.",
+      "binding": "Il vault o l’ambito è cambiato. Riavvia la sincronizzazione.",
+      "paused": "La sincronizzazione è sospesa o non disponibile.",
+      "limit": "Limite superato. Seleziona un ambito più piccolo.",
+      "format": "La proiezione contiene marcatori non validi.",
+      "write": "Scrittura non riuscita. Il contenuto precedente è recuperabile.",
+      "load": "Impossibile caricare la proiezione."
+    },
+    "historicalPage": "Revisione storica · sola lettura",
+    "finishDraft": "Salva o annulla la bozza per aprire il collegamento Obsidian."
   }
 }

@@ -1,3 +1,4 @@
+import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
@@ -153,6 +154,10 @@ export function registerIpcHandlers(
     return settings;
   });
 
+  ipcMain.handle(ipcChannels.obsidianWikiStatus, async()=>obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.status()));
+  ipcMain.handle(ipcChannels.obsidianWikiScope, async(_event,input:unknown)=>obsidianWikiScopeSchema.parse(await obsidianSyncService.wiki.saveScope(input)));
+  ipcMain.handle(ipcChannels.obsidianWikiDiff, async(_event,id:unknown)=>obsidianWikiDiffSchema.parse(await obsidianSyncService.wiki.diff(z.string().uuid().parse(id))));
+  ipcMain.handle(ipcChannels.obsidianWikiRecover, async(_event,input:unknown)=>{const value=obsidianWikiRecoverSchema.parse(input);return obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.recover(value.id,value.expectedHash));});
   ipcMain.handle(ipcChannels.obsidianSyncStart, () => obsidianSyncService.startSynchronization());
   ipcMain.handle(ipcChannels.obsidianSyncStatus, () => obsidianSyncService.getSynchronizationStatus());
 

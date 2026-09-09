@@ -1,3 +1,5 @@
+import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
+import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
 import { MaintenanceCommandSchema,MaintenanceResponseSchema } from "@app/domain";
 import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
@@ -183,6 +185,12 @@ const api: DesktopApi = {
     }
   },
   obsidian: {
+    onOpen(listener){const handler=(_event:unknown,payload:unknown)=>{const target=obsidianDeepLinkSchema.safeParse(payload);if(target.success)listener(target.data);};ipcRenderer.on(ipcChannels.obsidianDeepLink,handler);return()=>ipcRenderer.removeListener(ipcChannels.obsidianDeepLink,handler);},
+    async pendingOpen(){return obsidianDeepLinkSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.obsidianDeepLinkPending));},
+    async wikiStatus(){return obsidianWikiStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiStatus));},
+    async saveWikiScope(input){return obsidianWikiScopeSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiScope,obsidianWikiScopeSchema.parse(input)));},
+    async wikiDiff(id){return obsidianWikiDiffSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiDiff,z.string().uuid().parse(id)));},
+    async recoverWiki(input){return obsidianWikiStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiRecover,obsidianWikiRecoverSchema.parse(input)));},
     async startSync() {
       return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStart));
     },
