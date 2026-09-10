@@ -126,7 +126,10 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   prevents projection echoes from triggering ingestion. Restart reconciles the
   observed intended hash before clearing a guard. Recovery files are excluded
   from reconciliation and are removed only by explicit library reset when
-  their registered delivery and managed identity validate ownership.
+  their registered delivery and managed identity validate ownership. Legacy
+  recovery filenames with independent delivery IDs use the registered target
+  identity and strict recovery-directory validation specified in
+  `rules/security-and-privacy.md`.
 - The release-1 protocol negotiates `obsidian-wiki-projection-v1`. Clients without
   separately granted editorial capability skip outward files and
   refuse unsupported managed manual imports. The gateway also rejects reserved

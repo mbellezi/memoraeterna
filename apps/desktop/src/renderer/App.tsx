@@ -576,6 +576,9 @@ export function App({
           </div>
           {activeView === "settings" ? (
             <SettingsView
+              onReset={async () => {
+                window.location.reload();
+              }}
               activeScope={activeSettingsScope}
               appSettings={appSettings}
               settings={settings}

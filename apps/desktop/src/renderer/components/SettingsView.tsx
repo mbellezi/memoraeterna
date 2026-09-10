@@ -61,6 +61,7 @@ interface SettingsViewProps {
   onSelectObsidianVault: () => Promise<void>;
   onScopeChange: (scope: SettingsScope) => void;
   onToast: (message: MessageKey, tone: ToastTone) => void;
+  onReset?: () => Promise<void>;
 }
 
 export type SettingsScope = "organization" | "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
@@ -236,7 +237,8 @@ export function SettingsView({
   onChange,
   onSelectObsidianVault,
   onScopeChange,
-  onToast
+  onToast,
+  onReset
 }: SettingsViewProps) {
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
@@ -252,6 +254,7 @@ export function SettingsView({
     setResetStatus(null);
     try {
       const result = await window.app.settings.resetLibrary();
+      await onReset?.();
       setResetStatus(result.failedFiles > 0 ? "settings.reset.completedWithWarnings" : "settings.reset.completed");
     } catch {
       setResetStatus("settings.reset.failed");

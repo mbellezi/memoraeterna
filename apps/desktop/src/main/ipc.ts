@@ -4,7 +4,7 @@ import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
 import type { IpcMain } from "electron";
-import { app, dialog, shell, webContents } from "electron";
+import { app, dialog, session, shell, webContents } from "electron";
 import { z } from "zod";
 import { createTranslator } from "@app/i18n";
 import {
@@ -168,13 +168,21 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.debugSimilarityRunsList, () => similarityDebugService.list());
   ipcMain.handle(ipcChannels.debugSimilarityRunsClear, () => similarityDebugService.clear());
 
-  ipcMain.handle(ipcChannels.libraryReset, async () => {
-    await Promise.all([integrationGateway.stop(), jobSupervisor.stop(), localModelService.shutdown()]);
-    try {
-      return await libraryResetService.reset();
-    } finally {
-      await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
-    }
+  let resetInProgress: Promise<unknown> | null = null;
+  ipcMain.handle(ipcChannels.libraryReset, () => {
+    if (resetInProgress) return resetInProgress;
+    resetInProgress = (async () => {
+      try {
+        await integrationGateway.stop();
+        await Promise.all([jobSupervisor.stop(), localModelService.shutdown()]);
+        await metadataEnrichmentService.clearCache();
+        await session.defaultSession.clearCache();
+        return await libraryResetService.reset();
+      } finally {
+        await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
+      }
+    })().finally(() => { resetInProgress = null; });
+    return resetInProgress;
   });
 
   ipcMain.handle(ipcChannels.ingestionPreviewUrl, async (_event, payload: unknown) => {

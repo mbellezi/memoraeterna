@@ -22,6 +22,7 @@ export * from "./sourceSummaryRepository.js";
 export * from "./atomicNoteRepository.js";
 export * from "./atomicNoteRelationRepository.js";
 export * from "./libraryRepository.js";
+export * from "./libraryResetRepository.js";
 export * from "./sourceEditingRepository.js";
 export * from "./localModelRepository.js";
 export * from "./hierarchicalIngestionRepository.js";

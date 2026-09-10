@@ -60,7 +60,25 @@ processing, destructive operations, backups, or sensitive logging.
   only files managed/registered by the application.
 - Synchronization does not infer deletion merely from absence during a scan.
   Prefer tombstones and preserve audit history when loss is possible.
-- Library reset removes library data and registered managed projections/assets
-  but preserves installed local model files and records.
+- Reset everything clears all application tables except model/provider profiles,
+  capabilities, parameters, task routes and installed local model records/files
+  (including embedding models). It also resets other preferences, matching
+  presets, storage bindings, integrations, wiki, harness configuration/schedules,
+  all histories and every vector family. Migration history and extensions remain;
+  recreate only the empty projection clock needed for future synchronization.
+- Reset table coverage follows the application schema with an explicit model
+  preservation allowlist. Relational cleanup and AGE projection removal share a
+  transaction, without cascading into preserved model configuration.
+- Stop gateway, jobs and downloads before reset. Remove registered managed files,
+  recovery snapshots, internal assets, conversion/cache files and partial model
+  downloads, preserving installed models, backups and unrelated personal files.
+  Validate containment and reject symlink traversal before deletion. Registered
+  recovery content may establish ownership when its frontmatter is invalid.
+  Legacy recovery files with independent delivery IDs are removable only inside
+  the managed recovery directory, with a recognized recovery filename and valid
+  managed frontmatter referencing a registered synchronization identity.
+  File failures retain the database ownership registry for retry and report failure;
+  a retry tolerates already removed files. Reload the renderer after success so
+  stale preferences and wiki state cannot be written back.
 - Backups use `pg_dump` plus configured managed folders. They must not include
   plaintext secrets and must report partial-copy failures.

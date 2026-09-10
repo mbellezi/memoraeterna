@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import { createDocumentAssetRepository, type PgPool } from "@app/db";
@@ -43,6 +43,12 @@ interface CacheFile {
 }
 
 export class MetadataEnrichmentService {
+  public async clearCache(): Promise<void> {
+    await Promise.allSettled(this.pendingJson.values());
+    this.cache = { version: 1, entries: {} };
+    this.coverPreviewCache.clear();
+    await rm(this.cachePath, { force: true });
+  }
   private readonly fetch: FetchLike;
   private readonly timeoutMs: number;
   private readonly cacheTtlMs: number;
