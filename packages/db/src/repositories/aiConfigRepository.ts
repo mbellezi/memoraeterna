@@ -387,7 +387,7 @@ export function createAiConfigRepository(db: Queryable) {
       quantization?: string | null; parameters?: JsonObject;
       outputHash?: string | null; inputTokens?: number | null; outputTokens?: number | null;
       costEstimate?: number | null; durationMs: number; status: string; error?: string | null;
-      sourceItemIds?: string[];
+      sourceItemIds?: string[]; promptCompositions?: unknown[];
       organizationRunId?: string; organizationStep?: number; maintenanceRunId?: string; maintenanceStep?: number;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
@@ -396,8 +396,8 @@ export function createAiConfigRepository(db: Queryable) {
              profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
              quantization, parameters, capabilities_used,
              input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
-             duration_ms, status, error, finished_at
-           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())
+             duration_ms, status, error, prompt_compositions, finished_at
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,now())
            returning id
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)
@@ -406,8 +406,8 @@ export function createAiConfigRepository(db: Queryable) {
            on conflict (ai_task_run_id, source_item_id) do nothing
            returning id
          )
-         ${input.organizationRunId ? ", inserted_organization_step as (insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) select $21::uuid,$22::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
-         ${input.maintenanceRunId ? ", inserted_maintenance_step as (insert into maintenance_steps(run_id,sequence,ai_task_run_id,artifact) select $21::uuid,$22::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
+         ${input.organizationRunId ? ", inserted_organization_step as (insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) select $22::uuid,$23::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
+         ${input.maintenanceRunId ? ", inserted_maintenance_step as (insert into maintenance_steps(run_id,sequence,ai_task_run_id,artifact) select $22::uuid,$23::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
          select id from inserted_run
          where (select count(*) from inserted_sources) >= 0`,
         [input.profileId ?? null, input.taskType, input.provider, input.modelId, input.runtime,
@@ -415,7 +415,7 @@ export function createAiConfigRepository(db: Queryable) {
           input.parameters ?? {}, JSON.stringify(input.capabilitiesUsed ?? []), input.inputHash ?? null,
           input.outputHash ?? null, input.inputTokens ?? null, input.outputTokens ?? null,
           input.costEstimate ?? null, input.durationMs, input.status, input.error ?? null,
-          [...new Set(input.sourceItemIds ?? [])], ...(input.organizationRunId ? [input.organizationRunId,input.organizationStep] : input.maintenanceRunId ? [input.maintenanceRunId,input.maintenanceStep] : [])]
+          [...new Set(input.sourceItemIds ?? [])], JSON.stringify(input.promptCompositions ?? []), ...(input.organizationRunId ? [input.organizationRunId,input.organizationStep] : input.maintenanceRunId ? [input.maintenanceRunId,input.maintenanceStep] : [])]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI task run insert returned no row.");

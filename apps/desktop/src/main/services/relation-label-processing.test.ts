@@ -57,3 +57,11 @@ describe("relation description processing", () => {
     expect(db.saveRelationLabels).not.toHaveBeenCalled();
   });
 });
+
+import { defaultPromptPin,withPromptPin } from './prompt-runtime.js';
+it('the real labels caller reads activated body and repair suffix',async()=>{
+ const pin=defaultPromptPin();for(const key of ['graph.relation_labels','graph.relation_labels.repair']){const e=pin.entries.find(e=>e.id===key)!;e.fields.body='CATALOG:'+key+'\n'+e.fields.body;}
+ const runDefaultTask=vi.fn().mockResolvedValueOnce({...execution,output:{labels:[]}}).mockResolvedValue(execution);
+ await withPromptPin(pin,()=>processRelationLabels({}as PgPool,{runDefaultTask},job,new AbortController().signal));
+ expect(runDefaultTask.mock.calls[0]![1]).toContain('CATALOG:graph.relation_labels');expect(runDefaultTask.mock.calls[1]![1]).toContain('CATALOG:graph.relation_labels.repair');expect(db.saveRelationLabels).toHaveBeenCalledTimes(1);
+});

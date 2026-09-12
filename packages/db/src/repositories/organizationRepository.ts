@@ -22,6 +22,14 @@ export function createOrganizationRepository(pool:PgPool) {
       const activeId=(await pool.query(`select ${activeSql} as id`)).rows[0]?.id??null;return {activeId,revisions,activations};
     },
     async configuration(id:string){return (await pool.query('select id,configuration,hash from organization_settings_revisions where id=$1',[id])).rows[0]??null;},
+    async saveDomains(domains:Array<{id:string;name:string;sourceIds:string[];pageIds:string[]}>){return transaction(async db=>{
+      await db.query("select pg_advisory_xact_lock(hashtextextended('organization-settings',0))");
+      const current=(await db.query(`select configuration from organization_settings_revisions where id=(${activeSql})::uuid`)).rows[0]?.configuration??{global:{},pageSynthesis:{},domains:[]};
+      const configuration={...current,domains:domains.map(d=>({...current.domains.find((old:{id:string})=>old.id===d.id),slots:current.domains.find((old:{id:string})=>old.id===d.id)?.slots??{},pageSynthesis:current.domains.find((old:{id:string})=>old.id===d.id)?.pageSynthesis??{},...d}))};
+      const id=(await db.query('insert into organization_settings_revisions(configuration,hash) values($1,$2) returning id',[configuration,hash(configuration)])).rows[0]!.id;
+      await db.query('insert into organization_settings_activations(revision_id,created_at) values($1,clock_timestamp())',[id]);
+      await db.query("insert into settings(key,value) values('organization.active',$1) on conflict(key) do update set value=excluded.value,updated_at=now()",[{revisionId:id}]);return id;
+    });},
     async saveDraft(configuration:unknown){return (await pool.query('insert into organization_settings_revisions(configuration,hash) values($1,$2) returning id',[configuration,hash(configuration)])).rows[0]!.id as string;},
     async activate(id:string,expectedActiveId:string|null,requiredPrompts:string[],requiredConsultationPrompts:string[]=[]){
       return transaction(async db=>{

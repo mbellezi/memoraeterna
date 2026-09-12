@@ -67,7 +67,7 @@ interface LibrarySourceRow extends QueryResultRow {
 
 export function createLibraryRepository(db: Queryable) {
   return {
-    async listSources(input: { sourceTypes?: SourceItemType[] | undefined; limit?: number | undefined; offset?: number | undefined; query?: string | undefined; parentId?: string | null | undefined; ids?: string[] | undefined; queryEmbedding?: number[] | undefined; embeddingModel?: string | undefined } = {}): Promise<LibrarySourceRecord[]> {
+    async listSources(input: { embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;  sourceTypes?: SourceItemType[] | undefined; limit?: number | undefined; offset?: number | undefined; query?: string | undefined; parentId?: string | null | undefined; ids?: string[] | undefined; queryEmbedding?: number[] | undefined; embeddingModel?: string | undefined } = {}): Promise<LibrarySourceRecord[]> {
       const dimensions = input.queryEmbedding?.length;
       if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
         throw new Error(`Unsupported embedding dimension: ${dimensions}`);
@@ -125,6 +125,7 @@ export function createLibraryRepository(db: Queryable) {
          left join ${embeddingTable} source_embedding
            on source_embedding.target_type = 'source_item' and source_embedding.target_id = source.id
              and source_embedding.model = $9 and $8::vector is not null
+             and source_embedding.strategy='source-composite-centroid-v2:' || $12::text and source_embedding.provider=$13 and source_embedding.runtime=$14
          left join lateral (
            select max(candidate.score) as best_score, avg(candidate.score) as top_average,
                   (array_agg(candidate.excerpt order by candidate.score desc))[1] as best_excerpt,
@@ -138,6 +139,7 @@ export function createLibraryRepository(db: Queryable) {
              left join source_spans span on span.id = chunk.source_span_id
              where $8::vector is not null and embedding.target_type = 'chunk'
                and embedding.model = $9 and chunk.source_item_id = source.id
+               and embedding.strategy='native-v2:' || $12::text and embedding.provider=$13 and embedding.runtime=$14
                and not (document.metadata ? 'supersededByDocumentId')
              order by embedding.embedding <=> $8::vector
              limit 3
@@ -212,7 +214,7 @@ export function createLibraryRepository(db: Queryable) {
                           coalesce(graph_scores.graph_score, 0))) * 0.15 end desc nulls last,
                   hierarchy.position nulls last, case when source.parent_source_item_id is not null then source.created_at end asc, source.updated_at desc, source.id
          limit $2 offset $6`,
-        [input.sourceTypes ?? [], input.limit ?? 100, input.query ?? "", input.parentId !== undefined, input.parentId ?? null, input.offset ?? 0, input.ids ?? null, queryVector, input.embeddingModel ?? null, librarySemanticStandaloneFloor, librarySemanticCandidateFloor]
+        [input.sourceTypes ?? [], input.limit ?? 100, input.query ?? "", input.parentId !== undefined, input.parentId ?? null, input.offset ?? 0, input.ids ?? null, queryVector, input.embeddingModel ?? null, librarySemanticStandaloneFloor, librarySemanticCandidateFloor,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
       );
       return result.rows.map((row) => ({
         ...row,

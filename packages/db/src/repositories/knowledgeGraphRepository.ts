@@ -1,3 +1,4 @@
+import { persistKnowledgeGeneration,type KnowledgeGenerationInput } from "./hierarchicalIngestionRepository.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 
@@ -55,6 +56,7 @@ export interface ReplaceKnowledgeGraphInput {
   language: string;
   batches: KnowledgeGraphBatchInput[];
   generation: JsonObject;
+  generationReceipt?: Omit<KnowledgeGenerationInput,"sourceItemId"|"stage">;
 }
 
 export interface AtomicNoteGraphElements {
@@ -248,6 +250,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       const client = await pool.connect();
       try {
         await client.query("begin");
+        await client.query("select id from source_items where id=$1 for update",[input.sourceItemId]);
         await client.query(
           `delete from atomic_note_entity_links where atomic_note_id in (
              select id from atomic_notes where created_from_source_item_id = $1
@@ -376,6 +379,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
            returning id`,
           [input.sourceItemId]
         );
+        if(input.generationReceipt)await persistKnowledgeGeneration(client,{...input.generationReceipt,sourceItemId:input.sourceItemId,stage:"knowledgeGraph"});
         await client.query("commit");
         return {
           entityCount: entityIds.size,

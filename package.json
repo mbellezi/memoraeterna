@@ -44,7 +44,8 @@
     "package:desktop:smoke": "node scripts/smoke-packaged-desktop.mjs",
     "db:seed:verify": "npm run db:seed:verify -w @app/db",
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
-    "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts"
+    "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts",
+    "db:prompts:verify": "node --import tsx scripts/verify-prompts.ts"
   },
   "devDependencies": {
     "@types/node": "24.13.2",

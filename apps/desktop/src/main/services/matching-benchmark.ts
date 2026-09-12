@@ -1,3 +1,4 @@
+import { renderPrompt } from "./prompt-runtime.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -193,10 +194,10 @@ export async function runMatchingBenchmark(options:Parameters<typeof runMatching
       const note=z.object({id:z.string(),created_from_source_item_id:z.string(),title:z.string(),idea_statement:z.string(),body_markdown:z.string()}).parse(raw);
       if(manifest.warmedNotes.includes(note.id)) continue;
       await enforceLimit();
-      const execution=await options.ai.runDefaultTask("embedding",`${note.title}\n\n${note.idea_statement}\n\n${note.body_markdown}`,{operation:"benchmark_note_warmup",stage:"embedding",atomicNoteId:note.id,sourceItemId:note.created_from_source_item_id,sourceItemIds:[note.created_from_source_item_id]});
+      const execution=await options.ai.runDefaultTask("embedding",renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.idea_statement,note_body:note.body_markdown}),{operation:"benchmark_note_warmup",stage:"embedding",atomicNoteId:note.id,sourceItemId:note.created_from_source_item_id,sourceItemIds:[note.created_from_source_item_id]});
       if(!execution) throw Error("Configured embedding route required for warmup");
       const embedding=z.array(z.number().finite()).refine(v=>[256,768,1024].includes(v.length)).parse(execution.output);
-      await createEmbeddingRepository(options.pool).upsert({targetType:"atomic_note",targetId:note.id,provider:execution.providerId,model:execution.modelId,runtime:execution.runtime,usage:"matching",strategy:"native",contentHash:sha256(`${note.title}\n${note.idea_statement}\n${note.body_markdown}`),embedding});
+      await createEmbeddingRepository(options.pool).upsert({targetType:"atomic_note",targetId:note.id,provider:execution.providerId,model:execution.modelId,runtime:execution.runtime,usage:"matching",strategy:execution.embeddingSpaceKey?`native-v2:${execution.embeddingSpaceKey}`:"native-unidentified",contentHash:sha256(renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.idea_statement,note_body:note.body_markdown})),embedding});
       manifest.warmedNotes.push(note.id);await save();
     }
     log("notes_warmed",{count:manifest.warmedNotes.length});

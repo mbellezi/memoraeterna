@@ -40,3 +40,10 @@
   audit insert transaction. Inspection-only/no-change runs do not manufacture AI
   activity. Pending/unknown calls keep their reservation and availability state;
   diagnostic history and review receipts are independent of monitoring retention.
+
+- Canonical inference records retain the exact admitted catalog prompt/fragment
+  revision IDs, composition hashes, output-contract version and effective embedding
+  strategy identity on success and started failure/cancellation. Carry this metadata
+  with the admitted request; a process-wide rendered-text cache cannot own it.
+  Equal text from different revisions must never borrow another request's provenance.
+  Full source-bearing prompt capture continues to follow existing capture controls.

@@ -93,3 +93,18 @@ npm run db:generate
 - AGE is a projection/query mechanism, not the source of truth. If projection or
   a graph query fails, continue without graph score. Do not implement a hidden
   relational CTE traversal fallback.
+
+## Catalog and artifact provenance
+
+- PostgreSQL owns prompt revisions, activation history and composition validation
+  receipts. Preserve every legacy full configuration and activation; omitted slots
+  and removed domains must reset older overrides, and the old explicit active
+  pointer wins over historical timestamp ordering during migration.
+- Artifact compatibility belongs to the generation owning current artifacts, not
+  the latest attempted generation. A current summary uses its generation ID.
+  Current notes must agree on compatible owning generations and must not come from
+  an incomplete replacement; no-write failed attempts leave old ownership intact.
+- Canonical graph replacement and its knowledge-generation receipt commit in the
+  same transaction, including zero-output replacements. A failure in either rolls
+  back both. Completed zero-output stages use their own completion timestamp and
+  configured outcome; unrelated later run updates cannot reorder ownership.

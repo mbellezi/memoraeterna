@@ -1,3 +1,6 @@
+import { runPromptSamples } from "./services/prompt-samples.js";
+import { PromptService } from "./services/prompt-service.js";
+import { registerPromptIpc } from "./services/prompt-ipc.js";
 import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { MaintenanceService } from "./services/maintenance-service.js";
 import { MaintenanceCommandSchema } from "@app/domain";
@@ -270,6 +273,8 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
+  const promptService=new PromptService({getPool:()=>databaseService?.getPool()??null,ai:aiService,sample:(contexts,options)=>runPromptSamples(aiService!,contexts,options)});
+  registerPromptIpc(ipcMain,promptService);
   const consultationService=new ConsultationService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake()});
   const maintenanceService=new MaintenanceService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:id=>jobSupervisor!.requestCancel(id),idleSeconds:()=>powerMonitor.getSystemIdleTime(),aiBusy:()=>aiService!.isBusy()});
   ipcMain.handle(ipcChannels.maintenanceCommand,(_event,input:unknown)=>maintenanceService.command(MaintenanceCommandSchema.parse(input)));
@@ -335,6 +340,7 @@ void app.whenReady().then(() => {
   activeMainWindow = createMainWindow();
   serviceStartupPromise = databaseService.start().then(async (status) => {
     if (status.state === "ready") {
+      await promptService.initialize();
       await monitoringService.recover();
       await Promise.all([
         localModelService?.start(),

@@ -1,3 +1,4 @@
+import { jobTaskPayload } from "../job-task-payload.js";
 import { mkdir, rename, stat, lstat, readFile, open, link, unlink, realpath, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep, isAbsolute } from "node:path";
 import { randomUUID, createHash } from "node:crypto";
@@ -39,7 +40,7 @@ catch (error) {
     throw error;
 } }
 export async function runObsidianSync(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const input = payloadSchema.parse(payload);
+    const input = payloadSchema.parse(jobTaskPayload(payload));
     if(Buffer.byteLength(input.content,'utf8')>2_000_000)throw new Error('obsidianWiki.errors.limit');
     const targetPath = await safeVaultPath(input.vaultPath, input.relativePath);
     if (input.managedRoot && !input.relativePath.startsWith(`${input.managedRoot}/`))

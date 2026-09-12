@@ -125,3 +125,13 @@ it("fails before catalog persistence when the embedding model changes mid-batch"
   await expect(createRelationTypeResolver({ ...base, ai })(input)).rejects.toThrow("errors.relationTypes.modelChanged");
   expect(mocks.types.commit).not.toHaveBeenCalled();
 });
+
+import { defaultPromptPin,withPromptPin } from './prompt-runtime.js';
+it.each(['relation','entity']as const)('the actual %s resolver uses activated identity, repair and embedding serializers',async kind=>{
+ const prefix=kind==='relation'?'graph.relation_identity':'graph.entity_identity',embedding=kind==='relation'?'embedding.content.relation':'embedding.content.entity',pin=defaultPromptPin();
+ for(const key of [prefix,prefix+'.repair',embedding]){const entry=pin.entries.find(e=>e.id===key)!;entry.fields.body='CATALOG:'+key+'\n'+entry.fields.body;}
+ mocks.types.candidates.mockResolvedValue([{...type,score:.99}]);mocks.entities.candidates.mockResolvedValue([{id,type:'Person',canonicalName:'John Smith',aliases:[],identityDescription:'Physicist at University A, born 1950',score:.99}]);let attempt=0;
+ const ai={runDefaultTask:vi.fn(async(task:string,_input:string)=>result(task==='embedding'?vector:++attempt===1?{matches:[]}:{matches:[['r1','c1']]}))};
+ await withPromptPin(pin,()=>kind==='relation'?createRelationTypeResolver({...base,ai})(batch()):createEntityIdentityResolver({...base,ai,language:'en'})(batch()));
+ const calls=ai.runDefaultTask.mock.calls;expect(calls.find(c=>c[0]==='embedding')![1]).toContain('CATALOG:'+embedding);const generation=calls.filter(c=>c[0]!=='embedding');expect(generation).toHaveLength(2);expect(generation[0]![1]).toContain('CATALOG:'+prefix);expect(generation[1]![1]).toContain('CATALOG:'+prefix+'.repair');
+});

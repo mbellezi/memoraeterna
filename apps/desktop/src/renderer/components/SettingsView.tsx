@@ -1,3 +1,4 @@
+import { PromptsSettingsView } from "./PromptsSettingsView";
 import { ObsidianWikiCard } from "./ObsidianWikiCard";
 import { OrganizationSettingsView } from "./OrganizationView";
 import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
@@ -64,7 +65,7 @@ interface SettingsViewProps {
   onReset?: () => Promise<void>;
 }
 
-export type SettingsScope = "organization" | "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
+export type SettingsScope = "prompts" | "organization" | "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -125,6 +126,7 @@ const scopes: Array<{
     accent: "from-violet-500/20 via-fuchsia-500/10 to-transparent",
     iconStyle: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
   },
+  {id:"prompts",icon:Sparkles,label:"prompts.title",description:"prompts.navigationDescription",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
   {id:"organization",icon:Sparkles,label:"organization.title",description:"organization.description",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
   {
     id: "matching",
@@ -199,7 +201,7 @@ export function SettingsScopeMenu({ activeScope, t, onScopeChange }: {
               aria-selected={isActive}
               aria-controls={`settings-panel-${scope.id}`}
               className={cn(
-                "group flex min-h-12 items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                "group flex min-h-12 min-w-0 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
                 isActive
                   ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
                   : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
@@ -240,6 +242,7 @@ export function SettingsView({
   onToast,
   onReset
 }: SettingsViewProps) {
+  const [promptTarget,setPromptTarget]=useState<{id:string;domainId:string|null}>({id:"summary.short",domainId:null});
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
@@ -335,7 +338,8 @@ export function SettingsView({
             </div>
           ) : null}
 
-          {activeScope === "organization" ? <OrganizationSettingsView t={t as Translator} contentLanguage={appSettings.contentLanguage}/> : null}
+          {activeScope === "prompts" ? <PromptsSettingsView t={t as Translator} language={appSettings.language} initialId={promptTarget.id} initialDomainId={promptTarget.domainId}/> : null}
+          {activeScope === "organization" ? <OrganizationSettingsView t={t as Translator} contentLanguage={appSettings.contentLanguage} onPrompts={(id="organization.legacy_synthesis",domainId=null)=>{setPromptTarget({id,domainId});onScopeChange("prompts");}}/> : null}
           {activeScope === "matching" ? (
             <div className="grid gap-5">
               <ScopeHeader scope={activeScopeDefinition} t={t} />

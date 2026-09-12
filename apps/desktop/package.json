@@ -10,7 +10,7 @@
     "predev": "npm run package:deps",
     "dev": "electron-vite dev",
     "prebuild": "npm run package:deps",
-    "build": "electron-vite build",
+    "build": "electron-vite build && node ../../scripts/verify-sandbox-preload.mjs",
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run --config vitest.config.ts",
     "phase4:e2e": "tsx src/main/services/verify-phase4-e2e.ts",

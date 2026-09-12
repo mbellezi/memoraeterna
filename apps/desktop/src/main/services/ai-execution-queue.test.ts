@@ -65,8 +65,10 @@ describe("AI execution queue", () => {
   it("shares one queue between service instances, routed tasks and local-model tests", async () => {
     const makeService = () => new AiService({userDataPath:"/tmp/ai-queue-test",workspaceRoot:"/tmp",resourcesPath:"/tmp",isPackaged:false,getPool:() => null});
     const firstService = makeService(), secondService = makeService();
-    type Executors = {executeDefaultTask: (task: string) => Promise<null>; executeLocalModelTest: () => Promise<string>};
+    type Executors = {preparePromptAdmission:()=>Promise<any>;executeDefaultTask: (task: string) => Promise<null>; executeLocalModelTest: () => Promise<string>};
     const first = firstService as unknown as Executors, second = secondService as unknown as Executors;
+    vi.spyOn(first,"preparePromptAdmission").mockResolvedValue({selection:{},compositions:[],input:"one"});
+    vi.spyOn(second,"preparePromptAdmission").mockResolvedValue({selection:{},compositions:[],input:"next"});
     const gate = Promise.withResolvers<void>(), started = Promise.withResolvers<void>();
     const order: string[] = [];
     vi.spyOn(first,"executeDefaultTask").mockImplementation(async (task) => {order.push(task);started.resolve();await gate.promise;return null;});

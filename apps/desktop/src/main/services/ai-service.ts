@@ -1,3 +1,4 @@
+import { renderPrompt, joinPrompts, capturePromptPin, withPromptPin, promptAudit, embeddingPromptIdentity } from "./prompt-runtime.js";
 import { sha256 } from "@app/conversion";
 import { createTranslator } from "@app/i18n";
 import {
@@ -26,6 +27,7 @@ import {
   type PgPool
 } from "@app/db";
 import {
+  type PromptPin, type PromptCompositionSnapshot,
   AiCapabilitySchema,
   OrganizationProfileSchema,
   type OrganizationProfile,
@@ -92,6 +94,7 @@ export interface AiTaskLogContext {
   operation?: string;
   origin?: string;
   promptVersion?: string;
+  promptCompositions?: PromptCompositionSnapshot[];
   chunkId?: string;
   chunkIds?: string[];
   atomicNoteId?: string;
@@ -102,6 +105,10 @@ export interface AiTaskLogContext {
   onProgress?: (event: AiProgressEvent) => void;
 }
 
+type RoutedTask = "text-generation" | "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output";
+type TaskSelection = NonNullable<Awaited<ReturnType<ReturnType<typeof createAiConfigRepository>["getDefaultTask"]>>>;
+interface PromptAdmission { selection:TaskSelection; input:string; instruction:string; compositions:PromptCompositionSnapshot[]; pin:PromptPin; language:string }
+const selectionIdentity=(s:TaskSelection)=>JSON.stringify([s.profileId,s.providerConfigId,s.localModelId,s.provider,s.modelId,s.runtime,s.revision,s.baseUrl,s.repository,s.quantization]);
 export class AiService {
   public isBusy(): boolean { return aiExecutionQueue.busy; }
   private readonly credentials: CredentialService;
@@ -331,6 +338,8 @@ export class AiService {
     });
   }
 
+  public async describePromptRoute(task:string){const selection=await createAiConfigRepository(this.requirePool()).getDefaultTask(task);return selection?{provider:selection.provider,modelId:selection.modelId,repository:selection.repository}:null;}
+
   public async pinOrganizationProfile(profileId: string | undefined, _legacyPrivacy: "offline_only" | "allow_remote"): Promise<OrganizationProfile> {
     const repository=createAiConfigRepository(this.requirePool());
     const selection=await repository.getDefaultTask("structured-output",profileId);
@@ -342,43 +351,68 @@ export class AiService {
   }
 
   public async runConsultationEmbedding(text:string,_legacyPrivacy:'offline_only'|'allow_remote',sourceItemIds:string[],signal:AbortSignal){
-    return aiExecutionQueue.run(()=>this.executeDefaultTask('embedding',text,{stage:'wiki_consultation',embeddingInputType:'query',sourceItemIds},signal),signal);
+    return this.admitTask('embedding',text,{stage:'wiki_consultation',embeddingInputType:'query',sourceItemIds},signal);
   }
 
   public async runOrganizationTask(profile: OrganizationProfile, input: string, context: AiTaskLogContext, signal: AbortSignal, maxOutputTokens: number, beforeExecute?:()=>Promise<void>): Promise<DefaultAiTaskResult> {
     const pinned=OrganizationProfileSchema.parse(profile);
-    return aiExecutionQueue.run(async()=>{
-      await beforeExecute?.(); signal.throwIfAborted();
-      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned,beforeExecute);
-      if(!result)throw new Error("organization.errors.model");
-      return result;
-    },signal);
+    const result=await this.admitTask("structured-output",input,context,signal,{maxOutputTokens},pinned,beforeExecute);
+    if(!result)throw new Error("organization.errors.model");return result;
   }
 
   public async runDefaultTask(
-    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
+    taskType: "text-generation" | "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
     input: string,
     logContext: AiTaskLogContext = {},
     signal?: AbortSignal,
     limits?: { maxOutputTokens: number }
   ): Promise<DefaultAiTaskResult | null> {
-    return aiExecutionQueue.run(() => this.executeDefaultTask(taskType,input,logContext,signal,limits),signal);
+    return this.admitTask(taskType,input,logContext,signal,limits);
+  }
+
+  private async preparePromptAdmission(task:RoutedTask,input:string,context:AiTaskLogContext,pin:PromptPin,baseAudit:PromptCompositionSnapshot[],pinned?:OrganizationProfile):Promise<PromptAdmission|null>{
+    const repository=createAiConfigRepository(this.requirePool());
+    await repository.ensureRemoteRerankingCapabilities();
+    const found=await repository.getDefaultTask(task,pinned?.profileId);
+    const selection=found?structuredClone(found):null;
+    if(!selection){if(pinned)throw new Error('organization.errors.model');return null;}
+    const language=context.contentLanguage??await this.options.getContentLanguage?.()??'en';
+    return withPromptPin(pin,()=>{
+      const prepared=task==='embedding'?withEmbeddingInputInstruction(baseAudit.length?input:renderPrompt(context.embeddingInputType==='query'?'embedding.query':'embedding.content.chunk',context.embeddingInputType==='query'?{query:input}:{source_text:input}),selection.modelId,selection.repository,context.embeddingInputType):baseAudit.some(s=>s.promptId.startsWith("diagnostics."))?input:withOutputLanguageInstruction(input,language);
+      const instruction=selection.provider==='openai-codex'?renderPrompt('shared.codex_adapter_instruction'):'';
+      return {selection,input:prepared,instruction,compositions:[...baseAudit,...promptAudit(prepared),...promptAudit(instruction)],pin,language};
+    });
+  }
+
+  private async admitTask(task:RoutedTask,input:string,context:AiTaskLogContext,signal?:AbortSignal,limits?:{maxOutputTokens:number},pinned?:OrganizationProfile,beforeProvider?:()=>Promise<void>):Promise<DefaultAiTaskResult|null> {
+    const pin=capturePromptPin(),baseAudit=context.promptCompositions??promptAudit(input);
+    // Reserve FIFO order synchronously, while source-free routing preparation runs without model loading or telemetry.
+    const prepared=this.preparePromptAdmission(task,input,context,pin,baseAudit,pinned).then(value=>({value}),error=>({error}));
+    let entered=false,admission:PromptAdmission|null=null;
+    try{return await aiExecutionQueue.run(()=>withPromptPin(pin,async()=>{const result=await prepared;if('error' in result)throw result.error;admission=result.value;if(!admission)return null;await beforeProvider?.();signal?.throwIfAborted();entered=true;return this.executeDefaultTask(task,input,context,signal,limits,pinned,beforeProvider,admission);}),signal);}
+    catch(error){
+      if(!entered||!admission||error&&typeof error==='object'&&'aiTaskRunId' in error)throw error;
+      const completed=admission as PromptAdmission,selection=completed.selection;
+      const aiTaskRunId=await createAiConfigRepository(this.requirePool()).recordTaskRun({profileId:selection.profileId,taskType:task,provider:selection.provider,modelId:selection.modelId,runtime:selection.runtime,parameters:pinned?.parameters??{...selection.modelDefaultParameters,...selection.parameters},promptCompositions:completed.compositions,inputHash:sha256(completed.input),durationMs:0,status:signal?.aborted?'canceled':'failed',error:redactSensitiveText(error),sourceItemIds:taskSourceItemIds(context),...(context.organizationRunId?{organizationRunId:context.organizationRunId,organizationStep:context.organizationStep}:{}),...(context.maintenanceRunId?{maintenanceRunId:context.maintenanceRunId,maintenanceStep:context.maintenanceStep}:{})});
+      if(error instanceof Error)Object.assign(error,{aiTaskRunId});throw error;
+    }
   }
 
   private async executeDefaultTask(
-    taskType: "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
+    taskType: "text-generation" | "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output",
     input: string,
     logContext: AiTaskLogContext,
     signal?: AbortSignal,
     limits?: { maxOutputTokens: number },
     pinned?: OrganizationProfile,
-    beforeProvider?:()=>Promise<void>
+    beforeProvider?:()=>Promise<void>,
+    admission?:PromptAdmission
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     await repository.ensureRemoteRerankingCapabilities();
-    const selection = await repository.getDefaultTask(taskType, pinned?.profileId);
+    const selection = admission?.selection ?? await repository.getDefaultTask(taskType, pinned?.profileId);
     if (!selection) { if(pinned) throw new Error("organization.errors.model"); return null; }
     if(pinned){
       const current=await this.pinOrganizationProfile(pinned.profileId,pinned.privacy);
@@ -390,10 +424,10 @@ export class AiService {
       Boolean(selection.localModelId)
     ));
     if (limits) parameters.maxTokens = Math.min(parameters.maxTokens ?? 16384, Math.max(1,Math.floor(limits.maxOutputTokens)));
-    const outputLanguage = logContext.contentLanguage ?? await this.options.getContentLanguage?.() ?? "en";
-    const taskInput = taskType === "embedding"
+    const outputLanguage = admission?.language ?? logContext.contentLanguage ?? await this.options.getContentLanguage?.() ?? "en";
+    const taskInput = admission?.input ?? (taskType === "embedding"
       ? withEmbeddingInputInstruction(input, selection.modelId, selection.repository, structuredLogContext.embeddingInputType)
-      : withOutputLanguageInstruction(input, outputLanguage);
+      : withOutputLanguageInstruction(input, outputLanguage));
     const keepLocalEmbeddingModelLoaded = taskType === "embedding" && selection.localModelId
       ? await this.options.getKeepLocalEmbeddingModelsLoaded?.() ?? true
       : true;
@@ -408,6 +442,8 @@ export class AiService {
       profileId: selection.profileId, parameters, input: taskInput
     });
     try {
+      const currentSelection=await repository.getDefaultTask(taskType,selection.profileId);
+      if(!currentSelection||selectionIdentity(currentSelection)!==selectionIdentity(selection))throw new Error("organization.errors.modelChanged");
       const configuredAdapter = selection.localModelId
         ? await this.createLocalAdapter(selection.localModelId)
         : await this.createAdapter(selection.providerConfigId ?? "");
@@ -433,7 +469,7 @@ export class AiService {
       });
       const request: AiTaskRequest = {
         taskType, input: taskInput, profileId: selection.profileId, modelId: selection.modelId,
-        requiredCapabilities, parameters, metadata: {}
+        requiredCapabilities, parameters, metadata: {applicationInstruction:admission?.instruction??renderPrompt("shared.codex_adapter_instruction")}
       };
       const progress = createProgressReporter(onProgress);
       const run = async () => {
@@ -473,7 +509,7 @@ export class AiService {
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters,
+        parameters, promptCompositions:admission?.compositions??promptAudit(taskInput),
         inputHash: sha256(taskInput), outputHash: sha256(JSON.stringify(result.output)),
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
@@ -491,7 +527,7 @@ export class AiService {
         });
       }
       return { ...result, profileId: selection.profileId, aiTaskRunId, outputLanguage,
-        embeddingSpaceKey: sha256(JSON.stringify({ providerConfigId: selection.providerConfigId, baseUrl: selection.baseUrl, localModelId: selection.localModelId, repository: selection.repository, quantization: selection.quantization, model: result.modelId, provider: result.providerId, runtime: result.runtime, revision: selection.revision, parameters })) };
+        embeddingSpaceKey: sha256(JSON.stringify({ providerConfigId: selection.providerConfigId, baseUrl: selection.baseUrl, localModelId: selection.localModelId, repository: selection.repository, quantization: selection.quantization, model: result.modelId, provider: result.providerId, runtime: result.runtime, revision: selection.revision, parameters, ...(embeddingPromptIdentity()?{promptStrategy:embeddingPromptIdentity()}: {}) })) };
     } catch (error) {
       const aiTaskRunId = await repository.recordTaskRun({
         ...(logContext.maintenanceRunId?{maintenanceRunId:logContext.maintenanceRunId,maintenanceStep:logContext.maintenanceStep}:{}),
@@ -503,7 +539,8 @@ export class AiService {
         revision: selection.revision,
         quantization: selection.quantization,
         parameters,
-        durationMs: Date.now() - started, status: "failed",
+        promptCompositions:admission?.compositions??promptAudit(taskInput), inputHash:sha256(taskInput),
+        durationMs: Date.now() - started, status: signal?.aborted?"canceled":"failed",
         error: redactSensitiveText(error), sourceItemIds
       });
       await this.options.monitoring?.finish(capture, {
@@ -527,7 +564,7 @@ export class AiService {
           this.options.logger?.error("Failed to release local embedding runtime", releaseError);
         });
       }
-      if (pinned && error instanceof Error) Object.assign(error, { aiTaskRunId });
+      if (error instanceof Error) Object.assign(error, { aiTaskRunId });
       throw error;
     }
   }
@@ -557,7 +594,7 @@ export class AiService {
   }
 
   public async testLocalModel(localModelId: string): Promise<string> {
-    return aiExecutionQueue.run(() => this.executeLocalModelTest(localModelId));
+    const pin=capturePromptPin();return aiExecutionQueue.run(() => withPromptPin(pin,()=>this.executeLocalModelTest(localModelId)));
   }
 
   private async executeLocalModelTest(localModelId: string): Promise<string> {
@@ -576,7 +613,7 @@ export class AiService {
       offlineOnly: true
     });
     const repository = createAiConfigRepository(this.requirePool());
-    const input = embeddingOnly ? "query: local embedding smoke test" : "Reply with exactly: OK";
+    const input = renderPrompt(embeddingOnly ? "diagnostics.local_embedding" : "diagnostics.local_generation");
     const parameters = normalizeAiModelParameters(aiModelParametersSchema.parse(withAiTaskParameterDefaults(
       taskType,
       model.defaultParameters,
@@ -606,7 +643,7 @@ export class AiService {
         quantization: model.quantization,
         capabilitiesUsed: [...requiredCapabilities, "offline"],
         parameters,
-        inputHash: sha256(input),
+        inputHash: sha256(input), promptCompositions:promptAudit(input),
         outputHash: sha256(JSON.stringify(result.output)),
         ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
@@ -631,7 +668,7 @@ export class AiService {
         quantization: model.quantization,
         capabilitiesUsed: [...requiredCapabilities, "offline"],
         parameters,
-        inputHash: sha256(input),
+        inputHash: sha256(input), promptCompositions:promptAudit(input),
         durationMs: Date.now() - started,
         status: "failed",
         error: redactSensitiveText(error)
@@ -800,6 +837,7 @@ export interface DefaultAiTaskResult extends AiTaskResult {
 
 function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[] {
   return ({
+    "text-generation": ["text-generation"],
     embedding: ["embedding"],
     summarization: ["summarization"],
     "knowledge-graph-generation": ["structured-output"],
@@ -904,7 +942,7 @@ export function withOutputLanguageInstruction(input: string, language: string): 
     fr: "French",
     es: "Spanish"
   } as Record<string, string>)[language] ?? language;
-  return `Produce all natural-language response text in ${languageName}. Preserve required JSON keys and schemas exactly. All internal identifiers, enum values and relation predicates must remain in English; translate only user-visible natural-language content.\n\n${input}`;
+  return joinPrompts(renderPrompt("shared.output_language",{content_language:languageName}),"\n\n",input);
 }
 
 export function withEmbeddingInputInstruction(
@@ -916,8 +954,7 @@ export function withEmbeddingInputInstruction(
   if (inputType !== "query") return input;
   const identity = `${modelId} ${repository ?? ""}`.toLowerCase();
   if (!identity.includes("qwen3-embedding")) return input;
-  return "Instruct: Retrieve sources that are substantially about the person, work, concept, or topic named by the user.\n"
-    + `Query: ${input}`;
+  return renderPrompt("embedding.query_instruction",{query:input});
 }
 
 function createProgressReporter(listener?: (event: AiProgressEvent) => void): (event: AiProgressEvent) => void {

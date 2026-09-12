@@ -60,7 +60,7 @@ export default defineConfig({
   },
   preload: {
     json: { stringify: false },
-    plugins: [externalizeDepsPlugin({ exclude: ["@app/domain", "@app/integration-contracts", "zod"] })],
+    plugins: [externalizeDepsPlugin({ exclude: ["@app/domain", "@app/i18n", "@app/integration-contracts", "zod"] })],
     build: {
       rollupOptions: {
         output: {

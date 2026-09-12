@@ -50,6 +50,7 @@ export class SearchService {
       : [];
     let embedding: number[] | undefined;
     let embeddingModel: string | undefined;
+    let embeddingIdentity:{embeddingSpaceKey:string;embeddingProvider:string;embeddingRuntime:string}|undefined;
     if (input.mode === "hybrid") {
       try {
         const generated = await this.aiService.runDefaultTask("embedding", input.text, {
@@ -62,6 +63,7 @@ export class SearchService {
               && candidate.every(Number.isFinite)) {
             embedding = candidate;
             embeddingModel = generated.modelId;
+            embeddingIdentity={embeddingSpaceKey:generated.embeddingSpaceKey??"",embeddingProvider:generated.providerId,embeddingRuntime:generated.runtime};
           }
         }
       } catch {
@@ -79,7 +81,7 @@ export class SearchService {
     const vectorCandidates = embedding && embeddingModel
       ? await repository.searchVector({
           embedding,
-          embeddingModel,
+          embeddingModel,...embeddingIdentity,
           sourceTypes: input.sourceTypes,
           sourceItemIds,
           limit: candidateLimit
@@ -120,7 +122,7 @@ export class SearchService {
     const noteVectorCandidates = embedding && embeddingModel
       ? await repository.searchNotesVector({
           embedding,
-          embeddingModel,
+          embeddingModel,...embeddingIdentity,
           sourceTypes: input.sourceTypes,
           sourceItemIds,
           limit: candidateLimit

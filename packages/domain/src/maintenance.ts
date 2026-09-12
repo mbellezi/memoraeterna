@@ -1,3 +1,4 @@
+import { PromptPinSchema } from "./prompt-catalog.js";
 import { z } from "zod";
 import { OrganizationProfileSchema } from "./organization.js";
 import { WikiPageContentSchema } from "./wiki.js";
@@ -53,7 +54,7 @@ export const MaintenanceOperationSchema = z.discriminatedUnion("type",[
 ]);
 export const MaintenanceProposalSchema=z.object({operations:z.array(MaintenanceOperationSchema).max(10),explanation:z.string().trim().min(1).max(2000)}).strict();
 export type MaintenanceProposal=z.infer<typeof MaintenanceProposalSchema>;
-export const MaintenanceSnapshotSchema=z.object({version:z.literal("wiki-maintenance-v1"),policy:MaintenancePolicySchema,configurationId:z.string().uuid().nullable(),configurationHash:z.string(),instructions:z.object({slots:z.object({guidance:z.string(),advanced:z.string()}),origins:z.object({guidance:z.string(),advanced:z.string()}),domainId:z.string().uuid().nullable()}),profile:OrganizationProfileSchema.nullable(),language:z.enum(["en","pt-BR","it","fr","es"]),scopeKey:z.string(),period:z.string(),cutoff:z.string(),sample:z.boolean().default(false),manual:z.boolean().default(false)}).strict();
+export const MaintenanceSnapshotSchema=z.object({instructionPromptIds:z.array(z.string()).default([]),promptPin:PromptPinSchema.nullable().default(null),version:z.literal("wiki-maintenance-v1"),policy:MaintenancePolicySchema,configurationId:z.string().uuid().nullable(),configurationHash:z.string(),instructions:z.object({slots:z.object({guidance:z.string(),advanced:z.string()}),origins:z.object({guidance:z.string(),advanced:z.string()}),domainId:z.string().uuid().nullable()}),profile:OrganizationProfileSchema.nullable(),language:z.enum(["en","pt-BR","it","fr","es"]),scopeKey:z.string(),period:z.string(),cutoff:z.string(),sample:z.boolean().default(false),manual:z.boolean().default(false)}).strict();
 export type MaintenanceSnapshot=z.infer<typeof MaintenanceSnapshotSchema>;
 export const MaintenanceCheckpointSchema=z.object({
   cursor:z.object({kind:z.enum(["page","source","note","done"]),id:z.string().uuid().nullable()}).default({kind:"page",id:null}),

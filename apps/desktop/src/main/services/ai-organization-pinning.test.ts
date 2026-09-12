@@ -26,7 +26,7 @@ describe('organization profile pinning and shared inference queue',()=>{
     const guard=vi.fn(async()=>{throw new Error('organization.errors.evidence');});
     await expect(s.runOrganizationTask(pinned,'question',{},new AbortController().signal,2048,guard)).rejects.toThrow('organization.errors.evidence');expect(guard).toHaveBeenCalledOnce();expect(adapter).not.toHaveBeenCalled();
     state.selection.requiredCapabilities=['embedding'];
-    adapter.mockRejectedValue(new Error('routed adapter reached'));await expect(s.runConsultationEmbedding('private query','offline_only',[],new AbortController().signal)).rejects.toThrow('routed adapter reached');expect(state.select).toHaveBeenLastCalledWith('embedding',undefined);expect(adapter).toHaveBeenCalledOnce();
+    adapter.mockRejectedValue(new Error('routed adapter reached'));await expect(s.runConsultationEmbedding('private query','offline_only',[],new AbortController().signal)).rejects.toThrow('routed adapter reached');expect(state.select).toHaveBeenCalledWith('embedding',undefined);expect(state.select).toHaveBeenLastCalledWith('embedding',state.selection.profileId);expect(adapter).toHaveBeenCalledOnce();
   });
   it('rejects changed model identity before creating an adapter',async()=>{
     const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),adapter=vi.spyOn(s as any,'createAdapter');state.selection.modelId='replacement';await expect(s.runOrganizationTask(pinned,'private prompt',{},new AbortController().signal,4096)).rejects.toThrow('organization.errors.modelChanged');expect(adapter).not.toHaveBeenCalled();

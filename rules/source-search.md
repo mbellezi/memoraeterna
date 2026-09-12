@@ -131,3 +131,9 @@ Its bounded independent signals, original-chunk fusion, full embedding identity
 checks, context packing and no-matching contract are specified in
 `rules/second-brain.md`; this does not change Library or legacy evidence-search
 ranking.
+
+- Evidence, note matching and Library vector queries require matching provider,
+  runtime, model, dimensions and effective embedding space/strategy. Existing native
+  rows without provable identity remain stored but cannot be guessed compatible.
+  Preserve lexical fallback and the Library embedding-refresh indicator; never
+  silently backfill identity or start reindexing after a catalog activation.

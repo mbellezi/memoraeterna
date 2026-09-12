@@ -1,3 +1,4 @@
+import { PromptPinSchema } from "./prompt-catalog.js";
 import { z } from "zod";
 import { WikiPageContentSchema } from "./wiki.js";
 
@@ -92,6 +93,7 @@ export const OrganizationContextSchema = z.object({
 }).strict();
 export const OrganizationParticipationSchema=z.object({ingestionRunIds:z.array(z.string().uuid()),batchId:z.string().uuid().nullable(),omissions:z.array(z.object({sourceItemId:z.string().uuid().nullable(),stage:z.string(),status:z.string()}))}).strict();
 export const OrganizationSnapshotSchema = z.object({
+  promptPin:PromptPinSchema.nullable().default(null),
   version:z.literal(organizationVersion), targetId:z.string().uuid(), expectedRevisionId:z.string().uuid().nullable(),
   targetHuman:z.boolean(),baseContent:WikiPageContentSchema, sourceIds:z.array(z.string().uuid()), profile:OrganizationProfileSchema,
   contentLanguage:z.enum(["en","pt-BR","it","fr","es"]),configurationId:z.string().uuid().nullable(), configurationHash:z.string(),
@@ -133,6 +135,7 @@ export const OrganizationSettingsSchema=z.object({
 });
 export const OrganizationCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("settings")}).strict(),
+  z.object({command:z.literal("saveDomains"),domains:z.array(OrganizationDomainSchema.pick({id:true,name:true,sourceIds:true,pageIds:true})).max(30)}).strict(),
   z.object({command:z.literal("saveDraft"),configuration:OrganizationConfigurationSchema}).strict(),
   z.object({command:z.literal("activate"),revisionId:z.string().uuid(),expectedActiveId:z.string().uuid().nullable()}).strict(),
   z.object({command:z.literal("sample"),functionName:OrganizationFunctionSchema.default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid().optional(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),

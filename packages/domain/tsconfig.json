@@ -10,6 +10,7 @@
     "rootDir": "src",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
+  "references": [{ "path": "../i18n" }],
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "dist"]
 }

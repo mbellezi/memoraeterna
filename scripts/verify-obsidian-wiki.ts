@@ -1,9 +1,10 @@
+import { PromptService } from '../apps/desktop/src/main/services/prompt-service.js';
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, copyFile, writeFile, rm, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { WikiPageSchema, WikiPageContentSchema } from "@app/domain";
+import { PromptPinSchema, WikiPageSchema, WikiPageContentSchema } from "@app/domain";
 import { createPgPool, closePgPool, PostgresSidecarManager, resolvePostgresSidecarPaths, runMigrations, createSourceItemRepository, createDocumentRepository, createChunkRepository, createWikiRepository, createSourceRelationRepository, createObsidianWikiRepository, createObsidianSyncRepository, createJobRepository, type PgPool } from "../packages/db/src/index.js";
 import { ObsidianSyncService } from "../apps/desktop/src/main/services/obsidian-sync-service.js";
 import { runObsidianSync } from "../apps/desktop/src/main/workers/obsidian-sync.worker.js";
@@ -33,6 +34,7 @@ try {
     const child = await wiki.save({ expectedRevisionId: null, content: WikiPageContentSchema.parse({ title: 'Mémoire 日本語', kind: 'topic', parentId: pageId, collectionIds: [collection] }), evidenceChunkIds: [] });
     await createSourceRelationRepository(pool).commitDecision('m4', book.id, b.id, [{ existingId: null, sourceItemId: a.id, targetSourceItemId: b.id, relationType: 'contrasts', sourceIdea: `<source-ref id="${a.id}" /> supports retrieval.`, targetIdea: `<source-ref id="${b.id}" /> adds conditions.`, explanation: `<source-ref id="${a.id}" /> differs from <source-ref id="${b.id}" />.`, importance: 0.9, confidence: 0.9, evidence: [{ source: ac, target: bc, note: null }] }], {});
     assert.equal((await runMigrations(pool, migrations, { seedFolder })).seed.applied, false);
+    await new PromptService({getPool:()=>pool!}).initialize();
     const previousClock = (await pool.query('select generation from obsidian_projection_clock where id=1')).rows[0].generation;
     await pool.query('delete from obsidian_projection_clock where id=1');
     const admission = createObsidianWikiRepository(pool);
@@ -64,7 +66,8 @@ try {
     assert.equal(await service.wiki.enqueue(), null);
     assert.equal(writes, 0);
     settings = { ...settings, obsidianSyncEnabled: true };
-    const run = async () => { const jobId = (await service.wiki.enqueue(true))!, jobs = createJobRepository(pool!); let job = await jobs.findById(jobId); assert.ok(job); await jobs.update(jobId, { status: 'running' }); try {
+    let firstProjectionJobId:string|null=null;
+    const run = async () => { const jobId = (await service.wiki.enqueue(true))!, jobs = createJobRepository(pool!); let job = await jobs.findById(jobId); assert.ok(job);PromptPinSchema.parse(job.payload.promptPin);firstProjectionJobId??=job.id; await jobs.update(jobId, { status: 'running' }); try {
         const result = await service.wiki.execute(job);
         await jobs.update(jobId, { status: 'succeeded', result });
         return result;
@@ -74,6 +77,17 @@ try {
         throw error;
     } };
     const first = await run();
+    // The catalog trigger applies to non-AI jobs too. Execute a persisted retry with the supervisor's envelope intact.
+    const retryJobs=createJobRepository(pool),firstJob=(await retryJobs.findById(firstProjectionJobId!))!,admittedPin=structuredClone(firstJob.payload.promptPin);
+    await retryJobs.update(firstJob.id,{status:'queued',payload:{...firstJob.payload,errorHistory:[{message:'Synthetic previous failure',stage:'obsidian-wiki',attempt:1,occurredAt:new Date().toISOString()}],dashboardDismissedAt:new Date().toISOString()}});
+    const retry=(await retryJobs.findById(firstJob.id))!;await service.wiki.execute(retry);await retryJobs.update(retry.id,{status:'succeeded'});
+    assert.deepEqual((await retryJobs.findById(retry.id))!.payload.promptPin,admittedPin,'Task extraction preserves persisted admission provenance on retry');
+    await assert.rejects(service.wiki.execute({...retry,payload:{...retry.payload,unknownTaskAuthority:true}}),/unrecognized_keys/,'Unknown task fields remain rejected');
+    const writeJob=await retryJobs.create({type:'obsidian-sync',payload:{action:'write',vaultPath:vault,relativePath:'Memora/Envelope-check.md',content:'Synthetic non-AI worker fixture',expectedHash:null}});PromptPinSchema.parse(writeJob.payload.promptPin);
+    await runObsidianSync(writeJob.payload);assert.equal(await readFile(join(vault,'Memora/Envelope-check.md'),'utf8'),'Synthetic non-AI worker fixture');
+    await assert.rejects(runObsidianSync({...writeJob.payload,unknownTaskAuthority:true}),/unrecognized_keys/);
+    await retryJobs.update(writeJob.id,{status:'succeeded'});
+    assert.equal((await pool.query('select count(*)::int n from ai_task_runs')).rows[0].n,0,'Projection and task-envelope compatibility never perform inference');
     assert.ok(first.projected >= 9);assert.ok(eventChecks>=2);assert.equal((await pool.query("select count(*)::int as n from source_items")).rows[0].n,3);
     const sync = createObsidianSyncRepository(pool), pageFile = (await sync.findByMemoraId(pageId))!, catalogFile = (await sync.findByMemoraId(book.id))!, childFile = (await sync.findByMemoraId(child))!;
     assert.ok(pageFile.relativePath.endsWith('/index.md'));
@@ -221,7 +235,7 @@ try {
     assert.equal((await emptyPool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
     assert.equal((await emptyPool.query('select generation from obsidian_projection_clock')).rows[0].generation, '2');
     await service.shutdown();
-    console.log('M4 verified: real PostgreSQL populated upgrade and empty baseline; trigger rollback, bounded queued projection, canonical catalog-only reference, Unicode/collisions/hierarchy, exact evidence, source links, independent local conflicts/recovery, shared fenced format, archive/restore, lost receipt, pause/scope changes, no wiki writeback, symlink containment. No model, real DEV or user vault used.');
+    console.log('M4 verified: real PostgreSQL populated upgrade and empty baseline; trigger rollback, bounded queued projection with catalog admission/retry envelopes, strict worker payloads, canonical catalog-only reference, Unicode/collisions/hierarchy, exact evidence, source links, independent local conflicts/recovery, shared fenced format, archive/restore, lost receipt, pause/scope changes, no wiki writeback, symlink containment. No model, real DEV or user vault used.');
 }
 finally {
     if (emptyPool)

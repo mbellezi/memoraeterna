@@ -69,3 +69,8 @@ or Python sidecar merely for convenience.
   must not enter external-client or renderer bundles.
 - Transport details stay in per-app adapters; domain semantics stay in domain
   contracts and application services.
+
+- The browser-safe prompt registry may consume localized metadata from the existing
+  lightweight @app/i18n package. Keep template content in the registry and product
+  labels in locale resources. Bundle this transitive dependency in sandbox preload;
+  the desktop build must execute a preload check with only Electron resolvable.

@@ -177,9 +177,10 @@ Implementation sequencing lives in
 
 ## User-configurable organization instructions
 
-- Provide a dedicated Organization and harnesses settings section. Expose
-  instructions by implemented function and user-defined knowledge domain,
-  including global defaults, inherited values and effective overrides.
+- Organization settings retain domain management and schedules. Instruction
+  editing lives exclusively in Settings > Prompts; organization and maintenance
+  actions deep-link the relevant implemented function and selected domain. Expose
+  global defaults, inherited values and effective overrides in that catalog.
 - Allow freely editable organizational guidance and a separately disclosed,
   guarded advanced prompt editor. Advanced changes require validation and a
   bounded proposal-only sample before activation; preserve drafts when testing

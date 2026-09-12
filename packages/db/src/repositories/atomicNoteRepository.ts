@@ -347,6 +347,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       noteId: string;
       embedding: number[];
       embeddingModel?: string;
+      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
       limit?: number;
     }): Promise<AtomicNoteCandidateRecord[]> {
       const dimensions = input.embedding.length;
@@ -361,11 +362,11 @@ export function createAtomicNoteRepository(db: Queryable) {
          join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
          join embeddings_${dimensions} e
            on e.target_type = 'atomic_note' and e.target_id = candidate.id
-          and ($3::text is null or e.model = $3)
+          and ($3::text is null or e.model = $3) and e.strategy='native-v2:' || $5::text and e.provider=$6 and e.runtime=$7
          where source.id = $1
          order by "vectorScore" desc, candidate.id
          limit $4`,
-        [input.noteId, `[${input.embedding.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 30]
+        [input.noteId, `[${input.embedding.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 30,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
       );
       return result.rows.map((row) => ({
         note: mapNote(row),
@@ -379,6 +380,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       candidateIds: string[];
       embedding?: number[];
       embeddingModel?: string;
+      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
     }): Promise<AtomicNoteCandidateRecord[]> {
       if (input.candidateIds.length === 0) return [];
       const dimensions = input.embedding?.length;
@@ -388,7 +390,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       const vectorJoin = dimensions
         ? `left join embeddings_${dimensions} e
              on e.target_type = 'atomic_note' and e.target_id = candidate.id
-            and ($4::text is null or e.model = $4)`
+            and ($4::text is null or e.model = $4) and e.strategy='native-v2:' || $5::text and e.provider=$6 and e.runtime=$7`
         : "";
       const vectorScore = dimensions
         ? "coalesce(greatest(0, 1 - (e.embedding <=> $3::vector)), 0)"
@@ -409,7 +411,7 @@ export function createAtomicNoteRepository(db: Queryable) {
          ${vectorJoin}
          where source.id = $1 and candidate.id = any($2::uuid[])`,
         dimensions
-          ? [input.noteId, input.candidateIds, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null]
+          ? [input.noteId, input.candidateIds, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
           : [input.noteId, input.candidateIds]
       );
       return result.rows.map((row) => ({
@@ -423,6 +425,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       noteId: string;
       embedding?: number[];
       embeddingModel?: string;
+      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
       limit?: number;
     }): Promise<AtomicNoteCandidateRecord[]> {
       const dimensions = input.embedding?.length;
@@ -432,7 +435,7 @@ export function createAtomicNoteRepository(db: Queryable) {
       const vectorJoin = dimensions
         ? `left join embeddings_${dimensions} e
              on e.target_type = 'atomic_note' and e.target_id = candidate.id
-            and ($3::text is null or e.model = $3)`
+            and ($3::text is null or e.model = $3) and e.strategy='native-v2:' || $5::text and e.provider=$6 and e.runtime=$7`
         : "";
       const vectorScore = dimensions
         ? "coalesce(greatest(0, 1 - (e.embedding <=> $2::vector)), 0)"
@@ -458,7 +461,7 @@ export function createAtomicNoteRepository(db: Queryable) {
                   )) * 0.4) + (${vectorScore} * 0.6)) desc
          limit ${dimensions ? "$4" : "$2"}`,
         dimensions
-          ? [input.noteId, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 20]
+          ? [input.noteId, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 20,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
           : [input.noteId, input.limit ?? 20]
       );
       return result.rows.map((row) => ({

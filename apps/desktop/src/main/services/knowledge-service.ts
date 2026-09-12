@@ -1,3 +1,4 @@
+import { renderPrompt, capturePromptPin, stagePromptFingerprints, changedPromptIdentity } from "./prompt-runtime.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
 import { AtomicNoteMatchingSettingsSchema, CanonicalMatchingSettingsSchema, type AtomicNoteMatchingSettings, type CanonicalMatchingSettings, SourceRelationSettingsSchema, type SourceRelationSettings } from "@app/domain";
@@ -159,6 +160,7 @@ export class KnowledgeService {
     const query = input.query?.trim() ?? "";
     let queryEmbedding: number[] | undefined;
     let embeddingModel: string | undefined;
+    let embeddingIdentity:{embeddingSpaceKey:string;embeddingProvider:string;embeddingRuntime:string}|undefined;
     if (query && input.searchMode !== "traditional") {
       try {
         const generated = await this.options.aiService.runDefaultTask("embedding", query, {
@@ -171,6 +173,7 @@ export class KnowledgeService {
               && candidate.every(Number.isFinite)) {
             queryEmbedding = candidate;
             embeddingModel = generated.modelId;
+            embeddingIdentity={embeddingSpaceKey:generated.embeddingSpaceKey??"",embeddingProvider:generated.providerId,embeddingRuntime:generated.runtime};
           }
         }
       } catch {
@@ -179,7 +182,7 @@ export class KnowledgeService {
     }
     return (await createLibraryRepository(this.requirePool()).listSources({
       ...input, query,
-      ...(queryEmbedding && embeddingModel ? { queryEmbedding, embeddingModel } : {})
+      ...(queryEmbedding && embeddingModel ? { queryEmbedding, embeddingModel,...embeddingIdentity } : {})
     })).map((source) => ({
       ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()
     }));
@@ -412,7 +415,7 @@ export class KnowledgeService {
       jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
       aiTaskRunId: finalExecution.aiTaskRunId,
       inputHash: sha256(document.canonicalMarkdown),
-      metadata: { promptVersion: summaryPromptVersion }
+      metadata: { promptVersion: summaryPromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,summary.executions.map(e=>e.providerId)).summarization }
     });
     const persisted = await createSourceSummaryRepository(pool).create({
       sourceItemId,
@@ -524,7 +527,8 @@ export class KnowledgeService {
         blockedRoots.push({ sourceItemId: root.rootId, missingSummaryCount, totalSubparts: children.length });
         continue;
       }
-      const inputHash = sha256(summarizedChildren.map((child) => `${child.childId}:${child.summaryHash}`).join("\n"));
+      const promptIdentity=changedPromptIdentity(["summary.aggregate"]);
+      const inputHash = sha256(summarizedChildren.map((child) => `${child.childId}:${child.summaryHash}`).join("\n")+(promptIdentity?`\n${promptIdentity}`:""));
       const current = (await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)).find((summary) => summary.isCurrent);
       if (!forceRegeneration && current?.inputHash === inputHash) {
         reusedCount += 1;
@@ -654,7 +658,7 @@ export class KnowledgeService {
         jobId: logContext.jobId ?? null,
         aiTaskRunId: execution.aiTaskRunId,
         inputHash: sha256(document.canonicalMarkdown),
-        metadata: { promptVersion: atomicNotePromptVersion }
+        metadata: { promptVersion: atomicNotePromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,execution.providerId).atomicNotes,promptComplete:false }
       });
       const repository = createAtomicNoteRepository(pool);
       const noteIds: string[] = [];
@@ -696,6 +700,7 @@ export class KnowledgeService {
         });
         noteIds.push(note.id);
       }
+      await hierarchy.completeKnowledgeGeneration(generationId);
       return { configured: true, generatedCount: noteIds.length, noteIds };
     } catch (error) {
       logStructuredError(this.options.logger, "atomic_note_generation_failed", {
@@ -901,10 +906,21 @@ export class KnowledgeService {
     const finalExecution = generated.executions.at(-1);
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
     const repository = createKnowledgeGraphRepository(pool);
+    const hierarchy = createHierarchicalIngestionRepository(pool);
+    const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+    const graphModes = [processingMode ?? "source_chunks", ...(atomicGraph ? ["atomic_notes"] : [])];
     const persisted = await trace("graph_relations_persistence", () => repository.replaceSourceExtraction({
       sourceItemId,
       language: source.language,
       batches: generated.batches,
+      generationReceipt:{
+      documentRevisionId: revisionId,
+      ingestionRunId: context.ingestionRunId ?? null,
+      jobId: context.jobId ?? null,
+      aiTaskRunId: finalExecution.aiTaskRunId,
+      inputHash: sha256([...sourceInputs, ...atomicNoteInputs].map((input) => input.bodyMarkdown).join("\n\n")),
+      metadata: { graphModes, extractionLimits, promptVersion: knowledgeGraphPromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,generated.executions.map(e=>e.providerId)).knowledgeGraph }
+      },
       generation: {
         profileId: finalExecution.profileId,
         aiTaskRunIds: generated.executions.map((execution) => execution.aiTaskRunId),
@@ -917,19 +933,6 @@ export class KnowledgeService {
         ...(processingMode ? { processingMode } : {})
       }
     }));
-    const hierarchy = createHierarchicalIngestionRepository(pool);
-    const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
-    const graphModes = [processingMode ?? "source_chunks", ...(atomicGraph ? ["atomic_notes"] : [])];
-    await hierarchy.createKnowledgeGeneration({
-      sourceItemId,
-      documentRevisionId: revisionId,
-      stage: "knowledgeGraph",
-      ingestionRunId: context.ingestionRunId ?? null,
-      jobId: context.jobId ?? null,
-      aiTaskRunId: finalExecution.aiTaskRunId,
-      inputHash: sha256([...sourceInputs, ...atomicNoteInputs].map((input) => input.bodyMarkdown).join("\n\n")),
-      metadata: { graphModes, extractionLimits, promptVersion: knowledgeGraphPromptVersion }
-    });
     let projected = true;
     let projectionError: string | null = null;
     try {
@@ -981,7 +984,7 @@ export class KnowledgeService {
       }
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
-        `${note.title}\n\n${note.ideaStatement}\n\n${note.bodyMarkdown}`,
+        renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.ideaStatement,note_body:note.bodyMarkdown}),
         signal,
         withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" }, [note.createdFromSourceItemId])
       );
@@ -994,8 +997,8 @@ export class KnowledgeService {
           model: embeddingExecution.modelId,
           runtime: embeddingExecution.runtime,
           usage: "matching",
-          strategy: "native",
-          contentHash: sha256(`${note.title}\n${note.ideaStatement}\n${note.bodyMarkdown}`),
+          strategy: embeddingExecution.embeddingSpaceKey?`native-v2:${embeddingExecution.embeddingSpaceKey}`:"native-unidentified",
+          contentHash: sha256(renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.ideaStatement,note_body:note.bodyMarkdown})),
           embedding
         });
       }
@@ -1007,7 +1010,7 @@ export class KnowledgeService {
         ? await notes.findVectorMatchingCandidates({
             noteId,
             embedding,
-            ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {}),
+            ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId,embeddingSpaceKey:embeddingExecution.embeddingSpaceKey??"",embeddingProvider:embeddingExecution.providerId,embeddingRuntime:embeddingExecution.runtime } : {}),
             limit: matchingSettings.vectorCandidateLimit
           })
         : [];
@@ -1031,7 +1034,7 @@ export class KnowledgeService {
         noteId,
         candidateIds: fusedCandidates.map((candidate) => candidate.noteId),
         ...(embedding ? { embedding } : {}),
-        ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId } : {})
+        ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId,embeddingSpaceKey:embeddingExecution.embeddingSpaceKey??"",embeddingProvider:embeddingExecution.providerId,embeddingRuntime:embeddingExecution.runtime } : {})
       });
       const scoresById = new Map(scoredCandidates.map((candidate) => [candidate.note.id, candidate]));
       const graphPathsById = new Map(graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType]));

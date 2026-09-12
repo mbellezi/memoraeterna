@@ -181,3 +181,8 @@ function handleMissingKey(key: string, behavior: MissingKeyBehavior = "marker"):
 
   return `[[missing:${key}]]`;
 }
+
+/** Five-locale metadata for the browser-safe prompt registry. Keys remain stable. */
+export function promptMetadataLabels(group:'categories'|'labels'|'variables'|'purposes',key:string):Record<LanguageCode,string>{
+ return Object.fromEntries(supportedLanguageCodes.map(language=>[language,createTranslator(language)(`promptCatalogMetadata.${group}.${key}` as MessageKey)])) as Record<LanguageCode,string>;
+}

@@ -994,6 +994,7 @@ export const aiTaskRuns = pgTable(
     quantization: text("quantization"),
     parameters: jsonb("parameters").notNull().default(sql`'{}'::jsonb`),
     capabilitiesUsed: jsonb("capabilities_used").notNull().default(sql`'[]'::jsonb`),
+    promptCompositions: jsonb("prompt_compositions").notNull().default(sql`'[]'::jsonb`),
     inputHash: text("input_hash"),
     outputHash: text("output_hash"),
     inputTokens: integer("input_tokens"),
@@ -1522,3 +1523,18 @@ export const atomicNoteRevisions = pgTable("atomic_note_revisions", {
   previous: jsonb("previous").notNull(), current: jsonb("current").notNull(),
   origin: text("origin").notNull().default("human"), createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 }, table => [index("atomic_note_revisions_note_idx").on(table.noteId, table.createdAt)]);
+
+export const promptRevisions = pgTable('prompt_revisions', {
+ id:uuid('id').primaryKey().defaultRandom(),promptId:text('prompt_id').notNull(),scope:text('scope').notNull(),domainId:uuid('domain_id'),
+ fields:jsonb('fields').notNull(),origin:text('origin').notNull(),legacy:jsonb('legacy'),legacyKey:text('legacy_key'),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[index('prompt_revisions_leaf_idx').on(t.promptId,t.createdAt),uniqueIndex('prompt_revisions_legacy_idx').on(t.legacyKey),check('prompt_revisions_scope_check',sql`${t.scope} in ('global','function','domain','domain_function') and ((${t.scope} in ('domain','domain_function')) = (${t.domainId} is not null))`)]);
+export const promptActivations = pgTable('prompt_activations', {
+ id:uuid('id').primaryKey().defaultRandom(),revisionId:uuid('revision_id').notNull().references(()=>promptRevisions.id,{onDelete:'restrict'}),
+ createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[index('prompt_activations_revision_idx').on(t.revisionId)]);
+export const promptValidations = pgTable('prompt_validations', {
+ id:uuid('id').primaryKey().defaultRandom(),revisionId:uuid('revision_id').notNull().references(()=>promptRevisions.id,{onDelete:'restrict'}),
+ compositionHash:text('composition_hash').notNull(),samplePassed:boolean('sample_passed').notNull().default(false),
+ auditIds:jsonb('audit_ids').notNull().default(sql`'[]'::jsonb`),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[uniqueIndex('prompt_validations_composition_idx').on(t.revisionId,t.compositionHash)]);

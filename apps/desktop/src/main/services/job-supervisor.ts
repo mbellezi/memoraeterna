@@ -1,3 +1,7 @@
+import { jobTaskPayload } from "../job-task-payload.js";
+import { promptStageProviders } from "./prompt-strategies.js";
+import { PromptPinSchema } from "@app/domain";
+import { withPromptPin, capturePromptPin, renderPrompt, stagePromptFingerprints } from "./prompt-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
@@ -117,20 +121,21 @@ export class JobSupervisor {
     this.controllers.set(job.id, controller);
     try {
       if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const execute = async () => job.type === "obsidian-wiki"
-        ? await this.options.obsidianSyncService!.wiki!.execute(job,controller.signal)
+      const taskJob={...job,payload:jobTaskPayload(job.payload)};
+      const execute = async () => withPromptPin(job.payload.promptPin?PromptPinSchema.parse(job.payload.promptPin):null,async()=>job.type === "obsidian-wiki"
+        ? await this.options.obsidianSyncService!.wiki!.execute(taskJob,controller.signal)
         : job.type === "maintenance"
-        ? await this.options.processMaintenance!(job,controller.signal)
+        ? await this.options.processMaintenance!(taskJob,controller.signal)
         : job.type === "organization"
-        ? await this.options.processOrganization!(job, controller.signal)
+        ? await this.options.processOrganization!(taskJob, controller.signal)
         : job.type === "relation-labels"
-        ? await this.options.processRelationLabels!(job, controller.signal)
+        ? await this.options.processRelationLabels!(taskJob, controller.signal)
         : job.type === "ingestion"
-        ? await this.executeIngestion(job, controller)
-        : await this.workers.execute(job.type as WorkerTask["type"], job.payload, {
+        ? await this.executeIngestion(taskJob, controller)
+        : await this.workers.execute(job.type as WorkerTask["type"], taskJob.payload, {
             signal: controller.signal,
             onProgress: (progress) => this.trackProgress(repository.reportProgress(job.id, progress))
-          });
+          }));
       const result = await (this.options.traceOperation?.(job.type, { jobId: job.id, ingestionRunId: job.payload.ingestionRunId, sourceItemId: job.payload.sourceItemId, documentId: job.payload.documentId, origin: "job", attempt: job.attempts }, execute) ?? execute());
       const updated = await repository.update(job.id, {
         status: controller.signal.aborted ? "canceled" : "succeeded",
@@ -326,7 +331,7 @@ export class JobSupervisor {
     const runs = createIngestionRunRepository(pool);
     if (catalogMetadataOnly) {
       await runs.update(ingestionRunId, {
-        inputHashes: { contentHash: createHash("sha256").update(markdown).digest("hex") }
+        inputHashes: { contentHash: createHash("sha256").update(markdown).digest("hex"),promptFingerprints:stagePromptFingerprints(capturePromptPin(),false,await promptStageProviders(pool)) }
       });
     }
     const run = await runs.startOrResume(ingestionRunId) ?? await runs.findById(ingestionRunId);
@@ -403,7 +408,7 @@ export class JobSupervisor {
         let embeddingIdentity: { provider: string; model: string; runtime: string; spaceKey?: string } | null = null;
         for (const chunk of persistedChunks) {
           if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
-          const generated = await this.options.generateEmbedding(chunk.content, signal, {
+          const generated = await this.options.generateEmbedding(renderPrompt("embedding.content.chunk",{source_text:chunk.content}), signal, {
             jobId: job.id,
             ingestionRunId,
             sourceItemId,
@@ -722,6 +727,7 @@ export class JobSupervisor {
     controller?: AbortController
   ): Promise<Record<string, unknown>> {
     const repository = createJobRepository(this.requirePool());
+    payload={...payload,promptPin:capturePromptPin()};
     const job = await repository.create({ type, payload, maxAttempts: 1 });
     await repository.update(job.id, {
       status: "running",

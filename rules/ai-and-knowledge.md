@@ -31,16 +31,16 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
   implemented behind `AiModelAdapter`; it must not own canonical storage or
   bypass task routing. No external harness runtime is selected by this decision.
 
-## Application-wide prompt configuration target
+## Application-wide prompt catalog
 
-The next prompt-configuration version must expose one hierarchical, searchable
+The application exposes one hierarchical, searchable
 Prompts settings section for all application-owned AI prompts: summaries, atomic
 notes, matching, graph extraction/canonicalization, relation descriptions,
 consultation, organization, maintenance, embedding instructions and diagnostics,
 including shared fragments and repairs. The implementation plan is
-[the prompt catalog design](../docs/ai-prompt-catalog-plan.md). Existing inline
-builders and legacy instruction snapshots remain compatibility behavior until
-their callers are explicitly migrated; a settings-only copy is not completion.
+[the prompt catalog design](../docs/ai-prompt-catalog-plan.md). `PromptService` owns activation and persistence; registered builders own typed
+source serialization. Legacy instruction snapshots remain versioned replay data,
+not another editable authority. A settings-only copy is not runtime coverage.
 
 - Use registered `%variable_name%` placeholders in the new template version.
   Below every editable prompt field list the actual variables used and each
@@ -298,3 +298,31 @@ provider token breakdowns and precise call context, as specified in
   protected notes, including pending-review notes. A protected upsert also leaves
   its evidence links untouched. Existing edit-audit events conservatively backfill
   protection; do not fabricate historic text absent from the earlier audit.
+
+## Prompt catalog validation and compatibility
+
+- Catalog revisions are immutable. Draft state means never activated; superseded
+  active revisions remain history. Publishing active pointers and activation use
+  one transaction lock. Activation compares the expected scope pointer and the
+  complete effective validation hash under that lock.
+- Validate shared/global changes against every distinct affected function/domain
+  composition, including currently shadowed text that a later reset can reveal.
+  Required samples exercise every executable variant, including repair suffixes.
+  Successful coverage survives retries and deterministic revalidation of the same
+  composition; changed dependencies invalidate that coverage.
+- Explicit synthetic sample actions admit at most 12 calls per batch, 256 calls,
+  2,000,000 input characters and 1,048,576 reserved output tokens cumulatively per
+  revision/composition validation, with at most 4,096 output tokens per call and
+  five minutes per batch. Persist reservations, audit IDs, completed cases and
+  workflow checkpoints. Report partial progress; another explicit sample action
+  resumes it. Samples neither read nor mutate the library. Missing models preserve
+  drafts and do not certify required samples.
+- Provider-specific fragments declare their provider condition. Actual inference
+  audit includes adapter wording only when used; artifact fingerprints include
+  only the effective provider's applicable wording. An unrelated generative or
+  language edit must not alter embedding input compatibility.
+- Legacy-equivalent input compatibility is anchored to frozen, versioned entry
+  fingerprints, never whichever shipped defaults are current in a later release.
+  Actual wording/serialization changes split embedding spaces. Revision IDs alone
+  do not split byte-equivalent input strategies. Activation never backfills,
+  deletes, rekeys or regenerates vectors.

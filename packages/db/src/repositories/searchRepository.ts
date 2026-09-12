@@ -42,6 +42,7 @@ export interface TextSearchInput {
 export interface VectorSearchInput {
   embedding: number[];
   embeddingModel: string;
+  embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
   sourceTypes?: SourceItemType[];
   sourceItemIds?: string[];
   limit?: number;
@@ -120,11 +121,12 @@ export function createSearchRepository(db: Queryable) {
          join source_items s on s.id = c.source_item_id
          left join source_spans sp on sp.id = c.source_span_id
          where not (d.metadata ? 'supersededByDocumentId') and e.target_type = 'chunk' and e.model = $2
+           and e.strategy = 'native-v2:' || $6::text and e.provider=$7 and e.runtime=$8
            and (coalesce(array_length($3::source_item_type[], 1), 0) = 0 or s.type = any($3))
            and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
          order by e.embedding <=> $1::vector
          limit $4`,
-        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? []]
+        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? [], input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
       );
       return result.rows.map((row) => mapSearchRow(row, Number(row.vectorScore)));
     },
@@ -167,12 +169,13 @@ export function createSearchRepository(db: Queryable) {
          join atomic_notes n on n.id = e.target_id
          join source_items s on s.id = n.created_from_source_item_id
          where e.target_type = 'atomic_note' and e.model = $2
+           and e.strategy = 'native-v2:' || $6::text and e.provider=$7 and e.runtime=$8
            and n.status <> 'rejected'
            and (coalesce(array_length($3::source_item_type[], 1), 0) = 0 or s.type = any($3))
            and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
          order by e.embedding <=> $1::vector
          limit $4`,
-        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? []]
+        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? [], input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
       );
       return result.rows.map((row) => mapNoteSearchRow(row, Number(row.vectorScore)));
     }

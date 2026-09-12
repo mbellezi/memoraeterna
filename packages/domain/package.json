@@ -18,6 +18,7 @@
     "test": "vitest run --root ../.. packages/domain/src"
   },
   "dependencies": {
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@app/i18n": "0.0.0"
   }
 }

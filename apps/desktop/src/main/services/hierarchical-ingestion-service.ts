@@ -1,3 +1,5 @@
+import { promptStageProviders } from "./prompt-strategies.js";
+import { renderPrompt, capturePromptPin, stagePromptFingerprints, legacyStagePromptFingerprints } from "./prompt-runtime.js";
 import {
   DocumentDivisionCandidateSchema,
   ProcessingStages,
@@ -158,6 +160,7 @@ export class HierarchicalIngestionService {
       reingestionPolicy: plan.previousArtifactPolicy,
       targetSourceItemIds: uniqueSourceIds
     });
+    const promptPin=capturePromptPin(plan.organization?.domainId),promptProviders=await promptStageProviders(pool);
     const queued: Array<{ sourceItemId: string; documentId: string; ingestionRunId: string; jobId: string | null }> = [];
     for (const sourceItemId of uniqueSourceIds) {
       const catalogMetadataOnly = catalogIds.has(sourceItemId);
@@ -194,13 +197,13 @@ export class HierarchicalIngestionService {
         effectiveStages,
         planVersion: plan.planVersion,
         inputDocumentRevisionId: revisionId,
-        inputHashes: { contentHash: catalogMetadataOnly ? sha256(processingMarkdown) : document.contentHash },
+        inputHashes: { contentHash: catalogMetadataOnly ? sha256(processingMarkdown) : document.contentHash,promptFingerprints:stagePromptFingerprints(promptPin,false,promptProviders) },
         previousArtifactPolicy: plan.previousArtifactPolicy,
         trigger,
         currentStage: "queued"
       });
       await runs.initializeStages(run.id, effectiveStages, ProcessingStages);
-      const artifactState = catalogMetadataOnly ? {} : await hierarchy.getArtifactState(sourceItemId, document.id);
+      const artifactState = catalogMetadataOnly ? {} : await hierarchy.getArtifactState(sourceItemId, document.id,{current:stagePromptFingerprints(promptPin,false,promptProviders),shipped:legacyStagePromptFingerprints(promptProviders)});
       if (effectiveStages.includes("sourceMatching") && artifactState.embedding
         && !await createEmbeddingRepository(pool).hasSourceMatchingCoverage(sourceItemId,document.id)) artifactState.embedding = false;
       for (const stage of ["conversion", "structureDetection", "structureReview", "materialization"] as const) {
@@ -226,7 +229,7 @@ export class HierarchicalIngestionService {
       if (pending.length > 0) {
         const job = await jobs.create({
           type: "ingestion",
-          payload: {
+          payload: {promptPin,
             ingestionRunId: run.id,
             batchId: batch.id,
             sourceItemId,
@@ -302,7 +305,7 @@ export function buildCatalogMetadataMarkdown(source: {
     : [];
   const excluded = new Set(["type", "title", "subtitle", "creators", "provenance", "cover", "parentSourceItemId"]);
   const metadata = Object.fromEntries(Object.entries(descriptor).filter(([key]) => !excluded.has(key)));
-  return JSON.stringify({
+  return renderPrompt("embedding.content.catalog",{catalog_metadata:{
     sourceType: source.type,
     title: source.title,
     ...(source.subtitle ? { subtitle: source.subtitle } : {}),
@@ -311,7 +314,7 @@ export function buildCatalogMetadataMarkdown(source: {
     ...(source.summary ? { summary: source.summary } : {}),
     ...(source.sourceUri ? { sourceUri: source.sourceUri } : {}),
     metadata
-  }, null, 2);
+  }});
 }
 
 async function prepareCatalogMetadataDocument(

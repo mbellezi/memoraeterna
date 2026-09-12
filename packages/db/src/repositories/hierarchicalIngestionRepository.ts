@@ -515,7 +515,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return id;
     },
 
-    async getArtifactState(sourceItemId: string, documentId: string): Promise<Record<string, boolean>> {
+    async getArtifactState(sourceItemId: string, documentId: string,prompts?:{current:Record<string,string>;shipped:Record<string,string>}): Promise<Record<string, boolean>> {
       const result = await pool.query<QueryResultRow & Record<string, boolean>>(
         `select
            true as conversion,
@@ -567,6 +567,26 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
         [sourceItemId, documentId]
       );
       const state = result.rows[0] ?? {};
+      if(prompts){
+        const fingerprints=(await pool.query<{stage:string;fingerprint:string|null}>(`select distinct on(stage) stage,fingerprint from (
+          select 'summarization' as stage,g.metadata->>'promptFingerprint' as fingerprint,summary.created_at as at
+            from source_summaries summary left join knowledge_generations g on g.id=summary.generation_id
+            where summary.source_item_id=$1 and summary.is_current
+          union all select g.stage,g.metadata->>'promptFingerprint',g.updated_at from knowledge_generations g join document_revisions revision on revision.id=g.document_revision_id
+            where g.source_item_id=$1 and revision.document_id=$2 and (g.stage='knowledgeGraph' or g.stage='atomicNotes' and (g.metadata->>'promptComplete'='true' or not(g.metadata ? 'promptFingerprint') and exists(select 1 from atomic_notes n where n.generation_id=g.id)))
+          union all select stage.key,run.input_hashes->'promptFingerprints'->>stage.key,(stage.value->>'completedAt')::timestamptz
+            from ingestion_runs run join document_revisions revision on revision.id=run.input_document_revision_id cross join lateral jsonb_each(run.stages_checkpoint) stage
+            where run.source_item_id=$1 and revision.document_id=$2 and stage.value->>'status'='completed' and stage.value->'metadata'->>'reused' is distinct from 'true'
+              and (stage.key in('atomicNoteMatching','sourceMatching')
+                or stage.key='embedding' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,sourceEmbedded}'='true' and coalesce((stage.value#>>'{metadata,embeddedCount}')::int,0)>0
+                or stage.key='summarization' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,generated}'='false' and stage.value#>>'{metadata,skippedReason}'='non_content'
+                or stage.key='atomicNotes' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,generatedCount}'='0')
+        ) history order by stage,at desc nulls last`,[sourceItemId,documentId])).rows;
+        for(const [stage,current] of Object.entries(prompts.current))if(state[stage]&&(fingerprints.find(row=>row.stage===stage)?.fingerprint??prompts.shipped[stage])!==current)state[stage]=false;
+        // Every current note owns its generation; a partial replacement cannot borrow a previous complete receipt.
+        if(prompts.current.atomicNotes){const owners=(await pool.query<{fingerprint:string|null;complete:string|null}>(`select g.metadata->>'promptFingerprint' as fingerprint,g.metadata->>'promptComplete' as complete from atomic_notes n left join knowledge_generations g on g.id=n.generation_id where n.created_from_source_item_id=$1 and n.supersession_status='current'`,[sourceItemId])).rows;if(owners.length)state.atomicNotes=owners.every(owner=>owner.complete!=='false'&&(owner.fingerprint??prompts.shipped.atomicNotes)===prompts.current.atomicNotes);}
+
+      }
       const revision = await pool.query<{ editorial: boolean; checkpoints: Record<string, { status?: string }> | null }>(
         `select coalesce((document.metadata->>'editorialRevision')::boolean, false) as editorial,
            run.stages_checkpoint as checkpoints
@@ -584,31 +604,9 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return state;
     },
 
-    async createKnowledgeGeneration(input: {
-      sourceItemId: string;
-      documentRevisionId?: string | null;
-      stage: string;
-      ingestionRunId?: string | null;
-      jobId?: string | null;
-      aiTaskRunId?: string | null;
-      inputHash?: string | null;
-      metadata?: JsonObject;
-    }): Promise<string> {
-      const result = await pool.query<{ id: string }>(
-        `insert into knowledge_generations
-           (source_item_id, document_revision_id, stage, ingestion_run_id, job_id, ai_task_run_id, input_hash, metadata)
-         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-         on conflict (ingestion_run_id, stage) where ingestion_run_id is not null do update
-         set ai_task_run_id = coalesce(excluded.ai_task_run_id, knowledge_generations.ai_task_run_id),
-             metadata = knowledge_generations.metadata || excluded.metadata, updated_at = now()
-         returning id`,
-        [input.sourceItemId, input.documentRevisionId ?? null, input.stage, input.ingestionRunId ?? null,
-          input.jobId ?? null, input.aiTaskRunId ?? null, input.inputHash ?? null, input.metadata ?? {}]
-      );
-      const id = result.rows[0]?.id;
-      if (!id) throw new Error("knowledge_generation_insert_failed");
-      return id;
-    }
+    async completeKnowledgeGeneration(id:string){await pool.query("update knowledge_generations set metadata=metadata || jsonb_build_object('promptComplete',true),updated_at=now() where id=$1",[id]);},
+
+    async createKnowledgeGeneration(input:KnowledgeGenerationInput){return persistKnowledgeGeneration(pool,input); }
   };
 }
 
@@ -751,4 +749,31 @@ function materializedChildMetadata(input: {
       ...(typeof rootDescriptor.issn === "string" ? { issn: rootDescriptor.issn } : {})
     }
   };
+}
+
+export type KnowledgeGenerationInput={
+      sourceItemId: string;
+      documentRevisionId?: string | null;
+      stage: string;
+      ingestionRunId?: string | null;
+      jobId?: string | null;
+      aiTaskRunId?: string | null;
+      inputHash?: string | null;
+      metadata?: JsonObject;
+    };
+export async function persistKnowledgeGeneration(db:Pick<PgPool,"query">,input:KnowledgeGenerationInput):Promise<string>{
+      const result = await db.query<{ id: string }>(
+        `insert into knowledge_generations
+           (source_item_id, document_revision_id, stage, ingestion_run_id, job_id, ai_task_run_id, input_hash, metadata)
+         values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+         on conflict (ingestion_run_id, stage) where ingestion_run_id is not null do update
+         set ai_task_run_id = coalesce(excluded.ai_task_run_id, knowledge_generations.ai_task_run_id),
+             metadata = knowledge_generations.metadata || excluded.metadata, updated_at = now()
+         returning id`,
+        [input.sourceItemId, input.documentRevisionId ?? null, input.stage, input.ingestionRunId ?? null,
+          input.jobId ?? null, input.aiTaskRunId ?? null, input.inputHash ?? null, input.metadata ?? {}]
+      );
+      const id = result.rows[0]?.id;
+      if (!id) throw new Error("knowledge_generation_insert_failed");
+      return id;
 }

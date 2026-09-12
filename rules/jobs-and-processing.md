@@ -135,3 +135,22 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   reservations, deadlines, cursor and receipts across deferral/restart/retry.
   Policy pause/revision changes revoke new work and guarded apply. Retry cannot
   acquire a fresh occurrence allowance. No transaction waits for inference.
+
+## Prompt admission snapshots
+
+- Persist source-free catalog templates/revision references at job or run
+  admission. Pipeline child jobs inherit the original parent admission; repairs,
+  retries, restarts and FIFO waiting do not recapture newly active prompts.
+- Preserve older queued payloads and versioned legacy run snapshots. New ordinary
+  jobs receive the catalog pin through the SQL admission trigger; explicitly scoped
+  batches and harness runs persist the resolved domain composition themselves.
+- Prompt preparation may run while a request waits, but reserve FIFO order
+  synchronously. Check freshness after acquiring the FIFO and again before the
+  provider call. Queued cancellation creates no inference execution or AI audit;
+  its admitted job/run snapshot remains the provenance of the canceled work.
+- Persisted jobs may carry reserved app-owned envelope fields (`promptPin`,
+  `errorHistory`, `dashboardDismissedAt`) beside task arguments. Extract those
+  fields before strict task validation and worker dispatch, leaving the stored
+  admission/audit payload intact. Direct task entrypoints must follow the same
+  rule. Continue rejecting unknown task fields; never make task schemas permissive
+  merely to accept admission or retry metadata. Non-AI jobs obey this boundary too.

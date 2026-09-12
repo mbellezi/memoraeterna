@@ -1,3 +1,4 @@
+import { PromptCommandSchema,PromptResponseSchema } from "@app/domain";
 import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
 import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
 import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
@@ -122,6 +123,7 @@ import {
 const api: DesktopApi = {
   consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
   maintenance:{command:async(input)=>MaintenanceResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.maintenanceCommand,MaintenanceCommandSchema.parse(input)))},
+  prompts:{command:async(input)=>PromptResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.promptCommand,PromptCommandSchema.parse(input)))},
   organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),

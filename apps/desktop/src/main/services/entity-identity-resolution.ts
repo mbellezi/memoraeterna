@@ -1,3 +1,4 @@
+import { renderPrompt, joinPrompts, changedPromptIdentity } from "./prompt-runtime.js";
 import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
 import { createHash } from "node:crypto";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
@@ -7,7 +8,7 @@ import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { buildRelationMatchPrompt, parseRelationMatches, relationTypeCosine, type RelationMatchRow } from "./relation-type-resolution.js";
 
 export const entityIdentityResolutionVersion = "entity-identity-resolution-v1";
-export const identityText = (input: { type: string; canonicalName: string; identityDescription: string }) => `${input.type}: ${input.canonicalName}\n${input.identityDescription}`;
+export const identityText = (input: { type: string; canonicalName: string; identityDescription: string }) => renderPrompt("embedding.content.entity",{entity_type:input.type,entity_name:input.canonicalName,entity_description:input.identityDescription});
 type Entity = KnowledgeGraphGenerationOutput["entities"][number];
 type Candidate = { sourceItemIds?: string[]; key: string; predicate: string; definition: string; score: number; target: NonNullable<EntityIdentityDecision["target"]> };
 
@@ -17,7 +18,7 @@ export function createEntityIdentityResolver(options: {
 }) {
   const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createEntityIdentityRepository(options.pool);
-  const fingerprint = (entity: Entity) => createHash("sha256").update(JSON.stringify({ sourceItemId: options.context.sourceItemId, key: entity.key, type: entity.type, name: entity.canonicalName, identityDescription: entity.identityDescription, evidence: [...entity.evidenceChunkIds].sort(), version: entityIdentityResolutionVersion })).digest("hex");
+  const fingerprint = (entity: Entity) => createHash("sha256").update(JSON.stringify({ sourceItemId: options.context.sourceItemId, key: entity.key, type: entity.type, name: entity.canonicalName, identityDescription: entity.identityDescription, evidence: [...entity.evidenceChunkIds].sort(), version: entityIdentityResolutionVersion,...(changedPromptIdentity(["graph.entity_identity","graph.entity_identity.repair"])?{promptIdentity:changedPromptIdentity(["graph.entity_identity","graph.entity_identity.repair"])}:{}) })).digest("hex");
   const embed = createCanonicalEmbedder({ ...options, strategy: entityIdentityResolutionVersion });
   async function confirm(rows: RelationMatchRow[]) {
     const result = new Map<string, { candidate: string | null; aiTaskRunId: string }>();
@@ -31,8 +32,7 @@ export function createEntityIdentityResolver(options: {
       let valid = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         options.signal?.throwIfAborted();
-        const execution = await options.ai.runDefaultTask("knowledge-graph-generation", buildRelationMatchPrompt(group, true)
-          + (attempt ? "\nRepair: include every supplied input key exactly once, selecting only its candidates or null." : ""),
+        const execution = await options.ai.runDefaultTask("knowledge-graph-generation", joinPrompts(buildRelationMatchPrompt(group, true), attempt ? renderPrompt("graph.entity_identity.repair") : ""),
         { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], attempt, promptVersion: entityIdentityResolutionVersion, contentLanguage: "en", stage: "entity_identity_resolution" }, options.signal);
         if (!execution) throw new Error("errors.ai.noCompatibleModel");
         try {

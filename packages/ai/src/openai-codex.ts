@@ -105,7 +105,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         model: request.modelId ?? this.options.modelId,
         store: false,
         stream: true,
-        instructions: "You are a helpful assistant.",
+        instructions: typeof request.metadata.applicationInstruction === "string" ? request.metadata.applicationInstruction : "",
         input: [{ role: "user", content: [{ type: "input_text", text: readText(request.input) }] }],
         text: { verbosity: "low" },
         include: ["reasoning.encrypted_content"],

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
+import { jobTaskPayload } from "../job-task-payload.js";
 
 import { workerMessageSchema, type WorkerTask } from "../workers/worker-contracts.js";
 
@@ -18,7 +19,7 @@ export class WorkerSupervisor {
     options: ExecuteWorkerOptions = {}
   ): Promise<Record<string, unknown>> {
     const worker = new Worker(new URL("./workers/worker-host.js", import.meta.url), {
-      workerData: { id: randomUUID(), type, payload }
+      workerData: { id: randomUUID(), type, payload: jobTaskPayload(payload) }
     });
     this.activeWorkers.add(worker);
     const abort = () => void worker.terminate();

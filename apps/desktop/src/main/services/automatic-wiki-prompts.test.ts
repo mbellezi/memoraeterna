@@ -1,7 +1,7 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import ts from "typescript";
+import { promptDefinitions } from "@app/domain";
 import { summaryPrompt, summaryReductionPrompt, buildAggregateSummaryPrompt, buildAtomicNoteGenerationPrompt, buildAtomicNoteRepairPrompt, buildKnowledgeGraphPrompt, buildKnowledgeGraphRepairPrompt, buildBatchRerankPrompt, generateSummaryFromChunks } from "./knowledge-processing.js";
 import { buildRelationMatchPrompt, embeddingText } from "./relation-type-resolution.js";
 import { identityText } from "./entity-identity-resolution.js";
@@ -69,34 +69,11 @@ describe("A0 legacy rendered prompt goldens (no model or database)", () => {
   });
 });
 
-const root=process.cwd();
-const ownerFiles=["knowledge-processing","knowledge-service","relation-type-resolution","entity-identity-resolution","relation-label-processing","source-relation-processing","organization-service","consultation-service","maintenance-service","ai-service","canonical-embedding","job-supervisor","hierarchical-ingestion-service","search-service","matching-benchmark"];
-const paths=[...ownerFiles.map(name=>`apps/desktop/src/main/services/${name}.ts`),"packages/domain/src/organization.ts","packages/ai/src/openai-codex.ts"];
-function walkFiles(dir:string):string[]{return readdirSync(dir,{withFileTypes:true}).flatMap(entry=>entry.isDirectory()?walkFiles(join(dir,entry.name)):entry.name.endsWith(".ts")&&!entry.name.endsWith(".test.ts")?[join(dir,entry.name)]:[]);}
-it("inventories every direct application AI callsite and freezes inline wording/repair/serializer fragments",()=>{
-  const calls: Record<string,string[]>={};
-  for(const file of walkFiles(join(root,"apps/desktop/src/main"))) {
-    const code=readFileSync(file,"utf8"),tree=ts.createSourceFile(file,code,ts.ScriptTarget.Latest,true);
-    const visit=(node:ts.Node)=>{
-      if(ts.isCallExpression(node)&&ts.isPropertyAccessExpression(node.expression)&&["runDefaultTask","runOrganizationTask","runConsultationEmbedding","generateEmbedding","tryRunDefaultTask"].includes(node.expression.name.text)) {
-        const key=relative(root,file);(calls[key]??=[]).push(node.expression.getText(tree)+"("+node.arguments.slice(0,2).map(a=>a.getText(tree)).join(", ")+")");
-      }
-      ts.forEachChild(node,visit);
-    };visit(tree);
-  }
-  expect(calls).toMatchSnapshot("all direct AI callers, including DEV and transport forwarding");
-  const fragments:Record<string,string[]>={};
-  for(const file of paths) {
-    const code=readFileSync(join(root,file),"utf8"),tree=ts.createSourceFile(file,code,ts.ScriptTarget.Latest,true);
-    const visit=(node:ts.Node)=>{
-      // Full template expressions retain serializers, aliases and interpolation order;
-      // literal prose retains private inline repairs and adapter-owned instructions.
-      if(ts.isTemplateExpression(node)||(ts.isStringLiteralLike(node)&&(node.text.length>=35 || /Reply with|helpful assistant|smoke test/.test(node.text)))) {
-        (fragments[file]??=[]).push(node.getText(tree));
-        if(ts.isTemplateExpression(node)) return;
-      }
-      ts.forEachChild(node,visit);
-    };visit(tree);
-  }
-  expect(fragments).toMatchSnapshot("exact legacy source fragments (not runtime execution evidence)");
+// A1 retires the A0 source-expression inventory after migrating those expressions.
+// The three immutable rendered goldens above remain the byte-equivalence oracle;
+// prompt-catalog-callers/ai and the owning service suites execute actual repairs.
+it("registers the former inline families and removes their old prose authority",()=>{
+ const ids=new Set(promptDefinitions.map(d=>d.id));
+ for(const id of ["summary.short","summary.partial","summary.reduce","summary.aggregate","notes.extract","notes.repair","notes.match","graph.atomic_notes","graph.source_chunks","graph.catalog_metadata","graph.atomic_notes.repair","graph.source_chunks.repair","graph.catalog_metadata.repair","graph.entity_identity","graph.entity_identity.repair","graph.relation_identity","graph.relation_identity.repair","graph.relation_labels","graph.relation_labels.repair","sources.match","sources.repair","sources.validation.default","sources.validation.same_root","organization.legacy_synthesis","organization.repair","organization.state.discover","organization.state.read","organization.state.propose","consultation.answer","consultation.repair","maintenance.weekly","maintenance.monthly","maintenance.cleanup","shared.output_language","shared.relation_language","shared.codex_adapter_instruction","embedding.query_instruction","embedding.query","embedding.content.chunk","embedding.content.note","embedding.content.entity","embedding.content.relation","embedding.content.catalog","diagnostics.local_generation","diagnostics.local_embedding"])expect(ids.has(id),id).toBe(true);
+ for(const [path,phrase]of [["apps/desktop/src/main/services/organization-service.ts","You are the bounded wiki page synthesis workflow"],["apps/desktop/src/main/services/knowledge-processing.ts","Evaluate whether the source atomic note"],["packages/ai/src/openai-codex.ts","You are a helpful assistant."]])expect(readFileSync(join(process.cwd(),path!),"utf8")).not.toContain(phrase);
 });

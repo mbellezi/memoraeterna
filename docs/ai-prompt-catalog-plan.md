@@ -1,8 +1,9 @@
 # Application-wide AI prompt catalog: implementation design
 
-Date: 2026-09-12. Status: A0 inventory, golden fixtures and domain contracts are
-independently verified and accepted; the A1 runtime catalog/editor remains planned.
-See the [A0 report](automatic-wiki-a0-contracts.md#prompt-caller-inventory-and-golden-evidence).
+Date: 2026-09-12. Status: A0 inventory, golden fixtures and domain contracts and the
+A1 runtime catalog/editor are independently verified and accepted.
+See the [A0 report](automatic-wiki-a0-contracts.md#prompt-caller-inventory-and-golden-evidence)
+and [A1 report](automatic-wiki-a1-report.md).
 
 This is the prompt-configuration workstream of the
 [automatic wiki implementation plan](automatic-wiki-implementation-plan.md).

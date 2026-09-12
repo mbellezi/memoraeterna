@@ -403,3 +403,19 @@ job statuses, or user-visible backend errors.
   existing explicit overrides when editing saved operations. Do not expose
   independent local/remote permission controls. Reflow forms without empty grid
   cells and retain routed-model guidance, loading, empty and error states.
+
+## Prompt catalog editor
+
+- Settings > Prompts is a searchable hierarchy with distinct branch/leaf identities,
+  one roving tab stop, parent/first-child navigation and Up/Down/Home/End support.
+  Filters use catalog-wide saved state, including unopened drafts and invalid leaves.
+- Put actual used-variable documentation below every field, with localized purpose,
+  origin, required/type information and safe examples. Available insertion tokens
+  are distinct from tokens actually used. Highlight known/unknown tokens and expose
+  deterministic errors beside the affected field. Contracts remain visible/read-only.
+- Preserve selection/caret on insertion and ignore stale previews. Disable conflicting
+  scope/editor actions during save/sample/activation. Clear unsupported domain scope
+  when moving to a non-domain function; show canonical names, including domains with
+  no override. Activation controls reflect successful required validation.
+- Visual checks use at most the standard opening window (1600 × 1200), never full
+  screen. Also verify the minimum supported window and both themes.

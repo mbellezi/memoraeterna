@@ -1,3 +1,4 @@
+import { jobTaskPayload } from "../job-task-payload.js";
 import { createSourceItemRepository } from "@app/db";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -96,7 +97,7 @@ export class ObsidianWikiProjection {
         return this.status();
     }
     async execute(job: JobRecord, signal?: AbortSignal) {
-        const payload = z.object({ binding: z.string(), generation: z.string() }).strict().parse(job.payload);
+        const payload = z.object({ binding: z.string(), generation: z.string() }).strict().parse(jobTaskPayload(job.payload));
         const settings = await this.options.getStorageSettings();
         await this.assertBinding(settings, payload.binding);
         const repository = createObsidianWikiRepository(this.pool()), scope = await this.scope();

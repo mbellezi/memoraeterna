@@ -1,3 +1,4 @@
+import { defaultPromptPin,withPromptPin } from './prompt-runtime.js';
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createHash } from "node:crypto";
 import { defaultSourceRelationSettings } from "@app/domain";
@@ -115,6 +116,12 @@ describe("source matching budget and recovery",() => {
   });
   const run = (ai: Mock<(...args: any[]) => any>, key="run", settings={...defaultSourceRelationSettings,maxInputTokens:200000}) => matchSources({pool:{} as PgPool,ai:{runDefaultTask:ai},sourceIds:["A"],runKey:key,settings,contentLanguage:"en"});
   const execution = (output:unknown) => ({output,profileId:"profile",modelId:"model",providerId:"provider",runtime:"local",aiTaskRunId:"execution",inputTokens:100,outputTokens:20});
+  it('real same-root recovery composes the exact active validation suffix',async()=>{
+    const pin=defaultPromptPin();for(const id of ['sources.match','sources.repair','sources.validation.same_root']){const entry=pin.entries.find(e=>e.id===id)!;entry.fields.body='CATALOG:'+id+'\n'+entry.fields.body;}
+    mocks.repository.pairChunks!.mockResolvedValue([a,{...b,rootId:a.rootId}]);
+    const ai=vi.fn().mockResolvedValueOnce(execution({relations:[proposal()]})).mockResolvedValue(execution({relations:[]}));
+    await withPromptPin(pin,()=>run(ai));expect(ai).toHaveBeenCalledTimes(2);expect(ai.mock.calls[0]![1]).toContain('CATALOG:sources.match');expect(ai.mock.calls[1]![1]).toContain('CATALOG:sources.repair');expect(ai.mock.calls[1]![1]).toContain('CATALOG:sources.validation.same_root');
+  });
   it("reports planned and completed pair counts, counting a repair only once",async() => {
     const onProgress=vi.fn();
     const ai=vi.fn().mockResolvedValueOnce(execution("invalid")).mockResolvedValue(execution({relations:[]}));
