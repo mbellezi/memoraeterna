@@ -1,3 +1,4 @@
+import {InvestigationService} from './services/investigation-service.js';
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
@@ -15,7 +16,7 @@ import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
-import { app, powerMonitor, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
+import { app, powerMonitor, Notification, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
@@ -276,11 +277,13 @@ void app.whenReady().then(() => {
   const promptService=new PromptService({getPool:()=>databaseService?.getPool()??null,ai:aiService,sample:(contexts,options)=>runPromptSamples(aiService!,contexts,options)});
   registerPromptIpc(ipcMain,promptService);
   const consultationService=new ConsultationService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake()});
-  const maintenanceService=new MaintenanceService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:id=>jobSupervisor!.requestCancel(id),idleSeconds:()=>powerMonitor.getSystemIdleTime(),aiBusy:()=>aiService!.isBusy()});
+  const investigationService=new InvestigationService({getPool:()=>databaseService?.getPool()??null,consultation:consultationService,wake:()=>jobSupervisor?.wake(),notify:({question})=>{void settingsService!.getApp().then(settings=>{if(Notification.isSupported())new Notification({title:createTranslator(settings.language)("investigation.updated"),body:question}).show();}).catch(()=>{});}});
+  app.once("before-quit",()=>investigationService.shutdown());
+  const maintenanceService=new MaintenanceService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:id=>jobSupervisor!.requestCancel(id),idleSeconds:()=>powerMonitor.getSystemIdleTime(),aiBusy:()=>aiService!.isBusy(),investigations:investigationService});
   ipcMain.handle(ipcChannels.maintenanceCommand,(_event,input:unknown)=>maintenanceService.command(MaintenanceCommandSchema.parse(input)));
   const organizationService = new OrganizationService({sampleMaintenance:(...args)=>maintenanceService.sample(...args),validateMaintenanceActivation:(...args)=>maintenanceService.validateActivation(...args),sampleConsultation:(revisionId,profileId,privacy,domainId)=>consultationService.sample(revisionId,profileId,privacy,domainId),getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:(id)=>jobSupervisor!.requestCancel(id)});
   registerOrganizationIpc(ipcMain,organizationService);
-  registerConsultationIpc(ipcMain,consultationService);
+  registerConsultationIpc(ipcMain,consultationService,investigationService);
   jobSupervisor = new JobSupervisor({
     maintenanceTick:()=>maintenanceService.tick(),maintenanceReady:job=>maintenanceService.ready(job),processMaintenance:(job,signal)=>maintenanceService.execute(job,signal),
     reconcileOrganization:async()=>{await reconcileOrganizationParticipation(databaseService!.getPool()!,organizationService);await organizationService.automaticTick();},
@@ -341,6 +344,7 @@ void app.whenReady().then(() => {
   serviceStartupPromise = databaseService.start().then(async (status) => {
     if (status.state === "ready") {
       await promptService.initialize();
+      await investigationService.initialize();
       await monitoringService.recover();
       await Promise.all([
         localModelService?.start(),

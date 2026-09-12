@@ -1,5 +1,39 @@
 {
+  "investigation": {
+    "retained": "Salva como página de resposta acompanhada",
+    "title": "Perguntas acompanhadas",
+    "explanation": "Acompanhar salva uma página de resposta e reavalia a pergunta dentro da política automática selecionada e dos limites compartilhados. Salvar continua sendo uma proposta avulsa.",
+    "policy": "Autorização de atualização",
+    "choosePolicy": "Escolha uma política ativa",
+    "follow": "Acompanhar esta pergunta",
+    "noPolicy": "Ative uma política automática com escopo definido para acompanhar uma pergunta.",
+    "empty": "Nenhuma pergunta acompanhada.",
+    "followed": "Em acompanhamento",
+    "paused": "Pausada",
+    "resolved": "Resolvida",
+    "awaiting_evidence": "Aguardando evidências",
+    "current": "Resposta atual",
+    "pause": "Pausar",
+    "resolve": "Resolver",
+    "resume": "Retomar acompanhamento",
+    "history": "Respostas e mudanças de entendimento",
+    "viewAnswer": "Ver esta resposta",
+    "previous": "Resposta anterior",
+    "updated": "Uma resposta acompanhada mudou",
+    "historyState": {
+      "deferred": "Adiada pelo orçamento compartilhado",
+      "initial": "Resposta inicial",
+      "changed": "Entendimento alterado",
+      "no_change": "Sem mudança relevante",
+      "awaiting_evidence": "Aguardando evidências",
+      "failed": "Falhou",
+      "rejected": "Rejeitada",
+      "uncertain": "Interrompida — resultado incerto",
+      "running": "Avaliando"
+    }
+  },
   "consultation": {
+    "errors": {"noRelevantEvidence": "Não foi possível selecionar trechos originais relevantes para esta solicitação. Ajuste a pergunta ou o escopo de fontes."},
     "contextCoverage": "Contexto opcional: {included} de {available} itens couberam no orçamento do modelo. Os trechos originais continuam disponíveis.",
     "sourceCount": "Fontes no escopo: {count}",
     "title": "Respostas com fontes",
@@ -1448,6 +1482,10 @@
       "diagnostics": "Diagnóstico de modelos"
     },
     "labels": {
+      "knowledge": "Resposta com conhecimento compilado",
+      "comparison": "Comparação de fontes",
+      "investigation": "Pergunta acompanhada",
+      "gaps": "Lacunas de evidência",
       "catalog": "Metadados do catálogo",
       "short": "Fonte curta",
       "partial": "Resumo parcial e conceitos",

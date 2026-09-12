@@ -234,3 +234,14 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   a scope-limit decision, but retain the unresolved outcome and withhold complete
   acknowledgment. Automatic policies surface that decision through occurrence
   attention before admitting more work.
+
+- Followed questions execute inside the existing automatic maintenance pass after
+  its curator deliveries settle. They reserve through the same run/step identity,
+  parent policy month ledger and monotonic occurrence clock. Budget/period/deadline
+  failure before any reservation/provider call is a persistent deferral; close that
+  occurrence explicitly incomplete and permit its unstarted run in a later eligible
+  occurrence without changing its admitted model, prompts or consumed allowance.
+- Investigation startup recovery settles both evaluation and organization-run state.
+  An in-progress provider checkpoint is uncertain and never automatically replayed;
+  a never-started interrupted evaluation is reported separately. Pausing/resolving
+  aborts the active signal and blocks guarded apply while retaining prior answers.

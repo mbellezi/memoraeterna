@@ -1,3 +1,4 @@
+import type {FollowedInvestigation,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
 import type { PromptCommand } from "@app/domain";
 import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, type ObsidianEditReceipt } from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
@@ -35,6 +36,7 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
+  investigationList:"app:investigation:list",investigationGet:"app:investigation:get",investigationFollow:"app:investigation:follow",investigationState:"app:investigation:state",
   consultationAsk:"app:consultation:ask",consultationCancel:"app:consultation:cancel",consultationSave:"app:consultation:save",
   maintenanceCommand:"app:maintenance:command",
   promptCommand:"app:prompts:command",
@@ -1127,6 +1129,7 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
+  investigations:{list:()=>Promise<FollowedInvestigation[]>;get:(id:string)=>Promise<FollowedInvestigation|null>;follow:(input:z.infer<typeof FollowInvestigationInputSchema>)=>Promise<FollowedInvestigation|null>;state:(input:z.infer<typeof InvestigationStateInputSchema>)=>Promise<FollowedInvestigation|null>};
   consultation:{ask:(input:ConsultationInput)=>Promise<ConsultationResult>;cancel:(id:string)=>Promise<null>;save:(id:string)=>Promise<OrganizationRun>};
   maintenance:{command:(input:MaintenanceCommand)=>Promise<unknown>};
   prompts:{command:(input:PromptCommand)=>Promise<unknown>};

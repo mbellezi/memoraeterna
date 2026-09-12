@@ -187,14 +187,14 @@ export function createOrganizationRepository(pool:PgPool) {
           if(saved&&saved.snapshot.contentHash!==original.contentHash)throw new Error('organization.errors.evidence');
         }
         const contexts=run.snapshot.contexts??[];
-        const consumed=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>proposal.sections.some((s:{contextIds?:string[]})=>s.contextIds?s.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id)));
+        const consumed=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>run.snapshot.consultationVersion==='knowledge-consultation-v2'||proposal.sections.some((s:{contextIds?:string[]})=>s.contextIds?s.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id)));
         await validateWikiDependencies(db,consumed.flatMap((c:{dependencies?:Array<{kind:string;id:string;fingerprint:string}>})=>c.dependencies??[]),true);
         await createWikiRepository(pool).save(input,{transaction:db,origin:'organization',humanApproved:human,allocatedTarget:run.snapshot.expectedRevisionId===null});
         const revision=(await db.query('select current_revision_id from wiki_pages where id=$1',[run.snapshot.targetId])).rows[0]!.current_revision_id;
         for(let index=0;index<proposal.sections.length;index++){
           const op=proposal.sections[index];
           const sectionId=op.sectionId??input.content.sections[run.snapshot.baseContent.sections.length+proposal.sections.slice(0,index).filter((s:{sectionId:string|null})=>!s.sectionId).length]!.id;
-          const selected=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>op.contextIds?op.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id));
+          const selected=[...contexts,...run.snapshot.relations].filter((c:{id:string})=>run.snapshot.consultationVersion==='knowledge-consultation-v2'||(op.contextIds?op.contextIds.includes(c.id):run.snapshot.relations.some((r:{id:string})=>r.id===c.id)));
           for(const context of selected) for(const dep of context.dependencies??[]) await addWikiDependency(db,revision,sectionId,dep,context);
         }
         await db.query('insert into organization_receipts(run_id,revision_id) values($1,$2)',[id,revision]);

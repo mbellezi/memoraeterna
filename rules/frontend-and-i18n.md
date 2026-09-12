@@ -495,3 +495,14 @@ job statuses, or user-visible backend errors.
   Opening the prompt catalog from Wiki records a return destination in the shared
   native/mouse navigation router; Back returns to the mounted Wiki without losing
   its reading/tree context. Calendar previews do not render empty separators.
+
+- Native cited consultation explicitly offers Answer/Compare. Its separate Follow
+  action discloses persisted answer pages and scoped refresh under a selected parent
+  policy's shared limits. Existing followed questions can be read with no model;
+  show current/prior answers, original citations, gaps, changed understanding,
+  paused/resolved/awaiting-evidence state and retained failure/uncertainty.
+- Answer-to-answer navigation maintains a bounded local Back stack. Close an evidence
+  inspector first, then return to the previous answer and scroll, then close the
+  consultation. Hidden workspaces never handle Back. Original titles and saved prose
+  retain their language; controls use the interface language and authored gap headings
+  use the admitted content language. Unchanged polling does not notify.

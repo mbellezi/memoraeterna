@@ -1,5 +1,39 @@
 {
+  "investigation": {
+    "retained": "Guardada como página de respuesta seguida",
+    "title": "Preguntas seguidas",
+    "explanation": "Seguir guarda una página de respuesta y reevalúa la pregunta dentro de la política automática elegida y sus límites compartidos. Guardar sigue siendo una propuesta puntual.",
+    "policy": "Autorización de actualización",
+    "choosePolicy": "Elige una política activa",
+    "follow": "Seguir esta pregunta",
+    "noPolicy": "Activa una política automática con un ámbito definido para seguir una pregunta.",
+    "empty": "No hay preguntas seguidas.",
+    "followed": "En seguimiento",
+    "paused": "Pausada",
+    "resolved": "Resuelta",
+    "awaiting_evidence": "Esperando evidencia",
+    "current": "Respuesta actual",
+    "pause": "Pausar",
+    "resolve": "Resolver",
+    "resume": "Reanudar seguimiento",
+    "history": "Respuestas y cambios de comprensión",
+    "viewAnswer": "Ver esta respuesta",
+    "previous": "Respuesta anterior",
+    "updated": "Una respuesta seguida ha cambiado",
+    "historyState": {
+      "deferred": "Aplazada por el presupuesto compartido",
+      "initial": "Respuesta inicial",
+      "changed": "Comprensión modificada",
+      "no_change": "Sin cambios significativos",
+      "awaiting_evidence": "Esperando evidencia",
+      "failed": "Falló",
+      "rejected": "Rechazada",
+      "uncertain": "Interrumpida — resultado incierto",
+      "running": "Evaluando"
+    }
+  },
   "consultation": {
+    "errors": {"noRelevantEvidence": "No se pudieron seleccionar pasajes originales relevantes para esta solicitud. Ajusta la pregunta o el ámbito de las fuentes."},
     "contextCoverage": "Contexto opcional: {included} de {available} elementos caben en el presupuesto del modelo. Los pasajes originales siguen disponibles.",
     "sourceCount": "Fuentes en el ámbito: {count}",
     "title": "Respuestas con fuentes",
@@ -1365,6 +1399,10 @@
       "diagnostics": "Diagnóstico de modelos"
     },
     "labels": {
+      "knowledge": "Respuesta con conocimiento compilado",
+      "comparison": "Comparación de fuentes",
+      "investigation": "Pregunta seguida",
+      "gaps": "Lagunas de evidencia",
       "catalog": "Metadatos del catálogo",
       "short": "Fuente breve",
       "partial": "Resumen parcial y conceptos",

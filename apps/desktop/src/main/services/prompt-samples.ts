@@ -58,8 +58,8 @@ export function promptSampleCall(promptId: string, pin: PromptPin, variant?: str
             const base = sourceRelationPrompt(context, 2, false);
             return { input: promptId === 'sources.repair' ? joinPrompts(base, renderPrompt(promptId, { validation_errors: renderPrompt(variant === 'same_root' ? 'sources.validation.same_root' : 'sources.validation.default') })) : base, task: 'reranking', validate: o => parseSourceRelations(o, context, SourceRelationSettingsSchema.parse({}), 2) };
         }
-        if (promptId === 'consultation.answer' || promptId === 'consultation.repair') {
-            const snapshot = promptSampleSnapshot(pin, 'consultation'), base = consultationPrompt(snapshot, 'When did retrieval help?');
+        if (['consultation.answer','consultation.repair','consultation.knowledge','consultation.comparison','consultation.investigation','consultation.gaps'].includes(promptId)) {
+            const snapshot = promptSampleSnapshot(pin, 'consultation');if(!['consultation.answer','consultation.repair'].includes(promptId)){snapshot.consultationVersion='knowledge-consultation-v2';snapshot.consultationIntent=promptId==='consultation.comparison'?'comparison':promptId==='consultation.investigation'?'investigation':'answer';}const base = consultationPrompt(snapshot, 'When did retrieval help?');
             return { input: promptId.endsWith('.repair') ? joinPrompts(base, renderPrompt(promptId)) : base, task: 'structured-output', validate: o => parseConsultationAnswer(o, snapshot) };
         }
         if (/^maintenance\.(weekly|monthly|cleanup)$/.test(promptId)) {

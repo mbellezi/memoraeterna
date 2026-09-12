@@ -760,3 +760,54 @@ Implementation sequencing lives in
   outcome. Admission errors retain the exact dependent cursor and error namespace;
   do not translate them into skips, acknowledge them as complete, or claim complete
   maintenance coverage while they remain unresolved.
+
+## Knowledge-first consultation and followed questions
+
+- Native Ask admits `knowledge-consultation-v2`; an omitted version retains the
+  `wiki-answer-v1` reader and raw-ranking contract. Unknown versions fail before
+  inference. Resolve canonical authorized scope before content selection, including
+  current TOC owners and typed page/source/note memberships with cycle-safe traversal.
+  The successor has no arbitrary 500-source library ceiling; it bounds consumed
+  context to six compiled units and twelve complete originals instead. Its audit
+  identifies the participating originals, independently of total scope coverage.
+- Select eligible compiled sections and current supported TOC context before raw
+  chunk ranking. Expand every consumed original lineage as one packing unit; if
+  complete support cannot fit, omit the whole unit with bounded-coverage disclosure.
+  Revalidate exact current evidence, section assessment, human-review mode, and all
+  transitive source/note/relationship/page dependencies before inference and apply.
+  A supplied parent already lacking support is ineligible even when its current
+  fingerprint matches. Primary and linked note evidence must agree with canonical
+  source ownership. Index prose and repeated derivatives are not corroboration.
+- Ask remains transient in the existing twenty-answer, thirty-minute cache; retries
+  with the same request identity cannot replace a different question. Save creates
+  its existing idempotent one-off proposal using existing audits. Follow separately
+  saves a synthesis page with investigation role and a persistent scoped question;
+  neither explicit retention action performs inference or creates source material.
+  Preserve all supplied successor context dependencies when saving the answer.
+- Follow requires the explicit `refresh_investigation` operation in an enabled
+  parent policy. Newly reviewed setup previews disclose it; old policy revisions
+  do not gain it through migration. Future inputs remain within both followed scope
+  and parent authority. Generic topic/index curators never own investigation pages.
+- Followed evaluations retain original/current answers, exact scope and citations,
+  gaps, input fingerprints, pinned settings, change explanations and canonical AI
+  audit links. Answer-page gaps reuse the same localized save builder. Answer prose
+  remains unreviewed and unassessed unless separately verified; citation parsing
+  does not create a machine support verdict. New AI reasoning must never be labeled
+  human interpretation without explicitly supplied personal-authorship provenance.
+  Human evidence review is not human authorship.
+- Refresh uses the existing automatic occurrence and parent monthly allowance,
+  inference FIFO and two-call/one-repair, 120-second consultation ceiling. Inspect
+  after relevant curator deliveries settle, so one source update does not cause
+  pre-curation and post-curation answer refreshes. Fingerprints include all consumed
+  compiled content and applicable effective prompt composition/provider fragments.
+  Unchanged and irrelevant inspections invoke no model.
+- Meaningful change is explicit model-reported change in findings, qualifications or
+  gaps, not merely paraphrasing or a new citation. Preserve its explanation/history
+  and notify only after guarded canonical completion. An evidence-only refresh still
+  updates the current answer and page's exact citations while keeping notification
+  quiet. Missing evidence preserves the historical answer with a stale disclosure
+  and persistent awaiting-evidence state, without inference or external research.
+- Pause/resolve revoke active refresh and use optimistic state revisions. Guard
+  policy, scope, expected answer revision and protection again during atomic save.
+  Original answer revisions and rejected/uncertain outcomes remain inspectable.
+  No automatic retry can replay a started uncertain call or a semantic rejection.

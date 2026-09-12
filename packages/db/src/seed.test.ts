@@ -79,7 +79,9 @@ describe("baseline seed", () => {
       "0033_wakeful_kulan_gath",
       "0034_wiki_impact_expression_fix",
       "0035_acoustic_nemesis",
-      "0036_hot_scarlet_witch"
+      "0036_hot_scarlet_witch",
+      "0037_flawless_norrin_radd",
+      "0038_investigation_descendant_impacts"
     ]);
   });
 
@@ -134,7 +136,9 @@ describe("baseline seed", () => {
       "0033_wakeful_kulan_gath",
       "0034_wiki_impact_expression_fix",
       "0035_acoustic_nemesis",
-      "0036_hot_scarlet_witch"
+      "0036_hot_scarlet_witch",
+      "0037_flawless_norrin_radd",
+      "0038_investigation_descendant_impacts"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

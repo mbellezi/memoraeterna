@@ -1,10 +1,10 @@
-import {createAutomaticMaintenanceRepository,createWikiCuratorRepository,createWikiCollectionRepository,createOrganizationRepository,type PgPool,type JobRecord} from '@app/db';
+import {createAutomaticMaintenanceRepository,createWikiCuratorRepository,createWikiCollectionRepository,createOrganizationRepository,createInvestigationRepository,type PgPool,type JobRecord} from '@app/db';
 import {AutomaticMaintenanceCommandSchema,AutomaticMaintenanceDashboardSchema,automaticClock,type AutomaticMaintenanceRun,type AutomaticRoutinePolicy,type AutomaticMaintenanceCommandSchema as CommandSchema} from '@app/domain';
 import type {z} from 'zod';
 import {capturePromptPin,withPromptPin} from './prompt-runtime.js';
 import {WikiCollection} from './wiki-collection.js';
 import type {WikiCurator} from './wiki-curator.js';
-type Options=ConstructorParameters<typeof WikiCurator>[0]&{idleSeconds?:()=>number;aiBusy?:()=>boolean};
+type Options=ConstructorParameters<typeof WikiCurator>[0]&{idleSeconds?:()=>number;aiBusy?:()=>boolean;investigations?:{tick:(r:AutomaticMaintenanceRun)=>Promise<void>}};
 /** Versioned automatic branch of MaintenanceService; the supervisor remains the sole dispatcher. */
 export class AutomaticMaintenance {
  constructor(private options:Options){}
@@ -44,6 +44,10 @@ export class AutomaticMaintenance {
    r.checkpoint.startedAt??=now.toISOString();r.status='inspecting';await repo.checkpoint(r);
    // Existing delivery cursors repair exact stale consumers before broad coverage.
    const pending=await repo.pending(r.snapshot.policy.policyId);
+   if(!pending){
+   await this.options.investigations?.tick(r);
+   const investigationAttention=this.options.investigations?await createInvestigationRepository(this.pool()).attention(r.snapshot.policy.policyId):null;if(investigationAttention){r.status=/^(maintenance.errors.(budget|period)|organization.errors.deadline)$/.test(investigationAttention)?"failed":"awaiting_review";r.checkpoint.reason=investigationAttention;r.checkpoint.incomplete=true;await repo.checkpoint(r);continue;}
+   }
    if(existing){r.checkpoint.completedGroups=existing.checkpoint.completedGroups;r.checkpoint.completedSources=existing.checkpoint.completedSources;r.checkpoint.catalogedSources=existing.checkpoint.catalogedSources;if(existing.checkpoint.state==='complete'&&!pending){r.status=r.reservation.calls?'applied':'no_change';r.checkpoint.phase='complete';}else if(['attention','canceled','paused'].includes(existing.checkpoint.state)){r.status=/maintenance.errors.(budget|period)|organization.errors.deadline/.test(existing.checkpoint.error??'')&&!existing.checkpoint.childRunId?'failed':'awaiting_review';r.checkpoint.reason=existing.checkpoint.error??'organization.errors.review';r.checkpoint.incomplete=true;}await repo.checkpoint(r);continue;}
    if(pending)continue;
    if(r.snapshot.policy.kind==='incremental'){r.status=r.reservation.calls?'applied':'no_change';r.checkpoint.phase='complete';await repo.checkpoint(r);continue;}

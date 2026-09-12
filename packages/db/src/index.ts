@@ -16,3 +16,5 @@ export * from "./repositories/promptRepository.js";
 export * from './repositories/wikiCuratorRepository.js';
 export * from './repositories/wikiCollectionRepository.js';
 export * from './repositories/automaticMaintenanceRepository.js';
+export * from './repositories/knowledgeConsultationRepository.js';
+export * from './repositories/investigationRepository.js';

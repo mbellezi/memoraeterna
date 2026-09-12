@@ -1,3 +1,4 @@
+import {FollowedInvestigationSchema,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
 import { CuratorCommandSchema,CuratorResponseSchema } from '@app/domain';
 import { PromptCommandSchema,PromptResponseSchema } from "@app/domain";
 import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
@@ -122,6 +123,7 @@ import {
 } from "../shared/ipc";
 
 const api: DesktopApi = {
+  investigations:{list:async()=>z.array(FollowedInvestigationSchema).parse(await ipcRenderer.invoke(ipcChannels.investigationList)),get:async id=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationGet,z.string().uuid().parse(id))),follow:async input=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationFollow,FollowInvestigationInputSchema.parse(input))),state:async input=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationState,InvestigationStateInputSchema.parse(input)))},
   consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
   maintenance:{command:async(input)=>MaintenanceResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.maintenanceCommand,MaintenanceCommandSchema.parse(input)))},
   prompts:{command:async(input)=>PromptResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.promptCommand,PromptCommandSchema.parse(input)))},

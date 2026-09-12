@@ -7,7 +7,7 @@ verified and accepted (see [A1 report](automatic-wiki-a1-report.md)). A2 is inde
 verified and accepted through its database, selected-model and native window gates,
 including the collapsible menu and resizable tree (see [A2 report](automatic-wiki-a2-report.md)). A3 is independently verified and accepted through PostgreSQL,
 selected-Luna, native and DEV preservation gates (see [A3 report](automatic-wiki-a3-report.md));
-A4 is independently accepted through real PostgreSQL, selected-Luna upkeep, native context/settings and DEV preservation gates (see [A4 report](automatic-wiki-a4-report.md)); A5–A8 remain planned. See the
+A4 is independently accepted through real PostgreSQL, selected-Luna upkeep, native context/settings and DEV preservation gates (see [A4 report](automatic-wiki-a4-report.md)). A5 is independently accepted through compiled retrieval, persistent investigations, selected-Luna quality, native retention/navigation and DEV preservation gates (see [A5 report](automatic-wiki-a5-report.md)); A6–A8 remain planned. See the
 [A0 contract report](automatic-wiki-a0-contracts.md) and
 [acceptance ownership matrix](automatic-wiki-a0-acceptance.md).
 The product direction and initial information architecture were agreed in the
@@ -880,7 +880,8 @@ originals. A paused/unconfigured sync performs no migration or projection writes
 A0 contract/fixture work and A1 runtime catalog/editor are independently accepted;
 A2 has passed independent backend, selected-model and native walkthrough gates;
 A3 has passed independent collection, selected-model, native and DEV migration gates;
-A4 has passed independent maintenance, context, selected-model, native and DEV migration gates; A5–A8 remain **planned**. Each implementation task must report its
+A4 has passed independent maintenance, context, selected-model, native and DEV migration gates;
+A5 has passed independent consultation, investigation, selected-model, native and DEV migration gates; A6–A8 remain **planned**. Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 

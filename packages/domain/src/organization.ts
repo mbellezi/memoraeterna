@@ -93,6 +93,9 @@ export const OrganizationContextSchema = z.object({
 }).strict();
 export const OrganizationParticipationSchema=z.object({ingestionRunIds:z.array(z.string().uuid()),batchId:z.string().uuid().nullable(),omissions:z.array(z.object({sourceItemId:z.string().uuid().nullable(),stage:z.string(),status:z.string()}))}).strict();
 export const OrganizationSnapshotSchema = z.object({
+  consultationScope:z.object({sourceIds:z.array(z.string().uuid()),pageId:z.string().uuid().nullable(),includeDescendants:z.boolean(),reviewedOnly:z.boolean()}).optional(),
+  investigationId:z.string().uuid().optional(),maintenanceRunId:z.string().uuid().optional(),investigationPolicyId:z.string().uuid().optional(),
+  consultationVersion:z.enum(["wiki-answer-v1","knowledge-consultation-v2"]).optional(),consultationIntent:z.enum(["answer","comparison","investigation"]).optional(),
   promptPin:PromptPinSchema.nullable().default(null),
   version:z.literal(organizationVersion), targetId:z.string().uuid(), expectedRevisionId:z.string().uuid().nullable(),
   targetHuman:z.boolean(),baseContent:WikiPageContentSchema, sourceIds:z.array(z.string().uuid()), profile:OrganizationProfileSchema,
@@ -112,6 +115,7 @@ export const OrganizationSnapshotSchema = z.object({
 }).strict();
 export type OrganizationSnapshot = z.infer<typeof OrganizationSnapshotSchema>;
 export const OrganizationCheckpointSchema = z.object({
+  investigationOccurrenceId:z.string().uuid().optional(),
   tools:z.number().int().nonnegative(), calls:z.number().int().nonnegative(), repairs:z.number().int().min(0).max(1),
   startedAt:z.string().nullable(), readHandles:z.array(z.string()), discoveredHandles:z.array(z.string()),
   transcript:z.array(z.object({action:OrganizationActionSchema.nullable(),result:z.unknown()})).max(13),

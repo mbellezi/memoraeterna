@@ -1,5 +1,39 @@
 {
+  "investigation": {
+    "retained": "Enregistrée comme page de réponse suivie",
+    "title": "Questions suivies",
+    "explanation": "Suivre enregistre une page de réponse et réévalue la question dans la politique automatique choisie et ses limites partagées. Enregistrer reste une proposition ponctuelle.",
+    "policy": "Autorisation de mise à jour",
+    "choosePolicy": "Choisir une politique active",
+    "follow": "Suivre cette question",
+    "noPolicy": "Activez une politique automatique avec un périmètre défini pour suivre une question.",
+    "empty": "Aucune question suivie.",
+    "followed": "Suivie",
+    "paused": "En pause",
+    "resolved": "Résolue",
+    "awaiting_evidence": "En attente de preuves",
+    "current": "Réponse actuelle",
+    "pause": "Mettre en pause",
+    "resolve": "Résoudre",
+    "resume": "Reprendre le suivi",
+    "history": "Réponses et évolution de la compréhension",
+    "viewAnswer": "Voir cette réponse",
+    "previous": "Réponse précédente",
+    "updated": "Une réponse suivie a changé",
+    "historyState": {
+      "deferred": "Reportée par le budget partagé",
+      "initial": "Réponse initiale",
+      "changed": "Compréhension modifiée",
+      "no_change": "Aucun changement significatif",
+      "awaiting_evidence": "En attente de preuves",
+      "failed": "Échec",
+      "rejected": "Rejetée",
+      "uncertain": "Interrompue — résultat incertain",
+      "running": "Évaluation"
+    }
+  },
   "consultation": {
+    "errors": {"noRelevantEvidence": "Aucun passage original pertinent n’a pu être sélectionné pour cette demande. Ajustez la question ou le périmètre des sources."},
     "contextCoverage": "Contexte facultatif : {included} éléments sur {available} tiennent dans le budget du modèle. Les passages originaux restent disponibles.",
     "sourceCount": "Sources dans le périmètre : {count}",
     "title": "Réponses sourcées",
@@ -1365,6 +1399,10 @@
       "diagnostics": "Diagnostic des modèles"
     },
     "labels": {
+      "knowledge": "Réponse à partir des connaissances",
+      "comparison": "Comparaison des sources",
+      "investigation": "Question suivie",
+      "gaps": "Lacunes des preuves",
       "catalog": "Métadonnées du catalogue",
       "short": "Source courte",
       "partial": "Résumé partiel et concepts",

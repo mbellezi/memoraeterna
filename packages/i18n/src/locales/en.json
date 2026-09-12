@@ -1,5 +1,39 @@
 {
+  "investigation": {
+    "retained": "Saved as a followed answer page",
+    "title": "Followed questions",
+    "explanation": "Follow deliberately saves an answer page and refreshes this question within the selected automatic policy and its shared limits. Save remains a separate one-off proposal.",
+    "policy": "Refresh authority",
+    "choosePolicy": "Choose an enabled policy",
+    "follow": "Follow this question",
+    "noPolicy": "Enable a scoped automatic wiki policy to follow a question.",
+    "empty": "No followed questions yet.",
+    "followed": "Following",
+    "paused": "Paused",
+    "resolved": "Resolved",
+    "awaiting_evidence": "Awaiting evidence",
+    "current": "Current answer",
+    "pause": "Pause",
+    "resolve": "Resolve",
+    "resume": "Resume following",
+    "history": "Answers and changed understanding",
+    "viewAnswer": "View this answer",
+    "previous": "Previous answer",
+    "updated": "A followed answer changed",
+    "historyState": {
+      "deferred": "Deferred by shared allowance",
+      "initial": "Initial answer",
+      "changed": "Understanding changed",
+      "no_change": "No meaningful change",
+      "awaiting_evidence": "Awaiting evidence",
+      "failed": "Failed",
+      "rejected": "Rejected",
+      "uncertain": "Interrupted — outcome uncertain",
+      "running": "Evaluating"
+    }
+  },
   "consultation": {
+    "errors": {"noRelevantEvidence": "No relevant original passages could be selected for this request. Adjust the question or source scope."},
     "contextCoverage": "Optional context: {included} of {available} items fit the model budget. Original passages remain available.",
     "sourceCount": "Sources in scope: {count}",
     "title": "Cited answers",
@@ -1515,6 +1549,10 @@
       "diagnostics": "Model diagnostics"
     },
     "labels": {
+      "knowledge": "Compiled knowledge answer",
+      "comparison": "Source comparison",
+      "investigation": "Followed question",
+      "gaps": "Evidence gaps",
       "catalog": "Catalog metadata",
       "short": "Short source",
       "partial": "Partial summary and concepts",

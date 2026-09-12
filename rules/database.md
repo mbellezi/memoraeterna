@@ -174,3 +174,20 @@ npm run db:generate
   merely to satisfy a foreign key. Automatic readers exclude retired legacy rows,
   while historical run readers remain available. Protected-section equality uses
   structural content equality, not JSON object key order after a JSONB round-trip.
+
+- `wiki_investigations` owns explicit follow identity and current state;
+  `wiki_investigation_evaluations` owns unique question/input/composition evaluations.
+  Their answer pages, immutable revisions and originals remain in the existing wiki
+  tables. Evaluation inference uses existing organization runs/steps and canonical
+  AI audits, not an additional scheduler or inference log.
+- Follow/apply use the shared placement → policy → investigation/identity lock order.
+  Policy/scope, exact originals, transitive dependencies, current answer revision
+  and human protection are checked transactionally; no transaction awaits inference.
+  Source-impact enrollment includes new descendants in the canonical source-write
+  transaction. Delivery acknowledgments reference only IDs captured before inspection,
+  so an event arriving during retrieval cannot be swallowed by a no-change receipt.
+- A never-started investigation deferral may resume in a later eligible occurrence
+  only when no reservation or canonical audit exists for that run. Preserve the
+  admitted snapshot and canonical run ID; its existing checkpoint records renewed
+  occurrence authority and prior deferrals. Do not transfer an already charged
+  step, refund the parent ledger, or erase failed/uncertain provider history.
