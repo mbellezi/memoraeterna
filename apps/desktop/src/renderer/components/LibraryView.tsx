@@ -1,3 +1,4 @@
+import { TagBadges } from "./ui/tag-input";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AtomicNoteRelationReferenceText } from "./AtomicNoteRelationReferenceText";
 import { SourceReferenceBadge } from "./SourceRelationReferenceText";
@@ -775,7 +776,7 @@ function SourceDetailView({ detail, focusedAtomicNoteId, focusedSourceRelationId
         <Button type="button" disabled={deleting} onClick={() => onProcess()}>
           <Play className="h-4 w-4" aria-hidden="true" />{t("library.actions.process")}
         </Button>
-        <Button type="button" disabled={deleting} className="border-rose-700 bg-rose-700 hover:bg-rose-600 dark:border-rose-800 dark:bg-rose-800 dark:hover:bg-rose-700" onClick={() => void deleteSource()}>
+        <Button type="button" disabled={deleting} variant="danger" onClick={() => void deleteSource()}>
           <Trash2 className="h-4 w-4" aria-hidden="true" />{deleting ? t("library.delete.deleting") : t("library.delete.action")}
         </Button>
         <Button type="button" disabled={deleting} onClick={onBack}>
@@ -919,7 +920,7 @@ function SourceDetailView({ detail, focusedAtomicNoteId, focusedSourceRelationId
 
     {tab === "metadata" ? <div className="grid gap-4">
       <dl className="grid gap-4 rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900 sm:grid-cols-2">
-        {metadataEntries(detail.metadata).map(([key, value]) => <div key={key}><dt className="text-xs text-slate-500">{t(`import.metadataFields.${key}` as MessageKey)}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{value}</dd></div>)}
+        {metadataEntries(detail.metadata).map(([key, value]) => <div key={key}><dt className="text-xs text-slate-500">{t(`import.metadataFields.${key}` as MessageKey)}</dt><dd className="mt-1 whitespace-pre-wrap break-words text-sm">{key === "tags" ? <span className="flex flex-wrap gap-1.5"><TagBadges tags={value.split(/[,\n]/)} t={t} /></span> : value}</dd></div>)}
       </dl>
       <CollapsibleSection title={t("library.detail.rawMetadata")}>
       <pre className="overflow-auto whitespace-pre-wrap text-xs text-slate-600 dark:text-slate-300">{JSON.stringify(detail.metadata, null, 2)}</pre>

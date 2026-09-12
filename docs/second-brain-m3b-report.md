@@ -1,5 +1,12 @@
 # M3b recurring maintenance implementation
 
+Historical validation report: privacy-selector and explicit-profile behavior
+below describes the milestone at execution time. The current application uses
+`structured-output` routing by default, with an optional model override and no
+independent local/remote permission. Hybrid embeddings use their own route.
+See [current routing rules](../rules/ai-and-knowledge.md). Historical trial inputs
+and results are retained unchanged.
+
 Status: accepted after coordinator review, deterministic/PostgreSQL checks and
 sequential real local/Luna desktop trials. This report does not
 claim M4–M6, real-model quality, background execution while the app is closed,

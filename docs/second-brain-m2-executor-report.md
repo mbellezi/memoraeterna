@@ -1,5 +1,12 @@
 # M2 restricted wiki executor report
 
+Historical validation report: privacy-selector and explicit-profile behavior
+below describes the milestone at execution time. The current application uses
+`structured-output` routing by default, with an optional model override and no
+independent local/remote permission. Hybrid embeddings use their own route.
+See [current routing rules](../rules/ai-and-knowledge.md). Historical trial inputs
+and results are retained unchanged.
+
 Date: 2026-09-09. Scope: M2 and its remaining instruction-configuration
 prerequisites only. M3–M6 are not implemented by this change.
 

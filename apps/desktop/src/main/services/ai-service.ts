@@ -253,7 +253,6 @@ export class AiService {
         }
         modelCapabilities = parseCapabilities(localModel.capabilities);
       } else {
-        if (input.privacyMode === "offline_only") throw new Error("errors.ai.noCompatibleModel");
         const provider = (await repository.listProviders()).find((candidate) => candidate.id === input.providerConfigId);
         const capabilities = parseCapabilities(provider?.metadata.capabilities);
         if (!provider || provider.metadata.modelId !== input.modelId
@@ -266,7 +265,7 @@ export class AiService {
     return mapProfile(await repository.updateProfile({
       id: input.id,
       ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.privacyMode !== undefined ? { privacyMode: input.privacyMode } : {}),
+      ...(input.modelId !== undefined ? { privacyMode: input.localModelId ? "offline_only" : "allow_remote" } : {}),
       ...(input.outputLanguage !== undefined ? { outputLanguage: input.outputLanguage } : {}),
       ...(input.providerConfigId !== undefined ? { providerConfigId: input.providerConfigId } : {}),
       ...(input.localModelId !== undefined ? { localModelId: input.localModelId } : {}),
@@ -332,26 +331,25 @@ export class AiService {
     });
   }
 
-  public async pinOrganizationProfile(profileId: string | undefined, privacy: "offline_only" | "allow_remote"): Promise<OrganizationProfile> {
+  public async pinOrganizationProfile(profileId: string | undefined, _legacyPrivacy: "offline_only" | "allow_remote"): Promise<OrganizationProfile> {
     const repository=createAiConfigRepository(this.requirePool());
     const selection=await repository.getDefaultTask("structured-output",profileId);
     if(!selection || !selection.requiredCapabilities.includes("structured-output"))throw new Error("organization.errors.model");
-    const effectivePrivacy=privacy==="offline_only"||selection.privacyMode==="offline_only"?"offline_only":"allow_remote";
-    if(effectivePrivacy==="offline_only"&&!selection.localModelId)throw new Error("organization.errors.privacy");
+    const effectivePrivacy=selection.localModelId?"offline_only":"allow_remote";
     const parameters=aiModelParametersSchema.parse(withAiTaskParameterDefaults("structured-output",{...selection.modelDefaultParameters,...selection.parameters},Boolean(selection.localModelId)));
     const identityHash=sha256(JSON.stringify({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,baseUrl:selection.baseUrl,privacy:effectivePrivacy}));
     return OrganizationProfileSchema.parse({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,provider:selection.provider,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,privacy:effectivePrivacy,parameters,identityHash,contextWindow:parameters.contextWindow??null});
   }
 
-  public async runConsultationEmbedding(text:string,privacy:'offline_only'|'allow_remote',sourceItemIds:string[],signal:AbortSignal){
-    return aiExecutionQueue.run(()=>this.executeDefaultTask('embedding',text,{stage:'wiki_consultation',embeddingInputType:'query',sourceItemIds},signal,undefined,undefined,privacy),signal);
+  public async runConsultationEmbedding(text:string,_legacyPrivacy:'offline_only'|'allow_remote',sourceItemIds:string[],signal:AbortSignal){
+    return aiExecutionQueue.run(()=>this.executeDefaultTask('embedding',text,{stage:'wiki_consultation',embeddingInputType:'query',sourceItemIds},signal),signal);
   }
 
   public async runOrganizationTask(profile: OrganizationProfile, input: string, context: AiTaskLogContext, signal: AbortSignal, maxOutputTokens: number, beforeExecute?:()=>Promise<void>): Promise<DefaultAiTaskResult> {
     const pinned=OrganizationProfileSchema.parse(profile);
     return aiExecutionQueue.run(async()=>{
       await beforeExecute?.(); signal.throwIfAborted();
-      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned,undefined,beforeExecute);
+      const result=await this.executeDefaultTask("structured-output",input,context,signal,{maxOutputTokens},pinned,beforeExecute);
       if(!result)throw new Error("organization.errors.model");
       return result;
     },signal);
@@ -374,7 +372,6 @@ export class AiService {
     signal?: AbortSignal,
     limits?: { maxOutputTokens: number },
     pinned?: OrganizationProfile,
-    consultationPrivacy?: 'offline_only'|'allow_remote',
     beforeProvider?:()=>Promise<void>
   ): Promise<DefaultAiTaskResult | null> {
     const { onProgress, ...structuredLogContext } = logContext;
@@ -383,8 +380,6 @@ export class AiService {
     await repository.ensureRemoteRerankingCapabilities();
     const selection = await repository.getDefaultTask(taskType, pinned?.profileId);
     if (!selection) { if(pinned) throw new Error("organization.errors.model"); return null; }
-    if(consultationPrivacy==='offline_only'&&!selection.localModelId)return null;
-    if(selection.privacyMode === "offline_only" && !selection.localModelId) throw new Error("organization.errors.privacy");
     if(pinned){
       const current=await this.pinOrganizationProfile(pinned.profileId,pinned.privacy);
       if(current.identityHash!==pinned.identityHash)throw new Error("organization.errors.modelChanged");

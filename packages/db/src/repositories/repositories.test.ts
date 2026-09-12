@@ -412,13 +412,13 @@ describe("repositories", () => {
     expect(db.queries[3]?.values).toEqual(["run-2"]);
   });
 
-  it("clears only completed or failed jobs", async () => {
+  it("dismisses completed or failed jobs without deleting audit records", async () => {
     let queryText = "";
     const db: Queryable = {
       async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
         queryText = text;
         return {
-          command: "DELETE",
+          command: "UPDATE",
           rowCount: 2,
           oid: 0,
           fields: [],
@@ -431,6 +431,9 @@ describe("repositories", () => {
 
     expect(deletedCount).toBe(2);
     expect(queryText).toContain("status in ('succeeded', 'failed')");
+    expect(queryText).toContain("dashboardDismissedAt");
+    expect(queryText).not.toContain("delete from");
+    expect(queryText).not.toContain("type not in");
     expect(queryText).not.toContain("canceled");
     expect(queryText).not.toContain("running");
   });

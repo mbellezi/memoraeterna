@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { MatchingConfigurationSchema, matchingConfigurationsEqual, recommendedMatchingConfiguration, recommendedMatchingPresetId } from "@app/domain";
 import {
   closePgPool,
@@ -27,12 +28,16 @@ import {
 import { validateAbsolutePath, validateManagedRoot } from "./path-validation";
 
 const appSettingsKey = "app.preferences";
+const importDirectoryKey = "import.lastDirectory";
+const importDirectorySchema = z.object({ directory: z.string().refine(isAbsolute) });
 
 export interface SettingsRepository {
   getAppSettings: () => Promise<AppSettings | null>;
   saveAppSettings: (settings: AppSettings) => Promise<AppSettings>;
   getStorageSettings: () => Promise<StorageSettings | null>;
   saveStorageSettings: (settings: StorageSettings) => Promise<StorageSettings>;
+  getImportDirectory: () => Promise<unknown>;
+  saveImportDirectory: (directory: string) => Promise<void>;
   dispose?: () => Promise<void>;
 }
 
@@ -116,8 +121,17 @@ function validateStorageSettings(settings: StorageSettingsUpdate): void {
 function createFileSettingsRepository(userDataPath: string): SettingsRepository {
   const settingsPath = join(userDataPath, "storage-settings.json");
   const appSettingsPath = join(userDataPath, "app-settings.json");
+  const importDirectoryPath = join(userDataPath, "import-dialog.json");
 
   return {
+    async getImportDirectory() {
+      try { return JSON.parse(await readFile(importDirectoryPath, "utf8")); }
+      catch { return null; }
+    },
+    async saveImportDirectory(directory) {
+      await mkdir(userDataPath, { recursive: true });
+      await writeFile(importDirectoryPath, JSON.stringify({ directory }), "utf8");
+    },
     async getAppSettings() {
       try {
         const raw = await readFile(appSettingsPath, "utf8");
@@ -152,6 +166,10 @@ function createDbSettingsRepository(pool: Queryable, dispose?: () => Promise<voi
   const storageRepository = createStorageSettingsRepository(pool);
 
   return {
+    getImportDirectory: () => appRepository.get(importDirectoryKey),
+    async saveImportDirectory(directory) {
+      await appRepository.set(importDirectoryKey, { directory });
+    },
     async getAppSettings() {
       const value = await appRepository.get(appSettingsKey);
       return value ? parseSavedAppSettings(value) : null;
@@ -221,6 +239,20 @@ export class SettingsService {
     private readonly options: SettingsServiceOptions = {}
   ) {
     this.defaultLocale = options.desktopLocale;
+  }
+
+  public async getImportDirectory(): Promise<string | undefined> {
+    try {
+      const saved = importDirectorySchema.safeParse(await (await this.getRepository()).getImportDirectory());
+      if (saved.success && (await stat(saved.data.directory)).isDirectory()) return saved.data.directory;
+    } catch { /* An unavailable folder or preference must not prevent file selection. */ }
+    return undefined;
+  }
+
+  public async rememberImportFile(filePath: string): Promise<void> {
+    if (!isAbsolute(filePath)) return;
+    try { await (await this.getRepository()).saveImportDirectory(dirname(filePath)); }
+    catch { /* Remembering dialog location is best effort; continue the import. */ }
   }
 
   public async getApp(): Promise<AppSettings> {

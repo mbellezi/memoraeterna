@@ -81,7 +81,7 @@ export function organizationCheckpointWithUsage(checkpoint:OrganizationCheckpoin
  return {...checkpoint,reportedInputTokens:Math.max(checkpoint.reportedInputTokens,usage.inputTokens),reportedOutputTokens:Math.max(checkpoint.reportedOutputTokens,usage.outputTokens),costEstimate:Math.max(checkpoint.costEstimate,usage.costEstimate),usageCounts:{input:usage.knownInputCalls,output:usage.knownOutputCalls,cost:usage.knownCostCalls},usageIncomplete:checkpoint.usageIncomplete||usage.incomplete||usage.knownInputCalls<checkpoint.calls||usage.knownOutputCalls<checkpoint.calls||usage.knownCostCalls<checkpoint.calls};
 }
 export class OrganizationService {
-  constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleMaintenance?:(revisionId:string,profileId:string,privacy:"offline_only"|"allow_remote",domainId:string|null,routine:"weekly"|"monthly"|"cleanup")=>Promise<string>;validateMaintenanceActivation?:(id:string,config:import("@app/domain").OrganizationConfiguration,previous:import("@app/domain").OrganizationConfiguration,language:string)=>Promise<void>;sampleConsultation?:(revisionId:string,profileId:string,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
+  constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleMaintenance?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null,routine:"weekly"|"monthly"|"cleanup")=>Promise<string>;validateMaintenanceActivation?:(id:string,config:import("@app/domain").OrganizationConfiguration,previous:import("@app/domain").OrganizationConfiguration,language:string)=>Promise<void>;sampleConsultation?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
   private repo(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createOrganizationRepository(pool);}
   private wiki(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createWikiRepository(pool);}
   async settings(){return OrganizationSettingsSchema.parse(await this.repo().settings());}
@@ -148,7 +148,7 @@ export class OrganizationService {
     const checkpoint=emptyCheckpoint();checkpoint.discoveredHandles=[...new Set(snapshot.relations.flatMap(r=>[r.sourceHandle,r.targetHandle]))];
     const id=await repo.create(snapshot,checkpoint);this.options.wake();return this.get(id);
   }
-  async sample(revisionId:string,profileId:string,privacy:'offline_only'|'allow_remote',domainId:string|null=null){
+  async sample(revisionId:string,profileId:string|undefined,privacy:'offline_only'|'allow_remote',domainId:string|null=null){
     const revision=await this.repo().configuration(revisionId);if(!revision)throw new Error('organization.errors.invalid');
     const config=OrganizationConfigurationSchema.parse(revision.configuration),profile=await this.options.ai.pinOrganizationProfile(profileId,privacy);
     const sourceIds=[randomUUID(),randomUUID()];const language=z.enum(['en','pt-BR','it','fr','es']).parse(await this.options.contentLanguage());

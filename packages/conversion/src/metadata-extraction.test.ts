@@ -11,6 +11,11 @@ import type { MarkdownConversionResult } from "./types.js";
 const encoder = new TextEncoder();
 
 describe("metadata extraction", () => {
+  it("keeps identifiers before the user chooses a source type", async () => {
+    const draft = await extractFileMetadata({ sourceType: "GenericDocument", fileName: "paper.md", conversion: converted("# Paper\n\nDOI: 10.5555/example.42") });
+    expect(draft.values.doi).toBe("10.5555/example.42");
+    expect(draft.provenance.doi?.source).toBe("extracted");
+  });
   it("extracts EPUB OPF metadata, ISBN and cover", async () => {
     const epub = zipSync({
       "META-INF/container.xml": encoder.encode(`<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/package.opf"/></rootfiles></container>`),

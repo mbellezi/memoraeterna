@@ -9,6 +9,46 @@ Also load `rules/ai-and-knowledge.md` and `rules/security-and-privacy.md` for AI
 organization/query work; `rules/integrations.md` for Obsidian work; and the
 database, jobs or frontend rules when those boundaries are affected.
 
+## Automatic wiki product direction
+
+The following are acceptance constraints for the next automatic-wiki version.
+The restricted single-page executor, M3b maintenance and existing sync sections
+below continue to define their versioned compatibility contracts until explicit
+successors are implemented. This direction does not grant new runtime authority.
+Implementation sequencing lives in
+[the automatic wiki plan](../docs/automatic-wiki-implementation-plan.md).
+
+- Make AI-managed knowledge and native browsing the primary journey: discover
+  relevant topics, create/update coherent page and TOC groups, retain original
+  evidence, and integrate later inputs under an enabled scoped policy.
+- Maintain source-note TOCs, local topic TOCs, global indexes and cross-topic
+  maps. Typed links may reference existing notes, sources, pages and entities
+  without copying them or manufacturing semantic evidence. Preserve protected
+  prose, placements and ordering independently.
+- Keep stable Wiki, Atomic notes, Sources and Attachments areas. The Portuguese
+  projection uses `Wiki`, `Notas atômicas`, `Fontes` and `Anexos`; Sources is
+  classified by canonical source type and preserves parent/child hierarchy.
+  Theme structure emerges from useful content. Note identities and registered
+  paths do not depend on their participation in multiple TOCs.
+- Provide expandable native navigation, typed internal links/backlinks and exact
+  evidence inspection as part of the first automatic flow, before export is
+  considered sufficient evidence of a usable wiki.
+- Activating automatic organization includes setup of the disclosed maintenance
+  routines, rather than requiring manual creation of each schedule. Persist
+  idempotent setup, cadence/timezone, due/start deadlines, execution limits,
+  budgets and catch-up state. Preserve customized schedules; no application
+  update silently activates automation or promises closed-desktop execution.
+- Content maintenance must update affected unprotected knowledge and TOCs under
+  policy, preserve conflicting interpretations/history and present protected or
+  significant structural changes for review. An invalidation flag alone is not
+  completion of the editorial update.
+- Physical Obsidian layout changes require an explicit recoverable migration of
+  registered identities, links and exact local/base versions. Do not replace
+  existing paths or overwrite local edits merely by changing a layout formatter.
+- All curation and maintenance prompts participate in the application-wide prompt
+  catalog specified in `rules/ai-and-knowledge.md`; settings do not create a second
+  instruction authority or a separate inference queue.
+
 ## Participation and identity
 
 - Every imported source remains discoverable in the wiki catalog, including
@@ -18,7 +58,8 @@ database, jobs or frontend rules when those boundaries are affected.
   directly and must not enable note, summary, embedding or graph generation
   merely to satisfy an undocumented prerequisite.
 - Import-only remains free of AI execution. AI organization requires explicit
-  processing selection or an enabled policy with a defined scope and profile.
+  processing selection or an enabled policy with a defined scope. Resolve its
+  profile through the task router unless an explicit override is supplied.
 - Sources, notes, entities and wiki pages retain distinct stable identities.
   PostgreSQL is canonical; Markdown files and AGE/search projections are not.
 - Editorial wiki hierarchy is distinct from source/document hierarchy. Links
@@ -67,6 +108,20 @@ database, jobs or frontend rules when those boundaries are affected.
 - Persist organization progress and audit; apply coherent changes transactionally
   with idempotent mutation semantics and explicit projection recovery. Prevent
   recursive regeneration from the organizer's own output.
+
+## Harness model routing
+
+- All implemented generative harness functions and their instruction samples use
+  `structured-output`, as specified in `rules/ai-and-knowledge.md`. There is no
+  separate model route for each instruction function or knowledge domain.
+- Operation dialogs, processing-batch organization and model-enabled maintenance
+  default to the router. An omitted profile override is valid. The optional
+  “Force another model” switch follows `rules/frontend-and-i18n.md`; the selected
+  override must support structured output. Diagnostic-only maintenance invokes
+  no model. Enabling model analysis remains independent of choosing a model.
+- Hybrid consultation uses the independent `embedding` route for query vectors.
+  The selected model determines local/remote execution; legacy privacy fields
+  are compatibility/audit data, not a second permission or selection gate.
 
 ## User-configurable organization instructions
 
@@ -189,7 +244,7 @@ database, jobs or frontend rules when those boundaries are affected.
   `readRevision` and `proposePageChange`. No native tool transport is claimed
   until a concrete adapter validates it against the same action contract.
 - Admission pins one existing target revision or one preallocated new page ID,
-  explicit source IDs (descendants only on request), content language, privacy,
+  explicit source IDs (descendants only on request), content language, model execution location,
   model identity and effective parameters, instruction revision/hash and policy.
   Target prose cannot be exposed if its cited sources escape the selected scope.
   A domain is an explicit policy context bound to selected sources or wiki pages;
@@ -275,8 +330,8 @@ database, jobs or frontend rules when those boundaries are affected.
 
 - `organizeKnowledge` is an explicit processing stage with only `chunking` as
   its direct prerequisite. Existing named presets and saved effective plans do
-  not acquire it retroactively. Its saved plan options require a topic title,
-  profile, privacy and optional domain; one batch produces one cross-source
+  not acquire it retroactively. Its saved plan options require a topic title and
+  accept an optional profile override and domain; one batch produces one cross-source
   organization run. Reuse an exact normalized existing title/alias only when
   all current cited sources fit the authorized scope. Ambiguous matches or an
   existing topic outside scope require a visible scope conflict, never a duplicate
@@ -299,7 +354,7 @@ database, jobs or frontend rules when those boundaries are affected.
   relation-write or page-apply method. Text/title, grounded concepts, eligible
   notes, canonical relationships, scoped wiki sections with verified citation associations and entity names provide
   independent lexical signals. Optional vectors use the existing embedding route
-  through the same FIFO with privacy checked before input is exposed. Match the
+  through the same FIFO using the configured embedding route. Match the
   entire provider/model/runtime/dimension/space identity and original content hash.
   No compatible vectors means explicit textual degradation, not document generation.
 - Query fusion uses RRF with `k=60`, one contribution per original chunk per
@@ -399,7 +454,7 @@ database, jobs or frontend rules when those boundaries are affected.
   only. Changing a schedule, including its timezone, cancels pending authority and
   computes the next future occurrence. The preview uses the chosen timezone and
   interface locale. Paused/canceled occurrences are not replayed automatically.
-- The run snapshot pins configuration, profile/privacy, language, categories,
+- The run snapshot pins configuration, profile/model identity and execution location, language, categories,
   review policy and bounds. `maintenance_runs.checkpoint` owns the resumable
   inspection cursor, bounded candidates, coverage and cumulative call state.
   Later occurrences continue unfinished inspection before starting a new sweep.

@@ -39,8 +39,9 @@ processing, destructive operations, backups, or sensitive logging.
 
 ## AI privacy and cost
 
-- Never send content to a remote provider when the selected profile requires
-  offline/local processing.
+- The task router or explicit model override authorizes the selected provider.
+  Execution location follows that model, without a separate privacy selector or
+  legacy local-only gate. Preserve model identity checks and execution audits.
 - Remote calls record provider/model, effective parameters, tokens, duration,
   and estimated cost. Batch operations respect configured cost confirmation.
 - Monitoring retains usage and provenance independently of debug. Operation

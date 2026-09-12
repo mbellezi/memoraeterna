@@ -54,7 +54,7 @@ export function MatchingPresetControls({ settings, onChange, t }: {
       {selected && <Button onClick={() => { setEditor({ mode: "rename", name: selectedName }); setInvalid(false); }}>
         <Pencil className="mr-2 h-4 w-4" aria-hidden="true" />{label("rename")}
       </Button>}
-      {selected && <Button className="border-red-700 bg-red-700 hover:bg-red-600 dark:border-red-800 dark:bg-red-800 dark:hover:bg-red-700" onClick={() => {
+      {selected && <Button variant="danger" onClick={() => {
         if (!window.confirm(label("deleteConfirm"))) return;
         onChange({ ...recommendedMatchingConfiguration,
           matchingPresets: settings.matchingPresets.filter((preset) => preset.id !== selected.id),

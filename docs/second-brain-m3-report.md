@@ -1,5 +1,12 @@
 # M3 mixed-source organization and cited consultation
 
+Historical validation report: privacy-selector and explicit-profile behavior
+below describes the milestone at execution time. The current application uses
+`structured-output` routing by default, with an optional model override and no
+independent local/remote permission. Hybrid embeddings use their own route.
+See [current routing rules](../rules/ai-and-knowledge.md). Historical trial inputs
+and results are retained unchanged.
+
 Implementation status: accepted by the coordinator after the deterministic and
 real-model checks below. Luna is the semantic reference; contained local model
 failures are best-effort limitations and do not block the milestone.

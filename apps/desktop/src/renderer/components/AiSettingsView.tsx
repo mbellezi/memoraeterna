@@ -80,7 +80,6 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   const [openAiCodexConnected, setOpenAiCodexConnected] = useState(false);
   const [profileModel, setProfileModel] = useState("");
   const [profileName, setProfileName] = useState("");
-  const [profilePrivacy, setProfilePrivacy] = useState<"allow_remote" | "offline_only">("allow_remote");
   const [activeScope, setActiveScope] = useState<AiSettingsScope>("providers");
 
   async function load() {
@@ -215,14 +214,14 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
   }
 
   async function createProfile() {
-    const selectedRemote = providers.find((model) => `remote:${model.id}` === profileModel && profilePrivacy !== "offline_only");
+    const selectedRemote = providers.find((model) => `remote:${model.id}` === profileModel);
     const selectedLocal = localModels.find((model) => `local:${model.id}` === profileModel);
     if (!profileName || (!selectedRemote && !selectedLocal)) { onToast("errors.common.missingConfiguration", "error"); return; }
     await run(async () => {
       const profile = await window.app.ai.createProfile({
         name: profileName,
         isDefault: profiles.length === 0,
-        privacyMode: profilePrivacy,
+        privacyMode: selectedLocal ? "offline_only" : "allow_remote",
         outputLanguage: "ui"
       });
       const model = selectedRemote ?? selectedLocal!;
@@ -287,11 +286,10 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
         {addingProfile ? <CreationDialog titleId="create-profile-title" onClose={() => setAddingProfile(false)}>
         <form className="grid min-w-0 gap-4 p-4" onSubmit={(event) => { event.preventDefault(); void createProfile(); }}>
           <h3 id="create-profile-title" className="font-medium">{t("settings.ai.createProfile")}</h3>
-          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3">
           <Input aria-label={t("settings.ai.profileName")} value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder={t("settings.ai.profileName")} />
-          <select value={profilePrivacy} onChange={(event) => setProfilePrivacy(event.target.value as typeof profilePrivacy)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
           <p className="text-sm text-slate-500">{t("settings.language.contentDescription")}</p>
-          <select aria-label={t("settings.ai.model")} value={profileModel} onChange={(event) => setProfileModel(event.target.value)} className={selectClass}><option value="">{t("settings.ai.selectModel")}</option>{providers.filter(() => profilePrivacy !== "offline_only").map((model) => <option key={model.id} value={`remote:${model.id}`}>{model.displayName}</option>)}{localModels.map((model) => <option key={model.id} value={`local:${model.id}`}>{model.displayName}</option>)}</select>
+          <select aria-label={t("settings.ai.model")} value={profileModel} onChange={(event) => setProfileModel(event.target.value)} className={selectClass}><option value="">{t("settings.ai.selectModel")}</option>{providers.map((model) => <option key={model.id} value={`remote:${model.id}`}>{model.displayName}</option>)}{localModels.map((model) => <option key={model.id} value={`local:${model.id}`}>{model.displayName}</option>)}</select>
           </div>
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" onClick={() => setAddingProfile(false)}>{t("shell.actions.cancel")}</Button>
@@ -476,7 +474,7 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
           {model.provider === "openai-codex" ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={() => void onReconnect(model)}><LogIn className="h-4 w-4" aria-hidden="true" />{t("settings.ai.oauth.reconnect")}</Button> : null}
           <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={testing} onClick={() => void testProvider()}>{testing ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <TestTubeDiagonal className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.test")}</Button>
           <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={editing} onClick={beginEdit}><Pencil className="h-4 w-4" aria-hidden="true" />{t("settings.ai.editModel")}</Button>
-          <Button type="button" className="border-red-700 bg-red-700 hover:bg-red-800 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-800" disabled={deleting} onClick={() => void deleteModel()}>{deleting ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.deleteModel")}</Button>
+          <Button type="button" variant="danger" disabled={deleting} onClick={() => void deleteModel()}>{deleting ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Trash2 className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.deleteModel")}</Button>
         </div>
       </div>
       {editing ? (
@@ -511,21 +509,19 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   onRemove: () => void;
 }) {
   const [name, setName] = useState(profile.name);
-  const [privacyMode, setPrivacyMode] = useState(profile.privacyMode as "allow_remote" | "offline_only");
   const outputLanguage = profile.outputLanguage;
   const [saving, setSaving] = useState(false);
   const options = useMemo<ModelOption[]>(() => [
-    ...providers.filter(() => privacyMode !== "offline_only").map((model) => ({ value: `remote:${model.id}`, label: `${model.displayName} · ${model.modelId}`, modelId: model.modelId, runtime: "remote" as const, providerConfigId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities })),
+    ...providers.map((model) => ({ value: `remote:${model.id}`, label: `${model.displayName} · ${model.modelId}`, modelId: model.modelId, runtime: "remote" as const, providerConfigId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities })),
     ...localModels.map((model) => ({ value: `local:${model.id}`, label: `${model.displayName} · ${model.runtime.toUpperCase()}`, modelId: model.modelId, runtime: model.runtime, localModelId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities }))
-  ], [localModels, privacyMode, providers]);
+  ], [localModels, providers]);
   const existingValue = profile.providerConfigId ? `remote:${profile.providerConfigId}` : profile.localModelId ? `local:${profile.localModelId}` : "";
   const [selection, setSelection] = useState(existingValue);
   const [taskParameters, setTaskParameters] = useState<ProfileTaskParameters>(() => profileTaskParameters(profile.id, profileTasks));
   useEffect(() => {
-    setPrivacyMode(profile.privacyMode as typeof privacyMode);
     setSelection(existingValue);
     setTaskParameters(profileTaskParameters(profile.id, profileTasks));
-  }, [existingValue, profile.id, profile.outputLanguage, profile.privacyMode, profileTasks]);
+  }, [existingValue, profile.id, profile.outputLanguage, profileTasks]);
   const selected = options.find((option) => option.value === selection);
 
   const supportedTasks = selected
@@ -538,7 +534,7 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
     try {
       await onSave(
         {
-          name, privacyMode,
+          name, privacyMode: selected.runtime === "remote" ? "allow_remote" : "offline_only",
           outputLanguage,
           modelId: selected.modelId,
           runtime: selected.runtime,
@@ -566,17 +562,16 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
             {saving ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
             {t("settings.ai.saveProfile")}
           </Button>
-          <Button type="button" className="border-red-700 bg-red-700 hover:bg-red-800 dark:border-red-700 dark:bg-red-700 dark:hover:bg-red-800" disabled={saving} onClick={onRemove}>
+          <Button type="button" variant="danger" disabled={saving} onClick={onRemove}>
             <Trash2 className="h-4 w-4" aria-hidden="true" />
             {t("settings.ai.removeProfile")}
           </Button>
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-3 @xl:grid-cols-2">
-        <select value={privacyMode} onChange={(event) => setPrivacyMode(event.target.value as typeof privacyMode)} className={selectClass}><option value="allow_remote">{t("settings.ai.privacy.allowRemote")}</option><option value="offline_only">{t("settings.ai.privacy.offlineOnly")}</option></select>
+      <div className="grid min-w-0 gap-3">
           <p className="text-sm text-slate-500">{t("settings.language.contentDescription")}</p>
-        <select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950 @xl:col-span-2"><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+        <select aria-label={t("settings.ai.model")} value={selection} onChange={(event) => setSelection(event.target.value)} className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"><option value="">{t("settings.ai.selectModel")}</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
       </div>
 
       <div className="grid gap-2">

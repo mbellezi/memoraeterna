@@ -67,8 +67,8 @@ data behavior, security or privacy policy, workflow semantic, or stack decision.
   reprocessing.
 - Privileged work stays outside untrusted UI surfaces. Validate data with Zod
   whenever it crosses a process, worker, integration, or sidecar boundary.
-- Never expose or log secrets. Remote processing must respect the selected
-  privacy policy and record its effective model, parameters, token usage, and
+- Never expose or log secrets. Processing must use the routed or explicitly selected
+  model and record its effective model, parameters, token usage, and
   estimated cost when available.
 
 ## 5. Change discipline

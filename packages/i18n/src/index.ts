@@ -60,6 +60,18 @@ export function isSupportedLanguageCode(languageCode: string): languageCode is L
   return supportedLanguageCodes.includes(languageCode as LanguageCode);
 }
 
+export function getLanguageDisplayName(locale: LanguageCode, languageCode: string): string {
+  if (languageCode === "und") {
+    return translate(locale, "import.unspecifiedLanguage");
+  }
+
+  try {
+    return new Intl.DisplayNames(locale, { type: "language" }).of(languageCode) ?? languageCode;
+  } catch {
+    return languageCode;
+  }
+}
+
 export function normalizeLanguageCode(languageCode: string | null | undefined): LanguageCode {
   const normalized = languageCode?.replace("_", "-");
   if (normalized && isSupportedLanguageCode(normalized)) {

@@ -76,6 +76,9 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   queues a bounded refresh for a changed generation/configuration, only with
   configured, enabled, unpaused sync. Every target write rechecks the admitted
   vault/root/scope. A disabled desktop does not promise background execution.
+- Projection admission recreates a missing projection clock at generation zero
+  transactionally, without overwriting an existing generation. This repairs old
+  reset states and must not block unrelated ingestion work.
 - Bound a refresh to 1,000 sources, 1,000 pages, 2,000 notes, 1,000 conceptual
   relations and 100 evidence occurrences per relation. Limit each managed file
   to 2,000,000 characters/bytes on the relevant serialization/read boundary,

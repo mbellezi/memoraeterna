@@ -14,7 +14,7 @@ transitive references explicitly named inside a selected rule.
 | File/web conversion, Markdown normalization, structure detection, Docling protocol, OCR, chunks, SourceSpans, or assets | `rules/conversion.md` |
 | Jobs, processing batches, ingestion runs/stages, worker supervisor, retries, cancellation, checkpoints, or recovery | `rules/jobs-and-processing.md` |
 | Drizzle schema, migrations, repositories, SQL, PostgreSQL lifecycle, pgvector storage, or AGE persistence | `rules/database.md` |
-| AI providers, profiles, model parameters, local models, summaries, atomic notes, matching, or embedding execution | `rules/ai-and-knowledge.md` |
+| AI providers, profiles, model parameters, local models, summaries, atomic notes, matching, embedding execution, or application-wide prompt catalogs/templates/variables | `rules/ai-and-knowledge.md` |
 | Knowledge graph extraction, entities, claims, semantic relations, source connections, AGE projection, or graph dashboard/layout | `rules/knowledge-graph.md` |
 | Conceptual source relationships, reuse of note relationships, source matching/review, or source graph views | `rules/source-relations.md` |
 | Search in sources, Library search, evidence/chunk/note search, retrieval filters, semantic floors, or search ranking | `rules/source-search.md` |

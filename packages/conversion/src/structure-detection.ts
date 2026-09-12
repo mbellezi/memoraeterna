@@ -478,7 +478,7 @@ export async function detectPdfStructure(
   const warnings = divisions.length === 0 ? ["structure.pdf.noReliableDivisions"] : [];
   return {
     format: "pdf",
-    detectorVersion: "pdf-outline-canonical-markdown-v5",
+    detectorVersion: "pdf-outline-canonical-markdown-v6",
     overallConfidence: native?.outline.length ? 0.88 : divisions.length > 0 ? averageConfidence(divisions) : 0.2,
     divisions,
     warnings,
@@ -1043,6 +1043,18 @@ function divisionsFromPaperMarkdown(
     && (titleCounts.get(canonicalHeadingText(heading.title)) ?? 0) === 1
     && !isRejectedPaperHeading(heading)
   );
+  // A thematic article may not use a known academic heading until its conclusion.
+  // Prose between the opening title/affiliation and the next heading is evidence
+  // that the body has begun, even on page one and before that lexical anchor.
+  const proseStart = fallbackUnknown.find((heading) => {
+    const previous = parsed[parsed.indexOf(heading) - 1];
+    if (!previous || isRejectedPaperHeading(previous)) return false;
+    const between = markdown.slice(previous.headingEnd, heading.markdownStart)
+      .replace(/<!--[\s\S]*?-->/g, "")
+      .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+      .trim();
+    return between.length >= 240 && /[.!?](?:\s|$)/u.test(between);
+  })?.markdownStart;
   const fallbackPage = structuralIndex < 0
     ? fallbackUnknown.map((heading) => heading.block?.page).find((page): page is number => page !== undefined && page > 1)
     : undefined;
@@ -1057,6 +1069,9 @@ function divisionsFromPaperMarkdown(
     if (repeatedUnknown) return false;
     if (heading.role !== "unknown" || heading.numberLevel !== null) return true;
     if (terminalBackmatterIndex >= 0 && index > terminalBackmatterIndex) return false;
+    if (proseStart !== undefined && (structuralIndex < 0 || proseStart < parsed[structuralIndex]!.markdownStart)) {
+      return heading.markdownStart >= proseStart;
+    }
     if (structuralIndex >= 0) {
       if (index > structuralIndex) return true;
       const next = parsed[structuralIndex];
@@ -1269,7 +1284,7 @@ export function detectMarkdownStructure(
   if (documentKind === "paper") {
     const detected = divisionsFromPaperMarkdown(markdown, [], undefined, "markdown");
     return {
-      format: "markdown", detectorVersion: "markdown-paper-v2",
+      format: "markdown", detectorVersion: "markdown-paper-v3",
       overallConfidence: detected.divisions.length > 0 ? averageConfidence(detected.divisions) : 0.1,
       divisions: detected.divisions,
       warnings: detected.divisions.length > 0 ? [] : ["structure.markdown.noHeadings"],

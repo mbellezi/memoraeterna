@@ -36,7 +36,7 @@ the local integrations used by Chrome and Obsidian.
   Chrome capture, YouTube metadata and transcripts, and bidirectional Obsidian
   synchronization connect through the local integration gateway.
 - **Operational safety:** credentials use the desktop encrypted store, remote
-  processing follows the selected privacy policy, and user-canceled incomplete
+  processing uses the routed or explicitly selected model, and user-canceled incomplete
   runs can be removed from the processing dashboard without deleting imported
   sources or durable Library artifacts.
 
@@ -194,10 +194,29 @@ models, import GGUF files, test installations, and remove unused models.
 Platforms without MLX explicitly mark MLX models as incompatible; supported
 GGUF and remote adapters remain available.
 
-In **Settings > AI**, each remote or local model defines defaults. Profiles bind
-one model, privacy policy, response language, and task-specific overrides. Task
-routes select which profile executes embeddings, summarization, note generation,
-graph generation, reranking, and other AI work.
+In **Settings > AI**, each model defines defaults. Profiles bind one model and
+task-specific parameter overrides. Task routes select which profile executes
+embeddings, summarization, note generation, graph generation, reranking and
+structured output. Generated content follows the global content-language setting.
+The model itself determines local or remote execution; there is no separate
+“Allow remote models” or “Local models only” permission.
+
+Organization, cited consultation, weekly/monthly maintenance, cleanup and their
+instruction samples all use **Structured output** (`structured-output`). Configure
+that route once in the AI task router. Hybrid consultation additionally uses the
+independent **Embedding** route for query vectors.
+
+Outside AI configuration, operations use the router by default. Enable **Force
+another model** to reveal the selector with **Default model** and compatible
+profiles. Selecting **Default model**, or turning the switch off, uses the task
+route again. An explicit override takes priority over the task route; the global
+default profile is used only when there is no route. An incompatible or unavailable
+selection reports an error instead of silently switching models. An organization
+override in a processing batch does not change other stages' routes.
+
+An admitted harness run retains its model and parameters after router changes.
+New runs use the updated route. Model-enabled maintenance can use the router
+without a profile override; diagnostic-only maintenance needs no model.
 
 See `docs/local-models-and-packaging.md` for catalog, storage, and helper details.
 

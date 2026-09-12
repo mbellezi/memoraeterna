@@ -33,6 +33,16 @@ try {
     const child = await wiki.save({ expectedRevisionId: null, content: WikiPageContentSchema.parse({ title: 'Mémoire 日本語', kind: 'topic', parentId: pageId, collectionIds: [collection] }), evidenceChunkIds: [] });
     await createSourceRelationRepository(pool).commitDecision('m4', book.id, b.id, [{ existingId: null, sourceItemId: a.id, targetSourceItemId: b.id, relationType: 'contrasts', sourceIdea: `<source-ref id="${a.id}" /> supports retrieval.`, targetIdea: `<source-ref id="${b.id}" /> adds conditions.`, explanation: `<source-ref id="${a.id}" /> differs from <source-ref id="${b.id}" />.`, importance: 0.9, confidence: 0.9, evidence: [{ source: ac, target: bc, note: null }] }], {});
     assert.equal((await runMigrations(pool, migrations, { seedFolder })).seed.applied, false);
+    const previousClock = (await pool.query('select generation from obsidian_projection_clock where id=1')).rows[0].generation;
+    await pool.query('delete from obsidian_projection_clock where id=1');
+    const admission = createObsidianWikiRepository(pool);
+    const repaired = await Promise.all([admission.enqueue('missing-clock-regression'), admission.enqueue('missing-clock-regression')]);
+    assert.equal(repaired[0], repaired[1], 'Concurrent missing-clock recovery deduplicates the projection job');
+    assert.equal(Number((await pool.query('select generation from obsidian_projection_clock where id=1')).rows[0].generation), 0);
+    await pool.query('update obsidian_projection_clock set generation=$1 where id=1', [previousClock]);
+    await admission.enqueue('missing-clock-regression');
+    assert.equal((await pool.query('select generation from obsidian_projection_clock where id=1')).rows[0].generation, previousClock, 'Admission preserves existing generations');
+    await pool.query("delete from jobs where payload->>'binding'='missing-clock-regression'");
     assert.equal((await pool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
     assert.equal((await pool.query("select count(*)::int as n from pg_indexes where tablename='obsidian_projection_revisions'")).rows[0].n, 3);
     assert.equal((await pool.query("select count(*)::int as n from pg_trigger where tgname='obsidian_projection_dirty'")).rows[0].n, 15);

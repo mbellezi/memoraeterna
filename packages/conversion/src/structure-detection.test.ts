@@ -268,6 +268,31 @@ describe("structure detection", () => {
     expect(result.divisions[3]?.parentId).toBeNull();
   });
 
+  it.each([true, false])("keeps thematic paper sections on page one before a late conclusion (conclusion: %s)", async (withConclusion) => {
+    const introduction = "An opening paragraph explains the subject and gives the reader context before the first thematic section. ".repeat(4);
+    const titles = ["A thematic overview", "An applied perspective", "Practical steps", "First step", "Second step",
+      ...(withConclusion ? ["Considerações finais"] : [])];
+    const markdown = ["## The complete paper", "", "## Example institute", "", introduction, "",
+      ...titles.flatMap((title) => [`## ${title}`, "", `Body of ${title}.`, ""]),
+      "## References", "", "Bibliography.", "", "## Publisher appendix notice", "", "Unrelated boilerplate."
+    ].join("\n");
+    const blocks = paperBlocks(markdown, [
+      ["The complete paper", 1, 190], ["Example institute", 1, 200],
+      ...titles.map((title, index): PaperBlockSpec => [title, index === 0 ? 1 : 2, 72]),
+      ["References", 3, 72], ["Publisher appendix notice", 3, 72]
+    ]).map((block) => ({ ...block, markdownStart: markdown.length, markdownEnd: markdown.length }));
+    const result = await detectPdfStructure(paperConversion(markdown, blocks, 3), "paper");
+    expect(result.divisions.map((division) => division.title)).toEqual([...titles, "References"]);
+    expect(result.divisions[0]?.startPage).toBe(1);
+    for (const division of result.divisions) {
+      expect(division.markdownStart).toBe(markdown.indexOf(`## ${division.title}`));
+      expect(markdown.slice(division.markdownStart, division.markdownEnd)).toContain(division.title === "References" ? "Bibliography." : `Body of ${division.title}.`);
+      expect(division.markdownEnd).toBeGreaterThan(division.markdownStart!);
+    }
+    expect(validateDivisionTree(result.divisions)).toEqual([]);
+    expect(detectMarkdownStructure(markdown, "paper").divisions.map((division) => division.title)).toEqual([...titles, "References"]);
+  });
+
   it.each([
     ["French", ["Résumé", "Introduction", "Matériel et méthodes", "Résultats", "Discussion", "Conclusions", "Références"]],
     ["Spanish", ["Resumen", "Introducción", "Materiales y métodos", "Resultados", "Discusión", "Conclusiones", "Referencias"]],

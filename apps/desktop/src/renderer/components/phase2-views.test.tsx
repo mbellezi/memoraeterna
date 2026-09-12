@@ -45,32 +45,22 @@ import { SettingsScopeMenu, SettingsView } from "./SettingsView";
 const t = createTranslator("en");
 
 describe("phase 2 renderer views", () => {
-  it("renders the source-type step of the ingestion wizard", () => {
+  it("asks for the origin before showing source types", () => {
     const html = renderToString(<ImportView t={t} />);
-    expect(html).toContain("Search source types");
-    expect(html).toContain("Personal note");
-    expect(html).toContain("Metadata");
-    expect(html).toContain("Continue");
-    expect(html).toContain('<button type="button" aria-current="step"');
-    expect(html).toMatch(/<button type="button"[^>]*>.*Metadata/s);
-    expect(html).toMatch(/<button type="button" disabled=""[^>]*>.*Content/s);
+    expect(html).toContain("How would you like to start?");
+    expect(html).toContain("Manual content");
+    expect(html).toContain("Local file");
+    expect(html).not.toContain('id="source-type"');
+    expect(html).toContain('aria-current="step"');
   });
 
-  it("only enables wizard tabs whose dependencies are satisfied", () => {
-    expect(wizardStepAvailability({
-      busy: false,
-      canChooseType: true,
-      metadataReady: true,
-      descriptorReady: false,
-      contentReady: false
-    })).toEqual({ type: true, metadata: true, content: false, confirm: false, structure: false });
-    expect(wizardStepAvailability({
-      busy: false,
-      canChooseType: false,
-      metadataReady: true,
-      descriptorReady: true,
-      contentReady: true
-    })).toEqual({ type: false, metadata: true, content: true, confirm: true, structure: false });
+  it("allows writing before metadata but gates confirmation", () => {
+    expect(wizardStepAvailability({ busy: false, canChooseOrigin: true, studioReady: true,
+      descriptorReady: false, contentReady: false })).toEqual({ origin: true, file: true, content: true, confirm: false, structure: false });
+    expect(wizardStepAvailability({ busy: false, canChooseOrigin: false, studioReady: true,
+      descriptorReady: true, contentReady: true })).toEqual({ origin: false, file: false, content: true, confirm: true, structure: false });
+    expect(wizardStepAvailability({ busy: true, canChooseOrigin: true, studioReady: true,
+      descriptorReady: true, contentReady: true, structureReady: true })).toEqual({ origin: false, file: false, content: false, confirm: false, structure: false });
   });
 
   it("renders real file page progress with elapsed time", () => {

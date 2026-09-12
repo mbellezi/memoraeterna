@@ -105,8 +105,10 @@ export class JobSupervisor {
   public async runOnce(): Promise<JobRecord | null> {
     try{await this.options.reconcileOrganization?.();}catch{this.options.logger?.warn("Organization reconciliation is temporarily unavailable");}
     const repository = createJobRepository(this.requirePool());
-    await this.options.obsidianSyncService?.wiki?.enqueue();
-    await this.options.maintenanceTick?.();
+    try { await this.options.obsidianSyncService?.wiki?.enqueue(); }
+    catch { this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable"); }
+    try { await this.options.maintenanceTick?.(); }
+    catch { this.options.logger?.warn("Maintenance admission is temporarily unavailable"); }
     let job = await repository.claimNext(this.workerId, [...supportedJobTypes].filter(t=>t!=="maintenance"));
     if(!job){const pending=await repository.nextQueuedOfType("maintenance");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
     if (!job) return null;
@@ -775,9 +777,15 @@ export class JobSupervisor {
 
   private async drain(): Promise<void> {
     if (!this.running || this.stopping) return;
-    const job = await this.runOnce();
-    if (!job) await this.options.releaseAiRuntime?.();
-    this.schedule(job ? 0 : (this.options.pollIntervalMs ?? 500));
+    let delay = this.options.pollIntervalMs ?? 500;
+    try {
+      const job = await this.runOnce();
+      if (!job) await this.options.releaseAiRuntime?.();
+      if (job) delay = 0;
+    } finally {
+      // A failed admission, database read or idle cleanup must not stop polling.
+      this.schedule(delay);
+    }
   }
 
   private trackProgress(promise: Promise<unknown>): void {

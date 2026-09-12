@@ -25,6 +25,7 @@ import {
   readPdfPageCount,
   sha256,
   type ConversionProgress,
+  type StructureDetectionResult,
   type MarkdownConversionResult
 } from "@app/conversion";
 import {
@@ -44,6 +45,7 @@ import type {
 import type {
   SourceEditInput,
   FileImportInput,
+  FileStructurePreviewInput,
   FileImportProgress,
   ContainerSourceInput,
   DuplicateCandidate,
@@ -57,7 +59,7 @@ import type {
 import { readPublicHtml, youtubeIdFromUrl, type ExternalPageFetch } from "./source-url-preview.js";
 import { AssetStorageService } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
-import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
+import { HierarchicalIngestionService, structureBoundaries } from "./hierarchical-ingestion-service.js";
 
 export interface IngestionServiceOptions {
   traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
@@ -80,6 +82,7 @@ interface PreparedFileImport {
   conversion: MarkdownConversionResult;
   draft: SourceDescriptorDraft;
   preparedAt: number;
+  structures?: Map<string, Promise<StructureDetectionResult>>;
 }
 
 type FileImportProgressUpdate = Omit<FileImportProgress, "requestId">;
@@ -297,7 +300,8 @@ export class IngestionService {
       progress: 1,
       ...(totalPages ? { completedPages: totalPages, totalPages } : {})
     });
-    return { fileToken, fileName, mimeType, draft };
+    return { fileToken, fileName, mimeType, draft,
+      preview: { text: conversion.markdown.slice(0, 20_000), truncated: conversion.markdown.length > 20_000 } };
   }
 
   public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
@@ -311,14 +315,7 @@ export class IngestionService {
     if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
     const sourceType = input.descriptor.type;
     const detection = isHierarchicalSourceType(sourceType)
-      ? await detectDocumentStructure({
-          data: prepared.data,
-          sourcePath: prepared.path,
-          fileName: prepared.fileName,
-          mimeType: prepared.mimeType,
-          conversion: prepared.conversion,
-          documentKind: sourceType === "Book" ? "book" : sourceType === "PeriodicalIssue" ? "periodical" : "paper"
-        })
+      ? await this.preparedStructure({ fileToken, sourceType })
       : undefined;
     const result = await this.persist({
       descriptor: input.descriptor,
@@ -332,6 +329,29 @@ export class IngestionService {
     });
     this.preparedFiles.delete(fileToken);
     return result;
+  }
+
+  public async previewPreparedFileStructure(input: FileStructurePreviewInput) {
+    const detection = await this.preparedStructure(input);
+    const prepared = this.preparedFiles.get(input.fileToken);
+    if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
+    return { rootMarkdown: prepared.conversion.markdown, divisions: detection.divisions,
+      boundaries: structureBoundaries(prepared.conversion.markdown, detection.divisions) };
+  }
+
+  private async preparedStructure(input: FileStructurePreviewInput): Promise<StructureDetectionResult> {
+    this.removeExpiredPreparedFiles();
+    const prepared = this.preparedFiles.get(input.fileToken);
+    if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
+    prepared.structures ??= new Map();
+    const cached = prepared.structures.get(input.sourceType);
+    if (cached) return cached;
+    const detection = detectDocumentStructure({ data: prepared.data, sourcePath: prepared.path,
+      fileName: prepared.fileName, mimeType: prepared.mimeType, conversion: prepared.conversion,
+      documentKind: input.sourceType === "Book" ? "book" : input.sourceType === "PeriodicalIssue" ? "periodical" : "paper" });
+    prepared.structures.set(input.sourceType, detection);
+    try { return await detection; }
+    catch (error) { prepared.structures.delete(input.sourceType); throw error; }
   }
 
   public async captureWebPage(input: CaptureWebPageRequest): Promise<IngestionResult> {

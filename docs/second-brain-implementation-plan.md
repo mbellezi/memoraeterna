@@ -1,5 +1,22 @@
 # Hybrid second brain: implementation plan
 
+Forward development now follows the
+[automatic knowledge wiki plan](automatic-wiki-implementation-plan.md) and its
+[application-wide prompt catalog design](ai-prompt-catalog-plan.md). This document
+retains the earlier M1–M5 baseline and historical acceptance records. Its original
+M6 remains deferred; the new A0–A8 milestones are planned, not implemented.
+
+Current model-routing contract: all implemented generative harness functions
+(page synthesis, consultation, weekly/monthly maintenance, cleanup and instruction
+samples) use `structured-output`. Selection precedence is an explicit operation
+profile override, the task route, then the global default only if no route exists.
+Operation forms hide overrides behind “Force another model”; “Default model”
+returns to the router. Hybrid query embeddings use the independent `embedding`
+route. Admitted runs pin model identity and parameters. Execution location follows
+the selected model, without an independent local/remote permission. These current
+rules supersede earlier milestone references to profile/privacy selection; see
+[AI rules](../rules/ai-and-knowledge.md) and [AI setup](../README.md).
+
 Status: implementation in progress. M1's non-AI workspace and M2's restricted
 organization executor are accepted; their validation records are below.
 M3 is accepted after paired real-model trials and coordinator validation;
@@ -573,7 +590,8 @@ executor decision report must cover:
    after a committed edit but before completion was recorded.
 4. Concurrent human editing: reject stale apply and preserve the newer text.
 5. Equivalent scope/schema checks for native calls where supported and JSON
-   actions; local-only execution performs no remote request.
+   actions; a selected local generative model never falls back to a remote one.
+   Query embeddings independently follow the configured embedding route.
 6. Retry and failure behavior without duplicate edits, with bounded steps and
    recorded usage. Compare implementation/maintenance complexity separately
    from the selected models' semantic output quality.
@@ -670,7 +688,7 @@ title and folder changes.
    evidence merely to render settings.
 3. Offer a sample test producing a change-set preview only. It cannot apply
    knowledge changes or write vault files. Model-based tests use the selected
-   profile/privacy and a disclosed budget; they are not cost-free operations.
+   routed profile or explicit model override and a disclosed budget; they are not cost-free operations.
 4. Advanced activation requires successful contract preflight and a bounded
    sample run. Display validation failures and proposed effects. Passing a
    sample establishes compatibility for that sample, not universal correctness.
@@ -779,8 +797,10 @@ exactly-once model execution or exact billing after a network ambiguity.
 - Reuse parameterized repositories and managed projection writers. Escape
   Markdown links, YAML values and labels; render inert content with no raw
   scripts, unsafe URLs or automatic remote image/exfiltration loads.
-- Resolve remote eligibility before exposing any prompt, query, metadata or
-  derived artifact to a provider. The model cannot switch profiles at runtime.
+- Resolve the routed or explicitly selected model before exposing any prompt,
+  query, metadata or derived artifact to a provider. Local/remote execution follows
+  that model; legacy privacy flags do not add a permission gate. Preserve evidence
+  scope checks. The model cannot switch profiles at runtime.
 - Test containment by forcing malicious tool requests directly at the service,
   not only by hoping a model refuses adversarial documents.
 

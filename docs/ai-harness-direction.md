@@ -8,9 +8,17 @@ integration against this boundary. The selected starting approach is a
 TypeScript executor specific to the application, validated by its M2
 three-tool spike. Provider SDK evaluation remains independent.
 
+Current model routing follows [the AI rules](../rules/ai-and-knowledge.md):
+organization, consultation, maintenance, cleanup and instruction samples use
+`structured-output`. The operation override takes precedence over the task route,
+then the default profile only if no route exists. Query embeddings retain their
+independent `embedding` route. Local/remote execution follows the selected model,
+without a separate permission selector. See [AI setup](../README.md#local-models)
+for the setup workflow.
+
 Keep the existing `AiModelAdapter` boundary and place any future agent runtime
 above application services. The current product already has local GGUF/MLX,
-remote models, privacy policies, task routing, parameter normalization and audit
+remote models, model-based execution selection, task routing, parameter normalization and audit
 records. Replacing that whole boundary solely to prepare a wiki would create
 unnecessary migration work.
 
@@ -29,7 +37,7 @@ owns transitions into review and apply; the model may select only permitted
 read/proposal actions within a bounded analysis state. Native tool calls and
 validated JSON actions share the same application contracts. Versioned prompts
 and weekly/monthly schedules live in PostgreSQL and use existing task routing;
-the scheduler still needs implementation.
+the persisted scheduler is described in `second-brain-implementation-plan.md`.
 
 [LangGraph.js](https://docs.langchain.com/oss/javascript/langgraph/overview)
 and its [persistence layer](https://docs.langchain.com/oss/javascript/langgraph/persistence)

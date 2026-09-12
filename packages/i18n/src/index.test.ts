@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   createTranslator,
   defaultLanguageCode,
+  getLanguageDisplayName,
   messages,
   supportedLanguageCodes,
   translate,
@@ -10,6 +11,23 @@ import {
 } from "./index.js";
 
 describe("@app/i18n", () => {
+  it("displays content language names in the interface locale", () => {
+    expect(getLanguageDisplayName("pt-BR", "en")).toBe("inglês");
+    expect(getLanguageDisplayName("en", "pt-BR")).toBe("Brazilian Portuguese");
+    expect(getLanguageDisplayName("pt-BR", "nl")).toBe("holandês");
+    for (const locale of supportedLanguageCodes) {
+      for (const code of ["en", "pt-BR", "it", "fr", "es", "de", "ja", "zh", "ar"]) {
+        expect(getLanguageDisplayName(locale, code)).not.toBe(code);
+      }
+      expect(getLanguageDisplayName(locale, "und")).toBe(messages[locale].import.unspecifiedLanguage);
+    }
+  });
+
+  it("preserves unrecognized metadata language values without crashing", () => {
+    expect(getLanguageDisplayName("en", "not_a_language")).toBe("not_a_language");
+    expect(getLanguageDisplayName("en", "zz")).toBe("zz");
+  });
+
   it("falls back to en for unsupported locales", () => {
     const translator = createTranslator("de");
 

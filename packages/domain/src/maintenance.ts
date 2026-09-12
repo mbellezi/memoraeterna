@@ -33,7 +33,7 @@ export const MaintenancePolicySchema = z.object({
   review: z.literal("human_review").default("human_review"), modelEnabled: z.boolean().default(false),
   idleOnly: z.boolean().default(true), cooldownDays: z.number().int().min(1).max(180).default(30), minimumBenefit: z.number().min(0.5).max(1).default(0.7),
   budget: MaintenanceBudgetSchema.default(() => MaintenanceBudgetSchema.parse({})), periodBudget: MaintenancePeriodBudgetSchema.default(() => MaintenancePeriodBudgetSchema.parse({}))
-}).strict().superRefine((p,c) => { if(p.modelEnabled&&!p.profileId)c.addIssue({code:"custom",path:["profileId"],message:"maintenance.errors.model"}); for (const k of ["calls","tokens","spend","inspected","changes"] as const) if(p.periodBudget[k]!==null && (p.budget[k]===null || p.budget[k]!>p.periodBudget[k]!)) c.addIssue({code:"custom",path:["periodBudget",k],message:"maintenance.errors.budget"}); });
+}).strict().superRefine((p,c) => { for (const k of ["calls","tokens","spend","inspected","changes"] as const) if(p.periodBudget[k]!==null && (p.budget[k]===null || p.budget[k]!>p.periodBudget[k]!)) c.addIssue({code:"custom",path:["periodBudget",k],message:"maintenance.errors.budget"}); });
 export type MaintenancePolicy = z.infer<typeof MaintenancePolicySchema>;
 export type MaintenanceCadence = z.infer<typeof MaintenanceCadenceSchema>;
 export const MaintenanceScheduleSchema = z.object({ id:z.string().uuid(), revision:z.number().int(), policy:MaintenancePolicySchema, nextAt:z.string(), lastRunId:z.string().uuid().nullable(), lastError:z.string().nullable().default(null), updatedAt:z.string() }).strict();

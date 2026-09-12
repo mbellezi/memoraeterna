@@ -69,6 +69,8 @@ import {
   fileImportInputSchema,
   fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
+  fileStructurePreviewInputSchema,
+  fileStructurePreviewSchema,
   fileMetadataExtractionResultSchema,
   metadataEnrichmentInputSchema,
   metadataEnrichmentResultSchema,
@@ -246,6 +248,11 @@ const api: DesktopApi = {
       } finally {
         if (onProgress) ipcRenderer.removeListener(ipcChannels.ingestionFileProgress, handler);
       }
+    },
+    async previewFileStructure(input) {
+      return fileStructurePreviewSchema.parse(await ipcRenderer.invoke(
+        ipcChannels.ingestionPreviewFileStructure, fileStructurePreviewInputSchema.parse(input)
+      ));
     },
     async enrichMetadata(input: MetadataEnrichmentInput) {
       return metadataEnrichmentResultSchema.parse(await ipcRenderer.invoke(

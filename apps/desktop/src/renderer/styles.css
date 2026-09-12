@@ -1,33 +1,117 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  color-scheme: dark;
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: #020617;
+/* Shared neutral scale keeps existing screens on the same graphite palette.
+   Semantic tag, source-type, status and graph colors keep their own scales. */
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-slate-50: #f5f7f9;
+  --color-slate-100: #e4eaf2;
+  --color-slate-200: #d3dce6;
+  --color-slate-300: #b6c3d3;
+  --color-slate-400: #9daabd;
+  --color-slate-500: #697586;
+  --color-slate-600: #586679;
+  --color-slate-700: #354254;
+  --color-slate-800: #2a3544;
+  --color-slate-900: #202b39;
+  --color-slate-950: #171e28;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.4;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.35;
+  --text-2xl: 1.4375rem;
+  --text-2xl--line-height: 1.3;
+  --font-weight-semibold: 550;
+  --font-weight-bold: 650;
+  --radius-md: 0.4375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 0.875rem;
 }
 
-* {
-  box-sizing: border-box;
+@theme inline {
+  --color-background: var(--app-background);
+  --color-surface: var(--app-surface);
+  --color-soft: var(--app-soft);
+  --color-foreground: var(--app-foreground);
+  --color-muted-foreground: var(--app-muted);
+  --color-border: var(--app-border);
+  --color-accent: var(--app-accent);
+  --color-accent-foreground: var(--app-accent-foreground);
+  --color-accent-soft: var(--app-accent-soft);
 }
 
-body {
-  margin: 0;
-  min-width: 960px;
-  height: 100vh;
-  overflow: hidden;
-  background: #020617;
+@layer base {
+  :root {
+    color-scheme: light;
+    font-family: var(--font-sans);
+    --app-background: #f5f7f9;
+    --app-surface: #ffffff;
+    --app-soft: #eef2f6;
+    --app-foreground: #263140;
+    --app-muted: #697586;
+    --app-border: #e3e8ee;
+    --app-accent: #087d94;
+    --app-accent-foreground: #ffffff;
+    --app-accent-soft: #e8f7fa;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --app-background: #10151d;
+    --app-surface: #171e28;
+    --app-soft: #202b39;
+    --app-foreground: #e4eaf2;
+    --app-muted: #9daabd;
+    --app-border: #2a3544;
+    --app-accent: #65d6e8;
+    --app-accent-foreground: #0e2530;
+    --app-accent-soft: #19333d;
+    --color-slate-500: #9daabd;
+    --color-slate-700: #354254;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-width: 960px;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--app-background);
+    color: var(--app-foreground);
+    font-size: var(--text-base);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #root { height: 100%; }
+
+  /* Keep inheritance below utility classes so compact control sizes take effect. */
+  button, input, select, textarea { font: inherit; }
+  button, summary, select { cursor: pointer; }
+  button:disabled, select:disabled { cursor: not-allowed; }
+  input::placeholder, textarea::placeholder { color: var(--app-muted); opacity: 0.75; }
+  :where(button, input, select, textarea, summary, a):focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 3px;
+  }
+  :where(input[type="checkbox"], input[type="radio"]) { accent-color: var(--app-accent); }
+  h1, h2 { letter-spacing: -0.025em; }
+  ::selection { background: var(--app-accent); color: var(--app-accent-foreground); }
 }
 
-#root {
-  height: 100%;
-}
-
-button,
-input,
-select {
-  font: inherit;
+@layer components {
+  .graph-surface {
+    background: radial-gradient(circle at center, #202b39 0%, #10151d 62%);
+  }
 }
 
 @keyframes fade-in-up {

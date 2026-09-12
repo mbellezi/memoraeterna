@@ -54,7 +54,7 @@ export async function extractFileMetadata(input: FileMetadataExtractionInput): P
   }
 
   if (input.conversion) {
-    const converted = extractConvertedMetadata(input.sourceType, input.conversion);
+    const converted = extractConvertedMetadata(input.conversion);
     for (const [key, value] of Object.entries(converted.values)) {
       if (values[key] === undefined || isWeakTitle(String(values[key]))) {
         values[key] = value;
@@ -236,7 +236,7 @@ async function extractPdfMetadata(input: FileMetadataExtractionInput): Promise<R
   }
 }
 
-function extractConvertedMetadata(sourceType: SourceItemType, conversion: MarkdownConversionResult): {
+function extractConvertedMetadata(conversion: MarkdownConversionResult): {
   values: Record<string, unknown>;
   evidence: Record<string, string>;
 } {
@@ -276,7 +276,7 @@ function extractConvertedMetadata(sourceType: SourceItemType, conversion: Markdo
     }
   }
   const doi = pageText.match(/\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+\b/i)?.[0];
-  if (doi && ["AcademicPaper", "StandaloneArticle"].includes(sourceType)) {
+  if (doi) {
     values.doi = normalizeDoi(doi.replace(/[.,;]$/, ""));
     evidence.doi = "pdf-page-scan";
   }

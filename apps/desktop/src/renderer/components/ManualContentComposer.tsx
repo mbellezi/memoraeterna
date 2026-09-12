@@ -87,26 +87,23 @@ export function ManualContentComposer({
     onSubitems(next);
   }
 
-  return <div className="grid gap-4">
-    {hierarchical && !editing ? <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-2 dark:border-slate-800 dark:bg-slate-900/40">
-      <div className="grid grid-cols-2 gap-2" role="tablist" aria-label={t("import.content.modeLabel")}>
-        {(["subitems", "document"] as const).map((item) => {
-          const Icon = item === "subitems" ? Layers3 : FileText;
-          return <button key={item} type="button" role="tab" aria-selected={mode === item} onClick={() => onMode(item)} className={cn("flex items-start gap-3 rounded-xl border p-3 text-left transition", mode === item ? "border-cyan-500 bg-white shadow-sm ring-2 ring-cyan-500/10 dark:bg-slate-950" : "border-transparent text-slate-500 hover:bg-white/70 dark:hover:bg-slate-950/70")}>
-            <Icon className={cn("mt-0.5 h-5 w-5 shrink-0", mode === item && "text-cyan-700 dark:text-cyan-300")} aria-hidden="true" />
-            <span><span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{t(`import.content.modes.${item}` as MessageKey)}</span><span className="mt-1 block text-xs leading-5">{t(`import.content.modeDescriptions.${item}` as MessageKey)}</span></span>
-          </button>;
+  return <div className="@container grid min-w-0 gap-3">
+    {hierarchical && !editing ? <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-950" role="group" aria-label={t("import.content.modeLabel")}>
+        {(["document", "subitems"] as const).map((item) => {
+          const Icon = item === "document" ? FileText : Layers3;
+          return <button key={item} type="button" aria-pressed={mode === item} onClick={() => onMode(item)} className={cn("inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs", mode === item ? "bg-cyan-50 font-medium text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><Icon className="h-4 w-4" aria-hidden="true" />{t(item === "document" ? "intake.sourceView" : "intake.subitemsView")}</button>;
         })}
-      </div>
+      </div><span className="text-xs text-slate-500">{t("intake.viewHint")}</span>
     </div> : null}
 
-    {mode === "subitems" && hierarchical && !editing ? <div className="grid min-h-[34rem] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 lg:grid-cols-[15rem_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 lg:border-b-0 lg:border-r">
+    {mode === "subitems" && hierarchical && !editing ? <div className="grid min-h-96 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 @min-[640px]:grid-cols-[12rem_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 @min-[640px]:border-b-0 @min-[640px]:border-r">
         <div className="border-b border-slate-200 p-3 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t(subitemListKey(sourceType))}</p>
           <p className="mt-1 text-xs text-slate-500">{t("import.content.subitemsCount", { values: { count: subitems.length } })}</p>
         </div>
-        <ol className="grid max-h-64 gap-1 overflow-auto p-2 lg:max-h-none lg:flex-1">
+        <ol className="grid max-h-64 gap-1 overflow-auto p-2 @min-[640px]:max-h-none @min-[640px]:flex-1">
           {subitems.map((item, index) => <li key={item.id}><button type="button" onClick={() => setSelectedId(item.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition", selected?.id === item.id ? "bg-cyan-100 font-medium text-cyan-950 dark:bg-cyan-950 dark:text-cyan-100" : "hover:bg-white dark:hover:bg-slate-800")}>
             <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-xs font-semibold text-slate-500 shadow-sm dark:bg-slate-950">{index + 1}</span>
             <span className="truncate">{item.title.trim() || t("import.content.untitledSubitem")}</span>
@@ -117,7 +114,7 @@ export function ManualContentComposer({
       <div className="grid content-start gap-4 p-4 lg:p-5">
         {selected ? <>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-56 flex-1 grid gap-2"><Label htmlFor={`subitem-title-${selected.id}`}>{t("import.content.subitemTitle")} *</Label><Input id={`subitem-title-${selected.id}`} value={selected.title} onChange={(event) => updateItem({ title: event.target.value })} placeholder={t(subitemPlaceholderKey(sourceType))} /></div>
+            <div className="min-w-0 flex-1 grid gap-2"><Label htmlFor={`subitem-title-${selected.id}`}>{t("import.content.subitemTitle")} *</Label><Input id={`subitem-title-${selected.id}`} value={selected.title} onChange={(event) => updateItem({ title: event.target.value })} placeholder={t(subitemPlaceholderKey(sourceType))} /></div>
             <div className="flex gap-1">
               <button type="button" disabled={subitems.indexOf(selected) === 0} onClick={() => moveItem(-1)} aria-label={t("import.content.moveUp")} title={t("import.content.moveUp")} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"><ArrowUp className="h-4 w-4" /></button>
               <button type="button" disabled={subitems.indexOf(selected) === subitems.length - 1} onClick={() => moveItem(1)} aria-label={t("import.content.moveDown")} title={t("import.content.moveDown")} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"><ArrowDown className="h-4 w-4" /></button>

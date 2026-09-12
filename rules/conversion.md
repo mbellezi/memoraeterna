@@ -59,6 +59,10 @@ circumvent protection or produce a silent partial hierarchy.
   evidence.
 - Detection evidence and confidence remain explainable and reviewable. Conflicts,
   overlaps, empty ranges, or invalid ordering block materialization until fixed.
+- Paper detection preserves unnumbered thematic sections before recognized
+  academic headings, including sections on the first page. Intervening body
+  prose distinguishes the opening title/affiliation cluster from later sections;
+  a late conclusion must not suppress the preceding body headings.
 - Calibration corpora may stay local and ignored. Convert generalizable cases
   into small deterministic fixtures for normal tests.
 

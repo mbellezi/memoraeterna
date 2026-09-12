@@ -135,7 +135,7 @@ export const OrganizationCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("settings")}).strict(),
   z.object({command:z.literal("saveDraft"),configuration:OrganizationConfigurationSchema}).strict(),
   z.object({command:z.literal("activate"),revisionId:z.string().uuid(),expectedActiveId:z.string().uuid().nullable()}).strict(),
-  z.object({command:z.literal("sample"),functionName:OrganizationFunctionSchema.default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
+  z.object({command:z.literal("sample"),functionName:OrganizationFunctionSchema.default("pageSynthesis"),revisionId:z.string().uuid(),domainId:z.string().uuid().nullable().default(null),profileId:z.string().uuid().optional(),privacy:z.enum(["offline_only","allow_remote"])}).strict(),
   z.object({command:z.literal("start"),input:OrganizationStartSchema}).strict(),
   z.object({command:z.literal("list")}).strict(),
   z.object({command:z.literal("get"),id:z.string().uuid()}).strict(),

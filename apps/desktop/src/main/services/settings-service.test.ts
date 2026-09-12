@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,31 @@ import { defaultAppSettings } from "../../shared/ipc";
 import { MatchingConfigurationSchema, recommendedMatchingConfiguration, recommendedMatchingPresetId } from "@app/domain";
 const paths: string[] = [];
 afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(paths.splice(0).map((path) => rm(path, { recursive: true, force: true }))); });
+
+describe("import dialog directory", () => {
+  it("remembers selected file folders across restarts and ignores unavailable folders", async () => {
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-import-dialog-")); paths.push(path);
+    const folder = join(path, "Documentos com espaços");
+    await mkdir(folder);
+    const service = new SettingsService(path);
+    expect(await service.getImportDirectory()).toBeUndefined();
+    await service.rememberImportFile(join(folder, "example.pdf"));
+    const restarted = new SettingsService(path);
+    expect(await restarted.getImportDirectory()).toBe(folder);
+    expect(await restarted.getApp()).not.toHaveProperty("directory");
+    await rm(folder, { recursive: true });
+    expect(await restarted.getImportDirectory()).toBeUndefined();
+    await writeFile(join(path, "import-dialog.json"), JSON.stringify({ directory: "relative/folder" }));
+    expect(await restarted.getImportDirectory()).toBeUndefined();
+  });
+
+  it("allows file selection when preferences cannot be read or saved", async () => {
+    const service = new SettingsService(tmpdir(), { requireDatabase: true });
+    expect(await service.getImportDirectory()).toBeUndefined();
+    await expect(service.rememberImportFile(join(tmpdir(), "example.pdf"))).resolves.toBeUndefined();
+  });
+});
 
 describe("content language preference", () => {
   it.each([["pt-PT", "pt-BR"], ["fr-CA", "fr"], ["de-DE", "en"]])("initializes both languages from %s and persists them", async (locale, expected) => {

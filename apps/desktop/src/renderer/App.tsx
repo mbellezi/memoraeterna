@@ -442,7 +442,7 @@ export function App({
     return (
       <main
         className={cn(
-          "grid min-h-screen place-items-center bg-slate-50 px-6 text-slate-950 dark:bg-slate-950 dark:text-slate-50",
+          "grid min-h-screen place-items-center bg-background px-6 text-foreground",
           isDarkMode && "dark"
         )}
       >
@@ -498,14 +498,14 @@ export function App({
   return (
     <div
       className={cn(
-        "flex h-screen overflow-hidden bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50",
+        "flex h-screen overflow-hidden bg-background text-foreground",
         isDarkMode && "dark"
       )}
     >
-      <aside className="flex h-full min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-        <div className="flex h-16 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
-          <Database className="h-6 w-6 text-cyan-700 dark:text-cyan-300" aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-base font-semibold tracking-normal">{t("app.title")}</span>
+      <aside className="flex h-full min-h-0 w-56 shrink-0 flex-col border-r border-border bg-surface">
+        <div className="flex h-14 items-center gap-2.5 border-b border-border px-4">
+          <Database className="h-5 w-5 text-accent" aria-hidden="true" />
+          <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">{t("app.title")}</span>
           <button
             type="button"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
@@ -533,10 +533,10 @@ export function App({
                 key={item.id}
                 type="button"
                 className={cn(
-                  "flex h-10 items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
+                  "flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-cyan-50 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-50"
-                    : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
+                    ? "bg-accent-soft text-accent"
+                    : "text-muted-foreground hover:bg-soft hover:text-foreground"
                 )}
                 onClick={() => {
                   if (item.id === "library") setLibraryTarget(null);
@@ -561,12 +561,12 @@ export function App({
       </aside>
 
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
-          <h1 className="text-xl font-semibold text-slate-950 dark:text-slate-50">{t(pageTitle)}</h1>
+        <header className="flex h-14 shrink-0 items-center border-b border-border bg-background px-5">
+          <h1 className="text-base font-medium text-foreground">{t(pageTitle)}</h1>
         </header>
         <div
           ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-auto overscroll-contain p-6"
+          className="min-h-0 flex-1 overflow-auto overscroll-contain p-5"
           onScroll={(event) => {
             scrollPositions.current[activeView] = event.currentTarget.scrollTop;
           }}

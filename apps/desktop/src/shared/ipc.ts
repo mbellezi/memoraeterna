@@ -70,6 +70,7 @@ export const ipcChannels = {
   ingestionPreviewUrl: "app:ingestion:preview-url",
   ingestionEditSource: "app:ingestion:edit-source",
   ingestionExtractFileMetadata: "app:ingestion:extract-file-metadata",
+  ingestionPreviewFileStructure: "app:ingestion:preview-file-structure",
   ingestionFileProgress: "app:ingestion:file-progress",
   ingestionEnrichMetadata: "app:ingestion:enrich-metadata",
   ingestionApplyEnrichmentCover: "app:ingestion:apply-enrichment-cover",
@@ -363,10 +364,15 @@ export const fileMetadataExtractionResultSchema = z.object({
   fileToken: z.string().uuid(),
   fileName: z.string().min(1),
   mimeType: z.string().min(1),
-  draft: SourceDescriptorDraftSchema
+  draft: SourceDescriptorDraftSchema,
+  preview: z.object({ text: z.string().max(20_000), truncated: z.boolean() }).strict().optional()
 }).strict();
 
 export const metadataEnrichmentInputSchema = MetadataEnrichmentQuerySchema;
+export const fileStructurePreviewInputSchema = z.object({
+  fileToken: z.string().uuid(),
+  sourceType: z.enum(["Book", "AcademicPaper", "PeriodicalIssue"])
+}).strict();
 export const metadataEnrichmentResultSchema = EnrichmentCandidateSchema.array();
 export const enrichmentCoverInputSchema = z.object({ coverUrl: z.string().url() }).strict();
 export const enrichmentCoverResultSchema = z.object({
@@ -411,6 +417,11 @@ export const documentStructureViewSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 }).strict();
+
+export const fileStructurePreviewSchema = documentStructureViewSchema.pick({ rootMarkdown: true, boundaries: true })
+  .extend({ divisions: z.array(DocumentDivisionCandidateSchema) }).strict();
+export type FileStructurePreview = z.infer<typeof fileStructurePreviewSchema>;
+export type FileStructurePreviewInput = z.infer<typeof fileStructurePreviewInputSchema>;
 
 export const structureConfirmInputSchema = z.object({
   structureId: z.string().uuid(),
@@ -1158,6 +1169,7 @@ export interface DesktopApi {
       input: FileMetadataExtractionInput,
       onProgress?: (progress: FileImportProgress) => void
     ) => Promise<FileMetadataExtractionResult | null>;
+    previewFileStructure: (input: FileStructurePreviewInput) => Promise<FileStructurePreview>;
     enrichMetadata: (input: MetadataEnrichmentInput) => Promise<EnrichmentCandidate[]>;
     applyEnrichmentCover: (coverUrl: string) => Promise<EnrichmentCoverResult>;
     findDuplicate: (input: DuplicateCheckInput) => Promise<DuplicateCandidate | null>;

@@ -13,6 +13,15 @@ locales.
 - Use React 19, Tailwind CSS 4, vendored shadcn/ui components, and Lucide icons.
 - Prefer dense, clear, utility-oriented layouts with stable dimensions for
   toolbars, lists, trees, grids, buttons, and tiles.
+- The shared theme uses graphite backgrounds (`#10151d`), raised surfaces
+  (`#171e28`), subtle borders (`#2a3544`) and a soft cyan accent (`#65d6e8`) in
+  dark mode, with corresponding light-mode tokens. UI body text is 14 px;
+  secondary text and controls use 12–13 px and medium weights. Compact buttons
+  remain at least 34 px tall and wrap long labels. Secondary actions are neutral,
+  primary actions use the accent, and focus/selected states remain visible.
+  Semantic colors for tags, source types, statuses, warnings and graph relations
+  remain distinct. Use shared theme tokens and primitives across all workspaces;
+  base control inheritance must not override typography utilities.
 - Keep the desktop shell constrained to the viewport. The sidebar navigation
   and active workspace scroll independently without scroll chaining.
 - Library hierarchy navigation participates in browser history so system or
@@ -21,6 +30,12 @@ locales.
 - Use the correct control for the data: toggles/checkboxes for booleans,
   select/menu for choices, tabs for views, and inputs/sliders/steppers for
   numeric values.
+- Content tags use shared colored badges, normalized to lowercase, trimmed and
+  deduplicated. Editable tag lists provide accessible remove buttons and add
+  typed tags with Enter or Tab; empty Tab and Shift+Tab retain focus navigation.
+  Commit pending text on blur, respect IME composition, and preserve stable tag
+  colors across editing and read-only views. Saving source metadata persists
+  normalized tags; read-only views remove tags through the existing edit flow.
 - Icon-only or non-obvious controls require accessible labels/tooltips. Do not
   encode meaning by color alone.
 - Prevent text overlap and preserve keyboard/focus behavior. Dialogs restore
@@ -218,6 +233,42 @@ locales.
 - Manual textual intake uses a reusable Markdown editor with write, preview,
   and split views. Hierarchical roots also expose an ordered subitem composer;
   existing materialized children remain independently editable from the Library.
+- Add Content chooses manual/file origin before source type. A persistent,
+  accessible step trail leads into a studio with metadata properties in normal
+  form flow after the source-type selector (and required parent selection),
+  before the editor or file preview. Advanced fields retain progressive
+  disclosure; source type changes preserve entered content and fields.
+  Blank manual titles may use the first nonempty content line. Creator forms
+  expose name, role and optional affiliation as separate controls.
+- For BookChapter and DocumentSection, parent selection is the first studio
+  requirement: search compatible sources or create a catalog parent in a native
+  modal. Unlock content editing after selection, and clear incompatible parent
+  IDs when changing type. Keep linked parents fixed during editorial updates.
+  Shared text buttons wrap and grow vertically; action groups wrap before their
+  labels overflow. Verify long localized labels at the minimum desktop width.
+- Manual hierarchical intake and imported structure review expose explicit
+  Source/Subitems switches. Switching preserves drafts, selection and edits;
+  it never resets or recreates the source. Manual intake saves the currently
+  selected composition mode; source preview during import review is read-only.
+- Metadata review starts at the beginning of converted text and is distinct
+  from subitem selection. Text selection fills only the explicitly chosen field;
+  show origin links only when the displayed text actually contains the value.
+  Missing/truncated previews are explicit. Structure review keeps bulk selection,
+  filtering and the beginning-of-text preview prominent. Split, merge and reorder
+  actions, together with the split-position selector, remain visible above the
+  selected subitem preview, outside expandable metadata/boundary controls.
+  Preserve validation, disabled states and undo history.
+- Suggested metadata uses a native expandable card, initially collapsed. Its
+  header retains the suggestion count and loading/empty/error state. Expanding
+  or collapsing neither reapplies suggestions nor restarts metadata lookup.
+- Hierarchical file intake exposes Source/Subitems in the metadata studio and
+  places the subitem review before final confirmation in the step trail. Switching
+  views preserves edited divisions and selection; changing file/type invalidates
+  incompatible previews and ignores stale responses. Expose detection loading,
+  retryable errors and an empty selection that imports the complete source only.
+  Suggest Book from EPUB/ISBN and AcademicPaper from DOI without guessing from a
+  PDF extension alone. If a saved draft fails to load, retry that draft rather
+  than importing the file again.
 - Metadata lookup cancels stale UI results, exposes loading/empty/failure states,
   and keeps manual entry available. Applying a catalog candidate explicitly
   selects its title; other manually entered fields remain protected.
@@ -242,6 +293,10 @@ names, notifications, dialogs, toasts, placeholders, tooltips, empty states,
 job statuses, or user-visible backend errors.
 
 - All product copy goes through `@app/i18n`.
+- Content intake language selectors display localized language names through
+  `@app/i18n` while retaining language codes as values. Label `und` as unspecified;
+  resolve additional metadata languages with `Intl.DisplayNames` and preserve
+  unrecognized values as a safe fallback.
 - Graph processing settings expose separate similarity thresholds for relation types and
   entity identities, explain their provisional defaults and distinguish similarity from
   certainty. Explain the embedding requirement and conservative identity confirmation.
@@ -339,3 +394,12 @@ job statuses, or user-visible backend errors.
   The optional maintenance source picker is collapsed with a selected count and
   uses its own source-selection hint, preserving the organization picker's
   existing default guidance elsewhere.
+
+- Model selection outside AI configuration follows the task router by default.
+  A compact “Force another model” switch reveals a selector with “Default model”
+  and compatible active profiles. “Default model” means the current task route,
+  with the global default used only if that route is absent. Harness selectors
+  offer structured-output-capable profiles. Turning it off clears the override. Preserve
+  existing explicit overrides when editing saved operations. Do not expose
+  independent local/remote permission controls. Reflow forms without empty grid
+  cells and retain routed-model guidance, loading, empty and error states.

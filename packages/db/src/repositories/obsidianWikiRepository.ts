@@ -30,6 +30,7 @@ export function createObsidianWikiRepository(pool: PgPool) {
             const db = await pool.connect();
             try {
                 await db.query("begin");
+                await db.query("insert into obsidian_projection_clock(id,generation) values(1,0) on conflict(id) do nothing");
                 const generation = String((await db.query("select generation from obsidian_projection_clock where id=1 for update")).rows[0].generation);
                 const jobs = createJobRepository(db), latest = await jobs.latestByType("obsidian-wiki");
                 if (latest && (["queued", "running"].includes(latest.status) || (!force && latest.payload.generation === generation && latest.payload.binding === binding))) {

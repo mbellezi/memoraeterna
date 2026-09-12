@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { OrganizationEvidenceSchema, OrganizationContextSchema } from './organization.js';
 export const ConsultationInputSchema=z.object({
   requestId:z.string().uuid(),question:z.string().trim().min(3).max(1000),sourceIds:z.array(z.string().uuid()).max(100).default([]),pageId:z.string().uuid().nullable().default(null),includeDescendants:z.boolean().default(false),
-  profileId:z.string().uuid(),privacy:z.enum(['offline_only','allow_remote']).default('offline_only'),domainId:z.string().uuid().nullable().default(null),reviewedOnly:z.boolean().default(false),mode:z.enum(['text','hybrid']).default('text'),relationContext:z.boolean().default(true)
+  profileId:z.string().uuid().optional(),privacy:z.enum(['offline_only','allow_remote']).default('offline_only'),domainId:z.string().uuid().nullable().default(null),reviewedOnly:z.boolean().default(false),mode:z.enum(['text','hybrid']).default('text'),relationContext:z.boolean().default(true)
 }).strict();
 export const ConsultationAnswerSchema=z.object({
   paragraphs:z.array(z.object({markdown:z.string().trim().min(1).max(6000),citations:z.array(z.string().regex(/^e\d{1,3}$/)).min(1).max(12).refine(v=>new Set(v).size===v.length),contextIds:z.array(z.string().uuid()).max(20).default([])}).strict()).min(1).max(6),

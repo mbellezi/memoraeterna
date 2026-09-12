@@ -128,7 +128,7 @@ export class ConsultationService {
 
     return {answer:answer!,auditIds,inputTokens,outputTokens,costEstimate,usage:consultationUsage(usageRows)};
   }
-  async sample(revisionId:string,profileId:string,privacy:'offline_only'|'allow_remote',domainId:string|null){
+  async sample(revisionId:string,profileId:string|undefined,privacy:'offline_only'|'allow_remote',domainId:string|null){
     const repo=createOrganizationRepository(this.pool()),revision=await repo.configuration(revisionId);if(!revision)throw new Error('organization.errors.invalid');
     const config=OrganizationConfigurationSchema.parse(revision.configuration),profile=await this.options.ai.pinOrganizationProfile(profileId,privacy),language=z.enum(['en','pt-BR','it','fr','es']).parse(await this.options.contentLanguage());
     const question='Retrieval and feedback',sourceIds=[randomUUID(),randomUUID()];

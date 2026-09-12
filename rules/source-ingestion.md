@@ -31,6 +31,24 @@ Video, GenericDocument
 
 - File selection and path access stay in the main process. The renderer receives
   an expiring opaque UUID token plus safe metadata, never a local path.
+- Both file import entry points reopen the directory of the last selected file,
+  persisted as a main-only preference across restarts. Canceling does not change
+  it; missing/inaccessible directories fall back to the native dialog default.
+  Preference persistence failures must not interrupt file selection or import.
+- File preparation also returns an optional Zod-validated preview of the first
+  20,000 characters of canonical converted Markdown with an explicit truncation
+  flag. This is presentation evidence for metadata review; it does not replace
+  the complete prepared conversion or create a document revision.
+  Identifier extraction preserves detected DOIs before the user chooses a
+  source type; choosing the type later must not require another conversion.
+- Prepared files expose a read-only structure preview for books, academic papers
+  and periodical issues before final import confirmation. Detection uses the
+  complete prepared conversion and native file structure, cached per token/type;
+  import reuses that detection and its stable division IDs. Preview requests
+  neither create source records nor queue processing, and honor token expiry.
+  The final import applies the reviewed divisions through the existing structure
+  confirmation/materialization flow. Keeping a duplicate reviews its existing
+  structure instead of replacing it with a new preview.
 - Metadata enrichment runs only in the main process through the Open Library,
   Google Books, and Crossref adapters. It supports global opt-out, timeout,
   cache, non-blocking failure, and a separate HTTPS allowlist for cover assets.
@@ -101,8 +119,8 @@ remain useful without AI.
 
 - Import and edit wizard step headers are keyboard-accessible navigation. A
   later step is enabled only while all of its input and validation prerequisites
-  are satisfied; fixed-context steps and pre-materialization structure review
-  remain unavailable.
+  are satisfied; fixed-context steps remain unavailable. File structure previews
+  become available after conversion, before source creation or materialization.
 
 - Mandatory import work preserves the original, identifies metadata, converts
   and normalizes content, reviews structure where applicable, and materializes

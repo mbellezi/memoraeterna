@@ -32,6 +32,8 @@ import {
   fileImportInputSchema,
   fileImportProgressSchema,
   fileMetadataExtractionInputSchema,
+  fileStructurePreviewInputSchema,
+  fileStructurePreviewSchema,
   metadataEnrichmentInputSchema,
   enrichmentCoverInputSchema,
   containerSourceInputSchema,
@@ -91,6 +93,14 @@ export function registerIpcHandlers(
   obsidianSyncService: ObsidianSyncService,
   monitoringService?: MonitoringService
 ): void {
+  const chooseImportFile = async (): Promise<string | null> => {
+    const defaultPath = await settingsService.getImportDirectory();
+    const selection = await dialog.showOpenDialog({ properties: ["openFile"], ...(defaultPath ? { defaultPath } : {}) });
+    const path = selection.filePaths[0];
+    if (selection.canceled || !path) return null;
+    await settingsService.rememberImportFile(path);
+    return path;
+  };
   ipcMain.handle(ipcChannels.monitoringList, (_event, payload: unknown) => monitoringService!.list(monitoringQuerySchema.parse(payload)));
   ipcMain.handle(ipcChannels.monitoringDetail, (_event, payload: unknown) => monitoringService!.detail(z.string().uuid().parse(payload)));
   ipcMain.handle(ipcChannels.monitoringPrune, (_event, payload: unknown) => monitoringService!.prune(monitoringPruneSchema.parse(payload)));
@@ -206,9 +216,8 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.ingestionExtractFileMetadata, async (event, payload: unknown) => {
     const input = fileMetadataExtractionInputSchema.parse(payload);
     const requestId = input.requestId ?? randomUUID();
-    const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
-    const path = selection.filePaths[0];
-    if (selection.canceled || !path) return null;
+    const path = await chooseImportFile();
+    if (!path) return null;
     const report = (progress: Omit<FileImportProgress, "requestId">) => {
       if (event.sender.isDestroyed()) return;
       event.sender.send(ipcChannels.ingestionFileProgress, fileImportProgressSchema.parse({
@@ -220,6 +229,9 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(ipcChannels.ingestionEnrichMetadata, (_event, payload: unknown) =>
     metadataEnrichmentService.search(metadataEnrichmentInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.ingestionPreviewFileStructure, async (_event, payload: unknown) =>
+    fileStructurePreviewSchema.parse(await ingestionService.previewPreparedFileStructure(fileStructurePreviewInputSchema.parse(payload)))
   );
   ipcMain.handle(ipcChannels.ingestionApplyEnrichmentCover, (_event, payload: unknown) => {
     const input = enrichmentCoverInputSchema.parse(payload);
@@ -235,9 +247,8 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.ingestionImportFile, async (_event, payload: unknown) => {
     const input = fileImportInputSchema.parse(payload);
     if (input.fileToken) return ingestionService.importPreparedFile(input.fileToken, input);
-    const selection = await dialog.showOpenDialog({ properties: ["openFile"] });
-    const path = selection.filePaths[0];
-    return selection.canceled || !path ? null : ingestionService.importFile(path, input);
+    const path = await chooseImportFile();
+    return path ? ingestionService.importFile(path, input) : null;
   });
   ipcMain.handle(ipcChannels.ingestionLookupSources, (_event, payload: unknown) => {
     const input = sourceLookupInputSchema.parse(payload);

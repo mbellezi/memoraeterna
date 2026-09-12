@@ -1163,7 +1163,7 @@ export function KnowledgeGraphDashboard({
         </div>
       </header>
 
-      <div className="relative min-h-0 flex-1 bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
+      <div className="relative min-h-0 flex-1 graph-surface">
         <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.canvasLabel")} />
         {mode === "sources" && hierarchyNodeActions
           && Number.isFinite(hierarchyNodeActions.x) && Number.isFinite(hierarchyNodeActions.y) ? <div
@@ -1757,7 +1757,7 @@ function SourceHierarchyPreviewGraph({ data, graphPopup, dismissConnectionRef, f
     }
   }, [bundle, forces, onOpenSource, wheelZoomSensitivity, graphPopup, dismissConnectionRef]);
 
-  return <div className="relative h-full overflow-hidden bg-[radial-gradient(circle_at_center,_#172554_0%,_#020617_62%)]">
+  return <div className="relative h-full overflow-hidden graph-surface">
     <div ref={containerRef} className="absolute inset-0" role="application" aria-label={t("knowledgeGraph.subitems.focusDescription")} />
     <button type="button" className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-slate-950/80 text-slate-200 shadow-lg transition hover:bg-white/10 hover:text-white" aria-label={t("knowledgeGraph.fit")} title={t("knowledgeGraph.fit")} onClick={() => fitRef.current()}>
       <Maximize2 className="h-4 w-4" aria-hidden="true" />

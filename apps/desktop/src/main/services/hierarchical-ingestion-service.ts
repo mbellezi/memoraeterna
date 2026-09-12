@@ -355,7 +355,7 @@ function asObject(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function structureBoundaries(
+export function structureBoundaries(
   markdown: string,
   divisions: Array<{
     title: string;

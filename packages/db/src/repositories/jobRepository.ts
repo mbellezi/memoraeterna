@@ -4,7 +4,6 @@ import {
   asJsonObject,
   findById,
   insertRow,
-  listRows,
   mapNullableTimestamp,
   mapTimestamp,
   updateRow
@@ -163,8 +162,13 @@ export function createJobRepository(db: Queryable) {
     },
 
     async list(limit?: number): Promise<JobRecord[]> {
-      const rows = await listRows<JobRow>(db, "jobs", returning, limit);
-      return rows.map(mapJob);
+      const result = await db.query<JobRow>(
+        `select ${returning} from jobs
+         where payload->>'dashboardDismissedAt' is null or status in ('queued', 'running')
+         order by created_at desc limit $1`,
+        [limit ?? 100]
+      );
+      return result.rows.map(mapJob);
     },
 
     async nextQueuedOfType(type:string):Promise<JobRecord|null>{const row=(await db.query<JobRow>(`select ${returning} from jobs where type=$1 and status='queued' and run_after<=now() order by priority desc,run_after asc limit 1`,[type])).rows[0];return row?mapJob(row):null;},
@@ -229,6 +233,7 @@ export function createJobRepository(db: Queryable) {
       const result = await db.query<JobRow>(
         `update jobs
          set status = 'queued', result = null, error = null, progress = 0, run_after = now(),
+             payload = payload - 'dashboardDismissedAt',
              attempts = 0,
              locked_at = null, locked_by = null, finished_at = null,
              cancel_requested_at = null, updated_at = now()
@@ -242,8 +247,10 @@ export function createJobRepository(db: Queryable) {
 
     async clearCompletedOrFailed(): Promise<number> {
       const result = await db.query(
-        `delete from jobs
-         where status in ('succeeded', 'failed') and type not in ('organization','maintenance')`
+        `update jobs
+         set payload = jsonb_set(payload, '{dashboardDismissedAt}', to_jsonb(now()::text))
+         where status in ('succeeded', 'failed')
+           and payload->>'dashboardDismissedAt' is null`
       );
       return result.rowCount ?? 0;
     },

@@ -50,6 +50,10 @@ worker supervision, progress, cancellation, retry, or restart recovery.
   running, failed/canceled or completed state even after the ingestion job ends.
 - Aggregate progress never hides a failed child. Canceling a batch requests
   cancellation for active/pending runs while preserving completed results.
+- Dashboard cleanup dismisses succeeded and failed jobs of every type using
+  `payload.dashboardDismissedAt`, preserving execution records and audit links.
+  Queue admission is unaffected; retry removes the dismissal and active jobs
+  remain visible. Canceled-run deletion retains its separate confirmed flow.
 - Collective stages honor their barriers: note matching waits for selected note
   generation, and root aggregation waits for the required child summaries.
 - Failure in one independent child does not invalidate completed siblings.
@@ -87,6 +91,10 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   drain is active are coalesced and scheduled after it settles; they must never
   start concurrent ingestion orchestrators or duplicate collective matching.
   Shutdown clears deferred wakeups and waits for the active drain.
+- A failed polling pass or idle-runtime cleanup schedules another bounded poll.
+  Optional wiki-sync and maintenance admission failures cannot prevent foreground
+  jobs from being claimed; report sanitized diagnostics and retry admission on
+  subsequent polls. Shutdown still prevents any deferred restart.
 
 - Organization jobs are claimed by the existing supervisor alongside ingestion
   and relation maintenance. Their run checkpoint owns analysis/review state;

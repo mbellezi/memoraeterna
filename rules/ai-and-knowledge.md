@@ -31,13 +31,60 @@ embeddings, summaries, atomic notes, knowledge graph, matching, or search.
   implemented behind `AiModelAdapter`; it must not own canonical storage or
   bypass task routing. No external harness runtime is selected by this decision.
 
+## Application-wide prompt configuration target
+
+The next prompt-configuration version must expose one hierarchical, searchable
+Prompts settings section for all application-owned AI prompts: summaries, atomic
+notes, matching, graph extraction/canonicalization, relation descriptions,
+consultation, organization, maintenance, embedding instructions and diagnostics,
+including shared fragments and repairs. The implementation plan is
+[the prompt catalog design](../docs/ai-prompt-catalog-plan.md). Existing inline
+builders and legacy instruction snapshots remain compatibility behavior until
+their callers are explicitly migrated; a settings-only copy is not completion.
+
+- Use registered `%variable_name%` placeholders in the new template version.
+  Below every editable prompt field list the actual variables used and each
+  variable's function, type, origin and safe example. Keep unknown/missing
+  variables visible and prevent invalid execution.
+- Substantive application prompt wording is customizable. Required tool/output
+  contracts are visible in composition previews and remain enforced by code;
+  editing prose cannot change permissions, source scope, identity or budgets.
+- Render typed inputs once, without executable expressions or arbitrary includes.
+  Variable-like text inside source material remains literal untrusted data.
+  Shared fragments have explicit acyclic dependencies and pinned revisions.
+- Keep immutable defaults, recoverable drafts, activation/reset/restoration
+  history and deterministic global/function/domain inheritance in one authority.
+  Migrate existing Organization settings and link to the appropriate catalog leaf.
+- Every migrated runtime caller resolves the catalog entry actually shown in
+  settings. Record composition IDs/hashes with canonical AI audits; preserve
+  admitted job snapshots and existing full-prompt capture controls.
+- Prompt changes affect future admissions and compatible artifact fingerprints.
+  Embedding instruction/serialization changes invalidate incompatible vector
+  spaces. Saving or activation never implicitly reprocesses the library.
+- Preserve legacy placeholder syntax only in versioned compatibility readers.
+  Validate migrated effective text; do not reinterpret ambiguous user prose or
+  activate an unvalidated advanced prompt by changing its template syntax.
+
 ## Models, profiles, and parameters
 
-- Each profile references exactly one remote or local model and defines privacy
-  mode and task-specific overrides.
+- Each profile references exactly one model and defines task-specific overrides.
+  The selected model determines execution location; there is no independent
+  local-only/remote permission. Legacy privacy fields remain readable for stored
+  contracts and audit compatibility, but cannot filter or block a selected model.
 - Each AI task has a persisted profile route. The single default profile is a
   fallback only when no explicit route exists. Validate required capabilities
   before execution.
+- Organization/page synthesis, cited consultation, weekly/monthly maintenance,
+  cleanup and their synthetic instruction samples all use the `structured-output`
+  route. Resolve an explicit operation profile override first, then that task's
+  route, then the default profile only when no route exists. An unavailable or
+  incompatible selected profile fails visibly; do not silently try another model.
+- Hybrid consultation resolves its optional query vector through the independent
+  `embedding` route. A generation override does not override embeddings or other
+  processing stages. Missing embeddings degrade to text retrieval.
+- Pin the effective generative profile, model identity and parameters at run
+  admission. Later router edits affect new admissions, not an admitted run;
+  incompatible changes to the pinned model fail identity validation.
 - Model configurations own defaults. `ai_profile_tasks.parameters` owns only
   profile/task overrides.
 - Effective precedence is safe internal defaults, then model defaults, then
@@ -199,9 +246,8 @@ provider token breakdowns and precise call context, as specified in
   inference queue. It records a canonical AI task and organization-step link
   atomically. A queued run keeps its original effective model parameters and
   content language after settings edits. Recheck immutable provider/model,
-  endpoint, runtime/revision and privacy compatibility before adapter creation;
-  revoked or incompatible identity fails visibly. A local-only run or profile
-  cannot invoke a remote adapter or use a fallback profile.
+  endpoint and runtime/revision compatibility before adapter creation;
+  revoked or incompatible identity fails visibly. A pinned run cannot silently use a fallback profile.
 
 - Runtime and validation work must never load two local generative models or
   duplicate real helper instances simultaneously. The resource ceiling is one
@@ -210,8 +256,8 @@ provider token breakdowns and precise call context, as specified in
   switching real local models. Deterministic model mocks do not load runtimes.
 
 - Cited consultation and its optional query embedding use the existing FIFO and
-  adapters. The explicit query privacy applies to embedding admission as well as
-  generation; ineligible embeddings degrade to text. Organization/consultation
+  adapters. Query embeddings use the embedding route independently of the generation model;
+  unavailable embeddings degrade to text. Organization/consultation
   callers can revalidate scoped evidence inside FIFO admission and immediately
   before adapter execution. Explicit answer saves reference existing canonical
   AI audits instead of creating duplicate inference or billing records.
