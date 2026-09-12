@@ -14,3 +14,4 @@ export * from "./repositories/obsidianWikiRepository.js";
 export * from "./repositories/obsidianEditorialRepository.js";
 export * from "./repositories/promptRepository.js";
 export * from './repositories/wikiCuratorRepository.js';
+export * from './repositories/wikiCollectionRepository.js';

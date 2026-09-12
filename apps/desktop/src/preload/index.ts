@@ -6,7 +6,7 @@ import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSche
 import { MaintenanceCommandSchema,MaintenanceResponseSchema } from "@app/domain";
 import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
-import { WikiLinkedTargetSchema,WikiLinkedTargetInputSchema,WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
+import { WikiCollectionCommandSchema,WikiCollectionResponseSchema,WikiTreeInputSchema,WikiTreeSchema,WikiContextInputSchema,WikiContextSchema,WikiMoveInputSchema,WikiLinkedTargetSchema,WikiLinkedTargetInputSchema,WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
@@ -128,6 +128,10 @@ const api: DesktopApi = {
   curator:{command:async(input)=>CuratorResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.curatorCommand,CuratorCommandSchema.parse(input)))},
   organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
+    collection:async input=>WikiCollectionResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiCollection,WikiCollectionCommandSchema.parse(input))),
+    tree:async input=>WikiTreeSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiTree,WikiTreeInputSchema.parse(input))),
+    context:async input=>WikiContextSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiContext,WikiContextInputSchema.parse(input))),
+    move:async input=>WikiPageSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiMove,WikiMoveInputSchema.parse(input))),
     linkedTarget:async(input)=>WikiLinkedTargetSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiLinkedTarget,WikiLinkedTargetInputSchema.parse(input))),
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
     get: async (id, revisionId) => WikiPageSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })),

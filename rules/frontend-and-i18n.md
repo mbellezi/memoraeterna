@@ -450,3 +450,31 @@ job statuses, or user-visible backend errors.
 - Wiki page cards and title actions reflow using the available reading-panel
   width. In narrow windows, the evidence overlay stays within the reading region
   below the wrapped toolbar, with its own scrolling and visible close action.
+
+- Complete wiki navigation uses lazy/keyset children and explicit continuation,
+  not the legacy flat page-list ceiling. Home recent/pinned sections and reading
+  child links use their own bounded canonical reads, independent of expansion.
+  Ignore stale child-page responses and serialize continuation clicks.
+  Opening a distant page hydrates its path without resetting loaded siblings
+  or their continuation cursor.
+- Reading links are compact text links with visible focus and subtle type context.
+  Do not wrap individual TOC/child/note/source links in padded bordered cards.
+  Inline links contain only phrasing HTML; note/entity details open outside the
+  paragraph. Citation positions resolve only within the owning section/group's
+  exact evidence list. Unknown references stay inert; titles never imply identity.
+- Notes and Sources tabs show actual current memberships/evidence of the page and
+  its owned TOCs. Aggregate Notes/Sources by canonical identity before pagination,
+  retaining their associations. Connections show each edge’s purpose and context;
+  fixed relationship reasons are localized. Connections distinguish structural, evidential and semantic
+  links, with a bounded map and a paginated list alternative. These scoped tabs
+  use dedicated labels rather than whole-library or semantic-only wording.
+- Use one active renderer navigation router for native Back and raw mouse extra
+  buttons (3 Back, 4 Forward where history supports it). Coalesce a driver's
+  matching native/mouse event even when the top overlay unmounts. Close the top
+  inspector/dialog/context before navigating history; hidden mounted workspaces
+  do not consume Back. Preserve page, tree, note expansion, evidence, query and
+  scroll through source navigation. Graph overlays keep Escape/focus handling
+  but do not maintain competing raw mouse Back listeners.
+- Manual creation inherits the current page context. Accessible move-before,
+  move-after and move-into actions own ordering; numeric position is not the
+  primary organizing control. Wiki movement never changes source hierarchy.

@@ -143,10 +143,10 @@ export function MarkdownEditor({
   </div>;
 }
 
-export function MarkdownPreview({ markdown, emptyLabel }: { markdown: string; emptyLabel: string }) {
+export function MarkdownPreview({ markdown, emptyLabel, reference }: { markdown: string; emptyLabel: string; reference?:((token:string)=>ReactNode)|undefined }) {
   const blocks = parseBlocks(markdown);
   if (blocks.length === 0) return <p className="text-sm italic text-slate-400">{emptyLabel}</p>;
-  return <div className="grid gap-4 text-[15px] leading-7 text-slate-700 dark:text-slate-200">{blocks.map((block, index) => renderBlock(block, index))}</div>;
+  return <div className="grid gap-4 text-[15px] leading-7 text-slate-700 dark:text-slate-200">{blocks.map((block, index) => renderBlock(block, index, reference))}</div>;
 }
 
 type MarkdownBlock =
@@ -197,13 +197,13 @@ function parseBlocks(markdown: string): MarkdownBlock[] {
   return blocks;
 }
 
-function renderBlock(block: MarkdownBlock, key: number): ReactNode {
+function renderBlock(block: MarkdownBlock, key: number, reference?:((token:string)=>ReactNode)|undefined): ReactNode {
   if (block.type === "heading") {
     const Tag = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
-    return <Tag key={key} className={cn("font-semibold tracking-tight text-slate-950 dark:text-white", block.level === 1 ? "text-3xl" : block.level === 2 ? "text-2xl" : block.level === 3 ? "text-xl" : "text-lg")}>{renderInline(block.text)}</Tag>;
+    return <Tag key={key} className={cn("font-semibold tracking-tight text-slate-950 dark:text-white", block.level === 1 ? "text-3xl" : block.level === 2 ? "text-2xl" : block.level === 3 ? "text-xl" : "text-lg")}>{renderInline(block.text,reference)}</Tag>;
   }
-  if (block.type === "paragraph") return <p key={key} className="whitespace-pre-wrap">{renderInline(block.text)}</p>;
-  if (block.type === "quote") return <blockquote key={key} className="border-l-4 border-cyan-400 bg-cyan-50/70 py-2 pl-4 pr-3 italic dark:bg-cyan-950/30">{renderInline(block.text)}</blockquote>;
+  if (block.type === "paragraph") return <p key={key} className="whitespace-pre-wrap">{renderInline(block.text,reference)}</p>;
+  if (block.type === "quote") return <blockquote key={key} className="border-l-4 border-cyan-400 bg-cyan-50/70 py-2 pl-4 pr-3 italic dark:bg-cyan-950/30">{renderInline(block.text,reference)}</blockquote>;
   if (block.type === "code") return <pre key={key} className="overflow-auto rounded-xl bg-slate-950 p-4 text-sm leading-6 text-slate-100"><code>{block.text}</code></pre>;
   if (block.type === "rule") return <hr key={key} className="border-slate-200 dark:border-slate-800" />;
   const Tag = block.ordered ? "ol" : "ul";
@@ -211,14 +211,15 @@ function renderBlock(block: MarkdownBlock, key: number): ReactNode {
   return <Tag key={key} className={cn("grid gap-1", checklist ? "list-none pl-0" : "pl-6", !checklist && (block.ordered ? "list-decimal" : "list-disc"))}>{block.items.map((item, itemIndex) => {
     const task = item.match(/^\[([ xX])\]\s+(.+)$/);
     return <li key={itemIndex} className={cn(task && "flex items-start gap-2")}>
-      {task ? <><input type="checkbox" checked={task[1]!.toLowerCase() === "x"} readOnly tabIndex={-1} className="mt-1.5 accent-cyan-700" />{renderInline(task[2]!)}</> : renderInline(item)}
+      {task ? <><input type="checkbox" checked={task[1]!.toLowerCase() === "x"} readOnly tabIndex={-1} className="mt-1.5 accent-cyan-700" />{renderInline(task[2]!,reference)}</> : renderInline(item,reference)}
     </li>;
   })}</Tag>;
 }
 
-function renderInline(text: string): ReactNode[] {
-  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\(https?:\/\/[^)]+\))/g);
+function renderInline(text: string, reference?:((token:string)=>ReactNode)|undefined): ReactNode[] {
+  const tokens = text.split(/(\[[^\]]+\]\(memora:(?:page|source|atomic_note|entity)\/[0-9a-f-]{36}\)|\[(?:e)?[1-9][0-9]{0,3}\]|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\(https?:\/\/[^)]+\))/g);
   return tokens.map((token, index) => {
+    const resolved=reference?.(token);if(resolved!==undefined&&resolved!==null)return <Fragment key={index}>{resolved}</Fragment>;
     if (token.startsWith("`") && token.endsWith("`")) return <code key={index} className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-slate-800">{token.slice(1, -1)}</code>;
     if ((token.startsWith("**") && token.endsWith("**")) || (token.startsWith("__") && token.endsWith("__"))) return <strong key={index}>{token.slice(2, -2)}</strong>;
     if (token.startsWith("~~") && token.endsWith("~~")) return <del key={index}>{token.slice(2, -2)}</del>;

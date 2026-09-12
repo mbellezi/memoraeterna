@@ -1,10 +1,13 @@
 import { ipcChannels } from "../../shared/ipc.js";
 import type { IpcMain } from "electron";
 import { z } from "zod";
-import { WikiLinkedTargetInputSchema,WikiSaveInputSchema, WikiQuerySchema } from "@app/domain";
+import { WikiTreeInputSchema,WikiContextInputSchema,WikiMoveInputSchema,WikiLinkedTargetInputSchema,WikiSaveInputSchema, WikiQuerySchema } from "@app/domain";
 import type { WikiService } from "./wiki-service.js";
 
 export function registerWikiIpc(ipc: IpcMain, service: WikiService) {
+  ipc.handle(ipcChannels.wikiTree,(_event,input:unknown)=>service.tree(WikiTreeInputSchema.parse(input)));
+  ipc.handle(ipcChannels.wikiContext,(_event,input:unknown)=>service.context(WikiContextInputSchema.parse(input)));
+  ipc.handle(ipcChannels.wikiMove,(_event,input:unknown)=>service.move(WikiMoveInputSchema.parse(input)));
   ipc.handle(ipcChannels.wikiLinkedTarget,(_event,payload:unknown)=>service.linkedTarget(WikiLinkedTargetInputSchema.parse(payload)));
   ipc.handle(ipcChannels.wikiList, () => service.list());
   ipc.handle(ipcChannels.wikiGet, (_event, payload: unknown) => {

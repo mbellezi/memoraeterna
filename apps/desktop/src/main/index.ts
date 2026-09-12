@@ -283,7 +283,7 @@ void app.whenReady().then(() => {
   registerConsultationIpc(ipcMain,consultationService);
   jobSupervisor = new JobSupervisor({
     maintenanceTick:()=>maintenanceService.tick(),maintenanceReady:job=>maintenanceService.ready(job),processMaintenance:(job,signal)=>maintenanceService.execute(job,signal),
-    reconcileOrganization:()=>reconcileOrganizationParticipation(databaseService!.getPool()!,organizationService),
+    reconcileOrganization:async()=>{await reconcileOrganizationParticipation(databaseService!.getPool()!,organizationService);await organizationService.automaticTick();},
     processOrganization:(job,signal)=>organizationService.execute(job,signal),
     traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) => processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),

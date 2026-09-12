@@ -1,3 +1,4 @@
+import { WikiCollection } from './wiki-collection.js';
 import { WikiCurator } from './wiki-curator.js';
 import { organizationMetadataConfiguration, renderPrompt, capturePromptPin, withPromptPin, catalogInstructions } from "./prompt-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -78,8 +79,10 @@ export function organizationCheckpointWithUsage(checkpoint:OrganizationCheckpoin
 }
 export class OrganizationService {
   constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleMaintenance?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null,routine:"weekly"|"monthly"|"cleanup")=>Promise<string>;validateMaintenanceActivation?:(id:string,config:import("@app/domain").OrganizationConfiguration,previous:import("@app/domain").OrganizationConfiguration,language:string)=>Promise<void>;sampleConsultation?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
-  automaticStart(input:import("zod").z.input<typeof import("@app/domain").CuratorStartSchema>,participation:import("@app/domain").CuratorSnapshot["participation"]){return new WikiCurator(this.options).start(input,participation);}
+  async automaticStart(input:import("zod").z.input<typeof import("@app/domain").CuratorStartSchema>,participation:import("@app/domain").CuratorSnapshot["participation"]){try{return await new WikiCurator(this.options).start(input,participation);}catch(error){if(!String(error).includes('organization.errors.scopeLimit'))throw error;return import('@app/domain').then(async domain=>domain.WikiBootstrapSchema.parse(await new WikiCollection(this.options).command({command:'bootstrap',input:{policyId:input.policyId,policyRevisionId:input.policyRevisionId,sourceIds:input.sourceIds,noteIds:input.noteIds??[]}},participation)));}}
   automaticCommand(input:import("@app/domain").CuratorCommand){return new WikiCurator(this.options).command(input);}
+  collectionCommand(input:import("zod").z.input<typeof import("@app/domain").WikiCollectionCommandSchema>){return new WikiCollection(this.options).command(input);}
+  automaticTick(){return new WikiCollection(this.options).tick();}
   private repo(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createOrganizationRepository(pool);}
   private wiki(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createWikiRepository(pool);}
   async settings(){const value=await this.repo().settings();return OrganizationSettingsSchema.parse({...value,revisions:value.revisions.map(r=>({...r,configuration:organizationMetadataConfiguration(r.configuration)}))});}

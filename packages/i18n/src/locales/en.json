@@ -125,7 +125,8 @@
       "uncertain": "A model call was interrupted. Usage may be incomplete; retries remain bounded.",
       "canceled": "Canceled",
       "failed": "Organization failed. Check the selected profile and retry within the remaining budget.",
-      "policy": "The automatic policy is paused, changed, or does not permit this operation."
+      "policy": "The automatic policy is paused, changed, or does not permit this operation.",
+      "scopeDecision": "Related knowledge uses sources outside this policy. Review the source scope before integration."
     }
   },
   "entityIdentity": {"threshold":"Entity identity similarity threshold","hint":"AI verifies candidates of the same type using names and identifying facts. Equal names alone never authorize a merge. Ambiguous identities remain separate. Default: 0.92 (provisional). Exact names and known aliases are also checked. Existing entities are reused when identity is confirmed; historical duplicates are not merged in bulk."},
@@ -1272,7 +1273,39 @@
     "catalogOnly": "Catalog only",
     "scopeSource": "Explore this source",
     "verifyEvidence": "I reviewed these citations",
-    "needsEvidenceReview": "Review these citations before treating the evidence as verified."
+    "needsEvidenceReview": "Review these citations before treating the evidence as verified.",
+    "loadMore": "Load more",
+    "context": "Page context",
+    "read": "Read",
+    "notes": "Notes",
+    "localMap": "Local connection map",
+    "connectionList": "Connection list",
+    "mapBounded": "Map shows up to 12 connections; all loaded connections are listed below.",
+    "edge": {
+      "structural": "Hierarchy",
+      "evidential": "Evidence",
+      "semantic": "Membership / link"
+    },
+    "direction": {
+      "incoming": "Backlink",
+      "outgoing": "Outgoing"
+    },
+    "moveBefore": "Move before",
+    "moveAfter": "Move after",
+    "moveInto": "Move into",
+    "contextLoadError": "Could not load this page context. Try again.",
+    "contextSources": "Sources",
+    "contextConnections": "Connections",
+    "reason": {
+      "source": "Source membership",
+      "reading": "Reading membership",
+      "parent": "Parent page",
+      "child": "Child page",
+      "link": "Page link",
+      "evidence": "Original citation",
+      "subtopic": "Subtopic membership",
+      "related": "Related membership"
+    }
   },
   "maintenance": {
     "sourceSelection": "Select sources only if they should participate in this routine. Page selections remain independent.",
@@ -1673,6 +1706,33 @@
     "pause": "Pause policy",
     "links": "links",
     "assessment": "AI draft — original references checked structurally; semantic support has not been verified by a person.",
-    "modelAssessment": "AI draft — original references and semantic support checked by the selected model; still unreviewed by a person."
+    "modelAssessment": "AI draft — original references and semantic support checked by the selected model; still unreviewed by a person.",
+    "assess": "Assess collection",
+    "bootstrap": "Organize collection",
+    "wholeLibrary": "Whole library, including future imports",
+    "readOnlyAssessment": "Read-only assessment. Existing artifacts are reused; no optional processing is started.",
+    "resume": "Resume",
+    "groups": "Completed groups",
+    "coverage": "Coverage",
+    "coverageStates": {
+      "cataloged": "Cataloged",
+      "awaiting": "Awaiting organization",
+      "analyzing": "Analyzing",
+      "partial": "Partially integrated",
+      "integrated": "Integrated",
+      "attention": "Needs attention",
+      "stale": "Stale",
+      "running": "Organizing",
+      "paused": "Paused",
+      "complete": "Complete",
+      "canceled": "Canceled"
+    },
+    "policy": "Organization policy",
+    "newPolicy": "Create another policy",
+    "originalPassages": "Original passages",
+    "reviewScope": "Include in scope preview",
+    "excludedSources": "Excluded sources",
+    "excludedHint": "Exclude these sources and all their descendants from this policy.",
+    "previewChanges": "Preview and activate these changes before starting new work. The current policy remains in effect."
   }
 }

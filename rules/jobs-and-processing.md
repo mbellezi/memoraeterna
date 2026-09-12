@@ -179,3 +179,18 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   Changing parameters may admit a new generation after a failed old generation;
   the old snapshot, budgets and history remain unchanged. Running-model identity
   guards still preserve the parameters frozen at that run's admission.
+
+- Collection bootstrap uses source and complete-original cursors plus separate
+  selected-note groups under the existing organization owner. A large selected
+  `integrateWiki` stage falls back to that parent, preserving its processing-batch
+  participation and original prompt pin. Its own organization barrier must not
+  block the coordinator's read/admission step.
+- Pause blocks new child admission and guarded apply; resume retains child calls,
+  repairs, unknown-usage state, and its original deadline. Completed child receipts
+  are reconciled before advancing the cursor. A failed or rejected unchanged
+  generation cannot acquire a fresh allowance merely by reopening the UI.
+
+- Active bootstrap enumeration is independent of the recent-result UI. Take a
+  bounded fair page of running coordinators, persisting the last visit in their
+  checkpoint even while a child or source barrier waits. Newer terminal history
+  cannot hide or starve an older coordinator; paused/history views remain paginated.

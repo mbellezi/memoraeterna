@@ -1,3 +1,6 @@
+import { WikiChildrenLinks } from './WikiChildrenLinks';
+import { subscribeWindowNavigation } from '../lib/window-navigation';
+import { WikiContextPane } from './WikiContextPane';
 import { WikiNavigationPane } from "./WikiNavigationPane";
 import { AutomaticWikiDialog } from './AutomaticWikiDialog';
 import { WikiThemeTree } from './WikiThemeTree';
@@ -9,7 +12,7 @@ import { OrganizationDialog } from "./OrganizationView";
 import { SourceTypeBadge } from "./LibraryView";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowDown, ArrowUp, BookOpen, Check, ChevronRight, Clock3, FileText, FolderTree, Library, Link2, LoaderCircle, Pencil, Pin, Plus, Quote, Save, Search, ShieldCheck, X } from "lucide-react";
-import { WikiPageContentSchema, type WikiPage, type WikiPageContent, type WikiEvidence, type WikiResult } from "@app/domain";
+import { resolveWikiReference,WikiPageContentSchema, type WikiPage, type WikiPageContent, type WikiEvidence, type WikiResult } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import { MarkdownEditor, MarkdownPreview } from "./MarkdownEditor";
 import { SourceRelationsList } from "./SourceRelationsList";
@@ -31,6 +34,14 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
   const [automaticOpen,setAutomaticOpen]=useState(false);
   const [consultationOpen,setConsultationOpen]=useState(false);
   const [organizationOpen,setOrganizationOpen]=useState(false);
+  const treeCursors=useRef(new Map<string,Awaited<ReturnType<typeof window.app.wiki.tree>>["next"]>());
+  const [overview,setOverview]=useState<{recent:PageSummary[];pinned:PageSummary[]}>({recent:[],pinned:[]});
+  const [treeMore,setTreeMore]=useState<Record<string,boolean>>({}),[treeBusy,setTreeBusy]=useState(false);
+  const selectedPageRef=useRef<string|null>(null);
+  const [moveTarget,setMoveTarget]=useState("");
+  const readingRef=useRef<HTMLElement>(null);
+  const readingScroll=useRef(new Map<string,number>());
+  const [contextView,setContextView]=useState<"read"|"notes"|"sources"|"connections">("read");
   const [pages, setPages] = useState<PageSummary[]>([]), [page, setPage] = useState<WikiPage | null>(null);
   const [mode, setMode] = useState<"home" | "sources" | "page" | "search">("home");
   const [editing, setEditing] = useState(false), [draft, setDraft] = useState<WikiPageContent>(newContent);
@@ -41,6 +52,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
   const [reviewed, setReviewed] = useState(false), [current, setCurrent] = useState(true);
   const [results, setResults] = useState<WikiResult[]>([]), [offset, setOffset] = useState(0), [more, setMore] = useState(false);
   const [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<MessageKey | null>(null);
+  const [linkedInspector,setLinkedInspector]=useState<Awaited<ReturnType<typeof window.app.wiki.linkedTarget>>>(null);
   const [inspector, setInspector] = useState<WikiEvidence | WikiResult | null>(null);
   const [history, setHistory] = useState<Awaited<ReturnType<typeof window.app.wiki.history>> | null>(null);
   const [pickSection, setPickSection] = useState<string | null>(null), [chunks, setChunks] = useState<string[]>([]);
@@ -51,7 +63,9 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
   const fail = (e: unknown) => { const message = String(e); setError(message.includes("wiki.errors.conflict") ? "wiki.errors.conflict" : message.includes("wiki.errors.cycle") ? "wiki.errors.cycle" : message.includes("wiki.errors.evidence") ? "wiki.errors.evidence" : "wiki.errors.generic"); };
   useEffect(()=>{if(!externalTarget||editing||organizationOpen||consultationOpen||history||processedExternal.current===externalTarget.token)return;const isCurrent=pageRequests.current.begin();let live=true;void window.app.wiki.get(externalTarget.id,externalTarget.revision).then(value=>{if(!live||!isCurrent())return;processedExternal.current=externalTarget.token;setHistoricalRevision(externalTarget.revision);setPage(value);setMode('page');setInspector(value?.evidence.find(e=>e.id===externalTarget.evidence)??null);}).catch(fail);return()=>{live=false;};},[externalTarget,editing,organizationOpen,consultationOpen,history]);
 
-  const reload = useCallback(async () => { setPages(await window.app.wiki.list()); }, []);
+  selectedPageRef.current=page?.id??null;
+  const loadTree=useCallback(async(parentId:string|null=null,append=false,pathTo?:string)=>{setTreeBusy(true);try{const key=parentId??'root',result=await window.app.wiki.tree({parentId,after:append?treeCursors.current.get(key)??null:null,...(pathTo?{pathTo}:{})});treeCursors.current.set(key,result.next);setTreeMore(current=>({...current,[key]:!!result.next}));setPages(current=>{const rows=append?current:current.filter(p=>p.parentId!==parentId);return [...new Map([...rows,...result.items,...result.path].map(p=>[p.id,p])).values()];});}finally{setTreeBusy(false);}},[]);
+  const reload = useCallback(async () => {const [,recent,pinned]=await Promise.all([loadTree(null,false,selectedPageRef.current??undefined),window.app.wiki.tree({view:'recent',limit:12}),window.app.wiki.tree({view:'pinned',limit:12})]);setOverview({recent:recent.items,pinned:pinned.items});}, [loadTree]);
   useEffect(() => { if (!active) return; setLoading(true); reload().catch(fail).finally(() => setLoading(false)); }, [reload, active]);
   useEffect(() => {
     if (mode !== "sources" && mode !== "search" && !pickSection)
@@ -79,6 +93,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     const isCurrent=pageRequests.current.capture();let live=true;const id=page.id,timer=setInterval(()=>{if(document.hidden||!live||!isCurrent())return;void window.app.wiki.get(id).then(next=>{if(next&&live&&isCurrent())setPage(current=>live&&isCurrent()&&current?.id===id?next:current);}).catch(()=>undefined);},3000);
     return()=>{live=false;clearInterval(timer);};
   },[active,editing,mode,page?.id,historicalRevision]);
+  useEffect(()=>{if(page&&readingRef.current)readingRef.current.scrollTop=readingScroll.current.get(page.id)??0;},[page?.id]);
   const closeOrganization = useCallback(() => {
     setOrganizationOpen(false);
     void reload().catch(fail);
@@ -93,11 +108,15 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
   }, [page?.id, reload]);
   const goBack = useCallback(async () => {
     if(automaticOpen){setAutomaticOpen(false);return;}
+    if(consultationOpen){setConsultationOpen(false);return;}
     if (organizationOpen) { closeOrganization(); return; }
     if (inspector) {
       setInspector(null);
       return;
     }
+    if(linkedInspector){setLinkedInspector(null);return;}
+    const note=document.querySelector<HTMLButtonElement>('[data-wiki-note-expanded="true"]');if(note){note.click();return;}
+    if(contextView!=='read'){setContextView('read');return;}
     if (pickSection) {
       setPickSection(null);
       return;
@@ -118,7 +137,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
       const nextPage=target.pageId ? await window.app.wiki.get(target.pageId) : null;
       if(isCurrent())setPage(nextPage);
     }
-  }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization,automaticOpen]);
+  }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization,automaticOpen,consultationOpen,contextView,linkedInspector]);
   useEffect(() => {
     if (!active)
       return;
@@ -127,7 +146,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
         void goBack();
     };
     window.addEventListener("keydown", key);
-    const unsubscribe = window.app.system.subscribeNavigation((direction) => {
+    const unsubscribe = subscribeWindowNavigation((direction) => {
       if (direction === "back")
         void goBack();
     });
@@ -147,7 +166,10 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
       if (!result)
         throw new Error();
       setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]);
+      if(page)readingScroll.current.set(page.id,readingRef.current?.scrollTop??0);
       setPage(result);
+      void window.app.wiki.tree({parentId:null,pathTo:id,limit:1}).then(result=>setPages(current=>[...new Map([...current,...result.path].map(item=>[item.id,item])).values()])).catch(fail);
+      setContextView("read");
       setMode("page");
       setScope(id);
       setInspector(null);
@@ -164,7 +186,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     if (editing)
       return; pageRequests.current.invalidate();setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]); setMode(next); setScope(null); setSourceScope(null); setQuery(""); setOffset(0); setInspector(null);
   }
-  function createPage() { pageRequests.current.invalidate();setHistoricalRevision(undefined);setDraft(newContent()); setPage(null); setMode("page"); setEditing(true); setChunks([]); setHistory(null); }
+  function createPage() { pageRequests.current.invalidate();setHistoricalRevision(undefined);setDraft({...newContent(),parentId:mode==="page"?page?.id??null:null}); setPage(null); setMode("page"); setEditing(true); setChunks([]); setHistory(null); }
   function editPage() {
     if (!page)
       return; pageRequests.current.invalidate();setDraft(WikiPageContentSchema.strip().parse(page)); setEditing(true); setChunks([]); setHistory(null);
@@ -198,6 +220,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     if (!pickSection)
       return; setChunks((c) => [...new Set([...c, result.id])]); setDraft((d) => ({ ...d, sections: d.sections.map((s) => s.id === pickSection ? { ...s, evidenceIds: [...new Set([...s.evidenceIds, result.id])], provenance: "attributed", evidenceReview: "verified" } : s) })); setPickSection(null); setQuery("");
   }
+  const renderReference=(token:string,evidenceIds:string[])=>{if(!page)return undefined;const ref=resolveWikiReference(token,evidenceIds,[...(page.automatic?.links??[]),...(page.automatic?.memberships.map(m=>m.target)??[])]);if(ref?.kind==='evidence'){const e=page.evidence.find(e=>e.id===ref.id);return e?<button className="inline text-accent underline" aria-label={t('wiki.inspector')+' · '+e.sourceTitle} onClick={()=>setInspector(e)}>{token}</button>:undefined;}if(ref?.kind==='target')return <WikiTypedLink inline onInlineOpen={setLinkedInspector} label={ref.label} pageId={page.id} target={ref.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>;return undefined;};
   const pageCards = (items: PageSummary[]) => <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
     {items.map((p) => <button key={p.id} disabled={editing} onClick={() => void openPage(p.id)} className={`${card} group p-5 text-left transition hover:border-cyan-400`}>
       <div className="mb-4 flex items-center justify-between">
@@ -309,10 +332,12 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
         <p className="mb-2 mt-5 px-2 text-xs font-medium text-muted-foreground">
           {t("wiki.pages")}
         </p>
-        <WikiThemeTree pages={pages} selected={mode==='page'?page?.id??null:null} disabled={editing} onOpen={id=>void openPage(id)} t={t}/>
+        <WikiThemeTree onExpand={id=>{if(!treeCursors.current.has(id))void loadTree(id).catch(fail);}} more={treeMore} onMore={id=>void loadTree(id,true).catch(fail)} pages={pages} selected={mode==='page'?page?.id??null:null} disabled={editing} onOpen={id=>void openPage(id)} t={t}/>
+        {treeMore.root&&<button disabled={treeBusy} className="p-2 text-sm text-accent" onClick={()=>void loadTree(null,true).catch(fail)}>{t("wiki.loadMore")}</button>}
+        {treeBusy&&<p role="status" className="p-2 text-xs">{t("shell.states.loading")}</p>}
       </WikiNavigationPane>
 
-      <main className="min-w-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-8">
+      <main ref={readingRef} onScroll={event=>{if(page)readingScroll.current.set(page.id,event.currentTarget.scrollTop);}} className="min-w-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-8">
 
         {loading ? <p role="status" className="mb-3 flex items-center gap-2 text-sm text-slate-500">
           <LoaderCircle className="h-4 w-4 animate-spin" />
@@ -353,18 +378,18 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               </button>
             </div>
           </div>
-          {pages.some((p) => p.pinned && !p.archived) ? <section>
+          {overview.pinned.length>0 ? <section>
             <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <Pin className="h-4 w-4 text-amber-500" />
               {t("wiki.pinned")}
             </h3>
-            {pageCards(pages.filter((p) => p.pinned && !p.archived))}
+            {pageCards(overview.pinned)}
           </section> : null}
           <section>
             <h3 className="mb-3 text-sm font-semibold">
               {t("wiki.recent")}
             </h3>
-            {pages.length ? pageCards([...pages].filter((p) => !p.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 12)) : <p className={`${card} p-6 text-sm text-slate-500`}>
+            {overview.recent.length ? pageCards(overview.recent) : <p className={`${card} p-6 text-sm text-slate-500`}>
               {t("wiki.empty")}
             </p>}
           </section>
@@ -441,7 +466,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               {t("wiki.aliases")}
               <input className={control} defaultValue={draft.aliases.join(", ")} onBlur={(e) => patch({ aliases: e.target.value.split(",").map((a) => a.trim()).filter(Boolean) })} />
             </label>
-            <label className="grid gap-1 text-xs">
+            <label hidden className="grid gap-1 text-xs">
               {t("wiki.position")}
               <input type="number" min={0} max={1000000} className={control} value={draft.position} onChange={(e) => patch({ position: Math.max(0, Number(e.target.value) || 0) })} />
             </label>
@@ -547,6 +572,10 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               {t("wiki.history")}
             </button>
           </div>
+          {!historicalRevision&&<details className="mb-4 text-sm"><summary className="cursor-pointer text-muted-foreground">{t('wiki.parent')}</summary><div className="mt-2 flex flex-wrap gap-2"><select className={control} aria-label={t('wiki.parent')} value={moveTarget} onChange={e=>setMoveTarget(e.target.value)}><option value="">{t('wiki.parent')}</option>{pages.filter(p=>p.id!==page.id&&!p.archived).map(p=><option key={p.id} value={p.id}>{p.title}</option>)}</select>{(['before','after','into']as const).map(placement=><button key={placement} disabled={busy||!moveTarget} className={control} onClick={()=>{setBusy(true);void window.app.wiki.move({id:page.id,expectedRevisionId:page.revisionId,targetId:moveTarget,placement}).then(value=>{setPage(value);return reload();}).catch(fail).finally(()=>setBusy(false));}}>{t(placement==='before'?'wiki.moveBefore':placement==='after'?'wiki.moveAfter':'wiki.moveInto')}</button>)}</div></details>}
+          <div role="tablist" aria-label={t('wiki.context')} className="mb-5 flex flex-wrap gap-3">{(['read','notes','sources','connections']as const).map(view=><button role="tab" aria-selected={contextView===view} className={contextView===view?'text-accent underline underline-offset-8':'text-muted-foreground'} key={view} onClick={()=>setContextView(view)}>{t(view==='read'?'wiki.read':view==='notes'?'wiki.notes':view==='sources'?'wiki.contextSources':'wiki.contextConnections')}</button>)}</div>
+          {contextView!=='read'&&<WikiContextPane pageId={page.id} title={page.title} view={contextView} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>}
+          <div hidden={contextView!=='read'}>
           {history ? <div className={`${card} mb-6 p-4`}>
             <h3 className="mb-3 font-semibold">
               {t("wiki.history")}
@@ -576,7 +605,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               </span>
             </div>
             {page.impacts?.some(i=>i.sectionId===s.id)&&<details className="mb-3 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"><summary className="cursor-pointer">{t("consultation.stale")}</summary>{page.impacts.filter(i=>i.sectionId===s.id).map(i=><p key={i.id} className="mt-2 text-xs">{i.kind} · {new Date(i.changedAt).toLocaleString()}</p>)}</details>}
-            <MarkdownPreview markdown={s.markdown} emptyLabel={t("wiki.emptySection")} />
+            <MarkdownPreview markdown={s.markdown} emptyLabel={t("wiki.emptySection")} reference={token=>renderReference(token,s.evidenceIds)} />
             {s.evidenceReview === "needs_review" ? <p className="mt-3 text-xs text-amber-600">
               {t("wiki.needsEvidenceReview")}
             </p> : null}
@@ -598,19 +627,15 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
           </section>) : !page.automatic?.groups.length && !page.automatic?.links.length ? <p className={`${card} p-6 text-sm text-slate-500`}>
             {t("wiki.emptyPage")}
           </p> : null}
-          {pages.some((p) => p.parentId === page.id || p.collectionIds.includes(page.id)) ? <section className="mt-8">
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <FolderTree className="h-4 w-4" />
-              {t("wiki.linkedPages")}
-            </h2>
-            {pageCards(pages.filter((p) => !p.archived && (p.parentId === page.id || p.collectionIds.includes(page.id))))}
-          </section> : null}
-          {page.automatic&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel=""/>}<div className="mt-2 grid gap-2">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink key={m.id} pageId={page.id} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink key={target.kind+target.id} pageId={page.id} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
+          <WikiChildrenLinks pageId={page.id} t={t} onOpen={id=>void openPage(id)}/>
+          {page.automatic&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel="" reference={token=>renderReference(token,group.explanationEvidenceIds)}/>}<div className="mt-2 grid gap-1">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink key={m.id} pageId={page.id} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink key={target.kind+target.id} pageId={page.id} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
+          </div>
         </article> : null}
 
       </main>
 
       </div>
+      {linkedInspector&&!inspector&&<aside aria-label={t('wiki.inspector')} className={card+' w-80 shrink-0 overflow-auto p-4 max-xl:absolute max-xl:inset-y-4 max-xl:right-0 max-xl:z-20'}><div className="mb-3 flex justify-between"><h3 className="font-semibold">{linkedInspector.title}</h3><button aria-label={t('wiki.close')} onClick={()=>setLinkedInspector(null)}><X size={18}/></button></div><MarkdownPreview markdown={linkedInspector.markdown} emptyLabel={t('wiki.noResults')}/><div className="mt-4 grid gap-2">{linkedInspector.evidence.map(e=><button className="text-left text-sm text-accent underline" key={e.id} onClick={()=>setInspector(e)}>{e.sourceTitle} · {e.locator??t('wiki.inspector')}</button>)}</div>{linkedInspector.sourceItemId&&<button className="mt-4 text-sm text-accent underline" onClick={()=>onOpenSource(linkedInspector.sourceItemId!,linkedInspector.kind==='atomic_note'?linkedInspector.id:undefined)}>{t('wiki.openSource')}</button>}</aside>}
       {inspector ? <aside aria-label={t("wiki.inspector")} className={`${card} w-80 shrink-0 overflow-y-auto overscroll-contain p-4 max-xl:absolute max-xl:right-0 max-xl:top-4 max-xl:bottom-0 max-xl:z-20 max-xl:shadow-xl`}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold">

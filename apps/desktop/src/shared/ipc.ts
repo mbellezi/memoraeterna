@@ -40,7 +40,7 @@ export const ipcChannels = {
   promptCommand:"app:prompts:command",
   curatorCommand:"app:curator:command",
   organizationCommand: "app:organization:command",
-  wikiLinkedTarget:"app:wiki:linked-target",
+  wikiCollection:"app:wiki:collection", wikiTree:"app:wiki:tree", wikiContext:"app:wiki:context", wikiMove:"app:wiki:move", wikiLinkedTarget:"app:wiki:linked-target",
   wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
@@ -1132,7 +1132,7 @@ export interface DesktopApi {
   prompts:{command:(input:PromptCommand)=>Promise<unknown>};
   curator: { command:(input:import("@app/domain").CuratorCommand)=>Promise<unknown> };
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
-  wiki: { linkedTarget:(input:z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema>|null>; list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
+  wiki: { collection:(input:z.input<typeof import("@app/domain").WikiCollectionCommandSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiCollectionResponseSchema>>; tree:(input: z.input<typeof import("@app/domain").WikiTreeInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiTreeSchema>>; context:(input:z.input<typeof import("@app/domain").WikiContextInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiContextSchema>>; move:(input:z.input<typeof import("@app/domain").WikiMoveInputSchema>)=>Promise<WikiPage>; linkedTarget:(input:z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema>|null>; list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {
     getInfo: () => Promise<SystemInfo>;
     subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;

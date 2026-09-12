@@ -125,7 +125,8 @@
       "uncertain": "Un appel a été interrompu. La consommation peut être incomplète ; les essais restent limités.",
       "canceled": "Annulée",
       "failed": "L’organisation a échoué. Vérifiez le profil et réessayez dans le budget restant.",
-      "policy": "La politique automatique est suspendue, modifiée ou ne permet pas cette opération."
+      "policy": "La politique automatique est suspendue, modifiée ou ne permet pas cette opération.",
+      "scopeDecision": "Le savoir lié utilise des sources hors de cette politique. Vérifiez le périmètre avant l’intégration."
     }
   },
   "entityIdentity": {"threshold":"Seuil de similarité d’identité des entités","hint":"L’IA vérifie les candidats du même type avec leurs noms et faits distinctifs. Un nom identique ne suffit jamais à autoriser une fusion. Les identités ambiguës restent séparées. Défaut : 0,92 (provisoire). Les noms exacts et alias sont aussi vérifiés. Les entités existantes sont réutilisées après confirmation ; les doublons historiques ne sont pas fusionnés en masse."},
@@ -1122,7 +1123,39 @@
     "catalogOnly": "Catalogue uniquement",
     "scopeSource": "Explorer cette source",
     "verifyEvidence": "J’ai vérifié ces citations",
-    "needsEvidenceReview": "Révisez ces citations avant de considérer les preuves comme vérifiées."
+    "needsEvidenceReview": "Révisez ces citations avant de considérer les preuves comme vérifiées.",
+    "loadMore": "Charger plus",
+    "context": "Contexte de la page",
+    "read": "Lire",
+    "notes": "Notes",
+    "localMap": "Carte des liens locaux",
+    "connectionList": "Liste des liens",
+    "mapBounded": "La carte affiche jusqu’à 12 liens ; tous les liens chargés sont listés ci-dessous.",
+    "edge": {
+      "structural": "Hiérarchie",
+      "evidential": "Preuve",
+      "semantic": "Appartenance / lien"
+    },
+    "direction": {
+      "incoming": "Lien entrant",
+      "outgoing": "Sortant"
+    },
+    "moveBefore": "Déplacer avant",
+    "moveAfter": "Déplacer après",
+    "moveInto": "Déplacer dans",
+    "contextLoadError": "Impossible de charger le contexte de cette page. Réessayez.",
+    "contextSources": "Sources",
+    "contextConnections": "Liens",
+    "reason": {
+      "source": "Source dans la collection",
+      "reading": "Appartenance au parcours",
+      "parent": "Page parente",
+      "child": "Sous-page",
+      "link": "Lien de la page",
+      "evidence": "Citation originale",
+      "subtopic": "Sous-thème",
+      "related": "Appartenance associée"
+    }
   },
   "maintenance": {
     "sourceSelection": "Sélectionnez des sources uniquement si elles doivent participer à cette routine. La sélection des pages reste indépendante.",
@@ -1523,6 +1556,33 @@
     "pause": "Suspendre la politique",
     "links": "liens",
     "assessment": "Brouillon IA — références originales contrôlées structurellement ; support sémantique non encore vérifié par une personne.",
-    "modelAssessment": "Brouillon IA — références originales et support sémantique vérifiés par le modèle sélectionné ; toujours sans révision humaine."
+    "modelAssessment": "Brouillon IA — références originales et support sémantique vérifiés par le modèle sélectionné ; toujours sans révision humaine.",
+    "assess": "Évaluer la collection",
+    "bootstrap": "Organiser la collection",
+    "wholeLibrary": "Toute la bibliothèque, imports futurs inclus",
+    "readOnlyAssessment": "Évaluation en lecture seule. Les artefacts existants sont réutilisés ; aucun traitement optionnel n’est lancé.",
+    "resume": "Reprendre",
+    "groups": "Groupes terminés",
+    "coverage": "Couverture",
+    "coverageStates": {
+      "cataloged": "Catalogué",
+      "awaiting": "En attente d’organisation",
+      "analyzing": "Analyse en cours",
+      "partial": "Partiellement intégré",
+      "integrated": "Intégré",
+      "attention": "À examiner",
+      "stale": "À actualiser",
+      "running": "Organisation en cours",
+      "paused": "En pause",
+      "complete": "Terminé",
+      "canceled": "Annulé"
+    },
+    "policy": "Politique d’organisation",
+    "newPolicy": "Créer une autre politique",
+    "originalPassages": "Passages originaux",
+    "reviewScope": "Inclure dans l’aperçu du périmètre",
+    "excludedSources": "Sources exclues",
+    "excludedHint": "Excluez ces sources et tous leurs descendants de cette politique.",
+    "previewChanges": "Vérifiez et activez les modifications avant de lancer un nouveau travail. La politique actuelle reste en vigueur."
   }
 }

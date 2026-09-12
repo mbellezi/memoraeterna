@@ -10,6 +10,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -1464,6 +1465,7 @@ export const wikiDependencies = pgTable("wiki_dependencies", {
 }, t => [uniqueIndex("wiki_dependencies_consumer_idx").on(t.revisionId,t.sectionId,t.kind,t.inputId),
   index("wiki_dependencies_input_idx").on(t.kind,t.inputId), index("wiki_dependencies_revision_idx").on(t.revisionId)]);
 export const knowledgeImpactEvents = pgTable("knowledge_impact_events", {
+  sourceIds:jsonb("source_ids").notNull().default([]), causalRunId:uuid("causal_run_id"), causalGroupId:uuid("causal_group_id"),
   id: uuid("id").primaryKey().defaultRandom(), kind: text("kind").notNull(), inputId: uuid("input_id").notNull(),
   operation: text("operation").notNull(), fingerprint: text("fingerprint").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1560,3 +1562,11 @@ export const wikiSectionAssessments=pgTable('wiki_section_assessments',{
 export const wikiGroupReceipts=pgTable('wiki_group_receipts',{
  id:uuid('id').primaryKey().defaultRandom(),runId:uuid('run_id').notNull().references(()=>organizationRuns.id,{onDelete:'restrict'}),groupId:uuid('group_id').notNull(),inputFingerprint:text('input_fingerprint').notNull(),targets:jsonb('targets').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
 },t=>[uniqueIndex('wiki_group_receipt_run_idx').on(t.runId,t.groupId)]);
+
+// A3 extends canonical impacts; leases/checkpoints do not acknowledge another consumer.
+export const knowledgeImpactDeliveries=pgTable('knowledge_impact_deliveries',{
+ id:uuid('id').primaryKey().defaultRandom(),eventId:uuid('event_id').notNull().references(()=>knowledgeImpactEvents.id,{onDelete:'restrict'}),consumer:text('consumer').notNull(),consumerKey:text('consumer_key').notNull(),inputGeneration:text('input_generation').notNull(),status:text('status').notNull().default('pending'),leaseUntil:timestamp('lease_until',{withTimezone:true}),deferUntil:timestamp('defer_until',{withTimezone:true}),checkpoint:jsonb('checkpoint').notNull().default({}),receipt:jsonb('receipt'),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow(),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[uniqueIndex('knowledge_impact_delivery_generation_idx').on(t.eventId,t.consumer,t.consumerKey,t.inputGeneration),index('knowledge_impact_delivery_pending_idx').on(t.consumer,t.status,t.deferUntil),check('knowledge_impact_delivery_state_check',sql`${t.status} in ('pending','leased','deferred','acknowledged')`),check('knowledge_impact_delivery_receipt_check',sql`${t.status}<>'acknowledged' or ${t.receipt} is not null`)]);
+export const wikiSourceCoverage=pgTable('wiki_source_coverage',{
+ policyId:uuid('policy_id').notNull(),sourceId:uuid('source_id').notNull(),inputFingerprint:text('input_fingerprint').notNull(),status:text('status').notNull(),checkpoint:jsonb('checkpoint').notNull(),runId:uuid('run_id').references(()=>organizationRuns.id,{onDelete:'restrict'}),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[primaryKey({columns:[t.policyId,t.sourceId]}),index('wiki_source_coverage_state_idx').on(t.policyId,t.status)]);

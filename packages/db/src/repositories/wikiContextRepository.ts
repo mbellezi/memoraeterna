@@ -10,6 +10,7 @@ export const rowFingerprint = (alias:string) => `md5((to_jsonb(${alias})-'update
 const inputTables:Record<string,string>={source:'source_items',document:'documents',chunk:'chunks',atomic_note:'atomic_notes',summary:'source_summaries',entity:'entities',entity_mention:'entity_mentions',source_relation:'source_relations',relation_evidence:'source_relation_evidence',note_relation:'atomic_note_relations'};
 export async function validateWikiDependencies(db:Pick<PgClient,'query'>,dependencies:Array<{kind:string;id:string;fingerprint:string}>,lock=false){
   for(const dep of dependencies.toSorted((a,b)=>a.kind.localeCompare(b.kind)||a.id.localeCompare(b.id))){
+    if(dep.kind==='wiki_page'){const row=(await db.query('select current_revision_id from wiki_pages where id=$1'+(lock?' for share':''),[dep.id])).rows[0];if(row?.current_revision_id!==dep.fingerprint)throw new Error('organization.errors.evidence');continue;}
     if(dep.kind==='wiki_section'){
       if(lock)await db.query("select p.id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->>'id'=$1) for share of p",[dep.id]);
       const current=(await db.query("select md5(sec::text) as fingerprint from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where sec->>'id'=$1",[dep.id])).rows;

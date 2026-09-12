@@ -28,10 +28,51 @@ export function createWikiRepository(pool: PgPool) {
     async linkedTarget(input:{pageId:string;kind:string;id:string}) {
       const content=(await pool.query('select r.content from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1',[input.pageId])).rows[0]?.content;
       if(!content?.automatic||![...content.automatic.links,...content.automatic.memberships.map((m:any)=>m.target)].some((r:any)=>r.kind===input.kind&&r.id===input.id))throw new Error('wiki.errors.invalid');
-      const row=input.kind==='source'?(await pool.query("select id,title,id as source_id,'' as markdown from source_items where id=$1",[input.id])).rows[0]:input.kind==='page'?(await pool.query("select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",[input.id])).rows[0]:input.kind==='entity'?(await pool.query("select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",[input.id])).rows[0]:(await pool.query("select id,idea_statement as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id from atomic_notes where id=$1 and status not in('rejected','archived')",[input.id])).rows[0];
+      const row=input.kind==='source'?(await pool.query("select id,title,id as source_id,'' as markdown from source_items where id=$1",[input.id])).rows[0]:input.kind==='page'?(await pool.query("select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",[input.id])).rows[0]:input.kind==='entity'?(await pool.query("select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",[input.id])).rows[0]:(await pool.query("select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id from atomic_notes where id=$1 and status not in('rejected','archived')",[input.id])).rows[0];
       if(!row)return null;
       const evidence=input.kind==='atomic_note'?(await pool.query(`select distinct c.id,c.source_item_id as "sourceItemId",c.document_id as "documentId",c.id as "chunkId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,d.metadata->>'supersededByDocumentId' is null as current from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id where c.id=$1 or c.id in(select chunk_id from atomic_note_source_links where atomic_note_id=$2) order by c.id limit 100`,[row.evidence_chunk_id,input.id])).rows.map(e=>({...e,documentCreatedAt:new Date(e.documentCreatedAt).toISOString()})):[];
       return {kind:input.kind,id:row.id,title:row.title,markdown:row.markdown,sourceItemId:row.source_id,evidence};
+    },
+    async tree(input:{view?:'children'|'recent'|'pinned';parentId:string|null;after:{position:number;title:string;id:string}|null;limit:number;pathTo?:string|undefined}) {
+      // Only metadata is traversed. Every legacy cycle has one deterministic visible root.
+      const forest=`with recursive live as(select p.id,p.parent_id,p.position,p.title from wiki_pages p where not p.archived and p.current_revision_id is not null), walk as(select id as start,id,parent_id,array[id] as path from live union all select w.start,p.id,p.parent_id,w.path||p.id from walk w join live p on p.id=w.parent_id where not p.id=any(w.path)), cycle_roots as(select distinct (select min(x::text)::uuid from unnest(path[array_position(path,parent_id):]) x) id from walk where parent_id=any(path)), forest as(select l.id,case when c.id is not null or parent.id is null then null else l.parent_id end parent_id from live l left join live parent on parent.id=l.parent_id left join cycle_roots c on c.id=l.id)`;
+      const select=`select ${pageColumns.replace('r.content',"r.content - 'sections' - 'automatic' as content")},f.parent_id as "treeParent",exists(select 1 from forest child where child.parent_id=p.id) as "hasChildren" from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id join forest f on f.id=p.id`;
+      const map=(row:Record<string,any>)=>{const {sections:_sections,automatic:_automatic,...item}=flatten(row);return{...item,parentId:row.treeParent,hasChildren:row.hasChildren};};
+      if(input.view==='recent'||input.view==='pinned'){const rows=(await pool.query(`${forest} ${select} where ($1='recent' or (r.content->>'pinned')::boolean) order by p.updated_at desc,p.id limit $2`,[input.view,input.limit])).rows;return{items:rows.map(map),next:null,path:[]};}
+      const rows=(await pool.query(`${forest} ${select} where f.parent_id is not distinct from $1::uuid and ($2::uuid is null or (p.position,p.title,p.id)>($3,$4,$2::uuid)) order by p.position,p.title,p.id limit $5`,[input.parentId,input.after?.id??null,input.after?.position??0,input.after?.title??'',input.limit+1])).rows;
+      const items=rows.slice(0,input.limit).map(map),last=items.at(-1);
+      const path=input.pathTo?(await pool.query(`${forest}, ancestors as(select id,parent_id from forest where id=$1 union all select p.id,p.parent_id from forest p join ancestors a on p.id=a.parent_id) ${select} where p.id in(select id from ancestors)`,[input.pathTo])).rows.map(map):[];
+      return{items,next:rows.length>input.limit&&last?{position:last.position,title:last.title,id:last.id}:null,path};
+    },
+    async context(input:{pageId:string;view:string;after:string|null;limit:number}) {
+      // Topic TOCs extend their owner context. Historical/cross-source artifacts do not.
+      const rows=(await pool.query(`with owners as(select $1::uuid id union select id from wiki_pages where toc_owner_kind='page' and toc_owner_id=$1 and not archived), edges as(
+        select m.target_kind kind,m.target_id id,'semantic' edge,'outgoing' direction,(m.snapshot->>'purpose') reason,m.page_id via from wiki_memberships m join owners o on o.id=m.page_id
+        union select 'page',m.page_id,'semantic','incoming',(m.snapshot->>'purpose'),m.page_id from wiki_memberships m where m.target_kind='page' and m.target_id=$1
+        union select 'page',p.id,'structural','outgoing','child',p.id from wiki_pages p where p.parent_id=$1 and not p.archived
+        union select 'page',p.parent_id,'structural','incoming','parent',p.id from wiki_pages p where p.id=$1 and p.parent_id is not null
+        union select 'page',p.id,'semantic','incoming','link',p.id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived and (r.content->'automatic'->'links' @> jsonb_build_array(jsonb_build_object('kind','page','id',$1::text)) or r.content->'collectionIds' ? $1::text)
+        union select link->>'kind',(link->>'id')::uuid,'semantic','outgoing','link',p.id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id join owners o on o.id=p.id cross join lateral jsonb_array_elements(coalesce(r.content->'automatic'->'links','[]')) link
+        union select 'source',e.source_item_id,'evidential','outgoing','evidence',o.id from owners o join wiki_pages p on p.id=o.id join wiki_dependencies d on d.revision_id=p.current_revision_id and d.kind='source' join wiki_evidence e on e.page_id=o.id and e.source_item_id=d.input_id
+      ), named as(select distinct e.kind,e.id,e.edge,e.direction,e.reason,e.via as "viaPageId",coalesce(p.title,s.title,n.title,n.idea_statement,en.canonical_name,'') title,concat(e.kind,':',e.id,':',e.edge,':',e.direction,':',e.via,':',e.reason) key from edges e left join wiki_pages p on e.kind='page' and p.id=e.id and not p.archived left join source_items s on e.kind='source' and s.id=e.id left join atomic_notes n on e.kind='atomic_note' and n.id=e.id and n.status not in('rejected','archived') left join entities en on e.kind='entity' and en.id=e.id where coalesce(p.id,s.id,n.id,en.id) is not null)
+      , contextual as(
+       select key,kind,id,title,edge,direction,reason,"viaPageId",jsonb_build_array(jsonb_build_object('viaPageId',"viaPageId",'reason',reason,'edge',edge,'direction',direction)) associations from named where $2='connections'
+       union all select kind||':'||id::text,kind,id,max(title),case when bool_or(edge='evidential') then 'evidential' else 'semantic' end,'outgoing',string_agg(distinct reason,', ' order by reason),min("viaPageId"::text)::uuid,jsonb_agg(distinct jsonb_build_object('viaPageId',"viaPageId",'reason',reason,'edge',edge,'direction',direction)) from named where ($2='notes' and kind='atomic_note' or $2='sources' and kind='source') group by kind,id
+      ) select c.*,coalesce(p.title,'') as "viaTitle" from contextual c left join wiki_pages p on p.id=c."viaPageId" where ($3::text is null or key>$3) order by key limit $4`,[input.pageId,input.view,input.after,input.limit+1])).rows;
+      const items=rows.slice(0,input.limit);return{items,next:rows.length>input.limit?items.at(-1)!.key:null};
+    },
+    async move(input:{id:string;expectedRevisionId:string;targetId:string;placement:'before'|'after'|'into'}) {
+      const db=await pool.connect();try{await db.query('begin');await db.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");
+        const page=await createWikiRepository(pool).get(input.id),target=await createWikiRepository(pool).get(input.targetId);
+        if(!page||!target||page.id===target.id||target.archived||page.revisionId!==input.expectedRevisionId)throw new Error('wiki.errors.conflict');
+        const parentId=input.placement==='into'?target.id:target.parentId;
+        const siblings=(await db.query('select id from wiki_pages where parent_id is not distinct from $1::uuid and id<>$2 and not archived order by position,title,id',[parentId,page.id])).rows.map(r=>r.id as string);
+        const index=input.placement==='into'?siblings.length:siblings.indexOf(target.id)+(input.placement==='after'?1:0);siblings.splice(index,0,page.id);
+        // Fractional/numeric positions are an implementation detail; each moved neighbor keeps provenance.
+        for(const [position,id]of siblings.entries()){const current=id===page.id?page:await createWikiRepository(pool).get(id);if(!current||id!==page.id&&current.position===position)continue;const {id:_id,revisionId:_revision,revisionNumber:_number,updatedAt:_updated,evidence:_evidence,breadcrumbs:_breadcrumbs,impacts:_impacts,...content}=current;
+          await createWikiRepository(pool).save({version:2,id,expectedRevisionId:current.revisionId,content:{...content,parentId,position},evidenceChunkIds:[]},{transaction:db,origin:'human',allocatedTarget:false,humanApproved:true});}
+        await db.query('commit');return createWikiRepository(pool).get(page.id);
+      }catch(error){await db.query('rollback');throw error;}finally{db.release();}
     },
     async list() {
       const result = await pool.query(`select ${pageColumns} from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id order by p.position, p.title, p.id limit 1000`);
@@ -42,10 +83,10 @@ export function createWikiRepository(pool: PgPool) {
         where p.id=$1 and r.id=coalesce($2::uuid,p.current_revision_id)`, [id, revisionId ?? null])).rows[0];
       if (!row) return null;
       const evidence = (await pool.query(evidenceSql, [id])).rows.map(({ snapshot, ...item }) => ({ ...snapshot, ...item }));
-      const ids = new Set((row.content as Content).sections.flatMap((s) => s.evidenceIds));
+      const ids = new Set([...(row.content as Content).sections.flatMap((s) => s.evidenceIds),...((row.content as Content).automatic?.groups.flatMap(g=>g.explanationEvidenceIds)??[])]);
       const breadcrumbs = (await pool.query(`with recursive ancestors as (
-        select id,parent_id,title,0 as depth from wiki_pages where id=$1 union all
-        select p.id,p.parent_id,p.title,a.depth+1 from wiki_pages p join ancestors a on p.id=a.parent_id where a.depth<100
+        select id,parent_id,title,0 as depth,array[id] as path from wiki_pages where id=$1 union all
+        select p.id,p.parent_id,p.title,a.depth+1,a.path||p.id from wiki_pages p join ancestors a on p.id=a.parent_id where not p.id=any(a.path)
         ) select id,title from ancestors order by depth desc`, [id])).rows;
       return { ...flatten(row), evidence: evidence.filter((e) => ids.has(e.id)), breadcrumbs, impacts: await createWikiContextRepository(pool).impacts(id) };
     },
@@ -68,9 +109,9 @@ export function createWikiRepository(pool: PgPool) {
           for(const previous of old.sections)if(!content.sections.some(s=>s.id===previous.id))content.sections.push(structuredClone(previous));
         }
         if (content.parentId) {
-          const ancestors = (await db.query(`with recursive a as (select id,parent_id from wiki_pages where id=$1 union all
-            select p.id,p.parent_id from wiki_pages p join a on a.parent_id=p.id) select id from a`, [content.parentId])).rows;
-          if (!ancestors.length || ancestors.some((a) => a.id === id)) throw new Error("wiki.errors.cycle");
+          const ancestors = (await db.query(`with recursive a as (select id,parent_id,array[id] as path,false as cycle from wiki_pages where id=$1 union all
+            select p.id,p.parent_id,a.path||p.id,p.id=any(a.path) from wiki_pages p join a on a.parent_id=p.id where not a.cycle) select id,cycle from a`, [content.parentId])).rows;
+          if (!ancestors.length || ancestors.some((a) => a.id === id||a.cycle)) throw new Error("wiki.errors.cycle");
         }
         if (content.collectionIds.includes(id)) throw new Error("wiki.errors.cycle");
         if (content.collectionIds.length) {

@@ -137,3 +137,24 @@ npm run db:generate
   revision, including native pinning and human section edits. Preserve group/member
   identities, order and authorship; refresh only their current revision base.
   Historical revision snapshots remain unchanged.
+
+- Per-consumer impact delivery identity includes a concrete consumer key (policy
+  or investigation identity), in addition to event, consumer kind and generation.
+  One policy's receipt or the legacy `consumed_at` cannot acknowledge another.
+  Enrollment shares the canonical event transaction; retained-event reconciliation
+  admits at most 100 missing deliveries per pass. Events contain IDs, operation,
+  fingerprints and causal metadata, never copied source prose.
+- Bootstrap cursors remain in `organization_runs`; `wiki_source_coverage` is the
+  persistent per-policy source projection. Coverage fingerprints bind meaningful
+  canonical inputs, policy revision, content language, effective model parameters
+  and prompt composition. Canonicalize dictionary ordering for this new identity;
+  do not change existing proposal/audit hash semantics.
+- Parent bootstrap checkpoint updates compare the exact persisted timestamp.
+  A stale advance cannot overwrite a pause/cancel. Transactional apply locks and
+  rechecks the parent state; pause acknowledgment is serialized with a group
+  already committing. No database transaction waits for model inference.
+- Navigation uses bounded keyset metadata queries, with independent recent/pinned
+  overview reads. Normalize missing/archived parents and a deterministic root per
+  legacy cycle without dropping pages; selected paths remain loadable beyond any
+  sibling page. Move validation detects cyclic ancestry and rolls back, rather
+  than recursively waiting forever.

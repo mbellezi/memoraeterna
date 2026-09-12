@@ -606,8 +606,10 @@ Implementation sequencing lives in
   activation do not run curation. Migration never enables a policy. The A2 trigger
   is explicit selected processing; later recurring setup retains its own version.
 - Defaults retain the A0 ceilings, with a 2,048-token maximum output reservation
-  per model call and lower profile limits winning. The bounded first slice refuses
-  scopes exceeding twelve complete originals or one hundred scoped existing pages.
+  per model call and lower profile limits winning. The one-shot curator refuses
+  groups exceeding twelve complete originals. Collection bootstrap splits larger
+  inputs into resumable groups; successor discovery and native navigation use
+  bounded/paginated reads instead of the earlier flat scoped-page ceiling.
   It never clips an original passage to fit. Deadline starts at run admission and
   includes FIFO waits. Repeated admission of unfinished/failed identical inputs
   returns the same run; unchanged applied targets return the existing receipt.
@@ -653,3 +655,54 @@ Implementation sequencing lives in
   changes retain section revisions, provenance, assessments and dependencies.
   Explicit verification of unchanged citations creates a separately assessed,
   protected section revision; it cannot verify unavailable originals.
+
+## Collection bootstrap and incremental integration
+
+- Newly authored page/section/index headings, purposes and prose follow the
+  admitted content language. Canonical source/note reference titles retain their
+  original wording; changing interface language never translates stored material.
+- New policy previews may grant the whole library, including future inputs, or
+  an explicit source scope. Excluding a source also excludes its descendants.
+  A preview for an existing policy creates a new revision of that identity;
+  activation replaces that policy's previous grant. Paused policies remain
+  selectable, inspectable and explicitly resumable. Existing selected-processing
+  policies do not acquire the new input-change trigger through migration.
+- Assessment is read-only and paginated. Report canonical originals, existing
+  optional artifacts, bound/protected pages and persistent source coverage.
+  Catalog-only participation creates no claims or model calls. Bootstrap of old
+  material is a separate explicit action; retained pre-activation catalog events
+  cannot silently start broad initial organization.
+- `wiki-bootstrap-v1` is a coordinator snapshot/checkpoint in organization runs,
+  not another job queue or inference audit. Its source/original cursor, selected
+  note phase, child run, completed groups and attention state survive restart.
+  Use at most six new complete originals per group, decreasing the whole-passage
+  group when the selected context requires it. Existing A/B originals may fill
+  the admitted twelve-passage ceiling. Never truncate a passage or regenerate an
+  optional artifact to satisfy organization.
+- A selected processing operation that exceeds one curator group enters this
+  same parent checkpoint. Existing per-stage barriers and explicit omissions
+  remain authoritative; the organization stage settles only with the parent
+  outcome. Selected existing notes use complete original lineages in bounded
+  groups and retain their canonical identities. Source coverage remains partial
+  while explicitly selected note organization is unfinished.
+- Discovery searches authorized purpose, title, aliases and content with `simple`
+  and `unaccent` lexical terms. Inspect bounded candidates; expand to the exact
+  admitted A/B/C sources and originals. Excluded related pages expose only
+  bounded page/source metadata for a deliberate scope preview, never excluded
+  prose or a duplicate page that bypasses the policy.
+- Exact invalidated dependents and new-topic discovery have separate durable
+  delivery steps. The former requires the existing target handle; the latter
+  coalesces current source generations. Each delivery advances its page cursor
+  only after a child result, retaining per-target outcomes. Pending review or
+  failure remains deferred. A bounded propagation limit records explicit
+  attention and its remaining cursor; it is never an all-integrated result.
+- Causal run/group IDs are backend-owned. Propagate real cross-page changes,
+  skip superseded revisions and already-applied targets from the same causal
+  chain, and retain durable no-repeat receipts. Public IPC cannot forge lineage
+  or arbitrary input generations. Unchanged administrative pin/order changes
+  reuse the original receipt; meaningful edits/configuration changes permit
+  reconsideration while identical rejected inputs retain their decision.
+- Incremental section patches preserve untouched prose. Omitted existing TOC
+  memberships are retained; changing a group's authored heading/explanation
+  while omitting its existing members requires their admitted evidence rather
+  than silently extending the new assertion to unread members.

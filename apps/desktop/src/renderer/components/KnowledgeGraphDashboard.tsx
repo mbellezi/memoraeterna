@@ -1,3 +1,4 @@
+import { subscribeWindowNavigation } from '../lib/window-navigation';
 import { atomicRelationMessageKeys, atomicRelationLegend, atomicRelationColor, atomicRelationIcon, atomicRelationIconNode, atomicRelationMarkerRadius, formatEdgeLabel } from "./knowledge-relation-icons";
 export { atomicRelationColor, atomicRelationIcon, atomicRelationIconNode, atomicRelationMarkerRadius, formatEdgeLabel } from "./knowledge-relation-icons";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1314,19 +1315,13 @@ function SourceEntityPreview({ sourceItemId, forces, wheelZoomSensitivity, t, on
     const previousFocus = document.activeElement;
     panelRef.current?.focus({ preventScroll: true });
     const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
-      event.preventDefault(); event.stopImmediatePropagation(); closeRef.current();
-    };
-    const mouseBack = (event: MouseEvent) => {
-      if (event.button !== 3) return;
+      if (event.key !== "Escape") return;
       event.preventDefault(); event.stopImmediatePropagation(); closeRef.current();
     };
     window.addEventListener("keydown", keydown, true);
-    window.addEventListener("mouseup", mouseBack, true);
-    const unsubscribe = window.app.system.subscribeNavigation((direction) => { if (direction === "back") closeRef.current(); });
+    const unsubscribe = subscribeWindowNavigation((direction) => { if (direction === "back") closeRef.current(); });
     return () => {
       window.removeEventListener("keydown", keydown, true);
-      window.removeEventListener("mouseup", mouseBack, true);
       unsubscribe();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };
@@ -1399,25 +1394,17 @@ function SourceHierarchyPreviewOverlay({ data, sourceItemId, graphPopup, forces,
     const previousFocus = document.activeElement;
     panelRef.current?.focus({ preventScroll: true });
     const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (!dismissConnectionRef.current()) onClose();
-    };
-    const mouseBack = (event: MouseEvent) => {
-      if (event.button !== 3) return;
+      if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (!dismissConnectionRef.current()) onClose();
     };
     window.addEventListener("keydown", keydown, true);
-    window.addEventListener("mouseup", mouseBack, true);
-    const unsubscribe = window.app.system.subscribeNavigation((direction) => {
+    const unsubscribe = subscribeWindowNavigation((direction) => {
       if (direction === "back" && !dismissConnectionRef.current()) onClose();
     });
     return () => {
       window.removeEventListener("keydown", keydown, true);
-      window.removeEventListener("mouseup", mouseBack, true);
       unsubscribe();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };
@@ -1956,25 +1943,17 @@ function SourceConnectionTooltip({ hover, sourceItemId, targetSourceItemId, summ
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };
     const keydown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" && event.key !== "BrowserBack" && !(event.altKey && event.key === "ArrowLeft")) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      closeRef.current();
-    };
-    const mouseBack = (event: MouseEvent) => {
-      if (event.button !== 3) return;
+      if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
       closeRef.current();
     };
     window.addEventListener("keydown", keydown, true);
-    window.addEventListener("mouseup", mouseBack, true);
-    const unsubscribe = window.app.system.subscribeNavigation((direction) => {
+    const unsubscribe = subscribeWindowNavigation((direction) => {
       if (direction === "back") closeRef.current();
     });
     return () => {
       window.removeEventListener("keydown", keydown, true);
-      window.removeEventListener("mouseup", mouseBack, true);
       unsubscribe();
       if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus({ preventScroll: true });
     };

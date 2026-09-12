@@ -73,3 +73,11 @@ export type WikiResult = z.infer<typeof WikiResultSchema>;
 export type WikiEvidence = z.infer<typeof WikiEvidenceSchema>;
 export const WikiLinkedTargetInputSchema=z.object({pageId:z.string().uuid(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid()}).strict();
 export const WikiLinkedTargetSchema=z.object({kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid(),title:z.string(),markdown:z.string(),sourceItemId:z.string().uuid().nullable(),evidence:z.array(WikiEvidenceSchema)}).strict();
+
+/** Keyset navigation never mistakes a bounded page for a complete forest. */
+export const WikiTreeInputSchema=z.object({view:z.enum(['children','recent','pinned']).default('children'),parentId:z.string().uuid().nullable().default(null),after:z.object({position:z.number().int(),title:z.string().max(300),id:z.string().uuid()}).strict().nullable().default(null),limit:z.number().int().min(1).max(100).default(50),pathTo:z.string().uuid().optional()}).strict();
+export const WikiTreeItemSchema=WikiPageListSchema.element.extend({hasChildren:z.boolean()});
+export const WikiTreeSchema=z.object({items:z.array(WikiTreeItemSchema),next:WikiTreeInputSchema.shape.after,path:z.array(WikiTreeItemSchema).default([])}).strict();
+export const WikiContextInputSchema=z.object({pageId:z.string().uuid(),view:z.enum(['notes','sources','connections']),after:z.string().nullable().default(null),limit:z.number().int().min(1).max(50).default(30)}).strict();
+export const WikiContextSchema=z.object({items:z.array(z.object({key:z.string(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid(),title:z.string(),edge:z.enum(['structural','evidential','semantic']),direction:z.enum(['outgoing','incoming']),reason:z.string(),viaPageId:z.string().uuid(),viaTitle:z.string().default(''),associations:z.array(z.object({viaPageId:z.string().uuid(),reason:z.string(),edge:z.string(),direction:z.string()}).strict()).default([])}).strict()),next:z.string().nullable()}).strict();
+export const WikiMoveInputSchema=z.object({id:z.string().uuid(),expectedRevisionId:z.string().uuid(),targetId:z.string().uuid(),placement:z.enum(['before','after','into'])}).strict();

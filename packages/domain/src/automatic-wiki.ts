@@ -172,7 +172,7 @@ export const AutomaticWikiPolicySchema = z.object({
 });
 export const ImpactDeliverySchema = z.object({
   version: z.literal(automaticWikiVersion), eventId: id,
-  consumer: z.enum(["curator", "investigation"]), inputGeneration: fingerprint,
+  consumer: z.enum(["curator", "investigation"]), consumerKey:z.string().min(1).optional(), inputGeneration: fingerprint,
   causalRunId: id.nullable(), causalChangeSetId: id.nullable(),
   status: z.enum(["pending", "leased", "acknowledged", "deferred"]),
   runId: id.nullable(), receiptId: id.nullable()

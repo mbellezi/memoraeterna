@@ -280,15 +280,6 @@ export function LibraryView({ t, metadataEnrichmentEnabled = true, externalTarge
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
-  useEffect(() => {
-    function handleMouseHistory(event: MouseEvent) {
-      if (!navigateLibraryHistoryFromMouseButton(event.button, window.history)) return;
-      event.preventDefault();
-    }
-
-    window.addEventListener("mouseup", handleMouseHistory);
-    return () => window.removeEventListener("mouseup", handleMouseHistory);
-  }, []);
 
   useEffect(() => {
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;

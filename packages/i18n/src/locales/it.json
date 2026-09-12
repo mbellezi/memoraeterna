@@ -125,7 +125,8 @@
       "uncertain": "Una chiamata è stata interrotta. Il consumo può essere incompleto; i tentativi restano limitati.",
       "canceled": "Annullata",
       "failed": "Organizzazione non riuscita. Verifica il profilo e riprova entro il budget restante.",
-      "policy": "La politica automatica è sospesa, modificata o non consente questa operazione."
+      "policy": "La politica automatica è sospesa, modificata o non consente questa operazione.",
+      "scopeDecision": "Il sapere correlato usa fonti fuori da questa politica. Rivedi l’ambito prima di integrare."
     }
   },
   "entityIdentity": {"threshold":"Soglia di similarità dell’identità delle entità","hint":"L’IA verifica candidati dello stesso tipo usando nomi e fatti identificativi. Nomi uguali da soli non autorizzano un’unione. Le identità ambigue restano separate. Predefinito: 0,92 (provvisorio). Vengono verificati anche nomi esatti e alias. Le entità esistenti vengono riutilizzate dopo conferma; i duplicati storici non vengono uniti in massa."},
@@ -1122,7 +1123,39 @@
     "catalogOnly": "Solo catalogo",
     "scopeSource": "Esplora questa fonte",
     "verifyEvidence": "Ho verificato queste citazioni",
-    "needsEvidenceReview": "Rivedi queste citazioni prima di considerare le prove verificate."
+    "needsEvidenceReview": "Rivedi queste citazioni prima di considerare le prove verificate.",
+    "loadMore": "Carica altro",
+    "context": "Contesto della pagina",
+    "read": "Leggi",
+    "notes": "Note",
+    "localMap": "Mappa dei collegamenti locali",
+    "connectionList": "Elenco dei collegamenti",
+    "mapBounded": "La mappa mostra fino a 12 collegamenti; tutti quelli caricati sono elencati sotto.",
+    "edge": {
+      "structural": "Gerarchia",
+      "evidential": "Evidenza",
+      "semantic": "Appartenenza / link"
+    },
+    "direction": {
+      "incoming": "Collegamento in entrata",
+      "outgoing": "In uscita"
+    },
+    "moveBefore": "Sposta prima",
+    "moveAfter": "Sposta dopo",
+    "moveInto": "Sposta dentro",
+    "contextLoadError": "Impossibile caricare il contesto della pagina. Riprova.",
+    "contextSources": "Fonti",
+    "contextConnections": "Collegamenti",
+    "reason": {
+      "source": "Fonte nella raccolta",
+      "reading": "Partecipazione alla lettura",
+      "parent": "Pagina superiore",
+      "child": "Sottopagina",
+      "link": "Link nella pagina",
+      "evidence": "Citazione originale",
+      "subtopic": "Sottotema",
+      "related": "Appartenenza correlata"
+    }
   },
   "maintenance": {
     "sourceSelection": "Seleziona le fonti solo se devono partecipare a questa routine. Le pagine si selezionano indipendentemente.",
@@ -1523,6 +1556,33 @@
     "pause": "Sospendi politica",
     "links": "collegamenti",
     "assessment": "Bozza IA — riferimenti originali controllati strutturalmente; supporto semantico non ancora verificato da una persona.",
-    "modelAssessment": "Bozza IA — riferimenti originali e supporto semantico verificati dal modello selezionato; ancora senza revisione umana."
+    "modelAssessment": "Bozza IA — riferimenti originali e supporto semantico verificati dal modello selezionato; ancora senza revisione umana.",
+    "assess": "Valuta raccolta",
+    "bootstrap": "Organizza raccolta",
+    "wholeLibrary": "Intera raccolta, incluse importazioni future",
+    "readOnlyAssessment": "Valutazione in sola lettura. Gli artefatti esistenti vengono riutilizzati; nessuna elaborazione opzionale viene avviata.",
+    "resume": "Riprendi",
+    "groups": "Gruppi completati",
+    "coverage": "Copertura",
+    "coverageStates": {
+      "cataloged": "Catalogato",
+      "awaiting": "In attesa di organizzazione",
+      "analyzing": "Analisi in corso",
+      "partial": "Parzialmente integrato",
+      "integrated": "Integrato",
+      "attention": "Richiede attenzione",
+      "stale": "Obsoleto",
+      "running": "Organizzazione in corso",
+      "paused": "In pausa",
+      "complete": "Completato",
+      "canceled": "Annullato"
+    },
+    "policy": "Politica di organizzazione",
+    "newPolicy": "Crea un’altra politica",
+    "originalPassages": "Passaggi originali",
+    "reviewScope": "Includi nell’anteprima dell’ambito",
+    "excludedSources": "Fonti escluse",
+    "excludedHint": "Escludi queste fonti e tutti i loro discendenti dalla politica.",
+    "previewChanges": "Visualizza e attiva le modifiche prima di avviare nuovo lavoro. La politica corrente resta in vigore."
   }
 }

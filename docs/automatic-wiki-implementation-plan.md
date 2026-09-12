@@ -5,8 +5,9 @@ Date: 2026-09-12.
 Status: A0 contract/fixture work and A1 runtime catalog/editor are independently
 verified and accepted (see [A1 report](automatic-wiki-a1-report.md)). A2 is independently
 verified and accepted through its database, selected-model and native window gates,
-including the collapsible menu and resizable tree (see [A2 report](automatic-wiki-a2-report.md)). A3–A8
-runtime implementation and product acceptance remain planned. See the
+including the collapsible menu and resizable tree (see [A2 report](automatic-wiki-a2-report.md)). A3 is independently verified and accepted through PostgreSQL,
+selected-Luna, native and DEV preservation gates (see [A3 report](automatic-wiki-a3-report.md));
+A4–A8 remain planned. See the
 [A0 contract report](automatic-wiki-a0-contracts.md) and
 [acceptance ownership matrix](automatic-wiki-a0-acceptance.md).
 The product direction and initial information architecture were agreed in the
@@ -878,7 +879,8 @@ originals. A paused/unconfigured sync performs no migration or projection writes
 
 A0 contract/fixture work and A1 runtime catalog/editor are independently accepted;
 A2 has passed independent backend, selected-model and native walkthrough gates;
-A3–A8 remain **planned**. Each implementation task must report its
+A3 has passed independent collection, selected-model, native and DEV migration gates;
+A4–A8 remain **planned**. Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 
@@ -949,6 +951,9 @@ safe Markdown/reference rendering, processing-plan UI and i18n. Do not defer all
 native UX to the end or judge this gate only in Obsidian.
 
 ### A3 — Integrate and scale the collection
+
+Status: **implemented; independent coordinator gate pending**. See the
+[A3 implementation report](automatic-wiki-a3-report.md).
 
 - Implement assessment/bootstrap cursors, event consumption and exact dependent
   invalidation with bounded new-topic discovery.

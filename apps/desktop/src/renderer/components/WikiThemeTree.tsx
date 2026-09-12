@@ -1,14 +1,15 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, Files, FolderOpen, FolderTree, Network } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { WikiPage } from "@app/domain";
 import { visibleWikiNavigation } from "./wiki-navigation";
 
-type Page = { id: string; parentId: string | null; title: string; position: number; archived: boolean; kind?: WikiPage["kind"] };
+type Page = { id: string; parentId: string | null; title: string; position: number; archived: boolean; hasChildren?: boolean; kind?: WikiPage["kind"] };
 const icons = { topic: BookOpen, entity: Network, collection: FolderTree, synthesis: Files };
 
-export function WikiThemeTree({ pages, selected, disabled, onOpen, t }: {
+export function WikiThemeTree({ pages, selected, disabled, onOpen, onExpand, more, onMore, t }: {
   pages: Page[];
+  onExpand?:((id:string)=>void)|undefined; more?:Record<string,boolean>|undefined; onMore?:((id:string)=>void)|undefined;
   selected: string | null;
   disabled: boolean;
   onOpen: (id: string) => void;
@@ -18,19 +19,21 @@ export function WikiThemeTree({ pages, selected, disabled, onOpen, t }: {
   const [focus, setFocus] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const visible = useMemo(() => visibleWikiNavigation(pages, expanded), [pages, expanded]);
+  useEffect(()=>{if(!selected)return;const path=new Set<string>();let id=pages.find(p=>p.id===selected)?.parentId;while(id&&!path.has(id)){path.add(id);id=pages.find(p=>p.id===id)?.parentId;}setExpanded(current=>new Set([...current,...path]));},[selected,pages]);
   const focusId = visible.some(row => row.page.id === focus) ? focus : visible[0]?.page.id;
   const move = (id: string | undefined) => {
     if (!id) return;
     setFocus(id);
     root.current?.querySelector<HTMLButtonElement>(`[data-page-id="${id}"]`)?.focus();
   };
-  const toggle = (id: string, open: boolean) => setExpanded(current => {
+  const toggle = (id: string, open: boolean) => {if(open)onExpand?.(id);setExpanded(current => {
     const next = new Set(current);
     if (open) next.add(id); else next.delete(id);
     return next;
-  });
+  });};
   return <div ref={root} role="tree" aria-label={t("wiki.pages")} className="grid gap-0.5 pb-3">
-    {visible.map(({ page, depth, parentId, hasChildren }, index) => {
+    {visible.map(({ page, depth, parentId, hasChildren: loadedChildren }, index) => {
+      const hasChildren=page.hasChildren??loadedChildren;
       const open = expanded.has(page.id);
       const kind = page.kind ?? "topic";
       const Icon = kind === "collection" && open ? FolderOpen : icons[kind];
@@ -68,5 +71,6 @@ export function WikiThemeTree({ pages, selected, disabled, onOpen, t }: {
         <span className="min-w-0 [overflow-wrap:anywhere]">{page.title}</span>
       </button>;
     })}
+    {Object.entries(more??{}).filter(([id,hasMore])=>hasMore&&expanded.has(id)).map(([id])=><button key={id} disabled={disabled} className="p-2 text-left text-xs text-accent" onClick={()=>onMore?.(id)}>{pages.find(p=>p.id===id)?.title} · {t("wiki.loadMore")}</button>)}
   </div>;
 }

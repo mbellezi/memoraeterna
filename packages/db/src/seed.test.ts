@@ -74,7 +74,10 @@ describe("baseline seed", () => {
       "0028_elite_preak",
       "0029_slow_valeria_richards",
       "0030_damp_phil_sheldon",
-      "0031_luxuriant_nova"
+      "0031_luxuriant_nova",
+      "0032_faulty_leech",
+      "0033_wakeful_kulan_gath",
+      "0034_wiki_impact_expression_fix"
     ]);
   });
 
@@ -124,7 +127,10 @@ describe("baseline seed", () => {
       "0028_elite_preak",
       "0029_slow_valeria_richards",
       "0030_damp_phil_sheldon",
-      "0031_luxuriant_nova"
+      "0031_luxuriant_nova",
+      "0032_faulty_leech",
+      "0033_wakeful_kulan_gath",
+      "0034_wiki_impact_expression_fix"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -1,3 +1,4 @@
+import { subscribeWindowNavigation } from './lib/window-navigation';
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -176,8 +177,8 @@ export function App({
     document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
   }, [isDarkMode]);
 
-  useEffect(() => window.app.system.subscribeNavigation((direction) => {
-    if (activeViewRef.current !== "library") return;
+  useEffect(() => subscribeWindowNavigation((direction) => {
+    if (activeViewRef.current !== "library") return false;
     if (direction === "back") window.history.back();
     else window.history.forward();
   }), []);

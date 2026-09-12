@@ -1,0 +1,8 @@
+import {describe,it,expect,vi} from 'vitest';
+import {createNavigationRouter} from './window-navigation';
+describe('shared native and mouse navigation',()=>{
+ it('uses one active top layer, falls through hidden workspaces, and retains forward direction',()=>{const router=createNavigationRouter(),library=vi.fn(),hidden=vi.fn(()=>false),overlay=vi.fn();router.subscribe(library);router.subscribe(hidden);const close=router.subscribe(overlay);router.dispatch('back','native');expect(overlay).toHaveBeenCalledOnce();expect(library).not.toHaveBeenCalled();close();router.dispatch('forward','native');expect(hidden).toHaveBeenCalledWith('forward');expect(library).toHaveBeenCalledWith('forward');});
+ it('accepts raw extra buttons only and coalesces the matching driver native event',()=>{let now=0;const router=createNavigationRouter(()=>now),action=vi.fn();router.subscribe(action);expect(router.mouse(3)).toBe('back');expect(router.mouse(4)).toBe('forward');for(const button of [0,1,2,5])expect(router.mouse(button)).toBeNull();router.dispatch('back','mouse');now=40;router.dispatch('back','native');expect(action).toHaveBeenCalledOnce();now=70;router.dispatch('back','mouse');expect(action).toHaveBeenCalledTimes(2);});
+});
+
+it('coalesces the driver counterpart after the top overlay unmounts',()=>{let now=10;const router=createNavigationRouter(()=>now),parent=vi.fn();router.subscribe(parent);let remove=()=>{};const overlay=vi.fn(()=>{remove();});remove=router.subscribe(overlay,10);router.dispatch('back','mouse');now=30;router.dispatch('back','native');expect(overlay).toHaveBeenCalledOnce();expect(parent).not.toHaveBeenCalled();now=300;router.dispatch('back','mouse');expect(parent).toHaveBeenCalledOnce();});
