@@ -7,7 +7,10 @@ verified and accepted (see [A1 report](automatic-wiki-a1-report.md)). A2 is inde
 verified and accepted through its database, selected-model and native window gates,
 including the collapsible menu and resizable tree (see [A2 report](automatic-wiki-a2-report.md)). A3 is independently verified and accepted through PostgreSQL,
 selected-Luna, native and DEV preservation gates (see [A3 report](automatic-wiki-a3-report.md));
-A4 is independently accepted through real PostgreSQL, selected-Luna upkeep, native context/settings and DEV preservation gates (see [A4 report](automatic-wiki-a4-report.md)). A5 is independently accepted through compiled retrieval, persistent investigations, selected-Luna quality, native retention/navigation and DEV preservation gates (see [A5 report](automatic-wiki-a5-report.md)); A6 and A7 are independently accepted (see [A6 report](automatic-wiki-a6-report.md) and [A7 report](automatic-wiki-a7-report.md)). A8 remains planned. See the
+A4 is independently accepted through real PostgreSQL, selected-Luna upkeep, native context/settings and DEV preservation gates (see [A4 report](automatic-wiki-a4-report.md)). A5 is independently accepted through compiled retrieval, persistent investigations, selected-Luna quality, native retention/navigation and DEV preservation gates (see [A5 report](automatic-wiki-a5-report.md)); A6 and A7 are independently accepted (see [A6 report](automatic-wiki-a6-report.md) and [A7 report](automatic-wiki-a7-report.md)). A8 is independently accepted through the complete journey, actual-model review, native Obsidian reading, preservation and final package startup gates. The
+[A8 execution report](automatic-wiki-a8-report.md) records completed checks and
+remaining distribution/performance limitations; [the rollout runbook](automatic-wiki-rollout.md) describes
+explicit setup and the separate vault migration. See the
 [A0 contract report](automatic-wiki-a0-contracts.md) and
 [acceptance ownership matrix](automatic-wiki-a0-acceptance.md).
 The product direction and initial information architecture were agreed in the
@@ -883,7 +886,8 @@ A3 has passed independent collection, selected-model, native and DEV migration g
 A4 has passed independent maintenance, context, selected-model, native and DEV migration gates;
 A5 has passed independent consultation, investigation, selected-model, native and DEV migration gates;
 A6 has passed independent projection, plugin, actual-vault, recovery and DEV migration gates;
-A7 has passed independent interpretation, reviewed evolution, native, PostgreSQL and DEV preservation gates; A8 remains **planned**. Each implementation task must report its
+A7 has passed independent interpretation, reviewed evolution, native, PostgreSQL and DEV preservation gates;
+A8 has passed the combined journey, actual-model/native-editor, artifact and authorized package-startup gates. **A0–A8 are accepted.** Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 
@@ -955,7 +959,7 @@ native UX to the end or judge this gate only in Obsidian.
 
 ### A3 — Integrate and scale the collection
 
-Status: **implemented; independent coordinator gate pending**. See the
+Status: **independently verified and accepted**. See the
 [A3 implementation report](automatic-wiki-a3-report.md).
 
 - Implement assessment/bootstrap cursors, event consumption and exact dependent

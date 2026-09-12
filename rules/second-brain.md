@@ -865,3 +865,17 @@ Implementation sequencing lives in
   the original occurrence ledger. A review action never revives its canceled
   bootstrap or starts subsequent work. Failed/rejected/uncertain decisions remain
   inspectable and identical generations never buy another inference allowance.
+
+## Product rollout acceptance
+
+- Complete-journey evidence must connect the same canonical source/page/note
+  identities through initial integration, later targeted update, consultation,
+  explicit answer retention and portable navigation. Separate deterministic
+  service/SQL/filesystem checks from actual model, native and editor observations.
+- Release reports retain earlier failed model trials and distinguish the exact
+  human-reviewed corpus from later machine-reviewed output. A successful model or
+  support verdict never certifies uniform model compatibility.
+- Report corpus size, reference machine, timing units, sample counts and measurement
+  boundary. Database/API latency is not native interaction latency, and unavailable
+  tokens, price or timing is unknown rather than zero. A remaining required gate
+  prevents a full acceptance claim even when the automated matrix passes.

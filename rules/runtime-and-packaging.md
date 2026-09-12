@@ -76,3 +76,15 @@ desktop packaging; signing; notarization; or distribution.
 - Run only one Memora Eterna instance at a time. UI automation must target the
   DEV Electron app by its repository path or `localhost` content, never by an
   ambiguous display name that could open another copy.
+
+## Delivered artifact integrity
+
+- The runtime manifest and SBOM must describe the bytes actually copied into
+  packaged resources. Exclude packaging-omitted repository placeholders before
+  staging inventory; never claim a checksum for a file absent from the package.
+- Validate every declared artifact/file, seed/journal parity and the packaged
+  sandbox preload against the delivered archive. Verify the built Obsidian bundle
+  initializes with only its host module after workspace type checking.
+- Static archive/module validation starts no application and cannot substitute for
+  executable startup/shutdown, actual editor integration or distribution signing.
+  Keep those gates separately recorded; local staging grants no launch authority.

@@ -10,6 +10,7 @@ import { projectionHash } from '../apps/desktop/src/main/services/obsidian-wiki-
 import { parseObsidianMarkdown,sourceOriginal,type ObsidianEditOperation } from '@app/integration-contracts';
 import { seedObsidianLayoutFixture } from './fixtures/obsidian-layout-fixture.js';
 import { translate } from '@app/i18n';
+import { WikiPageContentSchema } from '@app/domain';
 const root=resolve(import.meta.dirname,'..'),work=await mkdtemp(join(tmpdir(),'memora-a6-')),migrations=join(root,'packages/db/drizzle'),seedFolder=join(root,'packages/db/seed');
 const paths=resolvePostgresSidecarPaths({cwd:root,env:process.env}),manager=new PostgresSidecarManager({binDir:paths.binDir,dataDir:join(work,'data'),database:'layout',user:'test',password:randomUUID(),startupTimeoutMs:30000,shutdownTimeoutMs:10000});
 let pool:PgPool|undefined,empty:PgPool|undefined,service:ObsidianSyncService|undefined;
@@ -18,6 +19,10 @@ try{
   const journal=JSON.parse(await readFile(join(migrations,'meta/_journal.json'),'utf8')),old=join(work,'old'),prior=journal.entries.filter((e:{idx:number})=>e.idx<39);await mkdir(join(old,'meta'),{recursive:true});await writeFile(join(old,'meta/_journal.json'),JSON.stringify({...journal,entries:prior}));for(const entry of prior)await copyFile(join(migrations,entry.tag+'.sql'),join(old,entry.tag+'.sql'));await runMigrations(pool,old);
   const assetRoot=join(work,'assets'),fixture=await seedObsidianLayoutFixture(pool,assetRoot),vault=join(work,'vault');await mkdir(vault);
   await pool.query('insert into atomic_note_source_links(atomic_note_id,source_item_id,chunk_id) values($1,$2,$3)',[fixture.noteId,fixture.sources[2]!.id,fixture.chunkIds[1]]);
+  const citationWiki=createWikiRepository(pool),citationBase=(await citationWiki.get(fixture.pageIds[3]!))!,citationContent=WikiPageContentSchema.strip().parse(citationBase);
+  citationContent.sections[0]!.evidenceIds=[fixture.chunkIds[1]!,fixture.chunkIds[0]!];
+  await citationWiki.save({version:2,id:citationBase.id,expectedRevisionId:citationBase.revisionId,content:citationContent,evidenceChunkIds:citationContent.sections[0]!.evidenceIds});
+  const citedPage=(await citationWiki.get(citationBase.id))!;
   const before=JSON.stringify((await pool.query('select id,current_revision_id from wiki_pages order by id')).rows);
   await runMigrations(pool,migrations,{seedFolder});assert.equal(JSON.stringify((await pool.query('select id,current_revision_id from wiki_pages order by id')).rows),before);
   assert.equal((await pool.query("select count(*)::int n from information_schema.columns where table_name='obsidian_layout_migrations'")).rows[0].n,8);
@@ -36,6 +41,12 @@ try{
   const resumed=await service.layoutMigration.apply({id:preview.id,editorsClosed:true});assert.equal(resumed.migrations[0]!.status,'partial');
   const complete=await service.layoutMigration.apply({id:preview.id,editorsClosed:true});assert.equal(complete.migrations[0]!.status,'completed');
   assert.equal((await registry.list()).filter(f=>f.memoraId===fixture.noteId).length,1);
+  const citedFile=(await registry.findByMemoraId(citedPage.id))!,citedRaw=await readFile(join(vault,citedFile.relativePath),'utf8');
+  const citationLines=[...citedRaw.matchAll(/^(\d+)\. \[\[#\^memora-evidence-([0-9a-f-]+)\|([^\]]+)\]\]$/gm)];
+  assert.deepEqual(citationLines.map(match=>({number:Number(match[1]),evidenceId:match[2]})),citedPage.sections[0]!.evidenceIds.map((id,index)=>({number:index+1,evidenceId:id})),'Section citation ordinals preserve exact canonical order as ordinary ordered links');
+  assert.ok(!/^- \[[^\]]\] \[\[#\^memora-evidence-/m.test(citedRaw),'Evidence numbering must not become an Obsidian task checkbox');
+  for(const match of citationLines){const original=citedPage.evidence.find(e=>e.id===match[2])!;assert.equal(match[3],original.sourceTitle);assert.ok(citedRaw.includes('^memora-evidence-'+original.id));assert.ok(citedRaw.includes(original.excerpt.split('\n').map(line=>'> '+line).join('\n')));}
+  assert.deepEqual(await citationWiki.get(citedPage.id),citedPage,'Projection formatting changes no canonical evidence or page revision');
   const noteBefore=(await registry.findByMemoraId(fixture.noteId))!,noteBeforeFrame=parseObsidianMarkdown(await readFile(join(vault,noteBefore.relativePath),'utf8'))!;
   assert.ok(noteBeforeFrame.bodyMarkdown.includes(fixture.chunkIds[1]!),'Secondary original appears in the shared note projection');
   assert.ok(noteBeforeFrame.bodyMarkdown.includes(translate('pt-BR','knowledge.notes.status.pending_review')));

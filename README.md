@@ -35,6 +35,11 @@ the local integrations used by Chrome and Obsidian.
 - **Review and integrations:** generated atomic notes enter a review queue.
   Chrome capture, YouTube metadata and transcripts, and bidirectional Obsidian
   synchronization connect through the local integration gateway.
+- **Automatic knowledge wiki:** explicitly scoped policies integrate originals
+  and selected existing notes into topics and reading indexes, with protected
+  human sections, exact evidence, scheduled upkeep and followed questions.
+  See [controlled setup and rollout](docs/automatic-wiki-rollout.md) and the
+  [A8 acceptance status](docs/automatic-wiki-a8-report.md) before release validation.
 - **Operational safety:** credentials use the desktop encrypted store, remote
   processing uses the routed or explicitly selected model, and user-canceled incomplete
   runs can be removed from the processing dashboard without deleting imported

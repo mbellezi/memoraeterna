@@ -312,6 +312,10 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   Portable typed links retain a reserved exact inverse map; restoring the map
   during editorial save preserves native canonical targets. A format-2 human
   save uses native version-2 section preservation semantics.
+- Section citation lists use ordinary ordered Markdown links, preserving each
+  section's canonical evidence order and exact anchors. Do not encode citation
+  ordinals with task-list syntax that Obsidian can render as checked boxes;
+  numbering is neither task completion nor evidence verification.
 - Portable paths retain NFC Unicode, detect case/normalization collisions,
   guard reserved filenames and enforce byte limits. Source classification uses
   canonical type and ancestry; sibling order comes from current materialized
@@ -350,6 +354,11 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   linked historical excerpts from `atomic_note_evidence` when live
   source/chunk rows disappear; mark missing originals historical and keep surviving
   attribution. Final note writes recheck scope and canonical note revision.
+- Retained original references in either projection format preserve the recorded
+  source title and excerpt when the canonical source is absent, with a localized
+  unavailable label and no source-opening action. A live source without a current
+  projected file can retain its valid application link. Missing current originals
+  remain historical; this presentation never broadens excluded-source scope.
 - Note evolution repairs current TOCs and exposes old-to-new note links while
   retaining older page/managed-file revisions. Generated interpretation histories
   include dates at their recorded precision, authorship, experience, caveats and

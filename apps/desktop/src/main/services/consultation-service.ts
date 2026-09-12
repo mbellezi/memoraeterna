@@ -63,7 +63,17 @@ export function packKnowledgeSnapshot(original:OrganizationSnapshot,question:str
   snapshot.evidence.push(...support.filter(e=>!snapshot.evidence.some(o=>o.chunkId===e.chunkId)));snapshot.contexts.push(context);
   if(snapshot.evidence.length>12||!consultationFits(snapshot,question)){snapshot.evidence=previous;snapshot.contexts.pop();}
  }
- for(const e of original.evidence){if(snapshot.evidence.some(o=>o.chunkId===e.chunkId)||snapshot.evidence.length>=12)continue;snapshot.evidence.push(e);if(!consultationFits(snapshot,question))snapshot.evidence.pop();}
+ // Raw expansion complements eligible compiled knowledge. A larger context window
+ // must not let unrelated lexical matches crowd out that knowledge by volume.
+ const compiledCount=snapshot.evidence.length,compiledBytes=snapshot.evidence.reduce((sum,e)=>sum+Buffer.byteLength(JSON.stringify(e)),0);
+ let expandedCount=0,expandedBytes=0;
+ for(const e of original.evidence){
+  if(snapshot.evidence.some(o=>o.chunkId===e.chunkId)||snapshot.evidence.length>=12)continue;
+  const bytes=Buffer.byteLength(JSON.stringify(e));
+  if(compiledCount&&(expandedCount>=compiledCount||expandedBytes+bytes>compiledBytes))continue;
+  snapshot.evidence.push(e);
+  if(!consultationFits(snapshot,question))snapshot.evidence.pop();else{expandedCount++;expandedBytes+=bytes;}
+ }
  const handles=new Set(snapshot.evidence.map(e=>e.handle));
  for(const c of original.contexts.filter(c=>c.kind!=='wiki_section')){if(c.handles.some(h=>!handles.has(h)))continue;snapshot.contexts.push(c);if(!consultationFits(snapshot,question))snapshot.contexts.pop();}
  for(const r of original.relations){if(!handles.has(r.sourceHandle)||!handles.has(r.targetHandle))continue;snapshot.relations.push(r);if(!consultationFits(snapshot,question))snapshot.relations.pop();}

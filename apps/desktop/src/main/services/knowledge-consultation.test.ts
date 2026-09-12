@@ -6,6 +6,19 @@ import {investigationContent,investigationFingerprint} from './investigation-ser
 import {defaultPromptPin,withPromptPin,promptAudit} from './prompt-runtime.js';
 import {promptSampleSnapshot} from './prompt-samples.js';
 describe('knowledge-first consultation contract',()=>{
+ it('bounds complementary raw volume at generous context and retains original-only fallback',()=>{
+  const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation');snapshot.consultationVersion='knowledge-consultation-v2';snapshot.profile.contextWindow=128000;
+  const originals=snapshot.evidence;
+  const distracting=Array.from({length:12},(_,i)=>({...originals[0]!,handle:'e'+(i+3),chunkId:randomUUID(),excerpt:i===0?'Unrelated '.repeat(1100):'Unrelated lexical match.'}));
+  snapshot.evidence=[...distracting,...originals];snapshot.contexts=[{id:randomUUID(),kind:'wiki_section',sourceItemId:originals[0]!.sourceItemId,text:'Faithful compiled synthesis.',review:'unreviewed',fingerprint:'fixture',handles:originals.map(e=>e.handle),dependencies:[]}];
+  const packed=packKnowledgeSnapshot(snapshot,'What do the studies report?');
+  expect(packed.evidence.slice(0,originals.length)).toEqual(originals);
+  const raw=packed.evidence.filter(e=>!originals.some(o=>o.chunkId===e.chunkId));
+  expect(raw.length).toBeLessThanOrEqual(originals.length);expect(raw.length).toBeGreaterThan(0);
+  expect(Buffer.byteLength(JSON.stringify(raw))).toBeLessThanOrEqual(Buffer.byteLength(JSON.stringify(originals)));
+  expect(raw.some(e=>e.chunkId===distracting[0]!.chunkId)).toBe(false);
+  snapshot.contexts=[];expect(packKnowledgeSnapshot(snapshot,'What do the studies report?').evidence.length).toBe(12);
+ });
  it('dispatches legacy inputs explicitly and rejects unknown versions',()=>{const input={requestId:randomUUID(),question:'Question'};expect(ConsultationInputSchema.parse(input).version).toBe('wiki-answer-v1');expect(()=>ConsultationInputSchema.parse({...input,version:'future'})).toThrow();});
  it('packs compiled knowledge together with all its complete support before raw candidates',()=>{const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation');snapshot.consultationVersion='knowledge-consultation-v2';snapshot.profile.contextWindow=10000;const originals=snapshot.evidence;const distracting=Array.from({length:12},(_,i)=>({...originals[0]!,handle:'e'+(i+3),chunkId:randomUUID(),excerpt:'Unrelated '.repeat(80)}));snapshot.evidence=[...distracting,...originals];snapshot.contexts=[{id:randomUUID(),kind:'wiki_section',sourceItemId:originals[0]!.sourceItemId,text:'Faithful compiled synthesis.',review:'unreviewed',fingerprint:'fixture',handles:originals.map(e=>e.handle),dependencies:[]}];const packed=packKnowledgeSnapshot(snapshot,'What do the studies report?');expect(packed.evidence.slice(0,2)).toEqual(originals);expect(packed.contexts).toHaveLength(1);expect(packed.evidence.length).toBeLessThanOrEqual(12);expect(consultationPrompt(packed,'Question')).toContain('COMPILED KNOWLEDGE');});
  it('never marks followed-answer prose as machine checked from citation parsing',()=>{const original=promptSampleSnapshot(defaultPromptPin(),'consultation').evidence[0]!;const content=investigationContent({question:'Question',answer:{paragraphs:[{markdown:'Reported finding [e1]',citations:['e1'],contextIds:[]}],gaps:[]},evidence:[original]} as any);expect(content.automatic!.role.role).toBe('investigation');expect(content.sections[0]!.assessment).toBeUndefined();expect(content.sections[0]!.evidenceReview).toBe('needs_review');});

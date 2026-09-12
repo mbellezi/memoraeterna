@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { access, cp, lstat, mkdir, readFile, readlink, readdir, rm, writeFile } from "node:fs/promises";
 import { arch, platform } from "node:process";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -76,11 +76,11 @@ for (const artifact of artifacts) {
         if (!await exists(source)) {
           throw new Error(`Required ${artifact.id} runtime directory is missing: ${relative(root, source)}`);
         }
-        await cp(source, join(artifact.destination, item), { recursive: true, force: false, errorOnExist: true });
+        await cp(source, join(artifact.destination, item), { recursive: true, force: false, errorOnExist: true, filter: stageFile });
       }
     } else {
       await mkdir(dirname(artifact.destination), { recursive: true });
-      await cp(artifact.source, artifact.destination, { recursive: true, force: false, errorOnExist: true });
+      await cp(artifact.source, artifact.destination, { recursive: true, force: false, errorOnExist: true, filter: stageFile });
     }
   }
   const files = available ? await inventory(artifact.destination, output) : [];
@@ -136,6 +136,12 @@ await writeJson(join(output, "sbom.spdx.json"), {
 });
 
 console.info(`Prepared desktop resources for ${platformArch}.`);
+
+// electron-builder omits this repository placeholder from extra resources.
+// Exclude it before inventory so the manifest describes the delivered bytes.
+function stageFile(path) {
+  return basename(path) !== ".gitkeep";
+}
 
 async function inventory(path, rootPath) {
   const info = await lstat(path);

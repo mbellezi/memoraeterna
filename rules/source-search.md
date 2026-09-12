@@ -146,3 +146,12 @@ independently of currentness and current section citations, before serializing
 prose, consultation material or portable projections. Whole-library historical
 search can return retained notes with unavailable live source navigation;
 missing originals never become current or newly authorized evidence.
+
+- Successor knowledge consultation packs complete compiled units first. When such
+  units fit, complementary raw expansion is bounded by both the number and UTF-8
+  serialized bytes of their selected original evidence. A larger model context
+  cannot turn spare capacity into a raw-match majority. Omit whole passages and
+  disclose limited coverage; this is a volume bound, not a semantic relevance
+  certificate. Without eligible compiled units, the existing bounded raw fallback
+  remains available. Legacy answer ranking and already-admitted snapshots retain
+  their original behavior.
