@@ -268,3 +268,21 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   of at most 1,000 pending operation IDs in the POST body for all pages. Filter
   resolution history and retired attempt IDs by that snapshot, so long history
   cannot crowd out an older operation still pending on an offline client.
+
+## Automatic-wiki layout successor
+
+- Keep projection language and layout version explicit and independent of UI
+  language. Stable language-independent category keys resolve registered paths;
+  language/layout changes use a reviewed migration, never a formatter-only move.
+- The successor layout retains one source reference/content identity, separate
+  original/human/generated regions, original parent-child order, shallow atomic
+  note identities and typed TOC links shared with native navigation. Assets project
+  once per registered identity and omitted binaries remain explicit.
+- Negotiate a new format/layout capability before new writeback; legacy v1 clients
+  cannot reinterpret TOCs, wrappers or generated summaries as source/note edits.
+  Preserve no-plugin Markdown usefulness and existing v1 recovery guarantees.
+- Before path changes persist an assessed identity/path/link map, exact
+  base/local/proposed bytes, backup and target journal. Dirty/open/missing/colliding
+  files require resolution or explicit exclusion. Use existing target coordination
+  and observed hashes to reconcile filesystem/registry/link crash boundaries.
+  Rollback checks subsequent edits; it never blindly restores old bytes.

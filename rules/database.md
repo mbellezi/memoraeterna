@@ -59,6 +59,30 @@ npm run db:generate
 - A PostgreSQL major change requires an explicit dump/restore or `pg_upgrade`
   migration plan.
 
+## Automatic-wiki persistence evolution
+
+- Reuse wiki page/revision, organization run/checkpoint/step, canonical AI audit,
+  maintenance and Obsidian registry/outbox ownership. New TOC group/membership,
+  section assessment, policy, prompt, investigation and migration-journal records
+  extend those boundaries; do not introduce a universal node store.
+- Multi-target organization uses group receipts unique by run/group plus exact
+  per-target revisions. Retain the old single-page receipt contract and readers;
+  never represent a multi-page group by overwriting one legacy receipt revision.
+- Knowledge impacts use one per-consumer delivery table, unique by event,
+  consumer and input generation, with lease/defer state and durable receipt.
+  `knowledge_impact_events.consumed_at` remains legacy data, never global proof
+  that new curator/investigation consumers completed. No competing event queue
+  or dispatcher checkpoint authority is introduced.
+- Event creation and delivery enrollment commit with canonical input mutation.
+  Upgrade reconciles retained events and current dependency state at a bounded
+  high-water mark; old consumption timestamps cannot acknowledge new consumers.
+  Causal run/group and visited revision fingerprints bound propagation while
+  preserving real cross-page invalidation. A paused consumer defers work.
+- Apply corresponding generated migrations only in the milestone implementing
+  persistence; contract-only schemas and synthetic fixtures do not justify
+  mutating a user's database. Upgrade tests retain historical revisions and
+  conservative human protections as well as checking schema/baseline parity.
+
 ## Search and graph storage
 
 - Vector columns and indexes have fixed dimensions. Keep 256, 768, and 1024

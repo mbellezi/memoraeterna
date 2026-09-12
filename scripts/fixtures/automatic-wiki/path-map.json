@@ -1,0 +1,23 @@
+{
+  "version":"automatic-wiki-layout-v1",
+  "language":"pt-BR",
+  "managedRoot":"Memora Eterna",
+  "entries":[
+    {"identity":"book","old":"Sources/Aprender com intervalos.md","next":"Fontes/Livros/Aprender com intervalos/Aprender com intervalos.md","state":"clean"},
+    {"identity":"A","old":"Sources/Recuperação ativa.md","next":"Fontes/Livros/Aprender com intervalos/Capítulos/01 — Recuperação ativa.md","state":"dirty"},
+    {"identity":"paper","old":"Sources/Intervalos e retenção.md","next":"Fontes/Artigos/Acadêmicos/Intervalos e retenção/Intervalos e retenção.md","state":"clean"},
+    {"identity":"B","old":"Sources/Resultados.md","next":"Fontes/Artigos/Acadêmicos/Intervalos e retenção/Seções/01 — Resultados.md","state":"clean"},
+    {"identity":"C","old":"Sources/Releitura antes da recuperação.md","next":"Fontes/Artigos/Web/Releitura antes da recuperação.md","state":"missing"},
+    {"identity":"catalog","old":"Wiki/Catalog/Manual ainda não adquirido.md","next":"Fontes/Livros/Manual ainda não adquirido/Manual ainda não adquirido.md","state":"clean"},
+    {"identity":"personal","old":"Sources/Minha interpretação.md","next":"Fontes/Notas pessoais/Minha interpretação.md","state":"clean"},
+    {"identity":"daily","old":"Sources/Registro de estudo.md","next":"Fontes/Diário/2026/09/Registro de estudo.md","state":"clean"},
+    {"identity":"issue","old":"Wiki/Catalog/Caderno de estudo 1.md","next":"Fontes/Periódicos/Caderno de estudo 1/Caderno de estudo 1.md","state":"clean"},
+    {"identity":"article","old":"Sources/Resultados — article.md","next":"Fontes/Periódicos/Caderno de estudo 1/Artigos/01 — Resultados.md","state":"collision"},
+    {"identity":"video","old":"Sources/Exercício comentado.md","next":"Fontes/Vídeos/Exercício comentado.md","state":"clean"},
+    {"identity":"document","old":"Sources/Roteiro.md","next":"Fontes/Documentos/Roteiro.md","state":"clean"},
+    {"identity":"recall-note","old":"Notes/Recuperar antes de consultar.md","next":"Notas atômicas/Recuperar antes de consultar.md","state":"clean"},
+    {"identity":"human-page","old":"Wiki/Meu método de estudo.md","next":"Wiki/Temas/Meu método de estudo.md","state":"dirty"}
+  ],
+  "journalStates":["assessed","approved","backed_up","write_guarded","file_observed","registry_committed","links_reconciled","complete","conflict","rollback_review"],
+  "blockedAutomaticMoves":["A","C","article","human-page"]
+}

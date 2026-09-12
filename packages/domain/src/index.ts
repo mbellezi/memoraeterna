@@ -22,3 +22,5 @@ export * from "./organization.js";
 
 export * from "./consultation.js";
 export * from "./maintenance.js";
+export * from "./automatic-wiki.js";
+export * from "./prompt-catalog.js";

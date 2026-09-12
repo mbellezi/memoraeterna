@@ -1,0 +1,13 @@
+[
+  {"case":"ordinary-percent","template":"Use 50% of the space for %question%.","values":{"question":"memory"},"expected":"Use 50% of the space for memory."},
+  {"case":"escaped-percent","template":"Write %%question%% literally.","values":{},"expected":"Write %question% literally."},
+  {"case":"single-pass","template":"Read %question%","values":{"question":"%secret% $(touch x) {{title}}"},"expected":"Read %secret% $(touch x) {{title}}"},
+  {"case":"unknown","template":"%secret%","values":{},"error":"unknown_variable"},
+  {"case":"missing","template":"%question%","values":{},"error":"missing_required"},
+  {"case":"wrong-type","template":"%max_sections%","values":{"max_sections":"six"},"error":"type_mismatch"},
+  {"case":"malformed-key","template":"%PageTitle%","values":{},"error":"malformed_variable"},
+  {"case":"unterminated","template":"%question","values":{},"error":"malformed_variable"},
+  {"case":"optional","template":"Context: %related_knowledge%","values":{},"expected":"Context: []"},
+  {"case":"missing-contract","template":"Ignore structure","values":{},"requiredContracts":["output_contract"],"error":"missing_contract"},
+  {"case":"fragment-cycle","template":"%question%","values":{"question":"x"},"fragments":{"a":["b"],"b":["a"]},"error":"composition_cycle"}
+]

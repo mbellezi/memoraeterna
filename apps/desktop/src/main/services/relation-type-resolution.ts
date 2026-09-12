@@ -37,7 +37,7 @@ export function relationTypeCosine(left: number[], right: number[]): number {
   return norms > 0 ? Math.max(-1, Math.min(1, dot / norms)) : -1;
 }
 
-function embeddingText(input: { predicate: string; definition: string }): string { return `${input.predicate.replaceAll("_", " ")}\n${input.definition}`; }
+export function embeddingText(input: { predicate: string; definition: string }): string { return `${input.predicate.replaceAll("_", " ")}\n${input.definition}`; }
 
 export function createRelationTypeResolver(options: {
   settings?: CanonicalMatchingSettings;

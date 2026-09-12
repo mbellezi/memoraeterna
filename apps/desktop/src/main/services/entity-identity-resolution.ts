@@ -7,7 +7,7 @@ import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { buildRelationMatchPrompt, parseRelationMatches, relationTypeCosine, type RelationMatchRow } from "./relation-type-resolution.js";
 
 export const entityIdentityResolutionVersion = "entity-identity-resolution-v1";
-const identityText = (input: { type: string; canonicalName: string; identityDescription: string }) => `${input.type}: ${input.canonicalName}\n${input.identityDescription}`;
+export const identityText = (input: { type: string; canonicalName: string; identityDescription: string }) => `${input.type}: ${input.canonicalName}\n${input.identityDescription}`;
 type Entity = KnowledgeGraphGenerationOutput["entities"][number];
 type Candidate = { sourceItemIds?: string[]; key: string; predicate: string; definition: string; score: number; target: NonNullable<EntityIdentityDecision["target"]> };
 

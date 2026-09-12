@@ -2,7 +2,10 @@
 
 Date: 2026-09-12.
 
-Status: detailed implementation plan; no automatic-wiki milestone has started.
+Status: A0 contract/fixture work is independently verified and accepted; A1–A8
+runtime implementation and product acceptance remain planned. See the
+[A0 contract report](automatic-wiki-a0-contracts.md) and
+[acceptance ownership matrix](automatic-wiki-a0-acceptance.md).
 The product direction and initial information architecture were agreed in the
 design discussion. New schema names, tools and numerical limits below are
 implementation proposals to validate at their stated gates, not shipped APIs.
@@ -870,7 +873,8 @@ originals. A paused/unconfigured sync performs no migration or projection writes
 
 ## 14. Implementation milestones
 
-All milestones below are **planned**. Each implementation task must report its
+Only A0 contract/fixture work has been implemented and independently accepted;
+A1–A8 below remain **planned**. Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 

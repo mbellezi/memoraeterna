@@ -1,0 +1,26 @@
+{
+  "version": "automatic-wiki-fixture-v1",
+  "synthetic": true,
+  "sources": [
+    {"key":"book","type":"Book","title":"Aprender com intervalos","parent":null,"text":"This synthetic handbook examines recall and spacing.","optionalArtifacts":[]},
+    {"key":"A","type":"BookChapter","title":"Recuperação ativa","parent":"book","text":"In this fictional classroom comparison, retrieving before rereading improved next-week recall. The exercise used low-stakes questions and feedback.","optionalArtifacts":["summary","atomic_note"]},
+    {"key":"paper","type":"AcademicPaper","title":"Intervalos e retenção","parent":null,"text":"This invented study compares spaced and massed practice in the same fictional classroom.","optionalArtifacts":[]},
+    {"key":"B","type":"DocumentSection","title":"Resultados","parent":"paper","text":"In the fictional comparison, practice spread across three days improved next-week recall compared with one massed session. Feedback was available in both groups.","optionalArtifacts":["summary"]},
+    {"key":"C","type":"WebArticle","title":"Releitura antes da recuperação","parent":null,"text":"In a fictional replication with the same classroom conditions, low-stakes questions and feedback, retrieving before rereading did not improve next-week recall. The earlier positive finding was not reproduced.","optionalArtifacts":[]},
+    {"key":"catalog","type":"Book","title":"Manual ainda não adquirido","parent":null,"text":null,"optionalArtifacts":[]},
+    {"key":"personal","type":"PersonalNote","title":"Minha interpretação","parent":null,"text":"I prefer short study sessions. This is my preference, not proof that shorter sessions improve retention.","optionalArtifacts":[]},
+    {"key":"daily","type":"DailyNote","title":"Registro de estudo","parent":null,"recordedDate":"2026-09-01","text":"Today I tried three short study sessions. I felt less tired; I did not measure retention.","optionalArtifacts":[]},
+    {"key":"issue","type":"PeriodicalIssue","title":"Caderno de estudo 1","parent":null,"text":null,"optionalArtifacts":[]},
+    {"key":"article","type":"StandaloneArticle","title":"Resultados","parent":"issue","text":"This fictional editorial distinguishes perceived fluency from measured retention.","optionalArtifacts":[]},
+    {"key":"video","type":"Video","title":"Exercício comentado","parent":null,"text":"At 00:12 the fictional teacher demonstrates retrieval with feedback.","optionalArtifacts":[]},
+    {"key":"document","type":"GenericDocument","title":"Roteiro","parent":null,"text":"This deliberately supplied synthetic checklist records the classroom protocol.","optionalArtifacts":[]}
+  ],
+  "notes":[{"key":"recall-note","source":"A","title":"Recuperar antes de consultar","review":"pending_review","text":"In the fictional first comparison, retrieval before rereading improved next-week recall."}],
+  "existingPages":[{"key":"human-page","title":"Meu método de estudo","origin":"human","protected":true,"text":"Keep my personal interpretation exactly as written."}],
+  "expected":{
+    "initialSources":["A","B"],"laterSource":"C","contradiction":["A","C"],
+    "sharedNote":"recall-note","tocContexts":["source-A","topic-memory","map-study"],
+    "catalogOnly":["catalog","issue"],"humanPage":"human-page",
+    "noPrerequisiteStages":["atomicNoteGeneration","embedding","knowledgeGraph","atomicNoteMatching","sourceMatching"]
+  }
+}

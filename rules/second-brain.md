@@ -49,6 +49,58 @@ Implementation sequencing lives in
   catalog specified in `rules/ai-and-knowledge.md`; settings do not create a second
   instruction authority or a separate inference queue.
 
+## Versioned automatic-wiki contracts
+
+- `automatic-wiki-v1` is the successor domain contract. Its schemas do not
+  activate automation or expand `wiki-three-tools-v1`, legacy maintenance or
+  Obsidian v1 authority. Dispatch by admitted version; retain old-run readers,
+  exact snapshots and receipts. Unknown versions fail before inference.
+- Keep existing page kinds; source/topic TOCs and maps are collection roles,
+  investigations are synthesis roles. One source/topic has one canonical TOC
+  owner binding. Typed page/source/atomic-note/entity memberships have stable
+  IDs, order and independent placement protection. No universal node store or
+  duplicate source-relation authority is introduced.
+- New curator proposals carry at most three page/TOC targets, six section
+  patches per page, twelve complete original passages per synthesis, twenty
+  tools, twenty-one admitted model calls including one repair, and a ten-minute
+  group deadline including FIFO wait. Lower effective model/policy limits win.
+  These development ceilings do not imply measured token/cost guarantees.
+- Proposed handles resolve only inside the coherent group; the backend owns
+  canonical IDs, authorization and apply. Validate existing references, scope,
+  expected revisions, canonical ancestry and protected text/order at apply.
+  Commit identities, sections, TOCs, links, dependencies and group receipts in
+  one transaction; conflicts never silently apply an invalid subset.
+- Preserve section revision identity and provenance on placement/pin-only
+  changes. A successor human save protects only changed prose/citations;
+  whole-page protection is explicit. Legacy full-save protection remains
+  compatible until its versioned successor is implemented.
+- Machine support assessment is tied to exact section revision and consumed
+  inputs, independently of human verification, management, freshness and sync.
+  Exploration may use current machine-validated unreviewed generated sections;
+  reviewed-only still requires human verification. Edited, stale, unsupported,
+  missing or ambiguously assessed content requires explicit revalidation or
+  replacement; relabeling it as a draft cannot make it eligible.
+- Conservatively backfill unknown/human/reviewed/protected origin as
+  human-managed. Only positively identified unprotected organization drafts
+  may be AI-managed, still requiring enabled policy authority. Legacy ambiguous
+  `needs_review` remains unassessed; preserve all existing protections/history.
+- Automatic routine bindings are unique by policy, routine kind and canonical
+  scope fingerprint; preset version is separate data so upgrades cannot create
+  duplicates. One reviewed activation binds defaults, preserving custom cadence,
+  prompts and limits; reuse existing schedules only after explicit compatible
+  reconciliation. Updates never activate policies.
+- Initial routine defaults are incremental two-minute debounce / fifteen-minute
+  eligible start window / ten-minute execution, daily 02:00 / six hours / twenty
+  minutes, Sunday 03:00 / twenty-four hours / forty-five minutes, and month day
+  one 04:00 / seventy-two hours / ninety minutes. Slice groups to ten minutes;
+  persist eligible-open time, actual overdue time and cumulative allowances.
+  A4 calibrates default call/token presets before release. All routines share
+  one parent policy allowance; unknown cost never means zero.
+- Resume unfinished occurrences before identical sweeps, coalesce closed-app
+  misses into one catch-up per compatible scope, preserve each routine's due
+  receipt and avoid duplicate investigation calls. Run-now bypasses idle
+  preference only. No-input inspection is quiet and invokes no model.
+
 ## Participation and identity
 
 - Every imported source remains discoverable in the wiki catalog, including

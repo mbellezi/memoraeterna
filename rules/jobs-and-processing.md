@@ -120,3 +120,18 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   remove its audit links. An uncertain interrupted inference is not replayed.
   Run now can queue during user activity but still respects imports/sync conflicts
   and the shared inference FIFO. Due schedules retain a visible deferral reason.
+
+## Automatic-wiki successor work
+
+- Admit new curator work with versioned policy, source scope, model and prompt
+  composition snapshots. Legacy single-page organization and maintenance runs
+  retain their original dispatch and checkpoint semantics. Source text cannot
+  activate policy, select a new model or raise a budget.
+- Automatic impact consumers use the per-consumer delivery ownership in
+  `rules/database.md`. Persist generation/causal run/group and acknowledge only
+  a durable apply, unchanged-inspection or explicit exclusion receipt. A global
+  legacy consumption timestamp is not acknowledgment for another consumer.
+- Automatic routine occurrences retain cumulative calls, tokens, unknown usage,
+  reservations, deadlines, cursor and receipts across deferral/restart/retry.
+  Policy pause/revision changes revoke new work and guarded apply. Retry cannot
+  acquire a fresh occurrence allowance. No transaction waits for inference.

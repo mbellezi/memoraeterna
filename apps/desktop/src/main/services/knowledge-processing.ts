@@ -377,7 +377,7 @@ export function parseKnowledgeGraphOutput(
   return parsed;
 }
 
-function buildKnowledgeGraphRepairPrompt(
+export function buildKnowledgeGraphRepairPrompt(
   source: { title: string; language: string },
   notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
   evidenceAliases: ReadonlyMap<string, string>,
@@ -737,7 +737,7 @@ export function fuseAtomicNoteCandidateRankings(
   return selected.sort(compare);
 }
 
-function summaryPrompt(chunks: ReadonlyArray<{ id: string; content: string }>, partial: boolean): string {
+export function summaryPrompt(chunks: ReadonlyArray<{ id: string; content: string }>, partial: boolean): string {
   return `${partial ? "Summarize this part of a longer source" : "Summarize this source"} faithfully and concisely. Preserve important claims, evidence, and uncertainty. Do not add facts.
 Do not summarize navigation, indexes or tables of contents, title pages, isolated titles, headings or subheadings, bibliographies, or reference lists.
 If the supplied text contains no substantive content beyond those cases, return exactly ${emptySummaryTag} and nothing else.
@@ -758,7 +758,7 @@ export function summaryConcepts(output: unknown, chunks: ReadonlyArray<{id:strin
   } catch { return []; } // Legacy plain summaries remain readable; invalid concept references never become evidence.
 }
 
-function summaryReductionPrompt(partials: ReadonlyArray<string>): string {
+export function summaryReductionPrompt(partials: ReadonlyArray<string>): string {
   return `Create one faithful, concise source summary from these substantive partial summaries. Preserve important claims and uncertainty.
 Do not introduce facts. Return only the summary body, without a title or Markdown heading.
 If the partial summaries contain no substantive content, return exactly ${emptySummaryTag} and nothing else.

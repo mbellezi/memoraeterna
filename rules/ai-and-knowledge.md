@@ -64,6 +64,22 @@ their callers are explicitly migrated; a settings-only copy is not completion.
 - Preserve legacy placeholder syntax only in versioned compatibility readers.
   Validate migrated effective text; do not reinterpret ambiguous user prose or
   activate an unvalidated advanced prompt by changing its template syntax.
+- `prompt-catalog-v1` records field-level declared variables, typed serializers,
+  backend origins, safe examples, sensitivity and descriptions in every supported
+  locale. Optional variables require a declared empty representation. Credentials
+  are never variables. `%snake_case%` tokens interpolate once; `%%` escapes percent
+  and ordinary percentages remain literal. Malformed/unknown/missing/type-invalid
+  values, missing structural contracts and fragment cycles fail before admission.
+- Catalog coverage includes app-owned adapter wording, local-model diagnostics,
+  query prefixes, DEV embedding warmup and deterministic input serializers, not
+  just functions named Prompt. Transport/model-native formatting is separately
+  identified external behavior. A source-fragment inventory is not proof a
+  runtime caller migrated: verify actual rendered inputs and caller spies.
+- Legacy configuration migration maps each revision/function/domain/slot once,
+  preserves drafts/history and effective active text until validated, and retains
+  admitted legacy snapshots. Composition snapshots record exact prompt/fragment
+  revisions, hash, output contract and embedding strategy identity. Shared edits
+  expose affected compositions; saving never runs existing content.
 
 ## Models, profiles, and parameters
 

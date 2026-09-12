@@ -896,7 +896,7 @@ function resolveLocalModelPath(model: LocalModelRecord): string {
   return join(model.managedPath, file.path);
 }
 
-function withOutputLanguageInstruction(input: string, language: string): string {
+export function withOutputLanguageInstruction(input: string, language: string): string {
   const languageName = ({
     en: "English",
     "pt-BR": "Brazilian Portuguese",

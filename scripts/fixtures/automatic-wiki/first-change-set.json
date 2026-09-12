@@ -1,0 +1,158 @@
+{
+  "version": "automatic-wiki-v1",
+  "groupId": "00000000-0000-4000-8000-000000000060",
+  "policyRevisionId": "00000000-0000-4000-8000-000000000061",
+  "explanation": "Create one topic and two indexes from A/B without generating new notes.",
+  "targets": [
+    {
+      "handle": "new_topic",
+      "pageId": null,
+      "expectedRevisionId": null,
+      "title": "Memória",
+      "purpose": "Explain retrieval and spacing with separate attribution.",
+      "role": {
+        "kind": "topic",
+        "role": "topic"
+      },
+      "initialParent": null,
+      "sections": [
+        {
+          "sectionId": null,
+          "expectedSectionRevisionId": null,
+          "title": "Complementary findings",
+          "markdown": "A reports benefits of retrieval and B reports benefits of spacing [e1] [e2].",
+          "originalHandles": [
+            "e1",
+            "e2"
+          ]
+        }
+      ],
+      "links": [
+        {
+          "reference": "proposed",
+          "handle": "new_topic_toc"
+        }
+      ],
+      "tocGroups": []
+    },
+    {
+      "handle": "new_source_toc",
+      "pageId": null,
+      "expectedRevisionId": null,
+      "title": "Notas deste capítulo",
+      "purpose": "Read the existing notes derived from A.",
+      "role": {
+        "kind": "collection",
+        "role": "source_toc",
+        "owner": {
+          "reference": "existing",
+          "target": {
+            "kind": "source",
+            "id": "00000000-0000-4000-8000-000000000004"
+          },
+          "fingerprint": "synthetic-r1"
+        }
+      },
+      "initialParent": null,
+      "sections": [],
+      "links": [],
+      "tocGroups": [
+        {
+          "handle": "new_source_group",
+          "id": null,
+          "expectedRevisionId": null,
+          "title": "Recall with feedback",
+          "explanation": null,
+          "originalHandles": [],
+          "memberships": [
+            {
+              "id": null,
+              "target": {
+                "reference": "existing",
+                "target": {
+                  "kind": "atomic_note",
+                  "id": "00000000-0000-4000-8000-000000000090"
+                },
+                "fingerprint": "synthetic-r1"
+              },
+              "purpose": "reading",
+              "order": 0
+            },
+            {
+              "id": null,
+              "target": {
+                "reference": "existing",
+                "target": {
+                  "kind": "source",
+                  "id": "00000000-0000-4000-8000-000000000004"
+                },
+                "fingerprint": "synthetic-r1"
+              },
+              "purpose": "source",
+              "order": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "handle": "new_topic_toc",
+      "pageId": null,
+      "expectedRevisionId": null,
+      "title": "Índice de Memória",
+      "purpose": "Navigate the topic without duplicating notes.",
+      "role": {
+        "kind": "collection",
+        "role": "topic_toc",
+        "owner": {
+          "reference": "proposed",
+          "handle": "new_topic"
+        }
+      },
+      "initialParent": {
+        "reference": "proposed",
+        "handle": "new_topic"
+      },
+      "sections": [],
+      "links": [],
+      "tocGroups": [
+        {
+          "handle": "new_reading_group",
+          "id": null,
+          "expectedRevisionId": null,
+          "title": "Recall with feedback",
+          "explanation": null,
+          "originalHandles": [],
+          "memberships": [
+            {
+              "id": null,
+              "target": {
+                "reference": "existing",
+                "target": {
+                  "kind": "atomic_note",
+                  "id": "00000000-0000-4000-8000-000000000090"
+                },
+                "fingerprint": "synthetic-r1"
+              },
+              "purpose": "reading",
+              "order": 0
+            },
+            {
+              "id": null,
+              "target": {
+                "reference": "existing",
+                "target": {
+                  "kind": "source",
+                  "id": "00000000-0000-4000-8000-000000000004"
+                },
+                "fingerprint": "synthetic-r1"
+              },
+              "purpose": "source",
+              "order": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 # Application-wide AI prompt catalog: implementation design
 
-Date: 2026-09-12. Status: planned, not implemented.
+Date: 2026-09-12. Status: A0 inventory, golden fixtures and domain contracts are
+independently verified and accepted; the A1 runtime catalog/editor remains planned.
+See the [A0 report](automatic-wiki-a0-contracts.md#prompt-caller-inventory-and-golden-evidence).
 
 This is the prompt-configuration workstream of the
 [automatic wiki implementation plan](automatic-wiki-implementation-plan.md).
@@ -310,4 +312,3 @@ Required checks:
 - Full-prompt logging remains off unless deliberately enabled through Monitoring.
 - Search, tree keyboard navigation, long localized labels, the variable table and
   preview work at the normal app window size in all supported locales.
-
