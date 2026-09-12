@@ -706,3 +706,57 @@ Implementation sequencing lives in
   memberships are retained; changing a group's authored heading/explanation
   while omitting its existing members requires their admitted evidence rather
   than silently extending the new assertion to unread members.
+
+## Automatic maintenance execution
+
+- `automatic-maintenance-v1` installs four disclosed bindings only when a new
+  policy revision is explicitly activated. Identity is policy/kind/canonical
+  scope, independently of the allowance preset. Same-revision resume preserves
+  customized schedules and reservations; it does not replay the original setup.
+  Legacy maintenance policies, receipts and structural-review semantics remain
+  version-dispatched and separate. Explicit retirement removes a legacy schedule
+  from admission and the active list while retaining its historical row, runs,
+  jobs and occurrences.
+- The `luna-a2-a3-conservative-v1` preset grants incremental/daily/weekly/monthly
+  occurrences 8/16/32/48 calls and 128,000/256,000/512,000/768,000 reserved tokens.
+  All installed routines and explicit work under that policy share one UTC
+  calendar-month ceiling of 128 calls and 2,000,000 reserved tokens. These are
+  conservative operational defaults calibrated from small synthetic Luna trials,
+  not a price, latency or universal quality guarantee. Unknown spend stays null;
+  an explicit monetary ceiling blocks inference without a reliable cost bound.
+- Each occurrence pins the effective profile and parameters, content language and
+  complete source-free prompt catalog. Curator groups and resumed bootstrap
+  cursors inherit those settings. Prompt editing does not change an admitted
+  occurrence. A never-started missing-model occurrence remains in history; an
+  explicit new run may admit the newly configured route.
+- Different routine kinds keep separate due receipts, start windows, limits and
+  histories. Serialize them per policy; coalesce missed dates within a routine
+  into one bounded catch-up. Existing generation/coverage receipts prevent later
+  sweeps from repeating known unchanged model work. Exhausted between-group work
+  retains its cursor for a subsequent authorized occurrence; retry of a particular
+  group retains its original allowance, deadline and uncertain-call state.
+- A source-document replacement admits the current permitted originals and the
+  exact stale generated section identity. Replace that section through the scoped
+  curator patch and support gate; preserve adjacent human prose, historical
+  excerpts and alternative findings. Weekly/monthly navigation may include
+  bounded existing notes, but maintenance never generates optional derivatives.
+
+- Curator input is a section patch inventory on every discovery/upkeep path,
+  independently of whether an exact page target was requested. A stale section
+  retains its identity and explicitly historical prose when its complete lineage
+  is in scope and current replacement originals are admitted. That prose is not
+  current support. Protected sections and sections lacking admitted originals
+  expose preservation metadata without patch authority. Section output contains
+  changed patches only: omission preserves existing prose, and a correction reuses
+  the stale section ID instead of appending a substitute while retaining the old
+  claim. Keep the same original/support/protection validators; do not remap model
+  output into a successful patch after validation fails.
+
+- TOC explanation evidence has its own freshness and lineage in the curator patch
+  inventory. Replacing stale evidence can require a same-group-ID patch even when
+  the wording stays accurate. Historical explanation text is not current support;
+  protected groups or missing permitted originals do not grant patch authority.
+- A delivery's discovery completion cannot conceal an unresolved dependent
+  outcome. Admission errors retain the exact dependent cursor and error namespace;
+  do not translate them into skips, acknowledge them as complete, or claim complete
+  maintenance coverage while they remain unresolved.

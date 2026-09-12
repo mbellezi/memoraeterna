@@ -1,4 +1,5 @@
-import { isDeepStrictEqual } from 'node:util';
+import {organizationAiFailure} from './ai-task-parameters.js';
+import {createAutomaticMaintenanceRepository} from '@app/db';
 import {createWikiCollectionRepository,createWikiCuratorRepository,createOrganizationRepository,curatorHash,type PgPool} from '@app/db';
 import {WikiCollectionCommandSchema,type WikiBootstrap} from '@app/domain';
 import type {z} from 'zod';
@@ -19,8 +20,8 @@ export class WikiCollection {
   if(c.command==='bootstrap'){
    const policy=await curator.policy(c.input.policyId);if(policy?.state!=='enabled'||policy.revisionId!==c.input.policyRevisionId)throw new Error('organization.errors.policy');
    const sourceIds=c.input.sourceIds.length?await curator.scope(policy,c.input.sourceIds):[];
-   const profile=await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote');
-   const id=await repo.bootstrap({version:'wiki-bootstrap-v1',participation,noteIds:c.input.noteIds,policy,sourceIds,profile,promptPin:capturePromptPin(policy.scope.domainId),contentLanguage:await this.options.contentLanguage(),admittedAt:new Date().toISOString()});this.options.wake();return repo.get(id);
+   const maintenanceRepo=createAutomaticMaintenanceRepository(this.pool()),existingMaintenance=await maintenanceRepo.authority(policy.id),maintenance=await maintenanceRepo.installed(policy.id)&&!existingMaintenance?await maintenanceRepo.manualAuthority(policy.id,new Date(),{profile:await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote'),promptPin:capturePromptPin(policy.scope.domainId),contentLanguage:await this.options.contentLanguage()},'daily'):existingMaintenance,profile=maintenance?.snapshot.profile??await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote');
+   const id=await repo.bootstrap({version:'wiki-bootstrap-v1',participation,noteIds:c.input.noteIds,policy,sourceIds,profile,promptPin:maintenance?.snapshot.promptPin??capturePromptPin(policy.scope.domainId),contentLanguage:maintenance?.snapshot.contentLanguage??await this.options.contentLanguage(),admittedAt:new Date().toISOString()});if(maintenance){maintenance.checkpoint.bootstrapId=id;maintenance.checkpoint.phase='coverage';await maintenanceRepo.checkpoint(maintenance);}this.options.wake();return repo.get(id);
   }
   const run=await repo.get(c.id);if(!run)throw new Error('organization.errors.invalid');
   if(c.command==='bootstrapGet')return run;
@@ -38,42 +39,45 @@ export class WikiCollection {
  tick(){const pool=this.pool(),active=ticks.get(pool);if(active)return active;const task=this.drain().finally(()=>ticks.delete(pool));ticks.set(pool,task);return task;}
  private async drain(){const repo=createWikiCollectionRepository(this.pool()),curator=createWikiCuratorRepository(this.pool());
   // One bounded step per active bootstrap and one delivery per policy per supervisor pass.
-  for(const run of await repo.active()){run.checkpoint.lastTickAt=new Date().toISOString();try{await repo.checkpoint(run);await this.advance(run);}catch(error){if(!String(error).includes('organization.errors.conflict'))throw error;}}
+  for(const run of await repo.active()){const maintenance=createAutomaticMaintenanceRepository(this.pool());if(await maintenance.installed(run.snapshot.policy.id)&&!await maintenance.authority(run.snapshot.policy.id))continue;run.checkpoint.lastTickAt=new Date().toISOString();try{await repo.checkpoint(run);await this.advance(run);}catch(error){if(!String(error).includes('organization.errors.conflict'))throw error;}}
   for(const policy of await curator.policies())if(policy.triggers.includes('input_changed')){
-   await repo.reconcileDeliveries(policy);if(policy.state!=='enabled')continue;
+   await repo.reconcileDeliveries(policy);if(policy.state!=='enabled')continue;const maintenance=createAutomaticMaintenanceRepository(this.pool());const installed=await maintenance.installed(policy.id),authority=await maintenance.authority(policy.id);if(installed&&!authority)continue;
    const event=await repo.claimDelivery(policy.id);if(!event)continue;
    if(event.operation!=='delete'&&!await repo.currentWikiEvent(event.kind,event.input_id,event.fingerprint)){await repo.delivery(event.id,event.checkpoint,{kind:'excluded',reason:'superseded_revision'});continue;}
    if(!event.input_generation.endsWith(':'+policy.revisionId)){await repo.delivery(event.id,event.checkpoint,{kind:'excluded',reason:'policy_revised'});continue;}
-   type Work={after:string|null;visited:string[];bootstrapId:string|null;discovery:boolean;childRunId:string|null;pageId:string|null;outcomes:Array<{pageId:string;runId:string|null;status:string}>};
-   const work:Work={after:null,visited:[],bootstrapId:null,discovery:false,childRunId:null,pageId:null,outcomes:[],...event.checkpoint};
-   if(work.childRunId){const child=await new WikiCurator(this.options).get(work.childRunId);if(child&&['queued','analyzing','awaiting_review','failed'].includes(child.status)){await repo.delivery(event.id,work,null,child.status==='failed'?60000:2000);continue;}work.outcomes.push({pageId:work.pageId!,runId:work.childRunId,status:child?.status??'missing'});work.after=work.pageId;work.childRunId=null;work.pageId=null;await repo.delivery(event.id,work,null,0);continue;}
+   type Work={after:string|null;visited:string[];bootstrapId:string|null;discovery:boolean;childRunId:string|null;pageId:string|null;blockedReason:string|null;blockedMaintenanceRunId:string|null;outcomes:Array<{pageId:string;runId:string|null;status:string}>};
+   const work:Work={after:null,visited:[],bootstrapId:null,discovery:false,childRunId:null,pageId:null,blockedReason:null,blockedMaintenanceRunId:null,outcomes:[],...event.checkpoint};
+   if(work.childRunId){const child=await new WikiCurator(this.options).get(work.childRunId);if(child&&['queued','analyzing','awaiting_review','failed','canceled','rejected'].includes(child.status)){work.blockedReason=['queued','analyzing'].includes(child.status)?null:child.checkpoint.error??'organization.errors.review';await repo.delivery(event.id,work,null,child.status==='failed'?60000:2000);continue;}work.blockedReason=null;work.outcomes.push({pageId:work.pageId!,runId:work.childRunId,status:child?.status??'missing'});work.after=work.pageId;work.childRunId=null;work.pageId=null;await repo.delivery(event.id,work,null,0);continue;}
+   const unresolved=work.outcomes.some(outcome=>!['applied','causal_output_already_applied','scope_decision'].includes(outcome.status));
+   if(work.bootstrapId&&unresolved){work.blockedReason??='organization.errors.review';await repo.delivery(event.id,work,null);continue;}
    if(work.bootstrapId){const run=await repo.get(work.bootstrapId);if(run&&['complete','attention','canceled'].includes(run.checkpoint.state)){await repo.delivery(event.id,work,{kind:run.checkpoint.state,runId:run.id,outcomes:work.outcomes});}else await repo.delivery(event.id,work,null);continue;}
    const allowed=await curator.allowed(policy),dependent=(await repo.dependents(event.kind,event.input_id,work.after,1))[0];
    if(dependent){
     const key=dependent.id+':'+dependent.revision_id;
     if(work.visited.length>=100){await repo.delivery(event.id,work,{kind:'attention',reason:'propagation_limit',remainingAfter:work.after,outcomes:work.outcomes});continue;}
-    work.visited.push(key);work.pageId=dependent.id;
+    if(!work.visited.includes(key))work.visited.push(key);work.pageId=dependent.id;
     const skip=async(reason:string)=>{work.outcomes.push({pageId:dependent.id,runId:null,status:reason});work.after=dependent.id;work.pageId=null;await repo.delivery(event.id,work,null,0);};
     if(dependent.source_ids.some((id:string)=>!allowed.includes(id))){await skip('scope_decision');continue;}
     if(event.causal_run_id&&await repo.causalApplied(event.causal_run_id,dependent.id)){await skip('causal_output_already_applied');continue;}
     if(await repo.sourceBusy(dependent.source_ids)){await repo.delivery(event.id,work,null);continue;}
     try{
-     const pages=await curator.exactPages(policy,[dependent.id]),page=pages[0]!,chunkIds=page.evidence.filter(e=>e.current).map(e=>e.chunkId);
+     const pages=await curator.exactPages(policy,[dependent.id]),page=pages[0]!;let chunkIds=[...new Set(page.evidence.filter(e=>e.current).map(e=>e.chunkId))];if(page.evidence.some(e=>!e.current)){const replacement=await curator.evidencePage(dependent.source_ids,null,policy.limits.originalPassages);if(replacement.next)throw new Error('organization.errors.scopeLimit');chunkIds=[...new Set([...chunkIds,...replacement.items.map(e=>e.chunkId)])];}
      // Required target groups keep complete originals; oversize targets remain explicit attention.
      if(!chunkIds.length||chunkIds.length>policy.limits.originalPassages)throw new Error('organization.errors.scopeLimit');
      const generation=await repo.inputGeneration(dependent.source_ids,event.kind==='wiki_section'||event.kind==='wiki_page'?event.fingerprint:null);
      const child=await new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:dependent.source_ids,noteIds:[],evidenceChunkIds:chunkIds},null,{targetPageId:dependent.id,inputGeneration:generation,causalRunId:event.causal_run_id??null,causalGroupId:event.causal_group_id??null});
-     work.childRunId=child!.id;await repo.delivery(event.id,work,null,0);
-    }catch(error){await skip(String(error).match(/organization\.errors\.[A-Za-z]+/)?.[0]??'organization.errors.failed');}
+     work.blockedReason=null;work.blockedMaintenanceRunId=null;work.childRunId=child!.id;await repo.delivery(event.id,work,null,0);
+    }catch(error){work.blockedReason=organizationAiFailure(error,'organization.errors.failed');work.blockedMaintenanceRunId=authority?.id??null;if(!installed&&['organization.errors.scopeLimit','organization.errors.scopeDecision'].includes(work.blockedReason)){work.outcomes.push({pageId:dependent.id,runId:null,status:work.blockedReason});work.after=dependent.id;work.pageId=null;work.blockedReason=null;}await repo.delivery(event.id,work,null,2000);}
     continue;
    }
+   if(unresolved){work.blockedReason??='organization.errors.review';await repo.delivery(event.id,work,null);continue;}
    // New material has no dependents: a separate once-per-current-generation discovery path.
    if(event.causal_run_id||work.discovery||event.kind.startsWith('wiki_')){await repo.delivery(event.id,work,{kind:'inspected',outcomes:work.outcomes});continue;}
    const enabledAt=await repo.enabledAt(policy.id,policy.revisionId);if(enabledAt&&new Date(event.event_created_at).getTime()<enabledAt.getTime()){await repo.delivery(event.id,work,{kind:'inspected',reason:'initial_collection_requires_bootstrap',outcomes:work.outcomes});continue;}
    const sources=[...new Set<string>(event.source_ids.filter((id:unknown):id is string=>typeof id==='string'))].filter(id=>allowed.includes(id));
    if(!sources.length){await repo.delivery(event.id,work,{kind:'excluded',reason:'outside_scope_or_deleted',outcomes:work.outcomes});continue;}
    if(await repo.sourceBusy(sources)){await repo.delivery(event.id,work,null);continue;}
-   try{const started=await this.command({command:'bootstrap',input:{policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:sources}}) as WikiBootstrap;work.discovery=true;work.bootstrapId=started.id;await repo.delivery(event.id,work,null,0);}catch(error){await repo.delivery(event.id,work,{kind:'attention',reason:String(error).match(/organization\.errors\.[A-Za-z]+/)?.[0]??'organization.errors.failed',outcomes:work.outcomes});}
+   try{const started=await this.command({command:'bootstrap',input:{policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:sources}}) as WikiBootstrap;work.discovery=true;work.bootstrapId=started.id;await repo.delivery(event.id,work,null,0);}catch(error){await repo.delivery(event.id,work,{kind:'attention',reason:organizationAiFailure(error,'organization.errors.failed'),outcomes:work.outcomes});}
 
   }
  }
@@ -82,7 +86,7 @@ export class WikiCollection {
   const policy=await curator.policy(run.snapshot.policy.id);if(policy?.state!=='enabled'||policy.revisionId!==run.snapshot.policy.revisionId){checkpoint.state='paused';checkpoint.error='organization.errors.policy';await repo.checkpoint(run);return;}
   try{
    const profile=await this.options.ai.pinOrganizationProfile(run.snapshot.policy.profileOverrideId??undefined,run.snapshot.profile.privacy);
-   if(profile.identityHash!==run.snapshot.profile.identityHash||!isDeepStrictEqual(profile.parameters,run.snapshot.profile.parameters)||await this.options.contentLanguage()!==run.snapshot.contentLanguage)throw new Error('organization.errors.modelChanged');
+   if(profile.identityHash!==run.snapshot.profile.identityHash)throw new Error('organization.errors.modelChanged');
    if(checkpoint.childRunId){
     const child=await new WikiCurator(this.options).get(checkpoint.childRunId);if(!child)throw new Error('organization.errors.invalid');
     if(['queued','analyzing'].includes(child.status))return;
@@ -106,6 +110,6 @@ export class WikiCollection {
    while(!child){try{child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:[checkpoint.sourceId!],noteIds:[],evidenceChunkIds:selected.map(e=>e.chunkId)},null,{parentBootstrapId:run.id}));}catch(error){if(selected.length<=1||!String(error).match(/organization.errors.(context|scopeLimit)/))throw error;selected=selected.slice(0,Math.max(1,Math.floor(selected.length/2)));next=selected.at(-1)!.chunkId;}}
    checkpoint.childRunId=child.id;checkpoint.pendingOriginals=selected.length;checkpoint.nextChunk=next;await repo.coverage(policy.id,checkpoint.sourceId!,checkpoint.sourceFingerprint!,'analyzing',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);
 
-  }catch(error){checkpoint.state='attention';checkpoint.error=String(error).match(/organization\.errors\.[A-Za-z]+/)?.[0]??'organization.errors.failed';checkpoint.attentionSources++;if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);}
+  }catch(error){checkpoint.state='attention';checkpoint.error=organizationAiFailure(error,'organization.errors.failed');checkpoint.attentionSources++;if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);}
  }
 }

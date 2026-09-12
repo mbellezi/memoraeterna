@@ -41,6 +41,17 @@ describe("AI model discovery", () => {
       apiKey: "gemini-secret"
     })).resolves.toEqual(["gemini-test"]);
   });
+  it('retains only explicit identity-bound discovered capacity and does not add Google input/output limits',async()=>{
+    const service=createService();vi.stubGlobal('fetch',vi.fn(async()=>Response.json({models:[{name:'models/gemini-test',inputTokenLimit:32000,outputTokenLimit:8192}]})));
+    await service.discoverModels({provider:'google',apiKey:'synthetic'});
+    expect(service.getParameterCapabilities({provider:'google',modelId:'gemini-test',capabilities:['structured-output']} as any).contextWindow!.max).toBe(32000);
+    expect(service.getParameterCapabilities({provider:'google',modelId:'other',capabilities:['structured-output']} as any).contextWindow!.max).toBe(2000000);
+    vi.stubGlobal('fetch',vi.fn(async()=>Response.json({data:[{id:'explicit-model',context_window:24000}]})));
+    await service.discoverModels({provider:'openai-compatible',baseUrl:'https://one.test/v1',apiKey:'synthetic'});
+    expect(service.getParameterCapabilities({provider:'openai-compatible',modelId:'explicit-model',baseUrl:'https://one.test/v1',capabilities:['structured-output']} as any).contextWindow!.max).toBe(24000);
+    expect(service.getParameterCapabilities({provider:'openai-compatible',modelId:'explicit-model',baseUrl:'https://two.test/v1',capabilities:['structured-output']} as any).contextWindow!.max).toBe(2000000);
+  });
+
 });
 
 function createService(): AiService {

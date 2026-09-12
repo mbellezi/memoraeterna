@@ -1,0 +1,366 @@
+{
+  "sourceIds": [
+    "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+    "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+  ],
+  "pages": [
+    {
+      "automatic": {
+        "version": "automatic-wiki-v1",
+        "management": "ai_managed",
+        "role": {
+          "kind": "topic",
+          "role": "topic"
+        },
+        "purpose": "Connects two distinct learning practices while keeping their reported findings and study contexts separate.",
+        "placementProtected": false,
+        "links": [
+          {
+            "kind": "source",
+            "id": "b9ddf93f-2629-4ad8-a696-a06af9b06651"
+          },
+          {
+            "kind": "source",
+            "id": "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+          }
+        ],
+        "groups": [],
+        "memberships": []
+      },
+      "title": "Spaced Practice and Active Retrieval",
+      "kind": "topic",
+      "aliases": [],
+      "parentId": null,
+      "position": 0,
+      "collectionIds": [],
+      "entityId": null,
+      "pinned": false,
+      "archived": false,
+      "review": "draft",
+      "sections": [
+        {
+          "sectionRevisionId": "7fec3571-6e11-44f8-bc64-0cb4e3d33183",
+          "assessment": {
+            "version": "automatic-wiki-v1",
+            "sectionId": "f0349438-c2f8-482a-be95-57425a606061",
+            "sectionRevisionId": "7fec3571-6e11-44f8-bc64-0cb4e3d33183",
+            "supportMethod": "model_checked",
+            "supportAuditId": "92010c42-da67-4314-9d5e-8001e86bd504",
+            "humanReview": "unreviewed",
+            "support": "validated",
+            "reason": "generated_pending_verification",
+            "inputFingerprint": "54293e01aabb622713674748e5eb0a1997cee5e0c52d743c7ef6fcdf4390d373",
+            "freshness": "current"
+          },
+          "id": "f0349438-c2f8-482a-be95-57425a606061",
+          "title": "Findings from the readings",
+          "kind": "prose",
+          "markdown": "- **Spaced practice:** In the fictional comparison, practice spread across three days improved next-week recall compared with one massed session; feedback was available in both groups [1].\n- **Active retrieval:** In a fictional classroom comparison, retrieving before rereading improved next-week recall; the exercise used low-stakes questions and feedback [2].",
+          "provenance": "generated",
+          "protected": false,
+          "evidenceReview": "needs_review",
+          "evidenceIds": [
+            "a5d1c491-2040-4f0a-9468-aa09326d35a1",
+            "26b5f9f4-058e-42b0-9455-789397daa00d"
+          ]
+        },
+        {
+          "sectionRevisionId": "b99e6107-241e-4c38-b248-8168536b2c6a",
+          "assessment": {
+            "version": "automatic-wiki-v1",
+            "sectionId": "150476be-5135-4c97-8aa2-c86166f6c0cf",
+            "sectionRevisionId": "b99e6107-241e-4c38-b248-8168536b2c6a",
+            "humanReview": "unreviewed",
+            "support": "unassessed",
+            "reason": "prose_changed",
+            "inputFingerprint": "abaff2a1db46a483da6f6596a4990543faef5e226f04f679619e7f756488464b",
+            "freshness": "current"
+          },
+          "id": "150476be-5135-4c97-8aa2-c86166f6c0cf",
+          "title": "My own interpretation",
+          "kind": "prose",
+          "markdown": "I keep my preference for brief study sessions; it is not proof of better recall.",
+          "provenance": "personal",
+          "protected": true,
+          "evidenceReview": "needs_review",
+          "evidenceIds": []
+        }
+      ],
+      "id": "2883eb07-9e54-454c-848a-70c7d4fd04df",
+      "revisionId": "37028cce-a97b-49ec-8305-0f1634892f42",
+      "revisionNumber": 2,
+      "updatedAt": "2026-09-12T16:44:51.831Z",
+      "evidence": [
+        {
+          "id": "a5d1c491-2040-4f0a-9468-aa09326d35a1",
+          "sourceItemId": "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+          "documentId": "eb81d74f-52ea-469a-abb8-f6352a6ca183",
+          "chunkId": "12cfaaf0-d14f-47b6-9193-3d2fe1b300ef",
+          "sourceSpanId": "a43e0bbd-c660-4aed-b3b9-3327212634ff",
+          "contentHash": "03c0789b0b34ad9f65da3f541d1431539ae19732a7341bc4a067fc9724123472",
+          "excerpt": "In the fictional comparison, practice spread across three days improved next-week recall compared with one massed session. Feedback was available in both groups.",
+          "sourceTitle": "Resultados",
+          "documentCreatedAt": "2026-09-12T16:44:35.794Z",
+          "locator": null,
+          "current": true
+        },
+        {
+          "id": "26b5f9f4-058e-42b0-9455-789397daa00d",
+          "sourceItemId": "fb87849b-797e-4b8a-8511-cfc3d2ff229f",
+          "documentId": "44c9c91c-a3bd-4dcd-b2d7-1b58e6c1396c",
+          "chunkId": "6979d045-2c56-459b-9839-c086b4261c91",
+          "sourceSpanId": "45e8a971-2222-49ba-b456-6ff7e658e785",
+          "contentHash": "ebf61ce3e00048452097202a30f05302f79d43456fa0136bdbefea54792b6082",
+          "excerpt": "In this fictional classroom comparison, retrieving before rereading improved next-week recall. The exercise used low-stakes questions and feedback.",
+          "sourceTitle": "Recuperação ativa",
+          "documentCreatedAt": "2026-09-12T16:44:35.791Z",
+          "locator": null,
+          "current": false
+        }
+      ],
+      "impacts": [
+        {
+          "id": "96c20bd5-95c6-40d7-9b05-58bf72e89daa",
+          "sectionId": "f0349438-c2f8-482a-be95-57425a606061",
+          "kind": "document",
+          "inputId": "44c9c91c-a3bd-4dcd-b2d7-1b58e6c1396c",
+          "reason": "document_update",
+          "changedAt": "2026-09-12T16:44:51.843Z"
+        }
+      ],
+      "breadcrumbs": [
+        {
+          "id": "2883eb07-9e54-454c-848a-70c7d4fd04df",
+          "title": "Spaced Practice and Active Retrieval"
+        }
+      ]
+    },
+    {
+      "automatic": {
+        "version": "automatic-wiki-v1",
+        "management": "ai_managed",
+        "role": {
+          "kind": "collection",
+          "role": "topic_toc",
+          "owner": {
+            "kind": "page",
+            "id": "2883eb07-9e54-454c-848a-70c7d4fd04df"
+          }
+        },
+        "purpose": "Provides a short, ordered path through the readings, separating spacing from active retrieval.",
+        "placementProtected": false,
+        "links": [],
+        "groups": [
+          {
+            "version": "automatic-wiki-v1",
+            "id": "04e01bef-4be5-4572-8585-fa1ef55bc62c",
+            "collectionId": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+            "title": "Spaced practice",
+            "explanation": "This reading reports a fictional comparison of practice spread across three days with one massed session and describes next-week recall outcomes [1].",
+            "explanationEvidenceIds": [
+              "619a6816-11d9-47ec-bd72-4c0214a52fc7"
+            ],
+            "membershipIds": [
+              "847a5bf6-99ff-40e3-b8e2-a35f82547cd0"
+            ],
+            "orderProtected": false,
+            "origin": "generated"
+          },
+          {
+            "version": "automatic-wiki-v1",
+            "id": "8a50ceaa-aaa1-4cf7-ab3d-5d29ab67b00c",
+            "collectionId": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+            "title": "Active retrieval",
+            "explanation": "This reading reports a fictional classroom comparison of retrieving before rereading and describes next-week recall outcomes using low-stakes questions and feedback [1].",
+            "explanationEvidenceIds": [
+              "0eed771c-dca1-407a-9937-8ed586e86927"
+            ],
+            "membershipIds": [
+              "e66b90fa-eb6f-42b3-859d-e03febd2127e"
+            ],
+            "orderProtected": false,
+            "origin": "generated"
+          }
+        ],
+        "memberships": [
+          {
+            "version": "automatic-wiki-v1",
+            "id": "847a5bf6-99ff-40e3-b8e2-a35f82547cd0",
+            "pageId": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+            "groupId": "04e01bef-4be5-4572-8585-fa1ef55bc62c",
+            "target": {
+              "kind": "source",
+              "id": "b9ddf93f-2629-4ad8-a696-a06af9b06651"
+            },
+            "purpose": "source",
+            "order": 0,
+            "origin": "generated",
+            "placementProtected": false,
+            "expectedPageRevisionId": "df0423f3-83fc-4685-9141-d411ae6cedfa",
+            "targetFingerprint": "bf858fd3cd5ec1c4eca7e17fa513d18d26f18591e49b919614d5638ec4a3b791"
+          },
+          {
+            "version": "automatic-wiki-v1",
+            "id": "e66b90fa-eb6f-42b3-859d-e03febd2127e",
+            "pageId": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+            "groupId": "8a50ceaa-aaa1-4cf7-ab3d-5d29ab67b00c",
+            "target": {
+              "kind": "source",
+              "id": "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+            },
+            "purpose": "source",
+            "order": 0,
+            "origin": "generated",
+            "placementProtected": false,
+            "expectedPageRevisionId": "df0423f3-83fc-4685-9141-d411ae6cedfa",
+            "targetFingerprint": "61bca130114aee30da87d2ef953a750b373baab84b7c71effcdd37f15d8dcc06"
+          }
+        ]
+      },
+      "title": "Readings on Learning Practice",
+      "kind": "collection",
+      "aliases": [],
+      "parentId": "2883eb07-9e54-454c-848a-70c7d4fd04df",
+      "position": 0,
+      "collectionIds": [],
+      "entityId": null,
+      "pinned": false,
+      "archived": false,
+      "review": "draft",
+      "sections": [],
+      "id": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+      "revisionId": "df0423f3-83fc-4685-9141-d411ae6cedfa",
+      "revisionNumber": 1,
+      "updatedAt": "2026-09-12T16:44:51.196Z",
+      "evidence": [
+        {
+          "id": "619a6816-11d9-47ec-bd72-4c0214a52fc7",
+          "sourceItemId": "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+          "documentId": "eb81d74f-52ea-469a-abb8-f6352a6ca183",
+          "chunkId": "12cfaaf0-d14f-47b6-9193-3d2fe1b300ef",
+          "sourceSpanId": "a43e0bbd-c660-4aed-b3b9-3327212634ff",
+          "contentHash": "03c0789b0b34ad9f65da3f541d1431539ae19732a7341bc4a067fc9724123472",
+          "excerpt": "In the fictional comparison, practice spread across three days improved next-week recall compared with one massed session. Feedback was available in both groups.",
+          "sourceTitle": "Resultados",
+          "documentCreatedAt": "2026-09-12T16:44:35.794Z",
+          "locator": null,
+          "current": true
+        },
+        {
+          "id": "0eed771c-dca1-407a-9937-8ed586e86927",
+          "sourceItemId": "fb87849b-797e-4b8a-8511-cfc3d2ff229f",
+          "documentId": "44c9c91c-a3bd-4dcd-b2d7-1b58e6c1396c",
+          "chunkId": "6979d045-2c56-459b-9839-c086b4261c91",
+          "sourceSpanId": "45e8a971-2222-49ba-b456-6ff7e658e785",
+          "contentHash": "ebf61ce3e00048452097202a30f05302f79d43456fa0136bdbefea54792b6082",
+          "excerpt": "In this fictional classroom comparison, retrieving before rereading improved next-week recall. The exercise used low-stakes questions and feedback.",
+          "sourceTitle": "Recuperação ativa",
+          "documentCreatedAt": "2026-09-12T16:44:35.791Z",
+          "locator": null,
+          "current": false
+        }
+      ],
+      "impacts": [
+        {
+          "id": "55017504-67e6-4b91-a8fb-8e78187ec694",
+          "sectionId": "8a50ceaa-aaa1-4cf7-ab3d-5d29ab67b00c",
+          "kind": "document",
+          "inputId": "44c9c91c-a3bd-4dcd-b2d7-1b58e6c1396c",
+          "reason": "document_update",
+          "changedAt": "2026-09-12T16:44:51.843Z"
+        }
+      ],
+      "breadcrumbs": [
+        {
+          "id": "2883eb07-9e54-454c-848a-70c7d4fd04df",
+          "title": "Spaced Practice and Active Retrieval"
+        },
+        {
+          "id": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+          "title": "Readings on Learning Practice"
+        }
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "chunkId": "12cfaaf0-d14f-47b6-9193-3d2fe1b300ef",
+      "sourceItemId": "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+      "documentId": "eb81d74f-52ea-469a-abb8-f6352a6ca183",
+      "sourceSpanId": "a43e0bbd-c660-4aed-b3b9-3327212634ff",
+      "contentHash": "03c0789b0b34ad9f65da3f541d1431539ae19732a7341bc4a067fc9724123472",
+      "excerpt": "In the fictional comparison, practice spread across three days improved next-week recall compared with one massed session. Feedback was available in both groups.",
+      "sourceTitle": "Resultados",
+      "documentCreatedAt": "2026-09-12T16:44:35.794Z",
+      "locator": null,
+      "handle": "e1"
+    },
+    {
+      "chunkId": "e81e077a-8a37-4cea-8bde-0178f6c94172",
+      "sourceItemId": "fb87849b-797e-4b8a-8511-cfc3d2ff229f",
+      "documentId": "892b0597-c0bb-4e4d-a345-15f7e0a92098",
+      "sourceSpanId": "4ad31657-f19d-4ad0-81f6-71ea1d76d669",
+      "contentHash": "baaded3483d7c8e10fece8f4ef6b1dc465e4aa103c5c60975cfcc2ae8d0646bf",
+      "excerpt": "In a corrected fictional classroom report, retrieving before rereading did not improve next-week recall. The earlier positive report was based on a scoring error. Low-stakes questions and feedback were used; no clinical conclusions are supported.",
+      "sourceTitle": "Recuperação ativa",
+      "documentCreatedAt": "2026-09-12T16:44:51.840Z",
+      "locator": null,
+      "handle": "e2"
+    }
+  ],
+  "references": [
+    {
+      "kind": "source",
+      "id": "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+      "title": "Resultados",
+      "text": "",
+      "sourceIds": [
+        "b9ddf93f-2629-4ad8-a696-a06af9b06651"
+      ],
+      "chunkIds": [],
+      "fingerprint": "bf858fd3cd5ec1c4eca7e17fa513d18d26f18591e49b919614d5638ec4a3b791"
+    },
+    {
+      "kind": "source",
+      "id": "fb87849b-797e-4b8a-8511-cfc3d2ff229f",
+      "title": "Recuperação ativa",
+      "text": "",
+      "sourceIds": [
+        "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+      ],
+      "chunkIds": [],
+      "fingerprint": "61bca130114aee30da87d2ef953a750b373baab84b7c71effcdd37f15d8dcc06"
+    },
+    {
+      "kind": "page",
+      "id": "2883eb07-9e54-454c-848a-70c7d4fd04df",
+      "fingerprint": "37028cce-a97b-49ec-8305-0f1634892f42",
+      "title": "Spaced Practice and Active Retrieval",
+      "text": "",
+      "sourceIds": [
+        "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+        "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+      ],
+      "chunkIds": [
+        "12cfaaf0-d14f-47b6-9193-3d2fe1b300ef",
+        "6979d045-2c56-459b-9839-c086b4261c91"
+      ]
+    },
+    {
+      "kind": "page",
+      "id": "2020940e-fb87-4b96-bb3a-b1e3fcfe7be1",
+      "fingerprint": "df0423f3-83fc-4685-9141-d411ae6cedfa",
+      "title": "Readings on Learning Practice",
+      "text": "",
+      "sourceIds": [
+        "b9ddf93f-2629-4ad8-a696-a06af9b06651",
+        "fb87849b-797e-4b8a-8511-cfc3d2ff229f"
+      ],
+      "chunkIds": [
+        "12cfaaf0-d14f-47b6-9193-3d2fe1b300ef",
+        "6979d045-2c56-459b-9839-c086b4261c91"
+      ]
+    }
+  ],
+  "description": "Synthetic Luna trial04 two-group reading index, corrected source A and protected human section; no credentials or provider configuration."
+}

@@ -194,3 +194,43 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   bounded fair page of running coordinators, persisting the last visit in their
   checkpoint even while a child or source barrier waits. Newer terminal history
   cannot hide or starve an older coordinator; paused/history views remain paginated.
+
+- The automatic branch of `MaintenanceService` uses the existing supervisor and
+  collection/curator executors. Installed policies cannot bypass debounce, idle,
+  conflicts or occurrence authority through the older input-impact tick. Explicit
+  selected integration and bootstrap obtain their authority in the backend;
+  run-now bypasses only idle, including an already deferred occurrence. Temporary
+  maintenance admission blockers leave selected organization stages waiting.
+- Automatic execution uses five-second liveness samples during asynchronous FIFO
+  waits and model calls. Long calls count while the supervisor awaits them; timer
+  gaps over thirty seconds are recorded as closed/unknown, never invented active
+  time. Restart establishes a new liveness baseline. The automatic group clock begins at supervisor execution/FIFO admission,
+  independently of its immutable queue-admission snapshot. First-wait recovery
+  requires proof that no provider started, retains reservations and previously
+  consumed open FIFO time, and never applies to uncertain calls or semantic
+  decisions. Group deadlines include FIFO and remain bounded across that recovery. Cumulative occurrence execution
+  is monotonic under concurrent heartbeat/checkpoint writes.
+- Pause, cancel and schedule revision changes revoke automatic inference admission
+  and transactional apply. Active child jobs receive cancellation through the
+  existing supervisor. A manual collection bootstrap is linked to its occurrence
+  until its cursor settles, even when the impact queue is empty.
+
+- Resolve maintenance bootstrap/child attention and retained human-review state
+  before accruing clocks or restoring inference authority. Review, uncertainty
+  and semantic failures remain distinct blockers; their waiting time is deferred,
+  not active execution, and polling cannot reset their decisions. A new manual
+  occurrence records the actual request due time in snapshot and receipt; joining
+  an existing occurrence retains that occurrence's original due time.
+
+- Resolve pending impact-delivery attention before maintenance execution clocks
+  and completion, including failed/rejected/canceled curator children. An
+  unstarted dependent blocked by occurrence budget/deadline retains its cursor
+  while that occurrence finishes explicitly incomplete. A subsequent authorized
+  occurrence may admit it under the shared policy month ledger, without refunding
+  consumed reservations or replaying uncertain calls or semantic decisions.
+
+- Blocked impact deliveries cannot starve other eligible deliveries. Historical
+  policies without installed automatic routines may inspect later targets after
+  a scope-limit decision, but retain the unresolved outcome and withhold complete
+  acknowledgment. Automatic policies surface that decision through occurrence
+  attention before admitting more work.

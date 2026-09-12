@@ -62,6 +62,7 @@ export async function reconcileOrganizationParticipation(pool:PgPool,service:Org
       const started=await service.start(OrganizationStartSchema.parse({title:plan.organization!.title,targetPageId:targetId??null,sourceIds,profileId:plan.organization!.profileId,privacy:plan.organization!.privacy,domainId:plan.organization!.domainId,relationContext:true,optionalContext:true,pageKind:'topic'}),{batchId:batch.id,ingestionRunIds:state.selected.map(r=>r.id),omissions:state.omissions});
       for(const run of state.selected){await runsRepo.waitForBatchStage(run.id,'organizeKnowledge');await runsRepo.updateStageProgress(run.id,'organizeKnowledge',0,{organizationRunId:started!.id,partial:state.omissions.length>0});}
     }catch(error){
+      if(/maintenance.errors.(wait|idle|busy|sync)/.test(String(error))){for(const run of state.selected)await runsRepo.waitForBatchStage(run.id,'organizeKnowledge');continue;}
       for(const run of state.selected)await runsRepo.failStage(run.id,'organizeKnowledge',String(error).match(/organization\.errors\.[A-Za-z]+/)?.[0]??'organization.errors.failed',false);
       await repository.participationFailed(batch.id);
     }

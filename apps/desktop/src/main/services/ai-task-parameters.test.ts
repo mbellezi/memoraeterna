@@ -35,7 +35,15 @@ describe("AI task parameter defaults", () => {
 
   it("applies the generation default to remote profiles too", () => {
     expect(withAiTaskParameterDefaults("atomic-note-generation", {}, false)).toEqual({
-      maxTokens: profileGenerationMaxTokens
+      maxTokens: profileGenerationMaxTokens, contextWindow:128000
     });
   });
+  it('bounds new remote defaults and overrides by discovered capacity while preserving old admissions',()=>{
+    expect(withAiTaskParameterDefaults('structured-output',{},false,{contextWindowLimit:64000})).toMatchObject({contextWindow:64000});
+    expect(withAiTaskParameterDefaults('structured-output',{contextWindow:32000},false,{contextWindowLimit:64000})).toMatchObject({contextWindow:32000});
+    expect(withAiTaskParameterDefaults('structured-output',{},false,{admitted:true})).not.toHaveProperty('contextWindow');
+    expect(()=>withAiTaskParameterDefaults('structured-output',{contextWindow:128000},false,{admitted:true,contextWindowLimit:64000})).toThrow('errors.ai.contextWindowLimit');
+    expect(withAiTaskParameterDefaults('structured-output',{},true)).not.toHaveProperty('contextWindow');
+  });
+
 });

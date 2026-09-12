@@ -346,3 +346,38 @@ provider token breakdowns and precise call context, as specified in
   1,024-token reservation. Deduplicate an underlying error repeated across fields;
   never truncate originals to accommodate verbose review. Malformed verdicts use
   the same shared repair allowance and cannot certify support.
+
+## Context planning controls
+
+- `contextWindow` is also an application planning control for remote generation
+  (Google, OpenAI-compatible, Codex) and MLX generation. Descriptors may expose
+  application controls as well as wire parameters; adapters still translate only
+  their supported wire/runtime fields. Never forward `contextWindow` to a remote
+  endpoint or the MLX helper. GGUF retains its existing runtime context control.
+- New remote generation admissions resolve an unspecified total context budget
+  to 128,000 tokens, then apply model defaults and task overrides. This is an app
+  planning budget, not a claim that an endpoint supports that capacity. Embedding
+  and implicit local defaults do not receive 128,000. Unspecified MLX context
+  retains the existing workflow default; the UI does not invent a universal local
+  runtime window. An explicit MLX context participates in pinning and planning.
+- Discovery may cache validated limits only for the same provider, endpoint and
+  exact model identity. Preserve that metadata on same-model edits and discard it
+  when identity changes. Discovery has no inference or library-processing side
+  effect, and execution never fetches model discovery. Use the smaller reliable
+  bound; Google input and output token limits are distinct and must not be added
+  into a fictional combined context capacity. Unknown model IDs imply no capacity.
+- Resolve effective context before telemetry and preserve it in canonical audits.
+  The common pre-provider planning check uses prepared input, the applicable
+  adapter instruction, output reservation and a 1,024-token protocol allowance.
+  Its UTF-8 byte-based estimate is conservative planning/reservation, not measured
+  token usage or a provider tokenizer. Reject an oversized prepared request before
+  provider start with a localized context error; do not silently truncate evidence.
+- Existing admitted profiles without context remain unchanged and receive no new
+  remote default. Existing wiki builders keep their historical 8,192 fallback.
+  Bootstrap children inherit admitted profile parameters, language and prompt pin,
+  independently of later settings. Validate immutable model/provider/endpoint/
+  runtime/revision identity and current policy authority. A newly discovered lower
+  capacity may explicitly reject incompatible pinned work, never rewrite its pin.
+- Context controls show total tokens separately from maximum output tokens, with
+  accessible labels and effective/default/inherited information. Saving defaults
+  or overrides does not infer, enqueue work, reprocess material or alter vectors.

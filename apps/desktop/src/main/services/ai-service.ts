@@ -1,3 +1,5 @@
+export {withOutputLanguageInstruction} from './prompt-runtime.js';
+import {withOutputLanguageInstruction} from './prompt-runtime.js';
 import { renderPrompt, joinPrompts, capturePromptPin, withPromptPin, promptAudit, embeddingPromptIdentity } from "./prompt-runtime.js";
 import { sha256 } from "@app/conversion";
 import { createTranslator } from "@app/i18n";
@@ -24,7 +26,8 @@ import {
   type AiProfileRecord,
   type AiProviderConfigRecord,
   type LocalModelRecord,
-  type PgPool
+  type PgPool,
+  type JsonObject
 } from "@app/db";
 import {
   type PromptPin, type PromptCompositionSnapshot,
@@ -52,7 +55,7 @@ import { aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
 import { AiExecutionQueue } from "./ai-execution-queue.js";
-import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
+import { withAiTaskParameterDefaults, discoveredContextWindow, discoveredModelLimits, estimateAiPlanningTokens } from "./ai-task-parameters.js";
 import type { MonitoringService } from "./monitoring-service.js";
 import { logStructuredError } from "./structured-logging.js";
 import {
@@ -126,7 +129,9 @@ export class AiService {
   public async listProviders(): Promise<AiProviderConfig[]> {
     const repository = createAiConfigRepository(this.requirePool());
     await repository.ensureRemoteRerankingCapabilities();
-    return (await repository.listProviders()).map(mapProvider);
+    const providers=await repository.listProviders();
+    for(const provider of providers){const limits=provider.metadata.modelLimits;if(limits&&typeof limits==="object"&&!Array.isArray(limits)){const validated=discoveredModelLimits(limits as Record<string,unknown>);if(discoveredContextWindow({modelLimits:validated}))this.discoveredContexts.set(this.contextKey(provider.provider,provider.baseUrl,String(provider.metadata.modelId)),validated);}}
+    return providers.map(mapProvider);
   }
 
   public async deleteProvider(providerId: string): Promise<boolean> {
@@ -144,9 +149,15 @@ export class AiService {
     return true;
   }
 
+  private readonly discoveredContexts = new Map<string, JsonObject>();
+  private contextKey(provider:string,baseUrl:string|null,modelId:string){return JSON.stringify([provider,baseUrl??defaultBaseUrl(provider as AiProviderConfig["provider"]),modelId]);}
+
   public async saveProvider(input: AiProviderConfigInput): Promise<AiProviderConfig> {
     const repository = createAiConfigRepository(this.requirePool());
     const existing = input.id ? (await repository.listProviders()).find((provider) => provider.id === input.id) : undefined;
+    const sameModel=existing?.provider===input.provider&&existing.baseUrl===(input.baseUrl??defaultBaseUrl(input.provider))&&existing.metadata.modelId===input.modelId;
+    const modelLimits=this.discoveredContexts.get(this.contextKey(input.provider,input.baseUrl??null,input.modelId))??(sameModel?existing?.metadata.modelLimits:undefined);
+    const known=discoveredContextWindow({modelLimits});
     const capabilities = withRemoteRerankingCapability(input.provider, input.capabilities);
     const parameterCapabilities = providerParameterCapabilities({
       provider: input.provider,
@@ -154,6 +165,7 @@ export class AiService {
       baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
       capabilities
     });
+    if(known&&parameterCapabilities.contextWindow)parameterCapabilities.contextWindow.max=known;
     let credentialRef: string | null;
     if (input.provider === "openai-codex") {
       const existingRef = existing?.provider === "openai-codex" ? existing.credentialRef : null;
@@ -170,7 +182,7 @@ export class AiService {
       ...(input.id ? { id: input.id } : {}), provider: input.provider, displayName: input.displayName,
       credentialRef, baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
       defaultParameters: normalizeAiModelParameters(input.defaultParameters, parameterCapabilities),
-      metadata: { modelId: input.modelId, capabilities }
+      metadata: { modelId: input.modelId, capabilities, ...(known?{modelLimits:modelLimits as JsonObject}:{}) }
     });
     if (input.provider === "openai-codex") this.pendingOpenAiCodexCredential = null;
     return mapProvider(record);
@@ -184,7 +196,9 @@ export class AiService {
 
   public async listModels(providerId: string): Promise<string[]> {
     const adapter = await this.createAdapter(providerId);
-    return (await adapter.listModels?.() ?? []).map((model) => model.modelId);
+    const models=await adapter.listModels?.()??[],repository=createAiConfigRepository(this.requirePool()),config=(await repository.listProviders()).find(p=>p.id===providerId);
+    if(config){for(const model of models){const limits=discoveredModelLimits(model.limits);if(discoveredContextWindow({modelLimits:limits}))this.discoveredContexts.set(this.contextKey(config.provider,config.baseUrl,model.modelId),limits);}const known=this.discoveredContexts.get(this.contextKey(config.provider,config.baseUrl,String(config.metadata.modelId)));if(known)await repository.cacheProviderModelContext(config.id,config.provider,String(config.metadata.modelId),config.baseUrl,known);}
+    return models.map(model=>model.modelId);
   }
 
   public async discoverModels(input: AiModelDiscoveryInput): Promise<string[]> {
@@ -194,17 +208,18 @@ export class AiService {
       : input.provider === "google"
         ? new GoogleGeminiAdapter({ apiKey: input.apiKey!, modelId: "", capabilities: [], baseUrl })
         : new OpenAiCompatibleAdapter({ apiKey: input.apiKey!, modelId: "", capabilities: [], baseUrl });
-    const modelIds = (await adapter.listModels?.() ?? []).map((model) => model.modelId);
+    const models=await adapter.listModels?.()??[];for(const model of models){const limits=discoveredModelLimits(model.limits);if(discoveredContextWindow({modelLimits:limits}))this.discoveredContexts.set(this.contextKey(input.provider,baseUrl,model.modelId),limits);}
+    const modelIds = models.map(model=>model.modelId);
     return [...new Set(modelIds)].sort((left, right) => left.localeCompare(right));
   }
 
   public getParameterCapabilities(input: AiParameterCapabilitiesInput): AiModelParameterCapabilities {
-    return providerParameterCapabilities({
+    const result=providerParameterCapabilities({
       provider: input.provider,
       modelId: input.modelId,
       baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
       capabilities: withRemoteRerankingCapability(input.provider, input.capabilities)
-    });
+    });const known=discoveredContextWindow({modelLimits:this.discoveredContexts.get(this.contextKey(input.provider,input.baseUrl??null,input.modelId))});if(known&&result.contextWindow)result.contextWindow.max=known;return result;
   }
 
   public async connectOpenAiCodex(): Promise<string[]> {
@@ -346,7 +361,7 @@ export class AiService {
     const selection=await repository.getDefaultTask("structured-output",profileId);
     if(!selection || !selection.requiredCapabilities.includes("structured-output"))throw new Error("organization.errors.model");
     const effectivePrivacy=selection.localModelId?"offline_only":"allow_remote";
-    const parameters=aiModelParametersSchema.parse(withAiTaskParameterDefaults("structured-output",{...selection.modelDefaultParameters,...selection.parameters},Boolean(selection.localModelId)));
+    const parameters=aiModelParametersSchema.parse(withAiTaskParameterDefaults("structured-output",{...selection.modelDefaultParameters,...selection.parameters},Boolean(selection.localModelId),{contextWindowLimit:discoveredContextWindow(selection.providerMetadata)}));
     const identityHash=sha256(JSON.stringify({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,baseUrl:selection.baseUrl,privacy:effectivePrivacy}));
     return OrganizationProfileSchema.parse({profileId:selection.profileId,providerConfigId:selection.providerConfigId,localModelId:selection.localModelId,provider:selection.provider,modelId:selection.modelId,runtime:selection.runtime,revision:selection.revision,privacy:effectivePrivacy,parameters,identityHash,contextWindow:parameters.contextWindow??null});
   }
@@ -422,9 +437,12 @@ export class AiService {
     let parameters = aiModelParametersSchema.parse(withAiTaskParameterDefaults(
       taskType,
       pinned?.parameters ?? { ...selection.modelDefaultParameters, ...selection.parameters },
-      Boolean(selection.localModelId)
+      Boolean(selection.localModelId),
+      {admitted:!!pinned,contextWindowLimit:discoveredContextWindow(selection.providerMetadata)}
     ));
     if (limits) parameters.maxTokens = Math.min(parameters.maxTokens ?? 16384, Math.max(1,Math.floor(limits.maxOutputTokens)));
+    const plannedOutputTokens=parameters.maxTokens??16384;
+    if(!selection.localModelId){const caps=providerParameterCapabilities({provider:selection.provider as AiProviderConfig["provider"],modelId:selection.modelId,baseUrl:selection.baseUrl,capabilities:parseCapabilities(selection.providerMetadata?.capabilities??selection.requiredCapabilities)});parameters=normalizeAiModelParameters(parameters,caps);}
     const outputLanguage = admission?.language ?? logContext.contentLanguage ?? await this.options.getContentLanguage?.() ?? "en";
     const taskInput = admission?.input ?? (taskType === "embedding"
       ? withEmbeddingInputInstruction(input, selection.modelId, selection.repository, structuredLogContext.embeddingInputType)
@@ -443,6 +461,10 @@ export class AiService {
       profileId: selection.profileId, parameters, input: taskInput
     });
     try {
+      if(taskType!=='embedding'&&parameters.contextWindow&&(!selection.localModelId||selection.runtime==='mlx')){
+        const plannedTokens=estimateAiPlanningTokens(taskInput,selection.provider==='openai-codex'?admission?.instruction??renderPrompt('shared.codex_adapter_instruction'):'',plannedOutputTokens);
+        if(plannedTokens>parameters.contextWindow)throw new Error('errors.ai.contextWindowLimit');
+      }
       const currentSelection=await repository.getDefaultTask(taskType,selection.profileId);
       if(!currentSelection||selectionIdentity(currentSelection)!==selectionIdentity(selection))throw new Error("organization.errors.modelChanged");
       const configuredAdapter = selection.localModelId
@@ -695,12 +717,12 @@ export class AiService {
     const provider = (await createAiConfigRepository(this.requirePool()).listProviders())
       .find((candidate) => candidate.id === profile.providerConfigId);
     if (!provider) throw new Error("errors.common.notFound");
-    return providerParameterCapabilities({
+    const capabilities=providerParameterCapabilities({
       provider: provider.provider as AiProviderConfig["provider"],
       modelId: typeof provider.metadata.modelId === "string" ? provider.metadata.modelId : profile.modelId ?? "",
       baseUrl: provider.baseUrl,
       capabilities: parseCapabilities(provider.metadata.capabilities)
-    });
+    });const known=discoveredContextWindow(provider.metadata);if(known&&capabilities.contextWindow)capabilities.contextWindow.max=known;return capabilities;
   }
 
   private async createAdapter(providerId: string): Promise<AiModelAdapter> {
@@ -888,6 +910,7 @@ function mapProvider(record: AiProviderConfigRecord): AiProviderConfig {
     baseUrl: record.baseUrl,
     capabilities
   });
+  const known=discoveredContextWindow(record.metadata);if(known&&parameterCapabilities.contextWindow)parameterCapabilities.contextWindow.max=known;
   return {
     id: record.id,
     provider,
@@ -936,16 +959,7 @@ function resolveLocalModelPath(model: LocalModelRecord): string {
   return join(model.managedPath, file.path);
 }
 
-export function withOutputLanguageInstruction(input: string, language: string): string {
-  const languageName = ({
-    en: "English",
-    "pt-BR": "Brazilian Portuguese",
-    it: "Italian",
-    fr: "French",
-    es: "Spanish"
-  } as Record<string, string>)[language] ?? language;
-  return joinPrompts(renderPrompt("shared.output_language",{content_language:languageName}),"\n\n",input);
-}
+
 
 export function withEmbeddingInputInstruction(
   input: string,

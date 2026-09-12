@@ -37,6 +37,7 @@ type ModelOption = {
   localModelId?: string;
   capabilities: AiCapability[];
   parameterCapabilities: AiModelParameterCapabilities;
+  defaultParameters: AiModelParameters;
 };
 
 type ProfileTaskParameters = Partial<Record<AiConfigurableTask, AiModelParameters>>;
@@ -273,7 +274,7 @@ export function AiSettingsView({ t, interfaceLanguage = "en", onToast = () => un
             <Field label={t("settings.ai.model")}><div className="grid gap-1"><div className="flex flex-col gap-2"><Input required list="remote-model-options" autoComplete="off" value={modelId} onChange={(event) => setModelId(event.target.value)} /><datalist id="remote-model-options">{availableModels.map((model) => <option key={model} value={model} />)}</datalist>{provider !== "openai-codex" ? <Button type="button" className="shrink-0 bg-white px-3 text-slate-800 dark:bg-slate-950 dark:text-slate-100" disabled={!apiKey.trim() || discoveringModels} onClick={() => void discoverModels()}>{discoveringModels ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.loadModels")}</Button> : null}</div>{provider === "openai-codex" ? <p className="text-xs text-slate-500">{t("settings.ai.oauth.modelSelectionHint")}</p> : null}</div></Field>
             {provider === "openai-codex" ? <Field label={t("settings.ai.oauth.authentication")}><div className="grid gap-1"><div className="flex items-center gap-2"><Button type="button" disabled={connectingOpenAiCodex} onClick={() => void connectOpenAiCodex()}>{connectingOpenAiCodex ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogIn className="h-4 w-4" aria-hidden="true" />}{t("settings.ai.oauth.connect")}</Button>{openAiCodexConnected ? <span className="text-xs text-emerald-700 dark:text-emerald-300">{t("settings.ai.oauth.connected")}</span> : null}</div><p className="text-xs text-slate-500">{t("settings.ai.oauth.description")}</p></div></Field> : <Field label={t("settings.ai.apiKey")}><Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} /></Field>}
           </div>
-          <details><summary className="cursor-pointer text-sm font-medium">{t("sourceWorkspace.modelDefaults")}</summary><div className="mt-3"><AiParameterFields value={modelDefaults} onChange={setModelDefaults} capabilities={modelParameterCapabilities} t={t} embeddingOnly={modelPurpose === "embedding"} /></div></details>
+          <details><summary className="cursor-pointer text-sm font-medium">{t("sourceWorkspace.modelDefaults")}</summary><div className="mt-3"><AiParameterFields remote value={modelDefaults} onChange={setModelDefaults} capabilities={modelParameterCapabilities} t={t} embeddingOnly={modelPurpose === "embedding"} /></div></details>
           <div className="flex flex-wrap justify-end gap-2"><Button type="button" onClick={() => setAddingModel(false)}>{t("shell.actions.cancel")}</Button><Button type="submit"><Save className="h-4 w-4" aria-hidden="true" />{t("settings.ai.saveModel")}</Button></div>
         </form>
         </CreationDialog> : null}
@@ -392,6 +393,7 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
   const [editModelId, setEditModelId] = useState(model.modelId);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [modelDiscoveryRevision,setModelDiscoveryRevision]=useState(0);
   const [deleting, setDeleting] = useState(false);
   const embeddingOnly = model.capabilities.includes("embedding");
   const modelOptionsId = `remote-model-options-${model.id}`;
@@ -416,7 +418,7 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
       setDefaults((current) => normalizeAiModelParameters(current, next));
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [editModelId, editing, model.baseUrl, model.capabilities, model.provider]);
+  }, [editModelId, editing, model.baseUrl, model.capabilities, model.provider,modelDiscoveryRevision]);
 
   async function testProvider() {
     setTesting(true);
@@ -429,6 +431,7 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
     setLoadingModels(true);
     try {
       setModelOptions(await window.app.ai.listModels(model.id));
+      setModelDiscoveryRevision(current=>current+1);
     } catch (error) {
       setTestStatus(readErrorMessageKey(error, "errors.ai.connectionFailed"));
     } finally {
@@ -489,7 +492,7 @@ function RemoteModelCard({ model, t, onSave, onDelete, onReconnect }: { model: A
           </Field>
         </div>
       ) : null}
-      <AiParameterFields value={defaults} onChange={setDefaults} capabilities={parameterCapabilities} t={t} embeddingOnly={embeddingOnly} />
+      <AiParameterFields remote value={defaults} onChange={setDefaults} capabilities={parameterCapabilities} t={t} embeddingOnly={embeddingOnly} />
       <div className="flex justify-end gap-2">
         {editing ? <Button type="button" className="bg-white text-slate-800 dark:bg-slate-950 dark:text-slate-100" onClick={cancelEdit}>{t("shell.actions.cancel")}</Button> : null}
         <Button type="button" disabled={editing && (!editDisplayName.trim() || !editModelId.trim())} onClick={() => void (editing ? saveEdit() : onSave(model, normalizeAiModelParameters(defaults, parameterCapabilities)))}><Save className="h-4 w-4" aria-hidden="true" />{t(editing ? "settings.ai.saveModelChanges" : "settings.ai.saveDefaults")}</Button>
@@ -512,8 +515,8 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   const outputLanguage = profile.outputLanguage;
   const [saving, setSaving] = useState(false);
   const options = useMemo<ModelOption[]>(() => [
-    ...providers.map((model) => ({ value: `remote:${model.id}`, label: `${model.displayName} · ${model.modelId}`, modelId: model.modelId, runtime: "remote" as const, providerConfigId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities })),
-    ...localModels.map((model) => ({ value: `local:${model.id}`, label: `${model.displayName} · ${model.runtime.toUpperCase()}`, modelId: model.modelId, runtime: model.runtime, localModelId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities }))
+    ...providers.map((model) => ({ value: `remote:${model.id}`, label: `${model.displayName} · ${model.modelId}`, modelId: model.modelId, runtime: "remote" as const, providerConfigId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities, defaultParameters:model.defaultParameters })),
+    ...localModels.map((model) => ({ value: `local:${model.id}`, label: `${model.displayName} · ${model.runtime.toUpperCase()}`, modelId: model.modelId, runtime: model.runtime, localModelId: model.id, capabilities: model.capabilities, parameterCapabilities: model.parameterCapabilities, defaultParameters:model.defaultParameters }))
   ], [localModels, providers]);
   const existingValue = profile.providerConfigId ? `remote:${profile.providerConfigId}` : profile.localModelId ? `local:${profile.localModelId}` : "";
   const [selection, setSelection] = useState(existingValue);
@@ -581,6 +584,9 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
             definition={definition}
             parameters={taskParameters[definition.task] ?? {}}
             parameterCapabilities={selected?.parameterCapabilities ?? {}}
+            remote={selected?.runtime==="remote"}
+            planningContext={selected?.runtime==="mlx"}
+            inheritedContextWindow={selected?.defaultParameters.contextWindow}
             t={t}
             onChange={(parameters) => setTaskParameters((current) => ({ ...current, [definition.task]: parameters }))}
           />
@@ -590,11 +596,11 @@ export function ProfileEditor({ profile, profileTasks, providers, localModels, t
   );
 }
 
-function ProfileTaskEditor({ definition, parameters, parameterCapabilities, t, onChange }: { definition: { task: AiConfigurableTask; capabilities: AiCapability[] }; parameters: AiModelParameters; parameterCapabilities: AiModelParameterCapabilities; t: (key: MessageKey) => string; onChange: (parameters: AiModelParameters) => void }) {
+function ProfileTaskEditor({ definition, parameters, parameterCapabilities, t, onChange, remote, planningContext, inheritedContextWindow }: { definition: { task: AiConfigurableTask; capabilities: AiCapability[] }; parameters: AiModelParameters; parameterCapabilities: AiModelParameterCapabilities; remote?:boolean; planningContext?:boolean; inheritedContextWindow?:number|undefined; t: (key: MessageKey) => string; onChange: (parameters: AiModelParameters) => void }) {
   const overrides = Object.keys(parameters).length;
   return <details className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
     <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 text-sm"><span className="font-medium">{t(`settings.ai.tasks.${definition.task}` as MessageKey)}</span><span className="text-xs text-slate-500">{overrides ? t("sourceWorkspace.customizeTask") : t("sourceWorkspace.modelDefaults")}{overrides ? ` (${overrides})` : ""}</span></summary>
-    <div className="mt-4 grid gap-3"><AiParameterFields value={parameters} onChange={onChange} capabilities={parameterCapabilities} t={t} embeddingOnly={definition.task === "embedding"} />
+    <div className="mt-4 grid gap-3"><AiParameterFields planningContext={planningContext??false} remote={remote??false} inheritedContextWindow={inheritedContextWindow} value={parameters} onChange={onChange} capabilities={parameterCapabilities} t={t} embeddingOnly={definition.task === "embedding"} />
       <Button type="button" className="w-fit" disabled={!overrides} onClick={() => onChange({})}>{t("sourceWorkspace.resetTask")}</Button></div>
   </details>;
 }

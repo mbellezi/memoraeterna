@@ -300,6 +300,10 @@ export function createAiConfigRepository(db: Queryable) {
       );
     },
 
+    async cacheProviderModelContext(id:string,provider:string,modelId:string,baseUrl:string|null,limits:JsonObject):Promise<void>{
+      await db.query("update ai_provider_configs set metadata=jsonb_set(metadata,'{modelLimits}',$4::jsonb) where id=$1 and metadata->>'modelId'=$2 and base_url is not distinct from $3 and provider=$5",[id,modelId,baseUrl,limits,provider]);
+    },
+
     async getDefaultTask(task: string, explicitProfileId?: string): Promise<{
       profileId: string;
       privacyMode: string;

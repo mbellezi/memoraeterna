@@ -158,3 +158,19 @@ npm run db:generate
   legacy cycle without dropping pages; selected paths remain loadable beyond any
   sibling page. Move validation detects cyclic ancestry and rolls back, rather
   than recursively waiting forever.
+
+- Automatic maintenance reuses version-dispatched `maintenance_schedules`,
+  `maintenance_runs`, `maintenance_occurrences` and the existing monthly reservation
+  table. `automatic_routine_bindings` has unique policy/kind/scope identity and a
+  separately recorded preset version. `automatic_routine_calls` is unique by
+  organization run/step and links every reservation to its occurrence and policy.
+- Serialize reservations on the parent policy lock. The same step cannot be
+  charged twice or transferred between occurrences. Every installed child shares
+  the parent monthly ledger; retries preserve consumed or uncertain reservations.
+  Prompt reservations include UTF-8 input bytes, admitted language/adapter wording,
+  bounded output and protocol margin. Reported usage remains separately linked
+  to the existing organization step and canonical AI audit.
+- Schedule retirement uses `retired_at`; it never deletes a historical occurrence
+  merely to satisfy a foreign key. Automatic readers exclude retired legacy rows,
+  while historical run readers remain available. Protected-section equality uses
+  structural content equality, not JSON object key order after a JSONB round-trip.

@@ -64,6 +64,7 @@ export function openAiCodexParameterCapabilities(input: {
   const levels = openAiCodexSupportedReasoningLevels(input.modelId);
   return parseCapabilities({
     ...(hasGeneration(input.capabilities) ? {
+      contextWindow,
       ...(levels ? { reasoning: { levels: [...levels] } } : {})
     } : {}),
     ...(input.capabilities.includes("embedding") ? { dimensions } : {})
@@ -93,6 +94,7 @@ export function localParameterCapabilities(input: {
   }
   const qwen35 = input.catalogId === "mlx-qwen3.5-9b-4bit" || /qwen3\.5[-/ ]?9b/i.test(input.modelId);
   return parseCapabilities({
+    contextWindow,
     maxTokens: localMaxTokens,
     temperature,
     topP,
@@ -139,7 +141,7 @@ export function isQwen35Model(modelId: string): boolean {
 
 function commonRemoteCapabilities(capabilities: readonly AiCapability[]): Record<string, unknown> {
   return {
-    ...(hasGeneration(capabilities) ? { maxTokens } : {}),
+    ...(hasGeneration(capabilities) ? { contextWindow, maxTokens } : {}),
     ...(capabilities.includes("embedding") ? { dimensions } : {})
   };
 }

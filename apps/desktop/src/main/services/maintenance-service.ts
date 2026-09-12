@@ -1,3 +1,6 @@
+import {organizationAiFailure} from './ai-task-parameters.js';
+import {AutomaticMaintenance} from './automatic-maintenance.js';
+import {AutomaticMaintenanceCommandSchema} from '@app/domain';
 import { organizationMetadataConfiguration, renderPrompt, capturePromptPin, withPromptPin, catalogInstructions, promptFingerprint } from "./prompt-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -66,7 +69,7 @@ export class MaintenanceService {
  private now(){return new Date((this.options.now??Date.now)());}
  private repo(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createMaintenanceRepository(pool);}
  async get(id:string){const r=await this.repo().get(id);if(!r)return null;const usage=await this.repo().usage(id);if(usage.calls){r.checkpoint.inputTokens=usage.input;r.checkpoint.outputTokens=usage.output;r.checkpoint.cost=usage.cost;r.checkpoint.usageIncomplete||=usage.inputs<r.checkpoint.calls||usage.outputs<r.checkpoint.calls||usage.costs<r.checkpoint.calls;}return MaintenanceRunSchema.parse(r);}
- async command(raw:MaintenanceCommand):Promise<unknown>{const c=MaintenanceCommandSchema.parse(raw);switch(c.command){
+ async command(raw:MaintenanceCommand):Promise<unknown>{if(AutomaticMaintenanceCommandSchema.safeParse(raw).success)return new AutomaticMaintenance(this.options).command(raw as any);const c=MaintenanceCommandSchema.parse(raw);switch(c.command){
   case 'dashboard':return MaintenanceDashboardSchema.parse({schedules:await this.repo().schedules(),runs:await this.repo().list()});
   case 'preview':return maintenanceOccurrences(c.cadence,this.now());
   case 'save':{const policy=MaintenancePolicySchema.parse(c.policy);if(policy.modelEnabled)await this.options.ai.pinOrganizationProfile(policy.profileId??undefined,policy.privacy);await this.repo().scope(policy.scope);const saved=await this.repo().save(c.id,c.expectedRevision,policy,maintenanceOccurrences(policy.cadence,this.now(),1)[0]!);for(const job of await this.repo().canceledJobs(saved.id))await this.options.cancelJob(job);return saved;}
@@ -78,10 +81,10 @@ export class MaintenanceService {
   case 'review':if(c.decision==='accept')await this.repo().reservePeriod(c.id,maintenancePeriod(this.now()));await this.repo().review(c.id,c.decision,r=>maintenanceApplyInputs({proposal:MaintenanceProposalSchema.parse(r.proposal),checkpoint:MaintenanceCheckpointSchema.parse(r.checkpoint),snapshot:MaintenanceSnapshotSchema.parse(r.snapshot)}));return this.get(c.id);
  }}
  async tick(){if(this.ticking)return;this.ticking=true;try{
-  const now=this.now(),due=(await this.repo().schedules()).map(s=>MaintenanceScheduleSchema.parse(s)).filter(s=>s.policy.enabled&&new Date(s.nextAt)<=now);
+  await new AutomaticMaintenance(this.options).tick();const now=this.now(),due=(await this.repo().schedules()).map(s=>MaintenanceScheduleSchema.parse(s)).filter(s=>s.policy.enabled&&new Date(s.nextAt)<=now);
   const groups=new Map<string,typeof due>();for(const s of due){const scope=await this.repo().scope(s.policy.scope);const k=compatibility({...s.policy,scope});groups.set(k,[...groups.get(k)??[],s]);}
   for(const group of groups.values()){const p=group[0]!.policy;if(p.idleOnly&&(this.options.idleSeconds?.()??Infinity)<60){await this.repo().scheduleError(group.map(s=>s.id),'maintenance.errors.idle');continue;}const blocker=this.options.aiBusy?.()?'maintenance.errors.busy':await this.repo().blockers();if(blocker){await this.repo().scheduleError(group.map(s=>s.id),blocker);continue;}
-   try{await this.admit(group,false);}catch(error){await this.repo().scheduleError(group.map(s=>s.id),String(error).match(/(?:maintenance|organization)\.errors\.[A-Za-z]+/)?.[0]??'maintenance.errors.failed');}
+   try{await this.admit(group,false);}catch(error){await this.repo().scheduleError(group.map(s=>s.id),organizationAiFailure(error,'maintenance.errors.failed'));}
   }
  }finally{this.ticking=false;}}
  private async admit(schedules:z.infer<typeof MaintenanceScheduleSchema>[],manual:boolean,requestId?:string){
@@ -110,8 +113,8 @@ export class MaintenanceService {
    if(next.slots.advanced!==old.slots.advanced&&!await this.repo().samplePassed(id,routine,next.slots.advanced))throw new Error('organization.errors.sample');
   }
  }
- async ready(job:JobRecord){const run=await this.get(String(job.payload.maintenanceRunId));if(!run||terminal.has(run.status))return true;if(!run.snapshot.manual&&!run.snapshot.sample&&run.snapshot.policy.idleOnly&&(this.options.idleSeconds?.()??Infinity)<60){await this.repo().defer(run.id,'maintenance.errors.idle');return false;}const blockers=await this.repo().blockers(job.id);if(blockers){await this.repo().defer(run.id,blockers);return false;}return !this.options.aiBusy?.();}
- async execute(job:JobRecord,signal:AbortSignal):Promise<JsonObject>{const run=await this.get(String(job.payload.maintenanceRunId));return withPromptPin(run?.snapshot.promptPin,()=>this.executePinned(job,signal));}
+ async ready(job:JobRecord){if(await new AutomaticMaintenance(this.options).isAutomatic(job))return true;const run=await this.get(String(job.payload.maintenanceRunId));if(!run||terminal.has(run.status))return true;if(!run.snapshot.manual&&!run.snapshot.sample&&run.snapshot.policy.idleOnly&&(this.options.idleSeconds?.()??Infinity)<60){await this.repo().defer(run.id,'maintenance.errors.idle');return false;}const blockers=await this.repo().blockers(job.id);if(blockers){await this.repo().defer(run.id,blockers);return false;}return !this.options.aiBusy?.();}
+ async execute(job:JobRecord,signal:AbortSignal):Promise<JsonObject>{if(await new AutomaticMaintenance(this.options).isAutomatic(job))return {maintenanceRunId:String(job.payload.maintenanceRunId),coordinator:true};const run=await this.get(String(job.payload.maintenanceRunId));return withPromptPin(run?.snapshot.promptPin,()=>this.executePinned(job,signal));}
  private async executePinned(job:JobRecord,signal:AbortSignal):Promise<JsonObject>{
   const id=z.string().uuid().parse(job.payload.maintenanceRunId),run=await this.get(id);if(!run)throw new Error('maintenance.errors.scope');if(terminal.has(run.status))return {maintenanceRunId:id,status:run.status};
   const c=run.checkpoint,s=run.snapshot;c.startedAt??=this.now().toISOString();c.error=null;
@@ -153,6 +156,6 @@ export class MaintenanceService {
    const parsed=MaintenanceProposalSchema.safeParse(output);if(!parsed.success)throw new Error('maintenance.errors.invalid');const proposal=parsed.data;validateMaintenanceProposal(proposal,c.candidates,s.policy);
    if(!s.sample)await this.repo().validateObjects(c.candidates);c.analyzedKeys=analyzed.map(o=>maintenanceDecisionKey(o,s,contextFingerprint));
    await this.repo().settle(id,proposal,c,analyzed.map(o=>({key:maintenanceDecisionKey(o,s,contextFingerprint),pageId:o.id})),s.sample);return {maintenanceRunId:id,status:proposal.operations.length?'awaiting_review':'no_change'};
-  }catch(error){c.modelState='none';c.error=signal.aborted?'maintenance.errors.canceled':String(error).match(/(?:maintenance|organization)\.errors\.[A-Za-z]+/)?.[0]??'maintenance.errors.failed';if(c.callPending)c.usageIncomplete=true;await this.repo().checkpoint(id,signal.aborted?'canceled':'failed',c);throw new Error(c.error);}
+  }catch(error){c.modelState='none';c.error=signal.aborted?'maintenance.errors.canceled':organizationAiFailure(error,'maintenance.errors.failed');if(c.callPending)c.usageIncomplete=true;await this.repo().checkpoint(id,signal.aborted?'canceled':'failed',c);throw new Error(c.error);}
  }
 }

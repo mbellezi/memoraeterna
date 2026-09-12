@@ -1,3 +1,4 @@
+import {AutomaticMaintenanceCommandSchema,AutomaticMaintenanceDashboardSchema,AutomaticMaintenanceRunSchema,AutomaticRoutineScheduleSchema} from './automatic-maintenance.js';
 import { PromptPinSchema } from "./prompt-catalog.js";
 import { z } from "zod";
 import { OrganizationProfileSchema } from "./organization.js";
@@ -68,7 +69,7 @@ export const MaintenanceRunSchema=z.object({id:z.string().uuid(),jobId:z.string(
 export type MaintenanceRun=z.infer<typeof MaintenanceRunSchema>;
 export const MaintenanceSummarySchema=MaintenanceRunSchema.pick({id:true,jobId:true,scheduleIds:true,status:true,createdAt:true,updatedAt:true}).extend({name:z.string(),routine:z.enum(maintenanceFunctions),inspected:z.number(),total:z.number(),findings:z.number(),deferred:z.number(),changes:z.number(),error:z.string().nullable()});
 export const MaintenanceDashboardSchema=z.object({schedules:z.array(MaintenanceScheduleSchema),runs:z.array(MaintenanceSummarySchema)});
-export const MaintenanceCommandSchema=z.discriminatedUnion("command",[
+const LegacyMaintenanceCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("dashboard")}).strict(),
   z.object({command:z.literal("save"),id:z.string().uuid().optional(),expectedRevision:z.number().int().optional(),policy:MaintenancePolicySchema}).strict(),
   z.object({command:z.literal("preview"),cadence:MaintenanceCadenceSchema}).strict(),
@@ -79,8 +80,9 @@ export const MaintenanceCommandSchema=z.discriminatedUnion("command",[
   z.object({command:z.literal("retry"),id:z.string().uuid()}).strict(),
   z.object({command:z.literal("review"),id:z.string().uuid(),decision:z.enum(["accept","reject"])}).strict()
 ]);
+export const MaintenanceCommandSchema=z.union([LegacyMaintenanceCommandSchema,AutomaticMaintenanceCommandSchema]);
 export type MaintenanceCommand=z.infer<typeof MaintenanceCommandSchema>;
-export const MaintenanceResponseSchema=z.union([MaintenanceDashboardSchema,MaintenanceScheduleSchema,MaintenanceRunSchema,z.array(z.string()),z.null()]);
+export const MaintenanceResponseSchema=z.union([AutomaticMaintenanceDashboardSchema,AutomaticMaintenanceRunSchema,AutomaticRoutineScheduleSchema,MaintenanceDashboardSchema,MaintenanceScheduleSchema,MaintenanceRunSchema,z.array(z.string()),z.null()]);
 
 const formatters=new Map<string,Intl.DateTimeFormat>();
 function localParts(date:Date,zone:string){

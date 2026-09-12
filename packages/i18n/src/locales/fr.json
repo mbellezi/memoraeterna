@@ -293,6 +293,7 @@
       "oauthCallbackUnavailable": "Le retour OAuth local n'a pas pu demarrer.",
       "oauthTimedOut": "L'authentification ChatGPT a expire.",
       "oauthNotConnected": "Connectez-vous a ChatGPT avant d'enregistrer ce modele.",
+      "contextWindowLimit": "Le contexte configuré dépasse la limite découverte du modèle.",
       "oauthRefreshFailed": "La session ChatGPT a expire. Reconnectez-vous.",
       "oauthCredentialInvalid": "L'identifiant ChatGPT enregistre est invalide.",
       "oauthTokenResponseInvalid": "ChatGPT a renvoye une reponse d'authentification invalide.",
@@ -799,7 +800,7 @@
       "languages": { "interface": "Meme langue que l'interface" },
       "oauth": { "authentication": "Authentification ChatGPT", "connect": "Se connecter avec ChatGPT", "reconnect": "Se reconnecter", "connected": "Connecte ; choisissez et enregistrez un modele.", "description": "Utilise le quota de l'abonnement ChatGPT/Codex pour les taches generatives. Les embeddings necessitent toujours une cle API ou un modele local.", "modelSelectionHint": "Saisissez du texte pour rechercher et selectionner un modele de la liste, ou entrez son nom manuellement.", "callbackSuccessTitle": "ChatGPT connecte", "callbackSuccessDescription": "Retournez dans Memora Eterna pour choisir et enregistrer un modele.", "callbackErrorTitle": "Echec de l'authentification", "callbackCloseWindow": "Fermez cette fenetre et reessayez dans Memora Eterna." },
       "tasks": { "embedding": "Embedding", "summarization": "Resume", "text-generation": "Generation de texte", "structured-output": "Sortie structuree", "knowledge-graph-generation": "Generation du graphe de connaissances", "atomic-note-generation": "Generation de notes atomiques", "reranking": "Reranking" },
-      "parameters": { "contextWindow": "Fenetre de contexte", "temperature": "Temperature", "maxTokens": "Tokens de sortie maximum", "reasoningLevel": "Raisonnement", "reasoningMaxTokens": "Tokens de raisonnement maximum", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalite de presence", "dimensions": "Dimensions d'embedding", "seed": "Seed", "inherit": "Utiliser la valeur heritee/par defaut", "reasoning": { "off": "Desactive", "on": "Active", "minimal": "Minimal", "low": "Faible", "medium": "Moyen", "high": "Eleve", "xhigh": "Tres eleve", "max": "Maximum" } }
+      "parameters": { "contextWindow": "Contexte total (tokens)", "contextWorkflowDefault": "Valeur par défaut du traitement", "contextPlanningLocal": "Budget de l’application pour entrée et sortie ; ne modifie ni le runtime MLX ni sa mémoire allouée.", "contextPlanning": "Budget de l’application pour entrée et sortie ; n’augmente pas la capacité du modèle distant.", "contextInherited": "Par défaut / hérité :", "contextEffective": "Effectif :", "temperature": "Temperature", "maxTokens": "Tokens de sortie maximum", "reasoningLevel": "Raisonnement", "reasoningMaxTokens": "Tokens de raisonnement maximum", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalite de presence", "dimensions": "Dimensions d'embedding", "seed": "Seed", "inherit": "Utiliser la valeur heritee/par defaut", "reasoning": { "off": "Desactive", "on": "Active", "minimal": "Minimal", "low": "Faible", "medium": "Moyen", "high": "Eleve", "xhigh": "Tres eleve", "max": "Maximum" } }
     }
   },
   "localModels": {
@@ -1549,7 +1550,7 @@
     "preview": "Aperçu de l’organisation automatique",
     "authority": "Périmètre et autorisations effectifs",
     "limits": "Au maximum {targets} pages ou index, {sections} modifications par page, {passages} passages complets, {calls} admissions du modèle et {minutes} minutes avec attente.",
-    "permission": "Crée des brouillons étayés et des index, actualise le contenu IA non protégé et place les nouvelles pages. Le texte humain et l’ordre fixe demandent une révision. L’activation ne lance rien ; les routines récurrentes sont configurées séparément.",
+    "permission": "Crée des brouillons étayés et des index, actualise le contenu IA non protégé et place les nouvelles pages. Le texte humain et l’ordre fixe demandent une révision. L’activation installe les routines récurrentes présentées, exécutées selon leurs horaires et conditions d’admissibilité. Vous pouvez aussi intégrer manuellement les contenus sélectionnés.",
     "activate": "Activer cette politique",
     "enabled": "Politique de périmètre active",
     "run": "Intégrer les documents sélectionnés",
@@ -1584,5 +1585,35 @@
     "excludedSources": "Sources exclues",
     "excludedHint": "Excluez ces sources et tous leurs descendants de cette politique.",
     "previewChanges": "Vérifiez et activez les modifications avant de lancer un nouveau travail. La politique actuelle reste en vigueur."
+  },
+  "automaticMaintenance": {
+    "title": "Maintenance automatique du contenu",
+    "disclosure": "Fonctionne lorsque l’application est ouverte, normalement après une minute d’inactivité. Exécuter maintenant ignore uniquement l’inactivité. Les groupes partagent le plafond mensuel de la politique. Le coût inconnu reste indisponible.",
+    "incremental": "Intégration incrémentale",
+    "daily": "Entretien quotidien",
+    "weekly": "Organisation hebdomadaire",
+    "monthly": "Consolidation mensuelle",
+    "debounce": "Deux minutes après stabilisation des contenus",
+    "allowance": "Jusqu’à {calls} appels / {tokens} jetons réservés / {minutes} minutes actives",
+    "monthlyAllowance": "Mois civil UTC partagé : {calls} appels / {tokens} jetons réservés",
+    "calibration": "Le preset luna-a2-a3-conservative-v1 utilise les essais synthétiques Luna acceptés et une marge de correction. Il réserve des octets d’entrée prudents et une sortie limitée ; ce petit échantillon ne garantit ni coût ni latence.",
+    "preserve": "Conserver les personnalisations",
+    "install": "Installer à l’activation",
+    "legacy": "Planifications indépendantes existantes",
+    "retain": "Conserver séparément, sans adoption automatique",
+    "notInstalled": "Cette politique existante n’a pas de routines automatiques. Prévisualisez et activez pour examiner la configuration.",
+    "reserved": "Réservé : {calls} appels / {tokens} jetons",
+    "startWindow": "Démarrage visé sous {minutes} minutes admissibles avec application ouverte",
+    "timezone": "Fuseau horaire",
+    "time": "Heure locale",
+    "due": "Échéance",
+    "clock": "Admissible {eligible} min · fenêtre restante {remaining} min · actif {active} min · différé {deferred} min · fermé/inconnu {closed} min",
+    "overdue": "Fenêtre de démarrage admissible dépassée",
+    "coverage": "Sources terminées {sources} · groupes {groups} · catalogue uniquement {catalog}",
+    "groupLimit": "Groupes de {minutes} minutes maximum, file comprise",
+    "weekday": "Jour de semaine",
+    "monthday": "Jour du mois",
+    "wallOverdue": "Retard réel au-delà de la cible : {minutes} min",
+    "exactPrompts": "Inspecter les prompts exacts admis"
   }
 }

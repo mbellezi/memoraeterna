@@ -20,7 +20,7 @@ describe("model parameter capabilities", () => {
     });
 
     expect(capabilities.reasoning).toEqual({ levels: ["off", "on"] });
-    expect(capabilities).not.toHaveProperty("contextWindow");
+    expect(capabilities).toHaveProperty("contextWindow");
     expect(capabilities.topP).toEqual({ min: 0, max: 1, step: 0.05 });
     expect(capabilities.topK).toEqual({ min: 1, step: 1 });
     expect(capabilities.presencePenalty).toEqual({ min: -2, max: 2, step: 0.1 });
@@ -38,17 +38,17 @@ describe("model parameter capabilities", () => {
     });
   });
 
-  it("does not advertise parameters that an adapter does not forward", () => {
+  it("distinguishes app context controls from unsupported runtime parameters", () => {
     expect(openAiCompatibleParameterCapabilities({
       modelId: "gpt-4.1-mini",
       baseUrl: "https://api.openai.com/v1",
       capabilities: generationCapabilities
-    })).not.toHaveProperty("contextWindow");
+    })).toHaveProperty("contextWindow");
     expect(localParameterCapabilities({
       runtime: "mlx",
       modelId: "mlx-community/gemma-3-4b-it-4bit",
       capabilities: generationCapabilities
-    })).not.toHaveProperty("contextWindow");
+    })).toHaveProperty("contextWindow");
     expect(localParameterCapabilities({
       runtime: "gguf",
       modelId: "generic-instruct.gguf",
@@ -61,7 +61,7 @@ describe("model parameter capabilities", () => {
     })).not.toHaveProperty("topK");
   });
 
-  it("exposes only wire-level OAuth controls for GPT-5.6 Terra and Luna", () => {
+  it("exposes OAuth wire controls and app-side context budget for GPT-5.6 Terra and Luna", () => {
     for (const modelId of ["gpt-5.6-terra", "gpt-5.6-luna"]) {
       const capabilities = openAiCodexParameterCapabilities({
         modelId,
@@ -69,6 +69,7 @@ describe("model parameter capabilities", () => {
       });
 
       expect(capabilities).toEqual({
+        contextWindow:{min:128,max:2_000_000,step:1},
         reasoning: { levels: ["low", "medium", "high", "xhigh", "max"] }
       });
       expect(normalizeAiModelParameters({

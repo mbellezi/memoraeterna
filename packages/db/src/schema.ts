@@ -1474,7 +1474,7 @@ export const knowledgeImpactEvents = pgTable("knowledge_impact_events", {
 
 export const maintenanceSchedules = pgTable("maintenance_schedules", {
   id: uuid("id").primaryKey().defaultRandom(), revision: integer("revision").notNull().default(1),
-  policy: jsonb("policy").notNull(), lastError:text("last_error"), nextAt: timestamp("next_at", { withTimezone: true }).notNull(), lastRunId: uuid("last_run_id"),
+  retiredAt: timestamp("retired_at",{withTimezone:true}), policy: jsonb("policy").notNull(), lastError:text("last_error"), nextAt: timestamp("next_at", { withTimezone: true }).notNull(), lastRunId: uuid("last_run_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, t => [index("maintenance_schedules_due_idx").on(t.nextAt)]);
 export const maintenanceRuns = pgTable("maintenance_runs", {
@@ -1570,3 +1570,11 @@ export const knowledgeImpactDeliveries=pgTable('knowledge_impact_deliveries',{
 export const wikiSourceCoverage=pgTable('wiki_source_coverage',{
  policyId:uuid('policy_id').notNull(),sourceId:uuid('source_id').notNull(),inputFingerprint:text('input_fingerprint').notNull(),status:text('status').notNull(),checkpoint:jsonb('checkpoint').notNull(),runId:uuid('run_id').references(()=>organizationRuns.id,{onDelete:'restrict'}),updatedAt:timestamp('updated_at',{withTimezone:true}).notNull().defaultNow()
 },t=>[primaryKey({columns:[t.policyId,t.sourceId]}),index('wiki_source_coverage_state_idx').on(t.policyId,t.status)]);
+
+/** Setup identity is independent of preset version and schedule display names. */
+export const automaticRoutineBindings = pgTable('automatic_routine_bindings', {
+ policyId:uuid('policy_id').notNull(),kind:text('kind').notNull(),scopeKey:text('scope_key').notNull(),presetVersion:text('preset_version').notNull(),scheduleId:uuid('schedule_id').notNull().references(()=>maintenanceSchedules.id,{onDelete:'restrict'})
+},t=>[uniqueIndex('automatic_routine_binding_identity_idx').on(t.policyId,t.kind,t.scopeKey),uniqueIndex('automatic_routine_binding_schedule_idx').on(t.scheduleId)]);
+export const automaticRoutineCalls = pgTable('automatic_routine_calls', {
+ organizationRunId:uuid('organization_run_id').notNull().references(()=>organizationRuns.id,{onDelete:'restrict'}),sequence:integer('sequence').notNull(),runId:uuid('run_id').notNull().references(()=>maintenanceRuns.id,{onDelete:'restrict'}),policyId:uuid('policy_id').notNull(),period:text('period').notNull(),tokens:integer('tokens').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[uniqueIndex('automatic_routine_call_identity_idx').on(t.organizationRunId,t.sequence),index('automatic_routine_call_policy_period_idx').on(t.policyId,t.period)]);

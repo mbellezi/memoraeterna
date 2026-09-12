@@ -77,3 +77,14 @@ export function organizationMetadataConfiguration(raw:unknown):import('@app/doma
     const slots={global:{},pageSynthesis:{},consultation:{},weekly:{},monthly:{},cleanup:{}};
     return OrganizationConfigurationSchema.parse({...record,...slots,domains:Array.isArray(record.domains)?record.domains.map(domain=>({...domain,...slots,global:undefined,slots:{}})).map(({global,...domain})=>domain):[]});
 }
+
+export function withOutputLanguageInstruction(input: string, language: string): string {
+  const languageName = ({
+    en: "English",
+    "pt-BR": "Brazilian Portuguese",
+    it: "Italian",
+    fr: "French",
+    es: "Spanish"
+  } as Record<string, string>)[language] ?? language;
+  return joinPrompts(renderPrompt("shared.output_language",{content_language:languageName}),"\n\n",input);
+}

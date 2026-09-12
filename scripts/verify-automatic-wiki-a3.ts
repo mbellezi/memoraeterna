@@ -23,6 +23,8 @@ async function exercise(db:PgPool){
  const options={getPool:()=>db,ai,contentLanguage:async()=> 'en',wake:()=>{},cancelJob:(id:string)=>jobs.requestCancel(id)};
  const curator=()=>new WikiCurator(options),collection=()=>new WikiCollection(options);
  const preview=CuratorPreviewSchema.parse(await curator().command({command:'preview',input:{wholeLibrary:true,sourceIds:[],includeDescendants:true,excludedSourceIds:[],profileOverrideId:profile.profileId,limits:initialCuratorLimits}}));
+ // Exercise the historical A2/A3 activation snapshot; A4 public setup has its own verifier.
+ await db.query("update wiki_policy_revisions set preview=preview-'maintenance' where id=$1",[preview.policy.revisionId]);
  const policy=AutomaticWikiPolicySchema.parse(await curator().command({command:'activate',policyId:preview.policy.id,revisionId:preview.policy.revisionId,previewHash:preview.previewHash}));
  // Read-only inventory neither generates nor creates dispatch jobs.
  const beforeJobs=(await db.query('select count(*)::int n from jobs')).rows[0].n,assessment=await collectionRepo.assessment(policy,null,10);assert.equal(assessment.totals.sources,3);assert.equal(assessment.totals.originals,2);assert.equal(assessment.sources.find(s=>s.id===catalog.id)?.coverage,'cataloged');assert.equal((await db.query('select count(*)::int n from jobs')).rows[0].n,beforeJobs);assert.equal(calls,0);

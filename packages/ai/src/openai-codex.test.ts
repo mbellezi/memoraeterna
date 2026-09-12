@@ -45,7 +45,7 @@ describe("OpenAI Codex adapter", () => {
         capabilities: ["summarization", "streaming"],
         fetch: async (_input, init) => {
           const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          expect(payload).not.toHaveProperty("max_output_tokens");
+          expect(payload).not.toHaveProperty("max_output_tokens");expect(payload).not.toHaveProperty("contextWindow");expect(payload).not.toHaveProperty("context_window");
           expect(payload).toMatchObject({
             model: modelId,
             reasoning: { effort: "low", summary: "auto" }
@@ -58,7 +58,7 @@ describe("OpenAI Codex adapter", () => {
         taskType: "summarization",
         input: "test",
         requiredCapabilities: ["summarization"],
-        parameters: { maxTokens: 16_384, reasoningLevel: "off" },
+        parameters: { contextWindow:128000,maxTokens: 16_384, reasoningLevel: "off" },
         metadata: {}
       })).resolves.toMatchObject({ output: "summary", modelId });
     }

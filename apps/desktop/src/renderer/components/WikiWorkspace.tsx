@@ -20,7 +20,8 @@ type PageSummary = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
 const control = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
 const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const newContent = (): WikiPageContent => ({ title: "", kind: "topic", aliases: [], parentId: null, position: 0, collectionIds: [], entityId: null, pinned: false, archived: false, review: "draft", sections: [] });
-export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, treeWidth, onTreeWidthChange }: {
+export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, treeWidth, onTreeWidthChange, onPrompts }: {
+  onPrompts?:()=>void;
   externalTarget?: (ObsidianDeepLink&{token:number})|null;
   active?: boolean;
   treeWidth?: number;
@@ -680,6 +681,6 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
 
     </div>
 
-    {automaticOpen&&<AutomaticWikiDialog t={t} onClose={()=>{setAutomaticOpen(false);void reload().catch(fail);}} onChanged={()=>void reload().catch(fail)}/>}
+    {automaticOpen&&<AutomaticWikiDialog onPrompts={onPrompts} t={t} onClose={()=>{setAutomaticOpen(false);void reload().catch(fail);}} onChanged={()=>void reload().catch(fail)}/>}
   </div>;
 }

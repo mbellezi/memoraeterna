@@ -478,3 +478,20 @@ job statuses, or user-visible backend errors.
 - Manual creation inherits the current page context. Accessible move-before,
   move-after and move-into actions own ordering; numeric position is not the
   primary organizing control. Wiki movement never changes source hierarchy.
+
+- Automatic setup discloses all four routine cadences, eligible start windows,
+  group/occurrence limits, shared monthly reservations, current exact prompt
+  fragments and reconciliation with independent legacy schedules. Runtime history
+  separates reserved tokens from reported input/output usage and unavailable cost.
+  Display parent-policy pause as well as each routine's enabled state.
+- Routine cadence/budget editing and history detail remain inside the native wiki
+  setup dialog. Their Back/Escape handlers close the local substate first and
+  restore focus; policy changes discard those substates and stale asynchronous
+  responses. The prompt inspector shows source-free admitted fragments and revision
+  identities, with a route to the existing prompt catalog for editing.
+
+- Automatic policy activation copy discloses joint recurring setup and subsequent
+  scheduling/eligibility conditions, with explicit manual integration available.
+  Opening the prompt catalog from Wiki records a return destination in the shared
+  native/mouse navigation router; Back returns to the mounted Wiki without losing
+  its reading/tree context. Calendar previews do not render empty separators.

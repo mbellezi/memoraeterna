@@ -261,6 +261,7 @@ export function LocalModelDefaults({ model, t, onSave }: { model: LocalModelView
         ) : null}
       </div>
       <AiParameterFields
+        planningContext={model.runtime==="mlx"}
         value={parameters}
         onChange={setParameters}
         capabilities={model.parameterCapabilities}

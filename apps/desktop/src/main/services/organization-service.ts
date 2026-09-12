@@ -1,3 +1,4 @@
+import {organizationAiFailure} from './ai-task-parameters.js';
 import { WikiCollection } from './wiki-collection.js';
 import { WikiCurator } from './wiki-curator.js';
 import { organizationMetadataConfiguration, renderPrompt, capturePromptPin, withPromptPin, catalogInstructions } from "./prompt-runtime.js";
@@ -234,7 +235,7 @@ export class OrganizationService {
         }
       }
     }catch(error){
-      checkpoint.error=signal.aborted||String(error).includes('canceled')?'organization.errors.canceled':timeout.aborted?'organization.errors.deadline':String(error).includes('organization.errors.')?String(error).match(/organization\.errors\.[A-Za-z]+/)![0]:'organization.errors.failed';
+      checkpoint.error=signal.aborted||String(error).includes('canceled')?'organization.errors.canceled':timeout.aborted?'organization.errors.deadline':organizationAiFailure(error);
       if(signal.aborted)await this.repo().cancel(id);else await this.repo().checkpoint(id,'failed',checkpoint);
       // Retries are driven by the existing supervisor; persisted budgets/deadline remain cumulative.
       throw new Error(checkpoint.error);

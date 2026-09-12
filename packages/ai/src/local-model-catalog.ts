@@ -178,6 +178,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     quantization: "4-bit",
     capabilities: textCapabilities,
     parameterCapabilities: {
+      contextWindow: { min:128,max:2_000_000,step:1 },
       temperature: { min: 0, max: 2, step: 0.1 },
       maxTokens: { min: 1, max: 32_768, step: 1 },
       topP: { min: 0, max: 1, step: 0.05 },
@@ -217,6 +218,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     quantization: "4-bit",
     capabilities: textCapabilities,
     parameterCapabilities: {
+      contextWindow: { min:128,max:2_000_000,step:1 },
       temperature: { min: 0, max: 2, step: 0.1 },
       maxTokens: { min: 1, max: 32_768, step: 1 },
       topP: { min: 0, max: 1, step: 0.05 },
@@ -257,6 +259,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     quantization: "4-bit",
     capabilities: textCapabilities,
     parameterCapabilities: {
+      contextWindow: { min:128,max:2_000_000,step:1 },
       temperature: { min: 0, max: 2, step: 0.1 },
       maxTokens: { min: 1, max: 32_768, step: 1 },
       topP: { min: 0, max: 1, step: 0.05 },
@@ -299,6 +302,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
     quantization: "4-bit",
     capabilities: textCapabilities,
     parameterCapabilities: {
+      contextWindow: { min:128,max:2_000_000,step:1 },
       temperature: { min: 0, max: 2, step: 0.1 },
       maxTokens: { min: 1, max: 32_768, step: 1 },
       topP: { min: 0, max: 1, step: 0.05 },

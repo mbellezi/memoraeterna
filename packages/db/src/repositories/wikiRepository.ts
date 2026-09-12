@@ -1,3 +1,4 @@
+import {isDeepStrictEqual} from 'node:util';
 import type { SectionAssessment, WikiPageContent } from '@app/domain';
 import { createHash, randomUUID } from "node:crypto";
 import { createWikiContextRepository } from "./wikiContextRepository.js";
@@ -127,7 +128,7 @@ export function createWikiRepository(pool: PgPool) {
             if(input.version===2&&same){const verify=section.evidenceReview==='verified'&&old.evidenceReview!=='verified';Object.assign(section,structuredClone(old));if(verify){section.protected=true;section.sectionRevisionId=randomUUID();section.evidenceReview='verified';section.assessment={version:'automatic-wiki-v1',sectionId:section.id,sectionRevisionId:section.sectionRevisionId,humanReview:'verified',support:'validated',reason:'human_verified',inputFingerprint:old.assessment?.inputFingerprint??createHash('sha256').update(JSON.stringify(section.evidenceIds)).digest('hex'),freshness:'current'};}}
             else { section.protected=true;if(input.version===2||old?.sectionRevisionId){section.provenance="personal";section.sectionRevisionId=randomUUID();section.assessment={version:"automatic-wiki-v1",sectionId:section.id,sectionRevisionId:section.sectionRevisionId,humanReview:"unreviewed",support:"unassessed",reason:"prose_changed",inputFingerprint:createHash("sha256").update(JSON.stringify(section)).digest("hex"),freshness:"current"};}}
           }
-          else if (!authority.humanApproved && (current?.content as Content | undefined)?.sections.some(s => s.id === section.id && s.protected && JSON.stringify(s) !== JSON.stringify(section))) throw new Error("organization.errors.protected");
+          else if (!authority.humanApproved && (current?.content as Content | undefined)?.sections.some(s => s.id === section.id && s.protected && !isDeepStrictEqual(s, section))) throw new Error("organization.errors.protected");
           const previous = (current?.content as Content | undefined)?.sections.find((s) => s.id === section.id);
           if (previous && (previous.markdown !== section.markdown || previous.title !== section.title) && section.evidenceIds.length) section.evidenceReview = "needs_review";
         }

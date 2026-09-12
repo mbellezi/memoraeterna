@@ -132,6 +132,7 @@ export function App({
   const [obsidianTarget,setObsidianTarget]=useState<(ObsidianDeepLink&{token:number})|null>(null);
   useEffect(()=>{const open=(target:ObsidianDeepLink)=>{if(target.kind==='wiki'){setObsidianTarget({...target,token:Date.now()});setActiveView('wiki');}else if(target.kind==='source'){libraryTargetToken.current+=1;setLibraryTarget({sourceItemId:target.id,origin:'wiki',...(target.relation?{sourceRelationId:target.relation}:{}),token:libraryTargetToken.current});setActiveView('library');}};const off=window.app.obsidian.onOpen(open);void window.app.obsidian.pendingOpen().then(target=>{if(target)open(target);});return off;},[]);
   const [activeView, setActiveView] = useState<ViewId>("library");
+  const wikiPromptReturn=useRef(false);
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
@@ -178,6 +179,7 @@ export function App({
   }, [isDarkMode]);
 
   useEffect(() => subscribeWindowNavigation((direction) => {
+    if(activeViewRef.current==='settings'&&wikiPromptReturn.current&&direction==='back'){wikiPromptReturn.current=false;setActiveView('wiki');return true;}
     if (activeViewRef.current !== "library") return false;
     if (direction === "back") window.history.back();
     else window.history.forward();
@@ -539,6 +541,7 @@ export function App({
                     : "text-muted-foreground hover:bg-soft hover:text-foreground"
                 )}
                 onClick={() => {
+                  wikiPromptReturn.current=false;
                   if (item.id === "library") setLibraryTarget(null);
                   if (item.id === "settings") selectSettingsScope("overview");
                   setActiveView(item.id);
@@ -590,7 +593,7 @@ export function App({
           }}
         >
           <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace treeWidth={appSettings.wikiTreeWidth} onTreeWidthChange={width => updateAppSettings({ wikiTreeWidth: width })} externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
+            <WikiWorkspace onPrompts={()=>{wikiPromptReturn.current=true;setActiveSettingsScope('prompts');setActiveView('settings');}} treeWidth={appSettings.wikiTreeWidth} onTreeWidthChange={width => updateAppSettings({ wikiTreeWidth: width })} externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
           </div>
           {activeView === "settings" ? (
             <SettingsView

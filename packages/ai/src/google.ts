@@ -52,13 +52,14 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
     const response = await this.fetchImplementation(`${this.baseUrl}/models?key=${encodeURIComponent(this.options.apiKey)}`, signal ? { signal } : {});
-    const payload = await parseResponse<{ models?: Array<{ name?: string; displayName?: string }> }>(response);
+    const payload = await parseResponse<{ models?: Array<{ name?: string; displayName?: string; inputTokenLimit?: number; outputTokenLimit?: number }> }>(response);
     return (payload.models ?? []).flatMap((model) => {
       if (!model.name) return [];
       const modelId = model.name.replace(/^models\//, "");
       return [{
         ...this.describe(),
         modelId,
+        limits: { ...(Number.isInteger(model.inputTokenLimit)&&model.inputTokenLimit!>0?{inputTokens:model.inputTokenLimit}:{}), ...(Number.isInteger(model.outputTokenLimit)&&model.outputTokenLimit!>0?{outputTokens:model.outputTokenLimit}:{}) },
         parameterCapabilities: googleParameterCapabilities({ modelId, capabilities: this.options.capabilities }),
         ...(model.displayName ? { displayName: model.displayName } : {})
       }];

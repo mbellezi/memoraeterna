@@ -293,6 +293,7 @@
       "oauthCallbackUnavailable": "The local OAuth callback could not be started.",
       "oauthTimedOut": "ChatGPT authentication timed out.",
       "oauthNotConnected": "Sign in with ChatGPT before saving this model.",
+      "contextWindowLimit": "The configured context exceeds the discovered model limit.",
       "oauthRefreshFailed": "The ChatGPT session expired. Sign in again.",
       "oauthCredentialInvalid": "The stored ChatGPT credential is invalid.",
       "oauthTokenResponseInvalid": "ChatGPT returned an invalid authentication response.",
@@ -899,7 +900,7 @@
         "structured-output": "Structured output", "knowledge-graph-generation": "Knowledge graph generation", "atomic-note-generation": "Atomic note generation", "reranking": "Reranking"
       },
       "parameters": {
-        "contextWindow": "Context window", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
+        "contextWindow": "Total context (tokens)", "contextWorkflowDefault": "Workflow default", "contextPlanningLocal": "App planning budget for input and output; does not change the MLX runtime or its memory allocation.", "contextPlanning": "App budget for input and output; does not increase the remote model’s capacity.", "contextInherited": "Default / inherited:", "contextEffective": "Effective:", "temperature": "Temperature", "maxTokens": "Maximum output tokens",
         "reasoningLevel": "Reasoning", "reasoningMaxTokens": "Maximum reasoning tokens", "topP": "Top P", "topK": "Top K", "presencePenalty": "Presence penalty", "dimensions": "Embedding dimensions", "seed": "Seed",
         "inherit": "Use inherited/default value",
         "reasoning": { "off": "Off", "on": "On", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high", "max": "Maximum" }
@@ -1699,7 +1700,7 @@
     "preview": "Preview automatic organization",
     "authority": "Effective scope and authority",
     "limits": "Up to {targets} pages or indexes, {sections} section patches per page, {passages} complete passages, {calls} model admissions and {minutes} minutes including queue waits.",
-    "permission": "Creates grounded drafts and reading indexes, updates unprotected AI content and gives new pages their initial placement. Human text and fixed ordering require review. Activation does not start a run; recurring routine setup is separate.",
+    "permission": "Creates grounded drafts and reading indexes, updates unprotected AI content and gives new pages their initial placement. Human text and fixed ordering require review. Activation installs the disclosed recurring routines together; they run when their schedule and eligibility conditions allow. You can also integrate selected materials manually.",
     "activate": "Enable this scoped policy",
     "enabled": "Scoped policy enabled",
     "run": "Integrate selected material",
@@ -1734,5 +1735,35 @@
     "excludedSources": "Excluded sources",
     "excludedHint": "Exclude these sources and all their descendants from this policy.",
     "previewChanges": "Preview and activate these changes before starting new work. The current policy remains in effect."
+  },
+  "automaticMaintenance": {
+    "title": "Automatic content maintenance",
+    "disclosure": "Runs while the desktop is open, normally after one minute idle. Run now bypasses only idle. Groups share the policy’s monthly allowance. Unknown cost is unavailable.",
+    "incremental": "Incremental integration",
+    "daily": "Daily upkeep",
+    "weekly": "Weekly organization",
+    "monthly": "Monthly consolidation",
+    "debounce": "Two minutes after inputs settle",
+    "allowance": "Up to {calls} calls / {tokens} reserved tokens / {minutes} active minutes",
+    "monthlyAllowance": "Shared UTC calendar month: {calls} calls / {tokens} reserved tokens",
+    "calibration": "Preset luna-a2-a3-conservative-v1 uses the accepted synthetic Luna trials plus repair margin. Reservations use conservative input bytes and bounded output; these small trials do not guarantee cost or latency.",
+    "preserve": "Preserve customized settings",
+    "install": "Install with activation",
+    "legacy": "Existing independent schedules",
+    "retain": "Retain separately; no automatic adoption",
+    "notInstalled": "This existing policy has no automatic routines. Preview and activate it to review setup.",
+    "reserved": "Reserved: {calls} calls / {tokens} tokens",
+    "startWindow": "Target start within {minutes} eligible open minutes",
+    "timezone": "Timezone",
+    "time": "Local time",
+    "due": "Due",
+    "clock": "Eligible {eligible} min · start window remaining {remaining} min · active {active} min · deferred {deferred} min · closed/unknown {closed} min",
+    "overdue": "Eligible start window exceeded",
+    "coverage": "Sources completed {sources} · groups {groups} · catalog only {catalog}",
+    "groupLimit": "Groups up to {minutes} minutes including FIFO",
+    "weekday": "Weekday",
+    "monthday": "Day of month",
+    "wallOverdue": "Wall-clock lateness beyond target: {minutes} min",
+    "exactPrompts": "Inspect exact admitted prompts"
   }
 }

@@ -54,10 +54,11 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
     const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
     if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
-    const payload = await response.json() as { data?: Array<{ id?: string }> };
+    const payload = await response.json() as { data?: Array<{ id?: string; context_window?: number }> };
     return (payload.data ?? []).flatMap((model) => model.id ? [{
       ...this.describe(),
       modelId: model.id,
+      limits: Number.isInteger(model.context_window)&&model.context_window!>0?{contextWindow:model.context_window}:{},
       parameterCapabilities: openAiCompatibleParameterCapabilities({ ...this.options, modelId: model.id })
     }] : []);
   }

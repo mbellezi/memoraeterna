@@ -246,6 +246,20 @@
       "when": 1789218118777,
       "tag": "0034_wiki_impact_expression_fix",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1789224776713,
+      "tag": "0035_acoustic_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1789225000488,
+      "tag": "0036_hot_scarlet_witch",
+      "breakpoints": true
     }
   ]
 }

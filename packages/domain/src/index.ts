@@ -27,3 +27,4 @@ export * from "./prompt-catalog.js";
 export * from "./prompt-definitions.js";
 export * from './automatic-wiki-runtime.js';
 export * from './wiki-reference.js';
+export * from './automatic-maintenance.js';

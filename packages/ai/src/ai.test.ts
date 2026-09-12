@@ -60,6 +60,7 @@ describe("AI adapters", () => {
     await openAi.run({
       taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
       parameters: {
+        contextWindow:128000,
         maxTokens: 512,
         temperature: 0.3,
         topP: 0.9,
@@ -75,7 +76,7 @@ describe("AI adapters", () => {
       presence_penalty: -0.4,
       reasoning_effort: "low"
     });
-    expect(openAiBody).not.toHaveProperty("maxTokens");
+    expect(openAiBody).not.toHaveProperty("maxTokens");expect(openAiBody).not.toHaveProperty("contextWindow");expect(openAiBody).not.toHaveProperty("context_window");
     await openAi.run({
       taskType: "text-generation", input: "hello", modelId: "gpt-5.6-terra",
       requiredCapabilities: ["text-generation"], parameters: { reasoningLevel: "max" }, metadata: {}
@@ -93,6 +94,7 @@ describe("AI adapters", () => {
     await google.run({
       taskType: "text-generation", input: "hello", requiredCapabilities: ["text-generation"],
       parameters: {
+        contextWindow:128000,
         maxTokens: 256,
         temperature: 1,
         topP: 0.95,
@@ -102,6 +104,7 @@ describe("AI adapters", () => {
       },
       metadata: {}
     });
+    expect(JSON.stringify(googleBody)).not.toContain("contextWindow");expect(JSON.stringify(googleBody)).not.toContain("context_window");
     expect(googleBody.generationConfig).toMatchObject({
       maxOutputTokens: 256,
       temperature: 1,
@@ -455,6 +458,7 @@ for await (const line of lines) {
   const request = JSON.parse(line);
   if (request.command === "shutdown") process.exit(0);
   if (request.prompt === "hang") continue;
+  if ("contextWindow" in request.parameters) process.exit(9);
   requests += 1;
   process.stdout.write(JSON.stringify({
     protocolVersion: 1, requestId: request.requestId, kind: "result", ok: true,
@@ -485,6 +489,7 @@ for await (const line of lines) {
     expect((await adapter.run({
       ...request,
       parameters: {
+        contextWindow:32000,
         reasoningLevel: "high" as const,
         topP: 0.95,
         topK: 20,

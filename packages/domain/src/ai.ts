@@ -1,3 +1,6 @@
+/** Application planning budget for new remote generation admissions; not a provider capacity claim. */
+export const remoteGenerationContextWindow = 128_000;
+
 import { z } from "zod";
 
 export const AiTaskTypes = [

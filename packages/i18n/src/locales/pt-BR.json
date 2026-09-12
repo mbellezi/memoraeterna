@@ -293,6 +293,7 @@
       "oauthCallbackUnavailable": "Nao foi possivel iniciar o retorno OAuth local.",
       "oauthTimedOut": "A autenticacao com o ChatGPT expirou.",
       "oauthNotConnected": "Entre com o ChatGPT antes de salvar este modelo.",
+      "contextWindowLimit": "O contexto configurado excede o limite descoberto do modelo.",
       "oauthRefreshFailed": "A sessao do ChatGPT expirou. Entre novamente.",
       "oauthCredentialInvalid": "A credencial salva do ChatGPT e invalida.",
       "oauthTokenResponseInvalid": "O ChatGPT retornou uma resposta de autenticacao invalida.",
@@ -863,7 +864,7 @@
         "structured-output": "Saida estruturada", "knowledge-graph-generation": "Geracao do grafo de conhecimento", "atomic-note-generation": "Geracao de notas atomicas", "reranking": "Reranking"
       },
       "parameters": {
-        "contextWindow": "Janela de contexto", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
+        "contextWindow": "Contexto total (tokens)", "contextWorkflowDefault": "Padrão do fluxo", "contextPlanningLocal": "Orçamento do app para entrada e saída; não altera o runtime MLX nem sua alocação de memória.", "contextPlanning": "Orçamento do app para entrada e saída; não aumenta a capacidade do modelo remoto.", "contextInherited": "Padrão / herdado:", "contextEffective": "Efetivo:", "temperature": "Temperatura", "maxTokens": "Maximo de tokens de saida",
         "reasoningLevel": "Raciocinio", "reasoningMaxTokens": "Maximo de tokens de raciocinio", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalidade de presenca", "dimensions": "Dimensoes do embedding", "seed": "Seed",
         "inherit": "Usar valor herdado/padrao",
         "reasoning": { "off": "Desligado", "on": "Ligado", "minimal": "Minimo", "low": "Baixo", "medium": "Medio", "high": "Alto", "xhigh": "Muito alto", "max": "Maximo" }
@@ -1632,7 +1633,7 @@
     "preview": "Prévia da organização automática",
     "authority": "Escopo e permissões efetivos",
     "limits": "Até {targets} páginas ou índices, {sections} alterações de seção por página, {passages} trechos completos, {calls} admissões de modelo e {minutes} minutos incluindo a fila.",
-    "permission": "Cria rascunhos fundamentados e índices, atualiza conteúdo de IA desprotegido e posiciona páginas novas. Texto humano e ordem fixa exigem revisão. Ativar não inicia uma execução; rotinas recorrentes são configuradas separadamente.",
+    "permission": "Cria rascunhos fundamentados e índices, atualiza conteúdo de IA desprotegido e posiciona páginas novas. Texto humano e ordem fixa exigem revisão. A ativação instala as rotinas recorrentes apresentadas; elas executam conforme os horários e as condições de elegibilidade. Você também pode integrar materiais selecionados manualmente.",
     "activate": "Ativar esta política de escopo",
     "enabled": "Política de escopo ativa",
     "run": "Integrar materiais selecionados",
@@ -1667,5 +1668,35 @@
     "excludedSources": "Fontes excluídas",
     "excludedHint": "Exclua estas fontes e todos os seus descendentes desta política.",
     "previewChanges": "Confira e ative as alterações antes de iniciar um novo trabalho. A política atual continua em vigor."
+  },
+  "automaticMaintenance": {
+    "title": "Manutenção automática do conteúdo",
+    "disclosure": "Executa com o aplicativo aberto, normalmente após um minuto de inatividade. Executar agora ignora apenas a inatividade. Os grupos compartilham o orçamento mensal da política. Custo desconhecido fica indisponível.",
+    "incremental": "Integração incremental",
+    "daily": "Manutenção diária",
+    "weekly": "Organização semanal",
+    "monthly": "Consolidação mensal",
+    "debounce": "Dois minutos após os materiais estabilizarem",
+    "allowance": "Até {calls} chamadas / {tokens} tokens reservados / {minutes} minutos ativos",
+    "monthlyAllowance": "Mês civil UTC compartilhado: {calls} chamadas / {tokens} tokens reservados",
+    "calibration": "O preset luna-a2-a3-conservative-v1 usa os testes sintéticos aceitos com Luna e margem para reparos. Reserva bytes de entrada conservadores e saída limitada; a amostra pequena não garante custo ou latência.",
+    "preserve": "Preservar personalizações",
+    "install": "Instalar ao ativar",
+    "legacy": "Agendamentos independentes existentes",
+    "retain": "Manter separado, sem adoção automática",
+    "notInstalled": "Esta política existente não possui rotinas automáticas. Pré-visualize e ative para revisar a configuração.",
+    "reserved": "Reservado: {calls} chamadas / {tokens} tokens",
+    "startWindow": "Início previsto em até {minutes} minutos elegíveis com o aplicativo aberto",
+    "timezone": "Fuso horário",
+    "time": "Horário local",
+    "due": "Previsto para",
+    "clock": "Elegível {eligible} min · janela restante {remaining} min · ativo {active} min · adiado {deferred} min · fechado/desconhecido {closed} min",
+    "overdue": "Janela de início elegível excedida",
+    "coverage": "Fontes concluídas {sources} · grupos {groups} · somente catálogo {catalog}",
+    "groupLimit": "Grupos de até {minutes} minutos, incluindo a fila",
+    "weekday": "Dia da semana",
+    "monthday": "Dia do mês",
+    "wallOverdue": "Atraso de relógio além da meta: {minutes} min",
+    "exactPrompts": "Inspecionar os prompts exatos admitidos"
   }
 }

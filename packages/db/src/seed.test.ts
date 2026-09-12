@@ -77,7 +77,9 @@ describe("baseline seed", () => {
       "0031_luxuriant_nova",
       "0032_faulty_leech",
       "0033_wakeful_kulan_gath",
-      "0034_wiki_impact_expression_fix"
+      "0034_wiki_impact_expression_fix",
+      "0035_acoustic_nemesis",
+      "0036_hot_scarlet_witch"
     ]);
   });
 
@@ -130,7 +132,9 @@ describe("baseline seed", () => {
       "0031_luxuriant_nova",
       "0032_faulty_leech",
       "0033_wakeful_kulan_gath",
-      "0034_wiki_impact_expression_fix"
+      "0034_wiki_impact_expression_fix",
+      "0035_acoustic_nemesis",
+      "0036_hot_scarlet_witch"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

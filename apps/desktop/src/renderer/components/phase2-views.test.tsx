@@ -194,6 +194,11 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Use model defaults");
   });
 
+  it.each(['en','pt-BR','es','fr','it'] as const)('labels inherited context independently of OS number formatting in %s',locale=>{
+    const html=renderToString(<AiParameterFields remote value={{}} inheritedContextWindow={64000} onChange={()=>{}} capabilities={{contextWindow:{min:128,max:2000000}}} t={createTranslator(locale)} />);expect(html).toContain('placeholder="64000"');expect(html).toContain('aria-describedby=');expect(html).toContain('for=');expect(html).not.toContain('64.000');
+    const local=renderToString(<AiParameterFields planningContext value={{}} onChange={()=>{}} capabilities={{contextWindow:{min:128,max:2000000}}} t={createTranslator(locale)} />);expect(local).not.toContain('placeholder=');expect(local).not.toContain('128000');
+  });
+
   it("renders only the reasoning controls declared by the model", () => {
     const qwen = renderToString(<AiParameterFields
       value={{}}

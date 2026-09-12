@@ -293,6 +293,7 @@
       "oauthCallbackUnavailable": "Impossibile avviare il ritorno OAuth locale.",
       "oauthTimedOut": "Autenticazione ChatGPT scaduta.",
       "oauthNotConnected": "Accedi a ChatGPT prima di salvare questo modello.",
+      "contextWindowLimit": "Il contesto configurato supera il limite rilevato del modello.",
       "oauthRefreshFailed": "La sessione ChatGPT e scaduta. Accedi di nuovo.",
       "oauthCredentialInvalid": "La credenziale ChatGPT salvata non e valida.",
       "oauthTokenResponseInvalid": "ChatGPT ha restituito una risposta di autenticazione non valida.",
@@ -799,7 +800,7 @@
       "languages": { "interface": "Come l'interfaccia" },
       "oauth": { "authentication": "Autenticazione ChatGPT", "connect": "Accedi con ChatGPT", "reconnect": "Accedi di nuovo", "connected": "Connesso; scegli e salva un modello.", "description": "Usa la quota dell'abbonamento ChatGPT/Codex per le attivita generative. Gli embedding richiedono ancora una chiave API o un modello locale.", "modelSelectionHint": "Digita per cercare e selezionare un modello dall'elenco oppure inserisci il nome manualmente.", "callbackSuccessTitle": "ChatGPT connesso", "callbackSuccessDescription": "Torna a Memora Eterna per scegliere e salvare un modello.", "callbackErrorTitle": "Autenticazione non riuscita", "callbackCloseWindow": "Chiudi questa finestra e riprova in Memora Eterna." },
       "tasks": { "embedding": "Embedding", "summarization": "Riepilogo", "text-generation": "Generazione testo", "structured-output": "Output strutturato", "knowledge-graph-generation": "Generazione grafo della conoscenza", "atomic-note-generation": "Generazione note atomiche", "reranking": "Reranking" },
-      "parameters": { "contextWindow": "Finestra di contesto", "temperature": "Temperatura", "maxTokens": "Token massimi di output", "reasoningLevel": "Ragionamento", "reasoningMaxTokens": "Token massimi di ragionamento", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalita di presenza", "dimensions": "Dimensioni embedding", "seed": "Seed", "inherit": "Usa valore ereditato/predefinito", "reasoning": { "off": "Disattivato", "on": "Attivato", "minimal": "Minimo", "low": "Basso", "medium": "Medio", "high": "Alto", "xhigh": "Molto alto", "max": "Massimo" } }
+      "parameters": { "contextWindow": "Contesto totale (token)", "contextWorkflowDefault": "Predefinito del flusso", "contextPlanningLocal": "Budget dell’app per input e output; non modifica il runtime MLX né la memoria allocata.", "contextPlanning": "Budget dell’app per input e output; non aumenta la capacità del modello remoto.", "contextInherited": "Predefinito / ereditato:", "contextEffective": "Effettivo:", "temperature": "Temperatura", "maxTokens": "Token massimi di output", "reasoningLevel": "Ragionamento", "reasoningMaxTokens": "Token massimi di ragionamento", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalita di presenza", "dimensions": "Dimensioni embedding", "seed": "Seed", "inherit": "Usa valore ereditato/predefinito", "reasoning": { "off": "Disattivato", "on": "Attivato", "minimal": "Minimo", "low": "Basso", "medium": "Medio", "high": "Alto", "xhigh": "Molto alto", "max": "Massimo" } }
     }
   },
   "localModels": {
@@ -1549,7 +1550,7 @@
     "preview": "Anteprima organizzazione automatica",
     "authority": "Ambito e autorizzazioni effettivi",
     "limits": "Fino a {targets} pagine o indici, {sections} modifiche per pagina, {passages} brani completi, {calls} ammissioni del modello e {minutes} minuti inclusa la coda.",
-    "permission": "Crea bozze fondate e indici, aggiorna contenuti IA non protetti e colloca le nuove pagine. Testo umano e ordine fisso richiedono revisione. L’attivazione non avvia un’esecuzione; le routine ricorrenti si configurano separatamente.",
+    "permission": "Crea bozze fondate e indici, aggiorna contenuti IA non protetti e colloca le nuove pagine. Testo umano e ordine fisso richiedono revisione. L’attivazione installa insieme le routine ricorrenti presentate, che vengono eseguite secondo gli orari e le condizioni di idoneità. Puoi anche integrare manualmente i materiali selezionati.",
     "activate": "Attiva questa politica",
     "enabled": "Politica di ambito attiva",
     "run": "Integra materiali selezionati",
@@ -1584,5 +1585,35 @@
     "excludedSources": "Fonti escluse",
     "excludedHint": "Escludi queste fonti e tutti i loro discendenti dalla politica.",
     "previewChanges": "Visualizza e attiva le modifiche prima di avviare nuovo lavoro. La politica corrente resta in vigore."
+  },
+  "automaticMaintenance": {
+    "title": "Manutenzione automatica dei contenuti",
+    "disclosure": "Esegue con l’app aperta, normalmente dopo un minuto di inattività. Esegui ora ignora solo l’inattività. I gruppi condividono il limite mensile della politica. Il costo sconosciuto resta non disponibile.",
+    "incremental": "Integrazione incrementale",
+    "daily": "Manutenzione giornaliera",
+    "weekly": "Organizzazione settimanale",
+    "monthly": "Consolidamento mensile",
+    "debounce": "Due minuti dopo la stabilizzazione dei materiali",
+    "allowance": "Fino a {calls} chiamate / {tokens} token riservati / {minutes} minuti attivi",
+    "monthlyAllowance": "Mese civile UTC condiviso: {calls} chiamate / {tokens} token riservati",
+    "calibration": "Il preset luna-a2-a3-conservative-v1 usa i test sintetici Luna accettati e un margine per le correzioni. Riserva byte di ingresso conservativi e uscita limitata; il piccolo campione non garantisce costi o latenza.",
+    "preserve": "Conserva personalizzazioni",
+    "install": "Installa all’attivazione",
+    "legacy": "Pianificazioni indipendenti esistenti",
+    "retain": "Mantieni separata, senza adozione automatica",
+    "notInstalled": "Questa politica esistente non ha routine automatiche. Visualizza l’anteprima e attiva per verificarle.",
+    "reserved": "Riservati: {calls} chiamate / {tokens} token",
+    "startWindow": "Avvio previsto entro {minutes} minuti idonei con app aperta",
+    "timezone": "Fuso orario",
+    "time": "Ora locale",
+    "due": "Scadenza",
+    "clock": "Idonei {eligible} min · finestra rimanente {remaining} min · attivi {active} min · differiti {deferred} min · chiusi/sconosciuti {closed} min",
+    "overdue": "Finestra di avvio idonea superata",
+    "coverage": "Fonti completate {sources} · gruppi {groups} · solo catalogo {catalog}",
+    "groupLimit": "Gruppi fino a {minutes} minuti, inclusa la coda",
+    "weekday": "Giorno della settimana",
+    "monthday": "Giorno del mese",
+    "wallOverdue": "Ritardo effettivo oltre l’obiettivo: {minutes} min",
+    "exactPrompts": "Ispeziona i prompt esatti ammessi"
   }
 }
