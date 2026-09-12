@@ -1,8 +1,10 @@
+import { WikiAutomaticContentSchema, SectionAssessmentSchema } from './automatic-wiki.js';
 import { SourceItemTypeSchema } from "./source-item.js";
 import { z } from "zod";
 
 export const WikiPageKindSchema = z.enum(["topic", "entity", "collection", "synthesis"]);
 export const WikiSectionSchema = z.object({
+  sectionRevisionId:z.string().uuid().optional(), assessment:SectionAssessmentSchema.optional(),
   id: z.string().uuid(), title: z.string().trim().max(300),
   kind: z.enum(["prose", "question", "comparison"]).default("prose"),
   markdown: z.string().max(100_000),
@@ -18,6 +20,7 @@ export const WikiEvidenceSchema = z.object({
   documentCreatedAt: z.string(), locator: z.string().nullable(), current: z.boolean()
 }).strict();
 export const WikiPageContentSchema = z.object({
+  automatic:WikiAutomaticContentSchema.optional(),
   title: z.string().trim().min(1).max(300), kind: WikiPageKindSchema,
   aliases: z.array(z.string().trim().min(1).max(300)).max(50).default([]),
   parentId: z.string().uuid().nullable().default(null),
@@ -38,6 +41,7 @@ export const WikiPageSchema = WikiPageContentSchema.safeExtend({
   breadcrumbs: z.array(z.object({ id: z.string().uuid(), title: z.string() }))
 });
 export const WikiSaveInputSchema = z.object({
+  version:z.literal(2).optional(),
   id: z.string().uuid().optional(), expectedRevisionId: z.string().uuid().nullable(),
   content: WikiPageContentSchema, evidenceChunkIds: z.array(z.string().uuid()).max(500).default([])
 }).strict();
@@ -67,3 +71,5 @@ export type WikiSaveInput = z.infer<typeof WikiSaveInputSchema>;
 export type WikiQuery = z.infer<typeof WikiQuerySchema>;
 export type WikiResult = z.infer<typeof WikiResultSchema>;
 export type WikiEvidence = z.infer<typeof WikiEvidenceSchema>;
+export const WikiLinkedTargetInputSchema=z.object({pageId:z.string().uuid(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid()}).strict();
+export const WikiLinkedTargetSchema=z.object({kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid(),title:z.string(),markdown:z.string(),sourceItemId:z.string().uuid().nullable(),evidence:z.array(WikiEvidenceSchema)}).strict();

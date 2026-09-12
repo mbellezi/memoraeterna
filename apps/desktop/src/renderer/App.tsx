@@ -8,6 +8,9 @@ import {
   Database,
   FilePlus2,
   Moon,
+  BookOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
   Network,
   RefreshCw,
   Search,
@@ -66,7 +69,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: "wiki", label: "wiki.title", icon: SquareLibrary },
+  { id: "wiki", label: "wiki.title", icon: BookOpen },
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
   { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
   { id: "search", label: "shell.navigation.search", icon: Search },
@@ -502,10 +505,60 @@ export function App({
         isDarkMode && "dark"
       )}
     >
-      <aside className="flex h-full min-h-0 w-56 shrink-0 flex-col border-r border-border bg-surface">
-        <div className="flex h-14 items-center gap-2.5 border-b border-border px-4">
-          <Database className="h-5 w-5 text-accent" aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">{t("app.title")}</span>
+      <aside className={cn("flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-surface", appSettings.navigationCollapsed ? "w-16" : "w-56")}>
+        <div className={cn("flex h-14 shrink-0 items-center gap-2.5 border-b border-border", appSettings.navigationCollapsed ? "justify-center px-2" : "px-4")}>
+          {!appSettings.navigationCollapsed && <><Database className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
+          <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">{t("app.title")}</span></>}
+          <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
+            aria-label={t(appSettings.navigationCollapsed ? "shell.actions.expandNavigation" : "shell.actions.collapseNavigation")}
+            title={t(appSettings.navigationCollapsed ? "shell.actions.expandNavigation" : "shell.actions.collapseNavigation")}
+            aria-expanded={!appSettings.navigationCollapsed} aria-controls="app-navigation"
+            onClick={() => updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed })}>
+            {appSettings.navigationCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        </div>
+        <nav id="app-navigation" aria-label={t("shell.navigation.label")} className={cn("min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain", appSettings.navigationCollapsed ? "p-2" : "p-3")}>
+          <div className="grid gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeView === item.id;
+
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-label={t(item.label)}
+                aria-current={isActive ? "page" : undefined}
+                title={appSettings.navigationCollapsed ? t(item.label) : undefined}
+                className={cn(
+                  "flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+                  appSettings.navigationCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
+                  isActive
+                    ? "bg-accent-soft text-accent"
+                    : "text-muted-foreground hover:bg-soft hover:text-foreground"
+                )}
+                onClick={() => {
+                  if (item.id === "library") setLibraryTarget(null);
+                  if (item.id === "settings") selectSettingsScope("overview");
+                  setActiveView(item.id);
+                }}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {!appSettings.navigationCollapsed && t(item.label)}
+              </button>
+            );
+          })}
+          </div>
+          {activeView === "settings" ? (
+            <SettingsScopeMenu
+              collapsed={appSettings.navigationCollapsed}
+              activeScope={activeSettingsScope}
+              t={t}
+              onScopeChange={selectSettingsScope}
+            />
+          ) : null}
+        </nav>
+        <div className={cn("flex shrink-0 border-t border-border p-3", appSettings.navigationCollapsed && "justify-center")}>
           <button
             type="button"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
@@ -522,42 +575,6 @@ export function App({
             )}
           </button>
         </div>
-        <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3">
-          <div className="grid gap-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeView === item.id;
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={cn(
-                  "flex min-h-9 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted-foreground hover:bg-soft hover:text-foreground"
-                )}
-                onClick={() => {
-                  if (item.id === "library") setLibraryTarget(null);
-                  if (item.id === "settings") selectSettingsScope("overview");
-                  setActiveView(item.id);
-                }}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-                {t(item.label)}
-              </button>
-            );
-          })}
-          </div>
-          {activeView === "settings" ? (
-            <SettingsScopeMenu
-              activeScope={activeSettingsScope}
-              t={t}
-              onScopeChange={selectSettingsScope}
-            />
-          ) : null}
-        </nav>
       </aside>
 
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
@@ -572,7 +589,7 @@ export function App({
           }}
         >
           <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
+            <WikiWorkspace treeWidth={appSettings.wikiTreeWidth} onTreeWidthChange={width => updateAppSettings({ wikiTreeWidth: width })} externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
           </div>
           {activeView === "settings" ? (
             <SettingsView

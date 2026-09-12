@@ -38,7 +38,9 @@ export const ipcChannels = {
   consultationAsk:"app:consultation:ask",consultationCancel:"app:consultation:cancel",consultationSave:"app:consultation:save",
   maintenanceCommand:"app:maintenance:command",
   promptCommand:"app:prompts:command",
+  curatorCommand:"app:curator:command",
   organizationCommand: "app:organization:command",
+  wikiLinkedTarget:"app:wiki:linked-target",
   wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
@@ -195,6 +197,8 @@ export const appSettingsSchema = z.object({
   contentLanguage: languageCodeSchema.default("en"),
   themeMode: themeModeSchema,
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).default(1),
+  navigationCollapsed: z.boolean().default(false),
+  wikiTreeWidth: z.number().int().min(240).max(520).default(320),
   debugMode: z.boolean().default(false),
   debugFullCapture: z.boolean().default(false),
   metadataEnrichmentEnabled: z.boolean().default(true),
@@ -220,6 +224,8 @@ export const appSettingsUpdateSchema = z.object({
   contentLanguage: languageCodeSchema.optional(),
   themeMode: themeModeSchema.optional(),
   graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
+  navigationCollapsed: z.boolean().optional(),
+  wikiTreeWidth: z.number().int().min(240).max(520).optional(),
   debugMode: z.boolean().optional(),
   debugFullCapture: z.boolean().optional(),
   metadataEnrichmentEnabled: z.boolean().optional(),
@@ -1095,6 +1101,8 @@ export const defaultAppSettings = {
   contentLanguage: "en",
   themeMode: "dark",
   graphWheelZoomSensitivity: 1,
+  navigationCollapsed: false,
+  wikiTreeWidth: 320,
   debugMode: false,
   debugFullCapture: false,
   metadataEnrichmentEnabled: true,
@@ -1122,8 +1130,9 @@ export interface DesktopApi {
   consultation:{ask:(input:ConsultationInput)=>Promise<ConsultationResult>;cancel:(id:string)=>Promise<null>;save:(id:string)=>Promise<OrganizationRun>};
   maintenance:{command:(input:MaintenanceCommand)=>Promise<unknown>};
   prompts:{command:(input:PromptCommand)=>Promise<unknown>};
+  curator: { command:(input:import("@app/domain").CuratorCommand)=>Promise<unknown> };
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
-  wiki: { list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
+  wiki: { linkedTarget:(input:z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema>|null>; list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
   system: {
     getInfo: () => Promise<SystemInfo>;
     subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;

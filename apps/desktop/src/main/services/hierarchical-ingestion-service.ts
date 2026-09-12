@@ -150,17 +150,18 @@ export class HierarchicalIngestionService {
     const documents = createDocumentRepository(pool);
     const sources = createSourceItemRepository(pool);
     const catalogStages = catalogMetadataStages(plan.effectiveStages);
-    if(plan.effectiveStages.includes("organizeKnowledge")&&!plan.organization)throw new Error("organization.errors.model");
+    if(plan.effectiveStages.includes("organizeKnowledge")&&!plan.organization&&!plan.integrateWiki)throw new Error("organization.errors.model");
     const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
     const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
+    const promptPin=capturePromptPin(plan.organization?.domainId),promptProviders=await promptStageProviders(pool);
     const batch = await hierarchy.createBatch({
+      ...(plan.integrateWiki?{promptPin}:{}),
       trigger,
       requestedPlan: plan,
       effectivePlan: plan,
       reingestionPolicy: plan.previousArtifactPolicy,
       targetSourceItemIds: uniqueSourceIds
     });
-    const promptPin=capturePromptPin(plan.organization?.domainId),promptProviders=await promptStageProviders(pool);
     const queued: Array<{ sourceItemId: string; documentId: string; ingestionRunId: string; jobId: string | null }> = [];
     for (const sourceItemId of uniqueSourceIds) {
       const catalogMetadataOnly = catalogIds.has(sourceItemId);

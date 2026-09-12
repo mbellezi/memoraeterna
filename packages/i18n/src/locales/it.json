@@ -121,10 +121,11 @@
       "protected": "Il contenuto protetto richiede approvazione umana.",
       "budget": "L’esecuzione ha esaurito il limite di strumenti, chiamate o input riportati.",
       "context": "Le prove superano il contesto del modello. Restringi l’ambito.",
-      "deadline": "Il limite di cinque minuti è scaduto. Crea una nuova esecuzione circoscritta.",
+      "deadline": "Il tempo massimo di esecuzione è scaduto. Esamina il risultato o scegli un ambito più ristretto.",
       "uncertain": "Una chiamata è stata interrotta. Il consumo può essere incompleto; i tentativi restano limitati.",
       "canceled": "Annullata",
-      "failed": "Organizzazione non riuscita. Verifica il profilo e riprova entro il budget restante."
+      "failed": "Organizzazione non riuscita. Verifica il profilo e riprova entro il budget restante.",
+      "policy": "La politica automatica è sospesa, modificata o non consente questa operazione."
     }
   },
   "entityIdentity": {"threshold":"Soglia di similarità dell’identità delle entità","hint":"L’IA verifica candidati dello stesso tipo usando nomi e fatti identificativi. Nomi uguali da soli non autorizzano un’unione. Le identità ambigue restano separate. Predefinito: 0,92 (provvisorio). Vengono verificati anche nomi esatti e alias. Le entità esistenti vengono riutilizzate dopo conferma; i duplicati storici non vengono uniti in massa."},
@@ -140,6 +141,7 @@
   },
   "shell": {
     "navigation": {
+    "label": "Navigazione principale",
       "library": "Libreria",
       "import": "Aggiungi contenuti",
       "search": "Cerca",
@@ -149,6 +151,8 @@
       "settings": "Impostazioni"
     },
     "actions": {
+    "expandNavigation": "Espandi menu principale",
+    "collapseNavigation": "Comprimi menu principale",
       "save": "Salva",
       "cancel": "Annulla",
       "close": "Chiudi",
@@ -1024,6 +1028,9 @@
     "partial": "Copertura parziale: budget di analisi raggiunto. Elabora di nuovo per continuare."
   },
   "wiki": {
+    "treeWidth": "Larghezza dell’albero: {width} pixel",
+    "resizeTreeHint": "Trascina per regolare. Usa le frecce sinistra/destra, Home o Fine. Fai doppio clic per ripristinare.",
+    "resizeTree": "Regola la larghezza dell’albero della wiki",
     "title": "Secondo cervello",
     "subtitle": "Uno spazio vivo per le tue conoscenze",
     "navigation": "Navigazione wiki",
@@ -1363,7 +1370,9 @@
       "default": "Validazione generale",
       "same_root": "Rifiuto della stessa opera",
       "guidance": "Indicazioni editoriali",
-      "advanced": "Istruzioni della funzione"
+      "advanced": "Istruzioni della funzione",
+      "curator": "Organizzazione automatica",
+        "support": "Verifica del supporto semantico"
     },
     "variables": {
       "source_title": "Titolo della fonte",
@@ -1414,7 +1423,11 @@
       "predicate": "Predicato della relazione in inglese",
       "definition": "Definizione della relazione diretta",
       "page_title": "Titolo della pagina o domanda",
-      "catalog_metadata": "Metadati sicuri del catalogo"
+      "catalog_metadata": "Metadati sicuri del catalogo",
+      "group_id": "Identità della proposta coerente fornita dall’applicazione.",
+        "reference_guide": "Riferimenti di navigazione a fonti, note, pagine ed entità esistenti. I riferimenti eN sono solo citazioni.",
+        "required_notes": "Note esistenti selezionate da includere in un indice senza copiarne il contenuto.",
+        "candidate_knowledge": "Proposta completa, inclusi titoli, finalità, testo e attribuzione degli indici, verificata rispetto alle prove originali."
     },
     "purposes": {
       "shared": "Testo riutilizzabile incluso nelle richieste al modello indicate.",
@@ -1493,5 +1506,23 @@
     "sampleBounds": "Ogni lotto esegue al massimo 12 chiamate, con fino a 4.096 token di output per chiamata. Una composizione ha un limite cumulativo di 256 chiamate, 2.000.000 di caratteri di input e 1.048.576 token di output riservati. I casi completati vengono riutilizzati quando continui.",
     "sampleProgress": "{completed}/{total} casi convalidati · {calls}/256 chiamate usate",
     "partial": "Questo lotto è terminato. Esegui un altro lotto per continuare la validazione salvata."
+  },
+  "automaticWiki": {
+    "scopeHint": "Seleziona un piccolo insieme di fonti originali. Verifica i limiti di esecuzione nell’anteprima della politica.",
+    "title": "Organizza automaticamente",
+    "intro": "Seleziona i materiali e verifica la politica di ambito. Il modello individua temi utili e indici di lettura dalle prove originali.",
+    "existingNotes": "Includi note esistenti selezionate",
+    "originals": "Senza note selezionate, si usano solo gli originali. Questa azione non genera note, sintesi, vettori, relazioni o grafi.",
+    "preview": "Anteprima organizzazione automatica",
+    "authority": "Ambito e autorizzazioni effettivi",
+    "limits": "Fino a {targets} pagine o indici, {sections} modifiche per pagina, {passages} brani completi, {calls} ammissioni del modello e {minutes} minuti inclusa la coda.",
+    "permission": "Crea bozze fondate e indici, aggiorna contenuti IA non protetti e colloca le nuove pagine. Testo umano e ordine fisso richiedono revisione. L’attivazione non avvia un’esecuzione; le routine ricorrenti si configurano separatamente.",
+    "activate": "Attiva questa politica",
+    "enabled": "Politica di ambito attiva",
+    "run": "Integra materiali selezionati",
+    "pause": "Sospendi politica",
+    "links": "collegamenti",
+    "assessment": "Bozza IA — riferimenti originali controllati strutturalmente; supporto semantico non ancora verificato da una persona.",
+    "modelAssessment": "Bozza IA — riferimenti originali e supporto semantico verificati dal modello selezionato; ancora senza revisione umana."
   }
 }

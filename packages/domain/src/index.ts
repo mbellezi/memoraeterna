@@ -25,3 +25,4 @@ export * from "./maintenance.js";
 export * from "./automatic-wiki.js";
 export * from "./prompt-catalog.js";
 export * from "./prompt-definitions.js";
+export * from './automatic-wiki-runtime.js';

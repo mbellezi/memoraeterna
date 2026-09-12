@@ -36,7 +36,7 @@ try {
   assert.equal((await runMigrations(pool, migrations, { seedFolder })).seed.applied, false);
   assert.equal((await pool.query("select count(*)::int as n from source_items")).rows[0].n, 3);
   for (const table of ["wiki_pages", "wiki_page_revisions", "wiki_evidence"]) assert.equal((await pool.query("select count(*)::int as n from information_schema.tables where table_name=$1", [table])).rows[0].n, 1);
-  assert.equal((await pool.query("select count(*)::int as n from pg_indexes where tablename in('wiki_pages','wiki_page_revisions','wiki_evidence')")).rows[0].n, 7);
+  assert.equal((await pool.query("select count(*)::int as n from pg_indexes where tablename in('wiki_pages','wiki_page_revisions','wiki_evidence')")).rows[0].n, 8);
   const columns=(await pool.query("select table_name,column_name,data_type from information_schema.columns where table_name like 'wiki_%'")).rows;
   for(const [table,column,type] of [["wiki_pages","id","uuid"],["wiki_pages","current_revision_id","uuid"],["wiki_pages","parent_id","uuid"],["wiki_pages","position","integer"],["wiki_pages","archived","boolean"],["wiki_page_revisions","content","jsonb"],["wiki_page_revisions","number","integer"],["wiki_page_revisions","content_hash","text"],["wiki_evidence","snapshot","jsonb"],["wiki_evidence","source_item_id","uuid"],["wiki_evidence","document_id","uuid"],["wiki_evidence","chunk_id","uuid"],["wiki_evidence","source_span_id","uuid"]]) {
     assert.equal(columns.find((item)=>item.table_name===table&&item.column_name===column)?.data_type,type);

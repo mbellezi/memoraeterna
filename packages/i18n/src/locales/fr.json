@@ -121,10 +121,11 @@
       "protected": "Le contenu protégé exige une approbation humaine.",
       "budget": "L’exécution a épuisé sa limite d’outils, d’appels ou d’entrée signalée.",
       "context": "Les preuves dépassent le contexte du modèle. Réduisez le périmètre.",
-      "deadline": "Le délai de cinq minutes est expiré. Créez une nouvelle exécution limitée.",
+      "deadline": "Le délai d’exécution a expiré. Examinez le résultat ou choisissez un périmètre plus restreint.",
       "uncertain": "Un appel a été interrompu. La consommation peut être incomplète ; les essais restent limités.",
       "canceled": "Annulée",
-      "failed": "L’organisation a échoué. Vérifiez le profil et réessayez dans le budget restant."
+      "failed": "L’organisation a échoué. Vérifiez le profil et réessayez dans le budget restant.",
+      "policy": "La politique automatique est suspendue, modifiée ou ne permet pas cette opération."
     }
   },
   "entityIdentity": {"threshold":"Seuil de similarité d’identité des entités","hint":"L’IA vérifie les candidats du même type avec leurs noms et faits distinctifs. Un nom identique ne suffit jamais à autoriser une fusion. Les identités ambiguës restent séparées. Défaut : 0,92 (provisoire). Les noms exacts et alias sont aussi vérifiés. Les entités existantes sont réutilisées après confirmation ; les doublons historiques ne sont pas fusionnés en masse."},
@@ -140,6 +141,7 @@
   },
   "shell": {
     "navigation": {
+    "label": "Navigation principale",
       "library": "Bibliotheque",
       "import": "Ajouter du contenu",
       "search": "Rechercher",
@@ -149,6 +151,8 @@
       "settings": "Parametres"
     },
     "actions": {
+    "expandNavigation": "Développer le menu principal",
+    "collapseNavigation": "Réduire le menu principal",
       "save": "Enregistrer",
       "cancel": "Annuler",
       "close": "Fermer",
@@ -1024,6 +1028,9 @@
     "partial": "Couverture partielle : budget atteint. Relancez le traitement pour continuer."
   },
   "wiki": {
+    "treeWidth": "Largeur de l’arborescence : {width} pixels",
+    "resizeTreeHint": "Faites glisser pour ajuster. Utilisez les flèches gauche/droite, Début ou Fin. Double-cliquez pour rétablir.",
+    "resizeTree": "Ajuster la largeur de l’arborescence du wiki",
     "title": "Second cerveau",
     "subtitle": "Un espace vivant pour vos connaissances",
     "navigation": "Navigation du wiki",
@@ -1363,7 +1370,9 @@
       "default": "Validation générale",
       "same_root": "Rejet du même ouvrage",
       "guidance": "Conseils éditoriaux",
-      "advanced": "Instructions de fonction"
+      "advanced": "Instructions de fonction",
+      "curator": "Organisation automatique",
+        "support": "Vérification du support sémantique"
     },
     "variables": {
       "source_title": "Titre de la source",
@@ -1414,7 +1423,11 @@
       "predicate": "Prédicat de relation en anglais",
       "definition": "Définition de relation orientée",
       "page_title": "Titre de page ou question",
-      "catalog_metadata": "Métadonnées sûres du catalogue"
+      "catalog_metadata": "Métadonnées sûres du catalogue",
+      "group_id": "Identité de la proposition cohérente fournie par l’application.",
+        "reference_guide": "Références de navigation vers les sources, notes, pages et entités existantes. Les références eN servent uniquement aux citations.",
+        "required_notes": "Notes existantes sélectionnées à inclure dans un index sans copier leur contenu.",
+        "candidate_knowledge": "Proposition complète, incluant titres, objectifs, texte et attribution des index, vérifiée contre les preuves originales."
     },
     "purposes": {
       "shared": "Texte réutilisable inclus dans les requêtes au modèle indiquées.",
@@ -1493,5 +1506,23 @@
     "sampleBounds": "Chaque lot exécute au maximum 12 appels, avec jusqu’à 4 096 jetons de sortie par appel. Une composition est limitée à 256 appels cumulés, 2 000 000 de caractères d’entrée et 1 048 576 jetons de sortie réservés. Les cas terminés sont réutilisés lors de la reprise.",
     "sampleProgress": "{completed}/{total} cas validés · {calls}/256 appels utilisés",
     "partial": "Ce lot est terminé. Exécutez un autre lot pour poursuivre la validation enregistrée."
+  },
+  "automaticWiki": {
+    "scopeHint": "Sélectionnez un petit ensemble de sources originales. Vérifiez les limites d’exécution dans l’aperçu de la politique.",
+    "title": "Organiser automatiquement",
+    "intro": "Sélectionnez les documents et vérifiez la politique de périmètre. Le modèle découvre des thèmes et index utiles à partir des preuves originales.",
+    "existingNotes": "Inclure des notes existantes sélectionnées",
+    "originals": "Sans notes sélectionnées, seuls les originaux sont utilisés. Cette action ne génère pas de notes, résumés, vecteurs, relations ou graphes.",
+    "preview": "Aperçu de l’organisation automatique",
+    "authority": "Périmètre et autorisations effectifs",
+    "limits": "Au maximum {targets} pages ou index, {sections} modifications par page, {passages} passages complets, {calls} admissions du modèle et {minutes} minutes avec attente.",
+    "permission": "Crée des brouillons étayés et des index, actualise le contenu IA non protégé et place les nouvelles pages. Le texte humain et l’ordre fixe demandent une révision. L’activation ne lance rien ; les routines récurrentes sont configurées séparément.",
+    "activate": "Activer cette politique",
+    "enabled": "Politique de périmètre active",
+    "run": "Intégrer les documents sélectionnés",
+    "pause": "Suspendre la politique",
+    "links": "liens",
+    "assessment": "Brouillon IA — références originales contrôlées structurellement ; support sémantique non encore vérifié par une personne.",
+    "modelAssessment": "Brouillon IA — références originales et support sémantique vérifiés par le modèle sélectionné ; toujours sans révision humaine."
   }
 }

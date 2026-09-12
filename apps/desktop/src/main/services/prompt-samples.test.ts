@@ -16,6 +16,8 @@ function model(){const calls:Array<{id:string,input:string}>=[];return {calls,de
  else if(id==='sources.match')output={relations:[]};
  else if(id==='consultation.answer')output={paragraphs:[{markdown:'Feedback qualified the benefit [e1].',citations:['e1'],contextIds:[]}],gaps:[]};
  else if(id.startsWith('maintenance.'))output={operations:[],explanation:'No structural improvement is warranted.'};
+ else if(id==='organization.curator.support')output={supported:true,checkedTargets:['new_topic','new_index'],issues:[]};
+ else if(id==='organization.curator')output={explanation:'Read complementary materials',topics:[{handle:'new_topic',title:'Recall with feedback',purpose:'Explain specific conditions for recall',sections:[{id:null,title:'Conditions',markdown:'Feedback qualifies recall [e1].',originalHandles:['e1']}],links:['new_index']}],indexes:[{handle:'new_index',title:'Original materials',purpose:'Read sources supporting this topic',owner:{topic:'new_topic'},groups:[{id:null,title:'Sources',explanation:null,originalHandles:[],targets:['r1','r2']}]}]};
  else if(id==='organization.legacy_synthesis'){
   const transcript=JSON.parse(input.split('PREVIOUS TOOLS: ')[1]!.split('\nRemaining tools:')[0]!) as Array<{action:{tool:string;handle?:string}|null}>;
   const read=transcript.filter(row=>row.action?.tool==='readRevision').map(row=>row.action!.handle);

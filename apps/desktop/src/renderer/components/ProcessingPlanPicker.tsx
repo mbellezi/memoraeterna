@@ -1,6 +1,6 @@
 import { ProfilePicker } from "./OrganizationView";
 import type { AiProfile } from "../../shared/ipc";
-import { OrganizationSettingsSchema, type OrganizationConfiguration } from "@app/domain";
+import { AutomaticWikiPolicySchema,type AutomaticWikiPolicy,OrganizationSettingsSchema, type OrganizationConfiguration } from "@app/domain";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -41,6 +41,7 @@ export function defaultProcessingPlan(preset: ProcessingPreset = "import_only"):
 
 export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
+    ...(plan.integrateWiki?{integrateWiki:plan.integrateWiki}:{}),
     ...(plan.organization?{organization:plan.organization}:{}),
     preset: plan.preset,
     requestedStages: plan.requestedStages,
@@ -212,8 +213,10 @@ function presetSurface(tone: string): string {
 }
 
 function ProcessingOrganizationOptions({value,onChange,t}:{value:ProcessingPlanRequest;onChange:(v:ProcessingPlanRequest)=>void;t:Translator}){
+  const [policies,setPolicies]=useState<AutomaticWikiPolicy[]>([]);
+  useEffect(()=>{void window.app.curator?.command({command:'policies'}).then(value=>setPolicies((value as unknown[]).map(p=>AutomaticWikiPolicySchema.parse(p)).filter(p=>p.state==='enabled'))).catch(()=>undefined);},[]);
   const [profiles,setProfiles]=useState<AiProfile[]>([]),[domains,setDomains]=useState<OrganizationConfiguration['domains']>([]),[title,setTitle]=useState(value.organization?.title??''),[profile,setProfile]=useState(value.organization?.profileId??''),[domainId,setDomainId]=useState<string|null>(value.organization?.domainId??null),[failed,setFailed]=useState(false);
   useEffect(()=>{void Promise.all([window.app.ai.listProfiles(),window.app.organization.command({command:'settings'})]).then(([p,c])=>{setProfiles(p);const s=OrganizationSettingsSchema.parse(c);setDomains(s.revisions.find(r=>r.id===s.activeId)?.configuration.domains??[]);}).catch(()=>setFailed(true));},[]);
   function update(patch:Partial<{title:string;profileId:string;domainId:string|null}>){const next={title,profileId:profile,privacy:"allow_remote" as const,domainId,...patch};setTitle(next.title);setProfile(next.profileId);setDomainId(next.domainId);onChange({...value,organization:next.title.trim()?{...next,profileId:next.profileId||undefined}:undefined});}
-  return <div className="grid gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4"><p className="text-sm leading-6">{t('consultation.processingHint')}</p><label className="grid gap-1 text-sm">{t('wiki.pageTitle')}<Input value={title} onChange={e=>update({title:e.target.value})}/></label><ProfilePicker profiles={profiles} value={profile} onChange={profileId=>update({profileId})} t={t}/><label className="grid gap-1 text-sm">{t('organization.domains')}<select className="rounded-lg border bg-transparent p-2" value={domainId??''} onChange={e=>update({domainId:e.target.value||null})}><option value="">{t('organization.global')}</option>{domains.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{(!value.organization||failed)&&<p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('consultation.processingRequired')}</p>}</div>;
+  return <div className="grid gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">{policies.length>0&&<label className="grid gap-1 text-sm">{t('automaticWiki.run')}<select className="rounded-lg border bg-transparent p-2" value={value.integrateWiki?.policyId??''} onChange={e=>{const policy=policies.find(p=>p.id===e.target.value);onChange({...value,integrateWiki:policy?{version:2,policyId:policy.id,policyRevisionId:policy.revisionId}:undefined,organization:undefined});}}><option value="">{t('organization.organize')}</option>{policies.map(p=><option key={p.id} value={p.id}>{t('automaticWiki.enabled')} · {p.scope.sourceIds.length}</option>)}</select></label>}{value.integrateWiki?<p className="text-sm">{t('automaticWiki.intro')}</p>:<><p className="text-sm leading-6">{t('consultation.processingHint')}</p><label className="grid gap-1 text-sm">{t('wiki.pageTitle')}<Input value={title} onChange={e=>update({title:e.target.value})}/></label><ProfilePicker profiles={profiles} value={profile} onChange={profileId=>update({profileId})} t={t}/><label className="grid gap-1 text-sm">{t('organization.domains')}<select className="rounded-lg border bg-transparent p-2" value={domainId??''} onChange={e=>update({domainId:e.target.value||null})}><option value="">{t('organization.global')}</option>{domains.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{(!value.organization||failed)&&<p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('consultation.processingRequired')}</p>}</>}</div>;
 }

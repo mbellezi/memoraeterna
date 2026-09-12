@@ -123,6 +123,7 @@ export const PreviousArtifactPolicySchema = z.enum([
 ]);
 
 export const ProcessingPlanRequestSchema = z.object({
+  integrateWiki:z.object({version:z.literal(2),policyId:z.string().uuid(),policyRevisionId:z.string().uuid()}).strict().optional(),
   organization: z.object({title:z.string().trim().min(1).max(300),profileId:z.string().uuid().optional(),privacy:z.enum(["offline_only","allow_remote"]),domainId:z.string().uuid().nullable().default(null)}).strict().optional(),
   preset: ProcessingPresetSchema,
   requestedStages: z.array(ProcessingStageSchema),

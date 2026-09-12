@@ -1,8 +1,11 @@
+import { WikiNavigationPane } from "./WikiNavigationPane";
+import { AutomaticWikiDialog } from './AutomaticWikiDialog';
+import { WikiThemeTree } from './WikiThemeTree';
+import { WikiTypedLink } from './WikiTypedLink';
 import { createWikiPageRequests } from "./wiki-page-requests";
 import type { ObsidianDeepLink } from "../../shared/obsidian-deep-link.js";
 import { ConsultationDialog } from "./ConsultationDialog";
 import { OrganizationDialog } from "./OrganizationView";
-import { wikiNavigationOrder } from "./wiki-navigation";
 import { SourceTypeBadge } from "./LibraryView";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowDown, ArrowUp, BookOpen, Check, ChevronRight, Clock3, FileText, FolderTree, Library, Link2, LoaderCircle, Pencil, Pin, Plus, Quote, Save, Search, ShieldCheck, X } from "lucide-react";
@@ -14,15 +17,18 @@ type PageSummary = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
 const control = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
 const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const newContent = (): WikiPageContent => ({ title: "", kind: "topic", aliases: [], parentId: null, position: 0, collectionIds: [], entityId: null, pinned: false, archived: false, review: "draft", sections: [] });
-export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }: {
+export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, treeWidth, onTreeWidthChange }: {
   externalTarget?: (ObsidianDeepLink&{token:number})|null;
   active?: boolean;
+  treeWidth?: number;
+  onTreeWidthChange?: (width: number) => void;
   t: Translator;
   onOpenSource: (id: string, noteId?: string) => void;
 }) {
   const pageRequests=useRef(createWikiPageRequests());
   const processedExternal=useRef<number|null>(null);
   const [historicalRevision,setHistoricalRevision]=useState<string|undefined>();
+  const [automaticOpen,setAutomaticOpen]=useState(false);
   const [consultationOpen,setConsultationOpen]=useState(false);
   const [organizationOpen,setOrganizationOpen]=useState(false);
   const [pages, setPages] = useState<PageSummary[]>([]), [page, setPage] = useState<WikiPage | null>(null);
@@ -86,6 +92,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
     }
   }, [page?.id, reload]);
   const goBack = useCallback(async () => {
+    if(automaticOpen){setAutomaticOpen(false);return;}
     if (organizationOpen) { closeOrganization(); return; }
     if (inspector) {
       setInspector(null);
@@ -111,7 +118,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
       const nextPage=target.pageId ? await window.app.wiki.get(target.pageId) : null;
       if(isCurrent())setPage(nextPage);
     }
-  }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization]);
+  }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization,automaticOpen]);
   useEffect(() => {
     if (!active)
       return;
@@ -166,7 +173,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
     setBusy(true);
     setError(null);
     try {
-      const result = await window.app.wiki.save({ ...(page ? { id: page.id } : {}), expectedRevisionId: page?.revisionId ?? null, content, evidenceChunkIds: chunks });
+      const result = await window.app.wiki.save({ version:2, ...(page ? { id: page.id } : {}), expectedRevisionId: page?.revisionId ?? null, content, evidenceChunkIds: chunks });
       setPage(result);
       setEditing(false);
       setPickSection(null);
@@ -191,7 +198,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
     if (!pickSection)
       return; setChunks((c) => [...new Set([...c, result.id])]); setDraft((d) => ({ ...d, sections: d.sections.map((s) => s.id === pickSection ? { ...s, evidenceIds: [...new Set([...s.evidenceIds, result.id])], provenance: "attributed", evidenceReview: "verified" } : s) })); setPickSection(null); setQuery("");
   }
-  const pageCards = (items: PageSummary[]) => <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+  const pageCards = (items: PageSummary[]) => <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
     {items.map((p) => <button key={p.id} disabled={editing} onClick={() => void openPage(p.id)} className={`${card} group p-5 text-left transition hover:border-cyan-400`}>
       <div className="mb-4 flex items-center justify-between">
         <span className="rounded-xl bg-cyan-500/10 p-2.5 text-cyan-600">
@@ -273,6 +280,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
             setMode("search");
         }} />
       </div>
+      <button className={control} disabled={editing} onClick={()=>setAutomaticOpen(true)}>{t('automaticWiki.title')}</button>
       <button className={`${control} flex items-center gap-2`} disabled={editing} onClick={createPage}>
         <Plus className="h-4 w-4" />
         {t("wiki.create")}
@@ -286,9 +294,10 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
       </button>
     </div> : null}
 
-    <div className="flex min-h-0 flex-1 gap-5 pt-4">
+    <div className="relative flex min-h-0 flex-1 gap-5 pt-4">
 
-      <nav aria-label={t("wiki.navigation")} className="w-44 shrink-0 overflow-y-auto overscroll-contain pr-2 max-lg:w-32">
+      <div className="flex min-h-0 min-w-0 flex-1">
+      <WikiNavigationPane width={treeWidth} onWidthChange={onTreeWidthChange} t={t}>
         <button disabled={editing} onClick={() => navigate("home")} className={`mb-1 flex w-full items-center gap-2 rounded-lg p-2 text-sm ${mode === "home" ? "bg-cyan-500/10 text-cyan-600" : ""}`}>
           <BookOpen className="h-4 w-4" />
           {t("wiki.home")}
@@ -297,18 +306,11 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
           <Library className="h-4 w-4" />
           {t("wiki.sources")}
         </button>
-        <p className="mb-2 mt-6 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <p className="mb-2 mt-5 px-2 text-xs font-medium text-muted-foreground">
           {t("wiki.pages")}
         </p>
-        {wikiNavigationOrder(pages).map(({ page: p, depth }) => {
-          return <button key={p.id} disabled={editing} title={p.title} aria-current={page?.id === p.id && mode === "page" ? "page" : undefined} onClick={() => void openPage(p.id)} style={{ paddingLeft: 8 + Math.min(depth, 4) * 10 }} className={`flex w-full items-center gap-1 rounded-lg py-2 pr-2 text-left text-xs ${page?.id === p.id && mode === "page" ? "bg-slate-200/60 dark:bg-slate-800" : "hover:bg-slate-100 dark:hover:bg-slate-800"}`}>
-            <ChevronRight className="h-3 w-3 shrink-0" />
-            <span className="truncate">
-              {p.title}
-            </span>
-          </button>;
-        })}
-      </nav>
+        <WikiThemeTree pages={pages} selected={mode==='page'?page?.id??null:null} disabled={editing} onOpen={id=>void openPage(id)} t={t}/>
+      </WikiNavigationPane>
 
       <main className="min-w-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-8">
 
@@ -508,8 +510,8 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
               {b.title}
             </button>)}
           </div>
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0 flex-[1_1_18rem]">
               <p className="text-xs font-medium text-cyan-600">
                 {t(`wiki.kinds.${page.kind}`)}
               </p>
@@ -517,6 +519,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
                 {page.title}
               </h1>
             </div>
+            <div className="flex shrink-0 items-center gap-2">
             <button disabled={busy||!!historicalRevision} className={control} aria-label={t("wiki.pinned")} onClick={() => void save({ ...WikiPageContentSchema.strip().parse(page), pinned: !page.pinned })}>
               <Pin className={`h-4 w-4 ${page.pinned ? "fill-amber-400 text-amber-500" : ""}`} />
             </button>
@@ -524,6 +527,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
               <Pencil className="h-4 w-4" />
               {t("wiki.edit")}
             </button>
+            </div>
           </div>
           {historicalRevision&&<p role="status" className="mt-3 text-sm text-amber-700 dark:text-amber-300">{t("obsidianWiki.historicalPage")} · {page.revisionNumber}</p>}
           <div className="mb-7 mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
@@ -591,9 +595,9 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
                 </button> : null;
               })}
             </div> : null}
-          </section>) : <p className={`${card} p-6 text-sm text-slate-500`}>
+          </section>) : !page.automatic?.groups.length && !page.automatic?.links.length ? <p className={`${card} p-6 text-sm text-slate-500`}>
             {t("wiki.emptyPage")}
-          </p>}
+          </p> : null}
           {pages.some((p) => p.parentId === page.id || p.collectionIds.includes(page.id)) ? <section className="mt-8">
             <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
               <FolderTree className="h-4 w-4" />
@@ -601,11 +605,13 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
             </h2>
             {pageCards(pages.filter((p) => !p.archived && (p.parentId === page.id || p.collectionIds.includes(page.id))))}
           </section> : null}
+          {page.automatic&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel=""/>}<div className="mt-2 grid gap-2">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink key={m.id} pageId={page.id} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink key={target.kind+target.id} pageId={page.id} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
         </article> : null}
 
       </main>
 
-      {inspector ? <aside aria-label={t("wiki.inspector")} className={`${card} w-80 shrink-0 overflow-y-auto overscroll-contain p-4 max-xl:absolute max-xl:right-6 max-xl:top-36 max-xl:bottom-6 max-xl:z-20 max-xl:shadow-xl`}>
+      </div>
+      {inspector ? <aside aria-label={t("wiki.inspector")} className={`${card} w-80 shrink-0 overflow-y-auto overscroll-contain p-4 max-xl:absolute max-xl:right-0 max-xl:top-4 max-xl:bottom-0 max-xl:z-20 max-xl:shadow-xl`}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-sm font-semibold">
             <Quote className="h-4 w-4 text-cyan-500" />
@@ -649,5 +655,6 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget }
 
     </div>
 
+    {automaticOpen&&<AutomaticWikiDialog t={t} onClose={()=>{setAutomaticOpen(false);void reload().catch(fail);}} onChanged={()=>void reload().catch(fail)}/>}
   </div>;
 }

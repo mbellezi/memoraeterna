@@ -29,3 +29,10 @@ export function wikiNavigationOrder<T extends PlacedPage>(pages: readonly T[]): 
   for (const page of ordered) if (!visited.has(page.id)) visit(page, 0);
   return result;
 }
+
+/** Visibility follows the normalized forest, including promoted orphan/cyclic legacy roots. */
+export function visibleWikiNavigation<T extends PlacedPage>(pages:readonly T[],expanded:ReadonlySet<string>){
+ const stack:string[]=[],ordered=wikiNavigationOrder(pages).map(row=>{stack.length=row.depth;const parentId=stack.at(-1)??null;stack.push(row.page.id);return{...row,parentId};});
+ const parents=new Map(ordered.map(r=>[r.page.id,r.parentId]));
+ return ordered.filter(row=>{let parent=row.parentId;while(parent){if(!expanded.has(parent))return false;parent=parents.get(parent)??null;}return true;}).map(row=>({...row,hasChildren:ordered.some(child=>child.parentId===row.page.id)}));
+}

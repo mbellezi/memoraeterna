@@ -48,3 +48,22 @@ describe("App", () => {
     expect(html).toContain("overflow-auto overscroll-contain");
   });
 });
+
+describe("compact main navigation", () => {
+  it("renders all destinations as named icons with tooltips and retains the active destination", () => {
+    const html = renderToString(<App
+      initialDatabaseStatus={{ state: "ready", messageKey: "database.status.ready", updatedAt: new Date(0).toISOString() }}
+      initialSettings={storageSettingsSchema.parse({ ...defaultStorageSettings, updatedAt: new Date(0).toISOString() })}
+      initialAppSettings={appSettingsSchema.parse({ ...defaultAppSettings, navigationCollapsed: true, language: "en", updatedAt: new Date(0).toISOString() })}
+    />);
+    expect(html).toContain('aria-label="Expand main navigation"');
+    expect(html).toContain('aria-expanded="false" aria-controls="app-navigation"');
+    expect(html).toContain('aria-label="Library" aria-current="page" title="Library"');
+    expect(html).toContain('aria-label="Settings" title="Settings"');
+    expect(html).toContain('aria-label="Toggle theme"');
+    expect(html).toContain('w-16');
+    const navigation = html.slice(html.indexOf('<nav id="app-navigation"'), html.indexOf('</nav>'));
+    expect(navigation).not.toContain('>Library</button>');
+    expect(navigation.match(/<button/g)).toHaveLength(9);
+  });
+});

@@ -417,14 +417,15 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       effectivePlan: JsonObject;
       reingestionPolicy: string;
       targetSourceItemIds: string[];
+      promptPin?:unknown;
     }): Promise<ProcessingBatchRecord> {
       const result = await pool.query<BatchRow>(
         `insert into processing_batches
            (trigger, requested_plan, effective_plan, reingestion_policy, total_items, metadata)
-         values ($1, $2::jsonb, $3::jsonb, $4, $5, jsonb_build_object('targetSourceItemIds', $6::jsonb))
+         values ($1, $2::jsonb, $3::jsonb, $4, $5, jsonb_build_object('targetSourceItemIds', $6::jsonb)||$7::jsonb)
          returning ${batchColumns}`,
         [input.trigger, input.requestedPlan, input.effectivePlan, input.reingestionPolicy,
-          input.targetSourceItemIds.length, JSON.stringify(input.targetSourceItemIds)]
+          input.targetSourceItemIds.length, JSON.stringify(input.targetSourceItemIds),JSON.stringify(input.promptPin?{promptPin:input.promptPin}:{})]
       );
       const row = result.rows[0];
       if (!row) throw new Error("processing_batch_insert_failed");

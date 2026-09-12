@@ -585,3 +585,71 @@ Implementation sequencing lives in
   assertions retain their historical evidence associations but need evidence
   review. An explicit navigation command in the application owns semantic
   reparenting/reordering; moving a vault folder does not grant that authority.
+
+## Automatic curation first slice
+
+- `OrganizationService` dispatches `wiki-curator-v2` separately from legacy
+  `wiki-three-tools-v1`. The successor uses the same organization jobs, run
+  checkpoint, proposals, step/audit links and supervisor. Its three deterministic
+  bounded reads load a scoped knowledge index, typed existing references and
+  complete originals. Synthesis proposes the coherent group; a separate bounded
+  semantic support check validates its claims and metadata against those originals.
+  The tool count includes those reads and each synthesis/check action.
+- The model transport separates topics from indexes. Index owners distinguish
+  topic, source and map; ordered short reference handles identify members. Backend
+  code resolves exact admitted IDs, fingerprints, roles, section/page revisions,
+  membership purpose and initial placement into `CuratorChangeSetSchema`. Original
+  `eN` citation handles never authorize typed navigation targets. Selected existing
+  notes must appear in a reading group without being regenerated or duplicated.
+- Scope activation is deliberate and follows an effective preview of source
+  titles, routed/overridden model, permissions and ceilings. Draft creation and
+  activation do not run curation. Migration never enables a policy. The A2 trigger
+  is explicit selected processing; later recurring setup retains its own version.
+- Defaults retain the A0 ceilings, with a 2,048-token maximum output reservation
+  per model call and lower profile limits winning. The bounded first slice refuses
+  scopes exceeding twelve complete originals or one hundred scoped existing pages.
+  It never clips an original passage to fit. Deadline starts at run admission and
+  includes FIFO waits. Repeated admission of unfinished/failed identical inputs
+  returns the same run; unchanged applied targets return the existing receipt.
+- Prompts, including repairs and reference guides, are actual catalog entries.
+  Repair persists bounded actionable issue paths/messages. If the complete invalid
+  prior draft cannot fit, omit that whole draft from repair context while retaining
+  it in the checkpoint; never omit part of an original passage. Model ambiguity or
+  exhausted repair is a visible failure, not permission to relax the output schema.
+- Persist a structurally valid candidate before checking semantic support. The
+  support verdict must cover every target, including sections, titles, purposes,
+  explanations and TOC attribution. Unsupported candidates remain inspectable but
+  cannot apply through automatic or human group approval. One shared repair may
+  fix draft structure, semantic issues or an invalid verdict, followed by a fresh
+  complete support check where needed. Normal execution uses two model calls;
+  repairing an unsupported draft uses at most four, within cumulative ceilings.
+- A model-supported section remains visibly unreviewed by a person. Record the
+  exact proposal hash, support verdict and canonical audit identity. Structural
+  reference checks alone do not qualify unreviewed generated knowledge for current
+  consultation. Human evidence verification stays independent. The model check is
+  an assessment, not a guarantee of entailment or human approval.
+- Neutral editorial grouping of faithfully attributed findings is useful and
+  allowed. A semantic rejection identifies a concrete unsupported assertion or
+  misattribution; style preferences, hypothetical confusion and positive/no-issue
+  observations are not support failures. Real-model acceptance checks positive and
+  fabricated-negative cases; valid JSON alone does not certify usefulness.
+- Specific technical mechanisms, interventions or experimental-variable labels
+  must fit each classified member's own original lineage. A broad editorial
+  subject does not authorize assigning one source's specific mechanism to every
+  source or note under its topic or group heading.
+- The review-only view binds complete originals directly to each section and each
+  typed membership. A section is not required to describe other sections' sources;
+  a group is assessed against its own members, and the page has an editorial
+  umbrella scope. Remove irrelevant canonical identifiers from this model view
+  while preserving the exact full-proposal hash and audit binding for apply.
+- Existing reference titles/bodies are explicitly read-only context in the review
+  view. Linking a pending note does not endorse all its unchanged wording. Review
+  authored page/section/group claims and the membership association against original
+  lineage; never request edits to supplied source/note metadata. A verdict pointing
+  into read-only metadata/original text is an invalid check, using the shared repair
+  to recheck the same candidate rather than regenerate content for an impossible edit.
+- Native version-2 saves compare individual sections with the exact base, protect
+  only changed prose/citations and preserve omitted sections. Pin/placement-only
+  changes retain section revisions, provenance, assessments and dependencies.
+  Explicit verification of unchanged citations creates a separately assessed,
+  protected section revision; it cannot verify unavailable originals.

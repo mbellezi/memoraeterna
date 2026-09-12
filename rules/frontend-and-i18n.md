@@ -419,3 +419,34 @@ job statuses, or user-visible backend errors.
   no override. Activation controls reflect successful required validation.
 - Visual checks use at most the standard opening window (1600 × 1200), never full
   screen. Also verify the minimum supported window and both themes.
+
+- Automatic wiki setup shows deliberate scoped preview/activation and a title-free
+  run action. Selected existing notes are explicit; an empty note selection means
+  originals only. Show missing-model, loading, failed, partial and review states,
+  ordered proposal targets and before/after prose without converting generated
+  assessments into human review.
+- Wiki theme navigation has one roving tree tab stop, Arrow/Home/End traversal and
+  persistent expansion while reading. Visibility follows the normalized forest:
+  children of missing/archived parents and defensive cyclic roots remain reachable.
+  Typed TOC links resolve canonical targets through the backend. Opening an atomic
+  note exposes its original excerpts and existing source-detail navigation; Back
+  preserves the mounted wiki page, note expansion and evidence selection.
+
+- The main application navigation has an accessible collapse/expand button and
+  a compact icon-only state. Every destination, including settings scopes, keeps
+  its accessible name, tooltip, active state and visible keyboard focus.
+  Persist this preference through the existing app settings service.
+- Wiki navigation defaults to a 320-pixel tree and exposes a pointer-draggable,
+  keyboard-focusable vertical separator. Left/Right arrows adjust its width,
+  Shift provides larger steps, Home/End reach its current bounds, and a double
+  click restores the default. Save the user's 240–520-pixel width preference on
+  completed gestures; canceled drags do not save. Temporarily clamp layout to
+  preserve at least 360 pixels for reading as the window or inspector changes,
+  without replacing the saved preference. Tree navigation scrolls independently,
+  wraps long titles, distinguishes page kinds with icons, reserves a consistent
+  chevron column and shows clear indentation, selection and keyboard focus.
+  Chevron activation expands/collapses; title activation opens the page without
+  changing expansion. Retain the existing roving tree keyboard behavior.
+- Wiki page cards and title actions reflow using the available reading-panel
+  width. In narrow windows, the evidence overlay stays within the reading region
+  below the wrapped toolbar, with its own scrolling and visible close action.

@@ -8,6 +8,16 @@
     "rootDir": "src",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "src/**/*.test.ts"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "src/**/*.test.ts"
+  ],
+  "references": [
+    {
+      "path": "../domain"
+    }
+  ]
 }

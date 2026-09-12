@@ -1396,6 +1396,7 @@ export const jobsRelations = relations(jobs, ({ many }) => ({
 
 // Wiki identities are independent from source hierarchy and derived graph records.
 export const wikiPages = pgTable("wiki_pages", {
+  management:text("management").notNull().default("human_managed"), role:text("role"), tocOwnerKind:text("toc_owner_kind"), tocOwnerId:uuid("toc_owner_id"),
   id: uuid("id").primaryKey().defaultRandom(),
   currentRevisionId: uuid("current_revision_id"),
   parentId: uuid("parent_id").references((): AnyPgColumn => wikiPages.id, { onDelete: "restrict" }),
@@ -1405,6 +1406,7 @@ export const wikiPages = pgTable("wiki_pages", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 }, (table) => [index("wiki_pages_parent_position_idx").on(table.parentId, table.position),
+  uniqueIndex("wiki_toc_owner_idx").on(table.role,table.tocOwnerKind,table.tocOwnerId),
   check("wiki_pages_not_self_parent", sql`${table.parentId} is distinct from ${table.id}`)]);
 export const wikiPageRevisions = pgTable("wiki_page_revisions", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -1538,3 +1540,23 @@ export const promptValidations = pgTable('prompt_validations', {
  compositionHash:text('composition_hash').notNull(),samplePassed:boolean('sample_passed').notNull().default(false),
  auditIds:jsonb('audit_ids').notNull().default(sql`'[]'::jsonb`),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
 },t=>[uniqueIndex('prompt_validations_composition_idx').on(t.revisionId,t.compositionHash)]);
+
+// Successor curation extends the existing wiki and organization owners.
+export const wikiPolicyRevisions=pgTable('wiki_policy_revisions',{
+ id:uuid('id').primaryKey(),policyId:uuid('policy_id').notNull(),policy:jsonb('policy').notNull(),preview:jsonb('preview').notNull(),previewHash:text('preview_hash').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+});
+export const wikiPolicyActivations=pgTable('wiki_policy_activations',{
+ id:uuid('id').primaryKey().defaultRandom(),policyId:uuid('policy_id').notNull(),revisionId:uuid('revision_id').notNull().references(()=>wikiPolicyRevisions.id,{onDelete:'restrict'}),state:text('state').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[index('wiki_policy_activation_lookup_idx').on(t.policyId,t.createdAt)]);
+export const wikiTocGroups=pgTable('wiki_toc_groups',{
+ id:uuid('id').primaryKey(),pageId:uuid('page_id').notNull().references(()=>wikiPages.id,{onDelete:'restrict'}),revisionId:uuid('revision_id').notNull().references(()=>wikiPageRevisions.id,{onDelete:'restrict'}),snapshot:jsonb('snapshot').notNull()
+},t=>[index('wiki_toc_page_idx').on(t.pageId)]);
+export const wikiMemberships=pgTable('wiki_memberships',{
+ id:uuid('id').primaryKey(),pageId:uuid('page_id').notNull().references(()=>wikiPages.id,{onDelete:'restrict'}),groupId:uuid('group_id').notNull().references(()=>wikiTocGroups.id,{onDelete:'restrict'}),targetKind:text('target_kind').notNull(),targetId:uuid('target_id').notNull(),position:integer('position').notNull(),snapshot:jsonb('snapshot').notNull()
+},t=>[index('wiki_membership_order_idx').on(t.groupId,t.position,t.id),index('wiki_membership_target_idx').on(t.targetKind,t.targetId)]);
+export const wikiSectionAssessments=pgTable('wiki_section_assessments',{
+ sectionRevisionId:uuid('section_revision_id').primaryKey(),sectionId:uuid('section_id').notNull(),pageId:uuid('page_id').notNull().references(()=>wikiPages.id,{onDelete:'restrict'}),assessment:jsonb('assessment').notNull()
+});
+export const wikiGroupReceipts=pgTable('wiki_group_receipts',{
+ id:uuid('id').primaryKey().defaultRandom(),runId:uuid('run_id').notNull().references(()=>organizationRuns.id,{onDelete:'restrict'}),groupId:uuid('group_id').notNull(),inputFingerprint:text('input_fingerprint').notNull(),targets:jsonb('targets').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[uniqueIndex('wiki_group_receipt_run_idx').on(t.runId,t.groupId)]);

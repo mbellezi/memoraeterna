@@ -108,3 +108,32 @@ npm run db:generate
   same transaction, including zero-output replacements. A failure in either rolls
   back both. Completed zero-output stages use their own completion timestamp and
   configured outcome; unrelated later run updates cannot reorder ownership.
+
+- Automatic curation extends the existing owners with `wiki_policy_revisions`,
+  `wiki_policy_activations`, `wiki_toc_groups`, `wiki_memberships`,
+  `wiki_section_assessments` and `wiki_group_receipts`. Page columns project only
+  management/role/TOC owner; immutable revision content retains complete navigation
+  and assessment snapshots. Unique TOC owner and run/group receipt indexes prevent
+  duplicate owners and canonical group replay.
+- A title or alias alone is not page identity. Duplicate curation checks combine
+  explicit purpose, page kind and positively overlapping source scope. Unbound
+  human prose is never loaded merely because a proposed page shares its title.
+- Group apply takes the existing placement lock, policy/run locks, sorted page and
+  canonical input locks, then validates current scope, cancellation, model grant,
+  every original and typed reference. No inference occurs inside the transaction.
+  One invalid target rolls back the whole group. Current TOC query records may be
+  replaced, but earlier revision snapshots and receipts remain immutable.
+- Group explanations and typed navigation retain exact dependencies in the existing
+  dependency table using their stable group identity. Current source/section/note
+  impacts remain separate from support and human review; a navigation edit cannot
+  turn a stale assessment into fresh evidence. Conservative legacy management
+  classification preserves old revision bytes and existing human protections.
+- Applying curator content requires the complete supported verdict for the exact
+  proposal hash, linked through the existing organization step to a succeeded
+  canonical AI audit with the admitted semantic-support prompt composition. Group
+  approval cannot bypass this gate. Store candidate and check progress in existing
+  proposals/checkpoints; do not create another audit or proposal store.
+- The canonical wiki save owns current TOC group/member query rows for every new
+  revision, including native pinning and human section edits. Preserve group/member
+  identities, order and authorship; refresh only their current revision base.
+  Historical revision snapshots remain unchanged.

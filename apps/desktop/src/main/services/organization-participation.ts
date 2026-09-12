@@ -1,4 +1,6 @@
-import { createHierarchicalIngestionRepository,createIngestionRunRepository,createOrganizationRepository,type PgPool,type IngestionRunRecord } from '@app/db';
+import { withPromptPin } from './prompt-runtime.js';
+import { PromptPinSchema } from '@app/domain';
+import { createHierarchicalIngestionRepository,createIngestionRunRepository,createOrganizationRepository,createWikiCuratorRepository,type PgPool,type IngestionRunRecord } from '@app/db';
 import { OrganizationStartSchema,EffectiveProcessingPlanSchema } from '@app/domain';
 import type { OrganizationService } from './organization-service.js';
 const derivations=['chunking','summarization','embedding','atomicNotes','knowledgeGraph','atomicNoteMatching','sourceMatching','aggregateSummarization'];
@@ -44,11 +46,18 @@ export async function reconcileOrganizationParticipation(pool:PgPool,service:Org
     }
     if(state.selected.every(r=>r.status==='canceled')){for(const run of state.selected)await runsRepo.failStage(run.id,'organizeKnowledge','organization.errors.canceled',true);continue;}
     const parsed=EffectiveProcessingPlanSchema.safeParse(batch.plan);
-    if(!parsed.success||!parsed.data.organization){for(const run of state.selected)await runsRepo.failStage(run.id,"organizeKnowledge","organization.errors.model",false);await repository.participationFailed(batch.id);continue;}
+    if(!parsed.success||(!parsed.data.organization&&!parsed.data.integrateWiki)){for(const run of state.selected)await runsRepo.failStage(run.id,"organizeKnowledge","organization.errors.model",false);await repository.participationFailed(batch.id);continue;}
     const plan=parsed.data;
     const sourceIds=[...new Set(state.selected.flatMap(r=>r.sourceItemId&&r.status!=='canceled'&&(r.stagesCheckpoint.chunking as {status?:string}|undefined)?.status==='completed'?[r.sourceItemId]:[]))];
     try{
       if(!sourceIds.length)throw new Error('organization.errors.noEvidence');
+      const automatic=plan.integrateWiki;
+      if(automatic){
+        const noteSourceIds=state.selected.filter(r=>r.effectiveStages.includes('atomicNotes')).flatMap(r=>r.sourceItemId?[r.sourceItemId]:[]);
+        const noteIds=await createWikiCuratorRepository(pool).noteIds(noteSourceIds);
+        const started=await withPromptPin(PromptPinSchema.parse(batch.promptPin),()=>service.automaticStart({policyId:automatic.policyId,policyRevisionId:automatic.policyRevisionId,sourceIds,noteIds},{batchId:batch.id,ingestionRunIds:state.selected.map(r=>r.id),omissions:state.omissions}));
+        for(const run of state.selected){await runsRepo.waitForBatchStage(run.id,'organizeKnowledge');await runsRepo.updateStageProgress(run.id,'organizeKnowledge',0,{organizationRunId:started!.id,partial:state.omissions.length>0});}continue;
+      }
       const targetId=await repository.topicTarget(plan.organization!.title,sourceIds);
       const started=await service.start(OrganizationStartSchema.parse({title:plan.organization!.title,targetPageId:targetId??null,sourceIds,profileId:plan.organization!.profileId,privacy:plan.organization!.privacy,domainId:plan.organization!.domainId,relationContext:true,optionalContext:true,pageKind:'topic'}),{batchId:batch.id,ingestionRunIds:state.selected.map(r=>r.id),omissions:state.omissions});
       for(const run of state.selected){await runsRepo.waitForBatchStage(run.id,'organizeKnowledge');await runsRepo.updateStageProgress(run.id,'organizeKnowledge',0,{organizationRunId:started!.id,partial:state.omissions.length>0});}

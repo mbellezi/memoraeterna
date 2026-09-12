@@ -22,6 +22,7 @@ export const WikiRoleSchema = z.discriminatedUnion("kind", [
 });
 export const SectionAssessmentSchema = z.object({
   version: z.literal(automaticWikiVersion), sectionId: id, sectionRevisionId: id,
+  supportMethod:z.enum(['structural','model_checked','human_review']).optional(),supportAuditId:id.optional(),
   // Human verification never follows from a structural machine check.
   humanReview: z.enum(["unreviewed", "verified"]),
   support: z.enum(["validated", "unassessed", "invalidated", "unsupported"]),
@@ -39,6 +40,7 @@ export const SectionAssessmentSchema = z.object({
 export type SectionAssessment = z.infer<typeof SectionAssessmentSchema>;
 export function canConsultSection(assessment: SectionAssessment, currentSectionRevisionId: string, reviewedOnly: boolean): boolean {
   return SectionAssessmentSchema.safeParse(assessment).success && assessment.sectionRevisionId === currentSectionRevisionId && assessment.support === "validated"
+    && (assessment.humanReview === "verified" || assessment.supportMethod === "model_checked" && Boolean(assessment.supportAuditId))
     && assessment.freshness === "current" && (!reviewedOnly || assessment.humanReview === "verified");
 }
 /** Conservative migration classification; does not change any existing record. */
@@ -195,3 +197,6 @@ export const InvestigationSchema = z.object({
   state: z.enum(["followed", "paused", "resolved", "awaiting_evidence"]),
   gaps: z.array(z.string().max(2000)).max(30), lastInputFingerprint: fingerprint.nullable()
 }).strict();
+
+/** Versioned revision metadata; legacy content omits it entirely. */
+export const WikiAutomaticContentSchema=z.object({version:z.literal(automaticWikiVersion),management:WikiManagementSchema,role:WikiRoleSchema,purpose:z.string().max(2000),placementProtected:z.boolean(),links:z.array(KnowledgeTargetSchema).max(200),groups:z.array(TocGroupSchema).max(12),memberships:z.array(KnowledgeMembershipSchema).max(2400)}).strict();

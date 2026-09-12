@@ -7,6 +7,8 @@ import { PromptDefinitionSchema, type PromptDefinition, type PromptVariable } fr
 export const promptCategoryLabels = Object.fromEntries(["shared", "summary", "notes", "graph", "sources", "embedding", "organization", "consultation", "maintenance", "diagnostics"].map(key => [key, promptMetadataLabels('categories', key)]));
 export function promptLabel(key: string) { return promptMetadataLabels('labels', key); }
 const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
+    reference_guide:[{handle:'r1',kind:'source',title:'Synthetic recall study'},{handle:'r2',kind:'atomic_note',title:'Recall finding'}],
+    required_notes:['r2'],
     "chunks": [
         {
             "id": "c1",

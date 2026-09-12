@@ -326,3 +326,23 @@ provider token breakdowns and precise call context, as specified in
   Actual wording/serialization changes split embedding spaces. Revision IDs alone
   do not split byte-equivalent input strategies. Activation never backfills,
   deletes, rekeys or regenerates vectors.
+
+- `AiService` exposes an awaited, non-serialized provider-start callback after the
+  final source/policy/model guard and immediately before adapter invocation. This
+  boundary, not generic loading/progress, distinguishes curator provider execution
+  from known pre-provider rejection. It uses the same FIFO and canonical audit;
+  callback functions never enter monitoring or canonical metadata.
+- New curator prompts describe topics and indexes with distinct shapes and backend
+  reference guides. Neither prompt activation nor transport simplification changes
+  unrelated embedding fingerprints, existing artifact ownership or model routes.
+- Curator synthesis, repair and semantic-support review are separate actual catalog
+  functions, pinned at admission and executed through the same selected profile,
+  FIFO and canonical audit. Support review checks complete originals and the exact
+  candidate, including all metadata and navigation attribution. Its known-valid
+  catalog sample requires a positive verdict with complete target coverage;
+  syntactically valid rejection cannot certify normal support capability. Samples
+  never apply canonical content and do not replace real-model quality gates.
+- Semantic-support output requests at most four distinct concise issues within its
+  1,024-token reservation. Deduplicate an underlying error repeated across fields;
+  never truncate originals to accommodate verbose review. Malformed verdicts use
+  the same shared repair allowance and cannot certify support.

@@ -11,13 +11,15 @@ import { maintenanceLocalInstant, maintenanceOccurrences, MaintenanceCadenceSche
 import { SourceItemTypeSchema } from "./source-item.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const fixture = (name: string) => JSON.parse(readFileSync(new URL(`../../../scripts/fixtures/automatic-wiki/${name}.json`, import.meta.url), "utf8"));
-const assessment = () => SectionAssessmentSchema.parse({ version: automaticWikiVersion, sectionId: id(1), sectionRevisionId: id(2), humanReview: "unreviewed", support: "validated", reason: "generated_pending_verification", inputFingerprint: "original-r1", freshness: "current" });
+const assessment = () => SectionAssessmentSchema.parse({ version: automaticWikiVersion, sectionId: id(1), sectionRevisionId: id(2), humanReview: "unreviewed", support: "validated", supportMethod:"model_checked", supportAuditId:id(3), reason: "generated_pending_verification", inputFingerprint: "original-r1", freshness: "current" });
 
 describe("A0 automatic wiki contract acceptance", () => {
   it("separates human verification, support and exact evidence freshness", () => {
     const fresh = assessment();
     expect(canConsultSection(fresh, id(2), false)).toBe(true);
     expect(canConsultSection(fresh, id(2), true)).toBe(false);
+    expect(canConsultSection({...fresh,supportMethod:"structural"},id(2),false)).toBe(false);
+    expect(canConsultSection({...fresh,supportAuditId:undefined},id(2),false)).toBe(false);
     expect(canConsultSection(fresh, id(3), false)).toBe(false);
     for (const support of ["unassessed", "invalidated", "unsupported"] as const)
       expect(canConsultSection({ ...fresh, support, humanReview: "verified" }, id(2), false)).toBe(false);

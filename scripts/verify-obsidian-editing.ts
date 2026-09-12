@@ -39,7 +39,7 @@ try {
     await pool.query("insert into atomic_note_review_events(atomic_note_id,action,previous_status,next_status,metadata) values($1,'edit','pending_review','pending_review','{}')", [note.id]);
     await runMigrations(pool, migrations, { seedFolder });
     assert.equal((await notes.findById(note.id))!.metadata.humanProtected, true);
-    assert.equal((await pool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, 30);
+    assert.equal((await pool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
     assert.equal((await pool.query("select count(*)::int as n from pg_indexes where tablename='obsidian_editorial_operations'")).rows[0].n, 2);
     const vault = join(work, 'vault');
     await mkdir(vault);

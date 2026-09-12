@@ -35,6 +35,7 @@
     "db:seed:verify": "tsx src/scripts/verify-seed.ts"
   },
   "dependencies": {
+    "@app/domain": "^0.0.0",
     "@types/pg": "8.20.0",
     "drizzle-orm": "0.45.2",
     "pg": "8.22.0",

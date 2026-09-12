@@ -103,6 +103,7 @@ export interface AiTaskLogContext {
   contentLanguage?: string;
   embeddingInputType?: "query" | "document";
   onProgress?: (event: AiProgressEvent) => void;
+  onProviderStart?:()=>Promise<void>;
 }
 
 type RoutedTask = "text-generation" | "embedding" | "summarization" | "knowledge-graph-generation" | "atomic-note-generation" | "reranking" | "structured-output";
@@ -408,7 +409,7 @@ export class AiService {
     beforeProvider?:()=>Promise<void>,
     admission?:PromptAdmission
   ): Promise<DefaultAiTaskResult | null> {
-    const { onProgress, ...structuredLogContext } = logContext;
+    const { onProgress,onProviderStart, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     await repository.ensureRemoteRerankingCapabilities();
@@ -475,6 +476,7 @@ export class AiService {
       const run = async () => {
         await beforeProvider?.();signal?.throwIfAborted();
         if(pinned&&(await this.pinOrganizationProfile(pinned.profileId,pinned.privacy)).identityHash!==pinned.identityHash)throw new Error("organization.errors.modelChanged");
+        await onProviderStart?.();
         return adapter.runStreaming
         && (descriptor.capabilities.includes("streaming") || descriptor.capabilities.includes("supports-progress-events"))
         ? adapter.runStreaming(request, signal, progress)
@@ -570,7 +572,7 @@ export class AiService {
   }
 
   public async traceOperation<T>(operation: string, context: AiTaskLogContext, run: () => Promise<T>, details: Record<string, unknown> = {}): Promise<T> {
-    const { onProgress: _progress, ...metadata } = context;
+    const { onProgress: _progress,onProviderStart:_providerStart, ...metadata } = context;
     return this.options.monitoring ? this.options.monitoring.operation(operation, metadata, run, details) : run();
   }
 

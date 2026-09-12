@@ -120,3 +120,19 @@ describe("matching preset persistence", () => {
     expect(await settings.getApp()).toMatchObject({ language: "fr", atomicNoteRelationThreshold: 0.77, matchingPresets: [{ settings: { atomicNoteRelationThreshold: 0.77 } }] });
   });
 });
+
+describe("navigation layout preferences", () => {
+  it("defaults legacy layouts and retains independent preferences across restart", async () => {
+    const { navigationCollapsed: _collapsed, wikiTreeWidth: _width, ...legacy } = defaultAppSettings;
+    expect(parseSavedAppSettings({ ...legacy, language: "en", updatedAt: new Date().toISOString() })).toMatchObject({ navigationCollapsed: false, wikiTreeWidth: 320 });
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-layout-settings-")); paths.push(path);
+    const service = new SettingsService(path);
+    await service.updateApp({ navigationCollapsed: true, wikiTreeWidth: 460 });
+    await service.updateApp({ themeMode: "light" });
+    expect(await new SettingsService(path).getApp()).toMatchObject({ navigationCollapsed: true, wikiTreeWidth: 460, themeMode: "light" });
+    await expect(service.updateApp({ wikiTreeWidth: 521 })).rejects.toThrow();
+    await expect(service.updateApp({ wikiTreeWidth: 239 })).rejects.toThrow();
+    expect((await service.getApp()).wikiTreeWidth).toBe(460);
+  });
+});

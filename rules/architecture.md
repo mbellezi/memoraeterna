@@ -74,3 +74,7 @@ or Python sidecar merely for convenience.
   lightweight @app/i18n package. Keep template content in the registry and product
   labels in locale resources. Bundle this transitive dependency in sandbox preload;
   the desktop build must execute a preload check with only Electron resolvable.
+
+- `@app/db` may import browser-safe `@app/domain` schemas for canonical automatic
+  wiki transaction validation. Keep the explicit workspace dependency and TypeScript
+  project reference; this does not move application orchestration into repositories.

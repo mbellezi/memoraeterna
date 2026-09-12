@@ -38,7 +38,7 @@ describe('actual catalog family callers with deterministic model doubles',()=>{
   const actions=['{',{tool:'searchEvidence',query:'',limit:20},{tool:'readRevision',handle:'e1',selector:'full'},{tool:'readRevision',handle:'e2',selector:'full'},{tool:'proposePageChange',target:'page',expectedRevisionId:null,explanation:'A bounded comparison',sections:[{sectionId:null,title:'Feedback',markdown:'The two studies qualify the role of feedback.',citations:['e1','e2'],contextIds:[]}]}];
   const runOrganizationTask=vi.fn(async()=>{installPromptPin(defaultPromptPin());return execution(actions.shift());});
   const service=new OrganizationService({getPool:()=>null,ai:{runOrganizationTask},contentLanguage:async()=> 'en',wake:()=>{},cancelJob:async()=>null}as any) as any;
-  service.get=async()=>run;service.repo=()=>({checkpoint:async(_id:string,status:string,c:unknown)=>{run.status=status;run.checkpoint=structuredClone(c);},step:async()=>{},propose:async()=>{run.status='succeeded';}});
+  service.get=async()=>run;service.repo=()=>({get:async()=>run,checkpoint:async(_id:string,status:string,c:unknown)=>{run.status=status;run.checkpoint=structuredClone(c);},step:async()=>{},propose:async()=>{run.status='succeeded';}});
   await service.execute({id:randomUUID(),payload:{organizationRunId:id}},new AbortController().signal);
   expect(run.status).toBe('succeeded');expect(runOrganizationTask).toHaveBeenCalledTimes(5);const inputs=(runOrganizationTask.mock.calls as unknown as Array<[unknown,string]>).map(c=>c[1]);for(const id of ['organization.legacy_synthesis','organization.state.discover','organization.state.read','organization.state.propose','organization.repair'])expect(inputs.some(t=>t.includes('CATALOG:'+id))).toBe(true);
  });

@@ -3,7 +3,9 @@
 Date: 2026-09-12.
 
 Status: A0 contract/fixture work and A1 runtime catalog/editor are independently
-verified and accepted (see [A1 report](automatic-wiki-a1-report.md)); A2–A8
+verified and accepted (see [A1 report](automatic-wiki-a1-report.md)). A2 is independently
+verified and accepted through its database, selected-model and native window gates,
+including the collapsible menu and resizable tree (see [A2 report](automatic-wiki-a2-report.md)). A3–A8
 runtime implementation and product acceptance remain planned. See the
 [A0 contract report](automatic-wiki-a0-contracts.md) and
 [acceptance ownership matrix](automatic-wiki-a0-acceptance.md).
@@ -875,7 +877,8 @@ originals. A paused/unconfigured sync performs no migration or projection writes
 ## 14. Implementation milestones
 
 A0 contract/fixture work and A1 runtime catalog/editor are independently accepted;
-A2–A8 below remain **planned**. Each implementation task must report its
+A2 has passed independent backend, selected-model and native walkthrough gates;
+A3–A8 remain **planned**. Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 

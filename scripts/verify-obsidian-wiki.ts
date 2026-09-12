@@ -233,7 +233,8 @@ try {
     emptyPool = createPgPool({ connectionString: url.toString(), max: 2 });
     assert.equal((await runMigrations(emptyPool, migrations, { seedFolder })).seed.applied, true);
     assert.equal((await emptyPool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
-    assert.equal((await emptyPool.query('select generation from obsidian_projection_clock')).rows[0].generation, '2');
+    // A2's conservative wiki-management backfill advances the existing statement-level projection clock once.
+    assert.equal((await emptyPool.query('select generation from obsidian_projection_clock')).rows[0].generation, '3');
     await service.shutdown();
     console.log('M4 verified: real PostgreSQL populated upgrade and empty baseline; trigger rollback, bounded queued projection with catalog admission/retry envelopes, strict worker payloads, canonical catalog-only reference, Unicode/collisions/hierarchy, exact evidence, source links, independent local conflicts/recovery, shared fenced format, archive/restore, lost receipt, pause/scope changes, no wiki writeback, symlink containment. No model, real DEV or user vault used.');
 }

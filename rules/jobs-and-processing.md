@@ -154,3 +154,28 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   admission/audit payload intact. Direct task entrypoints must follow the same
   rule. Continue rejecting unknown task fields; never make task schemas permissive
   merely to accept admission or retry metadata. Non-AI jobs obey this boundary too.
+
+- `integrateWiki` version 2 is a title-free choice on the existing explicitly
+  selected `organizeKnowledge` stage. Legacy plans/presets keep their meaning and
+  DAG. It references an enabled policy revision and adds no summary, note, vector,
+  matching or graph prerequisite. Selected-stage barriers and omissions remain
+  owned by existing ingestion checkpoints. Processing-batch metadata pins the
+  source-free catalog at admission, including batches reusing all other artifacts.
+- A selected processing stage may link an unchanged curator receipt through its
+  existing organization-run metadata. Reconciliation resolves that link even when
+  the receipt originated outside this batch, completes the stage and starts no
+  duplicate inference. The original run keeps its admission and audit ownership.
+- Curator admission deduplicates the same unfinished or failed input generation
+  under a transaction lock. Retry preserves calls, repairs, usage availability,
+  original admission deadline and exact templates. An uncertain started provider
+  call is not automatically repeated. A known pre-provider guard failure is not
+  mislabeled as uncertain inference merely because UI progress began.
+- Persist completed curator synthesis/check results before a subsequent admission
+  guard can cancel or defer execution. Resume the stored semantic-check or repair
+  stage without repeating known completed inference. A single repair allowance is
+  shared by structural failures, unsupported drafts and invalid check verdicts;
+  none resets cumulative calls, usage or the admission deadline.
+- Admission deduplication includes effective model parameters and content language.
+  Changing parameters may admit a new generation after a failed old generation;
+  the old snapshot, budgets and history remain unchanged. Running-model identity
+  guards still preserve the parameters frozen at that run's admission.

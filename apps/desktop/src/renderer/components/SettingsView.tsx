@@ -178,14 +178,15 @@ const scopes: Array<{
   }
 ];
 
-export function SettingsScopeMenu({ activeScope, t, onScopeChange }: {
+export function SettingsScopeMenu({ activeScope, t, onScopeChange, collapsed = false }: {
+  collapsed?: boolean;
   activeScope: SettingsScope;
   t: SettingsViewProps["t"];
   onScopeChange: (scope: SettingsScope) => void;
 }) {
   return (
     <div className="mt-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-      <p className="px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400">
+      <p className={cn("px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400", collapsed && "sr-only")}>
         {t("settings.dashboard.navigation.label")}
       </p>
       <div className="grid gap-1" role="tablist" aria-label={t("settings.dashboard.navigation.label")}>
@@ -199,9 +200,12 @@ export function SettingsScopeMenu({ activeScope, t, onScopeChange }: {
               type="button"
               role="tab"
               aria-selected={isActive}
+              aria-label={t(scope.label)}
+              title={collapsed ? t(scope.label) : undefined}
               aria-controls={`settings-panel-${scope.id}`}
               className={cn(
-                "group flex min-h-12 min-w-0 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors",
+                "group flex min-w-0 w-full items-center rounded-lg py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+                collapsed ? "min-h-9 justify-center px-1" : "min-h-12 gap-3 px-3",
                 isActive
                   ? "bg-slate-900 text-white dark:bg-white dark:text-slate-950"
                   : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-900"
@@ -214,7 +218,7 @@ export function SettingsScopeMenu({ activeScope, t, onScopeChange }: {
               )}>
                 <Icon className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span className="min-w-0 flex-1">
+              <span className={cn("min-w-0 flex-1", collapsed && "sr-only")}>
                 <span className="block text-sm font-semibold">{t(scope.label)}</span>
                 <span className={cn(
                   "mt-0.5 block truncate text-[0.69rem]",

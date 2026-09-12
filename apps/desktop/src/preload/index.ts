@@ -1,3 +1,4 @@
+import { CuratorCommandSchema,CuratorResponseSchema } from '@app/domain';
 import { PromptCommandSchema,PromptResponseSchema } from "@app/domain";
 import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
 import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
@@ -5,7 +6,7 @@ import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSche
 import { MaintenanceCommandSchema,MaintenanceResponseSchema } from "@app/domain";
 import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
-import { WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
+import { WikiLinkedTargetSchema,WikiLinkedTargetInputSchema,WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
 import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
@@ -124,8 +125,10 @@ const api: DesktopApi = {
   consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
   maintenance:{command:async(input)=>MaintenanceResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.maintenanceCommand,MaintenanceCommandSchema.parse(input)))},
   prompts:{command:async(input)=>PromptResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.promptCommand,PromptCommandSchema.parse(input)))},
+  curator:{command:async(input)=>CuratorResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.curatorCommand,CuratorCommandSchema.parse(input)))},
   organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
   wiki: {
+    linkedTarget:async(input)=>WikiLinkedTargetSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiLinkedTarget,WikiLinkedTargetInputSchema.parse(input))),
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
     get: async (id, revisionId) => WikiPageSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })),
     save: async (input) => WikiPageSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiSave, WikiSaveInputSchema.parse(input))),

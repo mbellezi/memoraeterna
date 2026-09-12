@@ -121,10 +121,11 @@
       "protected": "Protected content requires human approval.",
       "budget": "The run exhausted its tool, call or reported-input allowance.",
       "context": "The evidence exceeds the selected model’s context budget. Narrow the scope.",
-      "deadline": "The five-minute execution deadline expired. Create a new scoped run.",
+      "deadline": "The execution deadline expired. Review the result or choose a narrower scope.",
       "uncertain": "A model call was interrupted. Usage may be incomplete; retries remain bounded.",
       "canceled": "Canceled",
-      "failed": "Organization failed. Check the selected profile and retry within the remaining budget."
+      "failed": "Organization failed. Check the selected profile and retry within the remaining budget.",
+      "policy": "The automatic policy is paused, changed, or does not permit this operation."
     }
   },
   "entityIdentity": {"threshold":"Entity identity similarity threshold","hint":"AI verifies candidates of the same type using names and identifying facts. Equal names alone never authorize a merge. Ambiguous identities remain separate. Default: 0.92 (provisional). Exact names and known aliases are also checked. Existing entities are reused when identity is confirmed; historical duplicates are not merged in bulk."},
@@ -140,6 +141,7 @@
   },
   "shell": {
     "navigation": {
+    "label": "Main navigation",
       "library": "Library",
       "import": "Add content",
       "search": "Search",
@@ -149,6 +151,8 @@
       "settings": "Settings"
     },
     "actions": {
+    "expandNavigation": "Expand main navigation",
+    "collapseNavigation": "Collapse main navigation",
       "save": "Save",
       "cancel": "Cancel",
       "close": "Close",
@@ -1174,6 +1178,9 @@
     "partial": "Partial coverage: analysis budget reached. Process again to continue."
   },
   "wiki": {
+    "treeWidth": "Tree width: {width} pixels",
+    "resizeTreeHint": "Drag to resize. Use Left/Right arrows, Home or End. Double-click to reset.",
+    "resizeTree": "Resize wiki navigation",
     "title": "Second brain",
     "subtitle": "A living space for your knowledge",
     "navigation": "Wiki navigation",
@@ -1513,7 +1520,9 @@
       "default": "General validation",
       "same_root": "Same-work rejection",
       "guidance": "Editorial guidance",
-      "advanced": "Function instructions"
+      "advanced": "Function instructions",
+      "curator": "Automatic curation",
+        "support": "Semantic support check"
     },
     "variables": {
       "source_title": "Source title",
@@ -1564,7 +1573,11 @@
       "predicate": "English relation predicate",
       "definition": "Directed relation definition",
       "page_title": "Page or question title",
-      "catalog_metadata": "Safe source catalog metadata"
+      "catalog_metadata": "Safe source catalog metadata",
+      "group_id": "Coherent proposal identity supplied by the backend.",
+        "reference_guide": "Typed navigation handles for existing sources, notes, pages and entities. Original eN handles are citation-only.",
+        "required_notes": "Selected existing note handles that must appear in an index without copying their content.",
+        "candidate_knowledge": "Complete proposed group, including titles, purposes, prose and TOC attribution, checked against original evidence."
     },
     "purposes": {
       "shared": "Reusable wording composed into the affected model requests.",
@@ -1643,5 +1656,23 @@
     "sampleBounds": "Each sample batch runs at most 12 calls, with up to 4,096 output tokens per call. A composition has a cumulative ceiling of 256 calls, 2,000,000 input characters and 1,048,576 reserved output tokens. Completed cases are reused when you continue.",
     "sampleProgress": "{completed}/{total} cases validated · {calls}/256 calls used",
     "partial": "This batch is complete. Run another sample batch to continue the saved validation."
+  },
+  "automaticWiki": {
+    "scopeHint": "Select a small set of original sources. Check the execution limits in the policy preview.",
+    "title": "Organize automatically",
+    "intro": "Select material and preview its scoped policy. The model discovers useful topics and reading indexes from original evidence.",
+    "existingNotes": "Include selected existing notes",
+    "originals": "With no notes selected, curation uses originals only. This action does not generate notes, summaries, vectors, matching or graphs.",
+    "preview": "Preview automatic organization",
+    "authority": "Effective scope and authority",
+    "limits": "Up to {targets} pages or indexes, {sections} section patches per page, {passages} complete passages, {calls} model admissions and {minutes} minutes including queue waits.",
+    "permission": "Creates grounded drafts and reading indexes, updates unprotected AI content and gives new pages their initial placement. Human text and fixed ordering require review. Activation does not start a run; recurring routine setup is separate.",
+    "activate": "Enable this scoped policy",
+    "enabled": "Scoped policy enabled",
+    "run": "Integrate selected material",
+    "pause": "Pause policy",
+    "links": "links",
+    "assessment": "AI draft — original references checked structurally; semantic support has not been verified by a person.",
+    "modelAssessment": "AI draft — original references and semantic support checked by the selected model; still unreviewed by a person."
   }
 }
