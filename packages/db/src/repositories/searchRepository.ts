@@ -146,7 +146,7 @@ export function createSearchRepository(db: Queryable) {
            join source_items s on s.id = n.created_from_source_item_id
            where n.status <> 'rejected'
              and (coalesce(array_length($2::source_item_type[], 1), 0) = 0 or s.type = any($2))
-             and (coalesce(array_length($4::uuid[], 1), 0) = 0 or s.id = any($4))
+             and (coalesce(array_length($4::uuid[], 1), 0) = 0 or (s.id = any($4) and not exists(select 1 from atomic_note_evidence retained where retained.note_id=n.id and not(retained.source_id=any($4))) and not exists(select 1 from atomic_note_source_links link where link.atomic_note_id=n.id and not(link.source_item_id=any($4)))))
          )
          select * from scored where "textScore" > 0
          order by "textScore" desc, "noteId"
@@ -172,7 +172,7 @@ export function createSearchRepository(db: Queryable) {
            and e.strategy = 'native-v2:' || $6::text and e.provider=$7 and e.runtime=$8
            and n.status <> 'rejected'
            and (coalesce(array_length($3::source_item_type[], 1), 0) = 0 or s.type = any($3))
-           and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
+           and (coalesce(array_length($5::uuid[], 1), 0) = 0 or (s.id = any($5) and not exists(select 1 from atomic_note_evidence retained where retained.note_id=n.id and not(retained.source_id=any($5))) and not exists(select 1 from atomic_note_source_links link where link.atomic_note_id=n.id and not(link.source_item_id=any($5)))))
          order by e.embedding <=> $1::vector
          limit $4`,
         [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? [], input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]

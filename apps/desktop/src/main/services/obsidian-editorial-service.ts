@@ -62,6 +62,7 @@ export class ObsidianEditorialService {
             }) => !sources.has(e.sourceItemId)))
                 throw new Error('obsidianWiki.errors.binding');
         }
+        else if (file.memoraType==='atomic_note') {if(!await repo.exportEligible(null,[file.memoraId],scope.sourceIds,scope.includeDescendants))throw new Error('obsidianWiki.errors.binding');}
         else if (file.sourceItemId) {
             if (!await repo.exportEligible(file.sourceItemId, file.memoraType === 'atomic_note' ? [file.memoraId] : [], scope.sourceIds, scope.includeDescendants))
                 throw new Error('obsidianWiki.errors.binding');

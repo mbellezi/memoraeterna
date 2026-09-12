@@ -202,3 +202,24 @@ npm run db:generate
   journal; earlier entries contain metadata. Retain complete snapshots in SQL
   for recovery. Library reset recognizes registered binary hashes and journaled
   recovery paths before clearing ownership, and preserves unrelated files.
+
+- Atomic notes retain non-null historical `created_from_source_item_id` and
+  `evidence_chunk_id` identifiers, with separate nullable owning-source/owning-chunk
+  foreign keys. A validated ownership trigger supplies those cascade owners for
+  legacy/source-owned notes. Only reviewed evolution promotes participants and
+  outputs to `knowledge` ownership with no arbitrary source/chunk deletion owner;
+  promotion cannot be reversed by an ordinary update.
+- `atomic_note_evidence` stores immutable original attribution snapshots without
+  source/chunk deletion FKs; `atomic_note_evolution` retains restrictive previous,
+  successor and organization-run references. Live source links remain projections
+  of available originals. Deleting a source cannot erase retained note identities,
+  excerpts, supersession links, note revisions or canonical organization AI audits.
+  Whole-source deletion remains the separate explicit SourceDeletionService action.
+- Ownership backfill preserves all earlier columns, note fingerprints and legacy
+  cascade behavior without generating semantic impact events. Generation upserts
+  and pending-note archival exclude knowledge-owned identities. A note's former
+  source ID is attribution, never permission to regenerate it or delete its file.
+- Currentness and scoped retrieval check retained attribution as well as live links.
+  Deleted secondary evidence cannot disappear from scope checks. Whole-library
+  historical wiki search includes knowledge-owned notes after primary deletion;
+  source-specific searches must still contain the complete retained source set.

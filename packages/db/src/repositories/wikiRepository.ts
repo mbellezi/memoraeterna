@@ -1,3 +1,4 @@
+import {readNoteEvidence,retainedNoteCurrentSql} from "./noteEvidence.js";
 import {isDeepStrictEqual} from 'node:util';
 import type { SectionAssessment, WikiPageContent } from '@app/domain';
 import { createHash, randomUUID } from "node:crypto";
@@ -9,30 +10,33 @@ interface Content {
   automatic?: WikiPageContent["automatic"];
   title: string; kind: string; parentId: string | null; position: number; archived: boolean;
   aliases: string[]; collectionIds: string[]; entityId: string | null; pinned: boolean; review: string;
-  sections: Array<{ sectionRevisionId?:string|undefined; assessment?:SectionAssessment|undefined; id: string; title: string; kind: string; markdown: string; provenance: string; protected: boolean; evidenceReview: string; evidenceIds: string[] }>;
+  sections: Array<{ interpretations?:WikiPageContent["sections"][number]["interpretations"]; sectionRevisionId?:string|undefined; assessment?:SectionAssessment|undefined; id: string; title: string; kind: string; markdown: string; provenance: string; protected: boolean; evidenceReview: string; evidenceIds: string[] }>;
 }
 interface Query {
   text: string; sourceIds: string[]; includeDescendants: boolean; pageId: string | null;
   kind: string; reviewedOnly: boolean; currentOnly: boolean; limit: number; offset: number;
 }
-const currentNoteEvidence = `(n.supersession_status='current' and nd.id is not null and nd.metadata->>'supersededByDocumentId' is null
+const currentNoteEvidence = `(n.supersession_status='current' and ${retainedNoteCurrentSql()} and nd.id is not null and nd.metadata->>'supersededByDocumentId' is null
   and not exists(select 1 from atomic_note_source_links link left join chunks lc on lc.id=link.chunk_id left join documents ld on ld.id=lc.document_id
     where link.atomic_note_id=n.id and (ld.id is null or ld.metadata->>'supersededByDocumentId' is not null)))`;
 const pageColumns = `p.id, p.current_revision_id as "revisionId", r.number as "revisionNumber", p.updated_at as "updatedAt", r.content`;
 const evidenceSql = `select e.id,e.source_item_id as "sourceItemId",e.document_id as "documentId",e.chunk_id as "chunkId",e.source_span_id as "sourceSpanId",
-  e.snapshot, coalesce(c.content_hash = e.snapshot->>'contentHash' and d.metadata->>'supersededByDocumentId' is null,false) as current
+  exists(select 1 from source_items source where source.id=e.source_item_id) as "sourceAvailable",e.snapshot, coalesce(c.content_hash = e.snapshot->>'contentHash' and d.metadata->>'supersededByDocumentId' is null,false) as current
   from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=$1`;
 const flatten = (row: Record<string, any>) => ({ ...row.content, id: row.id, revisionId: row.revisionId, revisionNumber: row.revisionNumber, updatedAt: new Date(row.updatedAt).toISOString() });
 
 export function createWikiRepository(pool: PgPool) {
   return {
-    async linkedTarget(input:{pageId:string;kind:string;id:string}) {
-      const content=(await pool.query('select r.content from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1',[input.pageId])).rows[0]?.content;
-      if(!content?.automatic||![...content.automatic.links,...content.automatic.memberships.map((m:any)=>m.target)].some((r:any)=>r.kind===input.kind&&r.id===input.id))throw new Error('wiki.errors.invalid');
-      const row=input.kind==='source'?(await pool.query("select id,title,id as source_id,'' as markdown from source_items where id=$1",[input.id])).rows[0]:input.kind==='page'?(await pool.query("select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",[input.id])).rows[0]:input.kind==='entity'?(await pool.query("select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",[input.id])).rows[0]:(await pool.query("select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id from atomic_notes where id=$1 and status not in('rejected','archived')",[input.id])).rows[0];
+    async linkedTarget(input:{pageId:string;kind:string;id:string;revisionId?:string|undefined}) {
+      const content=(await pool.query('select r.content from wiki_pages p join wiki_page_revisions r on r.page_id=p.id and r.id=coalesce($2::uuid,p.current_revision_id) where p.id=$1',[input.pageId,input.revisionId??null])).rows[0]?.content;
+      const linked=[...(content?.automatic?.links??[]),...(content?.automatic?.memberships??[]).map((m:any)=>m.target)];
+      const legacyNoteLinks=(content?.sections??[]).flatMap((s:any)=>Array.from(String(s.markdown).matchAll(/memora:atomic_note\/([0-9a-f-]{36})/g),m=>({kind:'atomic_note',id:m[1]})));linked.push(...legacyNoteLinks);
+      if(!linked.some((r:any)=>r.kind===input.kind&&r.id===input.id)){const originalIds=linked.filter((r:any)=>r.kind==='atomic_note').map((r:any)=>r.id);const redirect=input.kind==='atomic_note'&&(await pool.query('with recursive chain as(select next_id,array[previous_id,next_id] path from atomic_note_evolution where previous_id=any($1::uuid[]) union all select e.next_id,c.path||e.next_id from atomic_note_evolution e join chain c on e.previous_id=c.next_id where cardinality(c.path)<20 and not e.next_id=any(c.path)) select 1 from chain where next_id=$2 limit 1',[originalIds,input.id])).rows.length;if(!redirect)throw new Error('wiki.errors.invalid');}
+      const row=input.kind==='source'?(await pool.query("select id,title,id as source_id,'' as markdown from source_items where id=$1",[input.id])).rows[0]:input.kind==='page'?(await pool.query("select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",[input.id])).rows[0]:input.kind==='entity'?(await pool.query("select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",[input.id])).rows[0]:(await pool.query("select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id,status,metadata,supersession_status from atomic_notes where id=$1 and status not in('rejected','archived')",[input.id])).rows[0];
       if(!row)return null;
-      const evidence=input.kind==='atomic_note'?(await pool.query(`select distinct c.id,c.source_item_id as "sourceItemId",c.document_id as "documentId",c.id as "chunkId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,d.metadata->>'supersededByDocumentId' is null as current from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id where c.id=$1 or c.id in(select chunk_id from atomic_note_source_links where atomic_note_id=$2) order by c.id limit 100`,[row.evidence_chunk_id,input.id])).rows.map(e=>({...e,documentCreatedAt:new Date(e.documentCreatedAt).toISOString()})):[];
-      return {kind:input.kind,id:row.id,title:row.title,markdown:row.markdown,sourceItemId:row.source_id,evidence};
+      const evidence=input.kind==='atomic_note'?await readNoteEvidence(pool,input.id,row.evidence_chunk_id):[];
+      const successors=input.kind==='atomic_note'?(await pool.query("select n.id,n.title from atomic_note_evolution e join atomic_notes n on n.id=e.next_id where e.previous_id=$1 and n.status not in('rejected','archived') order by n.id",[input.id])).rows:undefined;
+      return {...(input.kind==='atomic_note'?{noteState:{status:row.status,protected:row.metadata?.humanProtected===true,current:row.supersession_status==='current'&&evidence.length>0&&evidence.every(e=>e.current)}}:{}),...(successors?.length?{successors}:{}),kind:input.kind,id:row.id,title:row.title,markdown:row.markdown,sourceItemId:input.kind==='atomic_note'&&evidence.every(e=>e.sourceItemId!==row.source_id||e.sourceAvailable===false)?null:row.source_id,evidence};
     },
     async tree(input:{view?:'children'|'recent'|'pinned';parentId:string|null;after:{position:number;title:string;id:string}|null;limit:number;pathTo?:string|undefined}) {
       // Only metadata is traversed. Every legacy cycle has one deterministic visible root.
@@ -84,12 +88,13 @@ export function createWikiRepository(pool: PgPool) {
         where p.id=$1 and r.id=coalesce($2::uuid,p.current_revision_id)`, [id, revisionId ?? null])).rows[0];
       if (!row) return null;
       const evidence = (await pool.query(evidenceSql, [id])).rows.map(({ snapshot, ...item }) => ({ ...snapshot, ...item }));
+      const historyChunks=new Set((row.content as Content).sections.flatMap(s=>s.interpretations?.flatMap(r=>r.evidence.map(e=>e.chunkId))??[]));
       const ids = new Set([...(row.content as Content).sections.flatMap((s) => s.evidenceIds),...((row.content as Content).automatic?.groups.flatMap(g=>g.explanationEvidenceIds)??[])]);
       const breadcrumbs = (await pool.query(`with recursive ancestors as (
         select id,parent_id,title,0 as depth,array[id] as path from wiki_pages where id=$1 union all
         select p.id,p.parent_id,p.title,a.depth+1,a.path||p.id from wiki_pages p join ancestors a on p.id=a.parent_id where not p.id=any(a.path)
         ) select id,title from ancestors order by depth desc`, [id])).rows;
-      return { ...flatten(row), evidence: evidence.filter((e) => ids.has(e.id)), breadcrumbs, impacts: await createWikiContextRepository(pool).impacts(id) };
+      return { ...flatten(row), evidence: evidence.filter((e) => ids.has(e.id)||historyChunks.has(e.chunkId)), breadcrumbs, impacts: await createWikiContextRepository(pool).impacts(id) };
     },
     async history(id: string) {
       return (await pool.query(`select id,number,created_at as "createdAt",origin,content from wiki_page_revisions where page_id=$1 order by number desc limit 100`, [id])).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
@@ -124,6 +129,7 @@ export function createWikiRepository(pool: PgPool) {
         for (const section of content.sections) {
           if (!authority || authority.origin === "human") {
             const old=(current?.content as Content|undefined)?.sections.find(s=>s.id===section.id);
+            section.interpretations=old?.interpretations;
             const same=old&&["title","kind","markdown","evidenceIds"].every(k=>JSON.stringify(old[k as keyof typeof old])===JSON.stringify(section[k as keyof typeof section]));
             if(input.version===2&&same){const verify=section.evidenceReview==='verified'&&old.evidenceReview!=='verified';Object.assign(section,structuredClone(old));if(verify){section.protected=true;section.sectionRevisionId=randomUUID();section.evidenceReview='verified';section.assessment={version:'automatic-wiki-v1',sectionId:section.id,sectionRevisionId:section.sectionRevisionId,humanReview:'verified',support:'validated',reason:'human_verified',inputFingerprint:old.assessment?.inputFingerprint??createHash('sha256').update(JSON.stringify(section.evidenceIds)).digest('hex'),freshness:'current'};}}
             else { section.protected=true;if(input.version===2||old?.sectionRevisionId){section.provenance="personal";section.sectionRevisionId=randomUUID();section.assessment={version:"automatic-wiki-v1",sectionId:section.id,sectionRevisionId:section.sectionRevisionId,humanReview:"unreviewed",support:"unassessed",reason:"prose_changed",inputFingerprint:createHash("sha256").update(JSON.stringify(section)).digest("hex"),freshness:"current"};}}
@@ -168,6 +174,7 @@ export function createWikiRepository(pool: PgPool) {
                 [revisionId,section.id,kind,inputId,item.snapshot.contentHash,item.snapshot,item.current?null:'evidence_unavailable',item.current?null:new Date()]);
             }
           }
+          for(const original of section.interpretations?.flatMap(r=>r.evidence)??[])await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot) values($1,$2,$3,$4,$5,$6) on conflict do nothing',[revisionId,section.id,'source',original.sourceItemId,original.contentHash,{historicalInterpretation:true,sourceItemId:original.sourceItemId}]);
           if(previous&&previous.markdown===section.markdown) await db.query(`insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at)
             select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 and kind not in('source','document','chunk') on conflict do nothing`,[revisionId,input.expectedRevisionId,section.id]);
         }
@@ -201,6 +208,7 @@ export function createWikiRepository(pool: PgPool) {
           r.content->>'review' as review,not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.stale_reason is not null) and not exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->>'evidenceReview'='needs_review' and not(coalesce(sec->'assessment'->>'support','')='validated' and sec->'assessment'->>'sectionRevisionId'=sec->>'sectionRevisionId' and sec->'assessment'->>'freshness'='current' and (sec->'assessment'->>'humanReview'='verified' or sec->'assessment'->>'supportMethod'='model_checked' and sec->'assessment'->>'supportAuditId' is not null))) and not exists(select 1 from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=p.id and (c.id is null or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null) and exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->'evidenceIds' ? e.id::text)) as current,p.title as breadcrumb,unaccent(lower(p.title))=unaccent(lower($1)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') alias where unaccent(lower(alias))=unaccent(lower($1))) as exact
         from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived
           and (not $5 or r.content->>'review'='reviewed') and ${textMatch("p.title || ' ' || r.content::text")}
+          and (($4::uuid is null and cardinality($2::uuid[])=0) or not exists(select 1 from wiki_dependencies history where history.revision_id=r.id and history.kind='source' and history.input_id not in(select id from scoped)))
           and (($4::uuid is null and cardinality($2::uuid[])=0) or p.id=$4 or exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id in(select id from scoped)))
           and (($4::uuid is null and cardinality($2::uuid[])=0) or not exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id not in(select id from scoped)
             and exists(select 1 from jsonb_array_elements(r.content->'sections') sec where sec->'evidenceIds' ? e.id::text)))
@@ -209,8 +217,9 @@ export function createWikiRepository(pool: PgPool) {
         union all select c.id,'chunk',s.title,c.content,s.id,null::uuid,null,d.metadata->>'supersededByDocumentId' is null,t.path,false
           from chunks c join source_items s on s.id=c.source_item_id join source_tree t on t.id=s.id join documents d on d.id=c.document_id
           where s.id in(select id from scoped) and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1' and (not $6 or d.metadata->>'supersededByDocumentId' is null) and ${textMatch("c.content")}
-        union all select n.id,'atomic_note',n.idea_statement,n.body_markdown,n.created_from_source_item_id,null::uuid,n.status::text,${currentNoteEvidence},t.path,false
-          from atomic_notes n join source_tree t on t.id=n.created_from_source_item_id left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id where n.created_from_source_item_id in(select id from scoped)
+        union all select n.id,'atomic_note',n.idea_statement,n.body_markdown,t.id,null::uuid,n.status::text,${currentNoteEvidence},coalesce(t.path,''),false
+          from atomic_notes n left join source_tree t on t.id=n.created_from_source_item_id left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id where (($4::uuid is null and cardinality($2::uuid[])=0) or n.created_from_source_item_id in(select id from scoped))
+          and (($4::uuid is null and cardinality($2::uuid[])=0) or not exists(select 1 from atomic_note_evidence retained where retained.note_id=n.id and retained.source_id not in(select id from scoped)))
           and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and l.source_item_id not in(select id from scoped)) and n.status not in('rejected','archived') and (not $5 or n.status='approved') and (not $6 or ${currentNoteEvidence}) and ${textMatch("n.idea_statement || ' ' || n.body_markdown")}
         union all select r.id,'source_relation',a.title || ' → ' || b.title,r.explanation,r.source_item_id,r.target_source_item_id,r.status::text,${currentSourceRelationSql},a.title || ' / ' || b.title,false
           from source_relations r join source_items a on a.id=r.source_item_id join source_items b on b.id=r.target_source_item_id

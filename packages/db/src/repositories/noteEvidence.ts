@@ -1,0 +1,10 @@
+import type {PgPool} from '../client.js';
+/** Snapshot-backed attribution is readable but never makes a missing original current. */
+export async function readNoteEvidence(db:Pick<PgPool,'query'>,noteId:string,primaryChunkId:string){
+ const rows=(await db.query(`select c.id,c.source_item_id as "sourceItemId",c.document_id as "documentId",c.id as "chunkId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,d.metadata->>'supersededByDocumentId' is null as current,true as "sourceAvailable"
+ from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id
+ where (c.id=$2 or c.id in(select chunk_id from atomic_note_source_links where atomic_note_id=$1)) and not exists(select 1 from atomic_note_evidence e where e.note_id=$1 and e.chunk_id=c.id)
+ union all select e.chunk_id,e.source_id,(e.snapshot->>'documentId')::uuid,e.chunk_id,(e.snapshot->>'sourceSpanId')::uuid,e.snapshot->>'contentHash',e.snapshot->>'excerpt',e.snapshot->>'sourceTitle',(e.snapshot->>'documentCreatedAt')::timestamptz,e.snapshot->>'locator',coalesce(c.content_hash=e.snapshot->>'contentHash' and d.metadata->>'supersededByDocumentId' is null,false),s.id is not null from atomic_note_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=c.document_id left join source_items s on s.id=e.source_id where e.note_id=$1 order by 1 limit 101`,[noteId,primaryChunkId])).rows;
+ return rows.map(e=>({...e,documentCreatedAt:new Date(e.documentCreatedAt).toISOString()}));
+}
+export const retainedNoteCurrentSql=(alias='n')=>`not exists(select 1 from atomic_note_evidence retained left join chunks rc on rc.id=retained.chunk_id left join documents rd on rd.id=rc.document_id where retained.note_id=${alias}.id and (rc.id is null or rc.content_hash<>retained.snapshot->>'contentHash' or rd.metadata->>'supersededByDocumentId' is not null))`;

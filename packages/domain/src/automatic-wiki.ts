@@ -1,3 +1,4 @@
+import { InterpretationDraftSchema,NoteEvolutionSchema } from "./knowledge-evolution.js";
 import { z } from "zod";
 
 /** A0 contracts only. No policy, executor or migration is activated by importing these. */
@@ -81,6 +82,7 @@ export const CuratorReferenceSchema = z.discriminatedUnion("reference", [
   z.object({ reference: z.literal("proposed"), handle: proposalHandle }).strict()
 ]);
 export const CuratorChangeSetSchema = z.object({
+  noteEvolution:NoteEvolutionSchema.optional(),
   version: z.literal(automaticWikiVersion), groupId: id, policyRevisionId: id,
   explanation: z.string().min(1).max(2000),
   targets: z.array(z.object({
@@ -94,7 +96,7 @@ export const CuratorChangeSetSchema = z.object({
     ]),
     // Existing placements cannot be moved through this initial-placement field.
     initialParent: CuratorReferenceSchema.nullable(),
-    sections: z.array(z.object({ sectionId: id.nullable(), expectedSectionRevisionId: id.nullable(),
+    sections: z.array(z.object({ interpretation:InterpretationDraftSchema.optional(), sectionId: id.nullable(), expectedSectionRevisionId: id.nullable(),
       title: z.string().max(300), markdown: z.string().min(1).max(12000),
       originalHandles: z.array(z.string().regex(/^e[1-9][0-9]{0,3}$/)).min(1).max(12)
     }).strict()).max(6),
@@ -159,7 +161,7 @@ export const AutomaticWikiPolicySchema = z.object({
   scope: z.object({ wholeLibrary: z.boolean(), sourceIds: z.array(id).max(1000),
     includeDescendants: z.boolean(), excludedSourceIds: z.array(id).max(1000), domainId: id.nullable() }).strict(),
   triggers: z.array(z.enum(["processing_settled", "input_changed", "daily", "weekly", "monthly"])).max(5),
-  operations: z.array(z.enum(["repair_navigation", "create_grounded", "update_unprotected", "initial_placement", "refresh_investigation"])).max(5),
+  operations: z.array(z.enum(["repair_navigation", "create_grounded", "update_unprotected", "initial_placement", "refresh_investigation", "interpret_memory", "evolve_notes"])).max(7),
   profileOverrideId: id.nullable(), limits: CuratorLimitsSchema,
   // A4 must calibrate these; null means unavailable, never unlimited or zero.
   allowancePreset: z.object({ version: z.string().min(1), monthlyCalls: z.number().int().positive(),

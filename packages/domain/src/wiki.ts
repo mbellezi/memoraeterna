@@ -1,9 +1,11 @@
+import { InterpretationRecordSchema } from "./knowledge-evolution.js";
 import { WikiAutomaticContentSchema, SectionAssessmentSchema } from './automatic-wiki.js';
 import { SourceItemTypeSchema } from "./source-item.js";
 import { z } from "zod";
 
 export const WikiPageKindSchema = z.enum(["topic", "entity", "collection", "synthesis"]);
 export const WikiSectionSchema = z.object({
+  interpretations:z.array(InterpretationRecordSchema).max(100).optional(),
   sectionRevisionId:z.string().uuid().optional(), assessment:SectionAssessmentSchema.optional(),
   id: z.string().uuid(), title: z.string().trim().max(300),
   kind: z.enum(["prose", "question", "comparison"]).default("prose"),
@@ -14,7 +16,7 @@ export const WikiSectionSchema = z.object({
   evidenceIds: z.array(z.string().uuid()).max(100).default([])
 }).strict();
 export const WikiEvidenceSchema = z.object({
-  id: z.string().uuid(), sourceItemId: z.string().uuid(), documentId: z.string().uuid(),
+  sourceAvailable:z.boolean().optional(),id: z.string().uuid(), sourceItemId: z.string().uuid(), documentId: z.string().uuid(),
   chunkId: z.string().uuid(), sourceSpanId: z.string().uuid().nullable(),
   contentHash: z.string(), excerpt: z.string(), sourceTitle: z.string(),
   documentCreatedAt: z.string(), locator: z.string().nullable(), current: z.boolean()
@@ -71,8 +73,8 @@ export type WikiSaveInput = z.infer<typeof WikiSaveInputSchema>;
 export type WikiQuery = z.infer<typeof WikiQuerySchema>;
 export type WikiResult = z.infer<typeof WikiResultSchema>;
 export type WikiEvidence = z.infer<typeof WikiEvidenceSchema>;
-export const WikiLinkedTargetInputSchema=z.object({pageId:z.string().uuid(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid()}).strict();
-export const WikiLinkedTargetSchema=z.object({kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid(),title:z.string(),markdown:z.string(),sourceItemId:z.string().uuid().nullable(),evidence:z.array(WikiEvidenceSchema)}).strict();
+export const WikiLinkedTargetInputSchema=z.object({revisionId:z.string().uuid().optional(),pageId:z.string().uuid(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid()}).strict();
+export const WikiLinkedTargetSchema=z.object({noteState:z.object({status:z.enum(['pending_review','approved','rejected','archived']),protected:z.boolean(),current:z.boolean()}).strict().optional(),successors:z.array(z.object({id:z.string().uuid(),title:z.string()}).strict()).optional(),kind:z.enum(['page','source','atomic_note','entity']),id:z.string().uuid(),title:z.string(),markdown:z.string(),sourceItemId:z.string().uuid().nullable(),evidence:z.array(WikiEvidenceSchema)}).strict();
 
 /** Keyset navigation never mistakes a bounded page for a complete forest. */
 export const WikiTreeInputSchema=z.object({view:z.enum(['children','recent','pinned']).default('children'),parentId:z.string().uuid().nullable().default(null),after:z.object({position:z.number().int(),title:z.string().max(300),id:z.string().uuid()}).strict().nullable().default(null),limit:z.number().int().min(1).max(100).default(50),pathTo:z.string().uuid().optional()}).strict();

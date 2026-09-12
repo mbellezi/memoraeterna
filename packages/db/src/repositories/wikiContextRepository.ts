@@ -1,3 +1,4 @@
+import {retainedNoteCurrentSql} from "./noteEvidence.js";
 import type { PgPool, PgClient } from "../client.js";
 
 export interface WikiContextRecord {
@@ -5,7 +6,7 @@ export interface WikiContextRecord {
   sourceItemId: string; text: string; review: string | null; fingerprint: string;
   chunkIds: string[]; dependencies: Array<{kind:string;id:string;fingerprint:string}>;
 }
-export const noteFingerprint = (alias:string) => `md5((md5((to_jsonb(${alias})-'updated_at'-'created_at')::text))||coalesce((select string_agg((to_jsonb(l)-'created_at')::text,'|' order by l.id) from atomic_note_source_links l where l.atomic_note_id=${alias}.id),''))`;
+export const noteFingerprint = (alias:string) => `md5((md5((to_jsonb(${alias})-'updated_at'-'created_at'-'ownership'-'owning_source_item_id'-'owning_chunk_id')::text))||coalesce((select string_agg((to_jsonb(l)-'created_at')::text,'|' order by l.id) from atomic_note_source_links l where l.atomic_note_id=${alias}.id),''))`;
 export const rowFingerprint = (alias:string) => `md5((to_jsonb(${alias})-'updated_at'-'created_at')::text)`;
 const inputTables:Record<string,string>={source:'source_items',document:'documents',chunk:'chunks',atomic_note:'atomic_notes',summary:'source_summaries',entity:'entities',entity_mention:'entity_mentions',source_relation:'source_relations',relation_evidence:'source_relation_evidence',note_relation:'atomic_note_relations'};
 export async function validateWikiDependencies(db:Pick<PgClient,'query'>,dependencies:Array<{kind:string;id:string;fingerprint:string}>,lock=false){
@@ -37,7 +38,7 @@ export function createWikiContextRepository(pool:PgPool){return {
     const notes=(await pool.query(`select n.id,'atomic_note' as kind,n.created_from_source_item_id as "sourceItemId",n.idea_statement||E'\\n'||n.body_markdown as text,n.status as review,${noteFingerprint('n')} as fingerprint,
       array(select distinct id from (select n.evidence_chunk_id as id union select l.chunk_id from atomic_note_source_links l where l.atomic_note_id=n.id) refs order by id) as "chunkIds"
       from atomic_notes n join chunks c on c.id=n.evidence_chunk_id join documents d on d.id=c.document_id
-      where n.created_from_source_item_id=any($1::uuid[]) and c.source_item_id=n.created_from_source_item_id and n.evidence_chunk_id=any($2::uuid[]) and n.status not in('rejected','archived') and n.supersession_status='current'
+      where n.created_from_source_item_id=any($1::uuid[]) and c.source_item_id=n.created_from_source_item_id and n.evidence_chunk_id=any($2::uuid[]) and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()}
       and (not $3 or n.status='approved') and d.metadata->>'supersededByDocumentId' is null
       and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (l.source_item_id<>lc.source_item_id or l.source_item_id<>all($1::uuid[]) or l.chunk_id<>all($2::uuid[]) or ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))
       order by n.id limit 20`,[sourceIds,chunkIds,reviewedOnly])).rows;

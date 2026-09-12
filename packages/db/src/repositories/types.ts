@@ -70,6 +70,7 @@ export interface AtomicNoteRecord {
   id: string;
   generationId: string | null;
   supersessionStatus: string;
+  ownership?: "source" | "knowledge";
   title: string;
   bodyMarkdown: string;
   ideaStatement: string;

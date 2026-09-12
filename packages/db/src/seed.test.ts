@@ -82,7 +82,9 @@ describe("baseline seed", () => {
       "0036_hot_scarlet_witch",
       "0037_flawless_norrin_radd",
       "0038_investigation_descendant_impacts",
-      "0039_sturdy_lila_cheney"
+      "0039_sturdy_lila_cheney",
+      "0040_mysterious_talon",
+      "0041_knowledge_note_ownership"
     ]);
   });
 
@@ -140,7 +142,9 @@ describe("baseline seed", () => {
       "0036_hot_scarlet_witch",
       "0037_flawless_norrin_radd",
       "0038_investigation_descendant_impacts",
-      "0039_sturdy_lila_cheney"
+      "0039_sturdy_lila_cheney",
+      "0040_mysterious_talon",
+      "0041_knowledge_note_ownership"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -1050,8 +1050,10 @@ function AtomicNoteCard({ note, focused = false, t }: { note: SourceDetail["atom
           <span className="block font-semibold">{note.title}</span>
           <span className="mt-1 block text-sm font-medium text-slate-700 dark:text-slate-300">{note.ideaStatement}</span>
         </span>
-        <span className="flex shrink-0 items-center gap-2">
+        <span className="flex max-w-[45%] flex-wrap items-center justify-end gap-2">
           <span className="rounded-full bg-slate-200 px-2 py-1 text-xs dark:bg-slate-800">{t(noteStatusKey(note.status))}</span>
+          {note.supersessionStatus!=="current"&&<span className="text-xs text-amber-700 dark:text-amber-300">{t("knowledgeEvolution.supersededNote")}</span>}
+          <span className="text-xs text-muted-foreground">{t(note.ownership==="knowledge"?"knowledgeEvolution.knowledgeOwned":"knowledgeEvolution.sourceOwned")}</span>
           <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
         </span>
       </button>

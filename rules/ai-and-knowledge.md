@@ -381,3 +381,25 @@ provider token breakdowns and precise call context, as specified in
 - Context controls show total tokens separately from maximum output tokens, with
   accessible labels and effective/default/inherited information. Saving defaults
   or overrides does not infer, enqueue work, reprocess material or alter vectors.
+
+- Temporal, procedure, consolidation and their repair/support leaves are actual
+  catalog callers with the same documented variables, pinned source-free templates,
+  canonical audits and FIFO as curation. Catalog samples execute all supported
+  repair/support variants; their positive capability cases require the relevant
+  interpretation or note-evolution output, without applying library changes.
+- Evolution support reuses the calibrated distinction between concrete unsupported
+  claims and neutral editorial purposes, ordinary paraphrases, missing-evidence
+  statements or refusals to infer broader results. It remains a reviewer, not a
+  second synthesizer. Canonical personal originals are classified by backend
+  provenance, never titles; authored output-note fields and complete originals are
+  distinct from read-only references and earlier interpretations.
+- New note transport citations are checked against that note's selected originals
+  and converted to canonical numbered references in persisted evidence order.
+  Source matching cannot reuse knowledge-owned note relations by assigning their
+  combined meaning to one arbitrary historical source endpoint; direct canonical
+  source analysis retains its independent explicit processing path.
+
+- Curator note admission rechecks every retained original for currentness, including
+  deleted secondary evidence, before serializing note prose into a new prompt.
+  Retained history remains readable but cannot become fresh support by losing a
+  live source-link row.

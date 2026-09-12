@@ -1312,6 +1312,8 @@ function withAiSourceItems(context: AiTaskLogContext, sourceItemIds: string[]): 
 
 function serializeNote(note: AtomicNoteRecord) {
   return {
+    ownership: note.ownership ?? "source",
+    supersessionStatus: note.supersessionStatus,
     id: note.id,
     title: note.title,
     bodyMarkdown: note.bodyMarkdown,

@@ -1103,13 +1103,12 @@ export const atomicNotes = pgTable(
     ideaStatement: text("idea_statement").notNull(),
     language: varchar("language", { length: 16 }).notNull().default("und"),
     status: atomicNoteStatus("status").notNull().default("pending_review"),
-    createdFromSourceItemId: uuid("created_from_source_item_id")
-      .notNull()
-      .references(() => sourceItems.id, { onDelete: "cascade" }),
+    createdFromSourceItemId: uuid("created_from_source_item_id").notNull(),
+    ownership: text("ownership").notNull().default("source"),
+    owningSourceItemId: uuid("owning_source_item_id").references(() => sourceItems.id, { onDelete: "cascade" }),
+    owningChunkId: uuid("owning_chunk_id").references(() => chunks.id, { onDelete: "cascade" }),
     sourceSpanId: uuid("source_span_id").references(() => sourceSpans.id, { onDelete: "set null" }),
-    evidenceChunkId: uuid("evidence_chunk_id")
-      .notNull()
-      .references(() => chunks.id, { onDelete: "cascade" }),
+    evidenceChunkId: uuid("evidence_chunk_id").notNull(),
     generationProfileId: uuid("generation_profile_id").references(() => aiProfileSets.id, { onDelete: "set null" }),
     aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
     generationProvider: text("generation_provider").notNull(),
@@ -1592,3 +1591,11 @@ export const wikiInvestigations=pgTable('wiki_investigations',{
 export const wikiInvestigationEvaluations=pgTable('wiki_investigation_evaluations',{
  id:uuid('id').primaryKey(),investigationId:uuid('investigation_id').notNull().references(()=>wikiInvestigations.id,{onDelete:'restrict'}),inputFingerprint:text('input_fingerprint').notNull(),compositionHash:text('composition_hash').notNull(),status:text('status').notNull(),result:jsonb('result'),previous:jsonb('previous'),snapshot:jsonb('snapshot').notNull(),runId:uuid('run_id').references(()=>organizationRuns.id,{onDelete:'restrict'}),changedUnderstanding:jsonb('changed_understanding').notNull().default([]),error:text('error'),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
 },t=>[uniqueIndex('wiki_investigation_evaluation_identity_idx').on(t.investigationId,t.inputFingerprint,t.compositionHash),index('wiki_investigation_evaluation_history_idx').on(t.investigationId,t.createdAt)]);
+
+/** Immutable original attribution survives deletion of live source links. */
+export const atomicNoteEvidence=pgTable('atomic_note_evidence',{
+ noteId:uuid('note_id').notNull().references(()=>atomicNotes.id,{onDelete:'cascade'}),chunkId:uuid('chunk_id').notNull(),sourceId:uuid('source_id').notNull(),snapshot:jsonb('snapshot').notNull()
+},t=>[primaryKey({columns:[t.noteId,t.chunkId]}),index('atomic_note_evidence_source_idx').on(t.sourceId)]);
+export const atomicNoteEvolution=pgTable('atomic_note_evolution',{
+ previousId:uuid('previous_id').notNull().references(()=>atomicNotes.id,{onDelete:'restrict'}),nextId:uuid('next_id').notNull().references(()=>atomicNotes.id,{onDelete:'restrict'}),runId:uuid('run_id').notNull().references(()=>organizationRuns.id,{onDelete:'restrict'}),kind:text('kind').notNull(),reason:text('reason').notNull(),createdAt:timestamp('created_at',{withTimezone:true}).notNull().defaultNow()
+},t=>[primaryKey({columns:[t.previousId,t.nextId]}),index('atomic_note_evolution_run_idx').on(t.runId)]);

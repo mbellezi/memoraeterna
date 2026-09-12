@@ -15,6 +15,7 @@ interface AtomicNoteRow extends QueryResultRow {
   id: string;
   generationId: string | null;
   supersessionStatus: string;
+  ownership: "source" | "knowledge";
   title: string;
   bodyMarkdown: string;
   ideaStatement: string;
@@ -70,7 +71,7 @@ export interface CreateGeneratedAtomicNoteInput {
   metadata?: JsonObject;
 }
 
-const returning = `id, generation_id as "generationId", supersession_status as "supersessionStatus",
+const returning = `coalesce(to_jsonb(atomic_notes)->>'ownership','source') as ownership, id, generation_id as "generationId", supersession_status as "supersessionStatus",
   title, body_markdown as "bodyMarkdown", idea_statement as "ideaStatement",
   language, status, created_from_source_item_id as "createdFromSourceItemId",
   source_span_id as "sourceSpanId", evidence_chunk_id as "evidenceChunkId",
@@ -80,7 +81,7 @@ const returning = `id, generation_id as "generationId", supersession_status as "
   generation_key as "generationKey", metadata, reviewed_at as "reviewedAt",
   created_at as "createdAt", updated_at as "updatedAt"`;
 
-const candidateReturning = `candidate.id, candidate.generation_id as "generationId",
+const candidateReturning = `coalesce(to_jsonb(candidate)->>'ownership','source') as ownership, candidate.id, candidate.generation_id as "generationId",
   candidate.supersession_status as "supersessionStatus", candidate.title,
   candidate.body_markdown as "bodyMarkdown", candidate.idea_statement as "ideaStatement",
   candidate.language, candidate.status,
@@ -136,7 +137,7 @@ export function createAtomicNoteRepository(db: Queryable) {
              generation_runtime = excluded.generation_runtime,
              metadata = excluded.metadata,
              updated_at = now()
-           where atomic_notes.status = 'pending_review' and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
+           where coalesce(to_jsonb(atomic_notes)->>'ownership','source')='source' and atomic_notes.status = 'pending_review' and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
            returning ${returning}`,
           [
             input.title,
@@ -198,9 +199,10 @@ export function createAtomicNoteRepository(db: Queryable) {
     },
 
     async listBySourceItem(sourceItemId: string): Promise<AtomicNoteRecord[]> {
+      const retained = (await db.query("select to_regclass('public.atomic_note_evidence') is not null available")).rows[0]?.available === true;
       const result = await db.query<AtomicNoteRow>(
         `select ${returning} from atomic_notes
-         where created_from_source_item_id = $1 and status <> 'rejected'
+         where (created_from_source_item_id = $1 or exists(select 1 from atomic_note_source_links l where l.atomic_note_id=atomic_notes.id and l.source_item_id=$1) ${retained ? 'or exists(select 1 from atomic_note_evidence e where e.note_id=atomic_notes.id and e.source_id=$1)' : ''}) and status <> 'rejected'
          order by created_at`,
         [sourceItemId]
       );

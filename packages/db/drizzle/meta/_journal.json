@@ -281,6 +281,20 @@
       "when": 1789240699326,
       "tag": "0039_sturdy_lila_cheney",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1789246836686,
+      "tag": "0040_mysterious_talon",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1789246840980,
+      "tag": "0041_knowledge_note_ownership",
+      "breakpoints": true
     }
   ]
 }

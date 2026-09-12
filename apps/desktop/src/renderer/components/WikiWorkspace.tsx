@@ -1,3 +1,4 @@
+import {KnowledgeInterpretations} from "./KnowledgeInterpretations";
 import { WikiChildrenLinks } from './WikiChildrenLinks';
 import { subscribeWindowNavigation } from '../lib/window-navigation';
 import { WikiContextPane } from './WikiContextPane';
@@ -55,11 +56,14 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
   const [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<MessageKey | null>(null);
   const [linkedInspector,setLinkedInspector]=useState<Awaited<ReturnType<typeof window.app.wiki.linkedTarget>>>(null);
   const [inspector, setInspector] = useState<WikiEvidence | WikiResult | null>(null);
+  const [linkRefresh,setLinkRefresh]=useState(0);
+  const refreshLinkedEvidence=useCallback((value:Awaited<ReturnType<typeof window.app.wiki.linkedTarget>>)=>{if(!value)return;setInspector(current=>{if(!current||!("chunkId" in current))return current;const next=value.evidence.find(e=>e.chunkId===current.chunkId);return next?{...current,current:next.current,sourceAvailable:next.sourceAvailable}:current;});setLinkedInspector(current=>current?.id===value.id&&current.kind===value.kind?value:current);},[]);
   const [history, setHistory] = useState<Awaited<ReturnType<typeof window.app.wiki.history>> | null>(null);
   const [pickSection, setPickSection] = useState<string | null>(null), [chunks, setChunks] = useState<string[]>([]);
   const [historyStack, setHistoryStack] = useState<Array<{
     mode: typeof mode;
     pageId: string | null;
+    revisionId?: string|undefined;
   }>>([]);
   const fail = (e: unknown) => { const message = String(e); setError(message.includes("wiki.errors.conflict") ? "wiki.errors.conflict" : message.includes("wiki.errors.cycle") ? "wiki.errors.cycle" : message.includes("wiki.errors.evidence") ? "wiki.errors.evidence" : "wiki.errors.generic"); };
   useEffect(()=>{if(!externalTarget||editing||organizationOpen||consultationOpen||history||processedExternal.current===externalTarget.token)return;const isCurrent=pageRequests.current.begin();let live=true;void window.app.wiki.get(externalTarget.id,externalTarget.revision).then(value=>{if(!live||!isCurrent())return;processedExternal.current=externalTarget.token;setHistoricalRevision(externalTarget.revision);setPage(value);setMode('page');setInspector(value?.evidence.find(e=>e.id===externalTarget.evidence)??null);}).catch(fail);return()=>{live=false;};},[externalTarget,editing,organizationOpen,consultationOpen,history]);
@@ -90,8 +94,8 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     return () => { active = false; clearTimeout(timer); };
   }, [query, kind, scope, reviewed, current, mode, offset, pickSection, sourceScope, searchRetry]);
   useEffect(()=>{
-    if(!active||editing||historicalRevision||mode!=="page"||!page)return;
-    const isCurrent=pageRequests.current.capture();let live=true;const id=page.id,timer=setInterval(()=>{if(document.hidden||!live||!isCurrent())return;void window.app.wiki.get(id).then(next=>{if(next&&live&&isCurrent())setPage(current=>live&&isCurrent()&&current?.id===id?next:current);}).catch(()=>undefined);},3000);
+    if(!active||editing||mode!=="page"||!page)return;
+    const isCurrent=pageRequests.current.capture();let live=true;const id=page.id;const refresh=()=>{if(document.hidden||!live||!isCurrent())return;void window.app.wiki.get(id,historicalRevision).then(next=>{if(next&&live&&isCurrent()){setPage(current=>current?.id===id?next:current);setInspector(current=>{if(!current||!("chunkId" in current))return current;const evidence=next.evidence.find(e=>e.chunkId===current.chunkId);return evidence?{...current,current:evidence.current,sourceAvailable:evidence.sourceAvailable}:current;});setLinkRefresh(n=>n+1);}}).catch(()=>undefined);};refresh();const timer=setInterval(refresh,3000);
     return()=>{live=false;clearInterval(timer);};
   },[active,editing,mode,page?.id,historicalRevision]);
   useEffect(()=>{if(page&&readingRef.current)readingRef.current.scrollTop=readingScroll.current.get(page.id)??0;},[page?.id]);
@@ -133,9 +137,9 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
       setHistoryStack((s) => s.slice(0, -1));
       setMode(target.mode);
       setScope(target.pageId);
-      setHistoricalRevision(undefined);
+      setHistoricalRevision(target.revisionId);
       const isCurrent=pageRequests.current.begin();
-      const nextPage=target.pageId ? await window.app.wiki.get(target.pageId) : null;
+      const nextPage=target.pageId ? await window.app.wiki.get(target.pageId,target.revisionId) : null;
       if(isCurrent())setPage(nextPage);
     }
   }, [inspector, pickSection, history, editing, historyStack, organizationOpen, closeOrganization,automaticOpen,consultationOpen,contextView,linkedInspector]);
@@ -153,20 +157,20 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     });
     return () => { window.removeEventListener("keydown", key); unsubscribe(); };
   }, [goBack, active]);
-  async function openPage(id: string) {
+  async function openPage(id: string, revisionId?:string) {
     lastPageRequest.current = id;
     if (editing)
       return;
     setLoading(true);
     setError(null);
-    setHistoricalRevision(undefined);
+    setHistoricalRevision(revisionId);
     const isCurrent=pageRequests.current.begin();
     try {
-      const result = await window.app.wiki.get(id);
+      const result = await window.app.wiki.get(id,revisionId);
       if(!isCurrent())return;
       if (!result)
         throw new Error();
-      setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]);
+      setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null, revisionId:historicalRevision }]);
       if(page)readingScroll.current.set(page.id,readingRef.current?.scrollTop??0);
       setPage(result);
       void window.app.wiki.tree({parentId:null,pathTo:id,limit:1}).then(result=>setPages(current=>[...new Map([...current,...result.path].map(item=>[item.id,item])).values()])).catch(fail);
@@ -221,7 +225,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
     if (!pickSection)
       return; setChunks((c) => [...new Set([...c, result.id])]); setDraft((d) => ({ ...d, sections: d.sections.map((s) => s.id === pickSection ? { ...s, evidenceIds: [...new Set([...s.evidenceIds, result.id])], provenance: "attributed", evidenceReview: "verified" } : s) })); setPickSection(null); setQuery("");
   }
-  const renderReference=(token:string,evidenceIds:string[])=>{if(!page)return undefined;const ref=resolveWikiReference(token,evidenceIds,[...(page.automatic?.links??[]),...(page.automatic?.memberships.map(m=>m.target)??[])]);if(ref?.kind==='evidence'){const e=page.evidence.find(e=>e.id===ref.id);return e?<button className="inline text-accent underline" aria-label={t('wiki.inspector')+' · '+e.sourceTitle} onClick={()=>setInspector(e)}>{token}</button>:undefined;}if(ref?.kind==='target')return <WikiTypedLink inline onInlineOpen={setLinkedInspector} label={ref.label} pageId={page.id} target={ref.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>;return undefined;};
+  const renderReference=(token:string,evidenceIds:string[])=>{if(!page)return undefined;const ref=resolveWikiReference(token,evidenceIds,[...(page.automatic?.links??[]),...(page.automatic?.memberships.map(m=>m.target)??[])]);if(ref?.kind==='evidence'){const e=page.evidence.find(e=>e.id===ref.id);return e?<button className="inline text-accent underline" aria-label={t('wiki.inspector')+' · '+e.sourceTitle} onClick={()=>setInspector(e)}>{token}</button>:undefined;}if(ref?.kind==='target')return <WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} inline onInlineOpen={setLinkedInspector} label={ref.label} pageId={page.id} revisionId={page.revisionId} target={ref.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>;return undefined;};
   const pageCards = (items: PageSummary[]) => <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-3">
     {items.map((p) => <button key={p.id} disabled={editing} onClick={() => void openPage(p.id)} className={`${card} group p-5 text-left transition hover:border-cyan-400`}>
       <div className="mb-4 flex items-center justify-between">
@@ -585,12 +589,13 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               <summary className="cursor-pointer text-sm">
                 {t("wiki.revision")}
                 {r.number} ·
-                {new Date(r.createdAt).toLocaleString()} ·
+                {new Date(r.createdAt).toLocaleString(t.locale)} ·
                 {r.content.title}
               </summary>
               <div className="my-3 text-sm">
                 {r.content.sections.map((s) => <MarkdownPreview key={s.id} markdown={s.markdown} emptyLabel={t("wiki.emptySection")} />)}
               </div>
+              <button className={control} disabled={busy} onClick={()=>void openPage(page.id,r.id)}>{t("knowledgeEvolution.openRevision")}</button>
               <button className={control} disabled={busy || !!historicalRevision || r.id === page.revisionId} onClick={() => void save(r.content)}>
                 {t("wiki.restore")}
               </button>
@@ -606,7 +611,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
               </span>
             </div>
             {page.impacts?.some(i=>i.sectionId===s.id)&&<details className="mb-3 rounded-lg bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300"><summary className="cursor-pointer">{t("consultation.stale")}</summary>{page.impacts.filter(i=>i.sectionId===s.id).map(i=><p key={i.id} className="mt-2 text-xs">{i.kind} · {new Date(i.changedAt).toLocaleString()}</p>)}</details>}
-            <MarkdownPreview markdown={s.markdown} emptyLabel={t("wiki.emptySection")} reference={token=>renderReference(token,s.evidenceIds)} />
+            <KnowledgeInterpretations items={s.interpretations} t={t}/><MarkdownPreview markdown={s.markdown} emptyLabel={t("wiki.emptySection")} reference={token=>renderReference(token,s.evidenceIds)} />
             {s.evidenceReview === "needs_review" ? <p className="mt-3 text-xs text-amber-600">
               {t("wiki.needsEvidenceReview")}
             </p> : null}
@@ -629,7 +634,7 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
             {t("wiki.emptyPage")}
           </p> : null}
           <WikiChildrenLinks pageId={page.id} t={t} onOpen={id=>void openPage(id)}/>
-          {page.automatic&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel="" reference={token=>renderReference(token,group.explanationEvidenceIds)}/>}<div className="mt-2 grid gap-1">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink key={m.id} pageId={page.id} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink key={target.kind+target.id} pageId={page.id} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
+          {page.automatic&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel="" reference={token=>renderReference(token,group.explanationEvidenceIds)}/>}<div className="mt-2 grid gap-1">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} key={m.id} pageId={page.id} revisionId={page.revisionId} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} key={target.kind+target.id} pageId={page.id} revisionId={page.revisionId} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
           </div>
         </article> : null}
 
@@ -659,8 +664,8 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
             {t("wiki.staleEvidence")}
           </p> : null}<blockquote className="my-5 whitespace-pre-wrap border-l-2 border-cyan-500/40 pl-3 text-sm leading-6">
             {inspector.excerpt}
-          </blockquote><button className={`${control} w-full`} onClick={() => onOpenSource(inspector.sourceItemId)}>
-            {t("wiki.openSource")}
+          </blockquote><button disabled={inspector.sourceAvailable===false} className={`${control} w-full`} onClick={() => onOpenSource(inspector.sourceItemId)}>
+            {t(inspector.sourceAvailable===false?"obsidianWiki.unavailable":"wiki.openSource")}
           </button></> : <><h4 className="font-semibold">
             {inspector.title}
           </h4>{inspector.kind === "source_relation" && inspector.sourceItemId ? <SourceRelationsList sourceItemId={inspector.sourceItemId} targetSourceItemId={inspector.targetSourceItemId} relationId={inspector.id} t={t} onOpenNote={onOpenSource} /> : <><p className="mt-2 text-xs text-slate-400">

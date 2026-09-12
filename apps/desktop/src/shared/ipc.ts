@@ -596,6 +596,8 @@ export type LibraryBrowseInput = z.input<typeof libraryBrowseInputSchema>;
 export type SourceEditInput = z.infer<typeof sourceEditInputSchema>;
 
 export const atomicNoteViewSchema = z.object({
+  ownership: z.enum(["source", "knowledge"]).default("source"),
+  supersessionStatus: z.string().default("current"),
   id: z.string().uuid(),
   title: z.string().min(1),
   bodyMarkdown: z.string().min(1),

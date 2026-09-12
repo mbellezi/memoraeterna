@@ -101,7 +101,7 @@ export function createSourceRelationRepository(pool: PgPool) {
         where ta.root_id <> tb.root_id and $1 in (ta.root_id, tb.root_id) and n.status <> 'rejected'
           and not exists (select 1 from source_relation_evidence existing_evidence where existing_evidence.note_relation_id = n.id)
           and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
-          and a.supersession_status = 'current' and b.supersession_status = 'current'
+          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
         group by 1 order by score desc, id limit $2`, [rootId, limit]);
       const graph = await pool.query(`${sourceRelationTreeSql}
         select tb.root_id as id, count(distinct a.entity_id)::float / (1 + count(*)) as score
@@ -162,7 +162,7 @@ export function createSourceRelationRepository(pool: PgPool) {
           and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
           and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
           and n.status <> 'rejected' and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
-          and a.supersession_status = 'current' and b.supersession_status = 'current'
+          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
           and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null
         order by n.final_score desc, n.id limit $3`, [left, right, limit])).rows.map((note) =>
           ["contrasts","similar_to"].includes(note.type) && note.sourceItemId > note.targetSourceItemId ? {

@@ -811,3 +811,57 @@ Implementation sequencing lives in
   policy, scope, expected answer revision and protection again during atomic save.
   Original answer revisions and rejected/uncertain outcomes remain inspectable.
   No automatic retry can replay a started uncertain call or a semantic rejection.
+
+## Temporal interpretation and reviewed note evolution
+
+- New policy previews separately disclose `interpret_memory` and `evolve_notes`.
+  Existing grants and admitted generic curator snapshots acquire neither. Temporal,
+  procedure and consolidation intentions use the existing curator, complete-original
+  support check, review, organization checkpoints and coherent group receipts.
+  Their catalog leaves and repairs are pinned alongside the existing profile,
+  language, shared FIFO and occurrence/month reservations.
+- `knowledge-interpretation-v1` records append to stable wiki sections inside
+  immutable page revisions. Each record has assertion/revision identity, exact
+  original snapshots, attribution and support/contradiction/supersession links to
+  admitted prior records. Preserve all previous records even through human saves.
+  Human changes cannot manufacture or replace these structured records. A section
+  admits at most 100 retained interpretations; exceeding the bound fails visibly.
+- Event/validity and publication time use explicit year/month/day/instant precision
+  or null. Recorded author dates, document import/recording and interpretation
+  revision timestamps remain separate. Never infer a first day from a year/month,
+  an event date from import time, or falsity from age. Supersession concerns the
+  current interpretation, not the historical truth of a previous preference.
+- Deliberately supplied PersonalNote/DailyNote statements are canonical originals,
+  even when their title mentions interpretation. Distinguish them from historical
+  generated interpretations and new AI inference. Procedures retain supporting
+  experience, when it worked, assumptions, limits, corrections and unmeasured
+  outcomes. Missing experience cannot authorize fabricated procedures, sensitive
+  profiling or instructions that change application/prompt/policy authority.
+- All retained interpretation evidence contributes to scope authorization, even
+  after current section citations narrow. Current consultation cannot expose an
+  excluded source through embedded history. Historical evidence remains readable,
+  independently of current support, human review, protection and note ownership.
+- Incremental personal-source work may interpret temporal changes; daily personal
+  work may propose qualified procedures. Weekly/monthly selected-note groups may
+  inspect up to six source-owned notes for consolidation under the same existing
+  bootstrap cursor. No warranted evolution is a retained normal outcome. Reviewed
+  knowledge outputs are excluded from this automatic consolidation inventory to
+  prevent self-generated cycles. Explicit evolution remains available separately.
+- Merge/split replace old-note memberships with the reviewed outputs; cross-source
+  creation retains the selected inputs and adds its new note. Preserve the full
+  union of original attribution across outputs, prior IDs/revisions and explicit
+  redirects. Similarity alone never authorizes a mutation. The semantic reviewer
+  sees new note claims, interpretation fields and the resolved final memberships;
+  readonly old handles do not imply that old memberships remain unchanged.
+- Human review covers the complete bounded repair footprint, exact page revisions
+  and before/after reading order, including protected memberships. Canonical note
+  changes, current membership repairs, dependencies and one group receipt commit
+  together. Unknown concurrent backlinks fail the group. Historical typed links
+  resolve against an explicitly validated page revision and offer successors.
+- Explicit human acceptance of a retained supported proposal uses current enabled
+  policy/schedule revisions and exact input guards, independently of inference
+  authority and time spent waiting for review. Pause blocks acceptance; deliberate
+  same-revision resume permits review without restarting inference or resetting
+  the original occurrence ledger. A review action never revives its canceled
+  bootstrap or starts subsequent work. Failed/rejected/uncertain decisions remain
+  inspectable and identical generations never buy another inference allowance.

@@ -137,3 +137,12 @@ ranking.
   rows without provable identity remain stored but cannot be guessed compatible.
   Preserve lexical fallback and the Library embedding-refresh indicator; never
   silently backfill identity or start reindexing after a catalog activation.
+
+## Retained knowledge evidence
+
+Knowledge-owned notes and interpretation history retain all contributing source
+identities after live source deletion. Scope filtering checks that complete set
+independently of currentness and current section citations, before serializing
+prose, consultation material or portable projections. Whole-library historical
+search can return retained notes with unavailable live source navigation;
+missing originals never become current or newly authorized evidence.

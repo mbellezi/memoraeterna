@@ -341,3 +341,17 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   bytes, preserve later human edits and retain independent successful receipts.
   Only the latest journal returns full snapshots to the renderer; older status
   entries remain lightweight. An unconfigured vault has an explicit empty state.
+
+- Knowledge-owned notes use one independent registered file, without source/document
+  cascade ownership. Legacy per-source writers skip these identities and use the
+  existing wiki outbox to refresh their preserved paths in either format. Keep
+  that boundary when a note is listed through secondary attribution: source-owned
+  notes are written only by their canonical owning source. Retain primary and
+  linked historical excerpts from `atomic_note_evidence` when live
+  source/chunk rows disappear; mark missing originals historical and keep surviving
+  attribution. Final note writes recheck scope and canonical note revision.
+- Note evolution repairs current TOCs and exposes old-to-new note links while
+  retaining older page/managed-file revisions. Generated interpretation histories
+  include dates at their recorded precision, authorship, experience, caveats and
+  corrections outside editable regions. Native and Obsidian human edits retain
+  those immutable records; source text and wrapper metadata grant no authority.

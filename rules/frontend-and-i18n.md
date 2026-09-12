@@ -518,3 +518,23 @@ job statuses, or user-visible backend errors.
 - During a vault layout rollback, progress counts restored or explicitly excluded
   targets. Files preserved because of later edits remain visibly pending and are
   never counted as restored.
+
+- Wiki setup separately discloses interpretation and reviewed note-evolution grants,
+  their existing routine allowance and explicit temporal/procedure/merge/split/
+  cross-source actions. Changing these grants invalidates the pending preview.
+  Review shows old/new note prose, exact originals and affected reading order.
+- Section interpretation details distinguish current/historical/uncertain context,
+  user/attributed statements and AI inference; show exact date precision, separate
+  author-recorded dates and localized import/revision timestamps. Procedure steps,
+  assumptions, limits and nonempty corrections stay alongside original experience.
+  Historical page links carry the viewed revision; deleted originals expose an
+  unavailable source action while their excerpts remain readable.
+
+- Returning from a source and reopening a note revalidate live evidence/source
+  availability without discarding expanded note or selected original context.
+  Source-note cards display supersession and independent knowledge ownership
+  separately from review status. Source-deletion confirmation distinguishes
+  source-owned artifacts from retained evolved knowledge and original history.
+- History offers read-only revision navigation, including complete historical
+  TOCs and typed note links, without requiring a restore write. Back navigation
+  preserves the explicitly viewed revision.

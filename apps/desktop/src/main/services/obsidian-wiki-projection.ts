@@ -1,3 +1,4 @@
+import {renderInterpretationHistory} from "./interpretation-projection.js";
 import { inspectMirrorAssets, projectMirrorAssets } from './obsidian-asset-projection.js';
 import { createObsidianLayoutRepository } from '@app/db';
 import { buildObsidianMirror } from './obsidian-mirror.js';
@@ -97,7 +98,7 @@ export class ObsidianWikiProjection {
           if(!eligible.some(s=>s.id===row.memora_id)||!frame.memoraDocumentId)throw new Error('obsidianWiki.errors.binding');
           const document=await createDocumentRepository(this.pool()).findById(frame.memoraDocumentId);if(!document||projectionHash(normalizeProjectionText(document.canonicalMarkdown))!==row.editable_hash)throw new Error('obsidianWiki.errors.conflict');
         }else{
-          const plan=await this.plan(settings,scope,eligible,await repository.notes(eligible.map(s=>String(s.id)))),current=plan.find(t=>t.id===row.memora_id);
+          const plan=await this.plan(settings,scope,eligible,await repository.notes(eligible.map(s=>String(s.id)),!scope.sourceIds.length)),current=plan.find(t=>t.id===row.memora_id);
           if(!current||current.revision!==row.revision_id||projectionHash(current.editorial)!==row.editable_hash||projectionHash(current.generated)!==row.generated_hash)throw new Error('obsidianWiki.errors.conflict');
         }
         const local = await readOptional(await safeVaultPath(settings.obsidianVaultPath!, row.relative_path));
@@ -116,7 +117,7 @@ export class ObsidianWikiProjection {
         const sources = await repository.sources(scope.sourceIds, scope.includeDescendants);
         if (sources.length > 1000)
             throw new Error('obsidianWiki.errors.limit');
-        const ids = sources.map(s => String(s.id)), notes = await repository.notes(ids);
+        const ids = sources.map(s => String(s.id)), notes = await repository.notes(ids,!scope.sourceIds.length);
         if (notes.length > 2000)
             throw new Error('obsidianWiki.errors.limit');
         const allowedNotes = new Set(notes.map(n => String(n.id)));
@@ -212,6 +213,7 @@ export class ObsidianWikiProjection {
             if(file?.metadata.editorialTombstone||file?.status==='deleted')missing.add(note.id);
             if (file)
                 paths.set(note.id, file.relativePath);
+            else if(note.ownership==='knowledge')await reserve(note.id,'atomic_note',note.title,posix.join(settings.managedRoot,'Atomic notes'),`${slugify(note.title)}.md`);
         }
         await reserve(INDEX, 'wiki_index', t('wiki.title'), posix.join(settings.managedRoot, 'Wiki'), 'index.md');
         await reserve(CATALOG, 'wiki_index', t('obsidianWiki.catalog'), posix.join(settings.managedRoot, 'Wiki', 'Sources'), 'index.md');
@@ -236,6 +238,7 @@ export class ObsidianWikiProjection {
             const children = sources.filter(s => s.parentId === source.id);
             add(source.id, 'source_reference', projectionHash(JSON.stringify(source)), source.title, `# ${safeWikiLabel(source.title)}\n\n`, `${t('obsidianWiki.catalogOnly')}\n\n${t(("import.sourceTypes." + source.type) as MessageKey)}\n\n${bibliography(source)}\n\n${safeWikiLabel(source.subtitle ?? '')}\n\n${safeWikiLabel(source.sourceUri ?? '')}\n\n${list(children, 'source')}\n\n${link(CATALOG, t('obsidianWiki.catalog'), 'wiki')}`, source.id);
         }
+        for(const note of notes.filter(n=>n.ownership==='knowledge')){const originals=await createObsidianWikiRepository(this.pool()).noteEvidence(note.id,note.evidenceChunkId);add(note.id,'atomic_note',note.updatedAt.toISOString(),note.title,`# ${safeWikiLabel(note.title)}\n\n${note.bodyMarkdown}\n\n`,[t(note.current?'obsidianWiki.current':'obsidianWiki.historical'),...originals.map((e,i)=>`[${i+1}] ${link(e.sourceId,e.sourceTitle)} · ${e.documentId} · ${t(e.current?'obsidianWiki.current':'obsidianWiki.historical')}\n\n${quote(e.content)}`),...(note.successorIds??[]).map((id:string)=>link(id,notes.find(n=>n.id===id)?.title??id,'note'))].join('\n\n'));}
         for (const page of pages) {
             const editorial = `# ${markdownHeading(page.title)}\n\n` + page.sections.map(s => { return `${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${sourceReferences(s.markdown)}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`; }).join('\n') + '\n';
             const pageSources = new Set(page.evidence.map(e => e.sourceItemId));
@@ -243,7 +246,7 @@ export class ObsidianWikiProjection {
             const sectionEvidence = page.sections.map(s => `- [[#^memora-section-${s.id}|${safeWikiLabel(s.title)}]] · ${t(("wiki.provenanceTypes." + s.provenance) as MessageKey)} · ${s.evidenceReview === 'needs_review' ? t('wiki.needsEvidenceReview') : t('wiki.reviewed')}${s.protected ? ' · ' + t('obsidianWiki.protected') : ''}: ${s.evidenceIds.map(e => `[[#^memora-evidence-${e}|${page.evidence.findIndex(x => x.id === e) + 1}]]`).join(', ')}`).join('\n');
             const children = pages.filter(p => !p.archived && (p.parentId === page.id || p.collectionIds.includes(page.id)));
             const parent = pages.find(p => p.id === page.parentId);
-            const generated = [t('obsidianWiki.readOnly'), `${page.archived ? t("maintenance.archivedRecoverable") : t(("wiki." + page.review) as MessageKey)} · ${page.revisionId}`, page.aliases.map(safeWikiLabel).join(', '), link(INDEX, t('wiki.title'), 'wiki'), parent ? link(parent.id, parent.title, 'wiki') : '', list(children), list(pages.filter(p => page.collectionIds.includes(p.id))), sectionEvidence, citations, list(notes.filter(n => pageSources.has(n.sourceId) && paths.has(n.id)), 'note'), list(relations.filter(r => pageSources.has(r.source_item_id) && pageSources.has(r.target_source_item_id)).map(r => ({ id: r.id, title: `${r.sourceTitle} → ${r.targetTitle}` }))), '[ ' + t('obsidianWiki.openApp') + ` ](memora://open/wiki/${page.id})`].filter(Boolean).join('\n\n');
+            const generated = [t('obsidianWiki.readOnly'), `${page.archived ? t("maintenance.archivedRecoverable") : t(("wiki." + page.review) as MessageKey)} · ${page.revisionId}`, page.aliases.map(safeWikiLabel).join(', '), link(INDEX, t('wiki.title'), 'wiki'), parent ? link(parent.id, parent.title, 'wiki') : '', list(children), list(pages.filter(p => page.collectionIds.includes(p.id))), sectionEvidence,renderInterpretationHistory(page.sections.flatMap(s=>s.interpretations??[]),t), citations, list(notes.filter(n => (pageSources.has(n.sourceId)||n.sourceIds?.some((id:string)=>pageSources.has(id))) && paths.has(n.id)), 'note'), list(relations.filter(r => pageSources.has(r.source_item_id) && pageSources.has(r.target_source_item_id)).map(r => ({ id: r.id, title: `${r.sourceTitle} → ${r.targetTitle}` }))), '[ ' + t('obsidianWiki.openApp') + ` ](memora://open/wiki/${page.id})`].filter(Boolean).join('\n\n');
             add(page.id, 'wiki_page', page.revisionId, page.title, editorial, generated);
         }
         for (const r of relations) {
@@ -301,6 +304,7 @@ export class ObsidianWikiProjection {
         await this.assertBinding(settings, jobBinding);
         const targetFrame=parseObsidianMarkdown(row.content)?.frontmatter;
         if(targetFrame?.memoraType==='source_item')await this.assertSourceExport(settings,jobBinding,row.memora_id);
+        if(targetFrame?.memoraType==='atomic_note'){const scope=await this.scope();if(!await repo.exportEligible(null,[row.memora_id],scope.sourceIds,scope.includeDescendants))throw new Error('obsidianWiki.errors.binding');const current=(await this.pool().query('select updated_at from atomic_notes where id=$1',[row.memora_id])).rows[0];if(!current||new Date(current.updated_at).toISOString()!==row.revision_id)throw new Error('obsidianWiki.errors.conflict');}
         const registry=createObsidianSyncRepository(this.pool()),registered=await registry.findByMemoraId(row.memora_id);if(registered)await registry.update(registered.id,{metadata:{...registered.metadata,projectionWrite:{renderedHash:row.rendered_hash,deliveryId:row.id}}});
         await this.assertBinding(settings,jobBinding);
         await this.options.write({ vaultPath: settings.obsidianVaultPath!, relativePath: row.relative_path, content: row.content, expectedHash: row.base_hash, recoveryId: row.id, managedRoot: settings.managedRoot });

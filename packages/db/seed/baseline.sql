@@ -2122,3 +2122,64 @@ CREATE TABLE "obsidian_layout_migrations" (
 );
 --> statement-breakpoint
 CREATE INDEX "obsidian_layout_binding_idx" ON "obsidian_layout_migrations" USING btree ("binding","created_at");
+
+CREATE TABLE "atomic_note_evidence" (
+	"note_id" uuid NOT NULL,
+	"chunk_id" uuid NOT NULL,
+	"source_id" uuid NOT NULL,
+	"snapshot" jsonb NOT NULL,
+	CONSTRAINT "atomic_note_evidence_note_id_chunk_id_pk" PRIMARY KEY("note_id","chunk_id")
+);
+--> statement-breakpoint
+CREATE TABLE "atomic_note_evolution" (
+	"previous_id" uuid NOT NULL,
+	"next_id" uuid NOT NULL,
+	"run_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"reason" text NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "atomic_note_evolution_previous_id_next_id_pk" PRIMARY KEY("previous_id","next_id")
+);
+--> statement-breakpoint
+ALTER TABLE "atomic_notes" DROP CONSTRAINT "atomic_notes_created_from_source_item_id_source_items_id_fk";
+--> statement-breakpoint
+ALTER TABLE "atomic_notes" DROP CONSTRAINT "atomic_notes_evidence_chunk_id_chunks_id_fk";
+--> statement-breakpoint
+ALTER TABLE "atomic_notes" ADD COLUMN "ownership" text DEFAULT 'source' NOT NULL;--> statement-breakpoint
+ALTER TABLE "atomic_notes" ADD COLUMN "owning_source_item_id" uuid;--> statement-breakpoint
+ALTER TABLE "atomic_notes" ADD COLUMN "owning_chunk_id" uuid;--> statement-breakpoint
+ALTER TABLE "atomic_note_evidence" ADD CONSTRAINT "atomic_note_evidence_note_id_atomic_notes_id_fk" FOREIGN KEY ("note_id") REFERENCES "public"."atomic_notes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "atomic_note_evolution" ADD CONSTRAINT "atomic_note_evolution_previous_id_atomic_notes_id_fk" FOREIGN KEY ("previous_id") REFERENCES "public"."atomic_notes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "atomic_note_evolution" ADD CONSTRAINT "atomic_note_evolution_next_id_atomic_notes_id_fk" FOREIGN KEY ("next_id") REFERENCES "public"."atomic_notes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "atomic_note_evolution" ADD CONSTRAINT "atomic_note_evolution_run_id_organization_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."organization_runs"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "atomic_note_evidence_source_idx" ON "atomic_note_evidence" USING btree ("source_id");--> statement-breakpoint
+CREATE INDEX "atomic_note_evolution_run_idx" ON "atomic_note_evolution" USING btree ("run_id");--> statement-breakpoint
+ALTER TABLE "atomic_notes" ADD CONSTRAINT "atomic_notes_owning_source_item_id_source_items_id_fk" FOREIGN KEY ("owning_source_item_id") REFERENCES "public"."source_items"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "atomic_notes" ADD CONSTRAINT "atomic_notes_owning_chunk_id_chunks_id_fk" FOREIGN KEY ("owning_chunk_id") REFERENCES "public"."chunks"("id") ON DELETE cascade ON UPDATE no action;
+
+-- Legacy notes retain their original lifecycle; reviewed knowledge notes do not.
+ALTER TABLE atomic_notes DISABLE TRIGGER USER;
+--> statement-breakpoint
+UPDATE atomic_notes SET owning_source_item_id=created_from_source_item_id,owning_chunk_id=evidence_chunk_id WHERE ownership='source';
+--> statement-breakpoint
+ALTER TABLE atomic_notes ENABLE TRIGGER USER;
+--> statement-breakpoint
+ALTER TABLE atomic_notes ADD CONSTRAINT atomic_notes_ownership_check CHECK ((ownership='source' AND owning_source_item_id=created_from_source_item_id AND owning_chunk_id=evidence_chunk_id AND owning_source_item_id IS NOT NULL AND owning_chunk_id IS NOT NULL) OR (ownership='knowledge' AND owning_source_item_id IS NULL AND owning_chunk_id IS NULL));
+--> statement-breakpoint
+CREATE FUNCTION memora_note_ownership() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+ IF NEW.ownership='source' THEN
+  NEW.owning_source_item_id:=NEW.created_from_source_item_id;
+  NEW.owning_chunk_id:=NEW.evidence_chunk_id;
+ ELSE
+  NEW.owning_source_item_id:=NULL;
+  NEW.owning_chunk_id:=NULL;
+ END IF;
+ IF TG_OP='INSERT' OR NEW.created_from_source_item_id IS DISTINCT FROM OLD.created_from_source_item_id OR NEW.evidence_chunk_id IS DISTINCT FROM OLD.evidence_chunk_id THEN
+  IF NOT EXISTS(SELECT 1 FROM chunks WHERE id=NEW.evidence_chunk_id AND source_item_id=NEW.created_from_source_item_id) THEN RAISE EXCEPTION 'organization.errors.evidence'; END IF;
+ END IF;
+ IF TG_OP='UPDATE' AND OLD.ownership='knowledge' AND NEW.ownership<>'knowledge' THEN RAISE EXCEPTION 'organization.errors.evidence'; END IF;
+ RETURN NEW;
+END $$;
+--> statement-breakpoint
+CREATE TRIGGER atomic_notes_ownership BEFORE INSERT OR UPDATE ON atomic_notes FOR EACH ROW EXECUTE FUNCTION memora_note_ownership();

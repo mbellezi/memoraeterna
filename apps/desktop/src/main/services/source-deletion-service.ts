@@ -64,7 +64,7 @@ export class SourceDeletionService {
         [sourceItemIds]
       )).rows.map((row) => row.id);
       atomicNoteIds = (await client.query<IdRow>(
-        `select id from atomic_notes where created_from_source_item_id = any($1::uuid[])`,
+        `select id from atomic_notes where owning_source_item_id = any($1::uuid[])`,
         [sourceItemIds]
       )).rows.map((row) => row.id);
       const chunkIds = (await client.query<IdRow>(
@@ -193,6 +193,8 @@ export class SourceDeletionService {
         await client.query(
           `delete from ai_task_runs run where run.id = any($1::uuid[])
              and not exists (select 1 from ai_task_run_sources source where source.ai_task_run_id = run.id)
+             and not exists (select 1 from organization_steps step where step.ai_task_run_id = run.id)
+             and not exists (select 1 from maintenance_steps step where step.ai_task_run_id = run.id)
              and not exists (select 1 from source_summaries summary where summary.ai_task_run_id = run.id)
              and not exists (select 1 from atomic_notes note where note.ai_task_run_id = run.id)
              and not exists (select 1 from knowledge_generations generation where generation.ai_task_run_id = run.id)`,

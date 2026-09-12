@@ -100,8 +100,10 @@ export class ObsidianSyncService {
     let projected = await this.projectEntity(settings, source, document,binding);
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);
+    const knowledgeOwned=new Set(notes.filter(note=>note.ownership==='knowledge').map(note=>note.id));
+    if(knowledgeOwned.size)await this.wiki.enqueue();
     for (const note of notes) {
-      if (allowedNoteIds && !allowedNoteIds.has(note.id)) continue;
+      if (knowledgeOwned.has(note.id)||note.createdFromSourceItemId!==sourceItemId||allowedNoteIds && !allowedNoteIds.has(note.id)) continue;
       const relatedNotes = await this.resolveRelatedNotes(note.id, relations, allowedNoteIds);
       projected += await this.projectAtomicNote(settings, source, document, note, relatedNotes,binding);
     }

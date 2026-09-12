@@ -245,3 +245,10 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   An in-progress provider checkpoint is uncertain and never automatically replayed;
   a never-started interrupted evaluation is reported separately. Pausing/resolving
   aborts the active signal and blocks guarded apply while retaining prior answers.
+
+- Automatic occurrences recognize explicitly admitted curator children awaiting
+  review even when no bootstrap or impact-delivery cursor owns that child. Waiting
+  and restart remain no-model states with retained reservations; human acceptance
+  does not require restoring inference authority or charging waiting wall time.
+  Same-revision policy resume permits deliberate retained-proposal review, but
+  does not revive a canceled bootstrap or erase rejected/uncertain outcomes.
