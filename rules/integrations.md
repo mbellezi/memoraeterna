@@ -271,6 +271,12 @@ Obsidian plugin, vault projection, pairing, or synchronization.
 
 ## Automatic-wiki layout successor
 
+- Atomic-note wrappers retain primary and linked original excerpts with exact
+  document, chunk, span and locator identities. Display note review/protection
+  separately from evidence currentness. A superseded original remains labeled
+  historical; source editing updates generated metadata without replacing the
+  note's text, identity, path or historical evidence.
+
 - Keep projection language and layout version explicit and independent of UI
   language. Stable language-independent category keys resolve registered paths;
   language/layout changes use a reviewed migration, never a formatter-only move.
@@ -286,3 +292,52 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   files require resolution or explicit exclusion. Use existing target coordination
   and observed hashes to reconcile filesystem/registry/link crash boundaries.
   Rollback checks subsequent edits; it never blindly restores old bytes.
+
+- `obsidian-layout-v2` is an additional explicit pairing grant. Format 2 uses
+  `memora_layout`, `memora_layout_language`, `memora_wiki_schema: 2` and the
+  existing identities/revisions. Retain explicit version-1 configuration and
+  exact v1 readers/outbox replay. New empty configured projections initialize
+  their layout language from content language; existing registries require
+  reviewed migration. Interface-language changes never move files.
+- The version-2 source wrapper exposes one exact original region. Bibliography,
+  current `source_summaries` content and its provenance/freshness, source-note
+  TOCs and reverse links are generated. Never relabel the legacy catalog summary
+  as the current generated summary. Link human interpretation only to positively
+  personal canonical sections. Materialized parents do not repeat their derived
+  child originals; independent parent originals remain available.
+- Atomic notes have one shallow registered file. Page indexes, source TOCs,
+  maps and investigations use the existing canonical roles and ordered typed
+  memberships. Section-local citation ordinals map to exact evidence anchors;
+  export provenance, protection and support separately from human verification.
+  Portable typed links retain a reserved exact inverse map; restoring the map
+  during editorial save preserves native canonical targets. A format-2 human
+  save uses native version-2 section preservation semantics.
+- Portable paths retain NFC Unicode, detect case/normalization collisions,
+  guard reserved filenames and enforce byte limits. Source classification uses
+  canonical type and ancestry; sibling order comes from current materialized
+  divisions. Only an actual recorded daily date creates year/month folders.
+- Attachment copy is explicit, local-only and immutable. Register ownership in
+  the existing sync registry by document-asset identity; verify source bytes and
+  reuse the registered path. Bound an asset to 16 MB and a source-scope inventory
+  to 100 MB/1,000 assets. Missing, omitted or oversized assets remain visible;
+  never fetch a remote file or duplicate an original for each child source.
+- `obsidian_layout_migrations` retains assessed paths, acknowledged/local/proposed
+  snapshots and target receipts before filesystem changes. Apply/rollback process
+  at most 100 targets per action under the existing target advisory coordinator.
+  Active journals quiesce normal writes. Recheck exact local/canonical versions,
+  preserve unmanaged references for review, and verify generated-link closure.
+  Excluded registered files retain their paths and format until a later explicit
+  migration; normal refresh must not silently convert them.
+- Block migration while an incompatible Obsidian client is connected. A current
+  plugin reports every open Markdown leaf and pending target, acknowledges capture
+  quiescence, and suppresses migration echoes. Offline/stale presence requires
+  reconnection or explicit target exclusion; never discard its pending prose.
+  Reject incompatible handshakes during an active migration. Without a plugin,
+  the explicit migration review requires confirmation that managed editors in
+  all applications are closed, in addition to disk CAS and recovery copies.
+- Crash resume may acknowledge exact already-promoted bytes without another
+  write. Retirement reserves its capture destination exclusively; retries cannot
+  replace an inode containing a late human save. Guard rollback with current disk
+  bytes, preserve later human edits and retain independent successful receipts.
+  Only the latest journal returns full snapshots to the renderer; older status
+  entries remain lightweight. An unconfigured vault has an explicit empty state.

@@ -1,0 +1,32 @@
+import { randomUUID, createHash } from 'node:crypto';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { createSourceSummaryRepository, createSourceItemRepository, createDocumentRepository, createChunkRepository, createAtomicNoteRepository, createWikiRepository, type PgPool } from '../../packages/db/src/index.js';
+import { WikiPageContentSchema } from '@app/domain';
+const hash=(text:string)=>createHash('sha256').update(text).digest('hex');
+/** Synthetic canonical fixtures only; no inference, real sources or credentials. */
+export async function seedObsidianLayoutFixture(pool:PgPool,assetRoot:string){
+  const repository=createSourceItemRepository(pool),documents=createDocumentRepository(pool),sources:Awaited<ReturnType<typeof repository.create>>[]=[],chunks:string[]=[],docs:string[]=[];
+  const add=async(type:Parameters<typeof repository.create>[0]['type'],title:string,parent?:string,catalog=false)=>{
+    const source=await repository.create({type,title,...(parent?{parentSourceItemId:parent}:{}),metadata:{creators:[{name:'Synthetic Author'}]},language:'en'});sources.push(source);
+    if(!catalog){const text=`Original synthetic ${type} passage.  \nUnicode: memória 日本語.`,document=await documents.create({sourceItemId:source.id,title,canonicalMarkdown:text,contentHash:hash(text)}),chunk=randomUUID(),span=randomUUID();await createChunkRepository(pool).replaceDocumentChunks(document.id,source.id,[{id:chunk,chunkIndex:0,content:text,contentHash:hash(text),sourceSpanId:span,span:{id:span,startOffset:0,endOffset:text.length}}]);chunks.push(chunk);docs.push(document.id);}return source;
+  };
+  const book=await add('Book','A book.pdf',undefined,true);await add('BookChapter','Introduction',book.id);await add('BookChapter','Second chapter',book.id);
+  const paper=await add('AcademicPaper','Paper.pdf');await add('DocumentSection','Methods',paper.id);
+  const periodical=await add('PeriodicalIssue','Synthetic Journal — Issue 1',undefined,true);await add('StandaloneArticle','Article',periodical.id);
+  for(const [type,title]of [['StandaloneArticle','Article'],['WebArticle','Same title'],['Video','Same title'],['GenericDocument','CON'],['PersonalNote','Café 日本語'],['DailyNote','Unknown date']] as const)await add(type,title);
+  const structure=randomUUID(),division=randomUUID();await pool.query("insert into document_structures(id,root_source_item_id,root_document_id,format,detector_version,status,overall_confidence) values($1,$2,$3,'markdown','fixture','materialized',1)",[structure,paper.id,docs[2]]);
+  await pool.query("insert into document_divisions(id,stable_id,structure_id,child_source_item_id,child_document_id,kind,title,level,position,start_selector,end_selector,confidence) values($1,$1,$2,$3,$4,'section','Methods',0,0,'{}','{}',1)",[division,structure,sources[4]!.id,docs[3]]);
+  await pool.query('update documents set metadata=$2 where id=$1',[docs[3],{derivedFromDocumentId:docs[2],divisionId:division}]);await pool.query('update source_items set metadata=metadata||$2::jsonb where id=$1',[sources[4]!.id,{divisionId:division}]);
+  await pool.query('update source_items set summary=$2 where id=$1',[sources[1]!.id,'Legacy catalog summary — not current generated content.']);
+  await createSourceSummaryRepository(pool).create({sourceItemId:sources[1]!.id,summary:'Current synthetic generated summary; not original evidence.',provider:'synthetic',model:'fixture',runtime:'synthetic',promptVersion:'fixture-v1',inputHash:'synthetic-input',outputHash:'synthetic-output'});
+  const note=await createAtomicNoteRepository(pool).upsertGenerated({title:'Reusable synthetic idea',bodyMarkdown:'One idea reused by two canonical maps.',ideaStatement:'A reusable idea.',sourceItemId:sources[1]!.id,evidenceChunkId:chunks[0]!,evidenceLinks:[{chunkId:chunks[0]!}],generationProvider:'synthetic',generationModel:'fixture',generationRuntime:'synthetic',generationPromptVersion:'fixture-v1',generationKey:randomUUID()});
+  const wiki=createWikiRepository(pool),pageIds:string[]=[];
+  for(const [kind,title,role]of [['topic','Memória 日本語',{kind:'topic',role:'topic'}],['collection','Notes for book',{kind:'collection',role:'source_toc',owner:{kind:'source',id:book.id}}],['collection','Reading map',{kind:'collection',role:'map',owner:null}],['synthesis','Synthetic followed question',{kind:'synthesis',role:'investigation'}]] as const){
+    const id=await wiki.save({expectedRevisionId:null,content:WikiPageContentSchema.parse({title,kind}),evidenceChunkIds:[]}),group=randomUUID(),member=randomUUID(),content=WikiPageContentSchema.parse({title,kind,automatic:{version:'automatic-wiki-v1',management:'human_managed',role,purpose:'Synthetic navigation fixture.',placementProtected:true,links:[{kind:'source',id:book.id}],groups:[{version:'automatic-wiki-v1',id:group,collectionId:id,title:'Reading',explanation:null,explanationEvidenceIds:[],membershipIds:[member],orderProtected:true,origin:'human'}],memberships:[{version:'automatic-wiki-v1',id:member,pageId:id,groupId:group,target:{kind:'atomic_note',id:note.id},purpose:'reading',order:0,origin:'human',placementProtected:true,expectedPageRevisionId:randomUUID(),targetFingerprint:'synthetic-v1'}]},sections:[{id:randomUUID(),title:'Human interpretation',markdown:'Explicit synthetic human-authored interpretation. [Book](memora:source/'+book.id+')',provenance:'personal',protected:true}]});
+    const client=await pool.connect();try{await client.query('begin');const page=await wiki.save({id,expectedRevisionId:(await wiki.get(id))!.revisionId,content,evidenceChunkIds:[]},{transaction:client,origin:'organization',allocatedTarget:false,humanApproved:true});await client.query('commit');pageIds.push(page);}catch(error){await client.query('rollback');throw error;}finally{client.release();}
+  }
+  await mkdir(assetRoot,{recursive:true});const binary='Synthetic original asset, no real data.\n',assetId=randomUUID();await writeFile(join(assetRoot,'synthetic.txt'),binary);
+  await pool.query('insert into document_assets(id,source_item_id,document_id,original_file_name,sha256,mime_type,size_bytes,storage_base,relative_path) values($1,$2,$3,$4,$5,$6,$7,$8,$9)',[assetId,book.id,null,'Synthetic original.txt',hash(binary),'text/plain',Buffer.byteLength(binary),'app_internal','synthetic.txt']);
+  return {sources:sources.map(s=>({id:s.id,type:s.type,title:s.title})),noteId:note.id,pageIds,assetId,chunkIds:chunks,documentIds:docs};
+}

@@ -101,8 +101,8 @@ class SyncRecordPool {
 }
 
 class ContainerPool {
-  async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
-    const rows = text.includes("from source_items") ? [{
+  async query<T extends QueryResultRow = QueryResultRow>(text: string,values?:unknown[]): Promise<QueryResult<T>> {
+    const rows = text.includes("from settings")&&values?.[0]==='obsidian.layout'?[{key:'obsidian.layout',value:{version:1},updatedAt:new Date(0)}]:text.includes("from source_items") ? [{
       id: "11111111-1111-4111-8111-111111111111", type: "Book", title: "Container", subtitle: null,
       sourceOrigin: "manual", sourceUri: null, externalId: null, parentSourceItemId: null,
       contentHash: null, language: "en", summary: null, summaryGeneratedAt: null,

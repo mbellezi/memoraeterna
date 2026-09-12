@@ -26,7 +26,8 @@ export const integrationCapabilitySchema = z.enum([
   "reconcile-obsidian-vault",
   "receive-job-progress",
   "obsidian-wiki-projection-v1",
-  "obsidian-editorial-v1"
+  "obsidian-editorial-v1",
+  "obsidian-layout-v2"
 ]);
 export type IntegrationCapability = z.infer<typeof integrationCapabilitySchema>;
 
@@ -130,7 +131,10 @@ export const obsidianManagedFrontmatterSchema = z
     memoraRootSourceId: z.string().uuid().optional(),
     memoraDivisionId: z.string().min(1).optional(),
     memoraDocumentRevisionId: z.string().uuid().optional(),
-    memoraWikiSchema: z.literal(1).optional(),
+    memoraWikiSchema: z.union([z.literal(1), z.literal(2)]).optional(),
+    memoraLayout: z.literal(2).optional(),
+    memoraLinkMap:z.array(z.object({rendered:z.string().max(2000),canonical:z.string().max(2000)}).strict()).max(1000).optional(),
+    memoraLayoutLanguage: z.enum(["en", "pt-BR", "it", "fr", "es"]).optional(),
     memoraRevisionId: z.string().min(1).optional(),
     memoraManaged: z.literal(true),
     memoraSyncVersion: z.number().int().nonnegative(),
@@ -286,3 +290,5 @@ export function normalizeIntegrationError(error: unknown): IntegrationError {
 }
 
 export * from "./obsidian-editing.js";
+
+export * from "./obsidian-layout.js";

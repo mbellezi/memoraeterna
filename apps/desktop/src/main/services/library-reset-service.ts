@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
@@ -13,6 +14,7 @@ interface AssetPathRow {
 interface SyncPathRow {
   memora_id: string;
   expected_content: string | null;
+  expected_hash?:string|null;
   relative_path: string;
 }
 
@@ -35,7 +37,7 @@ export class LibraryResetService {
     const settings = await this.options.getStorageSettings();
     const [assets, syncFiles, sourceCount, noteCount] = await Promise.all([
       pool.query<AssetPathRow>("select storage_base, relative_path from document_assets"),
-      pool.query<SyncPathRow>(`select memora_id,relative_path,null::text expected_content from obsidian_sync_files union all select p.memora_id,$1::text || '/.memora-recovery/' || p.id::text || suffix,case when suffix='.after.md' then p.content else p.before_content end from obsidian_projection_revisions p cross join unnest(array['.before.md','.after.md','.before.md.captured']) suffix`,[settings.managedRoot]),
+      pool.query<SyncPathRow>(`select memora_id,relative_path,null::text expected_content,case when entity_type='document_asset' then content_hash else null end expected_hash from obsidian_sync_files union all select p.memora_id,$1::text || '/.memora-recovery/' || p.id::text || suffix,case when suffix='.after.md' then p.content else p.before_content end,null::text from obsidian_projection_revisions p cross join unnest(array['.before.md','.after.md','.before.md.captured']) suffix union all select (t->>'id')::uuid,(t->>'backupPath')||suffix,case when coalesce((t->>'binary')::boolean,false) then null else case when suffix='.rollback' then t->>'proposed' else t->>'local' end end,case when coalesce((t->>'binary')::boolean,false) then t->'asset'->>'sha256' else null end from obsidian_layout_migrations j cross join jsonb_array_elements(j.targets) t cross join unnest(array['','.captured','.rollback']) suffix where t->>'backupPath' is not null`,[settings.managedRoot]),
       pool.query<{ count: string }>("select count(*)::text as count from source_items"),
       pool.query<{ count: string }>("select count(*)::text as count from atomic_notes")
     ]);
@@ -59,7 +61,7 @@ export class LibraryResetService {
       for (const file of syncFiles.rows) {
         const target = resolveInside(vaultPath, file.relative_path);
         await rejectSymlinks(vaultPath, target);
-        if (isInside(managedPath, target) && await isOwnedManagedFile(target, file.memora_id, file.expected_content)) {
+        if (isInside(managedPath, target) && await isOwnedManagedFile(target, file.memora_id, file.expected_content,file.expected_hash)) {
           fileTargets.add(target);
         }
       }
@@ -110,8 +112,9 @@ async function readDirectoryIfPresent(path: string): Promise<string[]> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
 }
 
-async function isOwnedManagedFile(path: string, memoraId: string, expectedContent: string | null): Promise<boolean> {
+async function isOwnedManagedFile(path: string, memoraId: string, expectedContent: string | null,expectedHash?:string|null): Promise<boolean> {
   try {
+    if(expectedHash)return createHash("sha256").update(await readFile(path)).digest("hex")===expectedHash;
     const content = await readFile(path, "utf8");
     if (expectedContent != null && content === expectedContent) return true;
     const parsed = parseManagedMarkdown(content);

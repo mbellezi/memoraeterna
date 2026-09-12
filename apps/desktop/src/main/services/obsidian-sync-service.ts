@@ -1,8 +1,9 @@
+import { ObsidianLayoutMigration } from './obsidian-layout-migration.js';
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianEditorialService } from "./obsidian-editorial-service.js";
 import { safeVaultPath } from "../workers/obsidian-sync.worker.js";
 import { isOutwardProjection, parseObsidianMarkdown, serializeManagedFrontmatter, normalizeProjectionText } from "@app/integration-contracts";
-import { ObsidianWikiProjection } from "./obsidian-wiki-projection.js";
+import { ObsidianWikiProjection, projectionHash } from "./obsidian-wiki-projection.js";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import { join, posix, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -48,6 +49,7 @@ export interface ObsidianSyncServiceOptions {
   getPool: () => PgPool | null;
   getStorageSettings: () => Promise<StorageSettings>;
   getLocale?: () => Promise<string>;
+  assetRoots?:()=>Promise<Record<string,string>>;
   writeProjection?: (input: {
     vaultPath: string;
     relativePath: string;
@@ -58,16 +60,22 @@ export interface ObsidianSyncServiceOptions {
 
 export class ObsidianSyncService {
   private readonly workers = new WorkerSupervisor();
+  private legacyLayoutClient:()=>boolean=()=>false;
+  public setLayoutClientCheck(check:()=>boolean){this.legacyLayoutClient=check;}
+  public async isLayoutMigrating(){const s=await this.options.getStorageSettings();return Boolean(await (await import("@app/db")).createObsidianLayoutRepository(this.requirePool()).active(projectionHash(JSON.stringify([s.obsidianVaultPath,s.managedRoot]))));}
   private synchronizationPromise: Promise<void> | null = null;
   private synchronizationStatus: ObsidianSyncStatus = createIdleSynchronizationStatus();
 
+  public readonly layoutMigration: ObsidianLayoutMigration;
   public readonly wiki: ObsidianWikiProjection;
   public readonly editorial: ObsidianEditorialService;
   public constructor(private readonly options: ObsidianSyncServiceOptions) {
     this.wiki = new ObsidianWikiProjection({...options, projectSource:(id,notes,binding)=>this.projectSource(id,notes,binding),write:(input)=>this.writeProjection(input)});
+    this.layoutMigration = new ObsidianLayoutMigration({...options,legacyClientConnected:()=>this.legacyLayoutClient(),wiki:this.wiki,write:input=>this.writeProjection(input)});
     this.editorial = new ObsidianEditorialService({...options,wiki:this.wiki,write:input=>this.writeProjection(input)});
   }
 
+  public async layoutPresence(clientId:string,binding:string,input:unknown){const repo=(await import('@app/db')).createObsidianLayoutRepository(this.requirePool());await repo.presence(clientId,binding,input);const id=await repo.active(binding),migration=id?await repo.get(id):null;return {migration:migration?{id:migration.id,targetIds:migration.targets.filter(t=>t.status!=='excluded').map(t=>String(t.id))}:null};}
   public async shutdown(): Promise<void> {
     await this.workers.shutdown();
   }
@@ -75,6 +83,7 @@ export class ObsidianSyncService {
   public async projectSource(sourceItemId: string, allowedNoteIds?: Set<string>, admittedBinding?:string): Promise<{ projected: number }> {
     const settings = await this.options.getStorageSettings();
     if (!isSyncActive(settings)) return { projected: 0 };
+    if(await this.wiki.ensureLayout()){await this.wiki.enqueue();return {projected:0};}
     const binding=await this.wiki.sourceAdmission(settings,admittedBinding);
     const pool = this.requirePool();
     if(!allowedNoteIds){
@@ -106,7 +115,7 @@ export class ObsidianSyncService {
   ): Promise<IntegrationCommandResult> {
     const settings = await this.options.getStorageSettings();
     if (!isSyncActive(settings)) throw new Error("obsidian_sync_not_configured");
-    if (isOutwardProjection(input.frontmatter.memoraType)) return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
+    if (input.frontmatter.memoraLayout || isOutwardProjection(input.frontmatter.memoraType)) return {requestId:input.requestId,accepted:false,syncStatus:"ignored"};
     const relativePath = validateManagedRelativePath(settings, input.relativePath);
     const pool = this.requirePool();
     const syncFiles = createObsidianSyncRepository(pool);
@@ -205,6 +214,7 @@ export class ObsidianSyncService {
     const repository = createObsidianSyncRepository(this.requirePool());
     const record = await repository.findByMemoraId(event.memoraId);
     if (!isSyncActive(settings) || !record || record.metadata.editorialBase || record.metadata.editorialPending || record.metadata.projectionWrite || isOutwardProjection(record.memoraType)) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
+    if(record.metadata.projectionFormat===2)return {requestId:event.eventId,accepted:false,syncStatus:"ignored"};
     if (record.relativePath !== previousRelativePath || event.syncVersion !== record.syncVersion) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };
@@ -243,6 +253,7 @@ export class ObsidianSyncService {
     const repository = createObsidianSyncRepository(pool);
     const record = await repository.findByMemoraId(event.memoraId);
     if (!record || record.metadata.projectionWrite || isOutwardProjection(record.memoraType)) return { requestId: event.eventId, accepted: false, syncStatus: "ignored" };
+    if(record.metadata.projectionFormat===2)return {requestId:event.eventId,accepted:false,syncStatus:"ignored"};
     if (record.relativePath !== relativePath || event.syncVersion !== record.syncVersion) {
       await repository.update(record.id, { status: "conflict" });
       return { requestId: event.eventId, accepted: false, syncStatus: "conflict" };

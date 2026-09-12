@@ -135,6 +135,13 @@ const timestamps = {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 };
 
+export const obsidianLayoutMigrations = pgTable('obsidian_layout_migrations', {
+  id: uuid('id').primaryKey().defaultRandom(), binding: text('binding').notNull(),
+  status: text('status').notNull().default('preview'), config: jsonb('config').notNull(),
+  previousConfig: jsonb('previous_config'), targets: jsonb('targets').notNull(),
+  ...timestamps
+}, t => [index('obsidian_layout_binding_idx').on(t.binding,t.createdAt)]);
+
 export const sourceItems = pgTable(
   "source_items",
   {

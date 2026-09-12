@@ -48,6 +48,7 @@ try {
     assert.equal((await pool.query('select count(*)::int as n from drizzle.__drizzle_migrations')).rows[0].n, journal.entries.length);
     assert.equal((await pool.query("select count(*)::int as n from pg_indexes where tablename='obsidian_projection_revisions'")).rows[0].n, 3);
     assert.equal((await pool.query("select count(*)::int as n from pg_trigger where tgname='obsidian_projection_dirty'")).rows[0].n, 15);
+    await pool.query("insert into settings(key,value) values('obsidian.layout','{\"version\":1}') on conflict(key) do update set value=excluded.value"); // Explicit retained v1 reader/projection fixture.
     const vault = join(work, 'vault');
     await mkdir(vault);
     let settings = { obsidianVaultPath: vault, managedRoot: 'Memora', obsidianSyncEnabled: false, obsidianSyncPaused: false, deletionPolicy: 'delete' as const, uploadCopiesEnabled: false, uploadCopiesFolderPath: null, updatedAt: new Date().toISOString() };

@@ -881,7 +881,9 @@ A0 contract/fixture work and A1 runtime catalog/editor are independently accepte
 A2 has passed independent backend, selected-model and native walkthrough gates;
 A3 has passed independent collection, selected-model, native and DEV migration gates;
 A4 has passed independent maintenance, context, selected-model, native and DEV migration gates;
-A5 has passed independent consultation, investigation, selected-model, native and DEV migration gates; A6–A8 remain **planned**. Each implementation task must report its
+A5 has passed independent consultation, investigation, selected-model, native and DEV migration gates;
+A6 has passed independent projection, plugin, actual-vault, recovery and DEV migration gates;
+A7–A8 remain **planned**. Each implementation task must report its
 actual checks, migration state, rule updates and remaining limitations. Do not
 mark a milestone accepted because mocks or an export alone succeeded.
 

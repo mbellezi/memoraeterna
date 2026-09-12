@@ -1,3 +1,4 @@
+import { obsidianLayoutCapability, obsidianPresenceResponseSchema } from '@app/integration-contracts';
 import { obsidianEditingCapability, obsidianManifestSchema, obsidianEditReceiptSchema, integrationCommandResultSchema, integrationEventSchema, type ObsidianEditOperation } from "@app/integration-contracts";
 import {
   integrationContractVersion,
@@ -41,13 +42,13 @@ export class ObsidianGatewayClient {
         contractVersion: integrationContractVersion,
         clientId: settings.clientId,
         client: { kind: "obsidian-plugin", name: "Memora Obsidian", contractVersion: integrationContractVersion },
-        capabilities: ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability, obsidianEditingCapability],
+        capabilities: ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability, obsidianEditingCapability, obsidianLayoutCapability],
         instanceId: "obsidian"
       })
     });
     if (!response.ok) throw await responseError(response);
     const handshake = integrationHandshakeResponseSchema.parse(await response.json());
-    if (!handshake.capabilities.includes(wikiProjectionCapability) || !handshake.capabilities.includes(obsidianEditingCapability)) throw new Error("unsupported_wiki_projection");
+    if (!handshake.capabilities.includes(wikiProjectionCapability) || !handshake.capabilities.includes(obsidianEditingCapability) || !handshake.capabilities.includes(obsidianLayoutCapability)) throw new Error("unsupported_wiki_projection");
     this.shouldReconnect = true;
     this.sessionToken = handshake.sessionToken;
     this.eventUrl = handshake.eventUrl;
@@ -75,6 +76,7 @@ export class ObsidianGatewayClient {
     return this.post("/v1/obsidian/reconcile", input) as Promise<{ synced: number; conflicts: number; deleted: number }>;
   }
 
+  public presence(vaultId:string,openPaths:string[],pendingTargetIds:string[],quiescedMigrationIds:string[]=[]){return this.post('/v1/obsidian/layout/presence',{vaultId,openPaths,pendingTargetIds,quiescedMigrationIds}).then(value=>obsidianPresenceResponseSchema.parse(value));}
   public manifest(vaultId:string,cursor=0,pendingOperationIds?:string[]){return this.post('/v1/obsidian/editorial/manifest',{vaultId,cursor,...(pendingOperationIds?{pendingOperationIds}:{})}).then(value=>obsidianManifestSchema.parse(value));}
   public operation(input:ObsidianEditOperation){return this.post('/v1/obsidian/editorial/operation',input).then(value=>obsidianEditReceiptSchema.parse(value));}
   public compare(operationId:string,content:string){return this.post('/v1/obsidian/editorial/compare',{operationId,content}).then(value=>obsidianEditReceiptSchema.parse(value));}
@@ -93,7 +95,7 @@ export class ObsidianGatewayClient {
   private async post(path: string, payload: unknown, retry = true): Promise<unknown> {
     if (!this.sessionToken) await this.connect();
     const settings = this.getSettings();
-    const response = await fetch(`${trimUrl(settings.gatewayBaseUrl)}${path}`, {
+    const response = await gatewayFetch(`${trimUrl(settings.gatewayBaseUrl)}${path}`, {
       method: "POST",
       headers: { authorization: `Bearer ${this.sessionToken}`, "content-type": "application/json" },
       body: JSON.stringify(payload)

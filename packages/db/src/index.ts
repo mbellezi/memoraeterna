@@ -18,3 +18,4 @@ export * from './repositories/wikiCollectionRepository.js';
 export * from './repositories/automaticMaintenanceRepository.js';
 export * from './repositories/knowledgeConsultationRepository.js';
 export * from './repositories/investigationRepository.js';
+export * from "./repositories/obsidianLayoutRepository.js";

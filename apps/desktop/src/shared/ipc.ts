@@ -1,3 +1,5 @@
+import { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema } from '@app/integration-contracts';
+export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
 import type {FollowedInvestigation,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
 import type { PromptCommand } from "@app/domain";
 import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, type ObsidianEditReceipt } from "@app/integration-contracts";
@@ -60,6 +62,10 @@ export const ipcChannels = {
   obsidianEditorialConflicts: "app:obsidian:editorial:conflicts",
   obsidianEditorialComparison: "app:obsidian:editorial:comparison",
   obsidianEditorialResolve: "app:obsidian:editorial:resolve",
+  obsidianLayoutStatus: 'app:obsidian:layout:status',
+  obsidianLayoutPreview: 'app:obsidian:layout:preview',
+  obsidianLayoutApply: 'app:obsidian:layout:apply',
+  obsidianLayoutRollback: 'app:obsidian:layout:rollback',
   obsidianWikiStatus: "app:obsidian:wiki:status",
   obsidianWikiScope: "app:obsidian:wiki:scope",
   obsidianWikiDiff: "app:obsidian:wiki:diff",
@@ -1160,6 +1166,10 @@ export interface DesktopApi {
     editorialConflicts: () => Promise<z.infer<typeof obsidianEditorialConflictsSchema>>;
     editorialComparison: (id:string) => Promise<ObsidianEditReceipt>;
     resolveEditorial: (input:z.infer<typeof obsidianResolveInputSchema>) => Promise<ObsidianEditReceipt>;
+    layoutStatus: ()=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    previewLayout: (input:z.infer<typeof obsidianLayoutConfigSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    applyLayout: (input:z.infer<typeof obsidianLayoutApplyInputSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    rollbackLayout: (input:z.infer<typeof obsidianLayoutApplyInputSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
     wikiStatus: () => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
     saveWikiScope: (input: z.infer<typeof obsidianWikiScopeSchema>) => Promise<z.infer<typeof obsidianWikiScopeSchema>>;
     wikiDiff: (id:string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;

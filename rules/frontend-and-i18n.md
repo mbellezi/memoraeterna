@@ -506,3 +506,15 @@ job statuses, or user-visible backend errors.
   consultation. Hidden workspaces never handle Back. Original titles and saved prose
   retain their language; controls use the interface language and authored gap headings
   use the admitted content language. Unchanged polling does not notify.
+
+- Connections exposes a separate Obsidian layout preview with explicit language,
+  attachment choice, exact old/new paths and IDs, local/base/proposed versions,
+  preserved link references, exclusions and guarded apply/resume/rollback.
+  Require the closed-editor acknowledgment for filesystem actions. Open/pending
+  editors, incompatible clients, stale plugin presence and changed local bytes
+  have distinct localized guidance. A failed action refreshes durable state while
+  retaining its visible error. Configuring a previously absent vault in place
+  refreshes this card without losing a later user configuration draft.
+- During a vault layout rollback, progress counts restored or explicitly excluded
+  targets. Files preserved because of later edits remain visibly pending and are
+  never counted as restored.

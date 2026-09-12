@@ -12,7 +12,7 @@ export function rebaseQueuedContent(accepted: ObsidianEditOperation, receipt: Ob
     const before = parseObsidianMarkdown(accepted.content), after = parseObsidianMarkdown(receipt.content), local = parseObsidianMarkdown(next);
     if (!before || !after || !local) return next;
     let body = local.bodyMarkdown;
-    const parseRegions = accepted.targetType === 'wiki_page' ? parseWikiRegions : accepted.targetType === 'atomic_note' ? atomicEditorial : null;
+    const parseRegions = before.frontmatter.memoraLayout === 2 || accepted.targetType === 'wiki_page' ? parseWikiRegions : accepted.targetType === 'atomic_note' ? atomicEditorial : null;
     if (parseRegions && accepted.resolution?.choice !== 'app') {
         const b = parseRegions(before.bodyMarkdown), a = parseRegions(after.bodyMarkdown), l = parseRegions(body);
         if (b && a && l && l.generated === b.generated) body = l.editorial + a.generated;

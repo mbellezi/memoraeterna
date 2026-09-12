@@ -52,7 +52,9 @@ export function createObsidianWikiRepository(pool: PgPool) {
         async sources(sourceIds: string[], includeDescendants: boolean) {
             return (await pool.query(`with recursive scope as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[])
         union select s.id from source_items s join scope p on s.parent_source_item_id=p.id where $2)
-        select s.id,s.title,s.type,s.parent_source_item_id as "parentId",s.subtitle,s.source_uri as "sourceUri",s.updated_at as "updatedAt",
+        select s.id,s.title,s.type,(with recursive ancestry as(select s.id,s.parent_source_item_id,0 depth,array[s.id] visited union all select p.id,p.parent_source_item_id,a.depth+1,a.visited||p.id from source_items p join ancestry a on p.id=a.parent_source_item_id where a.depth<100 and not p.id=any(a.visited)) select id from ancestry order by depth desc limit 1) as "rootId",s.parent_source_item_id as "parentId",s.subtitle,s.source_uri as "sourceUri",s.updated_at as "updatedAt", s.summary as "legacySummary", s.metadata as "fullMetadata",
+          (select jsonb_build_object('id',ss.id,'text',ss.summary,'provider',ss.provider,'model',ss.model,'runtime',ss.runtime,'generatedAt',ss.generated_at,'promptVersion',ss.prompt_version,'inputHash',ss.input_hash,'generationId',ss.generation_id,'stale',coalesce(s.metadata->>'summaryStale'='true',false)) from source_summaries ss where ss.source_item_id=s.id and ss.is_current order by ss.generated_at desc,ss.id desc limit 1) as summary,
+          (select dv.position from document_divisions dv join document_structures st on st.id=dv.structure_id where dv.child_source_item_id=s.id and st.status in ('confirmed','materialized') order by st.revision desc,dv.position limit 1) as position,
           jsonb_build_object('creators',s.metadata->'creators','publicationDate',s.metadata->'publicationDate','publisher',s.metadata->'publisher') as metadata,
           (select coalesce(jsonb_agg(item),'[]') from (select w.creators,w.identifiers,i.publication_date as "publicationDate",i.publisher,i.edition,i.isbn,i.doi,i.issn from source_item_bibliographic_links l join bibliographic_works w on w.id=l.work_id left join bibliographic_instances i on i.id=l.instance_id where l.source_item_id=s.id order by l.id limit 21) item) as bibliography,
           not exists(select 1 from documents d where d.source_item_id=s.id and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'supersededByDocumentId' is null) as "catalogOnly"
@@ -72,9 +74,19 @@ export function createObsidianWikiRepository(pool: PgPool) {
             return row?.allowed===true;
         },
         async notes(sourceIds: string[]) {
-            return (await pool.query(`select n.id,n.title,n.created_from_source_item_id as "sourceId" from atomic_notes n
+            return (await pool.query(`select n.id,n.title,n.body_markdown as "bodyMarkdown",n.updated_at as "updatedAt",n.evidence_chunk_id as "evidenceChunkId",n.created_from_source_item_id as "sourceId",n.status,n.metadata,
+        (n.supersession_status='current' and nd.id is not null and nd.metadata->>'supersededByDocumentId' is null
+          and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id
+            where l.atomic_note_id=n.id and (ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))) as current
+        from atomic_notes n left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id
         where n.created_from_source_item_id=any($1::uuid[]) and n.status not in('rejected','archived')
         and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and not(l.source_item_id=any($1::uuid[]))) order by n.id limit 2001`, [sourceIds])).rows;
+        },
+        async noteEvidence(noteId:string,primaryChunkId:string) {
+            return (await pool.query(`select c.id,c.source_item_id as "sourceId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content,s.title as "sourceTitle",
+          coalesce(sp.label,sp.selector,sp.page::text) as locator,d.metadata->>'supersededByDocumentId' is null as current
+          from chunks c join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id
+          where c.id=$1 or c.id in(select chunk_id from atomic_note_source_links where atomic_note_id=$2) order by c.id limit 101`,[primaryChunkId,noteId])).rows;
         },
         async relations(sourceIds: string[]) {
             const rows = (await pool.query(`select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current

@@ -1,3 +1,7 @@
+import { inspectMirrorAssets, projectMirrorAssets } from './obsidian-asset-projection.js';
+import { createObsidianLayoutRepository } from '@app/db';
+import { buildObsidianMirror } from './obsidian-mirror.js';
+import { obsidianLayoutConfigSchema, type ObsidianLayoutConfig } from '@app/integration-contracts';
 import { jobTaskPayload } from "../job-task-payload.js";
 import { createSourceItemRepository } from "@app/db";
 import { createHash } from "node:crypto";
@@ -21,6 +25,7 @@ export interface WikiProjectionOptions {
     getPool: () => PgPool | null;
     getStorageSettings: () => Promise<StorageSettings>;
     getLocale?: () => Promise<string>;
+    assetRoots?:()=>Promise<Record<string,string>>;
     projectSource: (id: string, allowedNoteIds?: Set<string>, admittedBinding?:string) => Promise<{
         projected: number;
     }>;
@@ -45,11 +50,18 @@ interface Target {
     generated: string;
     sourceId?: string;
     documentId?: string;
+    layout?: ObsidianLayoutConfig;
+    linkMap?:Array<{rendered:string;canonical:string}>;
+    rootSourceId?:string;divisionId?:string;documentRevisionId?:string;
 }
 export class ObsidianWikiProjection {
     constructor(private readonly options: WikiProjectionOptions) { }
     private pool() { const pool = this.options.getPool(); if (!pool)
         throw new Error('errors.database.notReady'); return pool; }
+    async layout(): Promise<ObsidianLayoutConfig|null> { const value=await createSettingsRepository(this.pool()).get('obsidian.layout'); return value && (value as {version?:number}).version!==1?obsidianLayoutConfigSchema.parse(value):null; }
+    async ensureLayout(){const existing=await this.layout();if(existing)return existing;const s=await this.options.getStorageSettings();if(active(s)&&!await createSettingsRepository(this.pool()).get('obsidian.layout')&&!(await createObsidianSyncRepository(this.pool()).list(1)).length){const config=obsidianLayoutConfigSchema.parse({version:2,language:await this.options.getLocale?.()??'en',attachments:'omit'});await createSettingsRepository(this.pool()).set('obsidian.layout',config);return config;}return null;}
+    async assets(config:ObsidianLayoutConfig,migrate=false){const s=await this.options.getStorageSettings(),scope=await this.scope(),sources=await createObsidianWikiRepository(this.pool()).sources(scope.sourceIds,scope.includeDescendants);return inspectMirrorAssets(this.pool(),s,sources.map(r=>String(r.id)),config,await this.options.assetRoots?.()??{},migrate);}
+    async mirror(config:ObsidianLayoutConfig,migrate=false,excluded?:Set<string>) { const s=await this.options.getStorageSettings(); const assets=await this.assets(config,migrate);for(const asset of assets)if(excluded?.has(asset.id)){const old=await createObsidianSyncRepository(this.pool()).findByMemoraId(asset.id);if(old)asset.path=old.relativePath;}return buildObsidianMirror(this.pool(),s.managedRoot,await this.scope(),config,{migrate,assets,...(excluded?{excluded}:{})}); }
     async scope() { return ObsidianWikiScopeSchema.parse(await createSettingsRepository(this.pool()).get('obsidian.wiki.scope') ?? {}); }
     async saveScope(input: unknown) { const scope = ObsidianWikiScopeSchema.parse(input); await createSettingsRepository(this.pool()).set('obsidian.wiki.scope', scope); return scope; }
     private vaultBinding(settings: StorageSettings) { return projectionHash(JSON.stringify([settings.obsidianVaultPath, settings.managedRoot])); }
@@ -109,7 +121,9 @@ export class ObsidianWikiProjection {
             throw new Error('obsidianWiki.errors.limit');
         const allowedNotes = new Set(notes.map(n => String(n.id)));
         let projected = 0, conflicts = 0;
-        for (const source of sources) {
+        let layout=await this.layout();
+        if(!layout && !await createSettingsRepository(this.pool()).get('obsidian.layout') && !(await createObsidianSyncRepository(this.pool()).list(1)).length){layout=obsidianLayoutConfigSchema.parse({version:2,language:await this.options.getLocale?.()??'en',attachments:'omit'});await createSettingsRepository(this.pool()).set('obsidian.layout',layout);}
+        for (const source of layout?[]:sources) {
             if (signal?.aborted)
                 throw new Error('obsidianWiki.errors.paused');
             await this.assertBinding(settings, payload.binding);
@@ -125,7 +139,8 @@ export class ObsidianWikiProjection {
                 }
             }
         }
-        const targets = await this.plan(settings, scope, sources, notes);
+        if(layout)await projectMirrorAssets(this.pool(),settings,await this.assets(layout),await this.options.assetRoots?.()??{},()=>this.assertBinding(settings,payload.binding));
+        const targets = layout ? await this.mirror(layout) : await this.plan(settings, scope, sources, notes);
         if (targets.reduce((n, t) => n + t.editorial.length + t.generated.length, 0) > 20000000)
             throw new Error('obsidianWiki.errors.limit');
         for (const target of targets) {
@@ -144,7 +159,7 @@ export class ObsidianWikiProjection {
         }
         return { projected, conflicts, targets: targets.length };
     }
-    private async assertBinding(settings: StorageSettings, binding: string) { const current = await this.options.getStorageSettings(); if (!active(current))
+    private async assertBinding(settings: StorageSettings, binding: string) { if(await createObsidianLayoutRepository(this.pool()).active(this.vaultBinding(settings)))throw new Error("obsidianWiki.errors.paused"); const current = await this.options.getStorageSettings(); if (!active(current))
         throw new Error('obsidianWiki.errors.paused'); if (settings.obsidianVaultPath !== current.obsidianVaultPath || settings.managedRoot !== current.managedRoot || await this.binding(current) !== binding)
         throw new Error('obsidianWiki.errors.binding'); }
     private async plan(settings: StorageSettings, scope: ObsidianWikiScope, sources: Record<string, any>[], notes: Record<string, any>[]): Promise<Target[]> {
@@ -247,8 +262,9 @@ export class ObsidianWikiProjection {
         const binding = this.vaultBinding(settings);
         const repo = createObsidianWikiRepository(this.pool()), sync = createObsidianSyncRepository(this.pool());
         let latest = await repo.latest(target.id, binding);
+        if(!await sync.findByMemoraId(target.id))await sync.create({memoraId:target.id,entityId:target.id,entityType:target.type,memoraType:target.type,...(target.sourceId?{sourceItemId:target.sourceId}:{}),...(target.documentId?{documentId:target.documentId}:{}),relativePath:target.path,contentHash:projectionHash(''),frontmatterHash:projectionHash(''),mtimeMs:0,status:'pending',metadata:{projectionFormat:target.layout?2:1,bindingHash:binding}});
         let file = await sync.findByMemoraId(target.id);
-        if(file?.metadata.editorialPending || file?.metadata.editorialTombstone)return 0;
+        if(file?.metadata.editorialPending || file?.metadata.editorialTombstone || target.layout&&file?.metadata.layoutExcluded)return 0;
         const path = await safeVaultPath(settings.obsidianVaultPath!, target.path), local = await readOptional(path);
         const localHash = local === null ? null : projectionHash(local);
         if (latest && latest.status !== 'written' && localHash === latest.rendered_hash) {
@@ -259,8 +275,8 @@ export class ObsidianWikiProjection {
         const actualBase = await repo.base(target.id, binding);
         const parsed = local === null ? null : parseObsidianMarkdown(local);
         const adoptLegacy = target.type === 'source_reference' && !actualBase && parsed?.frontmatter.memoraId === target.id && parsed.frontmatter.memoraType === 'source_item' && parsed.frontmatter.memoraSyncVersion === file?.syncVersion && projectionHash(normalizeProjectionText(parsed.bodyMarkdown)) === file.contentHash;
-        const body = target.type==='source_item'?target.editorial:target.editorial + wikiGeneratedStart + '\n\n' + target.generated + '\n\n' + wikiGeneratedEnd + '\n';
-        const fm: ObsidianManagedFrontmatter = { memoraId: target.id, memoraType: target.type, memoraManaged: true, memoraSyncVersion: (file?.syncVersion ?? 0) + (actualBase?.revision_id === target.revision ? 0 : 1), memoraContentHash: projectionHash(target.editorial), ...(target.type==='source_item'?{memoraDocumentId:target.documentId}:{memoraWikiSchema: 1, memoraRevisionId: target.revision}), ...(target.sourceId ? { memoraSourceId: target.sourceId } : {}) };
+        const body = target.type==='source_item'&&!target.layout?target.editorial:target.editorial + wikiGeneratedStart + '\n\n' + target.generated + '\n\n' + wikiGeneratedEnd + '\n';
+        const fm: ObsidianManagedFrontmatter = { ...(target.linkMap?.length?{memoraLinkMap:target.linkMap}:{}), ...(target.rootSourceId?{memoraRootSourceId:target.rootSourceId}:{}),...(target.divisionId?{memoraDivisionId:target.divisionId}:{}),...(target.documentRevisionId?{memoraDocumentRevisionId:target.documentRevisionId}:{}), memoraId: target.id, memoraType: target.type, memoraManaged: true, memoraSyncVersion: (file?.syncVersion ?? 0) + (actualBase?.revision_id === target.revision ? 0 : 1), memoraContentHash: projectionHash(target.editorial), ...(target.layout?{memoraLayout:2,memoraLayoutLanguage:target.layout.language,memoraWikiSchema:2,memoraRevisionId:target.revision,...(target.documentId?{memoraDocumentId:target.documentId}:{})}:target.type==='source_item'?{memoraDocumentId:target.documentId}:{memoraWikiSchema: 1, memoraRevisionId: target.revision}), ...(target.sourceId ? { memoraSourceId: target.sourceId } : {}) };
         let content = serializeManagedFrontmatter(fm, parsed?.userFrontmatter ?? '') + '\n' + body, renderedHash = projectionHash(content);
         if(actualBase&&renderedHash!==actualBase.rendered_hash&&fm.memoraSyncVersion<=(file?.syncVersion??0)){fm.memoraSyncVersion=(file?.syncVersion??0)+1;content=serializeManagedFrontmatter(fm,parsed?.userFrontmatter??'')+'\n'+body;renderedHash=projectionHash(content);}
         if (actualBase && localHash === actualBase.rendered_hash && renderedHash === actualBase.rendered_hash)
@@ -300,7 +316,7 @@ export class ObsidianWikiProjection {
     } }); }
     private async receipt(row: ProjectionDelivery, settings: StorageSettings) { const parsed = parseObsidianMarkdown(row.content); if (!parsed || (parsed.frontmatter.memoraType!=='source_item'&&!parseWikiRegions(parsed.bodyMarkdown)))
         throw new Error('obsidianWiki.errors.format'); const sync = createObsidianSyncRepository(this.pool()), file = await sync.findByMemoraId(row.memora_id); if (!file)
-        throw new Error('obsidianWiki.errors.binding'); const {projectionWrite:_pending,...metadata}=file.metadata; await sync.update(file.id, { contentHash: parsed.frontmatter.memoraType==='source_item'?projectionHash(normalizeProjectionText(parsed.bodyMarkdown)):parsed.frontmatter.memoraContentHash, frontmatterHash: projectionHash(serializeManagedFrontmatter(parsed.frontmatter)), syncVersion: parsed.frontmatter.memoraSyncVersion, mtimeMs: Math.trunc((await stat(await safeVaultPath(settings.obsidianVaultPath!, row.relative_path))).mtimeMs), memoraType: parsed.frontmatter.memoraType, ...(parsed.frontmatter.memoraType === 'source_reference' ? { documentId: null } : parsed.frontmatter.memoraDocumentId?{documentId:parsed.frontmatter.memoraDocumentId}:{}), status: 'synced', metadata: { ...metadata, bindingHash: row.binding_hash, projectionFormat: 1, ...(metadata.editorialBase?{editorialBase:{content:row.content,revision:parsed.frontmatter.memoraType==='source_item'?(await createSourceItemRepository(this.pool()).findById(row.memora_id))!.updatedAt.toISOString():row.revision_id,version:parsed.frontmatter.memoraSyncVersion,hash:row.rendered_hash},editorialBinding:row.binding_hash}:{}) }, lastSyncedAt: new Date() }); await createObsidianWikiRepository(this.pool()).finish(row.id, 'written'); }
+        throw new Error('obsidianWiki.errors.binding'); const {projectionWrite:_pending,...metadata}=file.metadata; await sync.update(file.id, { contentHash: parsed.frontmatter.memoraType==='source_item'&&!parsed.frontmatter.memoraLayout?projectionHash(normalizeProjectionText(parsed.bodyMarkdown)):parsed.frontmatter.memoraContentHash, frontmatterHash: projectionHash(serializeManagedFrontmatter(parsed.frontmatter)), syncVersion: parsed.frontmatter.memoraSyncVersion, mtimeMs: Math.trunc((await stat(await safeVaultPath(settings.obsidianVaultPath!, row.relative_path))).mtimeMs), memoraType: parsed.frontmatter.memoraType, ...(parsed.frontmatter.memoraType === 'source_reference' ? { documentId: null } : parsed.frontmatter.memoraDocumentId?{documentId:parsed.frontmatter.memoraDocumentId}:{}), status: 'synced', metadata: { ...metadata, bindingHash: row.binding_hash, projectionFormat: parsed.frontmatter.memoraLayout??1, ...(metadata.editorialBase?{editorialBase:{content:row.content,revision:parsed.frontmatter.memoraType==='source_item'?(await createSourceItemRepository(this.pool()).findById(row.memora_id))!.updatedAt.toISOString():row.revision_id,version:parsed.frontmatter.memoraSyncVersion,hash:row.rendered_hash},editorialBinding:row.binding_hash}:{}) }, lastSyncedAt: new Date() }); await createObsidianWikiRepository(this.pool()).finish(row.id, 'written'); }
 }
 async function readOptional(path: string): Promise<string | null> { try {
     const file = await stat(path);

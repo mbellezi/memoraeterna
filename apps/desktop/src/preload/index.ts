@@ -1,3 +1,4 @@
+import { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema } from '@app/integration-contracts';
 import {FollowedInvestigationSchema,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
 import { CuratorCommandSchema,CuratorResponseSchema } from '@app/domain';
 import { PromptCommandSchema,PromptResponseSchema } from "@app/domain";
@@ -204,6 +205,10 @@ const api: DesktopApi = {
     async editorialConflicts(){return obsidianEditorialConflictsSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialConflicts));},
     async editorialComparison(id){return obsidianEditReceiptSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialComparison,z.string().uuid().parse(id)));},
     async resolveEditorial(input){return obsidianEditReceiptSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialResolve,obsidianResolveInputSchema.parse(input)));},
+    async layoutStatus(){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutStatus));},
+    async previewLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutPreview,obsidianLayoutConfigSchema.parse(input)));},
+    async applyLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutApply,obsidianLayoutApplyInputSchema.parse(input)));},
+    async rollbackLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutRollback,obsidianLayoutApplyInputSchema.parse(input)));},
     async wikiStatus(){return obsidianWikiStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiStatus));},
     async saveWikiScope(input){return obsidianWikiScopeSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiScope,obsidianWikiScopeSchema.parse(input)));},
     async wikiDiff(id){return obsidianWikiDiffSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiDiff,z.string().uuid().parse(id)));},

@@ -271,6 +271,7 @@ void app.whenReady().then(() => {
   });
   obsidianSyncService = new ObsidianSyncService({
     getLocale:async()=>(await settingsService!.getApp()).contentLanguage,
+    assetRoots:async()=>({app_internal:join(app.getPath('userData'),'assets'),...((await settingsService!.get()).uploadCopiesFolderPath?{uploaded_files:(await settingsService!.get()).uploadCopiesFolderPath!}:{})}),
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get()
   });

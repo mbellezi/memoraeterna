@@ -191,3 +191,14 @@ npm run db:generate
   admitted snapshot and canonical run ID; its existing checkpoint records renewed
   occurrence authority and prior deferrals. Do not transfer an already charged
   step, refund the parent ledger, or erase failed/uncertain provider history.
+
+- `obsidian_layout_migrations` owns explicit physical-layout assessment, immutable
+  admitted target snapshots and recoverable per-target progress. It does not
+  create source/wiki identity or activate organization policy. Existing sync
+  registry, editorial history and projection outbox remain the corresponding
+  placement, writeback and delivery authorities. Binary projection ownership
+  uses registered document-asset IDs, with journaled migration/rollback receipts.
+- Migration status reads return full target snapshots only for the newest
+  journal; earlier entries contain metadata. Retain complete snapshots in SQL
+  for recovery. Library reset recognizes registered binary hashes and journaled
+  recovery paths before clearing ownership, and preserves unrelated files.

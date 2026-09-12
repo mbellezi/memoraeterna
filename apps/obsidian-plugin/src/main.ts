@@ -32,6 +32,7 @@ const defaults: Settings = { gatewayBaseUrl: 'http://127.0.0.1:47831', clientId:
 export default class MemoraObsidianPlugin extends Plugin {
     public override settings: Settings = defaults;
     private unloaded=false;
+    private migration:{id:string;targetIds:string[]}|null=null;
     public connected = false;
     public state!: SavedState;
     public queue!: ObsidianOperationQueue;
@@ -45,6 +46,8 @@ export default class MemoraObsidianPlugin extends Plugin {
     private drafts = new Map<string, Promise<string>>();
     private refreshing: Promise<void> | null = null;
     public override async onload() {
+        this.registerInterval(window.setInterval(()=>void this.reportEditors().catch(()=>undefined),3000));
+        this.registerEvent(this.app.workspace.on('active-leaf-change',()=>void this.reportEditors().catch(()=>undefined)));
         const saved = await this.loadData() as Partial<SavedState> & Partial<Settings> | null;
         this.settings = { ...defaults, ...(saved?.settings ?? saved ?? {}) };
         this.state = { settings: this.settings, vaultId: saved?.vaultId ?? crypto.randomUUID(), binding: saved?.binding ?? '', managedRoot: saved?.managedRoot ?? '', files: saved?.files ?? [], queue: saved?.queue ?? { version: 1, operations: [] } };
@@ -102,6 +105,7 @@ export default class MemoraObsidianPlugin extends Plugin {
         if(file.stat.size>2_000_000)throw new Error('obsidianWiki.errors.limit');
         const content = normalizeProjectionText(await this.app.vault.read(file)), frame = parseObsidianMarkdown(content);
         let registered = this.state.files.find(f => f.relativePath === file.path) || this.state.files.find(f => f.targetId === frame?.frontmatter.memoraId);
+        if (this.migration?.targetIds.includes(registered?.targetId??''))return;
         if (!registered || !file.path.startsWith(this.state.managedRoot + '/'))
             return;
         if (frame && frame.frontmatter.memoraSyncVersion > registered.syncVersion && this.connected && !this.queue.state.operations.some(r => r.operation.targetId === registered!.targetId)) {
@@ -126,6 +130,7 @@ export default class MemoraObsidianPlugin extends Plugin {
     private async moved(path: string, previous: string) {
         const files = this.state.files.filter(f => f.relativePath === previous || f.relativePath.startsWith(previous + '/'));
         for (const registered of files) {
+            if(this.migration?.targetIds.includes(registered.targetId))continue;
             const before = registered.relativePath, next = path + before.slice(previous.length), file = this.app.vault.getAbstractFileByPath(next);
             if (!(file instanceof TFile))
                 continue;
@@ -144,6 +149,7 @@ export default class MemoraObsidianPlugin extends Plugin {
         await this.flush();
     }
     private async deleted(path: string) { for (const file of this.state.files.filter(f => f.relativePath === path || f.relativePath.startsWith(path + '/'))) {
+        if(this.migration?.targetIds.includes(file.targetId))continue;
         const timer = this.timers.get(file.relativePath);
         if (timer)
             clearTimeout(timer);
@@ -155,7 +161,10 @@ export default class MemoraObsidianPlugin extends Plugin {
     } await this.flush(); }
     public synchronize(): Promise<void> { if (this.refreshing)
         return this.refreshing; this.refreshing = this.refresh().finally(() => { this.refreshing = null; }); return this.refreshing; }
+    private async reportEditors(){if(!this.connected||!this.state||!this.queue)return;const paths:string[]=[];this.app.workspace.iterateAllLeaves(leaf=>{if(leaf.view instanceof MarkdownView && leaf.view.file)paths.push(leaf.view.file.path);});const old=this.migration;this.migration=(await this.client.presence(this.state.vaultId,paths,this.queue.state.operations.map(r=>r.operation.targetId),old?[old.id]:[])).migration;if(old&&!this.migration)void this.synchronize().catch(error=>this.noticeError(error));}
     private async refresh() {
+        await this.reportEditors();
+        if(this.migration)return;
         // Retained operations and original IDs are delivered before scanning present files.
         // Keep this filter stable for every page even as receipts replace rows.
         const pendingOperationIds = this.queue.state.operations.map(row => row.operation.operationId);

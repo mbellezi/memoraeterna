@@ -11,7 +11,7 @@ const keys: Record<string, keyof ObsidianManagedFrontmatter> = {
     memora_document_id: "memoraDocumentId", memora_root_source_id: "memoraRootSourceId",
     memora_division_id: "memoraDivisionId", memora_document_revision_id: "memoraDocumentRevisionId",
     memora_managed: "memoraManaged", memora_sync_version: "memoraSyncVersion",
-    memora_content_hash: "memoraContentHash", memora_wiki_schema: "memoraWikiSchema", memora_revision_id: "memoraRevisionId"
+    memora_content_hash: "memoraContentHash", memora_link_map: "memoraLinkMap", memora_layout: "memoraLayout", memora_layout_language: "memoraLayoutLanguage", memora_wiki_schema: "memoraWikiSchema", memora_revision_id: "memoraRevisionId"
 };
 export function serializeManagedFrontmatter(frontmatter: ObsidianManagedFrontmatter, userFrontmatter = ""): string {
     const rows = Object.entries(keys).flatMap(([key, field]) => frontmatter[field] === undefined ? [] : [`${key}: ${JSON.stringify(frontmatter[field])}`]);
@@ -49,8 +49,10 @@ export function parseObsidianMarkdown(raw: string): {
     const parsed = obsidianManagedFrontmatterSchema.safeParse(fields);
     if (!parsed.success)
         return null;
-    if (isOutwardProjection(parsed.data.memoraType) && (parsed.data.memoraWikiSchema !== 1 || !parsed.data.memoraRevisionId))
+    if (isOutwardProjection(parsed.data.memoraType) && (![1, 2].includes(parsed.data.memoraWikiSchema ?? 0) || !parsed.data.memoraRevisionId))
         return null;
+    if (parsed.data.memoraLayout === 2 && (parsed.data.memoraWikiSchema !== 2 || !parsed.data.memoraLayoutLanguage || !parseWikiRegions(match[2]!))) return null;
+    if (parsed.data.memoraWikiSchema === 2 && parsed.data.memoraLayout !== 2) return null;
     return { frontmatter: parsed.data, bodyMarkdown: match[2]!, userFrontmatter: user.join("\n") };
 }
 export function sectionStart(id: string) { return `<!-- memora:section:${id}:start -->`; }
@@ -61,6 +63,8 @@ export function parseWikiRegions(body: string) {
     const start = controls.indexOf(wikiGeneratedStart), end = controls.indexOf(wikiGeneratedEnd);
     if (start < 0 || end < start || controls.indexOf(wikiGeneratedStart, start + 1) >= 0 || controls.indexOf(wikiGeneratedEnd, end + 1) >= 0 || normalized.slice(end + wikiGeneratedEnd.length).trim())
         return null;
+    const recognized = controls.replace(/<!-- memora:(?:generated:(?:start|end)|section:[0-9a-f-]{36}:(?:start|end)|original:(?:start|end)) -->/g, "");
+    if (/<!--\s*memora:/i.test(recognized)) return null;
     const editorial = normalized.slice(0, start), generated = normalized.slice(start);
     const maskedEditorial = controls.slice(0, start);
     const sections = [...maskedEditorial.matchAll(/<!-- memora:section:([0-9a-f-]{36}):start -->\n([\s\S]*?)\n<!-- memora:section:\1:end -->/g)];

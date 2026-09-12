@@ -1,3 +1,5 @@
+import { sourceOriginal, replaceSourceOriginal, obsidianLayoutCapability } from '@app/integration-contracts';
+import { createObsidianLayoutRepository } from '@app/db';
 import { WikiPageContentSchema } from '@app/domain';
 import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -7,7 +9,7 @@ import { atomicEditorial, normalizeProjectionText, obsidianBindingSchema, obsidi
 import type { StorageSettings } from '../../shared/ipc.js';
 import { safeVaultPath } from '../workers/obsidian-sync.worker.js';
 import { SourceEditorialService } from './source-editorial-service.js';
-import { renderWikiCurrent, validateEditorialChange, wikiSections } from './obsidian-editorial-content.js';
+import { renderWikiCurrent, validateEditorialChange, wikiSections, wikiTitle } from './obsidian-editorial-content.js';
 import type { ObsidianWikiProjection } from './obsidian-wiki-projection.js';
 export interface EditorialBase {
     content: string;
@@ -72,12 +74,12 @@ export class ObsidianEditorialService {
         else
             throw new Error('obsidianWiki.errors.binding');
     }
-    async manifest(clientId: string, vaultId: string, cursor = 0, pendingOperationIds?: string[]) {
+    async manifest(clientId: string, vaultId: string, cursor = 0, pendingOperationIds?: string[], supportsLayout=false) {
         const binding = await this.bind(clientId, vaultId), s = await this.settings(), repo = createObsidianEditorialRepository(this.pool());
         const ids = await repo.list(cursor), files = [];
         for (const id of ids) {
             const file = await createObsidianSyncRepository(this.pool()).findByMemoraId(id);
-            if (!file || file.status === 'deleted')
+            if (!file || file.status === 'deleted' || file.metadata.layoutMigration || file.metadata.projectionFormat===2&&!supportsLayout)
                 continue;
             try {
                 await this.allowed(file, s);
@@ -115,7 +117,7 @@ export class ObsidianEditorialService {
             revision = client ? page.revision : page.revisionId;
             frame.frontmatter.memoraRevisionId=revision;
             if (revision !== base.revision)
-                body = renderWikiCurrent(body, content);
+                body = renderWikiCurrent(body, {...content,sections:content.sections.map((section:{id:string;title:string;markdown:string})=>({...section,markdown:(frame.frontmatter.memoraLinkMap??[]).reduce((text,map)=>text.replaceAll(map.canonical,map.rendered),section.markdown)}))});
         }
         else if (file.memoraType === 'atomic_note') {
             const note = await createAtomicNoteRepository(db).findById(file.memoraId);
@@ -123,14 +125,14 @@ export class ObsidianEditorialService {
                 throw new Error('obsidianWiki.errors.conflict');
             revision = note.updatedAt.toISOString();
             if (revision !== base.revision)
-                body = `# ${note.title}\n\n${note.bodyMarkdown}\n\n` + (atomicEditorial(body)?.generated ?? '');
+                body = `# ${note.title}\n\n${note.bodyMarkdown}\n\n` + (frame.frontmatter.memoraLayout===2?parseWikiRegions(body)?.generated??'':atomicEditorial(body)?.generated ?? '');
         }
         else if (file.sourceItemId) {
             const source = await createSourceItemRepository(db).findById(file.sourceItemId);
             if (!source)
                 throw new Error('obsidianWiki.errors.conflict');
             revision = source.updatedAt.toISOString();
-            if (file.memoraType === 'source_item') {const document=(await createDocumentRepository(db).listBySourceItem(source.id))[0];if(document){body=document.canonicalMarkdown;frame.frontmatter.memoraDocumentId=document.id;const documentRevision=await createObsidianEditorialRepository(this.pool()).documentRevision(db,document.id);if(documentRevision)frame.frontmatter.memoraDocumentRevisionId=documentRevision;else delete frame.frontmatter.memoraDocumentRevisionId;}}
+            if (file.memoraType === 'source_item') {const document=(await createDocumentRepository(db).listBySourceItem(source.id))[0];if(document){body=frame.frontmatter.memoraLayout===2?replaceSourceOriginal(body,sourceOriginal(body)?.original===''? '':document.canonicalMarkdown):document.canonicalMarkdown;frame.frontmatter.memoraDocumentId=document.id;const documentRevision=await createObsidianEditorialRepository(this.pool()).documentRevision(db,document.id);if(documentRevision)frame.frontmatter.memoraDocumentRevisionId=documentRevision;else delete frame.frontmatter.memoraDocumentRevisionId;}}
         }
         const content=serializeManagedFrontmatter(frame.frontmatter,frame.userFrontmatter)+'\n'+body;
         if(Buffer.byteLength(content)>2_000_000)throw new Error('obsidianWiki.errors.limit');
@@ -165,8 +167,8 @@ export class ObsidianEditorialService {
         await createObsidianSyncRepository(this.pool()).update(file.id, { metadata: { ...file.metadata, editorialBase: base, editorialBinding: this.binding(s) } });
         return base;
     }
-    apply(clientId: string, value: unknown): Promise<ObsidianEditReceipt> { const next = this.edits.then(() => this.applyOperation(clientId, value)); this.edits = next.then(() => undefined, () => undefined); return next; }
-    private async applyOperation(clientId: string, value: unknown): Promise<ObsidianEditReceipt> {
+    apply(clientId: string, value: unknown, supportsLayout=false): Promise<ObsidianEditReceipt> { const next = this.edits.then(() => this.applyOperation(clientId, value, supportsLayout)); this.edits = next.then(() => undefined, () => undefined); return next; }
+    private async applyOperation(clientId: string, value: unknown, supportsLayout=false): Promise<ObsidianEditReceipt> {
         const input = obsidianEditOperationSchema.parse(value), s = await this.settings();
         if(!input.relativePath.startsWith(s.managedRoot+'/'))throw new Error('obsidianWiki.errors.binding');
         if(Buffer.byteLength(input.content)>2_000_000)throw new Error('obsidianWiki.errors.limit');
@@ -177,6 +179,8 @@ export class ObsidianEditorialService {
         const file = await createObsidianSyncRepository(this.pool()).findByMemoraId(input.targetId);
         if (!file)
             throw new Error('obsidianWiki.errors.binding');
+        if(file.metadata.projectionFormat===2){const grant=await createIntegrationClientRepository(this.pool()).findById(clientId);if(!supportsLayout||!grant?.scopes.includes(obsidianLayoutCapability))throw new Error('obsidianWiki.errors.format');}
+        if(await createObsidianLayoutRepository(this.pool()).active(this.binding(s)))throw new Error('obsidianWiki.errors.paused');
         await this.allowed(file, s);
         const admitted = await this.options.wiki.sourceAdmission(s);
         let initialBase = await this.base(file, s);
@@ -247,20 +251,21 @@ export class ObsidianEditorialService {
                     if (body !== parseObsidianMarkdown(current.content)?.bodyMarkdown) {
                         if (locked.memoraType === 'wiki_page') {
                             const page = await repo.page(client, locked.memoraId), edited = wikiSections(body);
+                            for(const section of edited.sections)section.markdown=(parseObsidianMarkdown(input.content)?.frontmatter.memoraLinkMap??[]).reduce((text,map)=>text.replaceAll(map.rendered,map.canonical),section.markdown);
                             const content = { ...page!.content, title: edited.title, sections: edited.sections.map(edit => { const section = page!.content.sections.find((s: {
                                     id: string;
                                 }) => s.id === edit.id); return section ? { ...section, ...edit, ...((edit.markdown !== section.markdown || edit.title !== section.title) ? { provenance: 'personal', protected: true, evidenceReview: 'needs_review' } : {}) } : { ...edit, kind: 'prose', provenance: 'personal', protected: true, evidenceReview: 'needs_review', evidenceIds: [] }; }) };
-                            await createWikiRepository(this.pool()).save({ id: locked.memoraId, expectedRevisionId: page!.revision, content: WikiPageContentSchema.parse(content), evidenceChunkIds: [] }, { transaction: client, origin: 'human', allocatedTarget: false, humanApproved: true });
+                            await createWikiRepository(this.pool()).save({ ...(parseObsidianMarkdown(input.content)?.frontmatter.memoraLayout===2?{version:2 as const}:{}), id: locked.memoraId, expectedRevisionId: page!.revision, content: WikiPageContentSchema.parse(content), evidenceChunkIds: [] }, { transaction: client, origin: 'human', allocatedTarget: false, humanApproved: true });
                         }
                         else if (locked.memoraType === 'source_item' || locked.memoraType === 'source_reference') {
-                            const saved = await new SourceEditorialService(this.pool()).saveProjected(locked.sourceItemId!, current.revision, body, client);
+                            const saved = await new SourceEditorialService(this.pool()).saveProjected(locked.sourceItemId!, current.revision, parseObsidianMarkdown(current.content)?.frontmatter.memoraLayout===2?sourceOriginal(body)!.original:body, client);
                             await createObsidianSyncRepository(client).update(locked.id, { documentId: saved.documentId, ...(locked.memoraType === 'source_reference' ? { memoraType: 'source_item', entityType: 'source_item' } : {}) });
                         }
                         else {
-                            const editorial = atomicEditorial(body)!.editorial, match = /^# ([^\n]+)\n\n([\s\S]*)$/.exec(editorial);
+                            const editorial = (parseObsidianMarkdown(current.content)?.frontmatter.memoraLayout===2?parseWikiRegions(body)!:atomicEditorial(body)!).editorial, match = /^# ([^\n]+)\n\n([\s\S]*)$/.exec(editorial);
                             if (!match)
                                 throw new Error('obsidianWiki.errors.format');
-                            await createAtomicNoteRepository(client).review({ id: locked.memoraId, action: 'edit', title: match[1]!, bodyMarkdown: match[2]!.endsWith('\n\n') ? match[2]!.slice(0, -2) : match[2]!, expectedUpdatedAt: current.revision }, client);
+                            await createAtomicNoteRepository(client).review({ id: locked.memoraId, action: 'edit', title: wikiTitle(editorial), bodyMarkdown: match[2]!.endsWith('\n\n') ? match[2]!.slice(0, -2) : match[2]!, expectedUpdatedAt: current.revision }, client);
                         }
                     }
                     const next = await this.current(locked, { ...base, revision: '' }, client), localFrame = parseObsidianMarkdown(input.content)!;
@@ -319,7 +324,7 @@ export class ObsidianEditorialService {
                 receipt.syncVersion = locked.syncVersion + 1;
                 frame.frontmatter.memoraSyncVersion = receipt.syncVersion;
                 frame.frontmatter.memoraContentHash = sha256(parseWikiRegions(frame.bodyMarkdown)?.editorial ?? frame.bodyMarkdown);
-                if (locked.memoraType === 'wiki_page')
+                if (locked.memoraType === 'wiki_page'||frame.frontmatter.memoraLayout===2)
                     frame.frontmatter.memoraRevisionId = receipt.revision;
                 const latest = await createObsidianSyncRepository(client).findByMemoraId(locked.memoraId);
                 if (latest?.documentId)
@@ -327,8 +332,8 @@ export class ObsidianEditorialService {
                 if(latest?.documentId&&latest.memoraType==='source_item'){const revision=await repo.documentRevision(client,latest.documentId);if(revision)frame.frontmatter.memoraDocumentRevisionId=revision;else delete frame.frontmatter.memoraDocumentRevisionId;}
                 if (latest?.memoraType === 'source_item' && frame.frontmatter.memoraType === 'source_reference') {
                     frame.frontmatter.memoraType = 'source_item';
-                    delete frame.frontmatter.memoraWikiSchema;
-                    delete frame.frontmatter.memoraRevisionId;
+                    if(!frame.frontmatter.memoraLayout)delete frame.frontmatter.memoraWikiSchema;
+                    if(!frame.frontmatter.memoraLayout)delete frame.frontmatter.memoraRevisionId;
                 }
                 receipt.content = serializeManagedFrontmatter(frame.frontmatter, frame.userFrontmatter) + '\n' + frame.bodyMarkdown;
                 receipt.contentHash = sha256(receipt.content);
@@ -408,7 +413,7 @@ export class ObsidianEditorialService {
         }
         if (local !== input.expectedLocal)
             throw new Error('obsidianWiki.errors.conflict');
-        const receipt = await this.apply(row.client_id, { ...request, kind: 'edit', operationId: randomUUID(), occurredAt: new Date().toISOString(), content: input.choice === 'manual' ? input.content : input.choice === 'local' ? local ?? request.content : request.content, resolution: { operationId: request.resolution?.operationId ?? input.id, currentRevision: input.currentRevision, choice: input.choice, observedLocal: local } });
+        const receipt = await this.apply(row.client_id, { ...request, kind: 'edit', operationId: randomUUID(), occurredAt: new Date().toISOString(), content: input.choice === 'manual' ? input.content : input.choice === 'local' ? local ?? request.content : request.content, resolution: { operationId: request.resolution?.operationId ?? input.id, currentRevision: input.currentRevision, choice: input.choice, observedLocal: local } },true);
         if (receipt.status !== 'synced')
             throw new Error('obsidianWiki.errors.conflict');
         await this.options.write({ vaultPath: s.obsidianVaultPath!, relativePath: request.relativePath, content: receipt.content, expectedHash: local === null ? null : sha256(local), recoveryId: randomUUID(), managedRoot: s.managedRoot });

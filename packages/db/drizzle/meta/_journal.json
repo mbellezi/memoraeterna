@@ -274,6 +274,13 @@
       "when": 1789237179290,
       "tag": "0038_investigation_descendant_impacts",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1789240699326,
+      "tag": "0039_sturdy_lila_cheney",
+      "breakpoints": true
     }
   ]
 }
