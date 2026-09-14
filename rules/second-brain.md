@@ -101,6 +101,81 @@ Implementation sequencing lives in
   receipt and avoid duplicate investigation calls. Run-now bypasses idle
   preference only. No-input inspection is quiet and invokes no model.
 
+## Hierarchy successor domain contracts
+
+- `automatic-wiki-v2` policies/change sets and `wiki-curator-v3` snapshots,
+  checkpoints and runs are additive hierarchy contracts. Compact model output
+  uses `wiki-curator-draft-v3`. Importing them does not activate the executor.
+  Current unqualified exports retain their exact v1 policy/proposal and v2
+  runtime contracts; explicit `Versioned*Schema` readers accept complete old or
+  new envelopes and reject mixed/unknown versions. Persisted automatic content,
+  section assessments, memberships, TOC groups, impacts and routine keys retain
+  `automatic-wiki-v1`; this is not a wholesale content-version migration.
+- Successor `limits.targets` supports integers 1–12, default 3. Twelve is a
+  provisional implementation envelope requiring H6 calibration, not a model
+  capability or cost guarantee. Legacy limits remain 1–3. The configured value
+  must govern admission, draft expansion, required-page discovery, support,
+  repair, apply and settings before successor runtime activation. A target and
+  reviewed move of the same canonical page count once. Ordinary leaf/topic/entity
+  pages, populated TOCs and existing index patches count as work targets.
+- Required newly created ancestors are a separate strict shape: handle, title,
+  purpose, topic or ownerless map role, and initial parent only. They cannot
+  contain sections, entity bindings, groups, arbitrary links, existing IDs or
+  existing edits. Navigation-only topics canonically allow zero sections.
+  Ancestors must lead to admitted work targets through the composed principal
+  parent graph, or to exact unresolved targets of a backend-admitted route as
+  specified below; detached scaffolding is rejected and shared ancestors are unique.
+  These ancestors do not consume target slots, but do consume actual resources
+  and appear in support coverage and physical mutation/receipt counts.
+- Parent references identify existing pages with exact expected revision and
+  fingerprint, or same-group proposed pages. TOC owner identity remains distinct
+  from principal parent. Hierarchical reading descent uses `subtopic` memberships
+  between collection pages; ordinary related links do not create tree edges.
+  Validate missing references and cycles over existing plus proposed parents,
+  moves and hierarchical TOC links. Entity pages require admitted canonical
+  entity references; reuse existing entity-page and source/topic-owner bindings.
+  Canonical uniqueness and concurrency still require guarded database enforcement.
+- Existing-page placement uses a separate `reviewed_reparent` operation carrying
+  page/revision, exact from/to parent and reason. A target overlapping its move
+  shares its handle and revision. Policy capabilities explicitly disclose
+  `reviewed_reparent` and `use_scoped_destinations`. The latter permits children
+  at admitted destinations without granting edits to those destinations. Moves
+  remain human-reviewed; their review metadata includes before/after paths,
+  descendant impact and affected membership revisions, order and protection.
+- The immutable placement inventory contains scoped canonical page metadata,
+  revisions, bindings, principal parents, subtopic edges and destination/edit
+  capabilities. It is an organization snapshot, not another node store. Database
+  admission owns complete scope/lineage filtering, owner uniqueness, protection
+  checks and paginated discovery. Incomplete touched ancestry or TOC descent
+  requires continuation of discovery before apply, never an implicit root.
+- There is no fixed path/ancestor count or product depth cap. Independently pinned
+  inventory/proposal byte bounds support resource decisions; exceeding them
+  requires continuation, not reclassification as counted targets or flattening.
+  Versioned routes retain intended leaves and required TOCs as separate intended
+  targets, unresolved path segments, canonical resolved prefixes, current child,
+  receipt groups and structural fingerprint. Existing organization/bootstrap/
+  maintenance checkpoint owners retain this planning data, without a new queue.
+  Completion requires every intended target and path segment; cancellation and
+  partial progress preserve history and cannot grant another inference allowance.
+- An ancestor-only continuation requires an exact route ID, pinned structural
+  fingerprint, complete unresolved intended-target keys and next-parent endpoint.
+  It may create only the next exact prefix of that admitted route. The curator
+  snapshot pins the route; a model draft cannot supply or approve that proof.
+  Zero-target proposals without it are invalid. Later chunks attach to an exact
+  canonical resolved prefix with revision/fingerprint guards, never a dangling
+  handle from a previous group. Every changed ancestor still requires current
+  complete originals and full semantic support. The database/service must load
+  the backend-owned route, guard current policy/scope/evidence, persist the prefix
+  and receipt atomically, and advance its existing owner checkpoint before this
+  contract can execute; parsing a standalone proof never grants mutation authority.
+- Structural fingerprints pin the relevant branch, scope, policy revision,
+  effective prompt and model separately from content coverage. Revalidate current
+  authority/revisions when resuming. Group-local proposal handles never become
+  live references across groups. Apply all coherent mutations under the existing
+  placement lock and transaction, preserving prose revisions, assessments,
+  memberships, protection and registered paths. These domain schemas alone do
+  not implement transactional application or ancestor-first route execution.
+
 ## Participation and identity
 
 - Every imported source remains discoverable in the wiki catalog, including

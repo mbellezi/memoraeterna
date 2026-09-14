@@ -180,3 +180,22 @@ Historical versioned records retain their own evidence and replay contracts.
   before reporting success or resuming workers. Restore the Wiki areas, primary
   policy and four enabled routines even without a configured model, and reload
   the prompt runtime so deleted overrides cannot survive in memory.
+
+## Hierarchy contract rollout
+
+- The additive hierarchy policy supports a default of three work targets with a
+  validated configurable range of one to twelve. Existing policies, startup
+  defaults and UI admission remain on their exact historical version until the
+  successor executor and settings flow are migrated together. Importing schemas
+  cannot widen authority or activate a paused policy.
+- Count required new navigation-only ancestors separately from work targets and
+  total changed pages. Raising the target setting must work through every
+  successor discovery, synthesis, support, repair and apply boundary; resource
+  limits may require smaller groups but ancestor count alone cannot split them.
+- Existing collection and maintenance checkpoint owners will retain versioned
+  branch fingerprints, structural inspection counts and pending route progress.
+  Content integration does not imply structural completion. Preserve intended
+  leaves/TOCs, ancestor prefixes, receipts and budgets across resource deferral;
+  do not mark originals stale solely to request placement inspection. Domain
+  contracts alone do not enable route scheduling, ancestor-first persistence or
+  a new maintenance admission.
