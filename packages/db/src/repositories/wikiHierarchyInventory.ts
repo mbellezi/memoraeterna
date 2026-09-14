@@ -38,8 +38,8 @@ export async function readHierarchyPlacementInventory(db: Db, policyInput: Hiera
       union select page_id,target_id from wiki_memberships where target_kind='page'
       union select p.id,(l->>'id')::uuid from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(coalesce(r.content->'automatic'->'links','[]')) l where l->>'kind'='page'
       union select p.id,p.toc_owner_id from wiki_pages p where p.toc_owner_kind='page'
-    ), reachable(root,id) as (select id,id from selected union select r.root,e.child from reachable r join edges e on e.parent=r.id),
-    descendants(root,id) as (select id,id from selected union select d.root,p.id from descendants d join wiki_pages p on p.parent_id=d.id where not p.archived),
+    ), reachable(root,id) as (select id,id from selected union select r.root,e.child from reachable r join edges e on e.parent=r.id where not r.root=any($5::uuid[])),
+    descendants(root,id) as (select id,id from selected union select d.root,p.id from descendants d join wiki_pages p on p.parent_id=d.id where not p.archived and not d.root=any($5::uuid[])),
     typed_refs(page_id,kind,id) as (select page_id,target_kind,target_id from wiki_memberships
       union select p.id,l->>'kind',(l->>'id')::uuid from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(coalesce(r.content->'automatic'->'links','[]')) l),
     direct_sources(page_id,source_id) as (
@@ -75,11 +75,13 @@ export async function readHierarchyPlacementInventory(db: Db, policyInput: Hiera
   for (const row of rows) {
     if (pages.length === request.limit) { more = true; break; }
     const reserved=Object.values(wikiAreaIds).some(id=>id===row.pageId);
-    const permitted = row.sourceIds.length > 0 ? row.sourceIds.every((id: string) => allowed.includes(id)) : row.navigationArea;
+    const permitted = row.navigationArea || row.sourceIds.length > 0 && row.sourceIds.every((id: string) => allowed.includes(id));
     // Excluded metadata is not sent to the model. Missing ancestry is an explicit admission failure.
     if (!permitted) { after = row.pageId; continue; }
-    const { lineage, navigationArea: _navigationArea, ...metadata } = row;
-    const page = HierarchyPlacementEntrySchema.parse({ ...metadata, fingerprint: curatorHash({ ...metadata, lineage }), canEdit: !reserved && !row.archived && request.editablePageIds.includes(row.pageId), canReceiveChildren: !row.archived && policy.operations.includes('use_scoped_destinations') });
+    const { lineage, navigationArea, ...rawMetadata } = row;
+    // Reserved areas grant only their immutable destination identity, never descendant lineage.
+    const metadata=navigationArea?{...rawMetadata,sourceIds:[],subtopicIds:[],descendantCount:0,membershipCount:0}:rawMetadata;
+    const page = HierarchyPlacementEntrySchema.parse({ ...metadata, fingerprint: curatorHash({ ...metadata, lineage:navigationArea?row.revisionId:lineage }), canEdit: !reserved && !row.archived && request.editablePageIds.includes(row.pageId), canReceiveChildren: !row.archived && policy.operations.includes('use_scoped_destinations') });
     const size = Buffer.byteLength(JSON.stringify(page));
     if (bytes + size > request.maxBytes) { if (!pages.length) throw new Error('organization.errors.scopeLimit'); more = true; break; }
     pages.push(page); bytes += size; after = row.pageId;

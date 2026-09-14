@@ -396,7 +396,7 @@ frontend, integrations and runtime rules before implementing their portions.
 
 ### H0 — Freeze contracts and comparison fixtures
 
-- [ ] Capture the current two-call successful curator path and its repair path
+- [x] Capture the current two-call successful curator path and its repair path
   using deterministic fixtures and canonical usage links.
 - [x] Specify the current draft/run/change-set shapes, initial-parent fields,
   reviewed move operation and explicit authority/destination capabilities.
@@ -442,24 +442,34 @@ review and preservation; no model execution is needed to verify these invariants
 
 ### H2 — Bounded discovery and compact model transport
 
-- [ ] Add the scoped placement inventory to `wikiCuratorRepository.ts` and the
+- [x] Add the scoped placement inventory to `wikiCuratorRepository.ts` and the
   immutable curator snapshot; include bounded ancestry and navigation containers.
-- [ ] Extend draft expansion for topic/collection parents and canonical entity
+- [x] Extend draft expansion for topic/collection parents and canonical entity
   pages, including same-group parents and destination-only existing references.
-- [ ] Make the entire supported target range work through synthesis, support,
+- [x] Make the entire supported target range work through synthesis, support,
   repair and context planning. Include every structural ancestor in support
-  coverage without counting it as a work target. Continue paths only when actual
-  resource bounds require it, not when ancestor count exceeds target allowance.
-- [ ] Extend synthesis, support, repair and sample serializers in the existing
+  coverage without counting it as a work target. Persist oversized candidates
+  without spending a repair; owner-backed resource continuation remains H3 work.
+- [x] Extend synthesis, support, repair and sample serializers in the existing
   prompt catalog. Preserve custom prompt revisions and validate changed contracts.
-- [ ] Include placement/category meaning in complete support coverage, with clear
+- [x] Include placement/category meaning in complete support coverage, with clear
   separation of authored assertions and read-only reference metadata.
-- [ ] Test temporal/procedure/consolidation callers of shared draft contracts so
+- [x] Test temporal/procedure/consolidation callers of shared draft contracts so
   the hierarchy update does not break existing intent-specific workflows.
 
 Exit: one normal synthesis/support pair can create a useful multi-level group,
 link existing notes and position an existing canonical entity page; invalid
 structure fails deterministically and unsupported categorization cannot apply.
+
+Verification recorded: 127 targeted tests, typecheck, format and isolated
+PostgreSQL passed after parent review. Actual service admission, execution and
+audited apply exercised 1, 2 with five ancestors, 6 and 12 work targets with two
+synthetic adapter calls each. Repeated starts reused receipts; reviewed moves
+preserved sections and approval added no inference. The full suite passed 902
+tests with two pre-existing seed migration-list expectations still failing.
+On the frozen ordinary serialization fixture, combined prompt bytes decreased
+from 17,892 to 15,574 before final calibration; these are not provider token or
+cost measurements. Native rebuild/reset verification remains deferred to H6.
 
 ### H3 — Existing collection and maintenance orchestration
 

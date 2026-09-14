@@ -49,19 +49,21 @@ Implementation sequencing lives in
   catalog specified in `rules/ai-and-knowledge.md`; settings do not create a second
   instruction authority or a separate inference queue.
 
-## Versioned automatic-wiki contracts
+## Current automatic-wiki contracts
 
-- `automatic-wiki-v1` is the successor domain contract. Its schemas do not
-  activate automation or expand `wiki-three-tools-v1`, legacy maintenance or
-  Obsidian v1 authority. Dispatch by admitted version; retain old-run readers,
-  exact snapshots and receipts. Unknown versions fail before inference.
+- `automatic-wiki-v1` is the current automatic policy/change-set contract and
+  `wiki-curator-v2` is its current execution marker. The hierarchy rollout uses
+  an empty database and one schema per current contract; it does not add an
+  old/new curator dispatcher or compatibility reader. Preserve exact snapshots,
+  reviews and receipts created by this implementation.
 - Keep existing page kinds; source/topic TOCs and maps are collection roles,
   investigations are synthesis roles. One source/topic has one canonical TOC
   owner binding. Typed page/source/atomic-note/entity memberships have stable
   IDs, order and independent placement protection. No universal node store or
   duplicate source-relation authority is introduced.
-- New curator proposals carry at most three page/TOC targets, six section
-  patches per page, twelve complete original passages per synthesis, twenty
+- New curator proposals admit 1–12 work targets (default 3), with required
+  new path ancestors counted separately and no depth cap, six section patches
+  per page, twelve complete original passages per synthesis, twenty
   tools, twenty-one admitted model calls including one repair, and a ten-minute
   group deadline including FIFO wait. Lower effective model/policy limits win.
   These development ceilings do not imply measured token/cost guarantees.
@@ -173,6 +175,33 @@ Implementation sequencing lives in
   placement lock and transaction, preserving prose revisions, assessments,
   memberships, protection and registered paths. These domain schemas alone do
   not implement transactional application or ancestor-first route execution.
+
+- The current curator transport has topics, indexes, entities, required ancestors
+  and reviewed moves. It uses the same synthesis/support pair and one shared repair
+  allowance for all target counts. A one-target policy never requires a second
+  topic or TOC in the same group. Index members carry explicit reading/subtopic/
+  source/related purpose; owner identity does not set the principal parent.
+- Pin the exact placement inventory and complete support composition hash in the
+  current snapshot. The support payload carries complete originals once, with
+  exact handle associations for every changed target, ancestor and move. Ancestor
+  classification uses only reachable work descendants; move classification uses
+  only the moved page and its members. Parent meaning, entity bindings and TOC
+  association are assessed by that same support call.
+- Reserved Wiki areas are immutable destination-only capabilities. Their admitted
+  metadata contains no descendant lineage, counts or excluded material; unrelated
+  branches neither revoke the destination nor alter its fingerprint. Arbitrary
+  unbound pages or a modified reserved area cannot acquire this capability.
+- Ordinary content input identity follows complete inputs, scoped noncausal
+  editorial changes, explicit required targets/destinations and pinned prompts/
+  model. It excludes inventory changes produced by the curator itself. Retain the
+  inventory separately for guarded apply; structural inspection has its own
+  checkpoint fingerprint. Receipt reuse guards principal parent as well as content, so a real move
+  cannot be hidden by prose equality. Pin/order-only edits retain ordinary
+  content receipts; separate structural inspection owns their ordering signature.
+- Plan output within the profile limit and actual remaining context. The target
+  ceiling is not a mandatory output size. Resource exhaustion preserves the
+  candidate/checkpoint for explicit continuation or deferral; it never increases
+  calls/month budgets, truncates original passages or treats ancestors as targets.
 
 ## Participation and identity
 

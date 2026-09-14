@@ -163,7 +163,7 @@ describe("current hierarchy contracts", () => {
   });
   it("keeps minimal topics canonical with zero authored sections", () => {
     expect(WikiPageContentSchema.safeParse({ title: "Science", kind: "topic", sections: [] }).success).toBe(true);
-    const draft = { version: hierarchyDraftVersion, explanation: "Organize", topics: [{ handle: "new_leaf", title: "Leaf", purpose: "Navigation", initialParent: "new_path", sections: [], links: [] }], indexes: [], entities: [], ancestors: [{ ...ancestor("new_path"), initialParent: null }], moves: [] };
+    const draft = { explanation: "Organize", topics: [{ handle: "new_leaf", title: "Leaf", purpose: "Navigation", initialParent: "new_path", sections: [], links: [] }], indexes: [], entities: [], ancestors: [{ ...ancestor("new_path"), initialParent: null }], moves: [] };
     expect(HierarchyDraftSchema.safeParse(draft).success).toBe(true);
     expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...draft.topics[0], handle: "new_entity", entity: "University of Coimbra" }] }).success).toBe(false);
     expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...draft.topics[0], handle: "new_entity", entity: "r1", sections: [{ id: null, title: "Evidence", markdown: "Attributed finding", originalHandles: ["e1"] }] }] }).success).toBe(true);
@@ -183,7 +183,7 @@ describe("current hierarchy contracts", () => {
   });
   it("reads the hierarchy runtime and rejects incomplete snapshots and widened effective limits", () => {
     const oldPolicy = { ...policy(), version: automaticWikiVersion, operations: ["create_grounded"] };
-    const snapshot = CuratorSnapshotSchema.parse({ version: curatorVersion, policy: oldPolicy, sourceIds: [],
+    const snapshot = CuratorSnapshotSchema.parse({ version: curatorVersion, policy: oldPolicy, sourceIds: [], supportCompositionHash:"a".repeat(64),placement:inventory(),resources:{maxInventoryBytes:100000,maxProposalBytes:100000},
       profile: { profileId: id(20), providerConfigId: null, localModelId: null, provider: "synthetic", modelId: "synthetic", runtime: "remote", revision: null, privacy: "allow_remote", parameters: {}, identityHash: "synthetic", contextWindow: 16384 },
       promptPin: { version: "prompt-catalog-v1", entries: [], domainId: null }, contentLanguage: "en", evidence: [], references: [], pages: [], inputFingerprint: "input", groupId: id(1), outputTokens: 2048, limits: initialCuratorLimits, admittedAt: "2026-09-14T00:00:00Z" });
     const checkpoint = CuratorCheckpointSchema.parse({ version: curatorVersion, calls: 0, tools: 0, repairs: 0,
@@ -194,8 +194,8 @@ describe("current hierarchy contracts", () => {
       requiredPageIds: Array.from({ length: 6 }, (_, n) => id(n + 20)), supportCompositionHash:"a".repeat(64), placement: inventory(), resources: { maxInventoryBytes: 100000, maxProposalBytes: 100000 } },
       checkpoint: { ...checkpoint, version: hierarchyCuratorVersion, hierarchy: null } };
     expect(HierarchyCuratorRunSchema.safeParse(successor).success).toBe(true);
-    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, checkpoint }).success).toBe(false);
-    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, snapshot }).success).toBe(false);
+    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, checkpoint }).success).toBe(true);
+    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, snapshot:{...snapshot,placement:undefined} }).success).toBe(false);
     expect(HierarchySnapshotSchema.safeParse({ ...successor.snapshot, limits: policy(5).limits }).success).toBe(false);
     expect(HierarchySnapshotSchema.safeParse({ ...successor.snapshot, limits: policy(7).limits }).success).toBe(false);
   });

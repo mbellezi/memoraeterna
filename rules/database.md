@@ -264,3 +264,13 @@ npm run db:generate
   checkpoint and a matching current child run. Atomically save the next admitted
   prefix, canonical IDs/revisions/fingerprints, route progress and group receipt;
   model-provided proof alone never authorizes zero-work mutation.
+
+- The current curator repository exposes one canonical apply implementation for
+  content and hierarchy. Its ordinary apply entry point delegates to the same
+  hierarchy transaction; no older writer can silently drop ancestors or moves.
+  Reserved navigation-area inventories skip descendant traversal and disclose
+  only their exact immutable destination revision, including in narrow scopes.
+- Ordinary editorial generation supplements noncausal impact IDs with scoped
+  human revision IDs that change principal parent. Existing impact triggers omit
+  placement-only edits; no new queue or trigger is introduced. Organization
+  revisions and pin/order-only human changes do not enter this content signature.

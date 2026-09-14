@@ -1,4 +1,5 @@
-import {defaultPromptPin,promptFingerprint} from '../apps/desktop/src/main/services/prompt-runtime.js';
+import {WikiCurator} from '../apps/desktop/src/main/services/wiki-curator.js';
+import {defaultPromptPin,promptFingerprint,promptAudit} from '../apps/desktop/src/main/services/prompt-runtime.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -162,7 +163,7 @@ try {
   const sciencePage = cyclic.pages[0]!;
   await assert.rejects(apply(await pending(cyclic, change(cyclic, { targets: [], moves: [{ handle: 'new_cycle', operation: 'reviewed_reparent', pageId: science.id, expectedRevisionId: sciencePage.revisionId, fromParent: parentRef(cyclic,wikiAreaIds.themes) as Extract<HierarchyParent,{reference:'existing'}>, toParent: parentRef(cyclic, molecular.id), reason: 'Invalid descendant destination' }] })), true), /scope/);
   const mixed = await wiki.save({ expectedRevisionId: null, content: WikiPageContentSchema.parse({ title: 'Mixed excluded lineage', kind: 'topic', sections: [{ id: randomUUID(), title: 'Both', markdown: 'mixed', evidenceIds: [chunk, excludedChunk] }] }), evidenceChunkIds: [chunk, excludedChunk] });
-  assert.equal((await hierarchy.inventory(mainPolicy, { pageIds: [mixed], editablePageIds: [mixed] })).pages.length, 0);
+  const mixedInventory=await hierarchy.inventory(mainPolicy,{pageIds:[mixed],editablePageIds:[mixed]});assert.ok(!mixedInventory.pages.some(p=>p.pageId===mixed));assert.ok(mixedInventory.pages.every(p=>p.pageId===wikiAreaIds.themes&&!p.canEdit&&p.canReceiveChildren&&p.sourceIds.length===0));
   // Canonical save itself rejects duplicate entity identity, but homonyms remain distinct.
   const entityA = randomUUID(), entityB = randomUUID();
   for (const id of [entityA, entityB]) await db.query("insert into entities(id,canonical_name,type,normalized_name,confidence) values($1,'Shared name','organization','shared name',1)", [id]);
@@ -213,7 +214,7 @@ try {
   const notePageCount=await countPages();
   await db.query('insert into atomic_note_source_links(atomic_note_id,source_item_id,chunk_id) values($1,$2,$3)',[sharedNote,outside.id,excludedChunk]);
   await assert.rejects(apply(staleNoteRun),/scope|evidence/);assert.equal(await countPages(),notePageCount);
-  assert.equal((await hierarchy.inventory(mainPolicy,{pageIds:[noteParent.id]})).pages.length,0,'Secondary source lineage excludes both nested indexes');
+  assert.equal((await hierarchy.inventory(mainPolicy,{pageIds:[noteParent.id]})).pages.filter(p=>!Object.values(wikiAreaIds).some(id=>id===p.pageId)).length,0,'Secondary source lineage excludes both nested indexes');
   await db.query("insert into atomic_note_evidence(note_id,chunk_id,source_id,snapshot) select $1,id,source_item_id,jsonb_build_object('contentHash',content_hash,'excerpt',content) from chunks where id=$2",[sharedNote,excludedChunk]);
   await db.query('delete from atomic_note_source_links where atomic_note_id=$1 and chunk_id=$2',[sharedNote,excludedChunk]);
   const retainedOriginals=await repo.noteOriginals(sharedNote);assert.ok(retainedOriginals.source_ids.includes(outside.id)&&retainedOriginals.chunk_ids.includes(excludedChunk));
@@ -287,5 +288,46 @@ try {
   const pause = await snapshot(), pauseRun = await pending(pause, change(pause));
   await db.query("insert into wiki_policy_activations(policy_id,revision_id,state,created_at) values($1,$2,'paused',clock_timestamp())", [mainPolicy.id, mainPolicy.revisionId]);
   await assert.rejects(apply(pauseRun, true), /policy/);
-  console.log('Hierarchy fresh PostgreSQL: actual initialized area destinations with immutable reserved ownership, shared pending note across nested TOCs with retained excluded-secondary-lineage rejection, serialized entity-binding and reciprocal-move races, deep 4-ancestor + 2-target transaction, six-target cap, scoped inventory/cursors, shared reuse, protected reviewed move with unchanged section/support/evidence, exact support and stale guards, canonical entity uniqueness/homonyms, archived/cyclic parents, nested TOC cycles, late rollback, excluded lineage, atomic route prefixes/restart/final leaf/replay and pause passed. Synthetic audits only; no inference or user database accessed.');
+
+  // The normal current service admits, calls the existing adapter twice, audits and applies.
+  for(const targetCount of [1,2,6,12]){
+    const inputSource=await createSourceItemRepository(db).create({type:'PersonalNote',title:'Cobaltquartz'+targetCount});
+    await original(inputSource.id,'Cobaltquartz'+targetCount+' Euclidean'+targetCount+' Quaternary'+targetCount+'.');
+    const servicePolicy=HierarchyPolicySchema.parse({...mainPolicy,id:randomUUID(),revisionId:randomUUID(),scope:{...mainPolicy.scope,sourceIds:[inputSource.id]},limits:{...mainPolicy.limits,targets:targetCount}});
+    await repo.draft(servicePolicy,{},'service-fixture');await repo.activate(servicePolicy.id,servicePolicy.revisionId,'service-fixture');
+    let proposeMove=false;const prompts:string[]=[], service=new WikiCurator({getPool:()=>db,contentLanguage:async()=> 'en',wake:()=>{},cancelJob:async()=>{},ai:{pinOrganizationProfile:async()=>profile,runOrganizationTask:async(_profile,input,context,signal,_maxOutput,guard)=>{
+      await guard?.();signal?.throwIfAborted();await context.onProviderStart?.();prompts.push(input);
+      const current=(await runs.get(context.organizationRunId!))!;
+      const sourceHandle='r'+(current.snapshot.references.findIndex((r:{kind:string})=>r.kind==='source')+1);
+      const areaHandle='r'+(current.snapshot.references.findIndex((r:{id:string})=>r.id===wikiAreaIds.themes)+1);
+      const ancestors=targetCount===2?Array.from({length:5},(_,i)=>({handle:'new_service_path_'+i,title:'Service category '+i,purpose:'Required supported reading path',role:{kind:'topic',role:'topic'},initialParent:i?'new_service_path_'+(i-1):areaHandle})):[];
+      const draft={explanation:'Place independent source findings',topics:Array.from({length:targetCount===2?1:targetCount},(_,i)=>({handle:'new_service_leaf_'+i,title:'Service leaf '+targetCount+' '+i,purpose:'Read exact independent finding '+targetCount+' '+i,initialParent:targetCount===2?'new_service_path_4':areaHandle,sections:[{id:null,title:'Finding',markdown:'Complete independent fixture observation [e1]',originalHandles:['e1']}],links:[]})),indexes:targetCount===2?[{handle:'new_service_index',title:'Service reading',purpose:'Read original evidence',initialParent:'new_service_leaf_0',owner:{topic:'new_service_leaf_0'},groups:[{id:null,title:'Originals',explanation:null,originalHandles:[],targets:[{target:sourceHandle,purpose:'source'}]}]}]:[],entities:[],ancestors,moves:[]};
+      const moveDraft={explanation:'Review the exact supported placement',topics:[],indexes:[],entities:[],ancestors:[],moves:[{handle:'r'+(current.snapshot.references.findIndex((r:{id:string})=>r.id===current.snapshot.pages[0]?.id)+1),toParent:areaHandle,reason:'Restore the supported scoped reading destination'}]};
+      const output=context.stage==='support'?{supported:true,checkedTargets:hierarchyChangedHandles(current.checkpoint.proposal),issues:[]}:proposeMove?moveDraft:draft;
+      const aiTaskRunId=await createAiConfigRepository(db).recordTaskRun({organizationRunId:context.organizationRunId,organizationStep:context.organizationStep,taskType:'structured-output',provider:'synthetic',modelId:'fixture',runtime:'test',durationMs:1,status:'succeeded',promptCompositions:promptAudit(input),inputTokens:100,outputTokens:50});
+      return {output,aiTaskRunId,inputTokens:100,outputTokens:50};
+    }} as never});
+    const admitted=await service.start({policyId:servicePolicy.id,policyRevisionId:servicePolicy.revisionId,sourceIds:[inputSource.id],noteIds:[]});
+    assert.ok(admitted);assert.equal(admitted.snapshot.limits.targets,targetCount);assert.ok(admitted.snapshot.placement.pages.some(p=>p.pageId===wikiAreaIds.themes&&p.canReceiveChildren&&!p.canEdit));
+    const job=(await db.query('select * from jobs where id=$1',[admitted.jobId])).rows[0];await service.execute(job,new AbortController().signal);
+    const executed=(await service.get(admitted.id))!;assert.equal(executed.status,'applied');assert.equal(prompts.length,2);assert.equal(executed.checkpoint.calls,2);
+    assert.equal((await db.query('select targets from wiki_group_receipts where run_id=$1',[admitted.id])).rows[0].targets.length,targetCount+(targetCount===2?5:0));
+    await service.execute(job,new AbortController().signal);assert.equal(prompts.length,2,'Applied service replay never invokes inference');
+    const repeated=await service.start({policyId:servicePolicy.id,policyRevisionId:servicePolicy.revisionId,sourceIds:[inputSource.id],noteIds:[]});assert.equal(repeated!.id,admitted.id,'Repeated current admission returns the original receipt after its own placements');assert.equal(prompts.length,2);
+    if(targetCount===1){
+      const committed=(await db.query('select targets from wiki_group_receipts where run_id=$1',[admitted.id])).rows[0].targets[0];let page=WikiPageSchema.parse(await wiki.get(committed.pageId));
+      const originalSections=structuredClone(page.sections),generation=await repo.editorialGeneration([inputSource.id]);const areaBefore=await hierarchy.inventory(servicePolicy,{pageIds:[wikiAreaIds.themes]});
+      await wiki.save({version:2,id:page.id,expectedRevisionId:page.revisionId,content:{...WikiPageContentSchema.strip().parse(page),pinned:true,position:42},evidenceChunkIds:[]});
+      assert.equal(await repo.editorialGeneration([inputSource.id]),generation,'Pin/order-only revisions do not trigger ordinary prose analysis');
+      assert.equal((await service.start({policyId:servicePolicy.id,policyRevisionId:servicePolicy.revisionId,sourceIds:[inputSource.id],noteIds:[]}))!.id,admitted.id,'Pin/order-only changes retain the content receipt');
+      page=WikiPageSchema.parse(await wiki.get(page.id));
+      await wiki.save({version:2,id:page.id,expectedRevisionId:page.revisionId,content:{...WikiPageContentSchema.strip().parse(page),parentId:wikiAreaIds.maps},evidenceChunkIds:[]});
+      assert.notEqual(await repo.editorialGeneration([inputSource.id]),generation,'A manual move changes ordinary editorial generation without prose edits');
+      assert.deepEqual(await hierarchy.inventory(servicePolicy,{pageIds:[wikiAreaIds.themes]}),areaBefore,'An unrelated descendant placement does not alter reserved destination metadata');
+      proposeMove=true;const movedAdmission=(await service.start({policyId:servicePolicy.id,policyRevisionId:servicePolicy.revisionId,sourceIds:[inputSource.id],noteIds:[]}))!;assert.notEqual(movedAdmission.id,admitted.id);
+      const movedJob=(await db.query('select * from jobs where id=$1',[movedAdmission.jobId])).rows[0];await service.execute(movedJob,new AbortController().signal);assert.equal((await service.get(movedAdmission.id))!.status,'awaiting_review');assert.equal(prompts.length,4);
+      await service.command({command:'accept',id:movedAdmission.id});assert.equal((await service.get(movedAdmission.id))!.status,'applied');assert.equal(prompts.length,4,'Accepting supported movement invokes no inference');assert.deepEqual(WikiPageSchema.parse(await wiki.get(page.id)).sections,originalSections);
+    }
+  }
+  console.log('Hierarchy fresh PostgreSQL: actual initialized area destinations with immutable reserved ownership, shared pending note across nested TOCs with retained excluded-secondary-lineage rejection, serialized entity-binding and reciprocal-move races, deep 4-ancestor + 2-target transaction, six-target cap, scoped inventory/cursors, shared reuse, protected reviewed move with unchanged section/support/evidence, exact support and stale guards, canonical entity uniqueness/homonyms, archived/cyclic parents, nested TOC cycles, late rollback, excluded lineage, atomic route prefixes/restart/final leaf/replay and pause passed. Actual current service.start/execute completed target allowances 1/2/6/12 with two fixture adapter calls and canonical audit/apply. Synthetic adapters only; no real inference or user database accessed.');
 } finally { if (pool) await closePgPool(pool); await manager.stop(); await rm(dir, { recursive: true, force: true }); }
