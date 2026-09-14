@@ -1,11 +1,55 @@
 import { randomUUID } from 'node:crypto';
-import { WikiBootstrapSchema, WikiAssessmentSchema, type WikiBootstrap, type AutomaticWikiPolicy } from '@app/domain';
+import { WikiBootstrapSchema, WikiAssessmentSchema,HierarchyRouteContinuationSchema,type CuratorRun, type WikiBootstrap, type AutomaticWikiPolicy } from '@app/domain';
+import {isDeepStrictEqual} from 'node:util';
 import type { PgPool, PgClient } from '../client.js';
-import { createWikiCuratorRepository } from './wikiCuratorRepository.js';
+import { createWikiCuratorRepository,curatorHash } from './wikiCuratorRepository.js';
 
 export function createWikiCollectionRepository(pool:PgPool){
  const transaction=async<T>(fn:(db:PgClient)=>Promise<T>)=>{const db=await pool.connect();try{await db.query('begin');const result=await fn(db);await db.query('commit');return result;}catch(error){await db.query('rollback');throw error;}finally{db.release();}};
  const api={
+ async adoptHierarchyRoute(run:WikiBootstrap,planning:CuratorRun){return transaction(async db=>{
+  const route=run.checkpoint.hierarchy!.routes.find(r=>r.planningRunId===planning.id)!;
+  await db.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");
+  await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+run.snapshot.policy.id]);
+  const rows=(await db.query('select id,status,snapshot,checkpoint,updated_at::text updated from organization_runs where id=any($1::uuid[]) order by id for update',[[run.id,planning.id]])).rows;
+  const parent=rows.find(r=>r.id===run.id),child=rows.find(r=>r.id===planning.id);
+  if(!parent||parent.updated!==run.updatedAt||parent.checkpoint.state!=='running'||parent.checkpoint.childRunId!==planning.id||child?.status!=='failed'||child.checkpoint.callPending||!['organization.errors.scopeLimit','organization.errors.context'].includes(child.checkpoint.error)||child.checkpoint.continuedByRouteId||!isDeepStrictEqual(child.checkpoint.proposal,planning.checkpoint.proposal))throw new Error('organization.errors.conflict');
+  await createWikiCuratorRepository(pool).validate(planning.snapshot,db,true);
+  HierarchyRouteContinuationSchema.parse(route);
+  await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1',[planning.id,{...child.checkpoint,continuedByRouteId:route.routeId}]);
+  const saved=(await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1 returning updated_at::text updated',[run.id,run.checkpoint])).rows[0]!;run.updatedAt=saved.updated;
+ });},
+ async structuralCandidates(policy:AutomaticWikiPolicy,after:string|null,selected:string[]=[],limit=20,wide=false){
+  const curator=createWikiCuratorRepository(pool),allowed=await curator.allowed(policy),sourceIds=selected.length?allowed.filter(id=>selected.includes(id)):allowed;
+  const rows=(await pool.query(`select p.id,p.parent_id,p.kind,p.current_revision_id,
+   exists(select 1 from jsonb_array_elements(r.content->'sections') s where length(trim(s->>'markdown'))>0) substantive,
+   (select t.id from wiki_pages t where not t.archived and t.toc_owner_kind='page' and t.toc_owner_id=p.id) toc_id,
+   (select t.current_revision_id from wiki_pages t where not t.archived and t.toc_owner_kind='page' and t.toc_owner_id=p.id) toc_revision_id
+   from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id
+   where not p.archived and p.role is distinct from 'investigation' and ($1::uuid is null or p.id>$1)
+   and exists(select 1 from wiki_dependencies d where d.revision_id=p.current_revision_id and d.kind='source' and d.input_id=any($2::uuid[]))
+   and ($4 or p.parent_id is null or p.kind='topic' and exists(select 1 from jsonb_array_elements(r.content->'sections') s where length(trim(s->>'markdown'))>0) and not exists(select 1 from wiki_pages t where not t.archived and t.toc_owner_kind='page' and t.toc_owner_id=p.id))
+   order by p.id limit $3`,[after,sourceIds,Math.max(1,Math.min(100,limit)),wide])).rows;
+  const items:Array<{pageId:string;fingerprint:string;kind:'missing_toc'|'unplaced'|'settled';sourceIds:string[];tocId:string|null}>=[];
+  for(const row of rows){
+   const inventory:{pages:CuratorRun['snapshot']['placement']['pages']}={pages:[]};let after:string|null=null;
+   do{const part=await curator.hierarchy.inventory(policy,{pageIds:[row.id],after,limit:300,maxBytes:256000});inventory.pages.push(...part.pages);after=part.nextCursor;if(Buffer.byteLength(JSON.stringify(inventory.pages))>256000)throw new Error('organization.errors.scopeLimit');}while(after);
+   const page=inventory.pages.find(p=>p.pageId===row.id);
+   if(!page)continue;
+   if(inventory.pages.some(p=>p.parentId&&!inventory.pages.some(a=>a.pageId===p.parentId)))throw new Error('organization.errors.scopeDecision');
+   const kind=row.kind==='topic'&&row.substantive&&!row.toc_id?'missing_toc':!page.parentId?'unplaced':'settled';
+   // Descendant lineage fingerprints are apply guards. Diagnostics use only this
+   // branch's direct metadata, so a sibling write cannot invalidate every branch.
+   const fingerprint=curatorHash({pageId:page.pageId,revisionId:page.revisionId,tocRevisionId:row.toc_revision_id,ancestry:inventory.pages.map(p=>({pageId:p.pageId,revisionId:p.revisionId,parentId:p.parentId,placementProtected:p.placementProtected,subtopicIds:p.subtopicIds})),kind});
+   items.push({pageId:row.id,fingerprint,kind,sourceIds:page.sourceIds,tocId:row.toc_id??null});
+  }
+  return{items,after:rows.at(-1)?.id as string|null??after,done:rows.length<Math.max(1,Math.min(100,limit))};
+ },
+ async structuralDecision(policyId:string,pageId:string,fingerprint:string){
+  return(await pool.query(`select d from organization_runs r cross join lateral jsonb_array_elements(coalesce(r.checkpoint->'hierarchy'->'decisions','[]')) d
+   where r.snapshot->>'version'='wiki-bootstrap-v1' and r.snapshot->'policy'->>'id'=$1 and d->>'pageId'=$2 and d->>'fingerprint'=$3
+   and d->>'outcome'<>'pending' order by r.updated_at desc limit 1`,[policyId,pageId,fingerprint])).rows[0]?.d as NonNullable<WikiBootstrap['checkpoint']['hierarchy']>['decisions'][number]|undefined;
+ },
  async assessment(policy:AutomaticWikiPolicy,after:string|null,limit:number,selected:string[]=[],generation=''){
   const allowed=await createWikiCuratorRepository(pool).allowed(policy),scope=selected.length?allowed.filter(id=>selected.includes(id)):allowed;
   const cte=`with inventory as(select s.id,s.title,
@@ -24,14 +68,25 @@ export function createWikiCollectionRepository(pool:PgPool){
   return WikiAssessmentSchema.parse({policyId:policy.id,policyRevisionId:policy.revisionId,sources:rows.slice(0,limit),next:rows.length>limit?rows[limit-1]!.id:null,totals,groupOriginalLimit:Math.min(6,policy.limits.originalPassages),readOnly:true});
  },
  async bootstrap(snapshot:WikiBootstrap['snapshot']){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-bootstrap:'+snapshot.policy.id]);const old=(await db.query("select id from organization_runs where snapshot->>'version'='wiki-bootstrap-v1' and snapshot->'policy'->>'id'=$1 and status in('queued','analyzing') and snapshot->'sourceIds'=$2::jsonb and snapshot->'profile'=$3::jsonb and snapshot->'promptPin'=$4::jsonb and snapshot->>'contentLanguage'=$5 and snapshot->'policy'->>'revisionId'=$6 and snapshot->'noteIds'=$7::jsonb and coalesce((snapshot->>'includeExistingNotes')::boolean,false)=$8 order by created_at desc limit 1",[snapshot.policy.id,JSON.stringify(snapshot.sourceIds),JSON.stringify(snapshot.profile),JSON.stringify(snapshot.promptPin),snapshot.contentLanguage,snapshot.policy.revisionId,JSON.stringify(snapshot.noteIds),snapshot.includeExistingNotes])).rows[0];if(old)return old.id as string;
-  const id=randomUUID(),checkpoint:WikiBootstrap['checkpoint']={version:'wiki-bootstrap-v1',afterNote:null,nextNote:null,lastTickAt:null,phase:'originals',noteCursor:0,state:'running',afterSource:null,sourceId:null,sourceFingerprint:null,afterChunk:null,nextChunk:null,childRunId:null,pendingOriginals:0,sourceCovered:0,completedSources:0,catalogedSources:0,completedGroups:0,attentionSources:0,error:null};await db.query('insert into organization_runs(id,snapshot,checkpoint) values($1,$2,$3)',[id,snapshot,checkpoint]);return id;});},
+  const id=randomUUID(),checkpoint:WikiBootstrap['checkpoint']={version:'wiki-bootstrap-v1',afterNote:null,nextNote:null,lastTickAt:null,phase:'originals',hierarchy:null,contentComplete:false,notesComplete:false,noteCursor:0,state:'running',afterSource:null,sourceId:null,sourceFingerprint:null,afterChunk:null,nextChunk:null,childRunId:null,pendingOriginals:0,sourceCovered:0,completedSources:0,catalogedSources:0,completedGroups:0,attentionSources:0,error:null};await db.query('insert into organization_runs(id,snapshot,checkpoint) values($1,$2,$3)',[id,snapshot,checkpoint]);return id;});},
  async discoveryCovered(policy:AutomaticWikiPolicy,sourceIds:string[],generation:string){
   if(!sourceIds.length)return false;
   const assessment=await api.assessment(policy,null,sourceIds.length,sourceIds,generation);
   if(assessment.totals.sources!==sourceIds.length||assessment.sources.some(s=>!['integrated','cataloged'].includes(s.coverage)))return false;
   // Unseen catalog sources still need their first persisted coverage record.
   const count=(await pool.query("select count(*)::int n from wiki_source_coverage where policy_id=$1 and source_id=any($2::uuid[]) and status in('integrated','cataloged')",[policy.id,sourceIds])).rows[0].n;
-  return count===sourceIds.length&&!(await createWikiCuratorRepository(pool).unplacedNotes(sourceIds,null,1)).length;
+  const structure=await api.structuralCandidates(policy,null,sourceIds,20);
+  return count===sourceIds.length&&!(await createWikiCuratorRepository(pool).unplacedNotes(sourceIds,null,1)).length&&structure.done&&!structure.items.length;
+ },
+ async settled(policy:AutomaticWikiPolicy,generation:string){
+  const curator=createWikiCuratorRepository(pool),sourceIds=await curator.allowed(policy);
+  if(!sourceIds.length)return true;
+  const assessment=await api.assessment(policy,null,1,[],generation);
+  if(assessment.totals.sources!==assessment.totals.integrated+assessment.totals.cataloged)return false;
+  const persisted=(await pool.query("select count(*)::int n from wiki_source_coverage where policy_id=$1 and source_id=any($2::uuid[]) and status in('integrated','cataloged')",[policy.id,sourceIds])).rows[0]!.n;
+  if(persisted!==sourceIds.length||(await curator.unplacedNotes(sourceIds,null,1)).length)return false;
+  const structure=await api.structuralCandidates(policy,null,sourceIds,20);
+  return structure.done&&!structure.items.length;
  },
  async exhaustedAttention(policy:AutomaticWikiPolicy){return(await pool.query(`select d.id,d.checkpoint,d.receipt,e.kind,e.input_id,e.source_ids,b.id bootstrap_id
   from knowledge_impact_deliveries d join knowledge_impact_events e on e.id=d.event_id

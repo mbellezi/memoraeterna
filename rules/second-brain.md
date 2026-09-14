@@ -203,6 +203,41 @@ Implementation sequencing lives in
   candidate/checkpoint for explicit continuation or deferral; it never increases
   calls/month budgets, truncates original passages or treats ancestors as targets.
 
+- Collection completion has three independent conditions: complete original
+  coverage, selected/eligible note placement, and structural inspection with every
+  admitted route resolved. Persist the structural cursor, branch decisions,
+  physical/work/ancestor counts and group receipts in the existing bootstrap
+  checkpoint. A current checkpoint cannot claim completion without all three.
+- A substantive topic without its canonical owned TOC is a navigation candidate;
+  a sectionless path ancestor does not require its own TOC. Missing-TOC admission
+  pins the exact owner as read-only destination metadata and requires one new
+  populated TOC. The owner is not a work target and cannot be rewritten in that
+  group. This permits targets=1 to complete a topic, then its navigation.
+- Daily diagnostics filter missing navigation and unplaced branches before
+  expanding scoped lineage. Weekly/monthly may inspect a wider bounded metadata
+  page. Diagnostic fingerprints use direct branch and ancestry revisions, owner
+  navigation, scope and pinned model/prompts; unrelated sibling lineage does not
+  invalidate them. Retain explicit no-change and terminal branch decisions.
+  Structural work never makes integrated source content stale merely to trigger
+  another synthesis. A settled daily occurrence needs no bootstrap or inference.
+- Resource-deferred output is untrusted until ordinary content, note, scope,
+  target and hierarchy validation succeeds with only the byte check relaxed for
+  validation. The coordinator may decompose a coherent new linear path, retaining
+  its planning run and original audit, exact pending targets and per-ancestor
+  canonical original chunk associations. Each resource-sized chunk is preseeded
+  from that plan and receives current semantic support through the same adapter;
+  it does not repeat synthesis or invoke inference per ancestor. An unsupported
+  chunk rejects the retained route, rather than authorizing a rewritten path.
+  Branched oversized candidates, existing rewrites and a final target unit that
+  still exceeds resources remain explicit unresolved attention; they are never
+  partially applied or flattened. Branched proposals that fit remain ordinary
+  coherent groups. This is a current continuation limitation, not a depth cap.
+- Route keys are planning identities only. Resolve completed prefixes into
+  exact canonical parents, owners and links for each new child. Admission binds
+  the owner/current child atomically, and apply commits the prefix, receipt and
+  owner progress together. Re-read the owner before consuming that child receipt;
+  stale coordinator timestamps cannot overwrite route progress or a pause.
+
 ## Participation and identity
 
 - Every imported source remains discoverable in the wiki catalog, including

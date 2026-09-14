@@ -91,6 +91,13 @@ Historical versioned records retain their own evidence and replay contracts.
   single-selection ceiling; pack complete original lineages within group budgets.
   Coverage remains partial until the required navigation work settles. Existing
   explicit originals-only commands and admitted legacy snapshots keep their scope.
+- Source coverage and structural progress are distinct. Collection checkpoints
+  expose `contentComplete`, `notesComplete`, the `structure` phase and hierarchy
+  cursors/decisions/counts/routes. Automatic maintenance projects that hierarchy
+  through its existing checkpoint and cannot finish a linked bootstrap with
+  pending structural targets. Diagnose meaningful missing topic TOCs without
+  requiring a TOC for each empty navigation ancestor. Settled daily inspection
+  records no change without creating another empty collection wrapper.
 - Removal deliveries repair current page and TOC revisions before model admission.
   Subtract unavailable typed targets and unprotected generated sections that lost
   required inputs; preserve human/reviewed prose and retained interpretations with

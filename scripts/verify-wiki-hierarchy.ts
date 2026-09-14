@@ -1,4 +1,6 @@
+import {AutomaticMaintenance} from '../apps/desktop/src/main/services/automatic-maintenance.js';
 import {WikiCurator} from '../apps/desktop/src/main/services/wiki-curator.js';
+import {WikiCollection} from '../apps/desktop/src/main/services/wiki-collection.js';
 import {defaultPromptPin,promptFingerprint,promptAudit} from '../apps/desktop/src/main/services/prompt-runtime.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -8,7 +10,7 @@ import { join, resolve } from 'node:path';
 import {
   createPgPool, closePgPool, PostgresSidecarManager, resolvePostgresSidecarPaths, runMigrations,
   createWikiRepository, createWikiCuratorRepository, createOrganizationRepository, createAiConfigRepository,
-  createSourceItemRepository, createDocumentRepository, createChunkRepository, createKnowledgeAutomationRepository, curatorHash, type PgPool
+  createSourceItemRepository, createDocumentRepository, createChunkRepository, createKnowledgeAutomationRepository,createWikiCollectionRepository,createAutomaticMaintenanceRepository, curatorHash, type PgPool
 } from '../packages/db/src/index.js';
 import {
   HierarchyPolicySchema, HierarchySnapshotSchema, HierarchyChangeSetSchema, HierarchyCuratorCheckpointSchema,
@@ -329,5 +331,89 @@ try {
       await service.command({command:'accept',id:movedAdmission.id});assert.equal((await service.get(movedAdmission.id))!.status,'applied');assert.equal(prompts.length,4,'Accepting supported movement invokes no inference');assert.deepEqual(WikiPageSchema.parse(await wiki.get(page.id)).sections,originalSections);
     }
   }
+  // Real collection entrypoints: targets=1 separates the substantive topic and
+  // required TOC; resource continuation resumes a retained synthesis after restart.
+  for(const previous of await repo.policies())if(previous.state==='enabled')await repo.pause(previous.id);
+  await db.query("update jobs set status='succeeded',finished_at=now() where status in('queued','running')");
+  for(const scenario of ['single','review','maintenance','stale','canceled','uncertain','rejected'] as const){
+    const resourceRoute=!['single','review'].includes(scenario),installed=scenario==='maintenance',negative=!['single','review','maintenance'].includes(scenario);
+    const inputSource=await createSourceItemRepository(db).create({type:'PersonalNote',title:scenario+'zygomatic'+randomUUID().replaceAll('-','')});
+    await original(inputSource.id,inputSource.title+' Quasaryttrium'+randomUUID().replaceAll('-',''));
+    const p=HierarchyPolicySchema.parse({...mainPolicy,id:randomUUID(),revisionId:randomUUID(),scope:{...mainPolicy.scope,sourceIds:[inputSource.id]},limits:{...mainPolicy.limits,targets:resourceRoute?2:1}});
+    const automaticRepo=createAutomaticMaintenanceRepository(db),maintenancePreview=installed?await automaticRepo.preview(p,'UTC'):null;
+    if(maintenancePreview)maintenancePreview.routines.find(r=>r.policy.kind==='daily')!.policy.allowance.calls=1;
+    await repo.draft(p,maintenancePreview?{maintenance:maintenancePreview}:{},'collection-fixture');await repo.activate(p.id,p.revisionId,'collection-fixture');
+    const calls:Array<{runId:string;stage:string}>=[];
+    const options:ConstructorParameters<typeof WikiCurator>[0]={getPool:()=>db,contentLanguage:async()=> 'en',wake:()=>{},cancelJob:async()=>{},...(resourceRoute?{hierarchyResources:{maxProposalBytes:2500}}:{}),ai:{pinOrganizationProfile:async()=>profile,runOrganizationTask:async(_profile,input,context,signal,_max,guard)=>{
+      await guard?.();signal?.throwIfAborted();await context.onProviderStart?.();
+      const current=(await runs.get(context.organizationRunId!))!,s=current.snapshot;
+      calls.push({runId:current.id,stage:context.stage!});
+      const ref=(id:string)=>'r'+(s.references.findIndex((r:{id:string})=>r.id===id)+1),sourceRef=ref(inputSource.id),area=ref(wikiAreaIds.themes),owner=s.structuralIntent?.pageId?ref(s.structuralIntent.pageId):'new_collection_leaf';
+      const ancestors=resourceRoute&&!s.structuralIntent?Array.from({length:9},(_,i)=>({handle:'new_collection_path_'+i,title:'Reading category '+i,purpose:'Required supported editorial route '+i+' '+('source category '.repeat(12)),role:{kind:'topic',role:'topic'},initialParent:i?'new_collection_path_'+(i-1):area})):[];
+      const index={handle:'new_collection_toc',title:'Collection reading',purpose:'Read complete original material',initialParent:owner,owner:{topic:owner},groups:[{id:null,title:'Originals',explanation:null,originalHandles:[],targets:[{target:sourceRef,purpose:'source'}]}]};
+      const draft={explanation:'Organize supported collection',topics:s.structuralIntent?[]:[{handle:'new_collection_leaf',title:'Substantive collection finding',purpose:'Read complete source findings',initialParent:resourceRoute?'new_collection_path_8':scenario==='review'?null:area,sections:[{id:null,title:'Finding',markdown:'Complete original observation [e1]',originalHandles:['e1']}],links:resourceRoute?['new_collection_path_0']:[]}],indexes:s.structuralIntent||resourceRoute?[index]:[],entities:[],ancestors,moves:[]};
+      if(scenario==='uncertain'&&s.continuationRoute&&context.stage==='support')throw new Error('Synthetic lost provider acknowledgment');
+      const output=context.stage==='support'?{supported:scenario!=='rejected',checkedTargets:hierarchyChangedHandles(current.checkpoint.proposal),issues:scenario==='rejected'?[{path:'ancestors.0.title',message:'Unsupported classification'}]:[]}:s.structuralIntent?.kind==='unplaced'?{explanation:'Review existing placement',topics:[],indexes:[],entities:[],ancestors:[],moves:[{handle:owner,toParent:area,reason:'Use the supported canonical reading destination'}]}:draft;
+      const aiTaskRunId=await createAiConfigRepository(db).recordTaskRun({organizationRunId:context.organizationRunId,organizationStep:context.organizationStep,taskType:'structured-output',provider:'synthetic',modelId:'fixture',runtime:'test',durationMs:1,status:'succeeded',promptCompositions:promptAudit(input),inputTokens:100,outputTokens:50});return{output,aiTaskRunId,inputTokens:100,outputTokens:50};
+    }} as never};
+    const collections=createWikiCollectionRepository(db),service=new WikiCurator(options);
+    let collection=new WikiCollection(options);const automatic=new AutomaticMaintenance({...options,idleSeconds:()=>1000,aiBusy:()=>false});
+    const bootstrap=await collection.command({command:'bootstrap',input:{policyId:p.id,policyRevisionId:p.revisionId,sourceIds:[inputSource.id],includeExistingNotes:true}}) as import('@app/domain').WikiBootstrap;
+    let paused=false,finished=false,stopped=false,handedOff=false,oldOccurrence:string|null=null,oldReservation:unknown=null;
+    for(let step=0;step<300;step++){
+      if(installed)await automatic.tick();
+      await collection.tick();const current=(await collections.get(bootstrap.id))!;
+      if(installed&&current.checkpoint.state==='attention'&&current.checkpoint.error==='maintenance.errors.budget'&&!current.checkpoint.childRunId){
+       if(handedOff)continue;assert.ok(current.checkpoint.hierarchy!.routes[0]!.resolvedPrefix.length>0,'Recorded budget exhaustion follows a committed prefix in the old occurrence');await automatic.tick();const old=(await automaticRepo.history(p.id))[0]!;oldOccurrence=old.id;oldReservation=old.reservation;assert.equal(old.status,'failed');assert.equal(old.usage.calls,2);assert.equal((await db.query("select count(*)::int n from wiki_group_receipts g join organization_runs c on c.id=g.run_id where c.snapshot->>'maintenanceRunId'=$1 and c.snapshot->>'continuationRoute' is not null",[old.id])).rows[0].n,1,'The old occurrence owns the committed prefix receipt');
+       const weekly=(await automaticRepo.schedules(p.id)).find(s=>s.policy.kind==='weekly')!;await automatic.command({command:'automaticRun',scheduleId:weekly.id,requestId:randomUUID()});handedOff=true;continue;
+      }
+      if(scenario==='review'&&current.checkpoint.state==='attention'&&current.checkpoint.childRunId){const child=(await service.get(current.checkpoint.childRunId))!,beforeCalls=calls.length;assert.equal(child.status,'awaiting_review');const page=WikiPageSchema.parse(await wiki.get(child.snapshot.requiredPageIds[0]!)),sections=page.sections;await service.command({command:'accept',id:child.id});assert.deepEqual(WikiPageSchema.parse(await wiki.get(page.id)).sections,sections);assert.equal(calls.length,beforeCalls,'Accepting retained structural move requires no inference');continue;}
+      if(negative&&current.checkpoint.state!=='running'){stopped=true;break;}
+      if(current.checkpoint.state==='complete'){finished=true;break;}
+      assert.equal(current.checkpoint.state,'running',JSON.stringify(current.checkpoint));
+      if(resourceRoute&&!paused&&current.checkpoint.hierarchy?.routes[0]?.resolvedPrefix.length&&!current.checkpoint.childRunId){
+        if(scenario==='stale'){const prefix=current.checkpoint.hierarchy!.routes[0]!.resolvedPrefix[0]!,page=WikiPageSchema.parse(await wiki.get(prefix.pageId));await wiki.save({version:2,id:page.id,expectedRevisionId:page.revisionId,content:{...WikiPageContentSchema.strip().parse(page),title:'Human changed exact prefix'},evidenceChunkIds:[]});paused=true;continue;}
+        if(scenario==='canceled'){await collection.command({command:'bootstrapCancel',id:bootstrap.id});paused=true;continue;}
+        const beforeCalls=calls.length;await collection.command({command:'bootstrapPause',id:bootstrap.id});await collection.tick();assert.equal(calls.length,beforeCalls);
+        collection=new WikiCollection(options);await collection.command({command:'bootstrapResume',id:bootstrap.id});paused=true;
+      }
+      if(current.checkpoint.childRunId){const child=(await service.get(current.checkpoint.childRunId))!;if(child.status==='queued'){
+        const job=(await db.query('select * from jobs where id=$1',[child.jobId])).rows[0];
+        try{await service.execute(job,new AbortController().signal);}catch(error){assert.match(String(error),/scopeLimit|uncertain|evidence/,JSON.stringify((await service.get(child.id))?.checkpoint));}
+        if(child.snapshot.continuationRoute&&(await service.get(child.id))!.status==='applied')await assert.rejects(collections.checkpoint(current),/conflict/,'A stale coordinator cannot overwrite transactional route progress');
+        await db.query("update jobs set status='succeeded',finished_at=now() where id=$1",[child.jobId]);
+      }}
+    }
+    if(negative){assert.ok(stopped);const stoppedRun=(await collections.get(bootstrap.id))!,beforeCalls=calls.length;assert.equal(stoppedRun.checkpoint.state,scenario==='canceled'?'canceled':scenario==='rejected'?'rejected':'attention');if(scenario==='stale')assert.equal(stoppedRun.checkpoint.error,'organization.errors.conflict');if(scenario==='uncertain')assert.equal(stoppedRun.checkpoint.error,'organization.errors.uncertain');for(let i=0;i<3;i++)await new WikiCollection(options).tick();assert.equal(calls.length,beforeCalls,'Canceled, uncertain, stale and rejected routes do not replay inference');assert.notEqual(stoppedRun.checkpoint.hierarchy!.routes[0]!.state,'complete');await repo.pause(p.id);continue;}
+    assert.ok(finished,'Collection reached source + note + structure completion');
+    const done=(await collections.get(bootstrap.id))!;assert.ok(done.checkpoint.contentComplete&&done.checkpoint.notesComplete);assert.ok(['complete','no_change'].includes(done.checkpoint.hierarchy!.outcome));
+    const pages=(await repo.pages([inputSource.id]));assert.equal(pages.filter(p=>p.kind==='topic'&&p.sections.length).length,1,'No duplicate substantive topics');assert.equal(pages.filter(p=>p.automatic?.role.role==='topic_toc').length,1,'One canonical owned TOC');
+    if(resourceRoute){assert.ok(paused);assert.ok(handedOff);assert.deepEqual((await automaticRepo.get(oldOccurrence!))!.reservation,oldReservation,'Later authority does not refund consumed reservations');const route=done.checkpoint.hierarchy!.routes[0]!;assert.equal(route.state,'complete');assert.equal(route.remainingPath.length,0);assert.equal(route.resolvedPrefix.length,9);assert.equal(calls.filter(c=>c.stage==='curate').length,1,'Retained route synthesis is never replayed');assert.ok((await service.get(route.planningRunId!))!.checkpoint.continuationComplete);}
+    else assert.equal(calls.length,scenario==='review'?6:4,'One synthesis/support pair per exact topic, owned TOC and optional reviewed move');
+    if(installed){let ancestryReads=0;const counted={query:async(...args:unknown[])=>{if(String(args[0]).includes('seeds(id)'))ancestryReads++;return (db.query as Function).apply(db,args);}};assert.deepEqual((await createWikiCollectionRepository(counted as PgPool).structuralCandidates(p,null,[inputSource.id],100)).items,[]);assert.equal(ancestryReads,0,'Settled daily branches are filtered before lineage expansion');for(let drain=0;drain<300&&await automaticRepo.pending(p.id);drain++){await collection.tick();await automatic.tick();}await automatic.tick();const owner=(await automaticRepo.history(p.id)).find(r=>r.id!==oldOccurrence)!;assert.ok(['applied','no_change'].includes(owner.status),JSON.stringify(owner.checkpoint));assert.equal(owner.checkpoint.phase,'complete');}
+    const beforeCalls=calls.length;
+    const second=await collection.command({command:'bootstrap',input:{policyId:p.id,policyRevisionId:p.revisionId,sourceIds:[inputSource.id],includeExistingNotes:true}}) as import('@app/domain').WikiBootstrap;
+    for(let step=0;step<200&&(await collections.get(second.id))!.checkpoint.state!=='complete';step++){if(resourceRoute)await automatic.tick();await collection.tick();}
+    assert.equal((await collections.get(second.id))!.checkpoint.state,'complete');assert.equal(calls.length,beforeCalls,'Unchanged collection reinspection uses zero inference');
+    if(installed){await automatic.tick();const count=async()=>(await db.query("select count(*)::int n from organization_runs where snapshot->>'version'='wiki-bootstrap-v1' and snapshot->'policy'->>'id'=$1",[p.id])).rows[0].n;const beforeCount=await count(),daily=(await automaticRepo.schedules(p.id)).find(s=>s.policy.kind==='daily')!;const idle=await automatic.command({command:'automaticRun',scheduleId:daily.id,requestId:randomUUID()}) as import('@app/domain').AutomaticMaintenanceRun;assert.equal(idle.status,'no_change');assert.equal(idle.checkpoint.bootstrapId,null);assert.equal(await count(),beforeCount,'Unchanged daily occurrence creates no redundant bootstrap');assert.equal(calls.length,beforeCalls);}
+    if(scenario==='single'){
+      const leaf=pages.find(p=>p.kind==='topic'&&p.sections.length)!;
+      const originals=(await repo.evidencePage([inputSource.id],null,12)).items;
+      const sibling=await wiki.save({version:2,expectedRevisionId:null,content:WikiPageContentSchema.parse({title:'Independent diagnostic branch',kind:'topic',parentId:wikiAreaIds.themes,sections:[{id:randomUUID(),title:'Independent finding',markdown:'Independent original observation',kind:'prose',provenance:'personal',protected:true,evidenceReview:'needs_review',evidenceIds:[originals[0]!.chunkId]}]}),evidenceChunkIds:[originals[0]!.chunkId]});
+      const before=await collections.structuralCandidates(p,null,[inputSource.id],100,true);
+      const leafPage=WikiPageSchema.parse(await wiki.get(leaf.id));
+      await wiki.save({version:2,id:leaf.id,expectedRevisionId:leafPage.revisionId,content:{...WikiPageContentSchema.strip().parse(leafPage),parentId:null},evidenceChunkIds:[]});
+      const coverageBefore=(await db.query('select status from wiki_source_coverage where policy_id=$1 and source_id=$2',[p.id,inputSource.id])).rows[0].status;
+      const after=await collections.structuralCandidates(p,null,[inputSource.id],100,true);
+      assert.equal(after.items.find(i=>i.pageId===sibling)!.fingerprint,before.items.find(i=>i.pageId===sibling)!.fingerprint,'Unrelated branch placement does not invalidate this diagnostic identity');
+      assert.notEqual(after.items.find(i=>i.pageId===leaf.id)!.fingerprint,before.items.find(i=>i.pageId===leaf.id)!.fingerprint,'A noncausal parent-only edit changes the affected branch identity');
+      const daily=await collections.structuralCandidates(p,null,[inputSource.id],100);
+      assert.equal(daily.items.find(i=>i.pageId===leaf.id)!.kind,'unplaced');assert.equal(daily.items.find(i=>i.pageId===sibling)!.kind,'missing_toc');
+      assert.deepEqual(WikiPageSchema.parse(await wiki.get(leaf.id)).sections,leafPage.sections);
+      assert.equal((await db.query('select status from wiki_source_coverage where policy_id=$1 and source_id=$2',[p.id,inputSource.id])).rows[0].status,coverageBefore,'Structural inspection does not alter source coverage');
+    }
+    await repo.pause(p.id);
+  }
+  console.log('Collection/maintenance: target-one topic and required owned TOC, separate structural completion, resource-sized linear continuation with exact prefix/original refs, pause/restart, mid-route occurrence exhaustion and later authority preserving the ledger, stale/canceled/uncertain/rejected no replay, selective branch diagnostics, and unchanged daily zero inference passed.');
   console.log('Hierarchy fresh PostgreSQL: actual initialized area destinations with immutable reserved ownership, shared pending note across nested TOCs with retained excluded-secondary-lineage rejection, serialized entity-binding and reciprocal-move races, deep 4-ancestor + 2-target transaction, six-target cap, scoped inventory/cursors, shared reuse, protected reviewed move with unchanged section/support/evidence, exact support and stale guards, canonical entity uniqueness/homonyms, archived/cyclic parents, nested TOC cycles, late rollback, excluded lineage, atomic route prefixes/restart/final leaf/replay and pause passed. Actual current service.start/execute completed target allowances 1/2/6/12 with two fixture adapter calls and canonical audit/apply. Synthetic adapters only; no real inference or user database accessed.');
 } finally { if (pool) await closePgPool(pool); await manager.stop(); await rm(dir, { recursive: true, force: true }); }

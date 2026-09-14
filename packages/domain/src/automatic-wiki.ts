@@ -354,6 +354,7 @@ export function hierarchyResourceDecision(value: unknown, maxBytes: number) {
 }
 export const HierarchyRouteContinuationSchema = z.object({
   version: z.literal(automaticWikiHierarchyVersion), routeId: id,
+  planningRunId: id.nullable().default(null),
   fingerprint: HierarchyStructuralFingerprintSchema,
   state: z.enum(["pending", "partial", "deferred", "complete", "canceled"]),
   intendedTargets: z.array(z.object({ key: HierarchyHandleSchema, title: z.string().min(1).max(300),
@@ -361,7 +362,7 @@ export const HierarchyRouteContinuationSchema = z.object({
     resolvedPageId: id.nullable() }).strict()).min(1).max(hierarchyTargetRange.max),
   // Durable planning keys are not group-local live references and must be expanded afresh.
   remainingPath: z.array(z.object({ key: HierarchyHandleSchema, title: z.string().min(1).max(300),
-    purpose: z.string().min(1).max(2000), role: HierarchyAncestorRoleSchema }).strict()),
+    purpose: z.string().min(1).max(2000), role: HierarchyAncestorRoleSchema,chunkIds:z.array(id).default([]) }).strict()),
   resolvedPrefix: z.array(z.object({ key: HierarchyHandleSchema, pageId: id, revisionId: id, fingerprint }).strict()),
   destination: HierarchyParentSchema.options[0].nullable(),
   reason: z.enum(["context", "output", "deadline", "occurrence_budget", "paused"]).nullable(),
@@ -377,7 +378,8 @@ export const HierarchyCheckpointSchema = z.object({
   afterPageId: id.nullable(), inspectedPages: z.number().int().nonnegative(),
   outcome: z.enum(["pending", "no_change", "partial", "complete", "rejected", "awaiting_review", "canceled"]),
   routes: z.array(HierarchyRouteContinuationSchema), counts: HierarchyCountsSchema,
-  appliedGroupIds: z.array(id)
+  appliedGroupIds: z.array(id),
+  decisions: z.array(z.object({pageId:id,fingerprint,kind:z.enum(['missing_toc','unplaced','settled']),outcome:z.enum(['no_change','pending','applied','rejected','awaiting_review','failed','canceled']),runId:id.nullable(),reason:z.string().nullable().optional()}).strict()).default([])
 }).strict().superRefine((v, ctx) => {
   if (v.outcome === "complete" && v.routes.some(r => r.state !== "complete"))
     ctx.addIssue({ code: "custom", message: "Unfinished routes cannot be reported complete" });

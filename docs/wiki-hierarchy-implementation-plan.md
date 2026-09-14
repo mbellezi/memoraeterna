@@ -473,22 +473,34 @@ cost measurements. Native rebuild/reset verification remains deferred to H6.
 
 ### H3 — Existing collection and maintenance orchestration
 
-- [ ] Extend `wiki-collection.ts`, `automatic-maintenance.ts` and their current
+- [x] Extend `wiki-collection.ts`, `automatic-maintenance.ts` and their current
   repositories with resumable structural inspection and remaining-work receipts.
-- [ ] Preserve full original/eligible-note coverage while splitting hierarchy
+- [x] Preserve full original/eligible-note coverage while splitting hierarchy
   work into coherent groups under the same occurrence and monthly budgets.
 - [ ] Persist and resume missing ancestors through to the intended leaf and TOCs;
   do not flatten a chosen path, stop at the first group, or repeatedly plan it.
   Verify a restart and an occurrence-budget interruption between ancestor groups.
-- [ ] Add deterministic branch diagnostics and bounded candidates for existing
+- [x] Add deterministic branch diagnostics and bounded candidates for existing
   flat libraries, without forcing regeneration of integrated sources.
-- [ ] Route existing-page moves to the current review surface through the new
+- [x] Route existing-page moves to the current review surface through the new
   current operation; do not introduce a separate routine-creation workflow.
 - [ ] Retain exact changed-input, no-change and rejection identities; verify
   idleness, pause/cancel, restart, deadline and budget behavior.
 
 Exit: initial integration, later imports and due maintenance all advance useful
 hierarchy work; repeated unchanged occurrences use zero hierarchy model calls.
+
+Intermediate verification recorded: parent review passed 130 targeted tests,
+typecheck, format and the expanded isolated PostgreSQL verifier. It exercised
+target-one topic/TOC completion, reviewed moves, a nine-ancestor resource route,
+pause/restart, a committed prefix interrupted by occurrence budget and completed
+under later authority, stale coordinator/prefix refusal, retained negative
+outcomes and daily inspection without inference or an empty bootstrap wrapper.
+The full suite passed 904 tests with the same two pre-existing seed expectations.
+Continuation currently handles linear new paths and childless deferred cursors.
+The next implementation slice must cover branched ancestor paths and safe
+recovery of already-admitted route children that never started a provider call;
+these remaining items prevent declaring this milestone complete.
 
 ### H4 — Native browsing and structural review
 

@@ -264,6 +264,12 @@ npm run db:generate
   checkpoint and a matching current child run. Atomically save the next admitted
   prefix, canonical IDs/revisions/fingerprints, route progress and group receipt;
   model-provided proof alone never authorizes zero-work mutation.
+- Child admission updates the route's current-child binding and the bootstrap
+  cursor in the same transaction as the existing organization job/run creation.
+  The original resource-deferred planner is linked by `continuedByRouteId` and
+  `continuationComplete`; retain its consumed audit even after route completion.
+  Maintenance review lookup excludes that superseded planning failure, while
+  unresolved route children retain their exact review/uncertain/negative states.
 
 - The current curator repository exposes one canonical apply implementation for
   content and hierarchy. Its ordinary apply entry point delegates to the same

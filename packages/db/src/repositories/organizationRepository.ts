@@ -1,6 +1,7 @@
 import { recordValidationRejection } from './knowledgeRejections.js';
 import { taskHistoryVisibleSql } from './taskHistory.js';
 import { createHash, randomUUID } from "node:crypto";
+import {isDeepStrictEqual} from 'node:util';
 import type { PgPool, PgClient } from "../client.js";
 import { addWikiDependency, validateWikiDependencies } from "./wikiContextRepository.js";
 import { createWikiRepository } from "./wikiRepository.js";
@@ -110,7 +111,17 @@ export function createOrganizationRepository(pool:PgPool) {
         if(curator.version==='wiki-curator-v2'){if(curator.maintenanceRunId)await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+curator.policy!.id]);await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-admission:'+curator.policy!.id+':'+curator.inputFingerprint]);const prior=(await db.query("select id from organization_runs where snapshot->>'version'='wiki-curator-v2' and snapshot->>'inputFingerprint'=$1 and snapshot->'policy'->>'id'=$2 and status<>'applied' order by created_at desc limit 1",[curator.inputFingerprint,curator.policy!.id])).rows[0];if(prior)return prior.id as string;if(curator.maintenanceRunId&&(await db.query("select 1 from organization_runs where snapshot->>'version'='wiki-curator-v2' and snapshot->'policy'->>'id'=$1 and status in('queued','analyzing','awaiting_review') limit 1",[curator.policy!.id])).rows.length)throw new Error('maintenance.errors.wait');}
         const batchId=(snapshot as {participation?:{batchId:string}|null}).participation?.batchId;
         if(batchId){await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['organization-batch:'+batchId]);if((await db.query("select id from processing_batches where id=$1 and metadata->>'organizationCanceled'='true'",[batchId])).rows.length)throw new Error('organization.errors.canceled');const existing=(await db.query("select id from organization_runs where snapshot->'participation'->>'batchId'=$1",[batchId])).rows[0];if(existing)return existing.id as string;}
-        const id=randomUUID();const job=(await db.query("insert into jobs(type,payload,max_attempts) values('organization',$1,3) returning id",[{organizationRunId:id,...(batchId?{batchId}:{}),sourceItemIds:(snapshot as {sourceIds:string[]}).sourceIds}])).rows[0]!.id;
+        const id=randomUUID();
+        const routed=snapshot as {continuationRoute?:{routeId:string;currentChildRunId:string|null;planningRunId?:string|null}|null;parentBootstrapId?:string|null};
+        if(routed.continuationRoute?.planningRunId){
+          if(!routed.parentBootstrapId)throw new Error('organization.errors.scope');
+          const parent=(await db.query('select checkpoint from organization_runs where id=$1 for update',[routed.parentBootstrapId])).rows[0];
+          const route=parent?.checkpoint.hierarchy?.routes.find((r:{routeId:string})=>r.routeId===routed.continuationRoute!.routeId);
+          if(!route||route.currentChildRunId||parent.checkpoint.state!=='running'||!isDeepStrictEqual(route,routed.continuationRoute))throw new Error('organization.errors.conflict');
+          route.currentChildRunId=id;routed.continuationRoute={...route};parent.checkpoint.childRunId=id;
+          await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1',[routed.parentBootstrapId,parent.checkpoint]);
+        }
+        const job=(await db.query("insert into jobs(type,payload,max_attempts) values('organization',$1,3) returning id",[{organizationRunId:id,...(batchId?{batchId}:{}),sourceItemIds:(snapshot as {sourceIds:string[]}).sourceIds}])).rows[0]!.id;
         await db.query('insert into organization_runs(id,job_id,snapshot,checkpoint) values($1,$2,$3,$4)',[id,job,snapshot,checkpoint]);return id;
       });
     },

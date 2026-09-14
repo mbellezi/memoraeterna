@@ -189,6 +189,14 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   `integrateWiki` stage falls back to that parent, preserving its processing-batch
   participation and original prompt pin. Its own organization barrier must not
   block the coordinator's read/admission step.
+- Its structural phase and route cursor share that same owner. Reconcile valid
+  resource-deferred planning before maintenance classifies child attention.
+  A later eligible occurrence resumes a childless budget/deadline-deferred route
+  before broad impact sweeps, preserving the old occurrence's reservations,
+  actual usage and committed prefixes. Do not transfer a charged call, replay an
+  uncertain provider attempt or revive a canceled/rejected route. A failed
+  planning run retains its audit and explicit continuation linkage; completing
+  that linkage does not invent an apply receipt for the original oversized group.
 - Pause blocks new child admission and guarded apply; resume retains child calls,
   repairs, unknown-usage state, and its original deadline. Completed child receipts
   are reconciled before advancing the cursor. A failed or rejected unchanged

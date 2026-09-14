@@ -2,9 +2,10 @@ import {translate} from '@app/i18n';
 import {organizationAiFailure} from './ai-task-parameters.js';
 import {createAutomaticMaintenanceRepository} from '@app/db';
 import {createWikiImpactReconciliationRepository,createWikiCollectionRepository,createWikiRemovalRepository,createWikiCuratorRepository,createOrganizationRepository,curatorHash,type PgPool} from '@app/db';
-import {WikiCollectionCommandSchema,type WikiBootstrap,type AutomaticWikiPolicy} from '@app/domain';
+import {countHierarchyChanges,WikiCollectionCommandSchema,type WikiBootstrap,type AutomaticWikiPolicy} from '@app/domain';
 import type {z} from 'zod';
-import {WikiCurator} from './wiki-curator.js';
+import {WikiCurator,validateCuratorProposal,curatorSupportView} from './wiki-curator.js';
+import {planHierarchyRoute} from './wiki-hierarchy-continuation.js';
 import {capturePromptPin,promptFingerprint,withPromptPin} from './prompt-runtime.js';
 const ticks=new WeakMap<PgPool,Promise<void>>();
 export const collectionGenerationHash=(value:unknown):string=>{const canonical=(v:unknown):unknown=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).toSorted(([a],[b])=>a.localeCompare(b)).map(([key,value])=>[key,canonical(value)])):v;return curatorHash(canonical(value));};
@@ -27,7 +28,7 @@ export class WikiCollection {
   const run=await repo.get(c.id);if(!run)throw new Error('organization.errors.invalid');
   if(c.command==='bootstrapGet')return run;
   if(run.checkpoint.state==='rejected')throw new Error('organization.errors.rejected');
-  if(c.command==='bootstrapCancel'){run.checkpoint.state='canceled';if(run.checkpoint.childRunId)await new WikiCurator(this.options).command({command:'cancel',id:run.checkpoint.childRunId});}
+  if(c.command==='bootstrapCancel'){run.checkpoint.state='canceled';if(run.checkpoint.hierarchy){run.checkpoint.hierarchy.outcome='canceled';for(const route of run.checkpoint.hierarchy.routes)if(route.state!=='complete')route.state='canceled';}if(run.checkpoint.childRunId)await new WikiCurator(this.options).command({command:'cancel',id:run.checkpoint.childRunId});}
   if(c.command==='bootstrapPause')run.checkpoint.state='paused';
   if(c.command==='bootstrapResume'){
    const policy=await curator.policy(run.snapshot.policy.id);if(policy?.state!=='enabled'||policy.revisionId!==run.snapshot.policy.revisionId)throw new Error('organization.errors.policy');
@@ -44,6 +45,12 @@ export class WikiCollection {
   await createWikiImpactReconciliationRepository(this.pool()).editorial(policy);
   await repo.reconcileAppliedChildren(policy);
   if(policy.state!=='enabled')return;
+  // Resource-deferred synthesis is planning data, not human review. Adopt its
+  // validated route before maintenance resolves child attention/revokes authority.
+  for(const run of (await repo.active()).filter(r=>r.snapshot.policy.id===policy.id&&r.checkpoint.childRunId)){
+   const child=await new WikiCurator(this.options).get(run.checkpoint.childRunId!);
+   if(child?.status==='failed'&&!child.snapshot.continuationRoute&&child.checkpoint.proposal&&!child.checkpoint.callPending&&['organization.errors.scopeLimit','organization.errors.context'].includes(child.checkpoint.error??''))await this.advance(run);
+  }
   for(const event of await repo.exhaustedAttention(policy)){
    const bootstrap=await repo.get(event.bootstrap_id);
    if(!bootstrap||!await repo.discoveryCovered(policy,event.source_ids,this.generation(bootstrap.snapshot)))continue;
@@ -112,6 +119,31 @@ export class WikiCollection {
   }
  }
  private generation(snapshot:Pick<WikiBootstrap['snapshot'],'policy'|'profile'|'promptPin'|'contentLanguage'>){return collectionGenerationHash({policy:snapshot.policy.revisionId,profile:snapshot.profile.identityHash,parameters:snapshot.profile.parameters,language:snapshot.contentLanguage,prompts:promptFingerprint(['organization.curator','organization.curator.repair','organization.curator.support'],snapshot.promptPin,snapshot.profile.provider)});}
+ async settled(snapshot:Pick<WikiBootstrap['snapshot'],'policy'|'profile'|'promptPin'|'contentLanguage'>){return createWikiCollectionRepository(this.pool()).settled(snapshot.policy,this.generation(snapshot));}
+ private hierarchy(run:WikiBootstrap){const checkpoint=run.checkpoint,policy=run.snapshot.policy;checkpoint.hierarchy??={version:'automatic-wiki-v1',fingerprint:{version:'automatic-wiki-v1',branchFingerprint:'pending',scopeFingerprint:curatorHash(policy.scope),policyRevisionId:policy.revisionId,promptFingerprint:this.generation(run.snapshot),modelFingerprint:collectionGenerationHash(run.snapshot.profile)},afterPageId:null,inspectedPages:0,outcome:'pending',routes:[],counts:{workTargets:0,structuralAncestors:0,changedPages:0},appliedGroupIds:[],decisions:[]};return checkpoint.hierarchy;}
+ private async structure(run:WikiBootstrap){
+  const repo=createWikiCollectionRepository(this.pool()),curator=createWikiCuratorRepository(this.pool()),checkpoint=run.checkpoint,policy=run.snapshot.policy;
+  const hierarchy=this.hierarchy(run);
+  const maintenance=await createAutomaticMaintenanceRepository(this.pool()).authority(policy.id);
+  const wide=['weekly','monthly'].includes(maintenance?.snapshot.policy.kind??'daily');
+  const batch=await repo.structuralCandidates(policy,hierarchy.afterPageId,run.snapshot.sourceIds,wide?50:20,wide);
+  for(const item of batch.items){
+   const fingerprint=collectionGenerationHash({branch:item.fingerprint,generation:this.generation(run.snapshot),scope:policy.scope});
+   const prior=await repo.structuralDecision(policy.id,item.pageId,fingerprint);
+   hierarchy.afterPageId=item.pageId;hierarchy.inspectedPages++;hierarchy.fingerprint.branchFingerprint=item.fingerprint;
+   if(prior){if(!hierarchy.decisions.some(d=>d.pageId===prior.pageId&&d.fingerprint===prior.fingerprint))hierarchy.decisions.push(prior);if(prior.outcome!=='applied'&&prior.outcome!=='no_change'){checkpoint.state=prior.outcome==='rejected'?'rejected':prior.outcome==='canceled'?'canceled':'attention';checkpoint.error=prior.reason??'organization.errors.review';await repo.checkpoint(run);return;}continue;}
+   if(item.kind==='settled'){hierarchy.decisions.push({pageId:item.pageId,fingerprint,kind:item.kind,outcome:'no_change',runId:null});continue;}
+   const kind=item.kind;
+   const page=(await curator.exactPages(policy,[item.pageId]))[0]!;
+   const chunks=[...new Set(page.evidence.filter(e=>e.current).map(e=>e.chunkId))];
+   if(!chunks.length||chunks.length>policy.limits.originalPassages)throw new Error('organization.errors.scopeLimit');
+   const child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:item.sourceIds,noteIds:[],evidenceChunkIds:chunks},null,{parentBootstrapId:run.id,inputGeneration:fingerprint,structuralIntent:{kind,pageId:item.pageId,fingerprint},...(item.kind==='unplaced'?{targetPageId:item.pageId}:{destinationPageIds:[item.pageId]})}));
+   hierarchy.decisions.push({pageId:item.pageId,fingerprint,kind:item.kind,outcome:'pending',runId:child!.id});checkpoint.childRunId=child!.id;await repo.checkpoint(run);return;
+  }
+  hierarchy.afterPageId=batch.after;
+  if(batch.done){if(hierarchy.routes.some(r=>r.state!=='complete'))throw new Error('organization.errors.scopeLimit');hierarchy.outcome=hierarchy.counts.changedPages?'complete':'no_change';checkpoint.state='complete';}
+  await repo.checkpoint(run);
+ }
  private async advance(run:WikiBootstrap){const repo=createWikiCollectionRepository(this.pool()),curator=createWikiCuratorRepository(this.pool()),checkpoint=run.checkpoint;
   const policy=await curator.policy(run.snapshot.policy.id);if(policy?.state!=='enabled'||policy.revisionId!==run.snapshot.policy.revisionId){checkpoint.state='paused';checkpoint.error='organization.errors.policy';await repo.checkpoint(run);return;}
   try{
@@ -120,13 +152,39 @@ export class WikiCollection {
    if(checkpoint.childRunId){
     const child=await new WikiCurator(this.options).get(checkpoint.childRunId);if(!child)throw new Error('organization.errors.invalid');
     if(['queued','analyzing'].includes(child.status))return;
-    if(child.status!=='applied'){checkpoint.state=child.status==='rejected'?'rejected':'attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
+    if(child.status==='failed'&&child.checkpoint.proposal&&!child.checkpoint.callPending&&['organization.errors.scopeLimit','organization.errors.context'].includes(child.checkpoint.error??'')&&!child.snapshot.continuationRoute){
+     // The retained oversized output is untrusted until every ordinary scope,
+     // content, note and target check succeeds. Only the byte check is relaxed.
+     validateCuratorProposal({...child.snapshot,resources:{...child.snapshot.resources,maxProposalBytes:Number.MAX_SAFE_INTEGER}},child.checkpoint.proposal);
+     await curator.validate(child.snapshot);
+     const route=planHierarchyRoute(child,curatorSupportView(child.snapshot,child.checkpoint.proposal).associations);
+     checkpoint.hierarchy??={version:'automatic-wiki-v1',fingerprint:route.fingerprint,afterPageId:null,inspectedPages:0,outcome:'partial',routes:[],counts:{workTargets:0,structuralAncestors:0,changedPages:0},appliedGroupIds:[],decisions:[]};
+     checkpoint.hierarchy.routes.push(route);checkpoint.childRunId=null;
+     await repo.adoptHierarchyRoute(run,child);return;
+    }
+    if(child.status!=='applied'){checkpoint.state=child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.hierarchy){if(child.status==='rejected')checkpoint.hierarchy.outcome='rejected';else if(child.status==='awaiting_review')checkpoint.hierarchy.outcome='awaiting_review';else if(child.status==='canceled'){checkpoint.hierarchy.outcome='canceled';for(const route of checkpoint.hierarchy.routes)if(route.state!=='complete')route.state='canceled';}}const decision=checkpoint.hierarchy?.decisions.find(d=>d.runId===child.id);if(decision){decision.outcome=child.status==='awaiting_review'?'awaiting_review':child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'failed';decision.reason=checkpoint.error;}if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
+    if(child.snapshot.continuationRoute){
+     // Hierarchy apply commits the owner checkpoint and its timestamp alongside
+     // the receipt. Refresh before consuming it; never overwrite route progress.
+     const fresh=(await repo.get(run.id))!;Object.assign(run,fresh);Object.assign(checkpoint,fresh.checkpoint);run.checkpoint=checkpoint;
+     const route=checkpoint.hierarchy!.routes.find(r=>r.routeId===child.snapshot.continuationRoute!.routeId)!;
+     if(route.state!=='complete'){checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
+    }
+    const hierarchy=this.hierarchy(run);if(!hierarchy.appliedGroupIds.includes(child.snapshot.groupId)){const counts=countHierarchyChanges(child.checkpoint.proposal!);hierarchy.counts={workTargets:hierarchy.counts.workTargets+counts.workTargets,structuralAncestors:hierarchy.counts.structuralAncestors+counts.structuralAncestors,changedPages:hierarchy.counts.changedPages+counts.changedPages};hierarchy.appliedGroupIds.push(child.snapshot.groupId);}
+    if(checkpoint.phase==='structure'){const decision=hierarchy.decisions.find(d=>d.runId===child.id);if(decision){decision.outcome='applied';decision.reason=null;}hierarchy.afterPageId=null;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     if(checkpoint.phase==='notes'){if(checkpoint.nextNote){checkpoint.afterNote=checkpoint.nextNote;checkpoint.nextNote=null;}else checkpoint.noteCursor+=child.snapshot.references.filter(r=>r.kind==='atomic_note').length||1;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     checkpoint.sourceCovered+=checkpoint.pendingOriginals;checkpoint.completedGroups++;checkpoint.childRunId=null;checkpoint.afterChunk=checkpoint.nextChunk;
     await repo.coverage(policy.id,checkpoint.sourceId!,checkpoint.sourceFingerprint!,checkpoint.nextChunk||run.snapshot.noteIds.length||run.snapshot.includeExistingNotes?'partial':'integrated',checkpoint.sourceCovered,run.id);
     if(!checkpoint.nextChunk){checkpoint.completedSources++;checkpoint.afterSource=checkpoint.sourceId;checkpoint.sourceId=null;checkpoint.sourceCovered=0;checkpoint.afterChunk=null;checkpoint.sourceFingerprint=null;}
     await repo.checkpoint(run);return;
    }
+   const route=checkpoint.hierarchy?.routes.find(r=>r.state!=='complete'&&r.state!=='canceled');
+   if(route){
+    const planning=route.planningRunId?await new WikiCurator(this.options).get(route.planningRunId):null;if(!planning)throw new Error('organization.errors.invalid');
+    await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:planning.snapshot.sourceIds,noteIds:planning.snapshot.references.filter(r=>r.kind==='atomic_note').map(r=>r.id),evidenceChunkIds:planning.snapshot.evidence.map(e=>e.chunkId)},null,{parentBootstrapId:run.id,continuationRouteId:route.routeId}));
+    return; // Admission atomically binds the owner and child; no stale CAS write.
+   }
+   if(checkpoint.phase==='structure'){await this.structure(run);return;}
    if(!checkpoint.sourceId){
     const assessment=await repo.assessment(policy,checkpoint.afterSource,1,run.snapshot.sourceIds,this.generation(run.snapshot)),source=assessment.sources[0];
     if(!source){
@@ -144,7 +202,7 @@ export class WikiCollection {
       }
       checkpoint.nextNote=explicit?null:selectedNotes.at(-1)!;checkpoint.childRunId=child.id;await repo.checkpoint(run);return;
      }
-     await repo.finishCoverage(run.id);checkpoint.state='complete';await repo.checkpoint(run);return;
+     await repo.finishCoverage(run.id);checkpoint.contentComplete=true;checkpoint.notesComplete=true;checkpoint.phase='structure';await repo.checkpoint(run);return;
     }
     if(source.coverage==='integrated'||!source.originals){await repo.coverage(policy.id,source.id,source.fingerprint,source.originals?'integrated':'cataloged',source.originals,run.id);checkpoint.afterSource=source.id;checkpoint.completedSources++;if(!source.originals)checkpoint.catalogedSources++;await repo.checkpoint(run);return;}
     checkpoint.sourceId=source.id;checkpoint.sourceFingerprint=source.fingerprint;checkpoint.sourceCovered=0;await repo.checkpoint(run);
