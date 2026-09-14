@@ -101,23 +101,21 @@ Implementation sequencing lives in
   receipt and avoid duplicate investigation calls. Run-now bypasses idle
   preference only. No-input inspection is quiet and invokes no model.
 
-## Hierarchy successor domain contracts
+## Hierarchy contracts
 
-- `automatic-wiki-v2` policies/change sets and `wiki-curator-v3` snapshots,
-  checkpoints and runs are additive hierarchy contracts. Compact model output
-  uses `wiki-curator-draft-v3`. Importing them does not activate the executor.
-  Current unqualified exports retain their exact v1 policy/proposal and v2
-  runtime contracts; explicit `Versioned*Schema` readers accept complete old or
-  new envelopes and reject mixed/unknown versions. Persisted automatic content,
-  section assessments, memberships, TOC groups, impacts and routine keys retain
-  `automatic-wiki-v1`; this is not a wholesale content-version migration.
-- Successor `limits.targets` supports integers 1–12, default 3. Twelve is a
-  provisional implementation envelope requiring H6 calibration, not a model
-  capability or cost guarantee. Legacy limits remain 1–3. The configured value
-  must govern admission, draft expansion, required-page discovery, support,
-  repair, apply and settings before successor runtime activation. A target and
-  reviewed move of the same canonical page count once. Ordinary leaf/topic/entity
-  pages, populated TOCs and existing index patches count as work targets.
+- This hierarchy rollout targets an empty database and one current contract.
+  Reuse existing automatic-wiki-v1 and wiki-curator-v2 routing markers; do not
+  introduce format versions, union compatibility readers, historical data
+  migrations or reconciliation of prior entries for this rollout. This does not
+  authorize resetting a database. New canonical revisions, protections, audit
+  history and interrupted-apply receipts remain mandatory.
+- Hierarchy limits.targets supports integers 1–12, default 3. Twelve is a
+  provisional implementation envelope requiring calibration, not a model
+  capability or cost guarantee. The configured value governs admission, draft
+  expansion, required-page discovery, support, repair, apply and settings. A
+  target and reviewed move of the same canonical page count once. Ordinary
+  leaf/topic/entity pages, populated TOCs and existing index patches count as
+  work targets.
 - Required newly created ancestors are a separate strict shape: handle, title,
   purpose, topic or ownerless map role, and initial parent only. They cannot
   contain sections, entity bindings, groups, arbitrary links, existing IDs or
@@ -134,7 +132,7 @@ Implementation sequencing lives in
   Validate missing references and cycles over existing plus proposed parents,
   moves and hierarchical TOC links. Entity pages require admitted canonical
   entity references; reuse existing entity-page and source/topic-owner bindings.
-  Canonical uniqueness and concurrency still require guarded database enforcement.
+  Canonical saves enforce uniqueness and concurrency under the placement lock.
 - Existing-page placement uses a separate `reviewed_reparent` operation carrying
   page/revision, exact from/to parent and reason. A target overlapping its move
   shares its handle and revision. Policy capabilities explicitly disclose
@@ -151,7 +149,7 @@ Implementation sequencing lives in
 - There is no fixed path/ancestor count or product depth cap. Independently pinned
   inventory/proposal byte bounds support resource decisions; exceeding them
   requires continuation, not reclassification as counted targets or flattening.
-  Versioned routes retain intended leaves and required TOCs as separate intended
+  Routes retain intended leaves and required TOCs as separate intended
   targets, unresolved path segments, canonical resolved prefixes, current child,
   receipt groups and structural fingerprint. Existing organization/bootstrap/
   maintenance checkpoint owners retain this planning data, without a new queue.

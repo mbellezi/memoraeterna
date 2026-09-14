@@ -183,16 +183,16 @@ Historical versioned records retain their own evidence and replay contracts.
 
 ## Hierarchy contract rollout
 
-- The additive hierarchy policy supports a default of three work targets with a
-  validated configurable range of one to twelve. Existing policies, startup
-  defaults and UI admission remain on their exact historical version until the
-  successor executor and settings flow are migrated together. Importing schemas
-  cannot widen authority or activate a paused policy.
+- The hierarchy policy supports a default of three work targets with a validated
+  configurable range of one to twelve. This rollout uses an empty database and
+  one current contract, without new format versions or compatibility readers.
+  Integrate the existing executor, startup defaults and settings together; no
+  configuration edit can activate a paused policy implicitly.
 - Count required new navigation-only ancestors separately from work targets and
   total changed pages. Raising the target setting must work through every
-  successor discovery, synthesis, support, repair and apply boundary; resource
+  discovery, synthesis, support, repair and apply boundary; resource
   limits may require smaller groups but ancestor count alone cannot split them.
-- Existing collection and maintenance checkpoint owners will retain versioned
+- Existing collection and maintenance checkpoint owners retain
   branch fingerprints, structural inspection counts and pending route progress.
   Content integration does not imply structural completion. Preserve intended
   leaves/TOCs, ancestor prefixes, receipts and budgets across resource deferral;

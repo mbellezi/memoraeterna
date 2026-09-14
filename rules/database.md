@@ -233,3 +233,34 @@ npm run db:generate
   Deleted secondary evidence cannot disappear from scope checks. Whole-library
   historical wiki search includes knowledge-owned notes after primary deletion;
   source-specific searches must still contain the complete retained source set.
+
+## Hierarchy persistence
+
+- The hierarchy rollout uses an empty database and one current contract, without
+  historical migration/reconciliation gates or new format versions. No database
+  reset is implied. Canonical revisions and receipts created by new work remain
+  immutable and idempotent.
+- The existing curator repository exposes scoped placement metadata separately
+  from editable prose. Infer navigation-only lineage from reachable children,
+  current dependencies, typed memberships and retained original attribution.
+  Empty dependencies never imply permission for ordinary pages. The reserved
+  app-owned Wiki area IDs may receive children without source lineage only when
+  the initialization marker, exact empty navigation shape and canonical area
+  parentage agree. They are destination-only, never editable/movable curator
+  targets; excluded content or arbitrary empty human pages receive no exemption.
+  Bound response rows and bytes;
+  continue complete touched ancestry and subtopic descent without a depth cap.
+- Every canonical Wiki save serializes entity-ID and source/topic TOC-owner
+  uniqueness, archived-parent rejection and hierarchical TOC-cycle checks under
+  the placement lock. Reuse exact canonical entity IDs; do not merge identities
+  or create semantic graph relations from editorial edges.
+- One guarded group transaction saves all work targets, exempt ancestors and
+  explicitly accepted moves. Require exact originals, current scope and enabled
+  policy, expected page/destination revisions, complete changed-handle support
+  linked to the succeeded canonical AI audit, complete pinned fragment revisions
+  and the admitted supportCompositionHash.
+  Preserve untouched section revisions, assessments, memberships and protection.
+- Ancestor-only chunks require the exact route loaded from its owning backend
+  checkpoint and a matching current child run. Atomically save the next admitted
+  prefix, canonical IDs/revisions/fingerprints, route progress and group receipt;
+  model-provided proof alone never authorizes zero-work mutation.

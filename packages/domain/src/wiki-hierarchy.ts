@@ -4,8 +4,8 @@ import {
   CuratorReferenceSchema, WikiRoleSchema, initialCuratorLimits
 } from "./automatic-wiki.js";
 
-/** Additive contracts only: importing these does not change current admission. */
-export const automaticWikiHierarchyVersion = "automatic-wiki-v2";
+/** Canonical hierarchy contracts shared by discovery, transport and persistence. */
+export const automaticWikiHierarchyVersion = "automatic-wiki-v1";
 export const hierarchyTargetRange = { min: 1, max: 12, default: 3 } as const;
 const id = z.string().uuid();
 const fingerprint = z.string().min(1).max(256);

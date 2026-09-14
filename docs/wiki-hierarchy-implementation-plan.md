@@ -2,14 +2,16 @@
 
 Date: 2026-09-14.
 
-Status: proposed implementation plan; no implementation or acceptance gates have
-been completed by writing this document. The agreed scope is deeper editorial
+Status: implementation in progress. Domain contracts and canonical persistence
+have passed coordinator review and isolated PostgreSQL verification. Runtime,
+maintenance, native UI and complete-journey acceptance remain pending.
+The agreed scope is deeper editorial
 hierarchies for topics, atomic-note tables of contents (TOCs) and entity pages,
 with selective upkeep and controlled additional AI usage. The user additionally
 requires a configurable target count per group and creation of every missing
 ancestor needed to reach the intended leaf, independently of that group size.
 Required path ancestors do not consume the target allowance. Proposed field
-names, version boundaries and calibration targets below are implementation decisions to
+names and calibration targets below are implementation decisions to
 validate before shipping.
 
 This extends the [automatic wiki plan](automatic-wiki-implementation-plan.md).
@@ -20,7 +22,16 @@ and the [rule router](../rules/index.md). Normative contracts remain in
 [automatic workflow](../rules/automatic-knowledge-workflow.md),
 [AI and knowledge](../rules/ai-and-knowledge.md) and
 [knowledge graph](../rules/knowledge-graph.md). Update the owning rules alongside
-each implemented durable contract; this plan does not expand legacy authority.
+each implemented durable contract.
+
+Implementation scope was narrowed by the user: the rollout will use an empty
+database. Use one current contract and the existing routing markers, without new
+format versions, compatibility readers, migration of old entries or replay of
+historical executions. This supersedes the earlier compatibility proposals in
+the discussion. History, protection and recovery for newly created data remain
+required. It does not authorize resetting the user's database. Verify the reported
+reset/dashboard startup error after the complete hierarchy implementation and
+final rebuild, as the user requested.
 
 ## 1. Intended result
 
@@ -73,7 +84,7 @@ date above. Recheck them before editing because other work may change these file
 
 | Area | Available foundation | Gap to address |
 | --- | --- | --- |
-| Domain | `automatic-wiki.ts` represents topic, entity, synthesis and collection targets, initial parents, proposed references and cycle checks. | Existing targets cannot use `initialParent` to move. New move semantics require a versioned contract. |
+| Domain | `automatic-wiki.ts` represents topic, entity, synthesis and collection targets, initial parents, proposed references and cycle checks. | Existing targets use an explicit reviewed move operation, separate from initial placement. |
 | Model transport | `CuratorDraftSchema` in `automatic-wiki-runtime.ts` exposes topics and indexes. | No general parent field and no entity-page draft variant. Topics require authored sections. |
 | Target allowance | `CuratorLimitsSchema.targets` and `KnowledgeBudgetSettings` already expose a value restricted to 1–3. | Expand the range and distinguish counted work targets from required path ancestors throughout successor drafts, support, discovery and application. |
 | Draft expansion | `expandCuratorDraft` in `wiki-curator.ts` creates topic targets and index targets. | Topic parents are null; a new topic index receives its owner as parent. Source/map indexes have no explicit parent. |
@@ -181,8 +192,8 @@ children without imposing a fixed depth.
 - Resolve entity-page references by admitted canonical entity IDs and current
   scoped mentions. A name alone must never identify an entity.
 - Prefer one canonical Wiki representation of an entity, subject to existing
-  scope/protection rules. Audit historical duplicates before adding constraints;
-  conflicts require reconciliation, never automatic identity merging.
+  scope/protection rules. Enforce canonical binding uniqueness for new data;
+  conflicts never authorize automatic identity merging.
 - A page may also participate in thematic TOCs, such as History of Portugal.
 - Entity-related notes and subtopics can be linked through existing collections.
   Do not add an `entity_toc` role unless H0 demonstrates that existing page-owner
@@ -289,7 +300,7 @@ must not split a group because of the target-count setting.
 
 If context, output, execution time or other actual resource bounds require
 continuation, persist the intended destination, missing path segments and progress
-in the existing coordinator checkpoint. This is bounded, versioned planning data,
+in the existing coordinator checkpoint. This is bounded planning data,
 not live page references or a new workflow authority. Any per-step structural
 envelope bound must be explicit and resumable, never a disguised target/depth cap.
 
@@ -357,10 +368,10 @@ earlier consumption. Estimates remain context-planning inputs, not actual tokens
 - Moves of existing pages are explicit reviewed proposals by default, including
   the complete before/after paths and affected reading memberships. Large branch
   moves must disclose their descendant impact even when only one parent edge changes.
-- Never repurpose `initialParent` on an existing v1 target. Introduce versioned
-  structural operations and an explicitly disclosed policy capability, preserving
-  legacy readers, admitted snapshots and historical reviews. A prompt edit cannot
-  grant move authority. An upgrade cannot activate a paused policy.
+- Never repurpose `initialParent` on an existing target. Use explicit structural
+  operations and a disclosed policy capability in the single current contract.
+  Preserve admitted snapshots and reviews created by this implementation. A prompt
+  edit cannot grant move authority or activate a paused policy.
 - Apply under the existing placement lock and canonical transaction. Recheck page
   and destination revisions, current ancestry, scope, owner uniqueness, canonical
   entity bindings and protections across the complete composed result.
@@ -373,9 +384,9 @@ earlier consumption. Estimates remain context-planning inputs, not actual tokens
   memberships. A model omission cannot silently remove an existing link.
 - Persist before/after placement and one idempotent group receipt. Restore an
   earlier organization through a new guarded revision, never by erasing history.
-- Migrate only what is necessary. Preserve existing paths, IDs, TOC owners and
-  human edits; detect legacy corrupt ancestry/duplicate bindings before adding
-  constraints. No automatic semantic merge or wholesale reclassification on upgrade.
+- Use the empty baseline for this rollout; no historical data migration is needed.
+  Preserve paths, IDs, TOC owners and human edits as new work evolves. No automatic
+  semantic merge or wholesale reclassification follows from a configuration edit.
 
 ## 6. Implementation milestones
 
@@ -387,43 +398,44 @@ frontend, integrations and runtime rules before implementing their portions.
 
 - [ ] Capture the current two-call successful curator path and its repair path
   using deterministic fixtures and canonical usage links.
-- [ ] Specify the successor draft/run/change-set versions, initial-parent fields,
+- [x] Specify the current draft/run/change-set shapes, initial-parent fields,
   reviewed move operation and explicit authority/destination capabilities.
-- [ ] Define the expanded `limits.targets` range, compatibility/default behavior
+- [x] Define the expanded `limits.targets` range and default behavior
   and route-continuation contract. Separate counted work targets, exempt required
   ancestors, physical mutation count and per-step context bounds. No fixed product
   depth cap is permitted, and ancestor creation must not consume target slots.
-- [ ] Resolve navigation-only topics, collection ownership versus parentage,
+- [x] Resolve navigation-only topics, collection ownership versus parentage,
   entity-page binding uniqueness and hierarchical TOC edges without inventing a
   second node store. Record minimal schema/index needs.
-- [ ] Define fixtures for deep topics, nested note TOCs, entity categories,
+- [x] Define fixtures for deep topics, nested note TOCs, entity categories,
   homonyms, scope exclusions, protected placements and an already settled tree.
   Include fully missing paths deeper than the configured group size, shared path
   ancestors and runs with target allowances both below and above three.
-- [ ] Update the owning normative rules for the successor contracts while
-  retaining legacy semantics. List every new numerical limit as a calibrated
-  implementation limit, not a model capability or cost guarantee.
+- [x] Update the owning normative rules for the current contracts and empty-database
+  scope. Distinguish provisional numerical envelopes from measured model capacity
+  and cost; final calibration remains H6 work.
 
-Exit: explicit contracts, migration decisions and executable acceptance fixtures;
+Exit: explicit contracts, empty-baseline decisions and executable acceptance fixtures;
 no schema or prompt change can silently expand old authority.
 
 ### H1 — Canonical structure and guarded persistence
 
-- [ ] Implement successor schemas, parent/membership checks, optional required
-  indexes and compatible readers in domain and database owners.
-- [ ] Replace successor three-target ceilings with the shared supported range
+- [x] Implement hierarchy schemas and canonical parent/membership checks in
+  domain and database owners. No new table, migration or compatibility reader is needed.
+- [x] Replace hierarchy three-target ceilings with the shared supported range
   and enforce each admitted policy's effective target count at validation/apply.
-- [ ] Persist exempt structural ancestors in the same coherent transaction and
+- [x] Persist exempt structural ancestors in the same coherent transaction and
   receipt as their targets. Validate their canonical identity, required-path role,
   scope and cycles without counting them as content targets or permitting hidden
   existing-page/content edits through the structural shape.
-- [ ] Add transactional initial placement and reviewed reparenting, receipt
+- [x] Add transactional initial placement and reviewed reparenting, receipt
   replay, expected destination revisions and protection checks.
-- [ ] Enforce safe entity-page reuse and TOC ownership under concurrent creation.
-- [ ] Prove placement-only revisions preserve prose identity/support and that
+- [x] Enforce safe entity-page reuse and TOC ownership under concurrent creation.
+- [x] Prove placement-only revisions preserve prose identity/support and that
   interrupted acknowledgments reuse the committed receipt.
-- [ ] If migrations are needed, generate them with the repository mechanism,
-  synchronize the baseline and verify both populated upgrades and empty databases.
+- [x] Verify the existing empty baseline with the real PostgreSQL hierarchy
+  fixture, including initialized areas, shared notes, concurrency and continuation.
+  No new migration was required.
 
 Exit: deterministic database acceptance for valid trees, concurrency, cycles,
 review and preservation; no model execution is needed to verify these invariants.
@@ -461,7 +473,7 @@ structure fails deterministically and unsupported categorization cannot apply.
 - [ ] Add deterministic branch diagnostics and bounded candidates for existing
   flat libraries, without forcing regeneration of integrated sources.
 - [ ] Route existing-page moves to the current review surface through the new
-  versioned operation; do not revive legacy routine creation.
+  current operation; do not introduce a separate routine-creation workflow.
 - [ ] Retain exact changed-input, no-change and rejection identities; verify
   idleness, pause/cancel, restart, deadline and budget behavior.
 
@@ -576,7 +588,8 @@ Relevant existing verification entry points include:
 
 Use `npm run typecheck`, relevant Vitest suites, `npm run format:check` and the
 build/runtime checks required by the actual changed areas. For database changes,
-run the routed migration/baseline checks on isolated populated and empty databases.
+run the routed baseline checks on an isolated empty database; add schema migration
+checks only if the actual implementation introduces a migration.
 Start native DEV only from the repository root with `npm run dev -w @app/desktop`.
 Real-model trials use the configured route and canonical audits with the existing
 single-inference resource contract. A test run must never reset the user's library.
@@ -585,4 +598,4 @@ The final implementation report must list completed H0–H6 items, changed rules
 schema/migration results, checks actually executed, before/after navigation
 examples, measured ordinary versus initial-organization cost, preserved identities
 and paths, and any unresolved gate. Writing this plan marks none of those checks
-as executed and changes no runtime behavior or normative specification.
+as executed merely because they are listed. Record actual completion as work lands.

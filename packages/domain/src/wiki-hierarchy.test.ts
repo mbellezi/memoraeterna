@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
-  AutomaticWikiPolicySchema, CuratorChangeSetSchema, CuratorLimitsSchema,
-  WikiAutomaticContentSchema, automaticWikiVersion, initialCuratorLimits
+  automaticWikiVersion, initialCuratorLimits
 } from "./automatic-wiki.js";
-import { CuratorDraftSchema, CuratorSnapshotSchema, CuratorCheckpointSchema, curatorVersion } from "./automatic-wiki-runtime.js";
+import { CuratorSnapshotSchema, CuratorCheckpointSchema, curatorVersion } from "./automatic-wiki-runtime.js";
 import { WikiPageContentSchema } from "./wiki.js";
 import {
   HierarchyAncestorSchema, HierarchyChangeSetSchema, HierarchyLimitsSchema, HierarchyPageTargetSchema,
@@ -13,8 +11,7 @@ import {
 } from "./wiki-hierarchy.js";
 import {
   HierarchyDraftSchema, HierarchySnapshotSchema, HierarchySupportSnapshotSchema,
-  VersionedCuratorCheckpointSchema, VersionedCuratorChangeSetSchema, VersionedCuratorDraftSchema,
-  VersionedCuratorSnapshotSchema, VersionedCuratorRunSchema, VersionedWikiPolicySchema, hasCompleteHierarchySupport,
+  HierarchyCuratorRunSchema, hasCompleteHierarchySupport,
   hierarchyChangedHandles, hierarchyCuratorVersion, hierarchyDraftVersion
 } from "./wiki-hierarchy-runtime.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -51,14 +48,12 @@ const subtopic = (handle: string, target: string) => ({
 });
 const move = (n: number, handle = "new_moved") => ({ handle, operation: "reviewed_reparent" as const,
   pageId: id(n), expectedRevisionId: id(n + 100), fromParent: null, toParent: existing(20), reason: "Place under the relevant topic" });
-const oldFixture = () => JSON.parse(readFileSync(new URL("../../../scripts/fixtures/automatic-wiki/first-change-set.json", import.meta.url), "utf8"));
 
-describe("hierarchy successor contracts without runtime activation", () => {
+describe("current hierarchy contracts", () => {
   it("admits six targets and enforces the exact configured allowance", () => {
     const proposal = change(Array.from({ length: 6 }, (_, n) => topic(`new_topic_${n}`)));
     expect(validateHierarchyAdmission(proposal, policy(6), inventory(), []).valid).toBe(true);
     expect(validateHierarchyAdmission(proposal, policy(5), inventory(), []).issues).toContain("Configured work target limit exceeded");
-    expect(CuratorLimitsSchema.safeParse(policy(6).limits).success).toBe(false);
     const { targets: _, ...limits } = initialCuratorLimits;
     expect(HierarchyLimitsSchema.parse(limits).targets).toBe(3);
     for (const targets of [0, 13, 1.5]) expect(HierarchyLimitsSchema.safeParse({ ...limits, targets }).success).toBe(false);
@@ -182,25 +177,11 @@ describe("hierarchy successor contracts without runtime activation", () => {
     expect(HierarchySupportSnapshotSchema.safeParse({ ...support, associations: support.associations.slice(0, 1) }).success).toBe(false);
     expect(HierarchySupportSnapshotSchema.safeParse({ ...support, associations: support.associations.map(a => ({ ...a, originalHandles: ["e2"] })) }).success).toBe(false);
   });
-  it("preserves old policies, proposals, drafts and content versions without widening authority", () => {
-    const original = oldFixture();
-    expect(VersionedCuratorChangeSetSchema.parse(original)).toEqual(CuratorChangeSetSchema.parse(original));
-    expect(VersionedCuratorChangeSetSchema.parse(change()).version).toBe(automaticWikiHierarchyVersion);
-    const oldPolicy = { ...policy(), version: automaticWikiVersion, operations: ["create_grounded"] };
-    expect(VersionedWikiPolicySchema.parse(oldPolicy)).toEqual(AutomaticWikiPolicySchema.parse(oldPolicy));
-    expect(AutomaticWikiPolicySchema.safeParse(policy()).success).toBe(false);
-    const oldDraft = { explanation: "Memory", topics: [{ handle: "new_topic", title: "Memory", purpose: "Recall", sections: [{ id: null, title: "Study", markdown: "Finding", originalHandles: ["e1"] }] }], indexes: [] };
-    expect(VersionedCuratorDraftSchema.parse(oldDraft)).toEqual(CuratorDraftSchema.parse(oldDraft));
-    expect(VersionedCuratorDraftSchema.safeParse({ ...oldDraft, version: hierarchyDraftVersion }).success).toBe(false);
-    expect(WikiAutomaticContentSchema.shape.version.value).toBe("automatic-wiki-v1");
-    expect(curatorVersion).toBe("wiki-curator-v2");
-    expect(CuratorSnapshotSchema.shape.policy).toBe(AutomaticWikiPolicySchema);
-    expect(CuratorCheckpointSchema.shape.proposal.unwrap()).toBe(CuratorChangeSetSchema);
-    expect(VersionedCuratorSnapshotSchema.options).toContain(CuratorSnapshotSchema);
-    expect(VersionedCuratorCheckpointSchema.options).toContain(CuratorCheckpointSchema);
-    expect(VersionedCuratorChangeSetSchema.safeParse({ ...original, version: "automatic-wiki-v99" }).success).toBe(false);
+  it("keeps the existing current markers without version union readers", () => {
+    expect(automaticWikiHierarchyVersion).toBe(automaticWikiVersion);
+    expect(hierarchyCuratorVersion).toBe(curatorVersion);
   });
-  it("reads complete old/new runs and rejects mixed versions and widened effective limits", () => {
+  it("reads the hierarchy runtime and rejects incomplete snapshots and widened effective limits", () => {
     const oldPolicy = { ...policy(), version: automaticWikiVersion, operations: ["create_grounded"] };
     const snapshot = CuratorSnapshotSchema.parse({ version: curatorVersion, policy: oldPolicy, sourceIds: [],
       profile: { profileId: id(20), providerConfigId: null, localModelId: null, provider: "synthetic", modelId: "synthetic", runtime: "remote", revision: null, privacy: "allow_remote", parameters: {}, identityHash: "synthetic", contextWindow: 16384 },
@@ -209,13 +190,12 @@ describe("hierarchy successor contracts without runtime activation", () => {
       startedAt: "2026-09-14T00:00:00Z", callPending: false, waitingForModel: false, proposal: null, previousOutput: "", error: null,
       reportedInputTokens: 0, reportedOutputTokens: 0, costEstimate: 0, usageCounts: { input: 0, output: 0, cost: 0 }, usageIncomplete: false });
     const oldRun = { id: id(10), jobId: null, status: "queued", snapshot, checkpoint, proposal: null, receiptRevisionId: null, createdAt: "now", updatedAt: "now" };
-    expect(VersionedCuratorRunSchema.parse(oldRun)).toEqual(oldRun);
     const successor = { ...oldRun, snapshot: { ...snapshot, version: hierarchyCuratorVersion, policy: policy(6), limits: policy(6).limits,
-      requiredPageIds: Array.from({ length: 6 }, (_, n) => id(n + 20)), placement: inventory(), resources: { maxInventoryBytes: 100000, maxProposalBytes: 100000 } },
+      requiredPageIds: Array.from({ length: 6 }, (_, n) => id(n + 20)), supportCompositionHash:"a".repeat(64), placement: inventory(), resources: { maxInventoryBytes: 100000, maxProposalBytes: 100000 } },
       checkpoint: { ...checkpoint, version: hierarchyCuratorVersion, hierarchy: null } };
-    expect(VersionedCuratorRunSchema.safeParse(successor).success).toBe(true);
-    expect(VersionedCuratorRunSchema.safeParse({ ...successor, checkpoint }).success).toBe(false);
-    expect(VersionedCuratorRunSchema.safeParse({ ...successor, snapshot }).success).toBe(false);
+    expect(HierarchyCuratorRunSchema.safeParse(successor).success).toBe(true);
+    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, checkpoint }).success).toBe(false);
+    expect(HierarchyCuratorRunSchema.safeParse({ ...successor, snapshot }).success).toBe(false);
     expect(HierarchySnapshotSchema.safeParse({ ...successor.snapshot, limits: policy(5).limits }).success).toBe(false);
     expect(HierarchySnapshotSchema.safeParse({ ...successor.snapshot, limits: policy(7).limits }).success).toBe(false);
   });

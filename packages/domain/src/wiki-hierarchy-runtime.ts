@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { AutomaticWikiPolicySchema, CuratorChangeSetSchema } from "./automatic-wiki.js";
 import {
   CuratorCheckpointSchema, CuratorDraftSchema, CuratorRunSchema, CuratorSnapshotSchema,
   CuratorSupportVerdictSchema
@@ -12,8 +11,8 @@ import {
   hierarchyTargetRange
 } from "./wiki-hierarchy.js";
 
-export const hierarchyCuratorVersion = "wiki-curator-v3";
-export const hierarchyDraftVersion = "wiki-curator-draft-v3";
+export const hierarchyCuratorVersion = "wiki-curator-v2";
+export const hierarchyDraftVersion = "wiki-curator-v2";
 export const HierarchyModelReferenceSchema = z.string().regex(/^(r[1-9][0-9]{0,2}|new_[a-z][a-z0-9_]{0,63})$/);
 const reference = HierarchyModelReferenceSchema;
 const oldTopic = CuratorDraftSchema.shape.topics.element;
@@ -119,6 +118,7 @@ export const HierarchySupportAssessmentSchema = z.object({
 export const HierarchySnapshotSchema = z.object({
   ...CuratorSnapshotSchema.shape, version: z.literal(hierarchyCuratorVersion), policy: HierarchyPolicySchema,
   limits: HierarchyLimitsSchema, requiredPageIds: z.array(z.string().uuid()).max(hierarchyTargetRange.max).default([]),
+  supportCompositionHash: z.string().regex(/^[a-f0-9]{64}$/),
   placement: HierarchyPlacementInventorySchema, resources: HierarchyResourceBoundsSchema,
   continuationRoute: HierarchyRouteContinuationSchema.nullable().default(null)
 }).strict().superRefine((v, ctx) => {
@@ -141,14 +141,6 @@ export const HierarchyCuratorRunSchema = z.object({
       ctx.addIssue({ code: "custom", message: "Proposal must match its admitted group, policy and effective target limit" });
   }
 });
-/** Explicit readers, never replacements for current .shape consumers or admission. */
-export const VersionedWikiPolicySchema = z.union([AutomaticWikiPolicySchema, HierarchyPolicySchema]);
-export const VersionedCuratorChangeSetSchema = z.union([CuratorChangeSetSchema, HierarchyChangeSetSchema]);
-export const VersionedCuratorSnapshotSchema = z.union([CuratorSnapshotSchema, HierarchySnapshotSchema]);
-export const VersionedCuratorCheckpointSchema = z.union([CuratorCheckpointSchema, HierarchyCuratorCheckpointSchema]);
-export const VersionedCuratorRunSchema = z.union([CuratorRunSchema, HierarchyCuratorRunSchema]);
-// The old compact draft has no version field; strict parsing keeps that exact legacy shape.
-export const VersionedCuratorDraftSchema = z.union([CuratorDraftSchema, HierarchyDraftSchema]);
 export type HierarchySnapshot = z.infer<typeof HierarchySnapshotSchema>;
 export type HierarchyCuratorCheckpoint = z.infer<typeof HierarchyCuratorCheckpointSchema>;
 export type HierarchyCuratorRun = z.infer<typeof HierarchyCuratorRunSchema>;

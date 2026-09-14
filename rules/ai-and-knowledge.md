@@ -413,15 +413,15 @@ provider token breakdowns and precise call context, as specified in
   Retained history remains readable but cannot become fresh support by losing a
   live source-link row.
 
-## Hierarchy successor transport and support
+## Hierarchy transport and support
 
-- The additive `wiki-curator-draft-v3` contract carries topics, indexes, entity
+- The current compact hierarchy draft carries topics, indexes, entity
   pages, required minimal ancestors and reviewed moves. Parent handles are
   explicit for all new page kinds; entity handles resolve only to admitted
   canonical entity references. Topic/source TOC ownership never implies parentage.
 - The ordinary synthesis/support pair and shared repair allowance remain the
   intended execution contract. No separate call is required per ancestor.
-  Successor semantic verdicts cover every changed page handle, including exempt
+  Hierarchy semantic verdicts cover every changed page handle, including exempt
   ancestors and moves, independently of the configured counted work allowance.
   Missing, duplicate or extra checked handles cannot certify support.
 - The shared support snapshot binds the exact proposal/hash and all complete
@@ -431,9 +431,9 @@ provider token breakdowns and precise call context, as specified in
   must additionally preserve complete member/entity lineage and distinguish
   read-only admitted metadata from authored assertions. Exempt ancestors receive
   no evidence or semantic-support waiver.
-- Current prompt leaves, admitted pins, samples and temporal/procedure/note-
-  evolution callers retain their old transport until explicitly migrated. New
-  schemas and compatibility readers do not activate a new prompt or runtime.
-  Before activation, context planning, expansion, support/repair serializers and
-  samples must support the full admitted 1–12 work-target range and resource-
-  driven continuation, without a fixed hierarchy depth cutoff.
+- Extend the existing prompt leaves and preserve the ordinary shared inference
+  route and support gate. The empty-database rollout uses one current contract,
+  without a parallel version, prompt catalog or compatibility-reader branch.
+  Context planning, expansion, support/repair serializers and samples must support
+  the full admitted 1–12 work-target range and resource-driven continuation,
+  without a fixed hierarchy depth cutoff.

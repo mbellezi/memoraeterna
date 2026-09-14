@@ -1,3 +1,4 @@
+import {validateCanonicalWikiBindings} from './wikiHierarchyCanonical.js';
 import { wikiAreaIds } from "@app/domain";
 import {readNoteEvidence,retainedNoteCurrentSql} from "./noteEvidence.js";
 import {isDeepStrictEqual} from 'node:util';
@@ -100,7 +101,7 @@ export function createWikiRepository(pool: PgPool) {
     async history(id: string) {
       return (await pool.query(`select id,number,created_at as "createdAt",origin,content from wiki_page_revisions where page_id=$1 order by number desc limit 100`, [id])).rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
     },
-    async save(input: { version?: 2|undefined; id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }, authority?: { transaction: PgClient; origin: "organization" | "human"; allocatedTarget: boolean; humanApproved: boolean; revisionId?:string }) {
+    async save(input: { version?: 2|undefined; id?: string | undefined; expectedRevisionId: string | null; content: Content; evidenceChunkIds: string[] }, authority?: { transaction: PgClient; origin: "organization" | "human"; allocatedTarget: boolean; humanApproved: boolean; revisionId?:string; explicitParent?:boolean|undefined }) {
       const db = authority?.transaction ?? await pool.connect();
       try {
         if (!authority) await db.query("begin");
@@ -110,7 +111,7 @@ export function createWikiRepository(pool: PgPool) {
         const current = (await db.query("select p.*,r.content,r.number from wiki_pages p left join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1 for update of p", [id])).rows[0];
         if ((input.id && !current && !authority?.allocatedTarget) || (current?.current_revision_id ?? null) !== input.expectedRevisionId) throw new Error("wiki.errors.conflict");
         const content = structuredClone(input.content);
-        if (!current?.current_revision_id && !content.parentId && !Object.values(wikiAreaIds).includes(id as typeof wikiAreaIds[keyof typeof wikiAreaIds])) {
+        if (!authority?.explicitParent && !current?.current_revision_id && !content.parentId && !Object.values(wikiAreaIds).includes(id as typeof wikiAreaIds[keyof typeof wikiAreaIds])) {
           const area = content.kind === 'topic' ? wikiAreaIds.themes : content.kind === 'entity' ? wikiAreaIds.entities : content.kind === 'synthesis' ? content.automatic?.role.role === 'investigation' ? wikiAreaIds.investigations : wikiAreaIds.syntheses : wikiAreaIds.maps;
           if ((await db.query('select 1 from wiki_pages where id=$1', [area])).rows.length) content.parentId = area;
         }
@@ -120,9 +121,9 @@ export function createWikiRepository(pool: PgPool) {
           for(const previous of old.sections)if(!content.sections.some(s=>s.id===previous.id))content.sections.push(structuredClone(previous));
         }
         if (content.parentId) {
-          const ancestors = (await db.query(`with recursive a as (select id,parent_id,array[id] as path,false as cycle from wiki_pages where id=$1 union all
-            select p.id,p.parent_id,a.path||p.id,p.id=any(a.path) from wiki_pages p join a on a.parent_id=p.id where not a.cycle) select id,cycle from a`, [content.parentId])).rows;
-          if (!ancestors.length || ancestors.some((a) => a.id === id||a.cycle)) throw new Error("wiki.errors.cycle");
+          const ancestors = (await db.query(`with recursive a as (select id,parent_id,archived,array[id] as path,false as cycle from wiki_pages where id=$1 union all
+            select p.id,p.parent_id,p.archived,a.path||p.id,p.id=any(a.path) from wiki_pages p join a on a.parent_id=p.id where not a.cycle) select id,cycle,archived from a`, [content.parentId])).rows;
+          if (!ancestors.length || ancestors.some((a) => a.id === id||a.cycle||a.archived)) throw new Error("wiki.errors.cycle");
         }
         if (content.collectionIds.includes(id)) throw new Error("wiki.errors.cycle");
         if (content.collectionIds.length) {
@@ -130,6 +131,8 @@ export function createWikiRepository(pool: PgPool) {
           if (collections.rows.length !== new Set(content.collectionIds).size) throw new Error("wiki.errors.invalid");
         }
         if (content.entityId && !(await db.query("select id from entities where id=$1", [content.entityId])).rows.length) throw new Error("wiki.errors.invalid");
+        if(current?.content?.entityId&&current.content.entityId!==content.entityId)throw new Error('wiki.errors.conflict');
+        await validateCanonicalWikiBindings(db,id,content as WikiPageContent);
         // Every desktop edit is human protected, independently of review state.
         for (const section of content.sections) {
           if (!authority || authority.origin === "human") {
@@ -169,6 +172,7 @@ export function createWikiRepository(pool: PgPool) {
           [revisionId, id, input.expectedRevisionId, (current?.number ?? 0) + 1, content, createHash("sha256").update(JSON.stringify(content)).digest("hex"), authority?.origin ?? "human"]);
         await db.query(`update wiki_pages set current_revision_id=$2,title=$3,kind=$4,parent_id=$5,position=$6,archived=$7,updated_at=now() where id=$1`,
           [id, revisionId, content.title, content.kind, content.parentId, content.position, content.archived]);
+        if(content.automatic){const role=content.automatic.role;await db.query('update wiki_pages set management=$2,role=$3,toc_owner_kind=$4,toc_owner_id=$5 where id=$1',[id,content.automatic.management,role.role,role.kind==='collection'?role.owner?.kind:null,role.kind==='collection'?role.owner?.id:null]);}
         for (const section of content.sections) {
           const previous=(current?.content as Content|undefined)?.sections.find(s=>s.id===section.id);
           if(previous&&previous.markdown===section.markdown&&JSON.stringify(previous.evidenceIds)===JSON.stringify(section.evidenceIds))await db.query(`insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 on conflict do nothing`,[revisionId,input.expectedRevisionId,section.id]);
@@ -183,6 +187,7 @@ export function createWikiRepository(pool: PgPool) {
           if(previous&&previous.markdown===section.markdown) await db.query(`insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at)
             select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 and kind not in('source','document','chunk') on conflict do nothing`,[revisionId,input.expectedRevisionId,section.id]);
         }
+        if(input.expectedRevisionId)await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 on conflict do nothing',[revisionId,input.expectedRevisionId,id]);
         if(content.automatic) {
           for(const group of content.automatic.groups){
             if(input.expectedRevisionId)await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 on conflict do nothing',[revisionId,input.expectedRevisionId,group.id]);

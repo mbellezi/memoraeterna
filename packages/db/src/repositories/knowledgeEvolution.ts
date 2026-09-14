@@ -4,7 +4,7 @@ import { noteEvolutionReplacementIds,InterpretationRecordSchema, WikiPageContent
 import type {PgPool,PgClient} from '../client.js';
 import {createWikiRepository} from './wikiRepository.js';
 
-export function appendInterpretation(snapshot:CuratorSnapshot,patch:CuratorChangeSet['targets'][number]['sections'][number],previous:InterpretationRecord[]=[]):InterpretationRecord[]|undefined{
+export function appendInterpretation(snapshot:Pick<CuratorSnapshot,'evidence'|'sourceDates'>,patch:CuratorChangeSet['targets'][number]['sections'][number],previous:InterpretationRecord[]=[]):InterpretationRecord[]|undefined{
  if(!patch.interpretation)return previous.length?previous:undefined;
  if(previous.length>=100)throw new Error('organization.errors.scopeLimit');
  const {originalHandles,...draft}=patch.interpretation;
@@ -16,7 +16,7 @@ export function appendInterpretation(snapshot:CuratorSnapshot,patch:CuratorChang
 }
 
 /** Caller holds placement, policy, run, page and original locks. No inference here. */
-export async function applyNoteEvolution(db:PgClient,pool:PgPool,runId:string,snapshot:CuratorSnapshot,proposal:CuratorChangeSet,appliedPageIds:string[]=[]){
+export async function applyNoteEvolution(db:PgClient,pool:PgPool,runId:string,snapshot:Pick<CuratorSnapshot,'limits'|'pages'|'evidence'|'contentLanguage'|'profile'>,proposal:Pick<CuratorChangeSet,'noteEvolution'>,appliedPageIds:string[]=[]){
  const change=proposal.noteEvolution;if(!change)return {notes:[],repairs:[]};
  const rows=(await db.query('select * from atomic_notes where id=any($1::uuid[]) order by id for update',[change.noteIds])).rows;
  if(rows.length!==change.noteIds.length||rows.some(n=>n.supersession_status!=='current'||['rejected','archived'].includes(n.status)))throw new Error('organization.errors.conflict');

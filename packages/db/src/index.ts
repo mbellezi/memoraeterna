@@ -23,3 +23,5 @@ export * from './repositories/knowledgeAutomationRepository.js';
 
 export { createWikiRemovalRepository } from './repositories/wikiRemovalRepository.js';
 export { createWikiImpactReconciliationRepository } from './repositories/wikiImpactReconciliationRepository.js';
+
+export * from './repositories/wikiHierarchyInventory.js';
