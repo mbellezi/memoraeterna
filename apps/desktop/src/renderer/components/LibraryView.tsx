@@ -37,7 +37,7 @@ import { Tabs } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { CoverImage } from "./ui/cover-image";
-import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
+import { defaultProcessingPlan, ProcessingPlanPicker, processingPlanReady } from "./ProcessingPlanPicker";
 import { MarkdownPreview } from "./MarkdownEditor";
 import { SearchResultCard, searchResultId } from "./SearchView";
 
@@ -571,6 +571,7 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
   useEffect(() => { const dialog = dialogRef.current; dialog?.showModal(); return () => dialog?.close(); }, []);
   const selected = sources.filter((source) => sourceIds.includes(source.id));
   async function queue() {
+    if (!processingPlanReady(plan)) return;
     setBusy(true);
     try {
       await window.app.ingestion.process({ plan: { ...plan, targetSourceItemIds: sourceIds }, runKind: plan.forceRegeneration ? "reingestion" : "missing_stages", trigger: "library_action" });
@@ -587,7 +588,7 @@ function ProcessingDialog({ sourceIds, sources, t, onClose, onQueued }: { source
         <ProcessingPlanPicker value={plan} onChange={(next) => setPlan({ ...next, targetSourceItemIds: sourceIds, scope: sourceIds.length > 1 ? "selected_items" : plan.scope })} t={t} />
         <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40"><input type="checkbox" className="mt-0.5 h-4 w-4 accent-amber-600" checked={plan.forceRegeneration} onChange={(event) => setPlan({ ...plan, forceRegeneration: event.target.checked, previousArtifactPolicy: event.target.checked ? "preserve_reviewed_archive_pending" : "reuse_valid" })} /><span><span className="block font-semibold">{t("library.processingDialog.regenerate")}</span><span className="text-xs text-slate-600 dark:text-slate-400">{t("library.processingDialog.regenerateHint")}</span></span></label>
       </div>
-      <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><Button type="button" disabled={busy} onClick={onClose}>{t("shell.actions.cancel")}</Button><Button type="button" disabled={busy} onClick={() => void queue()}><Play className="h-4 w-4" />{t("library.actions.queueProcessing")}</Button></footer>
+      <footer className="sticky bottom-0 flex justify-end gap-2 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><Button type="button" disabled={busy} onClick={onClose}>{t("shell.actions.cancel")}</Button><Button type="button" disabled={busy || !processingPlanReady(plan)} onClick={() => void queue()}><Play className="h-4 w-4" />{t("library.actions.queueProcessing")}</Button></footer>
     </div>
   </dialog>;
 }

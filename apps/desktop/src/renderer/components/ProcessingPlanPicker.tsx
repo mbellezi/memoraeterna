@@ -1,11 +1,9 @@
-import { ProfilePicker } from "./OrganizationView";
-import type { AiProfile } from "../../shared/ipc";
-import { AutomaticWikiPolicySchema,type AutomaticWikiPolicy,OrganizationSettingsSchema, type OrganizationConfiguration } from "@app/domain";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Check, ChevronRight, Cloud, Search, Sparkles, WandSparkles } from "lucide-react";
 import {
+  ProcessingPlanRequestSchema,
   ProcessingStages,
   processingStageDependencies,
   resolveProcessingPlan,
@@ -25,7 +23,7 @@ const presets: Array<{ id: Exclude<ProcessingPreset, "custom">; icon: typeof Sea
 ];
 
 const optionalStages = ProcessingStages.filter((stage) =>
-  !["conversion", "structureDetection", "structureReview", "materialization", "aggregateSummarization"].includes(stage)
+  !["conversion", "structureDetection", "structureReview", "materialization", "aggregateSummarization", "obsidianProjection"].includes(stage)
 );
 
 export function defaultProcessingPlan(preset: ProcessingPreset = "import_only"): ProcessingPlanRequest {
@@ -50,6 +48,12 @@ export function toProcessingPlanRequest(plan: ProcessingPlanRequest): Processing
     forceRegeneration: plan.forceRegeneration,
     previousArtifactPolicy: plan.previousArtifactPolicy
   };
+}
+
+export function processingPlanReady(value: ProcessingPlanRequest): boolean {
+  const parsed = ProcessingPlanRequestSchema.safeParse(value);
+  if (!parsed.success) return false;
+  return true;
 }
 
 export function ProcessingPlanPicker({
@@ -185,7 +189,7 @@ export function ProcessingPlanPicker({
       </div>
     </details>
 
-    {resolved.effectiveStages.includes("organizeKnowledge")&&<ProcessingOrganizationOptions value={value} onChange={onChange} t={t}/>}
+    {resolved.effectiveStages.includes("organizeKnowledge")&&<div className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4 text-sm" role="status">{t("processing.wiki.hint")}</div>}
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
       <span>{t("processing.stageCount", { values: { count: resolved.effectiveStages.length } })}</span>
       {resolved.effectiveStages.some((stage) => ["embedding", "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching", "organizeKnowledge"].includes(stage))
@@ -210,13 +214,4 @@ function presetSurface(tone: string): string {
     violet: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
     amber: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
   } as Record<string, string>)[tone] ?? "bg-slate-100 text-slate-800";
-}
-
-function ProcessingOrganizationOptions({value,onChange,t}:{value:ProcessingPlanRequest;onChange:(v:ProcessingPlanRequest)=>void;t:Translator}){
-  const [policies,setPolicies]=useState<AutomaticWikiPolicy[]>([]);
-  useEffect(()=>{void window.app.curator?.command({command:'policies'}).then(value=>setPolicies((value as unknown[]).map(p=>AutomaticWikiPolicySchema.parse(p)).filter(p=>p.state==='enabled'))).catch(()=>undefined);},[]);
-  const [profiles,setProfiles]=useState<AiProfile[]>([]),[domains,setDomains]=useState<OrganizationConfiguration['domains']>([]),[title,setTitle]=useState(value.organization?.title??''),[profile,setProfile]=useState(value.organization?.profileId??''),[domainId,setDomainId]=useState<string|null>(value.organization?.domainId??null),[failed,setFailed]=useState(false);
-  useEffect(()=>{void Promise.all([window.app.ai.listProfiles(),window.app.organization.command({command:'settings'})]).then(([p,c])=>{setProfiles(p);const s=OrganizationSettingsSchema.parse(c);setDomains(s.revisions.find(r=>r.id===s.activeId)?.configuration.domains??[]);}).catch(()=>setFailed(true));},[]);
-  function update(patch:Partial<{title:string;profileId:string;domainId:string|null}>){const next={title,profileId:profile,privacy:"allow_remote" as const,domainId,...patch};setTitle(next.title);setProfile(next.profileId);setDomainId(next.domainId);onChange({...value,organization:next.title.trim()?{...next,profileId:next.profileId||undefined}:undefined});}
-  return <div className="grid gap-3 rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4">{policies.length>0&&<label className="grid gap-1 text-sm">{t('automaticWiki.run')}<select className="rounded-lg border bg-transparent p-2" value={value.integrateWiki?.policyId??''} onChange={e=>{const policy=policies.find(p=>p.id===e.target.value);onChange({...value,integrateWiki:policy?{version:2,policyId:policy.id,policyRevisionId:policy.revisionId}:undefined,organization:undefined});}}><option value="">{t('organization.organize')}</option>{policies.map(p=><option key={p.id} value={p.id}>{t('automaticWiki.enabled')} · {p.scope.sourceIds.length}</option>)}</select></label>}{value.integrateWiki?<p className="text-sm">{t('automaticWiki.intro')}</p>:<><p className="text-sm leading-6">{t('consultation.processingHint')}</p><label className="grid gap-1 text-sm">{t('wiki.pageTitle')}<Input value={title} onChange={e=>update({title:e.target.value})}/></label><ProfilePicker profiles={profiles} value={profile} onChange={profileId=>update({profileId})} t={t}/><label className="grid gap-1 text-sm">{t('organization.domains')}<select className="rounded-lg border bg-transparent p-2" value={domainId??''} onChange={e=>update({domainId:e.target.value||null})}><option value="">{t('organization.global')}</option>{domains.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></label>{(!value.organization||failed)&&<p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t('consultation.processingRequired')}</p>}</>}</div>;
 }

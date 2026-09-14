@@ -1,3 +1,4 @@
+import { TaskHistoryCleanup } from './TaskHistoryCleanup';
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -54,14 +55,13 @@ const pipelineStages = [
   "aggregateSummarization"
 ] as const;
 
-export function JobsView({ t }: { t: Translator }) {
+export function JobsView({ t, showHistoryCleanup = true }: { t: Translator; showHistoryCleanup?: boolean }) {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [batches, setBatches] = useState<ProcessingBatch[]>([]);
   const [filter, setFilter] = useState<JobFilter>("all");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(typeof window !== "undefined");
   const [loadError, setLoadError] = useState(false);
-  const [clearing, setClearing] = useState(false);
   const [busyJobId, setBusyJobId] = useState<string | null>(null);
   const [actionError, setActionError] = useState(false);
   const [selectedAttempt, setSelectedAttempt] = useState<JobRecord | null>(null);
@@ -102,17 +102,6 @@ export function JobsView({ t }: { t: Translator }) {
     completed: cards.filter((card) => card.status === "succeeded").length,
     attention: cards.filter((card) => card.status === "failed" || card.status === "canceled").length
   };
-
-  async function clearCompletedOrFailed() {
-    if (!window.confirm(t("jobs.actions.clearCompletedOrFailedConfirm"))) return;
-    setClearing(true);
-    try {
-      await window.app.jobs.clearCompletedOrFailed();
-      await load();
-    } finally {
-      setClearing(false);
-    }
-  }
 
   async function runAction(jobId: string, action: "retry" | "cancel" | "delete") {
     if (action === "delete" && !window.confirm(t("jobs.actions.deleteConfirm"))) return;
@@ -159,15 +148,7 @@ export function JobsView({ t }: { t: Translator }) {
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} aria-hidden="true" />
           </button>
-          <Button
-            type="button"
-            className="border-slate-200 bg-white text-slate-700 hover:bg-rose-50 hover:text-rose-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-rose-950 dark:hover:text-rose-200"
-            disabled={stats.completed + stats.attention === 0 || clearing}
-            onClick={() => void clearCompletedOrFailed()}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            {t("jobs.actions.clearCompletedOrFailed")}
-          </Button>
+          {showHistoryCleanup&&<TaskHistoryCleanup t={t} onCleared={load}/>}
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { QueryResult, QueryResultRow } from "pg";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
 import { LibraryResetService } from "./library-reset-service.js";
@@ -52,7 +52,9 @@ managed`),
     await writeFile(legacyRecovery, await readFile(obsidianFile));
     await writeFile(personalRecovery, "Unmanaged personal text");
     const pool = new ResetPool();
+    const restoreDefaults=vi.fn(async()=>{expect(pool.queries).toContain("commit");await expect(access(join(root,"assets"))).resolves.toBeUndefined();});
     const service = new LibraryResetService({
+      restoreDefaults,
       getPool: () => pool as unknown as PgPool,
       getStorageSettings: async () => ({
         obsidianVaultPath: vault,
@@ -69,6 +71,7 @@ managed`),
 
     const result = await service.reset();
 
+    expect(restoreDefaults).toHaveBeenCalledOnce();
     expect(result).toEqual({ deletedSources: 2, deletedAtomicNotes: 3, deletedFiles: 5, failedFiles: 0 });
     await expect(access(internalAsset)).rejects.toThrow();
     await expect(access(uploadedAsset)).rejects.toThrow();
@@ -95,12 +98,14 @@ managed`),
       await mkdir(join(root, "personal"));
       await writeFile(join(root, "personal", "keep.txt"), "personal");
       await symlink(join(root, "personal"), join(root, "assets"));
-      const service = new LibraryResetService({ getPool: () => pool as unknown as PgPool,
+      const restoreDefaults=vi.fn(async()=>{});
+      const service = new LibraryResetService({ restoreDefaults,getPool: () => pool as unknown as PgPool,
         userDataPath: root, getStorageSettings: async () => ({ obsidianVaultPath: null,
           managedRoot: "Memora", obsidianSyncEnabled: false, obsidianSyncPaused: false,
           deletionPolicy: "tombstone", uploadCopiesEnabled: false,
           uploadCopiesFolderPath: null, updatedAt: new Date(0).toISOString() }) });
       await expect(service.reset()).rejects.toThrow("errors.common.permissionDenied");
+      expect(restoreDefaults).not.toHaveBeenCalled();
       await expect(access(join(root, "personal", "keep.txt"))).resolves.toBeUndefined();
       expect(pool.queries.some(query => query.includes("truncate") || query.includes("drop_graph"))).toBe(false);
     } finally { await rm(root, { recursive: true, force: true }); }

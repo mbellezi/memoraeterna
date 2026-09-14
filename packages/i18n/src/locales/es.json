@@ -1,4 +1,91 @@
 {
+  "automation": {
+    "journeyError": "No se pudo cargar el estado de las fuentes. Inténtelo de nuevo.",
+    "reviewRetainedTitle": "Propuesta disponible para revisión",
+    "reviewRetainedHint": "La propuesta existente espera su decisión. La rutina la conserva sin crear otro intento.",
+    "automaticRejection": "Rechazada por la validación automática",
+    "automaticRejectionHint": "No hay una propuesta válida para aprobar. Se conservan el motivo y los originales para orientar futuros análisis de esta fuente.",
+    "priorRejections": "Rechazos anteriores considerados",
+    "priorRejectionsHint": "Este historial es contexto, no evidencia. Cada nuevo análisis debe comprobar los originales actuales; un rechazo anterior no es una regla general.",
+    "previousRejectedText": "Texto rechazado anteriormente",
+    "rejectionOriginals": "Originales del análisis anterior",
+    "retainedTitle": "Resultado cerrado y conservado",
+    "retainedHint": "El análisis anterior ha finalizado. No se volverá a intentar con los mismos datos. El motivo sigue disponible después de limpiar el historial.",
+    "waitingInput": "Esperando nuevas entradas",
+    "analysisDetails": "Detalles del análisis",
+    "budgetBlocked": "Bloqueada por presupuesto",
+    "changes": "{count} cambios pendientes",
+    "allTasks": "Ver todas las tareas",
+    "retired": "Retirada · historial conservado",
+    "journey": "De la fuente a la Wiki y Obsidian",
+    "complete": "Completado",
+    "imported": "Importada",
+    "stale": "Actualización pendiente",
+    "journeyColumns": {
+      "source": "Fuente",
+      "processing": "Procesamiento",
+      "wiki": "Wiki",
+      "obsidian": "Obsidian"
+    },
+    "title": "Conocimiento automático",
+    "description": "Siga la integración, el mantenimiento y la sincronización en un solo lugar. Las tareas pendientes y las decisiones permanecen visibles.",
+    "ready": "IA configurada",
+    "waitingModel": "Esperando configuración de IA",
+    "modelHint": "Registre un modelo y configure un perfil compatible y la ruta de salida estructurada.",
+    "models": "Modelos",
+    "routing": "Perfiles y rutas",
+    "empty": "No hay tareas en esta vista.",
+    "settings": "Alcance y permisos",
+    "saved": "Configuración guardada.",
+    "inspect": "Inspeccionar",
+    "scheduled": "Programada",
+    "pending": "En espera",
+    "deferred": "Aplazada",
+    "conflict": "Requiere una decisión",
+    "tabs": {
+      "prompts": "Prompts",
+      "sources": "Fuentes",
+      "overview": "Resumen",
+      "tasks": "Tareas",
+      "schedules": "Programaciones",
+      "decisions": "Decisiones",
+      "settings": "Configuración",
+      "budget": "Presupuesto"
+    },
+    "areas": {
+      "people": "Personas",
+      "organizations": "Organizaciones",
+      "places": "Lugares",
+      "works": "Obras",
+      "notes": "Notas atómicas",
+      "assets": "Adjuntos",
+      "themes": "Temas",
+      "entities": "Entidades",
+      "syntheses": "Síntesis",
+      "investigations": "Investigaciones",
+      "maps": "Mapas"
+    },
+    "coverage": {
+      "total": "Fuentes en la biblioteca",
+      "integrated": "Integradas en la Wiki",
+      "pending": "Esperando integración completa"
+    },
+    "kinds": {
+      "organization": "Integración con la Wiki",
+      "maintenance": "Mantenimiento del conocimiento",
+      "delivery": "Actualización incremental",
+      "schedule": "Mantenimiento programado",
+      "sync": "Sincronización con Obsidian"
+    },
+    "blockedHint": "Esta rutina está bloqueada y no tiene una propuesta lista para aprobar. El diagnóstico explica la incidencia. Cancelar finaliza esta ejecución y conserva su historial.",
+    "reviewProposal": "Revisar propuesta",
+    "openBlockingRun": "Abrir el análisis que bloqueó la rutina",
+    "clearHistory": "Limpiar historial de tareas",
+    "clearHistoryHint": "Retira de las listas las ejecuciones completadas, fallidas o canceladas. Conserva tareas activas, programaciones, pendientes, auditoría y consumo de presupuesto.",
+    "clearingHistory": "Limpiando historial…",
+    "historyCleared": "Historial de ejecuciones terminadas limpiado. Se conservaron los pendientes.",
+    "clearHistoryFailed": "No se pudo completar la limpieza. Inténtelo de nuevo."
+  },
   "investigation": {
     "retained": "Guardada como página de respuesta seguida",
     "title": "Preguntas seguidas",
@@ -138,6 +225,7 @@
     "canceled": "Cancelada",
     "failed": "Fallida",
     "errors": {
+      "rejected": "Este análisis fue rechazado y no puede reanudarse.",
       "topicScope": "Ya existe un tema coincidente fuera del ámbito. Ábrelo y selecciona todas las fuentes necesarias para evitar duplicados.",
       "wait": "La llamada cancelada todavía está terminando. Espera antes de reintentar.",
       "invalid": "La acción o configuración no es válida. Revisa los campos y reintenta.",
@@ -150,7 +238,7 @@
       "modelChanged": "La identidad del modelo fijado cambió o fue revocada. Recrea la ejecución.",
       "privacy": "Esta política exige un modelo generativo local. No se permite una alternativa remota.",
       "noEvidence": "El alcance no contiene pasajes originales. Los metadatos no sustentan una síntesis.",
-      "evidence": "Evidencias o relaciones no leídas, obsoletas o fuera del alcance. Crea una nueva propuesta.",
+      "evidence": "No se pudieron validar las evidencias o relaciones de esta propuesta. Consulte el diagnóstico del análisis.",
       "review": "Estos cambios requieren revisión humana explícita.",
       "protected": "El contenido protegido exige aprobación humana.",
       "budget": "La ejecución agotó el límite de herramientas, llamadas o entrada informada.",
@@ -160,7 +248,8 @@
       "canceled": "Cancelada",
       "failed": "La organización falló. Comprueba el perfil y reintenta con el presupuesto restante.",
       "policy": "La política automática está pausada, cambió o no permite esta operación.",
-      "scopeDecision": "El conocimiento relacionado usa fuentes fuera de esta política. Revisa el alcance antes de integrar."
+      "scopeDecision": "El conocimiento relacionado usa fuentes fuera de esta política. Revisa el alcance antes de integrar.",
+      "unsupported": "La propuesta no superó la verificación de fidelidad a las fuentes. Consulte el diagnóstico del análisis."
     }
   },
   "entityIdentity": {"threshold":"Umbral de similitud de identidad de entidades","hint":"La IA verifica candidatos del mismo tipo usando nombres y datos identificativos. Un nombre igual por sí solo nunca autoriza una unión. Las identidades ambiguas permanecen separadas. Predeterminado: 0,92 (provisional). También se verifican nombres exactos y alias. Se reutilizan entidades existentes tras confirmar su identidad; no se fusionan duplicados históricos en masa."},
@@ -394,12 +483,22 @@
     },
     "currentStage": "Etapa actual: {stage}",
     "stages": {
-      "organizeKnowledge": "Organizar conocimiento",
-      "queued": "En cola", "preparation": "Preparacion de la importacion", "conversion": "Conversion", "structureDetection": "Deteccion de estructura", "structureReview": "Revision de estructura", "materialization": "Materializacion", "chunking": "Segmentacion",
-      "embedding": "Embedding", "summarization": "Resumen", "atomicNotes": "Notas atomicas",
+      "organizeKnowledge": "Integrar en la Wiki",
+      "queued": "En cola",
+      "preparation": "Preparacion de la importacion",
+      "conversion": "Conversion",
+      "structureDetection": "Deteccion de estructura",
+      "structureReview": "Revision de estructura",
+      "materialization": "Materializacion",
+      "chunking": "Segmentacion",
+      "embedding": "Embedding",
+      "summarization": "Resumen",
+      "atomicNotes": "Notas atomicas",
       "knowledgeGraph": "Grafo de conocimiento",
       "atomicNoteMatching": "Conexion de notas",
-      "sourceMatching": "Relaciones entre fuentes", "obsidianProjection": "Proyeccion en Obsidian", "aggregateSummarization": "Resumen agregado",
+      "sourceMatching": "Relaciones entre fuentes",
+      "obsidianProjection": "Proyeccion en Obsidian",
+      "aggregateSummarization": "Resumen agregado",
       "completed": "Completada"
     },
     "stageStatus": {
@@ -543,9 +642,27 @@
     "status": { "queued": "Importacion en cola.", "canceled": "Seleccion de archivo cancelada.", "saved": "Fuente guardada sin procesamiento en segundo plano.", "metadataExtracted": "Metadatos extraidos localmente. Revisalos antes de continuar.", "duplicateHandled": "Politica de duplicados aplicada.", "reviewStructure": "Estructura detectada. Revisala antes de continuar.", "draftSaved": "Borrador de estructura guardado.", "queuedChildren": "Estructura confirmada y elementos seleccionados en cola.", "savedChildren": "Estructura confirmada y elementos seleccionados guardados." }
   },
   "processing": {
-    "title": "Elegir cuanto procesar", "aiOptional": "La IA es opcional", "description": "Importa primero y crea solo los artefactos necesarios. Las dependencias se incluyen automaticamente.",
-    "customize": "Personalizar etapas", "includedDependency": "Incluida porque otra etapa la necesita", "stageCount": "{count} etapas en este plan", "profileNotice": "Usa tu perfil de IA configurado", "noAiNotice": "No se necesita ninguna llamada de IA",
-    "presets": { "import_only": { "title": "Solo importar", "description": "Conserva y organiza la fuente sin IA." }, "search_ready": { "title": "Lista para buscar", "description": "Crea segmentos y embeddings para recuperacion." }, "summary": { "title": "Resumen", "description": "Genera un resumen conciso con evidencias." }, "full_knowledge": { "title": "Conocimiento completo", "description": "Genera notas, grafo y coincidencias." } }
+    "invalidPlan": "Revise las opciones de procesamiento antes de continuar.",
+    "wiki": {
+      "hint": "La Wiki descubre temas y actualiza páginas e índices automáticamente. Usa la política configurada y espera la IA o el presupuesto cuando sea necesario. No requiere un título de página."
+    },
+    "title": "Elegir cuanto procesar",
+    "aiOptional": "La IA es opcional",
+    "description": "Importa primero y crea solo los artefactos necesarios. Las dependencias se incluyen automaticamente.",
+    "customize": "Personalizar etapas",
+    "includedDependency": "Incluida porque otra etapa la necesita",
+    "stageCount": "{count} etapas en este plan",
+    "profileNotice": "Usa tu perfil de IA configurado",
+    "noAiNotice": "No se necesita ninguna llamada de IA",
+    "presets": {
+      "import_only": { "title": "Solo importar", "description": "Conserva y organiza la fuente sin IA." },
+      "search_ready": { "title": "Lista para buscar", "description": "Crea segmentos y embeddings para recuperacion." },
+      "summary": { "title": "Resumen", "description": "Genera un resumen conciso con evidencias." },
+      "full_knowledge": {
+        "title": "Procesamiento completo",
+        "description": "Genera resúmenes, notas, grafo y conexiones e integra el conocimiento en la Wiki."
+      }
+    }
   },
   "structure": {
     "eyebrow": "Punto de revision humana", "title": "Revisar la estructura detectada", "description": "Revisa los segmentos, ajusta sus limites y elige cuales seran subelementos.",
@@ -1067,7 +1184,7 @@
     "treeWidth": "Ancho del árbol: {width} píxeles",
     "resizeTreeHint": "Arrastra para ajustar. Usa las flechas izquierda/derecha, Inicio o Fin. Haz doble clic para restablecer.",
     "resizeTree": "Ajustar ancho del árbol de la wiki",
-    "title": "Segundo cerebro",
+    "title": "Wiki",
     "subtitle": "Un espacio vivo para tu conocimiento",
     "navigation": "Navegación de la wiki",
     "home": "Inicio",
@@ -1277,7 +1394,8 @@
       "rejected": "Rechazada",
       "canceled": "Cancelada",
       "failed": "Fallida",
-      "sample_passed": "Muestra aprobada"
+      "sample_passed": "Muestra aprobada",
+      "blocked": "Bloqueada"
     },
     "signal": {
       "broken_reference": "Referencia original no disponible",
@@ -1294,6 +1412,7 @@
       "obsolete_draft": "Borrador generado vacío elegible"
     },
     "errors": {
+      "retainedDecision": "Un análisis anterior ya trató estas entradas. Consulte el resultado conservado; no se creará otro intento para los mismos datos.",
       "scope": "Selecciona un ámbito y dominio válidos.",
       "budget": "El presupuesto es inválido o está agotado.",
       "period": "El límite mensual UTC está reservado o agotado. El trabajo sigue aplazado.",
@@ -1608,6 +1727,7 @@
     "groups": "Grupos completados",
     "coverage": "Cobertura",
     "coverageStates": {
+      "rejected": "Rechazada",
       "cataloged": "Catalogado",
       "awaiting": "Pendiente de organización",
       "analyzing": "Analizando",
@@ -1737,5 +1857,48 @@
     "knowledgeOwned": "Nota de conocimiento conservada",
     "supersededNote": "Sustituida · historial conservado",
     "openRevision": "Abrir esta revisión"
+  },
+  "budget": {
+    "title": "Presupuesto y límites",
+    "description": "El tope mensual es compartido. Cada ejecución también respeta los límites de su rutina y del grupo de curaduría; se aplica el más restrictivo.",
+    "routines": "Límites por rutina",
+    "monthly": "Presupuesto mensual compartido",
+    "monthlyHint": "Llamadas y tokens reservados por todas las rutinas de esta política. El período se renueva el primer día de cada mes en UTC. Las reservas conservadoras no son cargos ni uso medido.",
+    "monthCalls": "Llamadas por mes",
+    "monthTokens": "Tokens reservados por mes",
+    "used": "{used} de {limit} reservados",
+    "remaining": "Disponible: {count}",
+    "range": "Rango permitido: {min} a {max}.",
+    "invalid": "Complete todos los campos con números enteros dentro del rango permitido.",
+    "exhausted": "Las reservas actuales ya alcanzan este tope. Las nuevas llamadas quedan bloqueadas hasta que haya presupuesto disponible.",
+    "monthlyEffect": "Guardar cambia el tope para las próximas reservas, incluso de trabajos en curso. El consumo registrado se conserva; los fallos históricos no se repiten. El coste monetario sigue sin estar disponible sin una estimación fiable.",
+    "saveMonth": "Guardar presupuesto mensual",
+    "saveCurator": "Guardar límites de curaduría",
+    "saving": "Guardando…",
+    "saved": "Cambios guardados.",
+    "reload": "Recargar valores guardados",
+    "curator": "Límites por grupo de curaduría",
+    "curatorHint": "Un grupo genera cambios en la Wiki y verifica su respaldo en las fuentes. Estos límites controlan su tamaño y duración dentro del presupuesto de la rutina.",
+    "curatorInvalid": "Revise los rangos permitidos. Se necesitan al menos 2 llamadas sin reparación o 4 con reparación activada.",
+    "curatorEffect": "Guardar crea una nueva configuración para los próximos grupos. Los trabajos de la configuración anterior pierden la autorización para continuar; se conservan las propuestas y el historial. Una política pausada sigue pausada.",
+    "routineHint": "Estos límites se aplican por ejecución. El tope mensual compartido, editable en Presupuesto, puede detener el trabajo antes de alcanzar estos valores.",
+    "fields": {
+      "modelCalls": "Llamadas por grupo",
+      "repairs": "Ciclos de reparación",
+      "deadlineMs": "Duración máxima (segundos)",
+      "targets": "Páginas por grupo",
+      "sectionPatchesPerPage": "Secciones por página",
+      "originalPassages": "Pasajes originales",
+      "tools": "Operaciones de consulta"
+    },
+    "hints": {
+      "modelCalls": "Incluye generación, verificación de respaldo y reparaciones.",
+      "repairs": "Cada ciclo reserva margen para reparar y verificar de nuevo.",
+      "deadlineMs": "Límite de tiempo para un grupo de curaduría.",
+      "targets": "Máximo de páginas modificadas en conjunto.",
+      "sectionPatchesPerPage": "Máximo de secciones modificadas en cada página.",
+      "originalPassages": "Máximo de pasajes completos admitidos como evidencia.",
+      "tools": "Máximo de operaciones de búsqueda y lectura del grupo."
+    }
   }
 }

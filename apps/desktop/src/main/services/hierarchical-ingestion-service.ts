@@ -1,3 +1,5 @@
+import { knowledgeAutomationPolicyKey } from "@app/domain";
+import { createSettingsRepository, createWikiCuratorRepository } from "@app/db";
 import { promptStageProviders } from "./prompt-strategies.js";
 import { renderPrompt, capturePromptPin, stagePromptFingerprints, legacyStagePromptFingerprints } from "./prompt-runtime.js";
 import {
@@ -150,7 +152,12 @@ export class HierarchicalIngestionService {
     const documents = createDocumentRepository(pool);
     const sources = createSourceItemRepository(pool);
     const catalogStages = catalogMetadataStages(plan.effectiveStages);
-    if(plan.effectiveStages.includes("organizeKnowledge")&&!plan.organization&&!plan.integrateWiki)throw new Error("organization.errors.model");
+    if (plan.effectiveStages.includes("organizeKnowledge") && !plan.organization && !plan.integrateWiki) {
+      const policyId = (await createSettingsRepository(pool).get<{policyId:string}>(knowledgeAutomationPolicyKey))?.policyId;
+      const policy = policyId ? await createWikiCuratorRepository(pool).policy(policyId) : null;
+      if (!policy) throw new Error("organization.errors.policy");
+      plan = { ...plan, integrateWiki: { version: 2, policyId: policy.id, policyRevisionId: policy.revisionId } };
+    }
     const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
     const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
     const promptPin=capturePromptPin(plan.organization?.domainId),promptProviders=await promptStageProviders(pool);

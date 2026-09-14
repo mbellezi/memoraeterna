@@ -83,6 +83,11 @@ not another editable authority. A settings-only copy is not runtime coverage.
 
 ## Models, profiles, and parameters
 
+- Model-facing language variables and prompt policy language fields use full
+  English language names, including Brazilian Portuguese. Runtime and previews
+  share the serializer. Internal locale codes and original source prose remain
+  unchanged. Affected prompt fingerprints include the serializer change.
+
 - Each profile references exactly one model and defines task-specific overrides.
   The selected model determines execution location; there is no independent
   local-only/remote permission. Legacy privacy fields remain readable for stored

@@ -1,6 +1,7 @@
 import {organizationAiFailure} from './ai-task-parameters.js';
 import { WikiCollection } from './wiki-collection.js';
 import { WikiCurator } from './wiki-curator.js';
+import { KnowledgeAutomation } from './knowledge-automation.js';
 import { organizationMetadataConfiguration, renderPrompt, capturePromptPin, withPromptPin, catalogInstructions } from "./prompt-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -80,8 +81,9 @@ export function organizationCheckpointWithUsage(checkpoint:OrganizationCheckpoin
 }
 export class OrganizationService {
   constructor(private readonly options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;sampleMaintenance?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null,routine:"weekly"|"monthly"|"cleanup")=>Promise<string>;validateMaintenanceActivation?:(id:string,config:import("@app/domain").OrganizationConfiguration,previous:import("@app/domain").OrganizationConfiguration,language:string)=>Promise<void>;sampleConsultation?:(revisionId:string,profileId:string|undefined,privacy:"offline_only"|"allow_remote",domainId:string|null)=>Promise<OrganizationRun>}){}
-  async automaticStart(input:import("zod").z.input<typeof import("@app/domain").CuratorStartSchema>,participation:import("@app/domain").CuratorSnapshot["participation"]){try{return await new WikiCurator(this.options).start(input,participation);}catch(error){if(!String(error).includes('organization.errors.scopeLimit'))throw error;return import('@app/domain').then(async domain=>domain.WikiBootstrapSchema.parse(await new WikiCollection(this.options).command({command:'bootstrap',input:{policyId:input.policyId,policyRevisionId:input.policyRevisionId,sourceIds:input.sourceIds,noteIds:input.noteIds??[]}},participation)));}}
-  automaticCommand(input:import("@app/domain").CuratorCommand){return new WikiCurator(this.options).command(input);}
+  async automaticStart(input:import("zod").z.input<typeof import("@app/domain").CuratorStartSchema>,participation:import("@app/domain").CuratorSnapshot["participation"]){try{return await new WikiCurator(this.options).start(input,participation);}catch(error){if(!/(?:organization.errors.(scopeLimit|context)|maintenance.errors.budget)/.test(String(error)))throw error;return import('@app/domain').then(async domain=>domain.WikiBootstrapSchema.parse(await new WikiCollection(this.options).command({command:'bootstrap',input:{policyId:input.policyId,policyRevisionId:input.policyRevisionId,sourceIds:input.sourceIds,noteIds:input.noteIds??[]}},participation)));}}
+  initializeAutomation(){return new KnowledgeAutomation(this.options).initialize();}
+  automaticCommand(input:import("@app/domain").CuratorCommand){if(input.command==='automationDeliveries')return new KnowledgeAutomation(this.options).deliveries(input.policyId,input.sourceIds,input.offset,input.revisionId);if(input.command==='automationAssets')return new KnowledgeAutomation(this.options).assets(input.offset);if(input.command==='automationSources')return new KnowledgeAutomation(this.options).sources(input.offset);if(input.command==='automationDashboard')return new KnowledgeAutomation(this.options).dashboard(input.offset,input.filter);return new WikiCurator(this.options).command(input);}
   collectionCommand(input:import("zod").z.input<typeof import("@app/domain").WikiCollectionCommandSchema>){return new WikiCollection(this.options).command(input);}
   automaticTick(){return new WikiCollection(this.options).tick();}
   private repo(){const pool=this.options.getPool();if(!pool)throw new Error('wiki.errors.unavailable');return createOrganizationRepository(pool);}

@@ -210,7 +210,13 @@ void app.whenReady().then(() => {
     getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
+  async function initializeKnowledgeDefaults(){
+    await promptService.initialize();
+    await investigationService.initialize();
+    await organizationService.initializeAutomation();
+  }
   libraryResetService = new LibraryResetService({
+    restoreDefaults: initializeKnowledgeDefaults,
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData")
@@ -344,8 +350,7 @@ void app.whenReady().then(() => {
   activeMainWindow = createMainWindow();
   serviceStartupPromise = databaseService.start().then(async (status) => {
     if (status.state === "ready") {
-      await promptService.initialize();
-      await investigationService.initialize();
+      await initializeKnowledgeDefaults();
       await monitoringService.recover();
       await Promise.all([
         localModelService?.start(),

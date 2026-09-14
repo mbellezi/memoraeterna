@@ -50,10 +50,14 @@ worker supervision, progress, cancellation, retry, or restart recovery.
   running, failed/canceled or completed state even after the ingestion job ends.
 - Aggregate progress never hides a failed child. Canceling a batch requests
   cancellation for active/pending runs while preserving completed results.
-- Dashboard cleanup dismisses succeeded and failed jobs of every type using
-  `payload.dashboardDismissedAt`, preserving execution records and audit links.
-  Queue admission is unaffected; retry removes the dismissal and active jobs
-  remain visible. Canceled-run deletion retains its separate confirmed flow.
+- Dashboard cleanup dismisses succeeded, failed and canceled jobs of every type
+  using `payload.dashboardDismissedAt`, preserving execution records and audit
+  links. A completed dispatcher cannot hide a pending canonical ingestion,
+  organization or maintenance run. The same atomic action records a display-only
+  timestamp cutoff in settings for terminal execution histories, including older
+  records with no job. Later state changes remain visible. Queue admission is
+  unaffected; retry removes job dismissal and active work remains visible.
+  Canceled-run deletion retains its separate confirmed flow.
 - Collective stages honor their barriers: note matching waits for selected note
   generation, and root aggregation waits for the required child summaries.
 - Failure in one independent child does not invalidate completed siblings.
@@ -129,7 +133,7 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   activate policy, select a new model or raise a budget.
 - Automatic impact consumers use the per-consumer delivery ownership in
   `rules/database.md`. Persist generation/causal run/group and acknowledge only
-  a durable apply, unchanged-inspection or explicit exclusion receipt. A global
+  a durable apply, unchanged-inspection, terminal negative outcome or explicit exclusion receipt. A global
   legacy consumption timestamp is not acknowledgment for another consumer.
 - Automatic routine occurrences retain cumulative calls, tokens, unknown usage,
   reservations, deadlines, cursor and receipts across deferral/restart/retry.
@@ -155,9 +159,9 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   rule. Continue rejecting unknown task fields; never make task schemas permissive
   merely to accept admission or retry metadata. Non-AI jobs obey this boundary too.
 
-- `integrateWiki` version 2 is a title-free choice on the existing explicitly
-  selected `organizeKnowledge` stage. Legacy plans/presets keep their meaning and
-  DAG. It references an enabled policy revision and adds no summary, note, vector,
+- `integrateWiki` version 2 is a title-free binding on the existing selected
+  `organizeKnowledge` stage. Persisted plans retain their effective stages; new
+  full processing includes organization. It references a policy revision and adds no summary, note, vector,
   matching or graph prerequisite. Selected-stage barriers and omissions remain
   owned by existing ingestion checkpoints. Processing-batch metadata pins the
   source-free catalog at admission, including batches reusing all other artifacts.
@@ -217,8 +221,9 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
 
 - Resolve maintenance bootstrap/child attention and retained human-review state
   before accruing clocks or restoring inference authority. Review, uncertainty
-  and semantic failures remain distinct blockers; their waiting time is deferred,
-  not active execution, and polling cannot reset their decisions. A new manual
+  and semantic failures remain distinct outcomes. Only actionable review retains
+  waiting state; exhausted validation is a terminal rejection. Polling cannot
+  reset decisions or recreate occurrences for the same retained negative input. A new manual
   occurrence records the actual request due time in snapshot and receipt; joining
   an existing occurrence retains that occurrence's original due time.
 

@@ -187,14 +187,17 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.libraryReset, () => {
     if (resetInProgress) return resetInProgress;
     resetInProgress = (async () => {
+      let resetCompleted=false;
       try {
         await integrationGateway.stop();
         await Promise.all([jobSupervisor.stop(), localModelService.shutdown()]);
         await metadataEnrichmentService.clearCache();
         await session.defaultSession.clearCache();
-        return await libraryResetService.reset();
+        const result=await libraryResetService.reset();
+        resetCompleted=true;
+        return result;
       } finally {
-        await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
+        if(resetCompleted)await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
       }
     })().finally(() => { resetInProgress = null; });
     return resetInProgress;

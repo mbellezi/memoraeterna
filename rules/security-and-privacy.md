@@ -66,7 +66,11 @@ processing, destructive operations, backups, or sensitive logging.
   (including embedding models). It also resets other preferences, matching
   presets, storage bindings, integrations, wiki, harness configuration/schedules,
   all histories and every vector family. Migration history and extensions remain;
-  recreate only the empty projection clock needed for future synchronization.
+  recreate the empty projection clock needed for future synchronization. Before
+  reset reports success and background services resume, reload default prompts and
+  reinstall the initial Wiki structure, primary automatic policy and four enabled
+  basic routines through the same idempotent initialization used at startup.
+  Missing model configuration remains visible readiness; reset itself runs no AI.
 - Reset table coverage follows the application schema with an explicit model
   preservation allowlist. Relational cleanup and AGE projection removal share a
   transaction, without cascading into preserved model configuration.

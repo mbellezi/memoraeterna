@@ -2,7 +2,7 @@ import {renderInterpretationHistory} from "./interpretation-projection.js";
 import { posix } from 'node:path';
 import { createHash } from 'node:crypto';
 import { createDocumentRepository, createObsidianSyncRepository, createObsidianWikiRepository, createWikiRepository, createObsidianEditorialRepository, type PgPool } from '@app/db';
-import { WikiPageSchema, type WikiPage } from '@app/domain';
+import { wikiAreaIds, WikiPageSchema, type WikiPage } from '@app/domain';
 import { translate, type MessageKey } from '@app/i18n';
 import { outsideCodeFences, markdownHeading, wikiLink, safeWikiLabel, sectionStart, sectionEnd, sourceOriginalStart, sourceOriginalEnd, type ObsidianLayoutConfig, type ObsidianManagedFrontmatter } from '@app/integration-contracts';
 import { layoutLabels, pathIdentity, portableName, sourceLayoutPath } from './obsidian-layout-paths.js';
@@ -47,6 +47,12 @@ export async function buildObsidianMirror(pool: PgPool, root: string, scope: Obs
     if(paths.has(page.id))return paths.get(page.id)!;
     if(seen.has(page.id))throw new Error('wiki.errors.cycle');seen.add(page.id);
     const parent=pages.find(p=>p.id===page.parentId),role=page.automatic?.role;
+    const systemArea=Object.entries(wikiAreaIds).find(([,id])=>id===page.id)?.[0];
+    if(systemArea){
+      const areaNames:Record<string,string>={themes:l.topics,entities:l.entities,syntheses:l.syntheses,investigations:l.investigations,maps:l.maps};
+      const folder=areaNames[systemArea];
+      return reserve(page.id,folder?posix.join(root,'Wiki',folder,l.index+'.md'):posix.join(root,'Wiki',l.entities,portableName(page.title),l.index+'.md'));
+    }
     if(role?.kind==='collection' && role.role==='source_toc' && role.owner?.kind==='source' && paths.has(role.owner.id))return reserve(page.id,posix.join(posix.dirname(paths.get(role.owner.id)!),l.sourceNotes+'.md'));
     if(role?.kind==='collection'&&role.role==='topic_toc'&&role.owner?.kind==='page'){const owner=pages.find(p=>p.id===role.owner!.id);if(owner)return reserve(page.id,posix.join(posix.dirname(pagePath(owner,seen)),l.index+'.md'));}
     const area=role?.kind==='synthesis'&&role.role==='investigation'?l.investigations:role?.kind==='collection'&&role.role==='map'?l.maps:page.kind==='topic'?l.topics:page.kind==='entity'?l.entities:page.kind==='synthesis'?l.syntheses:l.maps;

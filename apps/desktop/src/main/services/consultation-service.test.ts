@@ -47,10 +47,10 @@ describe('bounded cited consultation',()=>{
   expect(query.slots.advanced).not.toBe('Write page Topic');expect(query.slots.guidance).toBe('Global guidance');
   expect(resolveOrganizationInstructions({...old,functionsVersion:2,consultation:{guidance:'Answer only'}},null,'Topic','en','consultation').slots).toEqual({guidance:'Answer only',advanced:'Write page Topic'});
  });
- it('adds only segmentation prerequisites to explicit organization; named and immutable legacy plans stay unchanged',()=>{
+ it('keeps direct organization independent and includes it in new full processing',()=>{
   const base={preset:'custom' as const,requestedStages:['organizeKnowledge' as const],scope:'source_only' as const,targetSourceItemIds:[],forceRegeneration:false,previousArtifactPolicy:'reuse_valid' as const};
   expect(resolveProcessingPlan(base).effectiveStages).toEqual(['conversion','structureDetection','structureReview','materialization','chunking','organizeKnowledge']);
-  expect(resolveProcessingPlan({...base,preset:'full_knowledge'}).effectiveStages).not.toContain('organizeKnowledge');
+  expect(resolveProcessingPlan({...base,preset:'full_knowledge'}).effectiveStages).toContain('organizeKnowledge');
   expect(resolveProcessingPlan({...base,preset:'import_only'}).effectiveStages).not.toContain('organizeKnowledge');
  });
 });

@@ -127,7 +127,6 @@ const scopes: Array<{
     iconStyle: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
   },
   {id:"prompts",icon:Sparkles,label:"prompts.title",description:"prompts.navigationDescription",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
-  {id:"organization",icon:Sparkles,label:"organization.title",description:"organization.description",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
   {
     id: "matching",
     icon: Network,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { ChevronDown, ChevronRight, FileText, Search, RotateCcw } from 'lucide-react';
 import { PromptOverviewSchema, PromptDetailSchema, PromptPreviewSchema, promptVariablesUsed, parsePromptTemplate, promptCategoryLabels, promptLabel, type PromptDefinition, type PromptCommand } from '@app/domain';
@@ -108,6 +108,12 @@ export function PromptField({ definition, field, text, onChange, language, t, er
     }>;
 }) {
     const input = useRef<HTMLTextAreaElement>(null), highlight = useRef<HTMLPreElement>(null);
+    useLayoutEffect(()=>{
+        const editor=input.current,layer=highlight.current;if(!editor||!layer)return;
+        const sync=()=>{layer.style.width=editor.clientWidth+'px';layer.style.height=editor.clientHeight+'px';layer.scrollTop=editor.scrollTop;layer.scrollLeft=editor.scrollLeft;};
+        sync();const observer=new ResizeObserver(sync);observer.observe(editor);
+        return()=>observer.disconnect();
+    },[text]);
     const used = fieldVariableKeys(text), variables = used.map(key => ({ key, definition: definition.variables.find(v => v.key === key) }));
     function insert(key: string) { const el = input.current; if (!el)
         return; const next = insertPromptVariable(text, key, el.selectionStart, el.selectionEnd); onChange(next.text); requestAnimationFrame(() => { el.focus(); el.setSelectionRange(next.cursor, next.cursor); }); }
@@ -115,7 +121,7 @@ export function PromptField({ definition, field, text, onChange, language, t, er
     return <section className={card} aria-labelledby={`label-${field.id}`}>
   <label id={`label-${field.id}`} htmlFor={`prompt-${field.id}`} className="mb-2 block font-semibold">{t(field.editable ? 'prompts.body' : 'prompts.contract')}</label>
   {field.editable ? <><div className="relative overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700">
-   <pre ref={highlight} aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words p-3 font-mono text-sm leading-6 text-transparent">{parts.map((part, i) => part.variable ? <mark key={i} className={`rounded text-transparent ${part.known ? 'bg-cyan-500/20' : 'bg-red-500/25'}`}>{part.text}</mark> : part.text)}{'\n'}</pre>
+   <pre ref={highlight} aria-hidden="true" className="pointer-events-none absolute left-0 top-0 overflow-hidden whitespace-pre-wrap break-words p-3 font-mono text-sm leading-6 text-transparent">{parts.map((part, i) => part.variable ? <mark key={i} className={`rounded text-transparent ${part.known ? 'bg-cyan-500/20' : 'bg-red-500/25'}`}>{part.text}</mark> : part.text)}{'\n'}</pre>
    <textarea ref={input} id={`prompt-${field.id}`} aria-describedby={`variables-${field.id}`} aria-invalid={!!errors.length} spellCheck={false} className="relative block min-h-64 w-full resize-y bg-transparent p-3 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-500" value={text} onChange={e => onChange(e.target.value)} onScroll={e => { if (highlight.current) {
             highlight.current.scrollTop = e.currentTarget.scrollTop;
             highlight.current.scrollLeft = e.currentTarget.scrollLeft;

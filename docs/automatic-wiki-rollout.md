@@ -1,5 +1,10 @@
 # Automatic wiki: controlled setup and rollout
 
+The current successor workflow is documented in
+[Automatic knowledge workflow](automatic-knowledge-workflow.md). Startup installs
+Wiki areas and enabled routines; Knowledge automation owns operation and readiness.
+The explicit activation/bootstrap steps below describe the previous rollout.
+
 This runbook describes the implemented local workflow. Product acceptance and
 remaining release gates are recorded in [the A8 report](automatic-wiki-a8-report.md).
 The unpacked macOS artifact is a development validation output; staging alone

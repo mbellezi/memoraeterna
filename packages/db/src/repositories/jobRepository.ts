@@ -1,4 +1,5 @@
 import type { QueryResultRow } from "pg";
+import { taskHistoryCutoffKey, terminalTaskStatusesSql } from './taskHistory.js';
 
 import {
   asJsonObject,
@@ -247,10 +248,17 @@ export function createJobRepository(db: Queryable) {
 
     async clearCompletedOrFailed(): Promise<number> {
       const result = await db.query(
-        `update jobs
-         set payload = jsonb_set(payload, '{dashboardDismissedAt}', to_jsonb(now()::text))
-         where status in ('succeeded', 'failed')
-           and payload->>'dashboardDismissedAt' is null`
+        `with cutoff as (
+           insert into settings(key,value) values($1,jsonb_build_object('before',clock_timestamp()))
+           on conflict(key) do update set value=excluded.value,updated_at=now() returning value
+         ) update jobs j
+         set payload = jsonb_set(j.payload, '{dashboardDismissedAt}', (select value->'before' from cutoff))
+         where j.status in ('succeeded', 'failed', 'canceled')
+           and j.payload->>'dashboardDismissedAt' is null
+           and not exists(select 1 from organization_runs r where r.job_id=j.id and r.status not in ${terminalTaskStatusesSql})
+           and not exists(select 1 from maintenance_runs r where r.job_id=j.id and r.status not in ${terminalTaskStatusesSql})
+           and not exists(select 1 from ingestion_runs r where r.job_id=j.id and r.status::text not in ${terminalTaskStatusesSql})`,
+        [taskHistoryCutoffKey]
       );
       return result.rowCount ?? 0;
     },

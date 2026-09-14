@@ -228,18 +228,16 @@ describe("source matching budget and recovery",() => {
     expect(mocks.repository.pairChunks).not.toHaveBeenCalled();
     expect(ai).not.toHaveBeenCalled();
   });
-  it("upgrades v1 failed checkpoints without losing spent budgets or completed decisions",async() => {
+  it("preserves spent budgets and decisions when language serialization invalidates an old checkpoint",async() => {
     const settings={...defaultSourceRelationSettings,maxInputTokens:200000};
     const configuration=createHash("sha256").update(JSON.stringify({version:"source-relations-v1",language:"en",settings,
       profile:"profile",provider:"provider",model:"model",runtime:"local",localModel:null,revision:"r1",parameters:{},defaults:{}})).digest("hex");
     states.set("run:root-A",{settings,configuration,pairs:["done","failed"],completed:["done"],attempts:{done:1,failed:2},
       inputTokens:10000,proposals:1,persistedCount:1,partial:false,finished:false});
     const ai=vi.fn().mockResolvedValue(execution({relations:[]}));
-    const result=await run(ai);
-    expect(ai).toHaveBeenCalledTimes(1);
-    expect(result.inputTokens).toBeGreaterThan(10000);
-    expect(result.persistedCount).toBe(1);
-    expect(states.get("run:root-A")).toMatchObject({completed:["done",expect.any(String)],proposals:1,attempts:{failed:2}});
+    await expect(run(ai)).rejects.toThrow("errors.sourceRelations.configurationChanged");
+    expect(ai).not.toHaveBeenCalled();
+    expect(states.get("run:root-A")).toMatchObject({completed:["done"],inputTokens:10000,persistedCount:1,proposals:1,attempts:{failed:2}});
   });
 });
 

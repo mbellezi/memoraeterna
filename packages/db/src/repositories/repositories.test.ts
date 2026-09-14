@@ -412,7 +412,7 @@ describe("repositories", () => {
     expect(db.queries[3]?.values).toEqual(["run-2"]);
   });
 
-  it("dismisses completed or failed jobs without deleting audit records", async () => {
+  it("dismisses terminal jobs and task history without deleting audit records", async () => {
     let queryText = "";
     const db: Queryable = {
       async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
@@ -430,12 +430,14 @@ describe("repositories", () => {
     const deletedCount = await createJobRepository(db).clearCompletedOrFailed();
 
     expect(deletedCount).toBe(2);
-    expect(queryText).toContain("status in ('succeeded', 'failed')");
+    expect(queryText).toContain("j.status in ('succeeded', 'failed', 'canceled')");
     expect(queryText).toContain("dashboardDismissedAt");
     expect(queryText).not.toContain("delete from");
     expect(queryText).not.toContain("type not in");
-    expect(queryText).not.toContain("canceled");
-    expect(queryText).not.toContain("running");
+    expect(queryText).toContain("insert into settings");
+    expect(queryText).toContain("not exists(select 1 from organization_runs");
+    expect(queryText).toContain("not exists(select 1 from maintenance_runs");
+    expect(queryText).toContain("not exists(select 1 from ingestion_runs");
   });
 
   it("attaches effective AI execution metadata to a running job", async () => {

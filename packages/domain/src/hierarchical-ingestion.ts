@@ -166,7 +166,7 @@ export const processingPresetStages: Readonly<Record<Exclude<ProcessingPreset, "
   summary: ["conversion", "structureDetection", "structureReview", "materialization", "chunking", "summarization"],
   full_knowledge: [
     "conversion", "structureDetection", "structureReview", "materialization", "chunking", "embedding",
-    "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching"
+    "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching", "organizeKnowledge"
   ]
 };
 

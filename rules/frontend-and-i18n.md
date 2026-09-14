@@ -538,3 +538,9 @@ job statuses, or user-visible backend errors.
 - History offers read-only revision navigation, including complete historical
   TOCs and typed note links, without requiring a restore write. Back navigation
   preserves the explicitly viewed revision.
+
+- Prompt variable highlighting must share the textarea's actual client viewport,
+  typography, wrapping and scroll position, including native scrollbar space.
+  Resizing and text changes resynchronize the highlight layer without changing
+  prompt bytes or selection. Verify wrapped and scrolled token geometry in the
+  real renderer; tokenizer tests alone do not establish visual alignment.

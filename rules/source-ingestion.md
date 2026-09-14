@@ -219,7 +219,7 @@ caller's `requestedStages` directly.
 
 - `search_ready` adds chunking/embedding to import; `summary` adds
   chunking/summarization; `full_knowledge` adds chunking, embedding, summary,
-  notes, graph, note matching and source matching. Source matching has a
+  notes, graph, note matching, source matching and automatic Wiki integration. Source matching has a
   collective barrier and root budgets defined in `rules/source-relations.md`.
   Projection and aggregate summarization are not
   explicit stages of `full_knowledge`; root aggregation is coordinated by the
@@ -295,3 +295,13 @@ configured test PostgreSQL instance; unit tests are not a substitute for it.
   including legacy catalog records without a complete descriptor. Source revision
   timestamps advance by at least one millisecond so IPC timestamps remain valid
   optimistic revisions. Saving content creates no processing jobs.
+
+
+- New ingestion and Library processing expose only title-free Wiki organization.
+  The backend binds the selected stage to the installed primary policy. It never
+  asks for a topic title. Retain legacy snapshots and dispatch for historical work.
+- The full processing preset includes organizeKnowledge. Import-only performs no
+  AI in its batch; independently enabled maintenance may later integrate eligible
+  originals through its normal queue. Model/policy/budget blockers stay visible.
+- Obsidian is not an optional checkbox in new plans. Configured, enabled, unpaused
+  sync follows canonical changes. Retain the old stage identifier for saved plans.

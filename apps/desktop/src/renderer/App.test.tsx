@@ -64,6 +64,6 @@ describe("compact main navigation", () => {
     expect(html).toContain('w-16');
     const navigation = html.slice(html.indexOf('<nav id="app-navigation"'), html.indexOf('</nav>'));
     expect(navigation).not.toContain('>Library</button>');
-    expect(navigation.match(/<button/g)).toHaveLength(9);
+    expect(navigation.match(/<button/g)).toHaveLength(10);
   });
 });

@@ -1,3 +1,4 @@
+import { wikiAreaIds } from "@app/domain";
 import {readNoteEvidence,retainedNoteCurrentSql} from "./noteEvidence.js";
 import {isDeepStrictEqual} from 'node:util';
 import type { SectionAssessment, WikiPageContent } from '@app/domain';
@@ -43,7 +44,7 @@ export function createWikiRepository(pool: PgPool) {
       const forest=`with recursive live as(select p.id,p.parent_id,p.position,p.title from wiki_pages p where not p.archived and p.current_revision_id is not null), walk as(select id as start,id,parent_id,array[id] as path from live union all select w.start,p.id,p.parent_id,w.path||p.id from walk w join live p on p.id=w.parent_id where not p.id=any(w.path)), cycle_roots as(select distinct (select min(x::text)::uuid from unnest(path[array_position(path,parent_id):]) x) id from walk where parent_id=any(path)), forest as(select l.id,case when c.id is not null or parent.id is null then null else l.parent_id end parent_id from live l left join live parent on parent.id=l.parent_id left join cycle_roots c on c.id=l.id)`;
       const select=`select ${pageColumns.replace('r.content',"r.content - 'sections' - 'automatic' as content")},f.parent_id as "treeParent",exists(select 1 from forest child where child.parent_id=p.id) as "hasChildren" from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id join forest f on f.id=p.id`;
       const map=(row:Record<string,any>)=>{const {sections:_sections,automatic:_automatic,...item}=flatten(row);return{...item,parentId:row.treeParent,hasChildren:row.hasChildren};};
-      if(input.view==='recent'||input.view==='pinned'){const rows=(await pool.query(`${forest} ${select} where ($1='recent' or (r.content->>'pinned')::boolean) order by p.updated_at desc,p.id limit $2`,[input.view,input.limit])).rows;return{items:rows.map(map),next:null,path:[]};}
+      if(input.view==='recent'||input.view==='pinned'){const rows=(await pool.query(`${forest} ${select} where ($1='recent' or (r.content->>'pinned')::boolean) and ($1<>'recent' or not p.id=any($3::uuid[])) order by p.updated_at desc,p.id limit $2`,[input.view,input.limit,Object.values(wikiAreaIds)])).rows;return{items:rows.map(map),next:null,path:[]};}
       const rows=(await pool.query(`${forest} ${select} where f.parent_id is not distinct from $1::uuid and ($2::uuid is null or (p.position,p.title,p.id)>($3,$4,$2::uuid)) order by p.position,p.title,p.id limit $5`,[input.parentId,input.after?.id??null,input.after?.position??0,input.after?.title??'',input.limit+1])).rows;
       const items=rows.slice(0,input.limit).map(map),last=items.at(-1);
       const path=input.pathTo?(await pool.query(`${forest}, ancestors as(select id,parent_id from forest where id=$1 union all select p.id,p.parent_id from forest p join ancestors a on p.id=a.parent_id) ${select} where p.id in(select id from ancestors)`,[input.pathTo])).rows.map(map):[];
@@ -109,6 +110,10 @@ export function createWikiRepository(pool: PgPool) {
         const current = (await db.query("select p.*,r.content,r.number from wiki_pages p left join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1 for update of p", [id])).rows[0];
         if ((input.id && !current && !authority?.allocatedTarget) || (current?.current_revision_id ?? null) !== input.expectedRevisionId) throw new Error("wiki.errors.conflict");
         const content = structuredClone(input.content);
+        if (!current && !content.parentId && !Object.values(wikiAreaIds).includes(id as typeof wikiAreaIds[keyof typeof wikiAreaIds])) {
+          const area = content.kind === 'topic' ? wikiAreaIds.themes : content.kind === 'entity' ? wikiAreaIds.entities : content.kind === 'synthesis' ? content.automatic?.role.role === 'investigation' ? wikiAreaIds.investigations : wikiAreaIds.syntheses : wikiAreaIds.maps;
+          if ((await db.query('select 1 from wiki_pages where id=$1', [area])).rows.length) content.parentId = area;
+        }
         if(!authority||authority.origin==="human")content.automatic=(current?.content as Content|undefined)?.automatic;
         if(input.version===2&&current){
           const old=current.content as Content; content.automatic=old.automatic;

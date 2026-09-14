@@ -39,7 +39,7 @@ export function MaintenanceExplanation({run}:{run:Pick<MaintenanceRun,'status'|'
  if(run.status!=='no_change'||!run.checkpoint.calls||!run.proposal||run.proposal.operations.length)return null;
  return <p className={`${card} whitespace-pre-wrap text-sm leading-6`}>{run.proposal.explanation}</p>;
 }
-function RunDetail({id,t,onClose,onChanged}:{id:string;t:Translator;onClose:()=>void;onChanged:()=>void}){
+export function RunDetail({id,t,onClose,onChanged}:{id:string;t:Translator;onClose:()=>void;onChanged:()=>void}){
  const [restored,setRestored]=useState<string[]>([]);const [run,setRun]=useState<MaintenanceRun|null>(null),[error,setError]=useState<MessageKey|null>(null),[busy,setBusy]=useState(false);
  // Background success preserves review/restore errors until another explicit action.
  const refresh=useCallback(async()=>{try{setRun(MaintenanceRunSchema.parse(await command({command:'get',id})));}catch(e){setError(errorKey(e));}},[id]);

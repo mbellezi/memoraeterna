@@ -19,6 +19,7 @@ transitive references explicitly named inside a selected rule.
 | Conceptual source relationships, reuse of note relationships, source matching/review, or source graph views | `rules/source-relations.md` |
 | Search in sources, Library search, evidence/chunk/note search, retrieval filters, semantic floors, or search ranking | `rules/source-search.md` |
 | Second-brain organization or consultation, wiki pages/hierarchy, organization/harness instruction settings, periodic reorganization/cleanup, or wiki projection/editing in Obsidian | `rules/second-brain.md` |
+| Automatic knowledge startup, default routines, unified operations dashboard, processing-to-Wiki journey, or removal of legacy operations | `rules/automatic-knowledge-workflow.md` |
 | Renderer components, product copy, styles, accessibility, themes, locales, or user-visible backend messages | `rules/frontend-and-i18n.md` |
 | Integration Gateway, Chrome extension, YouTube capture, Obsidian plugin, vault projection, pairing, or sync | `rules/integrations.md` |
 | Secrets, external input, filesystem access, network access, remote AI, deletion, backups, logs, or privacy-sensitive behavior | `rules/security-and-privacy.md` |

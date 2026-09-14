@@ -1,3 +1,4 @@
+import { KnowledgeAutomationView } from "./components/KnowledgeAutomationView";
 import { subscribeWindowNavigation } from './lib/window-navigation';
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
@@ -5,6 +6,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   BriefcaseBusiness,
   Activity,
+  Sparkles,
   ClipboardCheck,
   Database,
   FilePlus2,
@@ -56,7 +58,7 @@ import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog"
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
-type ViewId = "wiki" | "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
+type ViewId = "automation" | "wiki" | "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
@@ -70,6 +72,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
+  { id: "automation", label: "automation.title", icon: Sparkles },
   { id: "wiki", label: "wiki.title", icon: BookOpen },
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
   { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
@@ -82,6 +85,7 @@ const navItems: NavItem[] = [
 ];
 
 const emptyViews: Record<Exclude<ViewId, "settings" | "review" | "debug">, { title: MessageKey; empty: MessageKey }> = {
+  automation: { title: "automation.title", empty: "automation.empty" },
   wiki: { title: "wiki.title", empty: "wiki.empty" },
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
@@ -611,6 +615,8 @@ export function App({
               onScopeChange={selectSettingsScope}
               onToast={(message, tone) => pushToast(t(message), tone)}
             />
+          ) : activeView === "automation" ? (
+            <KnowledgeAutomationView t={t} contentLanguage={appSettings.contentLanguage} onSettings={scope=>{setActiveSettingsScope(scope);setActiveView("settings");}}/>
           ) : activeView === "import" ? (
             <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
           ) : activeView === "wiki" ? (null
@@ -626,7 +632,7 @@ export function App({
               }}
             />
           ) : activeView === "jobs" ? (
-            <JobsView t={t} />
+            <><KnowledgeAutomationView compact t={t} contentLanguage={appSettings.contentLanguage} onSettings={scope=>{setActiveSettingsScope(scope);setActiveView("settings");}}/><JobsView t={t} showHistoryCleanup={false} /></>
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
           ) : activeView === "knowledgeGraph" ? (

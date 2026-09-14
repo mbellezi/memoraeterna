@@ -25,6 +25,7 @@ export class WikiCollection {
   }
   const run=await repo.get(c.id);if(!run)throw new Error('organization.errors.invalid');
   if(c.command==='bootstrapGet')return run;
+  if(run.checkpoint.state==='rejected')throw new Error('organization.errors.rejected');
   if(c.command==='bootstrapCancel'){run.checkpoint.state='canceled';if(run.checkpoint.childRunId)await new WikiCurator(this.options).command({command:'cancel',id:run.checkpoint.childRunId});}
   if(c.command==='bootstrapPause')run.checkpoint.state='paused';
   if(c.command==='bootstrapResume'){
@@ -47,10 +48,10 @@ export class WikiCollection {
    if(!event.input_generation.endsWith(':'+policy.revisionId)){await repo.delivery(event.id,event.checkpoint,{kind:'excluded',reason:'policy_revised'});continue;}
    type Work={after:string|null;visited:string[];bootstrapId:string|null;discovery:boolean;childRunId:string|null;pageId:string|null;blockedReason:string|null;blockedMaintenanceRunId:string|null;outcomes:Array<{pageId:string;runId:string|null;status:string}>};
    const work:Work={after:null,visited:[],bootstrapId:null,discovery:false,childRunId:null,pageId:null,blockedReason:null,blockedMaintenanceRunId:null,outcomes:[],...event.checkpoint};
-   if(work.childRunId){const child=await new WikiCurator(this.options).get(work.childRunId);if(child&&['queued','analyzing','awaiting_review','failed','canceled','rejected'].includes(child.status)){work.blockedReason=['queued','analyzing'].includes(child.status)?null:child.checkpoint.error??'organization.errors.review';await repo.delivery(event.id,work,null,child.status==='failed'?60000:2000);continue;}work.blockedReason=null;work.outcomes.push({pageId:work.pageId!,runId:work.childRunId,status:child?.status??'missing'});work.after=work.pageId;work.childRunId=null;work.pageId=null;await repo.delivery(event.id,work,null,0);continue;}
+   if(work.childRunId){const child=await new WikiCurator(this.options).get(work.childRunId);if(child&&['rejected','canceled'].includes(child.status)){work.blockedReason=child.checkpoint.error;await repo.delivery(event.id,work,{kind:'rejected',runId:child.id,reason:child.checkpoint.error,inputFingerprint:child.snapshot.inputFingerprint});continue;}if(child&&['queued','analyzing','awaiting_review','failed','canceled','rejected'].includes(child.status)){work.blockedReason=['queued','analyzing'].includes(child.status)?null:child.checkpoint.error??'organization.errors.review';await repo.delivery(event.id,work,null,child.status==='failed'?60000:2000);continue;}work.blockedReason=null;work.outcomes.push({pageId:work.pageId!,runId:work.childRunId,status:child?.status??'missing'});work.after=work.pageId;work.childRunId=null;work.pageId=null;await repo.delivery(event.id,work,null,0);continue;}
    const unresolved=work.outcomes.some(outcome=>!['applied','causal_output_already_applied','scope_decision'].includes(outcome.status));
    if(work.bootstrapId&&unresolved){work.blockedReason??='organization.errors.review';await repo.delivery(event.id,work,null);continue;}
-   if(work.bootstrapId){const run=await repo.get(work.bootstrapId);if(run&&['complete','attention','canceled'].includes(run.checkpoint.state)){await repo.delivery(event.id,work,{kind:run.checkpoint.state,runId:run.id,outcomes:work.outcomes});}else await repo.delivery(event.id,work,null);continue;}
+   if(work.bootstrapId){const run=await repo.get(work.bootstrapId);if(run&&['complete','attention','canceled','rejected'].includes(run.checkpoint.state)){await repo.delivery(event.id,work,{kind:run.checkpoint.state,runId:run.id,outcomes:work.outcomes});}else await repo.delivery(event.id,work,null);continue;}
    const allowed=await curator.allowed(policy),dependent=(await repo.dependents(event.kind,event.input_id,work.after,1))[0];
    if(dependent){
     const key=dependent.id+':'+dependent.revision_id;
@@ -90,7 +91,7 @@ export class WikiCollection {
    if(checkpoint.childRunId){
     const child=await new WikiCurator(this.options).get(checkpoint.childRunId);if(!child)throw new Error('organization.errors.invalid');
     if(['queued','analyzing'].includes(child.status))return;
-    if(child.status!=='applied'){checkpoint.state='attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
+    if(child.status!=='applied'){checkpoint.state=child.status==='rejected'?'rejected':'attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
     if(checkpoint.phase==='notes'){checkpoint.noteCursor+=child.snapshot.references.filter(r=>r.kind==='atomic_note').length||1;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     checkpoint.sourceCovered+=checkpoint.pendingOriginals;checkpoint.completedGroups++;checkpoint.childRunId=null;checkpoint.afterChunk=checkpoint.nextChunk;
     await repo.coverage(policy.id,checkpoint.sourceId!,checkpoint.sourceFingerprint!,checkpoint.nextChunk||run.snapshot.noteIds.length?'partial':'integrated',checkpoint.sourceCovered,run.id);
@@ -107,9 +108,9 @@ export class WikiCollection {
    const originals=await curator.evidencePage([checkpoint.sourceId!],checkpoint.afterChunk,Math.min(6,policy.limits.originalPassages));
    if(!originals.items.length){checkpoint.afterSource=checkpoint.sourceId;checkpoint.sourceId=null;checkpoint.afterChunk=null;await repo.checkpoint(run);return;}
    let selected=originals.items,child:Awaited<ReturnType<WikiCurator['start']>>=null,next=originals.next;
-   while(!child){try{child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:[checkpoint.sourceId!],noteIds:[],evidenceChunkIds:selected.map(e=>e.chunkId)},null,{parentBootstrapId:run.id}));}catch(error){if(selected.length<=1||!String(error).match(/organization.errors.(context|scopeLimit)/))throw error;selected=selected.slice(0,Math.max(1,Math.floor(selected.length/2)));next=selected.at(-1)!.chunkId;}}
+   while(!child){try{child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:[checkpoint.sourceId!],noteIds:[],evidenceChunkIds:selected.map(e=>e.chunkId)},null,{parentBootstrapId:run.id}));}catch(error){if(selected.length<=1||!String(error).match(/(?:organization.errors.(context|scopeLimit)|maintenance.errors.budget)/))throw error;selected=selected.slice(0,Math.max(1,Math.floor(selected.length/2)));next=selected.at(-1)!.chunkId;}}
    checkpoint.childRunId=child.id;checkpoint.pendingOriginals=selected.length;checkpoint.nextChunk=next;await repo.coverage(policy.id,checkpoint.sourceId!,checkpoint.sourceFingerprint!,'analyzing',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);
 
-  }catch(error){checkpoint.state='attention';checkpoint.error=organizationAiFailure(error,'organization.errors.failed');checkpoint.attentionSources++;if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);}
+  }catch(error){if(/maintenance.errors.(wait|idle|busy|sync)$/.test(String(error))){await repo.checkpoint(run);return;}checkpoint.state='attention';checkpoint.error=organizationAiFailure(error,'organization.errors.failed');checkpoint.attentionSources++;if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);}
  }
 }

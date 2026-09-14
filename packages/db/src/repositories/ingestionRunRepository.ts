@@ -337,15 +337,15 @@ export function createIngestionRunRepository(db: Queryable) {
       }
     },
 
-    async waitForBatchStage(id: string, stage: string): Promise<void> {
+    async waitForBatchStage(id: string, stage: string, metadata: JsonObject = {}): Promise<void> {
       await db.query(
-        `update ingestion_run_stages set status = 'waiting_for_review', skip_reason = 'batch_barrier', updated_at = now()
-         where ingestion_run_id = $1 and stage = $2`, [id, stage]
+        `update ingestion_run_stages set status = 'waiting_for_review', skip_reason = 'batch_barrier', metadata=$3, updated_at = now()
+         where ingestion_run_id = $1 and stage = $2`, [id, stage, metadata]
       );
       await db.query(
         `update ingestion_runs set stages_checkpoint = jsonb_set(
-           stages_checkpoint, array[$2], jsonb_build_object('status', 'waiting_for_batch', 'metadata', '{}'::jsonb), true
-         ), updated_at = now() where id = $1`, [id, stage]
+           stages_checkpoint, array[$2], jsonb_build_object('status', 'waiting_for_batch', 'metadata', $3::jsonb), true
+         ), updated_at = now() where id = $1`, [id, stage, metadata]
       );
     },
 

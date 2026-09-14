@@ -1,0 +1,11 @@
+import {useEffect,useState} from 'react';
+import {KnowledgeAssetsSchema} from '@app/domain';
+import type {z} from 'zod';
+import type {Translator} from '@app/i18n';
+import {Button} from './ui/button';
+export function KnowledgeAssets({t,onOpenSource}:{t:Translator;onOpenSource:(id:string)=>void}){
+  const [data,setData]=useState<z.infer<typeof KnowledgeAssetsSchema>|null>(null),[offset,setOffset]=useState(0),[retry,setRetry]=useState(0),[error,setError]=useState(false);
+  useEffect(()=>{let live=true;void window.app.curator.command({command:'automationAssets',offset}).then(value=>{if(live){setData(KnowledgeAssetsSchema.parse(value));setError(false);}}).catch(()=>{if(live)setError(true);});return()=>{live=false;};},[offset,retry]);
+  async function open(id:string){try{if(!await window.app.knowledge.openAsset(id))setError(true);}catch{setError(true);}}
+  return <section className="grid gap-4"><h2 className="text-xl font-semibold">{t('automation.areas.assets')}</h2>{error&&<div role="alert" className="text-sm text-rose-600">{t('errors.common.unknown')} <Button onClick={()=>setRetry(n=>n+1)}>{t('shell.actions.retry')}</Button></div>}{!data?<p role="status">{t('shell.states.loading')}</p>:<>{!data.items.length&&<p className="rounded-xl border border-border p-5 text-sm text-muted-foreground">{t('wiki.noResults')}</p>}{data.items.map(asset=><article key={asset.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-4"><div className="min-w-0"><h3 className="break-words text-sm font-medium">{asset.title}</h3><p className="mt-1 text-xs text-muted-foreground">{asset.sourceTitle} · {(asset.bytes/1024).toLocaleString(t.locale,{maximumFractionDigits:1})} KB</p></div><div className="flex gap-2"><Button onClick={()=>void open(asset.id)}>{t('automation.inspect')}</Button>{asset.sourceId&&<Button onClick={()=>onOpenSource(asset.sourceId!)}>{t('wiki.openSource')}</Button>}</div></article>)}<div className="flex justify-between"><Button disabled={!offset} onClick={()=>{setOffset(Math.max(0,offset-50));setData(null);}}>{t('import.actions.back')}</Button><Button disabled={data.next===null} onClick={()=>{setOffset(data.next!);setData(null);}}>{t('wiki.loadMore')}</Button></div></>}</section>;
+}

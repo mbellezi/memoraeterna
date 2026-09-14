@@ -1,4 +1,91 @@
 {
+  "automation": {
+    "journeyError": "Unable to load source status. Please try again.",
+    "reviewRetainedTitle": "Proposal available for review",
+    "reviewRetainedHint": "The existing proposal awaits your decision. The routine preserves it without creating another attempt.",
+    "automaticRejection": "Rejected by automatic validation",
+    "automaticRejectionHint": "There is no valid proposal to approve. The reason and original references are preserved to inform future analysis of this source.",
+    "priorRejections": "Previous rejections considered",
+    "priorRejectionsHint": "This history is context, not evidence. Each new analysis must check current originals; a previous rejection is not a general rule.",
+    "previousRejectedText": "Previously rejected text",
+    "rejectionOriginals": "Originals from the previous analysis",
+    "retainedTitle": "Previous outcome preserved",
+    "retainedHint": "The previous analysis has ended. These same inputs will not be tried again. Its reason remains available after clearing task history.",
+    "waitingInput": "Waiting for new inputs",
+    "analysisDetails": "Analysis details",
+    "budgetBlocked": "Blocked by budget",
+    "changes": "{count} pending changes",
+    "allTasks": "View all tasks",
+    "retired": "Retired · history retained",
+    "journey": "From source to Wiki and Obsidian",
+    "complete": "Complete",
+    "imported": "Imported",
+    "stale": "Update pending",
+    "journeyColumns": {
+      "source": "Source",
+      "processing": "Processing",
+      "wiki": "Wiki",
+      "obsidian": "Obsidian"
+    },
+    "title": "Knowledge automation",
+    "description": "Follow integration, maintenance and synchronization in one place. Waiting work and decisions remain visible.",
+    "ready": "AI ready",
+    "waitingModel": "Waiting for AI configuration",
+    "modelHint": "Register a model and configure a compatible profile and the structured-output route.",
+    "models": "Models",
+    "routing": "Profiles and routing",
+    "empty": "No work in this view.",
+    "settings": "Scope and permissions",
+    "saved": "Settings saved.",
+    "inspect": "Inspect",
+    "scheduled": "Scheduled",
+    "pending": "Waiting",
+    "deferred": "Deferred",
+    "conflict": "Needs a decision",
+    "tabs": {
+      "prompts": "Prompts",
+      "sources": "Sources",
+      "overview": "Overview",
+      "tasks": "Tasks",
+      "schedules": "Schedules",
+      "decisions": "Decisions",
+      "settings": "Configuration",
+      "budget": "Budget"
+    },
+    "areas": {
+      "people": "People",
+      "organizations": "Organizations",
+      "places": "Places",
+      "works": "Works",
+      "notes": "Atomic notes",
+      "assets": "Attachments",
+      "themes": "Themes",
+      "entities": "Entities",
+      "syntheses": "Syntheses",
+      "investigations": "Investigations",
+      "maps": "Maps"
+    },
+    "coverage": {
+      "total": "Sources in the library",
+      "integrated": "Integrated into the Wiki",
+      "pending": "Awaiting complete integration"
+    },
+    "kinds": {
+      "organization": "Wiki integration",
+      "maintenance": "Knowledge maintenance",
+      "delivery": "Incremental update",
+      "schedule": "Scheduled maintenance",
+      "sync": "Obsidian synchronization"
+    },
+    "blockedHint": "This routine is blocked and has no proposal ready for approval. The diagnostics below explain the issue. Canceling ends this run and preserves its history.",
+    "reviewProposal": "Review proposal",
+    "openBlockingRun": "Open the analysis blocking this routine",
+    "clearHistory": "Clear task history",
+    "clearHistoryHint": "Removes completed, failed or canceled runs from the lists. Active tasks, schedules, unresolved work, audit and budget usage are preserved.",
+    "clearingHistory": "Clearing history…",
+    "historyCleared": "Finished-run history cleared. Unresolved work was preserved.",
+    "clearHistoryFailed": "Could not complete cleanup. Try again."
+  },
   "investigation": {
     "retained": "Saved as a followed answer page",
     "title": "Followed questions",
@@ -138,6 +225,7 @@
     "canceled": "Canceled",
     "failed": "Failed",
     "errors": {
+      "rejected": "This analysis was rejected and cannot be resumed.",
       "topicScope": "A matching topic already exists outside this source scope. Open it and explicitly select all required sources instead of creating a duplicate.",
       "wait": "The canceled model call is still settling. Wait for it to finish before retrying.",
       "invalid": "The action or settings are invalid. Review the fields and try again.",
@@ -150,7 +238,7 @@
       "modelChanged": "The pinned model identity changed or was revoked. Recreate the run.",
       "privacy": "This privacy policy requires a local generative model. No remote fallback is permitted.",
       "noEvidence": "The scope has no original passages. Catalog metadata cannot support a synthesis.",
-      "evidence": "Evidence or relationship support is unread, stale or outside scope. Create a fresh proposal.",
+      "evidence": "The evidence or relations in this proposal could not be validated. See the analysis diagnostics.",
       "review": "These changes require deliberate human review.",
       "protected": "Protected content requires human approval.",
       "budget": "The run exhausted its tool, call or reported-input allowance.",
@@ -160,7 +248,8 @@
       "canceled": "Canceled",
       "failed": "Organization failed. Check the selected profile and retry within the remaining budget.",
       "policy": "The automatic policy is paused, changed, or does not permit this operation.",
-      "scopeDecision": "Related knowledge uses sources outside this policy. Review the source scope before integration."
+      "scopeDecision": "Related knowledge uses sources outside this policy. Review the source scope before integration.",
+      "unsupported": "The proposal failed the source-faithfulness check. See the analysis diagnostics."
     }
   },
   "entityIdentity": {"threshold":"Entity identity similarity threshold","hint":"AI verifies candidates of the same type using names and identifying facts. Equal names alone never authorize a merge. Ambiguous identities remain separate. Default: 0.92 (provisional). Exact names and known aliases are also checked. Existing entities are reused when identity is confirmed; historical duplicates are not merged in bulk."},
@@ -403,7 +492,7 @@
     },
     "currentStage": "Current stage: {stage}",
     "stages": {
-      "organizeKnowledge": "Organize knowledge",
+      "organizeKnowledge": "Integrate into the Wiki",
       "queued": "Queued",
       "preparation": "Import preparation",
       "conversion": "Conversion",
@@ -566,6 +655,10 @@
     "status": { "queued": "Import queued.", "canceled": "File selection canceled.", "saved": "Source saved without background processing.", "metadataExtracted": "Metadata extracted locally. Review it before continuing.", "duplicateHandled": "Duplicate policy applied.", "reviewStructure": "Structure detected. Review it before continuing.", "draftSaved": "Structure draft saved.", "queuedChildren": "Structure confirmed and selected items queued.", "savedChildren": "Structure confirmed and selected items saved." }
   },
   "processing": {
+    "invalidPlan": "Check the processing options before continuing.",
+    "wiki": {
+      "hint": "The Wiki discovers topics and updates pages and reading indexes automatically. It uses the configured policy and waits for AI or budget when needed. No page title is required."
+    },
     "title": "Choose how far to process",
     "aiOptional": "AI is optional",
     "description": "Import first, then add only the artifacts you need. Dependencies are included automatically.",
@@ -578,7 +671,10 @@
       "import_only": { "title": "Import only", "description": "Preserve and organize the source without AI." },
       "search_ready": { "title": "Search ready", "description": "Create chunks and embeddings for retrieval." },
       "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },
-      "full_knowledge": { "title": "Full knowledge", "description": "Generate notes, graph, and matching artifacts." }
+      "full_knowledge": {
+        "title": "Complete processing",
+        "description": "Generates summaries, notes, graph and connections, and integrates knowledge into the Wiki."
+      }
     }
   },
   "structure": {
@@ -1217,7 +1313,7 @@
     "treeWidth": "Tree width: {width} pixels",
     "resizeTreeHint": "Drag to resize. Use Left/Right arrows, Home or End. Double-click to reset.",
     "resizeTree": "Resize wiki navigation",
-    "title": "Second brain",
+    "title": "Wiki",
     "subtitle": "A living space for your knowledge",
     "navigation": "Wiki navigation",
     "home": "Home",
@@ -1427,7 +1523,8 @@
       "rejected": "Rejected",
       "canceled": "Canceled",
       "failed": "Failed",
-      "sample_passed": "Sample passed"
+      "sample_passed": "Sample passed",
+      "blocked": "Blocked"
     },
     "signal": {
       "broken_reference": "Broken original reference",
@@ -1444,6 +1541,7 @@
       "obsolete_draft": "Eligible empty generated draft"
     },
     "errors": {
+      "retainedDecision": "An earlier analysis already handled these inputs. Inspect the preserved outcome; another attempt will not be created for the same data.",
       "scope": "Select a valid scope and domain.",
       "budget": "The configured run budget is invalid or exhausted.",
       "period": "The UTC calendar-month allowance is reserved or exhausted. Due work remains deferred.",
@@ -1758,6 +1856,7 @@
     "groups": "Completed groups",
     "coverage": "Coverage",
     "coverageStates": {
+      "rejected": "Rejected",
       "cataloged": "Cataloged",
       "awaiting": "Awaiting organization",
       "analyzing": "Analyzing",
@@ -1887,5 +1986,48 @@
     "knowledgeOwned": "Retained knowledge note",
     "supersededNote": "Superseded · history retained",
     "openRevision": "Open this revision"
+  },
+  "budget": {
+    "title": "Budget and limits",
+    "description": "The monthly ceiling is shared. Each run also obeys its routine and curator-group limits; the tightest limit applies.",
+    "routines": "Limits by routine",
+    "monthly": "Shared monthly budget",
+    "monthlyHint": "Calls and tokens reserved by all routines in this policy. The period renews on the first day of each month in UTC. Conservative reservations are not charges or measured usage.",
+    "monthCalls": "Calls per month",
+    "monthTokens": "Reserved tokens per month",
+    "used": "{used} of {limit} reserved",
+    "remaining": "Available: {count}",
+    "range": "Allowed range: {min} to {max}.",
+    "invalid": "Enter whole numbers within the allowed range in every field.",
+    "exhausted": "Current reservations have reached this ceiling. New calls remain blocked until budget is available.",
+    "monthlyEffect": "Saving changes the ceiling for future reservations, including running work. Recorded usage remains; historical failures are not replayed. Monetary cost stays unavailable without a reliable estimate.",
+    "saveMonth": "Save monthly budget",
+    "saveCurator": "Save curator limits",
+    "saving": "Saving…",
+    "saved": "Changes saved.",
+    "reload": "Reload saved values",
+    "curator": "Limits per curator group",
+    "curatorHint": "A group generates Wiki changes and verifies their support in the sources. These limits control its size and duration within the routine budget.",
+    "curatorInvalid": "Check the allowed ranges. At least 2 calls are required without repair, or 4 with repair enabled.",
+    "curatorEffect": "Saving creates new configuration for future groups. Work admitted under the previous configuration loses authority to continue; proposals and history remain. A paused policy stays paused.",
+    "routineHint": "These limits apply per run. The shared monthly ceiling, editable in Budget, may stop work before these values.",
+    "fields": {
+      "modelCalls": "Calls per group",
+      "repairs": "Repair cycles",
+      "deadlineMs": "Maximum duration (seconds)",
+      "targets": "Pages per group",
+      "sectionPatchesPerPage": "Sections per page",
+      "originalPassages": "Original passages",
+      "tools": "Retrieval operations"
+    },
+    "hints": {
+      "modelCalls": "Includes generation, support checks and repairs.",
+      "repairs": "Each cycle reserves room for repair and a new support check.",
+      "deadlineMs": "Time limit for one curator group.",
+      "targets": "Maximum pages changed together.",
+      "sectionPatchesPerPage": "Maximum sections changed in each page.",
+      "originalPassages": "Maximum complete passages admitted as evidence.",
+      "tools": "Maximum search and read operations for the group."
+    }
   }
 }

@@ -1,4 +1,4 @@
-import {createAutomaticMaintenanceRepository,createWikiCuratorRepository,createWikiCollectionRepository,createOrganizationRepository,createInvestigationRepository,type PgPool,type JobRecord} from '@app/db';
+import {createKnowledgeAutomationRepository,createAutomaticMaintenanceRepository,createWikiCuratorRepository,createWikiCollectionRepository,createOrganizationRepository,createInvestigationRepository,type PgPool,type JobRecord} from '@app/db';
 import {AutomaticMaintenanceCommandSchema,AutomaticMaintenanceDashboardSchema,automaticClock,type AutomaticMaintenanceRun,type AutomaticRoutinePolicy,type AutomaticMaintenanceCommandSchema as CommandSchema} from '@app/domain';
 import type {z} from 'zod';
 import {capturePromptPin,withPromptPin} from './prompt-runtime.js';
@@ -12,25 +12,40 @@ export class AutomaticMaintenance {
  private now(){return new Date((this.options.now??Date.now)());}
  private repo(){return createAutomaticMaintenanceRepository(this.pool());}
  async command(raw:z.input<typeof CommandSchema>){const c=AutomaticMaintenanceCommandSchema.parse(raw),repo=this.repo();
+  if(c.command==='automaticGet')return repo.get(c.runId);
   if(c.command==='automaticRetireLegacy')return repo.retireLegacy(c.scheduleIds);
+  if(c.command==='automaticBudgetSave'){await repo.saveMonthly(c.policyId,c.expectedSchedules,c.allowance,this.now());this.options.wake();return null;}
   if(c.command==='automaticDashboard'){const month=this.now().toISOString().slice(0,7);return AutomaticMaintenanceDashboardSchema.parse({policyState:(await createWikiCuratorRepository(this.pool()).policy(c.policyId))?.state??'draft',schedules:await repo.schedules(c.policyId),runs:await repo.history(c.policyId),month,reserved:await repo.monthly(c.policyId,month)});}
   if(c.command==='automaticCancel'){for(const id of await repo.cancel(c.runId)??[])await this.options.cancelJob(id);return null;}
   if(c.command==='automaticSave'){const saved=await repo.save(c.scheduleId,c.expectedRevision,c.policy,this.now());for(const id of await repo.canceledChildren(c.scheduleId))await this.options.cancelJob(id);return saved;}
-  const s=(await repo.schedules()).find(s=>s.id===c.scheduleId);if(!s)throw new Error('maintenance.errors.scope');const result=await repo.admit([s],this.now(),true,c.requestId,await this.context(s.policy));await this.tick();this.options.wake();return result?repo.get(result.id):null;
+  const s=(await repo.schedules()).find(s=>s.id===c.scheduleId);if(!s)throw new Error('maintenance.errors.scope');await repo.settleRejections(s.policy.policyId,s.policy.policyRevisionId);const result=await repo.admit([s],this.now(),true,c.requestId,await this.context(s.policy));await this.tick();this.options.wake();return result?repo.get(result.id):null;
  }
  private async context(p:AutomaticRoutinePolicy){const unfinished=(await createWikiCollectionRepository(this.pool()).list(p.policyId)).find(b=>b.snapshot.policy.revisionId===p.policyRevisionId&&['running','attention'].includes(b.checkpoint.state));if(unfinished)return {profile:unfinished.snapshot.profile,promptPin:unfinished.snapshot.promptPin,contentLanguage:unfinished.snapshot.contentLanguage};let profile=null;try{profile=await this.options.ai.pinOrganizationProfile((await createWikiCuratorRepository(this.pool()).policy(p.policyId))?.profileOverrideId??undefined,'allow_remote');}catch{}return {profile,promptPin:capturePromptPin(null),contentLanguage:await this.options.contentLanguage()};}
  private async blocker(r:AutomaticMaintenanceRun){const p=r.snapshot.policy,policy=await createWikiCuratorRepository(this.pool()).policy(p.policyId);if(policy?.state!=='enabled'||policy.revisionId!==r.snapshot.policyRevisionId||!p.enabled)return 'organization.errors.policy';if(!r.snapshot.profile)return 'organization.errors.model';if(!r.snapshot.manual&&!r.checkpoint.manualRequested&&(this.options.idleSeconds?.()??Infinity)<p.idleSeconds)return 'maintenance.errors.idle';if(this.options.aiBusy?.())return 'maintenance.errors.busy';return this.repo().blocker(p.policyId);}
  async tick(){const repo=this.repo(),now=this.now(),curator=createWikiCuratorRepository(this.pool());
-  for(const p of await curator.policies())if(await repo.installed(p.id))await createWikiCollectionRepository(this.pool()).reconcileDeliveries(p);
+  const policies=await curator.policies();
+  for(const p of policies)if(await repo.installed(p.id))await createWikiCollectionRepository(this.pool()).reconcileDeliveries(p);
+  await createKnowledgeAutomationRepository(this.pool()).acknowledgeNavigationImpacts();
+  for(const p of policies)if(await repo.installed(p.id))await repo.settleRejections(p.id,p.revisionId);
   const groups=new Map<string,Awaited<ReturnType<typeof repo.schedules>>>();
   for(const s of await repo.schedules()){if(!s.policy.enabled||new Date(s.nextAt)>now)continue;const policy=await curator.policy(s.policy.policyId);if(policy?.state!=='enabled'||policy.revisionId!==s.policy.policyRevisionId)continue;if(s.policy.kind==='incremental'){const changed=await repo.changedAt(s.policy.policyId);if(!changed||now.getTime()-Date.parse(changed)<s.policy.cadence.debounceMs)continue;}
    const key=s.id;groups.set(key,[...groups.get(key)??[],s]);}
-  for(const schedules of groups.values()){try{await repo.admit(schedules,now,false,undefined,await this.context(schedules[0]!.policy));}catch{/* A concurrent policy edit is observed on the next bounded poll. */}}
+  for (const schedules of groups.values()) {
+    try {
+      const policy=schedules[0]!.policy;
+      if(await repo.admissionBlock(policy.policyId,policy.policyRevisionId)){await repo.scheduleStatus(schedules.map(s=>s.id),'maintenance.errors.retainedDecision');continue;}
+      const context = await this.context(policy);
+      if (!context.profile) { await repo.scheduleStatus(schedules.map(s=>s.id),'organization.errors.model'); continue; }
+      const admitted=await repo.admit(schedules,now,false,undefined,context);
+      if(admitted)await repo.scheduleStatus(schedules.map(s=>s.id),null);
+    } catch(error) { await repo.scheduleStatus(schedules.map(s=>s.id),String(error).match(/(?:organization|maintenance)\.errors\.[A-Za-z]+/)?.[0]??'maintenance.errors.failed'); }
+  }
   const owners=new Set<string>();for(const r of (await repo.active()).toSorted((a,b)=>Number(!!b.checkpoint.startedAt)-Number(!!a.checkpoint.startedAt))){
    const waiting=owners.has(r.snapshot.policy.policyId);owners.add(r.snapshot.policy.policyId);
    // Resolve review/recovery state before clock accrual or granting inference authority.
    const existing=r.checkpoint.bootstrapId?await createWikiCollectionRepository(this.pool()).get(r.checkpoint.bootstrapId):null;
    const child=existing?.checkpoint.childRunId?await createOrganizationRepository(this.pool()).get(existing.checkpoint.childRunId):null;
+   if(existing?.checkpoint.state==='rejected'||child?.status==='rejected'){r.status='rejected';r.checkpoint.reason=existing?.checkpoint.error??String(child?.checkpoint.error??'organization.errors.rejected');r.checkpoint.incomplete=true;await repo.checkpoint(r);continue;}
    const retainedChild=await repo.reviewChild(r.id);if(retainedChild)r.checkpoint.reviewChildId=retainedChild.id;else if(r.checkpoint.reviewChildId){r.checkpoint.reviewChildId=null;r.checkpoint.incomplete=false;if(r.checkpoint.reason==='organization.errors.review')r.checkpoint.reason=null;}
    const childBlocked=child&&['awaiting_review','failed','canceled','rejected'].includes(child.status)?String(child.checkpoint.error??'organization.errors.review'):null;
    const bootstrapBlocked=existing&&['attention','paused','canceled'].includes(existing.checkpoint.state)?existing.checkpoint.error??'organization.errors.review':null;
@@ -45,7 +60,7 @@ export class AutomaticMaintenance {
    r.checkpoint.startedAt??=now.toISOString();r.status='inspecting';await repo.checkpoint(r);
    // Existing delivery cursors repair exact stale consumers before broad coverage.
    const pending=await repo.pending(r.snapshot.policy.policyId);
-   if(!pending){
+   if(!pending&&!existing?.checkpoint.childRunId){
    await this.options.investigations?.tick(r);
    const investigationAttention=this.options.investigations?await createInvestigationRepository(this.pool()).attention(r.snapshot.policy.policyId):null;if(investigationAttention){r.status=/^(maintenance.errors.(budget|period)|organization.errors.deadline)$/.test(investigationAttention)?"failed":"awaiting_review";r.checkpoint.reason=investigationAttention;r.checkpoint.incomplete=true;await repo.checkpoint(r);continue;}
    }

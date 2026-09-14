@@ -109,6 +109,10 @@ export function validatePromptGraph(graph: Record<string, readonly string[]>): v
   };
   Object.keys(graph).forEach(visit);
 }
+export function promptLanguageName(value: string): string {
+  if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(value)) return value;
+  try { return new Intl.DisplayNames(['en'], { type: 'language' }).of(value) ?? value; } catch { return value; }
+}
 export function renderPromptTemplate(template: string, variables: readonly PromptVariable[], values: Record<string, unknown>, requiredContracts: readonly string[] = []): string {
   const tokens = parsePromptTemplate(template), used = tokens.filter(t => t.kind === "variable").map(t => t.text);
   for (const contract of requiredContracts) if (!used.includes(contract)) throw new PromptTemplateError("missing_contract", contract);
@@ -116,7 +120,8 @@ export function renderPromptTemplate(template: string, variables: readonly Promp
     if (token.kind === "literal") return token.text;
     const variable = variables.find(v => v.key === token.text);
     if (!variable) throw new PromptTemplateError("unknown_variable", token.text);
-    const value = values[variable.key];
+    const supplied = values[variable.key];
+    const value = /^(content|relation|source)_language$/.test(variable.key) && typeof supplied === 'string' ? promptLanguageName(supplied) : supplied;
     if (value === undefined || value === null) {
       if (!variable.required) return variable.emptyRepresentation!;
       throw new PromptTemplateError("missing_required", variable.key);

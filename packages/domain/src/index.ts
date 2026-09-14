@@ -30,3 +30,5 @@ export * from './wiki-reference.js';
 export * from './automatic-maintenance.js';
 
 export * from "./knowledge-evolution.js";
+export * from './knowledge-automation.js';
+export * from './knowledge-rejections.js';

@@ -22,7 +22,7 @@ import type {
   FileImportProgress, FileMetadataExtractionResult, FileStructurePreview, SourceSuggestion, SourceDetail
 } from "../../shared/ipc";
 import { cn } from "../lib/cn";
-import { defaultProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
+import { defaultProcessingPlan, ProcessingPlanPicker, processingPlanReady } from "./ProcessingPlanPicker";
 import { StructureReview } from "./StructureReview";
 import { SourceMetadataPreview } from "./SourceMetadataPreview";
 import { CreatorFields } from "./CreatorFields";
@@ -362,6 +362,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
 
   async function submit() {
     if (!descriptor.success) return;
+    if (!editing && !processingPlanReady(processingPlan)) { setValidationError(t("processing.invalidPlan")); return; }
     if (fileHasHierarchy && !currentFileStructure?.reviewed) { setStep(2); setFileView("subitems"); return; }
     setBusy(true);
     setStatus("shell.states.loading");
@@ -440,6 +441,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
 
   async function confirmStructure(divisions: Parameters<typeof window.app.ingestion.confirmStructure>[0]["divisions"]) {
     if (!structure) return;
+    if (!processingPlanReady(processingPlan)) { setValidationError(t("processing.invalidPlan")); return; }
     setBusy(true);
     try {
       const result = await window.app.ingestion.confirmStructure({ structureId: structure.id, divisions, plan: processingPlan });
@@ -497,7 +499,7 @@ export function ImportView({ t, metadataEnrichmentEnabled = true, editing, paren
       <div className="flex flex-wrap gap-2">
         {onCancel ? <Button type="button" disabled={busy} onClick={onCancel}>{t("shell.actions.cancel")}</Button> : null}
         {step > (editing || parent ? 2 : 0) ? <Button type="button" disabled={busy} onClick={() => setStep(step === 4 ? 2 : step === 2 && origin === "file" ? 1 : 0)}><ChevronLeft className="h-4 w-4" />{t("import.actions.back")}</Button> : null}
-        {step < 4 ? <Button variant="primary" type="button" disabled={busy} onClick={next}><ChevronRight className="h-4 w-4" />{t(step === 1 && !file ? "import.actions.chooseFile" : "import.actions.continue")}</Button> : <Button variant="primary" type="button" disabled={busy} onClick={() => void submit()}><Upload className="h-4 w-4" />{t(editing ? "sourceWorkspace.save" : "import.actions.import")}</Button>}
+        {step < 4 ? <Button variant="primary" type="button" disabled={busy} onClick={next}><ChevronRight className="h-4 w-4" />{t(step === 1 && !file ? "import.actions.chooseFile" : "import.actions.continue")}</Button> : <Button variant="primary" type="button" disabled={busy || (!editing && !processingPlanReady(processingPlan))} onClick={() => void submit()}><Upload className="h-4 w-4" />{t(editing ? "sourceWorkspace.save" : "import.actions.import")}</Button>}
       </div>
     </footer>
   </section>;

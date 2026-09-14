@@ -1,4 +1,91 @@
 {
+  "automation": {
+    "journeyError": "Impossible de charger l’état des sources. Réessayez.",
+    "reviewRetainedTitle": "Proposition disponible pour examen",
+    "reviewRetainedHint": "La proposition existante attend votre décision. La routine la conserve sans créer une nouvelle tentative.",
+    "automaticRejection": "Rejetée par la validation automatique",
+    "automaticRejectionHint": "Aucune proposition valide ne peut être approuvée. Le motif et les originaux sont conservés pour éclairer les futures analyses de cette source.",
+    "priorRejections": "Rejets antérieurs pris en compte",
+    "priorRejectionsHint": "Cet historique est un contexte, pas une preuve. Chaque nouvelle analyse doit vérifier les originaux actuels ; un rejet antérieur ne constitue pas une règle générale.",
+    "previousRejectedText": "Texte précédemment rejeté",
+    "rejectionOriginals": "Originaux de l’analyse précédente",
+    "retainedTitle": "Résultat terminé et conservé",
+    "retainedHint": "L’analyse précédente est terminée. Ces mêmes données ne feront pas l’objet d’une nouvelle tentative. Le motif reste disponible après le nettoyage de l’historique.",
+    "waitingInput": "En attente de nouvelles données",
+    "analysisDetails": "Détails de l’analyse",
+    "budgetBlocked": "Bloquée par le budget",
+    "changes": "{count} changements en attente",
+    "allTasks": "Voir toutes les tâches",
+    "retired": "Retirée · historique conservé",
+    "journey": "De la source au Wiki et à Obsidian",
+    "complete": "Terminé",
+    "imported": "Importée",
+    "stale": "Mise à jour en attente",
+    "journeyColumns": {
+      "source": "Source",
+      "processing": "Traitement",
+      "wiki": "Wiki",
+      "obsidian": "Obsidian"
+    },
+    "title": "Connaissances automatiques",
+    "description": "Suivez l’intégration, la maintenance et la synchronisation au même endroit. Les tâches en attente et les décisions restent visibles.",
+    "ready": "IA configurée",
+    "waitingModel": "Configuration de l’IA requise",
+    "modelHint": "Enregistrez un modèle et configurez un profil compatible et le routage de sortie structurée.",
+    "models": "Modèles",
+    "routing": "Profils et routage",
+    "empty": "Aucune tâche dans cette vue.",
+    "settings": "Périmètre et autorisations",
+    "saved": "Configuration enregistrée.",
+    "inspect": "Examiner",
+    "scheduled": "Planifiée",
+    "pending": "En attente",
+    "deferred": "Différée",
+    "conflict": "Décision requise",
+    "tabs": {
+      "prompts": "Prompts",
+      "sources": "Sources",
+      "overview": "Vue d’ensemble",
+      "tasks": "Tâches",
+      "schedules": "Planification",
+      "decisions": "Décisions",
+      "settings": "Configuration",
+      "budget": "Budget"
+    },
+    "areas": {
+      "people": "Personnes",
+      "organizations": "Organisations",
+      "places": "Lieux",
+      "works": "Œuvres",
+      "notes": "Notes atomiques",
+      "assets": "Pièces jointes",
+      "themes": "Thèmes",
+      "entities": "Entités",
+      "syntheses": "Synthèses",
+      "investigations": "Investigations",
+      "maps": "Cartes"
+    },
+    "coverage": {
+      "total": "Sources de la bibliothèque",
+      "integrated": "Intégrées au Wiki",
+      "pending": "Intégration complète en attente"
+    },
+    "kinds": {
+      "organization": "Intégration au Wiki",
+      "maintenance": "Maintenance des connaissances",
+      "delivery": "Mise à jour incrémentale",
+      "schedule": "Maintenance planifiée",
+      "sync": "Synchronisation Obsidian"
+    },
+    "blockedHint": "Cette routine est bloquée et aucune proposition n’est prête à être approuvée. Le diagnostic explique le problème. Annuler termine cette exécution et conserve son historique.",
+    "reviewProposal": "Examiner la proposition",
+    "openBlockingRun": "Ouvrir l’analyse qui bloque la routine",
+    "clearHistory": "Nettoyer l’historique des tâches",
+    "clearHistoryHint": "Retire des listes les exécutions terminées, échouées ou annulées. Les tâches actives, planifications, problèmes en attente, audits et réservations de budget sont conservés.",
+    "clearingHistory": "Nettoyage de l’historique…",
+    "historyCleared": "Historique des exécutions terminées nettoyé. Les éléments en attente sont conservés.",
+    "clearHistoryFailed": "Le nettoyage n’a pas abouti. Réessayez."
+  },
   "investigation": {
     "retained": "Enregistrée comme page de réponse suivie",
     "title": "Questions suivies",
@@ -138,6 +225,7 @@
     "canceled": "Annulée",
     "failed": "Échec",
     "errors": {
+      "rejected": "Cette analyse a été rejetée et ne peut pas reprendre.",
       "topicScope": "Un sujet correspondant existe hors du périmètre. Ouvrez-le et sélectionnez toutes les sources nécessaires pour éviter un doublon.",
       "wait": "L’appel annulé est encore en cours d’arrêt. Attendez avant de réessayer.",
       "invalid": "Action ou paramètres invalides. Vérifiez les champs et réessayez.",
@@ -150,7 +238,7 @@
       "modelChanged": "L’identité du modèle fixé a changé ou a été révoquée. Recréez l’exécution.",
       "privacy": "Cette règle exige un modèle génératif local. Aucun recours distant n’est permis.",
       "noEvidence": "Le périmètre ne contient aucun passage original. Les métadonnées ne peuvent étayer une synthèse.",
-      "evidence": "Preuves ou relations non lues, périmées ou hors périmètre. Créez une nouvelle proposition.",
+      "evidence": "Les preuves ou relations de cette proposition n’ont pas pu être validées. Consultez le diagnostic de l’analyse.",
       "review": "Ces modifications exigent une révision humaine explicite.",
       "protected": "Le contenu protégé exige une approbation humaine.",
       "budget": "L’exécution a épuisé sa limite d’outils, d’appels ou d’entrée signalée.",
@@ -160,7 +248,8 @@
       "canceled": "Annulée",
       "failed": "L’organisation a échoué. Vérifiez le profil et réessayez dans le budget restant.",
       "policy": "La politique automatique est suspendue, modifiée ou ne permet pas cette opération.",
-      "scopeDecision": "Le savoir lié utilise des sources hors de cette politique. Vérifiez le périmètre avant l’intégration."
+      "scopeDecision": "Le savoir lié utilise des sources hors de cette politique. Vérifiez le périmètre avant l’intégration.",
+      "unsupported": "La proposition a échoué à la vérification de fidélité aux sources. Consultez le diagnostic de l’analyse."
     }
   },
   "entityIdentity": {"threshold":"Seuil de similarité d’identité des entités","hint":"L’IA vérifie les candidats du même type avec leurs noms et faits distinctifs. Un nom identique ne suffit jamais à autoriser une fusion. Les identités ambiguës restent séparées. Défaut : 0,92 (provisoire). Les noms exacts et alias sont aussi vérifiés. Les entités existantes sont réutilisées après confirmation ; les doublons historiques ne sont pas fusionnés en masse."},
@@ -394,12 +483,22 @@
     },
     "currentStage": "Etape actuelle : {stage}",
     "stages": {
-      "organizeKnowledge": "Organiser les connaissances",
-      "queued": "En attente", "preparation": "Preparation de l'importation", "conversion": "Conversion", "structureDetection": "Detection de structure", "structureReview": "Revision de structure", "materialization": "Materialisation", "chunking": "Decoupage",
-      "embedding": "Embedding", "summarization": "Resume", "atomicNotes": "Notes atomiques",
+      "organizeKnowledge": "Intégrer au Wiki",
+      "queued": "En attente",
+      "preparation": "Preparation de l'importation",
+      "conversion": "Conversion",
+      "structureDetection": "Detection de structure",
+      "structureReview": "Revision de structure",
+      "materialization": "Materialisation",
+      "chunking": "Decoupage",
+      "embedding": "Embedding",
+      "summarization": "Resume",
+      "atomicNotes": "Notes atomiques",
       "knowledgeGraph": "Graphe de connaissances",
       "atomicNoteMatching": "Mise en relation",
-      "sourceMatching": "Relations entre sources", "obsidianProjection": "Projection Obsidian", "aggregateSummarization": "Resume agrege",
+      "sourceMatching": "Relations entre sources",
+      "obsidianProjection": "Projection Obsidian",
+      "aggregateSummarization": "Resume agrege",
       "completed": "Terminee"
     },
     "stageStatus": {
@@ -543,9 +642,27 @@
     "status": { "queued": "Import en file.", "canceled": "Selection de fichier annulee.", "saved": "Source enregistree sans traitement en arriere-plan.", "metadataExtracted": "Metadonnees extraites localement. Verifiez-les avant de continuer.", "duplicateHandled": "Politique de doublon appliquee.", "reviewStructure": "Structure detectee. Revisez-la avant de continuer.", "draftSaved": "Brouillon de structure enregistre.", "queuedChildren": "Structure confirmee et elements selectionnes mis en file.", "savedChildren": "Structure confirmee et elements selectionnes enregistres." }
   },
   "processing": {
-    "title": "Choisir le niveau de traitement", "aiOptional": "L'IA est facultative", "description": "Importez d'abord, puis creez seulement les artefacts necessaires. Les dependances sont incluses automatiquement.",
-    "customize": "Personnaliser les etapes", "includedDependency": "Incluse car une autre etape en depend", "stageCount": "{count} etapes dans ce plan", "profileNotice": "Utilise votre profil IA configure", "noAiNotice": "Aucun appel IA necessaire",
-    "presets": { "import_only": { "title": "Importer seulement", "description": "Conserve et organise la source sans IA." }, "search_ready": { "title": "Pret pour la recherche", "description": "Cree des segments et embeddings pour la recherche." }, "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." }, "full_knowledge": { "title": "Connaissance complete", "description": "Genere notes, graphe et rapprochements." } }
+    "invalidPlan": "Vérifiez les options de traitement avant de continuer.",
+    "wiki": {
+      "hint": "Le Wiki découvre des thèmes et actualise pages et index automatiquement. Il utilise la politique configurée et attend l’IA ou le budget si nécessaire. Aucun titre de page n’est requis."
+    },
+    "title": "Choisir le niveau de traitement",
+    "aiOptional": "L'IA est facultative",
+    "description": "Importez d'abord, puis creez seulement les artefacts necessaires. Les dependances sont incluses automatiquement.",
+    "customize": "Personnaliser les etapes",
+    "includedDependency": "Incluse car une autre etape en depend",
+    "stageCount": "{count} etapes dans ce plan",
+    "profileNotice": "Utilise votre profil IA configure",
+    "noAiNotice": "Aucun appel IA necessaire",
+    "presets": {
+      "import_only": { "title": "Importer seulement", "description": "Conserve et organise la source sans IA." },
+      "search_ready": { "title": "Pret pour la recherche", "description": "Cree des segments et embeddings pour la recherche." },
+      "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." },
+      "full_knowledge": {
+        "title": "Traitement complet",
+        "description": "Génère résumés, notes, graphe et liens, puis intègre les connaissances au Wiki."
+      }
+    }
   },
   "structure": {
     "eyebrow": "Point de controle humain", "title": "Reviser la structure detectee", "description": "Revisez les segments, ajustez leurs limites et choisissez ceux qui deviennent des sous-elements.",
@@ -1067,7 +1184,7 @@
     "treeWidth": "Largeur de l’arborescence : {width} pixels",
     "resizeTreeHint": "Faites glisser pour ajuster. Utilisez les flèches gauche/droite, Début ou Fin. Double-cliquez pour rétablir.",
     "resizeTree": "Ajuster la largeur de l’arborescence du wiki",
-    "title": "Second cerveau",
+    "title": "Wiki",
     "subtitle": "Un espace vivant pour vos connaissances",
     "navigation": "Navigation du wiki",
     "home": "Accueil",
@@ -1277,7 +1394,8 @@
       "rejected": "Rejetée",
       "canceled": "Annulée",
       "failed": "Échec",
-      "sample_passed": "Échantillon validé"
+      "sample_passed": "Échantillon validé",
+      "blocked": "Bloquée"
     },
     "signal": {
       "broken_reference": "Référence originale indisponible",
@@ -1294,6 +1412,7 @@
       "obsolete_draft": "Brouillon généré vide éligible"
     },
     "errors": {
+      "retainedDecision": "Une analyse antérieure a déjà traité ces données. Consultez le résultat conservé ; aucune nouvelle tentative ne sera créée pour les mêmes données.",
       "scope": "Sélectionnez un périmètre et un domaine valides.",
       "budget": "Le budget est invalide ou épuisé.",
       "period": "Le budget du mois UTC est réservé ou épuisé. Le travail reste reporté.",
@@ -1608,6 +1727,7 @@
     "groups": "Groupes terminés",
     "coverage": "Couverture",
     "coverageStates": {
+      "rejected": "Rejetée",
       "cataloged": "Catalogué",
       "awaiting": "En attente d’organisation",
       "analyzing": "Analyse en cours",
@@ -1737,5 +1857,48 @@
     "knowledgeOwned": "Note de connaissance conservée",
     "supersededNote": "Remplacée · historique conservé",
     "openRevision": "Ouvrir cette révision"
+  },
+  "budget": {
+    "title": "Budget et limites",
+    "description": "Le plafond mensuel est partagé. Chaque exécution respecte aussi les limites de sa routine et du groupe de curation ; la limite la plus stricte prévaut.",
+    "routines": "Limites par routine",
+    "monthly": "Budget mensuel partagé",
+    "monthlyHint": "Appels et tokens réservés par toutes les routines de cette politique. La période se renouvelle le premier jour de chaque mois, en UTC. Les réservations prudentes ne sont ni des frais ni un usage mesuré.",
+    "monthCalls": "Appels par mois",
+    "monthTokens": "Tokens réservés par mois",
+    "used": "{used} sur {limit} réservés",
+    "remaining": "Disponible : {count}",
+    "range": "Plage autorisée : {min} à {max}.",
+    "invalid": "Renseignez tous les champs avec des nombres entiers dans la plage autorisée.",
+    "exhausted": "Les réservations actuelles ont atteint ce plafond. Les nouveaux appels restent bloqués tant que le budget est insuffisant.",
+    "monthlyEffect": "Enregistrer modifie le plafond des prochaines réservations, y compris pour les travaux en cours. La consommation enregistrée est conservée ; les échecs historiques ne sont pas rejoués. Le coût monétaire reste indisponible sans estimation fiable.",
+    "saveMonth": "Enregistrer le budget mensuel",
+    "saveCurator": "Enregistrer les limites de curation",
+    "saving": "Enregistrement…",
+    "saved": "Modifications enregistrées.",
+    "reload": "Recharger les valeurs enregistrées",
+    "curator": "Limites par groupe de curation",
+    "curatorHint": "Un groupe génère des modifications de la Wiki et vérifie leur appui dans les sources. Ces limites contrôlent sa taille et sa durée dans le budget de la routine.",
+    "curatorInvalid": "Vérifiez les plages autorisées. Il faut au moins 2 appels sans réparation ou 4 avec réparation activée.",
+    "curatorEffect": "Enregistrer crée une nouvelle configuration pour les prochains groupes. Les travaux de la configuration précédente perdent leur autorisation de continuer ; les propositions et l’historique sont conservés. Une politique en pause reste en pause.",
+    "routineHint": "Ces limites s’appliquent par exécution. Le plafond mensuel partagé, modifiable dans Budget, peut arrêter le travail avant ces valeurs.",
+    "fields": {
+      "modelCalls": "Appels par groupe",
+      "repairs": "Cycles de réparation",
+      "deadlineMs": "Durée maximale (secondes)",
+      "targets": "Pages par groupe",
+      "sectionPatchesPerPage": "Sections par page",
+      "originalPassages": "Passages originaux",
+      "tools": "Opérations de consultation"
+    },
+    "hints": {
+      "modelCalls": "Comprend la génération, les vérifications et les réparations.",
+      "repairs": "Chaque cycle réserve une marge pour réparer et vérifier à nouveau.",
+      "deadlineMs": "Durée limite d’un groupe de curation.",
+      "targets": "Nombre maximal de pages modifiées ensemble.",
+      "sectionPatchesPerPage": "Nombre maximal de sections modifiées par page.",
+      "originalPassages": "Nombre maximal de passages complets admis comme preuves.",
+      "tools": "Nombre maximal de recherches et de lectures du groupe."
+    }
   }
 }

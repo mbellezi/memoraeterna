@@ -13,8 +13,8 @@ database, jobs or frontend rules when those boundaries are affected.
 
 The following are acceptance constraints for the next automatic-wiki version.
 The restricted single-page executor, M3b maintenance and existing sync sections
-below continue to define their versioned compatibility contracts until explicit
-successors are implemented. This direction does not grant new runtime authority.
+below define their versioned compatibility contracts. The installed automatic
+workflow defines the current startup and operational defaults.
 Implementation sequencing lives in
 [the automatic wiki plan](../docs/automatic-wiki-implementation-plan.md).
 
@@ -36,8 +36,8 @@ Implementation sequencing lives in
 - Activating automatic organization includes setup of the disclosed maintenance
   routines, rather than requiring manual creation of each schedule. Persist
   idempotent setup, cadence/timezone, due/start deadlines, execution limits,
-  budgets and catch-up state. Preserve customized schedules; no application
-  update silently activates automation or promises closed-desktop execution.
+  budgets and catch-up state. Preserve customized schedules. First launch and
+  the successor upgrade install enabled defaults; execution requires an open app.
 - Content maintenance must update affected unprotected knowledge and TOCs under
   policy, preserve conflicting interpretations/history and present protected or
   significant structural changes for review. An invalidation flag alone is not
@@ -617,7 +617,7 @@ Implementation sequencing lives in
   Repair persists bounded actionable issue paths/messages. If the complete invalid
   prior draft cannot fit, omit that whole draft from repair context while retaining
   it in the checkpoint; never omit part of an original passage. Model ambiguity or
-  exhausted repair is a visible failure, not permission to relax the output schema.
+  exhausted validation repair is a terminal automatic rejection, never permission to relax the output schema.
 - Persist a structurally valid candidate before checking semantic support. The
   support verdict must cover every target, including sections, titles, purposes,
   explanations and TOC attribution. Unsupported candidates remain inspectable but
@@ -669,9 +669,9 @@ Implementation sequencing lives in
   policies do not acquire the new input-change trigger through migration.
 - Assessment is read-only and paginated. Report canonical originals, existing
   optional artifacts, bound/protected pages and persistent source coverage.
-  Catalog-only participation creates no claims or model calls. Bootstrap of old
-  material is a separate explicit action; retained pre-activation catalog events
-  cannot silently start broad initial organization.
+  Catalog-only participation creates no claims or model calls. Initial coverage
+  of old material is ordinary due work under the installed automatic policy;
+  scope/exclusions and model/budget prerequisites remain authoritative.
 - `wiki-bootstrap-v1` is a coordinator snapshot/checkpoint in organization runs,
   not another job queue or inference audit. Its source/original cursor, selected
   note phase, child run, completed groups and attention state survive restart.
@@ -693,8 +693,10 @@ Implementation sequencing lives in
 - Exact invalidated dependents and new-topic discovery have separate durable
   delivery steps. The former requires the existing target handle; the latter
   coalesces current source generations. Each delivery advances its page cursor
-  only after a child result, retaining per-target outcomes. Pending review or
-  failure remains deferred. A bounded propagation limit records explicit
+  only after a child result, retaining per-target outcomes. Actionable review and
+  temporary unstarted deferral remain pending. Terminal rejected/canceled or
+  non-retryable failed children receive negative outcome receipts and do not
+  repeatedly request review. A bounded propagation limit records explicit
   attention and its remaining cursor; it is never an all-integrated result.
 - Causal run/group IDs are backend-owned. Propagate real cross-page changes,
   skip superseded revisions and already-applied targets from the same causal
@@ -709,8 +711,8 @@ Implementation sequencing lives in
 
 ## Automatic maintenance execution
 
-- `automatic-maintenance-v1` installs four disclosed bindings only when a new
-  policy revision is explicitly activated. Identity is policy/kind/canonical
+- `automatic-maintenance-v1` installs four disclosed bindings when the default
+  policy is installed or a configuration revision is saved. Identity is policy/kind/canonical
   scope, independently of the allowance preset. Same-revision resume preserves
   customized schedules and reservations; it does not replay the original setup.
   Legacy maintenance policies, receipts and structural-review semantics remain
@@ -720,7 +722,10 @@ Implementation sequencing lives in
 - The `luna-a2-a3-conservative-v1` preset grants incremental/daily/weekly/monthly
   occurrences 8/16/32/48 calls and 128,000/256,000/512,000/768,000 reserved tokens.
   All installed routines and explicit work under that policy share one UTC
-  calendar-month ceiling of 128 calls and 2,000,000 reserved tokens. These are
+  calendar-month ceiling defaulting to 128 calls and 2,000,000 reserved tokens.
+  The Budget subpage can change that shared ceiling within validated bounds;
+  subsequent reservations use the live ceiling without rewriting admitted snapshots
+  or refunding the ledger (see `rules/automatic-knowledge-workflow.md`). These are
   conservative operational defaults calibrated from small synthetic Luna trials,
   not a price, latency or universal quality guarantee. Unknown spend stays null;
   an explicit monetary ceiling blocks inference without a reliable cost bound.

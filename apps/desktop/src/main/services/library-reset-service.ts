@@ -30,6 +30,7 @@ export class LibraryResetService {
     getPool: () => PgPool | null;
     getStorageSettings: () => Promise<StorageSettings>;
     userDataPath: string;
+    restoreDefaults: () => Promise<void>;
   }) {}
 
   public async reset(): Promise<LibraryResetResult> {
@@ -91,6 +92,8 @@ export class LibraryResetService {
     await removePartialDownloads(join(this.options.userDataPath, "local-models"));
     await createLibraryResetRepository(pool).reset();
     await mkdir(join(this.options.userDataPath, "assets"), { recursive: true });
+
+    await this.options.restoreDefaults();
 
     return {
       deletedSources: Number(sourceCount.rows[0]?.count ?? 0),

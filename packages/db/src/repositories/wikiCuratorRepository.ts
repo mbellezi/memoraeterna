@@ -1,4 +1,5 @@
 import {appendInterpretation,applyNoteEvolution} from "./knowledgeEvolution.js";
+import { RejectionFeedbackSchema, type RejectionFeedback } from '@app/domain';
 import {retainedNoteCurrentSql} from './noteEvidence.js';
 import {installAutomaticRoutines,validateAutomaticAuthority,validateAutomaticReviewAuthority} from './automaticMaintenanceRepository.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -47,9 +48,31 @@ export function createWikiCuratorRepository(pool:PgPool){
  async sourceMetadata(ids:string[]){return(await pool.query('select id,title from source_items where id=any($1::uuid[]) order by id limit 30',[ids])).rows as Array<{id:string;title:string}>;},
  async noteIds(sourceIds:string[],sourceOwnedOnly=false){return (await pool.query("select id from atomic_notes where created_from_source_item_id=any($1::uuid[]) and status not in('rejected','archived') and supersession_status='current' and (not $2 or ownership='source') order by id limit 101",[sourceIds,sourceOwnedOnly])).rows.map(r=>r.id as string);},
  async policy(id:string){return readPolicy(pool,id);},
+ async rejected(inputFingerprint:string,policyId:string){return(await pool.query("select id from organization_runs where status='rejected' and snapshot->>'version'='wiki-curator-v2' and snapshot->>'inputFingerprint'=$1 and snapshot->'policy'->>'id'=$2 order by updated_at desc,id limit 1",[inputFingerprint,policyId])).rows[0]?.id as string|undefined;},
+ async rejectionFeedback(sourceIds:string[]){
+  const rows=(await pool.query(`select id,snapshot->>'inputFingerprint' fingerprint,checkpoint,
+    (select jsonb_agg(jsonb_build_object('sourceItemId',e->>'sourceItemId','documentId',e->>'documentId','chunkId',e->>'chunkId','contentHash',e->>'contentHash')) from jsonb_array_elements(snapshot->'evidence') e) originals
+    from organization_runs where status='rejected' and snapshot->>'version'='wiki-curator-v2'
+    and checkpoint->'rejection'->>'kind'='automatic_validation'
+    and jsonb_array_length(snapshot->'sourceIds')>0 and snapshot->'sourceIds'<@$1::jsonb
+    order by updated_at desc,id limit 8`,[JSON.stringify(sourceIds)])).rows;
+  const feedback:RejectionFeedback[]=[];let length=0;
+  for(const row of rows){
+   const issues=(row.checkpoint.validationIssues??[]).slice(0,2).map((issue:{path:string;message:string})=>{
+    const match=/^targets\.(\d+)\.sections\.(\d+)\.(markdown|title)$/.exec(issue.path);
+    const text=match?row.checkpoint.proposal?.targets?.[Number(match[1])]?.sections?.[Number(match[2])]?.[match[3]!]:null;
+    return {...issue,previousText:typeof text==='string'?text.slice(0,800):null};
+   });
+   const parsed=RejectionFeedbackSchema.safeParse({analysisId:row.id,decidedAt:row.checkpoint.rejection.decidedAt,inputFingerprint:row.fingerprint,originals:row.originals??[],issues});
+   if(!parsed.success||!issues.length)continue;
+   const size=JSON.stringify(parsed.data).length;if(length+size>6000)continue;
+   feedback.push(parsed.data);length+=size;if(feedback.length===4)break;
+  }
+  return feedback;
+ },
  async policies(){const ids=(await pool.query('select distinct policy_id from wiki_policy_revisions')).rows;return (await Promise.all(ids.map(r=>readPolicy(pool,r.policy_id)))).filter((p):p is AutomaticWikiPolicy=>!!p);},
  async draft(policy:AutomaticWikiPolicy,preview:unknown,previewHash:string){await pool.query('insert into wiki_policy_revisions(id,policy_id,policy,preview,preview_hash) values($1,$2,$3,$4,$5)',[policy.revisionId,policy.id,policy,preview,previewHash]);},
- async activate(id:string,revision:string,previewHash:string){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+id]);const row=(await db.query('select * from wiki_policy_revisions where id=$1 and policy_id=$2 for update',[revision,id])).rows[0];if(!row||row.preview_hash!==previewHash)throw new Error('organization.errors.conflict');const prior=await readPolicy(db,id);if(prior?.revisionId===revision&&prior.state==='enabled')return prior;if(row.preview.maintenance&&prior?.revisionId!==revision)await installAutomaticRoutines(db,AutomaticWikiPolicySchema.parse({...row.policy,state:'enabled'}),row.preview.maintenance);await db.query("insert into wiki_policy_activations(policy_id,revision_id,state,created_at) values($1,$2,'enabled',clock_timestamp())",[id,revision]);return AutomaticWikiPolicySchema.parse({...row.policy,state:'enabled'});});},
+ async activate(id:string,revision:string,previewHash:string,state:'enabled'|'paused'='enabled'){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+id]);const row=(await db.query('select * from wiki_policy_revisions where id=$1 and policy_id=$2 for update',[revision,id])).rows[0];if(!row||row.preview_hash!==previewHash)throw new Error('organization.errors.conflict');const prior=await readPolicy(db,id);if(prior?.revisionId===revision&&prior.state===state)return prior;if(row.preview.maintenance&&prior?.revisionId!==revision)await installAutomaticRoutines(db,AutomaticWikiPolicySchema.parse({...row.policy,state:'enabled'}),row.preview.maintenance);await db.query("insert into wiki_policy_activations(policy_id,revision_id,state,created_at) values($1,$2,$3,clock_timestamp())",[id,revision,state]);return AutomaticWikiPolicySchema.parse({...row.policy,state});});},
  async resume(id:string){const policy=await readPolicy(pool,id);if(!policy)throw new Error('organization.errors.policy');const row=(await pool.query('select preview_hash from wiki_policy_revisions where id=$1',[policy.revisionId])).rows[0];return api.activate(id,policy.revisionId,row.preview_hash);},
  async pause(id:string){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+id]);const policy=await readPolicy(db,id);if(!policy)throw new Error('organization.errors.scope');await db.query("insert into wiki_policy_activations(policy_id,revision_id,state,created_at) values($1,$2,'paused',clock_timestamp())",[id,policy.revisionId]);return {...policy,state:'paused' as const};});},
  async scope(policy:AutomaticWikiPolicy,selected:string[]){const allowed=await api.allowed(policy);if(selected.some(id=>!allowed.includes(id)))throw new Error('organization.errors.scope');return selected.toSorted();},

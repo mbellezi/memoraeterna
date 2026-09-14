@@ -1,4 +1,91 @@
 {
+  "automation": {
+    "journeyError": "Impossibile caricare lo stato delle fonti. Riprova.",
+    "reviewRetainedTitle": "Proposta disponibile per la revisione",
+    "reviewRetainedHint": "La proposta esistente attende la tua decisione. La routine la conserva senza creare un altro tentativo.",
+    "automaticRejection": "Rifiutata dalla validazione automatica",
+    "automaticRejectionHint": "Non esiste una proposta valida da approvare. Il motivo e gli originali sono conservati per orientare le future analisi di questa fonte.",
+    "priorRejections": "Rifiuti precedenti considerati",
+    "priorRejectionsHint": "Questa cronologia è contesto, non evidenza. Ogni nuova analisi deve verificare gli originali attuali; un rifiuto precedente non è una regola generale.",
+    "previousRejectedText": "Testo precedentemente rifiutato",
+    "rejectionOriginals": "Originali dell’analisi precedente",
+    "retainedTitle": "Risultato concluso e conservato",
+    "retainedHint": "L’analisi precedente è terminata. Gli stessi dati non saranno elaborati nuovamente. Il motivo resta disponibile dopo la pulizia della cronologia.",
+    "waitingInput": "In attesa di nuovi dati",
+    "analysisDetails": "Dettagli dell’analisi",
+    "budgetBlocked": "Bloccata dal budget",
+    "changes": "{count} modifiche in attesa",
+    "allTasks": "Vedi tutte le attività",
+    "retired": "Ritirata · cronologia conservata",
+    "journey": "Dalla fonte alla Wiki e a Obsidian",
+    "complete": "Completato",
+    "imported": "Importata",
+    "stale": "Aggiornamento in attesa",
+    "journeyColumns": {
+      "source": "Fonte",
+      "processing": "Elaborazione",
+      "wiki": "Wiki",
+      "obsidian": "Obsidian"
+    },
+    "title": "Conoscenza automatica",
+    "description": "Segui integrazione, manutenzione e sincronizzazione in un unico posto. Attività in attesa e decisioni restano visibili.",
+    "ready": "IA configurata",
+    "waitingModel": "In attesa della configurazione IA",
+    "modelHint": "Registra un modello e configura un profilo compatibile e il routing per output strutturato.",
+    "models": "Modelli",
+    "routing": "Profili e routing",
+    "empty": "Nessuna attività in questa vista.",
+    "settings": "Ambito e permessi",
+    "saved": "Configurazione salvata.",
+    "inspect": "Esamina",
+    "scheduled": "Programmata",
+    "pending": "In attesa",
+    "deferred": "Rinviata",
+    "conflict": "Richiede una decisione",
+    "tabs": {
+      "prompts": "Prompt",
+      "sources": "Fonti",
+      "overview": "Panoramica",
+      "tasks": "Attività",
+      "schedules": "Programmazioni",
+      "decisions": "Decisioni",
+      "settings": "Configurazione",
+      "budget": "Budget"
+    },
+    "areas": {
+      "people": "Persone",
+      "organizations": "Organizzazioni",
+      "places": "Luoghi",
+      "works": "Opere",
+      "notes": "Note atomiche",
+      "assets": "Allegati",
+      "themes": "Temi",
+      "entities": "Entità",
+      "syntheses": "Sintesi",
+      "investigations": "Indagini",
+      "maps": "Mappe"
+    },
+    "coverage": {
+      "total": "Fonti nella biblioteca",
+      "integrated": "Integrate nella Wiki",
+      "pending": "In attesa di integrazione completa"
+    },
+    "kinds": {
+      "organization": "Integrazione nella Wiki",
+      "maintenance": "Manutenzione della conoscenza",
+      "delivery": "Aggiornamento incrementale",
+      "schedule": "Manutenzione programmata",
+      "sync": "Sincronizzazione Obsidian"
+    },
+    "blockedHint": "Questa routine è bloccata e non ha una proposta pronta per l’approvazione. La diagnosi spiega il problema. Annullare termina questa esecuzione e ne conserva la cronologia.",
+    "reviewProposal": "Esamina proposta",
+    "openBlockingRun": "Apri l’analisi che ha bloccato la routine",
+    "clearHistory": "Pulisci cronologia delle attività",
+    "clearHistoryHint": "Rimuove dagli elenchi le esecuzioni completate, fallite o annullate. Conserva attività in corso, pianificazioni, problemi in sospeso, audit e consumo del budget.",
+    "clearingHistory": "Pulizia della cronologia…",
+    "historyCleared": "Cronologia delle esecuzioni terminate pulita. Gli elementi in sospeso sono conservati.",
+    "clearHistoryFailed": "Impossibile completare la pulizia. Riprova."
+  },
   "investigation": {
     "retained": "Salvata come pagina di risposta seguita",
     "title": "Domande seguite",
@@ -138,6 +225,7 @@
     "canceled": "Annullata",
     "failed": "Non riuscita",
     "errors": {
+      "rejected": "Questa analisi è stata rifiutata e non può essere ripresa.",
       "topicScope": "Esiste un argomento corrispondente fuori da questo ambito. Aprilo e seleziona tutte le fonti necessarie per evitare duplicati.",
       "wait": "La chiamata annullata sta ancora terminando. Attendi prima di riprovare.",
       "invalid": "Azione o impostazioni non valide. Controlla i campi e riprova.",
@@ -150,7 +238,7 @@
       "modelChanged": "L’identità del modello fissato è cambiata o è stata revocata. Ricrea l’esecuzione.",
       "privacy": "Questa regola richiede un modello generativo locale. Non è consentito un ripiego remoto.",
       "noEvidence": "L’ambito non contiene passaggi originali. I metadati non sostengono una sintesi.",
-      "evidence": "Prove o relazioni non lette, obsolete o fuori ambito. Crea una nuova proposta.",
+      "evidence": "Non è stato possibile convalidare le prove o le relazioni di questa proposta. Consulta la diagnosi dell’analisi.",
       "review": "Queste modifiche richiedono una revisione umana esplicita.",
       "protected": "Il contenuto protetto richiede approvazione umana.",
       "budget": "L’esecuzione ha esaurito il limite di strumenti, chiamate o input riportati.",
@@ -160,7 +248,8 @@
       "canceled": "Annullata",
       "failed": "Organizzazione non riuscita. Verifica il profilo e riprova entro il budget restante.",
       "policy": "La politica automatica è sospesa, modificata o non consente questa operazione.",
-      "scopeDecision": "Il sapere correlato usa fonti fuori da questa politica. Rivedi l’ambito prima di integrare."
+      "scopeDecision": "Il sapere correlato usa fonti fuori da questa politica. Rivedi l’ambito prima di integrare.",
+      "unsupported": "La proposta non ha superato la verifica di fedeltà alle fonti. Consulta la diagnosi dell’analisi."
     }
   },
   "entityIdentity": {"threshold":"Soglia di similarità dell’identità delle entità","hint":"L’IA verifica candidati dello stesso tipo usando nomi e fatti identificativi. Nomi uguali da soli non autorizzano un’unione. Le identità ambigue restano separate. Predefinito: 0,92 (provvisorio). Vengono verificati anche nomi esatti e alias. Le entità esistenti vengono riutilizzate dopo conferma; i duplicati storici non vengono uniti in massa."},
@@ -394,12 +483,22 @@
     },
     "currentStage": "Fase corrente: {stage}",
     "stages": {
-      "organizeKnowledge": "Organizza conoscenza",
-      "queued": "In coda", "preparation": "Preparazione dell'importazione", "conversion": "Conversione", "structureDetection": "Rilevamento struttura", "structureReview": "Revisione struttura", "materialization": "Materializzazione", "chunking": "Suddivisione",
-      "embedding": "Embedding", "summarization": "Riepilogo", "atomicNotes": "Note atomiche",
+      "organizeKnowledge": "Integra nella Wiki",
+      "queued": "In coda",
+      "preparation": "Preparazione dell'importazione",
+      "conversion": "Conversione",
+      "structureDetection": "Rilevamento struttura",
+      "structureReview": "Revisione struttura",
+      "materialization": "Materializzazione",
+      "chunking": "Suddivisione",
+      "embedding": "Embedding",
+      "summarization": "Riepilogo",
+      "atomicNotes": "Note atomiche",
       "knowledgeGraph": "Grafo della conoscenza",
       "atomicNoteMatching": "Collegamento note",
-      "sourceMatching": "Relazioni tra fonti", "obsidianProjection": "Proiezione Obsidian", "aggregateSummarization": "Riepilogo aggregato",
+      "sourceMatching": "Relazioni tra fonti",
+      "obsidianProjection": "Proiezione Obsidian",
+      "aggregateSummarization": "Riepilogo aggregato",
       "completed": "Completata"
     },
     "stageStatus": {
@@ -543,9 +642,27 @@
     "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "metadataExtracted": "Metadati estratti localmente. Rivedili prima di continuare.", "duplicateHandled": "Politica duplicati applicata.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
   },
   "processing": {
-    "title": "Scegli quanto elaborare", "aiOptional": "L'IA e facoltativa", "description": "Importa prima, poi crea solo gli artefatti necessari. Le dipendenze vengono incluse automaticamente.",
-    "customize": "Personalizza le fasi", "includedDependency": "Inclusa perche richiesta da un'altra fase", "stageCount": "{count} fasi in questo piano", "profileNotice": "Usa il profilo IA configurato", "noAiNotice": "Non e necessaria alcuna chiamata IA",
-    "presets": { "import_only": { "title": "Solo importazione", "description": "Conserva e organizza la fonte senza IA." }, "search_ready": { "title": "Pronto per la ricerca", "description": "Crea segmenti ed embedding per la ricerca." }, "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." }, "full_knowledge": { "title": "Conoscenza completa", "description": "Genera note, grafo e corrispondenze." } }
+    "invalidPlan": "Controlla le opzioni di elaborazione prima di continuare.",
+    "wiki": {
+      "hint": "La Wiki individua temi e aggiorna pagine e indici automaticamente. Usa la politica configurata e attende IA o budget quando necessario. Non richiede un titolo di pagina."
+    },
+    "title": "Scegli quanto elaborare",
+    "aiOptional": "L'IA e facoltativa",
+    "description": "Importa prima, poi crea solo gli artefatti necessari. Le dipendenze vengono incluse automaticamente.",
+    "customize": "Personalizza le fasi",
+    "includedDependency": "Inclusa perche richiesta da un'altra fase",
+    "stageCount": "{count} fasi in questo piano",
+    "profileNotice": "Usa il profilo IA configurato",
+    "noAiNotice": "Non e necessaria alcuna chiamata IA",
+    "presets": {
+      "import_only": { "title": "Solo importazione", "description": "Conserva e organizza la fonte senza IA." },
+      "search_ready": { "title": "Pronto per la ricerca", "description": "Crea segmenti ed embedding per la ricerca." },
+      "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
+      "full_knowledge": {
+        "title": "Elaborazione completa",
+        "description": "Genera riassunti, note, grafo e collegamenti e integra la conoscenza nella Wiki."
+      }
+    }
   },
   "structure": {
     "eyebrow": "Controllo umano", "title": "Rivedi la struttura rilevata", "description": "Rivedi i segmenti, regola i confini e scegli quali diventano sottoelementi.",
@@ -1067,7 +1184,7 @@
     "treeWidth": "Larghezza dell’albero: {width} pixel",
     "resizeTreeHint": "Trascina per regolare. Usa le frecce sinistra/destra, Home o Fine. Fai doppio clic per ripristinare.",
     "resizeTree": "Regola la larghezza dell’albero della wiki",
-    "title": "Secondo cervello",
+    "title": "Wiki",
     "subtitle": "Uno spazio vivo per le tue conoscenze",
     "navigation": "Navigazione wiki",
     "home": "Home",
@@ -1277,7 +1394,8 @@
       "rejected": "Rifiutata",
       "canceled": "Annullata",
       "failed": "Non riuscita",
-      "sample_passed": "Campione superato"
+      "sample_passed": "Campione superato",
+      "blocked": "Bloccata"
     },
     "signal": {
       "broken_reference": "Riferimento originale non disponibile",
@@ -1294,6 +1412,7 @@
       "obsolete_draft": "Bozza generata vuota idonea"
     },
     "errors": {
+      "retainedDecision": "Un’analisi precedente ha già trattato questi dati. Consulta il risultato conservato; non verrà creato un altro tentativo per gli stessi dati.",
       "scope": "Seleziona un ambito e dominio validi.",
       "budget": "Il budget è invalido o esaurito.",
       "period": "Il limite mensile UTC è riservato o esaurito. Il lavoro rimane rinviato.",
@@ -1608,6 +1727,7 @@
     "groups": "Gruppi completati",
     "coverage": "Copertura",
     "coverageStates": {
+      "rejected": "Rifiutata",
       "cataloged": "Catalogato",
       "awaiting": "In attesa di organizzazione",
       "analyzing": "Analisi in corso",
@@ -1737,5 +1857,48 @@
     "knowledgeOwned": "Nota di conoscenza conservata",
     "supersededNote": "Sostituita · cronologia conservata",
     "openRevision": "Apri questa revisione"
+  },
+  "budget": {
+    "title": "Budget e limiti",
+    "description": "Il tetto mensile è condiviso. Ogni esecuzione rispetta anche i limiti della routine e del gruppo di curatela; vale il limite più restrittivo.",
+    "routines": "Limiti per routine",
+    "monthly": "Budget mensile condiviso",
+    "monthlyHint": "Chiamate e token riservati da tutte le routine di questa politica. Il periodo si rinnova il primo giorno di ogni mese, in UTC. Le prenotazioni conservative non sono addebiti né utilizzo misurato.",
+    "monthCalls": "Chiamate al mese",
+    "monthTokens": "Token riservati al mese",
+    "used": "{used} di {limit} riservati",
+    "remaining": "Disponibile: {count}",
+    "range": "Intervallo consentito: da {min} a {max}.",
+    "invalid": "Compila tutti i campi con numeri interi entro l’intervallo consentito.",
+    "exhausted": "Le prenotazioni attuali hanno raggiunto questo tetto. Le nuove chiamate restano bloccate finché non è disponibile budget.",
+    "monthlyEffect": "Il salvataggio modifica il tetto per le prossime prenotazioni, anche per i lavori in corso. Il consumo registrato viene conservato; gli errori storici non vengono ripetuti. Il costo monetario resta indisponibile senza una stima affidabile.",
+    "saveMonth": "Salva budget mensile",
+    "saveCurator": "Salva limiti di curatela",
+    "saving": "Salvataggio…",
+    "saved": "Modifiche salvate.",
+    "reload": "Ricarica valori salvati",
+    "curator": "Limiti per gruppo di curatela",
+    "curatorHint": "Un gruppo genera modifiche alla Wiki e ne verifica il supporto nelle fonti. Questi limiti controllano dimensione e durata entro il budget della routine.",
+    "curatorInvalid": "Controlla gli intervalli consentiti. Servono almeno 2 chiamate senza riparazione o 4 con riparazione attiva.",
+    "curatorEffect": "Il salvataggio crea una nuova configurazione per i prossimi gruppi. I lavori della configurazione precedente perdono l’autorizzazione a continuare; proposte e cronologia vengono conservate. Una politica in pausa resta in pausa.",
+    "routineHint": "Questi limiti valgono per ogni esecuzione. Il tetto mensile condiviso, modificabile in Budget, può fermare il lavoro prima di questi valori.",
+    "fields": {
+      "modelCalls": "Chiamate per gruppo",
+      "repairs": "Cicli di riparazione",
+      "deadlineMs": "Durata massima (secondi)",
+      "targets": "Pagine per gruppo",
+      "sectionPatchesPerPage": "Sezioni per pagina",
+      "originalPassages": "Passaggi originali",
+      "tools": "Operazioni di consultazione"
+    },
+    "hints": {
+      "modelCalls": "Include generazione, verifiche del supporto e riparazioni.",
+      "repairs": "Ogni ciclo riserva margine per riparare e verificare di nuovo.",
+      "deadlineMs": "Limite di tempo per un gruppo di curatela.",
+      "targets": "Massimo di pagine modificate insieme.",
+      "sectionPatchesPerPage": "Massimo di sezioni modificate in ogni pagina.",
+      "originalPassages": "Massimo di passaggi completi ammessi come prove.",
+      "tools": "Massimo di operazioni di ricerca e lettura del gruppo."
+    }
   }
 }
