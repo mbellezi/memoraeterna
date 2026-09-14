@@ -708,6 +708,10 @@ Implementation sequencing lives in
   memberships are retained; changing a group's authored heading/explanation
   while omitting its existing members requires their admitted evidence rather
   than silently extending the new assertion to unread members.
+  Canonical removal repair separately subtracts unavailable targets, as specified
+  in `rules/automatic-knowledge-workflow.md`; omission by a model is never removal
+  authority. Both compact drafts and canonical change sets must include every
+  selected eligible atomic note in a reading group, independently of approval.
 
 ## Automatic maintenance execution
 
@@ -720,15 +724,16 @@ Implementation sequencing lives in
   from admission and the active list while retaining its historical row, runs,
   jobs and occurrences.
 - The `luna-a2-a3-conservative-v1` preset grants incremental/daily/weekly/monthly
-  occurrences 8/16/32/48 calls and 128,000/256,000/512,000/768,000 reserved tokens.
+  occurrences 8/16/32/48 calls and 128,000/256,000/512,000/768,000 consumed tokens.
   All installed routines and explicit work under that policy share one UTC
-  calendar-month ceiling defaulting to 128 calls and 2,000,000 reserved tokens.
+  calendar-month ceiling defaulting to 128 calls and 2,000,000 consumed tokens.
   The Budget subpage can change that shared ceiling within validated bounds;
-  subsequent reservations use the live ceiling without rewriting admitted snapshots
+  subsequent generations check recorded usage against the live ceiling without rewriting admitted snapshots
   or refunding the ledger (see `rules/automatic-knowledge-workflow.md`). These are
   conservative operational defaults calibrated from small synthetic Luna trials,
   not a price, latency or universal quality guarantee. Unknown spend stays null;
-  an explicit monetary ceiling blocks inference without a reliable cost bound.
+  known spend above an explicit monetary ceiling blocks the next generation.
+  Unknown spend is disclosed and never replaced by a predicted reservation.
 - Each occurrence pins the effective profile and parameters, content language and
   complete source-free prompt catalog. Curator groups and resumed bootstrap
   cursors inherit those settings. Prompt editing does not change an admitted

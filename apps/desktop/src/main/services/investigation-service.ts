@@ -37,7 +37,7 @@ export class InvestigationService{
     const evaluation=await this.repo().begin(id,item.revision,fingerprint,composition,snapshot,occurrence.id);if(evaluation.existing)return;
     if("resumedSnapshot" in evaluation)Object.assign(snapshot,evaluation.resumedSnapshot);
     const runId=evaluation.run_id as string;let started=false;
-    const guard=()=>this.repo().guard(id,item.revision,runId,occurrence.id);
+    const guard=async()=>{await this.repo().guard(id,item.revision,runId,occurrence.id);await createAutomaticMaintenanceRepository(this.pool()).capacity(occurrence.id);};
     try{
      const generated=await withAutomaticMaintenanceClock((at,elapsed,unobserved)=>createAutomaticMaintenanceRepository(this.pool()).heartbeat(occurrence.id,at,elapsed,unobserved),clockSignal=>this.options.consultation.generate(snapshot,input.question,item.current.answer,AbortSignal.any([signal,clockSignal]),{runId,guard,before:async(prompt,sequence)=>{await guard();await createAutomaticMaintenanceRepository(this.pool()).reserve(occurrence.id,runId,sequence,estimateAiPlanningTokens(withOutputLanguageInstruction(prompt,snapshot.contentLanguage),profile.provider==='openai-codex'?renderPrompt('shared.codex_adapter_instruction'):'',2048));await this.repo().pendingCall(runId,sequence,false);},started:async sequence=>{started=true;await this.repo().pendingCall(runId,sequence,true);},settled:async sequence=>{started=false;await this.repo().pendingCall(runId,sequence,false);}}));
      const result=ConsultationResultSchema.parse({...metadata,answer:generated.answer,inputTokens:generated.inputTokens,outputTokens:generated.outputTokens,costEstimate:generated.costEstimate});

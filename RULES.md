@@ -60,6 +60,8 @@ data behavior, security or privacy policy, workflow semantic, or stack decision.
 
 ## 4. System invariants
 
+- Always start DEV from the repository root with `npm run dev -w @app/desktop`.
+  Follow `rules/runtime-and-packaging.md` for development application testing.
 - The product is local-first, TypeScript-first, contract-driven, and auditable.
 - PostgreSQL is the canonical local store. Files, paths, projections, search
   indexes, embeddings, and AGE graphs are not canonical identity.

@@ -23,11 +23,64 @@ export function createWikiCollectionRepository(pool:PgPool){
   const totals=(await pool.query(`${cte} select count(*)::int sources,coalesce(sum(originals),0)::int originals,count(*) filter(where coverage='cataloged')::int cataloged,count(*) filter(where coverage='integrated')::int integrated,count(*) filter(where coverage in('attention','stale'))::int attention from assessed`,[policy.id,scope,generation])).rows[0];
   return WikiAssessmentSchema.parse({policyId:policy.id,policyRevisionId:policy.revisionId,sources:rows.slice(0,limit),next:rows.length>limit?rows[limit-1]!.id:null,totals,groupOriginalLimit:Math.min(6,policy.limits.originalPassages),readOnly:true});
  },
- async bootstrap(snapshot:WikiBootstrap['snapshot']){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-bootstrap:'+snapshot.policy.id]);const old=(await db.query("select id from organization_runs where snapshot->>'version'='wiki-bootstrap-v1' and snapshot->'policy'->>'id'=$1 and status in('queued','analyzing') and snapshot->'sourceIds'=$2::jsonb and snapshot->'profile'=$3::jsonb and snapshot->'promptPin'=$4::jsonb and snapshot->>'contentLanguage'=$5 and snapshot->'policy'->>'revisionId'=$6 and snapshot->'noteIds'=$7::jsonb order by created_at desc limit 1",[snapshot.policy.id,JSON.stringify(snapshot.sourceIds),JSON.stringify(snapshot.profile),JSON.stringify(snapshot.promptPin),snapshot.contentLanguage,snapshot.policy.revisionId,JSON.stringify(snapshot.noteIds)])).rows[0];if(old)return old.id as string;
-  const id=randomUUID(),checkpoint:WikiBootstrap['checkpoint']={version:'wiki-bootstrap-v1',lastTickAt:null,phase:'originals',noteCursor:0,state:'running',afterSource:null,sourceId:null,sourceFingerprint:null,afterChunk:null,nextChunk:null,childRunId:null,pendingOriginals:0,sourceCovered:0,completedSources:0,catalogedSources:0,completedGroups:0,attentionSources:0,error:null};await db.query('insert into organization_runs(id,snapshot,checkpoint) values($1,$2,$3)',[id,snapshot,checkpoint]);return id;});},
+ async bootstrap(snapshot:WikiBootstrap['snapshot']){return transaction(async db=>{await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-bootstrap:'+snapshot.policy.id]);const old=(await db.query("select id from organization_runs where snapshot->>'version'='wiki-bootstrap-v1' and snapshot->'policy'->>'id'=$1 and status in('queued','analyzing') and snapshot->'sourceIds'=$2::jsonb and snapshot->'profile'=$3::jsonb and snapshot->'promptPin'=$4::jsonb and snapshot->>'contentLanguage'=$5 and snapshot->'policy'->>'revisionId'=$6 and snapshot->'noteIds'=$7::jsonb and coalesce((snapshot->>'includeExistingNotes')::boolean,false)=$8 order by created_at desc limit 1",[snapshot.policy.id,JSON.stringify(snapshot.sourceIds),JSON.stringify(snapshot.profile),JSON.stringify(snapshot.promptPin),snapshot.contentLanguage,snapshot.policy.revisionId,JSON.stringify(snapshot.noteIds),snapshot.includeExistingNotes])).rows[0];if(old)return old.id as string;
+  const id=randomUUID(),checkpoint:WikiBootstrap['checkpoint']={version:'wiki-bootstrap-v1',afterNote:null,nextNote:null,lastTickAt:null,phase:'originals',noteCursor:0,state:'running',afterSource:null,sourceId:null,sourceFingerprint:null,afterChunk:null,nextChunk:null,childRunId:null,pendingOriginals:0,sourceCovered:0,completedSources:0,catalogedSources:0,completedGroups:0,attentionSources:0,error:null};await db.query('insert into organization_runs(id,snapshot,checkpoint) values($1,$2,$3)',[id,snapshot,checkpoint]);return id;});},
+ async discoveryCovered(policy:AutomaticWikiPolicy,sourceIds:string[],generation:string){
+  if(!sourceIds.length)return false;
+  const assessment=await api.assessment(policy,null,sourceIds.length,sourceIds,generation);
+  if(assessment.totals.sources!==sourceIds.length||assessment.sources.some(s=>!['integrated','cataloged'].includes(s.coverage)))return false;
+  // Unseen catalog sources still need their first persisted coverage record.
+  const count=(await pool.query("select count(*)::int n from wiki_source_coverage where policy_id=$1 and source_id=any($2::uuid[]) and status in('integrated','cataloged')",[policy.id,sourceIds])).rows[0].n;
+  return count===sourceIds.length&&!(await createWikiCuratorRepository(pool).unplacedNotes(sourceIds,null,1)).length;
+ },
+ async exhaustedAttention(policy:AutomaticWikiPolicy){return(await pool.query(`select d.id,d.checkpoint,d.receipt,e.kind,e.input_id,e.source_ids,b.id bootstrap_id
+  from knowledge_impact_deliveries d join knowledge_impact_events e on e.id=d.event_id
+  join organization_runs b on b.id::text=coalesce(d.checkpoint->>'bootstrapId',d.receipt->>'runId')
+  where d.consumer='curator' and d.consumer_key=$1 and right(d.input_generation,36)=$2 and d.receipt->>'kind'='attention'
+  and b.snapshot->>'version'='wiki-bootstrap-v1' and b.snapshot->'sourceIds'=e.source_ids
+  and b.checkpoint->>'state'='attention' and b.checkpoint->>'childRunId' is null
+  and b.checkpoint->>'error' in('maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline')
+  order by d.created_at,d.id limit 20`,[policy.id,policy.revisionId])).rows;},
+ async acknowledgeCoveredAttention(policy:AutomaticWikiPolicy,id:string,bootstrapId:string){return transaction(async db=>{
+  await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+policy.id]);
+  const current=(await db.query('select state,revision_id from wiki_policy_activations where policy_id=$1 order by created_at desc,id desc limit 1',[policy.id])).rows[0];
+  if(current?.state!=='enabled'||current.revision_id!==policy.revisionId)return;
+  await db.query(`update knowledge_impact_deliveries d set status='acknowledged',lease_until=null,defer_until=null,
+   receipt=jsonb_build_object('kind','inspected','reason','coverage_current','previousAttention',d.receipt,'runId',b.id),updated_at=clock_timestamp()
+   from organization_runs b where d.id=$1 and b.id=$2 and d.consumer_key=$3 and d.receipt->>'kind'='attention'
+   and coalesce(d.checkpoint->>'bootstrapId',d.receipt->>'runId')=b.id::text
+   and b.checkpoint->>'state'='attention' and b.checkpoint->>'childRunId' is null
+   and b.checkpoint->>'error' in('maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline')`,[id,bootstrapId,policy.id]);
+ });},
  async get(id:string){const row=(await pool.query("select id,status,snapshot,checkpoint,created_at as \"createdAt\",updated_at::text as \"updatedAt\" from organization_runs where id=$1 and snapshot->>'version'='wiki-bootstrap-v1'",[id])).rows[0];return row?WikiBootstrapSchema.parse({...row,createdAt:row.createdAt.toISOString(),updatedAt:typeof row.updatedAt==='string'?row.updatedAt:row.updatedAt.toISOString()}):null;},
  async list(policyId?:string,after?:string){const ids=(await pool.query("select r.id from organization_runs r where r.snapshot->>'version'='wiki-bootstrap-v1' and ($1::text is null or r.snapshot->'policy'->>'id'=$1) and ($2::uuid is null or (r.checkpoint->>'state' in('running','paused','attention'),r.created_at,r.id)<(select checkpoint->>'state' in('running','paused','attention'),created_at,id from organization_runs where id=$2)) order by (r.checkpoint->>'state' in('running','paused','attention')) desc,r.created_at desc,r.id desc limit 50",[policyId??null,after??null])).rows;return Promise.all(ids.map(async r=>(await api.get(r.id))!));},
  async active(){const ids=(await pool.query("select id from organization_runs where snapshot->>'version'='wiki-bootstrap-v1' and checkpoint->>'state'='running' order by (checkpoint->>'lastTickAt')::timestamptz nulls first,created_at,id limit 10")).rows;return Promise.all(ids.map(async r=>(await api.get(r.id))!));},
+ async reconcileAppliedChildren(policy:AutomaticWikiPolicy){return transaction(async db=>{
+  await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+policy.id]);
+  const activation=(await db.query('select state,revision_id from wiki_policy_activations where policy_id=$1 order by created_at desc,id desc limit 1',[policy.id])).rows[0];
+  if(activation?.state!=='enabled'||activation.revision_id!==policy.revisionId)return [] as string[];
+  // Applying a retained proposal can finish after the collection observed its
+  // review state. Reopen only that exact wait; the normal cursor consumes the
+  // existing receipt once, without repeating the completed model calls.
+  const resumed=(await db.query(`update organization_runs b set status='analyzing',
+   checkpoint=b.checkpoint||'{"state":"running","error":null}'::jsonb,updated_at=clock_timestamp()
+   from organization_runs child where b.snapshot->>'version'='wiki-bootstrap-v1'
+   and b.snapshot->'policy'->>'id'=$1 and b.snapshot->'policy'->>'revisionId'=$2
+   and b.status in('analyzing','awaiting_review','failed') and b.checkpoint->>'state'='attention'
+   and b.checkpoint->>'error'='organization.errors.review'
+   and child.id::text=b.checkpoint->>'childRunId' and child.snapshot->>'parentBootstrapId'=b.id::text
+   and child.snapshot->'policy'->>'revisionId'=$2 and child.status='applied'
+   and exists(select 1 from wiki_group_receipts g where g.run_id=child.id)
+   and (child.snapshot->>'maintenanceRunId' is null or exists(select 1 from maintenance_runs m
+     where m.id::text=child.snapshot->>'maintenanceRunId' and m.status in('queued','inspecting','analyzing','awaiting_review')))
+   returning b.id`,[policy.id,policy.revisionId])).rows.map(r=>r.id as string);
+  if(resumed.length)await db.query(`update knowledge_impact_deliveries d set status='deferred',receipt=null,
+   checkpoint=d.checkpoint||'{"blockedReason":null}'::jsonb,lease_until=null,defer_until=null,updated_at=clock_timestamp()
+   where d.consumer='curator' and d.consumer_key=$1 and right(d.input_generation,36)=$2
+   and coalesce(d.checkpoint->>'bootstrapId',d.receipt->>'runId')=any($3::text[])
+   and d.receipt->>'kind'='attention' and coalesce(d.receipt->>'reason','organization.errors.review')='organization.errors.review'`,[policy.id,policy.revisionId,resumed]);
+  return resumed;
+ });},
  async checkpoint(run:WikiBootstrap){const row=(await pool.query("update organization_runs set checkpoint=$2,status=$3,updated_at=clock_timestamp() where id=$1 and status not in('canceled','rejected') and updated_at=$4::timestamptz returning updated_at::text as updated",[run.id,run.checkpoint,run.checkpoint.state==='complete'?'applied':run.checkpoint.state==='canceled'?'canceled':run.checkpoint.state==='rejected'?'rejected':run.checkpoint.state==='attention'?'failed':'analyzing',run.updatedAt])).rows[0];if(!row)throw new Error('organization.errors.conflict');run.updatedAt=row.updated;},
  async finishCoverage(runId:string){await pool.query("update wiki_source_coverage set status='integrated',updated_at=clock_timestamp() where run_id=$1 and status='partial'",[runId]);},
  async coverage(policyId:string,sourceId:string,fingerprint:string,status:string,covered:number,runId:string){await pool.query('insert into wiki_source_coverage(policy_id,source_id,input_fingerprint,status,checkpoint,run_id) values($1,$2,$3,$4,$5,$6) on conflict(policy_id,source_id) do update set input_fingerprint=excluded.input_fingerprint,status=excluded.status,checkpoint=excluded.checkpoint,run_id=excluded.run_id,updated_at=clock_timestamp()',[policyId,sourceId,fingerprint,status,{covered},runId]);},
@@ -37,7 +90,17 @@ export function createWikiCollectionRepository(pool:PgPool){
  },
  async claimDelivery(policyId:string){return transaction(async db=>{const row=(await db.query("select d.*,e.created_at as event_created_at,e.kind,e.operation,e.input_id,e.fingerprint,e.source_ids,e.causal_run_id,e.causal_group_id from knowledge_impact_deliveries d join knowledge_impact_events e on e.id=d.event_id where d.consumer='curator' and d.consumer_key=$1 and (d.status='pending' or d.status='deferred' and (d.defer_until is null or d.defer_until<=now()) or d.status='leased' and d.lease_until<now()) order by (d.checkpoint->>'blockedReason' is not null),e.created_at,e.id limit 1 for update of d skip locked",[policyId])).rows[0];if(!row)return null;await db.query("update knowledge_impact_deliveries set status='leased',lease_until=now()+interval '30 seconds',updated_at=now() where id=$1",[row.id]);return row;});},
  async delivery(id:string,checkpoint:unknown,receipt:unknown|null,deferMs=2000){await pool.query("update knowledge_impact_deliveries set checkpoint=$2,receipt=$3,status=case when $3::jsonb is null then 'deferred' else 'acknowledged' end,defer_until=now()+($4::int * interval '1 millisecond'),lease_until=null,updated_at=now() where id=$1",[id,checkpoint,receipt,deferMs]);},
- async dependents(kind:string,inputId:string,after:string|null,limit=20){return(await pool.query(`select distinct p.id,p.current_revision_id as revision_id,array(select distinct s.input_id from wiki_dependencies s where s.revision_id=p.current_revision_id and s.kind='source') source_ids from wiki_dependencies d join wiki_pages p on p.current_revision_id=d.revision_id where d.kind=$1 and d.input_id=$2 and d.stale_reason is not null and not p.archived and p.role is distinct from 'investigation' and ($3::uuid is null or p.id>$3) order by p.id limit $4`,[kind,inputId,after,limit])).rows;},
+ async dependents(kind:string,inputId:string,after:string|null,limit=20){return(await pool.query(`select p.id,p.current_revision_id as revision_id,array(select distinct s.input_id from wiki_dependencies s where s.revision_id=p.current_revision_id and s.kind='source') source_ids
+  from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where not p.archived and p.role is distinct from 'investigation' and ($3::uuid is null or p.id>$3)
+  and (exists(select 1 from wiki_dependencies d where d.revision_id=p.current_revision_id and d.kind=$1 and d.input_id=$2 and d.stale_reason is not null)
+   or (($1='source' and not exists(select 1 from source_items where id=$2)
+    or $1='atomic_note' and not exists(select 1 from atomic_notes where id=$2 and status not in('rejected','archived'))
+    or $1='wiki_page' and not exists(select 1 from wiki_pages where id=$2 and not archived)
+    or $1='entity' and not exists(select 1 from entities where id=$2)) and (exists(select 1 from wiki_memberships m where m.page_id=p.id and m.target_kind=case when $1='wiki_page' then 'page' else $1 end and m.target_id=$2)
+   or exists(select 1 from jsonb_array_elements(coalesce(r.content->'automatic'->'links','[]')) l where l->>'kind'=case when $1='wiki_page' then 'page' else $1 end and l->>'id'=$2::text)
+   or p.toc_owner_kind=case when $1='wiki_page' then 'page' else $1 end and p.toc_owner_id=$2)))
+  order by p.id limit $4`,[kind,inputId,after,limit])).rows;},
+ async removalPeers(pageId:string){return(await pool.query(`select id,current_revision_id revision_id from wiki_pages where not archived and id<>$1 and (toc_owner_kind='page' and toc_owner_id=$1 or id=(select toc_owner_id from wiki_pages where id=$1 and toc_owner_kind='page')) order by id limit 3`,[pageId])).rows;},
  async enabledAt(policyId:string,revisionId:string){return(await pool.query("select min(created_at) at from wiki_policy_activations where policy_id=$1 and revision_id=$2 and state='enabled'",[policyId,revisionId])).rows[0]?.at as Date|null;},
  async currentWikiEvent(kind:string,inputId:string,fingerprint:string){if(kind!=='wiki_section')return true;return(await pool.query("select exists(select 1 from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where sec->>'id'=$1 and md5(sec::text)=$2) current",[inputId,fingerprint])).rows[0]!.current as boolean;},
  async causalApplied(causalRunId:string,pageId:string){return(await pool.query("select exists(select 1 from wiki_group_receipts g join organization_runs r on r.id=g.run_id where (r.id=$1 or r.snapshot->>'causalRunId'=$1::text) and g.targets @> jsonb_build_array(jsonb_build_object('pageId',$2::text))) applied",[causalRunId,pageId])).rows[0]!.applied as boolean;},

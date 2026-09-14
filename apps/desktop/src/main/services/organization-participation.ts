@@ -53,7 +53,7 @@ export async function reconcileOrganizationParticipation(pool:PgPool,service:Org
       if(!sourceIds.length)throw new Error('organization.errors.noEvidence');
       const automatic=plan.integrateWiki;
       if(automatic){
-        const noteSourceIds=state.selected.filter(r=>r.effectiveStages.includes('atomicNotes')).flatMap(r=>r.sourceItemId?[r.sourceItemId]:[]);
+        const noteSourceIds=sourceIds;
         const noteIds=await createWikiCuratorRepository(pool).noteIds(noteSourceIds);
         const started=await withPromptPin(PromptPinSchema.parse(batch.promptPin),()=>service.automaticStart({policyId:automatic.policyId,policyRevisionId:automatic.policyRevisionId,sourceIds,noteIds},{batchId:batch.id,ingestionRunIds:state.selected.map(r=>r.id),omissions:state.omissions}));
         for(const run of state.selected){await runsRepo.waitForBatchStage(run.id,'organizeKnowledge');await runsRepo.updateStageProgress(run.id,'organizeKnowledge',0,{organizationRunId:started!.id,partial:state.omissions.length>0});}continue;

@@ -20,3 +20,6 @@ export * from './repositories/knowledgeConsultationRepository.js';
 export * from './repositories/investigationRepository.js';
 export * from "./repositories/obsidianLayoutRepository.js";
 export * from './repositories/knowledgeAutomationRepository.js';
+
+export { createWikiRemovalRepository } from './repositories/wikiRemovalRepository.js';
+export { createWikiImpactReconciliationRepository } from './repositories/wikiImpactReconciliationRepository.js';

@@ -137,6 +137,12 @@ npm run db:generate
   revision, including native pinning and human section edits. Preserve group/member
   identities, order and authorship; refresh only their current revision base.
   Historical revision snapshots remain unchanged.
+  Delete current group/member rows for removed groups in that same save. Removal
+  repairs retain dependencies of protected prose and surviving targets, including
+  unavailable attribution of retained knowledge-owned notes; removed members do
+  not leave orphan navigation rows or grant current support. Preserve unchanged
+  previously verified sections after evidence loss without allowing new verification
+  of missing evidence.
 
 - Per-consumer impact delivery identity includes a concrete consumer key (policy
   or investigation identity), in addition to event, consumer kind and generation.
@@ -167,9 +173,13 @@ npm run db:generate
 - Serialize reservations on the parent policy lock. The same step cannot be
   charged twice or transferred between occurrences. Every installed child shares
   the parent monthly ledger; retries preserve consumed or uncertain reservations.
-  Prompt reservations include UTF-8 input bytes, admitted language/adapter wording,
-  bounded output and protocol margin. Reported usage remains separately linked
-  to the existing organization step and canonical AI audit.
+  Historical estimate ledgers retain their original accounting and replay identity.
+  They no longer authorize or block generation. Aggregate budget consumption from
+  canonical AI audits through the exact organization step and routine-call links,
+  with UTC month attribution by audit timestamp. Use strict greater-than comparisons
+  before provider execution; do not include planned future calls or tokens. Unknown
+  usage remains incomplete, and a completed result is never discarded for crossing
+  the configured consumption limit.
 - Schedule retirement uses `retired_at`; it never deletes a historical occurrence
   merely to satisfy a foreign key. Automatic readers exclude retired legacy rows,
   while historical run readers remain available. Protected-section equality uses

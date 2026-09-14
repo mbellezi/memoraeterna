@@ -25,10 +25,14 @@ Historical versioned records retain their own evidence and replay contracts.
   internally. Preserve scope checks, evidence validation and immutable admitted
   inputs. Retire new legacy routine admissions during setup; historical runs and
   reviews keep their versioned readers without a second routine-creation UI.
-- Before new curator work, plan synthesis, support assessment and a bounded repair
-  cycle against occurrence and parent-month capacity. Reduce whole-original groups
-  before admission when possible. Planning is conservative and separate from
-  measured usage; actual calls retain transactional reservations and authority.
+- Automatic generation budgets use canonical recorded calls, input/output tokens
+  and known spend, never predicted usage or reservations. Check before the provider
+  starts, including after FIFO waiting. Block the next generation only when recorded
+  usage is strictly greater than the occurrence or live UTC-month limit; equality
+  permits a call and an in-flight call may finish. Keep context packing, structural
+  validation, time limits and support checks independent of this budget gate.
+  Preserve existing estimate ledgers for audit only. Missing usage stays disclosed
+  as incomplete; never substitute a predicted token or cost value to block work.
 - Missing-model schedules retain their due date and record the prerequisite.
   Pin the configured profile only on actual admission. Automatically recheck
   temporary admission blockers. Never replay uncertain provider calls, canceled
@@ -46,6 +50,61 @@ Historical versioned records retain their own evidence and replay contracts.
   separate pending decisions and protected local bytes.
 - Coalesce input deliveries by policy and exact source scope for the task overview,
   with a pending-change count and paginated drill-down retaining every event.
+- Present impact events separately from execution records, collapsed by default.
+  Summarize changes by type and disclose the complete source count; never label
+  each delivery as a new incremental execution or name a multi-source group after
+  its first source. Diagnostic records show event type, target, operation, event
+  time and the linked analysis. An attention receipt is not successful integration.
+- Before creating a discovery run for a retained event with no remaining consumer
+  repairs, check current persisted source coverage, the exact policy/model/prompt
+  generation and eligible unplaced notes. A settled input receives an inspection
+  receipt without another empty run. New pending-review notes still require TOCs.
+  Group completed collection checks with zero child work by policy revision and
+  source scope under collapsed diagnostics. Never label them as applied generation;
+  preserve paginated individual records, real analyses, failures and pending work.
+- Reconcile legacy review-only page events from their exact before/after revisions,
+  ignoring only the review flag and refreshed membership revision pointers. Retire
+  the event without applying prose. A finished unapplied proposal exclusively tied
+  to that obsolete event may be technically canceled, preserving its proposal,
+  audits, usage and budget. Preserve active calls, shared analyses and applied work.
+  Clear only linked review waits; substantive edits remain ordinary input events.
+- Close an old childless budget/deadline attention receipt when current coverage
+  and note placement prove that a later pass fulfilled it, with no consumer repairs
+  remaining. Preserve the original attention receipt and failed occurrence. This
+  acknowledgment grants no new allowance and never revives that failed occurrence.
+- Reconcile a collection's stale review wait after its exact child has an applied
+  canonical receipt. Reopen its linked attention delivery and consume the existing
+  result through the normal cursor, without replaying calls or granting approval.
+  Require the current enabled policy revision and a live owning occurrence when
+  present. Never revive paused/canceled collections or canceled/terminal owners.
+- Marking a Wiki page or collection reviewed, with unchanged semantic content,
+  persists its editorial revision but emits no knowledge impact or incremental
+  analysis. A substantive edit saved with the review flag still invalidates its
+  consumers. Preserve canonical revision guards and historical review evidence.
+
+- Every post-ingestion automatic integration and incremental/daily/weekly/monthly
+  coverage pass includes existing eligible atomic notes in reading TOCs. Pending
+  human approval never excludes a note from automatic processing. Rejected,
+  archived, superseded, unavailable or out-of-scope evidence remains ineligible.
+  Do not require note generation to have been selected again to organize existing
+  notes. Discover unplaced notes with a durable keyset cursor, without the former
+  single-selection ceiling; pack complete original lineages within group budgets.
+  Coverage remains partial until the required navigation work settles. Existing
+  explicit originals-only commands and admitted legacy snapshots keep their scope.
+- Removal deliveries repair current page and TOC revisions before model admission.
+  Subtract unavailable typed targets and unprotected generated sections that lost
+  required inputs; preserve human/reviewed prose and retained interpretations with
+  their missing-evidence state. Rebuild affected generated reading groups with a
+  neutral localized heading and surviving memberships. Preserve protected group
+  wording, order and all unrelated placements. Empty unprotected generated pages
+  without remaining sources may be archived; their revisions and evidence remain.
+- Persist the exact repaired target and remaining scope in the existing delivery
+  checkpoint with the canonical revision. Repair owned/owner TOCs before admitting
+  synthesis over surviving originals. Missing inputs cannot grant access to existing
+  excluded sources. Preserve scope, policy pause, concurrency guards, model support
+  checks and ordinary budgets. Fully unsupported or preserved historical content
+  requires no inference; never invent replacement evidence or silently skip deletion
+  as an ordinary scope exclusion.
 
 - Serialize unfinished automatic curator admission per policy, retaining generation
   deduplication under the same lock. Waiting for another group is temporary
@@ -53,16 +112,16 @@ Historical versioned records retain their own evidence and replay contracts.
   complete-unit capacity after the previous group settles.
 
 - The automation Budget subpage exposes the shared UTC monthly calls/token ceiling,
-  existing reservations and remaining capacity, and every bounded curator-group
+  recorded consumption and remaining capacity, and every bounded curator-group
   limit. Routine limits remain editable from Schedules with a Budget shortcut.
   Validate numeric ranges and the complete synthesis/support/repair call allowance
   before saving. Preserve current values until an explicit save.
 - Monthly ceiling edits atomically compare every active schedule revision under
   the same policy lock as reservations and update all active routine bindings.
-  Every future reservation and capacity check uses that live shared ceiling,
+  Every future generation checks recorded usage against that live shared ceiling,
   including admitted occurrences. Preserve occurrence limits, admitted snapshots,
   recorded or uncertain reservations, pause state and historical failures. Lowering
-  a ceiling below reserved usage blocks new calls without refunding prior usage.
+  a ceiling below recorded usage blocks the next generation without refunding usage.
   New scope bindings inherit the shared ceiling; stale previews cannot reset it.
 - Curator-limit edits use the normal validated policy revision/activation flow,
   disclose revocation of earlier work and retain paused state and history. Range
@@ -78,6 +137,16 @@ Historical versioned records retain their own evidence and replay contracts.
   are outcomes, not successful integration or requests for human approval.
   Other technical failures retain their distinct cause and uncertain-call guards.
   Show the bounded diagnostics and a direct analysis/review action.
+- Completed organization/maintenance dispatch jobs appear only through their
+  canonical automation runs, never as generic ingestion cards in the processing
+  center. History cleanup preserves genuinely pending automation without duplicating
+  those dispatch jobs as completed ingestion.
+- Attention lookup follows a delivery's bootstrap and actual child analysis, including
+  older receipts that omitted the reason. A childless bootstrap stopped by an earlier
+  occurrence's budget or deadline does not grant or require human review, and cannot
+  transfer that exhausted allowance to a later authorized occurrence. Preserve the
+  original reason, cursor, audits and reservations while permitting ordinary recovery
+  under the later occurrence's limits.
 - A shared Clear task history action covers processing and automatic knowledge.
   It removes terminal entries from display through the existing job dismissal and
   a persisted cutoff, never through deletion of execution records, proposals,

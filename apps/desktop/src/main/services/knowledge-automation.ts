@@ -43,5 +43,6 @@ export class KnowledgeAutomation {
     return SourceJourneySchema.parse(await createKnowledgeAutomationRepository(pool).sources(policy,offset));
   }
   async deliveries(policyId:string,sourceIds:string[],offset:number,revisionId:string|null){return AutomationDeliveriesSchema.parse(await createKnowledgeAutomationRepository(this.pool()).deliveries(policyId,sourceIds,offset,revisionId));}
+  async inspections(policyId:string,sourceIds:string[],offset:number,revisionId:string|null){return AutomationDeliveriesSchema.parse(await createKnowledgeAutomationRepository(this.pool()).inspections(policyId,sourceIds,offset,revisionId));}
   async assets(offset:number){return KnowledgeAssetsSchema.parse(await createKnowledgeAutomationRepository(this.pool()).assets(offset));}
 }

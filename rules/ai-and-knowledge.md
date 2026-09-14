@@ -163,6 +163,10 @@ provider token breakdowns and precise call context, as specified in
   reranking route, with separate per-root budgets and no unvalidated fallback.
 - Automatically generated atomic notes start as `pending_review`, use validated
   structured output, and link to source, chunks, and SourceSpans.
+- Pending human review is not an automatic-processing exclusion, including wiki
+  organization and TOC membership. Review remains independent of source freshness,
+  support validation and protection; explicit reviewed-only consultation retains
+  its requested filter.
 - Graph extraction, canonical persistence, projections, and dashboard contracts
   are defined in `rules/knowledge-graph.md`; load it when changing those areas.
 - Graph canonicalization uses the embedding route for retrieval and the graph-generation

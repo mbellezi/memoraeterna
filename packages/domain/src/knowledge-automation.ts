@@ -13,8 +13,9 @@ export const wikiAreaIds = {
   works: '93eb6590-c9a3-4b82-8f79-000000000009'
 } as const;
 export const AutomationTaskSchema = z.object({
+  event:z.object({kind:z.string(),operation:z.string(),targetId:z.string().uuid(),targetTitle:z.string().nullable(),createdAt:z.string(),causalRunId:z.string().uuid().nullable()}).strict().optional(),
   relatedRunId:z.string().uuid().nullable().optional(),relatedRunVersion:z.string().nullable().optional(),
-  id: z.string(), kind: z.enum(['organization', 'maintenance', 'delivery', 'schedule', 'sync']),
+  id: z.string(), kind: z.enum(['organization', 'maintenance', 'delivery', 'inspection', 'schedule', 'sync']),
   title: z.string(), status: z.string(), reason: z.string().nullable(), updatedAt: z.string(),
   policyId: z.string().nullable(), sourceIds: z.array(z.string()),
   version: z.string().nullable()
@@ -27,6 +28,7 @@ export const AutomationDashboardSchema = z.object({
   sources: z.object({ total: z.number().int(), integrated: z.number().int(), pending: z.number().int() }).strict()
 }).strict();
 export const AutomationCommandSchema = z.discriminatedUnion('command', [
+  z.object({command:z.literal('automationInspections'),policyId:z.string().uuid(),revisionId:z.string().max(100).nullable().default(null),sourceIds:z.array(z.string().uuid()).max(1000),offset:z.number().int().min(0).default(0)}).strict(),
   z.object({command:z.literal('automationDeliveries'),policyId:z.string().uuid(),revisionId:z.string().max(100).nullable().default(null),sourceIds:z.array(z.string().uuid()).max(1000),offset:z.number().int().min(0).default(0)}).strict(),
   z.object({ command: z.literal('automationAssets'), offset: z.number().int().min(0).default(0) }).strict(),
   z.object({ command: z.literal('automationSources'), offset: z.number().int().min(0).default(0) }).strict(),

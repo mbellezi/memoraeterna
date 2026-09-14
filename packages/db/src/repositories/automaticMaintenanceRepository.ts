@@ -51,6 +51,26 @@ async function monthlyAllowance(db:Db,policyId:string){
  if(rows.some(r=>!isDeepStrictEqual(AutomaticAllowanceSchema.parse(r.allowance),allowance)))throw new Error('maintenance.errors.conflict');
  return allowance;
 }
+async function recordedBudgetUsage(db:Db,policyId:string,period:string|null=null,runId:string|null=null){
+ const row=(await db.query(`select count(a.id)::int calls,
+  (coalesce(sum(a.input_tokens),0)+coalesce(sum(a.output_tokens),0))::float tokens,
+  sum(a.cost_estimate)::float spend,
+  count(a.id)<>count(a.input_tokens) or count(a.id)<>count(a.output_tokens) incomplete
+  from automatic_routine_calls c join organization_steps s on s.run_id=c.organization_run_id and s.sequence=c.sequence
+  join ai_task_runs a on a.id=s.ai_task_run_id
+  where c.policy_id=$1 and ($2::uuid is null or c.run_id=$2)
+  and ($3::text is null or to_char(a.started_at at time zone 'UTC','YYYY-MM')=$3)`,[policyId,runId,period])).rows[0];
+ return row as {calls:number;tokens:number;spend:number|null;incomplete:boolean};
+}
+export function automaticBudgetExceeded(used:{calls:number;tokens:number;spend:number|null},limit:AutomaticRoutinePolicy['allowance']){
+ return used.calls>limit.calls||used.tokens>limit.tokens||limit.spend!==null&&used.spend!==null&&used.spend>limit.spend;
+}
+async function checkRecordedBudget(db:Db,r:AutomaticMaintenanceRun,now:Date){
+ const policyId=r.snapshot.policy.policyId,ceiling=await monthlyAllowance(db,policyId);
+ if(!ceiling)throw new Error('maintenance.errors.revoked');
+ if(automaticBudgetExceeded(await recordedBudgetUsage(db,policyId,null,r.id),r.snapshot.policy.allowance))throw new Error('maintenance.errors.budget');
+ if(automaticBudgetExceeded(await recordedBudgetUsage(db,policyId,now.toISOString().slice(0,7)),ceiling))throw new Error('maintenance.errors.period');
+}
 /** Called inside the activation transaction, using the exact disclosed preview. */
 export async function installAutomaticRoutines(db:Db,policy:AutomaticWikiPolicy,raw:unknown,now=new Date()){
  const preview=AutomaticMaintenancePreviewSchema.parse(raw);
@@ -116,15 +136,20 @@ export function createAutomaticMaintenanceRepository(pool:PgPool){
  async attention(id:string){
   const parent=(await pool.query('select status,checkpoint from maintenance_runs where id=$1',[id])).rows[0];
   if(!parent||!['awaiting_review','failed','rejected'].includes(parent.status))return null;
+  const bootstrap=(await pool.query(`select b.checkpoint from maintenance_runs m
+    left join knowledge_impact_deliveries d on d.id::text=m.checkpoint->>'impactDeliveryId'
+    join organization_runs b on b.id::text=coalesce(m.checkpoint->>'bootstrapId',d.checkpoint->>'bootstrapId',d.receipt->>'runId')
+    where m.id=$1 and b.snapshot->>'version'='wiki-bootstrap-v1'`,[id])).rows[0];
   const child=(await pool.query(`select c.id,c.status,c.snapshot->>'version' version,c.checkpoint,
     c.status='awaiting_review' and case when c.snapshot->>'version'='wiki-curator-v2' then c.checkpoint->'supportAssessment'->'verdict'->>'supported'='true' and c.checkpoint->'proposal'<>'null'::jsonb else exists(select 1 from organization_proposals p where p.run_id=c.id) end review_ready
-    from maintenance_runs m left join organization_runs b on b.id::text=m.checkpoint->>'bootstrapId'
-    left join knowledge_impact_deliveries d on d.id::text=m.checkpoint->>'impactDeliveryId'
+    from maintenance_runs m left join knowledge_impact_deliveries d on d.id::text=m.checkpoint->>'impactDeliveryId'
+    left join organization_runs b on b.id::text=coalesce(m.checkpoint->>'bootstrapId',d.checkpoint->>'bootstrapId',d.receipt->>'runId')
     join organization_runs c on c.id::text in(m.checkpoint->>'reviewChildId',b.checkpoint->>'childRunId',d.checkpoint->>'childRunId') or c.snapshot->>'maintenanceRunId'=m.id::text
     where m.id=$1 and c.status in('awaiting_review','failed','rejected','canceled')
     order by (c.status='awaiting_review') desc,c.updated_at desc,c.id limit 1`,[id])).rows[0];
+  const reason=child?.checkpoint.supportAssessment?.verdict.supported===false?'organization.errors.unsupported':child?.checkpoint.error??bootstrap?.checkpoint.error??parent.checkpoint.reason??null;
   return AutomaticMaintenanceAttentionSchema.parse({kind:child?.review_ready?'review':'blocked',childRunId:child?.id??null,childVersion:child?.version??null,
-    reason:child?.checkpoint.supportAssessment?.verdict.supported===false?'organization.errors.unsupported':child?.checkpoint.error??parent.checkpoint.reason??null,
+    reason:!child?.review_ready&&reason==='organization.errors.review'?'maintenance.errors.failed':reason,
     issues:child?.checkpoint.validationIssues??[]});
  },
  async preview(policy:AutomaticWikiPolicy,timezone:string){const sharedMonth=await monthlyAllowance(pool,policy.id);const defaults=automaticRoutinePresets(policy.id,policy.revisionId,automaticScopeKey(policy.scope),timezone),routines=[];for(const p of defaults){const old=(await pool.query('select s.* from automatic_routine_bindings b join maintenance_schedules s on s.id=b.schedule_id where b.policy_id=$1 and b.kind=$2 and b.scope_key=$3',[policy.id,p.kind,p.scopeKey])).rows[0];routines.push({policy:{...(old?{...old.policy,policyRevisionId:policy.revisionId}:{...p,monthAllowance:sharedMonth??p.monthAllowance}),promptIds:[...p.promptIds,...(policy.operations.includes('interpret_memory')?['organization.temporal','organization.procedure']:[]),...(policy.operations.includes('evolve_notes')?['organization.consolidation']:[]),...(policy.operations.includes('interpret_memory')||policy.operations.includes('evolve_notes')?['organization.evolution.repair','organization.evolution.support']:[])]},scheduleId:old?.id??null,action:old?'preserve':'create'});}const legacy=(await pool.query("select id,policy from maintenance_schedules where retired_at is null and policy->>'version' is distinct from $1 order by id",[version])).rows.map(r=>({id:r.id,name:r.policy.name,enabled:r.policy.enabled,action:'retain_separate'}));return AutomaticMaintenancePreviewSchema.parse({version,routines,legacy,monthAllowance:routines[0]!.policy.monthAllowance});},
@@ -148,30 +173,39 @@ export function createAutomaticMaintenanceRepository(pool:PgPool){
   });
  },
  async scheduleStatus(ids:string[],reason:string|null){await pool.query('update maintenance_schedules set last_error=$2 where id=any($1::uuid[])',[ids,reason]);},
- async capacity(runId:string,calls:number,tokens:number,now=new Date()){
+ async measured(policyId:string,period:string){return recordedBudgetUsage(pool,policyId,period);},
+ async capacity(runId:string,_calls=0,_tokens=0,now=new Date()){
   const r=await api.get(runId);if(!r)throw new Error('maintenance.errors.revoked');
-  const p=r.snapshot.policy,month=await api.monthly(p.policyId,now.toISOString().slice(0,7)),ceiling=await monthlyAllowance(pool,p.policyId);
-  if(!ceiling)throw new Error('maintenance.errors.revoked');
-  if(p.allowance.spend!==null||ceiling.spend!==null)throw new Error('maintenance.errors.costUnknown');
-  if(r.reservation.calls+calls>p.allowance.calls||r.reservation.tokens+tokens>p.allowance.tokens)throw new Error('maintenance.errors.budget');
-  if(month.calls+calls>ceiling.calls||month.tokens+tokens>ceiling.tokens)throw new Error('maintenance.errors.period');
+  await checkRecordedBudget(pool,r,now);
  },
  async heartbeat(id:string,now:Date,elapsed:number,unobserved=0){const row=(await pool.query("update maintenance_runs set checkpoint=jsonb_set(jsonb_set(jsonb_set(checkpoint,'{closedMs}',to_jsonb(coalesce((checkpoint->>'closedMs')::float,0)+$4::float)),'{executionMs}',to_jsonb((checkpoint->>'executionMs')::float+$3::float)),'{lastTickAt}',to_jsonb($2::text)) where id=$1 and status in('inspecting','analyzing') and checkpoint->>'reason' is null returning snapshot,checkpoint",[id,now.toISOString(),Math.max(0,elapsed),Math.max(0,unobserved)])).rows[0];if(!row)throw new Error('maintenance.errors.revoked');return row.snapshot.policy.executionMs-row.checkpoint.executionMs;},
  async blocker(policyId:string){const row=(await pool.query("select exists(select 1 from jobs j where j.status in('queued','running') and j.type<>'maintenance' and not (j.type='organization' and exists(select 1 from organization_runs r where r.job_id=j.id and r.snapshot->'policy'->>'id'=$1))) busy",[policyId])).rows[0]!;return row.busy?'maintenance.errors.busy':null;},
  async pending(policyId:string){return Number((await pool.query("select count(*) n from knowledge_impact_deliveries where consumer='curator' and consumer_key=$1 and status not in ('acknowledged','excluded')",[policyId])).rows[0]!.n);},
  // Admission failures retain their delivery cursor. Only unstarted budget deferrals may move to a new occurrence.
- async reviewChild(runId:string){const row=(await pool.query("select id,status,checkpoint->>'error' error from organization_runs where snapshot->>'maintenanceRunId'=$1 and status in('awaiting_review','failed','canceled','rejected') order by created_at,id limit 1",[runId])).rows[0];return row?{id:row.id as string,reason:row.error??'organization.errors.review'}:null;},
- async deliveryAttention(policyId:string,runId:string){const row=(await pool.query(`select d.id,
+ async reviewChild(runId:string){const row=(await pool.query("select id,status,checkpoint->>'error' error from organization_runs where snapshot->>'maintenanceRunId'=$1 and status in('awaiting_review','failed','canceled','rejected') and not(status='canceled' and coalesce(checkpoint->>'error','')='organization.errors.supersededTrigger') order by created_at,id limit 1",[runId])).rows[0];return row?{id:row.id as string,reason:row.error??'organization.errors.review'}:null;},
+ async deliveryAttention(policyId:string,runId:string){const row=(await pool.query(`with attention as (
+ select d.id,d.updated_at,d.status,d.receipt,d.input_generation,d.checkpoint,
+ coalesce(child.status,'') child_status,child.id child_id,
  case when child.status in('awaiting_review','failed','canceled','rejected') then coalesce(child.checkpoint->>'error','organization.errors.review')
- else coalesce(d.checkpoint->>'blockedReason',d.receipt->>'reason','organization.errors.review') end reason,
- child.id is null and coalesce(d.checkpoint->>'blockedReason','') ~ '^(maintenance.errors.(budget|period)|organization.errors.deadline)$' exhaustible
- from knowledge_impact_deliveries d left join organization_runs child on child.id::text=d.checkpoint->>'childRunId'
- where d.consumer='curator' and d.consumer_key=$1 and (d.status not in('acknowledged','excluded') or d.receipt->>'kind'='attention') and (child.status in('awaiting_review','failed','canceled','rejected')
- or child.id is null and d.checkpoint->>'blockedReason' is not null and d.checkpoint->>'blockedReason' !~ '^maintenance.errors.(wait|idle|busy|sync)$' and
- (d.checkpoint->>'blockedReason' !~ '^(maintenance.errors.(budget|period)|organization.errors.deadline)$' or d.checkpoint->>'blockedMaintenanceRunId'=$2)
- or d.receipt->>'kind'='attention')
+ else coalesce(bootstrap.checkpoint->>'error',d.checkpoint->>'blockedReason',d.receipt->>'reason','organization.errors.review') end reason,
+ bootstrap.id bootstrap_id,bootstrap.checkpoint->>'childRunId' bootstrap_child,
+ owner.id owner_id
+ from knowledge_impact_deliveries d
+ left join organization_runs bootstrap on bootstrap.id::text=coalesce(d.checkpoint->>'bootstrapId',d.receipt->>'runId') and bootstrap.snapshot->>'version'='wiki-bootstrap-v1'
+ left join organization_runs child on child.id::text=coalesce(d.checkpoint->>'childRunId',bootstrap.checkpoint->>'childRunId')
+ left join lateral(select m.id from maintenance_runs m where m.checkpoint->>'bootstrapId'=bootstrap.id::text order by m.created_at desc,m.id limit 1) owner on true
+ where d.consumer='curator' and d.consumer_key=$1
  and d.input_generation like '%:'||(select snapshot->>'policyRevisionId' from maintenance_runs where id=$2::uuid)
- order by d.updated_at,d.id limit 1`,[policyId,runId])).rows[0];return row?{id:row.id as string,reason:row.reason as string,exhaustible:row.exhaustible as boolean}:null;},
+ ) select id,reason,child_id is null and reason ~ '^(maintenance.errors.(budget|period)|organization.errors.deadline)$' exhaustible
+ from attention where (status not in('acknowledged','excluded') or receipt->>'kind'='attention')
+ and (child_status in('awaiting_review','failed','canceled','rejected')
+ or child_id is null and checkpoint->>'blockedReason' is not null and checkpoint->>'blockedReason' !~ '^maintenance.errors.(wait|idle|busy|sync)$'
+ or receipt->>'kind'='attention')
+ -- An exhausted childless group belongs to its original occurrence. A later
+ -- authorized occurrence may continue its cursor; it must not inherit a review.
+ and not (child_id is null and reason ~ '^(maintenance.errors.(budget|period)|organization.errors.deadline)$'
+   and case when bootstrap_id is not null then owner_id is distinct from $2::uuid else (checkpoint->>'blockedMaintenanceRunId') is distinct from $2::text end)
+ order by updated_at,id limit 1`,[policyId,runId])).rows[0];return row?{id:row.id as string,reason:row.reason as string,exhaustible:row.exhaustible as boolean}:null;},
  async changedAt(policyId:string){const r=(await pool.query("select max(e.created_at) at from knowledge_impact_deliveries d join knowledge_impact_events e on e.id=d.event_id where (d.consumer='curator' and d.consumer_key=$1 or d.consumer='investigation' and d.consumer_key in(select id::text from wiki_investigations where policy_id=$1::uuid and state in('followed','awaiting_evidence'))) and d.receipt is null",[policyId])).rows[0];return r?.at?stamp(r.at):null;},
  async admit(schedules:zSchedule[],now:Date,manual=false,requestId?:string,context?:Pick<AutomaticMaintenanceRun['snapshot'],'promptPin'|'profile'|'contentLanguage'>){return tx(async db=>{const p=schedules[0]!.policy;await policyLock(db,p.policyId);const current=(await db.query("select a.state,a.revision_id from wiki_policy_activations a where policy_id=$1 order by created_at desc,id desc limit 1",[p.policyId])).rows[0];if(current?.state!=='enabled'||current.revision_id!==p.policyRevisionId)throw new Error('organization.errors.policy');
   let old=(await db.query(`select * from maintenance_runs where snapshot->>'version'=$1 and snapshot->'policy'->>'policyId'=$2 and snapshot->'policy'->>'kind'=$3 and ${live} order by created_at limit 1 for update`,[version,p.policyId,p.kind])).rows[0];
@@ -191,7 +225,7 @@ export function createAutomaticMaintenanceRepository(pool:PgPool){
  async save(id:string,expected:number,p:AutomaticRoutinePolicy,now:Date){return tx(async db=>{await policyLock(db,p.policyId);const old=(await db.query('select * from maintenance_schedules where id=$1 for update',[id])).rows[0];if(!old||old.revision!==expected||old.policy.policyId!==p.policyId||old.policy.kind!==p.kind||old.policy.scopeKey!==p.scopeKey)throw new Error('maintenance.errors.conflict');if(!isDeepStrictEqual(old.policy.monthAllowance,p.monthAllowance))throw new Error('maintenance.errors.budget');await db.query('update maintenance_schedules set policy=$2,revision=revision+1,next_at=$3,updated_at=$4 where id=$1',[id,p,automaticNext(p,now),now]);await db.query(`update maintenance_runs set status='canceled' where schedule_ids ? $1 and ${live}`,[id]);return schedule((await db.query('select * from maintenance_schedules where id=$1',[id])).rows[0]!);});},
  async authority(policyId:string,now=new Date()){const active=(await api.active(policyId)).find(r=>['inspecting','analyzing'].includes(r.status)&&!r.checkpoint.reason);if(!active)return null;try{return await validateAutomaticAuthority(pool,active.id,policyId,false,now);}catch{return null;}},
  async reserve(runId:string,organizationRunId:string,sequence:number,tokens:number,now=new Date()){return tx(async db=>{const initial=await api.get(runId);if(!initial)throw new Error('maintenance.errors.revoked');const policyId=initial.snapshot.policy.policyId;await policyLock(db,policyId);const r=await validateAutomaticAuthority(db,runId,policyId,true,now);const prior=(await db.query('select * from automatic_routine_calls where organization_run_id=$1 and sequence=$2',[organizationRunId,sequence])).rows[0];if(prior){if(prior.run_id!==runId)throw new Error('maintenance.errors.budget');return;}
-  const child=(await db.query('select snapshot,checkpoint from organization_runs where id=$1',[organizationRunId])).rows[0];if((child?.checkpoint.investigationOccurrenceId??child?.snapshot.maintenanceRunId)!==runId||(child.snapshot.investigationPolicyId??child.snapshot.policy.id)!==policyId)throw new Error('maintenance.errors.revoked');const p=r.snapshot.policy,period=now.toISOString().slice(0,7),ceiling=await monthlyAllowance(db,policyId);if(!ceiling)throw new Error('maintenance.errors.revoked');if(p.allowance.spend!==null||ceiling.spend!==null)throw new Error('maintenance.errors.costUnknown');const month=(await db.query('select reservation from maintenance_budget_reservations where scope_key=$1 and period=$2',['automatic-policy:'+policyId,period])).rows;const calls=month.reduce((n,r)=>n+r.reservation.calls,0),used=month.reduce((n,r)=>n+r.reservation.tokens,0);if(r.reservation.calls+1>p.allowance.calls||r.reservation.tokens+tokens>p.allowance.tokens)throw new Error('maintenance.errors.budget');if(calls+1>ceiling.calls||used+tokens>ceiling.tokens)throw new Error('maintenance.errors.period');
+  const child=(await db.query('select snapshot,checkpoint from organization_runs where id=$1',[organizationRunId])).rows[0];if((child?.checkpoint.investigationOccurrenceId??child?.snapshot.maintenanceRunId)!==runId||(child.snapshot.investigationPolicyId??child.snapshot.policy.id)!==policyId)throw new Error('maintenance.errors.revoked');const period=now.toISOString().slice(0,7);await checkRecordedBudget(db,r,now);
   await db.query('insert into automatic_routine_calls(organization_run_id,sequence,run_id,policy_id,period,tokens) values($1,$2,$3,$4,$5,$6)',[organizationRunId,sequence,runId,policyId,period,tokens]);await db.query("insert into maintenance_budget_reservations(run_id,scope_key,period,reservation) values($1,$2,$3,$4) on conflict(run_id,period) do update set reservation=jsonb_build_object('calls',(maintenance_budget_reservations.reservation->>'calls')::int+1,'tokens',(maintenance_budget_reservations.reservation->>'tokens')::int+$5,'spend',null)",[runId,'automatic-policy:'+policyId,period,{calls:1,tokens,spend:null},tokens]);await db.query("update maintenance_runs set reservation=jsonb_build_object('calls',(reservation->>'calls')::int+1,'tokens',(reservation->>'tokens')::int+$2,'spend',null),checkpoint=jsonb_set(jsonb_set(checkpoint,'{calls}',to_jsonb((reservation->>'calls')::int+1)),'{reservedTokens}',to_jsonb((reservation->>'tokens')::int+$2)) where id=$1",[runId,tokens]);
  });}
  };return api;

@@ -110,7 +110,7 @@ export function createWikiRepository(pool: PgPool) {
         const current = (await db.query("select p.*,r.content,r.number from wiki_pages p left join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1 for update of p", [id])).rows[0];
         if ((input.id && !current && !authority?.allocatedTarget) || (current?.current_revision_id ?? null) !== input.expectedRevisionId) throw new Error("wiki.errors.conflict");
         const content = structuredClone(input.content);
-        if (!current && !content.parentId && !Object.values(wikiAreaIds).includes(id as typeof wikiAreaIds[keyof typeof wikiAreaIds])) {
+        if (!current?.current_revision_id && !content.parentId && !Object.values(wikiAreaIds).includes(id as typeof wikiAreaIds[keyof typeof wikiAreaIds])) {
           const area = content.kind === 'topic' ? wikiAreaIds.themes : content.kind === 'entity' ? wikiAreaIds.entities : content.kind === 'synthesis' ? content.automatic?.role.role === 'investigation' ? wikiAreaIds.investigations : wikiAreaIds.syntheses : wikiAreaIds.maps;
           if ((await db.query('select 1 from wiki_pages where id=$1', [area])).rows.length) content.parentId = area;
         }
@@ -162,7 +162,7 @@ export function createWikiRepository(pool: PgPool) {
           return item.id as string;
         }))];
         if(content.automatic)for(const group of content.automatic.groups)group.explanationEvidenceIds=group.explanationEvidenceIds.map(handle=>{const item=evidence.find(e=>e.id===handle||e.chunkId===handle);if(!item)throw new Error("wiki.errors.evidence");return item.id;});
-        for(const section of content.sections)if(section.assessment?.reason==='human_verified'&&section.evidenceIds.some(id=>!evidence.find(e=>e.id===id)?.current))throw new Error('wiki.errors.evidence');
+        for(const section of content.sections)if(section.assessment?.reason==='human_verified'&&section.evidenceIds.some(id=>!evidence.find(e=>e.id===id)?.current)&&!isDeepStrictEqual((current?.content as Content|undefined)?.sections.find(s=>s.id===section.id),section))throw new Error('wiki.errors.evidence');
         const revisionId = authority?.revisionId??randomUUID();
         if(content.automatic){content.automatic=structuredClone(content.automatic);for(const member of content.automatic.memberships)member.expectedPageRevisionId=revisionId;}
         await db.query(`insert into wiki_page_revisions(id,page_id,parent_revision_id,number,origin,content,content_hash) values($1,$2,$3,$4,$7,$5,$6)`,
@@ -188,6 +188,11 @@ export function createWikiRepository(pool: PgPool) {
             if(input.expectedRevisionId)await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at) select $1,section_id,kind,input_id,fingerprint,snapshot,stale_reason,changed_at from wiki_dependencies where revision_id=$2 and section_id=$3 on conflict do nothing',[revisionId,input.expectedRevisionId,group.id]);
             for(const evidenceId of group.explanationEvidenceIds){const item=evidence.find(e=>e.id===evidenceId)!;for(const [kind,inputId]of [['source',item.sourceItemId],['document',item.documentId],['chunk',item.chunkId]])await db.query('insert into wiki_dependencies(revision_id,section_id,kind,input_id,fingerprint,snapshot) values($1,$2,$3,$4,$5,$6) on conflict do nothing',[revisionId,group.id,kind,inputId,item.snapshot.contentHash,item.snapshot]);}
           }
+        }
+        if(content.automatic){
+          const groups=content.automatic.groups.map(g=>g.id);
+          await db.query('delete from wiki_memberships where page_id=$1 and not(group_id=any($2::uuid[]))',[id,groups]);
+          await db.query('delete from wiki_toc_groups where page_id=$1 and not(id=any($2::uuid[]))',[id,groups]);
         }
         if(content.automatic)for(const group of content.automatic.groups){
           await db.query('insert into wiki_toc_groups(id,page_id,revision_id,snapshot) values($1,$2,$3,$4) on conflict(id) do update set revision_id=excluded.revision_id,snapshot=excluded.snapshot',[group.id,id,revisionId,group]);

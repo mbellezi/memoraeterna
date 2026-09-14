@@ -23,7 +23,7 @@ transitive references explicitly named inside a selected rule.
 | Renderer components, product copy, styles, accessibility, themes, locales, or user-visible backend messages | `rules/frontend-and-i18n.md` |
 | Integration Gateway, Chrome extension, YouTube capture, Obsidian plugin, vault projection, pairing, or sync | `rules/integrations.md` |
 | Secrets, external input, filesystem access, network access, remote AI, deletion, backups, logs, or privacy-sensitive behavior | `rules/security-and-privacy.md` |
-| PostgreSQL/Docling/MLX sidecars, native artifacts, runtime downloads, desktop packaging, signing, notarization, or distribution | `rules/runtime-and-packaging.md` |
+| Starting DEV, native application testing, PostgreSQL/Docling/MLX sidecars, native artifacts, runtime downloads, desktop packaging, signing, notarization, or distribution | `rules/runtime-and-packaging.md` |
 
 ## Routing examples
 

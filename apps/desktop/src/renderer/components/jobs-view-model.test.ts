@@ -5,6 +5,10 @@ import { collapsePreparationStages, groupJobs, listActivityJobs, type JobCardMod
 import { jobRecordSchema } from "../../shared/ipc";
 
 describe("jobs view model", () => {
+  it.each(['queued','running','succeeded','failed','canceled'] as const)('leaves %s automation dispatchers to the canonical task view',status=>{
+    const dispatchers=['maintenance','organization'].map((type,index)=>({id:'dispatcher-'+index,type,status} as JobRecord));
+    expect(groupJobs(dispatchers)).toEqual([]);
+  });
   it.each(["atomicNoteMatching","sourceMatching","organizeKnowledge"])("keeps %s cards independent after ingestion jobs finish",(stage) => {
     const jobs=["completed","running","waiting_for_batch","failed","canceled"].map((status,index) => jobRecordSchema.parse({
       id:`00000000-0000-4000-8000-00000000000${index}`,type:"ingestion",status:"succeeded",progress:1,
