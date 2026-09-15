@@ -37,13 +37,13 @@ export function validateCuratorProposal(snapshot:CuratorSnapshot,proposal:Curato
  if(countHierarchyChanges(proposal).workTargets>snapshot.limits.targets)throw new Error('organization.errors.budget');
  const ref=(r:CuratorChangeSet['targets'][number]['links'][number])=>{if(r.reference==='existing'&&!snapshot.references.some(a=>a.kind===r.target.kind&&a.id===r.target.id&&a.fingerprint===r.fingerprint))throw new Error('organization.errors.scope');};
  const originals=(handles:string[],markdown:string)=>{if(new Set(handles).size!==handles.length||handles.some(h=>!snapshot.evidence.some(e=>e.handle===h)))throw new Error('organization.errors.evidence');for(const [,h]of markdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g))if(!handles.includes(h!))throw new Error('organization.errors.evidence');};
- for(const target of proposal.targets){
+ for(const [targetIndex,target] of proposal.targets.entries()){
   if(target.sections.length>snapshot.limits.sectionPatchesPerPage)throw new Error('organization.errors.budget');
   const old=snapshot.pages.find(p=>p.id===target.pageId);
   if(target.pageId&&(!old||old.revisionId!==target.expectedRevisionId||old.kind!==target.role.kind))throw new Error('organization.errors.conflict');
   const ops=snapshot.policy.operations;if(!ops.includes(target.pageId?'update_unprotected':'create_grounded')||target.initialParent&&!ops.includes('initial_placement')||target.tocGroups.length&&!ops.includes('repair_navigation'))throw new Error('organization.errors.policy');
   if(target.tocGroups.length&&target.role.kind!=='collection')throw new Error('organization.errors.invalid');
-  if(!target.pageId&&target.role.kind!=='collection'&&target.role.kind!=='topic'&&!target.sections.length)throw new Error('organization.errors.evidence');
+  if(!target.pageId&&target.role.kind!=='collection'&&target.role.kind!=='topic'&&!target.sections.length){if(target.role.kind==='entity')throw new z.ZodError([{code:'custom',path:['targets',targetIndex,'sections'],message:'New entity pages need at least one grounded section with originalHandles; omit this target if no entity prose is supported.'}]);throw new Error('organization.errors.evidence');}
   if(target.role.kind==='entity'&&!snapshot.references.some(r=>r.kind==='entity'&&r.id===(target.role as {entityId:string}).entityId))throw new Error('organization.errors.scope');
   for(const patch of target.sections){const section=old?.sections.find(s=>s.id===patch.sectionId);if(patch.sectionId&&(!section||section.sectionRevisionId!==patch.expectedSectionRevisionId))throw new Error('organization.errors.conflict');originals(patch.originalHandles,patch.markdown);
    if(patch.interpretation){const interpretation=patch.interpretation;if(!snapshot.policy.operations.includes('interpret_memory')||!['temporal','procedure'].includes(snapshot.intent??''))throw new z.ZodError([{code:'custom',path:['targets',proposal.targets.indexOf(target),'sections',target.sections.indexOf(patch),'interpretation'],message:'This note-evolution intent does not permit interpretation fields. Omit interpretation entirely; keep the ordinary section fields and noteEvolution. Only temporal/procedure intent with interpret_memory grants this field.'}]);originals(interpretation.originalHandles,interpretation.statement);if(interpretation.originalHandles.some(h=>!patch.originalHandles.includes(h)))throw new Error('organization.errors.evidence');const prior=section?.interpretations??[];if(interpretation.relationships.some(r=>!prior.some(p=>p.revisionId===r.revisionId)))throw new Error('organization.errors.evidence');if((interpretation.perspective==='user_statement'||interpretation.procedure)&&interpretation.originalHandles.some(h=>!snapshot.personalSourceIds?.includes(snapshot.evidence.find(e=>e.handle===h)!.sourceItemId)))throw new Error('organization.errors.evidence');}
@@ -65,26 +65,26 @@ export function expandCuratorDraft(output:unknown,snapshot:CuratorSnapshot){
   if(!entry)throw new Error('organization.errors.scope');
   return{reference:'existing',target:{kind:'page',id:entry.pageId},expectedRevisionId:entry.revisionId,fingerprint:entry.fingerprint};
  };
- const pageFor=(handle:string)=>{
-  if(handle.startsWith('new_'))return undefined;const ref=reference(handle);
-  const page=ref.reference==='existing'&&ref.target.kind==='page'?snapshot.pages.find(p=>p.id===ref.target.id):undefined;
-  if(!page)throw new Error('organization.errors.scope');return page;
+ const pageFor=(handle:string,path:Array<string|number>,kind?:'topic'|'entity'|'collection')=>{
+  if(handle.startsWith('new_'))return undefined;const ref=snapshot.references[Number(handle.slice(1))-1];
+  const page=ref?.kind==='page'?snapshot.pages.find(p=>p.id===ref.id):undefined;
+  if(!page||kind&&page.kind!==kind)throw new z.ZodError([{code:'custom',path,message:'Use an admitted editable '+(kind?kind+' ':'')+'page rN handle; entity/source/note references are not page handles. A new page requires a new_ handle.'}]);return page;
  };
  const outputHandle=(handle:string)=>handle.startsWith('new_')?handle:'new_existing_'+handle;
- const prose=(topic:typeof draft.topics[number],role:CuratorChangeSet['targets'][number]['role'])=>{
-  const old=pageFor(topic.handle);if(old&&old.kind!==role.kind)throw new Error('organization.errors.scope');
+ const prose=(topic:typeof draft.topics[number],role:Extract<CuratorChangeSet['targets'][number]['role'],{kind:'topic'|'entity'}>,path:Array<string|number>)=>{
+  const old=pageFor(topic.handle,path,role.kind);
   if(!old&&topic.sections.some(s=>s.id))throw new Error('organization.errors.invalid');
   return{handle:outputHandle(topic.handle),pageId:old?.id??null,expectedRevisionId:old?.revisionId??null,title:topic.title,purpose:topic.purpose,role,initialParent:parent(topic.initialParent),sections:topic.sections.map(section=>({sectionId:section.id,expectedSectionRevisionId:section.id?old?.sections.find(s=>s.id===section.id)?.sectionRevisionId??null:null,interpretation:section.interpretation,title:section.title,markdown:section.markdown,originalHandles:section.originalHandles})),links:topic.links.map(reference),tocGroups:[]};
  };
- const topics=draft.topics.map(topic=>prose(topic,{kind:'topic',role:'topic'}));
- const entities=draft.entities.map(entity=>{const ref=reference(entity.entity);if(ref.reference!=='existing'||ref.target.kind!=='entity')throw new Error('organization.errors.scope');return prose(entity,{kind:'entity',role:'entity',entityId:ref.target.id});});
+ const topics=draft.topics.map((topic,i)=>prose(topic,{kind:'topic',role:'topic'},['topics',i,'handle']));
+ const entities=draft.entities.map((entity,i)=>{const ref=snapshot.references[Number(entity.entity.slice(1))-1];if(ref?.kind!=='entity')throw new z.ZodError([{code:'custom',path:['entities',i,'entity'],message:'Use the supplied canonical entity rN string, not a page/source/note handle.'}]);return prose(entity,{kind:'entity',role:'entity',entityId:ref.id},['entities',i,'handle']);});
  const indexes=draft.indexes.map((index,i)=>{
-  const old=pageFor(index.handle),owner='topic' in index.owner?reference(index.owner.topic):'source' in index.owner?reference(index.owner.source):null;
+  const old=pageFor(index.handle,['indexes',i,'handle'],'collection'),owner='topic' in index.owner?reference(index.owner.topic):'source' in index.owner?reference(index.owner.source):null;
   if(!old&&index.groups.some(g=>g.id))throw new Error('organization.errors.invalid');
   return{handle:outputHandle(index.handle),pageId:old?.id??null,expectedRevisionId:old?.revisionId??null,title:index.title,purpose:index.purpose,role:{kind:'collection' as const,role:'topic' in index.owner?'topic_toc' as const:'source' in index.owner?'source_toc' as const:'map' as const,owner},initialParent:parent(index.initialParent),sections:[],links:[],tocGroups:index.groups.map((g,gi)=>({handle:'new_group_'+i+'_'+gi,id:g.id,expectedRevisionId:g.id?old?.revisionId??null:null,title:g.title,explanation:g.explanation,originalHandles:g.originalHandles,memberships:g.targets.map((member,order)=>{const target=reference(member.target),prior=target.reference==='existing'?old?.automatic?.memberships.find(m=>m.groupId===g.id&&m.target.kind===target.target.kind&&m.target.id===target.target.id):undefined;return{id:prior?.id??null,target,purpose:member.purpose,order};})}))};
  });
  const ancestors=draft.ancestors.map(a=>({...a,initialParent:parent(a.initialParent)}));
- const moves=draft.moves.map(move=>{const old=pageFor(move.handle)!;const entry=snapshot.placement.pages.find(p=>p.pageId===old.id);if(!entry)throw new Error('organization.errors.scope');const from=entry.parentId?snapshot.placement.pages.find(p=>p.pageId===entry.parentId):null;if(entry.parentId&&!from)throw new Error('organization.errors.scope');return{handle:outputHandle(move.handle),operation:'reviewed_reparent' as const,pageId:old.id,expectedRevisionId:old.revisionId,fromParent:from?{reference:'existing' as const,target:{kind:'page' as const,id:from.pageId},expectedRevisionId:from.revisionId,fingerprint:from.fingerprint}:null,toParent:parent(move.toParent),reason:move.reason};});
+ const moves=draft.moves.map((move,i)=>{const old=pageFor(move.handle,['moves',i,'handle'])!;const entry=snapshot.placement.pages.find(p=>p.pageId===old.id);if(!entry)throw new Error('organization.errors.scope');const from=entry.parentId?snapshot.placement.pages.find(p=>p.pageId===entry.parentId):null;if(entry.parentId&&!from)throw new Error('organization.errors.scope');return{handle:outputHandle(move.handle),operation:'reviewed_reparent' as const,pageId:old.id,expectedRevisionId:old.revisionId,fromParent:from?{reference:'existing' as const,target:{kind:'page' as const,id:from.pageId},expectedRevisionId:from.revisionId,fingerprint:from.fingerprint}:null,toParent:parent(move.toParent),reason:move.reason};});
  return CuratorChangeSetSchema.parse({version:'automatic-wiki-v1',groupId:snapshot.groupId,policyRevisionId:snapshot.policy.revisionId,explanation:draft.explanation,...(draft.noteEvolution?{noteEvolution:draft.noteEvolution}:{}),targets:[...topics,...entities,...indexes],ancestors,moves});
 }
 export function parseCuratorProposal(output:unknown,snapshot?:CuratorSnapshot){if(typeof output==='string'){if(output.length>90000)throw new Error('organization.errors.invalid');const raw=output.trim(),fence=/^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(raw);output=JSON.parse(fence?.[1]??raw);}return snapshot&&output&&typeof output==='object'&&!('version' in output)?expandCuratorDraft(output,snapshot):CuratorChangeSetSchema.parse(output);}

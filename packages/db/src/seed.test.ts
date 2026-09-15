@@ -84,7 +84,8 @@ describe("baseline seed", () => {
       "0038_investigation_descendant_impacts",
       "0039_sturdy_lila_cheney",
       "0040_mysterious_talon",
-      "0041_knowledge_note_ownership"
+      "0041_knowledge_note_ownership",
+      "0042_wiki_editorial_review_impacts"
     ]);
   });
 
@@ -144,7 +145,8 @@ describe("baseline seed", () => {
       "0038_investigation_descendant_impacts",
       "0039_sturdy_lila_cheney",
       "0040_mysterious_talon",
-      "0041_knowledge_note_ownership"
+      "0041_knowledge_note_ownership",
+      "0042_wiki_editorial_review_impacts"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -437,3 +437,22 @@ provider token breakdowns and precise call context, as specified in
   Context planning, expansion, support/repair serializers and samples must support
   the full admitted 1–12 work-target range and resource-driven continuation,
   without a fixed hierarchy depth cutoff.
+
+- Curator transport distinguishes new entity pages from navigation-only topics:
+  a new entity page requires a grounded section with original handles; an existing
+  entity edit may omit unchanged sections. Report the exact entity/section field
+  when this prerequisite fails so the ordinary bounded repair can fix or omit the
+  target. Reject title text as a handle with an explicit permitted-handle message;
+  do not fabricate identifiers, prose or evidence during expansion. A new
+  topic TOC preferably uses its owner as principal parent, while separately
+  justified scoped placement remains explicit and independent of ownership.
+
+- Entity drafts separate the page handle from the canonical entity binding:
+  `handle` names a new page or an admitted editable entity page, while `entity`
+  is a distinct supplied entity reference string. Never coerce an entity reference
+  into a page identity. Existing topic/index/entity patches set `initialParent`
+  to null even when repeating their current parent; only reviewed moves change
+  existing placement. Draft/expansion failures identify the exact array field and
+  corrective action. Owner-preferred initial placement applies only to new TOCs.
+  When an entity binding already invalidates its page handle, report that identity
+  error without also giving existing-page placement instructions for the same row.

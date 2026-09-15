@@ -140,6 +140,8 @@ class ResetPool {
       rows = [{ count: "2" }];
     } else if (text.includes("from atomic_notes")) {
       rows = [{ count: "3" }];
+    } else if (text.includes("to_regclass('ag_catalog.ag_graph')")) {
+      rows = [{ available: true }];
     } else if (text.includes("from ag_catalog.ag_graph")) {
       rows = [{ exists: 1 }];
     }

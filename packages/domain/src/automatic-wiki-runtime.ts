@@ -14,7 +14,7 @@ export const CuratorTargetSchema=z.object({kind:z.enum(['page','source','atomic_
 
 export const hierarchyCuratorVersion = "wiki-curator-v2";
 export const hierarchyDraftVersion = "wiki-curator-v2";
-export const HierarchyModelReferenceSchema = z.string().regex(/^(r[1-9][0-9]*|new_[a-z][a-z0-9_]{0,63})$/);
+export const HierarchyModelReferenceSchema = z.string().regex(/^(r[1-9][0-9]*|new_[a-z][a-z0-9_]{0,63})$/, 'Use a supplied rN handle or new_ followed by a lowercase ASCII letter and up to 63 lowercase letters, digits or underscores; never a title.');
 const reference = HierarchyModelReferenceSchema;
 const DraftSectionSchema=z.object({interpretation:InterpretationDraftSchema.optional(),id:z.string().uuid().nullable(),title:z.string().max(300),markdown:z.string().min(1).max(12000),originalHandles:z.array(z.string().regex(/^e[1-9][0-9]{0,3}$/)).min(1).max(12)}).strict();
 const DraftProsePageSchema = z.object({handle:reference,title:z.string().min(1).max(300),purpose:z.string().min(1).max(2000),sections:z.array(DraftSectionSchema).max(6),links:z.array(reference).max(200).default([])}).strict();
@@ -30,7 +30,7 @@ export const CuratorDraftSchema = z.object({
     targets: z.array(z.object({ target: reference, purpose: z.enum(["reading", "subtopic", "source", "related"]) }).strict()).min(1).max(200)
   })).min(1).max(12) })).max(hierarchyTargetRange.max),
   entities: z.array(DraftProsePageSchema.extend({ initialParent: reference.nullable().default(null),
-    entity: z.string().regex(/^r[1-9][0-9]*$/)
+    entity: z.string({ error: 'Use a supplied canonical entity rN string, not an object; handle separately identifies the page.' }).regex(/^r[1-9][0-9]*$/, 'Use a supplied canonical entity rN string, not a page handle.')
   })).max(hierarchyTargetRange.max).default([]),
   ancestors: z.array(z.object({ handle: HierarchyHandleSchema, title, purpose,
     role: HierarchyAncestorRoleSchema, initialParent: reference.nullable().default(null) }).strict()).default([]),
@@ -38,6 +38,10 @@ export const CuratorDraftSchema = z.object({
     toParent: reference.nullable(), reason: z.string().min(1).max(2000) }).strict()).max(hierarchyTargetRange.max).default([])
 }).strict().superRefine((v, ctx) => {
   const issue = (message: string) => ctx.addIssue({ code: "custom", message });
+  for (const [index, entity] of v.entities.entries()) if (!/^r[1-9][0-9]*$/.test(entity.handle) && !entity.sections.length)
+    ctx.addIssue({ code: "custom", path: ["entities", index, "sections"], message: "New entity pages need at least one grounded section with originalHandles; omit this target if no entity prose is supported." });
+  for (const [index, entity] of v.entities.entries()) if (entity.handle === entity.entity)
+    ctx.addIssue({ code: "custom", path: ["entities", index, "handle"], message: "The entity rN is not a page handle. Use new_ for a new page when canonicalPage is null, or the distinct supplied canonical page rN." });
   const targets = [...v.topics, ...v.indexes, ...v.entities];
   const handles = new Set(targets.map(t => t.handle));
   if (handles.size !== targets.length) issue("Duplicate work target handle");
@@ -48,7 +52,11 @@ export const CuratorDraftSchema = z.object({
   if (new Set(nodes.map(t => t.handle)).size !== nodes.length) issue("Duplicate target/ancestor handle");
   const byHandle = new Map(nodes.map(t => [t.handle, t]));
   const parent = new Map(nodes.map(t => [t.handle, t.initialParent]));
-  for (const target of targets) if (target.handle.startsWith("r") && target.initialParent) issue("Existing target placement requires a reviewed move");
+  for (const kind of ["topics", "indexes", "entities"] as const) for (const [index, target] of v[kind].entries()) {
+    const invalidEntityPageHandle = kind === "entities" && target.handle === v.entities[index]!.entity;
+    if (!invalidEntityPageHandle && target.handle.startsWith("r") && target.initialParent)
+      ctx.addIssue({ code: "custom", path: [kind, index, "initialParent"], message: "Existing page targets must set initialParent:null, even for an unchanged parent; request a different parent only in moves." });
+  }
   for (const move of v.moves) parent.set(move.handle, move.toParent);
   const checkRef = (ref: string | null) => { if (ref?.startsWith("new_") && !byHandle.has(ref)) issue("Unknown proposed reference"); };
   const reached = new Set<string>();

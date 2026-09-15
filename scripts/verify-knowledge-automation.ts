@@ -262,8 +262,19 @@ try {
   // A complete reset must reinstall defaults before its response, without inference.
   configured=false;
   const reset=new LibraryResetService({getPool:()=>db!,getStorageSettings:async()=>({obsidianVaultPath:null,managedRoot:'Memora',obsidianSyncEnabled:false,obsidianSyncPaused:false,deletionPolicy:'tombstone',uploadCopiesEnabled:false,uploadCopiesFolderPath:null,updatedAt:new Date().toISOString()}),userDataPath:join(work,'reset-user-data'),restoreDefaults:async()=>{await new PromptService({getPool:()=>db!}).initialize();await automation.initialize();}});
+  const modelConfig=createAiConfigRepository(db);
+  await modelConfig.upsertProvider({provider:'openai-compatible',displayName:'Reset preservation fixture',defaultParameters:{temperature:0.2}});
+  const preservedProfile=await modelConfig.createProfile({name:'Reset preservation profile'});
+  await modelConfig.setProfileTask({profileId:preservedProfile.id,task:'structured-output',parameters:{maxTokens:2048}});
+  await modelConfig.setTaskRoute('structured-output',preservedProfile.id);
+  const modelSnapshot=async()=>Promise.all([modelConfig.listProviders(),modelConfig.listProfiles(),modelConfig.listProfileTasks(),modelConfig.listTaskRoutes()]);
+  const preservedModels=await modelSnapshot();
   await db.query("create extension if not exists age");
+  const ageClient=await db.connect();try{await ageClient.query('begin');await ageClient.query("load 'age'");await ageClient.query('set local search_path = ag_catalog, "$user", public');await ageClient.query("select ag_catalog.create_graph('memora_knowledge')");await ageClient.query('commit');}catch(error){await ageClient.query('rollback');throw error;}finally{ageClient.release();}
+  assert.equal((await db.query("select count(*)::int n from ag_catalog.ag_graph where name='memora_knowledge'")).rows[0].n,1);
   await reset.reset();
+  assert.equal((await db.query("select count(*)::int n from ag_catalog.ag_graph where name='memora_knowledge'")).rows[0].n,0);
+  assert.deepEqual(await modelSnapshot(),preservedModels);
   const restoredId=(await createSettingsRepository(db).get<{policyId:string}>(knowledgeAutomationPolicyKey))!.policyId;
   const restored=await createAutomaticMaintenanceRepository(db).schedules(restoredId);
   assert.deepEqual(restored.map(s=>s.policy.kind).sort(),['daily','incremental','monthly','weekly']);assert.ok(restored.every(s=>s.policy.enabled));
@@ -272,5 +283,20 @@ try {
   assert.equal((await db.query('select count(*)::int n from source_items')).rows[0].n,0);
   assert.equal((await db.query('select count(*)::int n from ai_task_runs')).rows[0].n,0);
   assert.equal(await automation.initialize(),restoredId);assert.equal((await createAutomaticMaintenanceRepository(db).schedules(restoredId)).length,4);
-  console.log(JSON.stringify({ok:true,checks:['existing-content-preservation','idempotent-startup','default-routines-without-model','no-inference','new-page-placement','visible-blocked-task-pagination','automatic-admission-after-model-configuration','estimates-do-not-block','serialized-idempotent-curator-admission','portable-mirror-areas-and-preserved-prose','atomic-shared-monthly-budget','stale-budget-save-rejected','recorded-usage-strict-limit-before-next-call','budget-save-preserves-snapshots-and-ledger','new-scope-inherits-budget','curator-limit-save-preserves-pause','stale-preview-cannot-reset-budget','blocked-versus-review-projection','linked-failure-diagnostics','terminal-history-cleanup-preserves-pending','history-cleanup-retains-audits-and-budget','later-completions-remain-visible','source-journey-empty-imported-and-processed-enum-status','reset-restores-four-enabled-routines-and-wiki-areas','reset-without-model-is-idempotent-and-no-inference'],actualModel:false}));
+  // Optional AGE is absent in a normal empty installation until graph use.
+  await db.query("drop extension age cascade");
+  assert.equal((await db.query("select to_regclass('ag_catalog.ag_graph') as catalog")).rows[0].catalog,null);
+  await db.query("insert into source_items(type,title) values('PersonalNote','Missing AGE reset fixture')");
+  await reset.reset();
+  const noAgePolicy=(await createSettingsRepository(db).get<{policyId:string}>(knowledgeAutomationPolicyKey))!.policyId;
+  const noAgeRoutines=await createAutomaticMaintenanceRepository(db).schedules(noAgePolicy);
+  assert.deepEqual(noAgeRoutines.map(s=>s.policy.kind).sort(),['daily','incremental','monthly','weekly']);assert.ok(noAgeRoutines.every(s=>s.policy.enabled));
+  for(const area of Object.values(wikiAreaIds))assert.ok(await wiki.get(area));
+  assert.equal((await db.query('select count(*)::int n from source_items')).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from ai_task_runs')).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from obsidian_projection_clock where id=1')).rows[0].n,1);
+  assert.equal((await db.query("select to_regclass('ag_catalog.ag_graph') as catalog")).rows[0].catalog,null);
+  assert.deepEqual(await modelSnapshot(),preservedModels);
+  await reset.reset();assert.deepEqual(await modelSnapshot(),preservedModels);
+  console.log(JSON.stringify({ok:true,checks:['existing-content-preservation','idempotent-startup','default-routines-without-model','no-inference','new-page-placement','visible-blocked-task-pagination','automatic-admission-after-model-configuration','estimates-do-not-block','serialized-idempotent-curator-admission','portable-mirror-areas-and-preserved-prose','atomic-shared-monthly-budget','stale-budget-save-rejected','recorded-usage-strict-limit-before-next-call','budget-save-preserves-snapshots-and-ledger','new-scope-inherits-budget','curator-limit-save-preserves-pause','stale-preview-cannot-reset-budget','blocked-versus-review-projection','linked-failure-diagnostics','terminal-history-cleanup-preserves-pending','history-cleanup-retains-audits-and-budget','later-completions-remain-visible','source-journey-empty-imported-and-processed-enum-status','reset-restores-four-enabled-routines-and-wiki-areas','reset-without-model-is-idempotent-and-no-inference','reset-existing-age-graph-removed','reset-without-age-restores-defaults-and-preserves-model-configuration'],actualModel:false}));
 } finally {if(db)await closePgPool(db);await manager.stop();await rm(work,{recursive:true,force:true});}

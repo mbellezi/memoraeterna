@@ -168,6 +168,38 @@ describe("current hierarchy contracts", () => {
     expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...draft.topics[0], handle: "new_entity", entity: "University of Coimbra" }] }).success).toBe(false);
     expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...draft.topics[0], handle: "new_entity", entity: "r1", sections: [{ id: null, title: "Evidence", markdown: "Attributed finding", originalHandles: ["e1"] }] }] }).success).toBe(true);
   });
+  it("requires grounded sections for new entities while preserving existing entity patches", () => {
+    const entity = { handle: "new_entity", title: "Known organization", purpose: "Read original mentions", initialParent: null, entity: "r1", sections: [], links: [] };
+    const draft = { explanation: "Organize canonical mentions", topics: [], indexes: [], entities: [entity], ancestors: [], moves: [] };
+    for (const handle of ["new_entity", "Known organization"]) {
+      const result = HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...entity, handle }] });
+      expect(result.success).toBe(false);
+      if (!result.success) expect(result.error.issues).toContainEqual(expect.objectContaining({ path: ["entities", 0, "sections"], message: expect.stringContaining("at least one grounded section with originalHandles") }));
+    }
+    expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...entity, handle: "r2", links: ["r3"] }] }).success).toBe(true);
+    expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...entity, sections: [{ id: null, title: "Mention", markdown: "The source names the organization [e1].", originalHandles: ["e1"] }] }] }).success).toBe(true);
+    expect(HierarchyDraftSchema.safeParse({ ...draft, entities: [{ ...entity, sections: [{ id: null, title: "Mention", markdown: "Unsupported", originalHandles: [] }] }] }).success).toBe(false);
+  });
+  it("reports distinct entity page handles and exact existing-parent fields", () => {
+    const section = { id: null, title: "Mention", markdown: "Attributed mention [e1]", originalHandles: ["e1"] };
+    const draft = { explanation: "Place canonical pages", topics: [{ handle: "r1", title: "Topic", purpose: "Retain", initialParent: "r9", sections: [], links: [] }],
+      indexes: [{ handle: "r2", title: "Reading", purpose: "Read", initialParent: "r9", owner: { map: true }, groups: [{ id: null, title: "Sources", explanation: null, originalHandles: [], targets: [{ target: "r8", purpose: "source" }] }] }],
+      entities: ["r4", "r5"].map(handle => ({ handle, entity: handle, title: "Organization", purpose: "Read mentions", initialParent: "r9", sections: [section], links: [] })), ancestors: [], moves: [] };
+    const result = HierarchyDraftSchema.safeParse(draft); expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.filter(i => i.path.at(-1) === "initialParent").map(i => i.path.join("."))).toEqual(["topics.0.initialParent", "indexes.0.initialParent"]);
+      expect(result.error.issues.filter(i => i.path.at(-1) === "handle").map(i => i.path.join("."))).toEqual(["entities.0.handle", "entities.1.handle"]);
+      expect(result.error.issues.find(i => i.path.at(-1) === "initialParent")!.message).toContain("even for an unchanged parent");
+    }
+    const corrected = { ...draft, topics: draft.topics.map(t => ({ ...t, initialParent: null })), indexes: draft.indexes.map(t => ({ ...t, initialParent: null })), entities: draft.entities.map((t, i) => ({ ...t, handle: "new_entity_" + i })) };
+    expect(HierarchyDraftSchema.safeParse(corrected).success).toBe(true);
+    const existingEntities = HierarchyDraftSchema.safeParse({ ...corrected, entities: draft.entities.map((t, i) => ({ ...t, handle: "r" + (i + 6) })) });
+    expect(existingEntities.success).toBe(false);
+    if (!existingEntities.success) expect(existingEntities.error.issues.map(i => i.path.join("."))).toEqual(["entities.0.initialParent", "entities.1.initialParent"]);
+    const objectBinding = HierarchyDraftSchema.safeParse({ ...corrected, entities: [{ ...corrected.entities[0], entity: { canonical: "r4" } }] });
+    expect(objectBinding.success).toBe(false);
+    if (!objectBinding.success) expect(objectBinding.error.issues).toContainEqual(expect.objectContaining({ path: ["entities", 0, "entity"], message: expect.stringContaining("string, not an object") }));
+  });
   it("uses the complete shared support snapshot for ancestors as well as targets", () => {
     const proposal = change([{ ...topic("new_leaf"), initialParent: proposed("new_path") }], [ancestor("new_path")]);
     const support = { version: hierarchyCuratorVersion, proposalHash: "exact-proposal", proposal,

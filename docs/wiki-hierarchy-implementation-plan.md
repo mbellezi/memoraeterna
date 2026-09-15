@@ -636,20 +636,27 @@ vault was changed.
 
 ### H6 — Cost, quality and complete-journey acceptance
 
-- [ ] Run the comparison matrix below on fixed synthetic corpora and the same
+- [x] Run the comparison matrix below on fixed synthetic corpora and the same
   selected model/profile, prompts and budgets. Keep deterministic and real-model
   results separate; never treat mock tokens as measured provider usage.
-- [ ] Inspect actual category usefulness, excessive depth, reuse of ancestors,
+- [x] Inspect actual category usefulness, excessive depth, reuse of ancestors,
   note attribution, homonyms and unsupported implied entity relationships.
-- [ ] Measure database discovery as well as model calls, input/output tokens,
+- [x] Measure database discovery as well as model calls, input/output tokens,
   latency, repairs and known cost from canonical audit records.
-- [ ] Complete relevant automated, real PostgreSQL and normal-size native gates;
+- [x] Complete relevant automated, real PostgreSQL and normal-size native gates;
   verify Obsidian behavior for the same canonical fixture identities.
-- [ ] Record residual limitations and final calibrated context bounds. Do not
+- [x] Record residual limitations and measured context bounds. Do not
   declare the feature complete with a missing required quality or preservation gate.
 
 Exit: an evidence-backed report demonstrates useful hierarchy and bounded overhead
 without claiming that all providers or all library sizes have identical cost.
+
+H6 verification was executed; the exit is **not fully accepted**. See
+[the acceptance report](wiki-hierarchy-acceptance-report.md). Automated and native
+preservation/reset gates pass. The selected low-reasoning model did not complete
+the combined deep hierarchy/entity generation, and unequal synthesis work prevents
+accepting the proposed 20% token threshold. These are explicit residual gates, not
+completed model-quality claims.
 
 ## 7. Acceptance and cost matrix
 
@@ -714,3 +721,51 @@ schema/migration results, checks actually executed, before/after navigation
 examples, measured ordinary versus initial-organization cost, preserved identities
 and paths, and any unresolved gate. Writing this plan marks none of those checks
 as executed merely because they are listed. Record actual completion as work lands.
+
+H6 automated acceptance update (15 September 2026): the two expected seed lists
+now include existing migration 0042; no migration was introduced. The complete
+Vitest suite passed 924 tests in 138 files with required local loopback access.
+TypeScript, formatting, the normal workspace build, seed parity (43 migrations),
+the isolated knowledge-automation verifier and the prompt PostgreSQL verifier
+passed. Automation checks include default startup/reset restoration and visible
+missing-model readiness without inference. Native reset, the actual model/token
+comparison, normal-size UI walkthrough and open-editor preservation remain
+pending. The acceptance report keeps these gates separate from automated and
+previous H5 evidence; no H6 completion claim is made by preparing a fixture.
+
+
+H6 first actual trial retained a rejection after synthesis plus one repair on the
+configured gpt-5.6-luna route (6,672 input / 1,886 output tokens, 36,536 ms, unknown
+cost). Titles were used as handles; the repair fixed those but still omitted
+sections on new entity pages. No support call or group applied. The follow-up
+clarifies handles, grounded new entity sections and ordinary TOC owner placement,
+and emits exact field diagnostics while preserving existing entity patch behavior.
+Four changed catalog defaults use shipped prompt revision 6; no transport version
+or migration changed. The complete regression suite now passes 927 tests; typecheck
+and the isolated prompt verifier passed. A fresh explicit changed-fingerprint
+trial and the remaining native/editor/token gates are still pending.
+
+
+H6 normal-main instrumentation correction retained the earlier two-call trial
+whose canonical audits lacked organization prompt provenance; guarded apply
+correctly refused it. The corrected normal-main ordinary trial applied with two
+calls (5,800 input / 815 output tokens, 18,445 ms, unknown cost), and unchanged
+replay added zero audits. A subsequent explicitly guided hierarchy trial proposed
+six ancestors and a move but rejected after two calls (8,896 input / 2,399 output,
+45,717 ms) because entity references were used as page handles and existing patches
+repeated initialParent. The revision-7 prompt/validation follow-up separates those
+identities and provides precise field feedback without relaxing guards. Full
+930-test, focused 59-test, typecheck and prompt PostgreSQL checks passed. The next
+explicit changed-prompt guided trial, native/editor completion and token-overhead
+gate remain pending; the old failures are preserved.
+
+H6 final verification record (15 September 2026): normal native DEV and the same-ID
+Obsidian editor checks passed, including protected movement, shared nested reading,
+homonyms, partial structural progress and stable registered paths after rename and
+reparent. A normal native reset exposed missing optional AGE catalogue handling;
+the fix passed real PostgreSQL with/without AGE and the authorized temporary-vault
+retry. The empty database retained nine Wiki areas, four enabled routines and zero
+AI audits. Final suite: 932 tests in 138 files; typecheck, formatting and workspace
+build passed. No new migration, dependency or transport version; all temporary main
+hooks removed. The paired usage and rejected deep-entity model trials are retained
+in the acceptance report, including their unaccepted quality/calibration gates.

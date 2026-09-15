@@ -74,6 +74,8 @@ processing, destructive operations, backups, or sensitive logging.
 - Reset table coverage follows the application schema with an explicit model
   preservation allowlist. Relational cleanup and AGE projection removal share a
   transaction, without cascading into preserved model configuration.
+  An absent optional AGE catalog skips graph removal only. When that catalog is
+  present, graph cleanup errors still roll back the canonical database reset.
 - Stop gateway, jobs and downloads before reset. Remove registered managed files,
   recovery snapshots, internal assets, conversion/cache files and partial model
   downloads, preserving installed models, backups and unrelated personal files.
