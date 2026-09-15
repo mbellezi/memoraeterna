@@ -1,5 +1,7 @@
 import type { PgPool } from "../client.js";
 import { createJobRepository } from "./jobRepository.js";
+import { readNoteEvidence, retainedNoteCurrentSql } from './noteEvidence.js';
+import { scopedProjectionPages } from './wikiProjectionLineage.js';
 import { currentSourceRelationSql, currentSourceRelationEvidenceSql, sourceRelationEvidenceJoins } from "./sourceRelationRepository.js";
 export interface ProjectionDelivery {
     id: string;
@@ -61,6 +63,7 @@ export function createObsidianWikiRepository(pool: PgPool) {
         from source_items s where s.id in(select id from scope) order by s.id limit 1001`, [sourceIds, includeDescendants])).rows;
         },
         async pages(ids:string[]=[]) { return (await pool.query('select id from wiki_pages where cardinality($1::uuid[])=0 or id=any($1::uuid[]) order by id limit 1001',[ids])).rows.map(r => String(r.id)); },
+        async scopedPages(ids:string[],allowed:string[]){return scopedProjectionPages(pool,ids,allowed);},
         async pageBytes(id:string){return Number((await pool.query("select octet_length(r.content::text) + coalesce((select sum(octet_length(e.snapshot::text)) from wiki_evidence e where e.page_id=p.id and exists(select 1 from jsonb_array_elements(r.content->'sections') s where s->'evidenceIds' ? e.id::text)),0) as bytes from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id where p.id=$1",[id])).rows[0]?.bytes??0);},
         async exportEligible(sourceId:string|null,noteIds:string[],sourceIds:string[],includeDescendants:boolean):Promise<boolean>{
             const row=(await pool.query(`with recursive scope as (
@@ -76,19 +79,15 @@ export function createObsidianWikiRepository(pool: PgPool) {
         },
         async notes(sourceIds: string[],wholeLibrary=false) {
             return (await pool.query(`select n.id,n.title,n.body_markdown as "bodyMarkdown",n.updated_at as "updatedAt",n.evidence_chunk_id as "evidenceChunkId",n.created_from_source_item_id as "sourceId",n.status,n.metadata,n.ownership, array(select source_id from atomic_note_evidence where note_id=n.id) as "sourceIds",array(select next_id from atomic_note_evolution where previous_id=n.id) as "successorIds",
-        (n.supersession_status='current' and not exists(select 1 from atomic_note_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=c.document_id where e.note_id=n.id and (c.id is null or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null)) and nd.id is not null and nd.metadata->>'supersededByDocumentId' is null
+        (n.supersession_status='current' and ${retainedNoteCurrentSql()} and nc.source_item_id=n.created_from_source_item_id and nd.id is not null and nd.metadata->>'supersededByDocumentId' is null
           and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id
-            where l.atomic_note_id=n.id and (ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))) as current
+            where l.atomic_note_id=n.id and (ld.id is null or lc.source_item_id is distinct from l.source_item_id or ld.metadata->>'supersededByDocumentId' is not null))) as current
         from atomic_notes n left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id
         where ($2 or n.created_from_source_item_id=any($1::uuid[])) and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and not $2 and not(e.source_id=any($1::uuid[]))) and n.status not in('rejected','archived')
         and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and not(l.source_item_id=any($1::uuid[]))) order by n.id limit 2001`, [sourceIds,wholeLibrary])).rows;
         },
         async noteEvidence(noteId:string,primaryChunkId:string) {
-            return (await pool.query(`select c.id,c.source_item_id as "sourceId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content,s.title as "sourceTitle",
-          coalesce(sp.label,sp.selector,sp.page::text) as locator,d.metadata->>'supersededByDocumentId' is null as current
-          from chunks c join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id
-          where (c.id=$1 or c.id in(select chunk_id from atomic_note_source_links where atomic_note_id=$2)) and not exists(select 1 from atomic_note_evidence e where e.note_id=$2 and e.chunk_id=c.id)
-          union all select e.chunk_id,e.source_id,(e.snapshot->>'documentId')::uuid,(e.snapshot->>'sourceSpanId')::uuid,e.snapshot->>'excerpt',e.snapshot->>'sourceTitle',e.snapshot->>'locator',coalesce(c.content_hash=e.snapshot->>'contentHash' and d.metadata->>'supersededByDocumentId' is null,false) from atomic_note_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=c.document_id where e.note_id=$2 order by 1 limit 101`,[primaryChunkId,noteId])).rows;
+            return (await readNoteEvidence(pool,noteId,primaryChunkId)).map(e=>({...e,sourceId:e.sourceItemId,content:e.excerpt}));
         },
         async relations(sourceIds: string[]) {
             const rows = (await pool.query(`select r.*,a.title as "sourceTitle",b.title as "targetTitle",${currentSourceRelationSql} as current

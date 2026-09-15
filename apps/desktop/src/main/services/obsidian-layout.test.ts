@@ -1,5 +1,5 @@
 import { describe,it,expect } from 'vitest';
-import { portableName,pathIdentity,sourceLayoutPath } from './obsidian-layout-paths.js';
+import { boundedWikiPath,portableName,pathIdentity,sourceLayoutPath } from './obsidian-layout-paths.js';
 import { renderMirrorTarget } from './obsidian-layout-migration.js';
 import { parseObsidianMarkdown,sourceOriginal,replaceSourceOriginal,wikiGeneratedStart,wikiGeneratedEnd } from '@app/integration-contracts';
 import { validateEditorialChange } from './obsidian-editorial-content.js';
@@ -21,6 +21,12 @@ describe('portable canonical layout',()=>{
   it('preserves Unicode, detects normalization/case collisions and bounds reserved filenames',()=>{
     expect(portableName('CON')).toBe('_CON');expect(portableName('é')).toBe('é');expect(pathIdentity('Café.md')).toBe(pathIdentity('CAFE\u0301.md'));
     expect(Buffer.byteLength(portableName('日本語'.repeat(300)))).toBeLessThanOrEqual(150);expect(portableName('../a:[b]#')).not.toMatch(/[/:\[\]#]/);
+  });
+  it('bounds new hierarchy and TOC paths by bytes with space for collision suffixes',()=>{
+    const fallback='Memora/Wiki/Themes/Deep leaf/Index.md';
+    expect(boundedWikiPath('a'.repeat(850),fallback)).toHaveLength(850);
+    expect(boundedWikiPath('é'.repeat(426)+'/Index.md',fallback)).toBe(fallback);
+    expect(()=>boundedWikiPath('a'.repeat(851),'b'.repeat(851))).toThrow('limit');
   });
 });
 it('never overwrites a late save to a captured inode when the original path is recreated',async()=>{

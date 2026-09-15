@@ -20,6 +20,12 @@ export function portableName(value: string) {
   return name;
 }
 export const pathIdentity = (path: string) => path.normalize('NFC').toUpperCase().toLowerCase().normalize('NFC');
+/** Leave collision-suffix space while keeping logical depth independent of disk depth. */
+export function boundedWikiPath(desired: string, fallback: string) {
+  const path=Buffer.byteLength(desired)<=850?desired:fallback;
+  if(Buffer.byteLength(path)>850)throw new Error('obsidianWiki.errors.limit');
+  return path;
+}
 export interface LayoutSource { id: string; title: string; type: string; parentId?: string | null; position?: number | null; metadata?: Record<string, any>; bibliography?: Record<string, any>[] }
 export function sourceLayoutPath(root: string, source: LayoutSource, sources: LayoutSource[], language: ObsidianLayoutConfig['language'], seen = new Set<string>()): string {
   if (seen.has(source.id)) throw new Error('wiki.errors.cycle');

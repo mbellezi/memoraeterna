@@ -1,3 +1,4 @@
+import { verifyObsidianHierarchy } from './fixtures/obsidian-hierarchy.js';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp,mkdir,readFile,writeFile,copyFile,rm,stat } from 'node:fs/promises';
@@ -69,5 +70,6 @@ try{
   const rollback=await service.layoutMigration.rollback({id:preview.id,editorsClosed:true});assert.equal(rollback.migrations[0]!.status,'rolling_back','Rollback preserves post-migration human edits');assert.equal(rollback.migrations[0]!.targets.find(t=>t.id===fixture.assetId)!.status,'rolled_back','Independent new binary asset rollback completes');await assert.rejects(stat(join(vault,asset.relativePath)));assert.ok((await readFile(join(vault,source.relativePath),'utf8')).includes('Human corrected original.'));
   settings={...settings,obsidianSyncPaused:true};await assert.rejects(service.layoutMigration.rollback({id:preview.id,editorsClosed:true}),/paused/);
   await pool.query('create database layout_empty');const emptyUrl=new URL(connection.connectionString);emptyUrl.pathname='/layout_empty';empty=createPgPool({connectionString:emptyUrl.toString(),max:2});assert.equal((await runMigrations(empty,migrations,{seedFolder})).seed.applied,true);assert.equal((await empty.query('select count(*)::int n from drizzle.__drizzle_migrations')).rows[0].n,journal.entries.length);assert.equal((await empty.query('select count(*)::int n from obsidian_layout_migrations')).rows[0].n,0);
-  console.log(JSON.stringify({ok:true,upgrade:39,baseline:journal.entries.length,sources:fixture.sources.length,sharedNotes:1,assets:1,oldReaders:true,dirtyPreserved:true,diskCrashResumed:true,guardedRollback:true,canonicalSourceBody:true,work}));
+  const hierarchy=await verifyObsidianHierarchy(empty,join(work,'hierarchy-vault'));
+  console.log(JSON.stringify({ok:true,hierarchy,upgrade:39,baseline:journal.entries.length,sources:fixture.sources.length,sharedNotes:1,assets:1,oldReaders:true,dirtyPreserved:true,diskCrashResumed:true,guardedRollback:true,canonicalSourceBody:true,work}));
 }finally{await service?.shutdown();if(empty)await closePgPool(empty);if(pool)await closePgPool(pool);await manager.stop();if(!process.env.MEMORA_KEEP_A6_FIXTURE)await rm(work,{recursive:true,force:true});}

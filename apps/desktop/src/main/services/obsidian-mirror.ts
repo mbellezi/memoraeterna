@@ -5,7 +5,7 @@ import { createDocumentRepository, createObsidianSyncRepository, createObsidianW
 import { wikiAreaIds, WikiPageSchema, type WikiPage } from '@app/domain';
 import { translate, type MessageKey } from '@app/i18n';
 import { outsideCodeFences, markdownHeading, wikiLink, safeWikiLabel, sectionStart, sectionEnd, sourceOriginalStart, sourceOriginalEnd, type ObsidianLayoutConfig, type ObsidianManagedFrontmatter } from '@app/integration-contracts';
-import { layoutLabels, pathIdentity, portableName, sourceLayoutPath } from './obsidian-layout-paths.js';
+import { boundedWikiPath, layoutLabels, pathIdentity, portableName, sourceLayoutPath } from './obsidian-layout-paths.js';
 import type { ObsidianWikiScope } from './obsidian-wiki-projection.js';
 
 export interface MirrorTarget { id: string; type: ObsidianManagedFrontmatter['memoraType']; revision: string; title: string; path: string; editorial: string; generated: string; sourceId?: string; documentId?: string; layout?: ObsidianLayoutConfig; linkMap?:Array<{rendered:string;canonical:string}>; rootSourceId?:string; divisionId?:string; documentRevisionId?:string }
@@ -18,10 +18,14 @@ export async function buildObsidianMirror(pool: PgPool, root: string, scope: Obs
   const repo=createObsidianWikiRepository(pool), registry=await createObsidianSyncRepository(pool).list(), sources=await repo.sources(scope.sourceIds,scope.includeDescendants), notes=await repo.notes(sources.map(s=>s.id),!scope.sourceIds.length);
   if (sources.length>1000 || notes.length>2000) throw new Error('obsidianWiki.errors.limit');
   const allowed=new Set(sources.map(s=>String(s.id))), pages:WikiPage[]=[];
-  for (const id of await repo.pages(scope.pageIds)) {
+  const pageIds=await repo.pages(scope.pageIds);
+  if(pageIds.length>1000)throw new Error('obsidianWiki.errors.limit');
+  const scopedPages=new Set(scope.sourceIds.length?await repo.scopedPages(pageIds,[...allowed]):pageIds);
+  for (const id of pageIds) {
+    if(!scopedPages.has(id))continue;
     if (await repo.pageBytes(id)>2_000_000) throw new Error('obsidianWiki.errors.limit');
     const page=WikiPageSchema.parse(await createWikiRepository(pool).get(id));
-    if ((!scope.sourceIds.length||page.evidence.every(e=>allowed.has(e.sourceItemId))) && (!page.archived || registry.some(f=>f.memoraId===id))) pages.push(page);
+    if (!page.archived || registry.some(f=>f.memoraId===id)) pages.push(page);
   }
   if(pages.length>1000)throw new Error('obsidianWiki.errors.limit');
   const relations=await repo.relations([...allowed]);
@@ -45,22 +49,29 @@ export async function buildObsidianMirror(pool: PgPool, root: string, scope: Obs
   for(const note of notes) reserve(note.id,posix.join(root,l.notes,portableName(note.title)+'.md'));
   const pagePath=(page:WikiPage,seen=new Set<string>()):string=>{
     if(paths.has(page.id))return paths.get(page.id)!;
+    // Resolve registered placement before considering any newly desired ancestors.
+    const registered=registry.find(f=>f.memoraId===page.id);
+    if(registered&&(!options.migrate||options.excluded?.has(page.id)))return reserve(page.id,registered.relativePath);
     if(seen.has(page.id))throw new Error('wiki.errors.cycle');seen.add(page.id);
     const parent=pages.find(p=>p.id===page.parentId),role=page.automatic?.role;
+    const area=role?.kind==='synthesis'&&role.role==='investigation'?l.investigations:role?.kind==='collection'&&role.role==='map'?l.maps:page.kind==='topic'?l.topics:page.kind==='entity'?l.entities:page.kind==='synthesis'?l.syntheses:l.maps;
+    const place=(path:string)=>reserve(page.id,boundedWikiPath(path,posix.join(root,'Wiki',area,portableName(page.title)+'.md')));
     const systemArea=Object.entries(wikiAreaIds).find(([,id])=>id===page.id)?.[0];
     if(systemArea){
       const areaNames:Record<string,string>={themes:l.topics,entities:l.entities,syntheses:l.syntheses,investigations:l.investigations,maps:l.maps};
       const folder=areaNames[systemArea];
       return reserve(page.id,folder?posix.join(root,'Wiki',folder,l.index+'.md'):posix.join(root,'Wiki',l.entities,portableName(page.title),l.index+'.md'));
     }
-    if(role?.kind==='collection' && role.role==='source_toc' && role.owner?.kind==='source' && paths.has(role.owner.id))return reserve(page.id,posix.join(posix.dirname(paths.get(role.owner.id)!),l.sourceNotes+'.md'));
-    if(role?.kind==='collection'&&role.role==='topic_toc'&&role.owner?.kind==='page'){const owner=pages.find(p=>p.id===role.owner!.id);if(owner)return reserve(page.id,posix.join(posix.dirname(pagePath(owner,seen)),l.index+'.md'));}
-    const area=role?.kind==='synthesis'&&role.role==='investigation'?l.investigations:role?.kind==='collection'&&role.role==='map'?l.maps:page.kind==='topic'?l.topics:page.kind==='entity'?l.entities:page.kind==='synthesis'?l.syntheses:l.maps;
+    if(role?.kind==='collection' && role.role==='source_toc' && role.owner?.kind==='source' && paths.has(role.owner.id))return place(posix.join(posix.dirname(paths.get(role.owner.id)!),l.sourceNotes+'.md'));
+    if(role?.kind==='collection'&&role.role==='topic_toc'&&role.owner?.kind==='page'){const owner=pages.find(p=>p.id===role.owner!.id);if(owner)return place(posix.join(posix.dirname(pagePath(owner,seen)),l.index+'.md'));}
     let directory=posix.join(root,'Wiki',area);
     if(parent){const path=pagePath(parent,seen);directory=parent.kind==='topic'||posix.basename(path)===l.index+'.md'?posix.dirname(path):path.replace(/\.md$/,'');}
     const index=page.kind==='topic'||pages.some(p=>p.parentId===page.id);
     const hasToc=pages.some(p=>p.automatic?.role.kind==='collection'&&p.automatic.role.role==='topic_toc'&&p.automatic.role.owner?.id===page.id);
-    return reserve(page.id,index?posix.join(directory,portableName(page.title),(hasToc?portableName(page.title):l.index)+'.md'):posix.join(directory,portableName(page.title)+'.md'));
+    const relative=index?posix.join(portableName(page.title),(hasToc?portableName(page.title):l.index)+'.md'):portableName(page.title)+'.md';
+    // Folder depth is a portable placement choice; logical ancestry remains complete.
+    // Keep room for reserve's full-ID collision suffix within the 900-byte limit.
+    return reserve(page.id,boundedWikiPath(posix.join(directory,relative),posix.join(root,'Wiki',area,relative)));
   };
   for(const page of pages)pagePath(page);
   reserve(INDEX,posix.join(root,'Wiki',l.index+'.md'));reserve(CATALOG,posix.join(root,l.sources,l.index+'.md'));
@@ -74,7 +85,7 @@ export async function buildObsidianMirror(pool: PgPool, root: string, scope: Obs
   const quote=(text:string)=>text.split('\n').map(line=>'> '+line.replace(/<!--\s*memora:/g,'&lt;!-- memora:')).join('\n');
   const references=(text:string)=>text.replace(/<source-ref\b[^>]*\bid=["']([^"']+)["'][^>]*\/?>(?:<\/source-ref>)?/g,(_match,id:string)=>{const source=sources.find(s=>s.id===id);return source?link(id,source.title):t('obsidianWiki.unavailable');}).replace(/<\/?source-ref[^>]*>/g,t('obsidianWiki.unavailable'));
   const typed=(target:{kind:string;id:string})=>{
-    const entity=target.kind==='source'?sources.find(s=>s.id===target.id):target.kind==='atomic_note'?notes.find(n=>n.id===target.id):pages.find(p=>p.id===target.id||p.entityId===target.id);
+    const entity=target.kind==='source'?sources.find(s=>s.id===target.id):target.kind==='atomic_note'?notes.find(n=>n.id===target.id):pages.find(p=>!p.archived&&(p.id===target.id||p.entityId===target.id));
     return entity?link(entity.id,entity.title,target.kind==='source'?'source':'wiki'):t('obsidianWiki.unavailable');
   };
   const add=(target:Omit<MirrorTarget,'path'|'layout'>)=>targets.push({...target,path:paths.get(target.id)!,layout:config});
@@ -103,14 +114,17 @@ export async function buildObsidianMirror(pool: PgPool, root: string, scope: Obs
     add({id:note.id,type:'atomic_note',revision:note.updatedAt.toISOString(),title:note.title,...(note.ownership==='knowledge'?{}:{sourceId:note.sourceId,...(evidence?{documentId:evidence.documentId}:{})}),editorial:`# ${markdownHeading(note.title)}\n\n${note.bodyMarkdown}\n\n`,generated:[noteState,source?link(source.id,source.title):'',originalReferences||t('obsidianWiki.unavailable'),note.successorIds?.map((id:string)=>link(id,notes.find(n=>n.id===id)?.title??id,'note')).join('\n'),list(memberships)].filter(Boolean).join('\n\n')});
   }
   for(const page of pages){
+    const ancestors:WikiPage[]=[],visited=new Set([page.id]);let parentId=page.parentId;
+    while(parentId&&!visited.has(parentId)){visited.add(parentId);const parent=pages.find(p=>p.id===parentId&&!p.archived);if(!parent)break;ancestors.unshift(parent);parentId=parent.parentId;}
+    const breadcrumb=ancestors.map(p=>link(p.id,p.title,'wiki')).join(' → ');
     const linkMap:Array<{rendered:string;canonical:string}>=[];
     const prose=(text:string)=>{const value=references(text),mask=outsideCodeFences(value);return value.replace(/\[([^\]]+)\]\(memora:(page|source|atomic_note|entity)\/([0-9a-f-]{36})\)/g,(canonical,label:string,kind:string,id:string,offset:number)=>{if(!mask.slice(offset,offset+canonical.length).trim())return canonical;const entity=kind==='source'?sources.find(s=>s.id===id):kind==='atomic_note'?notes.find(n=>n.id===id):pages.find(p=>p.id===id||p.entityId===id);if(!entity)return canonical;const rendered=link(entity.id,label,kind==='source'?'source':'wiki');if(!linkMap.some(m=>m.rendered===rendered&&m.canonical===canonical))linkMap.push({rendered,canonical});return rendered;});};
     const renderedSections=page.sections.map(s=>({...s,markdown:prose(s.markdown)}));
     const sectionReferences=page.sections.map(section=>{const assessment=section.assessment,review=assessment?.humanReview==='verified'||(!assessment&&section.provenance==='personal'&&section.evidenceReview==='verified')?t('wiki.reviewed'):t('wiki.needsEvidenceReview');const support=assessment?.support==='validated'&&assessment.sectionRevisionId===section.sectionRevisionId&&assessment.freshness==='current'?assessment.supportMethod==='model_checked'?t('automaticWiki.modelAssessment'):assessment.humanReview==='verified'?t('wiki.reviewed'):t('automaticWiki.assessment'):t('wiki.needsEvidenceReview');return '### '+('[[#^memora-section-'+section.id+'|'+safeWikiLabel(section.title)+']]')+'\n\n'+[t(('wiki.provenanceTypes.'+section.provenance) as MessageKey),section.protected?t('obsidianWiki.protected'):'',review,support].filter(Boolean).join(' · ')+'\n\n'+section.evidenceIds.map((id,i)=>(i+1)+'. [[#^memora-evidence-'+id+'|'+safeWikiLabel(page.evidence.find(e=>e.id===id)?.sourceTitle??t('obsidianWiki.unavailable'))+']]').join('\n');}).join('\n\n');
     const groups=page.automatic?.groups??[], memberships=page.automatic?.memberships??[];
-    const navigation=groups.map(group=>`## ${markdownHeading(group.title)}\n\n${group.explanation??''}\n\n`+memberships.filter(m=>m.groupId===group.id).sort((a,b)=>a.order-b.order).map(m=>`- ${typed(m.target)}`).join('\n')).join('\n\n');
+    const navigation=groups.map(group=>`## ${markdownHeading(group.title)}\n\n${group.explanation??''}\n\n`+memberships.filter(m=>m.groupId===group.id).sort((a,b)=>a.order-b.order).map(m=>`- ${typed(m.target)} · ${t(('hierarchy.link.'+m.purpose) as MessageKey)}`).join('\n')).join('\n\n');
     const citations=page.evidence.map(e=>`### ${e.id}\n\n${evidenceSourceLink(e.sourceItemId,e.sourceTitle)} · ${e.documentId} · ${e.chunkId} · ${e.sourceSpanId??''} · ${safeWikiLabel(e.locator??'')} · ${e.current?t('obsidianWiki.current'):t('obsidianWiki.historical')}\n\n${quote(e.excerpt)}\n\n^memora-evidence-${e.id}\n\n[${t('obsidianWiki.openApp')}](memora://open/wiki/${page.id}?revision=${page.revisionId}&evidence=${e.id})`).join('\n\n');
-    add({id:page.id,type:'wiki_page',revision:page.revisionId,title:page.title,linkMap,editorial:`# ${markdownHeading(page.title)}\n\n`+renderedSections.map(s=>`${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${references(s.markdown)}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`).join('\n')+'\n',generated:[page.archived?t('maintenance.archivedRecoverable'):t(('wiki.'+page.review) as MessageKey),navigation,list(pages.filter(p=>!p.archived&&(p.parentId===page.id||p.automatic?.role.kind==='collection'&&p.automatic.role.owner?.id===page.id))),...(page.automatic?.links??[]).map(typed),sectionReferences,renderInterpretationHistory(page.sections.flatMap(s=>s.interpretations??[]),t),citations,link(INDEX,t('wiki.title'),'wiki')].filter(Boolean).join('\n\n')});
+    add({id:page.id,type:'wiki_page',revision:page.revisionId,title:page.title,linkMap,editorial:`# ${markdownHeading(page.title)}\n\n`+renderedSections.map(s=>`${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${references(s.markdown)}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`).join('\n')+'\n',generated:[breadcrumb,page.entityId?`${t('hierarchy.entityBinding')}: ${page.entityId}`:'',page.archived?t('maintenance.archivedRecoverable'):t(('wiki.'+page.review) as MessageKey),navigation,list(pages.filter(p=>!p.archived&&(p.parentId===page.id||p.automatic?.role.kind==='collection'&&p.automatic.role.owner?.id===page.id))),...(page.automatic?.links??[]).map(typed),sectionReferences,renderInterpretationHistory(page.sections.flatMap(s=>s.interpretations??[]),t),citations,link(INDEX,t('wiki.title'),'wiki')].filter(Boolean).join('\n\n')});
   }
   for(const r of relations)add({id:r.id,type:'source_relation',revision:digest(JSON.stringify(r)),title:r.sourceTitle+' → '+r.targetTitle,editorial:`# ${markdownHeading(r.sourceTitle+' → '+r.targetTitle)}\n\n`,generated:[t('obsidianWiki.readOnly'),t(('sourceRelations.'+r.status) as MessageKey),link(r.source_item_id,r.sourceTitle)+' → '+link(r.target_source_item_id,r.targetTitle),references(r.source_idea),references(r.target_idea),references(r.explanation),...r.evidence.map((e:Record<string,any>)=>`${e.id} · ${e.sourceDocumentId??''} · ${e.targetDocumentId??''} · ${e.current?t('obsidianWiki.current'):t('obsidianWiki.historical')}\n\n${quote(e.snapshot.sourceExcerpt??'')}\n\n${quote(e.snapshot.targetExcerpt??'')}`)].join('\n\n')});
   add({id:RELATIONS,type:'wiki_index',revision:digest(JSON.stringify(relations)),title:t('obsidianWiki.connections'),editorial:`# ${t('obsidianWiki.connections')}\n\n`,generated:list(relations.map(r=>({id:r.id,title:r.sourceTitle+' → '+r.targetTitle}))) });

@@ -2,6 +2,7 @@ import {renderInterpretationHistory} from "./interpretation-projection.js";
 import { inspectMirrorAssets, projectMirrorAssets } from './obsidian-asset-projection.js';
 import { createObsidianLayoutRepository } from '@app/db';
 import { buildObsidianMirror } from './obsidian-mirror.js';
+import { boundedWikiPath } from './obsidian-layout-paths.js';
 import { obsidianLayoutConfigSchema, type ObsidianLayoutConfig } from '@app/integration-contracts';
 import { jobTaskPayload } from "../job-task-payload.js";
 import { createSourceItemRepository } from "@app/db";
@@ -172,14 +173,16 @@ export class ObsidianWikiProjection {
         if (pageIds.length > 1000)
             throw new Error('obsidianWiki.errors.limit');
         const allowed = new Set(sources.map(s => String(s.id)));
+        const scopedPages=new Set(scope.sourceIds.length?await repo.scopedPages(pageIds,[...allowed]):pageIds);
         const pages: WikiPage[] = [];
         let pageBytes=0;
         for (const id of pageIds) {
+            if(!scopedPages.has(id))continue;
             if (scope.pageIds.length && !scope.pageIds.includes(id))
                 continue;
             const bytes=await repo.pageBytes(id);pageBytes+=bytes;if(bytes>2_000_000||pageBytes>20_000_000)throw new Error('obsidianWiki.errors.limit');
             const p = WikiPageSchema.parse(await wiki.get(id));
-            if ((!scope.sourceIds.length || p.evidence.every(e => allowed.has(e.sourceItemId))) && (!p.archived || await sync.findByMemoraId(p.id)))
+            if (!p.archived || await sync.findByMemoraId(p.id))
                 pages.push(p);
         }
         const relations = await repo.relations([...allowed]);
@@ -192,6 +195,7 @@ export class ObsidianWikiProjection {
             throw new Error('obsidianWiki.errors.binding'); if (!path) {
             for (let attempt = 0; attempt <= 100; attempt++) {
                 const candidate = posix.join(directory, collisionFileName(base, new Date(), attempt, id));
+                if(Buffer.byteLength(candidate)>900)throw new Error('obsidianWiki.errors.limit');
                 if (!used.has(candidate) && !await sync.findByRelativePath(candidate) && await readOptional(await safeVaultPath(settings.obsidianVaultPath!, candidate)) === null) {
                     path = candidate;
                     break;
@@ -220,11 +224,16 @@ export class ObsidianWikiProjection {
         await reserve(RELATIONS, 'wiki_index', t('obsidianWiki.connections'), posix.join(settings.managedRoot, 'Wiki', 'Connections'), 'index.md');
         const groups = { topic: 'Topics', entity: 'Entities', collection: 'Collections', synthesis: 'Syntheses' };
         const place = async (page: WikiPage, seen = new Set<string>()): Promise<string> => { if (paths.has(page.id))
-            return paths.get(page.id)!; if (seen.has(page.id))
+            return paths.get(page.id)!;
+            const registered=await sync.findByMemoraId(page.id);
+            if(registered)return reserve(page.id,'wiki_page',page.title,posix.dirname(registered.relativePath),posix.basename(registered.relativePath));
+            if (seen.has(page.id))
             throw new Error('wiki.errors.cycle'); seen.add(page.id); const parent = pages.find(p => p.id === page.parentId); let directory = posix.join(settings.managedRoot, 'Wiki', groups[page.kind]); if (parent) {
             const parentPath = await place(parent, seen);
             directory = parentPath.endsWith('/index.md') ? posix.dirname(parentPath) : parentPath.replace(/\.md$/, '');
-        } const owns = pages.some(p => p.parentId === page.id); return reserve(page.id, 'wiki_page', page.title, owns ? posix.join(directory, slugify(page.title)) : directory, owns ? 'index.md' : `${slugify(page.title)}.md`); };
+        } const owns = pages.some(p => p.parentId === page.id),relative=owns?posix.join(slugify(page.title),'index.md'):`${slugify(page.title)}.md`;
+          const path=boundedWikiPath(posix.join(directory,relative),posix.join(settings.managedRoot,'Wiki',groups[page.kind],relative));
+          return reserve(page.id, 'wiki_page', page.title, posix.dirname(path),posix.basename(path)); };
         for (const p of pages)
             await place(p);
         for (const r of relations)
@@ -232,6 +241,7 @@ export class ObsidianWikiProjection {
         const link = (id: string, title: string, kind = 'source') => {if(!missing.has(id))return wikiLink(paths.get(id),title,id,kind);const note=notes.find(n=>n.id===id),relation=relations.find(r=>r.id===id);return (relation?`[${safeWikiLabel(title)}](memora://open/source/${relation.source_item_id}?relation=${id})`:wikiLink(undefined,title,note?note.sourceId:id,note?'source':kind))+' · '+t('obsidianEditing.deleted');};
         const evidenceSourceLink=(id:string,title:string)=>allowed.has(id)?link(id,title):safeWikiLabel(title)+' · '+t('obsidianWiki.unavailable');
         const list = (items: Record<string, any>[], kind = 'wiki') => items.map(p => `- ${link(p.id, p.title, kind)}`).join('\n');
+        const typed=(target:{kind:string;id:string})=>{const entity=target.kind==='source'?sources.find(s=>s.id===target.id):target.kind==='atomic_note'?notes.find(n=>n.id===target.id):pages.find(p=>!p.archived&&(p.id===target.id||p.entityId===target.id));return entity?link(entity.id,entity.title,target.kind==='source'?'source':target.kind==='atomic_note'?'note':'wiki'):t('obsidianWiki.unavailable');};
         const add = (id: string, type: Target['type'], revision: string, title: string, editorial: string, generated: string, sourceId?: string) => { targets.push({ id, type, revision, title, path: paths.get(id)!, editorial, generated, ...(sourceId ? { sourceId } : {}) }); };
         const sourceReferences=(text:string)=>text.replace(/<source-ref\b[^>]*\bid=["']([^"']+)["'][^>]*\/?>(?:<\/source-ref>)?/g,(_m,id:string)=>{const source=sources.find(s=>s.id===id);return source?link(id,source.title):t('obsidianWiki.unavailable');}).replace(/<\/?source-ref[^>]*>/g,t('obsidianWiki.unavailable'));
         const quote = (text: string) => text.split('\n').map(line => `> ${line.replace(/<!--\s*memora:/g, '&lt;!-- memora:')}`).join('\n');
@@ -245,9 +255,12 @@ export class ObsidianWikiProjection {
             const pageSources = new Set(page.evidence.map(e => e.sourceItemId));
             const citations = page.evidence.map(e => `### ${e.id}\n\n${evidenceSourceLink(e.sourceItemId, e.sourceTitle)} · ${e.documentId} · ${safeWikiLabel(e.locator ?? '')} · ${e.current ? t('obsidianWiki.current') : t('obsidianWiki.historical')}\n\n${quote(e.excerpt)}\n\n^memora-evidence-${e.id}\n\n[${t('obsidianWiki.openApp')}](memora://open/wiki/${page.id}?revision=${page.revisionId}&evidence=${e.id})`).join('\n\n');
             const sectionEvidence = page.sections.map(s => `- [[#^memora-section-${s.id}|${safeWikiLabel(s.title)}]] · ${t(("wiki.provenanceTypes." + s.provenance) as MessageKey)} · ${s.evidenceReview === 'needs_review' ? t('wiki.needsEvidenceReview') : t('wiki.reviewed')}${s.protected ? ' · ' + t('obsidianWiki.protected') : ''}: ${s.evidenceIds.map(e => `[[#^memora-evidence-${e}|${page.evidence.findIndex(x => x.id === e) + 1}]]`).join(', ')}`).join('\n');
-            const children = pages.filter(p => !p.archived && (p.parentId === page.id || p.collectionIds.includes(page.id)));
-            const parent = pages.find(p => p.id === page.parentId);
-            const generated = [t('obsidianWiki.readOnly'), `${page.archived ? t("maintenance.archivedRecoverable") : t(("wiki." + page.review) as MessageKey)} · ${page.revisionId}`, page.aliases.map(safeWikiLabel).join(', '), link(INDEX, t('wiki.title'), 'wiki'), parent ? link(parent.id, parent.title, 'wiki') : '', list(children), list(pages.filter(p => page.collectionIds.includes(p.id))), sectionEvidence,renderInterpretationHistory(page.sections.flatMap(s=>s.interpretations??[]),t), citations, list(notes.filter(n => (pageSources.has(n.sourceId)||n.sourceIds?.some((id:string)=>pageSources.has(id))) && paths.has(n.id)), 'note'), list(relations.filter(r => pageSources.has(r.source_item_id) && pageSources.has(r.target_source_item_id)).map(r => ({ id: r.id, title: `${r.sourceTitle} → ${r.targetTitle}` }))), '[ ' + t('obsidianWiki.openApp') + ` ](memora://open/wiki/${page.id})`].filter(Boolean).join('\n\n');
+            const children = pages.filter(p => !p.archived && (p.parentId === page.id || p.collectionIds.includes(page.id)||p.automatic?.role.kind==='collection'&&p.automatic.role.owner?.id===page.id));
+            const ancestors:WikiPage[]=[],visited=new Set([page.id]);let parentId=page.parentId;
+            while(parentId&&!visited.has(parentId)){visited.add(parentId);const parent=pages.find(p=>p.id===parentId&&!p.archived);if(!parent)break;ancestors.unshift(parent);parentId=parent.parentId;}
+            const breadcrumb=ancestors.map(p=>link(p.id,p.title,'wiki')).join(' → ');
+            const navigation=(page.automatic?.groups??[]).map(g=>`## ${markdownHeading(g.title)}\n\n${g.explanation??''}\n\n`+(page.automatic?.memberships??[]).filter(m=>m.groupId===g.id).sort((a,b)=>a.order-b.order).map(m=>`- ${typed(m.target)} · ${t(('hierarchy.link.'+m.purpose) as MessageKey)}`).join('\n')).join('\n\n');
+            const generated = [t('obsidianWiki.readOnly'), `${page.archived ? t("maintenance.archivedRecoverable") : t(("wiki." + page.review) as MessageKey)} · ${page.revisionId}`, page.aliases.map(safeWikiLabel).join(', '), link(INDEX, t('wiki.title'), 'wiki'), breadcrumb, page.entityId?`${t('hierarchy.entityBinding')}: ${page.entityId}`:'', navigation, ...(page.automatic?.links??[]).map(typed), list(children), list(pages.filter(p => page.collectionIds.includes(p.id))), sectionEvidence,renderInterpretationHistory(page.sections.flatMap(s=>s.interpretations??[]),t), citations, list(notes.filter(n => (pageSources.has(n.sourceId)||n.sourceIds?.some((id:string)=>pageSources.has(id))) && paths.has(n.id)), 'note'), list(relations.filter(r => pageSources.has(r.source_item_id) && pageSources.has(r.target_source_item_id)).map(r => ({ id: r.id, title: `${r.sourceTitle} → ${r.targetTitle}` }))), '[ ' + t('obsidianWiki.openApp') + ` ](memora://open/wiki/${page.id})`].filter(Boolean).join('\n\n');
             add(page.id, 'wiki_page', page.revisionId, page.title, editorial, generated);
         }
         for (const r of relations) {

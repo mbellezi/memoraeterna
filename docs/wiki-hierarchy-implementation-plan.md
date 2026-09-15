@@ -548,12 +548,12 @@ an entity homonym, a reviewed move and a pending limited-budget branch.
 - [x] Verify `wikiContextRepository.ts` and consultation scope expansion across
   nested TOCs: deduplicate originals, bound traversal and preserve exclusions and
   complete lineage. Do not make tree ancestors synthetic supporting evidence.
-- [ ] Verify `obsidianWikiRepository.ts` and existing editorial/layout services
+- [x] Verify `obsidianWikiRepository.ts` and existing editorial/layout services
   export deeper parents, nested reading links and entity-page references using
   registered canonical identities.
-- [ ] Preserve existing registered physical paths. Reflect deeper hierarchy in
+- [x] Preserve existing registered physical paths. Reflect deeper hierarchy in
   portable navigation without forcing one directory per ancestor.
-- [ ] Exercise divergent local edits, deep paths, page rename/reparent, historical
+- [x] Exercise divergent local edits, deep paths, page rename/reparent, historical
   links and disabled sync. Any required physical relocation must use the existing
   explicit recoverable layout migration, with its own verification.
 
@@ -611,6 +611,28 @@ passed 921 tests; the same two known seed migration-list expectations remain H6 
 No schema migration, real inference, native app launch or database reset occurred.
 The normal-size native walkthrough, Obsidian preservation and real-model calibration
 remain pending H6/H5c gates; this UI implementation does not complete those gates.
+
+H5c portable preservation is verified in isolated PostgreSQL and temporary vaults.
+Both outward layouts reuse registered page paths before resolving desired parents,
+bound new physical folders independently of logical depth, and generate scoped
+breadcrumbs, canonical entity attribution and ordered typed reading links. A shared
+projection lineage reader includes current dependencies, nested TOCs, retained note
+originals and interpretation history without dropping deleted source IDs. Scope
+overflow is checked before filtering, and note evidence/currentness shares canonical
+snapshot ownership checks. No format version, migration or model call was added.
+
+Twenty focused tests, full TypeScript, format/diff checks and both existing Obsidian
+PostgreSQL verifiers passed. The extended layout verifier covers forty Unicode-heavy
+logical levels in the current layout, twenty new legacy levels, complete breadcrumbs,
+two canonical entity homonyms, nested indexes sharing one note, rename/reparent and
+archive/restore with stable registrations, preserved divergent local text, retained
+secondary originals after live-link removal/deletion, dependency-only and historical
+interpretation scope, excluded ancestor labels, raw inventory overflow and disabled
+sync. Existing populated upgrade (39 to 43 migrations), empty baseline, binary asset,
+crash resume, guarded rollback and symlink/recovery checks also passed. These are
+database/service/filesystem observations; native browsing, real open-editor acceptance
+and real-model cost/quality calibration remain H6 gates. No real user database or
+vault was changed.
 
 ### H6 — Cost, quality and complete-journey acceptance
 

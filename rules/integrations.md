@@ -87,6 +87,13 @@ Obsidian plugin, vault projection, pairing, or synchronization.
 - Wiki identities project once at their primary placement: leaves are files,
   initial parents have an index file, secondary memberships are wikilinks.
   Registered paths survive renaming, reparenting, archive and restoration.
+  Resolve a registered page path before computing desired parent/owner folders.
+  New logical hierarchies have no directory-per-ancestor requirement: when the
+  folder byte allowance is exhausted, place the new file in its existing Wiki
+  area, reserving collision-suffix space within the portable path limit. This
+  does not migrate registered files or change the layout version. Scoped logical
+  breadcrumbs and ordered typed reading/subtopic/related links remain independent
+  of physical placement, in both supported projection layouts.
   Archived existing projections show recoverable archive state and leave active
   navigation; files are not deleted. Source and note paths are reused. The wiki
   source catalog links them; metadata-only sources have one `source_reference`
@@ -320,6 +327,13 @@ Obsidian plugin, vault projection, pairing, or synchronization.
   guard reserved filenames and enforce byte limits. Source classification uses
   canonical type and ancestry; sibling order comes from current materialized
   divisions. Only an actual recorded daily date creates year/month folders.
+- Page export admission checks the raw page inventory overflow before filtering.
+  Both layouts authorize complete current dependency and retained-original
+  lineage, including nested TOCs, note relations and interpretation history.
+  Metadata-only ancestors inherit descendant lineage; excluded parent headings
+  never enter breadcrumbs. Deleted original IDs remain exclusion inputs. A
+  source-scoped page needs positively attributable lineage; an empty evidence
+  array is not permission to expose unbound prose or derived headings.
 - Attachment copy is explicit, local-only and immutable. Register ownership in
   the existing sync registry by document-asset identity; verify source bytes and
   reuse the registered path. Bound an asset to 16 MB and a source-scope inventory

@@ -234,6 +234,13 @@ npm run db:generate
   Deleted secondary evidence cannot disappear from scope checks. Whole-library
   historical wiki search includes knowledge-owned notes after primary deletion;
   source-specific searches must still contain the complete retained source set.
+- Obsidian scope admission uses a focused dependency/typed-reference source
+  closure shared by both outward layouts. It includes retained interpretation
+  originals, note evidence and derivative relation endpoints without joining away
+  deleted source IDs. Metadata-only path pages inherit descendant attribution;
+  related references affect provenance without creating principal tree edges.
+  Projection note evidence shares the canonical snapshot reader and retained
+  currentness predicate, including exact source ownership checks.
 
 ## Hierarchy persistence
 
