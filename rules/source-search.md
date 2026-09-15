@@ -147,6 +147,13 @@ prose, consultation material or portable projections. Whole-library historical
 search can return retained notes with unavailable live source navigation;
 missing originals never become current or newly authorized evidence.
 
+Compiled consultation checks retained note attribution for atomic-note,
+note-relation and source-relation-evidence dependencies, including when no live
+source link remains. All retained source IDs must be in scope; their exact current
+chunks must be packed before derived note/group prose is eligible. Retained source
+identity and hash must agree with the live chunk. Deduplicate complete originals
+by chunk ID without discarding distinct source or TOC associations.
+
 - Successor knowledge consultation packs complete compiled units first. When such
   units fit, complementary raw expansion is bounded by both the number and UTF-8
   serialized bytes of their selected original evidence. A larger model context

@@ -427,7 +427,9 @@ job statuses, or user-visible backend errors.
   assessments into human review.
 - Wiki theme navigation has one roving tree tab stop, Arrow/Home/End traversal and
   persistent expansion while reading. Visibility follows the normalized forest:
-  children of missing/archived parents and defensive cyclic roots remain reachable.
+  children of missing/archived parents and defensive loaded cyclic roots remain
+  reachable. Loaded-tree ordering and visibility use iterative traversal without
+  recursive call-stack limits or repeated per-row ancestry/descendant scans.
   Typed TOC links resolve canonical targets through the backend. Opening an atomic
   note exposes its original excerpts and existing source-detail navigation; Back
   preserves the mounted wiki page, note expansion and evidence selection.
@@ -462,8 +464,9 @@ job statuses, or user-visible backend errors.
   Inline links contain only phrasing HTML; note/entity details open outside the
   paragraph. Citation positions resolve only within the owning section/group's
   exact evidence list. Unknown references stay inert; titles never imply identity.
-- Notes and Sources tabs show actual current memberships/evidence of the page and
-  its owned TOCs. Aggregate Notes/Sources by canonical identity before pagination,
+- Notes and Sources tabs show actual current memberships/evidence of the page,
+  its principal descendants, owned TOCs and nested subtopic collections.
+  Aggregate Notes/Sources by canonical identity before pagination,
   retaining their associations. Connections show each edge’s purpose and context;
   fixed relationship reasons are localized. Connections distinguish structural, evidential and semantic
   links, with a bounded map and a paginated list alternative. These scoped tabs

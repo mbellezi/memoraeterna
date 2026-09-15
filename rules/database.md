@@ -159,11 +159,12 @@ npm run db:generate
   A stale advance cannot overwrite a pause/cancel. Transactional apply locks and
   rechecks the parent state; pause acknowledgment is serialized with a group
   already committing. No database transaction waits for model inference.
-- Navigation uses bounded keyset metadata queries, with independent recent/pinned
-  overview reads. Normalize missing/archived parents and a deterministic root per
-  legacy cycle without dropping pages; selected paths remain loadable beyond any
-  sibling page. Move validation detects cyclic ancestry and rolls back, rather
-  than recursively waiting forever.
+- Navigation uses localized keyset child metadata queries, with independent
+  recent/pinned overview reads. Normalize missing/archived/noncurrent parents as
+  roots; selected paths remain loadable beyond any sibling page. Canonical saves
+  reject cycles, so ordinary reads must not reconstruct the complete forest or
+  walk every page's ancestry for historical cycle repair. Selected-path traversal
+  terminates defensively on repeated IDs without imposing a hierarchy depth cap.
 
 - Automatic maintenance reuses version-dispatched `maintenance_schedules`,
   `maintenance_runs`, `maintenance_occurrences` and the existing monthly reservation
@@ -291,3 +292,12 @@ npm run db:generate
   human revision IDs that change principal parent. Existing impact triggers omit
   placement-only edits; no new queue or trigger is introduced. Organization
   revisions and pin/order-only human changes do not enter this content signature.
+
+- Wiki reading context and compiled consultation share principal-child, owned-TOC
+  and typed subtopic descent. An explicitly selected page-owned TOC also opens its
+  canonical owner as a seed; descending into another TOC does not independently
+  open an outside owner. Related links remain connections, never traversal edges.
+  Deduplicate traversal IDs to terminate cycles and preserve the existing bounded
+  result/keyset contracts. Source scope includes transitive compiled dependencies
+  and every primary, live-linked and retained original of referenced notes and
+  note-relation participants before any derived prose is returned.

@@ -545,7 +545,7 @@ an entity homonym, a reviewed move and a pending limited-budget branch.
 
 ### H5 — Retrieval and Obsidian preservation
 
-- [ ] Verify `wikiContextRepository.ts` and consultation scope expansion across
+- [x] Verify `wikiContextRepository.ts` and consultation scope expansion across
   nested TOCs: deduplicate originals, bound traversal and preserve exclusions and
   complete lineage. Do not make tree ancestors synthetic supporting evidence.
 - [ ] Verify `obsidianWikiRepository.ts` and existing editorial/layout services
@@ -559,6 +559,39 @@ an entity homonym, a reviewed move and a pending limited-budget branch.
 
 Exit: native and portable navigation reach the same objects; retrieval respects
 scope and local editor changes remain recoverable.
+
+H5a repository reading verification: localized canonical child/keyset and selected
+path reads replace full-forest cycle reconstruction. Iterative loaded-tree helpers
+preserve ordering, expansion and defensive orphan/cycle rendering. Shared reading
+descent follows principal children, owned TOCs and typed subtopics; an explicit TOC
+also opens its owner. Related connections never add descendants. Retained secondary
+note originals participate in transitive scope, currentness and complete-original
+packing before derived prose is admitted. Metadata-only ancestors remain navigation.
+
+The extended A5 isolated PostgreSQL verifier passed its existing populated-upgrade
+and empty-baseline cases plus nested reading, pending shared-note associations,
+generic ancestor/TOC consultation, dependency-only note relations, exact-original
+deduplication, exclusions after live-link removal, mismatched attribution and
+superseded/deleted originals. It also covered 240 siblings, a depth-220 selected
+path, recent/pinned metadata, orphan normalization and defensive cyclic termination.
+The existing strict-consumption budget fixture now lowers the allowance below
+actual recorded calls; product budget logic is unchanged. No migration was added.
+Fifty-nine focused tests, TypeScript, format/diff checks and the existing complete
+isolated PostgreSQL hierarchy verifier passed. The full suite passed 908 tests;
+the same two pre-existing seed migration-list expectations still omit migration
+0042 and remain H6 work. Native interaction/review/dashboard (H5b), Obsidian
+preservation (H5c) and H6 remain pending.
+
+Same-machine isolated PostgreSQL navigation comparison: 1,201 metadata nodes,
+1,000 siblings, depth 200, six warm samples per view, Apple M4 Max arm64. Values
+are repository latency in milliseconds, not native interaction or model usage.
+
+| Read | Median before → after (ms) | p95 before → after (ms) |
+| --- | --- | --- |
+| Root children | 40.38 → 0.46 | 40.65 → 0.64 |
+| Broad children | 43.77 → 0.49 | 44.85 → 0.58 |
+| Deep children | 41.35 → 0.20 | 41.77 → 0.21 |
+| Selected depth-200 path | 87.44 → 14.91 | 89.05 → 14.94 |
 
 ### H6 — Cost, quality and complete-journey acceptance
 

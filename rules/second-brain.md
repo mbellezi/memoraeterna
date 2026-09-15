@@ -135,6 +135,14 @@ Implementation sequencing lives in
   moves and hierarchical TOC links. Entity pages require admitted canonical
   entity references; reuse existing entity-page and source/topic-owner bindings.
   Canonical saves enforce uniqueness and concurrency under the placement lock.
+- Reading from a navigation-only ancestor reaches substantive principal children,
+  canonical owned TOCs and nested `subtopic` collections. Notes and sources remain
+  unique by canonical ID while retaining every distinct page/reason association
+  before pagination. Related links stay visible connections without expanding
+  descendant scope. Explicit TOC consultation includes its canonical page owner.
+  Metadata-only ancestors do not acquire synthetic sections, originals or compiled
+  evidence units. Compiled sections and group explanations use the same reading
+  descent and retain the six-unit/twelve-complete-original packing contract.
 - Existing-page placement uses a separate `reviewed_reparent` operation carrying
   page/revision, exact from/to parent and reason. A target overlapping its move
   shares its handle and revision. Policy capabilities explicitly disclose

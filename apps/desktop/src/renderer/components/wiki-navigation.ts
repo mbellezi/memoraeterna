@@ -14,25 +14,34 @@ export function wikiNavigationOrder<T extends PlacedPage>(pages: readonly T[]): 
   const children = new Map<string | null, T[]>();
   for (const page of ordered) {
     const parent = page.parentId && ids.has(page.parentId) ? page.parentId : null;
-    children.set(parent, [...(children.get(parent) ?? []), page]);
+    const siblings = children.get(parent) ?? [];
+    siblings.push(page);
+    children.set(parent, siblings);
   }
   const result: Array<{ page: T; depth: number }> = [];
   const visited = new Set<string>();
   function visit(page: T, depth: number) {
-    if (visited.has(page.id)) return;
-    visited.add(page.id);
-    result.push({ page, depth });
-    for (const child of children.get(page.id) ?? []) visit(child, depth + 1);
+    const pending = [{ page, depth }];
+    while (pending.length) {
+      const row = pending.pop()!;
+      if (visited.has(row.page.id)) continue;
+      visited.add(row.page.id);
+      result.push(row);
+      const descendants = children.get(row.page.id) ?? [];
+      for (let index = descendants.length - 1; index >= 0; index--)
+        pending.push({ page: descendants[index]!, depth: row.depth + 1 });
+    }
   }
   for (const page of children.get(null) ?? []) visit(page, 0);
-  // Defensive visibility for corrupt legacy data; rendering cannot create a loop.
+  // Defensive visibility for corrupt data; rendering cannot create a loop.
   for (const page of ordered) if (!visited.has(page.id)) visit(page, 0);
   return result;
 }
 
-/** Visibility follows the normalized forest, including promoted orphan/cyclic legacy roots. */
+/** Visibility follows the normalized forest, including defensive orphan/cyclic roots. */
 export function visibleWikiNavigation<T extends PlacedPage>(pages:readonly T[],expanded:ReadonlySet<string>){
  const stack:string[]=[],ordered=wikiNavigationOrder(pages).map(row=>{stack.length=row.depth;const parentId=stack.at(-1)??null;stack.push(row.page.id);return{...row,parentId};});
- const parents=new Map(ordered.map(r=>[r.page.id,r.parentId]));
- return ordered.filter(row=>{let parent=row.parentId;while(parent){if(!expanded.has(parent))return false;parent=parents.get(parent)??null;}return true;}).map(row=>({...row,hasChildren:ordered.some(child=>child.parentId===row.page.id)}));
+ const parentsWithChildren=new Set(ordered.map(row=>row.parentId));
+ const visible=new Set<string>();
+ return ordered.filter(row=>{const shown=row.parentId===null||visible.has(row.parentId)&&expanded.has(row.parentId);if(shown)visible.add(row.page.id);return shown;}).map(row=>({...row,hasChildren:parentsWithChildren.has(row.page.id)}));
 }
