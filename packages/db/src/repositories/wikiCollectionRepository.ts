@@ -2,11 +2,35 @@ import { randomUUID } from 'node:crypto';
 import { WikiBootstrapSchema, WikiAssessmentSchema,HierarchyRouteContinuationSchema,type CuratorRun, type WikiBootstrap, type AutomaticWikiPolicy } from '@app/domain';
 import {isDeepStrictEqual} from 'node:util';
 import type { PgPool, PgClient } from '../client.js';
-import { createWikiCuratorRepository,curatorHash } from './wikiCuratorRepository.js';
+import { createWikiCuratorRepository,curatorHash,validateCuratorOriginals } from './wikiCuratorRepository.js';
 
 export function createWikiCollectionRepository(pool:PgPool){
  const transaction=async<T>(fn:(db:PgClient)=>Promise<T>)=>{const db=await pool.connect();try{await db.query('begin');const result=await fn(db);await db.query('commit');return result;}catch(error){await db.query('rollback');throw error;}finally{db.release();}};
  const api={
+ async pendingRouteChildren(policyId:string){const rows=(await pool.query("select b.id from organization_runs b join organization_runs c on c.id::text=b.checkpoint->>'childRunId' where b.snapshot->>'version'='wiki-bootstrap-v1' and b.snapshot->'policy'->>'id'=$1 and b.checkpoint->>'state' in('running','attention') and c.status='failed' and c.snapshot->>'continuationRoute' is not null and c.checkpoint->>'routeDeferral' is null and c.checkpoint->>'error' in('maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline') order by b.created_at,b.id limit 20",[policyId])).rows;return Promise.all(rows.map(async r=>(await api.get(r.id))!));},
+ async deferUnstartedRouteChild(run:WikiBootstrap,childId:string){return transaction(async db=>{
+  await db.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");
+  await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['wiki-policy:'+run.snapshot.policy.id]);
+  const rows=(await db.query('select id,job_id,status,snapshot,checkpoint,updated_at::text updated from organization_runs where id=any($1::uuid[]) order by id for update',[[run.id,childId]])).rows;
+  const parent=rows.find(r=>r.id===run.id),child=rows.find(r=>r.id===childId),cp=child?.checkpoint;
+  if(!parent||!['queued','analyzing','failed','awaiting_review'].includes(parent.status)||parent.updated!==run.updatedAt||!['running','attention'].includes(parent.checkpoint.state)||parent.checkpoint.childRunId!==childId||child?.status!=='failed'||child.snapshot.parentBootstrapId!==run.id||child.snapshot.policy.id!==run.snapshot.policy.id||child.snapshot.policy.revisionId!==run.snapshot.policy.revisionId||!isDeepStrictEqual(child.snapshot.profile,run.snapshot.profile)||!isDeepStrictEqual(child.snapshot.promptPin,run.snapshot.promptPin)||!child.snapshot.continuationRoute||!child.snapshot.maintenanceRunId||cp.routeDeferral||cp.callPending||cp.supportAssessment||!(cp.calls===0||cp.calls===1&&cp.waitingForModel)||!['maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline'].includes(cp.error))return false;
+  const route=parent.checkpoint.hierarchy?.routes.find((r:{routeId:string})=>r.routeId===child.snapshot.continuationRoute.routeId);
+  if(!route||route.currentChildRunId!==childId||!isDeepStrictEqual(route,child.snapshot.continuationRoute))throw new Error('organization.errors.conflict');
+  const job=(await db.query('select status,cancel_requested_at from jobs where id=$1 for update',[child.job_id])).rows[0];
+  if(!job||job.cancel_requested_at)return false;
+  // recordTaskRun atomically inserts the canonical audit and its organization
+  // step. Check both the linked audit and any pending step, not only usage totals.
+  if((await db.query('select 1 from organization_steps s left join ai_task_runs a on a.id=s.ai_task_run_id where s.run_id=$1 limit 1',[childId])).rows.length)return false;
+  const activation=(await db.query('select state,revision_id from wiki_policy_activations where policy_id=$1 order by created_at desc,id desc limit 1',[run.snapshot.policy.id])).rows[0];
+  if(activation?.state!=='enabled'||activation.revision_id!==run.snapshot.policy.revisionId)throw new Error('organization.errors.policy');
+  await validateCuratorOriginals(db,child.snapshot,run.snapshot.policy,true);
+  await createWikiCuratorRepository(pool).hierarchy.validatePlacement(child.snapshot,db);
+  route.currentChildRunId=null;route.deferredChildRunId=childId;route.state='deferred';route.reason=cp.error==='organization.errors.deadline'?'deadline':'occurrence_budget';
+  parent.checkpoint.childRunId=null;parent.checkpoint.state='attention';parent.checkpoint.error=cp.error;
+  await db.query("update jobs set status='canceled',cancel_requested_at=clock_timestamp(),finished_at=clock_timestamp() where id=$1",[child.job_id]);
+  await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1',[childId,{...cp,routeDeferral:{reason:cp.error,at:new Date().toISOString(),successorRunId:null}}]);
+  await db.query("update organization_runs set status='failed',checkpoint=$2,updated_at=clock_timestamp() where id=$1",[run.id,parent.checkpoint]);return true;
+ });},
  async adoptHierarchyRoute(run:WikiBootstrap,planning:CuratorRun){return transaction(async db=>{
   const route=run.checkpoint.hierarchy!.routes.find(r=>r.planningRunId===planning.id)!;
   await db.query("select pg_advisory_xact_lock(hashtextextended('wiki-placement',0))");

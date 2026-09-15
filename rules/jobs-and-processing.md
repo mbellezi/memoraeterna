@@ -197,6 +197,16 @@ checkpoint recovery, application restart, stage state, and batch aggregation.
   uncertain provider attempt or revive a canceled/rejected route. A failed
   planning run retains its audit and explicit continuation linkage; completing
   that linkage does not invent an apply receipt for the original oversized group.
+- An already-admitted route child stopped by occurrence budget/deadline may be
+  retired only with locked proof that no provider started: a known pre-provider
+  checkpoint, no support result, and no organization step/canonical audit. Preserve
+  its snapshot, counters and reservations, cancel its dispatch job, and retain
+  explicit deferral/successor linkage. A later authorized occurrence atomically
+  binds a successor using the exact retained proposal after current scope,
+  originals, prefix, model and prompt checks. No synthesis is repeated. Any
+  started/uncertain call, audit, canceled/rejected owner or changed authority
+  blocks this recovery. Provider-start acknowledgment must transition the exact
+  active waiting sequence and fail closed if retirement/cancellation won first.
 - Pause blocks new child admission and guarded apply; resume retains child calls,
   repairs, unknown-usage state, and its original deadline. Completed child receipts
   are reconciled before advancing the cursor. A failed or rejected unchanged

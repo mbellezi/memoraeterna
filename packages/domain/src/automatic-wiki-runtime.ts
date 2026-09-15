@@ -122,16 +122,18 @@ export const CuratorSnapshotSchema = z.object({
   limits: HierarchyLimitsSchema, requiredPageIds: z.array(z.string().uuid()).max(hierarchyTargetRange.max).default([]),
   supportCompositionHash: z.string().regex(/^[a-f0-9]{64}$/),
   placement: HierarchyPlacementInventorySchema, resources: HierarchyResourceBoundsSchema,
+  continuedFromRunId:z.string().uuid().nullable().default(null),
   continuationRoute: HierarchyRouteContinuationSchema.nullable().default(null),
-  structuralIntent:z.object({kind:z.enum(['missing_toc','unplaced']),pageId:z.string().uuid(),fingerprint:z.string().min(1)}).strict().nullable().default(null)
+  structuralIntent:z.object({kind:z.enum(['missing_toc','unplaced']),owners:z.array(z.object({pageId:z.string().uuid(),fingerprint:z.string().min(1)}).strict()).min(1).max(12)}).strict().superRefine((v,c)=>{if(new Set(v.owners.map(o=>o.pageId)).size!==v.owners.length||v.kind==='unplaced'&&v.owners.length!==1)c.addIssue({code:'custom',message:'Exact distinct structural owners required'});}).nullable().default(null)
 }).strict().superRefine((v, ctx) => {
+  if(v.structuralIntent&&(v.structuralIntent.owners.length>v.limits.targets||v.structuralIntent.owners.some(o=>!v.placement.pages.some(p=>p.pageId===o.pageId&&(v.structuralIntent!.kind==='unplaced'||p.role.kind==='topic'&&p.canReceiveChildren&&!p.canEdit)))))ctx.addIssue({code:'custom',message:'Every exact navigation owner must be an admitted destination within the target allowance'});
   if (new Set(v.requiredPageIds).size !== v.requiredPageIds.length || v.requiredPageIds.length > v.limits.targets || (Object.keys(v.limits) as (keyof typeof v.limits)[]).some(k => v.limits[k] > v.policy.limits[k]))
     ctx.addIssue({ code: "custom", message: "Snapshot must respect the admitted effective target allowance" });
 });
 export const CuratorCheckpointSchema = z.object({
   rejection:z.object({kind:z.literal('automatic_validation'),decidedAt:z.string()}).strict().optional(),executionBaseMs:z.number().nonnegative().nullable().default(null),executionAdmittedAt:z.string().nullable().default(null),calls:z.number().int().nonnegative(),tools:z.number().int().nonnegative(),repairs:z.number().int().min(0).max(1),startedAt:z.string(),callPending:z.boolean(),waitingForModel:z.boolean(),previousOutput:z.string().max(90000),validationIssues:z.array(z.object({path:z.string().max(300),message:z.string().max(500)}).strict()).max(12).default([]),error:z.string().nullable(),reportedInputTokens:z.number().nonnegative(),reportedOutputTokens:z.number().nonnegative(),costEstimate:z.number().nonnegative(),usageCounts:z.object({input:z.number().int(),output:z.number().int(),cost:z.number().int()}),usageIncomplete:z.boolean(), version: z.literal(hierarchyCuratorVersion),
   proposal: HierarchyChangeSetSchema.nullable(), supportAssessment: CuratorSupportAssessmentSchema.nullable().default(null),
-  hierarchy: HierarchyCheckpointSchema.nullable().default(null),continuedByRouteId:z.string().uuid().nullable().default(null),continuationComplete:z.boolean().default(false)
+  hierarchy: HierarchyCheckpointSchema.nullable().default(null),continuedByRouteId:z.string().uuid().nullable().default(null),continuationComplete:z.boolean().default(false),routeDeferral:z.object({reason:z.enum(['maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline']),at:z.string(),successorRunId:z.string().uuid().nullable()}).strict().nullable().default(null)
 }).strict();
 export const CuratorRunSchema = z.object({
   id:z.string().uuid(),jobId:z.string().uuid().nullable(),status:z.enum(['queued','analyzing','awaiting_review','applied','rejected','canceled','failed']),receiptRevisionId:z.string().uuid().nullable(),createdAt:z.string(),updatedAt:z.string(), snapshot: CuratorSnapshotSchema, checkpoint: CuratorCheckpointSchema,

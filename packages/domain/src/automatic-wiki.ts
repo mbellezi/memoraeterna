@@ -222,7 +222,7 @@ export const HierarchyStructuralFingerprintSchema = z.object({
 export const HierarchyContinuationProofSchema = z.object({
   routeId: id, fingerprint: HierarchyStructuralFingerprintSchema,
   intendedTargetKeys: z.array(HierarchyHandleSchema).min(1).max(hierarchyTargetRange.max),
-  nextParent: HierarchyParentSchema.options[1]
+  nextParents: z.array(HierarchyParentSchema.options[1]).min(1)
 }).strict();
 export const CuratorChangeSetSchema = z.object({
   version: z.literal(automaticWikiHierarchyVersion), groupId: id, policyRevisionId: id,
@@ -254,7 +254,8 @@ export const CuratorChangeSetSchema = z.object({
   if (value.continuation && (count !== 0 || !value.ancestors.length)) issue("Route prefix continuation is ancestor-only");
   if (value.continuation) {
     unique(value.continuation.intendedTargetKeys, "continuation target key");
-    if (!value.ancestors.some(a => a.handle === value.continuation!.nextParent.handle)) issue("Continuation must end at a created ancestor");
+    unique(value.continuation.nextParents.map(p=>p.handle), "continuation frontier");
+    if (value.continuation.nextParents.some(p=>!value.ancestors.some(a=>a.handle===p.handle))) issue("Continuation must end at created ancestors");
   }
   const key = (ref: HierarchyParent | z.infer<typeof CuratorReferenceSchema>): string => ref.reference === "proposed"
     ? ref.handle : targetById.get(ref.target.id)?.handle ?? moveById.get(ref.target.id)?.handle ?? ref.target.id;
@@ -274,8 +275,8 @@ export const CuratorChangeSetSchema = z.object({
       issue("A move must change its parent");
   }
   const required = new Set<string>();
-  if (value.continuation) parents.set("$pending_route_target", [value.continuation.nextParent.handle]);
-  for (const work of [...value.targets, ...value.moves, ...(value.continuation ? [{ handle: "$pending_route_target" }] : [])]) {
+  const pending=(value.continuation?.nextParents??[]).map((p,i)=>{const handle="$pending_route_target_"+i;parents.set(handle,[p.handle]);return{handle};});
+  for (const work of [...value.targets, ...value.moves, ...pending]) {
     const seen = new Set<string>(); let current = parents.get(work.handle)?.[0];
     while (current && !seen.has(current)) {
       seen.add(current); required.add(current); current = parents.get(current)?.[0];
@@ -359,18 +360,20 @@ export const HierarchyRouteContinuationSchema = z.object({
   state: z.enum(["pending", "partial", "deferred", "complete", "canceled"]),
   intendedTargets: z.array(z.object({ key: HierarchyHandleSchema, title: z.string().min(1).max(300),
     purpose: z.string().min(1).max(2000), role: HierarchyPageTargetSchema.shape.role,
-    resolvedPageId: id.nullable() }).strict()).min(1).max(hierarchyTargetRange.max),
+    initialParent:HierarchyParentSchema.nullable(),resolvedPageId: id.nullable() }).strict()).min(1).max(hierarchyTargetRange.max),
   // Durable planning keys are not group-local live references and must be expanded afresh.
   remainingPath: z.array(z.object({ key: HierarchyHandleSchema, title: z.string().min(1).max(300),
-    purpose: z.string().min(1).max(2000), role: HierarchyAncestorRoleSchema,chunkIds:z.array(id).default([]) }).strict()),
+    purpose: z.string().min(1).max(2000), role: HierarchyAncestorRoleSchema,initialParent:HierarchyParentSchema.nullable(),chunkIds:z.array(id).min(1) }).strict()),
   resolvedPrefix: z.array(z.object({ key: HierarchyHandleSchema, pageId: id, revisionId: id, fingerprint }).strict()),
-  destination: HierarchyParentSchema.options[0].nullable(),
   reason: z.enum(["context", "output", "deadline", "occurrence_budget", "paused"]).nullable(),
-  completedGroupIds: z.array(id), currentChildRunId: id.nullable()
+  completedGroupIds: z.array(id), currentChildRunId: id.nullable(),deferredChildRunId:id.nullable().default(null)
 }).strict().superRefine((v, ctx) => {
   const keys = [...v.remainingPath, ...v.resolvedPrefix, ...v.intendedTargets].map(s => s.key);
   if (new Set(keys).size !== keys.length) ctx.addIssue({ code: "custom", message: "Route keys must be unique" });
-  if (v.state === "complete" && (v.remainingPath.length || v.intendedTargets.some(t => !t.resolvedPageId) || v.currentChildRunId))
+  const available=new Set(v.resolvedPrefix.map(p=>p.key));
+  for(const node of v.remainingPath){if(node.initialParent?.reference==="proposed"&&!available.has(node.initialParent.handle))ctx.addIssue({code:"custom",message:"Planned ancestor parents must precede their children"});available.add(node.key);}
+  for(const node of v.intendedTargets)if(node.initialParent?.reference==="proposed"&&!keys.includes(node.initialParent.handle))ctx.addIssue({code:"custom",message:"Unknown intended target parent"});
+  if (v.state === "complete" && (v.remainingPath.length || v.intendedTargets.some(t => !t.resolvedPageId) || v.currentChildRunId || v.deferredChildRunId))
     ctx.addIssue({ code: "custom", message: "Completion requires all ancestors, leaves and required TOCs" });
 });
 export const HierarchyCheckpointSchema = z.object({
@@ -414,17 +417,15 @@ export function validateHierarchyAdmission(proposalInput: unknown, policyInput: 
         || admitted.fingerprint.scopeFingerprint !== inventory.scopeFingerprint
         || admitted.fingerprint.branchFingerprint !== inventory.fingerprint)
         issues.push("Continuation route identity, unresolved targets or current structural fingerprint mismatch");
-      const prefix = admitted.resolvedPrefix.at(-1);
-      let expectedParent: HierarchyParent | null = prefix ? { reference: "existing", target: { kind: "page", id: prefix.pageId }, expectedRevisionId: prefix.revisionId, fingerprint: prefix.fingerprint } : admitted.destination;
       if (proposal.ancestors.length > admitted.remainingPath.length) issues.push("Continuation exceeds the admitted remaining path");
       proposal.ancestors.forEach((ancestor, index) => {
         const segment = admitted.remainingPath[index];
         if (!segment || ancestor.handle !== segment.key || ancestor.title !== segment.title || ancestor.purpose !== segment.purpose
-          || JSON.stringify(ancestor.role) !== JSON.stringify(segment.role) || JSON.stringify(ancestor.initialParent) !== JSON.stringify(expectedParent))
+          || JSON.stringify(ancestor.role) !== JSON.stringify(segment.role) || JSON.stringify(ancestor.initialParent) !== JSON.stringify(resolveHierarchyRouteParent(segment.initialParent,admitted)))
           issues.push("Continuation must create the exact admitted ancestor prefix");
-        expectedParent = { reference: "proposed", handle: ancestor.handle };
       });
-      if (proof.nextParent.handle !== proposal.ancestors.at(-1)?.handle) issues.push("Continuation next parent must be the resolved prefix endpoint");
+      const frontier=hierarchyContinuationFrontier(proposal.ancestors).map(p=>p.handle).sort();
+      if(JSON.stringify(proof.nextParents.map(p=>p.handle).sort())!==JSON.stringify(frontier))issues.push("Continuation frontier must match the exact prefix endpoints");
     }
   }
   if (policy.state !== "enabled" || proposal.policyRevisionId !== policy.revisionId) issues.push("Current enabled policy revision required");
@@ -517,3 +518,14 @@ export function validateHierarchyAdmission(proposalInput: unknown, policyInput: 
 }
 
 export const HierarchyChangeSetSchema = CuratorChangeSetSchema;
+
+/** Durable route keys become current canonical parent references only at admission. */
+export function resolveHierarchyRouteParent(parent:HierarchyParent|null,route:Pick<z.infer<typeof HierarchyRouteContinuationSchema>,"resolvedPrefix">):HierarchyParent|null{
+ if(parent?.reference!=="proposed")return parent;
+ const page=route.resolvedPrefix.find(p=>p.key===parent.handle);
+ return page?{reference:"existing",target:{kind:"page",id:page.pageId},expectedRevisionId:page.revisionId,fingerprint:page.fingerprint}:parent;
+}
+export function hierarchyContinuationFrontier(ancestors:readonly {handle:string;initialParent:HierarchyParent|null}[]){
+ const parents=new Set(ancestors.flatMap(a=>a.initialParent?.reference==="proposed"?[a.initialParent.handle]:[]));
+ return ancestors.filter(a=>!parents.has(a.handle)).map(a=>({reference:"proposed" as const,handle:a.handle}));
+}

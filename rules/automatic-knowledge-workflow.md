@@ -98,6 +98,13 @@ Historical versioned records retain their own evidence and replay contracts.
   pending structural targets. Diagnose meaningful missing topic TOCs without
   requiring a TOC for each empty navigation ancestor. Settled daily inspection
   records no change without creating another empty collection wrapper.
+- Batch compatible missing topic TOCs within the configured target count and
+  complete evidence/context bounds. Admit every owner explicitly as destination
+  metadata and require its exact new populated TOC, preserving owner revisions.
+  Resource grouping may branch through shared ancestors; current route checkpoints
+  retain each planned parent and all unresolved targets. Known-unstarted expired
+  child attempts may continue under later valid occurrence authority through
+  explicit successor linkage, without refunding consumption or replaying synthesis.
 - Removal deliveries repair current page and TOC revisions before model admission.
   Subtract unavailable typed targets and unprotected generated sections that lost
   required inputs; preserve human/reviewed prose and retained interpretations with

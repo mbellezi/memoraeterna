@@ -158,7 +158,7 @@ Implementation sequencing lives in
   Completion requires every intended target and path segment; cancellation and
   partial progress preserve history and cannot grant another inference allowance.
 - An ancestor-only continuation requires an exact route ID, pinned structural
-  fingerprint, complete unresolved intended-target keys and next-parent endpoint.
+  fingerprint, complete unresolved intended-target keys and exact prefix endpoints.
   It may create only the next exact prefix of that admitted route. The curator
   snapshot pins the route; a model draft cannot supply or approve that proof.
   Zero-target proposals without it are invalid. Later chunks attach to an exact
@@ -210,9 +210,14 @@ Implementation sequencing lives in
   checkpoint. A current checkpoint cannot claim completion without all three.
 - A substantive topic without its canonical owned TOC is a navigation candidate;
   a sectionless path ancestor does not require its own TOC. Missing-TOC admission
-  pins the exact owner as read-only destination metadata and requires one new
-  populated TOC. The owner is not a work target and cannot be rewritten in that
-  group. This permits targets=1 to complete a topic, then its navigation.
+  pins exact owners as read-only destination metadata and requires one new
+  populated TOC per owner. Pack compatible missing owners within the configured
+  target allowance and complete-original/context bounds, using one ordinary
+  synthesis/support pair. Owners are not work targets and cannot be rewritten
+  in that group. Every new TOC counts. This permits targets=1 to complete a topic,
+  then its navigation; larger groups should include topics and required TOCs
+  together when their resources fit. A failed admission preserves the current
+  structural cursor so later authority cannot skip the unresolved owners.
 - Daily diagnostics filter missing navigation and unplaced branches before
   expanding scoped lineage. Weekly/monthly may inspect a wider bounded metadata
   page. Diagnostic fingerprints use direct branch and ancestry revisions, owner
@@ -222,18 +227,25 @@ Implementation sequencing lives in
   another synthesis. A settled daily occurrence needs no bootstrap or inference.
 - Resource-deferred output is untrusted until ordinary content, note, scope,
   target and hierarchy validation succeeds with only the byte check relaxed for
-  validation. The coordinator may decompose a coherent new linear path, retaining
+  validation. The coordinator may decompose a coherent forest of new ancestors, retaining
   its planning run and original audit, exact pending targets and per-ancestor
   canonical original chunk associations. Each resource-sized chunk is preseeded
   from that plan and receives current semantic support through the same adapter;
   it does not repeat synthesis or invoke inference per ancestor. An unsupported
   chunk rejects the retained route, rather than authorizing a rewritten path.
-  Branched oversized candidates, existing rewrites and a final target unit that
-  still exceeds resources remain explicit unresolved attention; they are never
-  partially applied or flattened. Branched proposals that fit remain ordinary
-  coherent groups. This is a current continuation limitation, not a depth cap.
+  Pin each ancestor and intended target's explicit planned parent. Topologically
+  ordered chunks admit only ancestors whose parent is canonical, already resolved
+  or earlier in the same chunk; exact frontier proof covers every branch. Reuse
+  shared ancestors once. Keep all final work targets and their cross-target links
+  in one coherent group. Existing rewrites, interpretation/evolution, ancestor
+  dependencies on undelivered substantive targets and irreducible final target
+  units remain explicit attention when ancestor-only decomposition is impossible;
+  never flatten them. Fitting branched proposals remain ordinary two-call groups.
 - Route keys are planning identities only. Resolve completed prefixes into
-  exact canonical parents, owners and links for each new child. Admission binds
+  exact canonical parents, owners and links using the complete resolved-key map
+  for each child, not merely the last created ancestor. Parent references retain
+  revision and placement fingerprints; ordinary references use canonical revision
+  identity. Persist only the exact original lineage for each ancestor. Admission binds
   the owner/current child atomically, and apply commits the prefix, receipt and
   owner progress together. Re-read the owner before consuming that child receipt;
   stale coordinator timestamps cannot overwrite route progress or a pause.

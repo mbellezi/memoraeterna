@@ -270,6 +270,17 @@ npm run db:generate
   `continuationComplete`; retain its consumed audit even after route completion.
   Maintenance review lookup excludes that superseded planning failure, while
   unresolved route children retain their exact review/uncertain/negative states.
+- Route planning stores explicit parent references for every ancestor and final
+  target. Validate the exact topological prefix and all frontier endpoints; update
+  every resolved branch fingerprint atomically after each chunk. Distinguish
+  placement references from ordinary owner/member/link references when rebinding.
+- Known-unstarted route retirement serializes against the run's provider-start
+  transition and its job. Canonical task recording atomically writes its
+  organization step, so any step/audit blocks retirement. Preserve old reservation
+  rows; successor admission locks both owner and retired child, verifies the
+  current occurrence and exact retained proposal, and writes reciprocal linkage
+  together with the new child binding. Historical linked planners/deferrals do
+  not become current actionable maintenance failures.
 
 - The current curator repository exposes one canonical apply implementation for
   content and hierarchy. Its ordinary apply entry point delegates to the same

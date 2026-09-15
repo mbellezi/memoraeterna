@@ -145,7 +145,7 @@ export function createAutomaticMaintenanceRepository(pool:PgPool){
     from maintenance_runs m left join knowledge_impact_deliveries d on d.id::text=m.checkpoint->>'impactDeliveryId'
     left join organization_runs b on b.id::text=coalesce(m.checkpoint->>'bootstrapId',d.checkpoint->>'bootstrapId',d.receipt->>'runId')
     join organization_runs c on c.id::text in(m.checkpoint->>'reviewChildId',b.checkpoint->>'childRunId',d.checkpoint->>'childRunId') or c.snapshot->>'maintenanceRunId'=m.id::text
-    where m.id=$1 and c.status in('awaiting_review','failed','rejected','canceled')
+    where m.id=$1 and c.checkpoint->>'continuedByRouteId' is null and c.checkpoint->>'routeDeferral' is null and c.status in('awaiting_review','failed','rejected','canceled')
     order by (c.status='awaiting_review') desc,c.updated_at desc,c.id limit 1`,[id])).rows[0];
   const reason=child?.checkpoint.supportAssessment?.verdict.supported===false?'organization.errors.unsupported':child?.checkpoint.error??bootstrap?.checkpoint.error??parent.checkpoint.reason??null;
   return AutomaticMaintenanceAttentionSchema.parse({kind:child?.review_ready?'review':'blocked',childRunId:child?.id??null,childVersion:child?.version??null,
@@ -182,7 +182,7 @@ export function createAutomaticMaintenanceRepository(pool:PgPool){
  async blocker(policyId:string){const row=(await pool.query("select exists(select 1 from jobs j where j.status in('queued','running') and j.type<>'maintenance' and not (j.type='organization' and exists(select 1 from organization_runs r where r.job_id=j.id and r.snapshot->'policy'->>'id'=$1))) busy",[policyId])).rows[0]!;return row.busy?'maintenance.errors.busy':null;},
  async pending(policyId:string){return Number((await pool.query("select count(*) n from knowledge_impact_deliveries where consumer='curator' and consumer_key=$1 and status not in ('acknowledged','excluded')",[policyId])).rows[0]!.n);},
  // Admission failures retain their delivery cursor. Only unstarted budget deferrals may move to a new occurrence.
- async reviewChild(runId:string){const row=(await pool.query("select id,status,checkpoint->>'error' error from organization_runs where snapshot->>'maintenanceRunId'=$1 and status in('awaiting_review','failed','canceled','rejected') and checkpoint->>'continuedByRouteId' is null and not(status='canceled' and coalesce(checkpoint->>'error','')='organization.errors.supersededTrigger') order by created_at,id limit 1",[runId])).rows[0];return row?{id:row.id as string,reason:row.error??'organization.errors.review'}:null;},
+ async reviewChild(runId:string){const row=(await pool.query("select id,status,checkpoint->>'error' error from organization_runs where snapshot->>'maintenanceRunId'=$1 and status in('awaiting_review','failed','canceled','rejected') and checkpoint->>'continuedByRouteId' is null and checkpoint->>'routeDeferral' is null and not(status='canceled' and coalesce(checkpoint->>'error','')='organization.errors.supersededTrigger') order by created_at,id limit 1",[runId])).rows[0];return row?{id:row.id as string,reason:row.error??'organization.errors.review'}:null;},
  async deliveryAttention(policyId:string,runId:string){const row=(await pool.query(`with attention as (
  select d.id,d.updated_at,d.status,d.receipt,d.input_generation,d.checkpoint,
  coalesce(child.status,'') child_status,child.id child_id,

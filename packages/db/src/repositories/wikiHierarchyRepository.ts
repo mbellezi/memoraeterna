@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  HierarchyChangeSetSchema, HierarchySnapshotSchema, HierarchySupportAssessmentSchema,
+  resolveHierarchyRouteParent,HierarchyChangeSetSchema, HierarchySnapshotSchema, HierarchySupportAssessmentSchema,
   HierarchyRouteContinuationSchema, HierarchyPlacementInventorySchema, HierarchyPolicySchema,
   WikiPageContentSchema, countHierarchyChanges, hasCompleteHierarchySupport, validateHierarchyAdmission,
   hierarchyResourceDecision, promptDefinition, type HierarchyChangeSet, type HierarchySnapshot, type HierarchyPolicy,
@@ -20,6 +20,7 @@ import { validateAutomaticAuthority, validateAutomaticReviewAuthority } from './
 /** Backend-owned exact structural admission. These entrypoints do not admit jobs or invoke AI. */
 export function createWikiHierarchyRepository(pool: PgPool) {
   return {
+    async validatePlacement(snapshot:HierarchySnapshot,db:Pick<PgPool,'query'>=pool){snapshot=HierarchySnapshotSchema.parse(snapshot);const current=await currentInventory(db,snapshot);if(current.fingerprint!==snapshot.placement.fingerprint||!isDeepStrictEqual(current.pages,snapshot.placement.pages))throw new Error('organization.errors.conflict');},
     inventory(policy: HierarchyPolicy, request: HierarchyInventoryRequest) { return readHierarchyPlacementInventory(pool, policy, request); },
     canonicalEntityPage(entityId: string) { return canonicalEntityPage(pool, entityId); },
     async apply(runId: string, human: boolean, validate: (snapshot: HierarchySnapshot, proposal: HierarchyChangeSet) => void, authorize: () => Promise<void>) {
@@ -122,7 +123,7 @@ export function createWikiHierarchyRepository(pool: PgPool) {
         // bind the same admitted originals used for the pending path.
         for (const ancestor of proposal.ancestors) {
           const pageId = persisted.ids.get(ancestor.handle)!, revisionId = persisted.targets.find(t => t.pageId === pageId)!.revisionId;
-          if (route) for (const original of snapshot.evidence) for (const [kind, id] of [['source', original.sourceItemId], ['document', original.documentId], ['chunk', original.chunkId]]) await addWikiDependency(db, revisionId, pageId, { kind: kind!, id: id!, fingerprint: original.contentHash }, { hierarchyRouteId: route.routeId, ...original });
+          if (route) for (const original of snapshot.evidence.filter(e=>route!.remainingPath.find(p=>p.key===ancestor.handle)!.chunkIds.includes(e.chunkId))) for (const [kind, id] of [['source', original.sourceItemId], ['document', original.documentId], ['chunk', original.chunkId]]) await addWikiDependency(db, revisionId, pageId, { kind: kind!, id: id!, fingerprint: original.contentHash }, { hierarchyRouteId: route.routeId, ...original });
         }
         const evolution = await applyNoteEvolution(db, pool, runId, snapshot, proposal, persisted.targets.map(t => t.pageId));
         if (evolution.repairs.some(r => !persisted.targets.some(t => t.pageId === r.pageId))) throw new Error('organization.errors.scope');
@@ -133,7 +134,8 @@ export function createWikiHierarchyRepository(pool: PgPool) {
         if (route) {
           const prefix = proposal.ancestors.map(a => { const page = after.pages.find(p => p.pageId === persisted.ids.get(a.handle))!; return { key: a.handle, pageId: page.pageId, revisionId: page.revisionId, fingerprint: page.fingerprint }; });
           const complete=!proposal.continuation;
-          const updated = HierarchyRouteContinuationSchema.parse({ ...route, state: complete?'complete':'partial', reason: complete?null:route.reason, intendedTargets:route.intendedTargets.map(t=>({...t,resolvedPageId:complete?persisted.ids.get(t.key)!:t.resolvedPageId})), destination:route.destination?{...route.destination,fingerprint:after.pages.find(p=>p.pageId===route.destination!.target.id)!.fingerprint}:null, remainingPath: route.remainingPath.slice(prefix.length), resolvedPrefix: [...route.resolvedPrefix.map(p => ({ ...p, fingerprint: after.pages.find(a => a.pageId === p.pageId)!.fingerprint })), ...prefix], completedGroupIds: [...route.completedGroupIds, snapshot.groupId], currentChildRunId: null, fingerprint: { ...route.fingerprint, branchFingerprint: after.fingerprint } });
+          const refreshParent=(parent:HierarchyParent|null):HierarchyParent|null=>parent?.reference==='existing'?{...parent,fingerprint:after.pages.find(p=>p.pageId===parent.target.id)!.fingerprint}:parent;
+          const updated = HierarchyRouteContinuationSchema.parse({ ...route, state: complete?'complete':'partial', reason: complete?null:route.reason, intendedTargets:route.intendedTargets.map(t=>({...t,initialParent:refreshParent(t.initialParent),resolvedPageId:complete?persisted.ids.get(t.key)!:t.resolvedPageId})), remainingPath: route.remainingPath.slice(prefix.length).map(p=>({...p,initialParent:refreshParent(p.initialParent)})), resolvedPrefix: [...route.resolvedPrefix.map(p => ({ ...p, fingerprint: after.pages.find(a => a.pageId === p.pageId)!.fingerprint })), ...prefix], completedGroupIds: [...route.completedGroupIds, snapshot.groupId], currentChildRunId: null, fingerprint: { ...route.fingerprint, branchFingerprint: after.fingerprint } });
           const checkpoint = structuredClone(parent!.checkpoint);
           checkpoint.hierarchy.routes = checkpoint.hierarchy.routes.map((r: { routeId: string }) => r.routeId === route!.routeId ? updated : r);
           const previousCounts=checkpoint.hierarchy.counts??{workTargets:0,structuralAncestors:0,changedPages:0};
@@ -153,10 +155,10 @@ export function createWikiHierarchyRepository(pool: PgPool) {
   };
 }
 
-async function currentInventory(db: PgClient, snapshot: HierarchySnapshot) {
+async function currentInventory(db: Pick<PgPool,'query'>, snapshot: HierarchySnapshot) {
   return completeInventory(db, snapshot.policy, snapshot.placement.pages.map(p => p.pageId), snapshot.placement.pages.filter(p => p.canEdit).map(p => p.pageId), snapshot.resources.maxInventoryBytes);
 }
-async function completeInventory(db: PgClient, policy: HierarchyPolicy, pageIds: string[], editablePageIds: string[], maxBytes: number): Promise<HierarchyPlacementInventory> {
+async function completeInventory(db: Pick<PgPool,'query'>, policy: HierarchyPolicy, pageIds: string[], editablePageIds: string[], maxBytes: number): Promise<HierarchyPlacementInventory> {
   // Merge bounded pages without truncating deep canonical ancestry. A byte overflow is explicit.
   const pages: HierarchyPlacementInventory['pages'] = [];
   for(let offset=0;offset<Math.max(1,pageIds.length);offset+=300){
@@ -173,8 +175,8 @@ async function completeInventory(db: PgClient, policy: HierarchyPolicy, pageIds:
 }
 
 function validateContent(snapshot: HierarchySnapshot, proposal: HierarchyChangeSet) {
-  if(snapshot.structuralIntent?.kind==='missing_toc'&&(proposal.moves.length||proposal.targets.length!==1||!proposal.targets.some(t=>!t.pageId&&t.role.kind==='collection'&&t.role.role==='topic_toc'&&t.role.owner?.reference==='existing'&&t.role.owner.target.id===snapshot.structuralIntent!.pageId&&t.tocGroups.some(g=>g.memberships.length))))throw new Error('organization.errors.scope');
-  if(snapshot.structuralIntent?.kind==='unplaced'&&(proposal.targets.some(t=>t.pageId)||!proposal.moves.some(m=>m.pageId===snapshot.structuralIntent!.pageId)))throw new Error('organization.errors.scope');
+  if(snapshot.structuralIntent?.kind==='missing_toc'&&(proposal.moves.length||proposal.targets.length!==snapshot.structuralIntent.owners.length||!snapshot.structuralIntent.owners.every(owner=>proposal.targets.some(t=>!t.pageId&&t.role.kind==='collection'&&t.role.role==='topic_toc'&&t.role.owner?.reference==='existing'&&t.role.owner.target.id===owner.pageId&&t.tocGroups.some(g=>g.memberships.length)))))throw new Error('organization.errors.scope');
+  if(snapshot.structuralIntent?.kind==='unplaced'&&(proposal.targets.some(t=>t.pageId)||!proposal.moves.some(m=>m.pageId===snapshot.structuralIntent!.owners[0]!.pageId)))throw new Error('organization.errors.scope');
   const originals = (handles: string[], markdown: string) => {
     if (handles.some(h => !snapshot.evidence.some(e => e.handle === h))) throw new Error('organization.errors.evidence');
     for (const [, h] of markdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g)) if (!handles.includes(h!)) throw new Error('organization.errors.evidence');
@@ -225,9 +227,8 @@ function validateContent(snapshot: HierarchySnapshot, proposal: HierarchyChangeS
 function validateRouteCompletion(proposal:HierarchyChangeSet,route:NonNullable<HierarchySnapshot['continuationRoute']>){
   const unresolved=route.intendedTargets.filter(t=>!t.resolvedPageId);
   if(proposal.moves.length||proposal.noteEvolution||proposal.ancestors.length!==route.remainingPath.length||proposal.targets.length!==unresolved.length)throw new Error('organization.errors.scope');
-  let parent:HierarchyParent|null=route.resolvedPrefix.length?{reference:'existing',target:{kind:'page',id:route.resolvedPrefix.at(-1)!.pageId},expectedRevisionId:route.resolvedPrefix.at(-1)!.revisionId,fingerprint:route.resolvedPrefix.at(-1)!.fingerprint}:route.destination;
-  for(const [index,ancestor]of proposal.ancestors.entries()){const segment=route.remainingPath[index]!;if(ancestor.handle!==segment.key||ancestor.title!==segment.title||ancestor.purpose!==segment.purpose||!isDeepStrictEqual(ancestor.role,segment.role)||!isDeepStrictEqual(ancestor.initialParent,parent))throw new Error('organization.errors.scope');parent={reference:'proposed',handle:ancestor.handle};}
-  for(const target of proposal.targets){const intended=unresolved.find(t=>t.key===target.handle);if(!intended||target.title!==intended.title||target.purpose!==intended.purpose||!isDeepStrictEqual(target.role,resolveRouteRole(intended.role,route))||target.pageId)throw new Error('organization.errors.scope');const expected=target.role.kind==='collection'&&target.role.role==='topic_toc'&&target.role.owner?.reference==='proposed'?target.role.owner:parent;if(!isDeepStrictEqual(target.initialParent,expected))throw new Error('organization.errors.scope');}
+  for(const [index,ancestor]of proposal.ancestors.entries()){const segment=route.remainingPath[index]!;if(ancestor.handle!==segment.key||ancestor.title!==segment.title||ancestor.purpose!==segment.purpose||!isDeepStrictEqual(ancestor.role,segment.role)||!isDeepStrictEqual(ancestor.initialParent,resolveHierarchyRouteParent(segment.initialParent,route)))throw new Error('organization.errors.scope');}
+  for(const target of proposal.targets){const intended=unresolved.find(t=>t.key===target.handle);if(!intended||target.title!==intended.title||target.purpose!==intended.purpose||!isDeepStrictEqual(target.role,resolveRouteRole(intended.role,route))||target.pageId||!isDeepStrictEqual(target.initialParent,resolveHierarchyRouteParent(intended.initialParent,route)))throw new Error('organization.errors.scope');}
 }
 
 function resolveRouteRole(role:HierarchyChangeSet['targets'][number]['role'],route:NonNullable<HierarchySnapshot['continuationRoute']>){

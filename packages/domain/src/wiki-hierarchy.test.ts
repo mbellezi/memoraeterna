@@ -201,9 +201,9 @@ describe("current hierarchy contracts", () => {
   });
   it("retains pending deep route work without a depth cap or premature completion", () => {
     const route = { version: automaticWikiHierarchyVersion, routeId: id(1), fingerprint: { version: automaticWikiHierarchyVersion, branchFingerprint: "branch", scopeFingerprint: "scope", policyRevisionId: id(2), promptFingerprint: "prompt", modelFingerprint: "model" }, state: "partial",
-      intendedTargets: [{ key: "new_leaf", title: "Leaf", purpose: "Findings", role: { kind: "topic", role: "topic" }, resolvedPageId: null }],
-      remainingPath: Array.from({ length: 160 }, (_, n) => ({ key: `new_path_${n}`, title: `Path ${n}`, purpose: "Navigation", role: { kind: "topic", role: "topic" } })),
-      resolvedPrefix: [], destination: null, reason: "context", completedGroupIds: [], currentChildRunId: null };
+      intendedTargets: [{ key: "new_leaf", title: "Leaf", purpose: "Findings", role: { kind: "topic", role: "topic" }, initialParent:proposed("new_path_159"),resolvedPageId: null }],
+      remainingPath: Array.from({ length: 160 }, (_, n) => ({ key: `new_path_${n}`, title: `Path ${n}`, purpose: "Navigation", role: { kind: "topic", role: "topic" },initialParent:n?proposed(`new_path_${n-1}`):null,chunkIds:[id(50)] })),
+      resolvedPrefix: [], reason: "context", completedGroupIds: [], currentChildRunId: null };
     const admittedRoute = HierarchyRouteContinuationSchema.parse(route);
     expect(HierarchyRouteContinuationSchema.safeParse(route).success).toBe(true);
     const ancestors = admittedRoute.remainingPath.slice(0, 2).map((segment, index) => HierarchyAncestorSchema.parse({
@@ -212,7 +212,7 @@ describe("current hierarchy contracts", () => {
     }));
     const prefix = HierarchyChangeSetSchema.parse({ ...change(), targets: [], ancestors,
       continuation: { routeId: admittedRoute.routeId, fingerprint: admittedRoute.fingerprint,
-        intendedTargetKeys: ["new_leaf"], nextParent: proposed("new_path_1") } });
+        intendedTargetKeys: ["new_leaf"], nextParents: [proposed("new_path_1")] } });
     expect(countHierarchyChanges(prefix)).toEqual({ workTargets: 0, structuralAncestors: 2, changedPages: 2 });
     expect(validateHierarchyAdmission(prefix, policy(1), inventory(), [], admittedRoute).valid).toBe(true);
     expect(validateHierarchyAdmission(prefix, policy(1), inventory(), []).valid).toBe(false);

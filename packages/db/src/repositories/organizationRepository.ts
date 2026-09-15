@@ -2,6 +2,7 @@ import { recordValidationRejection } from './knowledgeRejections.js';
 import { taskHistoryVisibleSql } from './taskHistory.js';
 import { createHash, randomUUID } from "node:crypto";
 import {isDeepStrictEqual} from 'node:util';
+import {validateAutomaticAuthority} from './automaticMaintenanceRepository.js';
 import type { PgPool, PgClient } from "../client.js";
 import { addWikiDependency, validateWikiDependencies } from "./wikiContextRepository.js";
 import { createWikiRepository } from "./wikiRepository.js";
@@ -112,12 +113,18 @@ export function createOrganizationRepository(pool:PgPool) {
         const batchId=(snapshot as {participation?:{batchId:string}|null}).participation?.batchId;
         if(batchId){await db.query("select pg_advisory_xact_lock(hashtextextended($1,0))",['organization-batch:'+batchId]);if((await db.query("select id from processing_batches where id=$1 and metadata->>'organizationCanceled'='true'",[batchId])).rows.length)throw new Error('organization.errors.canceled');const existing=(await db.query("select id from organization_runs where snapshot->'participation'->>'batchId'=$1",[batchId])).rows[0];if(existing)return existing.id as string;}
         const id=randomUUID();
-        const routed=snapshot as {continuationRoute?:{routeId:string;currentChildRunId:string|null;planningRunId?:string|null}|null;parentBootstrapId?:string|null};
+        const routed=snapshot as {continuationRoute?:{routeId:string;currentChildRunId:string|null;planningRunId?:string|null;deferredChildRunId?:string|null}|null;parentBootstrapId?:string|null;continuedFromRunId?:string|null;maintenanceRunId?:string|null};
         if(routed.continuationRoute?.planningRunId){
           if(!routed.parentBootstrapId)throw new Error('organization.errors.scope');
-          const parent=(await db.query('select checkpoint from organization_runs where id=$1 for update',[routed.parentBootstrapId])).rows[0];
+          const rows=(await db.query('select id,job_id,snapshot,checkpoint,status from organization_runs where id=any($1::uuid[]) order by id for update',[[routed.parentBootstrapId,...(routed.continuationRoute.deferredChildRunId?[routed.continuationRoute.deferredChildRunId]:[])]] )).rows;
+          const parent=rows.find(r=>r.id===routed.parentBootstrapId);
           const route=parent?.checkpoint.hierarchy?.routes.find((r:{routeId:string})=>r.routeId===routed.continuationRoute!.routeId);
           if(!route||route.currentChildRunId||parent.checkpoint.state!=='running'||!isDeepStrictEqual(route,routed.continuationRoute))throw new Error('organization.errors.conflict');
+          if(route.deferredChildRunId){const old=rows.find(r=>r.id===route.deferredChildRunId),cp=old?.checkpoint;if(!old||old.status!=='failed'||!cp.routeDeferral||cp.routeDeferral.successorRunId||cp.callPending||!(cp.calls===0||cp.calls===1&&cp.waitingForModel)||old.snapshot.maintenanceRunId===routed.maintenanceRunId||routed.continuedFromRunId!==old.id||(await db.query('select 1 from organization_steps s left join ai_task_runs a on a.id=s.ai_task_run_id where s.run_id=$1 limit 1',[old.id])).rows.length)throw new Error('organization.errors.conflict');
+            if(!routed.maintenanceRunId||old.snapshot.parentBootstrapId!==routed.parentBootstrapId||old.snapshot.continuationRoute?.routeId!==route.routeId||!isDeepStrictEqual((checkpoint as {proposal:unknown}).proposal,{...cp.proposal,groupId:(snapshot as {groupId:string}).groupId}))throw new Error('organization.errors.conflict');
+            await validateAutomaticAuthority(db,routed.maintenanceRunId,curator.policy!.id,true);
+            const oldJob=(await db.query('select status,cancel_requested_at from jobs where id=$1 for update',[old.job_id])).rows[0];if(oldJob?.status!=='canceled'||!oldJob.cancel_requested_at)throw new Error('organization.errors.conflict');
+            await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1',[old.id,{...cp,routeDeferral:{...cp.routeDeferral,successorRunId:id}}]);route.deferredChildRunId=null;}
           route.currentChildRunId=id;routed.continuationRoute={...route};parent.checkpoint.childRunId=id;
           await db.query('update organization_runs set checkpoint=$2,updated_at=clock_timestamp() where id=$1',[routed.parentBootstrapId,parent.checkpoint]);
         }
@@ -128,9 +135,9 @@ export function createOrganizationRepository(pool:PgPool) {
     async get(id:string){await pool.query("update organization_runs set status='applied',updated_at=now() where id=$1 and status<>'applied' and exists(select 1 from organization_receipts where run_id=$1)",[id]);const r=(await pool.query(`${runSelect} where r.id=$1`,[id])).rows[0];return r?{...r,createdAt:stamp(r.createdAt),updatedAt:stamp(r.updatedAt)}:null;},
     async curatorIds(){return (await pool.query(`select id from organization_runs where snapshot->>'version'='wiki-curator-v2' and ${taskHistoryVisibleSql('status','updated_at')} order by created_at desc limit 30`)).rows.map(r=>r.id as string);},
     async list(){await pool.query("update organization_runs r set status='applied',updated_at=now() where status<>'applied' and exists(select 1 from organization_receipts where run_id=r.id)");return (await pool.query(`select r.id,r.status,case when r.checkpoint->>'callPending'='true' then case when r.checkpoint->>'waitingForModel'='true' then 'waiting' else 'active' end else 'none' end as "modelState",r.snapshot->'baseContent'->>'title' as title,(r.snapshot->>'sample')::boolean as sample,receipt.revision_id as "receiptRevisionId",r.created_at as "createdAt",r.updated_at as "updatedAt" from organization_runs r left join organization_receipts receipt on receipt.run_id=r.id where r.snapshot->>'version' not in('wiki-curator-v2','wiki-bootstrap-v1') and ${taskHistoryVisibleSql('r.status','r.updated_at')} order by r.created_at desc limit 50`)).rows.map(r=>({...r,createdAt:stamp(r.createdAt),updatedAt:stamp(r.updatedAt)}));},
-    async checkpoint(id:string,status:string,checkpoint:unknown){await pool.query("update organization_runs set status=$2,checkpoint=$3,updated_at=now() where id=$1 and status not in('canceled','rejected','applied','sample_passed')",[id,status,checkpoint]);},
+    async checkpoint(id:string,status:string,checkpoint:unknown){await pool.query("update organization_runs set status=$2,checkpoint=$3,updated_at=now() where id=$1 and status not in('canceled','rejected','applied','sample_passed') and checkpoint->>'routeDeferral' is null",[id,status,checkpoint]);},
     async hasProviderAudit(id:string){return !!(await pool.query('select 1 from organization_steps where run_id=$1 and ai_task_run_id is not null limit 1',[id])).rows.length;},
-    async modelStarted(id:string,sequence:number){await pool.query("update organization_runs set checkpoint=jsonb_set(checkpoint,'{waitingForModel}','false'::jsonb),updated_at=now() where id=$1 and status='analyzing' and checkpoint->>'callPending'='true' and (checkpoint->>'calls')::int=$2",[id,sequence]);},
+    async modelStarted(id:string,sequence:number){const result=await pool.query("update organization_runs set checkpoint=jsonb_set(checkpoint,'{waitingForModel}','false'::jsonb),updated_at=now() where id=$1 and status='analyzing' and checkpoint->>'callPending'='true' and checkpoint->>'waitingForModel'='true' and checkpoint->>'routeDeferral' is null and (checkpoint->>'calls')::int=$2 returning id",[id,sequence]);if(!result.rows.length)throw new Error('organization.errors.canceled');},
     async step(id:string,sequence:number,checkpoint:unknown,artifact:unknown,aiTaskRunId:string|null){
       return transaction(async db=>{
         await db.query('insert into organization_steps(run_id,sequence,artifact,ai_task_run_id) values($1,$2,$3,$4) on conflict(run_id,sequence) do update set artifact=excluded.artifact',[id,sequence,artifact,aiTaskRunId]);
@@ -159,7 +166,7 @@ export function createOrganizationRepository(pool:PgPool) {
     });},
     async retry(id:string){return transaction(async db=>{
       const run=(await db.query("select * from organization_runs where id=$1 for update",[id])).rows[0];
-      if(!run||!['failed','canceled'].includes(run.status)||(run.status==='failed'&&run.checkpoint.error&&!['organization.errors.failed','organization.errors.uncertain',...(run.snapshot.version==='wiki-curator-v2'?['organization.errors.policy','organization.errors.canceled']:[])].includes(run.checkpoint.error))||run.checkpoint.calls>=run.snapshot.limits.modelCalls)throw new Error('organization.errors.budget');
+      if(!run||run.checkpoint.routeDeferral||!['failed','canceled'].includes(run.status)||(run.status==='failed'&&run.checkpoint.error&&!['organization.errors.failed','organization.errors.uncertain',...(run.snapshot.version==='wiki-curator-v2'?['organization.errors.policy','organization.errors.canceled']:[])].includes(run.checkpoint.error))||run.checkpoint.calls>=run.snapshot.limits.modelCalls)throw new Error('organization.errors.budget');
       const currentJob=(await db.query('select status from jobs where id=$1 for update',[run.job_id])).rows[0];
       if(currentJob&&['queued','running'].includes(currentJob.status))throw new Error('organization.errors.wait');
       const job=(await db.query("update jobs set status='queued',cancel_requested_at=null,error=null,run_after=now(),locked_at=null,locked_by=null,finished_at=null where id=$1 and status in('failed','canceled','succeeded') and attempts<max_attempts returning id",[run.job_id])).rows[0];

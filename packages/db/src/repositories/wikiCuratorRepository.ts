@@ -104,6 +104,7 @@ export function createWikiCuratorRepository(pool:PgPool){
  if(snapshot.parentBootstrapId){const parent=(await db.query("select status,checkpoint from organization_runs where id=$1"+(lock?" for share":""),[snapshot.parentBootstrapId])).rows[0];if(!parent||!humanReview&&(parent.status==='canceled'||parent.checkpoint.state!=='running'))throw new Error('organization.errors.policy');}
  const policy=await readPolicy(db,snapshot.policy.id);if(policy?.state!=='enabled'||policy.revisionId!==snapshot.policy.revisionId)throw new Error('organization.errors.policy');
  await validateCuratorOriginals(db,snapshot,policy,lock);
+ if(snapshot.continuationRoute)await api.hierarchy.validatePlacement(snapshot,db);
  },
  apply: createWikiHierarchyRepository(pool).apply
 

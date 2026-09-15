@@ -45,6 +45,11 @@ export class WikiCollection {
   await createWikiImpactReconciliationRepository(this.pool()).editorial(policy);
   await repo.reconcileAppliedChildren(policy);
   if(policy.state!=='enabled')return;
+  for(const run of await repo.pendingRouteChildren(policy.id)){
+   const profile=await this.options.ai.pinOrganizationProfile(run.snapshot.policy.profileOverrideId??undefined,run.snapshot.profile.privacy);
+   if(profile.identityHash!==run.snapshot.profile.identityHash)continue;
+   await repo.deferUnstartedRouteChild(run,run.checkpoint.childRunId!);
+  }
   // Resource-deferred synthesis is planning data, not human review. Adopt its
   // validated route before maintenance resolves child attention/revokes authority.
   for(const run of (await repo.active()).filter(r=>r.snapshot.policy.id===policy.id&&r.checkpoint.childRunId)){
@@ -128,17 +133,34 @@ export class WikiCollection {
   const wide=['weekly','monthly'].includes(maintenance?.snapshot.policy.kind??'daily');
   const batch=await repo.structuralCandidates(policy,hierarchy.afterPageId,run.snapshot.sourceIds,wide?50:20,wide);
   for(const item of batch.items){
+   const previousCursor=hierarchy.afterPageId;
    const fingerprint=collectionGenerationHash({branch:item.fingerprint,generation:this.generation(run.snapshot),scope:policy.scope});
    const prior=await repo.structuralDecision(policy.id,item.pageId,fingerprint);
    hierarchy.afterPageId=item.pageId;hierarchy.inspectedPages++;hierarchy.fingerprint.branchFingerprint=item.fingerprint;
    if(prior){if(!hierarchy.decisions.some(d=>d.pageId===prior.pageId&&d.fingerprint===prior.fingerprint))hierarchy.decisions.push(prior);if(prior.outcome!=='applied'&&prior.outcome!=='no_change'){checkpoint.state=prior.outcome==='rejected'?'rejected':prior.outcome==='canceled'?'canceled':'attention';checkpoint.error=prior.reason??'organization.errors.review';await repo.checkpoint(run);return;}continue;}
    if(item.kind==='settled'){hierarchy.decisions.push({pageId:item.pageId,fingerprint,kind:item.kind,outcome:'no_change',runId:null});continue;}
+   // Admission can stop on resources or occurrence authority. Keep this owner
+   // discoverable until its child receipt, rather than skipping it on resume.
+   hierarchy.afterPageId=previousCursor;
    const kind=item.kind;
-   const page=(await curator.exactPages(policy,[item.pageId]))[0]!;
-   const chunks=[...new Set(page.evidence.filter(e=>e.current).map(e=>e.chunkId))];
-   if(!chunks.length||chunks.length>policy.limits.originalPassages)throw new Error('organization.errors.scopeLimit');
-   const child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:item.sourceIds,noteIds:[],evidenceChunkIds:chunks},null,{parentBootstrapId:run.id,inputGeneration:fingerprint,structuralIntent:{kind,pageId:item.pageId,fingerprint},...(item.kind==='unplaced'?{targetPageId:item.pageId}:{destinationPageIds:[item.pageId]})}));
-   hierarchy.decisions.push({pageId:item.pageId,fingerprint,kind:item.kind,outcome:'pending',runId:child!.id});checkpoint.childRunId=child!.id;await repo.checkpoint(run);return;
+   const candidates=kind==='missing_toc'?batch.items.slice(batch.items.indexOf(item)).filter(i=>i.kind==='missing_toc'):[item];
+   let selected:Array<{item:typeof item;fingerprint:string;chunks:string[]}>=[];
+   for(const candidate of candidates){
+    const identity=collectionGenerationHash({branch:candidate.fingerprint,generation:this.generation(run.snapshot),scope:policy.scope});
+    if(candidate!==item&&await repo.structuralDecision(policy.id,candidate.pageId,identity))continue;
+    const page=(await curator.exactPages(policy,[candidate.pageId]))[0]!;
+    const chunks=[...new Set(page.evidence.filter(e=>e.current).map(e=>e.chunkId))];
+    if(!chunks.length||chunks.length>policy.limits.originalPassages){if(!selected.length)throw new Error('organization.errors.scopeLimit');continue;}
+    if(new Set([...selected.flatMap(s=>s.chunks),...chunks]).size>policy.limits.originalPassages)continue;
+    selected.push({item:candidate,fingerprint:identity,chunks});if(selected.length>=policy.limits.targets)break;
+   }
+   let child:Awaited<ReturnType<WikiCurator['start']>>=null;
+   while(!child){
+    const owners=selected.map(s=>({pageId:s.item.pageId,fingerprint:s.fingerprint}));
+    try{child=await withPromptPin(run.snapshot.promptPin,()=>new WikiCurator(this.options).start({policyId:policy.id,policyRevisionId:policy.revisionId,sourceIds:[...new Set(selected.flatMap(s=>s.item.sourceIds))],noteIds:[],evidenceChunkIds:[...new Set(selected.flatMap(s=>s.chunks))]},null,{parentBootstrapId:run.id,inputGeneration:collectionGenerationHash(owners),structuralIntent:{kind,owners},...(kind==='unplaced'?{targetPageId:item.pageId}:{destinationPageIds:owners.map(o=>o.pageId)})}));}
+    catch(error){if(selected.length===1||!/(?:organization.errors.(context|scopeLimit))/.test(String(error)))throw error;selected=selected.slice(0,-1);}
+   }
+   for(const selectedItem of selected)hierarchy.decisions.push({pageId:selectedItem.item.pageId,fingerprint:selectedItem.fingerprint,kind,outcome:'pending',runId:child.id});checkpoint.childRunId=child.id;await repo.checkpoint(run);return;
   }
   hierarchy.afterPageId=batch.after;
   if(batch.done){if(hierarchy.routes.some(r=>r.state!=='complete'))throw new Error('organization.errors.scopeLimit');hierarchy.outcome=hierarchy.counts.changedPages?'complete':'no_change';checkpoint.state='complete';}
@@ -162,7 +184,7 @@ export class WikiCollection {
      checkpoint.hierarchy.routes.push(route);checkpoint.childRunId=null;
      await repo.adoptHierarchyRoute(run,child);return;
     }
-    if(child.status!=='applied'){checkpoint.state=child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.hierarchy){if(child.status==='rejected')checkpoint.hierarchy.outcome='rejected';else if(child.status==='awaiting_review')checkpoint.hierarchy.outcome='awaiting_review';else if(child.status==='canceled'){checkpoint.hierarchy.outcome='canceled';for(const route of checkpoint.hierarchy.routes)if(route.state!=='complete')route.state='canceled';}}const decision=checkpoint.hierarchy?.decisions.find(d=>d.runId===child.id);if(decision){decision.outcome=child.status==='awaiting_review'?'awaiting_review':child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'failed';decision.reason=checkpoint.error;}if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
+    if(child.status!=='applied'){checkpoint.state=child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'attention';checkpoint.error=child.checkpoint.error??'organization.errors.review';if(checkpoint.hierarchy){if(child.status==='rejected')checkpoint.hierarchy.outcome='rejected';else if(child.status==='awaiting_review')checkpoint.hierarchy.outcome='awaiting_review';else if(child.status==='canceled'){checkpoint.hierarchy.outcome='canceled';for(const route of checkpoint.hierarchy.routes)if(route.state!=='complete')route.state='canceled';}}for(const decision of checkpoint.hierarchy?.decisions.filter(d=>d.runId===child.id)??[]){decision.outcome=child.status==='awaiting_review'?'awaiting_review':child.status==='rejected'?'rejected':child.status==='canceled'?'canceled':'failed';decision.reason=checkpoint.error;}if(checkpoint.sourceId)await repo.coverage(policy.id,checkpoint.sourceId,checkpoint.sourceFingerprint!,'attention',checkpoint.sourceCovered,run.id);await repo.checkpoint(run);return;}
     if(child.snapshot.continuationRoute){
      // Hierarchy apply commits the owner checkpoint and its timestamp alongside
      // the receipt. Refresh before consuming it; never overwrite route progress.
@@ -171,7 +193,7 @@ export class WikiCollection {
      if(route.state!=='complete'){checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     }
     const hierarchy=this.hierarchy(run);if(!hierarchy.appliedGroupIds.includes(child.snapshot.groupId)){const counts=countHierarchyChanges(child.checkpoint.proposal!);hierarchy.counts={workTargets:hierarchy.counts.workTargets+counts.workTargets,structuralAncestors:hierarchy.counts.structuralAncestors+counts.structuralAncestors,changedPages:hierarchy.counts.changedPages+counts.changedPages};hierarchy.appliedGroupIds.push(child.snapshot.groupId);}
-    if(checkpoint.phase==='structure'){const decision=hierarchy.decisions.find(d=>d.runId===child.id);if(decision){decision.outcome='applied';decision.reason=null;}hierarchy.afterPageId=null;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
+    if(checkpoint.phase==='structure'){for(const decision of hierarchy.decisions.filter(d=>d.runId===child.id)){decision.outcome='applied';decision.reason=null;}hierarchy.afterPageId=null;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     if(checkpoint.phase==='notes'){if(checkpoint.nextNote){checkpoint.afterNote=checkpoint.nextNote;checkpoint.nextNote=null;}else checkpoint.noteCursor+=child.snapshot.references.filter(r=>r.kind==='atomic_note').length||1;checkpoint.completedGroups++;checkpoint.childRunId=null;await repo.checkpoint(run);return;}
     checkpoint.sourceCovered+=checkpoint.pendingOriginals;checkpoint.completedGroups++;checkpoint.childRunId=null;checkpoint.afterChunk=checkpoint.nextChunk;
     await repo.coverage(policy.id,checkpoint.sourceId!,checkpoint.sourceFingerprint!,checkpoint.nextChunk||run.snapshot.noteIds.length||run.snapshot.includeExistingNotes?'partial':'integrated',checkpoint.sourceCovered,run.id);

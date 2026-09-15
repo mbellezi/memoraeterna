@@ -477,14 +477,14 @@ cost measurements. Native rebuild/reset verification remains deferred to H6.
   repositories with resumable structural inspection and remaining-work receipts.
 - [x] Preserve full original/eligible-note coverage while splitting hierarchy
   work into coherent groups under the same occurrence and monthly budgets.
-- [ ] Persist and resume missing ancestors through to the intended leaf and TOCs;
+- [x] Persist and resume missing ancestors through to the intended leaf and TOCs;
   do not flatten a chosen path, stop at the first group, or repeatedly plan it.
   Verify a restart and an occurrence-budget interruption between ancestor groups.
 - [x] Add deterministic branch diagnostics and bounded candidates for existing
   flat libraries, without forcing regeneration of integrated sources.
 - [x] Route existing-page moves to the current review surface through the new
   current operation; do not introduce a separate routine-creation workflow.
-- [ ] Retain exact changed-input, no-change and rejection identities; verify
+- [x] Retain exact changed-input, no-change and rejection identities; verify
   idleness, pause/cancel, restart, deadline and budget behavior.
 
 Exit: initial integration, later imports and due maintenance all advance useful
@@ -497,10 +497,29 @@ pause/restart, a committed prefix interrupted by occurrence budget and completed
 under later authority, stale coordinator/prefix refusal, retained negative
 outcomes and daily inspection without inference or an empty bootstrap wrapper.
 The full suite passed 904 tests with the same two pre-existing seed expectations.
-Continuation currently handles linear new paths and childless deferred cursors.
-The next implementation slice must cover branched ancestor paths and safe
-recovery of already-admitted route children that never started a provider call;
-these remaining items prevent declaring this milestone complete.
+The follow-up implementation closes those two remaining coordinator gates: routes
+pin explicit ancestor/target parents and a complete frontier for branched forests;
+known-unstarted expired children retain their old attempt and reservations while
+later authority atomically binds a successor using the same proposal. Compatible
+missing TOC owners now share one bounded synthesis/support pair.
+
+Follow-up verification passed 57 focused domain/curator/collection tests, full
+typecheck, format/diff checks, and the expanded isolated PostgreSQL verifier with
+a 30-second statement timeout. The real service fixtures cover a fitting forest
+in two calls, shared-root resource chunks with restart and nested TOCs, three
+missing owners in one two-call child without owner revisions, already-admitted
+child expiry and later authority, provider-start/retirement exclusion in both
+directions, canonical-audit refusal, and prior negative/idempotence gates. The
+full suite passed 906 tests with the same two existing seed expectations. Test
+isolation pre-settles only historical events wholly outside each synthetic scope;
+current-source impacts remain in the normal maintenance flow.
+
+Existing rewrites, interpretation/evolution, ancestors requiring undelivered
+substantive parents, and final target units that themselves exceed resources
+remain explicit attention when coherent ancestor-only decomposition is impossible.
+These limitations do not restrict fitting groups or ordinary new ancestor forests.
+Native browsing, retrieval, Obsidian and final real-model calibration remain the
+following milestones; no native app or real provider was invoked in this stage.
 
 ### H4 — Native browsing and structural review
 
