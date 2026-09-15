@@ -529,15 +529,15 @@ following milestones; no native app or real provider was invoked in this stage.
   breadcrumbs, keyboard controls and stable selection/expansion after updates.
 - [ ] Show nested note TOCs as reading paths with shared IDs; distinguish a
   principal child from an additional related/reading link.
-- [ ] Add before/after move previews, affected descendant/member counts,
+- [x] Add before/after move previews, affected descendant/member counts,
   protection indicators, reason and accept/reject actions to existing decisions.
-- [ ] Show structural progress independently from source integration and sync,
+- [x] Show structural progress independently from source integration and sync,
   including loading, empty, deferred, partial, error and successful states.
-- [ ] Extend the existing Budget target-count control beyond three with validated
+- [x] Extend the existing Budget target-count control beyond three with validated
   save, effective/default value and localized explanation. Show counted targets
   separately from structural ancestors and total changed pages; distinguish the
   limit from depth, references and remaining ancestor/leaf work.
-- [ ] Translate new product messages in every supported locale and keep generated
+- [x] Translate new product messages in every supported locale and keep generated
   content language independent of UI language.
 
 Exit: normal-size native desktop walkthrough covers both examples, a shared note,
@@ -592,6 +592,25 @@ are repository latency in milliseconds, not native interaction or model usage.
 | Broad children | 43.77 → 0.49 | 44.85 → 0.58 |
 | Deep children | 41.35 → 0.20 | 41.77 → 0.21 |
 | Selected depth-200 path | 87.44 → 14.91 | 89.05 → 14.94 |
+
+H5b native presentation and structural review implementation is verified by SSR,
+pure helpers and isolated PostgreSQL. Sectionless path pages wait for paged child
+results before showing empty state; nested reading labels preserve shared IDs.
+Review shows required ancestors, exact composed paths, canonical entity attribution,
+overlap-aware group counts and protected membership/group order. Editable inventory
+snapshots pin metadata-only incoming/outgoing review manifests; same-count incoming
+reorders invalidate transactional apply without exposing excluded prose or expanding
+mutation authority. Candidate support labels require a backend exact-hash match.
+Primary task/routine details show structural progress and retained continuation links;
+historical planners/retired children remain auditable, terminal and outside current
+attention. Delivery projections follow the actual unresolved continuation cause.
+
+Seventy-six focused tests, full TypeScript, format/diff checks and the expanded
+isolated PostgreSQL hierarchy verifier passed. The full suite with loopback access
+passed 921 tests; the same two known seed migration-list expectations remain H6 work.
+No schema migration, real inference, native app launch or database reset occurred.
+The normal-size native walkthrough, Obsidian preservation and real-model calibration
+remain pending H6/H5c gates; this UI implementation does not complete those gates.
 
 ### H6 — Cost, quality and complete-journey acceptance
 

@@ -68,8 +68,23 @@ export async function readHierarchyPlacementInventory(db: Db, policyInput: Hiera
       array(select distinct m.target_id from wiki_memberships m where m.page_id=p.id and m.target_kind='page' and m.snapshot->>'purpose'='subtopic' order by m.target_id) as "subtopicIds",
       (select count(*)::int-1 from descendants d where d.root=p.id) as "descendantCount",
       (select count(*)::int from wiki_memberships m where m.page_id=p.id) as "membershipCount",
+      case when p.id=any($8::uuid[]) and not p.id=any($5::uuid[]) then jsonb_build_object(
+        'memberships',coalesce((select jsonb_agg(jsonb_build_object(
+          'id',m.id,'pageId',m.page_id,'expectedRevisionId',mp.current_revision_id,'groupId',m.group_id,
+          'target',jsonb_build_object('kind',m.target_kind,'id',m.target_id),'purpose',m.snapshot->>'purpose',
+          'origin',m.snapshot->>'origin','placementProtected',(m.snapshot->>'placementProtected')::boolean,'order',m.position,
+          'groupOrderProtected',(g.snapshot->>'orderProtected')::boolean,
+          'groupOrder',(select ordinality-1 from jsonb_array_elements(mr.content->'automatic'->'groups') with ordinality item where item.value->>'id'=g.id::text)
+        ) order by m.page_id,m.group_id,m.position,m.id) from wiki_memberships m
+          join wiki_pages mp on mp.id=m.page_id join wiki_page_revisions mr on mr.id=mp.current_revision_id join wiki_toc_groups g on g.id=m.group_id
+          where m.page_id in(select id from descendants where root=p.id) or m.target_kind='page' and m.target_id in(select id from descendants where root=p.id)), '[]'::jsonb),
+        'backlinks',coalesce((select jsonb_agg(jsonb_build_object('pageId',bp.id,'revisionId',bp.current_revision_id) order by bp.id)
+          from wiki_pages bp join wiki_page_revisions br on br.id=bp.current_revision_id
+          where exists(select 1 from jsonb_array_elements_text(coalesce(br.content->'collectionIds','[]')) cid where cid::uuid in(select id from descendants where root=p.id)) or exists(select 1 from jsonb_array_elements(coalesce(br.content->'automatic'->'links','[]')) link
+            where link->>'kind'='page' and (link->>'id')::uuid in(select id from descendants where root=p.id))), '[]'::jsonb)
+      ) else null end as "reviewFootprint",
       (select md5(string_agg(reach.id::text||':'||rp.current_revision_id::text,',' order by reach.id)) from reachable reach join wiki_pages rp on rp.id=reach.id where reach.root=p.id) lineage
-    from selected s join wiki_pages p on p.id=s.id join wiki_page_revisions r on r.id=p.current_revision_id order by p.id`, [request.pageIds, request.sourceIds, request.after, request.limit + 1, Object.values(wikiAreaIds), [wikiAreaIds.people,wikiAreaIds.organizations,wikiAreaIds.places,wikiAreaIds.works],wikiAreaIds.entities])).rows;
+    from selected s join wiki_pages p on p.id=s.id join wiki_page_revisions r on r.id=p.current_revision_id order by p.id`, [request.pageIds, request.sourceIds, request.after, request.limit + 1, Object.values(wikiAreaIds), [wikiAreaIds.people,wikiAreaIds.organizations,wikiAreaIds.places,wikiAreaIds.works],wikiAreaIds.entities,request.editablePageIds])).rows;
   const pages: HierarchyPlacementInventory['pages'] = [];
   let bytes = 0, after = request.after, more = false;
   for (const row of rows) {
@@ -78,7 +93,8 @@ export async function readHierarchyPlacementInventory(db: Db, policyInput: Hiera
     const permitted = row.navigationArea || row.sourceIds.length > 0 && row.sourceIds.every((id: string) => allowed.includes(id));
     // Excluded metadata is not sent to the model. Missing ancestry is an explicit admission failure.
     if (!permitted) { after = row.pageId; continue; }
-    const { lineage, navigationArea, ...rawMetadata } = row;
+    const { lineage, navigationArea, reviewFootprint, ...rawMetadata } = row;
+    if(reviewFootprint&&!navigationArea)rawMetadata.reviewFootprint=reviewFootprint;
     // Reserved areas grant only their immutable destination identity, never descendant lineage.
     const metadata=navigationArea?{...rawMetadata,sourceIds:[],subtopicIds:[],descendantCount:0,membershipCount:0}:rawMetadata;
     const page = HierarchyPlacementEntrySchema.parse({ ...metadata, fingerprint: curatorHash({ ...metadata, lineage:navigationArea?row.revisionId:lineage }), canEdit: !reserved && !row.archived && request.editablePageIds.includes(row.pageId), canReceiveChildren: !row.archived && policy.operations.includes('use_scoped_destinations') });

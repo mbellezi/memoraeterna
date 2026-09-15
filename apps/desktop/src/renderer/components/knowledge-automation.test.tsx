@@ -46,3 +46,33 @@ it.each(['en','pt-BR','es','fr','it'] as const)('separates source journey loadin
  const loaded=renderToString(<SourceJourneyContent {...base} data={data}/>);expect(loaded).toContain('Source fixture');expect(loaded).toContain(t('automation.imported'));expect(loaded).not.toContain('role="alert"');
  const retained=renderToString(<SourceJourneyContent {...base} data={data} failed/>);expect(retained).toContain('Source fixture');expect(retained).toContain(t('automation.journeyError'));expect(retained).not.toContain('[[missing:');
 });
+
+import { HierarchyProgress, hierarchyProgress } from './HierarchyProgress';
+import { HierarchyCheckpointSchema } from '@app/domain';
+import { automationTaskStatus } from './AutomationTaskList';
+const hierarchyFixture=()=>HierarchyCheckpointSchema.parse({version:'automatic-wiki-v1',fingerprint:{version:'automatic-wiki-v1',branchFingerprint:'branch',scopeFingerprint:'scope',policyRevisionId:crypto.randomUUID(),promptFingerprint:'prompt',modelFingerprint:'model'},afterPageId:null,inspectedPages:1,outcome:'partial',counts:{workTargets:1,structuralAncestors:4,changedPages:5},appliedGroupIds:[crypto.randomUUID()],decisions:[],routes:[]});
+it('separates unresolved structural work, real deferral and failure without claiming source completion',()=>{
+ const h=hierarchyFixture();
+ expect(hierarchyProgress(null).state).toBe('empty');
+ expect(hierarchyProgress(h).state).toBe('partial');
+ expect(hierarchyProgress({...h,outcome:'complete'}).state).toBe('complete');
+ expect(hierarchyProgress({...h,outcome:'awaiting_review'}).state).toBe('review');
+ expect(hierarchyProgress({...h,outcome:'canceled'}).state).toBe('canceled');
+ expect(hierarchyProgress({...h,outcome:'canceled'},'organization.errors.uncertain').state).toBe('canceled');
+ expect(hierarchyProgress({...h,outcome:'canceled'},'organization.errors.conflict').state).toBe('canceled');
+ for(const reason of ['organization.errors.uncertain','organization.errors.conflict','organization.errors.failed'])expect(hierarchyProgress(h,reason).state).toBe('error');
+ for(const reason of ['maintenance.errors.budget','organization.errors.deadline','maintenance.errors.wait'])expect(hierarchyProgress(h,reason).state).toBe('deferred');
+ const route={version:'automatic-wiki-v1' as const,routeId:crypto.randomUUID(),planningRunId:crypto.randomUUID(),fingerprint:h.fingerprint,state:'deferred' as const,intendedTargets:[{key:'new_leaf',title:'Leaf',purpose:'Findings',role:{kind:'topic' as const,role:'topic' as const},initialParent:{reference:'proposed' as const,handle:'new_remaining'},resolvedPageId:null}],remainingPath:[{key:'new_remaining',title:'Remaining category',purpose:'Required path',role:{kind:'topic' as const,role:'topic' as const},initialParent:null,chunkIds:[crypto.randomUUID()]}],resolvedPrefix:[],reason:'occurrence_budget' as const,completedGroupIds:[],currentChildRunId:null,deferredChildRunId:null};
+ expect(hierarchyProgress({...h,routes:[route]})).toEqual({state:'deferred',ancestors:1,targets:1,decisions:0});
+});
+it.each(['en','pt-BR','es','fr','it'] as const)('renders structural loading, empty, partial, completed and error in %s',locale=>{
+ const t=createTranslator(locale),h=hierarchyFixture();
+ expect(renderToString(<HierarchyProgress t={t} hierarchy={null} loading/>)).toContain(t('shell.states.loading'));
+ for(const [hierarchy,state,reason] of [[null,'empty',null],[h,'partial',null],[{...h,outcome:'complete'},'complete',null],[h,'deferred','maintenance.errors.budget'],[h,'error','organization.errors.uncertain']] as const){
+   const html=renderToString(<HierarchyProgress t={t} hierarchy={hierarchy} reason={reason} contentComplete notesComplete={false}/>);
+   expect(html).toContain(t(`hierarchy.progressState.${state}`));expect(html).not.toContain('[[missing:');
+   expect(html).toContain(t('hierarchy.notes'));if(hierarchy)expect(html).toContain(t('hierarchy.appliedCounts',{values:h.counts}));
+ }
+ const historical=AutomationTaskSchema.parse({id:crypto.randomUUID(),kind:'organization',title:'Retained plan',status:'superseded',reason:'maintenance.errors.budget',updatedAt:'2026-09-15T00:00:00Z',policyId:null,sourceIds:[],version:'wiki-curator-v2'});
+ expect(automationTaskStatus(historical,t)).toBe(t('hierarchy.historical'));
+});

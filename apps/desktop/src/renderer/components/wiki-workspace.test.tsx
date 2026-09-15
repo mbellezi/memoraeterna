@@ -21,3 +21,12 @@ describe("manual wiki workspace",()=>{
     expect(libraryHistoryEntryFromState(createLibraryHistoryState({view:"wiki"}))).toEqual({view:"wiki"});
   });
 });
+
+import { wikiAutomaticAssessment } from './WikiWorkspace';
+import { WikiPageContentSchema } from '@app/domain';
+it('never labels a sectionless navigation or reading page as model-supported evidence',()=>{
+ const page={sections:WikiPageContentSchema.parse({title:'Navigation',kind:'topic'}).sections,impacts:[],evidence:[]};
+ expect(wikiAutomaticAssessment(page)).toBeNull();
+ const prose=WikiPageContentSchema.parse({title:'Finding',kind:'topic',sections:[{id:crypto.randomUUID(),title:'Finding',markdown:'Unassessed text',evidenceIds:[]}]});
+ expect(wikiAutomaticAssessment({...page,sections:prose.sections})).toBe('wiki.needsEvidenceReview');
+});

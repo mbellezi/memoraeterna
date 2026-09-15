@@ -232,3 +232,23 @@ describe("current hierarchy contracts", () => {
     expect(HierarchyRouteContinuationSchema.safeParse({ ...route, state: "complete" }).success).toBe(false);
   });
 });
+
+import { hierarchyMoveReviews, hierarchyReviewPath } from './automatic-wiki.js';
+it('composes exact review paths from the pinned base, renamed targets, ancestors and all moves',()=>{
+  const footprint={memberships:[{id:id(800),pageId:id(20),expectedRevisionId:id(120),groupId:id(801),target:{kind:'page' as const,id:id(10)},purpose:'related' as const,origin:'human' as const,placementProtected:true,order:7,groupOrderProtected:true,groupOrder:2}],backlinks:[{pageId:id(22),revisionId:id(122)}]};
+  const base=inventory([{...page(10,id(30)),reviewFootprint:footprint,placementProtected:true,descendantCount:5},{...page(20),reviewFootprint:{memberships:[],backlinks:[]}},page(30)]);
+  const target={...topic('new_moved'),pageId:id(10),expectedRevisionId:id(110),title:'Renamed leaf'};
+  const proposal=HierarchyChangeSetSchema.parse({...change([target]),ancestors:[ancestor('new_path')],moves:[{...move(10),fromParent:existing(30)},{...move(20,'new_parent'),toParent:proposed('new_path')}]});
+  const reviews=hierarchyMoveReviews(base,proposal);
+  expect(reviews[0]?.before.map(p=>p.title)).toEqual(['Page 30','Page 10']);
+  expect(reviews[0]?.after.map(p=>p.title)).toEqual(['new_path','Page 20','Renamed leaf']);
+  expect(reviews[0]?.after[1]?.reference).toEqual(existing(20));
+  expect(reviews[0]?.affectedMemberships).toEqual(footprint.memberships);
+  expect(reviews[0]?.backlinks).toEqual(footprint.backlinks);
+  expect(reviews[0]?.descendantCount).toBe(5);
+  expect(countHierarchyChanges(proposal)).toEqual({workTargets:2,structuralAncestors:1,changedPages:3});
+  expect(()=>hierarchyMoveReviews(inventory([page(10,id(30)),page(20),page(30)]),proposal)).toThrow('conflict');
+  expect(hierarchyReviewPath(inventory([page(10,id(30))]),proposal,existing(10),false)).toBeNull();
+  const deep=Array.from({length:220},(_,n)=>page(n+1000,n?id(n+999):null));
+  expect(hierarchyReviewPath(inventory(deep),change(),{reference:'existing',target:{kind:'page',id:id(1219)},expectedRevisionId:id(1319),fingerprint:'page-1219'})?.length).toBe(220);
+});

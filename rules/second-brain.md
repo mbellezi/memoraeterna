@@ -1046,3 +1046,15 @@ Implementation sequencing lives in
   boundary. Database/API latency is not native interaction latency, and unavailable
   tokens, price or timing is unknown rather than zero. A remaining required gate
   prevents a full acceptance claim even when the automated matrix passes.
+
+- Native structural review composes before/after paths from the admitted inventory
+  and all same-group targets, ancestors and moves. Missing ancestry or footprint
+  fails closed; never fill it from mutable current navigation. The existing
+  `HierarchyMoveReviewSchema` describes this deterministic view, while the pinned
+  inventory owns persistence through support/repair transitions. Review metadata
+  neither changes the semantic proposal nor requires additional inference.
+- The curator read DTO verifies the displayed candidate against the saved support
+  assessment's exact proposal hash. Complete changed-handle coverage alone cannot
+  label a different candidate supported. Retained resource plans remain candidates,
+  and continuation completion does not invent approval or a receipt for their
+  original planning attempt.

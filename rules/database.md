@@ -301,3 +301,13 @@ npm run db:generate
   result/keyset contracts. Source scope includes transitive compiled dependencies
   and every primary, live-linked and retained original of referenced notes and
   note-relation participants before any derived prose is returned.
+
+- Editable hierarchy inventory entries pin a metadata-only review footprint:
+  memberships owned by the moved subtree or pointing into it, including page
+  revisions, canonical group/member/target IDs, purpose, authorship, member/group
+  order and protection; incoming automatic links and explicit collection links
+  pin their owning page revisions. Include this footprint in the inventory hash
+  and exact transactional equality check. A same-count incoming change still
+  invalidates review. These IDs grant no mutation authority and disclose no
+  excluded headings or prose. Reserved destination areas expose no footprint.
+  Keep manifests within the existing inventory byte bound and out of model prompts.

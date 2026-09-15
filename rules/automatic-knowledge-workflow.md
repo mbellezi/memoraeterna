@@ -213,3 +213,15 @@ Historical versioned records retain their own evidence and replay contracts.
   do not mark originals stale solely to request placement inspection. Domain
   contracts alone do not enable route scheduling, ancestor-first persistence or
   a new maintenance admission.
+
+- Primary task details and automatic routine results show structural progress
+  independently of source coverage and synchronization: cumulative applied changes,
+  remaining planned ancestors/targets and other unresolved decisions. Distinguish
+  resource/pause deferral from conflict/uncertainty/failure, and preserve explicit
+  cancellation even when an earlier error remains in history.
+- Linked planning attempts and retired unstarted route children are terminal
+  historical task projections with navigation to their continuation/successor.
+  Preserve original status, cause, proposal, audits and receipts. Exclude them from
+  current attention and apply the ordinary terminal history cutoff. Delivery
+  projections resolve the actual continuation's unresolved cause rather than
+  perpetuating a superseded planner's failure.

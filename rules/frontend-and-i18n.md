@@ -547,3 +547,15 @@ job statuses, or user-visible backend errors.
   Resizing and text changes resynchronize the highlight layer without changing
   prompt bytes or selection. Verify wrapped and scrolled token geometry in the
   real renderer; tokenizer tests alone do not establish visual alignment.
+
+- Sectionless Wiki path pages explain navigation when paged children exist, and
+  show the empty-page state only after the children read settles empty. They have
+  no fabricated section-support label. Principal children and typed nested
+  reading/subtopic/related links use distinct localized context while preserving
+  canonical identities and existing keyboard/selection/paging behavior.
+- Hierarchy review discloses counted work targets, exempt minimal ancestors,
+  exact composed paths, canonical entity IDs with source attribution, move reasons,
+  descendant/member impact and preserved revision/order/protection metadata.
+  Long paths and IDs wrap in the scrollable dialog. Budget settings explain the
+  substantive target ceiling, ancestor exemption and saved/effective/default
+  values without introducing a depth limit.

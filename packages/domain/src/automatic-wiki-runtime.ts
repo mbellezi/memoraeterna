@@ -136,6 +136,7 @@ export const CuratorCheckpointSchema = z.object({
   hierarchy: HierarchyCheckpointSchema.nullable().default(null),continuedByRouteId:z.string().uuid().nullable().default(null),continuationComplete:z.boolean().default(false),routeDeferral:z.object({reason:z.enum(['maintenance.errors.budget','maintenance.errors.period','organization.errors.deadline']),at:z.string(),successorRunId:z.string().uuid().nullable()}).strict().nullable().default(null)
 }).strict();
 export const CuratorRunSchema = z.object({
+  candidateSupportMatches:z.boolean().default(false),
   id:z.string().uuid(),jobId:z.string().uuid().nullable(),status:z.enum(['queued','analyzing','awaiting_review','applied','rejected','canceled','failed']),receiptRevisionId:z.string().uuid().nullable(),createdAt:z.string(),updatedAt:z.string(), snapshot: CuratorSnapshotSchema, checkpoint: CuratorCheckpointSchema,
   proposal: HierarchyChangeSetSchema.nullable()
 }).strict().superRefine((v, ctx) => {

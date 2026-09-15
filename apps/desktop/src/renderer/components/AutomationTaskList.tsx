@@ -9,6 +9,7 @@ export function automationTaskTitle(task:AutomationTask,t:Translator){
  return task.title.startsWith('wiki-')||task.title==='delivery'?t(`automation.kinds.${task.kind}`):task.title;
 }
 export function automationTaskStatus(task:AutomationTask,t:Translator){
+ if(task.status==='superseded')return t(task.version==='wiki-curator-v2'?'hierarchy.historical':'automation.retired');
  if(task.kind==='schedule'&&task.reason==='maintenance.errors.retainedDecision')return t('automation.waitingInput');
  if(/^maintenance.errors.(wait|idle|busy|sync)$/.test(task.reason??''))return t('automation.deferred');
  if(/maintenance.errors.(budget|period)|organization.errors.budget/.test(task.reason??''))return t('automation.budgetBlocked');

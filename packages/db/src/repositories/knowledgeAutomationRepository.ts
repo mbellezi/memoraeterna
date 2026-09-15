@@ -6,22 +6,25 @@ import { createWikiRepository } from './wikiRepository.js';
 
 // Resolve the exact retained analysis before labeling a wrapper or an impact.
 const analysisProjection = `analysis as (
- select r.*,child.id related_run_id,child.snapshot->>'version' related_run_version,
+ select r.*,coalesce(continuation.id,child.id) related_run_id,coalesce(continuation.snapshot->>'version',child.snapshot->>'version') related_run_version,
  coalesce(r.snapshot->>'version'='wiki-bootstrap-v1' and r.status='applied' and r.checkpoint->>'state'='complete'
    and coalesce((r.checkpoint->>'completedGroups')::int,0)=0
    and not exists(select 1 from organization_runs work where work.snapshot->>'parentBootstrapId'=r.id::text),false) inspection_only,
- case when r.checkpoint->>'state'='attention' and r.checkpoint->>'error'='organization.errors.review' and child.status='applied' then 'reconciling'
+ case when r.checkpoint->>'continuedByRouteId' is not null or r.checkpoint->'routeDeferral'->>'at' is not null then 'superseded'
+ when r.checkpoint->>'state'='attention' and r.checkpoint->>'error'='organization.errors.review' and child.status='applied' then 'reconciling'
  when r.checkpoint->>'state'='attention' and child.status='awaiting_review' and child.checkpoint->'proposal'<>'null'::jsonb and child.checkpoint->'supportAssessment'->'verdict'->>'supported'='true' then 'awaiting_review'
  else r.status end task_status,
  case when r.checkpoint->'supportAssessment'->'verdict'->>'supported'='false' or child.checkpoint->'supportAssessment'->'verdict'->>'supported'='false' then 'organization.errors.unsupported'
  when child.status='applied' and r.checkpoint->>'error'='organization.errors.review' then null
  else coalesce(child.checkpoint->>'error',r.checkpoint->>'error') end task_reason
  from organization_runs r left join organization_runs child on r.snapshot->>'version'='wiki-bootstrap-v1' and child.id::text=r.checkpoint->>'childRunId'
+ left join organization_runs continuation on continuation.id::text=coalesce(r.checkpoint->'routeDeferral'->>'successorRunId',case when r.checkpoint->>'continuedByRouteId' is not null or r.checkpoint->'routeDeferral'->>'at' is not null then r.snapshot->>'parentBootstrapId' end)
 )`;
 const impactProjection = `impacts as (
  select d.*,e.kind event_kind,e.operation,e.input_id,e.created_at event_created_at,e.causal_run_id,e.source_ids,
  coalesce(c.id,b.related_run_id) related_run_id,coalesce(c.snapshot->>'version',b.related_run_version) related_run_version,
- case when (c.status='applied' or b.task_status='reconciling') and coalesce(b.task_reason,d.checkpoint->>'blockedReason',d.receipt->>'reason','organization.errors.review')='organization.errors.review' then null
+ case when c.task_status='superseded' then b.task_reason
+ when (c.status='applied' or b.task_status='reconciling') and coalesce(b.task_reason,d.checkpoint->>'blockedReason',d.receipt->>'reason','organization.errors.review')='organization.errors.review' then null
  else coalesce(c.task_reason,b.task_reason,d.checkpoint->>'blockedReason',d.receipt->>'reason') end task_reason
  from knowledge_impact_deliveries d join knowledge_impact_events e on e.id=d.event_id
  left join analysis b on b.id::text=coalesce(d.checkpoint->>'bootstrapId',d.receipt->>'runId') and b.snapshot->>'version'='wiki-bootstrap-v1'
@@ -72,11 +75,11 @@ export function createKnowledgeAutomationRepository(pool: PgPool) {
         union all select id::text,'schedule',coalesce(policy->>'name',policy->>'kind'),case when retired_at is not null then 'retired' when (policy->>'enabled')::boolean then 'scheduled' else 'paused' end,last_error,next_at,policy->>'policyId','[]',policy->>'version',1,policy->>'policyRevisionId' from maintenance_schedules
         union all select min(d.id::text),'delivery',coalesce(max(s.title),'delivery'),case when bool_and(d.consumer='curator' and right(d.input_generation,36) is distinct from (select revision_id::text from wiki_policy_activations where policy_id::text=d.consumer_key order by created_at desc,id desc limit 1)) then 'superseded' when bool_or(d.task_reason is not null) then 'blocked' when bool_or(d.status='deferred') then 'deferred' else 'pending' end,min(d.task_reason),max(d.updated_at),d.consumer_key,d.source_ids,'impact',count(*)::int,right(d.input_generation,36) from impacts d left join source_items s on s.id::text=d.source_ids->>0 where d.status<>'acknowledged' or d.receipt->>'kind'='attention' group by d.consumer_key,d.source_ids,right(d.input_generation,36)
         union all select memora_id::text,'sync',relative_path,status::text,null,updated_at,null,case when source_item_id is null then '[]'::jsonb else jsonb_build_array(source_item_id) end,'obsidian',1,null from obsidian_sync_files where status::text in ('conflict','pending','local_modified','error')
-      ), filtered as(select * from tasks where ${taskHistoryVisibleSql('status','updated_at')} and (not $1 or status not in('retired','applied','canceled','rejected','acknowledged') and coalesce(reason,'') not in('maintenance.errors.retainedDecision','maintenance.errors.wait','maintenance.errors.idle','maintenance.errors.busy','maintenance.errors.sync') and (reason is not null or status in ('awaiting_review','failed','conflict','local_modified'))))`;
+      ), filtered as(select * from tasks where ${taskHistoryVisibleSql('status','updated_at')} and (not $1 or status not in('superseded','retired','applied','canceled','rejected','acknowledged') and coalesce(reason,'') not in('maintenance.errors.retainedDecision','maintenance.errors.wait','maintenance.errors.idle','maintenance.errors.busy','maintenance.errors.sync') and (reason is not null or status in ('awaiting_review','failed','conflict','local_modified'))))`;
       const rows = (await pool.query(`${cte} select *,count(*) over()::int total,
         (select related_run_id from analysis a where a.id::text=filtered.id and filtered.kind='organization') related_run_id,
         (select related_run_version from analysis a where a.id::text=filtered.id and filtered.kind='organization') related_run_version
-        from filtered order by case when status in('applied','no_change','succeeded','canceled','rejected','retired') then 3 when kind='schedule' and updated_at>now() then 2 else 0 end,case when kind='schedule' then updated_at end asc,updated_at desc,id limit 51 offset $2`, [attention, offset])).rows;
+        from filtered order by case when status in('superseded','applied','no_change','succeeded','canceled','rejected','retired') then 3 when kind='schedule' and updated_at>now() then 2 else 0 end,case when kind='schedule' then updated_at end asc,updated_at desc,id limit 51 offset $2`, [attention, offset])).rows;
       return { total: rows[0]?.total ?? 0, next: rows.length > 50 ? offset + 50 : null, tasks: await Promise.all(rows.slice(0, 50).map(async r => {const attention=r.kind==='maintenance'&&r.version==='automatic-maintenance-v1'&&r.status==='awaiting_review'?await createAutomaticMaintenanceRepository(pool).attention(r.id):null;return { id: r.id, kind: r.kind, title: r.title ?? r.kind, status: attention?.kind==='blocked'?'blocked':r.status, reason: attention?.reason??r.reason, updatedAt: new Date(r.updated_at).toISOString(), policyId: r.policy_id, sourceIds: r.source_ids, version: r.version,detailCount:r.detail_count,policyRevisionId:r.policy_revision_id,relatedRunId:r.related_run_id,relatedRunVersion:r.related_run_version };})) };
     },
     async coverage(policyId: string) {

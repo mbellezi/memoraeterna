@@ -21,6 +21,10 @@ type PageSummary = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
 const control = "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
 const card = "rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const newContent = (): WikiPageContent => ({ title: "", kind: "topic", aliases: [], parentId: null, position: 0, collectionIds: [], entityId: null, pinned: false, archived: false, review: "draft", sections: [] });
+export function wikiAutomaticAssessment(page:Pick<WikiPage,'sections'|'impacts'|'evidence'>):MessageKey|null{
+ if(!page.sections.length)return null;
+ return page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview';
+}
 export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, treeWidth, onTreeWidthChange, onPrompts }: {
   onPrompts?:()=>void;
   externalTarget?: (ObsidianDeepLink&{token:number})|null;
@@ -613,11 +617,9 @@ export function WikiWorkspace({ t, onOpenSource, active = true, externalTarget, 
                 </button> : null;
               })}
             </div> : null}
-          </section>) : !Object.values(wikiAreaIds).some(id=>id===page.id) && !page.automatic?.groups.length && !page.automatic?.links.length ? <p className={`${card} p-6 text-sm text-slate-500`}>
-            {t("wiki.emptyPage")}
-          </p> : null}
-          <WikiChildrenLinks pageId={page.id} t={t} onOpen={id=>void openPage(id)}/>
-          {page.automatic&&!Object.values(wikiAreaIds).some(id=>id===page.id)&&<section className="mt-5 grid gap-4"><p className="text-xs text-amber-700 dark:text-amber-300">{t(page.sections.every(s=>s.assessment?.support==='validated'&&s.assessment.sectionRevisionId===s.sectionRevisionId)&&!page.impacts.length&&page.evidence.every(e=>e.current)?page.sections.every(s=>s.assessment?.supportMethod==='model_checked')?'automaticWiki.modelAssessment':'automaticWiki.assessment':'wiki.needsEvidenceReview')}</p>{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel="" reference={token=>renderReference(token,group.explanationEvidenceIds)}/>}<div className="mt-2 grid gap-1">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} key={m.id} pageId={page.id} revisionId={page.revisionId} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} key={target.kind+target.id} pageId={page.id} revisionId={page.revisionId} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
+          </section>) : null}
+          <WikiChildrenLinks showEmpty={!page.sections.length&&!Object.values(wikiAreaIds).some(id=>id===page.id)&&!page.automatic?.groups.length&&!page.automatic?.links.length} pageId={page.id} t={t} onOpen={id=>void openPage(id)}/>
+          {page.automatic&&!Object.values(wikiAreaIds).some(id=>id===page.id)&&<section className="mt-5 grid gap-4">{page.sections.length>0&&<p className="text-xs text-amber-700 dark:text-amber-300">{t(wikiAutomaticAssessment(page)!)}</p>}{page.automatic.groups.map(group=><section key={group.id}><h3 className="font-semibold">{group.title}</h3>{group.explanation&&<MarkdownPreview markdown={group.explanation} emptyLabel="" reference={token=>renderReference(token,group.explanationEvidenceIds)}/>}<div className="mt-2 grid gap-1">{page.automatic!.memberships.filter(m=>m.groupId===group.id).toSorted((a,b)=>a.order-b.order).map(m=><div key={m.id} className="flex min-w-0 flex-wrap items-baseline gap-2"><span className="text-xs text-muted-foreground">{t(`hierarchy.link.${m.purpose}`)}</span><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} pageId={page.id} revisionId={page.revisionId} target={m.target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/></div>)}</div></section>)}<div className="flex flex-wrap gap-2">{page.automatic.links.map(target=><WikiTypedLink active={active} refreshKey={linkRefresh} onRefreshed={refreshLinkedEvidence} key={target.kind+target.id} pageId={page.id} revisionId={page.revisionId} target={target} t={t} onOpenPage={id=>void openPage(id)} onOpenSource={onOpenSource} onEvidence={setInspector}/>)}</div></section>}
           </div>
         </article> : null}
 

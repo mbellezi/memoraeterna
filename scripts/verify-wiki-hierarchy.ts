@@ -1,5 +1,5 @@
 import {AutomaticMaintenance} from '../apps/desktop/src/main/services/automatic-maintenance.js';
-import {WikiCurator} from '../apps/desktop/src/main/services/wiki-curator.js';
+import {curatorPrompt,curatorSupportView,WikiCurator} from '../apps/desktop/src/main/services/wiki-curator.js';
 import {WikiCollection} from '../apps/desktop/src/main/services/wiki-collection.js';
 import {defaultPromptPin,promptFingerprint,promptAudit} from '../apps/desktop/src/main/services/prompt-runtime.js';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import {
   createSourceItemRepository, createDocumentRepository, createChunkRepository, createKnowledgeAutomationRepository,createWikiCollectionRepository,createAutomaticMaintenanceRepository, curatorHash, type PgPool
 } from '../packages/db/src/index.js';
 import {
-  resolveHierarchyRouteParent,HierarchyPolicySchema, HierarchySnapshotSchema, HierarchyChangeSetSchema, HierarchyCuratorCheckpointSchema,
+  hierarchyMoveReviews,resolveHierarchyRouteParent,HierarchyPolicySchema, HierarchySnapshotSchema, HierarchyChangeSetSchema, HierarchyCuratorCheckpointSchema,
   HierarchyPageTargetSchema, HierarchyRouteContinuationSchema, WikiPageSchema, WikiPageContentSchema,
   hierarchyChangedHandles, initialHierarchyLimits, promptDefinition, wikiAreaIds, type HierarchySnapshot, type HierarchyChangeSet,
   type HierarchyParent, type HierarchyPolicy
@@ -86,7 +86,7 @@ try {
   // Deep path + two counted work targets in one canonical transaction/receipt.
   const emptyAreas=await hierarchy.inventory(mainPolicy,{pageIds:[wikiAreaIds.themes,wikiAreaIds.organizations],editablePageIds:Object.values(wikiAreaIds)});
   assert.deepEqual(new Set(emptyAreas.pages.map(p=>p.pageId)),new Set([wikiAreaIds.themes,wikiAreaIds.entities,wikiAreaIds.organizations]));
-  assert.ok(emptyAreas.pages.every(p=>p.canReceiveChildren&&!p.canEdit&&p.sourceIds.length===0));
+  assert.ok(emptyAreas.pages.every(p=>p.canReceiveChildren&&!p.canEdit&&p.sourceIds.length===0&&!p.reviewFootprint));
   const arbitrary=await wiki.save({expectedRevisionId:null,content:WikiPageContentSchema.parse({title:'Unbound human container',kind:'collection'}),evidenceChunkIds:[]});
   assert.ok(!(await hierarchy.inventory(mainPolicy,{pageIds:[arbitrary],editablePageIds:[arbitrary]})).pages.some(p=>p.pageId===arbitrary));
   const first = await snapshot(mainPolicy,[wikiAreaIds.themes]);
@@ -149,14 +149,55 @@ try {
   // Reviewed placement preserves exact prose revisions, support and protected memberships.
   const loaded = WikiPageSchema.parse(await wiki.get(leafPage.id));
   await wiki.save({ version: 2, id: loaded.id, expectedRevisionId: loaded.revisionId, content: { ...WikiPageContentSchema.strip().parse(loaded), sections: loaded.sections.map(s => ({ ...s, protected: true })) }, evidenceChunkIds: [] });
+  async function saveFixtureNavigation(page:ReturnType<typeof WikiPageSchema.parse>,content:ReturnType<typeof WikiPageContentSchema.parse>){
+    const client=await db.connect();try{await client.query('begin');await wiki.save({id:page.id,expectedRevisionId:page.revisionId,content,evidenceChunkIds:[]},{transaction:client,origin:'organization',allocatedTarget:false,humanApproved:true});await client.query('commit');}catch(error){await client.query('rollback');throw error;}finally{client.release();}
+  }
+  const reading=WikiPageSchema.parse(await wiki.get(all.find(p=>p.title==='Gene regulation reading')!.id));
+  const protectedReading=structuredClone(WikiPageContentSchema.strip().parse(reading));
+  protectedReading.automatic!.groups[0]!.orderProtected=true;
+  protectedReading.automatic!.memberships[0]!.placementProtected=true;
+  await saveFixtureNavigation(reading,protectedReading);
+  const backlinkId=await wiki.save({expectedRevisionId:null,content:WikiPageContentSchema.parse({title:'Excluded backlink title',kind:'collection',sections:[{id:randomUUID(),title:'Private',markdown:'Private excluded backlink prose',evidenceIds:[excludedChunk]}]}),evidenceChunkIds:[excludedChunk]});
+  const backlink=WikiPageSchema.parse(await wiki.get(backlinkId)),backlinkGroup=randomUUID(),backlinkMember=randomUUID();
+  const backlinkContent=WikiPageContentSchema.strip().parse(backlink);
+  backlinkContent.collectionIds=[reading.id];
+  backlinkContent.automatic={version:'automatic-wiki-v1',management:'human_managed',role:{kind:'collection',role:'map',owner:null},purpose:'Private navigation',placementProtected:true,links:[],groups:[{version:'automatic-wiki-v1',id:backlinkGroup,collectionId:backlinkId,title:'Private group heading',explanation:null,explanationEvidenceIds:[],membershipIds:[backlinkMember],orderProtected:true,origin:'human'}],memberships:[{version:'automatic-wiki-v1',id:backlinkMember,pageId:backlinkId,groupId:backlinkGroup,target:{kind:'page',id:leafPage.id},purpose:'related',order:3,origin:'human',placementProtected:true,expectedPageRevisionId:backlink.revisionId,targetFingerprint:loaded.revisionId}]};
+  await saveFixtureNavigation(backlink,backlinkContent);
+  const preservedReading=WikiPageSchema.parse(await wiki.get(reading.id)),preservedBacklink=WikiPageSchema.parse(await wiki.get(backlinkId));
   const moving = await snapshot(mainPolicy, [leafPage.id, science.id], [leafPage.id]);
   const from = moving.pages[0]!, beforeSections = structuredClone(from.sections), beforeEvidence = structuredClone(from.evidence);
   const move = { handle: 'new_move', operation: 'reviewed_reparent' as const, pageId: from.id, expectedRevisionId: from.revisionId, fromParent: parentRef(moving, from.parentId!) as Extract<HierarchyParent, { reference: 'existing' }>, toParent: parentRef(moving, science.id), reason: 'Reviewed broader category' };
-  const moveRun = await pending(moving, change(moving, { targets: [], moves: [move] }));
+  const moveProposal=change(moving,{targets:[],moves:[move]}),moveReview=hierarchyMoveReviews(moving.placement,moveProposal)[0]!;
+  assert.deepEqual(moveReview.before.map(p=>p.title),['Themes','Science','Biology','Genetics','Molecular genetics','Gene regulation']);
+  assert.deepEqual(moveReview.after.map(p=>p.title),['Themes','Science','Gene regulation']);
+  assert.equal(moveReview.descendantCount,1);
+  assert.equal(moveReview.affectedMemberships.length,2);
+  assert.ok(moveReview.affectedMemberships.every(m=>m.placementProtected&&m.groupOrderProtected));
+  assert.equal(moveReview.affectedMemberships.find(m=>m.id===backlinkMember)!.order,3);
+  assert.deepEqual(moveReview.backlinks,[{pageId:backlinkId,revisionId:preservedBacklink.revisionId}]);
+  assert.ok(!JSON.stringify(moving).includes('Private excluded backlink prose'));
+  assert.ok(!JSON.stringify(moveReview).includes('Private group heading'));
+  assert.ok(!curatorPrompt(moving,checkpoint()).includes('reviewFootprint'));
+  assert.ok(!JSON.stringify(curatorSupportView(moving,moveProposal)).includes('groupOrderProtected'),'Review manifests never enter synthesis or support prompts');
+  assert.ok(!moving.pages.some(p=>p.id===backlinkId),'Inbound review IDs do not grant edits or expose excluded prose');
+  const moveRun = await pending(moving, moveProposal);
   await assert.rejects(apply(moveRun), /review/); await apply(moveRun, true);
   const moved = WikiPageSchema.parse(await wiki.get(from.id));
   assert.equal(moved.parentId, science.id); assert.deepEqual(moved.sections, beforeSections); assert.deepEqual(moved.evidence, beforeEvidence);
   assert.deepEqual(await apply(moveRun, true), await apply(moveRun, true));
+  assert.deepEqual(WikiPageContentSchema.strip().parse(await wiki.get(reading.id)),WikiPageContentSchema.strip().parse(preservedReading),'Descendant TOC content, membership identities, order and protection survive the move');
+  assert.equal(WikiPageSchema.parse(await wiki.get(reading.id)).revisionId,preservedReading.revisionId);
+  assert.deepEqual(WikiPageSchema.parse(await wiki.get(backlinkId)),preservedBacklink,'Inbound protected membership and excluded prose remain untouched');
+  const staleFootprint=await snapshot(mainPolicy,[leafPage.id,molecular.id],[leafPage.id]);
+  const staleMove=change(staleFootprint,{targets:[],moves:[{...move,expectedRevisionId:moved.revisionId,fromParent:parentRef(staleFootprint,science.id) as Extract<HierarchyParent,{reference:'existing'}>,toParent:parentRef(staleFootprint,molecular.id)}]});
+  const staleFootprintRun=await pending(staleFootprint,staleMove);
+  const changedBacklink=WikiPageContentSchema.strip().parse(preservedBacklink);changedBacklink.automatic!.memberships[0]!.order=4;
+  await saveFixtureNavigation(preservedBacklink,changedBacklink);
+  const newFootprint=await hierarchy.inventory(mainPolicy,{pageIds:[leafPage.id,molecular.id],editablePageIds:[leafPage.id]});
+  assert.equal(newFootprint.pages.find(p=>p.pageId===leafPage.id)!.reviewFootprint!.memberships.length,moveReview.affectedMemberships.length,'Inbound cardinality is unchanged');
+  await assert.rejects(apply(staleFootprintRun,true),/conflict/,'A same-count concurrent incoming membership reorder invalidates the shown review');
+  assert.equal(WikiPageSchema.parse(await wiki.get(leafPage.id)).revisionId,moved.revisionId);
+  assert.equal((await db.query('select count(*)::int n from wiki_group_receipts where run_id=$1',[staleFootprintRun])).rows[0].n,0);
   // Current destination metadata and source parent are exact, not a title-based guess.
   const stale = await snapshot(mainPolicy, [science.id]), staleProposal = change(stale, { targets: [{ ...topic('new_stale'), initialParent: parentRef(stale, science.id) }] }), staleRun = await pending(stale, staleProposal);
   const currentScience = WikiPageSchema.parse(await wiki.get(science.id));
@@ -329,6 +370,10 @@ try {
       assert.deepEqual(await hierarchy.inventory(servicePolicy,{pageIds:[wikiAreaIds.themes]}),areaBefore,'An unrelated descendant placement does not alter reserved destination metadata');
       proposeMove=true;const movedAdmission=(await service.start({policyId:servicePolicy.id,policyRevisionId:servicePolicy.revisionId,sourceIds:[inputSource.id],noteIds:[]}))!;assert.notEqual(movedAdmission.id,admitted.id);
       const movedJob=(await db.query('select * from jobs where id=$1',[movedAdmission.jobId])).rows[0];await service.execute(movedJob,new AbortController().signal);assert.equal((await service.get(movedAdmission.id))!.status,'awaiting_review');assert.equal(prompts.length,4);
+      const supportedMove=(await service.get(movedAdmission.id))!;assert.equal(supportedMove.candidateSupportMatches,true);
+      await db.query("update organization_runs set checkpoint=jsonb_set(checkpoint,'{supportAssessment,proposalHash}',to_jsonb($2::text)) where id=$1",[movedAdmission.id,'stale-same-handles']);
+      assert.equal((await service.get(movedAdmission.id))!.candidateSupportMatches,false,'Review DTO does not trust a same-handle stale support verdict');
+      await db.query("update organization_runs set checkpoint=jsonb_set(checkpoint,'{supportAssessment,proposalHash}',to_jsonb($2::text)) where id=$1",[movedAdmission.id,supportedMove.checkpoint.supportAssessment!.proposalHash]);
       await service.command({command:'accept',id:movedAdmission.id});assert.equal((await service.get(movedAdmission.id))!.status,'applied');assert.equal(prompts.length,4,'Accepting supported movement invokes no inference');assert.deepEqual(WikiPageSchema.parse(await wiki.get(page.id)).sections,originalSections);
     }
   }
@@ -402,6 +447,32 @@ try {
     if(resourceRoute){assert.ok(paused);if(installed){assert.ok(handedOff);assert.deepEqual((await automaticRepo.get(oldOccurrence!))!.reservation,oldReservation,'Later authority does not refund consumed reservations');}const route=done.checkpoint.hierarchy!.routes[0]!;assert.equal(route.state,'complete');assert.equal(route.remainingPath.length,0);assert.equal(route.resolvedPrefix.length,forest?7:9);assert.equal(calls.filter(c=>c.stage==='curate').length,1,'Retained route synthesis is never replayed');assert.ok((await service.get(route.planningRunId!))!.checkpoint.continuationComplete);}
     else assert.equal(calls.length,forest?2:scenario==='review'?6:4,'One synthesis/support pair per exact topic, owned TOC and optional reviewed move');
     if(expiredChild){const old=(await service.get(expiredChild))!;assert.equal(old.checkpoint.calls,0);assert.ok(old.checkpoint.routeDeferral?.successorRunId);assert.equal((await service.get(old.checkpoint.routeDeferral!.successorRunId!))!.snapshot.continuedFromRunId,old.id);assert.equal(calls.filter(c=>c.runId===old.id).length,0);assert.equal((await db.query('select count(*)::int n from organization_steps s join ai_task_runs a on a.id=s.ai_task_run_id where s.run_id=$1',[old.id])).rows[0].n,0);await assert.rejects(runs.modelStarted(old.id,1),/canceled/);await assert.rejects(runs.retry(old.id),/budget/);}
+    if(resourceRoute){
+      const automationTasks=createKnowledgeAutomationRepository(db),plannerId=done.checkpoint.hierarchy!.routes[0]!.planningRunId!;
+      const listTasks=async(attention:boolean)=>{const items:Awaited<ReturnType<typeof automationTasks.tasks>>['tasks']=[];let offset:number|null=0;while(offset!==null){const page=await automationTasks.tasks(offset,attention);items.push(...page.tasks);offset=page.next;}return items;};
+      const history=await listTasks(false),plannerTask=history.find(t=>t.id===plannerId)!;
+      assert.equal(plannerTask.status,'superseded');assert.equal(plannerTask.relatedRunId,bootstrap.id);assert.equal(plannerTask.relatedRunVersion,'wiki-bootstrap-v1');assert.equal(plannerTask.reason,'organization.errors.scopeLimit');
+      assert.ok(!(await listTasks(true)).some(t=>t.id===plannerId||t.id===expiredChild),'Linked historical attempts are not actionable failures');
+      assert.equal((await service.get(plannerId))!.status,'failed');assert.equal((await db.query('select count(*)::int n from wiki_group_receipts where run_id=$1',[plannerId])).rows[0].n,0);
+      if(expiredChild){const old=(await service.get(expiredChild))!;assert.equal(history.find(t=>t.id===old.id)!.status,'superseded');assert.equal(history.find(t=>t.id===old.id)!.relatedRunId,old.checkpoint.routeDeferral!.successorRunId);}
+      const projectionClient=await db.connect();try{
+        await projectionClient.query('begin');
+        const event=(await projectionClient.query("insert into knowledge_impact_events(kind,input_id,operation,fingerprint,source_ids) values('source',$1,'update','retained-planner-review',$2) returning id",[inputSource.id,JSON.stringify([inputSource.id])])).rows[0].id;
+        const retainedReceipt={kind:'attention',runId:bootstrap.id,reason:'organization.errors.scopeLimit'};
+        const delivery=(await projectionClient.query("insert into knowledge_impact_deliveries(event_id,consumer,consumer_key,input_generation,status,checkpoint,receipt) values($1,'curator',$2,$3,'acknowledged',$4,$5) returning id",[event,p.id,'retained-planner:'+p.revisionId,{bootstrapId:bootstrap.id,childRunId:plannerId,blockedReason:'organization.errors.scopeLimit'},retainedReceipt])).rows[0].id;
+        const projected=createKnowledgeAutomationRepository(projectionClient as unknown as PgPool);
+        const deliveries=async()=>{const items:Awaited<ReturnType<typeof projected.deliveries>>['items']=[];let offset:number|null=0;while(offset!==null){const page=await projected.deliveries(p.id,[inputSource.id],offset,p.revisionId);items.push(...page.items);offset=page.next;}return items;};
+        assert.notEqual((await deliveries()).find(d=>d.id===delivery)!.status,'blocked','A settled continuation does not inherit its historical planner failure');
+        await projectionClient.query("update organization_runs set status='failed',checkpoint=jsonb_set(jsonb_set(checkpoint,'{state}','\"attention\"'),'{error}', '\"organization.errors.conflict\"') where id=$1",[bootstrap.id]);
+        const unresolved=(await deliveries()).find(d=>d.id===delivery)!;assert.equal(unresolved.status,'blocked');assert.equal(unresolved.reason,'organization.errors.conflict','An unresolved actual continuation remains visible');
+        assert.deepEqual((await projectionClient.query('select receipt from knowledge_impact_deliveries where id=$1',[delivery])).rows[0].receipt,retainedReceipt,'Projection preserves the original attention receipt');
+      }finally{await projectionClient.query('rollback');projectionClient.release();}
+      const prior=(await db.query("select value from settings where key='jobs.history.dismissed-through.v1'")).rows[0];
+      await db.query("insert into settings(key,value) values('jobs.history.dismissed-through.v1',jsonb_build_object('before',clock_timestamp()+interval '1 second')) on conflict(key) do update set value=excluded.value");
+      assert.ok(!(await listTasks(false)).some(t=>t.id===plannerId||t.id===expiredChild),'History cutoff clears terminal linked attempts');
+      assert.equal((await service.get(plannerId))!.status,'failed','Display cleanup preserves exact audit access');
+      if(prior)await db.query("update settings set value=$1 where key='jobs.history.dismissed-through.v1'",[prior.value]);else await db.query("delete from settings where key='jobs.history.dismissed-through.v1'");
+    }
     if(forest){const tree=(await hierarchy.inventory(p,{pageIds:pages.map(p=>p.id),limit:300})).pages.map(p=>({...p,id:p.pageId}));const root=tree.find(p=>p.title==='Reading category 0')!;assert.equal(tree.filter(p=>p.title==='Reading category 0').length,1);for(let i=0;i<2;i++){const leaf=tree.find(p=>p.title==='Substantive collection finding '+i)!;assert.equal(leaf.parentId,tree.find(p=>p.title==='Reading category '+(i?6:3))!.id);}assert.equal(tree.find(p=>p.title==='Reading category 4')!.parentId,root.id);const toc=pages.find(p=>p.title==='Collection reading 0')!;assert.ok(toc.automatic!.memberships.some(m=>m.purpose==='subtopic'&&m.target.id===tree.find(p=>p.title==='Collection reading 1')!.id));}
     if(packed){const beforeDenied=calls.length;await assert.rejects(service.start({policyId:p.id,policyRevisionId:p.revisionId,sourceIds:[inputSource.id],noteIds:[]},null,{structuralIntent:{kind:'missing_toc',owners:[{pageId:pages.find(p=>p.kind==='topic')!.id,fingerprint:'allowed'},{pageId:leafPage.id,fingerprint:'excluded'}]}}),/scopeDecision/);assert.equal(calls.length,beforeDenied,'An excluded second owner is rejected before inference');const children=(await db.query("select id,snapshot from organization_runs where snapshot->>'parentBootstrapId'=$1 and snapshot->>'structuralIntent' is not null",[bootstrap.id])).rows;assert.equal(children.length,1);assert.equal(children[0].snapshot.structuralIntent.owners.length,3);assert.equal(children[0].snapshot.pages.length,0);assert.equal(calls.filter(c=>c.runId===children[0].id).length,2);for(const page of pages.filter(p=>p.kind==='topic'))assert.equal((await wiki.history(page.id)).length,1,'Packed TOCs do not rewrite owner revisions');}
     if(installed){let ancestryReads=0;const counted={query:async(...args:unknown[])=>{if(String(args[0]).includes('seeds(id)'))ancestryReads++;return (db.query as Function).apply(db,args);}};assert.deepEqual((await createWikiCollectionRepository(counted as PgPool).structuralCandidates(p,null,[inputSource.id],100)).items,[]);assert.equal(ancestryReads,0,'Settled daily branches are filtered before lineage expansion');for(let drain=0;drain<300&&await automaticRepo.pending(p.id);drain++){await collection.tick();await automatic.tick();}await automatic.tick();const owner=(await automaticRepo.history(p.id)).find(r=>r.id!==oldOccurrence)!;assert.ok(['applied','no_change'].includes(owner.status),JSON.stringify(owner.checkpoint));assert.equal(owner.checkpoint.phase,'complete');}

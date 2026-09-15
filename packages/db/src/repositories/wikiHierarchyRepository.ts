@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
-  resolveHierarchyRouteParent,HierarchyChangeSetSchema, HierarchySnapshotSchema, HierarchySupportAssessmentSchema,
+  hierarchyMoveReviews,resolveHierarchyRouteParent,HierarchyChangeSetSchema, HierarchySnapshotSchema, HierarchySupportAssessmentSchema,
   HierarchyRouteContinuationSchema, HierarchyPlacementInventorySchema, HierarchyPolicySchema,
   WikiPageContentSchema, countHierarchyChanges, hasCompleteHierarchySupport, validateHierarchyAdmission,
   hierarchyResourceDecision, promptDefinition, type HierarchyChangeSet, type HierarchySnapshot, type HierarchyPolicy,
@@ -95,8 +95,10 @@ export function createWikiHierarchyRepository(pool: PgPool) {
           if(route.fingerprint.branchFingerprint!==placement.fingerprint||route.fingerprint.scopeFingerprint!==placement.scopeFingerprint||route.fingerprint.policyRevisionId!==policy.revisionId)throw new Error('organization.errors.conflict');
           if(!proposal.continuation)validateRouteCompletion(proposal,route);
         }
+        // Review is computed from the pinned base; exact footprint equality above rejects concurrent inbound links as well.
         const admission = validateHierarchyAdmission(proposal, policy, placement, snapshot.references, route);
         if (!admission.valid) throw new Error('organization.errors.scope');
+        hierarchyMoveReviews(snapshot.placement,proposal);
         validateContent(snapshot, proposal);
         validate(snapshot, proposal);
         await db.query('select id from ai_profile_sets where id=$1 for share', [snapshot.profile.profileId]);

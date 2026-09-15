@@ -323,11 +323,21 @@ export const CuratorChangeSetSchema = z.object({
 export type HierarchyChangeSet = z.infer<typeof CuratorChangeSetSchema>;
 export type HierarchyPolicy = z.infer<typeof AutomaticWikiPolicySchema>;
 
+export const HierarchyAffectedMembershipSchema = z.object({
+  id, pageId:id, expectedRevisionId:id, groupId:id, target:KnowledgeTargetSchema,
+  purpose:KnowledgeMembershipSchema.shape.purpose, origin:KnowledgeMembershipSchema.shape.origin,
+  placementProtected:z.boolean(), order:z.number().int().nonnegative(), groupOrderProtected:z.boolean(), groupOrder:z.number().int().nonnegative()
+}).strict();
+export const HierarchyReviewFootprintSchema = z.object({
+  memberships:z.array(HierarchyAffectedMembershipSchema),
+  backlinks:z.array(z.object({pageId:id,revisionId:id}).strict())
+}).strict();
 /** Snapshot metadata only; canonical wiki tables continue owning these objects. */
 export const HierarchyPlacementEntrySchema = z.object({
   pageId: id, revisionId: id, fingerprint, title: z.string().max(300), purpose: z.string().max(2000),
   role: WikiRoleSchema, parentId: id.nullable(), archived: z.boolean(), placementProtected: z.boolean(),
   canEdit: z.boolean(), canReceiveChildren: z.boolean(), sourceIds: z.array(id),
+  reviewFootprint: HierarchyReviewFootprintSchema.optional(),
   subtopicIds: z.array(id), descendantCount: z.number().int().nonnegative(), membershipCount: z.number().int().nonnegative()
 }).strict();
 function freezeSnapshot<T>(value: T): T {
@@ -392,9 +402,42 @@ export const HierarchyMoveReviewSchema = z.object({
   before: z.array(z.object({ pageId: id, revisionId: id, title: z.string().max(300) }).strict()),
   after: z.array(z.object({ reference: HierarchyParentSchema, title: z.string().max(300) }).strict()),
   descendantCount: z.number().int().nonnegative(),
-  affectedMemberships: z.array(z.object({ id, pageId: id, expectedRevisionId: id, placementProtected: z.boolean(), order: z.number().int().nonnegative() }).strict()),
+  affectedMemberships: z.array(HierarchyAffectedMembershipSchema),
+  backlinks: HierarchyReviewFootprintSchema.shape.backlinks,
   placementProtected: z.boolean()
 }).strict();
+
+/** Compose only the admitted base and same-group edits. Missing ancestry fails closed. */
+export function hierarchyReviewPath(inventory:HierarchyPlacementInventory, proposal:HierarchyChangeSet, reference:HierarchyParent|null, composed=true):Array<{reference:HierarchyParent;title:string}>|null {
+  const path:Array<{reference:HierarchyParent;title:string}>=[],seen=new Set<string>();
+  let current=reference;
+  while(current){
+    const key=current.reference==='existing'?current.target.id:current.handle;
+    if(seen.has(key))return null;seen.add(key);
+    let base=current.reference==='existing'?inventory.pages.find(p=>p.pageId===key):undefined;
+    const target=composed?proposal.targets.find(t=>current!.reference==='existing'?t.pageId===key:t.handle===key)??proposal.ancestors.find(t=>t.handle===key):undefined;
+    if(!base&&target&&'pageId' in target&&target.pageId)base=inventory.pages.find(p=>p.pageId===target.pageId);
+    if(!base&&(!target||'pageId' in target&&target.pageId))return null;
+    path.unshift({reference:current,title:target?.title??base!.title});
+    const move=composed&&base?proposal.moves.find(m=>m.pageId===base.pageId):undefined;
+    if(move){current=move.toParent;continue;}
+    if(target&&!('pageId' in target&&target.pageId)){current=target.initialParent;continue;}
+    if(!base?.parentId){current=null;continue;}
+    const parent=inventory.pages.find(p=>p.pageId===base.parentId);if(!parent)return null;
+    current={reference:'existing',target:{kind:'page',id:parent.pageId},expectedRevisionId:parent.revisionId,fingerprint:parent.fingerprint};
+  }
+  return path;
+}
+export function hierarchyMoveReviews(inventory:HierarchyPlacementInventory,proposal:HierarchyChangeSet){
+  return proposal.moves.map(move=>{
+    const page=inventory.pages.find(p=>p.pageId===move.pageId);
+    if(!page?.reviewFootprint)throw new Error('organization.errors.conflict');
+    const reference:HierarchyParent={reference:'existing',target:{kind:'page',id:move.pageId},expectedRevisionId:move.expectedRevisionId,fingerprint:page.fingerprint};
+    const before=hierarchyReviewPath(inventory,proposal,reference,false),after=hierarchyReviewPath(inventory,proposal,reference);
+    if(!before||!after)throw new Error('organization.errors.conflict');
+    return HierarchyMoveReviewSchema.parse({move,before:before.map(p=>{if(p.reference.reference!=='existing')throw new Error('organization.errors.conflict');const pageId=p.reference.target.id,base=inventory.pages.find(b=>b.pageId===pageId)!;return{pageId:base.pageId,revisionId:base.revisionId,title:base.title};}),after,descendantCount:page.descendantCount,affectedMemberships:page.reviewFootprint.memberships,backlinks:page.reviewFootprint.backlinks,placementProtected:page.placementProtected});
+  });
+}
 
 /** Re-run against current locked data at apply. This validates admission, not human approval. */
 export function validateHierarchyAdmission(proposalInput: unknown, policyInput: unknown, inventoryInput: unknown,
