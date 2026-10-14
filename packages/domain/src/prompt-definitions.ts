@@ -247,7 +247,7 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
               "consultation.knowledge",
               "consultation.investigation",
               "consultation.gaps",
-              // Decision-only matching contract (atomic-note-matching-v7).
+              // Decision-only matching contract (atomic-note-matching-v8).
               "notes.match",
               // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
               "graph.atomic_notes",
