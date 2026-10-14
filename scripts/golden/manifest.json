@@ -16,8 +16,8 @@
       "format": "html",
       "url": "https://en.wikipedia.org/w/index.php?title=Forgetting_curve&oldid=1369227085&action=render",
       "pageUrl": "https://en.wikipedia.org/w/index.php?title=Forgetting_curve&oldid=1369227085",
-      "sha256": null,
-      "bytes": null
+      "sha256": "fc3c9c1755959bde5d76bdcc9029a92d1d07e6b1e0421949ec83f37d45c41039",
+      "bytes": 130916
     },
     {
       "key": "wikipedia-pt-curva-do-esquecimento",
@@ -30,8 +30,8 @@
       "format": "html",
       "url": "https://pt.wikipedia.org/w/index.php?title=Curva_do_esquecimento&oldid=68615636&action=render",
       "pageUrl": "https://pt.wikipedia.org/w/index.php?title=Curva_do_esquecimento&oldid=68615636",
-      "sha256": null,
-      "bytes": null
+      "sha256": "818e843299c4e838b7fe6ccd3c490c11b1e21164dbc9e4a792a56672c3f49497",
+      "bytes": 67874
     },
     {
       "key": "plos-one-murre-dros-2015",
@@ -43,8 +43,8 @@
       "attribution": "Murre, J. M. J. and Dros, J. (2015). PLOS ONE 10(7): e0120644. doi:10.1371/journal.pone.0120644",
       "format": "pdf",
       "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0120644&type=printable",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "2407f0f32f73ae944fd57736d6f825b787719f3c0fd6487f07392833ceee9120",
+      "bytes": 807435,
       "descriptor": {
         "type": "AcademicPaper",
         "creators": [
@@ -67,8 +67,8 @@
       "attribution": "Ferreira, L. and Juvêncio, C. H. (2025). Transinformação 37: e2510623. doi:10.1590/2318-0889202537e2510623",
       "format": "pdf",
       "url": "https://periodicos.puc-campinas.edu.br/transinfo/article/download/10623/12072/52705",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "936bd0a533e0a412ab17ed1c632a19f1fdab0cfe15027e12fe92354fc2c46a58",
+      "bytes": 157482,
       "descriptor": {
         "type": "StandaloneArticle",
         "creators": [
@@ -91,8 +91,8 @@
       "attribution": "Wikibooks contributors, \"Cognitive Psychology and Cognitive Neuroscience/Memory and Language\", revision 4371851 (2024-02-18)",
       "format": "html",
       "url": "https://en.wikibooks.org/w/index.php?title=Cognitive_Psychology_and_Cognitive_Neuroscience/Memory_and_Language&oldid=4371851&action=render",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "5f9fe44ed0114f2a29f2ae1e2fa5f23897373c70755f5f5011e56eb070d609b1",
+      "bytes": 28178,
       "descriptor": {
         "type": "StandaloneArticle",
         "creators": [{ "name": "Wikibooks contributors", "role": "author" }],
@@ -123,8 +123,8 @@
           "attribution": "Machado de Assis, \"O Alienista\", chapter I; Wikisource revision 515296",
           "format": "html",
           "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/I&oldid=515296&action=render",
-          "sha256": null,
-          "bytes": null,
+          "sha256": "4dd22d926464420bfb896ab94775d32eb646c778fd425e5f57922b282e4dd840",
+          "bytes": 20815,
           "descriptor": { "type": "BookChapter", "chapterNumber": "I" }
         },
         {
@@ -137,8 +137,8 @@
           "attribution": "Machado de Assis, \"O Alienista\", chapter II; Wikisource revision 515300",
           "format": "html",
           "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/II&oldid=515300&action=render",
-          "sha256": null,
-          "bytes": null,
+          "sha256": "d94ec3efa8d0be750f9d5b0e41fd1a54c0d151bdcf308a8dd6464ec1a223876e",
+          "bytes": 18951,
           "descriptor": { "type": "BookChapter", "chapterNumber": "II" }
         },
         {
@@ -151,8 +151,8 @@
           "attribution": "Machado de Assis, \"O Alienista\", chapter III; Wikisource revision 515301",
           "format": "html",
           "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/III&oldid=515301&action=render",
-          "sha256": null,
-          "bytes": null,
+          "sha256": "b41d797e69c266ce25547b08da4a6667316ffc14a724bc4d6ff340953a5e1dae",
+          "bytes": 15874,
           "descriptor": { "type": "BookChapter", "chapterNumber": "III" }
         }
       ]
@@ -167,8 +167,8 @@
       "attribution": "Machado de Assis, \"A Cartomante\" (1884), Várias Histórias (Laemmert & C., 1896); Wikisource revision 518402",
       "format": "html",
       "url": "https://pt.wikisource.org/w/index.php?title=A_Cartomante&oldid=518402&action=render",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "9a053bb3280a371933d40c207e7eed8b715d100ab01bcb892459c1f8e3814873",
+      "bytes": 46789,
       "descriptor": {
         "type": "StandaloneArticle",
         "creators": [{ "name": "Machado de Assis", "role": "author" }],
@@ -185,8 +185,8 @@
       "attribution": "Edgar Allan Poe, \"The Tell-Tale Heart\" (1843), The Works of the Late Edgar Allan Poe (1850), vol. 1; Wikisource revision 14833580",
       "format": "html",
       "url": "https://en.wikisource.org/w/index.php?title=The_Works_of_the_Late_Edgar_Allan_Poe_%281850%29/Volume_1/The_Tell-Tale_Heart&oldid=14833580&action=render",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "163d59d85b57254de67fff1595039cd7458438fbdb68c28139731b12dff3acbb",
+      "bytes": 35591,
       "descriptor": {
         "type": "StandaloneArticle",
         "creators": [{ "name": "Edgar Allan Poe", "role": "author" }],
@@ -203,8 +203,8 @@
       "attribution": "O. Henry, \"The Gift of the Magi\" (1905); Project Gutenberg eBook #7256, plain text without the Project Gutenberg header and license footer",
       "format": "text",
       "url": "https://www.gutenberg.org/cache/epub/7256/pg7256.txt",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "b79da7cde3266140b69ca2d2da2bb07a0e70e6fd3f13c5fa3381269151edb3a8",
+      "bytes": 11425,
       "trim": { "start": "*** START OF", "end": "*** END OF" },
       "descriptor": {
         "type": "StandaloneArticle",
@@ -222,8 +222,8 @@
       "attribution": "The Turing Way Community, The Turing Way handbook, reproducible-research/rdm/rdm-fair.md at commit 84ab5c4f7d9e649d9e2d3fb0a1a04aa144d1295a",
       "format": "markdown",
       "url": "https://raw.githubusercontent.com/the-turing-way/the-turing-way/84ab5c4f7d9e649d9e2d3fb0a1a04aa144d1295a/book/website/reproducible-research/rdm/rdm-fair.md",
-      "sha256": null,
-      "bytes": null,
+      "sha256": "af1d313611884d919c0713b6acbf27557b31f4884f1b1c78307d06b137010b81",
+      "bytes": 7886,
       "descriptor": {
         "type": "StandaloneArticle",
         "creators": [{ "name": "The Turing Way Community", "role": "author" }],
