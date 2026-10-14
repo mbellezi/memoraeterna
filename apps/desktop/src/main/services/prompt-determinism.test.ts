@@ -26,7 +26,7 @@ function expectIdentical(prompts: string[]) {
 
 const source = { title: "Forgetting curve", language: "en" };
 const bodies = ["First excerpt body.", "Second excerpt body.", "Third excerpt body."];
-const emptyGraph = JSON.stringify({ entities: [], claims: [], relations: [] });
+const emptyGraph = JSON.stringify({ entities: [], relations: [] });
 const execution = (output: unknown) => ({
   output,
   providerId: "test",
@@ -55,7 +55,6 @@ describe("knowledge graph prompts", () => {
                 evidenceChunkIds: ["c2"]
               }
             ],
-            claims: [],
             relations: []
           })
         );

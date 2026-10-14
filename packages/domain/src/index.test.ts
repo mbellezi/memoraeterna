@@ -4,13 +4,16 @@ import {
   AtomicNoteGenerationOutputSchema,
   AtomicNoteRelationSchema,
   AtomicNoteSchema,
+  AtomicNoteSearchResultSchema,
+  AtomicNoteStatusSchema,
   DocumentSchema,
   IngestionRunSchema,
   ObsidianSyncFileSchema,
   SearchResultSchema,
   SourceItemSchema,
   SourceItemTypes,
-  StorageSettingsSchema
+  StorageSettingsSchema,
+  WikiLinkedTargetSchema
 } from "./index.js";
 
 const now = "2026-07-05T12:00:00.000Z";
@@ -84,6 +87,46 @@ describe("@app/domain schemas", () => {
     expect(SourceItemSchema.parse(validSourceItem)).toEqual(validSourceItem);
     expect(DocumentSchema.parse(validDocument)).toEqual(validDocument);
     expect(AtomicNoteSchema.parse(validAtomicNote)).toEqual(validAtomicNote);
+  });
+
+  it("accepts the active status of a note at birth wherever a note status crosses a boundary", () => {
+    expect(AtomicNoteSchema.parse({ ...validAtomicNote, status: "active" }).status).toBe("active");
+    expect(AtomicNoteStatusSchema.options).toEqual([
+      "active",
+      "pending_review",
+      "approved",
+      "rejected",
+      "archived"
+    ]);
+    const noteResult = {
+      kind: "atomic_note",
+      noteId: "an_01JABCDEF123456789",
+      sourceItemId: validSourceItem.id,
+      sourceTitle: "Source",
+      sourceType: "StandaloneArticle",
+      title: "Title",
+      ideaStatement: "Idea",
+      excerpt: "Excerpt",
+      textScore: 0.5,
+      vectorScore: 0.5,
+      graphScore: 0,
+      finalScore: 0.5
+    };
+    for (const status of ["active", "pending_review", "approved", "archived"])
+      expect(AtomicNoteSearchResultSchema.parse({ ...noteResult, status }).status).toBe(status);
+    expect(AtomicNoteSearchResultSchema.safeParse({ ...noteResult, status: "draft" }).success).toBe(
+      false
+    );
+    const target = {
+      kind: "atomic_note",
+      id: "00000000-0000-4000-8000-000000000001",
+      title: "Title",
+      markdown: "Body",
+      sourceItemId: null,
+      evidence: [],
+      noteState: { status: "active", protected: false, current: true }
+    };
+    expect(WikiLinkedTargetSchema.parse(target).noteState?.status).toBe("active");
   });
 
   it("rejects invalid SourceItem type values", () => {

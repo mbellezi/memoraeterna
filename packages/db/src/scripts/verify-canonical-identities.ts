@@ -249,7 +249,6 @@ try {
           confidence: 0.8,
           evidenceChunkIds: [chunkId]
         })),
-        claims: [],
         relations: [
           {
             subjectEntityKey: "e0",

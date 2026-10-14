@@ -61,6 +61,22 @@ export function createEmbeddingRepository(db: Queryable) {
       }
       return false;
     },
+    /** Whether the target already has a vector built from exactly this content (any dimension). */
+    async hasContentHash(
+      targetType: UpsertEmbeddingInput["targetType"],
+      targetId: string,
+      contentHash: string
+    ): Promise<boolean> {
+      for (const dimensions of [256, 768, 1024]) {
+        const result = await db.query(
+          `select 1 from embeddings_${dimensions}
+            where target_type = $1 and target_id = $2 and content_hash = $3 limit 1`,
+          [targetType, targetId, contentHash]
+        );
+        if (result.rows.length) return true;
+      }
+      return false;
+    },
     async upsert(input: UpsertEmbeddingInput): Promise<string> {
       const table = embeddingTable(input.embedding.length);
       const result = await db.query<QueryResultRow & { id: string }>(

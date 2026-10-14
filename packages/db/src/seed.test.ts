@@ -91,7 +91,8 @@ describe("baseline seed", () => {
       "0041_knowledge_note_ownership",
       "0042_wiki_editorial_review_impacts",
       "0043_wall_clock_instrumentation",
-      "0044_relation_decisions"
+      "0044_relation_decisions",
+      "0045_notes_active_at_birth"
     ]);
   });
 
@@ -154,7 +155,8 @@ describe("baseline seed", () => {
         "0041_knowledge_note_ownership",
         "0042_wiki_editorial_review_impacts",
         "0043_wall_clock_instrumentation",
-        "0044_relation_decisions"
+        "0044_relation_decisions",
+        "0045_notes_active_at_birth"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

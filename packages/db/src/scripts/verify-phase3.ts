@@ -190,8 +190,8 @@ try {
     generationKey: "second-note",
     metadata: { entities: ["PostgreSQL"] }
   });
-  if (firstNote.status !== "pending_review" || secondNote.status !== "pending_review") {
-    throw new Error("Generated notes did not start pending review.");
+  if (firstNote.status !== "active" || secondNote.status !== "active") {
+    throw new Error("Generated notes were not active at birth.");
   }
   await notes.upsertGenerated({
     title: firstNote.title,

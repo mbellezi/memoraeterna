@@ -26,7 +26,7 @@ function model() {
       else if (id.includes("_identity")) output = { matches: [["r1", "c1"]] };
       else if (id === "graph.relation_labels")
         output = { labels: [{ key: "r1", displayLabel: "Improves recall" }] };
-      else if (id.startsWith("graph.")) output = { entities: [], claims: [], relations: [] };
+      else if (id.startsWith("graph.")) output = { entities: [], relations: [] };
       else if (id === "sources.match") output = { relations: [] };
       else if (id.startsWith("consultation."))
         output = {

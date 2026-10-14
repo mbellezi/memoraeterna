@@ -76,15 +76,6 @@ export const ExtractedGraphEntitySchema = z
   })
   .strict();
 
-export const ExtractedClaimSchema = z
-  .object({
-    text: NonEmptyStringSchema,
-    confidence: ConfidenceScoreSchema,
-    evidenceChunkIds: z.array(StableIdSchema).min(1).max(50),
-    relatedEntityKeys: z.array(z.string().trim().min(1).max(120)).max(30).default([])
-  })
-  .strict();
-
 export const ExtractedEntityRelationSchema = z
   .object({
     subjectEntityKey: z.string().trim().min(1).max(120),
@@ -104,10 +95,9 @@ export const ExtractedEntityRelationSchema = z
   })
   .strict();
 
-export const KnowledgeGraphGenerationOutputSchema = z
+const KnowledgeGraphEntitiesAndRelationsSchema = z
   .object({
     entities: z.array(ExtractedGraphEntitySchema).max(100),
-    claims: z.array(ExtractedClaimSchema).max(100),
     relations: z.array(ExtractedEntityRelationSchema).max(200)
   })
   .strict()
@@ -119,16 +109,6 @@ export const KnowledgeGraphGenerationOutputSchema = z
         message: "entity keys must be unique",
         path: ["entities"]
       });
-    }
-    for (const [index, claim] of output.claims.entries()) {
-      for (const key of claim.relatedEntityKeys) {
-        if (!keys.has(key))
-          context.addIssue({
-            code: "custom",
-            message: "claim references an unknown entity key",
-            path: ["claims", index, "relatedEntityKeys"]
-          });
-      }
     }
     for (const [index, relation] of output.relations.entries()) {
       if (!keys.has(relation.subjectEntityKey) || !keys.has(relation.objectEntityKey)) {
@@ -147,5 +127,18 @@ export const KnowledgeGraphGenerationOutputSchema = z
       }
     }
   });
+
+/**
+ * Knowledge-graph extraction returns entities and relations only (claims are no longer extracted).
+ * A model that still returns `claims` is tolerated: they are dropped before validation and never
+ * stored, so neither their shape nor their evidence aliases can fail an otherwise valid response.
+ */
+export const KnowledgeGraphGenerationOutputSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || !("claims" in value))
+    return value;
+  const rest = { ...(value as Record<string, unknown>) };
+  delete rest.claims;
+  return rest;
+}, KnowledgeGraphEntitiesAndRelationsSchema);
 
 export type KnowledgeGraphGenerationOutput = z.infer<typeof KnowledgeGraphGenerationOutputSchema>;

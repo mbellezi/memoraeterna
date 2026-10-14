@@ -2,7 +2,7 @@ import {
   persistKnowledgeGeneration,
   type KnowledgeGenerationInput
 } from "./hierarchicalIngestionRepository.js";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
@@ -30,13 +30,6 @@ export interface ExtractedEntityInput {
   evidenceChunkIds: string[];
 }
 
-export interface ExtractedClaimInput {
-  text: string;
-  confidence: number;
-  evidenceChunkIds: string[];
-  relatedEntityKeys: string[];
-}
-
 export interface ExtractedRelationInput {
   subjectEntityKey: string;
   predicate: string;
@@ -50,7 +43,6 @@ export interface ExtractedRelationInput {
 
 export interface KnowledgeGraphBatchInput {
   entities: ExtractedEntityInput[];
-  claims: ExtractedClaimInput[];
   relations: ExtractedRelationInput[];
 }
 
@@ -293,7 +285,6 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
     async replaceSourceExtraction(input: ReplaceKnowledgeGraphInput): Promise<{
       entityCount: number;
       mentionCount: number;
-      claimCount: number;
       relationCount: number;
       atomicNoteEntityLinkCount: number;
     }> {
@@ -312,14 +303,12 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         await client.query("delete from entity_relations where source_item_id = $1", [
           input.sourceItemId
         ]);
-        await client.query("delete from claims where source_item_id = $1", [input.sourceItemId]);
         await client.query("delete from entity_mentions where source_item_id = $1", [
           input.sourceItemId
         ]);
 
         const entityIds = new Set<string>();
         let mentionCount = 0;
-        let claimCount = 0;
         let relationCount = 0;
         for (const batch of input.batches) {
           const entitiesByKey = new Map<string, GraphEntityRecord>();
@@ -376,46 +365,6 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                 ]
               );
               mentionCount += mention.rowCount ?? 0;
-            }
-          }
-
-          for (const claim of batch.claims) {
-            const evidenceChunkId = claim.evidenceChunkIds[0];
-            if (!evidenceChunkId) continue;
-            const hash = createHash("sha256").update(claim.text.trim()).digest("hex");
-            const result = await client.query<{ id: string }>(
-              `insert into claims (
-                 source_item_id, evidence_chunk_id, source_span_id, text, content_hash, confidence, metadata
-               ) select $1, c.id, c.source_span_id, $2, $3, $4, $5
-                 from chunks c where c.id = $6 and c.source_item_id = $1
-               on conflict (source_item_id, content_hash) do update set
-                 text = excluded.text,
-                 evidence_chunk_id = excluded.evidence_chunk_id,
-                 source_span_id = excluded.source_span_id,
-                 confidence = excluded.confidence,
-                 metadata = excluded.metadata,
-                 updated_at = now()
-               returning id`,
-              [
-                input.sourceItemId,
-                claim.text,
-                hash,
-                claim.confidence,
-                { ...input.generation, evidenceChunkIds: claim.evidenceChunkIds },
-                evidenceChunkId
-              ]
-            );
-            const claimId = result.rows[0]?.id;
-            if (!claimId) continue;
-            claimCount += 1;
-            for (const key of claim.relatedEntityKeys) {
-              const entityId = entitiesByKey.get(key)?.id;
-              if (!entityId) continue;
-              await client.query(
-                `insert into claim_entity_links (claim_id, entity_id) values ($1, $2)
-                 on conflict (claim_id, entity_id) do nothing`,
-                [claimId, entityId]
-              );
             }
           }
 
@@ -478,7 +427,6 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         return {
           entityCount: entityIds.size,
           mentionCount,
-          claimCount,
           relationCount,
           atomicNoteEntityLinkCount: linked.rowCount ?? 0
         };

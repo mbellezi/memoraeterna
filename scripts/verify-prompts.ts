@@ -659,9 +659,11 @@ try {
       metadata: { ...graphMetadata, promptFingerprint: "graph-new" }
     }
   });
+  // Claims are no longer extracted and stored ones are read-only: a replacement leaves them alone.
   assert.equal(
     (await pool.query("select count(*)::int n from claims where id=$1", [claim])).rows[0].n,
-    0
+    1,
+    "Graph replacement keeps stored claims"
   );
   assert.equal(
     (

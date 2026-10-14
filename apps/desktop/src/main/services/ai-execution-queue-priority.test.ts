@@ -166,6 +166,41 @@ describe("active deadline", () => {
     deadline.dispose();
   });
 
+  it("joins extra cancellation to the deadline, which the queue still finds and pauses", async () => {
+    const parent = new AbortController();
+    const clock = new AbortController();
+    const deadline = new ActiveDeadline(1_000, parent.signal);
+    const joined = deadline.join(clock.signal);
+    expect(joined).not.toBe(deadline.signal);
+    expect(ActiveDeadline.of(joined)).toBe(deadline);
+    // Waiting for an AI slot through the joined signal stops the clock like the deadline's own.
+    ActiveDeadline.of(joined)!.pause();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(joined.aborted).toBe(false);
+    ActiveDeadline.of(joined)!.resume();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(joined.aborted).toBe(true);
+    expect(joined.reason).toMatchObject({ name: "TimeoutError" });
+  });
+
+  it("ends a joined signal with the cancellation of its parent or of the joined work", () => {
+    const parent = new AbortController();
+    const clock = new AbortController();
+    const first = new ActiveDeadline(60_000, parent.signal);
+    const joinedFirst = first.join(clock.signal);
+    clock.abort(new Error("clock closed"));
+    expect(joinedFirst.aborted).toBe(true);
+    expect(joinedFirst.reason).toMatchObject({ message: "clock closed" });
+    expect(first.signal.aborted).toBe(false);
+    const second = new ActiveDeadline(60_000, parent.signal);
+    const joinedSecond = second.join(new AbortController().signal);
+    parent.abort(new Error("canceled"));
+    expect(joinedSecond.aborted).toBe(true);
+    expect(joinedSecond.reason).toMatchObject({ message: "canceled" });
+    first.dispose();
+    second.dispose();
+  });
+
   it("stops for good when disposed", async () => {
     const deadline = new ActiveDeadline(100);
     deadline.pause();

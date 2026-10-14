@@ -71,7 +71,7 @@ export const AtomicNoteSearchResultSchema = z
     title: z.string().min(1),
     ideaStatement: z.string().min(1),
     excerpt: z.string(),
-    status: z.enum(["pending_review", "approved", "archived"]),
+    status: z.enum(["active", "pending_review", "approved", "archived"]),
     textScore: z.number().min(0).max(1),
     vectorScore: z.number().min(0).max(1),
     graphScore: z.number().min(0).max(1),

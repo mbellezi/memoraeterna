@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { PendingAtomicNote } from "../../shared/ipc";
+import { AiNoteBadge } from "./AiNoteBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -74,6 +75,7 @@ export function ReviewQueueView({ t }: { t: Translator }) {
 
   return (
     <section className="grid gap-4">
+      <p className="text-sm text-muted-foreground">{t("knowledge.review.optional")}</p>
       {saveError && (
         <p role="alert" className="text-sm text-red-600">
           {t("obsidianEditing.stale")}
@@ -88,7 +90,10 @@ export function ReviewQueueView({ t }: { t: Translator }) {
             <p className="text-xs text-slate-500">
               {note.sourceTitle ?? t("knowledge.review.unknownSource")}
             </p>
-            <h2 className="font-semibold">{note.title}</h2>
+            <h2 className="flex flex-wrap items-center gap-2 font-semibold">
+              {note.title}
+              <AiNoteBadge t={t} status={note.status} />
+            </h2>
           </div>
           {editing === note.id ? (
             <div className="grid gap-3">

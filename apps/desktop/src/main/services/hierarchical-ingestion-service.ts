@@ -238,7 +238,7 @@ export class HierarchicalIngestionService {
       ) {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
-           where created_from_source_item_id = $1 and ownership='source' and status = 'pending_review' and metadata->>'humanProtected' is distinct from 'true'`,
+           where created_from_source_item_id = $1 and ownership='source' and status in ('active', 'pending_review') and metadata->>'humanProtected' is distinct from 'true'`,
           [sourceItemId]
         );
       }
@@ -327,6 +327,7 @@ export class HierarchicalIngestionService {
             markdown: processingMarkdown,
             effectiveStages,
             ...(plan.forceRegeneration ? { regenerateSourceRelations: true } : {}),
+            ...(plan.knowledgeGraphOnNotes ? { knowledgeGraphOnNotes: true } : {}),
             processingMode: catalogMetadataOnly ? catalogMetadataProcessingMode : "content"
           }
         });

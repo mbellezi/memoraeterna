@@ -884,6 +884,150 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("status <> 'rejected'");
   });
 
+  describe("notes are active at birth and optional to review", () => {
+    const now = new Date("2026-10-14T10:00:00.000Z");
+    const noteRow = (status: string) => ({
+      id: "note-1",
+      generationId: null,
+      supersessionStatus: "current",
+      ownership: "source",
+      title: "Title",
+      bodyMarkdown: "Body",
+      ideaStatement: "Idea",
+      language: "en",
+      status,
+      createdFromSourceItemId: "source-1",
+      sourceSpanId: null,
+      evidenceChunkId: "chunk-1",
+      generationProfileId: null,
+      aiTaskRunId: null,
+      generationProvider: "test",
+      generationModel: "test",
+      generationRuntime: "test",
+      generationPromptVersion: "atomic-note-v4",
+      generationKey: "key",
+      metadata: {},
+      reviewedAt: null,
+      createdAt: now,
+      updatedAt: now
+    });
+    /** Answers for the statements `review` runs on an edit, in order. */
+    const reviewRows = (status: string, queuesJob: boolean) => [
+      [], // begin
+      [noteRow(status)], // lock and read the note
+      [noteRow(status)], // update
+      [], // audit event
+      [], // delete the 256-dimension vector
+      [], // delete the 768-dimension vector
+      [], // delete the 1024-dimension vector
+      ...(queuesJob ? [[], [{ id: "job-1" }]] : []), // queue lock, deduplicated insert
+      [], // revision
+      [] // commit
+    ];
+    const jobQueries = (db: FakeQueryable) =>
+      db.queries.filter((query) => /insert into jobs|pg_advisory_xact_lock/.test(query.text));
+
+    it("inserts generated notes as active and regenerates only notes nobody reviewed or edited", async () => {
+      const db = new FakeQueryable([[], [], [noteRow("active")], [], []]);
+      await createAtomicNoteRepository(db).upsertGenerated({
+        generationId: "00000000-0000-4000-8000-000000000001",
+        title: "Title",
+        bodyMarkdown: "Body",
+        ideaStatement: "Idea",
+        sourceItemId: "source-1",
+        evidenceChunkId: "chunk-1",
+        evidenceLinks: [{ chunkId: "chunk-1" }],
+        generationProvider: "test",
+        generationModel: "test",
+        generationRuntime: "test",
+        generationPromptVersion: "atomic-note-v4",
+        generationKey: "key"
+      });
+      const insert = db.queries.find((query) => query.text.includes("insert into atomic_notes"));
+      // The status is the column default (active since migration 0045), never a literal here.
+      expect(insert?.text.slice(0, insert.text.indexOf("values"))).not.toContain("status");
+      expect(insert?.text).not.toContain("'pending_review',");
+      expect(insert?.text).toContain("atomic_notes.status::text in ('active', 'pending_review')");
+      expect(insert?.text).toContain("humanProtected' is distinct from 'true'");
+    });
+
+    it("offers every unreviewed note for the optional review", async () => {
+      const db = new FakeQueryable([[noteRow("active"), noteRow("pending_review")]]);
+      const pending = await createAtomicNoteRepository(db).listPending(10);
+      expect(pending.map((note) => note.status)).toEqual(["active", "pending_review"]);
+      expect(db.queries[0]?.text).toContain("status in ('active', 'pending_review')");
+    });
+
+    it("queues one deduplicated embedding job per edited note, in the editing transaction", async () => {
+      const db = new FakeQueryable(reviewRows("active", true));
+      const edited = await createAtomicNoteRepository(db).review({
+        id: "note-1",
+        action: "edit",
+        bodyMarkdown: "Edited body"
+      });
+      expect(edited?.status).toBe("active");
+      const texts = db.queries.map((query) => query.text);
+      const lock = texts.findIndex((text) => text.includes("pg_advisory_xact_lock"));
+      expect(lock).toBeGreaterThan(texts.findLastIndex((text) => text.includes("delete from")));
+      expect(texts[lock + 1]).toContain("insert into jobs");
+      expect(texts[lock + 1]).toContain("where not exists");
+      expect(texts[lock + 1]).toContain("status = 'queued'");
+      expect(db.queries[lock + 1]?.values).toEqual(["note-embedding", 10, "note-1", "source-1"]);
+      expect(texts.at(-1)).toBe("commit");
+    });
+
+    it.each([
+      ["approve", "active"],
+      ["discard", "active"]
+    ] as const)("queues nothing when the note is %sd", async (action, status) => {
+      const rows = reviewRows(status, false);
+      rows.splice(4, 3);
+      const db = new FakeQueryable(rows);
+      await createAtomicNoteRepository(db).review({ id: "note-1", action });
+      expect(jobQueries(db)).toEqual([]);
+    });
+
+    it.each(["rejected", "archived"])(
+      "does not rebuild the vector of a %s note",
+      async (status) => {
+        const db = new FakeQueryable(reviewRows(status, false));
+        await createAtomicNoteRepository(db).review({
+          id: "note-1",
+          action: "edit",
+          bodyMarkdown: "Edited body"
+        });
+        expect(jobQueries(db)).toEqual([]);
+      }
+    );
+
+    it("reports whether a job was queued or one already waited", async () => {
+      const queued = new FakeQueryable([[], [{ id: "job" }]]);
+      const waiting = new FakeQueryable([[], []]);
+      const input = { atomicNoteId: "note-1", sourceItemId: "source-1" };
+      expect(await createJobRepository(queued).enqueueNoteEmbedding(input)).toBe(true);
+      expect(await createJobRepository(waiting).enqueueNoteEmbedding(input)).toBe(false);
+      // A running job may have read the text before the edit, so only a queued one deduplicates.
+      expect(waiting.queries[1]?.text).toContain("status = 'queued'");
+      expect(waiting.queries[1]?.text).not.toContain("'running'");
+    });
+
+    it("recognizes a vector built from the current text of a note", async () => {
+      const db = new FakeQueryable([[], [], [{ "?column?": 1 }]]);
+      expect(await createEmbeddingRepository(db).hasContentHash("atomic_note", "note-1", "h")).toBe(
+        true
+      );
+      expect(db.queries.map((query) => query.text.includes("embeddings_"))).toEqual([
+        true,
+        true,
+        true
+      ]);
+      const none = new FakeQueryable([[], [], []]);
+      expect(await createEmbeddingRepository(none).hasContentHash("atomic_note", "n", "h")).toBe(
+        false
+      );
+    });
+  });
+
   it("retrieves atomic-note text and vector rankings independently", async () => {
     const db = new FakeQueryable([[], [], []]);
     const notes = createAtomicNoteRepository(db);

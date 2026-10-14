@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type { WikiLinkedTargetSchema, WikiEvidence } from "@app/domain";
 import type { Translator } from "@app/i18n";
+import { AiNoteBadge } from "./AiNoteBadge";
 import { MarkdownPreview } from "./MarkdownEditor";
 import { WikiPageLinksContext, lookupWikiLink } from "./wiki-page-sync";
 /**
@@ -128,13 +129,16 @@ export function WikiTypedLink({
       {open && (
         <div className="mt-3 grid gap-3">
           {value.noteState && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                ("knowledge.notes.status." +
-                  value.noteState.status) as import("@app/i18n").MessageKey
-              )}{" "}
-              · {t(value.noteState.current ? "obsidianWiki.current" : "obsidianWiki.historical")}
-              {value.noteState.protected ? " · " + t("obsidianWiki.protected") : ""}
+            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <AiNoteBadge t={t} status={value.noteState.status} />
+              <span>
+                {t(
+                  ("knowledge.notes.status." +
+                    value.noteState.status) as import("@app/i18n").MessageKey
+                )}{" "}
+                · {t(value.noteState.current ? "obsidianWiki.current" : "obsidianWiki.historical")}
+                {value.noteState.protected ? " · " + t("obsidianWiki.protected") : ""}
+              </span>
             </p>
           )}
           <MarkdownPreview

@@ -845,7 +845,7 @@ export const atomicNoteViewSchema = z
     bodyMarkdown: z.string().min(1),
     ideaStatement: z.string().min(1),
     language: z.string().min(1),
-    status: z.enum(["pending_review", "approved", "rejected", "archived"]),
+    status: z.enum(["active", "pending_review", "approved", "rejected", "archived"]),
     sourceItemId: z.string().uuid(),
     sourceSpanId: z.string().uuid().nullable(),
     evidenceChunkId: z.string().uuid(),
@@ -872,7 +872,7 @@ export const knowledgeGraphDashboardNodeSchema = z
     content: z.string().max(4_000).nullable(),
     sourceItemId: z.string().uuid(),
     sourceType: SourceItemTypeSchema.nullable(),
-    noteStatus: z.enum(["pending_review", "approved", "rejected", "archived"]).nullable(),
+    noteStatus: z.enum(["active", "pending_review", "approved", "rejected", "archived"]).nullable(),
     detailCount: z.number().int().nonnegative(),
     parentSourceItemId: z.string().uuid().nullable(),
     childCount: z.number().int().nonnegative()

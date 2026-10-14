@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import type { QueryResultRow } from "pg";
 
+import { createJobRepository } from "./jobRepository.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { AtomicNoteRecord, AtomicNoteStatus, JsonObject, Queryable } from "./types.js";
 
@@ -111,13 +112,15 @@ export function createAtomicNoteRepository(db: Queryable) {
         const generationId =
           input.generationId ?? (await ensureLegacyGeneration(connection, input));
         const result = await connection.query<AtomicNoteRow>(
+          // The status is the column default: a generated note is active at birth. Leaving it out
+          // keeps this insert valid on a database that has not reached migration 0045 yet.
           `insert into atomic_notes (
-             title, body_markdown, idea_statement, language, status,
+             title, body_markdown, idea_statement, language,
              created_from_source_item_id, source_span_id, evidence_chunk_id,
              generation_profile_id, ai_task_run_id, generation_provider,
              generation_model, generation_runtime, generation_prompt_version,
              generation_key, metadata, generation_id
-           ) values ($1, $2, $3, $4, 'pending_review', $5, $6, $7, $8, $9,
+           ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                      $10, $11, $12, $13, $14, $15, $16)
            on conflict (created_from_source_item_id, generation_id, generation_key) do update set
              title = excluded.title,
@@ -133,7 +136,9 @@ export function createAtomicNoteRepository(db: Queryable) {
              generation_runtime = excluded.generation_runtime,
              metadata = excluded.metadata,
              updated_at = now()
-           where coalesce(to_jsonb(atomic_notes)->>'ownership','source')='source' and atomic_notes.status = 'pending_review' and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
+           where coalesce(to_jsonb(atomic_notes)->>'ownership','source')='source'
+             and atomic_notes.status::text in ('active', 'pending_review')
+             and atomic_notes.metadata->>'humanProtected' is distinct from 'true'
            returning ${returning}`,
           [
             input.title,
@@ -228,10 +233,11 @@ export function createAtomicNoteRepository(db: Queryable) {
       }));
     },
 
+    /** Notes nobody has approved or discarded yet (review is optional, never a gate). */
     async listPending(limit = 100): Promise<AtomicNoteRecord[]> {
       const result = await db.query<AtomicNoteRow>(
         `select ${returning} from atomic_notes
-         where status = 'pending_review' order by created_at limit $1`,
+         where status in ('active', 'pending_review') order by created_at limit $1`,
         [limit]
       );
       return result.rows.map(mapNote);
@@ -313,12 +319,20 @@ export function createAtomicNoteRepository(db: Queryable) {
             }
           ]
         );
-        if (input.action === "edit")
+        if (input.action === "edit") {
           for (const dimensions of [256, 768, 1024])
             await connection.query(
               `delete from embeddings_${dimensions} where target_type='atomic_note' and target_id=$1`,
               [input.id]
             );
+          // The embedding is derived from the text: rebuilding it is ordinary background work.
+          // Discarded and archived notes never take part in matching, so they are not rebuilt.
+          if (nextStatus !== "rejected" && nextStatus !== "archived")
+            await createJobRepository(connection).enqueueNoteEmbedding({
+              atomicNoteId: input.id,
+              sourceItemId: current.createdFromSourceItemId
+            });
+        }
         if (input.action === "edit")
           await connection.query(
             "insert into atomic_note_revisions(note_id,previous,current) values($1,$2,$3)",

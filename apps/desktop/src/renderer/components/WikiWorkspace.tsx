@@ -17,6 +17,7 @@ import {
 } from "./wiki-page-sync";
 import type { ObsidianDeepLink } from "../../shared/obsidian-deep-link.js";
 import { ConsultationDialog } from "./ConsultationDialog";
+import { AiNoteBadge } from "./AiNoteBadge";
 import { SourceTypeBadge } from "./LibraryView";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -637,7 +638,9 @@ export function WikiWorkspace({
               ) : null}
             </span>
             {r.exact ? <span className="text-cyan-600">{t("wiki.exact")}</span> : null}
-            {r.review ? (
+            {r.review === "active" ? (
+              <AiNoteBadge t={t} status={r.review} />
+            ) : r.review ? (
               <span>
                 {r.review === "draft" || r.review === "reviewed"
                   ? t(`wiki.${r.review}`)

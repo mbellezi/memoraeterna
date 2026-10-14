@@ -145,12 +145,7 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
   const forbiddenHoldout = mapping.forbiddenRootPairs.filter((e) => e.partition === "holdout");
   const expectedTuning = mapping.expectedRootPairs.filter((e) => e.partition === "tuning");
 
-  async function addNote(
-    n: number,
-    root: string,
-    status = "pending_review",
-    supersession = "current"
-  ) {
+  async function addNote(n: number, root: string, status = "active", supersession = "current") {
     const record = mapping.roots.find((r) => r.id === root)!;
     const source = record.records[0] ? uid(1000 + n) : rootSource.get(root)!;
     if (record.records[0])
@@ -260,7 +255,7 @@ describe.skipIf(!sidecarInstalled)("the evaluator on a real PostgreSQL database"
     await relate(noteOf.get(f0)!, noteOf.get(f1)!, "rejected");
     // A rejected and a superseded note of the library are not the library's notes.
     const rejectedNote = await addNote(50, f0, "rejected");
-    const supersededNote = await addNote(51, f1, "pending_review", "superseded");
+    const supersededNote = await addNote(51, f1, "active", "superseded");
     await relate(rejectedNote, noteOf.get(f1)!, "pending_review");
     await relate(noteOf.get(f0)!, supersededNote, "pending_review");
     // Tuning: an expected pair linked only through a source relation.

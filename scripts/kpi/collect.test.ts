@@ -86,7 +86,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     expect(library.notes).toEqual({
       total: 5,
       current: 3,
-      byStatus: { pending_review: 3, approved: 1, rejected: 1 }
+      byStatus: { active: 2, pending_review: 1, approved: 1, rejected: 1 }
     });
     expect(library.documents).toBe(1);
     expect(library.chunks).toBe(1);
@@ -343,11 +343,11 @@ async function seed(pool: PgPool): Promise<void> {
 
   // Notes: two current members, a rejected one, a superseded one and a current one outside the wiki.
   for (const [n, status, supersession] of [
-    [11, "pending_review", "current"],
+    [11, "active", "current"],
     [12, "approved", "current"],
     [13, "rejected", "current"],
     [14, "pending_review", "superseded"],
-    [15, "pending_review", "current"]
+    [15, "active", "current"]
   ] as const) {
     await q(
       `insert into atomic_notes (id, title, body_markdown, idea_statement, created_from_source_item_id,

@@ -164,7 +164,7 @@ export const WikiLinkedTargetSchema = z
   .object({
     noteState: z
       .object({
-        status: z.enum(["pending_review", "approved", "rejected", "archived"]),
+        status: z.enum(["active", "pending_review", "approved", "rejected", "archived"]),
         protected: z.boolean(),
         current: z.boolean()
       })

@@ -41,7 +41,9 @@ export const QuestionSchema = z
 
 export type Question = z.infer<typeof QuestionSchema>;
 
+/** `active` is the status of a generated note at birth: usable at once, review is optional. */
 export const AtomicNoteStatusSchema = z.enum([
+  "active",
   "pending_review",
   "approved",
   "rejected",

@@ -38,6 +38,7 @@ import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportView, childSourceType } from "./ImportView";
+import { AiNoteBadge } from "./AiNoteBadge";
 import { Tabs } from "./ui/tabs";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -1985,7 +1986,7 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
     .toSorted((left, right) => left.sourceTitle.localeCompare(right.sourceTitle));
 }
 
-function AtomicNoteCard({
+export function AtomicNoteCard({
   note,
   focused = false,
   t
@@ -2025,6 +2026,7 @@ function AtomicNoteCard({
           <span className="rounded-full bg-slate-200 px-2 py-1 text-xs dark:bg-slate-800">
             {t(noteStatusKey(note.status))}
           </span>
+          <AiNoteBadge t={t} status={note.status} />
           {note.supersessionStatus !== "current" && (
             <span className="text-xs text-amber-700 dark:text-amber-300">
               {t("knowledgeEvolution.supersededNote")}

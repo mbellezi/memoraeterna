@@ -273,12 +273,65 @@ try {
             evidenceChunkIds: [graphChunkId]
           }
         ],
-        claims: [
+        relations: [
           {
-            text: "PostgreSQL supports vector search.",
+            subjectEntityKey: "postgres",
+            predicate: "supports",
+            objectEntityKey: "vector",
             confidence: 1,
-            evidenceChunkIds: [graphChunkId],
-            relatedEntityKeys: ["postgres", "vector"]
+            evidenceChunkIds: [graphChunkId]
+          }
+        ]
+      }
+    ]
+  });
+  if (
+    graphPersistence.entityCount !== 2 ||
+    graphPersistence.relationCount !== 1 ||
+    graphPersistence.atomicNoteEntityLinkCount !== 4
+  ) {
+    throw new Error("Knowledge graph SQL persistence failed.");
+  }
+  // Claims are no longer extracted: persisting a graph writes none and leaves the existing ones
+  // (read-only legacy data) as they are.
+  if (
+    Number(
+      (
+        await pool.query("select count(*)::int as n from claims where source_item_id = $1", [
+          graphSource.id
+        ])
+      ).rows[0]?.n
+    ) !== 0
+  ) {
+    throw new Error("Knowledge graph persistence wrote claims.");
+  }
+  await pool.query(
+    `insert into claims (source_item_id, evidence_chunk_id, text, content_hash, confidence)
+     values ($1, $2, 'PostgreSQL supports vector search.', 'legacy-claim', 1)`,
+    [graphSource.id, graphChunkId]
+  );
+  await graph.replaceSourceExtraction({
+    sourceItemId: graphSource.id,
+    language: "en",
+    generation: { provider: "verify", model: "verify", promptVersion: "knowledge-graph-v8" },
+    batches: [
+      {
+        entities: [
+          {
+            key: "postgres",
+            type: "Product",
+            canonicalName: "PostgreSQL",
+            aliases: [],
+            confidence: 1,
+            evidenceChunkIds: [graphChunkId]
+          },
+          {
+            key: "vector",
+            type: "Concept",
+            canonicalName: "Vector search",
+            aliases: [],
+            confidence: 1,
+            evidenceChunkIds: [graphChunkId]
           }
         ],
         relations: [
@@ -294,12 +347,15 @@ try {
     ]
   });
   if (
-    graphPersistence.entityCount !== 2 ||
-    graphPersistence.claimCount !== 1 ||
-    graphPersistence.relationCount !== 1 ||
-    graphPersistence.atomicNoteEntityLinkCount !== 4
+    Number(
+      (
+        await pool.query("select count(*)::int as n from claims where source_item_id = $1", [
+          graphSource.id
+        ])
+      ).rows[0]?.n
+    ) !== 1
   ) {
-    throw new Error("Knowledge graph SQL persistence failed.");
+    throw new Error("Knowledge graph persistence removed or wrote claims.");
   }
   const noteElements = await graph.listAtomicNoteElements([graphNote.id]);
   const extracted = noteElements.get(graphNote.id);

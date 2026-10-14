@@ -1136,6 +1136,7 @@ function jobTypeMessageKey(type: string): MessageKey {
         "markdown-conversion": "jobs.types.conversion",
         chunking: "jobs.types.chunking",
         embedding: "jobs.types.embedding",
+        "note-embedding": "jobs.types.noteEmbedding",
         summarization: "jobs.types.summarization",
         "atomic-note-generation": "jobs.types.atomicNoteGeneration",
         "knowledge-graph-generation": "jobs.types.knowledgeGraphGeneration",

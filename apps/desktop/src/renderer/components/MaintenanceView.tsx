@@ -113,6 +113,28 @@ export function maintenancePreviewPath(run: MaintenanceRun, pageId: string) {
   return path;
 }
 type Page = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
+/**
+ * The policy a new routine starts from, with an empty scope to be chosen. Legacy wiki stopgap: it
+ * does not wait for the operating system to be idle; the person can still turn that on.
+ */
+export function newMaintenancePolicy(name: string, timezone: string): MaintenancePolicy {
+  return {
+    ...MaintenancePolicySchema.parse({
+      name,
+      scope: { wholeLibrary: true },
+      categories: ["navigation", "knowledge", "evidence"],
+      idleOnly: false,
+      cadence: { timezone }
+    }),
+    scope: {
+      wholeLibrary: false,
+      includePageDescendants: true,
+      pageIds: [],
+      sourceIds: [],
+      excludedPageIds: []
+    }
+  };
+}
 function ScheduleEditor({
   schedule,
   pages,
@@ -131,21 +153,11 @@ function ScheduleEditor({
   onSaved: () => void;
 }) {
   const [policy, setPolicy] = useState<MaintenancePolicy>(
-      schedule?.policy ?? {
-        ...MaintenancePolicySchema.parse({
-          name: t("maintenance.weekly"),
-          scope: { wholeLibrary: true },
-          categories: ["navigation", "knowledge", "evidence"],
-          cadence: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
-        }),
-        scope: {
-          wholeLibrary: false,
-          includePageDescendants: true,
-          pageIds: [],
-          sourceIds: [],
-          excludedPageIds: []
-        }
-      }
+      schedule?.policy ??
+        newMaintenancePolicy(
+          t("maintenance.weekly"),
+          Intl.DateTimeFormat().resolvedOptions().timeZone
+        )
     ),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<MessageKey | null>(null),

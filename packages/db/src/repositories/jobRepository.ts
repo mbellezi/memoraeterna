@@ -97,8 +97,38 @@ function mapJob(row: JobRow): JobRecord {
   };
 }
 
+/** Re-embeds one atomic note after its text changed; background work that never calls a generative model. */
+export const noteEmbeddingJobType = "note-embedding";
+/** Short job: it runs ahead of the long ingestion jobs that were queued before it. */
+const noteEmbeddingJobPriority = 10;
+
 export function createJobRepository(db: Queryable) {
   return {
+    /**
+     * Queues the re-embedding of a note unless one is already waiting for it. A queued job reads
+     * the note when it runs, so it covers every edit made before then; a running job may have read
+     * the text before the edit, so it does not count. Call it inside the editing transaction: the
+     * lock then makes concurrent edits of one note queue a single job.
+     */
+    async enqueueNoteEmbedding(input: {
+      atomicNoteId: string;
+      sourceItemId: string;
+    }): Promise<boolean> {
+      await db.query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
+        `${noteEmbeddingJobType}:${input.atomicNoteId}`
+      ]);
+      const result = await db.query(
+        `insert into jobs (type, priority, payload)
+         select $1, $2, jsonb_build_object('atomicNoteId', $3::text, 'sourceItemId', $4::text)
+          where not exists (
+            select 1 from jobs
+             where type = $1 and status = 'queued' and payload->>'atomicNoteId' = $3::text
+          )`,
+        [noteEmbeddingJobType, noteEmbeddingJobPriority, input.atomicNoteId, input.sourceItemId]
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
     async create(input: CreateJobInput): Promise<JobRecord> {
       const row = await insertRow<JobRow>(
         db,

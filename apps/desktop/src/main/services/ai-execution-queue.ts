@@ -126,6 +126,16 @@ export class ActiveDeadline {
     return signal ? activeDeadlines.get(signal) : undefined;
   }
 
+  /**
+   * A signal that also ends with `others`, for work that adds its own cancellation to the
+   * deadline's: the queue still finds this deadline on it and stops its clock while it waits.
+   */
+  public join(...others: AbortSignal[]): AbortSignal {
+    const joined = AbortSignal.any([this.signal, ...others]);
+    activeDeadlines.set(joined, this);
+    return joined;
+  }
+
   /** The owner starts waiting for an execution slot: the clock stops. */
   public pause(): void {
     this.waiting++;

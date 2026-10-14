@@ -7,7 +7,8 @@ import {
   MaintenanceExplanation,
   MaintenanceView,
   formatOccurrence,
-  maintenancePreviewPath
+  maintenancePreviewPath,
+  newMaintenancePolicy
 } from "./MaintenanceView";
 describe("maintenance settings presentation", () => {
   it("discloses inspection and an explicit add action with loading state in every locale", () => {
@@ -19,6 +20,17 @@ describe("maintenance settings presentation", () => {
       expect(html).toContain('role="status"');
       expect(html).not.toContain("maintenance.description");
     }
+  });
+  it("starts a new routine without the operating-system idle gate and still disabled", () => {
+    const policy = newMaintenancePolicy("Weekly", "Europe/London");
+    expect(policy).toMatchObject({
+      name: "Weekly",
+      enabled: false,
+      idleOnly: false,
+      routine: "weekly",
+      cadence: { timezone: "Europe/London" }
+    });
+    expect(policy.scope.wholeLibrary).toBe(false);
   });
   it("does not throw while a timezone is partially typed", () => {
     expect(formatOccurrence("2026-09-09T09:00Z", "Europe/", "pt-BR")).toBe("");

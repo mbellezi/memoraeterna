@@ -17,7 +17,7 @@ export const summaryPromptVersion = "summary-v3";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
 export const atomicNoteMatchingVersion = "atomic-note-matching-v7";
-export const knowledgeGraphPromptVersion = "knowledge-graph-v7";
+export const knowledgeGraphPromptVersion = "knowledge-graph-v8";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
@@ -116,14 +116,7 @@ export function limitKnowledgeGraphBatches(
       relationCount += 1;
       return true;
     });
-    return {
-      entities,
-      claims: batch.claims.map((claim) => ({
-        ...claim,
-        relatedEntityKeys: claim.relatedEntityKeys.filter((key) => allowedKeys.has(key))
-      })),
-      relations
-    };
+    return { entities, relations };
   });
 }
 
@@ -384,7 +377,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
         [...checkpoints.map((checkpoint) => checkpoint.batch), parsed],
         options.extractionLimits
       );
-      parsed = limited.at(-1) ?? { entities: [], claims: [], relations: [] };
+      parsed = limited.at(-1) ?? { entities: [], relations: [] };
     }
     if (options.resolveRelations) parsed = await options.resolveRelations(parsed);
     checkpoints.push({
@@ -1188,7 +1181,9 @@ function resolveGraphEvidenceAliases(
   evidenceAliases: ReadonlyMap<string, string>
 ): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
-  const root = value as Record<string, unknown>;
+  // Claims are no longer extracted: a model that still returns them is ignored, aliases included.
+  const root = { ...(value as Record<string, unknown>) };
+  delete root.claims;
   const resolveItems = (items: unknown): unknown =>
     Array.isArray(items)
       ? items.map((item) => {
@@ -1209,7 +1204,6 @@ function resolveGraphEvidenceAliases(
   return {
     ...root,
     entities: resolveItems(root.entities),
-    claims: resolveItems(root.claims),
     relations: resolveItems(root.relations)
   };
 }

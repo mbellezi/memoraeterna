@@ -22,6 +22,26 @@ describe("automatic maintenance clock and calendar", () => {
       defaults.every((p) => p.allowance.spend === null && p.monthAllowance.spend === null)
     ).toBe(true);
   });
+  it("starts new profiles with the weekly and monthly routines off and no operating-system idle gate", () => {
+    expect(defaults.map((p) => [p.kind, p.enabled, p.idleSeconds])).toEqual([
+      ["incremental", true, 0],
+      ["daily", true, 0],
+      ["weekly", false, 0],
+      ["monthly", false, 0]
+    ]);
+  });
+  it("leaves stored routines alone: a stored policy keeps its own idle gate and switches", () => {
+    const stored = structuredClone(defaults[2]!) as Record<string, unknown>;
+    // A routine saved before the defaults changed carries its own values, or none for the gate.
+    stored.enabled = true;
+    stored.idleSeconds = 120;
+    expect(AutomaticRoutinePolicySchema.parse(stored)).toMatchObject({
+      enabled: true,
+      idleSeconds: 120
+    });
+    delete stored.idleSeconds;
+    expect(AutomaticRoutinePolicySchema.parse(stored).idleSeconds).toBe(60);
+  });
   it("debounces incremental work and computes daily, Sunday and first-of-month local instants", () => {
     const after = new Date("2026-09-12T00:00:00Z");
     expect(defaults.map((p) => automaticNext(p, after))).toEqual([

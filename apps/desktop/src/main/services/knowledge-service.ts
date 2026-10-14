@@ -945,7 +945,6 @@ export class KnowledgeService {
         generated: false,
         projected: false,
         entityCount: 0,
-        claimCount: 0,
         relationCount: 0
       };
     }
@@ -987,7 +986,6 @@ export class KnowledgeService {
         generated: false,
         projected: false,
         entityCount: 0,
-        claimCount: 0,
         relationCount: 0
       };
     }
@@ -1140,7 +1138,6 @@ export class KnowledgeService {
         generated: false,
         projected: false,
         entityCount: 0,
-        claimCount: 0,
         relationCount: 0
       };
     }
@@ -1196,7 +1193,6 @@ export class KnowledgeService {
         generated: false,
         projected: false,
         entityCount: 0,
-        claimCount: 0,
         relationCount: 0
       };
     }
@@ -1292,6 +1288,63 @@ export class KnowledgeService {
     };
   }
 
+  /**
+   * Rebuilds the vector of one note after a human edit invalidated it. Ordinary background work
+   * (the `note-embedding` job): it only calls the embedding model, never a generative one, and a
+   * provider failure is thrown so the job retries it.
+   */
+  public async embedAtomicNote(
+    noteId: string,
+    signal?: AbortSignal,
+    logContext: AiTaskLogContext = {}
+  ): Promise<{
+    embedded: boolean;
+    reason?: "note_not_found" | "note_not_current" | "unchanged" | "no_embedding";
+  }> {
+    const pool = this.requirePool();
+    const note = await createAtomicNoteRepository(pool).findById(noteId);
+    if (!note) return { embedded: false, reason: "note_not_found" };
+    // A discarded or archived note takes no part in matching or search.
+    if (note.status === "rejected" || note.status === "archived")
+      return { embedded: false, reason: "note_not_current" };
+    const text = atomicNoteEmbeddingText(note);
+    // Matching may have embedded the edited text already.
+    if (await createEmbeddingRepository(pool).hasContentHash("atomic_note", note.id, sha256(text)))
+      return { embedded: false, reason: "unchanged" };
+    const execution = await this.options.aiService.runDefaultTask(
+      "embedding",
+      text,
+      withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_embedding" }, [
+        note.createdFromSourceItemId
+      ]),
+      signal
+    );
+    const embedding = readEmbedding(execution?.output);
+    if (!execution || !embedding) return { embedded: false, reason: "no_embedding" };
+    await this.storeAtomicNoteEmbedding(note, execution, embedding);
+    return { embedded: true };
+  }
+
+  private async storeAtomicNoteEmbedding(
+    note: AtomicNoteRecord,
+    execution: DefaultAiTaskResult,
+    embedding: number[]
+  ): Promise<void> {
+    await createEmbeddingRepository(this.requirePool()).upsert({
+      targetType: "atomic_note",
+      targetId: note.id,
+      provider: execution.providerId,
+      model: execution.modelId,
+      runtime: execution.runtime,
+      usage: "matching",
+      strategy: execution.embeddingSpaceKey
+        ? `native-v2:${execution.embeddingSpaceKey}`
+        : "native-unidentified",
+      contentHash: sha256(atomicNoteEmbeddingText(note)),
+      embedding
+    });
+  }
+
   public async matchAtomicNotes(
     noteIds: string[],
     signal?: AbortSignal,
@@ -1323,11 +1376,7 @@ export class KnowledgeService {
       }
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
-        renderPrompt("embedding.content.note", {
-          note_title: note.title,
-          note_idea: note.ideaStatement,
-          note_body: note.bodyMarkdown
-        }),
+        atomicNoteEmbeddingText(note),
         signal,
         withAiSourceItems(
           { ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" },
@@ -1335,27 +1384,8 @@ export class KnowledgeService {
         )
       );
       const embedding = readEmbedding(embeddingExecution?.output);
-      if (embedding && embeddingExecution) {
-        await createEmbeddingRepository(pool).upsert({
-          targetType: "atomic_note",
-          targetId: note.id,
-          provider: embeddingExecution.providerId,
-          model: embeddingExecution.modelId,
-          runtime: embeddingExecution.runtime,
-          usage: "matching",
-          strategy: embeddingExecution.embeddingSpaceKey
-            ? `native-v2:${embeddingExecution.embeddingSpaceKey}`
-            : "native-unidentified",
-          contentHash: sha256(
-            renderPrompt("embedding.content.note", {
-              note_title: note.title,
-              note_idea: note.ideaStatement,
-              note_body: note.bodyMarkdown
-            })
-          ),
-          embedding
-        });
-      }
+      if (embedding && embeddingExecution)
+        await this.storeAtomicNoteEmbedding(note, embeddingExecution, embedding);
       const textCandidates = await notes.findTextMatchingCandidates({
         noteId,
         limit: matchingSettings.textCandidateLimit
@@ -1944,6 +1974,15 @@ function withAiSourceItems(context: AiTaskLogContext, sourceItemIds: string[]): 
     ...(combined[0] ? { sourceItemId: combined[0] } : {}),
     sourceItemIds: combined
   };
+}
+
+/** The text a note is embedded from; its hash tells whether a stored vector is still current. */
+function atomicNoteEmbeddingText(note: AtomicNoteRecord): string {
+  return renderPrompt("embedding.content.note", {
+    note_title: note.title,
+    note_idea: note.ideaStatement,
+    note_body: note.bodyMarkdown
+  });
 }
 
 function serializeNote(note: AtomicNoteRecord) {

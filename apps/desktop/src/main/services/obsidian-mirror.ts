@@ -449,6 +449,8 @@ export async function buildObsidianMirror(
     );
     const noteState = [
       t(("knowledge.notes.status." + note.status) as MessageKey),
+      // AI provenance until a person approves, edits or discards the note.
+      note.status === "active" ? t("knowledge.notes.aiBadge") : "",
       t(note.current ? "obsidianWiki.current" : "obsidianWiki.historical"),
       note.metadata?.humanProtected === true ? t("obsidianWiki.protected") : ""
     ]

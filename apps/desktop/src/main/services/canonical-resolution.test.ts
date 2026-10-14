@@ -60,7 +60,6 @@ const batch = (): KnowledgeGraphGenerationOutput => ({
       evidenceChunkIds: [id]
     }
   ],
-  claims: [],
   relations: [
     {
       subjectEntityKey: "e1",

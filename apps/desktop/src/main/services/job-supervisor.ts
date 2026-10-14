@@ -98,6 +98,7 @@ const supportedJobTypes = new Set<string>([
   "markdown-conversion",
   "chunking",
   "embedding",
+  "note-embedding",
   "atomic-note-generation",
   "obsidian-sync",
   "asset-storage"
@@ -188,15 +189,17 @@ export class JobSupervisor {
                     ? await this.options.processRelationLabels!(taskJob, controller.signal)
                     : job.type === "ingestion"
                       ? await this.executeIngestion(taskJob, controller)
-                      : await this.workers.execute(
-                          job.type as WorkerTask["type"],
-                          taskJob.payload,
-                          {
-                            signal: controller.signal,
-                            onProgress: (progress) =>
-                              this.trackProgress(repository.reportProgress(job.id, progress))
-                          }
-                        )
+                      : job.type === "note-embedding"
+                        ? await this.executeNoteEmbedding(taskJob, controller.signal)
+                        : await this.workers.execute(
+                            job.type as WorkerTask["type"],
+                            taskJob.payload,
+                            {
+                              signal: controller.signal,
+                              onProgress: (progress) =>
+                                this.trackProgress(repository.reportProgress(job.id, progress))
+                            }
+                          )
         );
       const result = await (this.options.traceOperation?.(
         job.type,
@@ -450,6 +453,22 @@ export class JobSupervisor {
           if (next !== null) this.schedule(next);
         });
     }, delay);
+  }
+
+  /**
+   * Rebuilds the vector of one note a human edited. It only calls the embedding model, never a
+   * generative one; a provider failure is retried like any other job.
+   */
+  private async executeNoteEmbedding(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
+    const atomicNoteId = readString(job.payload, "atomicNoteId");
+    const sourceItemId = optionalString(job.payload.sourceItemId);
+    if (!this.options.knowledgeService) return { embedded: false, reason: "knowledge_unavailable" };
+    const result = await this.options.knowledgeService.embedAtomicNote(atomicNoteId, signal, {
+      jobId: job.id,
+      stage: "note_embedding",
+      ...(sourceItemId ? { sourceItemId } : {})
+    });
+    return { ...result };
   }
 
   private async executeIngestion(
@@ -774,7 +793,10 @@ export class JobSupervisor {
                     {
                       jobId: stageJobId,
                       ingestionRunId,
-                      includeAtomicNotesGraph: shouldRun("atomicNotes"),
+                      // One graph pass over the chunks per source; a second pass over the notes
+                      // only when the processing plan asks for it.
+                      includeAtomicNotesGraph:
+                        shouldRun("atomicNotes") && job.payload.knowledgeGraphOnNotes === true,
                       completedBatches: graphMetadata?.completedBatches,
                       onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
                       onBatchCompleted: async ({ completed, total, checkpoints }) => {

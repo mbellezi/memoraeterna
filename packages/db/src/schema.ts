@@ -76,6 +76,7 @@ export const obsidianSyncStatus = pgEnum("obsidian_sync_status", [
 ]);
 
 export const atomicNoteStatus = pgEnum("atomic_note_status", [
+  "active",
   "pending_review",
   "approved",
   "rejected",
@@ -1456,7 +1457,7 @@ export const atomicNotes = pgTable(
     bodyMarkdown: text("body_markdown").notNull(),
     ideaStatement: text("idea_statement").notNull(),
     language: varchar("language", { length: 16 }).notNull().default("und"),
-    status: atomicNoteStatus("status").notNull().default("pending_review"),
+    status: atomicNoteStatus("status").notNull().default("active"),
     createdFromSourceItemId: uuid("created_from_source_item_id").notNull(),
     ownership: text("ownership").notNull().default("source"),
     owningSourceItemId: uuid("owning_source_item_id").references(() => sourceItems.id, {

@@ -25,9 +25,12 @@ import {
   renderPrompt,
   withOutputLanguageInstruction
 } from "./prompt-runtime.js";
+import { ActiveDeadline } from "./ai-execution-queue.js";
 import { estimateAiPlanningTokens } from "./ai-task-parameters.js";
 import { withAutomaticMaintenanceClock } from "./automatic-maintenance-clock.js";
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
+/** Active time (excluding the wait for an AI slot) one followed question may use per evaluation. */
+export const investigationTimeoutMs = 120_000;
 export function investigationFingerprint(snapshot: OrganizationSnapshot) {
   return hash({
     question: snapshot.baseContent.title,
@@ -162,8 +165,11 @@ export class InvestigationService {
       if (!profile) continue;
       const controller = new AbortController();
       this.controllers.set(id, controller);
-      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]);
       const deliveries = await this.repo().highWater(id);
+      // The time limit counts while the evaluation prepares and answers, not while it waits for
+      // the AI queue behind other work.
+      const deadline = new ActiveDeadline(investigationTimeoutMs, controller.signal);
+      const signal = deadline.signal;
       try {
         await withPromptPin(occurrence.snapshot.promptPin, async () => {
           const input = ConsultationInputSchema.parse({
@@ -240,7 +246,7 @@ export class InvestigationService {
                   snapshot,
                   input.question,
                   item.current.answer,
-                  AbortSignal.any([signal, clockSignal]),
+                  deadline.join(clockSignal),
                   {
                     runId,
                     guard,
@@ -309,6 +315,7 @@ export class InvestigationService {
           )?.[0] ?? "organization.errors.failed"
         );
       } finally {
+        deadline.dispose();
         this.controllers.delete(id);
       }
     }

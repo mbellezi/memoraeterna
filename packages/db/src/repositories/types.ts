@@ -25,7 +25,7 @@ export type SourceItemType =
 export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 export type IngestionRunStatus = "pending" | "running" | "succeeded" | "failed" | "canceled";
 export type ObsidianSyncStatus = "pending" | "synced" | "conflict" | "deleted" | "ignored";
-export type AtomicNoteStatus = "pending_review" | "approved" | "rejected" | "archived";
+export type AtomicNoteStatus = "active" | "pending_review" | "approved" | "rejected" | "archived";
 export type AtomicNoteRelationStatus = "pending_review" | "accepted" | "rejected";
 
 export interface SourceItemRecord {

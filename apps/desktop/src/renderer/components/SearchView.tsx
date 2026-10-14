@@ -11,6 +11,7 @@ import {
 import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult } from "../../shared/ipc";
 import { cn } from "../lib/cn";
+import { AiNoteBadge } from "./AiNoteBadge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 
@@ -274,6 +275,7 @@ export function SearchResultCard({
                 {t(`knowledge.notes.status.${result.status}` as MessageKey)}
               </span>
             ) : null}
+            {isNote ? <AiNoteBadge t={t} status={result.status} /> : null}
           </div>
           {result.breadcrumbs.length > 0 ? (
             <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">

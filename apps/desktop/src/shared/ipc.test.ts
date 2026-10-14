@@ -15,6 +15,8 @@ import {
   searchInputSchema,
   atomicNoteReviewInputSchema,
   sourceDetailSchema,
+  atomicNoteViewSchema,
+  knowledgeGraphDashboardNodeSchema,
   aiProfileTaskInputSchema,
   aiProfileCreateSchema,
   aiTaskRouteSchema,
@@ -230,6 +232,41 @@ describe("desktop IPC contracts", () => {
     });
     expect(detail.title).toBe("Source");
     expect(detail.graph).toEqual({ entities: [], relations: [], sourceConnections: [] });
+  });
+
+  it("accepts the active status of a note at birth in note views and graph nodes", () => {
+    const view = {
+      id: "00000000-0000-4000-8000-000000000001",
+      title: "Title",
+      bodyMarkdown: "Body",
+      ideaStatement: "Idea",
+      language: "en",
+      sourceItemId: "00000000-0000-4000-8000-000000000002",
+      sourceSpanId: null,
+      evidenceChunkId: "00000000-0000-4000-8000-000000000003",
+      generationModel: "model",
+      generationPromptVersion: "atomic-note-v4",
+      createdAt: "2026-10-14T10:00:00.000Z",
+      updatedAt: "2026-10-14T10:00:00.000Z"
+    };
+    for (const status of ["active", "pending_review", "approved", "rejected", "archived"])
+      expect(atomicNoteViewSchema.parse({ ...view, status }).status).toBe(status);
+    expect(atomicNoteViewSchema.safeParse({ ...view, status: "draft" }).success).toBe(false);
+    const node = {
+      id: view.id,
+      kind: "atomic_note",
+      title: "Title",
+      subtitle: null,
+      content: null,
+      sourceItemId: view.sourceItemId,
+      sourceType: null,
+      detailCount: 0,
+      parentSourceItemId: null,
+      childCount: 0
+    };
+    expect(
+      knowledgeGraphDashboardNodeSchema.parse({ ...node, noteStatus: "active" }).noteStatus
+    ).toBe("active");
   });
 
   it("validates phase 5 local model commands and profile selections", () => {

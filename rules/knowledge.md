@@ -55,14 +55,14 @@ Ask, or background maintenance (Gardener).
 - Summaries are versioned and traceable to source revision, model, prompt and
   input hashes; long sources use map-reduce over chunks.
 - Atomic notes use validated structured output and link to their source, chunks
-  and SourceSpans. Review status never gates automatic processing. Human edits
-  mark a note protected and invalidate its embedding and dependents; they never
-  start generative AI. Re-embedding is ordinary background work (target F1a).
+  and SourceSpans. They are active at birth with an AI-provenance badge; review
+  is optional, never a gate. Human edits protect a note, invalidate its
+  embedding and dependents and queue one embedding job, never generative AI.
 - Repeated derivations of the same passage are not independent corroboration.
 - Entities and semantic relations are canonical in SQL with evidence. Names are
   retrieval signals, never identity; identity reuse needs conservative
   confirmation and ambiguity creates a new entity. Graph extraction runs once per
-  source (target F3).
+  source over its chunks, for entities and relations; old claims are read-only.
 - Human accept or reject decisions on relations are preserved across reruns and
   respected in both directions.
 

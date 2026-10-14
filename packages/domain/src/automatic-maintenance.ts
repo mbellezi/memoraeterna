@@ -86,6 +86,11 @@ export const AutomaticRoutinePolicySchema = z
   })
   .strict();
 export type AutomaticRoutinePolicy = z.infer<typeof AutomaticRoutinePolicySchema>;
+/**
+ * Defaults for newly installed routines. Legacy wiki stopgap: the weekly and monthly routines start
+ * disabled and no routine waits for the operating system to be idle. Stored routines keep their
+ * own values.
+ */
 export function automaticRoutinePresets(
   policyId: string,
   policyRevisionId: string,
@@ -100,7 +105,8 @@ export function automaticRoutinePresets(
       scopeKey,
       presetVersion: automaticAllowancePreset,
       kind,
-      enabled: true,
+      enabled: kind === "incremental" || kind === "daily",
+      idleSeconds: 0,
       cadence: { kind, timezone, hour: [0, 2, 3, 4][i] },
       startWindowMs: [15, 360, 1440, 4320][i]! * 60000,
       executionMs: [10, 20, 45, 90][i]! * 60000,

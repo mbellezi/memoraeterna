@@ -168,6 +168,11 @@ export const ProcessingPlanRequestSchema = z
     scope: ProcessingScopeSchema.default("source_only"),
     targetSourceItemIds: z.array(StableIdSchema).default([]),
     forceRegeneration: z.boolean().default(false),
+    /**
+     * Run a second knowledge-graph pass over the atomic notes. Absent means off: one pass over the
+     * chunks already yields the entities and relations, and the notes link to them by evidence.
+     */
+    knowledgeGraphOnNotes: z.boolean().optional(),
     previousArtifactPolicy: PreviousArtifactPolicySchema.default("reuse_valid")
   })
   .strict();

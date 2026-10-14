@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiProviderError } from "@app/ai";
 import type { JobRecord, PgPool } from "@app/db";
 import { JobSupervisor } from "./job-supervisor.js";
+import type { KnowledgeService } from "./knowledge-service.js";
 
 const mocks = vi.hoisted(() => ({
   jobs: {
@@ -203,6 +204,73 @@ describe("ingestion queue scheduling", () => {
       expect(await fail(new Error("Worker exited with code 1."))).toMatchObject({
         status: "queued"
       });
+    });
+  });
+  describe("re-embedding an edited note", () => {
+    const embeddingJob = (payload: Record<string, unknown> = {}, attempts = 1) => ({
+      id: "job",
+      type: "note-embedding",
+      attempts,
+      maxAttempts: 3,
+      progress: 0,
+      payload: { atomicNoteId: "note-1", sourceItemId: "source-1", ...payload } as Record<
+        string,
+        unknown
+      >
+    });
+    const runWith = async (embedAtomicNote: ReturnType<typeof vi.fn>, job = embeddingJob()) => {
+      supervisor = new JobSupervisor({
+        getPool: () => ({}) as PgPool,
+        knowledgeService: { embedAtomicNote } as unknown as KnowledgeService
+      });
+      mocks.jobs.claimNext.mockResolvedValue(job);
+      mocks.jobs.update.mockResolvedValue({ id: "job" });
+      await supervisor.runOnce();
+      return mocks.jobs.update.mock.calls.at(-1)?.[1] as {
+        status: string;
+        error: string | null;
+        result?: unknown;
+        runAfter: Date;
+      };
+    };
+
+    it("embeds the note with the embedding model and records the outcome", async () => {
+      const embedAtomicNote = vi.fn().mockResolvedValue({ embedded: true });
+      const update = await runWith(embedAtomicNote);
+      expect(embedAtomicNote).toHaveBeenCalledOnce();
+      expect(embedAtomicNote).toHaveBeenCalledWith(
+        "note-1",
+        expect.any(AbortSignal),
+        expect.objectContaining({ jobId: "job", sourceItemId: "source-1" })
+      );
+      expect(update).toMatchObject({ status: "succeeded", result: { embedded: true } });
+    });
+
+    it("finishes without error when there is nothing to embed", async () => {
+      const update = await runWith(
+        vi.fn().mockResolvedValue({ embedded: false, reason: "note_not_current" })
+      );
+      expect(update).toMatchObject({
+        status: "succeeded",
+        result: { embedded: false, reason: "note_not_current" }
+      });
+    });
+
+    it("queues a transient provider failure again like any other job", async () => {
+      const busy = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+      const update = await runWith(vi.fn().mockRejectedValue(busy));
+      expect(update).toMatchObject({ status: "queued" });
+      expect(update.runAfter.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("fails once when the job does not name a note", async () => {
+      const embedAtomicNote = vi.fn();
+      const update = await runWith(embedAtomicNote, {
+        ...embeddingJob(),
+        payload: { sourceItemId: "source-1" }
+      });
+      expect(embedAtomicNote).not.toHaveBeenCalled();
+      expect(update).toMatchObject({ status: "failed", error: "missing_atomicNoteId" });
     });
   });
   describe("a batch run that fails for good", () => {

@@ -656,6 +656,7 @@
       "conversion": "Conversion",
       "chunking": "Decoupage",
       "embedding": "Embedding",
+      "noteEmbedding": "Embedding de note",
       "summarization": "Resume",
       "atomicNoteGeneration": "Generation de note atomique",
       "knowledgeGraphGeneration": "Generation du graphe de connaissances",
@@ -1114,7 +1115,7 @@
       "description": "Choisissez quoi generer pour {count} sources selectionnees.",
       "scope": "Appliquer a",
       "regenerate": "Regenerer les artefacts existants",
-      "regenerateHint": "Les notes revisees sont conservees; les generations en attente sont archivees."
+      "regenerateHint": "Les notes revisees et modifiees sont conservees; les notes generees non revisees sont archivees."
     },
     "scopes": {
       "source_only": "Cette source uniquement",
@@ -1170,7 +1171,8 @@
     "review": {
       "title": "Revision des notes atomiques",
       "error": "Impossible de charger la file de revision.",
-      "empty": "Aucune note atomique en attente de revision.",
+      "empty": "Aucune note generee par l'IA n'attend une relecture facultative.",
+      "optional": "Ces notes sont deja utilisees. Les relire est facultatif.",
       "unknownSource": "Source inconnue",
       "fields": { "title": "Titre", "idea": "Idee principale", "body": "Corps de la note" },
       "actions": {
@@ -1182,7 +1184,10 @@
     },
     "notes": {
       "emptyForSource": "Cette source n'a pas encore de notes atomiques.",
+      "aiBadge": "IA",
+      "aiBadgeHint": "Generee par l'IA. La note est deja utilisee ; la relire est facultatif.",
       "status": {
+        "active": "Active",
         "pending_review": "En attente de revision",
         "approved": "Approuvee",
         "rejected": "Rejetee",

@@ -110,19 +110,18 @@ Return exactly one complete JSON object. Do not use Markdown fences or add comme
 Use exactly this compact JSON shape and these property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
 
 For each entity, supply identityDescription in English with only identifying facts actually stated in the evidence: roles, dates, locations, affiliations or explicit identifiers. Never infer missing facts. If identifying context is absent say "Insufficient identifying context." This internal field is always English, independently of display language.
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
-Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
-Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
-Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
+Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities or relations from it.
+Use a short unique local key for each entity. Relations must connect two extracted entities.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
+Every entity and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
-This batch may return at most 12 entities, 8 claims, and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
+This batch may return at most 12 entities and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
 
 Source title: Synthetic learning
 Source language: English
@@ -137,7 +136,6 @@ Return one complete compact JSON object only. Do not include reasoning, commenta
 Use exactly this shape and property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
@@ -146,9 +144,9 @@ Validation problems:
 - The response failed the required structured-output schema. Match the schema and all consistency rules exactly.
 
 identityDescription must contain English identifying facts grounded in the evidence; use "Insufficient identifying context." when absent.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
-Use at most 8 entities, 5 claims, and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
-Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities, claims, and relations arrays.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
+Use at most 8 entities and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
+Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities and relations arrays.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
 Source title: Synthetic learning
 Source language: English
@@ -166,19 +164,18 @@ Return exactly one complete JSON object. Do not use Markdown fences or add comme
 Use exactly this compact JSON shape and these property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
 
 For each entity, supply identityDescription in English with only identifying facts actually stated in the evidence: roles, dates, locations, affiliations or explicit identifiers. Never infer missing facts. If identifying context is absent say "Insufficient identifying context." This internal field is always English, independently of display language.
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
-Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
-Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
-Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
+Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities or relations from it.
+Use a short unique local key for each entity. Relations must connect two extracted entities.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
+Every entity and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
-This batch may return at most 12 entities, 8 claims, and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
+This batch may return at most 12 entities and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
 
 Source title: Synthetic learning
 Source language: English
@@ -192,7 +189,6 @@ Return one complete compact JSON object only. Do not include reasoning, commenta
 Use exactly this shape and property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
@@ -201,9 +197,9 @@ Validation problems:
 - The response failed the required structured-output schema. Match the schema and all consistency rules exactly.
 
 identityDescription must contain English identifying facts grounded in the evidence; use "Insufficient identifying context." when absent.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
-Use at most 8 entities, 5 claims, and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
-Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities, claims, and relations arrays.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
+Use at most 8 entities and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
+Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities and relations arrays.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
 Source title: Synthetic learning
 Source language: English
@@ -232,19 +228,18 @@ Return exactly one complete JSON object. Do not use Markdown fences or add comme
 Use exactly this compact JSON shape and these property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
 
 For each entity, supply identityDescription in English with only identifying facts actually stated in the evidence: roles, dates, locations, affiliations or explicit identifiers. Never infer missing facts. If identifying context is absent say "Insufficient identifying context." This internal field is always English, independently of display language.
 Create entities for named people, organizations, places, events, concepts, works, publications, publishers, projects, products, fields of study, tags, or collections.
-Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities, claims, or relations from it.
-Use a short unique local key for each entity. Claims must be verifiable statements from the text. Relations must connect two extracted entities.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
-Every entity, claim, and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
+Ignore material that only reproduces navigation, an index or table of contents, titles, isolated headings or subheadings, a bibliography, or a reference list. Do not create entities or relations from it.
+Use a short unique local key for each entity. Relations must connect two extracted entities.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never use canonical names or other free text in entity-key fields.
+Every entity and relation must cite at least one supplied evidence alias such as "c1". Copy aliases exactly. Do not infer unsupported facts or invent aliases.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
-This batch may return at most 12 entities, 8 claims, and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
+This batch may return at most 12 entities and 12 relations. These are hard limits; never exceed them. Use empty arrays when no supported items exist.
 
 Source title: Synthetic learning
 Source language: English
@@ -258,7 +253,6 @@ Return one complete compact JSON object only. Do not include reasoning, commenta
 Use exactly this shape and property names:
 {
   "entities": [{"key":"e1","type":"Concept","identityDescription":"Concise English identifying facts grounded in the evidence","canonicalName":"Name","aliases":[],"description":"Optional description","confidence":0.9,"evidenceChunkIds":["c1"]}],
-  "claims": [{"text":"Verifiable statement","confidence":0.9,"evidenceChunkIds":["c1"],"relatedEntityKeys":["e1"]}],
   "relations": [{"subjectEntityKey":"e1","predicate":"relates_to","displayLabel":"Relates to","definition":"The subject has a general association with the object.","objectEntityKey":"e2","confidence":0.9,"evidenceChunkIds":["c1"]}]
 }
 Every predicate is an internal identifier: use concise English snake_case, preserving the full meaning, direction, negation and modality (for example used_to_accuse, not accuses). Every definition is a concise English definition of the directed relation, independent of the specific entity names, preserving its full semantics. Every displayLabel is a natural-language phrase describing that same directed relation in the requested content language (for example Foi usado para acusar in pt-BR). Never translate internal keys, identifiers or enum values. Entity keys must be short English/ASCII aliases such as e1.
@@ -267,9 +261,9 @@ Validation problems:
 - The response failed the required structured-output schema. Match the schema and all consistency rules exactly.
 
 identityDescription must contain English identifying facts grounded in the evidence; use "Insufficient identifying context." when absent.
-Every value in relatedEntityKeys, subjectEntityKey, and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
-Use at most 8 entities, 5 claims, and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
-Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities, claims, and relations arrays.
+Every value in subjectEntityKey and objectEntityKey must exactly match an entities[].key in the same response. Never put a canonical name, description, or other free text in an entity-key field. Relations must connect two different extracted entities; omit a relation when either endpoint has no entity.
+Use at most 8 entities and 8 relations. These are hard limits; never exceed them. Use empty arrays when necessary.
+Do not repair structural or reference-only material into knowledge. If no substantive input remains, return empty entities and relations arrays.
 The only allowed evidence aliases in this batch are: ["c1"]. Never output any other alias.
 Source title: Synthetic learning
 Source language: English

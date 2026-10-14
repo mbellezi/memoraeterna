@@ -194,9 +194,7 @@ try {
     "Secondary original appears in the shared note projection"
   );
   assert.ok(
-    noteBeforeFrame.bodyMarkdown.includes(
-      translate("pt-BR", "knowledge.notes.status.pending_review")
-    )
+    noteBeforeFrame.bodyMarkdown.includes(translate("pt-BR", "knowledge.notes.status.active"))
   );
   const asset = (await registry.findByMemoraId(fixture.assetId))!;
   assert.equal(

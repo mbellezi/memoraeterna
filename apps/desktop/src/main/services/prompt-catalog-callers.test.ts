@@ -88,7 +88,7 @@ describe("actual catalog family callers with deterministic model doubles", () =>
     async (kind) => {
       let count = 0;
       const run = vi.fn(async (_input: string) =>
-        execution(++count === 1 ? "{" : { entities: [], claims: [], relations: [] })
+        execution(++count === 1 ? "{" : { entities: [], relations: [] })
       );
       const result = await withPromptPin(marked([`graph.${kind}`, `graph.${kind}.repair`]), () =>
         generateKnowledgeGraphFromAtomicNotes(

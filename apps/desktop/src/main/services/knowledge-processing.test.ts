@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  knowledgeGraphPromptVersion,
+  buildKnowledgeGraphRepairPrompt,
   summaryConcepts,
   buildAtomicNoteGenerationPrompt,
   buildAggregateSummaryPrompt,
@@ -16,6 +18,7 @@ import {
   limitKnowledgeGraphBatches,
   meetsRelationThreshold,
   normalizeSummaryText,
+  parseKnowledgeGraphBatchCheckpoints,
   parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
   mergeBatchRerankRepair,
@@ -373,7 +376,7 @@ describe("knowledge processing", () => {
     );
   });
 
-  it("parses graph knowledge with traceable entities, claims, and relations", async () => {
+  it("parses graph knowledge with traceable entities and relations", async () => {
     const output = {
       entities: [
         {
@@ -395,14 +398,6 @@ describe("knowledge processing", () => {
           evidenceChunkIds: ["c1"]
         }
       ],
-      claims: [
-        {
-          text: "PostgreSQL supports vector search.",
-          confidence: 0.9,
-          evidenceChunkIds: ["c1"],
-          relatedEntityKeys: ["postgres", "vector"]
-        }
-      ],
       relations: [
         {
           subjectEntityKey: "postgres",
@@ -418,7 +413,6 @@ describe("knowledge processing", () => {
     const resolved = {
       ...output,
       entities: output.entities.map((entity) => ({ ...entity, evidenceChunkIds: ["chunk-1"] })),
-      claims: output.claims.map((claim) => ({ ...claim, evidenceChunkIds: ["chunk-1"] })),
       relations: output.relations.map((relation) => ({
         ...relation,
         evidenceChunkIds: ["chunk-1"]
@@ -457,6 +451,144 @@ describe("knowledge processing", () => {
       })
     );
     expect(generated?.batches[0]?.relations).toHaveLength(1);
+  });
+
+  describe("knowledge graph without claims", () => {
+    const entity = (key: string) => ({
+      key,
+      type: "Concept",
+      canonicalName: key,
+      identityDescription: "A concept defined in the supplied evidence.",
+      aliases: [],
+      confidence: 0.9,
+      evidenceChunkIds: ["c1"]
+    });
+    const relation = {
+      subjectEntityKey: "a",
+      predicate: "supports",
+      displayLabel: "supports",
+      definition: "The subject supports the object.",
+      objectEntityKey: "b",
+      confidence: 0.8,
+      evidenceChunkIds: ["c1"]
+    };
+    const aliases = new Map([["c1", "chunk-1"]]);
+
+    it("asks for entities and relations only, in every prompt and contract", () => {
+      expect(knowledgeGraphPromptVersion).toBe("knowledge-graph-v8");
+      const notes = [
+        {
+          id: "n",
+          title: "Note",
+          ideaStatement: "Idea",
+          bodyMarkdown: "Body",
+          evidenceChunkIds: ["chunk-1"]
+        }
+      ];
+      const source = { title: "Source", language: "en" };
+      for (const kind of ["atomic_notes", "source_chunks", "catalog_metadata"] as const) {
+        const prompts = [
+          buildKnowledgeGraphPrompt(source, notes, aliases, kind),
+          buildKnowledgeGraphRepairPrompt(source, notes, aliases, "{", new Error("x"), kind)
+        ];
+        for (const prompt of prompts) {
+          expect(prompt).not.toMatch(/claim/i);
+          expect(prompt).not.toContain("relatedEntityKeys");
+          expect(prompt).toContain('"entities"');
+          expect(prompt).toContain('"relations"');
+        }
+      }
+    });
+
+    it("accepts a response without claims and ignores claims a model still returns", () => {
+      const entities = [entity("a"), entity("b")];
+      const expected = {
+        entities: entities.map((item) => ({ ...item, evidenceChunkIds: ["chunk-1"] })),
+        relations: [{ ...relation, evidenceChunkIds: ["chunk-1"] }]
+      };
+      const without = parseKnowledgeGraphOutput({ entities, relations: [relation] }, aliases);
+      expect(without).toEqual(expected);
+      expect(without).not.toHaveProperty("claims");
+      // Whatever shape the claims have, whatever they cite, they cannot fail the response.
+      for (const claims of [
+        [{ text: "A verifiable statement.", confidence: 1, evidenceChunkIds: ["c1"] }],
+        [{ text: "Cites an unknown alias.", confidence: 1, evidenceChunkIds: ["c9"] }],
+        [{ text: "Unknown entity.", relatedEntityKeys: ["missing"] }],
+        "not even a list"
+      ]) {
+        const parsed = parseKnowledgeGraphOutput(
+          JSON.stringify({ entities, claims, relations: [relation] }),
+          aliases
+        );
+        expect(parsed).toEqual(expected);
+        expect(parsed).not.toHaveProperty("claims");
+      }
+    });
+
+    it("still validates the entities and relations around ignored claims", () => {
+      expect(() =>
+        parseKnowledgeGraphOutput(
+          { entities: [entity("a")], claims: [], relations: [relation] },
+          aliases
+        )
+      ).toThrow();
+    });
+
+    it("never carries claims into the generated batches or their limits", async () => {
+      const output = {
+        entities: [entity("a"), entity("b")],
+        claims: [{ text: "Ignored.", confidence: 1, evidenceChunkIds: ["c1"] }],
+        relations: [relation]
+      };
+      const generated = await generateKnowledgeGraphFromAtomicNotes(
+        { title: "Source", language: "en" },
+        [
+          {
+            id: "n",
+            title: "Note",
+            ideaStatement: "Idea",
+            bodyMarkdown: "Body",
+            evidenceChunkIds: ["chunk-1"]
+          }
+        ],
+        async () => ({
+          output: JSON.stringify(output),
+          providerId: "test",
+          modelId: "mock",
+          runtime: "remote",
+          profileId: "profile-1",
+          aiTaskRunId: "run-1"
+        }),
+        12_000,
+        { extractionLimits: { maxEntities: 1, maxRelations: 5 } }
+      );
+      const batch = generated?.batches[0];
+      expect(Object.keys(batch ?? {}).sort()).toEqual(["entities", "relations"]);
+      expect(batch?.entities).toHaveLength(1);
+      expect(
+        JSON.stringify(generated?.checkpoints),
+        "checkpoints persist entities and relations only"
+      ).not.toContain("claims");
+    });
+
+    it("reads a checkpoint saved before claims were dropped", () => {
+      const saved = [
+        {
+          batchKey: "source:abc",
+          batch: { entities: [entity("a")], claims: [{ text: "Old." }], relations: [] },
+          execution: {
+            providerId: "p",
+            modelId: "m",
+            runtime: "remote",
+            profileId: "profile",
+            aiTaskRunId: "run"
+          }
+        }
+      ];
+      const parsed = parseKnowledgeGraphBatchCheckpoints(saved);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]?.batch).not.toHaveProperty("claims");
+    });
   });
 
   it("regenerates a compact graph response after truncated JSON", async () => {
@@ -728,7 +860,6 @@ describe("knowledge processing", () => {
               evidenceChunkIds: ["chunk-1"]
             }
           ],
-          claims: [],
           relations: [
             {
               subjectEntityKey: "e1",

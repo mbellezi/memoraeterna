@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EffectiveProcessingPlanSchema,
+  ProcessingPlanRequestSchema,
   defaultInteractivePreset,
   resolveProcessingPlan,
   validateDivisionTree,
@@ -46,6 +48,32 @@ describe("hierarchical ingestion", () => {
     ]);
     expect(plan.automaticallyIncludedStages).toContain("chunking");
     expect(plan.automaticallyIncludedStages).not.toContain("atomicNotes");
+  });
+
+  it("runs one knowledge-graph pass per source unless the plan asks for a second one over notes", () => {
+    const request = {
+      preset: "full_knowledge" as const,
+      requestedStages: [],
+      scope: "source_only" as const,
+      targetSourceItemIds: [],
+      forceRegeneration: false,
+      previousArtifactPolicy: "reuse_valid" as const
+    };
+    // Both passes belong to the one knowledgeGraph stage: the plan only chooses the second.
+    const byDefault = resolveProcessingPlan(request);
+    expect(byDefault.effectiveStages.filter((stage) => stage.startsWith("knowledgeGraph"))).toEqual(
+      ["knowledgeGraph"]
+    );
+    expect(byDefault.knowledgeGraphOnNotes).toBeUndefined();
+    expect(ProcessingPlanRequestSchema.parse(request).knowledgeGraphOnNotes).toBeUndefined();
+    expect(
+      resolveProcessingPlan({ ...request, knowledgeGraphOnNotes: true }).knowledgeGraphOnNotes
+    ).toBe(true);
+    // Plans stored before the option existed still parse.
+    expect(() => EffectiveProcessingPlanSchema.parse(byDefault)).not.toThrow();
+    expect(() =>
+      ProcessingPlanRequestSchema.parse({ ...request, knowledgeGraphOnNotes: "yes" })
+    ).toThrow();
   });
 
   it("defaults interactive processing to full knowledge only when a writer route is ready", () => {

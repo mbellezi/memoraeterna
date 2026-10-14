@@ -13,6 +13,14 @@ const mocks = vi.hoisted(() => ({
   graph: { replaceSourceExtraction: vi.fn(), projectSource: vi.fn() },
   hierarchy: { ensureCurrentDocumentRevision: vi.fn() }
 }));
+// Identity and relation-type resolution are covered by their own tests; here they pass through.
+vi.mock("./entity-identity-resolution.js", () => ({
+  createEntityIdentityResolver: () => async (batch: unknown) => batch
+}));
+vi.mock("./relation-type-resolution.js", async (original) => ({
+  ...(await original<typeof import("./relation-type-resolution.js")>()),
+  createRelationTypeResolver: () => async (batch: unknown) => batch
+}));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
   createSourceItemRepository: () => mocks.sources,
@@ -28,6 +36,15 @@ vi.mock("@app/db", async (original) => ({
 const sourceItemId = "source-1";
 const documentId = "document-1";
 const excerpts = ["The curve falls fast.", "Spacing flattens it.", "Review resets it."];
+const entity = (key: string, alias: string) => ({
+  key,
+  type: "Concept",
+  canonicalName: key,
+  identityDescription: "A concept defined in the supplied evidence.",
+  aliases: [],
+  confidence: 0.9,
+  evidenceChunkIds: [alias]
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -47,6 +64,62 @@ beforeEach(() => {
 });
 
 describe("knowledge graph generation for a stored source", () => {
+  const noteInputs = [
+    {
+      id: "note-0",
+      title: "Note",
+      ideaStatement: "Idea",
+      bodyMarkdown: "Body",
+      evidenceChunkIds: ["chunk-0"]
+    }
+  ];
+  const serviceWith = (runDefaultTask: ReturnType<typeof vi.fn>) =>
+    new KnowledgeService({
+      getPool: () => ({}) as PgPool,
+      aiService: { runDefaultTask } as unknown as AiService,
+      userDataPath: "/tmp/memora-test",
+      getStorageSettings: async () => ({}) as never,
+      getUploadedFilesBasePath: async () => null
+    });
+  const answer = () => ({
+    taskType: "knowledge-graph-generation",
+    output: JSON.stringify({ entities: [], relations: [] }),
+    providerId: "test",
+    modelId: "mock",
+    runtime: "remote",
+    durationMs: 1,
+    aiTaskRunId: "run-1",
+    profileId: "profile-1",
+    outputLanguage: "en"
+  });
+
+  it("makes one graph pass over the chunks and none over the notes unless asked", async () => {
+    mocks.chunks.listByDocument.mockResolvedValue(
+      excerpts.map((content, index) => ({
+        id: `chunk-${index}`,
+        chunkIndex: index,
+        content,
+        sourceSpanId: null
+      }))
+    );
+    mocks.notes.listGraphInputsBySourceItem.mockResolvedValue(noteInputs);
+    const passes = async (context?: { includeAtomicNotesGraph?: boolean }) => {
+      const runDefaultTask = vi.fn<
+        (task: string, prompt: string) => Promise<ReturnType<typeof answer>>
+      >(async () => answer());
+      await serviceWith(runDefaultTask).generateKnowledgeGraph(sourceItemId, documentId, context);
+      return runDefaultTask.mock.calls.map(([, prompt]) =>
+        String(prompt).includes("Atomic notes:") ? "notes" : "chunks"
+      );
+    };
+    // The default context (what the processing plans produce) never reads the notes.
+    expect(await passes()).toEqual(["chunks"]);
+    expect(mocks.notes.listGraphInputsBySourceItem).not.toHaveBeenCalled();
+    expect(await passes({ includeAtomicNotesGraph: false })).toEqual(["chunks"]);
+    // An explicit opt-in keeps the second pass available.
+    expect(await passes({ includeAtomicNotesGraph: true })).toEqual(["chunks", "notes"]);
+  });
+
   it("builds the same prompt and resolves aliases to the same chunks whatever the chunk UUIDs", async () => {
     const prompts: string[] = [];
     for (const ids of uuidAssignments(excerpts.length)) {
@@ -63,8 +136,9 @@ describe("knowledge graph generation for a stored source", () => {
         prompts.push(prompt);
         return {
           taskType: "knowledge-graph-generation",
+          // A model that still returns claims is ignored; entities cite the alias of chunk 2.
           output: JSON.stringify({
-            entities: [],
+            entities: [entity("spacing", "c2")],
             claims: [
               {
                 text: "Spacing flattens the forgetting curve.",
@@ -95,7 +169,8 @@ describe("knowledge graph generation for a stored source", () => {
       await service.generateKnowledgeGraph(sourceItemId, documentId);
 
       const stored = mocks.graph.replaceSourceExtraction.mock.calls.at(-1)![0];
-      expect(stored.batches[0].claims[0].evidenceChunkIds).toEqual([ids[1]]);
+      expect(stored.batches[0].entities[0].evidenceChunkIds).toEqual([ids[1]]);
+      expect(stored.batches[0]).not.toHaveProperty("claims");
     }
     expect(prompts).toHaveLength(4);
     expect(new Set(prompts).size).toBe(1);
@@ -131,17 +206,7 @@ describe("knowledge graph generation for a stored source", () => {
         return {
           taskType: "knowledge-graph-generation",
           output: JSON.stringify({
-            entities: [],
-            claims: atomic
-              ? [
-                  {
-                    text: "The middle chunk is the first cited in document order.",
-                    confidence: 0.9,
-                    evidenceChunkIds: ["c1"],
-                    relatedEntityKeys: []
-                  }
-                ]
-              : [],
+            entities: atomic ? [entity("middle", "c1")] : [],
             relations: []
           }),
           providerId: "test",
@@ -165,8 +230,9 @@ describe("knowledge graph generation for a stored source", () => {
         includeAtomicNotesGraph: true
       });
 
+      // The middle chunk is the first cited in document order, so the note pass calls it c1.
       const stored = mocks.graph.replaceSourceExtraction.mock.calls.at(-1)![0];
-      expect(stored.batches.at(-1).claims[0].evidenceChunkIds).toEqual([ids[1]]);
+      expect(stored.batches.at(-1).entities[0].evidenceChunkIds).toEqual([ids[1]]);
     }
     // One source-chunks call and one atomic-notes call per assignment.
     const atomic = prompts.filter((prompt) => prompt.includes("Atomic notes:"));
