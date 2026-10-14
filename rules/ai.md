@@ -26,11 +26,12 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
 ## Routing
 
 - Every AI task resolves its model through its route (explicit operation
-  override first, then the task or workload-class route). An unavailable or
-  incompatible model fails visibly; never fall back silently to another model.
-- The routed or explicitly selected model determines where execution happens.
-- The effective profile, model identity and parameters are pinned when work is
-  admitted. Later settings edits affect new work only.
+  override first, then the task or workload-class route), and that model decides
+  where execution happens. An unavailable or incompatible model fails visibly;
+  never fall back silently to another model.
+- Missing routes are seeded only from profiles no less private than the default.
+- Profile, model identity and parameters are pinned when work is admitted;
+  later settings edits affect new work only.
 - Generated user-visible content uses the global content language, separate from
   the interface language. Internal identifiers, predicates, keys and enums stay
   English. Model-facing language names are full English names. Embeddings
@@ -45,12 +46,14 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
   respect rate-limit signals (target F3). Interactive work (Ask, query
   embeddings, user-started actions) is admitted before background work and never
   preempts a running call; a caller's timeout excludes its wait for a slot.
-- Every remote call has deadlines counted from execution start (connect, first
-  byte, stalled stream, total). Adapters retry only transient failures
-  (timeouts, stalls, 408, 425, 429, 5xx, network) with exponential backoff, full
-  jitter and bounded attempts, honoring `Retry-After`; never invalid requests,
-  auth failures, exhausted quota, context overflow or schema failures after the
-  allowed repair. Job retries use the same classification.
+- Remote generation streams, so every remote call has deadlines counted from
+  execution start (connect, first byte, stalled stream, total). Adapters retry
+  only transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with
+  exponential backoff, full jitter and bounded attempts, honoring `Retry-After`
+  or the provider's stated reset (a wait too long for the single slot goes to
+  the job); never invalid requests, auth failures, exhausted billing quota,
+  context overflow or schema failures after the allowed repair. Job retries use
+  the same classification.
 - Structured output is requested with a schema where the runtime supports it and
   is always validated with Zod. Invalid output gets a bounded repair; valid items
   are kept and only missing ones are requested again (target F3).
@@ -58,8 +61,7 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
   resolved by the backend to real IDs and validated before persistence.
 - Prompts are a function of content, not of IDs: aliases and the order of
   evidence, candidates and batches follow document position or a content key
-  (title, text). An ID may only break a tie between indistinguishable items,
-  so identical content yields identical prompts across imports.
+  (title, text); an ID only breaks a tie between indistinguishable items.
 - Oversized requests are rejected before the provider call with a localized
   error; evidence is never silently truncated.
 
@@ -69,14 +71,13 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
   SHA-256 checksums, license, capabilities and memory/platform requirements.
   Imported GGUF files use their SHA-256 as the revision.
 - Downloads use the managed model directory, resumable `.partial` files,
-  preflight checks, progress, cancellation, checksum verification and atomic
-  promotion. Optional repository tokens live in `safeStorage`.
+  preflight, progress, cancellation, checksum verification and atomic promotion;
+  repository tokens live in `safeStorage`.
 - A model cannot be removed while loaded, running or required by an active
   route without an explicit replacement flow.
-- Embedding models expose only embedding capabilities, validate requested
-  dimensions and normalize vectors. Query and document inputs are distinguished;
-  instructions apply to queries only. Changing embedding wording or serialization
-  creates a new embedding space.
+- Embedding models expose only embedding capabilities, validate dimensions and
+  normalize vectors; instructions apply to queries only. Changing embedding
+  wording or serialization creates a new embedding space.
 
 ## Prompt catalog
 
@@ -86,10 +87,9 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
 - Templates use registered, typed `%variable_name%` placeholders rendered once.
   Variable-like text inside source material stays literal, untrusted data.
   Credentials are never variables. Unknown or missing variables block execution.
-- Required output contracts are enforced by code. Editing prompt prose can never
-  change permissions, source scope, identity or budgets.
-- Saving or activating a prompt never reprocesses the library; it affects future
-  admissions only.
+- Required output contracts are enforced by code: editing prompt prose can never
+  change permissions, source scope, identity or budgets. Saving or activating a
+  prompt never reprocesses the library; it affects future admissions only.
 
 ## Audit and monitoring
 
@@ -97,8 +97,8 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
   records a canonical audit with provider, model, runtime, effective parameters,
   prompt revision and composition hash, token usage, duration, cost when known,
   status and the participating source IDs.
-- Provider usage is normalized without double counting. Unknown tokens or cost
-  stay absent and disclosed, never fabricated; no extra paid calls are made for
-  telemetry. Budget gates use the rules in `security-privacy.md`.
+- Provider usage, billed failed attempts included, is normalized without double
+  counting. Unknown tokens or cost stay absent and disclosed, never fabricated;
+  no extra paid calls are made for telemetry. Budget gates: `security-privacy.md`.
 - Monitoring entries are written independently of debug settings and never fail
   the underlying operation. Full capture follows `security-privacy.md`.

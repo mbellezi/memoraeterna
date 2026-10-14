@@ -7,7 +7,7 @@ import { runEmbedding } from "./embedding.worker.js";
 import { runIngestion } from "./ingestion.worker.js";
 import { runMarkdownConversion } from "./markdown-conversion.worker.js";
 import { runObsidianSync } from "./obsidian-sync.worker.js";
-import { workerTaskSchema, type WorkerMessage } from "./worker-contracts.js";
+import { workerErrorMessage, workerTaskSchema, type WorkerMessage } from "./worker-contracts.js";
 
 const task = workerTaskSchema.parse(workerData);
 
@@ -31,5 +31,5 @@ async function run(): Promise<void> {
 }
 
 void run().catch((error: unknown) => {
-  send({ kind: "error", error: error instanceof Error ? error.message : "worker_failed" });
+  send(workerErrorMessage(error));
 });

@@ -278,7 +278,8 @@ describe("seeding task routes from the first configured profile", () => {
     repository.getDefaultTask.mockResolvedValue(null);
     await expect(newService().runDefaultTask("embedding", "text")).resolves.toBeNull();
     expect(repository.seedTaskRoute).not.toHaveBeenCalledWith("embedding", expect.anything());
-    expect(repository.getDefaultTask).toHaveBeenCalledTimes(1);
+    // The task is looked up again after seeding even when nothing was seeded for it.
+    expect(repository.getDefaultTask).toHaveBeenCalledTimes(2);
   });
 
   it("does not touch routes while the task resolves", async () => {

@@ -15,10 +15,12 @@ import {
   monotonicProgress,
   resolveAiRuntimeConfig,
   runRemoteCall,
+  withCallReport,
   type AiRuntimeConfig,
   type AiRuntimeConfigInput,
   type RemoteAttempt,
-  type RemoteCallOptions
+  type RemoteCallOptions,
+  type RemoteCallReport
 } from "./remote-execution.js";
 import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
 
@@ -140,82 +142,103 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     if (!this.canHandle(request)) throw new Error("errors.ai.unsupportedTask");
     const startedAt = performance.now();
     const progress = onProgress ? monotonicProgress(onProgress) : undefined;
-    const streamed = await this.remoteCall({ request, streaming: true, signal }, async (call) => {
-      const response = await this.request(call, `${this.baseUrl}/responses`, {
-        method: "POST",
-        body: JSON.stringify({
-          model: request.modelId ?? this.options.modelId,
-          store: false,
-          stream: true,
-          instructions:
-            typeof request.metadata.applicationInstruction === "string"
-              ? request.metadata.applicationInstruction
-              : "",
-          input: [
-            { role: "user", content: [{ type: "input_text", text: readText(request.input) }] }
-          ],
-          text: { verbosity: "low" },
-          include: ["reasoning.encrypted_content"],
-          ...codexGenerationParameters(request.parameters, request.modelId ?? this.options.modelId)
-        })
-      });
-      if (!response.ok) throw await call.guard(providerHttpError(response));
+    let report: RemoteCallReport | undefined;
+    const streamed = await this.remoteCall(
+      {
+        request,
+        streaming: true,
+        signal,
+        report: (received) => {
+          report = received;
+        }
+      },
+      async (call) => {
+        const response = await this.request(call, `${this.baseUrl}/responses`, {
+          method: "POST",
+          body: JSON.stringify({
+            model: request.modelId ?? this.options.modelId,
+            store: false,
+            stream: true,
+            instructions:
+              typeof request.metadata.applicationInstruction === "string"
+                ? request.metadata.applicationInstruction
+                : "",
+            input: [
+              { role: "user", content: [{ type: "input_text", text: readText(request.input) }] }
+            ],
+            text: { verbosity: "low" },
+            include: ["reasoning.encrypted_content"],
+            ...codexGenerationParameters(
+              request.parameters,
+              request.modelId ?? this.options.modelId
+            )
+          })
+        });
+        if (!response.ok) throw await call.guard(providerHttpError(response));
 
-      let output = "";
-      let tokenUsage: Record<string, number> = {};
-      let inputTokens: number | undefined;
-      let outputTokens: number | undefined;
-      let streamError: AiProviderError | undefined;
-      await readServerSentEvents(
-        response,
-        (data) => {
-          if (data === "[DONE]") return;
-          const event = JSON.parse(data) as {
-            type?: string;
-            delta?: string;
-            message?: string;
-            code?: string;
-            error?: { message?: string; code?: string; type?: string };
-            response?: {
+        let output = "";
+        let tokenUsage: Record<string, number> = {};
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
+        let streamError: AiProviderError | undefined;
+        await readServerSentEvents(
+          response,
+          (data) => {
+            if (data === "[DONE]") return;
+            const event = JSON.parse(data) as {
+              type?: string;
+              delta?: string;
+              message?: string;
+              code?: string;
               error?: { message?: string; code?: string; type?: string };
-              usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number };
+              response?: {
+                error?: { message?: string; code?: string; type?: string };
+                usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number };
+              };
             };
-          };
-          if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-            output += event.delta;
-            progress?.({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
-          }
-          if (event.type === "error" || event.type === "response.failed") {
-            const failure = event.error ?? event.response?.error;
-            streamError = providerStreamError({
-              message: event.message ?? failure?.message,
-              code: event.code ?? failure?.code,
-              type: failure?.type
-            });
-          }
-          tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.response?.usage) };
-          inputTokens = event.response?.usage?.input_tokens ?? inputTokens;
-          outputTokens = event.response?.usage?.output_tokens ?? outputTokens;
-        },
-        16 * 1024 * 1024,
-        call
-      );
-      if (streamError) throw streamError;
-      if (output.length === 0) throw new Error("AI generation response did not contain content.");
-      return { output, tokenUsage, inputTokens, outputTokens };
-    });
+            if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+              if (event.delta.length > 0) call.outputStarted();
+              output += event.delta;
+              progress?.({
+                progress: streamedProgress(output.length, request.parameters.maxTokens)
+              });
+            }
+            if (event.type === "error" || event.type === "response.failed") {
+              const failure = event.error ?? event.response?.error;
+              streamError = providerStreamError({
+                message: event.message ?? failure?.message,
+                code: event.code ?? failure?.code,
+                type: failure?.type
+              });
+            }
+            tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.response?.usage) };
+            call.reportUsage(tokenUsage);
+            inputTokens = event.response?.usage?.input_tokens ?? inputTokens;
+            outputTokens = event.response?.usage?.output_tokens ?? outputTokens;
+          },
+          16 * 1024 * 1024,
+          call
+        );
+        if (streamError) throw streamError;
+        if (output.length === 0) throw new Error("AI generation response did not contain content.");
+        return { output, tokenUsage, inputTokens, outputTokens };
+      }
+    );
     progress?.({ progress: 1 });
-    return {
-      taskType: request.taskType,
-      output: streamed.output,
-      providerId: "openai-codex",
-      modelId: request.modelId ?? this.options.modelId,
-      runtime: "remote",
-      durationMs: Math.round(performance.now() - startedAt),
-      tokenUsage: streamed.tokenUsage,
-      ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
-      ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
-    };
+    return withCallReport(
+      {
+        taskType: request.taskType,
+        output: streamed.output,
+        providerId: "openai-codex",
+        modelId: request.modelId ?? this.options.modelId,
+        runtime: "remote",
+        durationMs: Math.round(performance.now() - startedAt),
+        tokenUsage: streamed.tokenUsage,
+        ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
+        ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
+      },
+      report
+    );
   }
 
   private remoteCall<T>(

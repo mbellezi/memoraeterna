@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
 import { jobTaskPayload } from "../job-task-payload.js";
 
-import { workerMessageSchema, type WorkerTask } from "../workers/worker-contracts.js";
+import {
+  workerFailure,
+  workerMessageSchema,
+  type WorkerTask
+} from "../workers/worker-contracts.js";
 
 export interface ExecuteWorkerOptions {
   timeoutMs?: number;
@@ -31,7 +35,7 @@ export class WorkerSupervisor {
           const message = workerMessageSchema.parse(raw);
           if (message.kind === "progress") options.onProgress?.(message.progress);
           if (message.kind === "result") resolve(message.result);
-          if (message.kind === "error") reject(new Error(message.error));
+          if (message.kind === "error") reject(workerFailure(message));
         });
         worker.once("error", reject);
         worker.once("exit", (code) => {

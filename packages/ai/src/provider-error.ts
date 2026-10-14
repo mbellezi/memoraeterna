@@ -12,7 +12,7 @@ export interface AiProviderErrorDetails {
   /** Retrying the same request can succeed: timeouts, 408, 425, 429, 5xx, transport failures, stalls. */
   transient: boolean;
   status?: number;
-  /** Delay requested by the provider (`Retry-After`), in milliseconds. */
+  /** Delay requested by the provider (`Retry-After`, a retry delay or reset time in the body), in milliseconds. */
   retryAfterMs?: number;
   /** Provider error code reported inside a stream or response body. */
   code?: string;
@@ -40,9 +40,20 @@ export class AiProviderError extends Error {
 const maximumRetryAfterMs = 60 * 60_000;
 const contextOverflowPattern =
   /context[_ ](?:length|window)|maximum context|too many tokens|token limit|prompt is too long|input token count|exceeds the (?:maximum|model)/i;
-/** Exhausted billing quota never recovers by waiting, unlike a per-minute rate limit. */
-const exhaustedQuotaPattern =
-  /insufficient_quota|exceeded your current quota|billing[_ ]hard[_ ]limit|credit balance/i;
+/**
+ * Exhausted billing quota never recovers by waiting. "Exceeded your current quota" is not listed: Gemini
+ * says it for per-minute limits that clear within seconds.
+ */
+const exhaustedQuotaPattern = /insufficient_quota|billing[_ ]hard[_ ]limit|credit balance/i;
+/** Where a rate-limited provider states how long to wait when it sends no `Retry-After` header. */
+const bodyRetryDelayPatterns = [
+  // Google RetryInfo: "retryDelay": "32s".
+  /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/i,
+  // Google messages: "Please retry in 32.4s."
+  /\bretry in (\d+(?:\.\d+)?)\s*s\b/i,
+  // ChatGPT plan limits (usage_limit_reached): "resets_in_seconds": 3600.
+  /"resets_in_seconds"\s*:\s*(\d+(?:\.\d+)?)/i
+];
 
 const transientSystemCodes = new Set([
   "ECONNRESET",
@@ -86,23 +97,46 @@ export async function providerHttpError(
   const responseText = redactSensitiveText(rawText);
   const summary = `${message} (${response.status}).`;
   const classification = classifyHttpFailure(response.status, rawText);
-  const retryAfterMs = retryAfterMilliseconds(response.headers);
+  // The header wins over a delay stated in the body.
+  const retryAfterMs = retryAfterMilliseconds(response.headers) ?? classification.retryAfterMs;
   return new AiProviderError(responseText.length > 0 ? `${summary}\n${responseText}` : summary, {
-    ...classification,
+    kind: classification.kind,
+    transient: classification.transient,
     status: response.status,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {})
   });
 }
 
-/** 408, 425, 429 and 5xx are transient; 400, 401, 403, 404, 413 and context overflow are not. */
+/**
+ * 408, 425, 429 and 5xx are transient; 400, 401, 403, 404, 413, context overflow and an exhausted
+ * billing quota are not. A rate limit that states its reset in the body carries it as `retryAfterMs`.
+ */
 export function classifyHttpFailure(
   status: number,
   body = ""
-): Pick<AiProviderErrorDetails, "kind" | "transient"> {
+): Pick<AiProviderErrorDetails, "kind" | "transient" | "retryAfterMs"> {
   if ((status === 400 || status === 413 || status === 422) && contextOverflowPattern.test(body))
     return { kind: "context_overflow", transient: false };
-  if (status === 429) return { kind: "http", transient: !exhaustedQuotaPattern.test(body) };
+  if (status === 429) {
+    if (exhaustedQuotaPattern.test(body)) return { kind: "http", transient: false };
+    const retryAfterMs = retryDelayFromText(body);
+    return {
+      kind: "http",
+      transient: true,
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {})
+    };
+  }
   return { kind: "http", transient: status === 408 || status === 425 || status >= 500 };
+}
+
+/** The wait a rate-limit message or body states, in milliseconds; undefined when it names none. */
+export function retryDelayFromText(text: string): number | undefined {
+  for (const pattern of bodyRetryDelayPatterns) {
+    const seconds = Number(pattern.exec(text)?.[1]);
+    if (Number.isFinite(seconds) && seconds >= 0)
+      return Math.min(Math.round(seconds * 1_000), maximumRetryAfterMs);
+  }
+  return undefined;
 }
 
 /** Reads `retry-after-ms` or `Retry-After` (seconds or an HTTP date); undefined when absent or invalid. */
@@ -146,11 +180,13 @@ export function providerStreamError(event: {
     exhaustedQuotaPattern.test(evidence) ||
     names.some((value) => permanentStreamCodes.has(value)) ||
     (status !== undefined && !classifyHttpFailure(status, text).transient);
+  const retryAfterMs = permanent ? undefined : retryDelayFromText(text);
   return new AiProviderError(redactSensitiveText(text), {
     kind: overflow ? "context_overflow" : "stream",
     transient: !permanent,
     ...(status !== undefined ? { status } : {}),
-    ...(code !== undefined ? { code } : {})
+    ...(code !== undefined ? { code } : {}),
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {})
   });
 }
 

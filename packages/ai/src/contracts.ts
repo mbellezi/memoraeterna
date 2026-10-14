@@ -49,7 +49,20 @@ export const aiTaskResultSchema = z
     inputTokens: z.number().int().nonnegative().optional(),
     outputTokens: z.number().int().nonnegative().optional(),
     tokenUsage: z.record(z.string(), z.number().finite().nonnegative()).optional(),
-    costEstimate: z.number().nonnegative().optional()
+    costEstimate: z.number().nonnegative().optional(),
+    /** Requests the provider received for this call, the successful one included; absent when unknown. */
+    attempts: z.number().int().positive().optional(),
+    /**
+     * Tokens the provider reported for attempts that failed before the answer. They are already part of
+     * the totals above wherever the answer's own count is known.
+     */
+    retriedUsage: z
+      .object({
+        inputTokens: z.number().int().nonnegative().optional(),
+        outputTokens: z.number().int().nonnegative().optional()
+      })
+      .strict()
+      .optional()
   })
   .strict();
 export type AiTaskResult = z.infer<typeof aiTaskResultSchema>;
@@ -84,20 +97,36 @@ export interface AiModelAdapter {
   dispose?(): Promise<void>;
 }
 
+/**
+ * Whether a call runs through `runStreaming`. A remote generation always streams when the adapter can,
+ * whatever capabilities are stored for the model, because only a streamed call has the connect,
+ * first-byte and stall deadlines that keep a silent server from holding the execution slot. Any other
+ * adapter streams when its model declares it.
+ */
+export function runsStreaming(
+  adapter: AiModelAdapter,
+  taskType: AiTaskRequest["taskType"]
+): boolean {
+  if (!adapter.runStreaming) return false;
+  const descriptor = adapter.describe();
+  if (descriptor.runtime === "remote" && taskType !== "embedding") return true;
+  return (
+    descriptor.capabilities.includes("streaming") ||
+    descriptor.capabilities.includes("supports-progress-events")
+  );
+}
+
 export function createTaskHandle(adapter: AiModelAdapter, request: AiTaskRequest): AiTaskHandle {
   const controller = new AbortController();
   const listeners = new Set<(event: AiProgressEvent) => void>();
   const result = (async () => {
     for (const listener of listeners) listener({ progress: 0 });
     const parsed = aiTaskRequestSchema.parse(request);
-    const capabilities = adapter.describe().capabilities;
-    const output =
-      adapter.runStreaming &&
-      (capabilities.includes("streaming") || capabilities.includes("supports-progress-events"))
-        ? await adapter.runStreaming(parsed, controller.signal, (event) => {
-            for (const listener of listeners) listener(event);
-          })
-        : await adapter.run(parsed, controller.signal);
+    const output = runsStreaming(adapter, parsed.taskType)
+      ? await adapter.runStreaming!(parsed, controller.signal, (event) => {
+          for (const listener of listeners) listener(event);
+        })
+      : await adapter.run(parsed, controller.signal);
     for (const listener of listeners) listener({ progress: 1 });
     return aiTaskResultSchema.parse(output);
   })();

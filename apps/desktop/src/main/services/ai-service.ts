@@ -21,6 +21,8 @@ import {
   OpenAiCodexAdapter,
   providerParameterCapabilities,
   redactSensitiveText,
+  remoteCallReport,
+  runsStreaming,
   type AiModelAdapter,
   type AiProgressEvent,
   type AiRuntimeConfigInput,
@@ -503,7 +505,9 @@ export class AiService {
 
   /**
    * Routes every task that has no route to the first configured profile that can serve it: the default
-   * profile first, then the oldest. Existing routes and task parameters are never changed.
+   * profile first, then the oldest. Existing routes and task parameters are never changed. When the
+   * default profile runs on this machine, only profiles that run on this machine are candidates: a
+   * remote model never inherits a task the user kept local by choosing a local default.
    */
   private async seedTaskRoutes(
     repository: ReturnType<typeof createAiConfigRepository>
@@ -511,7 +515,7 @@ export class AiService {
     const routed = new Set((await repository.listTaskRoutes()).map((route) => route.task));
     const missing = aiConfigurableTaskSchema.options.filter((task) => !routed.has(task));
     if (missing.length === 0) return [];
-    const profiles = (await repository.listProfiles())
+    const configured = (await repository.listProfiles())
       .filter(
         (profile) =>
           profile.status === "active" &&
@@ -524,6 +528,10 @@ export class AiService {
           left.createdAt.getTime() - right.createdAt.getTime() ||
           left.id.localeCompare(right.id)
       );
+    // The first profile is the default one, or the oldest when the default is not configured.
+    const profiles = configured[0]?.localModelId
+      ? configured.filter((profile) => profile.localModelId)
+      : configured;
     const seeded: string[] = [];
     for (const task of missing) {
       const profile = profiles.find((candidate) => supportsTask(task, candidate.capabilities));
@@ -662,12 +670,18 @@ export class AiService {
     text: string,
     _legacyPrivacy: "offline_only" | "allow_remote",
     sourceItemIds: string[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    priority?: AiQueuePriority
   ) {
     return this.admitTask(
       "embedding",
       text,
-      { stage: "wiki_consultation", embeddingInputType: "query", sourceItemIds },
+      {
+        stage: "wiki_consultation",
+        embeddingInputType: "query",
+        sourceItemIds,
+        ...(priority ? { priority } : {})
+      },
       signal
     );
   }
@@ -721,9 +735,12 @@ export class AiService {
   ): Promise<PromptAdmission | null> {
     const repository = createAiConfigRepository(this.requirePool());
     let found = await repository.getDefaultTask(task, pinned?.profileId);
-    // A task without a route is routed to the first configured profile that can serve it.
-    if (!found && !pinned && (await this.seedTaskRoutes(repository)).includes(task))
+    // A task without a route is routed to the first configured profile that can serve it. A concurrent
+    // call may have created the route first, so the task is looked up again whatever this call seeded.
+    if (!found && !pinned) {
+      await this.seedTaskRoutes(repository);
       found = await repository.getDefaultTask(task);
+    }
     const selection = found ? structuredClone(found) : null;
     if (!selection) {
       if (pinned) throw new Error("organization.errors.model");
@@ -1028,9 +1045,8 @@ export class AiService {
         )
           throw new Error("organization.errors.modelChanged");
         await onProviderStart?.();
-        return adapter.runStreaming &&
-          (descriptor.capabilities.includes("streaming") ||
-            descriptor.capabilities.includes("supports-progress-events"))
+        // Remote generation always streams, so its connect, first-byte and stall deadlines apply.
+        return adapter.runStreaming && runsStreaming(adapter, taskType)
           ? adapter.runStreaming(request, signal, progress)
           : adapter.run(request, signal);
       };
@@ -1109,6 +1125,9 @@ export class AiService {
         tokenUsage: monitoringUsage(result),
         parameters,
         output: result.output,
+        ...(result.attempts !== undefined
+          ? { details: callDetails(result.attempts, result.retriedUsage) }
+          : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {})
       });
       if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
@@ -1165,16 +1184,24 @@ export class AiService {
         inputHash: sha256(taskInput),
         durationMs: Date.now() - started,
         ...queueAndAttempt(admission, logContext),
+        ...failedCallUsage(error),
         status: signal?.aborted ? "canceled" : "failed",
         error: redactSensitiveText(error),
         sourceItemIds
       });
+      const failedReport = remoteCallReport(error);
       await this.options.monitoring?.finish(capture, {
         status: signal?.aborted ? "canceled" : "failed",
         aiTaskRunId,
         durationMs: Date.now() - started,
         error: redactSensitiveText(error),
-        parameters
+        parameters,
+        ...(failedReport
+          ? {
+              tokenUsage: failedMonitoringUsage(failedReport.failedUsage),
+              details: callDetails(failedReport.attempts, failedReport.failedUsage)
+            }
+          : {})
       });
       if (taskType === "atomic-note-generation") {
         logStructuredError(
@@ -1723,6 +1750,35 @@ function taskSourceItemIds(context: Omit<AiTaskLogContext, "onProgress">): strin
       ...(context.sourceItemIds ?? [])
     ])
   ];
+}
+
+type CallTokens = { inputTokens?: number | undefined; outputTokens?: number | undefined };
+
+/** Tokens the provider billed for the attempts of a call that failed, for the audit of the failed run. */
+function failedCallUsage(error: unknown): { inputTokens?: number; outputTokens?: number } {
+  const usage = remoteCallReport(error)?.failedUsage;
+  return {
+    ...(usage?.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+    ...(usage?.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {})
+  };
+}
+
+function failedMonitoringUsage(usage: CallTokens): Record<string, number> {
+  return {
+    ...(usage.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+    ...(usage.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
+    ...(usage.inputTokens !== undefined && usage.outputTokens !== undefined
+      ? { totalTokens: usage.inputTokens + usage.outputTokens }
+      : {})
+  };
+}
+
+/** What the monitoring entry keeps about the requests of a call: their number and what the failed ones used. */
+function callDetails(attempts: number, retried: CallTokens | undefined): JsonObject {
+  return {
+    attempts,
+    ...(retried && Object.keys(retried).length > 0 ? { retriedUsage: { ...retried } } : {})
+  };
 }
 
 function monitoringUsage(result: AiTaskResult): Record<string, number> {

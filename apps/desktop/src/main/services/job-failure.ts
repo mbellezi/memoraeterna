@@ -18,6 +18,15 @@ const transientDatabaseCodes = new Set([
   "57P02",
   "57P03"
 ]);
+/** Busy or locked files, exhausted descriptors and dropped connections of the filesystem and network I/O. */
+const transientSystemCodes = new Set([
+  "EBUSY",
+  "EAGAIN",
+  "EMFILE",
+  "ENFILE",
+  "ETIMEDOUT",
+  "ECONNRESET"
+]);
 const transientMessages = [
   /^Worker exited with code \d+\.?$/,
   /^Connection terminated/,
@@ -31,8 +40,8 @@ const transientMessages = [
 
 /**
  * Whether a failed job can succeed when it runs again: provider timeouts, 408/425/429/5xx, network
- * failures, stalled streams, a crashed worker or local helper, and database connection or contention
- * errors.
+ * failures, stalled streams, a crashed worker or local helper, database connection or contention
+ * errors, and transient filesystem errors (a worker reports the error code with its message).
  * Everything else is deterministic (invalid model output after its repair, an empty document, a missing
  * model or credential, a context overflow): the job fails once and keeps its real error.
  */
@@ -41,7 +50,11 @@ export function isTransientJobFailure(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; current instanceof Error && depth < 5; depth++) {
     const { code, message } = current as Error & { code?: unknown };
-    if (typeof code === "string" && transientDatabaseCodes.has(code)) return true;
+    if (
+      typeof code === "string" &&
+      (transientDatabaseCodes.has(code) || transientSystemCodes.has(code))
+    )
+      return true;
     if (transientMessages.some((pattern) => pattern.test(message))) return true;
     current = current.cause;
   }

@@ -21,10 +21,12 @@ import {
   monotonicProgress,
   resolveAiRuntimeConfig,
   runRemoteCall,
+  withCallReport,
   type AiRuntimeConfig,
   type AiRuntimeConfigInput,
   type RemoteAttempt,
-  type RemoteCallOptions
+  type RemoteCallOptions,
+  type RemoteCallReport
 } from "./remote-execution.js";
 
 export interface GoogleGeminiAdapterOptions {
@@ -127,68 +129,82 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const startedAt = performance.now();
     const modelId = request.modelId ?? this.options.modelId;
+    let report: RemoteCallReport | undefined;
+    const reportTo = (received: RemoteCallReport) => {
+      report = received;
+    };
     if (request.taskType === "embedding") {
-      const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
-        parseResponse<{
-          embedding?: { values?: number[] };
-          usageMetadata?: Record<string, unknown>;
-        }>(
-          await this.post(call, `/models/${encodeURIComponent(modelId)}:embedContent`, {
-            model: `models/${modelId}`,
-            content: { parts: [{ text: readText(request.input) }] },
-            outputDimensionality:
-              typeof request.parameters.dimensions === "number"
-                ? request.parameters.dimensions
-                : 768
-          }),
-          call
-        )
+      const payload = await this.remoteCall(
+        { request, streaming: false, signal, report: reportTo },
+        async (call) =>
+          parseResponse<{
+            embedding?: { values?: number[] };
+            usageMetadata?: Record<string, unknown>;
+          }>(
+            await this.post(call, `/models/${encodeURIComponent(modelId)}:embedContent`, {
+              model: `models/${modelId}`,
+              content: { parts: [{ text: readText(request.input) }] },
+              outputDimensionality:
+                typeof request.parameters.dimensions === "number"
+                  ? request.parameters.dimensions
+                  : 768
+            }),
+            call
+          )
       );
       if (!payload.embedding?.values)
         throw new Error("AI embedding response did not contain a vector.");
-      return {
+      return withCallReport(
+        {
+          taskType: request.taskType,
+          output: payload.embedding.values,
+          providerId: "google",
+          modelId,
+          runtime: "remote",
+          durationMs: Math.round(performance.now() - startedAt),
+          tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google")
+        },
+        report
+      );
+    }
+    const payload = await this.remoteCall(
+      { request, streaming: false, signal, report: reportTo },
+      async (call) =>
+        parseResponse<{
+          candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+          usageMetadata?: Record<string, unknown> & {
+            promptTokenCount?: number;
+            candidatesTokenCount?: number;
+          };
+        }>(
+          await this.post(
+            call,
+            `/models/${encodeURIComponent(modelId)}:generateContent`,
+            this.generationBody(request, modelId)
+          ),
+          call
+        )
+    );
+    const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
+    if (output === undefined) throw new Error("AI generation response did not contain content.");
+    return withCallReport(
+      {
         taskType: request.taskType,
-        output: payload.embedding.values,
+        output,
         providerId: "google",
         modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
-        tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google")
-      };
-    }
-    const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
-      parseResponse<{
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        usageMetadata?: Record<string, unknown> & {
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-        };
-      }>(
-        await this.post(
-          call,
-          `/models/${encodeURIComponent(modelId)}:generateContent`,
-          this.generationBody(request, modelId)
-        ),
-        call
-      )
+        tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google"),
+        ...(payload.usageMetadata?.promptTokenCount !== undefined
+          ? { inputTokens: payload.usageMetadata.promptTokenCount }
+          : {}),
+        ...(payload.usageMetadata?.candidatesTokenCount !== undefined
+          ? { outputTokens: payload.usageMetadata.candidatesTokenCount }
+          : {})
+      },
+      report
     );
-    const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
-    if (output === undefined) throw new Error("AI generation response did not contain content.");
-    return {
-      taskType: request.taskType,
-      output,
-      providerId: "google",
-      modelId,
-      runtime: "remote",
-      durationMs: Math.round(performance.now() - startedAt),
-      tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google"),
-      ...(payload.usageMetadata?.promptTokenCount !== undefined
-        ? { inputTokens: payload.usageMetadata.promptTokenCount }
-        : {}),
-      ...(payload.usageMetadata?.candidatesTokenCount !== undefined
-        ? { outputTokens: payload.usageMetadata.candidatesTokenCount }
-        : {})
-    };
   }
 
   public async runStreaming(
@@ -200,59 +216,76 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     const startedAt = performance.now();
     const modelId = request.modelId ?? this.options.modelId;
     const progress = monotonicProgress(onProgress);
-    const streamed = await this.remoteCall({ request, streaming: true, signal }, async (call) => {
-      const response = await this.post(
-        call,
-        `/models/${encodeURIComponent(modelId)}:streamGenerateContent`,
-        this.generationBody(request, modelId),
-        "alt=sse"
-      );
-      let output = "";
-      let tokenUsage: Record<string, number> = {};
-      let inputTokens: number | undefined;
-      let outputTokens: number | undefined;
-      await readServerSentEvents(
-        response,
-        (data) => {
-          const event = JSON.parse(data) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-            usageMetadata?: Record<string, unknown> & {
-              promptTokenCount?: number;
-              candidatesTokenCount?: number;
+    let report: RemoteCallReport | undefined;
+    const streamed = await this.remoteCall(
+      {
+        request,
+        streaming: true,
+        signal,
+        report: (received) => {
+          report = received;
+        }
+      },
+      async (call) => {
+        const response = await this.post(
+          call,
+          `/models/${encodeURIComponent(modelId)}:streamGenerateContent`,
+          this.generationBody(request, modelId),
+          "alt=sse"
+        );
+        let output = "";
+        let tokenUsage: Record<string, number> = {};
+        let inputTokens: number | undefined;
+        let outputTokens: number | undefined;
+        await readServerSentEvents(
+          response,
+          (data) => {
+            const event = JSON.parse(data) as {
+              candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+              usageMetadata?: Record<string, unknown> & {
+                promptTokenCount?: number;
+                candidatesTokenCount?: number;
+              };
+              error?: { message?: string; code?: number; status?: string };
             };
-            error?: { message?: string; code?: number; status?: string };
-          };
-          if (event.error)
-            throw providerStreamError({
-              message: event.error.message,
-              code: event.error.code,
-              type: event.error.status
-            });
-          output +=
-            event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-          tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
-          inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
-          outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
-          progress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
-        },
-        undefined,
-        call
-      );
-      if (output.length === 0) throw new Error("AI generation response did not contain content.");
-      return { output, tokenUsage, inputTokens, outputTokens };
-    });
+            if (event.error)
+              throw providerStreamError({
+                message: event.error.message,
+                code: event.error.code,
+                type: event.error.status
+              });
+            const text =
+              event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+            if (text.length > 0) call.outputStarted();
+            output += text;
+            tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
+            call.reportUsage(tokenUsage);
+            inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
+            outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
+            progress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+          },
+          undefined,
+          call
+        );
+        if (output.length === 0) throw new Error("AI generation response did not contain content.");
+        return { output, tokenUsage, inputTokens, outputTokens };
+      }
+    );
     progress({ progress: 1 });
-    return {
-      taskType: request.taskType,
-      output: streamed.output,
-      providerId: "google",
-      modelId,
-      runtime: "remote",
-      durationMs: Math.round(performance.now() - startedAt),
-      tokenUsage: streamed.tokenUsage,
-      ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
-      ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
-    };
+    return withCallReport(
+      {
+        taskType: request.taskType,
+        output: streamed.output,
+        providerId: "google",
+        modelId,
+        runtime: "remote",
+        durationMs: Math.round(performance.now() - startedAt),
+        tokenUsage: streamed.tokenUsage,
+        ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
+        ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
+      },
+      report
+    );
   }
 
   private generationBody(request: AiTaskRequest, modelId: string): Record<string, unknown> {

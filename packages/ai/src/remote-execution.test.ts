@@ -7,9 +7,12 @@ import {
   isLocalEndpoint,
   monotonicProgress,
   resolveAiRuntimeConfig,
+  remoteCallReport,
   retryDelayMs,
   runRemoteCall,
-  type AiRuntimeConfigInput
+  withCallReport,
+  type AiRuntimeConfigInput,
+  type RemoteAttempt
 } from "./remote-execution.js";
 
 beforeEach(() => {
@@ -66,6 +69,45 @@ describe("remote execution configuration", () => {
     ])
       expect(isLocalEndpoint(url)).toBe(true);
     for (const url of ["https://api.openai.com/v1", "http://172.32.0.1/v1", "not a url"])
+      expect(isLocalEndpoint(url)).toBe(false);
+  });
+
+  it("recognizes private IPv6 addresses and the whole loopback block", () => {
+    for (const url of [
+      "http://127.1.2.3:8000/v1",
+      "http://[fd12:3456:789a::1]:8000/v1",
+      "http://[fc00::5]/v1",
+      "http://[fe80::1ff:fe23:4567:890a]/v1",
+      "http://[febf::1]/v1",
+      "http://[::ffff:127.0.0.1]/v1",
+      "http://[::ffff:192.168.1.5]/v1",
+      "http://app.localhost:3000/v1"
+    ])
+      expect(isLocalEndpoint(url)).toBe(true);
+    for (const url of [
+      "http://[2001:db8::1]/v1",
+      "http://[fec0::1]/v1",
+      "http://[::]/v1",
+      "http://[::ffff:8.8.8.8]/v1",
+      "http://172.15.0.1/v1",
+      "http://192.169.0.1/v1",
+      "http://11.0.0.1/v1"
+    ])
+      expect(isLocalEndpoint(url)).toBe(false);
+  });
+
+  it("does not take a public host name for a private address because of how it starts", () => {
+    for (const url of [
+      "https://10.example.com/v1",
+      "https://127.0.0.1.nip.io/v1",
+      "https://192.168.acme.com/v1",
+      "https://172.16.evil.test/v1",
+      "https://fc00.example.com/v1",
+      "https://fe80.example.com/v1",
+      "https://localhost.example.com/v1",
+      "https://notlocalhost/v1",
+      "https://example.localhost.com/v1"
+    ])
       expect(isLocalEndpoint(url)).toBe(false);
   });
 
@@ -153,6 +195,21 @@ describe("runRemoteCall retries", () => {
     expect(attempt).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     await expect(result).resolves.toBe("done");
+  });
+
+  it("waits inline for a Retry-After of at most five seconds and leaves a longer one to the job", async () => {
+    expect(defaultAiRuntimeConfig.retry.maxInlineRetryAfterMs).toBe(5_000);
+    const within = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(transient(5_000))
+      .mockResolvedValue("done");
+    const waited = runRemoteCall(context(), { streaming: false }, within);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(waited).resolves.toBe("done");
+    const beyond = transient(5_001);
+    const refused = vi.fn<() => Promise<string>>().mockRejectedValue(beyond);
+    await expect(runRemoteCall(context(), { streaming: false }, refused)).rejects.toBe(beyond);
+    expect(refused).toHaveBeenCalledTimes(1);
   });
 
   it("leaves a Retry-After longer than the inline limit to the caller", async () => {
@@ -289,6 +346,88 @@ describe("runRemoteCall deadlines", () => {
     await settled;
   });
 
+  describe("silence after the first chunk", () => {
+    /** A stream that delivers one lifecycle chunk and then goes quiet, like a model that thinks. */
+    const silentAfterLifecycle = (parameters: Record<string, unknown>, outputAt?: number) =>
+      runRemoteCall(
+        context({ retry: { maxAttempts: 1 } }),
+        { streaming: true, taskType: "structured-output", parameters },
+        async (call) => {
+          const response = await call.fetch(
+            async () => new Response(new ReadableStream<Uint8Array>({ start: () => undefined })),
+            "https://example.test",
+            {}
+          );
+          expect(response.ok).toBe(true);
+          call.chunkReceived();
+          if (outputAt !== undefined) {
+            await call.guard(new Promise<void>((resolve) => setTimeout(resolve, outputAt)));
+            call.chunkReceived();
+            call.outputStarted();
+          }
+          return call.guard(new Promise<string>(() => undefined));
+        }
+      );
+
+    it("stalls an ordinary request after the stall window", async () => {
+      const result = silentAfterLifecycle({ reasoningLevel: "low" });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(20_000);
+      await settled;
+    });
+
+    it("lets a high-reasoning request think in silence for the longer window until its first output", async () => {
+      const result = silentAfterLifecycle({ reasoningLevel: "high" });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 120000 ms."
+      });
+      // One early chunk and then 60 s of silence is not a stall for a reasoning request.
+      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(59_999);
+      await vi.advanceTimersByTimeAsync(1);
+      await settled;
+    });
+
+    it("applies the short stall window again once the answer text started", async () => {
+      const result = silentAfterLifecycle({ reasoningLevel: "high" }, 50_000);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(50_000);
+      await vi.advanceTimersByTimeAsync(19_999);
+      await vi.advanceTimersByTimeAsync(1);
+      await settled;
+    });
+
+    it("never lets the reasoning window be shorter than the stall window", async () => {
+      const result = runRemoteCall(
+        context({
+          retry: { maxAttempts: 1 },
+          deadlines: { stallMs: 200_000, firstByteHighReasoningMs: 120_000 }
+        }),
+        {
+          streaming: true,
+          taskType: "knowledge-graph-generation",
+          parameters: { reasoningLevel: "xhigh" }
+        },
+        async (call) => {
+          call.chunkReceived();
+          return call.guard(new Promise<string>(() => undefined));
+        }
+      );
+      const settled = expect(result).rejects.toMatchObject({
+        message: "AI provider stream stalled for 200000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(200_000);
+      await settled;
+    });
+  });
+
   it("allows a high-reasoning request to stay silent longer before its first byte", async () => {
     const respond = (delay: number) =>
       vi.fn<typeof fetch>(
@@ -312,5 +451,108 @@ describe("runRemoteCall deadlines", () => {
     const high = first({ reasoningLevel: "high" });
     await vi.advanceTimersByTimeAsync(61_000);
     await expect(high).resolves.toBeUndefined();
+  });
+});
+
+describe("what a call cost beyond its answer", () => {
+  it("reports the attempts it made and the tokens its failed attempts used", async () => {
+    const reported: Array<{ attempts: number; failedUsage: unknown }> = [];
+    const attempt = vi
+      .fn<(call: RemoteAttempt) => Promise<string>>()
+      .mockImplementationOnce(async (call) => {
+        call.reportUsage({ inputTokens: 100, outputTokens: 5 });
+        call.reportUsage({ inputTokens: 100, outputTokens: 20 });
+        throw transient();
+      })
+      .mockImplementationOnce(async (call) => {
+        call.reportUsage({ inputTokens: 100 });
+        throw transient();
+      })
+      .mockImplementation(async (call) => {
+        call.reportUsage({ inputTokens: 100, outputTokens: 30 });
+        return "done";
+      });
+    const result = runRemoteCall(
+      context(),
+      { streaming: false, report: (report) => reported.push(report) },
+      attempt
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe("done");
+    // The cumulative report of an attempt replaces its earlier ones; the answer's own usage is not
+    // counted as failed.
+    expect(reported).toEqual([
+      { attempts: 3, failedUsage: { inputTokens: 200, outputTokens: 20 } }
+    ]);
+  });
+
+  it("attaches the report to the error of a failed call", async () => {
+    const error = permanent();
+    const failure = runRemoteCall(context(), { streaming: false }, async () => {
+      throw error;
+    });
+    await expect(failure).rejects.toBe(error);
+    expect(remoteCallReport(error)).toEqual({ attempts: 1, failedUsage: {} });
+    expect(remoteCallReport(new Error("other"))).toBeUndefined();
+    expect(remoteCallReport("text")).toBeUndefined();
+  });
+
+  it("keeps the usage of every attempt of a call that never succeeded", async () => {
+    const last = transient();
+    const attempt = vi.fn(async (call: RemoteAttempt) => {
+      call.reportUsage({ inputTokens: 10 });
+      throw last;
+    });
+    const result = runRemoteCall(
+      context({ retry: { maxAttempts: 2 } }),
+      { streaming: false },
+      attempt
+    );
+    const settled = expect(result).rejects.toBe(last);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await settled;
+    expect(remoteCallReport(last)).toEqual({ attempts: 2, failedUsage: { inputTokens: 20 } });
+  });
+
+  it("adds failed-attempt tokens to the totals only where the answer's own count is known", () => {
+    const base = {
+      taskType: "summarization" as const,
+      output: "x",
+      providerId: "p",
+      modelId: "m",
+      runtime: "remote" as const,
+      durationMs: 1
+    };
+    const report = { attempts: 3, failedUsage: { inputTokens: 200, outputTokens: 20 } };
+    expect(
+      withCallReport(
+        {
+          ...base,
+          inputTokens: 100,
+          outputTokens: 30,
+          tokenUsage: { inputTokens: 100, outputTokens: 30, totalTokens: 130, "provider.x": 7 }
+        },
+        report
+      )
+    ).toEqual({
+      ...base,
+      attempts: 3,
+      inputTokens: 300,
+      outputTokens: 50,
+      tokenUsage: { inputTokens: 300, outputTokens: 50, totalTokens: 350, "provider.x": 7 },
+      retriedUsage: { inputTokens: 200, outputTokens: 20 }
+    });
+    // The provider did not report the answer's usage: unknown stays unknown.
+    expect(withCallReport({ ...base, tokenUsage: {} }, report)).toEqual({
+      ...base,
+      attempts: 3,
+      tokenUsage: {},
+      retriedUsage: { inputTokens: 200, outputTokens: 20 }
+    });
+    expect(withCallReport(base, { attempts: 1, failedUsage: {} })).toEqual({
+      ...base,
+      attempts: 1
+    });
+    expect(withCallReport(base, undefined)).toBe(base);
   });
 });

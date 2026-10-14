@@ -8,6 +8,7 @@ import {
   providerHttpError,
   providerStreamError,
   retryAfterMilliseconds,
+  retryDelayFromText,
   toProviderNetworkError
 } from "./provider-error.js";
 
@@ -34,6 +35,69 @@ describe("HTTP failure classification", () => {
       false
     );
     expect(classifyHttpFailure(429, "Rate limit reached for requests").transient).toBe(true);
+  });
+
+  it("treats a per-minute Gemini quota as a rate limit and takes its retry delay from the body", async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        status: "RESOURCE_EXHAUSTED",
+        message:
+          "You exceeded your current quota, please check your plan and billing details. Please retry in 32.4s.",
+        details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "32s" }]
+      }
+    });
+    expect(classifyHttpFailure(429, body)).toEqual({
+      kind: "http",
+      transient: true,
+      retryAfterMs: 32_000
+    });
+    const error = await providerHttpError(new Response(body, { status: 429 }));
+    expect(error).toMatchObject({ transient: true, status: 429, retryAfterMs: 32_000 });
+    // The header, when the provider sends one, wins over the body.
+    const withHeader = await providerHttpError(
+      new Response(body, { status: 429, headers: { "retry-after": "4" } })
+    );
+    expect(withHeader.retryAfterMs).toBe(4_000);
+    expect(
+      classifyHttpFailure(429, "You exceeded your current quota. Please retry in 1.5s.")
+    ).toMatchObject({ transient: true, retryAfterMs: 1_500 });
+  });
+
+  it("keeps an exhausted billing quota permanent, with or without the quota wording", () => {
+    for (const body of [
+      '{"error":{"code":"insufficient_quota","message":"You exceeded your current quota"}}',
+      '{"error":{"code":"billing_hard_limit_reached"}}',
+      "Your credit balance is too low to access the API"
+    ])
+      expect(classifyHttpFailure(429, body)).toEqual({ kind: "http", transient: false });
+  });
+
+  it("waits for the reset a ChatGPT plan limit announces instead of retrying at once", async () => {
+    for (const type of ["usage_limit_reached", "usage_not_included"]) {
+      const body = JSON.stringify({
+        error: { type, message: "The usage limit has been reached", resets_in_seconds: 1_800 }
+      });
+      const error = await providerHttpError(new Response(body, { status: 429 }));
+      expect(error).toMatchObject({ transient: true, status: 429, retryAfterMs: 1_800_000 });
+    }
+    // A reset far in the future is bounded like any other provider delay.
+    expect(
+      classifyHttpFailure(
+        429,
+        '{"error":{"type":"usage_limit_reached","resets_in_seconds":900000}}'
+      ).retryAfterMs
+    ).toBe(3_600_000);
+    expect(
+      classifyHttpFailure(429, '{"error":{"type":"usage_limit_reached"}}').retryAfterMs
+    ).toBeUndefined();
+  });
+
+  it("reads the delay a rate-limit message states and nothing else", () => {
+    expect(retryDelayFromText('"retryDelay": "0.5s"')).toBe(500);
+    expect(retryDelayFromText("Please retry in 12s")).toBe(12_000);
+    expect(retryDelayFromText("retry in soon")).toBeUndefined();
+    expect(retryDelayFromText("")).toBeUndefined();
   });
 
   it("keeps the status and the redacted body in the error and reads Retry-After", async () => {
@@ -81,6 +145,18 @@ describe("errors reported inside a stream", () => {
     expect(providerStreamError({ code: "rate_limit_exceeded" }).transient).toBe(true);
     expect(providerStreamError({ message: "AI provider request failed." }).transient).toBe(true);
     expect(providerStreamError({ code: 503, type: "UNAVAILABLE" }).transient).toBe(true);
+  });
+
+  it("retries a Gemini quota error reported in a stream after the delay it states", () => {
+    const error = providerStreamError({
+      code: 429,
+      type: "RESOURCE_EXHAUSTED",
+      message: "You exceeded your current quota, please check your plan. Please retry in 32s."
+    });
+    expect(error).toMatchObject({ transient: true, status: 429, retryAfterMs: 32_000 });
+    const exhausted = providerStreamError({ code: "insufficient_quota", message: "Retry in 5s" });
+    expect(exhausted.transient).toBe(false);
+    expect(exhausted.retryAfterMs).toBeUndefined();
   });
 
   it("treats invalid requests, context overflow and exhausted quota as permanent", () => {

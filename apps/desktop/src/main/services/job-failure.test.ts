@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { AiProviderError } from "@app/ai";
+import {
+  workerErrorMessage,
+  workerFailure,
+  workerMessageSchema
+} from "../workers/worker-contracts.js";
 import { isTransientJobFailure } from "./job-failure.js";
 
 describe("job failure classification", () => {
@@ -38,6 +43,37 @@ describe("job failure classification", () => {
     expect(isTransientJobFailure(Object.assign(new Error("shutdown"), { code: "57P01" }))).toBe(
       true
     );
+  });
+
+  it("retries busy files, exhausted descriptors and dropped connections", () => {
+    for (const code of ["EBUSY", "EAGAIN", "EMFILE", "ENFILE", "ETIMEDOUT", "ECONNRESET"])
+      expect(
+        isTransientJobFailure(Object.assign(new Error(`${code}: operation failed`), { code }))
+      ).toBe(true);
+    for (const code of ["ENOENT", "EACCES", "ENOSPC", "EEXIST", "EPERM"])
+      expect(isTransientJobFailure(Object.assign(new Error(`${code}: failed`), { code }))).toBe(
+        false
+      );
+  });
+
+  it("keeps the error code of a filesystem failure that crossed the worker boundary", () => {
+    const busy = Object.assign(new Error("EBUSY: resource busy or locked, rename 'a' -> 'b'"), {
+      code: "EBUSY"
+    });
+    const posted = workerMessageSchema.parse(workerErrorMessage(busy));
+    expect(posted).toEqual({ kind: "error", error: busy.message, code: "EBUSY" });
+    // The supervisor rejects with an Error that carries the code, as the job supervisor classifies it.
+    expect(isTransientJobFailure(workerFailure(posted as { error: string; code: string }))).toBe(
+      true
+    );
+    const missing = workerMessageSchema.parse(
+      workerErrorMessage(Object.assign(new Error("ENOENT: no such file"), { code: "ENOENT" }))
+    );
+    expect(isTransientJobFailure(workerFailure(missing as { error: string; code: string }))).toBe(
+      false
+    );
+    // Without a code, a worker failure is as deterministic as it was before.
+    expect(isTransientJobFailure(workerFailure({ error: "obsidian_sync_failed" }))).toBe(false);
   });
 
   it("fails deterministic errors once, with their real error", () => {

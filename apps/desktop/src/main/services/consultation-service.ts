@@ -470,11 +470,13 @@ export class ConsultationService {
     let vectors: Array<{ id: string; score: number }> = [];
     if (input.mode === "hybrid")
       try {
+        // An automatic investigation refresh (it brings its own admission) must not outrank ingestion.
         const embedded = await this.options.ai.runConsultationEmbedding(
           input.question,
           profile.privacy,
           sourceIds,
-          signal
+          signal,
+          admission ? "background" : undefined
         );
         if (embedded && Array.isArray(embedded.output) && embedded.embeddingSpaceKey) {
           vectors = await retrieval.vector(sourceIds, {
@@ -738,11 +740,13 @@ export class ConsultationService {
         profile,
         prompt,
         {
+          // Hooks mean an automatic investigation refresh, which is background work; Ask stays interactive.
           ...(hooks
             ? {
                 organizationRunId: hooks.runId,
                 organizationStep: attempt + 1,
-                onProviderStart: () => hooks.started(attempt + 1)
+                onProviderStart: () => hooks.started(attempt + 1),
+                priority: "background" as const
               }
             : {}),
           sourceItemIds: snapshot.sample ? [] : sourceIds,
