@@ -28,6 +28,11 @@ record; when an approved version changes, update this file in the same change.
 | `@types/node` | `24.13.2` | Node type baseline |
 | `tsx` | `4.23.0` | Scripts requiring full TypeScript execution |
 | `vitest` | `4.1.9` | Unit and integration tests |
+| `prettier` | `3.9.9` | Code formatting (`npm run format`) |
+| `eslint` / `@eslint/js` | `10.11.0` / `10.0.1` | Linting with bulk suppressions (`npm run lint`) |
+| `typescript-eslint` | `8.71.0` | TypeScript lint rules; supports TypeScript `>=4.8.4 <6.1.0` |
+| `eslint-plugin-react-hooks` | `7.1.1` | Hooks rules for renderer code |
+| `globals` | `17.12.0` | Environment globals for the ESLint config |
 | CPython | `3.13.13` | Isolated Docling sidecar only |
 
 Directly executed `.ts` files must stay within Node's erasable TypeScript syntax

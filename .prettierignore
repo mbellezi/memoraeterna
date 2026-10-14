@@ -1,0 +1,34 @@
+# Prettier formats code only (ts, tsx, js, mjs, cjs, json, css, html).
+
+# Markdown, rules and docs are maintained by hand.
+*.md
+docs/
+rules/
+
+# Other languages and config formats are out of scope.
+*.yml
+*.yaml
+
+# Lockfiles and generated files.
+package-lock.json
+eslint-suppressions.json
+packages/db/drizzle/
+packages/db/seed/
+packages/conversion/sidecar/
+
+# Fixtures that carry data and must stay byte-stable.
+scripts/fixtures/**/*.json
+**/__snapshots__/
+
+# Build outputs, caches, vendored and native trees.
+**/dist/
+**/out/
+**/coverage/
+**/.vite/
+.cache/
+vendor/
+samples/
+native/
+apps/desktop/build/
+apps/desktop/build-resources/
+apps/desktop/release/

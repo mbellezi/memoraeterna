@@ -1,0 +1,842 @@
+{
+  "apps/chrome-extension/src/popup.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/job-task-payload.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/services/ai-execution-queue.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/ai-organization-pinning.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 18
+    }
+  },
+  "apps/desktop/src/main/services/ai-service-model-discovery.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/main/services/ai-service.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/automatic-maintenance.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/canonical-resolution.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/consultation-service.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 5
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/integration-gateway.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/job-supervisor.ts": {
+    "no-useless-assignment": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/knowledge-consultation.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/services/knowledge-evolution.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/knowledge-processing.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/knowledge-processing.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/knowledge-service.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/maintenance-service.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/matching-benchmark.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "apps/desktop/src/main/services/matching-benchmark.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/matching-pilot.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/metadata-enrichment-service.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/metadata-enrichment-service.ts": {
+    "preserve-caught-error": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-editorial-service.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 5
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-layout-migration.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-layout-paths.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    },
+    "no-control-regex": {
+      "count": 1
+    },
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-layout.test.ts": {
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-mirror.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-projection.ts": {
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-sync-service.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/services/obsidian-wiki-projection.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/organization-service.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/organization-service.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "preserve-caught-error": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/prompt-catalog-ai.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 21
+    }
+  },
+  "apps/desktop/src/main/services/prompt-catalog-callers.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/services/prompt-runtime.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/prompt-samples.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/main/services/prompt-samples.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/prompt-service.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/relation-type-resolution.ts": {
+    "prefer-const": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/main/services/settings-service.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 7
+    }
+  },
+  "apps/desktop/src/main/services/source-deletion-service.ts": {
+    "no-useless-assignment": {
+      "count": 5
+    }
+  },
+  "apps/desktop/src/main/services/source-relation-processing.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/main/services/source-relation-processing.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/source-url-preview.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/wiki-collection.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/wiki-curator.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 47
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/wiki-curator.ts": {
+    "no-useless-assignment": {
+      "count": 1
+    },
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/main/services/wiki-hierarchy-continuation.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/App.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/immutability": {
+      "count": 8
+    },
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/AdvancedMatchingSettings.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/AiSettingsView.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 4
+    }
+  },
+  "apps/desktop/src/renderer/components/AutomaticMaintenancePanel.tsx": {
+    "no-empty": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    },
+    "react-hooks/purity": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/AutomaticWikiDialog.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/AutomationTaskDetail.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 5
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/ConsultationDialog.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/CreatorFields.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/DebugDashboard.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/ImportView.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 4
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 5
+    }
+  },
+  "apps/desktop/src/renderer/components/JobsView.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    },
+    "react-hooks/static-components": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/KnowledgeAutomationView.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/KnowledgeGraphDashboard.tsx": {
+    "react-hooks/refs": {
+      "count": 8
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 5
+    },
+    "react-hooks/static-components": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/LibraryView.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    },
+    "react-hooks/refs": {
+      "count": 4
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/LocalModelsView.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/MaintenanceView.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/MarkdownEditor.tsx": {
+    "react-hooks/refs": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/MonitoringDashboard.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/ObsidianEditorialCard.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/ObsidianSyncStatusCard.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/ObsidianWikiCard.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/OrganizationView.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 15
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 3
+    }
+  },
+  "apps/desktop/src/renderer/components/PromptsSettingsView.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/ReviewQueueView.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/SettingsView.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/SourceConnectionGraph.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/SourceRelationsList.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/StructureReview.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiBootstrapPanel.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiChildrenLinks.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiContextPane.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiThemeTree.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiTypedLink.tsx": {
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    },
+    "react-hooks/refs": {
+      "count": 1
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/renderer/components/WikiWorkspace.tsx": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 2
+    },
+    "react-hooks/preserve-manual-memoization": {
+      "count": 4
+    },
+    "react-hooks/refs": {
+      "count": 3
+    },
+    "react-hooks/set-state-in-effect": {
+      "count": 2
+    }
+  },
+  "apps/desktop/src/renderer/components/ui/cover-image.tsx": {
+    "react-hooks/set-state-in-effect": {
+      "count": 1
+    }
+  },
+  "apps/desktop/src/shared/ipc.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "apps/obsidian-plugin/src/integration-client.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "apps/obsidian-plugin/src/main.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/ai/src/parameter-capabilities.ts": {
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "packages/ai/src/reasoning.ts": {
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "packages/conversion/src/structure-detection.ts": {
+    "no-useless-escape": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/automaticMaintenanceRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "packages/db/src/repositories/investigationRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/knowledgeConsultationRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "no-empty": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/knowledgeEvolution.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 3
+    }
+  },
+  "packages/db/src/repositories/maintenanceRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/obsidianLayoutRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/organizationRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "packages/db/src/repositories/promptRepository.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/sourceRelationRepository.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/wikiCuratorRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 15
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 7
+    }
+  },
+  "packages/db/src/repositories/wikiHierarchyRepository.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/db/src/repositories/wikiRepository.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 10
+    }
+  },
+  "packages/db/src/sidecar/manager.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/domain/src/automatic-maintenance.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/domain/src/prompt-definitions.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "packages/domain/src/wiki-hierarchy.test.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "packages/integration-contracts/src/obsidian-format.ts": {
+    "no-useless-escape": {
+      "count": 3
+    }
+  },
+  "scripts/analyze-matching-benchmark.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 36
+    }
+  },
+  "scripts/analyze-matching-pilot.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 19
+    }
+  },
+  "scripts/fixtures/automatic-wiki-fixture.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "scripts/fixtures/obsidian-hierarchy.ts": {
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/fixtures/wiki-hierarchy-reading.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "scripts/matching-benchmark-status.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "scripts/select-matching-benchmark.ts": {
+    "preserve-caught-error": {
+      "count": 1
+    }
+  },
+  "scripts/verify-ai-context.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "scripts/verify-automatic-wiki-a3.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 13
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-automatic-wiki-a4.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 19
+    }
+  },
+  "scripts/verify-automatic-wiki-a5.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-automatic-wiki-a7.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 13
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-automatic-wiki-a8.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 11
+    }
+  },
+  "scripts/verify-automatic-wiki.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 15
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-maintenance.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "scripts/verify-obsidian-editing.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    }
+  },
+  "scripts/verify-obsidian-layout.ts": {
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-obsidian-wiki.ts": {
+    "prefer-const": {
+      "count": 3
+    }
+  },
+  "scripts/verify-organization.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    },
+    "prefer-const": {
+      "count": 1
+    }
+  },
+  "scripts/verify-prompts.ts": {
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "scripts/verify-second-brain-m3.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 4
+    }
+  },
+  "scripts/verify-wiki-hierarchy.ts": {
+    "@typescript-eslint/no-unsafe-function-type": {
+      "count": 1
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 2
+    }
+  },
+  "scripts/verify-wiki-recomposition.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  }
+}
