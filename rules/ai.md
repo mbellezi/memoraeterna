@@ -40,9 +40,9 @@ monitoring.
 
 ## Scheduling and execution
 
-- Local inference runs one call at a time per machine across the app, scripts,
-  helpers and tests, including embeddings and reranking. Never load two local
-  generative models at once or start a duplicate helper to go faster.
+- Local inference runs one call at a time per machine (app, scripts, helpers,
+  tests), bounds its memory (e.g. the MLX buffer cache) so the host never swaps,
+  and never loads two local generative models at once or starts a duplicate helper.
 - Remote calls run with bounded concurrency per provider configuration and
   respect rate-limit signals. Interactive work is served before background work;
   a running call is never preempted (target F1a-F3).
