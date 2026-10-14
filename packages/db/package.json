@@ -33,7 +33,8 @@
     "db:phase5:verify": "tsx src/scripts/verify-phase5.ts",
     "db:source-ingestion:verify": "tsx src/scripts/verify-source-ingestion.ts",
     "db:seed:verify": "tsx src/scripts/verify-seed.ts",
-    "db:wall-clock:verify": "tsx src/scripts/verify-wall-clock.ts"
+    "db:wall-clock:verify": "tsx src/scripts/verify-wall-clock.ts",
+    "db:relation-decisions:verify": "tsx src/scripts/verify-relation-decisions.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",

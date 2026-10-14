@@ -79,8 +79,10 @@ describe("synthetic pilot rematch boundary", () => {
     const deletes = query.mock.calls
       .filter(([sql]) => sql.startsWith("delete"))
       .map(([sql]) => sql);
-    expect(deletes).toHaveLength(4);
+    expect(deletes).toHaveLength(5);
     expect(deletes.every((sql) => sql.includes("any($1::uuid[])"))).toBe(true);
+    // Cached relation decisions go too, so the rematch asks the decider again.
+    expect(deletes.some((sql) => sql.startsWith("delete from relation_decisions"))).toBe(true);
     expect(
       deletes.some((sql) =>
         /delete from (source_items|atomic_notes|ai_profile_sets|entities|source_summaries)\b/.test(

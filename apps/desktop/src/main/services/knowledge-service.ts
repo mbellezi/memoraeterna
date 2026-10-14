@@ -1,14 +1,18 @@
 import {
   renderPrompt,
   capturePromptPin,
+  promptFingerprint,
   stagePromptFingerprints,
   changedPromptIdentity
 } from "./prompt-runtime.js";
-import { compareContent, contentKey } from "./content-order.js";
+import { contentKey } from "./content-order.js";
+import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
 import {
   AtomicNoteMatchingSettingsSchema,
+  AtomicNoteRelationTypeSchema,
+  type AtomicNoteRelationType,
   CanonicalMatchingSettingsSchema,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
@@ -23,7 +27,9 @@ import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import {
+  createAiConfigRepository,
   createAtomicNoteRelationRepository,
+  createRelationDecisionRepository,
   createSourceRelationRepository,
   listSourceRelations,
   createAtomicNoteRepository,
@@ -41,6 +47,7 @@ import {
   type AtomicNoteGraphElements,
   type AtomicNoteRecord,
   type PgPool,
+  type RelationDecisionInput,
   type SourceItemType
 } from "@app/db";
 
@@ -49,27 +56,30 @@ import { SourceDeletionService } from "./source-deletion-service.js";
 import { logStructuredError } from "./structured-logging.js";
 import type { LibraryBrowseInput, StorageSettings } from "../../shared/ipc.js";
 import {
+  atomicNoteDecisionContentHash,
+  atomicNoteDeciderKey,
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
   buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
   calculateAtomicNoteMatchingProgress,
-  calculateRelationScore,
+  canQualifyAtomicNoteRelation,
   defaultSummaryMinimumWordCount,
   fuseAtomicNoteCandidateRankings,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes,
   generateSummaryFromChunks,
   hierarchyAggregateSummaryPromptVersion,
-  qualifiesAtomicNoteRelation,
+  mergeBatchRerankRepair,
   normalizeSummaryText,
   parseBatchRerankOutput,
   resolveAtomicNoteReferences,
   scoreMetadataOverlap,
+  selectAtomicNoteRelations,
   knowledgeGraphPromptVersion,
   parseKnowledgeGraphBatchCheckpoints,
   summaryPromptVersion,
-  type BatchRerankOutput,
+  type BatchRerankDecision,
   type KnowledgeGraphBatchCheckpoint,
   type KnowledgeAiExecution
 } from "./knowledge-processing.js";
@@ -1286,22 +1296,29 @@ export class KnowledgeService {
     noteIds: string[],
     signal?: AbortSignal,
     onProgress?: (progress: number) => void | Promise<void>,
-    logContext: AiTaskLogContext = {}
+    logContext: AiTaskLogContext = {},
+    options: {
+      /** Called once a note's relations and decisions are saved: a resumable checkpoint. */
+      onNoteCompleted?: (noteId: string, persistedCount: number) => void | Promise<void>;
+    } = {}
   ) {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
+    const decisions = createRelationDecisionRepository(pool);
     const relationThreshold = clamp(
       (await this.options.getRelationThreshold?.()) ?? this.relationThreshold
     );
     const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(
       (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
     );
+    let decider = await this.atomicNoteDecider();
     let persistedCount = 0;
     for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
       if (!note) {
         await onProgress?.((noteIndex + 1) / noteIds.length);
+        await options.onNoteCompleted?.(noteId, 0);
         continue;
       }
       const embeddingExecution = await this.tryRunDefaultTask(
@@ -1413,24 +1430,43 @@ export class KnowledgeService {
       const graphPathsById = new Map(
         graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType])
       );
-      const existingTargets = await relations.existingTargets(
+      const pairStatuses = await relations.pairStatuses(
         noteId,
         fusedCandidates.map((candidate) => candidate.noteId)
       );
+      const hasEmbedding = Boolean(embedding);
+      // A human accept or reject is final in both directions. An automatic relation is still
+      // decided in a direction that has no decision yet (the decision cache below skips the rest).
       const candidates = fusedCandidates
-        .filter((candidate) => !existingTargets.has(candidate.noteId))
+        .filter(
+          (candidate) =>
+            (pairStatuses.get(candidate.noteId) ?? "pending_review") === "pending_review"
+        )
         .flatMap((candidate) => {
           const scored = scoresById.get(candidate.noteId);
-          return scored
-            ? [
-                {
-                  ...candidate,
-                  note: scored.note,
-                  textScore: scored.textScore,
-                  vectorScore: scored.vectorScore
-                }
-              ]
-            : [];
+          if (!scored) return [];
+          const scores = {
+            vectorScore: scored.vectorScore,
+            textScore: scored.textScore,
+            metadataScore: scoreMetadataOverlap(note.metadata, scored.note.metadata),
+            graphScore: candidate.graphScore
+          };
+          return [
+            {
+              ...candidate,
+              note: scored.note,
+              textScore: scored.textScore,
+              vectorScore: scored.vectorScore,
+              scores,
+              contentHash: atomicNoteDecisionContentHash(scored.note),
+              feasible: canQualifyAtomicNoteRelation({
+                scores,
+                hasEmbedding,
+                threshold: relationThreshold,
+                settings: matchingSettings
+              })
+            }
+          ];
         });
       let graphElementsByNote = new Map<string, AtomicNoteGraphElements>();
       try {
@@ -1441,127 +1477,196 @@ export class KnowledgeService {
       } catch {
         // Debug enrichment must not make note matching fail.
       }
-      let rerankExecution: DefaultAiTaskResult | null = null;
-      let rerankResults = new Map<string, BatchRerankOutput>();
-      let rerankError: string | null = null;
-      const rerankAliases = new Map(
-        candidates.map((candidate, index) => [candidate.note.id, `c${index + 1}`])
-      );
-      if (candidates.length > 0) {
-        try {
-          rerankExecution = await this.options.aiService.runDefaultTask(
-            "reranking",
-            buildBatchRerankPrompt(
-              note,
-              candidates.map((candidate) => ({
-                alias: rerankAliases.get(candidate.note.id)!,
-                title: candidate.note.title,
-                ideaStatement: candidate.note.ideaStatement
-              }))
-            ),
-            withAiSourceItems(
-              {
-                ...logContext,
-                atomicNoteId: note.id,
-                operation: "note_matching_reranking",
-                promptVersion: atomicNoteMatchingVersion
-              },
-              [
-                note.createdFromSourceItemId,
-                ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
-              ]
-            ),
-            signal,
-            { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
-          );
-          if (rerankExecution) {
-            rerankResults = parseBatchRerankOutput(
-              rerankExecution.output,
-              new Set(rerankAliases.values())
-            );
-            for (const candidate of candidates) {
-              const result = rerankResults.get(rerankAliases.get(candidate.note.id)!)!;
-              result.explanation = resolveAtomicNoteReferences(
-                result.explanation,
-                note.id,
-                result.candidateAlias,
-                candidate.note.id
-              );
-            }
-          }
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          rerankExecution = null;
-          rerankResults.clear();
-          rerankError =
-            error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-          // The batch is atomic: any invalid or incomplete output discards all reranking results.
+      const sourceContentHash = atomicNoteDecisionContentHash(note);
+      const feasible = candidates.filter((candidate) => candidate.feasible);
+      // A direction already decided on the same content by the same decider is never asked again.
+      const cachedVerdicts = new Map<
+        string,
+        { score: number; relationType: AtomicNoteRelationType }
+      >();
+      if (decider && feasible.length > 0) {
+        const verdicts = await decisions.findVerdicts({
+          sourceAtomicNoteId: note.id,
+          sourceContentHash,
+          deciderKey: decider.key,
+          targets: feasible.map((candidate) => ({
+            atomicNoteId: candidate.note.id,
+            contentHash: candidate.contentHash
+          }))
+        });
+        for (const [targetId, verdict] of verdicts) {
+          const relationType = AtomicNoteRelationTypeSchema.safeParse(verdict.relationType);
+          if (relationType.success)
+            cachedVerdicts.set(targetId, { score: verdict.score, relationType: relationType.data });
         }
       }
-      if (candidates.length > 0 && matchingSettings.requireReranking && !rerankExecution) {
-        throw new Error(
-          rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel"
+      // Aliases follow the content order of the fused candidates, never their IDs.
+      const pending = feasible.filter((candidate) => !cachedVerdicts.has(candidate.note.id));
+      const rerankAliases = new Map(
+        pending.map((candidate, index) => [candidate.note.id, `c${index + 1}`])
+      );
+      const runRerank = (subset: typeof pending, attempt: number) =>
+        this.options.aiService.runDefaultTask(
+          "reranking",
+          buildBatchRerankPrompt(
+            note,
+            subset.map((candidate) => ({
+              alias: rerankAliases.get(candidate.note.id)!,
+              title: candidate.note.title,
+              ideaStatement: candidate.note.ideaStatement
+            })),
+            matchingSettings.minRerankScore
+          ),
+          withAiSourceItems(
+            {
+              ...logContext,
+              atomicNoteId: note.id,
+              operation: attempt ? "note_matching_reranking_repair" : "note_matching_reranking",
+              promptVersion: atomicNoteMatchingVersion,
+              attempt
+            },
+            [
+              note.createdFromSourceItemId,
+              ...subset.map((candidate) => candidate.note.createdFromSourceItemId)
+            ]
+          ),
+          signal,
+          { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
         );
+      let rerankExecution: DefaultAiTaskResult | null = null;
+      let rerankError: string | null = null;
+      let repairedAliases: string[] = [];
+      let undecidedAliases: string[] = [];
+      const modelDecisions = new Map<string, BatchRerankDecision & { aiTaskRunId: string }>();
+      if (pending.length > 0) {
+        try {
+          rerankExecution = await runRerank(pending, 0);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          rerankError =
+            error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+        }
+        if (rerankExecution) {
+          const aliases = pending.map((candidate) => rerankAliases.get(candidate.note.id)!);
+          const initial = parseBatchRerankOutput(
+            rerankExecution.output,
+            aliases,
+            matchingSettings.minRerankScore
+          );
+          const firstRunId = rerankExecution.aiTaskRunId;
+          const runIds = new Map(aliases.map((alias) => [alias, firstRunId]));
+          let merged = initial.decisions;
+          if (initial.retry.length > 0) {
+            // One repair call asks again only for missing, invalid or unexplained items.
+            repairedAliases = initial.retry;
+            const retry = new Set(initial.retry);
+            try {
+              const repairExecution = await runRerank(
+                pending.filter((candidate) => retry.has(rerankAliases.get(candidate.note.id)!)),
+                1
+              );
+              if (repairExecution) {
+                const repaired = parseBatchRerankOutput(
+                  repairExecution.output,
+                  initial.retry,
+                  matchingSettings.minRerankScore
+                );
+                for (const alias of repaired.decisions.keys())
+                  runIds.set(alias, repairExecution.aiTaskRunId);
+                merged = mergeBatchRerankRepair(initial, repaired);
+              }
+            } catch (error) {
+              if (signal?.aborted) throw error;
+              rerankError =
+                error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+            }
+          }
+          for (const candidate of pending) {
+            const alias = rerankAliases.get(candidate.note.id)!;
+            const decision = merged.get(alias);
+            if (decision)
+              modelDecisions.set(candidate.note.id, {
+                ...decision,
+                aiTaskRunId: runIds.get(alias)!
+              });
+          }
+          // Items still invalid stay undecided: no relation and no recorded decision.
+          undecidedAliases = aliases.filter((alias) => !merged.has(alias));
+        }
+        if (matchingSettings.requireReranking && !rerankExecution) {
+          throw new Error(
+            rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel"
+          );
+        }
       }
-      candidates.sort((left, right) => {
-        const score = (candidate: typeof left) =>
-          calculateRelationScore({
-            vectorScore: candidate.vectorScore,
-            textScore: candidate.textScore,
-            metadataScore: scoreMetadataOverlap(note.metadata, candidate.note.metadata),
-            graphScore: candidate.graphScore,
-            hasEmbedding: Boolean(embedding),
-            rerankScore: rerankResults.get(rerankAliases.get(candidate.note.id)!)?.score ?? null,
-            settings: matchingSettings
-          });
-        return (
-          score(right) - score(left) ||
-          compareContent(noteContentKey(left.note), noteContentKey(right.note)) ||
-          left.note.id.localeCompare(right.note.id)
-        );
-      });
+      // Decisions are recorded only when the route did not change during the call.
+      let recordDecisions = false;
+      if (rerankExecution && decider) {
+        const current = await this.atomicNoteDecider();
+        recordDecisions =
+          current?.key === decider.key && rerankExecution.profileId === decider.profileId;
+        decider = current;
+      }
+      const rerankStatus = rerankExecution
+        ? undecidedAliases.length > 0
+          ? "partial"
+          : "succeeded"
+        : rerankError
+          ? "failed"
+          : pending.length > 0
+            ? "not_configured"
+            : "not_needed";
+      const selection = selectAtomicNoteRelations(
+        candidates.map((candidate) => {
+          const decision =
+            modelDecisions.get(candidate.note.id) ?? cachedVerdicts.get(candidate.note.id);
+          return {
+            ...candidate,
+            noteId: candidate.note.id,
+            contentKey: noteContentKey(candidate.note),
+            decision: decision
+              ? { score: decision.score, relationType: decision.relationType }
+              : null
+          };
+        }),
+        { hasEmbedding, threshold: relationThreshold, settings: matchingSettings }
+      );
       let notePersistedCount = 0;
+      const decisionRecords: RelationDecisionInput[] = [];
       const debugResults: Parameters<
         ReturnType<typeof createSimilarityDebugRepository>["record"]
       >[0]["results"] = [];
-      for (const [candidateIndex, candidate] of candidates.entries()) {
-        const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
-        const graphScore = candidate.graphScore;
-        const baseScore = calculateRelationScore({
-          vectorScore: candidate.vectorScore,
-          textScore: candidate.textScore,
-          metadataScore,
-          graphScore,
-          hasEmbedding: Boolean(embedding),
-          settings: matchingSettings
-        });
-        let finalScore = baseScore;
-        let relationType = "related";
-        let explanation = "knowledge.relations.explanations.hybrid";
-        let rerankScore: number | null = null;
+      for (const [candidateIndex, selected] of selection.entries()) {
+        const candidate = selected.candidate;
+        const { finalScore, relationType } = selected;
+        const { metadataScore, graphScore } = candidate.scores;
+        const rerankScore = candidate.decision?.score ?? null;
+        const modelDecision = modelDecisions.get(candidate.note.id);
         const alias = rerankAliases.get(candidate.note.id);
-        const reranked = alias ? rerankResults.get(alias) : undefined;
-        if (reranked) {
-          rerankScore = reranked.score;
-          finalScore = calculateRelationScore({
-            vectorScore: candidate.vectorScore,
-            textScore: candidate.textScore,
-            metadataScore,
-            graphScore,
-            hasEmbedding: Boolean(embedding),
-            rerankScore: reranked.score,
-            settings: matchingSettings
-          });
-          relationType = reranked.relationType;
-          explanation = reranked.explanation;
+        const decisionSource = modelDecision
+          ? "model"
+          : cachedVerdicts.has(candidate.note.id)
+            ? "cache"
+            : candidate.feasible
+              ? "undecided"
+              : "infeasible";
+        const existingRelation = pairStatuses.has(candidate.note.id);
+        let explanation =
+          rerankScore === null
+            ? "knowledge.relations.explanations.hybrid"
+            : "knowledge.relations.explanations.reranked";
+        if (modelDecision?.explanation && alias) {
+          try {
+            explanation = resolveAtomicNoteReferences(
+              modelDecision.explanation,
+              note.id,
+              alias,
+              candidate.note.id
+            );
+          } catch {
+            // The parser already refused unsafe references; keep the localized fallback.
+          }
         }
-        const passedThreshold = qualifiesAtomicNoteRelation({
-          finalScore,
-          threshold: relationThreshold,
-          rerankScore,
-          relationType,
-          settings: matchingSettings
-        });
         debugResults.push({
           targetType: "atomic_note",
           targetId: candidate.note.id,
@@ -1577,13 +1682,16 @@ export class KnowledgeService {
           rerankScore,
           fusionScore: candidate.fusionScore,
           finalScore,
-          passedThreshold,
-          explanation,
+          passedThreshold: selected.qualifies,
+          explanation: selected.qualifies ? explanation : null,
           metadata: {
-            baseScore,
-            skippedByRelationLimit:
-              passedThreshold && notePersistedCount >= matchingSettings.maxRelationsPerNote,
+            baseScore: selected.baseScore,
+            skippedByRelationLimit: selected.qualifies && !selected.accepted,
             relationType,
+            contract: atomicNoteMatchingVersion,
+            feasible: candidate.feasible,
+            decisionSource,
+            existingRelation,
             graphError,
             graphStatus: graphError
               ? "failed"
@@ -1597,13 +1705,14 @@ export class KnowledgeService {
               relations: []
             },
             rerankError,
-            rerankStatus: rerankExecution ? "succeeded" : rerankError ? "failed" : "not_configured",
+            rerankStatus,
             rerankProfileId: rerankExecution?.profileId ?? null,
             rerankModel: rerankExecution?.modelId ?? null,
             candidateStatus: candidate.note.status
           }
         });
-        if (passedThreshold && notePersistedCount < matchingSettings.maxRelationsPerNote) {
+        // An existing automatic relation is kept as it is; it still counts toward the limit.
+        if (selected.accepted && !existingRelation) {
           const persistRelation = () =>
             relations.upsert({
               sourceAtomicNoteId: note.id,
@@ -1614,10 +1723,15 @@ export class KnowledgeService {
               rerankScore,
               finalScore,
               explanation,
-              matchingProfileId: rerankExecution?.profileId ?? null,
-              matchingModel: rerankExecution?.modelId ?? null,
+              matchingProfileId: modelDecision
+                ? (rerankExecution?.profileId ?? null)
+                : (decider?.profileId ?? null),
+              matchingModel: modelDecision
+                ? (rerankExecution?.modelId ?? null)
+                : (decider?.modelId ?? null),
               metadata: {
                 version: atomicNoteMatchingVersion,
+                decisionSource,
                 settings: matchingSettings,
                 threshold: relationThreshold,
                 textScore: candidate.textScore,
@@ -1651,21 +1765,35 @@ export class KnowledgeService {
           persistedCount += 1;
           notePersistedCount += 1;
         }
+        if (modelDecision && recordDecisions && decider)
+          decisionRecords.push({
+            sourceAtomicNoteId: note.id,
+            targetAtomicNoteId: candidate.note.id,
+            sourceContentHash,
+            targetContentHash: candidate.contentHash,
+            deciderKey: decider.key,
+            score: modelDecision.score,
+            relationType: modelDecision.relationType,
+            accepted: selected.accepted,
+            aiTaskRunId: modelDecision.aiTaskRunId
+          });
         await onProgress?.(
           calculateAtomicNoteMatchingProgress({
             noteIndex,
             noteCount: noteIds.length,
             completedCandidates: candidateIndex + 1,
-            candidateCount: candidates.length
+            candidateCount: selection.length
           })
         );
       }
+      // Relations are written before their decisions: a crash in between only repeats a decision.
+      for (const record of decisionRecords) await decisions.record(record);
       await this.recordAtomicMatchingDebug({
         noteId: note.id,
         queryText: `${note.title}\n${note.ideaStatement}`,
         embeddingModel: embeddingExecution?.modelId ?? null,
         dimensions: embedding?.length ?? null,
-        hasEmbedding: Boolean(embedding),
+        hasEmbedding,
         relationThreshold,
         matchingSettings,
         sourceGraphElements: graphElementsByNote.get(note.id) ?? {
@@ -1673,11 +1801,56 @@ export class KnowledgeService {
           claims: [],
           relations: []
         },
+        decisions: {
+          contract: atomicNoteMatchingVersion,
+          candidates: candidates.length,
+          infeasible: candidates.length - feasible.length,
+          cached: cachedVerdicts.size,
+          requested: pending.length,
+          repaired: repairedAliases.length,
+          undecided: undecidedAliases.length,
+          recorded: decisionRecords.length
+        },
         results: debugResults
       });
-      if (candidates.length === 0) await onProgress?.((noteIndex + 1) / noteIds.length);
+      if (selection.length === 0) await onProgress?.((noteIndex + 1) / noteIds.length);
+      await options.onNoteCompleted?.(note.id, notePersistedCount);
     }
     return { persistedCount, threshold: relationThreshold };
+  }
+
+  /** The current reranking route as a decider identity, or null when it cannot be resolved. */
+  private async atomicNoteDecider(): Promise<{
+    key: string;
+    profileId: string;
+    modelId: string;
+  } | null> {
+    try {
+      const route = await createAiConfigRepository(this.requirePool()).getDefaultTask("reranking");
+      if (!route) return null;
+      return {
+        key: atomicNoteDeciderKey({
+          provider: route.provider,
+          baseUrl: route.baseUrl,
+          modelId: route.modelId,
+          runtime: route.runtime,
+          repository: route.repository,
+          revision: route.revision,
+          quantization: route.quantization,
+          parameters: withAiTaskParameterDefaults(
+            "reranking",
+            { ...route.modelDefaultParameters, ...route.parameters },
+            Boolean(route.localModelId)
+          ),
+          promptFingerprint: promptFingerprint(["notes.match"], capturePromptPin(), route.provider)
+        }),
+        profileId: route.profileId,
+        modelId: route.modelId
+      };
+    } catch {
+      // Without a decider identity nothing is cached or recorded; matching itself goes on.
+      return null;
+    }
   }
 
   private async tryRunDefaultTask(
@@ -1703,6 +1876,8 @@ export class KnowledgeService {
     relationThreshold: number;
     matchingSettings: AtomicNoteMatchingSettings;
     sourceGraphElements: AtomicNoteGraphElements;
+    /** How the candidates were decided: gate, cache, model call, repair. */
+    decisions: Record<string, string | number>;
     results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
   }): Promise<void> {
     try {
@@ -1734,7 +1909,8 @@ export class KnowledgeService {
             base: 1 - matchingSettings.rerankerWeight,
             reranker: matchingSettings.rerankerWeight
           },
-          rerankMode: "single_atomic_batch",
+          rerankMode: "decision_only_batch",
+          decisions: input.decisions,
           sourceGraphElements: input.sourceGraphElements
         },
         results: input.results

@@ -22,6 +22,20 @@ describe("AI task parameter defaults", () => {
     });
   });
 
+  it("turns reasoning off for reranking unless the profile asks for it", () => {
+    expect(withAiTaskParameterDefaults("reranking", {}, false)).toMatchObject({
+      reasoningLevel: "off"
+    });
+    expect(withAiTaskParameterDefaults("reranking", {}, true)).toMatchObject({
+      reasoningLevel: "off"
+    });
+    expect(
+      withAiTaskParameterDefaults("reranking", { reasoningLevel: "medium" }, false)
+    ).toMatchObject({ reasoningLevel: "medium" });
+    for (const task of ["summarization", "knowledge-graph-generation", "structured-output"])
+      expect(withAiTaskParameterDefaults(task, {}, false)).not.toHaveProperty("reasoningLevel");
+  });
+
   it("preserves explicit profile overrides", () => {
     expect(
       withAiTaskParameterDefaults(

@@ -21,6 +21,7 @@ export * from "./aiConfigRepository.js";
 export * from "./sourceSummaryRepository.js";
 export * from "./atomicNoteRepository.js";
 export * from "./atomicNoteRelationRepository.js";
+export * from "./relationDecisionRepository.js";
 export * from "./libraryRepository.js";
 export * from "./libraryResetRepository.js";
 export * from "./sourceEditingRepository.js";

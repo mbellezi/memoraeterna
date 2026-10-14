@@ -16,7 +16,7 @@ import {
 export const summaryPromptVersion = "summary-v3";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
-export const atomicNoteMatchingVersion = "atomic-note-matching-v6";
+export const atomicNoteMatchingVersion = "atomic-note-matching-v7";
 export const knowledgeGraphPromptVersion = "knowledge-graph-v7";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
@@ -629,6 +629,149 @@ export function calculateRelationScore(input: {
   );
 }
 
+export interface AtomicNoteRelationScoreInputs {
+  vectorScore: number;
+  textScore: number;
+  metadataScore: number;
+  graphScore: number | null;
+}
+
+/**
+ * Lossless feasibility gate: the final score grows monotonically with the decider score, so a
+ * candidate whose final score stays below the threshold even with a perfect decider score (1) can
+ * never qualify, whatever the decider would say. Only such candidates are dropped before a call.
+ */
+export function canQualifyAtomicNoteRelation(input: {
+  scores: AtomicNoteRelationScoreInputs;
+  hasEmbedding: boolean;
+  threshold: number;
+  settings: AtomicNoteMatchingSettings;
+}): boolean {
+  return meetsRelationThreshold(
+    calculateRelationScore({
+      ...input.scores,
+      hasEmbedding: input.hasEmbedding,
+      rerankScore: 1,
+      settings: input.settings
+    }),
+    input.threshold
+  );
+}
+
+export interface AtomicNoteRelationSelectionCandidate {
+  noteId: string;
+  contentKey: string;
+  scores: AtomicNoteRelationScoreInputs;
+  /** The decider's verdict for this direction, or null when no decision exists. */
+  decision: { score: number; relationType: AtomicNoteRelationType } | null;
+}
+
+export interface AtomicNoteRelationSelection<
+  T extends AtomicNoteRelationSelectionCandidate = AtomicNoteRelationSelectionCandidate
+> {
+  candidate: T;
+  baseScore: number;
+  finalScore: number;
+  relationType: string;
+  qualifies: boolean;
+  /** Qualifies and fits in the per-note relation limit, in final-score order. */
+  accepted: boolean;
+}
+
+/** Orders candidates by final score and applies the acceptance rules and the per-note limit. */
+export function selectAtomicNoteRelations<T extends AtomicNoteRelationSelectionCandidate>(
+  candidates: ReadonlyArray<T>,
+  options: { hasEmbedding: boolean; threshold: number; settings: AtomicNoteMatchingSettings }
+): AtomicNoteRelationSelection<T>[] {
+  let accepted = 0;
+  return candidates
+    .map((candidate) => {
+      const score = (rerankScore: number | null) =>
+        calculateRelationScore({
+          ...candidate.scores,
+          hasEmbedding: options.hasEmbedding,
+          rerankScore,
+          settings: options.settings
+        });
+      const finalScore = score(candidate.decision?.score ?? null);
+      const relationType = candidate.decision?.relationType ?? "related";
+      return {
+        candidate,
+        baseScore: score(null),
+        finalScore,
+        relationType,
+        qualifies: qualifiesAtomicNoteRelation({
+          finalScore,
+          threshold: options.threshold,
+          rerankScore: candidate.decision?.score ?? null,
+          relationType,
+          settings: options.settings
+        }),
+        accepted: false
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.finalScore - left.finalScore ||
+        compareContent(left.candidate.contentKey, right.candidate.contentKey) ||
+        left.candidate.noteId.localeCompare(right.candidate.noteId)
+    )
+    .map((selection) => {
+      const fits = selection.qualifies && accepted < options.settings.maxRelationsPerNote;
+      if (fits) accepted += 1;
+      return { ...selection, accepted: fits };
+    });
+}
+
+/**
+ * Identifies who decided a relation: the model, the matching contract and prompt, and the
+ * parameters that can change a verdict. Output budgets and thresholds are not part of it, so
+ * changing them never makes a recorded decision stale.
+ */
+export function atomicNoteDeciderKey(input: {
+  provider: string;
+  baseUrl: string | null;
+  modelId: string;
+  runtime: string;
+  repository: string | null;
+  revision: string | null;
+  quantization: string | null;
+  parameters: Record<string, unknown>;
+  promptFingerprint: string;
+}): string {
+  const parameters = Object.fromEntries(
+    Object.entries(input.parameters)
+      .filter(([key]) => key !== "maxTokens" && key !== "contextWindow")
+      .sort(([left], [right]) => compareContent(left, right))
+  );
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        contract: atomicNoteMatchingVersion,
+        prompt: input.promptFingerprint,
+        model: [
+          input.provider,
+          input.baseUrl,
+          input.modelId,
+          input.runtime,
+          input.repository,
+          input.revision,
+          input.quantization
+        ],
+        parameters
+      })
+    )
+    .digest("hex");
+}
+
+/** The note content a relation decision depends on: what the decider is shown. */
+export function atomicNoteDecisionContentHash(note: {
+  title: string;
+  ideaStatement: string;
+}): string {
+  return createHash("sha256").update(`${note.title}\u0000${note.ideaStatement}`).digest("hex");
+}
+
 export function calculateAtomicNoteMatchingProgress(input: {
   noteIndex: number;
   noteCount: number;
@@ -641,51 +784,107 @@ export function calculateAtomicNoteMatchingProgress(input: {
   return Math.max(0, Math.min(1, (input.noteIndex + candidateProgress) / input.noteCount));
 }
 
-const batchRerankItemSchema = z
-  .object({
-    candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
-    explanation: z.string().trim().min(1).max(700),
-    score: z.number().min(0).max(1),
-    relationType: AtomicNoteRelationTypeSchema
-  })
-  .strict();
+/** Model-written explanations are short; longer prose is treated as an invalid item. */
+export const maxRerankExplanationCharacters = 300;
 
-const batchRerankOutputSchema = z
-  .object({
-    results: z.array(z.unknown()).max(100)
-  })
-  .strict();
+const batchRerankDecisionSchema = z.object({
+  candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
+  score: z.number().min(0).max(1),
+  relationType: AtomicNoteRelationTypeSchema,
+  // Validated only when the score asks for an explanation; prose of a rejection is ignored.
+  explanation: z.unknown().optional()
+});
 
-export interface BatchRerankOutput {
+const batchRerankEnvelopeSchema = z.object({ results: z.array(z.unknown()).max(100) });
+
+export interface BatchRerankDecision {
   candidateAlias: string;
-  explanation: string;
   score: number;
   relationType: AtomicNoteRelationType;
+  /** A safe explanation with unresolved aliases, only for scores at or above the threshold. */
+  explanation: string | null;
 }
 
+export interface BatchRerankParseResult {
+  /** Valid decisions; a valid score without its required explanation keeps a null explanation. */
+  decisions: Map<string, BatchRerankDecision>;
+  /** Aliases to request once more, in prompt order: missing, malformed, duplicated or unexplained. */
+  retry: string[];
+}
+
+/**
+ * Decision-only contract (v7): every candidate gets an alias, a score and a relation type; only a
+ * score at or above `explanationMinScore` carries a short explanation. Valid items are kept;
+ * nothing in one item can invalidate another, and the prose of a rejected candidate is never read.
+ */
 export function parseBatchRerankOutput(
   output: unknown,
-  allowedAliases: ReadonlySet<string>
-): Map<string, BatchRerankOutput> {
-  const envelope = batchRerankOutputSchema.parse(parseJsonOutput(output));
-  if (envelope.results.length !== allowedAliases.size) {
-    throw new Error("atomic_note_rerank_incomplete_batch");
+  allowedAliases: ReadonlyArray<string>,
+  explanationMinScore: number
+): BatchRerankParseResult {
+  const allowed = new Set(allowedAliases);
+  const decisions = new Map<string, BatchRerankDecision>();
+  const invalid = new Set<string>();
+  const unexplained = new Set<string>();
+  let items: unknown[];
+  try {
+    items = batchRerankEnvelopeSchema.parse(parseJsonOutput(output)).results;
+  } catch {
+    // Unparseable output decides nothing: every alias is asked again once.
+    items = [];
   }
-  const parsed = new Map<string, BatchRerankOutput>();
-  for (const candidate of envelope.results) {
-    const result = batchRerankItemSchema.parse(candidate);
-    if (!allowedAliases.has(result.candidateAlias)) {
-      throw new Error("atomic_note_rerank_unknown_candidate");
+  for (const item of items) {
+    const alias =
+      item && typeof item === "object" && "candidateAlias" in item
+        ? (item as { candidateAlias: unknown }).candidateAlias
+        : undefined;
+    if (typeof alias !== "string" || !allowed.has(alias)) continue;
+    const parsed = batchRerankDecisionSchema.safeParse(item);
+    if (!parsed.success || decisions.has(alias) || invalid.has(alias)) {
+      // A duplicated alias is ambiguous: neither answer is trusted.
+      decisions.delete(alias);
+      unexplained.delete(alias);
+      invalid.add(alias);
+      continue;
     }
-    if (parsed.has(result.candidateAlias)) {
-      throw new Error("atomic_note_rerank_duplicate_candidate");
-    }
-    parsed.set(result.candidateAlias, result);
+    const explanation =
+      parsed.data.score >= explanationMinScore
+        ? safeRerankExplanation(parsed.data.explanation, alias)
+        : null;
+    if (parsed.data.score >= explanationMinScore && explanation === null) unexplained.add(alias);
+    decisions.set(alias, {
+      candidateAlias: alias,
+      score: parsed.data.score,
+      relationType: parsed.data.relationType,
+      explanation
+    });
   }
-  if ([...allowedAliases].some((alias) => !parsed.has(alias))) {
-    throw new Error("atomic_note_rerank_incomplete_batch");
-  }
-  return parsed;
+  return {
+    decisions,
+    retry: allowedAliases.filter((alias) => !decisions.has(alias) || unexplained.has(alias))
+  };
+}
+
+/**
+ * A repaired answer replaces the first one for the aliases asked again (the repair is parsed with
+ * only those aliases allowed). A decision whose explanation is still missing after the repair is
+ * kept without one: the score decides, the prose is optional.
+ */
+export function mergeBatchRerankRepair(
+  initial: BatchRerankParseResult,
+  repair: BatchRerankParseResult
+): Map<string, BatchRerankDecision> {
+  return new Map([...initial.decisions, ...repair.decisions]);
+}
+
+function safeRerankExplanation(value: unknown, candidateAlias: string): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text || text.length > maxRerankExplanationCharacters) return null;
+  if (/<\/?(?:note|source)-ref\b/i.test(text)) return null;
+  for (const [alias] of text.matchAll(/\b[sc][0-9]+\b/g))
+    if (alias !== "s1" && alias !== candidateAlias) return null;
+  return text;
 }
 
 export function resolveAtomicNoteReferences(
@@ -710,11 +909,13 @@ export function resolveAtomicNoteReferences(
 
 export function buildBatchRerankPrompt(
   source: { title: string; ideaStatement: string },
-  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>
+  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>,
+  explanationMinScore = defaultAtomicNoteMatchingSettings.minRerankScore
 ): string {
   return renderPrompt("notes.match", {
     source_title: source.title,
     source_idea: source.ideaStatement,
+    explanation_min_score: explanationMinScore,
     candidate_notes: candidates
       .map(
         (candidate) =>

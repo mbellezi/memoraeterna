@@ -66,20 +66,20 @@ Ask, or background maintenance (Gardener).
 - Human accept or reject decisions on relations are preserved across reruns and
   respected in both directions.
 
-## Relations (target F1a-F3)
+## Relations
 
-- Pipeline: retrieve candidates (vector, full-text, shared entities, fused),
-  filter deterministically, decide P(related), assign type and direction only for
-  accepted pairs, and write explanations later and only for persisted relations.
-  No prose is generated for rejected candidates.
-- Decisions store raw scores per direction separately from calibration, keyed by
-  the input hashes and decider, so recalibration never re-decides.
+- The decider explains only candidates it scores as related; filters before it
+  are lossless: they drop only candidates that no decider score could accept.
+- Decisions keep the raw score of each direction apart from calibration, keyed by
+  both notes' content hashes and the decider; a decided direction is reused.
+- Type, direction and explanation are assigned later, only to accepted pairs
+  (target F3).
 - Relation types use one fixed vocabulary shared by notes and sources. Shared
   topics, names, dates or homonyms alone never create a relation; the relation
-  must be supported by evidence from both endpoints.
-- Source relations are derived from accepted note relations plus decider-confirmed
-  discovery pairs, never from same-root pairs.
-- Matching runs per source as soon as its notes exist; there is no batch barrier.
+  must be supported by evidence from both endpoints (target F3).
+- Source relations come from accepted note relations plus decider-confirmed
+  discovery pairs, never same-root pairs. Matching runs per source as soon as its
+  notes exist, with no batch barrier (target F3).
 
 ## Topic tree (target F2)
 

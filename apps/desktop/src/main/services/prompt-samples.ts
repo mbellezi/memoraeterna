@@ -5,7 +5,12 @@ import {
   parseCuratorProposal,
   validateCuratorProposal
 } from "./wiki-curator.js";
-import { CuratorSnapshotSchema, CuratorCheckpointSchema, initialCuratorLimits } from "@app/domain";
+import {
+  CuratorSnapshotSchema,
+  CuratorCheckpointSchema,
+  defaultAtomicNoteMatchingSettings,
+  initialCuratorLimits
+} from "@app/domain";
 import { z } from "zod";
 import {
   promptDefinition,
@@ -534,7 +539,15 @@ export function promptSampleCall(
           }
         ]),
         task: "reranking",
-        validate: (o) => parseBatchRerankOutput(o, new Set(["c1"]))
+        validate: (o) => {
+          const parsed = parseBatchRerankOutput(
+            o,
+            ["c1"],
+            defaultAtomicNoteMatchingSettings.minRerankScore
+          );
+          if (!parsed.decisions.has("c1") || parsed.retry.length > 0)
+            throw new Error("prompts.errors.sample");
+        }
       };
     const extraction = /^graph\.(atomic_notes|source_chunks|catalog_metadata)(\.repair)?$/.exec(
       promptId

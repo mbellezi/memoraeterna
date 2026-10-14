@@ -2330,6 +2330,7 @@
       "previous_output": "Risposta precedente non valida",
       "source_idea": "Proposizione della nota originale",
       "candidate_notes": "Note candidate con alias stabili",
+      "explanation_min_score": "Punteggio minimo che riceve una spiegazione",
       "input_kind": "Tipo di prova",
       "input_heading": "Intestazione delle prove",
       "graph_inputs": "Prove autorizzate con alias",

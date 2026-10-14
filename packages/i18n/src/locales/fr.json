@@ -2337,6 +2337,7 @@
       "previous_output": "Réponse précédente invalide",
       "source_idea": "Proposition de la note source",
       "candidate_notes": "Notes candidates avec alias stables",
+      "explanation_min_score": "Score minimal qui reçoit une explication",
       "input_kind": "Type de preuve",
       "input_heading": "En-tête des preuves",
       "graph_inputs": "Preuves autorisées avec alias",

@@ -118,6 +118,13 @@ export function createMatchingEvaluationRepository(pool: PgPool) {
           and a.created_from_source_item_id=any($1::uuid[]) and b.created_from_source_item_id=any($1::uuid[])`,
           [sourceIds]
         );
+        // A rematch measures the decider again: cached relation decisions would answer for it.
+        await client.query(
+          `delete from relation_decisions d using atomic_notes a, atomic_notes b
+          where a.id=d.lo_atomic_note_id and b.id=d.hi_atomic_note_id
+          and a.created_from_source_item_id=any($1::uuid[]) and b.created_from_source_item_id=any($1::uuid[])`,
+          [sourceIds]
+        );
         await client.query(
           "delete from source_matching_decisions where source_root_id=any($1::uuid[]) and target_root_id=any($1::uuid[])",
           [sourceIds]

@@ -5,7 +5,9 @@ import { uuidAssignments, withoutUuids } from "./__fixtures__/uuid-assignments.j
 import { compareContent, contentKey } from "./content-order.js";
 import { consultationPrompt, rankConsultationCandidates } from "./consultation-service.js";
 import {
+  atomicNoteDecisionContentHash,
   buildAtomicNoteGenerationPrompt,
+  buildBatchRerankPrompt,
   buildKnowledgeGraphPrompt,
   buildKnowledgeGraphRepairPrompt,
   createEvidenceAliases,
@@ -270,6 +272,38 @@ describe("atomic note candidate fusion", () => {
     const expected = [contentKey("Alpha", "Idea"), contentKey("Beta", "Idea")];
     expect(fused(low!, high!)).toEqual(expected);
     expect(fused(high!, low!)).toEqual(expected);
+  });
+
+  it("builds the decision-only matching prompt and cache identity from content alone", () => {
+    const prompts: string[] = [];
+    const hashes: string[][] = [];
+    for (const ids of uuidAssignments(2)) {
+      const notes = ["Beta", "Alpha"].map((title, index) => ({
+        id: ids[index]!,
+        title,
+        ideaStatement: `${title} idea`
+      }));
+      // The two candidates swap ranks between the lists, so they tie; content breaks the tie.
+      const ranking = notes.map((note) => ({
+        noteId: note.id,
+        contentKey: contentKey(note.title, note.ideaStatement),
+        score: 1
+      }));
+      const fused = fuseAtomicNoteCandidateRankings(ranking, [...ranking].reverse(), [], 10);
+      const ordered = fused.map((candidate) => notes.find((note) => note.id === candidate.noteId)!);
+      prompts.push(
+        buildBatchRerankPrompt(
+          { title: "Source", ideaStatement: "Source idea" },
+          ordered.map((note, index) => ({ ...note, alias: `c${index + 1}` })),
+          0.65
+        )
+      );
+      hashes.push(ordered.map(atomicNoteDecisionContentHash));
+    }
+    expectIdentical(prompts);
+    expectIdentical(hashes.map((list) => list.join(",")));
+    expect(prompts[0]).toContain("[c1]\nTitle: Alpha");
+    expect(prompts[0]).toContain("[c2]\nTitle: Beta");
   });
 
   it("orders content keys without relying on the locale", () => {

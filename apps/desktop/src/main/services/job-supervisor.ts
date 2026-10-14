@@ -13,6 +13,11 @@ import { hostname } from "node:os";
 
 import { runIndividualStageBatch } from "./individual-stage-batch.js";
 import {
+  atomicNoteMatchingCheckpointMetadata,
+  matchAtomicNotesFromCheckpoint,
+  readAtomicNoteMatchingCheckpoint
+} from "./atomic-note-matching-checkpoint.js";
+import {
   createOrganizationRepository,
   createMaintenanceRepository,
   createChunkRepository,
@@ -814,20 +819,32 @@ export class JobSupervisor {
       const waiting = batchId
         ? (await runs.countIncompleteBatchStage(batchId, "atomicNotes")) > 0
         : false;
+      // Waiting or restarting keeps the per-note checkpoint of an earlier attempt.
+      const matchingCheckpoint = (item: typeof run) =>
+        atomicNoteMatchingCheckpointMetadata(item.stagesCheckpoint.atomicNoteMatching);
       if (waiting) {
         if (shouldRun("atomicNoteMatching"))
-          await runs.waitForBatchStage(ingestionRunId, "atomicNoteMatching");
+          await runs.waitForBatchStage(
+            ingestionRunId,
+            "atomicNoteMatching",
+            matchingCheckpoint(run)
+          );
       } else {
         const failures = await runIndividualStageBatch({
           runs: pendingNoteMatching,
           signal,
           wait: async (item) => {
-            await runs.waitForBatchStage(item.id, "atomicNoteMatching");
+            await runs.waitForBatchStage(item.id, "atomicNoteMatching", matchingCheckpoint(item));
             await runs.update(item.id, { currentStage: "atomicNoteMatching" });
             this.notify();
           },
           start: async (item) => {
-            await runs.updateStageProgress(item.id, "atomicNoteMatching", 0, {});
+            await runs.updateStageProgress(
+              item.id,
+              "atomicNoteMatching",
+              0,
+              matchingCheckpoint(item)
+            );
             this.notify();
           },
           process: async (item) => {
@@ -848,34 +865,31 @@ export class JobSupervisor {
               ? this.runInlineStageJob(
                   "atomic-note-matching",
                   { ...itemContext, noteIds: itemNoteIds },
-                  async (stageJobId) => {
-                    await runs.updateStageProgress(item.id, "atomicNoteMatching", 0, {
-                      completed: 0,
-                      total: itemNoteIds.length
-                    });
-                    const matching = await this.options.knowledgeService!.matchAtomicNotes(
-                      itemNoteIds,
-                      signal,
-                      async (progress) => {
-                        const completed = Math.min(
-                          itemNoteIds.length,
-                          Math.floor(progress * itemNoteIds.length)
-                        );
+                  (stageJobId) =>
+                    matchAtomicNotesFromCheckpoint({
+                      noteIds: itemNoteIds,
+                      checkpoint: readAtomicNoteMatchingCheckpoint(
+                        item.stagesCheckpoint.atomicNoteMatching
+                      ),
+                      save: async (progress, metadata) => {
                         await createJobRepository(pool).reportProgress(stageJobId, progress);
-                        await runs.updateStageProgress(item.id, "atomicNoteMatching", progress, {
-                          completed,
-                          total: itemNoteIds.length
-                        });
+                        await runs.updateStageProgress(
+                          item.id,
+                          "atomicNoteMatching",
+                          progress,
+                          metadata
+                        );
                         this.notify();
                       },
-                      { ...itemContext, jobId: stageJobId, stage: "atomic_note_matching" }
-                    );
-                    return {
-                      ...matching,
-                      completed: itemNoteIds.length,
-                      total: itemNoteIds.length
-                    };
-                  },
+                      match: (noteIds, onProgress, onNoteCompleted) =>
+                        this.options.knowledgeService!.matchAtomicNotes(
+                          noteIds,
+                          signal,
+                          onProgress,
+                          { ...itemContext, jobId: stageJobId, stage: "atomic_note_matching" },
+                          { onNoteCompleted }
+                        )
+                    }),
                   controller
                 )
               : { persistedCount: 0, completed: 0, total: 0 };

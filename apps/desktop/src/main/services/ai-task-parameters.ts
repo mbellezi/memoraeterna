@@ -26,6 +26,9 @@ export function withAiTaskParameterDefaults(
   return {
     maxTokens: profileGenerationMaxTokens,
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
+    // Reranking returns decisions, not prose: reasoning stays off (adapters map "off" to the
+    // lowest level a model supports) unless the profile or model defaults ask for more.
+    ...(taskType === "reranking" ? { reasoningLevel: "off" } : {}),
     ...parameters,
     ...(effective !== null ? { contextWindow: effective } : {})
   };

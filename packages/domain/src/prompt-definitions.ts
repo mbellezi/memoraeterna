@@ -50,6 +50,7 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
   previous_output: '{"notes":',
   source_idea: "Feedback improved delayed recall in a fictional trial.",
   candidate_notes: "c1: Spaced practice\nPractice on separate days improved recall.",
+  explanation_min_score: 0.65,
   input_kind: "source_chunks",
   evidence_aliases: ["c1"],
   source_language: "en",
@@ -181,7 +182,13 @@ function variable(key: string, id: string): PromptVariable {
       key === "guidance"
         ? "user_guidance"
         : numeric ||
-            ["output_contract", "content_language", "input_kind", "input_heading"].includes(key)
+            [
+              "output_contract",
+              "content_language",
+              "input_kind",
+              "input_heading",
+              "explanation_min_score"
+            ].includes(key)
           ? "public"
           : "source_content",
     serialization: "text",
@@ -236,9 +243,13 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
             "organization.evolution.support"
           ].includes(row.id)
         ? "5"
-        : ["consultation.knowledge", "consultation.investigation", "consultation.gaps"].includes(
-              row.id
-            )
+        : [
+              "consultation.knowledge",
+              "consultation.investigation",
+              "consultation.gaps",
+              // Decision-only matching contract (atomic-note-matching-v7).
+              "notes.match"
+            ].includes(row.id)
           ? "2"
           : "1",
     fields: [

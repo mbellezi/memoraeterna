@@ -264,12 +264,12 @@ try {
     metadata: { semanticSourceAtomicNoteId: noteIds[0]!, semanticTargetAtomicNoteId: noteIds[1]! }
   });
   assert.deepEqual(
-    await createAtomicNoteRelationRepository(pool).existingTargets(noteIds[0]!, [noteIds[1]!]),
-    new Set([noteIds[1]!])
+    await createAtomicNoteRelationRepository(pool).pairStatuses(noteIds[0]!, [noteIds[1]!]),
+    new Map([[noteIds[1]!, "pending_review"]])
   );
   assert.deepEqual(
-    await createAtomicNoteRelationRepository(pool).existingTargets(noteIds[1]!, [noteIds[0]!]),
-    new Set([noteIds[0]!])
+    await createAtomicNoteRelationRepository(pool).pairStatuses(noteIds[1]!, [noteIds[0]!]),
+    new Map([[noteIds[0]!, "pending_review"]])
   );
   const boundedEvidence = await repository.pairChunks(book.id, b.id, [ac.id, sc.id, bc.id], 1);
   assert.equal(boundedEvidence.filter((chunk) => chunk.rootId === book.id).length, 1);

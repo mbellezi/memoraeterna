@@ -18,6 +18,7 @@ import {
   normalizeSummaryText,
   parseKnowledgeGraphOutput,
   parseAtomicNoteGenerationOutput,
+  mergeBatchRerankRepair,
   parseBatchRerankOutput,
   resolveAtomicNoteReferences,
   scoreMetadataOverlap
@@ -40,16 +41,46 @@ describe("knowledge processing", () => {
         "atomic_note_rerank_invalid_reference"
       );
     }
-    for (const explanation of [undefined, "", "   ", "a".repeat(701)]) {
-      expect(() =>
-        parseBatchRerankOutput(
-          {
-            results: [{ candidateAlias: "c1", score: 0.9, relationType: "supports", explanation }]
-          },
-          new Set(["c1"])
-        )
-      ).toThrow();
+    // An accepted score needs a short, safe explanation; without one the decision is kept and
+    // its alias is asked again, never failing the batch.
+    for (const explanation of [
+      undefined,
+      null,
+      "",
+      "   ",
+      "a".repeat(301),
+      "c2 supports s1.",
+      '<note-ref id="invented" /> supports s1.'
+    ]) {
+      const parsed = parseBatchRerankOutput(
+        { results: [{ candidateAlias: "c1", score: 0.9, relationType: "supports", explanation }] },
+        ["c1"],
+        0.65
+      );
+      expect(parsed.decisions.get("c1")).toEqual({
+        candidateAlias: "c1",
+        score: 0.9,
+        relationType: "supports",
+        explanation: null
+      });
+      expect(parsed.retry).toEqual(["c1"]);
     }
+    expect(
+      parseBatchRerankOutput(
+        {
+          results: [
+            {
+              candidateAlias: "c1",
+              score: 0.9,
+              relationType: "supports",
+              explanation: ` ${"a".repeat(300)} `
+            }
+          ]
+        },
+        ["c1"],
+        0.65
+      ).decisions.get("c1")?.explanation
+    ).toBe("a".repeat(300));
   });
   it("resolves summary concept aliases to source chunks and drops unsupported evidence", () => {
     expect(
@@ -66,15 +97,22 @@ describe("knowledge processing", () => {
     ).toEqual([{ idea: "Concept with scope", evidenceChunkIds: ["two"] }]);
     expect(summaryConcepts("Legacy summary", [{ id: "one" }])).toEqual([]);
   });
-  it("builds and validates one complete atomic-note reranking batch", () => {
-    const prompt = buildBatchRerankPrompt({ title: "Source", ideaStatement: "Source idea" }, [
-      { alias: "c1", title: "First", ideaStatement: "First idea" },
-      { alias: "c2", title: "Second", ideaStatement: "Second idea" }
-    ]);
+  it("builds the decision-only prompt and keeps every valid item of a partial batch", () => {
+    const prompt = buildBatchRerankPrompt(
+      { title: "Source", ideaStatement: "Source idea" },
+      [
+        { alias: "c1", title: "First", ideaStatement: "First idea" },
+        { alias: "c2", title: "Second", ideaStatement: "Second idea" }
+      ],
+      0.7
+    );
     expect(prompt).toContain("source note -> candidate note");
     expect(prompt).toContain("[c1]");
-    expect(prompt).toContain("explanation");
     expect(prompt).toContain("Source note [s1]");
+    expect(prompt).toContain("Add explanation only when score is 0.7 or higher");
+    expect(prompt).toContain("at most 300 characters");
+    expect(prompt).toContain("Never explain a lower score");
+    expect(prompt).not.toContain("For every candidate, explain");
 
     const parsed = parseBatchRerankOutput(
       JSON.stringify({
@@ -85,25 +123,95 @@ describe("knowledge processing", () => {
             relationType: "supports",
             explanation: "c1 provides evidence for s1."
           },
+          // The prose of a rejected candidate is never read, even with a foreign reference.
           {
             candidateAlias: "c2",
             score: 0.2,
             relationType: "related",
-            explanation: "The claims address different conditions."
+            explanation: "Unlike c3, it addresses different conditions."
           }
         ]
       }),
-      new Set(["c1", "c2"])
+      ["c1", "c2", "c3"],
+      0.65
     );
-    expect(parsed.get("c1")).toMatchObject({ score: 0.9, relationType: "supports" });
-    expect(() =>
-      parseBatchRerankOutput(
-        JSON.stringify({
-          results: [{ candidateAlias: "c1", score: 0.9, relationType: "supports" }]
-        }),
-        new Set(["c1", "c2"])
-      )
-    ).toThrow("atomic_note_rerank_incomplete_batch");
+    expect(parsed.decisions.get("c1")).toEqual({
+      candidateAlias: "c1",
+      score: 0.9,
+      relationType: "supports",
+      explanation: "c1 provides evidence for s1."
+    });
+    expect(parsed.decisions.get("c2")).toEqual({
+      candidateAlias: "c2",
+      score: 0.2,
+      relationType: "related",
+      explanation: null
+    });
+    expect(parsed.retry).toEqual(["c3"]);
+  });
+
+  it("asks again only for missing, malformed, duplicated or unknown-shaped items", () => {
+    const parsed = parseBatchRerankOutput(
+      {
+        results: [
+          { candidateAlias: "c4", score: 0.1, relationType: "related", confidence: 0.4 },
+          { candidateAlias: "c1", score: 1.4, relationType: "supports" },
+          { candidateAlias: "c2", score: 0.1, relationType: "related" },
+          { candidateAlias: "c2", score: 0.3, relationType: "related" },
+          { candidateAlias: "c3", score: 0.1, relationType: "unknown_type" },
+          { candidateAlias: "c9", score: 0.9, relationType: "supports" },
+          "not an item"
+        ]
+      },
+      ["c1", "c2", "c3", "c4", "c5"],
+      0.65
+    );
+    expect([...parsed.decisions.keys()]).toEqual(["c4"]);
+    expect(parsed.retry).toEqual(["c1", "c2", "c3", "c5"]);
+    for (const output of ["not json", { items: [] }, { results: "none" }, null])
+      expect(parseBatchRerankOutput(output, ["c1", "c2"], 0.65)).toEqual({
+        decisions: new Map(),
+        retry: ["c1", "c2"]
+      });
+  });
+
+  it("merges one repair over the first answer and keeps decisions still unexplained", () => {
+    const initial = parseBatchRerankOutput(
+      {
+        results: [
+          { candidateAlias: "c1", score: 0.1, relationType: "related" },
+          { candidateAlias: "c2", score: 0.9, relationType: "extends" }
+        ]
+      },
+      ["c1", "c2", "c3"],
+      0.65
+    );
+    expect(initial.retry).toEqual(["c2", "c3"]);
+    const repaired = parseBatchRerankOutput(
+      {
+        results: [
+          { candidateAlias: "c1", score: 0.9, relationType: "supports", explanation: "s1 and c1." },
+          {
+            candidateAlias: "c2",
+            score: 0.8,
+            relationType: "extends",
+            explanation: "c3 extends s1."
+          },
+          { candidateAlias: "c3", score: 0.3, relationType: "related" }
+        ]
+      },
+      initial.retry,
+      0.65
+    );
+    const merged = mergeBatchRerankRepair(initial, repaired);
+    expect(merged.get("c1")).toMatchObject({ score: 0.1 });
+    expect(merged.get("c2")).toEqual({
+      candidateAlias: "c2",
+      score: 0.8,
+      relationType: "extends",
+      explanation: null
+    });
+    expect(merged.get("c3")).toMatchObject({ score: 0.3, explanation: null });
   });
 
   it("uses graph-only candidates in atomic-note RRF preselection", () => {
@@ -1056,7 +1164,11 @@ describe("advanced note matching calibration", () => {
       explanation: "The candidate provides evidence for the source claim."
     }));
     expect(
-      parseBatchRerankOutput({ results }, new Set(results.map((r) => r.candidateAlias))).size
+      parseBatchRerankOutput(
+        { results },
+        results.map((r) => r.candidateAlias),
+        0.65
+      ).decisions.size
     ).toBe(45);
     const ranked = [{ noteId: "text", score: 1 }];
     expect(

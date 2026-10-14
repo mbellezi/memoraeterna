@@ -1579,6 +1579,63 @@ export const atomicNoteRelations = pgTable(
   })
 );
 
+// Relation decider verdicts on an unordered note pair, one row per pair and decider. Each direction
+// keeps its raw score apart from calibration (thresholds), for the content hashes it was decided on.
+export const relationDecisions = pgTable(
+  "relation_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pairKey: text("pair_key").notNull(),
+    loAtomicNoteId: uuid("lo_atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    hiAtomicNoteId: uuid("hi_atomic_note_id")
+      .notNull()
+      .references(() => atomicNotes.id, { onDelete: "cascade" }),
+    loContentHash: text("lo_content_hash").notNull(),
+    hiContentHash: text("hi_content_hash").notNull(),
+    deciderKey: text("decider_key").notNull(),
+    loToHiScore: doublePrecision("lo_to_hi_score"),
+    loToHiRelationType: text("lo_to_hi_relation_type"),
+    hiToLoScore: doublePrecision("hi_to_lo_score"),
+    hiToLoRelationType: text("hi_to_lo_relation_type"),
+    relationType: text("relation_type"),
+    accepted: boolean("accepted").notNull().default(false),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" })
+  },
+  (table) => ({
+    pairDeciderUidx: uniqueIndex("relation_decisions_pair_decider_uidx").on(
+      table.pairKey,
+      table.deciderKey
+    ),
+    loIdx: index("relation_decisions_lo_note_idx").on(table.loAtomicNoteId),
+    hiIdx: index("relation_decisions_hi_note_idx").on(table.hiAtomicNoteId),
+    pair: check(
+      "relation_decisions_pair",
+      sql`${table.loAtomicNoteId} < ${table.hiAtomicNoteId} and ${table.pairKey} = ${table.loAtomicNoteId}::text || ':' || ${table.hiAtomicNoteId}::text`
+    ),
+    directions: check(
+      "relation_decisions_directions",
+      sql`(${table.loToHiScore} is not null or ${table.hiToLoScore} is not null)
+        and (${table.loToHiScore} is null) = (${table.loToHiRelationType} is null)
+        and (${table.hiToLoScore} is null) = (${table.hiToLoRelationType} is null)
+        and coalesce(${table.loToHiScore}, 0) between 0 and 1
+        and coalesce(${table.hiToLoScore}, 0) between 0 and 1`
+    ),
+    accepted: check(
+      "relation_decisions_accepted",
+      sql`(${table.relationType} is not null) = ${table.accepted}`
+    ),
+    types: check(
+      "relation_decisions_types",
+      sql`coalesce(${table.loToHiRelationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')
+        and coalesce(${table.hiToLoRelationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')
+        and coalesce(${table.relationType}, 'related') in ('supports','contrasts','extends','similar_to','depends_on','clarifies','mentions','related')`
+    )
+  })
+);
+
 export const sourceRelations = pgTable(
   "source_relations",
   {
