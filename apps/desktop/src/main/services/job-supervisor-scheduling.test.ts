@@ -11,12 +11,19 @@ const mocks = vi.hoisted(() => ({
     nextQueuedOfType: vi.fn(),
     update: vi.fn()
   },
-  runs: { recoverInterrupted: vi.fn(), findById: vi.fn(), fail: vi.fn() }
+  runs: {
+    recoverInterrupted: vi.fn(),
+    findById: vi.fn(),
+    fail: vi.fn(),
+    findReleasableBatchRun: vi.fn()
+  },
+  hierarchy: { refreshBatch: vi.fn() }
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
   createJobRepository: () => mocks.jobs,
-  createIngestionRunRepository: () => mocks.runs
+  createIngestionRunRepository: () => mocks.runs,
+  createHierarchicalIngestionRepository: () => mocks.hierarchy
 }));
 let supervisor: JobSupervisor | undefined;
 beforeEach(() => {
@@ -109,6 +116,60 @@ describe("ingestion queue scheduling", () => {
       "job",
       expect.objectContaining({ status: "failed", error: "errors.conversion.emptyResult" })
     );
+  });
+  describe("a batch run that fails for good", () => {
+    const failingJob = (attempts: number) => ({
+      id: "job",
+      type: "ingestion",
+      attempts,
+      maxAttempts: 3,
+      payload: {
+        ingestionRunId: "run",
+        batchId: "batch",
+        documentId: "document",
+        sourceItemId: "source",
+        markdown: "",
+        processingMode: "content"
+      }
+    });
+
+    it("queues the job of a sibling that parked its matching behind it", async () => {
+      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
+      mocks.jobs.update.mockResolvedValue({ id: "job", status: "failed" });
+      mocks.runs.findReleasableBatchRun.mockResolvedValue({ runId: "parked", jobId: "parked-job" });
+      mocks.jobs.retry.mockResolvedValue({ id: "parked-job", status: "queued" });
+      await supervisor.runOnce();
+      expect(mocks.runs.findReleasableBatchRun).toHaveBeenCalledWith("batch");
+      expect(mocks.jobs.retry).toHaveBeenCalledWith("parked-job");
+    });
+
+    it("releases nothing while the failure is still going to be retried", async () => {
+      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+      // An unreadable payload is not a deterministic document failure: the job is queued again.
+      mocks.jobs.claimNext.mockResolvedValue({
+        ...failingJob(1),
+        payload: { batchId: "batch", sourceItemId: "source" }
+      });
+      mocks.jobs.update.mockResolvedValue({ id: "job", status: "queued" });
+      await supervisor.runOnce();
+      expect(mocks.jobs.update).toHaveBeenCalledWith(
+        "job",
+        expect.objectContaining({ status: "queued" })
+      );
+      expect(mocks.runs.findReleasableBatchRun).not.toHaveBeenCalled();
+      expect(mocks.jobs.retry).not.toHaveBeenCalled();
+    });
+
+    it("keeps going when the release itself cannot be determined", async () => {
+      const logger = { error: vi.fn(), warn: vi.fn() };
+      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool, logger });
+      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
+      mocks.jobs.update.mockResolvedValue({ id: "job", status: "failed" });
+      mocks.runs.findReleasableBatchRun.mockRejectedValue(new Error("database restarting"));
+      await expect(supervisor.runOnce()).resolves.toMatchObject({ status: "failed" });
+      expect(logger.warn).toHaveBeenCalledWith("database restarting");
+    });
   });
   it("coalesces retries during an active drain instead of starting overlapping ingestion", async () => {
     supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });

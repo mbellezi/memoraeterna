@@ -140,6 +140,16 @@ function attemptEndAssignment(alias: string): string {
   return `case when ${alias}.status = 'running' and ${alias}.ended_at is null then now() else ${alias}.ended_at end`;
 }
 
+/**
+ * A run the rest of its batch no longer waits for: it failed or was canceled and no job is left to
+ * retry it. A failed run whose job is queued or running again is still coming back, so it is not
+ * abandoned. `run` and `job` are the aliases of `ingestion_runs` and its (left-joined) `jobs` row.
+ */
+function abandonedRun(run: string, job: string): string {
+  return `((${run}.status in ('failed', 'canceled') or ${job}.status in ('failed', 'canceled'))
+    and coalesce(${job}.status::text, '') not in ('queued', 'running'))`;
+}
+
 export function createIngestionRunRepository(db: Queryable) {
   return {
     async create(input: CreateIngestionRunInput): Promise<IngestionRunRecord> {
@@ -207,6 +217,20 @@ export function createIngestionRunRepository(db: Queryable) {
     async listByBatch(batchId: string): Promise<IngestionRunRecord[]> {
       const result = await db.query<IngestionRunRow>(
         `select ${returning} from ingestion_runs where batch_id = $1 order by created_at asc`,
+        [batchId]
+      );
+      return result.rows.map(mapIngestionRun);
+    },
+
+    /** The runs of a batch that still take part in its collective stages (not abandoned). */
+    async listBatchParticipants(batchId: string): Promise<IngestionRunRecord[]> {
+      const result = await db.query<IngestionRunRow>(
+        `select ${returning} from ingestion_runs
+         where batch_id = $1 and not exists (
+           select 1 from ingestion_runs run left join jobs job on job.id = run.job_id
+           where run.id = ingestion_runs.id and ${abandonedRun("run", "job")}
+         )
+         order by created_at asc`,
         [batchId]
       );
       return result.rows.map(mapIngestionRun);
@@ -392,15 +416,54 @@ export function createIngestionRunRepository(db: Queryable) {
       );
     },
 
+    /**
+     * How many runs of the batch still have to finish `stage` before a collective stage may start.
+     * One failed or canceled sibling never holds back the others: an abandoned run is settled, and
+     * so is a stage that failed or was canceled unless its job is queued or running again.
+     */
     async countIncompleteBatchStage(batchId: string, stage: string): Promise<number> {
       const result = await db.query<{ count: string }>(
         `select count(*)::text as count
          from ingestion_runs run
          join ingestion_run_stages stage_state on stage_state.ingestion_run_id = run.id and stage_state.stage = $2
-         where run.batch_id = $1 and stage_state.status not in ('completed', 'skipped')`,
+         left join jobs job on job.id = run.job_id
+         where run.batch_id = $1
+           and (stage_state.status in ('pending', 'running', 'waiting_for_review')
+             or (stage_state.status in ('failed', 'canceled') and job.status in ('queued', 'running')))
+           and not ${abandonedRun("run", "job")}`,
         [batchId, stage]
       );
       return Number(result.rows[0]?.count ?? 0);
+    },
+
+    /**
+     * The finished run of a batch that parked its collective matching behind a sibling, when nothing
+     * is left in the batch that could still run it: its job is the one to run again. Null while any
+     * run of the batch is pending, running or waiting for a retry.
+     */
+    async findReleasableBatchRun(
+      batchId: string
+    ): Promise<{ runId: string; jobId: string } | null> {
+      const result = await db.query<{ runId: string; jobId: string }>(
+        `select run.id as "runId", run.job_id as "jobId"
+         from ingestion_runs run join jobs job on job.id = run.job_id
+         where run.batch_id = $1 and job.status = 'succeeded'
+           and exists (
+             select 1 from ingestion_run_stages stage_state
+             where stage_state.ingestion_run_id = run.id
+               and stage_state.stage in ('atomicNoteMatching', 'sourceMatching')
+               and stage_state.status = 'waiting_for_review'
+           )
+           and not exists (
+             select 1 from ingestion_runs other left join jobs other_job on other_job.id = other.job_id
+             where other.batch_id = $1 and not ${abandonedRun("other", "other_job")}
+               and (other.status in ('pending', 'running') or other_job.status in ('queued', 'running'))
+           )
+         order by run.updated_at desc, run.id
+         limit 1`,
+        [batchId]
+      );
+      return result.rows[0] ?? null;
     },
 
     async completeStageForBatch(

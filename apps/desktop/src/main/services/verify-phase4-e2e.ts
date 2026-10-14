@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createAtomicNoteRepository,
   createChunkRepository,
   createDocumentRepository,
   createIngestionRunRepository,
@@ -43,6 +44,7 @@ import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.j
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor } from "./job-supervisor.js";
+import type { KnowledgeService } from "./knowledge-service.js";
 import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { YouTubeService } from "./youtube-service.js";
@@ -537,6 +539,226 @@ try {
       `An empty document did not fail cleanly: ${JSON.stringify([emptyProcessing.run, emptyProcessing.job])}`
     );
   }
+
+  // Note and source matching are collective stages: the last job of a batch runs them for every
+  // run, and the earlier runs park theirs. A run that failed or was canceled for good must neither
+  // hold the others behind it (a first sibling that fails) nor leave the parked ones with nobody
+  // to run them (a last sibling that fails). The fake knowledge service stands in for the AI.
+  const matched = { notes: [] as string[], sources: [] as string[] };
+  // Sources whose note generation fails once (a transient provider error) or whose note matching
+  // always fails, and the source each generated note belongs to.
+  const generationFailsOnce = new Set<string>();
+  const matchingFails = new Set<string>();
+  const noteSource = new Map<string, string>();
+  const knowledge = {
+    isHierarchicalRoot: async () => false,
+    summarizeSource: async () => ({ configured: true, generated: false }),
+    summarizeHierarchiesForBatch: async () => ({ generatedCount: 0 }),
+    generateKnowledgeGraph: async () => ({ configured: true, generated: false }),
+    generateAtomicNotes: async (sourceItemId: string, documentId: string) => {
+      if (generationFailsOnce.delete(sourceItemId)) throw new Error("provider_unavailable");
+      const [chunk] = await createChunkRepository(pool!).listByDocument(documentId);
+      if (!chunk) throw new Error("The chunking stage left no chunk.");
+      const note = await createAtomicNoteRepository(pool!).upsertGenerated({
+        title: "Note",
+        bodyMarkdown: "A fact.",
+        ideaStatement: "A fact.",
+        sourceItemId,
+        evidenceChunkId: chunk.id,
+        evidenceLinks: [{ chunkId: chunk.id }],
+        generationProvider: "verify",
+        generationModel: "verify",
+        generationRuntime: "local",
+        generationPromptVersion: "verify",
+        generationKey: "verify"
+      });
+      noteSource.set(note.id, sourceItemId);
+      return { configured: true, generatedCount: 1, noteIds: [note.id] };
+    },
+    matchAtomicNotes: async (noteIds: string[]) => {
+      if (noteIds.some((id) => matchingFails.has(noteSource.get(id) ?? "")))
+        throw new Error("matching_failed");
+      matched.notes.push(...noteIds);
+      return { persistedCount: 0 };
+    },
+    matchSourceRelations: async (sourceIds: string[]) => {
+      matched.sources.push(...sourceIds);
+      return { persistedCount: 0 };
+    }
+  };
+  const matching = new JobSupervisor({
+    getPool: () => pool ?? null,
+    knowledgeService: knowledge as unknown as KnowledgeService
+  });
+  const matchingStages = [
+    "chunking",
+    "embedding",
+    "summarization",
+    "atomicNotes",
+    "knowledgeGraph",
+    "atomicNoteMatching",
+    "sourceMatching"
+  ] as const;
+  const newSource = async (title: string, content: string) => {
+    const sourceId = (
+      await ingestion.createManual({
+        descriptor: SourceDescriptorSchema.parse({ type: "PersonalNote", title }),
+        content: content || "placeholder",
+        duplicatePolicy: "ignore",
+        processingPlan: importOnly
+      })
+    ).sourceItemId;
+    // An empty document is what an earlier version stored for a page it could not convert.
+    if (!content)
+      await pool!.query(
+        `update documents set canonical_markdown = '', content_hash = $2 where source_item_id = $1`,
+        [sourceId, sha256("")]
+      );
+    return sourceId;
+  };
+  const queueBatch = async (sourceIds: string[]) => {
+    const batch = await hierarchy.process({
+      plan: ProcessingPlanRequestSchema.parse({
+        preset: "custom",
+        requestedStages: [...matchingStages],
+        scope: "source_only",
+        targetSourceItemIds: sourceIds
+      }),
+      runKind: "initial",
+      trigger: "library_action"
+    });
+    return batch.queued.map((item) => ({
+      sourceItemId: item.sourceItemId,
+      runId: item.ingestionRunId,
+      jobId: item.jobId!
+    }));
+  };
+  const stageStatus = async (runId: string, stage: string) =>
+    (
+      await pool!.query<{ status: string }>(
+        `select status::text from ingestion_run_stages where ingestion_run_id = $1 and stage = $2`,
+        [runId, stage]
+      )
+    ).rows[0]?.status;
+  const jobStatus = async (jobId: string) =>
+    (await createJobRepository(pool!).findById(jobId))?.status;
+  const drainBatch = async (queued: Array<{ jobId: string }>) => {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const statuses = await Promise.all(queued.map((item) => jobStatus(item.jobId)));
+      if (statuses.every((status) => status !== "queued" && status !== "running")) return;
+      await matching.runOnce();
+    }
+    throw new Error("The batch jobs did not settle.");
+  };
+  const expectMatched = async (
+    healthy: Array<{ sourceItemId: string; runId: string }>,
+    context: string
+  ) => {
+    for (const item of healthy) {
+      const statuses = [
+        await stageStatus(item.runId, "atomicNoteMatching"),
+        await stageStatus(item.runId, "sourceMatching")
+      ];
+      if (statuses.join() !== "completed,completed" || !matched.sources.includes(item.sourceItemId))
+        throw new Error(`${context}: matching of ${item.sourceItemId} was ${statuses.join()}.`);
+    }
+    const notes = await createAtomicNoteRepository(pool!).listBySourceItem(
+      healthy[0]!.sourceItemId
+    );
+    if (!notes.every((note) => matched.notes.includes(note.id)) || notes.length === 0)
+      throw new Error(`${context}: the notes of a healthy source were not matched.`);
+  };
+
+  // A sibling that fails first: its pending stages must not hold the others.
+  matched.notes.length = matched.sources.length = 0;
+  const firstFails = await queueBatch([
+    await newSource("Matching A", ""),
+    await newSource("Matching B", "Matching batch B holds its own fact."),
+    await newSource("Matching C", "Matching batch C holds its own fact.")
+  ]);
+  const [failedFirst, ...healthyFirst] = firstFails;
+  await drainBatch(firstFails);
+  if (
+    (await createIngestionRunRepository(pool).findById(failedFirst!.runId))?.status !== "failed" ||
+    matched.sources.includes(failedFirst!.sourceItemId)
+  ) {
+    throw new Error("The failed sibling was matched or did not fail.");
+  }
+  await expectMatched(healthyFirst, "A sibling that failed first");
+
+  // A sibling that fails last: the others park, then the failure releases them.
+  matched.notes.length = matched.sources.length = 0;
+  const lastFails = await queueBatch([
+    await newSource("Matching D", "Matching batch D holds its own fact."),
+    await newSource("Matching E", "Matching batch E holds its own fact."),
+    await newSource("Matching F", "")
+  ]);
+  const [parkedD, parkedE, failedLast] = lastFails;
+  await matching.runOnce();
+  await matching.runOnce();
+  if (
+    (await stageStatus(parkedD!.runId, "atomicNoteMatching")) !== "waiting_for_review" ||
+    (await stageStatus(parkedE!.runId, "atomicNoteMatching")) !== "waiting_for_review" ||
+    matched.sources.length !== 0
+  ) {
+    throw new Error("The runs did not park their matching behind the pending sibling.");
+  }
+  await matching.runOnce();
+  if ((await jobStatus(failedLast!.jobId)) !== "failed") {
+    throw new Error("The last sibling did not fail.");
+  }
+  await drainBatch(lastFails);
+  await expectMatched([parkedD!, parkedE!], "A sibling that failed last");
+
+  // A sibling whose job was canceled before it ran leaves its run pending: it is out as well.
+  matched.notes.length = matched.sources.length = 0;
+  const canceledSibling = await queueBatch([
+    await newSource("Matching G", "Matching batch G holds its own fact."),
+    await newSource("Matching H", "Matching batch H holds its own fact."),
+    await newSource("Matching I", "Matching batch I holds its own fact.")
+  ]);
+  await matching.requestCancel(canceledSibling[0]!.jobId);
+  await drainBatch(canceledSibling);
+  await expectMatched(canceledSibling.slice(1), "A canceled sibling");
+
+  // A sibling whose own note matching fails is isolated: it neither stops the others' note
+  // matching nor, being settled, their source matching.
+  matched.notes.length = matched.sources.length = 0;
+  const matchingFailure = await queueBatch([
+    await newSource("Matching J", "Matching batch J holds its own fact."),
+    await newSource("Matching K", "Matching batch K holds its own fact."),
+    await newSource("Matching L", "Matching batch L holds its own fact.")
+  ]);
+  matchingFails.add(matchingFailure[0]!.sourceItemId);
+  await drainBatch(matchingFailure);
+  matchingFails.clear();
+  if ((await stageStatus(matchingFailure[0]!.runId, "atomicNoteMatching")) !== "failed") {
+    throw new Error("The note matching failure of one sibling was not recorded on its run.");
+  }
+  await expectMatched(matchingFailure.slice(1), "A sibling whose matching failed");
+
+  // A sibling that fails transiently is coming back: the others still wait for its retry, and the
+  // matching then covers all of them together.
+  matched.notes.length = matched.sources.length = 0;
+  const retrying = await queueBatch([
+    await newSource("Matching M", "Matching batch M holds its own fact."),
+    await newSource("Matching N", "Matching batch N holds its own fact."),
+    await newSource("Matching O", "Matching batch O holds its own fact.")
+  ]);
+  generationFailsOnce.add(retrying[0]!.sourceItemId);
+  for (let step = 0; step < 3; step += 1) await matching.runOnce();
+  const retryingStatus = [
+    await jobStatus(retrying[0]!.jobId),
+    await stageStatus(retrying[1]!.runId, "atomicNoteMatching"),
+    await stageStatus(retrying[2]!.runId, "atomicNoteMatching")
+  ].join();
+  if (retryingStatus !== "queued,waiting_for_review,waiting_for_review" || matched.sources.length) {
+    throw new Error(`The siblings did not wait for the retry: ${retryingStatus}.`);
+  }
+  await pool.query(`update jobs set run_after = now() where id = $1`, [retrying[0]!.jobId]);
+  await drainBatch(retrying);
+  await expectMatched(retrying, "A sibling that is retried");
+  await matching.stop();
 
   const obsidianPairing = await gateway.createPairing({
     clientType: "obsidian-plugin",

@@ -256,10 +256,30 @@ export class JobSupervisor {
       const batchId = optionalString(job.payload.batchId);
       if (batchId)
         await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
+      // A run that failed for good may have been the one the rest of its batch was waiting for.
+      if (batchId && job.type === "ingestion" && !wasCanceled && !shouldRetry)
+        await this.releaseParkedBatch(batchId);
       this.notify();
       return updated;
     } finally {
       this.controllers.delete(job.id);
+    }
+  }
+
+  /**
+   * Collective stages (note and source matching) run in the last job that reaches them, and every
+   * earlier run parks its own and finishes. When that last job fails instead, nothing would ever
+   * run them: the job of one parked run is queued again, and its checkpoints make it do only the
+   * matching, now that the failed run no longer holds the batch. A cancellation does not release:
+   * it is a stop, and parked work resumes with the manual retry.
+   */
+  private async releaseParkedBatch(batchId: string): Promise<void> {
+    try {
+      const pool = this.requirePool();
+      const parked = await createIngestionRunRepository(pool).findReleasableBatchRun(batchId);
+      if (parked && (await createJobRepository(pool).retry(parked.jobId))) this.schedule(0);
+    } catch (error) {
+      this.options.logger?.warn(normalizeWorkerError(error));
     }
   }
 
@@ -768,8 +788,10 @@ export class JobSupervisor {
     throwIfAborted(signal);
     await createJobRepository(pool).reportProgress(job.id, 0.89);
     const batchId = run.batchId ?? optionalString(job.payload.batchId);
+    // The collective stages below run for the runs of the batch that are still live: a run that
+    // failed or was canceled for good neither holds them back nor takes part in them.
     const noteMatchingRuns = batchId
-      ? (await runs.listByBatch(batchId)).filter((item) =>
+      ? (await runs.listBatchParticipants(batchId)).filter((item) =>
           participatesInAtomicNoteMatching(item.effectiveStages)
         )
       : shouldRun("atomicNoteMatching")
@@ -872,7 +894,7 @@ export class JobSupervisor {
     // A collective stage runs after every selected summary/embedding and optional note match.
     // The final participant may be a catalog job, so inspect the batch rather than only this run.
     const sourceMatchingRuns = batchId
-      ? (await runs.listByBatch(batchId)).filter((item) =>
+      ? (await runs.listBatchParticipants(batchId)).filter((item) =>
           item.effectiveStages.includes("sourceMatching")
         )
       : effectiveStages.has("sourceMatching")

@@ -512,6 +512,45 @@ describe("repositories", () => {
     }
   });
 
+  it("does not wait on abandoned runs or settled stages of a batch", async () => {
+    const db = new FakeQueryable([[{ count: "2" }], [], [{ runId: "run-1", jobId: "job-1" }], []]);
+    const runs = createIngestionRunRepository(db);
+
+    expect(await runs.countIncompleteBatchStage("batch-1", "atomicNotes")).toBe(2);
+    expect(await runs.listBatchParticipants("batch-1")).toEqual([]);
+    expect(await runs.findReleasableBatchRun("batch-1")).toEqual({
+      runId: "run-1",
+      jobId: "job-1"
+    });
+    expect(await runs.findReleasableBatchRun("batch-2")).toBeNull();
+
+    const [count, participants, releasable] = db.queries.map((query) => query.text);
+    // Only stages that can still progress are waited on; a failed or canceled stage is settled
+    // unless its job is queued or running again.
+    expect(count).toContain("stage_state.status in ('pending', 'running', 'waiting_for_review')");
+    expect(count).toContain(
+      "stage_state.status in ('failed', 'canceled') and job.status in ('queued', 'running')"
+    );
+    // A run is abandoned when it or its job failed or was canceled and no job can retry it.
+    for (const text of [count, participants, releasable]) {
+      expect(text).toContain("left join jobs");
+      expect(text).toMatch(
+        /\.status in \('failed', 'canceled'\) or \w+\.status in \('failed', 'canceled'\)/
+      );
+      expect(text).toMatch(/coalesce\(\w+\.status::text, ''\) not in \('queued', 'running'\)/);
+    }
+    // Releasing needs a finished run with parked matching and no live run left in the batch.
+    expect(releasable).toContain("job.status = 'succeeded'");
+    expect(releasable).toContain("stage_state.status = 'waiting_for_review'");
+    expect(releasable).toContain("other.status in ('pending', 'running')");
+    expect(db.queries.map((query) => query.values)).toEqual([
+      ["batch-1", "atomicNotes"],
+      ["batch-1"],
+      ["batch-1"],
+      ["batch-2"]
+    ]);
+  });
+
   it("serializes ingestion stage lists as JSON", async () => {
     const now = new Date("2026-07-15T10:00:00.000Z");
     const requestedStages = ["conversion", "chunking"];

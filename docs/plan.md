@@ -317,7 +317,7 @@ coherent by the owner and ambiguity ≤30% *(cal.)*, otherwise retune (Louvain o
       checkpoint.
 - [ ] Remote fetch deadlines and stream watchdog; classified retry with backoff; priority classes in the
       current queue; Ask timeout counted from admission.
-- [ ] A failed or canceled sibling no longer blocks batch matching.
+- [x] A failed or canceled sibling no longer blocks batch matching.
 - [ ] Import defaults ("Second brain" when a writer route is ready, else searchable), open the source after
       import; seed all routes from the first profile; stop tagging generative models as rerankers.
 - [ ] Re-embed notes after human edits; batch wiki link resolution; keep Library mounted; stabilize graph
