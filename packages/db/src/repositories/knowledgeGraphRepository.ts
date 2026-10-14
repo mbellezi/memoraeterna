@@ -81,6 +81,8 @@ export interface AtomicNoteGraphCandidate {
   noteId: string;
   graphScore: number;
   pathType: "shared_entity" | "related_entity";
+  /** Content-stable tie-break: the note title and idea, which (unlike IDs) survive a re-import. */
+  contentKey: string;
 }
 
 export interface SourceGraphElements {
@@ -234,7 +236,7 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          where r.created_at <= $1::timestamptz
            and coalesce(r.metadata->>'labelJobId', '') <> $2
            and ($3 = 'all' or coalesce(trim(r.metadata->>'displayLabel'), '') = '')
-         order by r.id limit 20`,
+         order by s.canonical_name, r.predicate, o.canonical_name, r.id limit 20`,
         [input.before, input.jobId, input.mode]
       );
       return result.rows;
@@ -826,7 +828,13 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         .map(([candidateId, candidate]) => ({ noteId: candidateId, ...candidate }))
         .sort(
           (left, right) =>
-            right.graphScore - left.graphScore || left.noteId.localeCompare(right.noteId)
+            right.graphScore - left.graphScore ||
+            (left.contentKey < right.contentKey
+              ? -1
+              : left.contentKey > right.contentKey
+                ? 1
+                : 0) ||
+            left.noteId.localeCompare(right.noteId)
         )
         .slice(0, limit);
     },
@@ -1060,11 +1068,18 @@ async function scoreAtomicNoteGraphPaths(
       ])
     ];
     if (targetIds.length === 0) return new Map();
-    const activeTargets = await client.query<{ id: string } & QueryResultRow>(
-      `select id from atomic_notes where id = any($1::uuid[]) and status <> 'rejected'`,
+    const activeTargets = await client.query<
+      { id: string; title?: string; ideaStatement?: string } & QueryResultRow
+    >(
+      `select id, title, idea_statement as "ideaStatement" from atomic_notes where id = any($1::uuid[]) and status <> 'rejected'`,
       [targetIds]
     );
-    const allowedTargets = new Set(activeTargets.rows.map((row) => row.id));
+    const allowedTargets = new Map(
+      activeTargets.rows.map((row) => [
+        row.id,
+        `${row.title ?? ""}\u0000${row.ideaStatement ?? ""}`
+      ])
+    );
     const entityIds = [
       ...new Set([
         ...direct.rows.map((row) => agString(row.entityId)),
@@ -1102,10 +1117,11 @@ async function scoreAtomicNoteGraphPaths(
       graphScore: number,
       pathType: AtomicNoteGraphCandidate["pathType"]
     ) => {
-      if (!allowedTargets.has(targetId)) return;
+      const contentKey = allowedTargets.get(targetId);
+      if (contentKey === undefined) return;
       const previous = candidates.get(targetId);
       if (!previous || graphScore > previous.graphScore) {
-        candidates.set(targetId, { graphScore: score(graphScore), pathType });
+        candidates.set(targetId, { graphScore: score(graphScore), pathType, contentKey });
       }
     };
     for (const row of direct.rows) {

@@ -1,3 +1,4 @@
+import { compareContent } from "./content-order.js";
 import { renderPrompt, changedPromptIdentity } from "./prompt-runtime.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -144,6 +145,11 @@ export interface KnowledgeGraphGenerationOptions {
   inputKind?: "atomic_notes" | "source_chunks" | "catalog_metadata";
   checkpointNamespace?: string;
   contentLanguage?: string;
+  /**
+   * Document position (chunk index) of each evidence chunk. Evidence aliases follow it, so the same
+   * content gets the same aliases on every import; chunk IDs never order anything.
+   */
+  chunkPositions?: ReadonlyMap<string, number>;
   resolveRelations?: (
     batch: KnowledgeGraphGenerationOutput
   ) => Promise<KnowledgeGraphGenerationOutput>;
@@ -324,7 +330,7 @@ export async function generateKnowledgeGraphFromAtomicNotes(
     );
     if (remaining && remaining.maxEntities <= 0) break;
     const group = groups[batchIndex] ?? [];
-    const evidenceAliases = createEvidenceAliases(group);
+    const evidenceAliases = createEvidenceAliases(group, options.chunkPositions);
     const batchLimits = {
       maxEntities: Math.min(12, remaining?.maxEntities ?? 12),
       maxRelations: Math.min(12, remaining?.maxRelations ?? 12)
@@ -721,10 +727,13 @@ export function buildBatchRerankPrompt(
 export interface AtomicNoteRankingInput {
   noteId: string;
   score: number;
+  /** Content-stable tie-break (for example title and idea); note IDs differ on every import. */
+  contentKey?: string;
 }
 
 export interface FusedAtomicNoteCandidate {
   noteId: string;
+  contentKey: string;
   textScore: number;
   vectorScore: number;
   graphScore: number | null;
@@ -747,6 +756,7 @@ export function fuseAtomicNoteCandidateRankings(
     ranking.forEach((candidate, index) => {
       const current = candidates.get(candidate.noteId) ?? {
         noteId: candidate.noteId,
+        contentKey: candidate.contentKey ?? "",
         textScore: 0,
         vectorScore: 0,
         graphScore: null,
@@ -765,6 +775,7 @@ export function fuseAtomicNoteCandidateRankings(
         current.graphScore = candidate.score;
         current.graphRank = index + 1;
       }
+      if (!current.contentKey && candidate.contentKey) current.contentKey = candidate.contentKey;
       candidates.set(candidate.noteId, current);
     });
   add(textCandidates, "text");
@@ -782,6 +793,7 @@ export function fuseAtomicNoteCandidateRankings(
     (right.graphScore ?? 0) - (left.graphScore ?? 0) ||
     right.vectorScore - left.vectorScore ||
     right.textScore - left.textScore ||
+    compareContent(left.contentKey, right.contentKey) ||
     left.noteId.localeCompare(right.noteId);
   const ranked = [...candidates.values()]
     .map((candidate) => ({
@@ -907,11 +919,29 @@ function graphNoteContent(note: KnowledgeGraphAtomicNoteInput): string {
   return `${note.title}\n${note.ideaStatement}\n${note.bodyMarkdown}`;
 }
 
-function createEvidenceAliases(
-  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>
+/**
+ * Evidence aliases c1..cN follow document order: the chunk position when it is known, then the order
+ * in which the inputs first cite the chunk (which is itself content order). Chunk IDs are random per
+ * import and must never decide an alias.
+ */
+export function createEvidenceAliases(
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  chunkPositions?: ReadonlyMap<string, number>
 ): Map<string, string> {
-  const chunkIds = [...new Set(notes.flatMap((note) => note.evidenceChunkIds))].sort();
-  return new Map(chunkIds.map((chunkId, index) => [`c${index + 1}`, chunkId]));
+  const citedAt = new Map<string, number>();
+  for (const note of notes)
+    for (const chunkId of note.evidenceChunkIds)
+      if (!citedAt.has(chunkId)) citedAt.set(chunkId, citedAt.size);
+  const position = (chunkId: string) => chunkPositions?.get(chunkId) ?? Number.POSITIVE_INFINITY;
+  const ordered = [...citedAt.keys()].sort((left, right) => {
+    const leftPosition = position(left);
+    const rightPosition = position(right);
+    return (
+      (leftPosition === rightPosition ? 0 : leftPosition < rightPosition ? -1 : 1) ||
+      citedAt.get(left)! - citedAt.get(right)!
+    );
+  });
+  return new Map(ordered.map((chunkId, index) => [`c${index + 1}`, chunkId]));
 }
 
 function formatGraphInputs(
@@ -920,12 +950,15 @@ function formatGraphInputs(
   inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"
 ): string {
   const aliasByChunkId = new Map([...evidenceAliases].map(([alias, chunkId]) => [chunkId, alias]));
+  const aliasOrder = new Map([...evidenceAliases.keys()].map((alias, index) => [alias, index]));
   return notes
     .map((note, index) => {
-      const aliases = note.evidenceChunkIds.flatMap((chunkId) => {
-        const alias = aliasByChunkId.get(chunkId);
-        return alias ? [alias] : [];
-      });
+      const aliases = note.evidenceChunkIds
+        .flatMap((chunkId) => {
+          const alias = aliasByChunkId.get(chunkId);
+          return alias ? [alias] : [];
+        })
+        .sort((left, right) => aliasOrder.get(left)! - aliasOrder.get(right)!);
       const prefix = inputKind === "atomic_notes" ? "n" : "s";
       return `[${prefix}${index + 1}; evidence=${aliases.join(",")}]
 Title: ${note.title}

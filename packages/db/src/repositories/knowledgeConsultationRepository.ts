@@ -65,7 +65,7 @@ export function createKnowledgeConsultationRepository(pool: PgPool) {
       if (!ids.length) return [];
       const rows = (
         await pool.query(
-          `select c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) locator from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id where c.id=any($1::uuid[]) and c.source_item_id=any($2::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1' order by c.id`,
+          `select c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) locator from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id where c.id=any($1::uuid[]) and c.source_item_id=any($2::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1' order by s.title,c.chunk_index,c.id`,
           [ids, allowed]
         )
       ).rows;

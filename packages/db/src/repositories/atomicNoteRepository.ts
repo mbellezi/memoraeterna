@@ -210,12 +210,13 @@ export function createAtomicNoteRepository(db: Queryable) {
     async listGraphInputsBySourceItem(sourceItemId: string): Promise<AtomicNoteGraphInputRecord[]> {
       const result = await db.query<QueryResultRow & AtomicNoteGraphInputRecord>(
         `select n.id, n.title, n.idea_statement as "ideaStatement", n.body_markdown as "bodyMarkdown",
-                array_agg(l.chunk_id::text order by l.chunk_id) as "evidenceChunkIds"
+                array_agg(l.chunk_id::text order by c.chunk_index nulls last, l.chunk_id) as "evidenceChunkIds"
            from atomic_notes n
            join atomic_note_source_links l on l.atomic_note_id = n.id
+           left join chunks c on c.id = l.chunk_id
           where n.created_from_source_item_id = $1 and n.status <> 'rejected'
           group by n.id, n.title, n.idea_statement, n.body_markdown, n.created_at
-          order by n.created_at`,
+          order by n.created_at, n.title, n.idea_statement, n.id`,
         [sourceItemId]
       );
       return result.rows.map((row) => ({
@@ -362,7 +363,7 @@ export function createAtomicNoteRepository(db: Queryable) {
          from atomic_notes source
          join atomic_notes candidate on candidate.id <> source.id and candidate.status <> 'rejected'
          where source.id = $1
-         order by "textScore" desc, candidate.id
+         order by "textScore" desc, candidate.title, candidate.idea_statement, candidate.id
          limit $2`,
         [input.noteId, input.limit ?? 30]
       );
@@ -396,7 +397,7 @@ export function createAtomicNoteRepository(db: Queryable) {
            on e.target_type = 'atomic_note' and e.target_id = candidate.id
           and ($3::text is null or e.model = $3) and e.strategy='native-v2:' || $5::text and e.provider=$6 and e.runtime=$7
          where source.id = $1
-         order by "vectorScore" desc, candidate.id
+         order by "vectorScore" desc, candidate.title, candidate.idea_statement, candidate.id
          limit $4`,
         [
           input.noteId,
@@ -520,7 +521,8 @@ export function createAtomicNoteRepository(db: Queryable) {
          order by ((least(1, greatest(
                     similarity(unaccent(candidate.idea_statement), unaccent(source.idea_statement)),
                     similarity(unaccent(candidate.title), unaccent(source.title))
-                  )) * 0.4) + (${vectorScore} * 0.6)) desc
+                  )) * 0.4) + (${vectorScore} * 0.6)) desc,
+                  candidate.title, candidate.idea_statement, candidate.id
          limit ${dimensions ? "$4" : "$2"}`,
         dimensions
           ? [

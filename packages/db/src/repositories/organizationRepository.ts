@@ -205,10 +205,11 @@ export function createOrganizationRepository(pool: PgPool) {
     async relations(sourceIds: string[]) {
       return (
         await pool.query(
-          `select distinct on(r.id) r.id,e.id as "evidenceId",md5(e.snapshot::text) as fingerprint,r.source_item_id as "sourceItemId",r.target_source_item_id as "targetSourceItemId",r.status as review,r.updated_at as "updatedAt",r.source_idea as "sourceIdea",r.target_idea as "targetIdea",r.explanation,e.source_chunk_id as "sourceChunkId",e.target_chunk_id as "targetChunkId"
+          `select * from (select distinct on(r.id) r.id,e.id as "evidenceId",md5(e.snapshot::text) as fingerprint,r.source_item_id as "sourceItemId",r.target_source_item_id as "targetSourceItemId",r.status as review,r.updated_at as "updatedAt",r.source_idea as "sourceIdea",r.target_idea as "targetIdea",r.explanation,e.source_chunk_id as "sourceChunkId",e.target_chunk_id as "targetChunkId"
         from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins}
         where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and ${currentSourceRelationEvidenceSql}
-        order by r.id,e.id limit 20`,
+        order by r.id,e.snapshot->>'sourceHash',e.snapshot->>'targetHash',e.id) picked
+        order by picked."sourceIdea",picked."targetIdea",picked."evidenceId" limit 20`,
           [sourceIds]
         )
       ).rows.map((r) => ({ ...r, updatedAt: stamp(r.updatedAt) }));

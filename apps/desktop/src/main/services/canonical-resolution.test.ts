@@ -7,6 +7,7 @@ import {
   buildRelationMatchPrompt
 } from "./relation-type-resolution.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
+import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import type { DefaultAiTaskResult } from "./ai-service.js";
 
 const mocks = vi.hoisted(() => ({
@@ -291,6 +292,81 @@ it("serializes shared candidate definitions once and never includes provenance I
   expect(data.candidates).toHaveLength(1);
   expect(data.relations).toHaveLength(2);
   expect(prompt).not.toContain(id);
+});
+
+describe("confirmation prompts do not depend on database IDs", () => {
+  const confirmationPrompt = (ai: { runDefaultTask: { mock: { calls: unknown[][] } } }) =>
+    ai.runDefaultTask.mock.calls.find(([task]) => task !== "embedding")![1] as string;
+  const askingAi = () => ({
+    runDefaultTask: vi.fn(async (task: string) =>
+      result(task === "embedding" ? vector : { matches: [["r1", null]] })
+    )
+  });
+
+  it("number relation type candidates of equal score by content under any UUID assignment", async () => {
+    const prompts: string[] = [];
+    for (const [usedId, employedId] of uuidAssignments(2).map((ids) => ids as [string, string])) {
+      vi.clearAllMocks();
+      mocks.types.findExact.mockResolvedValue(new Map());
+      mocks.types.revision.mockResolvedValue(0);
+      mocks.types.missingVectors.mockResolvedValue([]);
+      mocks.types.commit.mockResolvedValue(new Map([["utilized_to_accuse", type]]));
+      // Two stored types score the same; the catalog returns them in whatever order it likes.
+      mocks.types.candidates.mockResolvedValue([
+        { id: usedId, predicate: "used_to_accuse", definition: "Used as evidence.", score: 0.95 },
+        {
+          id: employedId,
+          predicate: "employed_to_accuse",
+          definition: "Employed as proof.",
+          score: 0.95
+        }
+      ]);
+      const ai = askingAi();
+      await createRelationTypeResolver({ ...base, ai })(batch());
+      prompts.push(confirmationPrompt(ai));
+    }
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(new Set(prompts).size).toBe(1);
+    expect(prompts[0]).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    const candidates = JSON.parse(prompts[0]!.split("\n").at(-1)!).candidates;
+    expect(candidates.map((candidate: string[]) => candidate[1])).toEqual([
+      "employed_to_accuse",
+      "used_to_accuse"
+    ]);
+  });
+
+  it("number entity identity candidates of equal score by content under any UUID assignment", async () => {
+    const prompts: string[] = [];
+    for (const [firstId, secondId] of uuidAssignments(2).map((ids) => ids as [string, string])) {
+      vi.clearAllMocks();
+      mocks.entities.findResolved.mockResolvedValue(new Map());
+      mocks.entities.revision.mockResolvedValue("0:0:0");
+      mocks.entities.missingVectors.mockResolvedValue([]);
+      mocks.entities.commit.mockResolvedValue(new Map([["e1", otherId]]));
+      const person = (entityId: string, canonicalName: string, identityDescription: string) => ({
+        id: entityId,
+        type: "Person",
+        canonicalName,
+        aliases: [],
+        identityDescription,
+        score: 0.97
+      });
+      mocks.entities.candidates.mockResolvedValue([
+        person(firstId, "John Smyth", "Musician in London, born 1980"),
+        person(secondId, "John Smith", "Chemist at University B")
+      ]);
+      const ai = askingAi();
+      await createEntityIdentityResolver({ ...base, ai, language: "en" })(batch());
+      prompts.push(confirmationPrompt(ai));
+    }
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(new Set(prompts).size).toBe(1);
+    const candidates = JSON.parse(prompts[0]!.split("\n").at(-1)!).candidates;
+    expect(candidates.map((candidate: string[]) => candidate[1])).toEqual([
+      "Person: John Smith",
+      "Person: John Smyth"
+    ]);
+  });
 });
 
 it("fails before catalog persistence when the embedding model changes mid-batch", async () => {

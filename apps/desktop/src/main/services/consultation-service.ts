@@ -1,4 +1,5 @@
 import { estimateAiPlanningTokens } from "./ai-task-parameters.js";
+import { compareContent } from "./content-order.js";
 import { withOutputLanguageInstruction } from "./prompt-runtime.js";
 import {
   organizationMetadataConfiguration,
@@ -39,6 +40,11 @@ import {
 } from "@app/domain";
 import type { AiService } from "./ai-service.js";
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
+/** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
+const compareChunkPosition = (a: Record<string, unknown>, b: Record<string, unknown>) =>
+  compareContent(String(a.sourceTitle ?? ""), String(b.sourceTitle ?? "")) ||
+  Number(a.chunkIndex ?? 0) - Number(b.chunkIndex ?? 0) ||
+  String(a.chunkId).localeCompare(String(b.chunkId));
 export function rankConsultationCandidates(
   rows: Array<Record<string, any>>,
   vector: Array<{ id: string; score: number }>,
@@ -48,9 +54,7 @@ export function rankConsultationCandidates(
   for (const signal of ["text", "title", "concept", "note", "entity", "relation", "wiki"]) {
     const ranked = rows
       .filter((r) => Number(r[signal]) > 0)
-      .toSorted(
-        (a, b) => Number(b[signal]) - Number(a[signal]) || a.chunkId.localeCompare(b.chunkId)
-      );
+      .toSorted((a, b) => Number(b[signal]) - Number(a[signal]) || compareChunkPosition(a, b));
     ranked.forEach((r, i) => scores.set(r.chunkId, (scores.get(r.chunkId) ?? 0) + 1 / (61 + i)));
   }
   vector
@@ -60,8 +64,7 @@ export function rankConsultationCandidates(
     .filter((r) => (scores.get(r.chunkId) ?? 0) > 0)
     .toSorted(
       (a, b) =>
-        (scores.get(b.chunkId) ?? 0) - (scores.get(a.chunkId) ?? 0) ||
-        a.chunkId.localeCompare(b.chunkId)
+        (scores.get(b.chunkId) ?? 0) - (scores.get(a.chunkId) ?? 0) || compareChunkPosition(a, b)
     );
   const used = new Set<string>(),
     picked: typeof rows = [];

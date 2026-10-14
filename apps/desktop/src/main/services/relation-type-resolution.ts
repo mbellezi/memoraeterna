@@ -1,3 +1,4 @@
+import { compareContent } from "./content-order.js";
 import { renderPrompt, joinPrompts } from "./prompt-runtime.js";
 import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from "@app/domain";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
@@ -30,6 +31,22 @@ export interface RelationMatchRow {
   predicate: string;
   definition: string;
   candidates: Array<Pick<Candidate, "key" | "predicate" | "definition" | "sourceItemIds">>;
+}
+
+/**
+ * Orders confirmation candidates by score, then by what a reader sees. The candidate key embeds a
+ * database ID for stored candidates, which differs on every import and so can never break a tie.
+ */
+export function compareConfirmationCandidates(
+  left: Pick<Candidate, "score" | "predicate" | "definition" | "key">,
+  right: Pick<Candidate, "score" | "predicate" | "definition" | "key">
+): number {
+  return (
+    right.score - left.score ||
+    compareContent(left.predicate, right.predicate) ||
+    compareContent(left.definition, right.definition) ||
+    compareContent(left.key, right.key)
+  );
 }
 
 export function buildRelationMatchPrompt(rows: RelationMatchRow[], entityIdentity = false): string {
@@ -217,7 +234,7 @@ export function createRelationTypeResolver(options: {
               });
           }
           const selected = candidates
-            .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+            .sort(compareConfirmationCandidates)
             .slice(0, settings.relationTypeCandidateLimit)
             .map((candidate) => {
               if (!candidateKeys.has(candidate.key))

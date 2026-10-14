@@ -13,6 +13,7 @@ import type { AiService, AiTaskLogContext } from "./ai-service.js";
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import {
   buildRelationMatchPrompt,
+  compareConfirmationCandidates,
   parseRelationMatches,
   relationTypeCosine,
   type RelationMatchRow
@@ -195,7 +196,7 @@ export function createEntityIdentityResolver(options: {
               });
           }
           const selected = candidates
-            .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+            .sort(compareConfirmationCandidates)
             .slice(0, settings.entityCandidateLimit)
             .map((candidate) => {
               if (!candidateKeys.has(candidate.key))

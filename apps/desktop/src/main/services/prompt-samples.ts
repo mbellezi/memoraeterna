@@ -584,6 +584,8 @@ export function promptSampleCall(
           sourceItemId: id(11 + i),
           rootId: variant === "same_root" ? id(11) : id(11 + i),
           title: source.title,
+          rootTitle: source.title,
+          chunkIndex: i,
           summary: null,
           documentId: id(31 + i),
           sourceSpanId: null,

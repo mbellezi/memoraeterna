@@ -1,3 +1,4 @@
+import { compareContent } from "./content-order.js";
 import {
   renderPrompt,
   joinPrompts,
@@ -70,6 +71,10 @@ export interface SourceRelationContext {
   notes: SourceRelationNote[];
   existing: ExistingRelation[];
 }
+/** Equal scores break on the work title: candidate IDs are random on every import. */
+const compareCandidateIdentity = (a: SourceRelationCandidate, b: SourceRelationCandidate) =>
+  compareContent(a.title, b.title) || a.id.localeCompare(b.id);
+
 export function rankSourceCandidates(
   candidates: SourceRelationCandidate[],
   limit: number,
@@ -79,7 +84,7 @@ export function rankSourceCandidates(
   for (const signal of ["textScore", "vectorScore", "graphScore", "noteScore"] as const) {
     candidates
       .filter((candidate) => candidate[signal] > 0)
-      .toSorted((a, b) => b[signal] - a[signal] || a.id.localeCompare(b.id))
+      .toSorted((a, b) => b[signal] - a[signal] || compareCandidateIdentity(a, b))
       .forEach((candidate, index) =>
         ranks.set(
           candidate.id,
@@ -88,7 +93,7 @@ export function rankSourceCandidates(
       );
   }
   const ranked = candidates.toSorted(
-    (a, b) => (ranks.get(b.id) ?? 0) - (ranks.get(a.id) ?? 0) || a.id.localeCompare(b.id)
+    (a, b) => (ranks.get(b.id) ?? 0) - (ranks.get(a.id) ?? 0) || compareCandidateIdentity(a, b)
   );
   // Reserve discovery capacity for sources without note links; notes must not monopolize the shortlist.
   const discovery = ranked.filter((candidate) => candidate.noteScore === 0),
@@ -104,14 +109,72 @@ export function rankSourceCandidates(
   return selected;
 }
 
+const symmetricRelationTypes: ReadonlyArray<string> = ["contrasts", "similar_to"];
+
+/**
+ * Chunks in document order across the pair: work title, source title, then chunk position. The
+ * prompt's chunk, source and root aliases all follow this order, so identical content yields an
+ * identical prompt; IDs only break ties between items that are indistinguishable by content.
+ */
+export function orderSourceRelationChunks<
+  T extends Pick<
+    SourceRelationChunk,
+    "id" | "rootId" | "rootTitle" | "sourceItemId" | "title" | "chunkIndex" | "contentHash"
+  >
+>(chunks: ReadonlyArray<T>): T[] {
+  return chunks.toSorted(
+    (a, b) =>
+      compareContent(a.rootTitle, b.rootTitle) ||
+      compareContent(a.rootId, b.rootId) ||
+      compareContent(a.title, b.title) ||
+      compareContent(a.sourceItemId, b.sourceItemId) ||
+      a.chunkIndex - b.chunkIndex ||
+      compareContent(a.contentHash, b.contentHash) ||
+      compareContent(a.id, b.id)
+  );
+}
+
+/** Source and root aliases (s1.., w1..) number the sources and roots in order of first appearance. */
+function aliasOrder(chunks: ReadonlyArray<SourceRelationChunk>) {
+  return {
+    sources: [...new Set(chunks.map((chunk) => chunk.sourceItemId))],
+    roots: [...new Set(chunks.map((chunk) => chunk.rootId))]
+  };
+}
+
+/**
+ * Symmetric types (contrasts, similar_to) always read from the lower source alias to the higher one.
+ * Note relations carry the direction of their stored pair, so they are turned to match.
+ */
+export function orientSymmetricNotes(
+  notes: ReadonlyArray<SourceRelationNote>,
+  sources: ReadonlyArray<string>
+): SourceRelationNote[] {
+  return notes.map((note) =>
+    symmetricRelationTypes.includes(note.type) &&
+    sources.indexOf(note.sourceItemId) > sources.indexOf(note.targetSourceItemId)
+      ? {
+          ...note,
+          sourceItemId: note.targetSourceItemId,
+          targetSourceItemId: note.sourceItemId,
+          sourceNoteId: note.targetNoteId,
+          targetNoteId: note.sourceNoteId,
+          sourceChunkId: note.targetChunkId,
+          targetChunkId: note.sourceChunkId,
+          sourceIdea: note.targetIdea,
+          targetIdea: note.sourceIdea
+        }
+      : note
+  );
+}
+
 export function sourceRelationPrompt(
   context: SourceRelationContext,
   maxRelations: number,
   includeWeakTypes: boolean,
   summaryMaxCharacters = 1200
 ) {
-  const sources = [...new Set(context.chunks.map((chunk) => chunk.sourceItemId))].sort();
-  const roots = [...new Set(context.chunks.map((chunk) => chunk.rootId))].sort();
+  const { sources, roots } = aliasOrder(context.chunks);
   return renderPrompt("sources.match", {
     max_relations: maxRelations,
     weak_types: includeWeakTypes ? ", mentions, related" : "",
@@ -161,7 +224,7 @@ export function parseSourceRelations(
       : output
   );
   if (parsed.relations.length > allowance) throw new Error("errors.sourceRelations.invalidOutput");
-  const sources = [...new Set(context.chunks.map((chunk) => chunk.sourceItemId))].sort();
+  const { sources } = aliasOrder(context.chunks);
   const chunkByAlias = new Map(context.chunks.map((chunk, i) => [`c${i + 1}`, chunk]));
   const relations: SourceRelationWrite[] = [];
   const identities = new Set<string>();
@@ -171,7 +234,10 @@ export function parseSourceRelations(
       aliasTarget = sources.find((_, i) => `s${i + 1}` === proposal.target);
     if (!aliasSource || !aliasTarget || aliasSource === aliasTarget)
       throw new Error("errors.sourceRelations.invalidOutput");
-    if (["contrasts", "similar_to"].includes(proposal.type) && aliasSource > aliasTarget)
+    if (
+      symmetricRelationTypes.includes(proposal.type) &&
+      sources.indexOf(aliasSource) > sources.indexOf(aliasTarget)
+    )
       throw new Error("errors.sourceRelations.invalidOutput");
     if (
       context.chunks.find((chunk) => chunk.sourceItemId === aliasSource)?.rootId ===
@@ -221,15 +287,24 @@ export function parseSourceRelations(
     const sourceIdea = resolveSourceRelationReferences(proposal.sourceIdea, references);
     const targetIdea = resolveSourceRelationReferences(proposal.targetIdea, references);
     const explanation = resolveSourceRelationReferences(proposal.explanation, references);
+    // A symmetric relation saved before the alias order was content-based may be stored reversed.
+    const sameIdeas = (relation: ExistingRelation, reversed: boolean) =>
+      relation.sourceIdea.trim().toLowerCase() ===
+        (reversed ? targetIdea : sourceIdea).toLowerCase() &&
+      relation.targetIdea.trim().toLowerCase() ===
+        (reversed ? sourceIdea : targetIdea).toLowerCase();
     if (
       existing ||
       context.existing.some(
         (relation) =>
-          relation.sourceItemId === aliasSource &&
-          relation.targetSourceItemId === aliasTarget &&
           relation.relationType === proposal.type &&
-          relation.sourceIdea.trim().toLowerCase() === sourceIdea.toLowerCase() &&
-          relation.targetIdea.trim().toLowerCase() === targetIdea.toLowerCase()
+          ((relation.sourceItemId === aliasSource &&
+            relation.targetSourceItemId === aliasTarget &&
+            sameIdeas(relation, false)) ||
+            (symmetricRelationTypes.includes(proposal.type) &&
+              relation.sourceItemId === aliasTarget &&
+              relation.targetSourceItemId === aliasSource &&
+              sameIdeas(relation, true)))
       )
     )
       continue;
@@ -489,17 +564,19 @@ export async function matchSources(options: {
           state.partial = true;
           break;
         }
-        const chunks = (
-          await repository.pairChunks(
-            root,
-            candidate.id,
-            notes.flatMap((note) => [note.sourceChunkId, note.targetChunkId]),
-            settings.evidenceChunksPerSource
-          )
-        ).map((chunk) => ({
-          ...chunk,
-          content: chunk.content.slice(0, settings.evidenceMaxCharacters)
-        }));
+        const chunks = orderSourceRelationChunks(
+          (
+            await repository.pairChunks(
+              root,
+              candidate.id,
+              notes.flatMap((note) => [note.sourceChunkId, note.targetChunkId]),
+              settings.evidenceChunksPerSource
+            )
+          ).map((chunk) => ({
+            ...chunk,
+            content: chunk.content.slice(0, settings.evidenceMaxCharacters)
+          }))
+        );
         if (chunks.length < 2) {
           total--;
           state.totalPairs--;
@@ -514,10 +591,13 @@ export async function matchSources(options: {
         const existing = (await repository.existing(root, candidate.id)) as ExistingRelation[];
         const makeContext = (): SourceRelationContext => ({
           chunks,
-          notes: notes.filter(
-            (note) =>
-              chunks.some((chunk) => chunk.id === note.sourceChunkId) &&
-              chunks.some((chunk) => chunk.id === note.targetChunkId)
+          notes: orientSymmetricNotes(
+            notes.filter(
+              (note) =>
+                chunks.some((chunk) => chunk.id === note.sourceChunkId) &&
+                chunks.some((chunk) => chunk.id === note.targetChunkId)
+            ),
+            aliasOrder(chunks).sources
           ),
           existing: existing.filter(
             (relation) =>
@@ -608,7 +688,13 @@ export async function matchSources(options: {
               configuration,
               inputTokens: execution.inputTokens ?? null,
               outputTokens: execution.outputTokens ?? null,
-              candidateSignals: { ...candidate },
+              candidateSignals: {
+                id: candidate.id,
+                textScore: candidate.textScore,
+                vectorScore: candidate.vectorScore,
+                graphScore: candidate.graphScore,
+                noteScore: candidate.noteScore
+              },
               contentLanguage: options.contentLanguage,
               proposals: output.proposals
             }

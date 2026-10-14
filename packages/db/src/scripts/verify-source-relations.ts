@@ -115,7 +115,9 @@ try {
       contentHash: content,
       title: source.title,
       summary: content,
-      rootId: source.id === b.id ? b.id : book.id
+      rootId: source.id === b.id ? b.id : book.id,
+      rootTitle: source.id === b.id ? b.title : book.title,
+      chunkIndex: 0
     };
   };
   const ac = await chunk(
@@ -151,8 +153,9 @@ try {
       }
     });
   assert.deepEqual(
-    (await repository.roots([book.id, a.id, sibling.id, b.id])).sort(),
-    [book.id, b.id].sort()
+    await repository.roots([book.id, a.id, sibling.id, b.id]),
+    [book.id, b.id],
+    "Roots are visited in title order, never in ID order"
   );
   const fingerprint = await repository.fingerprint(book.id);
   await pool.query("update chunks set chunking_version = 'test-v2' where id = $1", [ac.id]);
@@ -169,6 +172,19 @@ try {
   );
   const evidence = await repository.pairChunks(book.id, b.id, [], 4);
   assert.ok(evidence.some((item) => item.id === ac.id && item.rootId === book.id));
+  assert.ok(
+    evidence.every((item) => item.rootTitle.length > 0 && Number.isInteger(item.chunkIndex)),
+    "Evidence carries the work title and chunk position that order the prompt"
+  );
+  assert.deepEqual(
+    (await repository.pairChunks(b.id, book.id, [], 4)).map((item) => item.id).sort(),
+    evidence.map((item) => item.id).sort(),
+    "The evidence does not depend on which of the two roots starts the match"
+  );
+  assert.ok(
+    found.every((item) => item.title.length > 0),
+    "Candidates carry their work title"
+  );
   for (const dimensions of [256, 768, 1024]) {
     const vector = Array.from({ length: dimensions }, (_, i) => (i === 0 ? 1 : 0));
     for (const source of [a, b, sibling])
@@ -266,8 +282,8 @@ try {
   const symmetric = (await repository.pairNotes(book.id, b.id))[0]!;
   assert.equal(
     symmetric.sourceItemId,
-    [a.id, b.id].sort()[0],
-    "Symmetric relationships have one stable orientation"
+    a.id,
+    "Symmetric relationships keep their stored direction; the prompt's content order orients them, never an ID order"
   );
   await pool.query("update atomic_note_relations set relation_type = 'supports' where id = $1", [
     noteRelation.id
@@ -448,6 +464,20 @@ try {
     assert.equal((await typeCatalog.candidates(vector, 0.5, 1)).length, 1);
     assert.equal((await typeCatalog.candidates(vector, 0.5, 5)).length, 5);
   }
+  // Equal scores order by content: the same eight works get random IDs, yet always rank by title.
+  const tieText = "Spacing practice distributes study sessions across time.";
+  const tieQuery = await sources.create({ type: "Book", title: "Tie query" });
+  await chunk(tieQuery, tieText);
+  const tieTitles = Array.from({ length: 8 }, (_, i) => `Tie work ${String.fromCharCode(65 + i)}`);
+  for (const title of [...tieTitles].reverse())
+    await chunk(await sources.create({ type: "Book", title }), tieText);
+  assert.deepEqual(
+    (await repository.candidates(tieQuery.id, 40))
+      .filter((item) => item.title.startsWith("Tie work"))
+      .map((item) => item.title),
+    tieTitles,
+    "Equal scores rank by work title, never by ID"
+  );
   await pool.query("create database relations_empty");
   const url = new URL(connection.connectionString);
   url.pathname = "/relations_empty";

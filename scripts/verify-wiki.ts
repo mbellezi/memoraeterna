@@ -148,7 +148,9 @@ try {
       contentHash: content,
       title: source.title,
       summary: null,
-      rootId: source.id === a.id ? book.id : b.id
+      rootId: source.id === a.id ? book.id : b.id,
+      rootTitle: source.id === a.id ? book.title : b.title,
+      chunkIndex: 0
     };
   };
   const ac = await chunk(a, "Retrieval improves durable memory."),

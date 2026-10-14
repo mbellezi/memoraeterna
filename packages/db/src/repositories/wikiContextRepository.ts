@@ -107,13 +107,14 @@ export function createWikiContextRepository(pool: PgPool) {
       const notes = (
         await pool.query(
           `select n.id,'atomic_note' as kind,n.created_from_source_item_id as "sourceItemId",n.idea_statement||E'\\n'||n.body_markdown as text,n.status as review,${noteFingerprint("n")} as fingerprint,
-      array(select distinct id from (select n.evidence_chunk_id as id union select l.chunk_id from atomic_note_source_links l where l.atomic_note_id=n.id union select e.chunk_id from atomic_note_evidence e where e.note_id=n.id) refs order by id) as "chunkIds"
+      array(select refs.id from (select n.evidence_chunk_id as id union select l.chunk_id from atomic_note_source_links l where l.atomic_note_id=n.id union select e.chunk_id from atomic_note_evidence e where e.note_id=n.id) refs left join chunks rc on rc.id=refs.id order by (select si.title from source_items si where si.id=rc.source_item_id),rc.chunk_index,refs.id) as "chunkIds"
       from atomic_notes n join chunks c on c.id=n.evidence_chunk_id join documents d on d.id=c.document_id
       where n.created_from_source_item_id=any($1::uuid[]) and c.source_item_id=n.created_from_source_item_id and n.evidence_chunk_id=any($2::uuid[]) and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()}
       and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and (e.source_id<>all($1::uuid[]) or e.chunk_id<>all($2::uuid[])))
       and (not $3 or n.status='approved') and d.metadata->>'supersededByDocumentId' is null
       and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (l.source_item_id<>lc.source_item_id or l.source_item_id<>all($1::uuid[]) or l.chunk_id<>all($2::uuid[]) or ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))
-      order by n.id limit 20`,
+      order by (select si.title from source_items si where si.id=n.created_from_source_item_id),
+        c.chunk_index,n.title,n.idea_statement,n.id limit 20`,
           [sourceIds, chunkIds, reviewedOnly]
         )
       ).rows;
@@ -122,7 +123,7 @@ export function createWikiContextRepository(pool: PgPool) {
         : (
             await pool.query(
               `select s.id,'summary' as kind,s.source_item_id as "sourceItemId",s.metadata->'concepts' as concepts,${rowFingerprint("s")} as fingerprint
-      from source_summaries s join source_items src on src.id=s.source_item_id where s.source_item_id=any($1::uuid[]) and s.is_current and src.metadata->>'summaryStale' is distinct from 'true' and jsonb_typeof(s.metadata->'concepts')='array' order by s.id limit 20`,
+      from source_summaries s join source_items src on src.id=s.source_item_id where s.source_item_id=any($1::uuid[]) and s.is_current and src.metadata->>'summaryStale' is distinct from 'true' and jsonb_typeof(s.metadata->'concepts')='array' order by src.title,s.id limit 20`,
               [sourceIds]
             )
           ).rows;
@@ -150,7 +151,8 @@ export function createWikiContextRepository(pool: PgPool) {
             await pool.query(
               `select m.id,'entity_mention' as kind,m.source_item_id as "sourceItemId",e.canonical_name as text,null::text as review,${rowFingerprint("m")} as fingerprint,array[m.chunk_id] as "chunkIds",e.id as "entityId",${rowFingerprint("e")} as "entityFingerprint"
       from entity_mentions m join entities e on e.id=m.entity_id join chunks c on c.id=m.chunk_id
-      where m.source_item_id=any($1::uuid[]) and m.source_item_id=c.source_item_id and m.chunk_id=any($2::uuid[]) order by m.id limit 20`,
+      where m.source_item_id=any($1::uuid[]) and m.source_item_id=c.source_item_id and m.chunk_id=any($2::uuid[])
+      order by (select si.title from source_items si where si.id=m.source_item_id),c.chunk_index,e.canonical_name,m.id limit 20`,
               [sourceIds, chunkIds]
             )
           ).rows;

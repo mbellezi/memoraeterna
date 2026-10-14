@@ -96,7 +96,7 @@ export function createEntityIdentityRepository(pool: PgPool) {
         where e.type = $3 and (1 - (v.embedding <=> $1::vector) >= $4
           or e.normalized_name = any($5::text[])
           or exists (select 1 from jsonb_array_elements_text(e.aliases) a where lower(unaccent(a)) = any($5::text[])))
-        order by (e.normalized_name = any($5::text[])) desc, v.embedding <=> $1::vector, e.id limit $6`,
+        order by (e.normalized_name = any($5::text[])) desc, v.embedding <=> $1::vector, e.canonical_name, e.id limit $6`,
         [
           `[${input.vector.embedding.join(",")}]`,
           input.vector.spaceKey,

@@ -56,6 +56,10 @@ monitoring.
   are kept and only missing ones are requested again (target F3).
 - Model output never supplies canonical IDs. Short aliases in prompts are
   resolved by the backend to real IDs and validated before persistence.
+- Prompts are a function of content, not of IDs: aliases and the order of
+  evidence, candidates and batches follow document position or a content key
+  (title, text). An ID may only break a tie between indistinguishable items,
+  so identical content yields identical prompts across imports.
 - Oversized requests are rejected before the provider call with a localized
   error; evidence is never silently truncated.
 

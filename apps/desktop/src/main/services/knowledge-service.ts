@@ -4,6 +4,7 @@ import {
   stagePromptFingerprints,
   changedPromptIdentity
 } from "./prompt-runtime.js";
+import { compareContent, contentKey } from "./content-order.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
 import {
@@ -626,8 +627,8 @@ export class KnowledgeService {
          order by structure.revision desc limit 1
        ) canonical_order on true
        left join source_summaries summary on summary.source_item_id = child.id and summary.is_current = true
-       order by aggregate_roots.maximum_depth, aggregate_roots.root_id,
-                canonical_order.position nulls last, child.created_at, child.id`,
+       order by aggregate_roots.maximum_depth, aggregate_roots.root_title, aggregate_roots.root_id,
+                canonical_order.position nulls last, child.created_at, child.title, child.id`,
       [batchId, rootSourceItemId]
     );
     const grouped = new Map<string, typeof rows.rows>();
@@ -952,6 +953,7 @@ export class KnowledgeService {
         evidenceChunkIds: [chunk.id]
       })),
       notes,
+      chunkPositions(chunks),
       context,
       signal
     );
@@ -992,6 +994,7 @@ export class KnowledgeService {
         }
       ],
       [],
+      chunkPositions(chunks),
       context,
       signal,
       "catalog_metadata"
@@ -1003,6 +1006,7 @@ export class KnowledgeService {
     documentId: string,
     sourceInputs: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
     atomicNoteInputs: Parameters<typeof generateKnowledgeGraphFromAtomicNotes>[1],
+    positions: ReadonlyMap<string, number>,
     context: KnowledgeGraphGenerationContext,
     signal?: AbortSignal,
     processingMode?: "catalog_metadata"
@@ -1102,6 +1106,7 @@ export class KnowledgeService {
         inputKind: processingMode ? "catalog_metadata" : "source_chunks",
         resolveRelations,
         checkpointNamespace: "source",
+        chunkPositions: positions,
         contentLanguage,
         extractionLimits,
         ...(context.onBatchCompleted
@@ -1159,6 +1164,7 @@ export class KnowledgeService {
               inputKind: "atomic_notes",
               resolveRelations,
               checkpointNamespace: "atomic_notes",
+              chunkPositions: positions,
               contentLanguage,
               ...(context.onBatchCompleted
                 ? {
@@ -1371,14 +1377,17 @@ export class KnowledgeService {
       const fusedCandidates = fuseAtomicNoteCandidateRankings(
         textCandidates.map((candidate) => ({
           noteId: candidate.note.id,
+          contentKey: noteContentKey(candidate.note),
           score: candidate.textScore
         })),
         vectorCandidates.map((candidate) => ({
           noteId: candidate.note.id,
+          contentKey: noteContentKey(candidate.note),
           score: candidate.vectorScore
         })),
         graphCandidates.map((candidate) => ({
           noteId: candidate.noteId,
+          contentKey: candidate.contentKey,
           score: candidate.graphScore
         })),
         matchingSettings.fusedCandidateLimit,
@@ -1505,7 +1514,11 @@ export class KnowledgeService {
             rerankScore: rerankResults.get(rerankAliases.get(candidate.note.id)!)?.score ?? null,
             settings: matchingSettings
           });
-        return score(right) - score(left) || left.note.id.localeCompare(right.note.id);
+        return (
+          score(right) - score(left) ||
+          compareContent(noteContentKey(left.note), noteContentKey(right.note)) ||
+          left.note.id.localeCompare(right.note.id)
+        );
       });
       let notePersistedCount = 0;
       const debugResults: Parameters<
@@ -1800,6 +1813,18 @@ function readStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+/** The document position of every chunk: evidence aliases follow it, never the chunk IDs. */
+function chunkPositions(
+  chunks: ReadonlyArray<{ id: string; chunkIndex: number }>
+): ReadonlyMap<string, number> {
+  return new Map(chunks.map((chunk) => [chunk.id, chunk.chunkIndex]));
+}
+
+/** Content-stable tie-break for note candidates; it matches AtomicNoteGraphCandidate.contentKey. */
+function noteContentKey(note: { title: string; ideaStatement: string }): string {
+  return contentKey(note.title, note.ideaStatement);
 }
 
 function clamp(value: number): number {

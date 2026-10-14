@@ -32,8 +32,11 @@ describe("knowledge graph repository", () => {
           rowCount: 1
         };
       if (text.includes("sourceEntity.id")) return { rows: [], rowCount: 0 };
-      if (text.includes("select id from atomic_notes"))
-        return { rows: [{ id: targetId }], rowCount: 1 };
+      if (text.includes("from atomic_notes where id = any"))
+        return {
+          rows: [{ id: targetId, title: "Spacing", ideaStatement: "Distributed practice" }],
+          rowCount: 1
+        };
       if (text.includes("count(distinct links.atomic_note_id)"))
         return {
           rows: [{ entityId, noteCount: "20", totalNotes: "100" }],
@@ -53,7 +56,8 @@ describe("knowledge graph repository", () => {
       {
         noteId: targetId,
         graphScore: 0.8 * inverseEntityFrequency(100, 20),
-        pathType: "shared_entity"
+        pathType: "shared_entity",
+        contentKey: "Spacing\u0000Distributed practice"
       }
     ]);
     const directQuery = query.mock.calls.find(([text]) =>

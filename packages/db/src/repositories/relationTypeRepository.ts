@@ -97,7 +97,7 @@ export function createRelationTypeRepository(pool: PgPool) {
         `select t.id, t.predicate, t.definition, coalesce(t.metadata->'sourceItemIds', '[]'::jsonb) as "sourceItemIds", 1 - (e.embedding <=> $1::vector) as score
          from ${tableFor(vector.embedding)} e join relation_types t on t.id = e.relation_type_id
          where e.space_key = $2 and 1 - (e.embedding <=> $1::vector) >= $3
-         order by e.embedding <=> $1::vector, t.id limit $4`,
+         order by e.embedding <=> $1::vector, t.predicate, t.definition, t.id limit $4`,
         [
           literal(vector.embedding),
           vector.spaceKey,

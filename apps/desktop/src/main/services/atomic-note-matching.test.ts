@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AtomicNoteMatchingSettingsSchema } from "@app/domain";
+import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import { KnowledgeService } from "./knowledge-service.js";
 import type { AiService } from "./ai-service.js";
 import type { PgPool } from "@app/db";
@@ -115,6 +116,66 @@ describe("atomic note matching execution", () => {
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ targetAtomicNoteId: "c", relationType: "extends" })
     );
+  });
+  it("builds the same rerank prompt for the same notes under any UUID assignment", async () => {
+    const rerankPrompts: string[] = [];
+    for (const [alphaId, betaId, gammaId] of uuidAssignments(3).map(
+      (ids) => ids as [string, string, string]
+    )) {
+      const alpha = { ...note(alphaId), title: "Alpha", ideaStatement: "Alpha idea" };
+      const beta = { ...note(betaId), title: "Beta", ideaStatement: "Beta idea" };
+      const gamma = { ...note(gammaId), title: "Gamma", ideaStatement: "Gamma idea" };
+      const candidate = (n: typeof alpha, textScore: number, vectorScore: number) => ({
+        note: n,
+        textScore,
+        vectorScore
+      });
+      // Beta and Alpha swap ranks between the text and vector lists, so their fused scores tie,
+      // and the graph list holds Gamma. Only the note content can order the tie.
+      mocks.notes.findTextMatchingCandidates.mockResolvedValue([
+        candidate(beta, 1, 0),
+        candidate(alpha, 1, 0)
+      ]);
+      mocks.notes.findVectorMatchingCandidates.mockResolvedValue([
+        candidate(alpha, 0, 1),
+        candidate(beta, 0, 1)
+      ]);
+      mocks.graph.findAtomicNoteCandidates.mockResolvedValue([
+        {
+          noteId: gamma.id,
+          graphScore: 0.5,
+          pathType: "shared_entity",
+          contentKey: "Gamma\0Gamma idea"
+        }
+      ]);
+      mocks.notes.scoreMatchingCandidates.mockImplementation(
+        async ({ candidateIds }: { candidateIds: string[] }) =>
+          candidateIds.map((id) => ({
+            note: [alpha, beta, gamma].find((n) => n.id === id)!,
+            textScore: 1,
+            vectorScore: 1
+          }))
+      );
+      mocks.run.mockImplementation(async (task, prompt: string) => {
+        if (task === "embedding") return execution(Array.from({ length: 256 }, () => 0.1));
+        rerankPrompts.push(prompt);
+        return execution({
+          results: ["c1", "c2", "c3"].map((candidateAlias) => ({
+            candidateAlias,
+            score: 0.1,
+            relationType: "supports",
+            explanation: "The candidate supplies only weak support for the source idea."
+          }))
+        });
+      });
+      await service({ graphCandidateLimit: 5 }).matchAtomicNotes(["source"]);
+    }
+    expect(rerankPrompts).toHaveLength(4);
+    expect(new Set(rerankPrompts).size).toBe(1);
+    const prompt = rerankPrompts[0]!;
+    expect(prompt.indexOf("[c1]\nTitle: Alpha")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("[c2]\nTitle: Beta")).toBeGreaterThan(prompt.indexOf("[c1]"));
+    expect(prompt.indexOf("[c3]\nTitle: Gamma")).toBeGreaterThan(prompt.indexOf("[c2]"));
   });
   it("fails visibly on invalid validation without creating fallback links", async () => {
     mocks.run.mockImplementation(async (task) =>

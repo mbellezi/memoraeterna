@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createHash } from "node:crypto";
 import { defaultSourceRelationSettings } from "@app/domain";
 import type { SourceRelationChunk, SourceRelationNote, PgPool } from "@app/db";
+import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import {
   matchSources,
+  orderSourceRelationChunks,
+  orientSymmetricNotes,
   parseSourceRelations,
   rankSourceCandidates,
   sourceRelationPrompt,
@@ -28,7 +31,9 @@ const a: SourceRelationChunk = {
   contentHash: "ah",
   title: "A",
   summary: "Retrieval mechanisms",
-  rootId: "root-A"
+  rootId: "root-A",
+  rootTitle: "Root A",
+  chunkIndex: 0
 };
 const b: SourceRelationChunk = {
   ...a,
@@ -37,7 +42,8 @@ const b: SourceRelationChunk = {
   documentId: "bd",
   contentHash: "bh",
   title: "B",
-  rootId: "root-B"
+  rootId: "root-B",
+  rootTitle: "Root B"
 };
 const note: SourceRelationNote = {
   id: "note-relation",
@@ -221,6 +227,7 @@ describe("source relation semantics", () => {
   it("keeps note reuse and direct discovery in every shortlist prefix", () => {
     const candidates = Array.from({ length: 40 }, (_, i) => ({
       id: String(i),
+      title: `Work ${i}`,
       textScore: 1 - i / 50,
       vectorScore: 0.8,
       graphScore: 0,
@@ -498,11 +505,12 @@ describe("source matching budget and recovery", () => {
     expect(mocks.repository.commitDecision).not.toHaveBeenCalled();
   });
   it("explains same-root rejection in the bounded repair and accepts a negative decision", async () => {
-    mocks.repository.pairChunks!.mockResolvedValue([a, b, { ...a, id: "c", sourceItemId: "C" }]);
+    // Chunks are ordered by work, so the sibling chapter of root A follows A and precedes root B.
+    mocks.repository.pairChunks!.mockResolvedValue([b, a, { ...a, id: "c", sourceItemId: "C" }]);
     const ai = vi
       .fn()
       .mockResolvedValueOnce(
-        execution({ relations: [{ ...proposal(), target: "s3", targetEvidence: ["c3"] }] })
+        execution({ relations: [{ ...proposal(), target: "s2", targetEvidence: ["c2"] }] })
       )
       .mockResolvedValueOnce(execution({ relations: [] }));
     const result = await run(ai);
@@ -564,6 +572,281 @@ describe("source matching budget and recovery", () => {
       proposals: 1,
       attempts: { failed: 2 }
     });
+  });
+});
+
+/**
+ * The same two works under any UUID assignment: three sources of two roots, four chunks and one
+ * symmetric note stored in the direction opposite to the prompt's content order. The database may
+ * hand the chunks back in any order.
+ */
+const worksFor = (ids: string[], rotation = 0) => {
+  const [learning, memory, retrieval, spacing, paper, c1, c2, c3, c4] = ids as [
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string,
+    string
+  ];
+  const chunk = (
+    id: string,
+    sourceItemId: string,
+    rootId: string,
+    title: string,
+    rootTitle: string,
+    chunkIndex: number,
+    content: string
+  ): SourceRelationChunk => ({
+    id,
+    sourceItemId,
+    rootId,
+    title,
+    rootTitle,
+    chunkIndex,
+    content,
+    contentHash: `hash-${content}`,
+    documentId: `document-${sourceItemId}`,
+    sourceSpanId: null,
+    summary: `Summary of ${title}`
+  });
+  const inContentOrder = [
+    chunk(c1, retrieval, learning, "Retrieval", "Learning mechanisms", 0, "Retrieval strengthens."),
+    chunk(c2, retrieval, learning, "Retrieval", "Learning mechanisms", 1, "Feedback corrects."),
+    chunk(c3, spacing, learning, "Spacing", "Learning mechanisms", 0, "Spacing distributes."),
+    chunk(c4, paper, memory, "Memory paper", "Memory paper", 0, "Memory consolidates.")
+  ];
+  const chunks = [...inContentOrder.slice(rotation), ...inContentOrder.slice(0, rotation)];
+  const note: SourceRelationNote = {
+    id: `note-relation-${ids[0]}`,
+    type: "similar_to",
+    sourceNoteId: `note-${c4}`,
+    targetNoteId: `note-${c1}`,
+    sourceChunkId: c4,
+    targetChunkId: c1,
+    sourceItemId: paper,
+    targetSourceItemId: retrieval,
+    sourceIdea: "Memory consolidates.",
+    targetIdea: "Retrieval strengthens.",
+    fingerprint: "note-fingerprint"
+  };
+  const existing = {
+    id: `existing-${spacing}`,
+    sourceItemId: retrieval,
+    targetSourceItemId: paper,
+    relationType: "supports",
+    sourceIdea: "Old idea",
+    targetIdea: "Older idea",
+    status: "accepted"
+  };
+  const ordered = orderSourceRelationChunks(chunks);
+  const sources = [...new Set(ordered.map((c) => c.sourceItemId))];
+  const context: SourceRelationContext = {
+    chunks: ordered,
+    notes: orientSymmetricNotes([note], sources),
+    existing: [existing]
+  };
+  return { context, ids: { retrieval, spacing, paper, learning, memory, c1, c4 } };
+};
+
+describe("source relation prompts do not depend on database IDs", () => {
+  it("number sources, roots, chunks and notes by content under any UUID assignment", () => {
+    const prompts = uuidAssignments(9).map((ids, index) =>
+      sourceRelationPrompt(worksFor(ids, index).context, 4, false)
+    );
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(new Set(prompts).size).toBe(1);
+    const prompt = prompts[0]!;
+    expect(prompt).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(prompt).toContain('"key":"s1","root":"w1","title":"Retrieval"');
+    expect(prompt).toContain('"key":"s2","root":"w1","title":"Spacing"');
+    expect(prompt).toContain('"key":"s3","root":"w2","title":"Memory paper"');
+    expect(prompt.indexOf("Retrieval strengthens.")).toBeLessThan(
+      prompt.indexOf("Feedback corrects.")
+    );
+    expect(prompt.indexOf("Feedback corrects.")).toBeLessThan(
+      prompt.indexOf("Spacing distributes.")
+    );
+    expect(prompt.indexOf("Spacing distributes.")).toBeLessThan(
+      prompt.indexOf("Memory consolidates.")
+    );
+    // The stored pair runs from the paper to the retrieval chapter; the prompt reads lower alias first.
+    expect(prompt).toContain('"key":"n1","source":"s1","target":"s3","type":"similar_to"');
+  });
+
+  it("reads a symmetric relation from the lower alias and writes it in that direction", () => {
+    for (const [index, ids] of uuidAssignments(9).entries()) {
+      const { context, ids: works } = worksFor(ids, index);
+      const proposal = {
+        source: "s1",
+        target: "s3",
+        type: "similar_to",
+        sourceIdea: "Retrieval strengthens.",
+        targetIdea: "Memory consolidates.",
+        explanation: "Both describe how practice stabilizes memory.",
+        importance: 0.9,
+        confidence: 0.9,
+        durable: true,
+        grounded: true,
+        sourceEvidence: ["c1"],
+        targetEvidence: ["c4"],
+        noteRelations: ["n1"],
+        discovery: "atomic_notes",
+        existing: null
+      };
+      const parsed = parseSourceRelations(
+        { relations: [proposal] },
+        context,
+        defaultSourceRelationSettings,
+        4
+      );
+      expect(parsed.relations[0]).toMatchObject({
+        sourceItemId: works.retrieval,
+        targetSourceItemId: works.paper
+      });
+      expect(parsed.relations[0]?.evidence[0]?.note?.sourceChunkId).toBe(works.c1);
+      expect(() =>
+        parseSourceRelations(
+          {
+            relations: [
+              {
+                ...proposal,
+                source: "s3",
+                target: "s1",
+                sourceEvidence: ["c4"],
+                targetEvidence: ["c1"]
+              }
+            ]
+          },
+          context,
+          defaultSourceRelationSettings,
+          4
+        )
+      ).toThrow("errors.sourceRelations.invalidOutput");
+    }
+  });
+
+  it("treats a symmetric relation saved in the reverse direction as already known", () => {
+    const { context, ids: works } = worksFor(uuidAssignments(9)[0]!);
+    const saved = {
+      id: "saved",
+      sourceItemId: works.paper,
+      targetSourceItemId: works.retrieval,
+      relationType: "similar_to",
+      sourceIdea: "Memory consolidates.",
+      targetIdea: "Retrieval strengthens.",
+      status: "accepted"
+    };
+    const result = parseSourceRelations(
+      {
+        relations: [
+          {
+            source: "s1",
+            target: "s3",
+            type: "similar_to",
+            sourceIdea: "Retrieval strengthens.",
+            targetIdea: "Memory consolidates.",
+            explanation: "Both describe how practice stabilizes memory.",
+            importance: 0.9,
+            confidence: 0.9,
+            durable: true,
+            grounded: true,
+            sourceEvidence: ["c1"],
+            targetEvidence: ["c4"],
+            noteRelations: [],
+            discovery: "source_analysis",
+            existing: null
+          }
+        ]
+      },
+      { ...context, existing: [saved] },
+      defaultSourceRelationSettings,
+      4
+    );
+    expect(result).toEqual({ proposals: 0, relations: [] });
+  });
+
+  it("breaks candidate ties on the work title, never on the candidate ID", () => {
+    for (const [first, second] of uuidAssignments(2).map((ids) => ids as [string, string])) {
+      const signals = { textScore: 0.5, vectorScore: 0.5, graphScore: 0, noteScore: 0 };
+      const candidates = [
+        { id: first, title: "Zeta work", ...signals },
+        { id: second, title: "Alpha work", ...signals }
+      ];
+      expect(rankSourceCandidates(candidates, 2).map((candidate) => candidate.title)).toEqual([
+        "Alpha work",
+        "Zeta work"
+      ]);
+    }
+  });
+
+  it("sends the model the same prompt for the same works under any UUID assignment", async () => {
+    const states = new Map<string, unknown>();
+    const decisions = new Map<string, Record<string, unknown>>();
+    mocks.selection.mockReset().mockResolvedValue({
+      profileId: "profile",
+      providerConfigId: "provider",
+      modelId: "model",
+      runtime: "local",
+      localModelId: null,
+      revision: "r1",
+      parameters: {},
+      modelDefaultParameters: {}
+    });
+    const prompts: string[] = [];
+    for (const [index, ids] of uuidAssignments(9).entries()) {
+      const { context, ids: works } = worksFor(ids, index);
+      mocks.repository = {
+        roots: vi.fn().mockResolvedValue([works.learning]),
+        fingerprint: vi.fn(async (id: string) => id),
+        candidates: vi.fn().mockResolvedValue([
+          {
+            id: works.memory,
+            title: "Memory paper",
+            textScore: 1,
+            vectorScore: 0,
+            graphScore: 0,
+            noteScore: 0
+          }
+        ]),
+        pairNotes: vi.fn().mockResolvedValue([]),
+        // The database returns the chunks in whatever order it likes.
+        pairChunks: vi.fn().mockResolvedValue([...context.chunks].reverse()),
+        existing: vi.fn().mockResolvedValue([]),
+        runState: vi.fn(async (key: string) => structuredClone(states.get(key) ?? null)),
+        saveRun: vi.fn(async (key: string, _root: string, state: unknown) => {
+          states.set(key, structuredClone(state));
+        }),
+        decision: vi.fn(async (key: string) => decisions.get(key) ?? null),
+        commitDecision: vi.fn(async (key: string, _a: string, _b: string, relations: unknown[]) => {
+          decisions.set(key, { persistedCount: relations.length });
+          return relations.length;
+        })
+      };
+      const ai = vi.fn().mockResolvedValue({
+        output: { relations: [] },
+        profileId: "profile",
+        modelId: "model",
+        providerId: "provider",
+        runtime: "local",
+        aiTaskRunId: "execution"
+      });
+      await matchSources({
+        pool: {} as PgPool,
+        ai: { runDefaultTask: ai },
+        sourceIds: [works.learning],
+        runKey: `determinism-${index}`,
+        settings: { ...defaultSourceRelationSettings, maxInputTokens: 200000 },
+        contentLanguage: "en"
+      });
+      prompts.push(ai.mock.calls[0]![1] as string);
+    }
+    expect(prompts).toHaveLength(4);
+    expect(new Set(prompts).size).toBe(1);
+    expect(prompts[0]).toContain('"key":"s1","root":"w1","title":"Retrieval"');
   });
 });
 

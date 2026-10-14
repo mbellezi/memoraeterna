@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobRecord, PgPool } from "@app/db";
+import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import { parseRelationLabels, processRelationLabels } from "./relation-label-processing.js";
 
 const db = vi.hoisted(() => ({
@@ -87,6 +88,48 @@ describe("relation description processing", () => {
       mode: "all",
       before: job.payload.before
     });
+  });
+
+  it("sends the same labelling prompt for the same relations under any UUID assignment", async () => {
+    const prompts: string[] = [];
+    for (const [relationId, sourceId, otherId] of uuidAssignments(3).map(
+      (ids) => ids as [string, string, string]
+    )) {
+      db.listRelationLabels
+        .mockReset()
+        .mockResolvedValueOnce([
+          { ...relation, id: relationId, sourceItemId: sourceId },
+          { ...relation, id: otherId, predicate: "supports", sourceItemId: sourceId }
+        ])
+        .mockResolvedValue([]);
+      const runDefaultTask = vi.fn().mockResolvedValue({
+        ...execution,
+        output: {
+          labels: [
+            { key: "r1", displayLabel: "Foi usado para acusar" },
+            { key: "r2", displayLabel: "Apoia" }
+          ]
+        }
+      });
+      await processRelationLabels(
+        {} as PgPool,
+        { runDefaultTask },
+        job,
+        new AbortController().signal
+      );
+      prompts.push(runDefaultTask.mock.calls[0]![1] as string);
+      // The model's keys resolve back to the real relation IDs of this library.
+      expect(db.saveRelationLabels).toHaveBeenLastCalledWith(
+        [
+          { id: relationId, displayLabel: "Foi usado para acusar" },
+          { id: otherId, displayLabel: "Apoia" }
+        ],
+        expect.anything()
+      );
+    }
+    expect(prompts).toHaveLength(4);
+    expect(new Set(prompts).size).toBe(1);
+    expect(prompts[0]).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 
   it("does not invoke AI when all batches have already been persisted", async () => {

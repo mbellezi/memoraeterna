@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
+import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
 
@@ -63,7 +64,13 @@ describe("hierarchical aggregate summaries", () => {
     expect(queries[0]?.text).toContain(
       "join source_items child on child.parent_source_item_id = aggregate_roots.root_id"
     );
-    expect(queries[0]?.text).toContain("order by aggregate_roots.maximum_depth");
+    // Roots and subparts never fall back to ID order before a content key.
+    expect(queries[0]?.text).toContain(
+      "order by aggregate_roots.maximum_depth, aggregate_roots.root_title, aggregate_roots.root_id"
+    );
+    expect(queries[0]?.text).toContain(
+      "canonical_order.position nulls last, child.created_at, child.title, child.id"
+    );
     expect(queries[0]?.text).not.toContain("root.type in");
     expect(queries[0]?.text).toContain("hierarchy.root_id = $2::uuid");
     expect(queries[0]?.text).toContain(
@@ -185,5 +192,50 @@ describe("hierarchical aggregate summaries", () => {
     expect(prompt).toContain("A substantive section summary.");
     expect(prompt).not.toContain("[Subpart 2: Title]");
     expect(prompt).toContain('do not output "# Aggregate summary" or "# Resumo agregado"');
+  });
+  it("builds the same aggregate prompt for the same subparts under any UUID assignment", async () => {
+    const prompts: string[] = [];
+    for (const [rootId, firstId, secondId] of uuidAssignments(3).map(
+      (ids) => ids as [string, string, string]
+    )) {
+      const runDefaultTask = vi.fn(async (_taskType: string, prompt: string) => {
+        prompts.push(prompt);
+        return null;
+      });
+      const row = (childId: string, title: string) => ({
+        rootId,
+        rootType: "Book",
+        rootTitle: "Learning mechanisms",
+        rootLanguage: "en",
+        documentId: `document-${rootId}`,
+        documentHash: "document-hash",
+        childId,
+        childTitle: title,
+        summaryId: `summary-${childId}`,
+        summary: `Summary of ${title}.`,
+        summaryHash: `hash-${title}`
+      });
+      const pool = {
+        query: async (text: string) =>
+          text.includes("with recursive hierarchy")
+            ? { rows: [row(firstId, "Retrieval"), row(secondId, "Spacing")] }
+            : { rows: [] }
+      } as unknown as PgPool;
+      const service = new KnowledgeService({
+        getPool: () => pool,
+        aiService: { runDefaultTask } as unknown as AiService,
+        userDataPath: "/tmp/memora-test",
+        getStorageSettings: async () => ({}) as never,
+        getUploadedFilesBasePath: async () => null
+      });
+      await service.summarizeHierarchiesForBatch("batch-id");
+    }
+    expect(prompts).toHaveLength(4);
+    expect(new Set(prompts).size).toBe(1);
+    expect(prompts[0]).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+    expect(prompts[0]!.indexOf("[Subpart 1: Retrieval]")).toBeGreaterThan(-1);
+    expect(prompts[0]!.indexOf("[Subpart 2: Spacing]")).toBeGreaterThan(
+      prompts[0]!.indexOf("[Subpart 1: Retrieval]")
+    );
   });
 });

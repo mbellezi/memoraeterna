@@ -13,6 +13,10 @@ export interface SourceRelationChunk {
   title: string;
   summary: string | null;
   rootId: string;
+  /** Title of the original work the chunk belongs to; part of the content-stable prompt order. */
+  rootTitle: string;
+  /** Position of the chunk in its document. */
+  chunkIndex: number;
 }
 export interface SourceRelationNote {
   id: string;
@@ -29,6 +33,8 @@ export interface SourceRelationNote {
 }
 export interface SourceRelationCandidate {
   id: string;
+  /** Title of the candidate work: ties between equal scores break on content, never on the ID. */
+  title: string;
   textScore: number;
   vectorScore: number;
   graphScore: number;
@@ -63,7 +69,11 @@ const processableChunk = (
   join documents cd on cd.id = cc.document_id where child.parent_source_item_id = ${alias}.source_item_id and cd.metadata->>'supersededByDocumentId' is null)`;
 const chunkColumns = `c.id, c.source_item_id as "sourceItemId", c.document_id as "documentId",
   c.source_span_id as "sourceSpanId", c.content, c.content_hash as "contentHash", s.title,
+  c.chunk_index as "chunkIndex", (select root.title from source_items root where root.id = t.root_id) as "rootTitle",
   case when s.metadata->>'summaryStale' = 'true' then null else s.summary end as summary`;
+// Ranked roots break score ties on the work title: IDs are random on every import.
+const byTitleThenId = (id: string) =>
+  `(select ranked_source.title from source_items ranked_source where ranked_source.id = ${id}), ${id}`;
 const noteFacts = (alias: string) =>
   `concat_ws('|',${alias}.id::text,${alias}.idea_statement,${alias}.body_markdown,${alias}.status::text,${alias}.supersession_status)`;
 const noteFingerprint = `md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
@@ -92,7 +102,8 @@ export function createSourceRelationRepository(pool: PgPool) {
       return (
         await pool.query<{ id: string } & QueryResultRow>(
           `${sourceRelationTreeSql}
-        select distinct root_id as id from tree where id = any($1::uuid[]) order by id`,
+        select distinct tree.root_id as id, root.title from tree join source_items root on root.id = tree.root_id
+        where tree.id = any($1::uuid[]) order by root.title, id`,
           [sourceIds]
         )
       ).rows.map((row) => row.id);
@@ -137,11 +148,12 @@ export function createSourceRelationRepository(pool: PgPool) {
           join documents d on d.id = c.document_id where ${currentDocument} and ${processableChunk("c")}
       ) select b.root_id as id, max(similarity(a.content, b.content)) as score
         from units a join units b on b.root_id <> a.root_id where a.root_id = $1
-        group by b.root_id having max(similarity(a.content, b.content)) >= 0.08 order by score desc, id limit $2`,
+        group by b.root_id having max(similarity(a.content, b.content)) >= 0.08
+        order by score desc, ${byTitleThenId("b.root_id")} limit $2`,
         [rootId, limit]
       );
       const notes = await pool.query(
-        `${sourceRelationTreeSql}
+        `${sourceRelationTreeSql}, scored as (
         select case when ta.root_id = $1 then tb.root_id else ta.root_id end as id, max(n.final_score) as score
         from atomic_note_relations n join atomic_notes a on a.id = n.source_atomic_note_id
         join atomic_notes b on b.id = n.target_atomic_note_id join tree ta on ta.id = a.created_from_source_item_id
@@ -150,7 +162,8 @@ export function createSourceRelationRepository(pool: PgPool) {
           and not exists (select 1 from source_relation_evidence existing_evidence where existing_evidence.note_relation_id = n.id)
           and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
-        group by 1 order by score desc, id limit $2`,
+        group by 1
+        ) select scored.id, scored.score from scored order by scored.score desc, ${byTitleThenId("scored.id")} limit $2`,
         [rootId, limit]
       );
       const graph = await pool.query(
@@ -159,7 +172,8 @@ export function createSourceRelationRepository(pool: PgPool) {
         from entity_mentions a join tree ta on ta.id = a.source_item_id
         join entities entity on entity.id = a.entity_id and entity.type = 'Concept'
         join entity_mentions b on b.entity_id = a.entity_id join tree tb on tb.id = b.source_item_id
-        where ta.root_id = $1 and tb.root_id <> $1 group by tb.root_id order by score desc, id limit $2`,
+        where ta.root_id = $1 and tb.root_id <> $1 group by tb.root_id
+        order by score desc, ${byTitleThenId("tb.root_id")} limit $2`,
         [rootId, limit]
       );
       const vectors: QueryResultRow[] = [];
@@ -184,7 +198,7 @@ export function createSourceRelationRepository(pool: PgPool) {
           ) neighbor where ta.root_id = $1 and neighbor.score >= 0.4
             and ((a.target_type = 'source_item' and a.strategy like 'source-composite-centroid-v2:%')
               or (a.target_type = 'chunk' and a.strategy like 'native-v2:%' and ac.content_hash = a.content_hash and ad.metadata->>'supersededByDocumentId' is null))
-          group by neighbor.root_id order by score desc, id limit $2`,
+          group by neighbor.root_id order by score desc, ${byTitleThenId("neighbor.root_id")} limit $2`,
           [rootId, limit]
         );
         vectors.push(...result.rows);
@@ -200,6 +214,7 @@ export function createSourceRelationRepository(pool: PgPool) {
           const id = String(row.id),
             candidate = candidates.get(id) ?? {
               id,
+              title: "",
               textScore: 0,
               vectorScore: 0,
               graphScore: 0,
@@ -209,11 +224,22 @@ export function createSourceRelationRepository(pool: PgPool) {
           candidates.set(id, candidate);
         }
       }
+      if (candidates.size) {
+        const titles = await pool.query<{ id: string; title: string } & QueryResultRow>(
+          "select id, title from source_items where id = any($1::uuid[])",
+          [[...candidates.keys()]]
+        );
+        for (const row of titles.rows) {
+          const candidate = candidates.get(row.id);
+          if (candidate) candidate.title = row.title;
+        }
+      }
       return [...candidates.values()];
     },
 
     async pairNotes(left: string, right: string, limit = 16): Promise<SourceRelationNote[]> {
-      // Legacy storage sorts UUIDs. Direction must come from the validated matching metadata.
+      // Legacy storage sorts UUIDs. Direction must come from the validated matching metadata. The
+      // direction of symmetric types is decided by the prompt's content order, not by an ID order.
       return (
         await pool.query<SourceRelationNote & QueryResultRow>(
           `${sourceRelationTreeSql}
@@ -235,25 +261,10 @@ export function createSourceRelationRepository(pool: PgPool) {
           and n.status <> 'rejected' and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
           and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
           and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null
-        order by n.final_score desc, n.id limit $3`,
+        order by n.final_score desc, a.idea_statement, b.idea_statement, n.id limit $3`,
           [left, right, limit]
         )
-      ).rows.map((note) =>
-        ["contrasts", "similar_to"].includes(note.type) &&
-        note.sourceItemId > note.targetSourceItemId
-          ? {
-              ...note,
-              sourceItemId: note.targetSourceItemId,
-              targetSourceItemId: note.sourceItemId,
-              sourceNoteId: note.targetNoteId,
-              targetNoteId: note.sourceNoteId,
-              sourceChunkId: note.targetChunkId,
-              targetChunkId: note.sourceChunkId,
-              sourceIdea: note.targetIdea,
-              targetIdea: note.sourceIdea
-            }
-          : note
-      );
+      ).rows;
     },
 
     async pairChunks(
@@ -262,12 +273,16 @@ export function createSourceRelationRepository(pool: PgPool) {
       noteChunkIds: string[],
       limit = 8
     ): Promise<SourceRelationChunk[]> {
+      // The query is asymmetric (left chunks pair with right chunks): visit the works in a content
+      // order, so the evidence never depends on which of the two roots started the match.
+      [left, right] = await orderRootsByTitle(pool, left, right);
       const notes = noteChunkIds.length
         ? (
             await pool.query<SourceRelationChunk & QueryResultRow>(
               `${sourceRelationTreeSql} select ${chunkColumns},t.root_id as "rootId" from chunks c join source_items s on s.id = c.source_item_id
          join tree t on t.id = c.source_item_id join documents d on d.id = c.document_id
-         where c.id = any($1::uuid[]) and ${currentDocument} and ${processableChunk("c")}`,
+         where c.id = any($1::uuid[]) and ${currentDocument} and ${processableChunk("c")}
+         order by array_position($1::uuid[], c.id)`,
               [noteChunkIds]
             )
           ).rows
@@ -275,15 +290,20 @@ export function createSourceRelationRepository(pool: PgPool) {
       const result = await pool.query(
         `${sourceRelationTreeSql}, pairs as (
         select a.id as a, b.id as b, similarity(a.content, b.content) as score,
-          row_number() over (partition by a.source_item_id, b.source_item_id order by similarity(a.content,b.content) desc, a.id, b.id) as position
-        from chunks a join tree ta on ta.id = a.source_item_id join documents da on da.id = a.document_id
-        join chunks b on b.source_item_id <> a.source_item_id join tree tb on tb.id = b.source_item_id
+          sa.title as a_title, sb.title as b_title, a.chunk_index as a_index, b.chunk_index as b_index,
+          row_number() over (partition by a.source_item_id, b.source_item_id order by similarity(a.content,b.content) desc, a.chunk_index, b.chunk_index, a.id, b.id) as position
+        from chunks a join source_items sa on sa.id = a.source_item_id join tree ta on ta.id = a.source_item_id
+        join documents da on da.id = a.document_id
+        join chunks b on b.source_item_id <> a.source_item_id join source_items sb on sb.id = b.source_item_id
+        join tree tb on tb.id = b.source_item_id
         join documents db on db.id = b.document_id
         where ta.root_id = $1 and tb.root_id = $2 and da.metadata->>'supersededByDocumentId' is null
           and db.metadata->>'supersededByDocumentId' is null and ${processableChunk("a")} and ${processableChunk("b")}
-      ), selected as (select a,b from pairs order by position, score desc, a,b limit $3)
+      ), selected as (
+        select a,b from pairs order by position, score desc, a_title, b_title, a_index, b_index, a, b limit $3
+      )
         select ${chunkColumns},t.root_id as "rootId" from chunks c join source_items s on s.id = c.source_item_id join tree t on t.id = c.source_item_id
-        where c.id in (select a from selected union select b from selected) order by c.source_item_id,c.chunk_index`,
+        where c.id in (select a from selected union select b from selected) order by s.title, c.chunk_index, c.id`,
         [left, right, limit]
       );
       const semanticPairs: Array<{ a: string; b: string; score: number }> = [];
@@ -299,21 +319,22 @@ export function createSourceRelationRepository(pool: PgPool) {
           where ta.root_id = $1 and tb.root_id = $2 and av.strategy like 'native-v2:%'
             and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null
             and ${processableChunk("a")} and ${processableChunk("b")}
-          order by av.embedding <=> bv.embedding,a.id,b.id limit $3`,
+          order by av.embedding <=> bv.embedding, a.content_hash, b.content_hash, a.chunk_index, b.chunk_index, a.id, b.id limit $3`,
           [left, right, limit]
         );
         semanticPairs.push(...(vector.rows as typeof semanticPairs));
       }
       const conceptPairs = await pool.query(
         `${sourceRelationTreeSql}, concepts as (
-        select t.root_id,c.id,idea->>'idea' as idea from source_summaries summary
+        select t.root_id,c.id,c.chunk_index,idea->>'idea' as idea from source_summaries summary
         join source_items s on s.id = summary.source_item_id and s.metadata->>'summaryStale' is distinct from 'true'
         join tree t on t.id = s.id cross join lateral jsonb_array_elements(coalesce(summary.metadata->'concepts','[]'::jsonb)) idea
         cross join lateral jsonb_array_elements_text(idea->'evidenceChunkIds') evidence
         join chunks c on c.id::text = evidence and c.source_item_id = s.id join documents d on d.id = c.document_id
         where summary.is_current and t.root_id in ($1,$2) and ${currentDocument}
       ) select a.id as a,b.id as b,similarity(a.idea,b.idea) as score from concepts a join concepts b on a.root_id <> b.root_id
-        where a.root_id = $1 and b.root_id = $2 order by score desc,a.id,b.id limit $3`,
+        where a.root_id = $1 and b.root_id = $2
+        order by score desc, a.idea, b.idea, a.chunk_index, b.chunk_index, a.id, b.id limit $3`,
         [left, right, limit]
       );
       const rankedIds = [
@@ -358,8 +379,9 @@ export function createSourceRelationRepository(pool: PgPool) {
         select r.id, r.source_item_id as "sourceItemId", r.target_source_item_id as "targetSourceItemId", r.relation_type as "relationType",
           r.source_idea as "sourceIdea", r.target_idea as "targetIdea", r.status
         from source_relations r join tree a on a.id = r.source_item_id join tree b on b.id = r.target_source_item_id
+        join source_items rs on rs.id = r.source_item_id join source_items rt on rt.id = r.target_source_item_id
         where (a.root_id = $1 and b.root_id = $2) or (a.root_id = $2 and b.root_id = $1)
-        order by r.importance desc, r.id limit 100`,
+        order by r.importance desc, rs.title, rt.title, r.relation_type, r.source_idea, r.target_idea, r.id limit 100`,
           [left, right]
         )
       ).rows;
@@ -435,6 +457,21 @@ export function createSourceRelationRepository(pool: PgPool) {
 
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+/** Two roots in a content order (title, then ID only when the titles are equal). */
+async function orderRootsByTitle(
+  pool: PgPool,
+  left: string,
+  right: string
+): Promise<[string, string]> {
+  const rows = (
+    await pool.query<{ id: string } & QueryResultRow>(
+      "select id from source_items where id = any($1::uuid[]) order by title, id",
+      [[left, right]]
+    )
+  ).rows;
+  return rows.length === 2 ? [rows[0]!.id, rows[1]!.id] : [left, right];
 }
 async function persistRelation(db: Queryable, relation: SourceRelationWrite, metadata: JsonObject) {
   const identity = hash(
