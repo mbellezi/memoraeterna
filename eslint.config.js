@@ -20,6 +20,7 @@ export default defineConfig([
     "**/coverage/",
     "**/.vite/",
     ".cache/",
+    ".claude/",
     "vendor/",
     "samples/",
     "native/",

@@ -26,6 +26,7 @@ scripts/fixtures/**/*.json
 **/coverage/
 **/.vite/
 .cache/
+.claude/
 vendor/
 samples/
 native/
