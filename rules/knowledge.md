@@ -32,15 +32,19 @@ Ask, or background maintenance (Gardener).
 
 ## Conversion
 
-- Web pages use Defuddle; PDF, Office, EPUB, OpenDocument and OCR images use the
-  packaged Docling sidecar; textual formats use native converters; YouTube uses
-  `youtubei.js`. Archives are extracted with byte, entry, depth, compression and
-  path-traversal limits.
+- Web pages and HTML files (rendered fragments without `html`/`body` included)
+  use Defuddle, with the page text as the fallback; PDF, Office, EPUB,
+  OpenDocument and OCR images use the packaged Docling sidecar; other textual
+  formats use native converters; YouTube uses `youtubei.js`. Archives are
+  extracted with byte, entry, depth, compression and path-traversal limits.
 - Converters and structure detection never fetch remote resources a document
   references; EPUB/HTML hrefs and fragments resolve safely inside the archive.
 - Every textual source becomes normalized Markdown with engine, version, options,
   hashes and warnings recorded. Never report success for empty, corrupt or
   low-coverage output, and never circumvent passwords or DRM.
+- A source without text is never stored: file imports, captures and note imports
+  refuse an empty conversion with `errors.conversion.emptyResult`, and the hash
+  of empty content never identifies a duplicate.
 - Docling runs offline over Zod-validated JSONL on stdin/stdout, exposes no
   port, never uses system Python, and cleans its temporary files.
 - Chunks are always produced from the current normalized document, never from a

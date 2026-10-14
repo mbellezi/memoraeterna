@@ -149,17 +149,6 @@ export function convertNotebook(input: ConversionInput): MarkdownConversionResul
   return result(markdown, "native-ipynb", { notebookMetadata: notebook.metadata ?? {} });
 }
 
-export function convertLocalHtml(input: ConversionInput): MarkdownConversionResult {
-  const { document } = parseHTML(textDecoder.decode(input.data));
-  for (const element of document.querySelectorAll("script, style, template, nav")) element.remove();
-  const title = document.querySelector("title, h1")?.textContent?.trim();
-  const body = document.body.textContent
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return result(`${title ? `# ${escapeMarkdown(title)}\n\n` : ""}${body}`, "native-html");
-}
-
 /**
  * Captured markup is not always a whole page: an element's outerHTML or a rendered article body has
  * no `html` or `body` tag, and the parsed fragment gives Defuddle nothing to extract. A fragment is
@@ -169,6 +158,17 @@ function asHtmlDocument(markup: string): string {
   return /<(?:html|body)[\s>]/i.test(markup)
     ? markup
     : `<!doctype html><html><head></head><body>${markup}</body></html>`;
+}
+
+export function convertLocalHtml(input: ConversionInput): MarkdownConversionResult {
+  const { document } = parseHTML(asHtmlDocument(textDecoder.decode(input.data)));
+  for (const element of document.querySelectorAll("script, style, template, nav")) element.remove();
+  const title = document.querySelector("title, h1")?.textContent?.trim();
+  const body = document.body.textContent
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return result(`${title ? `# ${escapeMarkdown(title)}\n\n` : ""}${body}`, "native-html");
 }
 
 export async function convertWebHtml(input: ConversionInput): Promise<MarkdownConversionResult> {
@@ -183,4 +183,14 @@ export async function convertWebHtml(input: ConversionInput): Promise<MarkdownCo
     published: extracted.published,
     sourceUrl: input.sourceUrl
   });
+}
+
+/**
+ * An HTML file saved or exported from the web is an article like a captured page: Defuddle gives its
+ * Markdown (headings, paragraphs, lists) without the site chrome. When it finds no article, the page's
+ * plain text is the fallback, so a file that holds text never converts to nothing.
+ */
+export async function convertHtmlFile(input: ConversionInput): Promise<MarkdownConversionResult> {
+  const article = await convertWebHtml(input);
+  return article.markdown ? article : convertLocalHtml(input);
 }

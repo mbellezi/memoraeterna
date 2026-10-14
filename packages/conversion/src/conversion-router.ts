@@ -4,7 +4,7 @@ import { sanitizeConversionResult } from "./conversion-sanitizer.js";
 import {
   convertCsv,
   convertJson,
-  convertLocalHtml,
+  convertHtmlFile,
   convertMarkdown,
   convertNotebook,
   convertPlainText,
@@ -86,7 +86,7 @@ export class ConversionRouter {
     if (extension === ".ipynb" || mime === "application/x-ipynb+json")
       return convertNotebook(input);
     if ([".html", ".htm"].includes(extension) || mime === "text/html")
-      return convertLocalHtml(input);
+      return convertHtmlFile(input);
     if ([".txt", ""].includes(extension) || mime?.startsWith("text/"))
       return convertPlainText(input);
     if (complexExtensions.has(extension)) return this.convertWithDocling(input, signal, onProgress);

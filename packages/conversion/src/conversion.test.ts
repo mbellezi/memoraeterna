@@ -79,6 +79,62 @@ describe("conversion", () => {
     expect(result.warnings).toEqual([]);
   });
 
+  describe("HTML files", () => {
+    const convertFile = (html: string, fileName = "saved-page.html") =>
+      new ConversionRouter().convert({
+        data: encoder.encode(html),
+        fileName,
+        mimeType: "text/html",
+        profile: "standard"
+      });
+
+    it("converts a rendered article fragment (no html or body tag) to Markdown", async () => {
+      // A MediaWiki action=render response saved to disk: the same markup a web capture sends. It
+      // used to parse to an empty body and convert to nothing, which the duplicate check then took
+      // for the same document as every other empty conversion.
+      const result = await convertFile(
+        '<div class="mw-content-ltr mw-parser-output" lang="pt"><section><p>As chronicas da villa de Itaguahy dizem que em tempos remotos vivera alli um certo medico.</p>' +
+          "<h2>Capitulo II</h2><p>Estudara em Coimbra e Padua, e regressou ao Brazil aos trinta e quatro annos.</p></section></div>"
+      );
+      expect(result.status).toBe("converted");
+      expect(result.engine).toBe("defuddle");
+      expect(result.markdown).toContain("chronicas da villa de Itaguahy");
+      expect(result.markdown).toContain("## Capitulo II");
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("converts a whole saved page and keeps its structure", async () => {
+      const result = await convertFile(
+        "<!doctype html><html><head><title>Saved page</title></head><body><nav>Menu</nav><article><h1>Saved page</h1>" +
+          "<p>First paragraph of the saved page with enough words.</p><h2>Section</h2><p>Second paragraph under the section.</p></article></body></html>",
+        "saved-page.htm"
+      );
+      expect(result.markdown).toContain("First paragraph of the saved page");
+      expect(result.markdown).toContain("## Section");
+      expect(result.markdown).not.toContain("Menu");
+    });
+
+    it("falls back to the page text when no article is found", async () => {
+      const result = await convertFile(
+        "<html><body><aside>A side note that is the only text on this page.</aside></body></html>"
+      );
+      expect(result.status).toBe("converted");
+      expect(result.engine).toBe("native-html");
+      expect(result.markdown).toContain("only text on this page");
+    });
+
+    it("reports a file without text as an empty result instead of a conversion", async () => {
+      for (const html of ["", "<div class='mw-parser-output'></div>", "<p>&nbsp;</p>"]) {
+        const result = await convertFile(html);
+        expect(result.markdown).toBe("");
+        expect(result.status).toBe("requires_ocr");
+        expect(result.warnings).toEqual([
+          expect.objectContaining({ messageKey: "errors.conversion.emptyResult" })
+        ]);
+      }
+    });
+  });
+
   it("validates Docling JSONL responses and handles crash, timeout and cancellation", async () => {
     const client = new DoclingClient({
       executablePath: process.execPath,

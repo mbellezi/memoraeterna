@@ -322,6 +322,8 @@ export class IngestionService {
       (progress) =>
         reportFileImportProgress(onProgress, mapConversionProgress(progress, totalPages))
     );
+    // Refused before the metadata form, not after the user has filled it in.
+    assertConversionHasText(conversion);
     reportFileImportProgress(onProgress, {
       stage: "extracting_metadata",
       progress: 0.9,
@@ -626,6 +628,8 @@ export class IngestionService {
     processingPlan: ProcessingPlanRequest;
     structureDetection?: Awaited<ReturnType<typeof detectDocumentStructure>>;
   }): Promise<IngestionResult> {
+    // The one place every source is stored: a source without text would fail every later stage.
+    assertConversionHasText(input.conversion);
     const pool = this.requirePool();
     const sources = createSourceItemRepository(pool);
     const documents = createDocumentRepository(pool);
@@ -1286,6 +1290,11 @@ function conversionMetadata(result: MarkdownConversionResult): Record<string, un
     quality: result.quality,
     metadata: result.metadata
   };
+}
+
+/** A conversion without text is a failure, not an empty document to store. */
+function assertConversionHasText(conversion: MarkdownConversionResult): void {
+  if (!conversion.markdown.trim()) throw new Error("errors.conversion.emptyResult");
 }
 
 function markdownResult(markdownInput: string, engine: string): MarkdownConversionResult {

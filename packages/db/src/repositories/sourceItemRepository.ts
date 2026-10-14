@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 import {
@@ -28,6 +29,9 @@ interface SourceItemRow extends QueryResultRow {
   createdAt: unknown;
   updatedAt: unknown;
 }
+
+/** SHA-256 of the empty string: what content with no text hashes to. It never identifies a source. */
+export const emptyContentHash = createHash("sha256").update("").digest("hex");
 
 export interface CreateSourceItemInput {
   type: SourceItemType;
@@ -163,7 +167,9 @@ export function createSourceItemRepository(db: Queryable) {
       sourceUri?: string | null;
       contentHash?: string | null;
     }): Promise<SourceItemRecord | null> {
-      if (!input.sourceUri && !input.contentHash) {
+      // Content with no text hashes to one value for every empty source, so it proves nothing.
+      const contentHash = input.contentHash === emptyContentHash ? null : input.contentHash;
+      if (!input.sourceUri && !contentHash) {
         return null;
       }
       const result = await db.query<SourceItemRow>(
@@ -173,7 +179,7 @@ export function createSourceItemRepository(db: Queryable) {
             or ($2::text is not null and content_hash = $2)
          order by updated_at desc
          limit 1`,
-        [input.sourceUri ?? null, input.contentHash ?? null]
+        [input.sourceUri ?? null, contentHash ?? null]
       );
       const row = result.rows[0];
       return row ? mapSourceItem(row) : null;

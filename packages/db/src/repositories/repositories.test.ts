@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import type { QueryResult, QueryResultRow } from "pg";
 import { describe, expect, it } from "vitest";
 
 import { createSettingsRepository } from "./settingsRepository.js";
-import { createSourceItemRepository } from "./sourceItemRepository.js";
+import { createSourceItemRepository, emptyContentHash } from "./sourceItemRepository.js";
 import { createSourceSummaryRepository } from "./sourceSummaryRepository.js";
 import { createLocalModelRepository } from "./localModelRepository.js";
 import { createJobRepository } from "./jobRepository.js";
@@ -106,6 +107,43 @@ describe("repositories", () => {
       "und",
       { capturedBy: "test" }
     ]);
+  });
+
+  describe("duplicate lookup by content", () => {
+    const emptyHash = createHash("sha256").update("").digest("hex");
+    const otherHash = createHash("sha256").update("Some text.").digest("hex");
+
+    it("never matches on the hash of empty content", async () => {
+      const db = new FakeQueryable([]);
+      const repo = createSourceItemRepository(db);
+
+      // Content with no text hashes to one value for every source, so it says nothing about identity.
+      expect(emptyContentHash).toBe(
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      );
+      expect(emptyHash).toBe(emptyContentHash);
+      expect(await repo.findDuplicate({ contentHash: emptyHash })).toBeNull();
+      expect(await repo.findDuplicate({ sourceUri: null, contentHash: emptyHash })).toBeNull();
+      expect(db.queries).toEqual([]);
+    });
+
+    it("still matches on the address when the content is empty", async () => {
+      const db = new FakeQueryable([[]]);
+      await createSourceItemRepository(db).findDuplicate({
+        sourceUri: "file:///library/a.html",
+        contentHash: emptyHash
+      });
+
+      expect(db.queries).toHaveLength(1);
+      expect(db.queries[0]?.values).toEqual(["file:///library/a.html", null]);
+    });
+
+    it("matches on the hash of content that has text", async () => {
+      const db = new FakeQueryable([[]]);
+      await createSourceItemRepository(db).findDuplicate({ contentHash: otherHash });
+
+      expect(db.queries[0]?.values).toEqual([null, otherHash]);
+    });
   });
 
   it("invalidates source-level embeddings when searchable source data changes", async () => {

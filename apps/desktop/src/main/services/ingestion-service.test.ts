@@ -246,6 +246,171 @@ describe("IngestionService captures", () => {
   });
 });
 
+describe("IngestionService file imports without text", () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "memora-file-import-"));
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const plan = resolveProcessingPlan({
+    preset: "import_only",
+    requestedStages: [],
+    scope: "source_only",
+    targetSourceItemIds: [],
+    forceRegeneration: false,
+    previousArtifactPolicy: "reuse_valid"
+  });
+
+  function setup() {
+    const pool = new TransactionRecordingPool();
+    const process = vi.fn(async () => ({
+      batchId: "00000000-0000-4000-8000-0000000000b1",
+      queued: [
+        {
+          sourceItemId: "00000000-0000-4000-8000-000000000001",
+          documentId: "00000000-0000-4000-8000-0000000000c1",
+          ingestionRunId: "00000000-0000-4000-8000-0000000000d1",
+          jobId: "00000000-0000-4000-8000-0000000000e1"
+        }
+      ]
+    }));
+    const service = createService(pool as unknown as PgPool, {
+      userDataPath: directory,
+      hierarchicalIngestionService: { process } as unknown as HierarchicalIngestionService
+    });
+    const importFile = async (fileName: string, contents: string) => {
+      const path = join(directory, fileName);
+      await writeFile(path, contents);
+      return service.importFile(path, {
+        descriptor: SourceDescriptorSchema.parse({ type: "StandaloneArticle", title: fileName }),
+        duplicatePolicy: "ignore",
+        processingPlan: plan
+      });
+    };
+    return { pool, process, service, importFile };
+  }
+
+  const inserts = (pool: TransactionRecordingPool) =>
+    pool.texts().filter((text) => text.includes("insert into"));
+
+  it("stores the Markdown of an HTML file that is a rendered article fragment", async () => {
+    const { pool, process, importFile } = setup();
+
+    await importFile(
+      "wikibooks-chapter.html",
+      '<div class="mw-content-ltr mw-parser-output" lang="en"><table><tbody><tr><td><a href="/wiki/Previous">Previous Chapter</a></td></tr></tbody></table>' +
+        "<p>Memory and language interact when a speaker retrieves a word from long-term storage.</p>" +
+        "<h2>Naming</h2><p>Picture naming shows how lexical access depends on the strength of a memory trace.</p></div>"
+    );
+
+    const stored = pool.storedDocumentText();
+    expect(stored).toContain("Memory and language interact");
+    expect(stored).toContain("Picture naming shows how lexical access");
+    expect(process).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    [
+      "an HTML fragment with no text",
+      "empty-fragment.html",
+      '<div class="mw-parser-output"></div>'
+    ],
+    [
+      "an HTML page with only markup",
+      "markup-only.html",
+      "<html><body><p>&nbsp;</p></body></html>"
+    ],
+    ["a blank text file", "blank.txt", "  \n\n "],
+    ["an empty Markdown file", "empty.md", ""]
+  ])("refuses %s and stores nothing", async (_name, fileName, contents) => {
+    const { pool, process, importFile } = setup();
+
+    await expect(importFile(fileName, contents)).rejects.toThrow("errors.conversion.emptyResult");
+
+    expect(inserts(pool)).toEqual([]);
+    expect(pool.texts()).not.toContain("begin");
+    expect(process).not.toHaveBeenCalled();
+    await expect(readdir(join(directory, "assets"))).rejects.toThrow();
+  });
+
+  it("refuses every empty file on its own, so none is taken for a duplicate of another", async () => {
+    const { pool, importFile } = setup();
+
+    // Both convert to the hash of the empty string; the second must fail as empty, not as the
+    // first one's duplicate, and neither is stored.
+    for (const [fileName, contents] of [
+      ["memory-and-language.html", '<div class="mw-parser-output"></div>'],
+      ["o-alienista-i.html", "<div class='mw-parser-output'><span></span></div>"]
+    ] as const) {
+      await expect(importFile(fileName, contents)).rejects.toThrow("errors.conversion.emptyResult");
+    }
+    // No duplicate lookup ran either: the empty content was refused before any query.
+    expect(pool.texts()).toEqual([]);
+  });
+
+  it("refuses a prepared file whose conversion holds no text when it is imported", async () => {
+    const { pool, process, service } = setup();
+    const emptyConversion = {
+      status: "requires_ocr",
+      markdown: "",
+      contentHash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      blocks: [],
+      assets: [],
+      engine: "native-html",
+      engineVersion: "1",
+      profile: "standard",
+      options: {},
+      warnings: [],
+      quality: { textCoverage: 0 },
+      metadata: {}
+    };
+    // A prepared selection older than the guard, or one whose conversion lost its text.
+    (
+      service as unknown as { preparedFiles: Map<string, Record<string, unknown>> }
+    ).preparedFiles.set("token", {
+      path: join(directory, "stale.html"),
+      fileName: "stale.html",
+      mimeType: "text/html",
+      data: new Uint8Array(),
+      conversion: { ...emptyConversion },
+      draft: {},
+      preparedAt: Date.now()
+    });
+
+    await expect(
+      service.importPreparedFile("token", {
+        descriptor: SourceDescriptorSchema.parse({ type: "StandaloneArticle", title: "Stale" }),
+        duplicatePolicy: "ignore",
+        processingPlan: plan
+      })
+    ).rejects.toThrow("errors.conversion.emptyResult");
+
+    expect(inserts(pool)).toEqual([]);
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("refuses an Obsidian note without text: an empty document fails every processing stage", async () => {
+    const { pool, process, service } = setup();
+
+    await expect(
+      service.importObsidianNote({
+        requestId: "00000000-0000-4000-8000-0000000000a4",
+        relativePath: "Inbox/Empty note.md",
+        markdown: "\n  \n",
+        contentHash: "0".repeat(64),
+        mtimeMs: 1
+      })
+    ).rejects.toThrow("errors.conversion.emptyResult");
+
+    expect(inserts(pool)).toEqual([]);
+    expect(process).not.toHaveBeenCalled();
+  });
+});
+
 class ContainerPool {
   readonly queries: string[] = [];
 
@@ -370,7 +535,7 @@ class CapturePool {
  * `failOn`, which is how an insert that PostgreSQL rejects is simulated.
  */
 class TransactionRecordingPool {
-  readonly statements: Array<{ connection: string; text: string }> = [];
+  readonly statements: Array<{ connection: string; text: string; values: unknown[] }> = [];
   failOn: RegExp | null = null;
   /** Makes every stored file look referenced by a committed document_assets row. */
   assetsReferenced = false;
@@ -379,13 +544,22 @@ class TransactionRecordingPool {
   async connect() {
     const connection = `client-${++this.connections}`;
     return {
-      query: (text: string) => this.run(connection, text),
+      query: (text: string, values?: unknown[]) => this.run(connection, text, values),
       release: () => undefined
     };
   }
 
-  query<T extends QueryResultRow = QueryResultRow>(text: string) {
-    return this.run("pool", text) as Promise<QueryResult<T>>;
+  query<T extends QueryResultRow = QueryResultRow>(text: string, values?: unknown[]) {
+    return this.run("pool", text, values) as Promise<QueryResult<T>>;
+  }
+
+  /** Every string bound to an `insert into documents` statement: the stored Markdown is one. */
+  storedDocumentText(): string {
+    return this.statements
+      .filter((statement) => statement.text.includes("insert into documents"))
+      .flatMap((statement) => statement.values)
+      .filter((value): value is string => typeof value === "string")
+      .join("\n");
   }
 
   texts(connection?: string): string[] {
@@ -394,8 +568,8 @@ class TransactionRecordingPool {
       .map((statement) => statement.text);
   }
 
-  private async run(connection: string, text: string) {
-    this.statements.push({ connection, text });
+  private async run(connection: string, text: string, values: unknown[] = []) {
+    this.statements.push({ connection, text, values });
     if (this.failOn?.test(text)) throw new Error("simulated database failure");
     const now = new Date(0);
     const rows = text.includes("insert into source_items")

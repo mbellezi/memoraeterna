@@ -774,6 +774,129 @@ try {
     );
   }
 
+  // A file import is held to the standard of a capture. HTML saved from a rendered article body
+  // converts to Markdown (it used to convert to nothing), a file without text is refused and stores
+  // no source, and empty content never identifies a duplicate: two empty conversions were taken for
+  // the same document, so a chapter was rejected as a duplicate of an unrelated article.
+  const legacyEmptyImport = await createSourceItemRepository(pool).create({
+    type: "StandaloneArticle",
+    title: "Legacy empty import",
+    sourceOrigin: "file_upload",
+    contentHash: sha256(""),
+    language: "en"
+  });
+  if (
+    (await createSourceItemRepository(pool).findDuplicate({ contentHash: sha256("") })) !== null ||
+    (await createSourceItemRepository(pool).findDuplicate({
+      sourceUri: null,
+      contentHash: sha256("")
+    })) !== null
+  ) {
+    throw new Error("The hash of empty content was reported as a duplicate.");
+  }
+  const writeHtml = async (name: string, html: string) => {
+    const path = join(workDir, name);
+    await writeFile(path, html);
+    return path;
+  };
+  const fragmentFile = (title: string, text: string) =>
+    `<div class="mw-content-ltr mw-parser-output" lang="en"><section><p>${text}</p><h2>${title}</h2>` +
+    "<p>Retention declines with time unless the memory is rehearsed at spaced intervals.</p></section></div>";
+  const importHtml = (
+    name: string,
+    html: string,
+    descriptor: Record<string, unknown> = { type: "StandaloneArticle", title: name }
+  ) =>
+    writeHtml(`${name}.html`, html).then((path) =>
+      ingestion.importFile(path, {
+        descriptor: SourceDescriptorSchema.parse({ title: name, ...descriptor }),
+        duplicatePolicy: "ignore",
+        processingPlan: importOnly
+      })
+    );
+  const articleImport = await importHtml(
+    "Memory and Language",
+    fragmentFile("Naming", "Memory and language interact when a speaker retrieves a word.")
+  );
+  const articleDocument = (
+    await createDocumentRepository(pool).listBySourceItem(articleImport.sourceItemId)
+  )[0];
+  if (
+    articleImport.duplicate ||
+    articleImport.sourceItemId === legacyEmptyImport.id ||
+    !articleDocument?.canonicalMarkdown.includes("Memory and language interact")
+  ) {
+    throw new Error(
+      `An HTML fragment file was not stored as Markdown: ${JSON.stringify(articleImport)}`
+    );
+  }
+  const articleProcessing = await processFromLibrary(articleImport.sourceItemId);
+  if (
+    articleProcessing.run.status !== "succeeded" ||
+    (await createChunkRepository(pool).listByDocument(articleDocument.id)).length === 0
+  ) {
+    throw new Error(
+      `An imported HTML fragment did not chunk: ${JSON.stringify(articleProcessing.run)}`
+    );
+  }
+  // Chapters of a book come from the same kind of file and are different sources.
+  const book = await ingestion.createContainerSource({
+    descriptor: SourceDescriptorSchema.parse({ type: "Book", title: "Phase 4 fragment book" }),
+    duplicatePolicy: "ignore"
+  });
+  const chapterDescriptor = (title: string, chapterNumber: string) => ({
+    type: "BookChapter",
+    title,
+    chapterNumber,
+    parentSourceItemId: book.sourceItemId
+  });
+  const firstChapter = await importHtml(
+    "Chapter I",
+    fragmentFile("First", "The first chapter describes how the asylum was founded."),
+    chapterDescriptor("Chapter I", "I")
+  );
+  const secondChapter = await importHtml(
+    "Chapter II",
+    fragmentFile("Second", "The second chapter describes how the patients arrived."),
+    chapterDescriptor("Chapter II", "II")
+  );
+  if (
+    firstChapter.duplicate ||
+    secondChapter.duplicate ||
+    firstChapter.sourceItemId === articleImport.sourceItemId ||
+    firstChapter.sourceItemId === secondChapter.sourceItemId
+  ) {
+    throw new Error("Chapters imported from HTML files were taken for duplicates.");
+  }
+  // Two different files that convert to nothing are each refused as empty, never as duplicates of
+  // each other or of the library's empty rows, and they leave no source or document behind.
+  const sourcesBeforeEmpty = await count("source_items");
+  const documentsBeforeEmpty = await count("documents");
+  for (const [name, html, descriptor] of [
+    ["Empty article", "<div class='mw-parser-output'></div>", undefined],
+    ["Another empty article", "<div class='mw-parser-output'><span> </span></div>", undefined],
+    [
+      "Empty chapter",
+      "<div class='mw-parser-output'></div>",
+      chapterDescriptor("Empty chapter", "III")
+    ],
+    ["Another empty chapter", "<p>&nbsp;</p>", chapterDescriptor("Another empty chapter", "IV")]
+  ] as const) {
+    const failure = await importHtml(name, html, descriptor).then(
+      () => null,
+      (error: unknown) => error
+    );
+    if (!(failure instanceof Error) || failure.message !== "errors.conversion.emptyResult") {
+      throw new Error(`The empty file "${name}" was not refused as empty: ${String(failure)}`);
+    }
+  }
+  if (
+    (await count("source_items")) !== sourcesBeforeEmpty ||
+    (await count("documents")) !== documentsBeforeEmpty
+  ) {
+    throw new Error("A file without text left a source or document behind.");
+  }
+
   await processing.stop();
 
   // Note and source matching are collective stages: the last job of a batch runs them for every
