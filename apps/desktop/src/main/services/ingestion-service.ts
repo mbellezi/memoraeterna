@@ -29,7 +29,6 @@ import {
   type MarkdownConversionResult
 } from "@app/conversion";
 import {
-  resolveProcessingPlan,
   SourceDescriptorSchema,
   type SourceDescriptor,
   type SourceDescriptorDraft,
@@ -1002,15 +1001,17 @@ export class IngestionService {
   }
 }
 
+// HierarchicalIngestionService.process resolves the plan itself with a strict request schema,
+// so captures must hand it the plan request, never an already-resolved plan.
 function importOnlyPlan(): ProcessingPlanRequest {
-  return resolveProcessingPlan({
+  return {
     preset: "import_only",
     requestedStages: [],
     scope: "source_only",
     targetSourceItemIds: [],
     forceRegeneration: false,
     previousArtifactPolicy: "reuse_valid"
-  });
+  };
 }
 
 function isHierarchicalSourceType(

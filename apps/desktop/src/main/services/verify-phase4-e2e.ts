@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,26 +8,35 @@ import {
   closePgPool,
   createChunkRepository,
   createDocumentRepository,
+  createIngestionRunRepository,
   createJobRepository,
   createObsidianSyncRepository,
   createPgPool,
   createSearchRepository,
+  createSettingsRepository,
+  createSourceItemRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool
 } from "@app/db";
 import { sha256 } from "@app/conversion";
+import { processingPresetStages } from "@app/domain";
 import {
   integrationContractVersion,
   integrationHandshakeResponseSchema,
-  type IntegrationHandshakeResponse
+  obsidianEditingCapability,
+  obsidianLayoutCapability,
+  obsidianManifestSchema,
+  parseObsidianMarkdown,
+  type IntegrationHandshakeResponse,
+  type ObsidianEditOperation
 } from "@app/integration-contracts";
 
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor } from "./job-supervisor.js";
-import { parseManagedMarkdown } from "./obsidian-projection.js";
+import { SourceEditorialService } from "./source-editorial-service.js";
 import { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { YouTubeService } from "./youtube-service.js";
 import { runObsidianSync } from "../workers/obsidian-sync.worker.js";
@@ -104,13 +113,14 @@ try {
     preferredPort: 0
   });
   const gatewayStatus = await gateway.start();
-  if (!gatewayStatus.baseUrl) throw new Error("Gateway did not start.");
+  const baseUrl = gatewayStatus.baseUrl;
+  if (!baseUrl) throw new Error("Gateway did not start.");
 
   const chromePairing = await gateway.createPairing({
     clientType: "chrome-extension",
     displayName: "E2E Chrome"
   });
-  const chrome = await handshake(gatewayStatus.baseUrl, chromePairing, "chrome-extension", [
+  const chrome = await handshake(baseUrl, chromePairing, "chrome-extension", [
     "capture-web-page",
     "capture-selection",
     "capture-youtube-video",
@@ -125,21 +135,11 @@ try {
     html: "<html><head><title>Phase 4 article</title></head><body><main><h1>Phase 4</h1><p>Gateway evidence is searchable.</p></main></body></html>",
     metadata: { language: "en" }
   };
-  const firstCapture = await post(
-    gatewayStatus.baseUrl,
-    chrome.sessionToken,
-    "/v1/capture/web-page",
-    webPayload
-  );
-  const repeatedCapture = await post(
-    gatewayStatus.baseUrl,
-    chrome.sessionToken,
-    "/v1/capture/web-page",
-    {
-      ...webPayload,
-      requestId: randomUUID()
-    }
-  );
+  const firstCapture = await post(baseUrl, chrome.sessionToken, "/v1/capture/web-page", webPayload);
+  const repeatedCapture = await post(baseUrl, chrome.sessionToken, "/v1/capture/web-page", {
+    ...webPayload,
+    requestId: randomUUID()
+  });
   const webSourceId = requiredString(firstCapture, "sourceItemId");
   if (
     webSourceId !== requiredString(repeatedCapture, "sourceItemId") ||
@@ -147,20 +147,15 @@ try {
   ) {
     throw new Error("Repeated web capture was not deduplicated.");
   }
-  const youtubeCapture = await post(
-    gatewayStatus.baseUrl,
-    chrome.sessionToken,
-    "/v1/capture/youtube",
-    {
-      requestId: randomUUID(),
-      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      videoId: "dQw4w9WgXcQ",
-      title: "Visible title",
-      capturedAt,
-      visibleMetadata: {}
-    }
-  );
-  await post(gatewayStatus.baseUrl, chrome.sessionToken, "/v1/capture/selection", {
+  const youtubeCapture = await post(baseUrl, chrome.sessionToken, "/v1/capture/youtube", {
+    requestId: randomUUID(),
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    videoId: "dQw4w9WgXcQ",
+    title: "Visible title",
+    capturedAt,
+    visibleMetadata: {}
+  });
+  const selectionCapture = await post(baseUrl, chrome.sessionToken, "/v1/capture/selection", {
     requestId: randomUUID(),
     url: "https://example.com/phase-4",
     title: "Phase 4 selection",
@@ -168,34 +163,194 @@ try {
     selection: "A selected external idea.",
     metadata: {}
   });
+  const selectionSourceId = requiredString(selectionCapture, "sourceItemId");
   const youtubeSourceId = requiredString(youtubeCapture, "sourceItemId");
-  await obsidian.projectSource(webSourceId);
-  await obsidian.projectSource(youtubeSourceId);
+
+  // Captures are import-only: no generative stage is planned for a non-interactive capture.
+  const runs = createIngestionRunRepository(pool);
+  const importOnlyStages: readonly string[] = processingPresetStages.import_only;
+  for (const sourceId of [webSourceId, youtubeSourceId, selectionSourceId]) {
+    const [run] = await runs.listBySourceItem(sourceId);
+    if (!run || run.effectiveStages.join() !== importOnlyStages.join()) {
+      throw new Error(`Capture ${sourceId} was not queued with the import-only plan.`);
+    }
+  }
+
+  const obsidianPairing = await gateway.createPairing({
+    clientType: "obsidian-plugin",
+    displayName: "E2E Obsidian"
+  });
+  const obsidianClient = await handshake(baseUrl, obsidianPairing, "obsidian-plugin", [
+    "import-obsidian-note",
+    "watch-obsidian-files",
+    "reconcile-obsidian-vault",
+    "receive-job-progress",
+    obsidianLayoutCapability,
+    obsidianEditingCapability
+  ]);
+  const importMarkdown = "# Phase 4 vault note\n\nA user note written inside Obsidian.";
+  const importPayload = {
+    requestId: randomUUID(),
+    relativePath: "Inbox/Phase 4 vault note.md",
+    markdown: importMarkdown,
+    contentHash: sha256(importMarkdown),
+    mtimeMs: Date.now()
+  };
+  const imported = await post(
+    baseUrl,
+    obsidianClient.sessionToken,
+    "/v1/obsidian/import",
+    importPayload
+  );
+  const importedSourceId = requiredString(imported, "sourceItemId");
+  const importedAgain = await post(baseUrl, obsidianClient.sessionToken, "/v1/obsidian/import", {
+    ...importPayload,
+    requestId: randomUUID()
+  });
+  if (importedAgain.sourceItemId !== importedSourceId || importedAgain.duplicate !== true) {
+    throw new Error("Repeated Obsidian import was not deduplicated.");
+  }
+  const importedSource = await createSourceItemRepository(pool).findById(importedSourceId);
+  if (importedSource?.sourceOrigin !== "obsidian") {
+    throw new Error("Imported Obsidian note did not keep its origin.");
+  }
+
+  // The projection is a mirror job: it creates the layout on a fresh install and writes the vault.
+  const jobsRepository = createJobRepository(pool);
+  const projectVault = async () => {
+    const jobId = await obsidian!.wiki.enqueue(true);
+    const job = jobId ? await jobsRepository.findById(jobId) : null;
+    if (!jobId || !job) throw new Error("Projection job was not queued.");
+    await jobsRepository.update(jobId, { status: "running" });
+    const result = await obsidian!.wiki.execute(job);
+    await jobsRepository.update(jobId, { status: "succeeded", result });
+    return result;
+  };
+  const countIngestionJobs = async () =>
+    (await jobsRepository.list()).filter((job) => job.type === "ingestion").length;
+  const ingestionJobsBeforeProjection = await countIngestionJobs();
+  const projection = await projectVault();
+  if (projection.conflicts !== 0 || projection.projected < 3) {
+    throw new Error(`Unexpected projection result: ${JSON.stringify(projection)}`);
+  }
+  const layout = await createSettingsRepository(pool).get<{ version?: number }>("obsidian.layout");
+  if (layout?.version !== 2) throw new Error("A fresh install did not start on layout version 2.");
+  if ((await countIngestionJobs()) !== ingestionJobsBeforeProjection) {
+    throw new Error("Projection queued ingestion work.");
+  }
 
   const syncRepository = createObsidianSyncRepository(pool);
   const webSync = await syncRepository.findByMemoraId(webSourceId);
   const videoSync = await syncRepository.findByMemoraId(youtubeSourceId);
-  if (!webSync || !videoSync) throw new Error("Captured sources were not projected to Obsidian.");
+  const selectionSync = await syncRepository.findByMemoraId(selectionSourceId);
+  if (!webSync || !videoSync || !selectionSync) {
+    throw new Error("Captured sources were not projected to Obsidian.");
+  }
   const webPath = join(vaultPath, webSync.relativePath);
-  const projected = parseManagedMarkdown(await readFile(webPath, "utf8"));
-  if (!projected) throw new Error("Projected web frontmatter was invalid.");
+  const projected = parseObsidianMarkdown(await readFile(webPath, "utf8"));
+  const webDocument = (await createDocumentRepository(pool).listBySourceItem(webSourceId))[0];
+  if (!webDocument) throw new Error("Captured web source has no document.");
+  if (
+    !webSync.relativePath.startsWith("Memora/Sources/") ||
+    !videoSync.relativePath.startsWith("Memora/Sources/") ||
+    projected?.frontmatter.memoraId !== webSourceId ||
+    projected.frontmatter.memoraType !== "source_item" ||
+    projected.frontmatter.memoraManaged !== true ||
+    projected.frontmatter.memoraLayout !== 2 ||
+    projected.frontmatter.memoraDocumentId !== webDocument.id ||
+    !projected.bodyMarkdown.includes("<!-- memora:original:start -->")
+  ) {
+    throw new Error("Projected web source does not follow the layout 2 identity contract.");
+  }
 
-  const offlineBody = "# Phase 4 article\n\nOffline Obsidian edit is searchable evidence.";
-  await writeFile(
-    webPath,
-    (await readFile(webPath, "utf8")).replace(projected.bodyMarkdown, offlineBody)
+  // A projection never echoes back as an import, a move or a deletion.
+  const echo = await obsidian.reconcileVault();
+  if (echo.synced !== 0 || echo.conflicts !== 0 || echo.deleted !== 0) {
+    throw new Error(`Projection echoed back as a change: ${JSON.stringify(echo)}`);
+  }
+
+  // Editorial writeback is a separately granted, vault-bound capability.
+  const vaultId = randomUUID();
+  await post(baseUrl, obsidianClient.sessionToken, "/v1/obsidian/layout/presence", {
+    vaultId,
+    openPaths: [],
+    pendingTargetIds: []
+  });
+  const manifestFor = async (targetId: string) => {
+    const manifest = obsidianManifestSchema.parse(
+      await post(baseUrl, obsidianClient.sessionToken, "/v1/obsidian/editorial/manifest", {
+        vaultId,
+        cursor: 0
+      })
+    );
+    const file = manifest.files.find((entry) => entry.targetId === targetId);
+    if (!file) throw new Error(`Editorial manifest does not list ${targetId}.`);
+    return { binding: manifest.binding.binding, file };
+  };
+  const operationFrom = (
+    manifest: Awaited<ReturnType<typeof manifestFor>>,
+    content: string
+  ): ObsidianEditOperation => ({
+    version: 1,
+    operationId: randomUUID(),
+    vaultId,
+    binding: manifest.binding,
+    targetId: manifest.file.targetId,
+    targetType: manifest.file.targetType,
+    kind: "edit",
+    relativePath: manifest.file.relativePath,
+    baseRevision: manifest.file.revision,
+    baseVersion: manifest.file.syncVersion,
+    baseHash: manifest.file.contentHash,
+    content,
+    occurredAt: new Date().toISOString()
+  });
+
+  const webManifest = await manifestFor(webSourceId);
+  const offlineMarker = "Offline Obsidian edit is searchable evidence.";
+  const offlineContent = webManifest.file.content.replace(
+    "Gateway evidence is searchable.",
+    offlineMarker
   );
-  const reconcileEdit = await obsidian.reconcileVault();
-  if (reconcileEdit.synced < 1) throw new Error("Offline Obsidian edit was not reconciled.");
-  const webDocument = await createDocumentRepository(pool).findById(webSync.documentId!);
-  if (!webDocument?.canonicalMarkdown.includes("Offline Obsidian edit")) {
+  if (offlineContent === webManifest.file.content) {
+    throw new Error("The projected original region changed shape.");
+  }
+  await writeFile(webPath, offlineContent);
+  const accepted = await post(
+    baseUrl,
+    obsidianClient.sessionToken,
+    "/v1/obsidian/editorial/operation",
+    operationFrom(webManifest, offlineContent)
+  );
+  if (accepted.status !== "synced") {
+    throw new Error(`Editorial edit was not accepted: ${JSON.stringify(accepted)}`);
+  }
+  await writeFile(webPath, requiredString(accepted, "content"));
+  await post(baseUrl, obsidianClient.sessionToken, "/v1/obsidian/editorial/acknowledge", {
+    operationId: requiredString(accepted, "operationId"),
+    vaultId
+  });
+  const editedDocument = (await createDocumentRepository(pool).listBySourceItem(webSourceId))[0];
+  if (!editedDocument?.canonicalMarkdown.includes(offlineMarker)) {
     throw new Error("Obsidian edit did not update canonical Markdown.");
+  }
+  const acceptedFrame = parseObsidianMarkdown(requiredString(accepted, "content"));
+  const revisionId = acceptedFrame?.frontmatter.memoraDocumentRevisionId;
+  const revision = revisionId
+    ? await pool.query("select 1 from document_revisions where id = $1 and document_id = $2", [
+        revisionId,
+        editedDocument.id
+      ])
+    : null;
+  if (revision?.rowCount !== 1) throw new Error("The edit did not become a document revision.");
+  if ((await countIngestionJobs()) !== ingestionJobsBeforeProjection) {
+    throw new Error("An editorial edit queued ingestion work.");
   }
   await indexDocument(
     pool,
-    webDocument.id,
-    webDocument.sourceItemId,
-    webDocument.canonicalMarkdown
+    editedDocument.id,
+    editedDocument.sourceItemId,
+    editedDocument.canonicalMarkdown
   );
   const search = await createSearchRepository(pool).searchText({
     text: "offline obsidian edit",
@@ -204,80 +359,69 @@ try {
   if (search[0]?.sourceItemId !== webSourceId)
     throw new Error("Search did not reflect the Obsidian edit.");
 
-  const movedPath = join(dirname(webPath), "phase-4-article-moved.md");
-  await rename(webPath, movedPath);
-  await obsidian.reconcileVault();
-  const movedRecord = await syncRepository.findByMemoraId(webSourceId);
-  if (!movedRecord?.relativePath.endsWith("phase-4-article-moved.md")) {
-    throw new Error("Offline Obsidian move was not reconciled.");
+  // A desktop edit made while Obsidian still holds an older base is an explicit conflict.
+  const staleManifest = await manifestFor(webSourceId);
+  const staleLocal = staleManifest.file.content.replace(offlineMarker, "A stale local rewrite.");
+  const desktopMarkdown = `${editedDocument.canonicalMarkdown.trim()}\n\nDesktop edit wins.\n`;
+  const webSource = await createSourceItemRepository(pool).findById(webSourceId);
+  if (!webSource) throw new Error("Captured web source disappeared.");
+  await new SourceEditorialService(pool).saveProjected(
+    webSourceId,
+    webSource.updatedAt.toISOString(),
+    desktopMarkdown
+  );
+  const conflict = await post(
+    baseUrl,
+    obsidianClient.sessionToken,
+    "/v1/obsidian/editorial/operation",
+    operationFrom(staleManifest, staleLocal)
+  );
+  const comparison = conflict.comparison as Record<string, string> | null;
+  if (
+    conflict.status !== "conflict" ||
+    !comparison?.base?.includes(offlineMarker) ||
+    !comparison.local?.includes("A stale local rewrite.") ||
+    !comparison.app?.includes("Desktop edit wins.")
+  ) {
+    throw new Error(`Version conflict was not explicit: ${JSON.stringify(conflict)}`);
+  }
+  const afterConflict = (await createDocumentRepository(pool).listBySourceItem(webSourceId))[0];
+  if (!afterConflict?.canonicalMarkdown.includes("Desktop edit wins.")) {
+    throw new Error("A conflicting Obsidian edit overwrote the desktop version.");
   }
 
-  const obsidianPairing = await gateway.createPairing({
-    clientType: "obsidian-plugin",
-    displayName: "E2E Obsidian"
-  });
-  const obsidianClient = await handshake(
-    gatewayStatus.baseUrl,
-    obsidianPairing,
-    "obsidian-plugin",
-    [
-      "import-obsidian-note",
-      "watch-obsidian-files",
-      "reconcile-obsidian-vault",
-      "receive-job-progress"
-    ]
-  );
-  const videoRaw = await readFile(join(vaultPath, videoSync.relativePath), "utf8");
-  const videoManaged = parseManagedMarkdown(videoRaw);
-  if (!videoManaged) throw new Error("Projected video frontmatter was invalid.");
-  const conflictBody = `${videoManaged.bodyMarkdown}\n\nConflicting edit.`;
-  const conflict = await post(
-    gatewayStatus.baseUrl,
-    obsidianClient.sessionToken,
-    "/v1/obsidian/file-changed",
-    {
-      eventId: randomUUID(),
-      kind: "modified",
-      occurredAt: new Date().toISOString(),
-      note: {
-        requestId: randomUUID(),
-        relativePath: videoSync.relativePath,
-        markdown: conflictBody,
-        frontmatter: {
-          ...videoManaged.frontmatter,
-          memoraSyncVersion: videoManaged.frontmatter.memoraSyncVersion + 1
-        },
-        contentHash: sha256(`${conflictBody.trim()}\n`),
-        mtimeMs: Math.trunc((await stat(join(vaultPath, videoSync.relativePath))).mtimeMs)
-      }
-    }
-  );
-  if (conflict.syncStatus !== "conflict") throw new Error("Version conflict was not explicit.");
-
+  // Registered paths are stable and absence is never evidence of deletion.
+  const movedPath = join(dirname(webPath), "phase-4-article-moved.md");
+  await rename(webPath, movedPath);
+  const afterMove = await obsidian.reconcileVault();
+  const movedRecord = await syncRepository.findByMemoraId(webSourceId);
+  if (movedRecord?.relativePath !== webSync.relativePath || movedRecord.status === "deleted") {
+    throw new Error("An Obsidian rename silently moved or retired the registered path.");
+  }
   await unlink(movedPath);
-  const reconcileDelete = await obsidian.reconcileVault();
+  const afterDelete = await obsidian.reconcileVault();
   if (
-    reconcileDelete.deleted !== 0 ||
+    afterMove.deleted !== 0 ||
+    afterDelete.deleted !== 0 ||
     (await syncRepository.findByMemoraId(webSourceId))?.status === "deleted"
   ) {
     throw new Error("A missing file was incorrectly treated as an explicit deletion.");
   }
-  const queuedAfterEdit = (await createJobRepository(pool).list()).some(
-    (job) => job.type === "ingestion" && job.payload.sourceItemId === webSourceId
-  );
-  if (!queuedAfterEdit) throw new Error("Obsidian edit did not queue reprocessing.");
 
   console.info(
     JSON.stringify(
       {
-        gateway: gatewayStatus.baseUrl,
+        gateway: baseUrl,
         deduplicatedWebSource: webSourceId,
         youtubeSource: youtubeSourceId,
+        importedObsidianSource: importedSourceId,
         projectedFiles: (await syncRepository.list()).length,
-        offlineEditReconciled: reconcileEdit.synced,
-        movedPath: movedRecord.relativePath,
-        explicitConflict: conflict.syncStatus,
-        inferredDeletions: reconcileDelete.deleted,
+        layoutVersion: layout.version,
+        webPath: webSync.relativePath,
+        editorialEdit: accepted.status,
+        explicitConflict: conflict.status,
+        stablePath: movedRecord.relativePath,
+        inferredDeletions: afterDelete.deleted,
         searchEvidence: search[0]?.excerpt
       },
       null,
