@@ -84,8 +84,11 @@ repository in `packages/db`, service in desktop main, clustering in a `worker_th
 - **Stability:** hysteresis, per-node cooldown, freeze on nodes the user recently viewed or edited, daily
   operation and move budgets, "moved from X" hint. Pinned and human-created nodes never move automatically.
 - **Naming:** one write-fast call per operation for all new nodes (title, one-line description, aliases, in
-  the content language, Zod-validated, sibling duplicates rejected). Without an LLM: provisional "Parent ›
-  TF-IDF terms" with per-language stopwords. Mixed-language clusters are named in the dominant language.
+  the content language, Zod-validated, sibling duplicates rejected). Names are ALWAYS in the content
+  language, even when a cluster's notes are mostly in another language (owner feedback on Spike B: mixed
+  pt/en TF-IDF names). Without an LLM: provisional "Parent › TF-IDF terms" built only from content-language
+  items with that language's stopwords; with no such items, a localized "Unnamed topic" placeholder
+  flagged for naming. Clustering itself stays language-agnostic (pt and en notes on one subject belong together).
 - **Bootstrap and cold start:** below ~12 items everything is a direct child of Topics and shown as
   Unsorted; at ~12 items a bottom-up bootstrap builds the first named tree (chapter centroids seed k-means
   for a single hierarchical source); the user may pin 3-10 suggested Areas.
@@ -278,17 +281,27 @@ or revised on measured data, not facts.
       the `lint` alias.
 - [x] `scripts/quality-ratchet.mjs` (raw palette classes, arbitrary text sizes, window dialogs, renderer
       setInterval, product lines over 200 characters, rule lines; numbers only go down).
-- [ ] Wall-clock instrumentation (stage start/end, queue time, attempt) and `npm run kpi`; first measurement
-      of the v6 matching contract.
+- [x] Wall-clock instrumentation (migration 0043: stage attempts/attempt start/end, AI `queue_ms`/`attempt`)
+      and `npm run kpi`; baseline in `docs/kpi-baseline.md` (owner library: 13 sources, 0 notes).
+- [ ] First measurement of the v6 matching contract (wave 3, DEV app).
 - [ ] Reference libraries: golden-small public manifest (licenses + SHA-256 only in the repo) with AI
       cassettes recorded on a small subset via the current route; read-only golden-private snapshot (never
-      versioned); a large public corpus of 5-20k notes with real embeddings for tree calibration.
-- [ ] Backup restore path into a scratch sidecar, with a verification script.
-- [ ] e2e harness reusing the existing `phase4:e2e`.
-- [ ] Spike A: Qwen3-Reranker-0.6B on the MLX helper (yes/no logits), then GGUF `createRankingContext`, then
+      versioned); a large public corpus of 5-20k notes with real embeddings for tree calibration
+      (done: 18,632 Wikipedia pt/en pseudo-notes, MLX embeddings; golden-small + cassettes pending, wave 3).
+- [x] Backup restore path into a scratch sidecar, with a verification script (`npm run db:restore`).
+- [ ] e2e harness reusing the existing `phase4:e2e` (inspected: already fails at `pre-strangler`; wave 3).
+- [x] Spike A: Qwen3-Reranker-0.6B on the MLX helper (yes/no logits), then GGUF `createRankingContext`, then
       bge: artifact check, smoke, AUC on human labels, ms per 250-300-token pair on the owner's Mac.
-- [ ] Spike B: offline k-means tree over real embeddings; shape metrics, ambiguity rate, HTML page with 30
-      sampled topics for the owner.
+      Result `docs/spikes/spike-a-reranker.md`: conditional GO for MLX scoring both directions (held-out
+      27-28/28, 0/35; 36 ms/pair; 3.6 min for 200 notes x 20 both ways); GGUF Qwen3 fallback; bge rejected.
+      Open for F3: 32% loss of reverse-only acceptances vs the ≤5% target.
+- [x] Spike A2: OpenAI Decisions API on the same protocol (`docs/spikes/spike-a2-decisions.md`): ties at root
+      level, best direction stability, ~0.2 s/request, ~US$ 0.03-0.04 per 1k pairs, order/composition
+      sensitive; candidate optional tiebreaker for the MLX uncertain band (F3 bake-off decides).
+- [x] Spike B: offline k-means tree over real embeddings; shape metrics, ambiguity rate, HTML page with 30
+      sampled topics for the owner. Result `docs/spikes/spike-b-topic-tree.md`: conditional GO for the
+      Louvain-kNN builder (100% reachability; owner 25/30 coherent, 23/30 well named); top two levels weak
+      and seed-dependent; ambiguity ≤30% only for known topics (new topics 28-48%), so the bar is re-based in F2.
 
 Exit: `npm run check` green with the baseline; `docs/kpi-baseline.md` recorded; cassette replay
 deterministic at $0; Spike A GO at p50 ≤75 ms/pair (4-minute target for 200 notes) or ≤150 ms/pair (8-minute
@@ -343,7 +356,11 @@ passes AA in both themes; mockups approved.
 - [ ] Repository, service, clustering worker; PLACE and REBALANCE in the light slot.
 - [ ] Shadow mode with a developer comparison panel on the large corpus and golden libraries; calibrate
       admission, margin, gate temperature and threshold.
-- [ ] Naming with TF-IDF fallback; bootstrap.
+- [ ] Naming in the content language (LLM; content-language TF-IDF fallback); bootstrap with the Louvain-kNN
+      builder (Spike B winner). Spike B owner evaluation (25/30 coherent): leaves and levels 3-4 were 17/17
+      coherent but level 1 only 1/4, so the top two levels get an LLM-assisted Clio-style grouping into
+      ~10-16 areas (owner can pin Areas), plus a mis-parent audit that moves a cluster whose centroid is
+      closer to another parent.
 - [ ] Switch: verified `pg_dump` backup, then wipe existing wiki, organization and maintenance data
       (decision 4); bootstrap a fresh tree from current notes and sources; the engine becomes the single
       writer of AI topic parents.
