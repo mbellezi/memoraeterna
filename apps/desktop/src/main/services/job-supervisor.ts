@@ -79,6 +79,9 @@ export interface JobSupervisorOptions {
   releaseAiRuntime?: () => Promise<void>;
 }
 
+/** Deterministic: the document has no text, so a retry can only fail again. */
+const emptyDocumentError = "errors.conversion.emptyResult";
+
 const supportedJobTypes = new Set<string>([
   "obsidian-wiki",
   "maintenance",
@@ -219,6 +222,7 @@ export class JobSupervisor {
       const shouldRetry =
         job.type !== "maintenance" &&
         !wasCanceled &&
+        normalizeWorkerError(error) !== emptyDocumentError &&
         job.attempts < job.maxAttempts &&
         (job.type !== "organization" ||
           /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
@@ -423,8 +427,10 @@ export class JobSupervisor {
     const ingestionRunId = readString(job.payload, "ingestionRunId");
     const documentId = readString(job.payload, "documentId");
     const sourceItemId = readString(job.payload, "sourceItemId");
-    let markdown = readString(job.payload, "markdown");
     const catalogMetadataOnly = job.payload.processingMode === "catalog_metadata";
+    let markdown = optionalString(job.payload.markdown) ?? "";
+    // A document without text (an import that converted to nothing) has nothing to chunk or derive.
+    if (!catalogMetadataOnly && !markdown.trim()) throw new Error(emptyDocumentError);
     const pool = this.requirePool();
     const inputDocument = await createDocumentRepository(pool).findById(documentId);
     if (inputDocument?.metadata.supersededByDocumentId)

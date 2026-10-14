@@ -71,6 +71,40 @@ describe("IntegrationGateway", () => {
     expect(captureWebPage).toHaveBeenCalledOnce();
   });
 
+  it("refuses a capture without text with a non-retryable error", async () => {
+    const gateway = createGateway(async () => {
+      throw new Error("errors.conversion.emptyResult");
+    });
+    gateways.push(gateway);
+    const status = await gateway.start();
+    const pairing = await gateway.createPairing({
+      clientType: "chrome-extension",
+      displayName: "Chrome"
+    });
+    const handshake = await createSession(status.baseUrl!, pairing);
+    const refused = await fetch(`${status.baseUrl}/v1/capture/web-page`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${handshake.sessionToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        requestId: randomUUID(),
+        url: "https://example.com/blank",
+        title: "Blank",
+        capturedAt: new Date().toISOString(),
+        html: "<html><body></body></html>",
+        metadata: {}
+      })
+    });
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toEqual({
+      code: "invalid_request",
+      messageKey: "errors.conversion.emptyResult",
+      retryable: false
+    });
+  });
+
   it("requires an explicit editorial grant rather than upgrading old Obsidian pairings", async () => {
     const store = createMemoryStore(),
       gateway = createGateway(

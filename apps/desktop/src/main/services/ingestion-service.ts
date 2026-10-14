@@ -474,18 +474,42 @@ export class IngestionService {
     }
   }
 
+  /**
+   * The first capture source that yields text wins: Markdown the client already extracted, the page
+   * HTML through Defuddle, then the visible text. A capture that yields none is refused; an empty
+   * document would fail every later processing stage.
+   */
+  private async convertWebCapture(input: CaptureWebPageRequest): Promise<MarkdownConversionResult> {
+    const candidates: Array<() => Promise<MarkdownConversionResult>> = [];
+    if (input.markdown) {
+      const markdown = input.markdown;
+      candidates.push(async () => markdownResult(markdown, "chrome-defuddle"));
+    }
+    if (input.html) {
+      const html = input.html;
+      candidates.push(() =>
+        this.convertWithMonitoring({
+          data: new TextEncoder().encode(html),
+          fileName: "capture.html",
+          mimeType: "text/html",
+          sourceUrl: input.url,
+          profile: "standard"
+        })
+      );
+    }
+    if (input.textContent) {
+      const text = input.textContent;
+      candidates.push(async () => markdownResult(text, "chrome-text"));
+    }
+    for (const convert of candidates) {
+      const conversion = await convert();
+      if (conversion.markdown.trim()) return conversion;
+    }
+    throw new Error("errors.conversion.emptyResult");
+  }
+
   public async captureWebPage(input: CaptureWebPageRequest): Promise<IngestionResult> {
-    const conversion = input.markdown
-      ? markdownResult(input.markdown, "chrome-defuddle")
-      : input.html
-        ? await this.convertWithMonitoring({
-            data: new TextEncoder().encode(input.html),
-            fileName: "capture.html",
-            mimeType: "text/html",
-            sourceUrl: input.url,
-            profile: "standard"
-          })
-        : markdownResult(input.textContent ?? "", "chrome-text");
+    const conversion = await this.convertWebCapture(input);
     const descriptor = descriptorDraftFromWebMetadata({
       title: input.title,
       url: input.url,

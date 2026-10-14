@@ -61,6 +61,24 @@ describe("conversion", () => {
     expect(result.markdown).toContain("Main evidence");
   });
 
+  it("extracts an HTML fragment that has no html or body tag", async () => {
+    // A rendered article body (a Wikipedia action=render response, an element's outerHTML) parses to
+    // a document Defuddle finds nothing in unless the fragment is given a document skeleton.
+    const fragment =
+      '<div class="mw-parser-output" lang="en"><section><p>The forgetting curve describes how memory retention declines over time without rehearsal.</p>' +
+      "<h2>History</h2><p>Hermann Ebbinghaus measured retention of nonsense syllables across several days and described the exponential decline.</p></section></div>";
+    const result = await convertWebHtml({
+      data: encoder.encode(fragment),
+      fileName: "capture.html",
+      mimeType: "text/html",
+      sourceUrl: "https://example.test/forgetting-curve"
+    });
+    expect(result.status).toBe("converted");
+    expect(result.markdown).toContain("forgetting curve describes how memory retention declines");
+    expect(result.markdown).toContain("Hermann Ebbinghaus");
+    expect(result.warnings).toEqual([]);
+  });
+
   it("validates Docling JSONL responses and handles crash, timeout and cancellation", async () => {
     const client = new DoclingClient({
       executablePath: process.execPath,

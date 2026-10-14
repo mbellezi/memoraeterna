@@ -38,6 +38,7 @@ import {
   type ObsidianEditOperation
 } from "@app/integration-contracts";
 
+import "./verify-worker-host.js";
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
@@ -406,6 +407,135 @@ try {
     if (!run || run.effectiveStages.join() !== importOnlyStages.join()) {
       throw new Error(`Capture ${sourceId} was not queued with the import-only plan.`);
     }
+  }
+
+  // A captured page is processed later from the Library with a knowledge plan, so it must hold
+  // canonical Markdown. An article body without html/body tags (Wikipedia's action=render, an
+  // element's outerHTML) used to convert to nothing and fail at chunking as "missing_markdown".
+  const processing = new JobSupervisor({ getPool: () => pool ?? null });
+  const runUntilSettled = async (jobId: string) => {
+    let job = await createJobRepository(pool!).findById(jobId);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      await processing.runOnce();
+      job = await createJobRepository(pool!).findById(jobId);
+      if (job && !["queued", "running"].includes(job.status)) return job;
+    }
+    throw new Error(
+      `Job ${jobId} did not settle: ${JSON.stringify({ status: job?.status, attempts: job?.attempts, error: job?.error, errorHistory: job?.payload.errorHistory })}`
+    );
+  };
+  const processFromLibrary = async (sourceId: string) => {
+    const queued = await hierarchy.process({
+      plan: ProcessingPlanRequestSchema.parse({
+        preset: "search_ready",
+        requestedStages: [],
+        scope: "source_only",
+        targetSourceItemIds: [sourceId]
+      }),
+      runKind: "initial",
+      trigger: "library_action"
+    });
+    const first = queued.queued[0];
+    if (!first?.jobId) throw new Error(`Processing ${sourceId} queued no job.`);
+    const job = await runUntilSettled(first.jobId);
+    const run = await createIngestionRunRepository(pool!).findById(first.ingestionRunId);
+    if (!run) throw new Error("The processing run disappeared.");
+    return { job, run };
+  };
+  const captureWith = async (title: string, content: Record<string, string>) =>
+    post(baseUrl, chrome.sessionToken, "/v1/capture/web-page", {
+      requestId: randomUUID(),
+      url: `https://example.com/${encodeURIComponent(title)}`,
+      title,
+      capturedAt,
+      ...content,
+      metadata: { language: "en" }
+    });
+  const fragmentCapture = await captureWith("Rendered article body", {
+    html:
+      '<div class="mw-content-ltr mw-parser-output" lang="en"><section><p>The forgetting curve describes how memory retention declines over time without rehearsal.</p>' +
+      "<h2>History</h2><p>Hermann Ebbinghaus measured retention of nonsense syllables across several days.</p></section></div>"
+  });
+  const fragmentSourceId = requiredString(fragmentCapture, "sourceItemId");
+  const fragmentDocument = (
+    await createDocumentRepository(pool).listBySourceItem(fragmentSourceId)
+  )[0];
+  if (!fragmentDocument?.canonicalMarkdown.includes("forgetting curve describes how memory")) {
+    throw new Error("An HTML fragment capture was not stored as canonical Markdown.");
+  }
+  const fragmentProcessing = await processFromLibrary(fragmentSourceId);
+  if (
+    fragmentProcessing.run.status !== "succeeded" ||
+    (fragmentProcessing.run.stagesCheckpoint.chunking as { status?: string } | undefined)
+      ?.status !== "completed" ||
+    (await createChunkRepository(pool).listByDocument(fragmentDocument.id)).length === 0
+  ) {
+    throw new Error(
+      `A captured page did not chunk with a search-ready plan: ${JSON.stringify(fragmentProcessing.run)}`
+    );
+  }
+  // The extension sends the HTML and the visible text: the text is used when Defuddle finds nothing.
+  const visibleTextCapture = await captureWith("Application page", {
+    html: "<html><body><div id='app'></div></body></html>",
+    textContent: "Visible text of an application page that Defuddle cannot read."
+  });
+  const visibleTextDocument = (
+    await createDocumentRepository(pool).listBySourceItem(
+      requiredString(visibleTextCapture, "sourceItemId")
+    )
+  )[0];
+  if (!visibleTextDocument?.canonicalMarkdown.includes("Visible text of an application page")) {
+    throw new Error("A capture whose HTML was empty did not fall back to the visible text.");
+  }
+  // A capture without any text is refused, retryable by nobody, and leaves no source behind.
+  const sourcesBeforeBlank = await count("source_items");
+  const blank = await fetch(`${baseUrl}/v1/capture/web-page`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${chrome.sessionToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      requestId: randomUUID(),
+      url: "https://example.com/blank",
+      title: "Blank page",
+      capturedAt,
+      html: "<html><body><div></div></body></html>",
+      metadata: {}
+    })
+  });
+  const blankBody = (await blank.json()) as Record<string, unknown>;
+  if (
+    blank.status !== 422 ||
+    blankBody.messageKey !== "errors.conversion.emptyResult" ||
+    blankBody.retryable !== false ||
+    (await count("source_items")) !== sourcesBeforeBlank
+  ) {
+    throw new Error(`A capture without text was not refused cleanly: ${JSON.stringify(blankBody)}`);
+  }
+  // A library that already holds an empty document (stored before the capture was guarded) fails
+  // its processing run with a localized reason, once, instead of an internal "missing_markdown".
+  const legacyEmpty = await createSourceItemRepository(pool).create({
+    type: "WebArticle",
+    title: "Legacy empty capture",
+    sourceOrigin: "web_capture",
+    language: "en"
+  });
+  await createDocumentRepository(pool).create({
+    sourceItemId: legacyEmpty.id,
+    title: legacyEmpty.title,
+    canonicalMarkdown: "",
+    contentHash: sha256(""),
+    language: "en",
+    metadata: {}
+  });
+  const emptyProcessing = await processFromLibrary(legacyEmpty.id);
+  if (
+    emptyProcessing.run.status !== "failed" ||
+    emptyProcessing.run.error !== "errors.conversion.emptyResult" ||
+    emptyProcessing.job.status !== "failed" ||
+    emptyProcessing.job.attempts !== 1
+  ) {
+    throw new Error(
+      `An empty document did not fail cleanly: ${JSON.stringify([emptyProcessing.run, emptyProcessing.job])}`
+    );
   }
 
   const obsidianPairing = await gateway.createPairing({

@@ -8,9 +8,10 @@ const mocks = vi.hoisted(() => ({
     findById: vi.fn(),
     retry: vi.fn(),
     claimNext: vi.fn(),
-    nextQueuedOfType: vi.fn()
+    nextQueuedOfType: vi.fn(),
+    update: vi.fn()
   },
-  runs: { recoverInterrupted: vi.fn(), findById: vi.fn() }
+  runs: { recoverInterrupted: vi.fn(), findById: vi.fn(), fail: vi.fn() }
 }));
 vi.mock("@app/db", async (original) => ({
   ...(await original<typeof import("@app/db")>()),
@@ -84,6 +85,30 @@ describe("ingestion queue scheduling", () => {
     expect(enqueue).toHaveBeenCalledOnce();
     expect(maintenanceTick).toHaveBeenCalledOnce();
     expect(mocks.jobs.claimNext).toHaveBeenCalledOnce();
+  });
+  it("fails a document without text with a localized error and does not retry it", async () => {
+    // A web capture whose Defuddle result was empty used to fail here as "missing_markdown".
+    supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+    mocks.jobs.claimNext.mockResolvedValue({
+      id: "job",
+      type: "ingestion",
+      attempts: 1,
+      maxAttempts: 3,
+      payload: {
+        ingestionRunId: "run",
+        documentId: "document",
+        sourceItemId: "source",
+        markdown: "",
+        processingMode: "content"
+      }
+    });
+    mocks.jobs.update.mockResolvedValue({ id: "job", status: "failed" });
+    await supervisor.runOnce();
+    expect(mocks.runs.fail).toHaveBeenCalledWith("run", "errors.conversion.emptyResult");
+    expect(mocks.jobs.update).toHaveBeenCalledWith(
+      "job",
+      expect.objectContaining({ status: "failed", error: "errors.conversion.emptyResult" })
+    );
   });
   it("coalesces retries during an active drain instead of starting overlapping ingestion", async () => {
     supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });

@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { createRequire, syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -18,6 +17,7 @@ import {
 import { AiCassette, type AiModelAdapter, type AiTaskRequest } from "@app/ai";
 import { ProcessingPlanRequestSchema, SourceDescriptorSchema } from "@app/domain";
 
+import "./verify-worker-host.js";
 import { BackupService } from "./backup-service.js";
 import {
   goldenManifestFiles,
@@ -56,26 +56,6 @@ import { LibraryResetService } from "./library-reset-service.js";
  */
 
 const execFileAsync = promisify(execFile);
-
-// The packaged app bundles the worker host next to the main bundle; under tsx it is the TypeScript
-// source, so point the supervisor's worker threads there (tsx's loader is inherited by the thread).
-{
-  const workerThreads = createRequire(import.meta.url)(
-    "node:worker_threads"
-  ) as typeof import("node:worker_threads");
-  class SourceWorker extends workerThreads.Worker {
-    public constructor(file: string | URL, options?: import("node:worker_threads").WorkerOptions) {
-      super(
-        file instanceof URL && file.pathname.endsWith("/services/workers/worker-host.js")
-          ? new URL("../workers/worker-host.ts", import.meta.url)
-          : file,
-        options
-      );
-    }
-  }
-  workerThreads.Worker = SourceWorker;
-  syncBuiltinESMExports();
-}
 
 const desktopRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const repositoryRoot = resolve(desktopRoot, "../..");

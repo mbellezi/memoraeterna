@@ -160,8 +160,19 @@ export function convertLocalHtml(input: ConversionInput): MarkdownConversionResu
   return result(`${title ? `# ${escapeMarkdown(title)}\n\n` : ""}${body}`, "native-html");
 }
 
+/**
+ * Captured markup is not always a whole page: an element's outerHTML or a rendered article body has
+ * no `html` or `body` tag, and the parsed fragment gives Defuddle nothing to extract. A fragment is
+ * parsed inside a document skeleton instead.
+ */
+function asHtmlDocument(markup: string): string {
+  return /<(?:html|body)[\s>]/i.test(markup)
+    ? markup
+    : `<!doctype html><html><head></head><body>${markup}</body></html>`;
+}
+
 export async function convertWebHtml(input: ConversionInput): Promise<MarkdownConversionResult> {
-  const { document } = parseHTML(textDecoder.decode(input.data));
+  const { document } = parseHTML(asHtmlDocument(textDecoder.decode(input.data)));
   const extracted = await Defuddle(document as unknown as Document, input.sourceUrl, {
     markdown: true
   });

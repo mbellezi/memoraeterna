@@ -174,6 +174,76 @@ describe("IngestionService captures", () => {
       expect(trigger).toBe("integration");
     }
   );
+
+  describe("web page text", () => {
+    const capture = (service: IngestionService, content: Record<string, string>) =>
+      service.captureWebPage({
+        requestId: "00000000-0000-4000-8000-0000000000a5",
+        url: "https://example.com/article",
+        title: "Captured article",
+        capturedAt,
+        ...content,
+        metadata: {}
+      });
+    const setup = () => {
+      vi.spyOn(
+        HierarchicalIngestionService.prototype as unknown as {
+          queueSources: (...args: unknown[]) => Promise<unknown>;
+        },
+        "queueSources"
+      ).mockResolvedValue({
+        batchId: "00000000-0000-4000-8000-0000000000b1",
+        queued: [
+          {
+            sourceItemId: "00000000-0000-4000-8000-000000000001",
+            documentId: "00000000-0000-4000-8000-0000000000c1",
+            ingestionRunId: "00000000-0000-4000-8000-0000000000d1",
+            jobId: "00000000-0000-4000-8000-0000000000e1"
+          }
+        ]
+      });
+      const pool = new CapturePool();
+      const typed = pool as unknown as PgPool;
+      const service = createService(typed, {
+        hierarchicalIngestionService: new HierarchicalIngestionService({ getPool: () => typed })
+      });
+      return { pool, service };
+    };
+    const storedMarkdown = (pool: CapturePool) =>
+      pool.documentInserts.flat().filter((value) => typeof value === "string");
+
+    it("stores the Markdown of an HTML fragment that has no html or body tag", async () => {
+      const { pool, service } = setup();
+      await capture(service, {
+        html:
+          '<div class="mw-parser-output"><section><p>The forgetting curve describes how memory retention declines without rehearsal.</p>' +
+          "<p>Hermann Ebbinghaus measured the decline of retention across several days.</p></section></div>"
+      });
+      expect(pool.documentInserts).toHaveLength(1);
+      expect(storedMarkdown(pool).join("\n")).toContain("forgetting curve describes how memory");
+    });
+
+    it("falls back to the visible text when the HTML holds nothing to extract", async () => {
+      const { pool, service } = setup();
+      await capture(service, {
+        html: "<html><body><div></div></body></html>",
+        textContent: "Visible text of an application page that Defuddle cannot read."
+      });
+      expect(pool.documentInserts).toHaveLength(1);
+      expect(storedMarkdown(pool).join("\n")).toContain("Visible text of an application page");
+    });
+
+    it("refuses a capture that yields no text instead of storing an empty document", async () => {
+      const { pool, service } = setup();
+      await expect(
+        capture(service, { html: "<html><body><div></div></body></html>", textContent: "  \n " })
+      ).rejects.toThrow("errors.conversion.emptyResult");
+      await expect(capture(service, { markdown: "   " })).rejects.toThrow(
+        "errors.conversion.emptyResult"
+      );
+      expect(pool.documentInserts).toEqual([]);
+    });
+  });
 });
 
 class ContainerPool {
@@ -237,11 +307,18 @@ class ContainerPool {
 
 /** Answers the queries a fresh capture issues: no duplicate, one new source, one new document. */
 class CapturePool {
+  /** Values of every `insert into documents` statement. */
+  readonly documentInserts: unknown[][] = [];
+
   async connect() {
     return { query: this.query.bind(this), release: () => undefined };
   }
 
-  async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
+  async query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values: unknown[] = []
+  ): Promise<QueryResult<T>> {
+    if (text.includes("insert into documents")) this.documentInserts.push(values);
     const now = new Date(0);
     const rows = text.includes("insert into source_items")
       ? [

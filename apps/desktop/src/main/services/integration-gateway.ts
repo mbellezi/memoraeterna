@@ -616,6 +616,12 @@ function gatewayError(error: unknown): { status: number; body: IntegrationError 
     ].includes(error.message)
   )
     return { status: 409, body: { code: "conflict", messageKey: error.message, retryable: false } };
+  // The capture itself is valid but holds no text: retrying the same capture cannot succeed.
+  if (error instanceof Error && error.message === "errors.conversion.emptyResult")
+    return {
+      status: 422,
+      body: { code: "invalid_request", messageKey: error.message, retryable: false }
+    };
   if (error instanceof z.ZodError) return { status: 400, body: normalizeIntegrationError(error) };
   return { status: 500, body: normalizeIntegrationError(error) };
 }
