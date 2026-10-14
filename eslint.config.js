@@ -31,7 +31,9 @@ export default defineConfig([
   {
     files: codeFiles,
     extends: [js.configs.recommended, tseslint.configs.recommended],
-    languageOptions: { globals: { ...globals.node } }
+    languageOptions: { globals: { ...globals.node } },
+    // Prettier may place `[` of a member chain on its own line; semicolons are enforced.
+    rules: { "no-unexpected-multiline": "off" }
   },
   {
     files: browserFiles,
