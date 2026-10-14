@@ -45,7 +45,9 @@ import { LibraryResetService } from "./library-reset-service.js";
  * and any real AI call, so source matching waits for review in the complete run. It also covers
  * MEMORA_GOLDEN_RESET=1 with the real LibraryResetService (the Settings reset): a complete golden
  * library, then a record-style import of two golden sources, is reset and replayed in the same
- * database, an empty library is a no-op, and one non-golden source refuses the reset.
+ * database, an empty library is a no-op, and one non-golden source refuses the reset. It also
+ * covers the import failing at its document insert (a database trigger rejects it): nothing is left
+ * behind, no source row and no stored file.
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -497,7 +499,48 @@ try {
     "an ambiguous reset flag"
   );
 
-  // 6d. An empty library needs no reset: the flag is a no-op and the run's usual backup is taken.
+  // 6d. An import that fails at its document insert persists nothing: no source row, no document,
+  //     no asset row and no stored file (the persistence is one transaction). A trigger rejects the
+  //     insert in the throwaway database; the paper is a hierarchical file import, as in the field.
+  await resetLibrary();
+  const storedFiles = async () =>
+    (await readdir(join(userData, "assets"), { recursive: true, withFileTypes: true })).filter(
+      (entry) => entry.isFile()
+    ).length;
+  const filesBefore = await storedFiles();
+  const worksBefore = await rowCount("bibliographic_works");
+  await pool.query(
+    `create function verify_reject_document() returns trigger language plpgsql as $$
+     begin
+       if new.title = 'Replication study' then raise exception 'simulated document insert failure'; end if;
+       return new;
+     end $$`
+  );
+  await pool.query(
+    `create trigger verify_reject_document before insert on documents
+     for each row execute function verify_reject_document()`
+  );
+  await expectRejection(
+    importSources(
+      { workspaceRoot: workspace, ingestion, hierarchy },
+      selectGoldenSources(manifest, ["paper"])
+    ),
+    /simulated document insert failure/,
+    "an import whose document insert fails"
+  );
+  await pool.query(`drop trigger verify_reject_document on documents`);
+  await pool.query(`drop function verify_reject_document()`);
+  check(
+    (await rowCount("source_items")) === 0 &&
+      (await rowCount("documents")) === 0 &&
+      (await rowCount("document_assets")) === 0 &&
+      (await rowCount("document_structures")) === 0 &&
+      (await rowCount("bibliographic_works")) === worksBefore &&
+      (await storedFiles()) === filesBefore,
+    "the failed import left no source, document, asset, structure, new bibliographic row or new stored file"
+  );
+
+  // 6e. An empty library needs no reset: the flag is a no-op and the run's usual backup is taken.
   await resetLibrary();
   const noop = await prepareGoldenRun(input({ ...withReset, env: resetEnv() }));
   check(

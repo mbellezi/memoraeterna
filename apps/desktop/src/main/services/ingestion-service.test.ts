@@ -1,7 +1,15 @@
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { QueryResult, QueryResultRow } from "pg";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
-import { processingPresetStages, type EffectiveProcessingPlan } from "@app/domain";
+import {
+  SourceDescriptorSchema,
+  processingPresetStages,
+  resolveProcessingPlan,
+  type EffectiveProcessingPlan
+} from "@app/domain";
 
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService, type IngestionServiceOptions } from "./ingestion-service.js";
@@ -171,6 +179,10 @@ describe("IngestionService captures", () => {
 class ContainerPool {
   readonly queries: string[] = [];
 
+  async connect() {
+    return { query: this.query.bind(this), release: () => undefined };
+  }
+
   async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
     this.queries.push(text);
     const now = new Date(0);
@@ -225,6 +237,10 @@ class ContainerPool {
 
 /** Answers the queries a fresh capture issues: no duplicate, one new source, one new document. */
 class CapturePool {
+  async connect() {
+    return { query: this.query.bind(this), release: () => undefined };
+  }
+
   async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
     const now = new Date(0);
     const rows = text.includes("insert into source_items")
@@ -271,3 +287,252 @@ class CapturePool {
     };
   }
 }
+
+/**
+ * Records every statement with the connection that ran it and fails the first one that matches
+ * `failOn`, which is how an insert that PostgreSQL rejects is simulated.
+ */
+class TransactionRecordingPool {
+  readonly statements: Array<{ connection: string; text: string }> = [];
+  failOn: RegExp | null = null;
+  /** Makes every stored file look referenced by a committed document_assets row. */
+  assetsReferenced = false;
+  private connections = 0;
+
+  async connect() {
+    const connection = `client-${++this.connections}`;
+    return {
+      query: (text: string) => this.run(connection, text),
+      release: () => undefined
+    };
+  }
+
+  query<T extends QueryResultRow = QueryResultRow>(text: string) {
+    return this.run("pool", text) as Promise<QueryResult<T>>;
+  }
+
+  texts(connection?: string): string[] {
+    return this.statements
+      .filter((statement) => !connection || statement.connection === connection)
+      .map((statement) => statement.text);
+  }
+
+  private async run(connection: string, text: string) {
+    this.statements.push({ connection, text });
+    if (this.failOn?.test(text)) throw new Error("simulated database failure");
+    const now = new Date(0);
+    const rows = text.includes("insert into source_items")
+      ? [
+          {
+            id: "00000000-0000-4000-8000-000000000001",
+            type: "GenericDocument",
+            title: "Atomic",
+            subtitle: null,
+            sourceOrigin: "file_upload",
+            sourceUri: null,
+            externalId: null,
+            parentSourceItemId: null,
+            contentHash: null,
+            language: "en",
+            summary: null,
+            summaryGeneratedAt: null,
+            metadata: {},
+            createdAt: now,
+            updatedAt: now
+          }
+        ]
+      : text.includes("insert into documents")
+        ? [
+            {
+              id: "00000000-0000-4000-8000-0000000000c1",
+              sourceItemId: "00000000-0000-4000-8000-000000000001",
+              title: "Atomic",
+              canonicalMarkdown: "",
+              contentHash: "hash",
+              language: "en",
+              metadata: {},
+              createdAt: now,
+              updatedAt: now
+            }
+          ]
+        : text.includes("insert into bibliographic_works")
+          ? [{ id: "00000000-0000-4000-8000-000000000002", creators: [], identifiers: {} }]
+          : text.includes("insert into bibliographic_instances")
+            ? [{ id: "00000000-0000-4000-8000-000000000003" }]
+            : text.includes("insert into document_assets")
+              ? [{ id: "00000000-0000-4000-8000-0000000000a1" }]
+              : text.includes("from document_assets where storage_base")
+                ? this.assetsReferenced
+                  ? [{ "?column?": 1 }]
+                  : []
+                : [];
+    return {
+      command: "SELECT",
+      rowCount: rows.length,
+      oid: 0,
+      fields: [],
+      rows
+    } as unknown as QueryResult;
+  }
+}
+
+describe("IngestionService atomic import persistence", () => {
+  let directory: string;
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "memora-atomic-import-"));
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const plan = resolveProcessingPlan({
+    preset: "import_only",
+    requestedStages: [],
+    scope: "source_only",
+    targetSourceItemIds: [],
+    forceRegeneration: false,
+    previousArtifactPolicy: "reuse_valid"
+  });
+
+  async function storedFiles(): Promise<string[]> {
+    const entries = await readdir(join(directory, "assets"), {
+      recursive: true,
+      withFileTypes: true
+    }).catch(() => []);
+    return entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  }
+
+  async function importMarkdown(
+    pool: TransactionRecordingPool,
+    type: "GenericDocument" | "Book",
+    createStructureDraft?: () => Promise<unknown>
+  ) {
+    const path = join(directory, "import-source.md");
+    await writeFile(path, "# Chapter One\n\nFirst chapter.\n\n# Chapter Two\n\nSecond chapter.\n");
+    const process = vi.fn(async () => ({
+      batchId: "00000000-0000-4000-8000-0000000000b1",
+      queued: [
+        {
+          sourceItemId: "00000000-0000-4000-8000-000000000001",
+          documentId: "00000000-0000-4000-8000-0000000000c1",
+          ingestionRunId: "00000000-0000-4000-8000-0000000000d1",
+          jobId: "00000000-0000-4000-8000-0000000000e1"
+        }
+      ]
+    }));
+    const service = createService(pool as unknown as PgPool, {
+      userDataPath: directory,
+      hierarchicalIngestionService: {
+        process,
+        createStructureDraft:
+          createStructureDraft ?? (async () => ({ id: "00000000-0000-4000-8000-0000000000f1" }))
+      } as unknown as HierarchicalIngestionService
+    });
+    const run = () =>
+      service.importFile(path, {
+        descriptor: SourceDescriptorSchema.parse({ type, title: "Atomic" }),
+        duplicatePolicy: "version",
+        processingPlan: plan
+      });
+    return { run, process };
+  }
+
+  it("commits the source, document and asset rows on one connection and keeps the stored file", async () => {
+    const pool = new TransactionRecordingPool();
+    const { run, process } = await importMarkdown(pool, "GenericDocument");
+
+    await expect(run()).resolves.toMatchObject({ documentId: expect.any(String) });
+
+    const transaction = pool.texts("client-1");
+    expect(transaction[0]).toBe("begin");
+    expect(transaction.at(-1)).toBe("commit");
+    for (const table of ["source_items", "documents", "document_assets"]) {
+      expect(transaction.some((text) => text.includes(`insert into ${table}`))).toBe(true);
+    }
+    expect(pool.texts("pool").some((text) => text.includes("insert into"))).toBe(false);
+    expect(await storedFiles()).toHaveLength(1);
+    expect(process).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["the document insert", /insert into documents/],
+    ["the original asset row", /insert into document_assets/]
+  ])("rolls back every row and removes the stored file when %s fails", async (_name, failOn) => {
+    const pool = new TransactionRecordingPool();
+    pool.failOn = failOn;
+    const { run, process } = await importMarkdown(pool, "GenericDocument");
+
+    await expect(run()).rejects.toThrow("simulated database failure");
+
+    const transaction = pool.texts("client-1");
+    expect(transaction.at(-1)).toBe("rollback");
+    expect(transaction).not.toContain("commit");
+    expect(pool.texts("pool").some((text) => text.includes("insert into"))).toBe(false);
+    expect(await storedFiles()).toEqual([]);
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("rolls back a hierarchical import when the structure draft fails after the asset rows", async () => {
+    const pool = new TransactionRecordingPool();
+    const { run, process } = await importMarkdown(pool, "Book", async () => {
+      throw new Error("structure draft failed");
+    });
+
+    await expect(run()).rejects.toThrow("structure draft failed");
+
+    const transaction = pool.texts("client-1");
+    expect(transaction.some((text) => text.includes("insert into bibliographic_works"))).toBe(true);
+    expect(transaction.some((text) => text.includes("insert into document_assets"))).toBe(true);
+    expect(transaction.at(-1)).toBe("rollback");
+    expect(transaction).not.toContain("commit");
+    expect(await storedFiles()).toEqual([]);
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("keeps a stored file that another asset row already references", async () => {
+    const first = new TransactionRecordingPool();
+    await (await importMarkdown(first, "GenericDocument")).run();
+    const [existing] = await storedFiles();
+    expect(existing).toBeDefined();
+
+    // The same bytes again: the store deduplicates, so the failed import did not create the file.
+    const second = new TransactionRecordingPool();
+    second.failOn = /insert into documents/;
+    await expect((await importMarkdown(second, "GenericDocument")).run()).rejects.toThrow(
+      "simulated database failure"
+    );
+
+    expect(await storedFiles()).toEqual([existing]);
+  });
+
+  it("does not remove a file it created when another asset row references it by then", async () => {
+    const pool = new TransactionRecordingPool();
+    pool.failOn = /insert into documents/;
+    // A concurrent import committed a row for the same content-addressed path in the meantime.
+    pool.assetsReferenced = true;
+    const { run } = await importMarkdown(pool, "GenericDocument");
+
+    await expect(run()).rejects.toThrow("simulated database failure");
+
+    expect(await storedFiles()).toHaveLength(1);
+  });
+
+  it("rolls back a container source whose bibliographic rows fail", async () => {
+    const pool = new TransactionRecordingPool();
+    pool.failOn = /insert into bibliographic_works/;
+    const service = createService(pool as unknown as PgPool, { userDataPath: directory });
+
+    await expect(
+      service.createContainerSource({
+        descriptor: SourceDescriptorSchema.parse({ type: "Book", title: "Atomic book" }),
+        duplicatePolicy: "ignore"
+      })
+    ).rejects.toThrow("simulated database failure");
+
+    const transaction = pool.texts("client-1");
+    expect(transaction.some((text) => text.includes("insert into source_items"))).toBe(true);
+    expect(transaction.at(-1)).toBe("rollback");
+    expect(transaction).not.toContain("commit");
+  });
+});

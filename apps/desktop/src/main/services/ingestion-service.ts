@@ -10,7 +10,12 @@ import {
   createDocumentRepository,
   createIngestionRunRepository,
   createSourceItemRepository,
-  type PgPool
+  withTransaction,
+  type DocumentRecord,
+  type PgClient,
+  type PgPool,
+  type Queryable,
+  type SourceItemRecord
 } from "@app/db";
 import {
   ConversionRouter,
@@ -57,7 +62,7 @@ import type {
 } from "../../shared/ipc.js";
 
 import { readPublicHtml, youtubeIdFromUrl, type ExternalPageFetch } from "./source-url-preview.js";
-import { AssetStorageService } from "./asset-storage-service.js";
+import { AssetStorageService, type StoredAsset } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
 import {
   HierarchicalIngestionService,
@@ -90,6 +95,19 @@ interface PreparedFileImport {
   draft: SourceDescriptorDraft;
   preparedAt: number;
   structures?: Map<string, Promise<StructureDetectionResult>>;
+}
+
+interface PersistedRows {
+  sourceItem: SourceItemRecord;
+  document: DocumentRecord;
+  structure: { id: string } | null;
+  edited: boolean;
+}
+
+/** Files written to the managed asset store before the database transaction of one import. */
+interface StagedAssetFiles {
+  original?: { fileName: string; mimeType: string; internal: StoredAsset; copy?: StoredAsset };
+  structured?: StoredAsset;
 }
 
 type FileImportProgressUpdate = Omit<FileImportProgress, "requestId">;
@@ -176,8 +194,8 @@ export class IngestionService {
     };
   }
 
-  public async editSource(input: SourceEditInput) {
-    return new SourceEditorialService(this.requirePool()).save(input);
+  public async editSource(input: SourceEditInput, transaction?: PgClient) {
+    return new SourceEditorialService(this.requirePool()).save(input, transaction);
   }
 
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {
@@ -234,13 +252,18 @@ export class IngestionService {
     if (duplicate && input.duplicatePolicy === "ignore") return containerResult(duplicate.id, true);
 
     const values = sourceValues(descriptor, "manual", null);
-    const sourceItem =
-      duplicate && input.duplicatePolicy === "update"
-        ? await sources.update(duplicate.id, values)
-        : await sources.create(values);
-    if (!sourceItem) throw new Error("Source item persistence failed.");
-    await this.persistBibliographic(sourceItem.id, descriptor);
-    await this.attachDescriptorCover(sourceItem.id, descriptor);
+    // The source row and its bibliographic rows are written together or not at all.
+    const sourceItem = await withTransaction(pool, async (transaction) => {
+      const written = createSourceItemRepository(transaction);
+      const item =
+        duplicate && input.duplicatePolicy === "update"
+          ? await written.update(duplicate.id, values)
+          : await written.create(values);
+      if (!item) throw new Error("Source item persistence failed.");
+      await this.persistBibliographic(transaction, item.id, descriptor);
+      await this.attachDescriptorCover(transaction, item.id, descriptor);
+      return item;
+    });
     return containerResult(sourceItem.id, Boolean(duplicate));
   }
 
@@ -633,76 +656,35 @@ export class IngestionService {
       return containerResult(duplicate.id, true);
     }
 
-    const previousDocument =
-      duplicate && input.duplicatePolicy === "update"
-        ? (await documents.listBySourceItem(duplicate.id))[0]
-        : undefined;
-    const editedDuplicate =
-      duplicate && input.duplicatePolicy === "update"
-        ? await this.editSource({
-            sourceItemId: duplicate.id,
-            expectedUpdatedAt: duplicate.updatedAt.toISOString(),
+    const updating = Boolean(duplicate && input.duplicatePolicy === "update");
+    // Slow file copies happen before the transaction; the files this import created are removed
+    // again when the rows cannot be committed, so a failed import leaves nothing behind.
+    const staged = await this.stageAssetFiles(input);
+    let persisted: PersistedRows;
+    try {
+      persisted = await withTransaction(pool, (transaction) =>
+        this.persistRows(
+          transaction,
+          {
             descriptor,
-            content: {
-              documentId: previousDocument?.id ?? null,
-              markdown: input.conversion.markdown
-            }
-          })
-        : null;
-    let sourceItem = editedDuplicate
-      ? await sources.findById(editedDuplicate.sourceItemId)
-      : await sources.create({
-          ...sourceValues(
-            descriptor,
-            input.sourceOrigin,
-            input.conversion.contentHash,
-            input.metadata
-          ),
-          sourceUri
-        });
-    sourceItem ??= duplicate;
-    if (!sourceItem) throw new Error("Source item persistence failed.");
-
-    const existingDocuments =
-      duplicate && input.duplicatePolicy === "update"
-        ? await documents.listBySourceItem(sourceItem.id)
-        : [];
-    const document = existingDocuments[0]
-      ? await documents.update(existingDocuments[0].id, {
-          title: descriptor.title,
-          canonicalMarkdown: input.conversion.markdown,
-          contentHash: input.conversion.contentHash,
-          language: descriptor.language,
-          metadata: { ...existingDocuments[0].metadata, ...conversionMetadata(input.conversion) }
-        })
-      : await documents.create({
-          sourceItemId: sourceItem.id,
-          title: descriptor.title,
-          canonicalMarkdown: input.conversion.markdown,
-          contentHash: input.conversion.contentHash,
-          language: descriptor.language,
-          metadata: conversionMetadata(input.conversion)
-        });
-    if (!document) throw new Error("Document persistence failed.");
-
-    await this.persistBibliographic(sourceItem.id, descriptor);
-    await this.attachDescriptorCover(sourceItem.id, descriptor, document.id);
-    if (input.originalAsset)
-      await this.persistOriginalAsset(sourceItem.id, document.id, input.originalAsset);
-    if (input.conversion.rawStructuredResult !== undefined) {
-      await this.persistStructuredAsset(
-        sourceItem.id,
-        document.id,
-        input.conversion.rawStructuredResult
+            sourceOrigin: input.sourceOrigin,
+            sourceUri,
+            conversion: input.conversion,
+            duplicate,
+            updating,
+            ...(input.metadata ? { metadata: input.metadata } : {}),
+            ...(input.structureDetection ? { structureDetection: input.structureDetection } : {})
+          },
+          staged
+        )
       );
+    } catch (error) {
+      await this.discardStagedFiles(staged);
+      throw error;
     }
+    const { sourceItem, document, structure, edited: editedDuplicate } = persisted;
 
-    if (input.structureDetection) {
-      const structure = await this.hierarchical.createStructureDraft(
-        sourceItem.id,
-        document.id,
-        input.structureDetection
-      );
+    if (structure) {
       return {
         sourceItemId: sourceItem.id,
         documentId: document.id,
@@ -736,7 +718,95 @@ export class IngestionService {
     };
   }
 
+  /**
+   * Every database write of one source import, on the caller's transaction: source item (or its
+   * editorial revision), document, bibliographic rows, cover, asset rows and the structure draft.
+   * Queueing the processing plan is a separate step after the commit.
+   */
+  private async persistRows(
+    transaction: PgClient,
+    input: {
+      descriptor: SourceDescriptor;
+      sourceOrigin: string;
+      metadata?: Record<string, unknown>;
+      conversion: MarkdownConversionResult;
+      structureDetection?: Awaited<ReturnType<typeof detectDocumentStructure>>;
+      sourceUri: string | null;
+      duplicate: SourceItemRecord | null;
+      updating: boolean;
+    },
+    staged: StagedAssetFiles
+  ): Promise<PersistedRows> {
+    const { descriptor, duplicate } = input;
+    const sources = createSourceItemRepository(transaction);
+    const documents = createDocumentRepository(transaction);
+    const previousDocument =
+      duplicate && input.updating ? (await documents.listBySourceItem(duplicate.id))[0] : undefined;
+    const edited =
+      duplicate && input.updating
+        ? await this.editSource(
+            {
+              sourceItemId: duplicate.id,
+              expectedUpdatedAt: duplicate.updatedAt.toISOString(),
+              descriptor,
+              content: {
+                documentId: previousDocument?.id ?? null,
+                markdown: input.conversion.markdown
+              }
+            },
+            transaction
+          )
+        : null;
+    let sourceItem = edited
+      ? await sources.findById(edited.sourceItemId)
+      : await sources.create({
+          ...sourceValues(
+            descriptor,
+            input.sourceOrigin,
+            input.conversion.contentHash,
+            input.metadata
+          ),
+          sourceUri: input.sourceUri
+        });
+    sourceItem ??= duplicate;
+    if (!sourceItem) throw new Error("Source item persistence failed.");
+
+    const existingDocuments =
+      duplicate && input.updating ? await documents.listBySourceItem(sourceItem.id) : [];
+    const document = existingDocuments[0]
+      ? await documents.update(existingDocuments[0].id, {
+          title: descriptor.title,
+          canonicalMarkdown: input.conversion.markdown,
+          contentHash: input.conversion.contentHash,
+          language: descriptor.language,
+          metadata: { ...existingDocuments[0].metadata, ...conversionMetadata(input.conversion) }
+        })
+      : await documents.create({
+          sourceItemId: sourceItem.id,
+          title: descriptor.title,
+          canonicalMarkdown: input.conversion.markdown,
+          contentHash: input.conversion.contentHash,
+          language: descriptor.language,
+          metadata: conversionMetadata(input.conversion)
+        });
+    if (!document) throw new Error("Document persistence failed.");
+
+    await this.persistBibliographic(transaction, sourceItem.id, descriptor);
+    await this.attachDescriptorCover(transaction, sourceItem.id, descriptor, document.id);
+    await this.recordAssetRows(transaction, sourceItem.id, document.id, staged);
+    const structure = input.structureDetection
+      ? await this.hierarchical.createStructureDraft(
+          sourceItem.id,
+          document.id,
+          input.structureDetection,
+          transaction
+        )
+      : null;
+    return { sourceItem, document, structure, edited: Boolean(edited) };
+  }
+
   private async persistBibliographic(
+    db: Queryable,
     sourceItemId: string,
     descriptor: SourceDescriptor
   ): Promise<void> {
@@ -747,12 +817,12 @@ export class IngestionService {
     ) {
       return;
     }
-    const repository = createBibliographicRepository(this.requirePool());
+    const repository = createBibliographicRepository(db);
     if (
       (descriptor.type === "BookChapter" || descriptor.type === "StandaloneArticle") &&
       descriptor.parentSourceItemId
     ) {
-      const parent = await this.requirePool().query<{ workId: string; instanceId: string | null }>(
+      const parent = await db.query<{ workId: string; instanceId: string | null }>(
         `select work_id as "workId", instance_id as "instanceId"
          from source_item_bibliographic_links where source_item_id = $1 limit 1`,
         [descriptor.parentSourceItemId]
@@ -771,14 +841,14 @@ export class IngestionService {
     }
 
     const identifiers = descriptorIdentifierMap(descriptor);
-    const existing = await this.requirePool().query<{ workId: string; instanceId: string | null }>(
+    const existing = await db.query<{ workId: string; instanceId: string | null }>(
       `select work_id as "workId", instance_id as "instanceId"
        from source_item_bibliographic_links where source_item_id = $1 limit 1`,
       [sourceItemId]
     );
     const existingLink = existing.rows[0];
     if (existingLink) {
-      await this.requirePool().query(
+      await db.query(
         `update bibliographic_works set type = $2, title = $3, subtitle = $4, language = $5,
            creators = $6::jsonb, identifiers = $7::jsonb,
            metadata = metadata || $8::jsonb, updated_at = now() where id = $1`,
@@ -794,7 +864,7 @@ export class IngestionService {
         ]
       );
       if (existingLink.instanceId) {
-        await this.updateBibliographicInstance(existingLink.instanceId, descriptor);
+        await this.updateBibliographicInstance(db, existingLink.instanceId, descriptor);
       }
       return;
     }
@@ -859,6 +929,7 @@ export class IngestionService {
   }
 
   private async updateBibliographicInstance(
+    db: Queryable,
     instanceId: string,
     descriptor: SourceDescriptor
   ): Promise<void> {
@@ -869,7 +940,7 @@ export class IngestionService {
       descriptor.type !== "StandaloneArticle"
     )
       return;
-    await this.requirePool().query(
+    await db.query(
       `update bibliographic_instances set type = $2, edition = $3, volume = $4, issue = $5,
          publication_date = $6, publisher = $7, isbn = $8, issn = $9, doi = $10,
          creators = $11::jsonb, page_count = $12, series = $13, updated_at = now() where id = $1`,
@@ -898,90 +969,126 @@ export class IngestionService {
   }
 
   private async attachDescriptorCover(
+    db: Queryable,
     sourceItemId: string,
     descriptor: SourceDescriptor,
     documentId?: string
   ): Promise<void> {
     const assetId = descriptor.cover?.assetId;
     if (!assetId) return;
-    await createDocumentAssetRepository(this.requirePool()).update(assetId, {
+    await createDocumentAssetRepository(db).update(assetId, {
       sourceItemId,
       ...(documentId ? { documentId } : {}),
       role: "cover"
     });
   }
 
-  private async persistOriginalAsset(
+  /** Copies the original file (and the optional upload copy) and the Docling JSON into the stores. */
+  private async stageAssetFiles(input: {
+    originalAsset?: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string };
+    conversion: MarkdownConversionResult;
+  }): Promise<StagedAssetFiles> {
+    const staged: StagedAssetFiles = {};
+    try {
+      const original = input.originalAsset;
+      if (original) {
+        const source = {
+          ...(original.data ? { data: original.data } : {}),
+          ...(original.sourcePath ? { sourcePath: original.sourcePath } : {}),
+          originalFileName: original.fileName
+        };
+        const internal = await this.assetStorage.store({
+          ...source,
+          basePath: join(this.options.userDataPath, "assets"),
+          storageBase: "app_internal"
+        });
+        staged.original = { fileName: original.fileName, mimeType: original.mimeType, internal };
+        const storageSettings = await this.options.getStorageSettings();
+        if (storageSettings.uploadCopiesEnabled && storageSettings.uploadCopiesFolderPath) {
+          staged.original.copy = await this.assetStorage.store({
+            ...source,
+            basePath: storageSettings.uploadCopiesFolderPath,
+            storageBase: "uploaded_files"
+          });
+        }
+      }
+      if (input.conversion.rawStructuredResult !== undefined) {
+        staged.structured = await this.assetStorage.store({
+          data: new TextEncoder().encode(JSON.stringify(input.conversion.rawStructuredResult)),
+          originalFileName: "docling.json",
+          basePath: join(this.options.userDataPath, "assets"),
+          storageBase: "app_internal"
+        });
+      }
+      return staged;
+    } catch (error) {
+      await this.discardStagedFiles(staged);
+      throw error;
+    }
+  }
+
+  private async recordAssetRows(
+    db: Queryable,
     sourceItemId: string,
     documentId: string,
-    input: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string }
+    staged: StagedAssetFiles
   ): Promise<void> {
-    const internal = await this.assetStorage.store({
-      ...(input.data ? { data: input.data } : {}),
-      ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
-      originalFileName: input.fileName,
-      basePath: join(this.options.userDataPath, "assets"),
-      storageBase: "app_internal"
-    });
-    const assets = createDocumentAssetRepository(this.requirePool());
-    await assets.create({
-      sourceItemId,
-      documentId,
-      originalFileName: input.fileName,
-      sha256: internal.sha256,
-      mimeType: input.mimeType,
-      sizeBytes: internal.sizeBytes,
-      storageBase: internal.storageBase,
-      relativePath: internal.relativePath,
-      role: "original"
-    });
-    const storageSettings = await this.options.getStorageSettings();
-    if (storageSettings.uploadCopiesEnabled && storageSettings.uploadCopiesFolderPath) {
-      const copy = await this.assetStorage.store({
-        ...(input.data ? { data: input.data } : {}),
-        ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
-        originalFileName: input.fileName,
-        basePath: storageSettings.uploadCopiesFolderPath,
-        storageBase: "uploaded_files"
-      });
+    const assets = createDocumentAssetRepository(db);
+    const { original } = staged;
+    if (original) {
+      for (const stored of [original.internal, ...(original.copy ? [original.copy] : [])]) {
+        await assets.create({
+          sourceItemId,
+          documentId,
+          originalFileName: original.fileName,
+          sha256: stored.sha256,
+          mimeType: original.mimeType,
+          sizeBytes: stored.sizeBytes,
+          storageBase: stored.storageBase,
+          relativePath: stored.relativePath,
+          role: "original"
+        });
+      }
+    }
+    if (staged.structured) {
       await assets.create({
         sourceItemId,
         documentId,
-        originalFileName: input.fileName,
-        sha256: copy.sha256,
-        mimeType: input.mimeType,
-        sizeBytes: copy.sizeBytes,
-        storageBase: copy.storageBase,
-        relativePath: copy.relativePath,
-        role: "original"
+        originalFileName: `${documentId}.docling.json`,
+        sha256: staged.structured.sha256,
+        mimeType: "application/json",
+        sizeBytes: staged.structured.sizeBytes,
+        storageBase: staged.structured.storageBase,
+        relativePath: staged.structured.relativePath,
+        role: "derived",
+        metadata: { engine: "docling" }
       });
     }
   }
 
-  private async persistStructuredAsset(
-    sourceItemId: string,
-    documentId: string,
-    raw: unknown
-  ): Promise<void> {
-    const data = new TextEncoder().encode(JSON.stringify(raw));
-    const stored = await this.assetStorage.store({
-      data,
-      originalFileName: `${documentId}.docling.json`,
-      basePath: join(this.options.userDataPath, "assets"),
-      storageBase: "app_internal"
-    });
-    await createDocumentAssetRepository(this.requirePool()).create({
-      sourceItemId,
-      documentId,
-      originalFileName: `${documentId}.docling.json`,
-      sha256: stored.sha256,
-      mimeType: "application/json",
-      sizeBytes: stored.sizeBytes,
-      storageBase: stored.storageBase,
-      relativePath: stored.relativePath,
-      role: "derived",
-      metadata: { engine: "docling" }
-    });
+  /**
+   * Removes the files a failed import created. A file another asset row already references, or one
+   * that existed before this import (deduplicated), is never touched; when that cannot be checked
+   * the file stays, because an orphan file is harmless and a deleted original is not.
+   */
+  private async discardStagedFiles(staged: StagedAssetFiles): Promise<void> {
+    const created = [staged.original?.internal, staged.original?.copy, staged.structured].filter(
+      (stored): stored is StoredAsset => stored !== undefined && !stored.deduplicated
+    );
+    const pool = this.options.getPool();
+    for (const stored of created) {
+      try {
+        const referenced = await pool?.query(
+          `select 1 from document_assets where storage_base = $1 and relative_path = $2 limit 1`,
+          [stored.storageBase, stored.relativePath]
+        );
+        if (referenced && referenced.rows.length === 0) {
+          await rm(stored.absolutePath, { force: true });
+        }
+      } catch {
+        // Keep the file: see above.
+      }
+    }
   }
 
   private requirePool(): PgPool {

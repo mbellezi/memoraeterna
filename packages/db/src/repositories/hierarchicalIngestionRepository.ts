@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { sanitizeStoredValue } from "@app/domain";
 import type { PoolClient, QueryResultRow } from "pg";
 
-import type { PgPool } from "../client.js";
+import type { PgClient, PgPool } from "../client.js";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
-import type { JsonObject, SourceItemType } from "./types.js";
+import type { JsonObject, Queryable, SourceItemType } from "./types.js";
 
 export interface DivisionPersistenceInput {
   id: string;
@@ -148,20 +148,44 @@ const batchColumns = `id, trigger, requested_plan as "requestedPlan", effective_
   reingestion_policy as "reingestionPolicy", status, progress, total_items as "totalItems",
   completed_items as "completedItems", failed_items as "failedItems", created_at as "createdAt", updated_at as "updatedAt"`;
 
+async function loadStructure(db: Queryable, id: string): Promise<DocumentStructureRecord | null> {
+  const result = await db.query<StructureRow>(
+    `select ${structureColumns} from document_structures where id = $1`,
+    [id]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  const divisions = await db.query<DivisionRow>(
+    `select ${divisionColumns} from document_divisions division
+     left join document_divisions parent on parent.id = division.parent_division_id
+     where division.structure_id = $1 order by division.position asc`,
+    [id]
+  );
+  return mapStructure(row, divisions.rows.map(mapDivision));
+}
+
+/**
+ * Methods that take an optional `transaction` join the caller's transaction: they neither begin,
+ * commit nor roll back, and read back through the same connection. Without one, each method keeps
+ * its own transaction.
+ */
 export function createHierarchicalIngestionRepository(pool: PgPool) {
   return {
-    async createDraft(input: {
-      rootSourceItemId: string;
-      rootDocumentId: string;
-      format: string;
-      detectorVersion: string;
-      overallConfidence: number;
-      rawEvidence: JsonObject;
-      divisions: DivisionPersistenceInput[];
-    }): Promise<DocumentStructureRecord> {
-      const client = await pool.connect();
+    async createDraft(
+      input: {
+        rootSourceItemId: string;
+        rootDocumentId: string;
+        format: string;
+        detectorVersion: string;
+        overallConfidence: number;
+        rawEvidence: JsonObject;
+        divisions: DivisionPersistenceInput[];
+      },
+      transaction?: PgClient
+    ): Promise<DocumentStructureRecord> {
+      const client = transaction ?? (await pool.connect());
       try {
-        await client.query("begin");
+        if (!transaction) await client.query("begin");
         const previousResult = await client.query<{ id: string }>(
           `select id from document_structures
            where root_source_item_id = $1 and status in ('confirmed', 'materialized')
@@ -210,30 +234,20 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
             [structure.id, previousStructureId]
           );
         }
-        await client.query("commit");
-        return (await this.findById(structure.id))!;
+        if (!transaction) await client.query("commit");
+        return (await (transaction
+          ? loadStructure(transaction, structure.id)
+          : this.findById(structure.id)))!;
       } catch (error) {
-        await client.query("rollback");
+        if (!transaction) await client.query("rollback");
         throw error;
       } finally {
-        client.release();
+        if (!transaction) client.release();
       }
     },
 
     async findById(id: string): Promise<DocumentStructureRecord | null> {
-      const result = await pool.query<StructureRow>(
-        `select ${structureColumns} from document_structures where id = $1`,
-        [id]
-      );
-      const row = result.rows[0];
-      if (!row) return null;
-      const divisions = await pool.query<DivisionRow>(
-        `select ${divisionColumns} from document_divisions division
-         left join document_divisions parent on parent.id = division.parent_division_id
-         where division.structure_id = $1 order by division.position asc`,
-        [id]
-      );
-      return mapStructure(row, divisions.rows.map(mapDivision));
+      return loadStructure(pool, id);
     },
 
     async findCurrentByRoot(rootSourceItemId: string): Promise<DocumentStructureRecord | null> {
@@ -248,17 +262,18 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
 
     async saveDraft(
       id: string,
-      divisions: DivisionPersistenceInput[]
+      divisions: DivisionPersistenceInput[],
+      transaction?: PgClient
     ): Promise<DocumentStructureRecord | null> {
-      const client = await pool.connect();
+      const client = transaction ?? (await pool.connect());
       try {
-        await client.query("begin");
+        if (!transaction) await client.query("begin");
         const status = await client.query<{ status: string }>(
           "select status from document_structures where id = $1 for update",
           [id]
         );
         if (!status.rows[0] || !["draft", "in_review"].includes(status.rows[0].status)) {
-          await client.query("rollback");
+          if (!transaction) await client.query("rollback");
           return null;
         }
         await client.query("delete from document_divisions where structure_id = $1", [id]);
@@ -267,23 +282,27 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           "update document_structures set status = 'in_review', updated_at = now() where id = $1",
           [id]
         );
-        await client.query("commit");
-        return this.findById(id);
+        if (!transaction) await client.query("commit");
+        return transaction ? loadStructure(transaction, id) : this.findById(id);
       } catch (error) {
-        await client.query("rollback");
+        if (!transaction) await client.query("rollback");
         throw error;
       } finally {
-        client.release();
+        if (!transaction) client.release();
       }
     },
 
-    async confirm(id: string, confirmedBy = "local-user"): Promise<DocumentStructureRecord | null> {
-      await pool.query(
+    async confirm(
+      id: string,
+      confirmedBy = "local-user",
+      transaction?: PgClient
+    ): Promise<DocumentStructureRecord | null> {
+      await (transaction ?? pool).query(
         `update document_structures set status = 'confirmed', confirmed_at = now(), confirmed_by = $2, updated_at = now()
          where id = $1 and status in ('draft', 'in_review', 'confirmed')`,
         [id, confirmedBy]
       );
-      return this.findById(id);
+      return transaction ? loadStructure(transaction, id) : this.findById(id);
     },
 
     async markMaterialized(id: string): Promise<void> {
@@ -294,11 +313,12 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
     },
 
     async materializeStructure(
-      id: string
+      id: string,
+      transaction?: PgClient
     ): Promise<Array<{ sourceItemId: string; documentId: string; divisionId: string }>> {
-      const client = await pool.connect();
+      const client = transaction ?? (await pool.connect());
       try {
-        await client.query("begin");
+        if (!transaction) await client.query("begin");
         const structureResult = await client.query<{
           rootSourceItemId: string;
           rootDocumentId: string;
@@ -469,13 +489,13 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           "update document_structures set status = 'materialized', updated_at = now() where id = $1",
           [id]
         );
-        await client.query("commit");
+        if (!transaction) await client.query("commit");
         return materialized;
       } catch (error) {
-        await client.query("rollback");
+        if (!transaction) await client.query("rollback");
         throw error;
       } finally {
-        client.release();
+        if (!transaction) client.release();
       }
     },
 

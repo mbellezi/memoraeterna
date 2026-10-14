@@ -23,6 +23,8 @@ import {
   createIngestionRunRepository,
   createJobRepository,
   createSourceItemRepository,
+  withTransaction,
+  type PgClient,
   type PgPool
 } from "@app/db";
 import { sha256, type StructureDetectionResult } from "@app/conversion";
@@ -48,20 +50,25 @@ export interface HierarchicalIngestionServiceOptions {
 export class HierarchicalIngestionService {
   public constructor(private readonly options: HierarchicalIngestionServiceOptions) {}
 
+  /** With `transaction` the draft joins the caller's transaction (the import persists atomically). */
   public async createStructureDraft(
     rootSourceItemId: string,
     rootDocumentId: string,
-    detection: StructureDetectionResult
+    detection: StructureDetectionResult,
+    transaction?: PgClient
   ) {
-    return createHierarchicalIngestionRepository(this.requirePool()).createDraft({
-      rootSourceItemId,
-      rootDocumentId,
-      format: detection.format,
-      detectorVersion: detection.detectorVersion,
-      overallConfidence: detection.overallConfidence,
-      rawEvidence: { warnings: detection.warnings, metadata: detection.metadata },
-      divisions: detection.divisions
-    });
+    return createHierarchicalIngestionRepository(this.requirePool()).createDraft(
+      {
+        rootSourceItemId,
+        rootDocumentId,
+        format: detection.format,
+        detectorVersion: detection.detectorVersion,
+        overallConfidence: detection.overallConfidence,
+        rawEvidence: { warnings: detection.warnings, metadata: detection.metadata },
+        divisions: detection.divisions
+      },
+      transaction
+    );
   }
 
   public async getStructure(structureId: string) {
@@ -103,10 +110,14 @@ export class HierarchicalIngestionService {
       throw error;
     }
     const repository = createHierarchicalIngestionRepository(this.requirePool());
-    const saved = await repository.saveDraft(input.structureId, divisions);
-    if (!saved) throw new Error("structure_not_editable");
-    await repository.confirm(input.structureId);
-    const materialized = await repository.materializeStructure(input.structureId);
+    // Saving the reviewed divisions, confirming and materializing the children are one unit: a
+    // failure leaves the structure in review (retryable) instead of confirmed without children.
+    const materialized = await withTransaction(this.requirePool(), async (transaction) => {
+      const saved = await repository.saveDraft(input.structureId, divisions, transaction);
+      if (!saved) throw new Error("structure_not_editable");
+      await repository.confirm(input.structureId, undefined, transaction);
+      return repository.materializeStructure(input.structureId, transaction);
+    });
     const structure = await repository.findById(input.structureId);
     if (!structure) throw new Error("structure_not_found");
     const plan = resolveProcessingPlan(input.plan);

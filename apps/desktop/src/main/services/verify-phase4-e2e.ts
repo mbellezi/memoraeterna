@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,12 @@ import {
   type PgPool
 } from "@app/db";
 import { sha256 } from "@app/conversion";
-import { processingPresetStages } from "@app/domain";
+import {
+  DocumentDivisionCandidateSchema,
+  ProcessingPlanRequestSchema,
+  SourceDescriptorSchema,
+  processingPresetStages
+} from "@app/domain";
 import {
   integrationContractVersion,
   integrationHandshakeResponseSchema,
@@ -33,6 +38,7 @@ import {
   type ObsidianEditOperation
 } from "@app/integration-contracts";
 
+import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService } from "./ingestion-service.js";
 import { IntegrationGateway } from "./integration-gateway.js";
 import { JobSupervisor } from "./job-supervisor.js";
@@ -186,6 +192,211 @@ try {
   ) {
     throw new Error("A capture containing U+0000 was not stored without it.");
   }
+
+  // A source import persists in one transaction: when any step fails (a trigger rejects the insert
+  // in this throwaway database), no source, document, asset, structure, bibliographic row or stored
+  // file remains, and the structure confirmation leaves the draft retryable instead of half done.
+  const hierarchy = new HierarchicalIngestionService({ getPool: () => pool ?? null });
+  const importOnly = ProcessingPlanRequestSchema.parse({
+    preset: "import_only",
+    requestedStages: []
+  });
+  const atomicPath = join(workDir, "atomic-source.md");
+  await writeFile(
+    atomicPath,
+    "# Chapter One\n\nFirst chapter of the atomic import.\n\n# Chapter Two\n\nSecond chapter of the atomic import.\n"
+  );
+  const count = async (table: string) =>
+    Number(
+      (await pool!.query<{ n: number }>(`select count(*)::int as n from ${table}`)).rows[0]?.n
+    );
+  const persistedRows = async () =>
+    JSON.stringify(
+      await Promise.all(
+        [
+          "source_items",
+          "documents",
+          "document_assets",
+          "document_structures",
+          "document_divisions",
+          "bibliographic_works",
+          "bibliographic_instances",
+          "source_item_bibliographic_links"
+        ].map(count)
+      )
+    );
+  const storedFiles = async () =>
+    (
+      await readdir(join(workDir, "assets"), { recursive: true, withFileTypes: true }).catch(
+        () => []
+      )
+    )
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  await pool.query(
+    `create function phase4_reject() returns trigger language plpgsql as $$
+     begin raise exception 'simulated % failure', tg_argv[0]; end $$`
+  );
+  const importAtomicBook = () =>
+    ingestion.importFile(atomicPath, {
+      descriptor: SourceDescriptorSchema.parse({ type: "Book", title: "Phase 4 atomic book" }),
+      duplicatePolicy: "version",
+      processingPlan: importOnly
+    });
+  const rowsBefore = await persistedRows();
+  const filesBefore = await storedFiles();
+  for (const [step, table, condition] of [
+    ["document", "documents", "new.title = 'Phase 4 atomic book'"],
+    ["asset", "document_assets", "new.original_file_name = 'atomic-source.md'"],
+    ["structure", "document_structures", "true"]
+  ] as const) {
+    await pool.query(
+      `create trigger phase4_reject before insert on ${table}
+       for each row when (${condition}) execute function phase4_reject('${step}')`
+    );
+    const failure = await importAtomicBook().then(
+      () => null,
+      (error: unknown) => error
+    );
+    await pool.query(`drop trigger phase4_reject on ${table}`);
+    if (!(failure instanceof Error) || !failure.message.includes(`simulated ${step} failure`)) {
+      throw new Error(`The ${step} insert failure did not fail the import: ${String(failure)}`);
+    }
+    if (
+      (await persistedRows()) !== rowsBefore ||
+      (await storedFiles()).join() !== filesBefore.join()
+    ) {
+      throw new Error(`A failed import at the ${step} step left rows or files behind.`);
+    }
+  }
+  const atomicImport = await importAtomicBook();
+  if (
+    !atomicImport.documentId ||
+    !atomicImport.structureId ||
+    !atomicImport.requiresStructureReview ||
+    (await storedFiles()).length !== filesBefore.length + 1 ||
+    (await count("document_assets")) !== 1 ||
+    (await count("document_structures")) !== 1
+  ) {
+    throw new Error("The import that follows the failures did not persist completely.");
+  }
+
+  // The confirmation saves the reviewed divisions, confirms and materializes the children together.
+  const draft = await hierarchy.getStructure(atomicImport.structureId);
+  if (!draft || draft.divisions.length !== 2) throw new Error("The structure draft is missing.");
+  const reviewed = draft.divisions.map((division) =>
+    DocumentDivisionCandidateSchema.parse({
+      id: division.id,
+      parentId: division.parentId,
+      kind: division.kind,
+      title: division.title,
+      level: division.level,
+      position: division.position,
+      startSelector: division.startSelector,
+      endSelector: division.endSelector,
+      ...(division.markdownStart === undefined ? {} : { markdownStart: division.markdownStart }),
+      ...(division.markdownEnd === undefined ? {} : { markdownEnd: division.markdownEnd }),
+      confidence: division.confidence,
+      evidence: division.evidence,
+      reviewStatus: division.reviewStatus,
+      isProcessable: division.isProcessable,
+      metadata: division.metadata
+    })
+  );
+  const sourcesBeforeConfirmation = await count("source_items");
+  await pool.query(
+    `create trigger phase4_reject before insert on documents
+     for each row when (new.metadata ? 'derivedFromDocumentId') execute function phase4_reject('materialization')`
+  );
+  const confirmFailure = await hierarchy
+    .confirmStructure({
+      structureId: atomicImport.structureId,
+      divisions: reviewed,
+      plan: importOnly
+    })
+    .then(
+      () => null,
+      (error: unknown) => error
+    );
+  await pool.query(`drop trigger phase4_reject on documents`);
+  const afterFailedConfirmation = await createDocumentRepository(pool).listBySourceItem(
+    atomicImport.sourceItemId
+  );
+  const draftAfterFailure = await hierarchy.getStructure(atomicImport.structureId);
+  if (
+    !(confirmFailure instanceof Error) ||
+    !confirmFailure.message.includes("simulated materialization failure") ||
+    draftAfterFailure?.status !== "in_review" ||
+    (await count("source_items")) !== sourcesBeforeConfirmation ||
+    afterFailedConfirmation.length !== 1
+  ) {
+    throw new Error("A failed confirmation did not leave the structure in review.");
+  }
+  const confirmed = await hierarchy.confirmStructure({
+    structureId: atomicImport.structureId,
+    divisions: reviewed,
+    plan: importOnly
+  });
+  if (
+    confirmed.structure.status !== "materialized" ||
+    confirmed.materialized.length !== 2 ||
+    (await count("source_items")) !== sourcesBeforeConfirmation + 2
+  ) {
+    throw new Error("The retried confirmation did not materialize the chapters.");
+  }
+
+  // Updating a duplicate is atomic too: the editorial revision and the refreshed document are one
+  // transaction, so a failure after the revision was written (the document refresh is rejected
+  // here) leaves the previous version current and untouched.
+  const noteDescriptor = SourceDescriptorSchema.parse({
+    type: "PersonalNote",
+    title: "Phase 4 atomic note"
+  });
+  const saveNote = (content: string) =>
+    ingestion.createManual({
+      descriptor: noteDescriptor,
+      content,
+      duplicatePolicy: "update",
+      processingPlan: importOnly
+    });
+  const firstNote = await saveNote("First version of the atomic note.");
+  const secondNote = await saveNote("Second version of the atomic note.");
+  const documentHistory = () => createDocumentRepository(pool!).listHistory(firstNote.sourceItemId);
+  const noteBefore = await createSourceItemRepository(pool).findById(firstNote.sourceItemId);
+  const historyBefore = (await documentHistory()).length;
+  if (
+    secondNote.sourceItemId !== firstNote.sourceItemId ||
+    !secondNote.duplicate ||
+    historyBefore !== 2
+  ) {
+    throw new Error("Updating a duplicate did not create a revision of the same source.");
+  }
+  await pool.query(
+    `create trigger phase4_reject before update on documents
+     for each row when (new.canonical_markdown like 'Third version%')
+     execute function phase4_reject('update')`
+  );
+  const updateFailure = await saveNote("Third version of the atomic note.").then(
+    () => null,
+    (error: unknown) => error
+  );
+  await pool.query(`drop trigger phase4_reject on documents`);
+  const noteAfter = await createSourceItemRepository(pool).findById(firstNote.sourceItemId);
+  const currentNote = (
+    await createDocumentRepository(pool).listBySourceItem(firstNote.sourceItemId)
+  )[0];
+  if (
+    !(updateFailure instanceof Error) ||
+    !updateFailure.message.includes("simulated update failure") ||
+    (await documentHistory()).length !== historyBefore ||
+    noteAfter?.updatedAt.getTime() !== noteBefore?.updatedAt.getTime() ||
+    currentNote?.id !== secondNote.documentId ||
+    !currentNote.canonicalMarkdown.includes("Second version")
+  ) {
+    throw new Error("A failed update changed the source or its current document.");
+  }
+  await pool.query(`drop function phase4_reject()`);
 
   // Captures are import-only: no generative stage is planned for a non-interactive capture.
   const runs = createIngestionRunRepository(pool);

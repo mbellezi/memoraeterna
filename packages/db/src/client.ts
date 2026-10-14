@@ -33,3 +33,26 @@ export function createDbClient(pool: PgPool) {
 export async function closePgPool(pool: PgPool): Promise<void> {
   await pool.end();
 }
+
+/**
+ * Runs `work` in one PostgreSQL transaction on a dedicated connection: commit when it resolves,
+ * rollback when it throws (the original error is rethrown), and always release the connection.
+ * Callers keep slow work (model inference, file copies) outside `work`.
+ */
+export async function withTransaction<T>(
+  pool: PgPool,
+  work: (client: PgClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const result = await work(client);
+    await client.query("commit");
+    return result;
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}

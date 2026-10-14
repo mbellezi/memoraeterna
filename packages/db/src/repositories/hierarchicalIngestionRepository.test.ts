@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 
 import type { PgPool } from "../client.js";
@@ -155,5 +156,70 @@ describe("hierarchical ingestion repository", () => {
       text.includes("insert into source_item_bibliographic_links")
     );
     expect(bibliographicLink?.[1]?.[3]).toBe("10-20");
+  });
+});
+
+describe("hierarchical ingestion repository inside a caller transaction", () => {
+  function setup() {
+    const statements: string[] = [];
+    const transaction = {
+      query: vi.fn(async (text: string) => {
+        statements.push(text.trim().split(/\s+/).slice(0, 3).join(" "));
+        if (text.includes("select status from document_structures")) {
+          return { rows: [{ status: "materialized" }] };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn()
+    };
+    const pool = { query: vi.fn(), connect: vi.fn() };
+    return {
+      statements,
+      transaction: transaction as unknown as PoolClient,
+      pool: pool as unknown as PgPool,
+      poolMocks: pool,
+      release: transaction.release
+    };
+  }
+
+  it("leaves begin, commit and rollback to the caller and never takes another connection", async () => {
+    const { statements, transaction, pool, poolMocks, release } = setup();
+    const repository = createHierarchicalIngestionRepository(pool);
+
+    // A structure that can no longer be edited is reported to the caller, which decides to roll back.
+    await expect(repository.saveDraft("structure-1", [], transaction)).resolves.toBeNull();
+    await expect(repository.materializeStructure("structure-1", transaction)).rejects.toThrow(
+      "document_structure_not_confirmed"
+    );
+
+    expect(statements).not.toContain("begin");
+    expect(statements).not.toContain("commit");
+    expect(statements).not.toContain("rollback");
+    expect(poolMocks.connect).not.toHaveBeenCalled();
+    expect(poolMocks.query).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+  });
+
+  it("keeps its own transaction when none is given", async () => {
+    const statements: string[] = [];
+    const client = {
+      query: vi.fn(async (text: string) => {
+        statements.push(text.trim().split(/\s+/)[0] ?? "");
+        return { rows: [] };
+      }),
+      release: vi.fn()
+    };
+    const pool = {
+      query: vi.fn(),
+      connect: vi.fn().mockResolvedValue(client)
+    } as unknown as PgPool;
+
+    await expect(
+      createHierarchicalIngestionRepository(pool).materializeStructure("structure-1")
+    ).rejects.toThrow("document_structure_not_confirmed");
+
+    expect(statements[0]).toBe("begin");
+    expect(statements.at(-1)).toBe("rollback");
+    expect(client.release).toHaveBeenCalledOnce();
   });
 });
