@@ -154,6 +154,124 @@ npx tsx scripts/golden/compare.ts .cache/golden/runs/<record> .cache/golden/runs
 Exit 0: both runs completed with identical content digests (chunks, notes, note and source relations,
 current summaries, entities), stage outcomes and AI calls and tokens per task.
 
+## 5. Matching-quality fixture (the F1a exit criterion)
+
+The ten public roots above show that the pipeline runs; they carry no human labels, so they cannot say
+whether matching links the right notes. The matching fixture is the expanded DEV matching benchmark
+(`docs/matching-benchmark.md`) as a second golden manifest: 60 synthetic pt-BR roots (11 books with 22
+chapters, 49 single articles; 82 records), 40 tuning and 20 held-out roots, with the human labels per root
+pair. Held-out: 28 expected and 35 forbidden pairs; tuning: 26 expected and 25 forbidden. The F1a exit
+asks for at least 27 of the 28 expected held-out pairs, 0 of the 35 forbidden ones, and matching time per
+note at most a third of the v6 baseline (10.4 s, `docs/kpi-golden.md`).
+
+The texts and labels are versioned in `scripts/fixtures/matching-benchmark.json` (synthetic, no third-party
+content). Everything derived from it is generated and git-ignored: the build is offline and deterministic,
+its pins would only drift if committed, and the generated manifest repeats the fixture's titles. Labels,
+partitions and expected ideas never enter a source file.
+
+### Build
+
+```sh
+npx tsx scripts/golden/build-matching-fixture.ts           # write the files, the manifest and the mapping
+npx tsx scripts/golden/build-matching-fixture.ts --verify  # offline: do the files on disk match the fixture?
+```
+
+- `.cache/golden/sources/mf-<id>.md`: 71 Markdown files, one per document or chapter, with the fixture
+  text as is. The runner reads sources only from `.cache/golden/sources/<key>.<ext>`, hence the `mf-`
+  prefix instead of a folder of their own.
+- `.cache/golden/matching-fixture/manifest.json`: manifest `golden-matching-fixture` (books are `Book`
+  containers of `BookChapter` files, singles are `StandaloneArticle`), SHA-256 and size computed from the
+  bytes just written. The runner's schema requires an HTTPS URL; the placeholder (`*.invalid`) is never
+  fetched.
+- `.cache/golden/matching-fixture/mapping.json`: benchmark ids, manifest keys, titles, partitions, the
+  expected, forbidden and ambiguous root pairs, the nonconceptual sources and `subsets` (manifest keys for
+  `MEMORA_GOLDEN_ONLY`: the 40 tuning roots, and the 48 roots a held-out score needs, which are the 20
+  held-out roots plus the tuning roots they are paired with).
+
+Changing the fixture file changes the pins, which invalidates recorded cassettes; rebuild only on purpose.
+
+### Record and replay
+
+Same flow as sections 2 and 3, with the fixture manifest and its own cassette folder:
+
+```sh
+MEMORA_AI_CASSETTE=record MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/matching-fixture \
+MEMORA_GOLDEN_RUN=.cache/golden/matching-fixture/manifest.json MEMORA_GOLDEN_MAX_TOKENS=<n> \
+MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
+```
+
+- The run processes the full plan like the small library (summaries, notes, knowledge graph, matching), so
+  size the token cap with a dry run on a few roots: `MEMORA_GOLDEN_ONLY=mf-p01,mf-p02,mf-p03`.
+- The reset guard (`MEMORA_GOLDEN_RESET=1`) proves a library against one manifest at a time. A library that
+  holds the ten small-library roots is refused by this manifest and the other way round: back up and reset
+  from Settings, or use a scratch profile (`MEMORA_USER_DATA_DIR`) per fixture.
+- Leave `MEMORA_GOLDEN_EXIT=1` out and evaluate while the app is still open (the evaluator needs the DEV
+  PostgreSQL running), or evaluate the pre-run backup of the next run, which holds this run's library
+  (`npm run db:restore -- --from <backup> --name <slug> --keep-running`).
+
+### Evaluate
+
+```sh
+npx tsx scripts/golden/evaluate-matching.ts --db <dev-connection.json | scratch-<slug>.json> \
+  --label "v7 record" --out .cache/golden/matching-v7.md --json .cache/golden/matching-v7.json [--check]
+```
+
+Read-only: the session is `default_transaction_read_only` and the reads run in one read-only, repeatable
+read transaction; only a loopback PostgreSQL is accepted. The report holds counts and root ids, never note
+text or a password.
+
+- Roots are found by title (the runner imports them with the fixture titles; two roots with one title are
+  reported and not scored). A library built by the benchmark controller is found by id instead:
+  `--ids .cache/matching-benchmark/manifest.json`.
+- A note belongs to its source and a chapter to its book, so note relations and source relations are both
+  aggregated to root pairs. A root pair counts as linked when at least one relation of the layer joins it;
+  statuses `accepted` and `pending_review` count (`--statuses` changes that), `rejected` does not. Rejected,
+  archived and superseded notes are not part of the library; relations inside one root are ignored.
+- Per partition and layer (note relations, source relations, either): relations, linked root pairs,
+  expected pairs linked and the ones missing, forbidden pairs linked, unlabelled pairs (bridges, not errors
+  by themselves), pairs involving a designated nonconceptual source.
+- Cost of the `reranking` task (`--task` for another one), from `ai_task_runs` and, to tell note from source
+  matching and to attribute a call to its note, the monitoring record of each call: calls per note, seconds
+  per note, input, output and reasoning tokens per call, per library and per partition, source matching per
+  matched root, the prompt contract of the calls, failed and replayed calls. Seconds per note divide the
+  seconds of all note-matching calls by the notes of the library, the way the v6 baseline does (10.4 s = 176
+  calls over 160 notes). `--since` and `--until` window the calls (a library matched in several passes adds
+  the passes); then read the partition rows, because the library row still divides by every note.
+- Exit criterion: held-out expected and forbidden pairs on the note-relation layer, and seconds per note
+  against `--baseline-seconds-per-note` (default 10.4) divided by three. A measure that cannot be decided is
+  reported as such: missing roots, or note-matching calls answered from a cassette, whose durations are
+  near zero. Time is therefore only judged on a record run; quality is the same in a replay. `--check`
+  exits 0 when everything passes, 1 when a measure fails, 2 when none failed but one is undecided.
+
+### Checked against the old pipeline
+
+The evaluator reproduces the archived result (`docs/archive/matching-benchmark-report.md`) on the newest
+benchmark backup, restored into a scratch cluster:
+
+```sh
+npm run db:restore -- --from .cache/matching-benchmark/memora-backup-2026-09-09T01-46-23-785Z --name bench-eval --keep-running
+npx tsx scripts/golden/evaluate-matching.ts --db .cache/f0/scratch-bench-eval.json \
+  --ids .cache/matching-benchmark/manifest.json
+npm run db:restore -- --remove --name bench-eval
+```
+
+| Measure | Archived report | Evaluator |
+| --- | --- | --- |
+| Held-out expected pairs, note relations | 27/28 (P03/V01 missing) | 27/28 (P03/V01 missing) |
+| Held-out expected pairs, source relations | 27/28 (P09/V03 missing) | 27/28 (P09/V03 missing) |
+| Held-out expected pairs, either layer | all 28 | 28/28 |
+| Held-out forbidden pairs, both layers | 0/35 | 0/35 |
+| Held-out note relations | 57, of which 3 inside one source | 54 between roots |
+| Held-out source relations | 35, of which 4 unlabelled bridges | 35, of which 4 pairs unlabelled |
+| Tuning expected pairs, notes / sources (economy, floor 0.85) | 23/26, 26/26 | 23/26, 26/26 |
+| Source relations in the restored library | 97 (62 tuning, 35 held-out) | 62 tuning, 35 held-out |
+
+The same figures come out by title and by `--ids`. Windowed to the benchmark's validation phase
+(`--since 2026-09-09T01:02:08Z --until 2026-09-09T01:18:16Z`, from its manifest) the evaluator finds 30
+note-matching calls, one per held-out note, at 11.9 s per note (the 11.9 s of `docs/plan.md`; contract
+`atomic-note-matching-v5`), and 121 source-matching calls, as the report says. Without a window the
+library reads 46.8 s per note, because the benchmark matched it in four passes.
+
 ## After a run
 
 The runner leaves the legacy wiki automation paused on purpose (that code is frozen until it is
