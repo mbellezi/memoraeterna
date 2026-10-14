@@ -5,7 +5,9 @@
 //
 // Recorded values live in quality-ratchet.json. `--update` only ever lowers a
 // value (or records a metric that has no value yet); it never raises one. A
-// metric that grew must be fixed in the code, not recorded.
+// metric that grew must be fixed in the code, not recorded. A metric with a
+// fixed `budget` (rule lines) is not recorded: it may move freely up to the budget,
+// so an essential rule can be added without forcing an unrelated deletion.
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -94,6 +96,7 @@ const metrics = [
   {
     name: "ruleLines",
     description: "total lines of RULES.md and rules/**/*.md",
+    budget: 800,
     appliesTo: (file) => file === "RULES.md" || (file.startsWith("rules/") && file.endsWith(".md")),
     count: countLines
   }
@@ -123,6 +126,7 @@ if (existsSync(ratchetPath)) {
   recorded = JSON.parse(readFileSync(ratchetPath, "utf8"));
   const known = new Set(metrics.map((metric) => metric.name));
   const stray = Object.keys(recorded).filter((name) => !known.has(name));
+  for (const metric of metrics) if (metric.budget !== undefined) delete recorded[metric.name];
   if (stray.length > 0) {
     console.error(`quality-ratchet.json has unknown metrics: ${stray.join(", ")}`);
     process.exit(2);
@@ -138,6 +142,17 @@ let changed = false;
 const lines = [];
 
 for (const metric of measured) {
+  if (metric.budget !== undefined) {
+    if (metric.total > metric.budget) {
+      failed = true;
+      lines.push(
+        `  FAIL      ${metric.name}: ${metric.total} > budget ${metric.budget}  (${metric.description})`
+      );
+    } else {
+      lines.push(`  ok        ${metric.name}: ${metric.total} (budget ${metric.budget})`);
+    }
+    continue;
+  }
   const limit = recorded[metric.name];
   if (limit === undefined) {
     if (update) {
@@ -176,7 +191,11 @@ for (const metric of measured) {
 console.log(lines.join("\n"));
 
 if (update && changed) {
-  const ordered = Object.fromEntries(metrics.map((metric) => [metric.name, next[metric.name]]));
+  const ordered = Object.fromEntries(
+    metrics
+      .filter((metric) => metric.budget === undefined)
+      .map((metric) => [metric.name, next[metric.name]])
+  );
   writeFileSync(ratchetPath, `${JSON.stringify(ordered, null, 2)}\n`);
   console.log("quality-ratchet.json updated.");
 }

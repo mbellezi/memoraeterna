@@ -280,7 +280,7 @@ or revised on measured data, not facts.
       = typecheck + vitest + prettier --check + eslint + ratchet, building on `scripts/check-format.mjs` and
       the `lint` alias.
 - [x] `scripts/quality-ratchet.mjs` (raw palette classes, arbitrary text sizes, window dialogs, renderer
-      setInterval, product lines over 200 characters, rule lines; numbers only go down).
+      setInterval, product lines over 200 characters: numbers only go down; rule lines: fixed 800-line budget).
 - [x] Wall-clock instrumentation (migration 0043: stage attempts/attempt start/end, AI `queue_ms`/`attempt`)
       and `npm run kpi`; baseline in `docs/kpi-baseline.md` (owner library: 13 sources, 0 notes).
 - [ ] First measurement of the v6 matching contract (wave 3, DEV app).
