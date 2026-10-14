@@ -381,6 +381,9 @@ rating ≥80% of 30 topics coherent and well named; undo restores exact placemen
       runtimes, `embedMany`, hot-path caches, residency); remove `ai-execution-queue.ts`; update
       `rules/ai.md`.
 - [ ] Full workload classes with Local / Hybrid / Cloud presets; map legacy routes.
+- [ ] Directed note relations: today `atomicNoteRelationRepository.upsert` sorts the two endpoints by UUID, so
+      the direction of directed types (extends, supports, depends_on) is arbitrary (found by the golden replay);
+      store canonical pair + explicit direction.
 - [ ] Decide → type (batched per source) → explain later; isotonic calibration and bands; streaming
       `relation.explain` with cache; NOT_RELATED veto.
 - [ ] Incremental per-source matching; source aggregation and discovery pairs; SQL fixes (search_tsv,

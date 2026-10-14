@@ -1439,8 +1439,10 @@ async function contentDigests(pool: Query, ids: string[]) {
         left join source_items p on p.id = s.parent_source_item_id
         where n.created_from_source_item_id = any($1::uuid[])`)
     ),
+    // Note relations are stored as unordered pairs (endpoints sorted by UUID), so the
+    // pair is digested in title order; directed storage arrives with Relations v2 (F3).
     noteRelations: contentDigest(
-      await rows(`select sn.title || '|' || tn.title || '|' ||
+      await rows(`select least(sn.title, tn.title) || '|' || greatest(sn.title, tn.title) || '|' ||
           coalesce(r.relation_type::text, '') || '|' || coalesce(r.status::text, '') as line
         from atomic_note_relations r
         join atomic_notes sn on sn.id = r.source_atomic_note_id
