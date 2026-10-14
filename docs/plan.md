@@ -42,6 +42,11 @@ concurrency and automatic correction.
     fallback when there is no MLX build or no Apple Silicon. Approved extra downloads under `.cache/`: MLX
     weights of Qwen/Qwen3-Reranker-0.6B and Qwen3-Embedding-0.6B (safetensors or mlx-community conversions,
     Apache-2.0), with pinned revisions and SHA-256.
+13. **Generated atomic notes are active at birth** with an AI-provenance badge; review is optional and never
+    a gate (replaces `pending_review` as the default). Human-edited notes stay protected.
+14. **Claims are no longer extracted** (2026-10-14): knowledge-graph extraction returns only entities and
+    relations. Claims cost ~25% of graph output and were never shown; the `claims` table stays read-only.
+    "What sources say about X" is served by atomic notes linked to entities.
 
 ## 3. The five swaps
 
