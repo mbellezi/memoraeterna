@@ -8,12 +8,28 @@ import {
   type AiTaskRequest
 } from "./contracts.js";
 
+/** Wraps adapters as they are registered (the DEV-only AI cassette uses it). */
+export type AiAdapterDecorator = (adapter: AiModelAdapter) => AiModelAdapter;
+
+let adapterDecorator: AiAdapterDecorator | null = null;
+
+/**
+ * Installs a process-wide decorator applied to every adapter registered afterwards, so that every
+ * routed AI execution passes through it; null removes it. Only DEV tooling installs one.
+ */
+export function setAiAdapterDecorator(decorator: AiAdapterDecorator | null): void {
+  adapterDecorator = decorator;
+}
+
 export class AiModelRegistry {
   private readonly adapters = new Map<string, AiModelAdapter>();
 
   public register(adapter: AiModelAdapter): void {
     const descriptor = adapter.describe();
-    this.adapters.set(`${descriptor.providerId}:${descriptor.modelId}`, adapter);
+    this.adapters.set(
+      `${descriptor.providerId}:${descriptor.modelId}`,
+      adapterDecorator ? adapterDecorator(adapter) : adapter
+    );
   }
 
   public unregister(providerId: string, modelId: string): void {

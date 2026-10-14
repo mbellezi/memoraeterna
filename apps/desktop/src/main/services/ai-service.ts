@@ -24,7 +24,8 @@ import {
   type AiModelAdapter,
   type AiProgressEvent,
   type AiTaskRequest,
-  type AiTaskResult
+  type AiTaskResult,
+  aiCassetteReplayedUsageKey
 } from "@app/ai";
 import {
   createAiConfigRepository,
@@ -1023,7 +1024,11 @@ export class AiService {
         modelId: result.modelId,
         runtime: selection.localModelId ? selection.runtime : result.runtime,
         capabilitiesUsed: requiredCapabilities,
-        adapter: selection.localModelId ? localAdapterName(selection.runtime) : result.providerId,
+        adapter: result.tokenUsage?.[aiCassetteReplayedUsageKey]
+          ? "cassette-replay"
+          : selection.localModelId
+            ? localAdapterName(selection.runtime)
+            : result.providerId,
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,

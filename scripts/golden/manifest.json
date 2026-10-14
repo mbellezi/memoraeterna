@@ -1,0 +1,234 @@
+{
+  "format": "memora-golden-manifest",
+  "version": 1,
+  "name": "golden-small",
+  "description": "Small public reference library for deterministic pipeline replays: memory and forgetting (encyclopedia, research, textbook, social memory), madness in fiction (pt-BR and en) and unrelated controls. Files stay in .cache/golden/sources; the repository stores only this manifest.",
+  "capturedAt": "2026-10-14T00:00:00.000Z",
+  "sources": [
+    {
+      "key": "wikipedia-en-forgetting-curve",
+      "kind": "document",
+      "import": "webCapture",
+      "title": "Forgetting curve",
+      "language": "en",
+      "license": "CC-BY-SA-4.0",
+      "attribution": "Wikipedia contributors, \"Forgetting curve\", English Wikipedia, revision 1369227085 (2026-08-13)",
+      "format": "html",
+      "url": "https://en.wikipedia.org/w/index.php?title=Forgetting_curve&oldid=1369227085&action=render",
+      "pageUrl": "https://en.wikipedia.org/w/index.php?title=Forgetting_curve&oldid=1369227085",
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "key": "wikipedia-pt-curva-do-esquecimento",
+      "kind": "document",
+      "import": "webCapture",
+      "title": "Curva do esquecimento",
+      "language": "pt-BR",
+      "license": "CC-BY-SA-4.0",
+      "attribution": "Colaboradores da Wikipédia, \"Curva do esquecimento\", Wikipédia em português, revisão 68615636 (2024-09-11)",
+      "format": "html",
+      "url": "https://pt.wikipedia.org/w/index.php?title=Curva_do_esquecimento&oldid=68615636&action=render",
+      "pageUrl": "https://pt.wikipedia.org/w/index.php?title=Curva_do_esquecimento&oldid=68615636",
+      "sha256": null,
+      "bytes": null
+    },
+    {
+      "key": "plos-one-murre-dros-2015",
+      "kind": "document",
+      "import": "file",
+      "title": "Replication and Analysis of Ebbinghaus' Forgetting Curve",
+      "language": "en",
+      "license": "CC-BY-4.0",
+      "attribution": "Murre, J. M. J. and Dros, J. (2015). PLOS ONE 10(7): e0120644. doi:10.1371/journal.pone.0120644",
+      "format": "pdf",
+      "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0120644&type=printable",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "AcademicPaper",
+        "creators": [
+          { "name": "Jaap M. J. Murre", "role": "author" },
+          { "name": "Joeri Dros", "role": "author" }
+        ],
+        "doi": "10.1371/journal.pone.0120644",
+        "venue": "PLOS ONE",
+        "year": 2015,
+        "publicationDate": "2015-07-06"
+      }
+    },
+    {
+      "key": "transinformacao-esquecimento-destruicao-2025",
+      "kind": "document",
+      "import": "file",
+      "title": "O esquecimento e a destruição na construção social da memória",
+      "language": "pt-BR",
+      "license": "CC-BY-4.0",
+      "attribution": "Ferreira, L. and Juvêncio, C. H. (2025). Transinformação 37: e2510623. doi:10.1590/2318-0889202537e2510623",
+      "format": "pdf",
+      "url": "https://periodicos.puc-campinas.edu.br/transinfo/article/download/10623/12072/52705",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [
+          { "name": "Livia Ferreira", "role": "author" },
+          { "name": "Carlos Henrique Juvêncio", "role": "author" }
+        ],
+        "doi": "10.1590/2318-0889202537e2510623",
+        "periodicalTitle": "Transinformação",
+        "volume": "37",
+        "publicationDate": "2025"
+      }
+    },
+    {
+      "key": "wikibooks-en-memory-and-language",
+      "kind": "document",
+      "import": "file",
+      "title": "Memory and Language",
+      "language": "en",
+      "license": "CC-BY-SA-4.0",
+      "attribution": "Wikibooks contributors, \"Cognitive Psychology and Cognitive Neuroscience/Memory and Language\", revision 4371851 (2024-02-18)",
+      "format": "html",
+      "url": "https://en.wikibooks.org/w/index.php?title=Cognitive_Psychology_and_Cognitive_Neuroscience/Memory_and_Language&oldid=4371851&action=render",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [{ "name": "Wikibooks contributors", "role": "author" }],
+        "periodicalTitle": "Cognitive Psychology and Cognitive Neuroscience"
+      }
+    },
+    {
+      "key": "machado-o-alienista",
+      "kind": "container",
+      "title": "O Alienista",
+      "language": "pt-BR",
+      "license": "public-domain",
+      "attribution": "Machado de Assis, \"O Alienista\", Papeis Avulsos (Lombaerts & C., 1882); chapters I-III from the Wikisource transcription",
+      "descriptor": {
+        "type": "Book",
+        "creators": [{ "name": "Machado de Assis", "role": "author" }],
+        "publicationDate": "1882",
+        "publisher": "Lombaerts & C."
+      },
+      "children": [
+        {
+          "key": "machado-o-alienista-01",
+          "kind": "document",
+          "import": "file",
+          "title": "I. De como Itaguaí ganhou uma casa de Orates",
+          "language": "pt-BR",
+          "license": "public-domain",
+          "attribution": "Machado de Assis, \"O Alienista\", chapter I; Wikisource revision 515296",
+          "format": "html",
+          "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/I&oldid=515296&action=render",
+          "sha256": null,
+          "bytes": null,
+          "descriptor": { "type": "BookChapter", "chapterNumber": "I" }
+        },
+        {
+          "key": "machado-o-alienista-02",
+          "kind": "document",
+          "import": "file",
+          "title": "II. Torrentes de loucos",
+          "language": "pt-BR",
+          "license": "public-domain",
+          "attribution": "Machado de Assis, \"O Alienista\", chapter II; Wikisource revision 515300",
+          "format": "html",
+          "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/II&oldid=515300&action=render",
+          "sha256": null,
+          "bytes": null,
+          "descriptor": { "type": "BookChapter", "chapterNumber": "II" }
+        },
+        {
+          "key": "machado-o-alienista-03",
+          "kind": "document",
+          "import": "file",
+          "title": "III. Deus sabe o que faz",
+          "language": "pt-BR",
+          "license": "public-domain",
+          "attribution": "Machado de Assis, \"O Alienista\", chapter III; Wikisource revision 515301",
+          "format": "html",
+          "url": "https://pt.wikisource.org/w/index.php?title=O_Alienista/III&oldid=515301&action=render",
+          "sha256": null,
+          "bytes": null,
+          "descriptor": { "type": "BookChapter", "chapterNumber": "III" }
+        }
+      ]
+    },
+    {
+      "key": "machado-a-cartomante",
+      "kind": "document",
+      "import": "file",
+      "title": "A Cartomante",
+      "language": "pt-BR",
+      "license": "public-domain",
+      "attribution": "Machado de Assis, \"A Cartomante\" (1884), Várias Histórias (Laemmert & C., 1896); Wikisource revision 518402",
+      "format": "html",
+      "url": "https://pt.wikisource.org/w/index.php?title=A_Cartomante&oldid=518402&action=render",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [{ "name": "Machado de Assis", "role": "author" }],
+        "publicationDate": "1884"
+      }
+    },
+    {
+      "key": "poe-the-tell-tale-heart",
+      "kind": "document",
+      "import": "file",
+      "title": "The Tell-Tale Heart",
+      "language": "en",
+      "license": "public-domain",
+      "attribution": "Edgar Allan Poe, \"The Tell-Tale Heart\" (1843), The Works of the Late Edgar Allan Poe (1850), vol. 1; Wikisource revision 14833580",
+      "format": "html",
+      "url": "https://en.wikisource.org/w/index.php?title=The_Works_of_the_Late_Edgar_Allan_Poe_%281850%29/Volume_1/The_Tell-Tale_Heart&oldid=14833580&action=render",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [{ "name": "Edgar Allan Poe", "role": "author" }],
+        "publicationDate": "1843"
+      }
+    },
+    {
+      "key": "o-henry-the-gift-of-the-magi",
+      "kind": "document",
+      "import": "file",
+      "title": "The Gift of the Magi",
+      "language": "en",
+      "license": "public-domain",
+      "attribution": "O. Henry, \"The Gift of the Magi\" (1905); Project Gutenberg eBook #7256, plain text without the Project Gutenberg header and license footer",
+      "format": "text",
+      "url": "https://www.gutenberg.org/cache/epub/7256/pg7256.txt",
+      "sha256": null,
+      "bytes": null,
+      "trim": { "start": "*** START OF", "end": "*** END OF" },
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [{ "name": "O. Henry", "role": "author" }],
+        "publicationDate": "1905"
+      }
+    },
+    {
+      "key": "turing-way-fair-principles",
+      "kind": "document",
+      "import": "file",
+      "title": "FAIR Principles",
+      "language": "en",
+      "license": "CC-BY-4.0",
+      "attribution": "The Turing Way Community, The Turing Way handbook, reproducible-research/rdm/rdm-fair.md at commit 84ab5c4f7d9e649d9e2d3fb0a1a04aa144d1295a",
+      "format": "markdown",
+      "url": "https://raw.githubusercontent.com/the-turing-way/the-turing-way/84ab5c4f7d9e649d9e2d3fb0a1a04aa144d1295a/book/website/reproducible-research/rdm/rdm-fair.md",
+      "sha256": null,
+      "bytes": null,
+      "descriptor": {
+        "type": "StandaloneArticle",
+        "creators": [{ "name": "The Turing Way Community", "role": "author" }],
+        "periodicalTitle": "The Turing Way"
+      }
+    }
+  ]
+}

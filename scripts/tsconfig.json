@@ -1,0 +1,38 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "types": ["node"]
+  },
+  "include": [
+    "./*.ts",
+    "./db/**/*.ts",
+    "./fixtures/**/*.ts",
+    "./kpi/**/*.ts",
+    "./spikes/*.ts",
+    "./spikes/lib/*.ts"
+  ],
+  "exclude": [
+    "./verify-ai-context.ts",
+    "./verify-automatic-admission.ts",
+    "./verify-automatic-wiki.ts",
+    "./verify-automatic-wiki-a3.ts",
+    "./verify-automatic-wiki-a4.ts",
+    "./verify-automatic-wiki-a5.ts",
+    "./verify-automatic-wiki-a7.ts",
+    "./verify-automatic-wiki-a8.ts",
+    "./verify-knowledge-automation.ts",
+    "./verify-maintenance.ts",
+    "./verify-obsidian-layout.ts",
+    "./verify-obsidian-wiki.ts",
+    "./verify-organization.ts",
+    "./verify-second-brain-m3.ts",
+    "./verify-wiki-hierarchy.ts",
+    "./verify-wiki-recomposition.ts",
+    "./fixtures/obsidian-hierarchy.ts",
+    "./fixtures/wiki-hierarchy-reading.ts"
+  ]
+}

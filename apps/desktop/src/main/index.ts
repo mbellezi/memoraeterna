@@ -30,6 +30,7 @@ import {
   webContents
 } from "electron";
 import { createTranslator } from "@app/i18n";
+import { createAiCassetteFromEnvironment, setAiAdapterDecorator, type AiCassette } from "@app/ai";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
 import { SettingsService } from "./services/settings-service";
@@ -208,6 +209,8 @@ void app.whenReady().then(() => {
     desktopLocale: app.getLocale()
   });
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+  const aiCassette = installDevelopmentAiCassette(workspaceRoot);
+  if (aiCassette === undefined) return;
   const monitoringService = new MonitoringService(
     () => databaseService?.getPool() ?? null,
     () => settingsService!.getApp()
@@ -455,6 +458,41 @@ void app.whenReady().then(() => {
       if (status.state === "ready") {
         await initializeKnowledgeDefaults();
         await monitoringService.recover();
+        // DEV-only golden run: prepared before the job supervisor starts so that the legacy wiki
+        // automation is paused before it can admit any work.
+        const goldenRun =
+          !app.isPackaged && process.env.MEMORA_GOLDEN_RUN
+            ? await import("./services/golden-runner.js")
+                .then(({ prepareGoldenRun }) =>
+                  prepareGoldenRun({
+                    env: process.env,
+                    isPackaged: app.isPackaged,
+                    userDataPath: app.getPath("userData"),
+                    workspaceRoot,
+                    pool: databaseService!.getPool()!,
+                    cassette: aiCassette,
+                    backup: backupService!,
+                    ingestion: ingestionService!,
+                    hierarchy: hierarchicalIngestionService!,
+                    jobs: jobSupervisor!,
+                    organization: organizationService,
+                    maintenance: maintenanceService,
+                    settings: settingsService!,
+                    quit: () => app.quit()
+                  })
+                )
+                .catch((error: unknown) => {
+                  console.error(
+                    "GOLDEN_RUN refused:",
+                    error instanceof Error ? error.message : String(error)
+                  );
+                  return null;
+                })
+            : undefined;
+        if (goldenRun === null) {
+          app.quit();
+          return;
+        }
         await Promise.all([
           localModelService?.start(),
           jobSupervisor?.start(),
@@ -508,6 +546,7 @@ void app.whenReady().then(() => {
               )
             );
         }
+        void goldenRun?.start();
         const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
         if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
       }
@@ -615,6 +654,29 @@ function showMainWindow(): void {
 
   activeMainWindow.show();
   activeMainWindow.focus();
+}
+
+/**
+ * DEV-only AI cassette (MEMORA_AI_CASSETTE=record|replay, MEMORA_AI_CASSETTE_DIR). A DEV
+ * misconfiguration stops the app (undefined); a packaged build refuses cassettes and runs normally.
+ */
+function installDevelopmentAiCassette(workspaceRoot: string): AiCassette | null | undefined {
+  try {
+    const cassette = createAiCassetteFromEnvironment(process.env, {
+      isPackaged: app.isPackaged,
+      baseDirectory: workspaceRoot
+    });
+    if (cassette) {
+      setAiAdapterDecorator((adapter) => cassette.wrap(adapter));
+      console.info(`AI cassette: ${cassette.mode} ${cassette.directory}`);
+    }
+    return cassette;
+  } catch (error) {
+    console.error(`AI cassette refused: ${error instanceof Error ? error.message : String(error)}`);
+    if (app.isPackaged) return null;
+    app.exit(1);
+    return undefined;
+  }
 }
 
 function getResourcesPath(): string {

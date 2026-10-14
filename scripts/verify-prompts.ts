@@ -87,14 +87,16 @@ try {
       canonicalMarkdown: text,
       contentHash: "fixture"
     }),
-    chunkId = randomUUID();
+    chunkId = randomUUID(),
+    sourceSpanId = randomUUID();
   await createChunkRepository(pool).replaceDocumentChunks(document.id, source.id, [
     {
       id: chunkId,
+      sourceSpanId,
       chunkIndex: 0,
       content: text,
       contentHash: "fixture",
-      span: { id: randomUUID(), startOffset: 0, endOffset: text.length }
+      span: { id: sourceSpanId, startOffset: 0, endOffset: text.length }
     }
   ]);
   const jobs = createJobRepository(pool),

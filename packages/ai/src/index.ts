@@ -10,3 +10,4 @@ export * from "./local-model-catalog.js";
 export * from "./local-runtime-protocol.js";
 export * from "./local-model-downloader.js";
 export * from "./local-adapters.js";
+export * from "./cassette.js";
