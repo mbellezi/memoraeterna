@@ -202,9 +202,10 @@ MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
 
 - The run processes the full plan like the small library (summaries, notes, knowledge graph, matching), so
   size the token cap with a dry run on a few roots: `MEMORA_GOLDEN_ONLY=mf-p01,mf-p02,mf-p03`.
-- The reset guard (`MEMORA_GOLDEN_RESET=1`) proves a library against one manifest at a time. A library that
-  holds the ten small-library roots is refused by this manifest and the other way round: back up and reset
-  from Settings, or use a scratch profile (`MEMORA_USER_DATA_DIR`) per fixture.
+- The reset guard (`MEMORA_GOLDEN_RESET=1`) proves a library against the run's manifest. To switch a
+  profile between golden libraries, name the other manifests in `MEMORA_GOLDEN_RESET_ALSO` (comma-separated
+  paths, only with `MEMORA_GOLDEN_RESET=1`); a source golden in any of them may be removed, anything else
+  still stops the run. Example: `MEMORA_GOLDEN_RESET_ALSO=scripts/golden/manifest.json`.
 - Leave `MEMORA_GOLDEN_EXIT=1` out and evaluate while the app is still open (the evaluator needs the DEV
   PostgreSQL running), or evaluate the pre-run backup of the next run, which holds this run's library
   (`npm run db:restore -- --from <backup> --name <slug> --keep-running`).

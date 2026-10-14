@@ -9,6 +9,7 @@ import type { AiCassetteStats } from "@app/ai";
 
 import {
   classifyGoldenLibrary,
+  mergeGoldenManifests,
   contentDigest,
   distribution,
   goldenManifestFiles,
@@ -303,6 +304,12 @@ describe("golden run environment", () => {
     expect(read("1")).toMatchObject({ resetLibrary: true });
     expect(() => read("true")).toThrow("MEMORA_GOLDEN_RESET must be 1");
     expect(() => read("1", { MEMORA_GOLDEN_ALLOW_NONEMPTY: "1" })).toThrow("contradict");
+    expect(read("1", { MEMORA_GOLDEN_RESET_ALSO: " a.json, ,b/c.json" })).toMatchObject({
+      resetAlsoManifestPaths: ["/repo/a.json", "/repo/b/c.json"]
+    });
+    expect(() => read(undefined, { MEMORA_GOLDEN_RESET_ALSO: "a.json" })).toThrow(
+      "MEMORA_GOLDEN_RESET_ALSO only applies"
+    );
     // Not requested without a golden run, but never honored in a packaged build either.
     expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RESET: "1" }, options)).toBeNull();
     expect(() =>
@@ -331,6 +338,7 @@ describe("golden run environment", () => {
       manifestPath: "/repo/scripts/golden/manifest.json",
       allowNonEmpty: true,
       resetLibrary: false,
+      resetAlsoManifestPaths: [],
       exitWhenDone: true,
       maxLiveTokens: 500000,
       only: null
@@ -668,6 +676,19 @@ describe("golden library classification", () => {
     ]);
     expect(result.golden.map((source) => source.id)).toEqual(["paper-1"]);
     expect(result.foreign).toEqual([]);
+  });
+
+  it("treats sources of any merged golden manifest as golden, and nothing else", () => {
+    const full = testManifest();
+    const withoutWeb = {
+      sources: full.sources.filter(
+        (source) => !(source.kind === "document" && source.import === "webCapture")
+      )
+    };
+    expect(classifyGoldenLibrary(withoutWeb, [goldenWeb()]).foreign).toHaveLength(1);
+    const merged = mergeGoldenManifests([withoutWeb, full]);
+    expect(classifyGoldenLibrary(merged, [goldenWeb(), goldenPaper()]).foreign).toEqual([]);
+    expect(classifyGoldenLibrary(merged, [foreignSource("mine")]).foreign).toHaveLength(1);
   });
 
   it("proves web captures by the capture ID derived from the manifest key", () => {

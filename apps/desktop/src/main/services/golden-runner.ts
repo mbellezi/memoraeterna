@@ -285,6 +285,11 @@ export interface GoldenRunEnvironment {
   allowNonEmpty: boolean;
   /** MEMORA_GOLDEN_RESET=1: reset a library that holds only golden sources before the run. */
   resetLibrary: boolean;
+  /**
+   * MEMORA_GOLDEN_RESET_ALSO: other golden manifests whose sources the reset may also remove, so one
+   * profile can switch between golden libraries (for example the small library and the matching fixture).
+   */
+  resetAlsoManifestPaths: string[];
   exitWhenDone: boolean;
   /** Cap on live remote tokens: required when recording, where it also stops new provider calls. */
   maxLiveTokens: number | null;
@@ -320,6 +325,12 @@ export function readGoldenRunEnvironment(
   if (rawReset && rawReset !== "0" && rawReset !== "1")
     throw new Error("MEMORA_GOLDEN_RESET must be 1 (or unset)");
   const resetLibrary = rawReset === "1";
+  const resetAlso = (env.MEMORA_GOLDEN_RESET_ALSO ?? "")
+    .split(",")
+    .map((path) => path.trim())
+    .filter(Boolean);
+  if (resetAlso.length && !resetLibrary)
+    throw new Error("MEMORA_GOLDEN_RESET_ALSO only applies with MEMORA_GOLDEN_RESET=1");
   if (resetLibrary && env.MEMORA_GOLDEN_ALLOW_NONEMPTY === "1")
     throw new Error(
       "MEMORA_GOLDEN_RESET and MEMORA_GOLDEN_ALLOW_NONEMPTY contradict each other: the reset " +
@@ -329,6 +340,7 @@ export function readGoldenRunEnvironment(
     manifestPath: resolve(options.workspaceRoot, manifest),
     allowNonEmpty: env.MEMORA_GOLDEN_ALLOW_NONEMPTY === "1",
     resetLibrary,
+    resetAlsoManifestPaths: resetAlso.map((path) => resolve(options.workspaceRoot, path)),
     exitWhenDone: env.MEMORA_GOLDEN_EXIT === "1",
     maxLiveTokens: limit,
     only: only.length ? only : null
@@ -451,8 +463,12 @@ export async function prepareGoldenRun(
   let reset: GoldenReset | undefined;
   if (environment.resetLibrary) {
     // The guard reads the whole manifest, not the MEMORA_GOLDEN_ONLY subset: a library left by a
-    // full run may be reset before a dry run of two sources.
-    const plan = await planGoldenReset(options, fullManifest);
+    // full run may be reset before a dry run of two sources. MEMORA_GOLDEN_RESET_ALSO adds the
+    // sources of other golden manifests.
+    const others = [];
+    for (const path of environment.resetAlsoManifestPaths)
+      others.push(goldenManifestSchema.parse(JSON.parse(await readFile(path, "utf8"))));
+    const plan = await planGoldenReset(options, mergeGoldenManifests([fullManifest, ...others]));
     if (plan.roots === 0) {
       reset = { performed: false, removedSources: 0, backupPath: null };
       log(options, "reset", { ...reset, roots: 0 });
@@ -588,6 +604,13 @@ export interface GoldenForeignSource {
  *
  * A source that cannot be traced to a root (a parent cycle) is foreign too.
  */
+/** The sources of several golden manifests, for the reset guard: golden in any of them is golden. */
+export function mergeGoldenManifests(
+  manifests: ReadonlyArray<Pick<GoldenManifest, "sources">>
+): Pick<GoldenManifest, "sources"> {
+  return { sources: manifests.flatMap((manifest) => manifest.sources) };
+}
+
 export function classifyGoldenLibrary(
   manifest: Pick<GoldenManifest, "sources">,
   sources: readonly GoldenLibrarySource[]
@@ -711,7 +734,10 @@ async function readLibrarySources(pool: Query): Promise<GoldenLibrarySource[]> {
  * MEMORA_GOLDEN_RESET=1, first half: lists the library and refuses unless every root source is
  * golden. Changes nothing. `roots` is 0 for an empty library, which needs no reset.
  */
-async function planGoldenReset(options: GoldenRunOptions, manifest: GoldenManifest) {
+async function planGoldenReset(
+  options: GoldenRunOptions,
+  manifest: Pick<GoldenManifest, "sources">
+) {
   if (!options.libraryReset)
     throw new Error("MEMORA_GOLDEN_RESET needs the library reset service; nothing was changed");
   const { golden, foreign } = classifyGoldenLibrary(
