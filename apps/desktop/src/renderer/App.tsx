@@ -218,6 +218,10 @@ export function App({
     setLibraryTarget({ ...target, token: libraryTargetToken.current });
     setActiveView("library");
   }
+  // The Library keeps the target it opened; dropping ours stops a later open from reusing it.
+  const consumeLibraryTarget = useStableCallback((token: number) => {
+    setLibraryTarget((current) => (current?.token === token ? null : current));
+  });
   // The graph renderer is expensive to rebuild: these keep one identity across App renders.
   const openGraphSource = useStableCallback((sourceItemId: string) =>
     openLibrarySource({ sourceItemId, origin: "knowledgeGraph" })
@@ -725,6 +729,7 @@ export function App({
               metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
               externalTarget={libraryTarget}
               onNavigate={scrollActiveViewToTop}
+              onTargetConsumed={consumeLibraryTarget}
               onExitToWiki={() => {
                 setLibraryTarget(null);
                 setActiveView("wiki");

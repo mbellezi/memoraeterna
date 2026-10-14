@@ -62,6 +62,17 @@ export function interactiveProcessingPlan(writerRouteReady: boolean | null): Pro
   return defaultProcessingPlan(defaultInteractivePreset(writerRouteReady === true));
 }
 
+/**
+ * The plan an interactive import uses. An explicit choice always wins, even when route readiness
+ * arrives afterwards; until one is made the default follows readiness.
+ */
+export function resolveInteractivePlan(
+  chosen: ProcessingPlanRequest | null,
+  writerRouteReady: boolean | null
+): ProcessingPlanRequest {
+  return chosen ?? interactiveProcessingPlan(writerRouteReady);
+}
+
 export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
     ...(plan.integrateWiki ? { integrateWiki: plan.integrateWiki } : {}),

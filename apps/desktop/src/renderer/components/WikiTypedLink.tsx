@@ -4,11 +4,17 @@ import type { WikiLinkedTargetSchema, WikiEvidence } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { AiNoteBadge } from "./AiNoteBadge";
 import { MarkdownPreview } from "./MarkdownEditor";
-import { WikiPageLinksContext, lookupWikiLink } from "./wiki-page-sync";
+import {
+  WikiPageLinksContext,
+  lookupWikiLink,
+  wikiLinkFetchMode,
+  wikiLinkValueToShow
+} from "./wiki-page-sync";
 /**
  * Links that belong to the page being read take their target from the page's single batched
- * resolution. Only links the batch cannot know (successors of an opened note, links shown outside
- * the page) are requested individually.
+ * resolution. Links the batch cannot know (successors of an opened note, links shown outside the
+ * page) are requested individually, and an opened note card is always read again because the
+ * batch cannot see edits made after the revision was resolved.
  */
 export function WikiTypedLink({
   pageId,
@@ -39,22 +45,29 @@ export function WikiTypedLink({
 }) {
   const links = useContext(WikiPageLinksContext);
   const lookup = lookupWikiLink(links, pageId, revisionId, target);
-  const fetchNeeded = lookup.kind === "fetch";
-  // Individually requested links of this page (successors) refresh with the page's batch.
-  const pageBatch = links?.pageId === pageId ? links : null;
-  const [fetched, setFetched] = useState<z.infer<typeof WikiLinkedTargetSchema> | null>(null),
+  const [fetched, setFetched] = useState<
+      z.infer<typeof WikiLinkedTargetSchema> | null | undefined
+    >(),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(false),
     [retry, setRetry] = useState(0),
     [open, setOpen] = useState(false);
-  const value = lookup.kind === "value" ? lookup.value : fetchNeeded ? fetched : null;
+  const mode = wikiLinkFetchMode(lookup, target.kind, open);
+  const fetchNeeded = mode === "individual";
+  // Individually requested links of this page (successors) refresh with the page's batch.
+  const pageBatch = links?.pageId === pageId ? links : null;
+  const value = wikiLinkValueToShow(lookup, fetched, mode);
   const refreshed = useRef(onRefreshed);
   refreshed.current = onRefreshed;
   useEffect(() => {
-    if (!active || !fetchNeeded) return;
+    if (!active || mode === "none") return;
     let live = true;
-    setLoading(true);
-    setError(false);
+    // An opened note card keeps showing the batch value until its own read arrives, and keeps it
+    // if that read fails; a link only this read can supply shows loading and error states.
+    if (mode === "individual") {
+      setLoading(true);
+      setError(false);
+    } else setFetched(undefined);
     void window.app.wiki
       .linkedTarget({ pageId, ...(revisionId ? { revisionId } : {}), ...target })
       .then((v) => {
@@ -64,7 +77,7 @@ export function WikiTypedLink({
         }
       })
       .catch(() => {
-        if (live) setError(true);
+        if (live && mode === "individual") setError(true);
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -72,7 +85,7 @@ export function WikiTypedLink({
     return () => {
       live = false;
     };
-  }, [pageId, revisionId, target.kind, target.id, retry, active, fetchNeeded, pageBatch]);
+  }, [pageId, revisionId, target.kind, target.id, retry, active, mode, pageBatch]);
   if (lookup.kind === "failed" || (fetchNeeded && error))
     return (
       <button
@@ -115,10 +128,7 @@ export function WikiTypedLink({
         onClick={() => {
           if (target.kind === "page") onOpenPage(target.id);
           else if (target.kind === "source" && value.sourceItemId) onOpenSource(value.sourceItemId);
-          else {
-            if (!open) setRetry((n) => n + 1);
-            setOpen(!open);
-          }
+          else setOpen(!open);
         }}
       >
         {label ?? value.title}
@@ -130,7 +140,11 @@ export function WikiTypedLink({
         <div className="mt-3 grid gap-3">
           {value.noteState && (
             <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <AiNoteBadge t={t} status={value.noteState.status} />
+              <AiNoteBadge
+                t={t}
+                status={value.noteState.status}
+                humanProtected={value.noteState.protected}
+              />
               <span>
                 {t(
                   ("knowledge.notes.status." +

@@ -507,6 +507,7 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(ipcChannels.localModelsList, () => localModelService.list());
+  ipcMain.handle(ipcChannels.localModelsStatuses, () => localModelService.listStatuses());
   ipcMain.handle(ipcChannels.localModelsDownload, (_event, payload: unknown) =>
     localModelService.requestDownload(localModelDownloadInputSchema.parse(payload))
   );

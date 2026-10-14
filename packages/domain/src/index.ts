@@ -1,4 +1,5 @@
 export * from "./ai.js";
+export * from "./ai-task-support.js";
 export * from "./bibliographic.js";
 export * from "./document.js";
 export * from "./graph.js";

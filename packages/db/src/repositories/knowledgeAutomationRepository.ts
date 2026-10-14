@@ -2,7 +2,7 @@ import { createAutomaticMaintenanceRepository } from "./automaticMaintenanceRepo
 import { taskHistoryVisibleSql } from "./taskHistory.js";
 import { WikiPageContentSchema, wikiAreaIds } from "@app/domain";
 import type { PgPool } from "../client.js";
-import { createWikiRepository } from "./wikiRepository.js";
+import { createWikiRepository, wikiAreaForRole } from "./wikiRepository.js";
 
 // Resolve the exact retained analysis before labeling a wrapper or an impact.
 const analysisProjection = `analysis as (
@@ -88,16 +88,10 @@ export function createKnowledgeAutomationRepository(pool: PgPool) {
         ).rows;
         for (const row of roots) {
           const content = WikiPageContentSchema.parse(row.content);
-          content.parentId =
-            content.kind === "topic"
-              ? wikiAreaIds.themes
-              : content.kind === "entity"
-                ? wikiAreaIds.entities
-                : content.kind === "synthesis"
-                  ? content.automatic?.role.role === "investigation"
-                    ? wikiAreaIds.investigations
-                    : wikiAreaIds.syntheses
-                  : wikiAreaIds.maps;
+          content.parentId = wikiAreaForRole({
+            kind: content.kind,
+            role: content.automatic?.role.role
+          });
           await wiki.save(
             {
               id: row.id,

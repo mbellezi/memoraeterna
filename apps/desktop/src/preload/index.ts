@@ -163,6 +163,7 @@ import {
   localModelDownloadInputSchema,
   localModelDefaultsInputSchema,
   localModelViewSchema,
+  localModelStatusEntrySchema,
   localEmbeddingLoadStatusSchema,
   repositoryTokenInputSchema,
   obsidianSyncStatusSchema,
@@ -853,6 +854,11 @@ const api: DesktopApi = {
       return localModelViewSchema
         .array()
         .parse(await ipcRenderer.invoke(ipcChannels.localModelsList));
+    },
+    async statuses() {
+      return localModelStatusEntrySchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.localModelsStatuses));
     },
     async download(input: LocalModelDownloadInput) {
       return localModelViewSchema.parse(

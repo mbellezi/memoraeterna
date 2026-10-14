@@ -36,6 +36,12 @@ import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import {
+  isSilentRefresh,
+  showsLoadError,
+  syncModalDialog,
+  type LoadOutcome
+} from "../lib/hidden-view";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportView, childSourceType } from "./ImportView";
 import { AiNoteBadge } from "./AiNoteBadge";
@@ -80,6 +86,48 @@ export function libraryHistoryEntryForOpening(
   if (origin === "import")
     return current?.view === "library" ? null : { view: "library", path: [], fromSearch: false };
   return { view: origin ?? "search" };
+}
+
+/** What a history change means for the Library; a hidden Library never reacts to one. */
+export type LibraryPopStateAction =
+  | { type: "ignore" }
+  | { type: "exit"; view: "wiki" | "search" | "knowledgeGraph" }
+  | { type: "path"; path: string[]; fromSearch: boolean };
+
+export function libraryPopStateAction(
+  active: boolean,
+  entry: LibraryHistoryEntry | null
+): LibraryPopStateAction {
+  if (!active) return { type: "ignore" };
+  if (entry?.view === "wiki" || entry?.view === "search" || entry?.view === "knowledgeGraph")
+    return { type: "exit", view: entry.view };
+  return entry?.view === "library"
+    ? { type: "path", path: entry.path, fromSearch: entry.fromSearch }
+    : { type: "path", path: [], fromSearch: false };
+}
+
+/**
+ * The target that opened the source at the root of the stack. A target that opened another source
+ * is stale: it must neither relabel Back nor refocus a note of this one.
+ */
+export function targetOpeningSource(
+  target: LibraryExternalTarget | null,
+  sourceItemId: string | null | undefined
+): LibraryExternalTarget | null {
+  return target && sourceItemId && target.sourceItemId === sourceItemId ? target : null;
+}
+
+export function libraryBackLabelKey(input: {
+  stack: readonly string[];
+  openedTarget: LibraryExternalTarget | null;
+  fromSearch: boolean;
+}): MessageKey {
+  const { stack, fromSearch } = input;
+  const opened = stack.length === 1 ? targetOpeningSource(input.openedTarget, stack[0]) : null;
+  if (opened?.origin === "knowledgeGraph") return "knowledgeGraph.backToGraph";
+  if (opened?.origin === "wiki") return "wiki.backToWiki";
+  if (stack.length === 1 && fromSearch) return "library.detail.backToSearch";
+  return "library.back";
 }
 
 export function createLibraryHistoryState(entry: LibraryHistoryEntry): Record<string, unknown> {
@@ -215,6 +263,7 @@ export function LibraryView({
   metadataEnrichmentEnabled = true,
   externalTarget = null,
   onNavigate,
+  onTargetConsumed,
   onExitToSearch,
   onExitToKnowledgeGraph,
   onExitToWiki
@@ -225,6 +274,8 @@ export function LibraryView({
   metadataEnrichmentEnabled?: boolean;
   externalTarget?: LibraryExternalTarget | null;
   onNavigate?: () => void;
+  /** The Library has taken over the target (it now holds it); the owner can drop it. */
+  onTargetConsumed?: (token: number) => void;
   onExitToWiki?: () => void;
   onExitToSearch?: () => void;
   onExitToKnowledgeGraph?: () => void;
@@ -248,7 +299,13 @@ export function LibraryView({
   const [processingIds, setProcessingIds] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [detailError, setDetailError] = useState(false);
+  // The consumed target stays here while its source is open; the owner's copy is dropped at once.
+  const [openedTarget, setOpenedTarget] = useState<LibraryExternalTarget | null>(null);
   const consumedTargetToken = useRef<number | null>(null);
+  const listOutcome = useRef<LoadOutcome | null>(null);
+  const detailOutcome = useRef<LoadOutcome | null>(null);
+  const activeRef = useRef(active);
   const historyInitialized = useRef(false);
   const wasActive = useRef(active);
   const listWasHidden = useRef(false);
@@ -265,10 +322,15 @@ export function LibraryView({
   onExitToKnowledgeGraphRef.current = onExitToKnowledgeGraph;
 
   const currentId = stack.at(-1) ?? null;
+  const listKey = JSON.stringify([query, filter, offset, currentId]);
 
-  /** A silent load refreshes in place (after the view was hidden) without replacing the list. */
+  /**
+   * A silent load refreshes in place (after the view was hidden, with the same key and a
+   * successful previous load) without replacing the list. A failure it cannot absorb is shown.
+   */
   async function load(silent = false) {
     const generation = ++loadGeneration.current;
+    const key = listKey;
     if (!silent) {
       setLoading(true);
       setError(false);
@@ -299,9 +361,19 @@ export function LibraryView({
       if (generation === loadGeneration.current) {
         setSources(result);
         setGraphResults(graphResult);
+        setError(false);
+        listOutcome.current = {
+          key,
+          ok: true,
+          hasData: result.length > 0 || graphResult.length > 0
+        };
       }
     } catch {
-      if (generation === loadGeneration.current && !silent) setError(true);
+      if (generation === loadGeneration.current) {
+        const previous = listOutcome.current;
+        listOutcome.current = { key, ok: false, hasData: false };
+        if (showsLoadError({ silent, previous, key })) setError(true);
+      }
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
@@ -312,7 +384,7 @@ export function LibraryView({
       listWasHidden.current = true;
       return;
     }
-    const silent = listWasHidden.current;
+    const silent = isSilentRefresh(listWasHidden.current, listOutcome.current, listKey);
     listWasHidden.current = false;
     const timer = window.setTimeout(() => void load(silent), query && !silent ? 250 : 0);
     return () => {
@@ -331,32 +403,27 @@ export function LibraryView({
     }
 
     function handlePopState(event: PopStateEvent) {
-      const entry = libraryHistoryEntryFromState(event.state);
+      const action = libraryPopStateAction(
+        activeRef.current,
+        libraryHistoryEntryFromState(event.state)
+      );
+      if (action.type === "ignore") return;
       onNavigateRef.current?.();
 
-      if (entry?.view === "wiki") {
+      if (action.type === "exit") {
         setStack([]);
         setFromSearch(false);
-        onExitToWikiRef.current?.();
+        const exit =
+          action.view === "wiki"
+            ? onExitToWikiRef
+            : action.view === "search"
+              ? onExitToSearchRef
+              : onExitToKnowledgeGraphRef;
+        exit.current?.();
         return;
       }
-      if (entry?.view === "search") {
-        setStack([]);
-        setFromSearch(false);
-        onExitToSearchRef.current?.();
-        return;
-      }
-      if (entry?.view === "knowledgeGraph") {
-        setStack([]);
-        setFromSearch(false);
-        onExitToKnowledgeGraphRef.current?.();
-        return;
-      }
-
-      const path = entry?.view === "library" ? entry.path : [];
-      const cameFromSearch = entry?.view === "library" ? entry.fromSearch : false;
-      setStack(path);
-      setFromSearch(cameFromSearch);
+      setStack(action.path);
+      setFromSearch(action.fromSearch);
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -386,9 +453,15 @@ export function LibraryView({
     onNavigate?.();
     setFromSearch(cameFromSearch);
     setStack([externalTarget.sourceItemId]);
-  }, [externalTarget, onNavigate]);
+    setOpenedTarget(externalTarget);
+    onTargetConsumed?.(externalTarget.token);
+  }, [externalTarget, onNavigate, onTargetConsumed]);
+
+  // Leaving the source that the target opened ends the target: Back and focus no longer apply.
+  if (openedTarget && stack[0] !== openedTarget.sourceItemId) setOpenedTarget(null);
 
   useEffect(() => {
+    activeRef.current = active;
     const reopened = active && !wasActive.current;
     wasActive.current = active;
     if (!reopened) return;
@@ -400,28 +473,34 @@ export function LibraryView({
   useEffect(() => {
     if (!currentId) {
       setDetail(null);
+      setDetailError(false);
+      detailOutcome.current = null;
       return;
     }
     if (!active) {
       detailWasHidden.current = true;
       return;
     }
-    const silent = detailWasHidden.current;
+    const silent = isSilentRefresh(detailWasHidden.current, detailOutcome.current, currentId);
     detailWasHidden.current = false;
     let live = true;
     if (!silent) {
       setLoading(true);
-      setError(false);
+      setDetailError(false);
     }
     window.app.knowledge
       .getSourceDetail(currentId)
       .then((loaded) => {
         if (!live) return;
         setDetail(loaded);
-        if (!loaded) setError(true);
+        setDetailError(!loaded);
+        detailOutcome.current = { key: currentId, ok: Boolean(loaded), hasData: Boolean(loaded) };
       })
       .catch(() => {
-        if (live && !silent) setError(true);
+        if (!live) return;
+        const previous = detailOutcome.current;
+        detailOutcome.current = { key: currentId, ok: false, hasData: false };
+        if (showsLoadError({ silent, previous, key: currentId })) setDetailError(true);
       })
       .finally(() => {
         if (live) setLoading(false);
@@ -464,6 +543,14 @@ export function LibraryView({
     navigateToPath([], false);
   }
 
+  // A request that finishes while the Library is hidden must not load: the effect reloads once the
+  // Library is shown again.
+  function queued() {
+    setProcessingIds(null);
+    setSelectedIds(new Set());
+    setRefreshKey((key) => key + 1);
+  }
+
   function returnToLibraryAfterDeletion() {
     replaceLibraryHistory({ view: "library", path: [], fromSearch: false });
     setStack([]);
@@ -473,35 +560,24 @@ export function LibraryView({
   }
 
   if (currentId) {
+    // Only the target that opened this very source may focus a note or relabel Back.
+    const detailTarget = detail ? targetOpeningSource(openedTarget, detail.id) : null;
     return (
       <>
         {detail && detail.id === currentId ? (
           <SourceDetailView
-            key={`${detail.id}:${externalTarget?.token ?? 0}`}
+            key={`${detail.id}:${detailTarget?.token ?? 0}`}
             detail={detail}
-            focusedSourceRelationId={
-              externalTarget?.sourceItemId === detail.id
-                ? externalTarget.sourceRelationId
-                : undefined
-            }
+            focusedSourceRelationId={detailTarget?.sourceRelationId}
             focusedAtomicNoteId={
               relationNoteTarget?.sourceItemId === detail.id
                 ? relationNoteTarget.noteId
-                : externalTarget?.sourceItemId === detail.id
-                  ? (externalTarget.atomicNoteId ?? null)
-                  : null
+                : (detailTarget?.atomicNoteId ?? null)
             }
+            active={active}
             metadataEnrichmentEnabled={metadataEnrichmentEnabled}
             allSources={sources}
-            backLabel={
-              stack.length === 1 && externalTarget?.origin === "knowledgeGraph"
-                ? t("knowledgeGraph.backToGraph")
-                : stack.length === 1 && externalTarget?.origin === "wiki"
-                  ? t("wiki.backToWiki")
-                  : stack.length === 1 && fromSearch
-                    ? t("library.detail.backToSearch")
-                    : t("library.back")
-            }
+            backLabel={t(libraryBackLabelKey({ stack, openedTarget, fromSearch }))}
             t={t}
             onOpen={openSource}
             onOpenNote={(sourceItemId, noteId) => {
@@ -519,29 +595,36 @@ export function LibraryView({
             loadError={error}
             onDeleted={returnToLibraryAfterDeletion}
           />
-        ) : error ? (
+        ) : detailError ? (
           <div className="grid gap-4">
             <StateCard>{t("library.error")}</StateCard>
-            <Button type="button" className="w-fit" onClick={goBack}>
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              {t("library.back")}
-            </Button>
+            <div className="flex gap-2">
+              <Button type="button" className="w-fit" onClick={goBack}>
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                {t("library.back")}
+              </Button>
+              <Button
+                type="button"
+                className="w-fit"
+                onClick={() => setRefreshKey((key) => key + 1)}
+              >
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                {t("shell.actions.retry")}
+              </Button>
+            </div>
           </div>
         ) : (
           <StateCard>{t("shell.states.loading")}</StateCard>
         )}
-        {processingIds && active ? (
+        {processingIds ? (
           <ProcessingDialog
+            open={active}
             sourceIds={processingIds}
             sources={detail ? [...sources, detailAsLibrarySource(detail)] : sources}
             writerRouteReady={writerRouteReady}
             t={t}
             onClose={() => setProcessingIds(null)}
-            onQueued={() => {
-              setProcessingIds(null);
-              setSelectedIds(new Set());
-              void load();
-            }}
+            onQueued={queued}
           />
         ) : null}
       </>
@@ -678,18 +761,15 @@ export function LibraryView({
         t={t}
         onPage={setOffset}
       />
-      {processingIds && active ? (
+      {processingIds ? (
         <ProcessingDialog
+          open={active}
           sourceIds={processingIds}
           sources={sources}
           writerRouteReady={writerRouteReady}
           t={t}
           onClose={() => setProcessingIds(null)}
-          onQueued={() => {
-            setProcessingIds(null);
-            setSelectedIds(new Set());
-            void load();
-          }}
+          onQueued={queued}
         />
       ) : null}
     </section>
@@ -884,6 +964,7 @@ export function libraryProcessingPlan(
 }
 
 function ProcessingDialog({
+  open,
   sourceIds,
   sources,
   writerRouteReady,
@@ -891,6 +972,8 @@ function ProcessingDialog({
   onClose,
   onQueued
 }: {
+  /** The dialog stays mounted, with its choices and any request in flight, while the Library is hidden. */
+  open: boolean;
   sourceIds: string[];
   sources: LibrarySource[];
   writerRouteReady: boolean | null;
@@ -907,9 +990,9 @@ function ProcessingDialog({
   const dialogRef = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const dialog = dialogRef.current;
-    dialog?.showModal();
-    return () => dialog?.close();
-  }, []);
+    syncModalDialog(dialog, open);
+    return () => syncModalDialog(dialog, false);
+  }, [open]);
   const selected = sources.filter((source) => sourceIds.includes(source.id));
   async function queue() {
     if (!processingPlanReady(plan)) return;
@@ -1117,6 +1200,7 @@ export function orderHierarchically(
 
 function SourceDetailView({
   detail,
+  active,
   focusedAtomicNoteId,
   focusedSourceRelationId,
   allSources,
@@ -1137,6 +1221,7 @@ function SourceDetailView({
   onOpenNote
 }: {
   detail: SourceDetail;
+  active: boolean;
   focusedAtomicNoteId: string | null;
   focusedSourceRelationId?: string | undefined;
   onOpenNote: (sourceItemId: string, noteId: string) => void;
@@ -1216,6 +1301,7 @@ function SourceDetailView({
     return (
       <ImportView
         t={t}
+        active={active}
         metadataEnrichmentEnabled={metadataEnrichmentEnabled}
         {...(editor === "edit" ? { editing: detail } : { parent: detail })}
         onCancel={() => setEditor(null)}

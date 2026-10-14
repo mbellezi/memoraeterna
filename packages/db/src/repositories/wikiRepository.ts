@@ -63,9 +63,47 @@ const flatten = (row: Record<string, any>) => ({
 
 const wikiLinkKinds = new Set(["page", "source", "atomic_note", "entity"]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * The most links resolved in one batch. A page may link far more; the links beyond the cap are
+ * simply not in the batch and are read individually when the reader needs them.
+ */
+export const wikiResolveLinksLimit = 500;
+const noteEvidenceConcurrency = 6;
+
+/**
+ * The system area that holds the automatic pages of a role. One mapping for every place that places
+ * a page without a parent: a topic goes to Themes, an entity to Entities, a synthesis to Syntheses
+ * (an investigation to Investigations) and anything else to Maps.
+ */
+export function wikiAreaForRole(role: {
+  kind: string;
+  role?: string | undefined;
+}): (typeof wikiAreaIds)[keyof typeof wikiAreaIds] {
+  if (role.kind === "topic") return wikiAreaIds.themes;
+  if (role.kind === "entity") return wikiAreaIds.entities;
+  if (role.kind === "synthesis")
+    return role.role === "investigation" ? wikiAreaIds.investigations : wikiAreaIds.syntheses;
+  return wikiAreaIds.maps;
+}
+
+interface LinkRef {
+  kind: string;
+  id: string;
+}
+
+interface LinkedTarget {
+  noteState?: { status: string; protected: boolean; current: boolean };
+  successors?: Array<{ id: string; title: string }>;
+  kind: string;
+  id: string;
+  title: string;
+  markdown: string;
+  sourceItemId: string | null;
+  evidence: Awaited<ReturnType<typeof readNoteEvidence>>;
+}
 
 /** Every target a page revision links to: curated links, memberships and legacy note references. */
-function pageLinkRefs(content: any): Array<{ kind: string; id: string }> {
+function pageLinkRefs(content: any): LinkRef[] {
   const linked = [
     ...(content?.automatic?.links ?? []),
     ...(content?.automatic?.memberships ?? []).map((m: any) => m.target)
@@ -80,93 +118,114 @@ function pageLinkRefs(content: any): Array<{ kind: string; id: string }> {
   return linked;
 }
 
-async function mapWithConcurrency<T, R>(
+/** Runs the work with bounded concurrency. The work reports its own failures; it never rejects. */
+async function mapWithConcurrency<T>(
   items: readonly T[],
   limit: number,
-  run: (item: T) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
+  run: (item: T) => Promise<void>
+): Promise<void> {
   let next = 0;
   await Promise.all(
     Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
-        const index = next++;
-        results[index] = await run(items[index]!);
-      }
+      while (next < items.length) await run(items[next++]!);
     })
   );
-  return results;
+}
+
+/**
+ * Reads the targets of one kind with one query for all of them (notes also read their successors
+ * in one query and their evidence note by note). The caller has already established that the page
+ * may link to them. `found` holds what exists; ids in neither `found` nor `failed` do not exist.
+ * After the first evidence failure no further note is read: the rest are reported as failed.
+ */
+async function readLinkedTargets(pool: PgPool, kind: string, ids: readonly string[]) {
+  const found = new Map<string, LinkedTarget>();
+  const failed = new Map<string, unknown>();
+  if (ids.length === 0) return { found, failed };
+  const list = [...ids];
+  if (kind !== "atomic_note") {
+    const sql =
+      kind === "source"
+        ? "select id,title,id as source_id from source_items where id=any($1::uuid[])"
+        : kind === "page"
+          ? "select id,title,null::uuid as source_id from wiki_pages where id=any($1::uuid[])"
+          : "select id,canonical_name as title,null::uuid as source_id from entities where id=any($1::uuid[])";
+    for (const row of (await pool.query(sql, [list])).rows)
+      found.set(row.id, {
+        kind,
+        id: row.id,
+        title: row.title,
+        markdown: "",
+        sourceItemId: row.source_id,
+        evidence: []
+      });
+    return { found, failed };
+  }
+  const notes = (
+    await pool.query(
+      "select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id,status,metadata,supersession_status from atomic_notes where id=any($1::uuid[]) and status not in('rejected','archived')",
+      [list]
+    )
+  ).rows;
+  const successors = new Map<string, Array<{ id: string; title: string }>>();
+  if (notes.length)
+    for (const row of (
+      await pool.query(
+        `select e.previous_id,n.id,n.title from atomic_note_evolution e join atomic_notes n on n.id=e.next_id
+         where e.previous_id=any($1::uuid[]) and n.status not in('rejected','archived') order by e.previous_id,n.id`,
+        [notes.map((note) => note.id)]
+      )
+    ).rows)
+      successors.set(row.previous_id, [
+        ...(successors.get(row.previous_id) ?? []),
+        { id: row.id, title: row.title }
+      ]);
+  let stopped = false;
+  let firstError: unknown;
+  await mapWithConcurrency(notes, noteEvidenceConcurrency, async (row) => {
+    if (stopped) {
+      failed.set(row.id, firstError);
+      return;
+    }
+    try {
+      const evidence = await readNoteEvidence(pool, row.id, row.evidence_chunk_id);
+      const next = successors.get(row.id);
+      found.set(row.id, {
+        noteState: {
+          status: row.status,
+          protected: row.metadata?.humanProtected === true,
+          current:
+            row.supersession_status === "current" &&
+            evidence.length > 0 &&
+            evidence.every((e) => e.current)
+        },
+        ...(next?.length ? { successors: next } : {}),
+        kind,
+        id: row.id,
+        title: row.title,
+        markdown: row.markdown,
+        sourceItemId: evidence.every(
+          (e) => e.sourceItemId !== row.source_id || e.sourceAvailable === false
+        )
+          ? null
+          : row.source_id,
+        evidence
+      });
+    } catch (error) {
+      if (!stopped) firstError = error;
+      stopped = true;
+      failed.set(row.id, error);
+    }
+  });
+  return { found, failed };
 }
 
 /** Reads one linked target. The caller has already established that the page may link to it. */
-async function readLinkedTarget(pool: PgPool, input: { kind: string; id: string }) {
-  const row =
-    input.kind === "source"
-      ? (
-          await pool.query(
-            "select id,title,id as source_id,'' as markdown from source_items where id=$1",
-            [input.id]
-          )
-        ).rows[0]
-      : input.kind === "page"
-        ? (
-            await pool.query(
-              "select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",
-              [input.id]
-            )
-          ).rows[0]
-        : input.kind === "entity"
-          ? (
-              await pool.query(
-                "select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",
-                [input.id]
-              )
-            ).rows[0]
-          : (
-              await pool.query(
-                "select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id,status,metadata,supersession_status from atomic_notes where id=$1 and status not in('rejected','archived')",
-                [input.id]
-              )
-            ).rows[0];
-  if (!row) return null;
-  const evidence =
-    input.kind === "atomic_note"
-      ? await readNoteEvidence(pool, input.id, row.evidence_chunk_id)
-      : [];
-  const successors =
-    input.kind === "atomic_note"
-      ? (
-          await pool.query(
-            "select n.id,n.title from atomic_note_evolution e join atomic_notes n on n.id=e.next_id where e.previous_id=$1 and n.status not in('rejected','archived') order by n.id",
-            [input.id]
-          )
-        ).rows
-      : undefined;
-  return {
-    ...(input.kind === "atomic_note"
-      ? {
-          noteState: {
-            status: row.status,
-            protected: row.metadata?.humanProtected === true,
-            current:
-              row.supersession_status === "current" &&
-              evidence.length > 0 &&
-              evidence.every((e) => e.current)
-          }
-        }
-      : {}),
-    ...(successors?.length ? { successors } : {}),
-    kind: input.kind,
-    id: row.id,
-    title: row.title,
-    markdown: row.markdown,
-    sourceItemId:
-      input.kind === "atomic_note" &&
-      evidence.every((e) => e.sourceItemId !== row.source_id || e.sourceAvailable === false)
-        ? null
-        : row.source_id,
-    evidence
-  };
+async function readLinkedTarget(pool: PgPool, input: LinkRef) {
+  const id = input.id.toLowerCase();
+  const { found, failed } = await readLinkedTargets(pool, input.kind, [id]);
+  if (failed.has(id)) throw failed.get(id);
+  return found.get(id) ?? null;
 }
 
 export function createWikiRepository(pool: PgPool) {
@@ -198,7 +257,11 @@ export function createWikiRepository(pool: PgPool) {
       }
       return readLinkedTarget(pool, input);
     },
-    /** Resolves every link of one page revision at once, so the renderer needs one call per revision. */
+    /**
+     * Resolves the links of one page revision at once, so the renderer needs one call per revision:
+     * one query per kind rather than per link, capped at `wikiResolveLinksLimit`. A link whose read
+     * fails is reported in `failed` and never fails the others; after a failure no more is read.
+     */
     async resolveLinks(input: { pageId: string; revisionId?: string | undefined }) {
       const row = (
         await pool.query(
@@ -211,15 +274,44 @@ export function createWikiRepository(pool: PgPool) {
         ...new Map(
           pageLinkRefs(row.content)
             .filter((r) => wikiLinkKinds.has(r.kind) && uuidPattern.test(r.id))
-            .map((r) => [`${r.kind}:${r.id}`, r])
+            .map((r) => [`${r.kind}:${r.id.toLowerCase()}`, r])
         ).values()
-      ];
-      const resolved = await mapWithConcurrency(refs, 6, (ref) => readLinkedTarget(pool, ref));
+      ].slice(0, wikiResolveLinksLimit);
+      const byKind = new Map<string, LinkRef[]>();
+      for (const ref of refs) byKind.set(ref.kind, [...(byKind.get(ref.kind) ?? []), ref]);
+      const targets: LinkedTarget[] = [];
+      const unresolved: LinkRef[] = [];
+      const failed: LinkRef[] = [];
+      let broken = false;
+      for (const [kind, group] of byKind) {
+        if (broken) {
+          failed.push(...group);
+          continue;
+        }
+        try {
+          const read = await readLinkedTargets(
+            pool,
+            kind,
+            group.map((ref) => ref.id.toLowerCase())
+          );
+          for (const ref of group) {
+            const id = ref.id.toLowerCase();
+            const target = read.found.get(id);
+            if (target) targets.push(target);
+            else if (read.failed.has(id)) failed.push(ref);
+            else unresolved.push(ref);
+          }
+        } catch {
+          broken = true;
+          failed.push(...group);
+        }
+      }
       return {
         pageId: input.pageId,
         revisionId: row.revisionId as string,
-        targets: resolved.filter((target): target is NonNullable<typeof target> => target !== null),
-        unresolved: refs.filter((_, index) => resolved[index] === null)
+        targets,
+        unresolved,
+        failed
       };
     },
     async tree(input: {
@@ -467,16 +559,10 @@ export function createWikiRepository(pool: PgPool) {
           !content.parentId &&
           !Object.values(wikiAreaIds).includes(id as (typeof wikiAreaIds)[keyof typeof wikiAreaIds])
         ) {
-          const area =
-            content.kind === "topic"
-              ? wikiAreaIds.themes
-              : content.kind === "entity"
-                ? wikiAreaIds.entities
-                : content.kind === "synthesis"
-                  ? content.automatic?.role.role === "investigation"
-                    ? wikiAreaIds.investigations
-                    : wikiAreaIds.syntheses
-                  : wikiAreaIds.maps;
+          const area = wikiAreaForRole({
+            kind: content.kind,
+            role: content.automatic?.role.role
+          });
           if ((await db.query("select 1 from wiki_pages where id=$1", [area])).rows.length)
             content.parentId = area;
         }

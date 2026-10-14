@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { supportsTask } from "@app/domain";
 import type {
   AiConfigurableTask,
   AiProfile,
   AiProfileTask,
+  AiProviderConfig,
   AiTaskRoute,
-  LocalModelView
+  LocalModelStatusEntry
 } from "../../shared/ipc";
 
 /** Generative tasks that full knowledge processing needs; embeddings are a separate route. */
@@ -17,21 +19,26 @@ export const writerRouteTasks = [
 export interface WriterRouteInputs {
   profiles: readonly Pick<
     AiProfile,
-    "id" | "isDefault" | "status" | "providerConfigId" | "localModelId"
+    "id" | "isDefault" | "status" | "providerConfigId" | "localModelId" | "modelId" | "capabilities"
   >[];
   profileTasks: readonly Pick<AiProfileTask, "profileId" | "task">[];
   routes: readonly AiTaskRoute[];
-  localModels: readonly Pick<LocalModelView, "id" | "status">[];
+  providers: readonly Pick<AiProviderConfig, "id" | "secretConfigured">[];
+  localModels: readonly Pick<LocalModelStatusEntry, "id" | "status">[];
 }
 
 /**
- * Mirrors the main-process route resolution: the task route first, then the default profile; the
- * profile must be active, have a usable provider or ready local model, and configure the task.
+ * Mirrors the main-process route resolution: the task route first, then the default profile. The
+ * profile must be active, configure the task, declare the capabilities that serve it (the shared
+ * `supportsTask` rule) and reach a model that can run: a provider with a stored secret or a ready
+ * local model. Task rows outlive a model change, so a row alone never proves the profile can serve
+ * the task.
  */
 export function isWriterRouteReady({
   profiles,
   profileTasks,
   routes,
+  providers,
   localModels
 }: WriterRouteInputs): boolean {
   const defaultProfile = profiles.find((profile) => profile.isDefault);
@@ -40,9 +47,13 @@ export function isWriterRouteReady({
     const profile = routedProfileId
       ? profiles.find((candidate) => candidate.id === routedProfileId)
       : defaultProfile;
-    if (!profile || profile.status !== "active") return false;
+    if (!profile || profile.status !== "active" || profile.modelId === null) return false;
+    if (!supportsTask(task, profile.capabilities)) return false;
     const hasModel =
-      profile.providerConfigId !== null ||
+      (profile.providerConfigId !== null &&
+        providers.some(
+          (provider) => provider.id === profile.providerConfigId && provider.secretConfigured
+        )) ||
       (profile.localModelId !== null &&
         localModels.some((model) => model.id === profile.localModelId && model.status === "ready"));
     return (
@@ -56,19 +67,23 @@ export interface WriterRouteClient {
   listProfiles: () => Promise<AiProfile[]>;
   listProfileTasks: () => Promise<AiProfileTask[]>;
   listTaskRoutes: () => Promise<AiTaskRoute[]>;
-  listLocalModels: () => Promise<LocalModelView[]>;
+  listProviders: () => Promise<AiProviderConfig[]>;
+  /** Read-only: it must not synchronize the model catalog. */
+  listLocalModelStatuses: () => Promise<LocalModelStatusEntry[]>;
 }
 
 /** Unknown or failing route state is never treated as ready: imports fall back to searchable. */
 export async function loadWriterRouteReady(client: WriterRouteClient): Promise<boolean> {
   try {
-    const [profiles, profileTasks, routes, localModels] = await Promise.all([
+    const [profiles, profileTasks, routes, providers] = await Promise.all([
       client.listProfiles(),
       client.listProfileTasks(),
       client.listTaskRoutes(),
-      client.listLocalModels()
+      client.listProviders()
     ]);
-    return isWriterRouteReady({ profiles, profileTasks, routes, localModels });
+    const usesLocalModel = profiles.some((profile) => profile.localModelId !== null);
+    const localModels = usesLocalModel ? await client.listLocalModelStatuses() : [];
+    return isWriterRouteReady({ profiles, profileTasks, routes, providers, localModels });
   } catch {
     return false;
   }
@@ -84,7 +99,8 @@ export function useWriterRouteReady(active = true): boolean | null {
       listProfiles: () => window.app.ai.listProfiles(),
       listProfileTasks: () => window.app.ai.listProfileTasks(),
       listTaskRoutes: () => window.app.ai.listTaskRoutes(),
-      listLocalModels: () => window.app.localModels.list()
+      listProviders: () => window.app.ai.listProviders(),
+      listLocalModelStatuses: () => window.app.localModels.statuses()
     }).then((value) => {
       if (live) setReady(value);
     });

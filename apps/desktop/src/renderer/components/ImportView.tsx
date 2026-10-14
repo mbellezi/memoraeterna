@@ -44,7 +44,7 @@ import type {
 } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import {
-  interactiveProcessingPlan,
+  resolveInteractivePlan,
   ProcessingPlanPicker,
   processingPlanReady
 } from "./ProcessingPlanPicker";
@@ -154,6 +154,7 @@ const fileProgressStageKeys = {
 
 export function ImportView({
   t,
+  active = true,
   metadataEnrichmentEnabled = true,
   editing,
   parent,
@@ -161,6 +162,8 @@ export function ImportView({
   onCancel
 }: {
   t: Translator;
+  /** Embedded in a view that stays mounted while hidden: a hidden import form asks for nothing. */
+  active?: boolean;
   metadataEnrichmentEnabled?: boolean;
   editing?: SourceDetail;
   parent?: {
@@ -220,10 +223,10 @@ export function ImportView({
   );
   // Interactive imports default to full knowledge when a writer route is ready, otherwise to
   // searchable processing. An explicit choice always wins over the default.
-  const writerRouteReady = useWriterRouteReady(!editing);
+  const writerRouteReady = useWriterRouteReady(!editing && active);
   const [chosenPlan, setChosenPlan] = useState<ProcessingPlanRequest | null>(null);
   const processingPlan = useMemo(
-    () => chosenPlan ?? interactiveProcessingPlan(writerRouteReady),
+    () => resolveInteractivePlan(chosenPlan, writerRouteReady),
     [chosenPlan, writerRouteReady]
   );
   const setProcessingPlan = (plan: ProcessingPlanRequest) => setChosenPlan(plan);

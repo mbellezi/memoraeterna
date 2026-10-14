@@ -6,6 +6,8 @@ export function createWikiPageRequests() {
     return () => requestedEpoch === epoch;
   };
   return {
+    /** Changes whenever a request begins or is invalidated; anything captured earlier is stale. */
+    epoch: () => epoch,
     capture,
     begin() {
       epoch += 1;

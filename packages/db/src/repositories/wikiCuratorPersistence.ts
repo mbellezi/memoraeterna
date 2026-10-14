@@ -1,40 +1,30 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
-import {
-  WikiPageContentSchema,
-  wikiAreaIds,
-  type CuratorSnapshot,
-  type CuratorChangeSet
-} from "@app/domain";
+import { WikiPageContentSchema, type CuratorSnapshot, type CuratorChangeSet } from "@app/domain";
 import type { PgPool, PgClient } from "../client.js";
-import { createWikiRepository } from "./wikiRepository.js";
+import { createWikiRepository, wikiAreaForRole } from "./wikiRepository.js";
 import { addWikiDependency } from "./wikiContextRepository.js";
 import { appendInterpretation } from "./knowledgeEvolution.js";
 import { curatorHash } from "./wikiCuratorRepository.js";
 
-/** The system area that holds automatic pages of a role: Themes, Entities or Maps. */
-export function wikiAreaForRole(kind: string): string {
-  return kind === "topic"
-    ? wikiAreaIds.themes
-    : kind === "entity"
-      ? wikiAreaIds.entities
-      : wikiAreaIds.maps;
-}
-
 /**
  * The parent of a new automatic page. A draft that proposes no parent (or omits it) never creates
- * a root: the page goes under the area of its role, as long as that area exists.
+ * a root: the page goes under the area of its role (the same mapping `save` uses), as long as that
+ * area exists. A caller that places pages explicitly (the hierarchy) owns every parent, so a draft
+ * without one stays a root there, exactly as `save` leaves it.
  */
 export async function initialParentId(
   db: Pick<PgClient, "query">,
   target: {
     initialParent: CuratorChangeSet["targets"][number]["initialParent"];
-    role: { kind: string };
+    role: { kind: string; role?: string };
   },
-  resolve: (reference: NonNullable<typeof target.initialParent>) => { id: string }
+  resolve: (reference: NonNullable<typeof target.initialParent>) => { id: string },
+  options?: { explicitParent?: boolean | undefined }
 ): Promise<string | null> {
   if (target.initialParent) return resolve(target.initialParent).id;
-  const area = wikiAreaForRole(target.role.kind);
+  if (options?.explicitParent) return null;
+  const area = wikiAreaForRole(target.role);
   return (await db.query("select 1 from wiki_pages where id=$1", [area])).rows.length ? area : null;
 }
 
@@ -94,7 +84,10 @@ export async function persistCuratorTargets(
   const initialParents = new Map<string, string | null>();
   for (const target of proposal.targets)
     if (!target.pageId)
-      initialParents.set(target.handle, await initialParentId(db, target, resolve));
+      initialParents.set(
+        target.handle,
+        await initialParentId(db, target, resolve, { explicitParent: options?.explicitParent })
+      );
   if (options?.explicitParent)
     for (const target of proposal.targets)
       if (!target.pageId)

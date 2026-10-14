@@ -47,6 +47,9 @@ import {
   OrganizationProfileSchema,
   type OrganizationProfile,
   normalizeAiModelParameters,
+  capabilitiesForTask,
+  generativeDeciderCapabilities,
+  supportsTask,
   type AiCapability,
   type AiModelParameterCapabilities
 } from "@app/domain";
@@ -1586,44 +1589,6 @@ export interface DefaultAiTaskResult extends AiTaskResult {
   aiTaskRunId: string;
   outputLanguage: string;
   embeddingSpaceKey?: string;
-}
-
-function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[] {
-  return (
-    (
-      {
-        "text-generation": ["text-generation"],
-        embedding: ["embedding"],
-        summarization: ["summarization"],
-        "knowledge-graph-generation": ["structured-output"],
-        "atomic-note-generation": ["atomic-note-generation", "structured-output"],
-        "structured-output": ["structured-output"],
-        reranking: ["reranking"]
-      } as Partial<Record<AiTaskRequest["taskType"], AiCapability[]>>
-    )[taskType] ?? []
-  );
-}
-
-/** Generative capabilities that qualify a model as an explicit, decision-only decider. */
-const generativeDeciderCapabilities: readonly AiCapability[] = [
-  "structured-output",
-  "text-generation"
-];
-
-/**
- * Whether a model with these capabilities can serve a task. The decision route (`reranking`) also
- * accepts a generative model as a decision-only decider, which is how matching decides today. That is a
- * routing rule: no `reranking` capability is ever written for the model.
- */
-export function supportsTask(
-  taskType: AiTaskRequest["taskType"],
-  capabilities: readonly string[]
-): boolean {
-  return (
-    capabilitiesForTask(taskType).every((capability) => capabilities.includes(capability)) ||
-    (taskType === "reranking" &&
-      generativeDeciderCapabilities.some((capability) => capabilities.includes(capability)))
-  );
 }
 
 /** What the adapter has to declare to run the task: a generative decider needs generation only. */

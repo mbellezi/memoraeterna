@@ -9,14 +9,20 @@ import { cn } from "../lib/cn";
 export function AiNoteBadge({
   t,
   status,
+  humanProtected = false,
   className
 }: {
   t: Translator;
   /** The note status; only a note that is still `active` (never reviewed) is marked. */
   status: string | null | undefined;
+  /**
+   * A person edited the note: an edit keeps it `active`, but it is no longer AI-generated text, so
+   * the surface shows its protected indication instead.
+   */
+  humanProtected?: boolean;
   className?: string;
 }) {
-  if (status !== "active") return null;
+  if (status !== "active" || humanProtected) return null;
   return (
     <span
       title={t("knowledge.notes.aiBadgeHint")}

@@ -5,7 +5,11 @@ import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 
 import { confirmedStatus } from "./ImportView";
 import { libraryHistoryEntryForOpening, libraryProcessingPlan } from "./LibraryView";
-import { interactiveProcessingPlan, ProcessingPlanPicker } from "./ProcessingPlanPicker";
+import {
+  interactiveProcessingPlan,
+  ProcessingPlanPicker,
+  resolveInteractivePlan
+} from "./ProcessingPlanPicker";
 
 const stages = (plan: ReturnType<typeof interactiveProcessingPlan>) =>
   resolveProcessingPlan(plan).effectiveStages;
@@ -80,6 +84,22 @@ describe("interactive processing defaults", () => {
       );
       expect(html).not.toContain("[[missing");
     }
+  });
+});
+
+describe("an explicit plan choice", () => {
+  it("wins over the default, whatever readiness says later", () => {
+    const chosen = interactiveProcessingPlan(false);
+    for (const readiness of [null, false, true])
+      expect(resolveInteractivePlan(chosen, readiness)).toBe(chosen);
+    const importOnly = { ...chosen, preset: "import_only" as const };
+    expect(resolveInteractivePlan(importOnly, true).preset).toBe("import_only");
+  });
+
+  it("follows readiness until a plan is chosen", () => {
+    expect(resolveInteractivePlan(null, null).preset).toBe("search_ready");
+    expect(resolveInteractivePlan(null, false).preset).toBe("search_ready");
+    expect(resolveInteractivePlan(null, true).preset).toBe("full_knowledge");
   });
 });
 

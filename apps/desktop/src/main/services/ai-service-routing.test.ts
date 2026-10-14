@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AiService, supportsTask } from "./ai-service.js";
+import { AiService } from "./ai-service.js";
 
 const repository = vi.hoisted(() => ({
   getDefaultTask: vi.fn(),
@@ -105,25 +105,6 @@ beforeEach(() => {
   repository.listTaskRoutes.mockResolvedValue([]);
   repository.seedTaskRoute.mockResolvedValue(true);
   repository.recordTaskRun.mockResolvedValue("run-id");
-});
-
-describe("which models can serve a task", () => {
-  it("accepts a generative model on the decision route without a reranking capability", () => {
-    expect(supportsTask("reranking", ["text-generation"])).toBe(true);
-    expect(supportsTask("reranking", ["structured-output"])).toBe(true);
-    expect(supportsTask("reranking", ["reranking"])).toBe(true);
-  });
-
-  it("accepts nothing else as a decider and keeps every other task strict", () => {
-    expect(supportsTask("reranking", ["embedding"])).toBe(false);
-    expect(supportsTask("reranking", [])).toBe(false);
-    expect(supportsTask("embedding", ["text-generation"])).toBe(false);
-    expect(supportsTask("summarization", ["text-generation"])).toBe(false);
-    expect(supportsTask("atomic-note-generation", ["structured-output"])).toBe(false);
-    expect(
-      supportsTask("atomic-note-generation", ["atomic-note-generation", "structured-output"])
-    ).toBe(true);
-  });
 });
 
 describe("the decision route", () => {

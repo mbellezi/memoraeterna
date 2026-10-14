@@ -36,3 +36,20 @@ it("invalidates pending reads when entering a draft, and permits new refreshes a
   expect(latestNavigation()).toBe(true);
   expect(requests.capture()()).toBe(true);
 });
+
+it("moves its epoch on every begin and invalidate, which is what rebuilds a page poll", () => {
+  const requests = createWikiPageRequests();
+  const seen = new Set([requests.epoch()]);
+  // Opening the page that is already shown still begins a request: the poll captured before it is
+  // stale and must be replaced, so the epoch (a dependency of the poll) has to change.
+  const poll = requests.capture();
+  requests.begin();
+  seen.add(requests.epoch());
+  expect(poll()).toBe(false);
+  const rebuilt = requests.capture();
+  expect(rebuilt()).toBe(true);
+  requests.invalidate();
+  seen.add(requests.epoch());
+  expect(rebuilt()).toBe(false);
+  expect(seen.size).toBe(3);
+});

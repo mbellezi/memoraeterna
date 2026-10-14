@@ -14,9 +14,8 @@ accessibility, visualizations or user-visible backend messages.
   and trees use bounded pages or virtualization.
 - Background state is shown quietly (status indicators, drawers), not by
   blocking the reading surface.
-- Views that hold navigation, filters or scroll (Library, Wiki) stay mounted
-  while hidden. A page resolves its own links in one request per revision, and
-  a refresh that found no change neither re-renders nor re-requests.
+- Views that hold navigation, filters or scroll (Library, Wiki) stay mounted while hidden. A hidden view loads nothing, holds no open modal and ignores history events; shown again it refreshes in place only when its key is unchanged and its last load succeeded, otherwise a failed load stays visible and retryable.
+- A page resolves its links in one batch per revision and evidence-currency change; an opened note is read again. A refresh that found no change neither re-renders nor re-requests, and a failed resolution backs off.
 
 ## Visual language
 

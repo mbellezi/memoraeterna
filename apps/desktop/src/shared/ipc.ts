@@ -178,6 +178,7 @@ export const ipcChannels = {
   aiTaskRouteSet: "app:ai:task-routes:set",
   aiLocalEmbeddingLoadStatus: "app:ai:local-embedding-load-status",
   localModelsList: "app:local-models:list",
+  localModelsStatuses: "app:local-models:statuses",
   localModelsDownload: "app:local-models:download",
   localModelsCancel: "app:local-models:cancel",
   localModelsResume: "app:local-models:resume",
@@ -1410,6 +1411,11 @@ export const localModelViewSchema = z
   })
   .strict();
 
+/** Read-only readiness of installed models: never synchronizes the catalog. */
+export const localModelStatusEntrySchema = z
+  .object({ id: z.string().uuid(), status: localModelStatusSchema })
+  .strict();
+
 export const localModelDefaultsInputSchema = z
   .object({
     localModelId: z.string().uuid(),
@@ -1536,6 +1542,7 @@ export type AiModelParameters = z.infer<typeof aiModelParametersSchema>;
 export type AiModelParameterCapabilities = z.infer<typeof aiModelParameterCapabilitiesSchema>;
 export type AiOutputLanguage = z.infer<typeof aiOutputLanguageSchema>;
 export type LocalModelView = z.infer<typeof localModelViewSchema>;
+export type LocalModelStatusEntry = z.infer<typeof localModelStatusEntrySchema>;
 export type LocalModelDownloadInput = z.infer<typeof localModelDownloadInputSchema>;
 export type BackupResult = z.infer<typeof backupResultSchema>;
 export type IntegrationGatewayStatus = z.infer<typeof integrationGatewayStatusSchema>;
@@ -1556,13 +1563,17 @@ const wikiLinkReferenceSchema = z
   })
   .strict();
 
-/** Every link of one page revision in a single response; unresolved links are listed explicitly. */
+/**
+ * Every link of one page revision in a single response. Links that do not exist are `unresolved`;
+ * links whose read failed are `failed`, so one bad link never fails the page and can be retried.
+ */
 export const wikiResolvedLinksSchema = z
   .object({
     pageId: z.string().uuid(),
     revisionId: z.string().uuid(),
     targets: z.array(WikiLinkedTargetSchema),
-    unresolved: z.array(wikiLinkReferenceSchema)
+    unresolved: z.array(wikiLinkReferenceSchema),
+    failed: z.array(wikiLinkReferenceSchema)
   })
   .strict();
 export type WikiResolvedLinks = z.infer<typeof wikiResolvedLinksSchema>;
@@ -1784,6 +1795,7 @@ export interface DesktopApi {
   };
   localModels: {
     list: () => Promise<LocalModelView[]>;
+    statuses: () => Promise<LocalModelStatusEntry[]>;
     download: (input: LocalModelDownloadInput) => Promise<LocalModelView>;
     cancel: (catalogId: string) => Promise<LocalModelView>;
     resume: (catalogId: string) => Promise<LocalModelView>;

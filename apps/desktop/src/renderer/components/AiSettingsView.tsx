@@ -14,7 +14,7 @@ import {
   Trash2,
   Users
 } from "lucide-react";
-import { normalizeAiModelParameters, type AiCapability } from "@app/domain";
+import { normalizeAiModelParameters, supportsTask, type AiCapability } from "@app/domain";
 import type { LanguageCode, MessageKey } from "@app/i18n";
 import {
   type AiConfigurableTask,
@@ -56,14 +56,15 @@ type ModelOption = {
 
 type ProfileTaskParameters = Partial<Record<AiConfigurableTask, AiModelParameters>>;
 
-const taskDefinitions: Array<{ task: AiConfigurableTask; capabilities: AiCapability[] }> = [
-  { task: "embedding", capabilities: ["embedding"] },
-  { task: "summarization", capabilities: ["summarization"] },
-  { task: "knowledge-graph-generation", capabilities: ["structured-output"] },
-  { task: "atomic-note-generation", capabilities: ["atomic-note-generation", "structured-output"] },
-  { task: "reranking", capabilities: ["reranking"] },
-  { task: "text-generation", capabilities: ["text-generation"] },
-  { task: "structured-output", capabilities: ["structured-output"] }
+/** The tasks a profile can be configured for; which model serves which is `supportsTask`. */
+const taskDefinitions: Array<{ task: AiConfigurableTask }> = [
+  { task: "embedding" },
+  { task: "summarization" },
+  { task: "knowledge-graph-generation" },
+  { task: "atomic-note-generation" },
+  { task: "reranking" },
+  { task: "text-generation" },
+  { task: "structured-output" }
 ];
 
 const purposeCapabilities: Record<ModelPurpose, AiCapability[]> = {
@@ -652,9 +653,8 @@ export function AiSettingsView({
             </p>
             <div className="grid gap-3 md:grid-cols-2">
               {taskDefinitions.map(({ task }) => {
-                const definition = taskDefinitions.find((candidate) => candidate.task === task)!;
                 const eligibleProfiles = profiles.filter((profile) =>
-                  supportsTask(profile, definition)
+                  profileSupportsTask(profile, task)
                 );
                 return (
                   <Field key={task} label={t(`settings.ai.tasks.${task}` as MessageKey)}>
@@ -1116,7 +1116,7 @@ export function ProfileEditor({
   const selected = options.find((option) => option.value === selection);
 
   const supportedTasks = selected
-    ? taskDefinitions.filter((definition) => hasTaskCapabilities(definition, selected.capabilities))
+    ? taskDefinitions.filter((definition) => supportsTask(definition.task, selected.capabilities))
     : [];
 
   async function saveProfile() {
@@ -1225,7 +1225,7 @@ function ProfileTaskEditor({
   planningContext,
   inheritedContextWindow
 }: {
-  definition: { task: AiConfigurableTask; capabilities: AiCapability[] };
+  definition: { task: AiConfigurableTask };
   parameters: AiModelParameters;
   parameterCapabilities: AiModelParameterCapabilities;
   remote?: boolean;
@@ -1265,23 +1265,8 @@ function ProfileTaskEditor({
   );
 }
 
-function supportsTask(
-  profile: AiProfile,
-  definition: { task: AiConfigurableTask; capabilities: AiCapability[] }
-): boolean {
-  return Boolean(profile.modelId) && hasTaskCapabilities(definition, profile.capabilities);
-}
-
-/** Mirrors the main-process rule: the reranking route also takes a generative model as a decider. */
-function hasTaskCapabilities(
-  definition: { task: AiConfigurableTask; capabilities: AiCapability[] },
-  capabilities: readonly AiCapability[]
-): boolean {
-  return (
-    definition.capabilities.every((capability) => capabilities.includes(capability)) ||
-    (definition.task === "reranking" &&
-      (capabilities.includes("structured-output") || capabilities.includes("text-generation")))
-  );
+function profileSupportsTask(profile: AiProfile, task: AiConfigurableTask): boolean {
+  return Boolean(profile.modelId) && supportsTask(task, profile.capabilities);
 }
 
 function profileTaskParameters(

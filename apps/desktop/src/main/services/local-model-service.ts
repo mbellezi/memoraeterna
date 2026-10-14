@@ -86,6 +86,12 @@ export class LocalModelService {
     this.controllers.clear();
   }
 
+  /** Readiness only: unlike `list`, this never writes, so a screen can ask on every activation. */
+  public async listStatuses(): Promise<Array<Pick<LocalModelView, "id" | "status">>> {
+    const models = await createLocalModelRepository(this.requirePool()).listModels();
+    return models.map((model) => ({ id: model.id, status: model.status }));
+  }
+
   public async list(): Promise<LocalModelView[]> {
     await this.syncCatalog();
     const repository = createLocalModelRepository(this.requirePool());

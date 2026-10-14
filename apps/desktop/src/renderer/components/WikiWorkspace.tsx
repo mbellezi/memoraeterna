@@ -105,6 +105,18 @@ export function WikiWorkspace({
   onOpenSource: (id: string, noteId?: string) => void;
 }) {
   const pageRequests = useRef(createWikiPageRequests());
+  // The page poll belongs to one request epoch. Starting or invalidating a request moves the epoch,
+  // and the poll is rebuilt with it: opening the page already shown must not strand the poll.
+  const [requestEpoch, setRequestEpoch] = useState(0);
+  const beginPageRequest = useCallback(() => {
+    const isCurrent = pageRequests.current.begin();
+    setRequestEpoch(pageRequests.current.epoch());
+    return isCurrent;
+  }, []);
+  const invalidatePageRequests = useCallback(() => {
+    pageRequests.current.invalidate();
+    setRequestEpoch(pageRequests.current.epoch());
+  }, []);
   const processedExternal = useRef<number | null>(null);
   const [historicalRevision, setHistoricalRevision] = useState<string | undefined>();
   const [consultationOpen, setConsultationOpen] = useState(false);
@@ -207,7 +219,7 @@ export function WikiWorkspace({
       processedExternal.current === externalTarget.token
     )
       return;
-    const isCurrent = pageRequests.current.begin();
+    const isCurrent = beginPageRequest();
     let live = true;
     void window.app.wiki
       .get(externalTarget.id, externalTarget.revision)
@@ -223,7 +235,7 @@ export function WikiWorkspace({
     return () => {
       live = false;
     };
-  }, [externalTarget, editing, consultationOpen, history]);
+  }, [externalTarget, editing, consultationOpen, history, beginPageRequest]);
 
   selectedPageRef.current = page?.id ?? null;
   const loadTree = useCallback(
@@ -357,7 +369,7 @@ export function WikiWorkspace({
       live = false;
       clearInterval(timer);
     };
-  }, [active, editing, mode, page?.id, historicalRevision, linkRetry]);
+  }, [active, editing, mode, page?.id, historicalRevision, linkRetry, requestEpoch]);
   useEffect(() => {
     if (page && readingRef.current)
       readingRef.current.scrollTop = readingScroll.current.get(page.id) ?? 0;
@@ -399,7 +411,7 @@ export function WikiWorkspace({
       setMode(target.mode);
       setScope(target.pageId);
       setHistoricalRevision(target.revisionId);
-      const isCurrent = pageRequests.current.begin();
+      const isCurrent = beginPageRequest();
       const nextPage = target.pageId
         ? await window.app.wiki.get(target.pageId, target.revisionId)
         : null;
@@ -413,7 +425,8 @@ export function WikiWorkspace({
     historyStack,
     consultationOpen,
     contextView,
-    linkedInspector
+    linkedInspector,
+    beginPageRequest
   ]);
   useEffect(() => {
     if (!active) return;
@@ -435,7 +448,7 @@ export function WikiWorkspace({
     setLoading(true);
     setError(null);
     setHistoricalRevision(revisionId);
-    const isCurrent = pageRequests.current.begin();
+    const isCurrent = beginPageRequest();
     try {
       const result = await window.app.wiki.get(id, revisionId);
       if (!isCurrent()) return;
@@ -467,7 +480,7 @@ export function WikiWorkspace({
   }
   function navigate(next: "home" | "sources" | "search" | "assets") {
     if (editing) return;
-    pageRequests.current.invalidate();
+    invalidatePageRequests();
     setHistoryStack((s) => [...s, { mode, pageId: page?.id ?? null }]);
     setMode(next);
     setScope(null);
@@ -477,7 +490,7 @@ export function WikiWorkspace({
     setInspector(null);
   }
   function createPage() {
-    pageRequests.current.invalidate();
+    invalidatePageRequests();
     setHistoricalRevision(undefined);
     setDraft({ ...newContent(), parentId: mode === "page" ? (page?.id ?? null) : null });
     setPage(null);
@@ -488,7 +501,7 @@ export function WikiWorkspace({
   }
   function editPage() {
     if (!page) return;
-    pageRequests.current.invalidate();
+    invalidatePageRequests();
     setDraft(WikiPageContentSchema.strip().parse(page));
     setEditing(true);
     setChunks([]);

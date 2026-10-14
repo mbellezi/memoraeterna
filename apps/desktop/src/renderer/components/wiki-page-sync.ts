@@ -15,6 +15,8 @@ export interface WikiPageLinks {
   status: "loading" | "ready" | "error";
   targets: ReadonlyMap<string, WikiLinkedTargetValue>;
   unresolved: ReadonlySet<string>;
+  /** Links whose resolution failed: shown as retryable, never as missing. */
+  failed: ReadonlySet<string>;
   /** Asks the page poll to resolve the links again. */
   retry?: () => void;
 }
@@ -49,8 +51,37 @@ export function lookupWikiLink(
   const value = links.targets.get(key);
   if (value) return { kind: "value", value };
   if (links.status === "loading") return { kind: "pending" };
-  if (links.status === "error") return { kind: "failed" };
+  if (links.status === "error" || links.failed.has(key)) return { kind: "failed" };
   return links.unresolved.has(key) ? { kind: "missing" } : { kind: "fetch" };
+}
+
+/**
+ * How a link gets its own read. A link the batch cannot know is read individually. A note card the
+ * reader opens is always read again: the batch is keyed on the revision, so it cannot know that the
+ * note was edited, retitled, superseded or archived since.
+ */
+export function wikiLinkFetchMode(
+  lookup: WikiLinkLookup,
+  targetKind: string,
+  expanded: boolean
+): "none" | "individual" | "refresh" {
+  if (lookup.kind === "fetch") return "individual";
+  return lookup.kind === "value" && expanded && targetKind === "atomic_note" ? "refresh" : "none";
+}
+
+/**
+ * What a link shows. `fetched` is `undefined` until the link's own read arrives and `null` when
+ * that read found nothing. An opened note's own read overrides the page's batch value, so a note
+ * that was archived or discarded since the batch is no longer shown from it.
+ */
+export function wikiLinkValueToShow(
+  lookup: WikiLinkLookup,
+  fetched: WikiLinkedTargetValue | null | undefined,
+  mode: ReturnType<typeof wikiLinkFetchMode>
+): WikiLinkedTargetValue | null {
+  if (lookup.kind === "value")
+    return mode === "refresh" && fetched !== undefined ? fetched : lookup.value;
+  return lookup.kind === "fetch" ? (fetched ?? null) : null;
 }
 
 export function emptyWikiPageLinks(
@@ -62,7 +93,8 @@ export function emptyWikiPageLinks(
     revisionId: page.revisionId,
     status,
     targets: new Map(),
-    unresolved: new Set()
+    unresolved: new Set(),
+    failed: new Set()
   };
 }
 
@@ -72,7 +104,8 @@ export function wikiPageLinksFromResolved(resolved: WikiResolvedLinks): WikiPage
     revisionId: resolved.revisionId,
     status: "ready",
     targets: new Map(resolved.targets.map((target) => [wikiLinkKey(target), target])),
-    unresolved: new Set(resolved.unresolved.map(wikiLinkKey))
+    unresolved: new Set(resolved.unresolved.map(wikiLinkKey)),
+    failed: new Set(resolved.failed.map(wikiLinkKey))
   };
 }
 
@@ -110,6 +143,16 @@ export function wikiLinkSetKey(page: SyncPage): string {
   ].join("|");
 }
 
+/** A failed resolution is retried after a capped exponential delay, not on every poll cycle. */
+export const wikiLinkRetryBackoff = { baseMs: 3_000, maxMs: 60_000 } as const;
+
+export function wikiLinkRetryDelayMs(failures: number): number {
+  return Math.min(
+    wikiLinkRetryBackoff.maxMs,
+    wikiLinkRetryBackoff.baseMs * 2 ** Math.max(0, failures - 1)
+  );
+}
+
 export interface WikiPageSyncClient<Page extends SyncPage> {
   get: (id: string, revisionId?: string) => Promise<Page | null>;
   resolveLinks: (pageId: string, revisionId?: string) => Promise<WikiResolvedLinks | null>;
@@ -128,12 +171,17 @@ export interface WikiPageSyncSink<Page extends SyncPage> {
  */
 export function createWikiPageSync<Page extends SyncPage>(
   client: WikiPageSyncClient<Page>,
-  shown: Page | null
+  shown: Page | null,
+  now: () => number = Date.now
 ) {
   let pageKey = shown ? wikiPageSnapshotKey(shown) : null;
   let linkKey: string | null = null;
   let lastLinks: WikiPageLinks | null = null;
   let running = false;
+  // Consecutive failures of the current link set; a new set (another revision) starts afresh.
+  let failedLinkKey: string | null = null;
+  let failures = 0;
+  let retryAt = 0;
   async function run(
     id: string,
     historicalRevision: string | undefined,
@@ -148,17 +196,31 @@ export function createWikiPageSync<Page extends SyncPage>(
     }
     const nextLinkKey = wikiLinkSetKey(next);
     if (nextLinkKey === linkKey) return;
+    if (nextLinkKey === failedLinkKey && now() < retryAt) return;
+    if (nextLinkKey !== failedLinkKey) failures = 0;
     let links: WikiPageLinks;
+    let complete = false;
     try {
       const resolved = await client.resolveLinks(next.id, next.revisionId);
       if (!sink.isLive()) return;
       if (resolved) {
-        linkKey = nextLinkKey;
         links = wikiPageLinksFromResolved(resolved);
+        complete = links.failed.size === 0;
       } else links = failedLinks(lastLinks, next);
     } catch {
       if (!sink.isLive()) return;
       links = failedLinks(lastLinks, next);
+    }
+    if (complete) {
+      linkKey = nextLinkKey;
+      failedLinkKey = null;
+      failures = 0;
+    } else {
+      // What is shown is no longer the last complete set: returning to that set resolves again.
+      linkKey = null;
+      failedLinkKey = nextLinkKey;
+      failures += 1;
+      retryAt = now() + wikiLinkRetryDelayMs(failures);
     }
     lastLinks = links;
     sink.onLinks(links);

@@ -56,6 +56,18 @@ describe("AI provenance badge on notes", () => {
       expect(renderToString(<AiNoteBadge t={t} status={status} />)).toBe("");
   });
 
+  it("does not mark a note a person edited: an edit keeps it active but protects it", () => {
+    expect(renderToString(<AiNoteBadge t={t} status="active" humanProtected />)).toBe("");
+    expect(renderToString(<AiNoteBadge t={t} status="active" humanProtected={false} />)).toContain(
+      'data-testid="ai-note-badge"'
+    );
+    // The protected indication that replaces it exists in every locale.
+    for (const locale of supportedLanguageCodes) {
+      const translate = createTranslator(locale);
+      expect(translate("obsidianWiki.protected")).not.toBe("obsidianWiki.protected");
+    }
+  });
+
   it("shows in the Library note list next to the status, and only for active notes", () => {
     const active = renderToString(<AtomicNoteCard note={note("active")} t={t} />);
     expect(active).toContain("Active");
