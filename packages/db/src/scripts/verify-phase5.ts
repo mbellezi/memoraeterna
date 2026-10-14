@@ -19,6 +19,11 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations
 } from "../index.js";
+import {
+  assertMigrationsRecorded,
+  assertMigrationsSeeded,
+  requiredMigrations
+} from "./verify-migration-history.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -41,12 +46,13 @@ try {
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
+  // Phase 5 needs its own migrations (up to 0016); later ones may exist.
+  const required = await requiredMigrations(migrationsFolder, "0016_awesome_dragon_man");
   await runMigrations(pool, migrationsFolder);
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 17)
-    throw new Error("Unexpected AI configuration migration history.");
+  await assertMigrationsRecorded(pool, required, "AI configuration migration history");
 
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables where table_schema = 'public'
@@ -391,9 +397,10 @@ try {
   seedUrl.pathname = "/memora_phase5_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 17) {
+  if (!baseline.seed.applied) {
     throw new Error("Empty database did not apply the complete phase 5 baseline.");
   }
+  assertMigrationsSeeded(baseline.seed.seededMigrations, required, "Phase 5 baseline");
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {
     throw new Error("Seed database reapplied the baseline.");
   }

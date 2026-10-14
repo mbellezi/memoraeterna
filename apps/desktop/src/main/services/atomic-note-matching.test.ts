@@ -88,6 +88,15 @@ const respond = (...outputs: unknown[]) => {
       : execution(queue.shift(), `run-${outputs.length - queue.length}`)
   );
 };
+const defaultVerdicts = {
+  results: [
+    // A rejected candidate's prose is ignored, even when it names another candidate.
+    result("c1", 0.1, "supports", "Unlike c3, the candidate supplies only weak support."),
+    result("c2", 0.7, "supports", "c2 reinforces the central claim of s1."),
+    result("c3", 0.95, "extends", "c3 adds a further condition to s1.")
+  ]
+};
+const embeddingResult = () => execution(Array.from({ length: 256 }, () => 0.1));
 beforeEach(() => {
   vi.resetAllMocks();
   const candidates = ["a", "b", "c"].map((id) => ({
@@ -104,14 +113,7 @@ beforeEach(() => {
   mocks.relations.pairStatuses.mockResolvedValue(new Map());
   mocks.decisions.findVerdicts.mockResolvedValue(new Map());
   mocks.aiConfig.getDefaultTask.mockResolvedValue(route());
-  respond({
-    results: [
-      // A rejected candidate's prose is ignored, even when it names another candidate.
-      result("c1", 0.1, "supports", "Unlike c3, the candidate supplies only weak support."),
-      result("c2", 0.7, "supports", "c2 reinforces the central claim of s1."),
-      result("c3", 0.95, "extends", "c3 adds a further condition to s1.")
-    ]
-  });
+  respond(defaultVerdicts);
 });
 
 describe("atomic note matching execution", () => {
@@ -300,13 +302,213 @@ describe("atomic note matching execution", () => {
     );
   });
 
-  it("leaves candidates undecided, unlinked and unrecorded when the output and its repair are invalid", async () => {
+  it("leaves candidates undecided, unlinked and unrecorded when the output and its repair are invalid and reranking is optional", async () => {
     respond({ results: [] }, "not json");
-    const matched = await service().matchAtomicNotes(["source"]);
+    const completed: string[] = [];
+    const matched = await service({
+      requireReranking: false,
+      // An undecided pair has the weak type "related".
+      includeWeakTypes: true
+    }).matchAtomicNotes(
+      ["source"],
+      undefined,
+      undefined,
+      {},
+      {
+        onNoteCompleted: (noteId) => void completed.push(noteId)
+      }
+    );
     expect(rerankCalls()).toHaveLength(2);
-    expect(matched.persistedCount).toBe(0);
+    // Without a required decider the hybrid score stands in, and nothing is recorded as decided.
+    expect(matched.persistedCount).toBe(3);
+    expect(
+      mocks.relations.upsert.mock.calls.map(([input]) => input.metadata.decisionSource)
+    ).toEqual(["undecided", "undecided", "undecided"]);
+    expect(mocks.relations.upsert.mock.calls.map(([input]) => input.matchingModel)).toEqual([
+      null,
+      null,
+      null
+    ]);
+    expect(mocks.decisions.record).not.toHaveBeenCalled();
+    expect(completed).toEqual(["source"]);
+  });
+
+  it("fails visibly, before the checkpoint, when a required decision has two invalid outputs", async () => {
+    const completed: string[] = [];
+    const onNoteCompleted = (noteId: string) => void completed.push(noteId);
+    for (const outputs of [
+      [{ results: [] }, "not json"],
+      ["not json", { results: [] }]
+    ]) {
+      respond(...outputs);
+      const failure = await service()
+        .matchAtomicNotes(["source"], undefined, undefined, {}, { onNoteCompleted })
+        .catch((error: unknown) => error);
+      expect((failure as Error).message).toBe("errors.matching.rerankingFailed");
+      expect(rerankCalls()).toHaveLength(2);
+      mocks.run.mockClear();
+    }
     expect(mocks.relations.upsert).not.toHaveBeenCalled();
     expect(mocks.decisions.record).not.toHaveBeenCalled();
+    expect(completed).toEqual([]);
+  });
+
+  it("fails visibly, before the checkpoint, when the repair of a required decision throws or returns nothing", async () => {
+    const completed: string[] = [];
+    const onNoteCompleted = (noteId: string) => void completed.push(noteId);
+    // c2 is missing from the first answer, so a repair asks for it alone.
+    const firstAnswer = {
+      results: [result("c1", 0.1, "related"), result("c3", 0.95, "extends", "c3 extends s1.")]
+    };
+    const timeout = new Error("provider_timeout");
+    for (const [repairOutcome, cause] of [
+      [() => Promise.reject(timeout), timeout],
+      [() => Promise.resolve(null), undefined]
+    ] as const) {
+      mocks.run.mockImplementation(async (task, _prompt, context: { attempt?: number }) =>
+        task === "embedding"
+          ? embeddingResult()
+          : context.attempt === 1
+            ? repairOutcome()
+            : execution(firstAnswer)
+      );
+      const failure = await service()
+        .matchAtomicNotes(["source"], undefined, undefined, {}, { onNoteCompleted })
+        .catch((error: unknown) => error);
+      expect((failure as Error).message).toBe("errors.matching.rerankingFailed");
+      // The repair error stays the cause, so the supervisor can still classify it as transient.
+      expect((failure as Error).cause).toBe(cause);
+      expect(rerankCalls()).toHaveLength(2);
+      mocks.run.mockClear();
+    }
+    expect(mocks.relations.upsert).not.toHaveBeenCalled();
+    expect(mocks.decisions.record).not.toHaveBeenCalled();
+    expect(completed).toEqual([]);
+  });
+
+  it("keeps the decided items when a failed repair leaves nothing undecided or reranking is optional", async () => {
+    const throwingRepair = (firstAnswer: unknown) =>
+      mocks.run.mockImplementation(async (task, _prompt, context: { attempt?: number }) => {
+        if (task === "embedding") return embeddingResult();
+        if (context.attempt === 1) throw new Error("provider_timeout");
+        return execution(firstAnswer);
+      });
+    // Only the explanation of an accepted pair is missing: the decision stands, with the fallback.
+    throwingRepair({
+      results: [
+        result("c1", 0.1, "related"),
+        result("c2", 0.2, "related"),
+        result("c3", 0.95, "extends")
+      ]
+    });
+    const matched = await service().matchAtomicNotes(["source"]);
+    expect(rerankCalls()).toHaveLength(2);
+    expect(matched.persistedCount).toBe(1);
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAtomicNoteId: "c",
+        explanation: "knowledge.relations.explanations.reranked"
+      })
+    );
+
+    // With optional reranking an undecided item stays undecided and the decided ones are kept.
+    vi.clearAllMocks();
+    throwingRepair({
+      results: [result("c1", 0.1, "related"), result("c3", 0.95, "extends", "c3 extends s1.")]
+    });
+    const optional = await service({
+      requireReranking: false,
+      includeWeakTypes: true
+    }).matchAtomicNotes(["source"]);
+    expect(optional.persistedCount).toBe(2);
+    expect(
+      mocks.relations.upsert.mock.calls.map(([input]) => [
+        input.targetAtomicNoteId,
+        input.metadata.decisionSource
+      ])
+    ).toEqual([
+      ["c", "model"],
+      ["b", "undecided"]
+    ]);
+    expect(mocks.decisions.record.mock.calls.map(([r]) => r.targetAtomicNoteId).sort()).toEqual([
+      "a",
+      "c"
+    ]);
+  });
+
+  it("asks neither for an explanation nor for a repair of a verdict that can never be accepted", async () => {
+    // A weak type is refused with the default settings, whatever the score.
+    respond({
+      results: [
+        result("c1", 0.1, "related"),
+        result("c2", 0.2, "related"),
+        result("c3", 0.9, "mentions")
+      ]
+    });
+    expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
+    expect(rerankCalls()).toHaveLength(1);
+    expect(mocks.relations.upsert).not.toHaveBeenCalled();
+    expect(mocks.decisions.record).toHaveBeenCalledTimes(3);
+
+    // The same verdict is repaired when the settings could accept it.
+    vi.clearAllMocks();
+    respond(
+      {
+        results: [
+          result("c1", 0.1, "related"),
+          result("c2", 0.2, "related"),
+          result("c3", 0.9, "mentions")
+        ]
+      },
+      { results: [result("c3", 0.9, "mentions", "c3 only mentions s1.")] }
+    );
+    await service({ includeWeakTypes: true }).matchAtomicNotes(["source"]);
+    expect(rerankCalls()).toHaveLength(2);
+
+    // A final score under the threshold even with the verdict cannot qualify either.
+    vi.clearAllMocks();
+    const faint = ["a", "b", "c"].map((id) => ({
+      note: note(id),
+      textScore: 0.42,
+      vectorScore: 0.42
+    }));
+    mocks.notes.scoreMatchingCandidates.mockResolvedValue(faint);
+    respond({ results: ["c1", "c2", "c3"].map((alias) => result(alias, 0.9, "supports")) });
+    expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
+    expect(rerankCalls()).toHaveLength(1);
+  });
+
+  it("keeps the prompt and the decider key independent of the relation calibration", async () => {
+    const prompts: string[] = [];
+    const keys: string[] = [];
+    for (const minRerankScore of [0.4, 0.65, 0.9]) {
+      mocks.run.mockClear();
+      mocks.decisions.findVerdicts.mockClear();
+      respond(defaultVerdicts);
+      await service({ minRerankScore }).matchAtomicNotes(["source"]);
+      prompts.push(rerankCalls()[0]![1] as string);
+      keys.push(mocks.decisions.findVerdicts.mock.calls[0]![0].deciderKey);
+    }
+    expect(new Set(prompts).size).toBe(1);
+    expect(new Set(keys).size).toBe(1);
+    expect(prompts[0]).toContain("Add explanation only when score is 0.5 or higher");
+  });
+
+  it("runs the decision with reasoning off by default and identifies the decider by that", async () => {
+    const run = async (parameters: Record<string, unknown>) => {
+      mocks.aiConfig.getDefaultTask.mockResolvedValue({ ...route(), parameters });
+      mocks.run.mockClear();
+      mocks.decisions.findVerdicts.mockClear();
+      respond(defaultVerdicts);
+      await service().matchAtomicNotes(["source"]);
+      expect(rerankCalls()[0]![2]).toMatchObject({ operation: "note_matching_reranking" });
+      return mocks.decisions.findVerdicts.mock.calls[0]![0].deciderKey as string;
+    };
+    const byDefault = await run({});
+    // The default is part of the effective parameters, so spelling it out changes nothing...
+    expect(await run({ reasoningLevel: "off" })).toBe(byDefault);
+    // ...and asking for more reasoning is another decider.
+    expect(await run({ reasoningLevel: "high" })).not.toBe(byDefault);
   });
 
   it("fails visibly when the required reranking call itself fails or has no model", async () => {
@@ -428,6 +630,39 @@ describe("atomic note matching execution", () => {
     await service().matchAtomicNotes(["source"]);
     expect(mocks.relations.upsert).toHaveBeenCalled();
     expect(mocks.decisions.record).not.toHaveBeenCalled();
+  });
+
+  it("keeps the provenance of cached verdicts when the route changes during the call", async () => {
+    mocks.aiConfig.getDefaultTask
+      .mockResolvedValueOnce(route("model"))
+      .mockResolvedValueOnce(route("another-model"));
+    mocks.decisions.findVerdicts.mockResolvedValue(
+      new Map([["c", { score: 0.95, relationType: "extends" }]])
+    );
+    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    await service().matchAtomicNotes(["source"]);
+    // The cached verdict belongs to the decider it was looked up under, not to the new route.
+    expect(mocks.relations.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetAtomicNoteId: "c",
+        matchingModel: "model",
+        metadata: expect.objectContaining({ decisionSource: "cache" })
+      })
+    );
+    expect(mocks.decisions.record).not.toHaveBeenCalled();
+  });
+
+  it("resolves the decider again for every note, so a route that appears later is used from then on", async () => {
+    // The first note finds no route (it is seeded by its own call); the second finds it.
+    mocks.aiConfig.getDefaultTask
+      .mockReset()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(route());
+    respond(defaultVerdicts, defaultVerdicts);
+    await service().matchAtomicNotes(["source", "second"]);
+    expect(rerankCalls()).toHaveLength(2);
+    expect(mocks.decisions.findVerdicts).toHaveBeenCalledOnce();
+    expect(mocks.decisions.record).toHaveBeenCalledTimes(3);
   });
 
   it("matches without the cache when no decider identity can be resolved", async () => {

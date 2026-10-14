@@ -16,7 +16,7 @@ import {
 export const summaryPromptVersion = "summary-v3";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
-export const atomicNoteMatchingVersion = "atomic-note-matching-v7";
+export const atomicNoteMatchingVersion = "atomic-note-matching-v8";
 export const knowledgeGraphPromptVersion = "knowledge-graph-v8";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
@@ -651,6 +651,31 @@ export function canQualifyAtomicNoteRelation(input: {
   );
 }
 
+/**
+ * Whether one decider verdict could be accepted for a candidate, ignoring the per-note limit that
+ * depends on the other candidates. A verdict that cannot qualify is never explained or repaired.
+ */
+export function atomicNoteVerdictQualifies(input: {
+  scores: AtomicNoteRelationScoreInputs;
+  hasEmbedding: boolean;
+  threshold: number;
+  settings: AtomicNoteMatchingSettings;
+  verdict: { score: number; relationType: string };
+}): boolean {
+  return qualifiesAtomicNoteRelation({
+    finalScore: calculateRelationScore({
+      ...input.scores,
+      hasEmbedding: input.hasEmbedding,
+      rerankScore: input.verdict.score,
+      settings: input.settings
+    }),
+    threshold: input.threshold,
+    rerankScore: input.verdict.score,
+    relationType: input.verdict.relationType,
+    settings: input.settings
+  });
+}
+
 export interface AtomicNoteRelationSelectionCandidate {
   noteId: string;
   contentKey: string;
@@ -780,6 +805,13 @@ export function calculateAtomicNoteMatchingProgress(input: {
 /** Model-written explanations are short; longer prose is treated as an invalid item. */
 export const maxRerankExplanationCharacters = 300;
 
+/**
+ * The decider is told to explain scores at or above this. A fixed part of the matching contract,
+ * never derived from the relation calibration (`minRerankScore`), so a stored raw score does not
+ * depend on how the thresholds were set when it was produced.
+ */
+export const rerankExplanationMinScore = 0.5;
+
 const batchRerankDecisionSchema = z.object({
   candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
   score: z.number().min(0).max(1),
@@ -806,14 +838,19 @@ export interface BatchRerankParseResult {
 }
 
 /**
- * Decision-only contract (v7): every candidate gets an alias, a score and a relation type; only a
- * score at or above `explanationMinScore` carries a short explanation. Valid items are kept;
+ * Decision-only contract: every candidate gets an alias, a score and a relation type; only a score
+ * at or above `rerankExplanationMinScore` carries a short explanation. Valid items are kept;
  * nothing in one item can invalidate another, and the prose of a rejected candidate is never read.
+ * A missing explanation is asked for again only when `canQualify` says the verdict could still be
+ * accepted: a pair that never qualifies is not worth a paid repair.
  */
 export function parseBatchRerankOutput(
   output: unknown,
   allowedAliases: ReadonlyArray<string>,
-  explanationMinScore: number
+  canQualify: (
+    alias: string,
+    verdict: { score: number; relationType: AtomicNoteRelationType }
+  ) => boolean = () => true
 ): BatchRerankParseResult {
   const allowed = new Set(allowedAliases);
   const decisions = new Map<string, BatchRerankDecision>();
@@ -840,11 +877,14 @@ export function parseBatchRerankOutput(
       invalid.add(alias);
       continue;
     }
-    const explanation =
-      parsed.data.score >= explanationMinScore
-        ? safeRerankExplanation(parsed.data.explanation, alias)
-        : null;
-    if (parsed.data.score >= explanationMinScore && explanation === null) unexplained.add(alias);
+    const explained = parsed.data.score >= rerankExplanationMinScore;
+    const explanation = explained ? safeRerankExplanation(parsed.data.explanation, alias) : null;
+    if (
+      explained &&
+      explanation === null &&
+      canQualify(alias, { score: parsed.data.score, relationType: parsed.data.relationType })
+    )
+      unexplained.add(alias);
     decisions.set(alias, {
       candidateAlias: alias,
       score: parsed.data.score,
@@ -902,13 +942,12 @@ export function resolveAtomicNoteReferences(
 
 export function buildBatchRerankPrompt(
   source: { title: string; ideaStatement: string },
-  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>,
-  explanationMinScore = defaultAtomicNoteMatchingSettings.minRerankScore
+  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>
 ): string {
   return renderPrompt("notes.match", {
     source_title: source.title,
     source_idea: source.ideaStatement,
-    explanation_min_score: explanationMinScore,
+    explanation_min_score: rerankExplanationMinScore,
     candidate_notes: candidates
       .map(
         (candidate) =>

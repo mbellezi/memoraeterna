@@ -22,6 +22,11 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations
 } from "../index.js";
+import {
+  assertMigrationsRecorded,
+  assertMigrationsSeeded,
+  requiredMigrations
+} from "./verify-migration-history.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -43,18 +48,20 @@ try {
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
+  // Phase 3 needs its own migrations (up to 0010); later ones may exist.
+  const required = await requiredMigrations(migrationsFolder, "0010_handy_gamora");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 11) {
+  if (!firstRun.seed.applied) {
     throw new Error("Empty database did not apply the complete phase 3 baseline.");
   }
+  assertMigrationsSeeded(firstRun.seed.seededMigrations, required, "Phase 3 baseline");
   const secondRun = await runMigrations(pool, migrationsFolder, { seedFolder });
   if (secondRun.seed.applied) throw new Error("Existing database reapplied the phase 3 baseline.");
 
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 11)
-    throw new Error("Unexpected Drizzle migration history.");
+  await assertMigrationsRecorded(pool, required, "Phase 3 migration history");
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables
      where table_schema = 'public' and table_name in (
@@ -213,6 +220,8 @@ try {
 
   const vector = Array.from({ length: 256 }, (_, index) => (index === 0 ? 1 : 0));
   const embeddings = createEmbeddingRepository(pool);
+  // Vectors are compared only inside one provable embedding space: the strategy carries its key.
+  const embeddingSpaceKey = "phase3-space";
   await embeddings.upsert({
     targetType: "atomic_note",
     targetId: firstNote.id,
@@ -220,6 +229,7 @@ try {
     model: "test-256",
     runtime: "local",
     usage: "matching",
+    strategy: `native-v2:${embeddingSpaceKey}`,
     contentHash: "d".repeat(64),
     embedding: vector
   });
@@ -230,6 +240,7 @@ try {
     model: "test-256",
     runtime: "local",
     usage: "matching",
+    strategy: `native-v2:${embeddingSpaceKey}`,
     contentHash: "e".repeat(64),
     embedding: vector
   });
@@ -237,6 +248,9 @@ try {
     noteId: firstNote.id,
     embedding: vector,
     embeddingModel: "test-256",
+    embeddingSpaceKey,
+    embeddingProvider: "test",
+    embeddingRuntime: "local",
     limit: 5
   });
   if (candidates[0]?.note.id !== secondNote.id || candidates[0].vectorScore < 0.99) {

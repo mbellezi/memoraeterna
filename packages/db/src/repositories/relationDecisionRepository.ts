@@ -20,6 +20,7 @@ export interface RelationDecisionInput {
   relationType: string;
   /** Whether matching accepted the pair when this verdict was recorded. */
   accepted: boolean;
+  /** The AI run that produced this direction's verdict; the other direction keeps its own. */
   aiTaskRunId: string | null;
 }
 
@@ -39,6 +40,29 @@ export function relationDecisionPair(left: string, right: string) {
   if (left === right) throw new Error("A relation decision needs two different notes.");
   const [lo, hi] = left < right ? [left, right] : [right, left];
   return { lo, hi, key: `${lo}:${hi}` };
+}
+
+const sameContent =
+  "d.lo_content_hash = excluded.lo_content_hash and d.hi_content_hash = excluded.hi_content_hash";
+
+/**
+ * The SET clauses of one direction on conflict (static column names, never input). The verdict is
+ * kept while the content is unchanged unless this call records the direction; its AI run and time
+ * follow the recording call, so the other direction keeps its own.
+ */
+function directionAssignments(direction: "lo_to_hi" | "hi_to_lo"): string {
+  const verdict = (column: string) =>
+    `${column} = case when ${sameContent}
+             then coalesce(excluded.${column}, d.${column}) else excluded.${column} end`;
+  const audit = (column: string) =>
+    `${column} = case when excluded.${direction}_score is not null then excluded.${column}
+             when ${sameContent} then d.${column} end`;
+  return [
+    verdict(`${direction}_score`),
+    verdict(`${direction}_relation_type`),
+    audit(`${direction}_ai_task_run_id`),
+    audit(`${direction}_decided_at`)
+  ].join(",\n           ");
 }
 
 export function createRelationDecisionRepository(db: Queryable) {
@@ -90,44 +114,33 @@ export function createRelationDecisionRepository(db: Queryable) {
     },
 
     /**
-     * Records one direction. The other direction's verdict is kept while both content hashes are
-     * unchanged and discarded when either note changed, so a row never mixes content versions.
+     * Records one direction with its own AI run and time. The other direction's verdict, run and
+     * time are kept while both content hashes are unchanged and discarded when either note changed,
+     * so a row never mixes content versions.
      */
     async record(input: RelationDecisionInput): Promise<void> {
       const pair = relationDecisionPair(input.sourceAtomicNoteId, input.targetAtomicNoteId);
       const sourceIsLo = pair.lo === input.sourceAtomicNoteId;
-      const verdict = [input.score, input.relationType];
+      const verdict = [input.score, input.relationType, input.aiTaskRunId];
       await db.query(
         `insert into relation_decisions as d (
            pair_key, lo_atomic_note_id, hi_atomic_note_id, lo_content_hash, hi_content_hash,
-           decider_key, lo_to_hi_score, lo_to_hi_relation_type, hi_to_lo_score,
-           hi_to_lo_relation_type, relation_type, accepted, ai_task_run_id
-         ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           decider_key, lo_to_hi_score, lo_to_hi_relation_type, lo_to_hi_ai_task_run_id,
+           lo_to_hi_decided_at, hi_to_lo_score, hi_to_lo_relation_type, hi_to_lo_ai_task_run_id,
+           hi_to_lo_decided_at, relation_type, accepted
+         ) values ($1, $2, $3, $4, $5, $6, $7::double precision, $8, $9::uuid,
+           case when $7::double precision is not null then now() end,
+           $10::double precision, $11, $12::uuid,
+           case when $10::double precision is not null then now() end, $13, $14)
          on conflict (pair_key, decider_key) do update set
-           lo_to_hi_score = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash
-             then coalesce(excluded.lo_to_hi_score, d.lo_to_hi_score) else excluded.lo_to_hi_score end,
-           lo_to_hi_relation_type = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash
-             then coalesce(excluded.lo_to_hi_relation_type, d.lo_to_hi_relation_type)
-             else excluded.lo_to_hi_relation_type end,
-           hi_to_lo_score = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash
-             then coalesce(excluded.hi_to_lo_score, d.hi_to_lo_score) else excluded.hi_to_lo_score end,
-           hi_to_lo_relation_type = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash
-             then coalesce(excluded.hi_to_lo_relation_type, d.hi_to_lo_relation_type)
-             else excluded.hi_to_lo_relation_type end,
-           relation_type = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash and d.accepted
+           ${directionAssignments("lo_to_hi")},
+           ${directionAssignments("hi_to_lo")},
+           relation_type = case when ${sameContent} and d.accepted
              then d.relation_type else excluded.relation_type end,
-           accepted = case when d.lo_content_hash = excluded.lo_content_hash
-               and d.hi_content_hash = excluded.hi_content_hash
+           accepted = case when ${sameContent}
              then d.accepted or excluded.accepted else excluded.accepted end,
            lo_content_hash = excluded.lo_content_hash,
-           hi_content_hash = excluded.hi_content_hash,
-           ai_task_run_id = excluded.ai_task_run_id,
-           decided_at = now()`,
+           hi_content_hash = excluded.hi_content_hash`,
         [
           pair.key,
           pair.lo,
@@ -135,11 +148,10 @@ export function createRelationDecisionRepository(db: Queryable) {
           sourceIsLo ? input.sourceContentHash : input.targetContentHash,
           sourceIsLo ? input.targetContentHash : input.sourceContentHash,
           input.deciderKey,
-          ...(sourceIsLo ? verdict : [null, null]),
-          ...(sourceIsLo ? [null, null] : verdict),
+          ...(sourceIsLo ? verdict : [null, null, null]),
+          ...(sourceIsLo ? [null, null, null] : verdict),
           input.accepted ? input.relationType : null,
-          input.accepted,
-          input.aiTaskRunId
+          input.accepted
         ]
       );
     }

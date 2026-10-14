@@ -896,7 +896,8 @@ export class AiService {
         Boolean(selection.localModelId),
         {
           admitted: !!pinned,
-          contextWindowLimit: discoveredContextWindow(selection.providerMetadata)
+          contextWindowLimit: discoveredContextWindow(selection.providerMetadata),
+          operation: logContext.operation
         }
       )
     );

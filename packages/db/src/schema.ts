@@ -1581,7 +1581,8 @@ export const atomicNoteRelations = pgTable(
 );
 
 // Relation decider verdicts on an unordered note pair, one row per pair and decider. Each direction
-// keeps its raw score apart from calibration (thresholds), for the content hashes it was decided on.
+// keeps its raw score apart from calibration (thresholds), for the content hashes it was decided on,
+// with the AI run and the time of its own decision.
 export const relationDecisions = pgTable(
   "relation_decisions",
   {
@@ -1598,12 +1599,18 @@ export const relationDecisions = pgTable(
     deciderKey: text("decider_key").notNull(),
     loToHiScore: doublePrecision("lo_to_hi_score"),
     loToHiRelationType: text("lo_to_hi_relation_type"),
+    loToHiAiTaskRunId: uuid("lo_to_hi_ai_task_run_id").references(() => aiTaskRuns.id, {
+      onDelete: "set null"
+    }),
+    loToHiDecidedAt: timestamp("lo_to_hi_decided_at", { withTimezone: true }),
     hiToLoScore: doublePrecision("hi_to_lo_score"),
     hiToLoRelationType: text("hi_to_lo_relation_type"),
+    hiToLoAiTaskRunId: uuid("hi_to_lo_ai_task_run_id").references(() => aiTaskRuns.id, {
+      onDelete: "set null"
+    }),
+    hiToLoDecidedAt: timestamp("hi_to_lo_decided_at", { withTimezone: true }),
     relationType: text("relation_type"),
-    accepted: boolean("accepted").notNull().default(false),
-    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull().defaultNow(),
-    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" })
+    accepted: boolean("accepted").notNull().default(false)
   },
   (table) => ({
     pairDeciderUidx: uniqueIndex("relation_decisions_pair_decider_uidx").on(
@@ -1623,6 +1630,13 @@ export const relationDecisions = pgTable(
         and (${table.hiToLoScore} is null) = (${table.hiToLoRelationType} is null)
         and coalesce(${table.loToHiScore}, 0) between 0 and 1
         and coalesce(${table.hiToLoScore}, 0) between 0 and 1`
+    ),
+    decidedAt: check(
+      "relation_decisions_decided_at",
+      sql`(${table.loToHiScore} is null) = (${table.loToHiDecidedAt} is null)
+        and (${table.hiToLoScore} is null) = (${table.hiToLoDecidedAt} is null)
+        and (${table.loToHiScore} is not null or ${table.loToHiAiTaskRunId} is null)
+        and (${table.hiToLoScore} is not null or ${table.hiToLoAiTaskRunId} is null)`
     ),
     accepted: check(
       "relation_decisions_accepted",

@@ -3,11 +3,45 @@ import type { JsonObject } from "@app/db";
 
 export const profileGenerationMaxTokens = 16_384;
 
+/**
+ * Operations of the `notes.match` decision call and its repair. They return decisions, not prose,
+ * so they run with reasoning off by default; other uses of the `reranking` route (source matching)
+ * keep the profile's own parameters.
+ */
+export const noteMatchDecisionOperations = {
+  decide: "note_matching_reranking",
+  repair: "note_matching_reranking_repair"
+} as const;
+
+/**
+ * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
+ * Any default here changes the effective parameters, so a run fingerprint must include it.
+ */
+export function aiTaskBehaviorDefaults(
+  taskType: string,
+  localModel: boolean,
+  operation?: string | null
+): JsonObject {
+  const decision =
+    operation === noteMatchDecisionOperations.decide ||
+    operation === noteMatchDecisionOperations.repair;
+  return {
+    ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
+    // Adapters map "off" to the lowest reasoning level a model supports.
+    ...(taskType === "reranking" && decision ? { reasoningLevel: "off" } : {})
+  };
+}
+
 export function withAiTaskParameterDefaults(
   taskType: string,
   parameters: JsonObject,
   localModel: boolean,
-  options: { admitted?: boolean; contextWindowLimit?: number | null } = {}
+  options: {
+    admitted?: boolean;
+    contextWindowLimit?: number | null;
+    /** The calling operation: some defaults apply to one operation of a task only. */
+    operation?: string | null | undefined;
+  } = {}
 ): JsonObject {
   if (taskType === "embedding") {
     return { dimensions: 768, ...parameters };
@@ -25,10 +59,7 @@ export function withAiTaskParameterDefaults(
     !localModel && requested !== null ? Math.min(requested, known ?? 2_000_000) : null;
   return {
     maxTokens: profileGenerationMaxTokens,
-    ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
-    // Reranking returns decisions, not prose: reasoning stays off (adapters map "off" to the
-    // lowest level a model supports) unless the profile or model defaults ask for more.
-    ...(taskType === "reranking" ? { reasoningLevel: "off" } : {}),
+    ...aiTaskBehaviorDefaults(taskType, localModel, options.operation),
     ...parameters,
     ...(effective !== null ? { contextWindow: effective } : {})
   };

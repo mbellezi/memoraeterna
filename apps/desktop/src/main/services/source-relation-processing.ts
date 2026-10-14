@@ -22,8 +22,10 @@ import {
   type SourceRelationWrite
 } from "@app/db";
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
+import { aiTaskBehaviorDefaults } from "./ai-task-parameters.js";
 
 export const sourceRelationPromptVersion = "source-relations-v4";
+const sourceMatchingOperation = "source_relation_matching";
 const proposalSchema = z
   .object({
     source: z.string(),
@@ -409,12 +411,23 @@ export async function matchSources(options: {
     repository = createSourceRelationRepository(pool);
   const selection = await createAiConfigRepository(pool).getDefaultTask("reranking");
   if (!selection) throw new Error("errors.ai.noCompatibleModel");
+  // What the task adds beneath the profile's parameters changes the effective parameters, so it is
+  // part of the fingerprint. It is empty, and absent, while source matching adds nothing.
+  const taskDefaultsIdentity = (model: typeof selection) => {
+    const taskDefaults = aiTaskBehaviorDefaults(
+      "reranking",
+      Boolean(model.localModelId),
+      sourceMatchingOperation
+    );
+    return Object.keys(taskDefaults).length ? { taskDefaults } : {};
+  };
   const fingerprintConfiguration = (
     model: typeof selection,
     version = sourceRelationPromptVersion
   ) =>
     hash({
       version,
+      ...taskDefaultsIdentity(model),
       ...(changedPromptIdentity([
         "sources.match",
         "sources.repair",
@@ -638,7 +651,7 @@ export async function matchSources(options: {
             input,
             {
               ...options.context,
-              operation: "source_relation_matching",
+              operation: sourceMatchingOperation,
               stage: "sourceMatching",
               contentLanguage: options.contentLanguage,
               promptVersion: sourceRelationPromptVersion,

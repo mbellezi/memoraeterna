@@ -1,8 +1,7 @@
 # Knowledge pipeline
 
-Load for sources and ingestion, conversion, Docling, chunks and SourceSpans,
-summaries, atomic notes, relations, the knowledge graph, the topic tree, search,
-Ask, or background maintenance (Gardener).
+Load for ingestion, conversion, chunks and SourceSpans, summaries, atomic notes,
+relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Sources and ingestion
 
@@ -63,20 +62,21 @@ Ask, or background maintenance (Gardener).
   retrieval signals, never identity; identity reuse needs conservative
   confirmation and ambiguity creates a new entity. Graph extraction runs once per
   source over its chunks, for entities and relations; old claims are read-only.
-- Human accept or reject decisions on relations are preserved across reruns and
-  respected in both directions.
+- Human accept or reject of a relation survives reruns, in both directions.
 
 ## Relations
 
-- The decider explains only candidates it scores as related; filters before it
-  are lossless: they drop only candidates that no decider score could accept.
-- Decisions keep the raw score of each direction apart from calibration, keyed by
-  both notes' content hashes and the decider; a decided direction is reused.
-- Type, direction and explanation are assigned later, only to accepted pairs
-  (target F3).
-- Relation types use one fixed vocabulary shared by notes and sources. Shared
-  topics, names, dates or homonyms alone never create a relation; the relation
-  must be supported by evidence from both endpoints (target F3).
+- The decider explains only candidates it scores at a fixed threshold that could
+  be accepted; filters before it are lossless (they drop only candidates no
+  decider score could accept). A required decider that fails or decides nothing
+  fails the note visibly, before its checkpoint.
+- Decisions keep each direction's raw score, AI run and time apart from
+  calibration, keyed by both notes' content hashes and the decider; a decided
+  direction is reused with the decider that decided it.
+- Relation types use one fixed vocabulary shared by notes and sources; type,
+  direction and explanation are assigned only to accepted pairs. Shared topics,
+  names, dates or homonyms alone never create a relation; the relation must be
+  supported by evidence from both endpoints (target F3).
 - Source relations come from accepted note relations plus decider-confirmed
   discovery pairs, never same-root pairs. Matching runs per source as soon as its
   notes exist, with no batch barrier (target F3).

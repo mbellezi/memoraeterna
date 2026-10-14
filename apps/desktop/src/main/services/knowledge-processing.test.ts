@@ -23,6 +23,8 @@ import {
   parseAtomicNoteGenerationOutput,
   mergeBatchRerankRepair,
   parseBatchRerankOutput,
+  atomicNoteVerdictQualifies,
+  rerankExplanationMinScore,
   resolveAtomicNoteReferences,
   scoreMetadataOverlap
 } from "./knowledge-processing.js";
@@ -57,8 +59,7 @@ describe("knowledge processing", () => {
     ]) {
       const parsed = parseBatchRerankOutput(
         { results: [{ candidateAlias: "c1", score: 0.9, relationType: "supports", explanation }] },
-        ["c1"],
-        0.65
+        ["c1"]
       );
       expect(parsed.decisions.get("c1")).toEqual({
         candidateAlias: "c1",
@@ -80,8 +81,7 @@ describe("knowledge processing", () => {
             }
           ]
         },
-        ["c1"],
-        0.65
+        ["c1"]
       ).decisions.get("c1")?.explanation
     ).toBe("a".repeat(300));
   });
@@ -101,18 +101,16 @@ describe("knowledge processing", () => {
     expect(summaryConcepts("Legacy summary", [{ id: "one" }])).toEqual([]);
   });
   it("builds the decision-only prompt and keeps every valid item of a partial batch", () => {
-    const prompt = buildBatchRerankPrompt(
-      { title: "Source", ideaStatement: "Source idea" },
-      [
-        { alias: "c1", title: "First", ideaStatement: "First idea" },
-        { alias: "c2", title: "Second", ideaStatement: "Second idea" }
-      ],
-      0.7
-    );
+    const prompt = buildBatchRerankPrompt({ title: "Source", ideaStatement: "Source idea" }, [
+      { alias: "c1", title: "First", ideaStatement: "First idea" },
+      { alias: "c2", title: "Second", ideaStatement: "Second idea" }
+    ]);
     expect(prompt).toContain("source note -> candidate note");
     expect(prompt).toContain("[c1]");
     expect(prompt).toContain("Source note [s1]");
-    expect(prompt).toContain("Add explanation only when score is 0.7 or higher");
+    // The explanation threshold is a fixed contract constant, never the relation calibration.
+    expect(rerankExplanationMinScore).toBe(0.5);
+    expect(prompt).toContain("Add explanation only when score is 0.5 or higher");
     expect(prompt).toContain("at most 300 characters");
     expect(prompt).toContain("Never explain a lower score");
     expect(prompt).not.toContain("For every candidate, explain");
@@ -135,8 +133,7 @@ describe("knowledge processing", () => {
           }
         ]
       }),
-      ["c1", "c2", "c3"],
-      0.65
+      ["c1", "c2", "c3"]
     );
     expect(parsed.decisions.get("c1")).toEqual({
       candidateAlias: "c1",
@@ -166,13 +163,12 @@ describe("knowledge processing", () => {
           "not an item"
         ]
       },
-      ["c1", "c2", "c3", "c4", "c5"],
-      0.65
+      ["c1", "c2", "c3", "c4", "c5"]
     );
     expect([...parsed.decisions.keys()]).toEqual(["c4"]);
     expect(parsed.retry).toEqual(["c1", "c2", "c3", "c5"]);
     for (const output of ["not json", { items: [] }, { results: "none" }, null])
-      expect(parseBatchRerankOutput(output, ["c1", "c2"], 0.65)).toEqual({
+      expect(parseBatchRerankOutput(output, ["c1", "c2"])).toEqual({
         decisions: new Map(),
         retry: ["c1", "c2"]
       });
@@ -186,8 +182,7 @@ describe("knowledge processing", () => {
           { candidateAlias: "c2", score: 0.9, relationType: "extends" }
         ]
       },
-      ["c1", "c2", "c3"],
-      0.65
+      ["c1", "c2", "c3"]
     );
     expect(initial.retry).toEqual(["c2", "c3"]);
     const repaired = parseBatchRerankOutput(
@@ -203,8 +198,7 @@ describe("knowledge processing", () => {
           { candidateAlias: "c3", score: 0.3, relationType: "related" }
         ]
       },
-      initial.retry,
-      0.65
+      initial.retry
     );
     const merged = mergeBatchRerankRepair(initial, repaired);
     expect(merged.get("c1")).toMatchObject({ score: 0.1 });
@@ -215,6 +209,54 @@ describe("knowledge processing", () => {
       explanation: null
     });
     expect(merged.get("c3")).toMatchObject({ score: 0.3, explanation: null });
+  });
+
+  it("asks for an explanation only when the verdict could still be accepted", async () => {
+    const { AtomicNoteMatchingSettingsSchema } = await import("@app/domain");
+    const output = {
+      results: [
+        { candidateAlias: "c1", score: 0.8, relationType: "mentions" },
+        { candidateAlias: "c2", score: 0.8, relationType: "supports" },
+        { candidateAlias: "c3", score: 0.3, relationType: "supports" }
+      ]
+    };
+    const aliases = ["c1", "c2", "c3"];
+    // Without a qualification rule every explainable score without prose is asked again.
+    expect(parseBatchRerankOutput(output, aliases).retry).toEqual(["c1", "c2"]);
+    const parsed = parseBatchRerankOutput(
+      output,
+      aliases,
+      (_alias, verdict) => verdict.relationType !== "mentions"
+    );
+    expect(parsed.retry).toEqual(["c2"]);
+    // The decision itself is kept, only without an explanation nobody will read.
+    expect(parsed.decisions.get("c1")).toMatchObject({ score: 0.8, explanation: null });
+
+    const settings = AtomicNoteMatchingSettingsSchema.parse({});
+    const strong = { vectorScore: 1, textScore: 1, metadataScore: 1, graphScore: null };
+    const verdictOf = (
+      verdict: { score: number; relationType: string },
+      scores = strong,
+      overrides: Partial<typeof settings> = {}
+    ) =>
+      atomicNoteVerdictQualifies({
+        scores,
+        hasEmbedding: true,
+        threshold: 0.6,
+        settings: { ...settings, ...overrides },
+        verdict
+      });
+    expect(verdictOf({ score: 0.9, relationType: "supports" })).toBe(true);
+    // A weak type is refused unless the settings include weak types.
+    expect(verdictOf({ score: 0.9, relationType: "mentions" })).toBe(false);
+    expect(
+      verdictOf({ score: 0.9, relationType: "mentions" }, strong, { includeWeakTypes: true })
+    ).toBe(true);
+    // A score under the decider minimum never qualifies.
+    expect(verdictOf({ score: 0.3, relationType: "supports" })).toBe(false);
+    // Weak retrieval scores stay under the threshold even with a perfect verdict.
+    const weak = { vectorScore: 0, textScore: 0, metadataScore: 0, graphScore: null };
+    expect(verdictOf({ score: 1, relationType: "supports" }, weak)).toBe(false);
   });
 
   it("uses graph-only candidates in atomic-note RRF preselection", () => {
@@ -1297,8 +1339,7 @@ describe("advanced note matching calibration", () => {
     expect(
       parseBatchRerankOutput(
         { results },
-        results.map((r) => r.candidateAlias),
-        0.65
+        results.map((r) => r.candidateAlias)
       ).decisions.size
     ).toBe(45);
     const ranked = [{ noteId: "text", score: 1 }];

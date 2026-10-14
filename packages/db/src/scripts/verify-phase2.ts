@@ -20,6 +20,11 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations
 } from "../index.js";
+import {
+  assertMigrationsRecorded,
+  assertMigrationsSeeded,
+  requiredMigrations
+} from "./verify-migration-history.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -41,10 +46,13 @@ try {
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
+  // Phase 2 needs its own migrations (up to 0010); later ones may exist.
+  const required = await requiredMigrations(migrationsFolder, "0010_handy_gamora");
   const firstRun = await runMigrations(pool, migrationsFolder, { seedFolder });
-  if (!firstRun.seed.applied || firstRun.seed.seededMigrations.length !== 11) {
+  if (!firstRun.seed.applied) {
     throw new Error("Empty database did not apply the complete phase 2 baseline.");
   }
+  assertMigrationsSeeded(firstRun.seed.seededMigrations, required, "Phase 2 baseline");
 
   await pool.query("insert into settings (key, value) values ('phase2.marker', 'true'::jsonb)");
   const secondRun = await runMigrations(pool, migrationsFolder, { seedFolder });
@@ -53,8 +61,7 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 11)
-    throw new Error("Unexpected Drizzle migration history.");
+  await assertMigrationsRecorded(pool, required, "Phase 2 migration history");
   const extensions = await pool.query<{ extname: string }>(
     "select extname from pg_extension where extname in ('vector', 'unaccent', 'pg_trgm') order by extname"
   );

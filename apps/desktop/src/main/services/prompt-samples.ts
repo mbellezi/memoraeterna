@@ -5,12 +5,7 @@ import {
   parseCuratorProposal,
   validateCuratorProposal
 } from "./wiki-curator.js";
-import {
-  CuratorSnapshotSchema,
-  CuratorCheckpointSchema,
-  defaultAtomicNoteMatchingSettings,
-  initialCuratorLimits
-} from "@app/domain";
+import { CuratorSnapshotSchema, CuratorCheckpointSchema, initialCuratorLimits } from "@app/domain";
 import { z } from "zod";
 import {
   promptDefinition,
@@ -540,11 +535,7 @@ export function promptSampleCall(
         ]),
         task: "reranking",
         validate: (o) => {
-          const parsed = parseBatchRerankOutput(
-            o,
-            ["c1"],
-            defaultAtomicNoteMatchingSettings.minRerankScore
-          );
+          const parsed = parseBatchRerankOutput(o, ["c1"]);
           if (!parsed.decisions.has("c1") || parsed.retry.length > 0)
             throw new Error("prompts.errors.sample");
         }

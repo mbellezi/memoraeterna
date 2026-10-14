@@ -6,7 +6,7 @@ import {
   changedPromptIdentity
 } from "./prompt-runtime.js";
 import { contentKey } from "./content-order.js";
-import { withAiTaskParameterDefaults } from "./ai-task-parameters.js";
+import { noteMatchDecisionOperations, withAiTaskParameterDefaults } from "./ai-task-parameters.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
 import {
@@ -60,6 +60,7 @@ import {
   atomicNoteDeciderKey,
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
+  atomicNoteVerdictQualifies,
   buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
   calculateAtomicNoteMatchingProgress,
@@ -1365,7 +1366,6 @@ export class KnowledgeService {
     const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(
       (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
     );
-    let decider = await this.atomicNoteDecider();
     let persistedCount = 0;
     for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
@@ -1509,6 +1509,9 @@ export class KnowledgeService {
       }
       const sourceContentHash = atomicNoteDecisionContentHash(note);
       const feasible = candidates.filter((candidate) => candidate.feasible);
+      // The decider is resolved once per note, before the cache lookup: the cached verdicts, their
+      // provenance and the recorded decisions of this note all belong to this identity.
+      const decider = await this.atomicNoteDecider();
       // A direction already decided on the same content by the same decider is never asked again.
       const cachedVerdicts = new Map<
         string,
@@ -1544,14 +1547,15 @@ export class KnowledgeService {
               alias: rerankAliases.get(candidate.note.id)!,
               title: candidate.note.title,
               ideaStatement: candidate.note.ideaStatement
-            })),
-            matchingSettings.minRerankScore
+            }))
           ),
           withAiSourceItems(
             {
               ...logContext,
               atomicNoteId: note.id,
-              operation: attempt ? "note_matching_reranking_repair" : "note_matching_reranking",
+              operation: attempt
+                ? noteMatchDecisionOperations.repair
+                : noteMatchDecisionOperations.decide,
               promptVersion: atomicNoteMatchingVersion,
               attempt
             },
@@ -1563,6 +1567,27 @@ export class KnowledgeService {
           signal,
           { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
         );
+      // A verdict that can never be accepted (weak type, or a final score under the threshold even
+      // with it) is neither explained nor repaired.
+      const pendingByAlias = new Map(
+        pending.map((candidate) => [rerankAliases.get(candidate.note.id)!, candidate])
+      );
+      const verdictCanQualify = (
+        alias: string,
+        verdict: { score: number; relationType: AtomicNoteRelationType }
+      ) => {
+        const candidate = pendingByAlias.get(alias);
+        return (
+          !candidate ||
+          atomicNoteVerdictQualifies({
+            scores: candidate.scores,
+            hasEmbedding,
+            threshold: relationThreshold,
+            settings: matchingSettings,
+            verdict
+          })
+        );
+      };
       let rerankExecution: DefaultAiTaskResult | null = null;
       let rerankError: string | null = null;
       let rerankCause: unknown;
@@ -1583,11 +1608,13 @@ export class KnowledgeService {
           const initial = parseBatchRerankOutput(
             rerankExecution.output,
             aliases,
-            matchingSettings.minRerankScore
+            verdictCanQualify
           );
           const firstRunId = rerankExecution.aiTaskRunId;
           const runIds = new Map(aliases.map((alias) => [alias, firstRunId]));
           let merged = initial.decisions;
+          let repairFailed = false;
+          let repairCause: unknown;
           if (initial.retry.length > 0) {
             // One repair call asks again only for missing, invalid or unexplained items.
             repairedAliases = initial.retry;
@@ -1601,14 +1628,16 @@ export class KnowledgeService {
                 const repaired = parseBatchRerankOutput(
                   repairExecution.output,
                   initial.retry,
-                  matchingSettings.minRerankScore
+                  verdictCanQualify
                 );
                 for (const alias of repaired.decisions.keys())
                   runIds.set(alias, repairExecution.aiTaskRunId);
                 merged = mergeBatchRerankRepair(initial, repaired);
-              }
+              } else repairFailed = true;
             } catch (error) {
               if (signal?.aborted) throw error;
+              repairFailed = true;
+              repairCause = error;
               rerankError =
                 error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
             }
@@ -1624,6 +1653,15 @@ export class KnowledgeService {
           }
           // Items still invalid stay undecided: no relation and no recorded decision.
           undecidedAliases = aliases.filter((alias) => !merged.has(alias));
+          // A required decider whose repair failed, or that decided nothing in two calls, fails the
+          // note before its checkpoint: the undecided items would otherwise be lost for good. The
+          // cause keeps a transient provider failure retryable by the job supervisor.
+          if (
+            matchingSettings.requireReranking &&
+            undecidedAliases.length > 0 &&
+            (repairFailed || modelDecisions.size === 0)
+          )
+            throw new Error("errors.matching.rerankingFailed", { cause: repairCause });
         }
         if (matchingSettings.requireReranking && !rerankExecution) {
           // The cause keeps a transient provider failure retryable by the job supervisor.
@@ -1633,13 +1671,13 @@ export class KnowledgeService {
           );
         }
       }
-      // Decisions are recorded only when the route did not change during the call.
+      // Decisions are recorded only when the route did not change during the call. The cached
+      // verdicts and their provenance stay those of the decider they were looked up under.
       let recordDecisions = false;
       if (rerankExecution && decider) {
         const current = await this.atomicNoteDecider();
         recordDecisions =
           current?.key === decider.key && rerankExecution.profileId === decider.profileId;
-        decider = current;
       }
       const rerankStatus = rerankExecution
         ? undecidedAliases.length > 0
@@ -1757,12 +1795,18 @@ export class KnowledgeService {
               rerankScore,
               finalScore,
               explanation,
+              // Provenance of the decision itself: the call that made it, or for a cached verdict
+              // the decider it was recorded under. A hybrid acceptance has no decider.
               matchingProfileId: modelDecision
                 ? (rerankExecution?.profileId ?? null)
-                : (decider?.profileId ?? null),
+                : decisionSource === "cache"
+                  ? (decider?.profileId ?? null)
+                  : null,
               matchingModel: modelDecision
                 ? (rerankExecution?.modelId ?? null)
-                : (decider?.modelId ?? null),
+                : decisionSource === "cache"
+                  ? (decider?.modelId ?? null)
+                  : null,
               metadata: {
                 version: atomicNoteMatchingVersion,
                 decisionSource,
@@ -1874,7 +1918,8 @@ export class KnowledgeService {
           parameters: withAiTaskParameterDefaults(
             "reranking",
             { ...route.modelDefaultParameters, ...route.parameters },
-            Boolean(route.localModelId)
+            Boolean(route.localModelId),
+            { operation: noteMatchDecisionOperations.decide }
           ),
           promptFingerprint: promptFingerprint(["notes.match"], capturePromptPin(), route.provider)
         }),

@@ -293,8 +293,7 @@ describe("atomic note candidate fusion", () => {
       prompts.push(
         buildBatchRerankPrompt(
           { title: "Source", ideaStatement: "Source idea" },
-          ordered.map((note, index) => ({ ...note, alias: `c${index + 1}` })),
-          0.65
+          ordered.map((note, index) => ({ ...note, alias: `c${index + 1}` }))
         )
       );
       hashes.push(ordered.map(atomicNoteDecisionContentHash));

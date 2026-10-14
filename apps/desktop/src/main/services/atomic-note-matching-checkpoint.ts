@@ -29,6 +29,8 @@ export function atomicNoteMatchingCheckpointMetadata(stage: unknown): JsonObject
 /**
  * Runs note matching from the last checkpoint: notes completed by an earlier attempt are skipped,
  * and every completed note is saved before the next one starts, so a retry resumes after it.
+ * Only `save` (at the start and once per completed note) writes the checkpoint; the progress ticks
+ * inside a note go to `reportProgress` and never rewrite the list of completed notes.
  */
 export async function matchAtomicNotesFromCheckpoint<R extends { persistedCount: number }>(input: {
   noteIds: string[];
@@ -39,6 +41,7 @@ export async function matchAtomicNotesFromCheckpoint<R extends { persistedCount:
     onNoteCompleted: (noteId: string, persistedCount: number) => Promise<void>
   ) => Promise<R>;
   save: (progress: number, metadata: JsonObject) => Promise<void>;
+  reportProgress: (progress: number) => Promise<void>;
 }): Promise<R & { completed: number; total: number; resumedNotes: number }> {
   const total = input.noteIds.length;
   const current = new Set(input.noteIds);
@@ -57,7 +60,7 @@ export async function matchAtomicNotesFromCheckpoint<R extends { persistedCount:
   await input.save(fraction(resumedNotes), metadata());
   const result = await input.match(
     remaining,
-    (progress) => input.save(fraction(resumedNotes + progress * remaining.length), metadata()),
+    (progress) => input.reportProgress(fraction(resumedNotes + progress * remaining.length)),
     async (noteId, notePersisted) => {
       completed.add(noteId);
       persistedCount += notePersisted;

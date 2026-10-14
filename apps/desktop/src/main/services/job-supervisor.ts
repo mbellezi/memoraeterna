@@ -903,6 +903,11 @@ export class JobSupervisor {
                         );
                         this.notify();
                       },
+                      // A progress tick inside a note never rewrites the stage checkpoint.
+                      reportProgress: async (progress) => {
+                        await createJobRepository(pool).reportProgress(stageJobId, progress);
+                        this.notify();
+                      },
                       match: (noteIds, onProgress, onNoteCompleted) =>
                         this.options.knowledgeService!.matchAtomicNotes(
                           noteIds,

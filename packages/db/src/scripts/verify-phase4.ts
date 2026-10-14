@@ -15,6 +15,11 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations
 } from "../index.js";
+import {
+  assertMigrationsRecorded,
+  assertMigrationsSeeded,
+  requiredMigrations
+} from "./verify-migration-history.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -38,6 +43,8 @@ try {
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
 
+  // Phase 4 needs its own migrations (up to 0010); later ones may exist.
+  const required = await requiredMigrations(migrationsFolder, "0010_handy_gamora");
   const migrated = await runMigrations(pool, migrationsFolder);
   if (migrated.seed.applied)
     throw new Error("Migration-only flow unexpectedly applied the baseline.");
@@ -46,8 +53,7 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 11)
-    throw new Error("Unexpected phase 4 migration history.");
+  await assertMigrationsRecorded(pool, required, "Phase 4 migration history");
 
   const columns = await pool.query<{
     table_name: string;
@@ -128,9 +134,10 @@ try {
   seedUrl.pathname = "/memora_phase4_seed";
   seedPool = createPgPool({ connectionString: seedUrl.toString(), max: 2 });
   const baseline = await runMigrations(seedPool, migrationsFolder, { seedFolder });
-  if (!baseline.seed.applied || baseline.seed.seededMigrations.length !== 11) {
+  if (!baseline.seed.applied) {
     throw new Error("Empty database did not apply the complete phase 4 baseline.");
   }
+  assertMigrationsSeeded(baseline.seed.seededMigrations, required, "Phase 4 baseline");
   if ((await runMigrations(seedPool, migrationsFolder, { seedFolder })).seed.applied) {
     throw new Error("Seed database reapplied the baseline.");
   }

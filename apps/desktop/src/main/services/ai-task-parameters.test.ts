@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { profileGenerationMaxTokens, withAiTaskParameterDefaults } from "./ai-task-parameters.js";
+import {
+  aiTaskBehaviorDefaults,
+  noteMatchDecisionOperations,
+  profileGenerationMaxTokens,
+  withAiTaskParameterDefaults
+} from "./ai-task-parameters.js";
 
 describe("AI task parameter defaults", () => {
   it.each([
@@ -22,18 +27,42 @@ describe("AI task parameter defaults", () => {
     });
   });
 
-  it("turns reasoning off for reranking unless the profile asks for it", () => {
-    expect(withAiTaskParameterDefaults("reranking", {}, false)).toMatchObject({
-      reasoningLevel: "off"
-    });
-    expect(withAiTaskParameterDefaults("reranking", {}, true)).toMatchObject({
-      reasoningLevel: "off"
-    });
-    expect(
-      withAiTaskParameterDefaults("reranking", { reasoningLevel: "medium" }, false)
-    ).toMatchObject({ reasoningLevel: "medium" });
+  it("turns reasoning off for the note-match decision calls unless the profile asks for it", () => {
+    for (const operation of Object.values(noteMatchDecisionOperations)) {
+      for (const local of [false, true])
+        expect(withAiTaskParameterDefaults("reranking", {}, local, { operation })).toMatchObject({
+          reasoningLevel: "off"
+        });
+      expect(
+        withAiTaskParameterDefaults("reranking", { reasoningLevel: "medium" }, false, { operation })
+      ).toMatchObject({ reasoningLevel: "medium" });
+    }
     for (const task of ["summarization", "knowledge-graph-generation", "structured-output"])
-      expect(withAiTaskParameterDefaults(task, {}, false)).not.toHaveProperty("reasoningLevel");
+      expect(
+        withAiTaskParameterDefaults(task, {}, false, {
+          operation: noteMatchDecisionOperations.decide
+        })
+      ).not.toHaveProperty("reasoningLevel");
+  });
+
+  it("leaves other uses of the reranking route, such as source matching, on the profile's parameters", () => {
+    for (const operation of [undefined, null, "source_relation_matching"]) {
+      expect(withAiTaskParameterDefaults("reranking", {}, false, { operation })).not.toHaveProperty(
+        "reasoningLevel"
+      );
+      expect(
+        withAiTaskParameterDefaults("reranking", { reasoningLevel: "high" }, true, { operation })
+      ).toMatchObject({ reasoningLevel: "high" });
+    }
+    expect(withAiTaskParameterDefaults("reranking", {}, false)).not.toHaveProperty(
+      "reasoningLevel"
+    );
+    // Whatever a task adds beyond sizing is what a run fingerprint has to cover.
+    expect(aiTaskBehaviorDefaults("reranking", false, "source_relation_matching")).toEqual({});
+    expect(aiTaskBehaviorDefaults("reranking", false, noteMatchDecisionOperations.repair)).toEqual({
+      reasoningLevel: "off"
+    });
+    expect(aiTaskBehaviorDefaults("atomic-note-generation", true)).toEqual({ temperature: 0 });
   });
 
   it("preserves explicit profile overrides", () => {

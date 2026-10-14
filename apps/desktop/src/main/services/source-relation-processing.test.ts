@@ -1,4 +1,4 @@
-import { defaultPromptPin, withPromptPin } from "./prompt-runtime.js";
+import { changedPromptIdentity, defaultPromptPin, withPromptPin } from "./prompt-runtime.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createHash } from "node:crypto";
 import { defaultSourceRelationSettings } from "@app/domain";
@@ -11,17 +11,28 @@ import {
   parseSourceRelations,
   rankSourceCandidates,
   sourceRelationPrompt,
+  sourceRelationPromptVersion,
   type SourceRelationContext
 } from "./source-relation-processing.js";
 
 const mocks = vi.hoisted(() => ({
   repository: {} as Record<string, Mock<(...args: any[]) => any>>,
-  selection: vi.fn()
+  selection: vi.fn(),
+  taskDefaults: null as Record<string, unknown> | null
 }));
 vi.mock("@app/db", () => ({
   createSourceRelationRepository: () => mocks.repository,
   createAiConfigRepository: () => ({ getDefaultTask: mocks.selection })
 }));
+// A test can stand in for a task that adds a default beneath the profile's parameters.
+vi.mock("./ai-task-parameters.js", async (original) => {
+  const actual = await original<typeof import("./ai-task-parameters.js")>();
+  return {
+    ...actual,
+    aiTaskBehaviorDefaults: (...args: Parameters<typeof actual.aiTaskBehaviorDefaults>) =>
+      mocks.taskDefaults ?? actual.aiTaskBehaviorDefaults(...args)
+  };
+});
 const a: SourceRelationChunk = {
   id: "a",
   sourceItemId: "A",
@@ -572,6 +583,47 @@ describe("source matching budget and recovery", () => {
       proposals: 1,
       attempts: { failed: 2 }
     });
+  });
+  it("keeps its run fingerprint while the task adds nothing and notices a task default that changes the parameters", async () => {
+    const settings = { ...defaultSourceRelationSettings, maxInputTokens: 200000 };
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    await run(ai, "run", settings);
+    // The reasoning-off default belongs to the note decision call only: source matching hashes
+    // exactly the profile, model and parameters, as before the default existed.
+    const prompts = changedPromptIdentity([
+      "sources.match",
+      "sources.repair",
+      "sources.validation.default",
+      "sources.validation.same_root"
+    ]);
+    const unchanged = createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: sourceRelationPromptVersion,
+          ...(prompts ? { prompts } : {}),
+          language: "en",
+          settings,
+          profile: "profile",
+          provider: "provider",
+          model: "model",
+          runtime: "local",
+          localModel: null,
+          revision: "r1",
+          parameters: {},
+          defaults: {}
+        })
+      )
+      .digest("hex");
+    expect((states.get("run:root-A") as { configuration: string }).configuration).toBe(unchanged);
+    // A resumed run whose task now adds a default no longer matches its saved fingerprint.
+    mocks.taskDefaults = { reasoningLevel: "off" };
+    try {
+      await expect(run(ai, "run", settings)).rejects.toThrow(
+        "errors.sourceRelations.configurationChanged"
+      );
+    } finally {
+      mocks.taskDefaults = null;
+    }
   });
 });
 

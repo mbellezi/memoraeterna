@@ -48,7 +48,9 @@ const pools: PgPool[] = [];
 try {
   const connection = await manager.start();
   const journal = JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8"));
-  assert.equal(journal.entries.at(-1)?.tag, tag, "0045 is the newest migration");
+  // Later migrations may exist: this check needs 0045 and the migrations before it.
+  const tagIndex = journal.entries.findIndex((entry: { tag: string }) => entry.tag === tag);
+  assert.ok(tagIndex > 0, "0045 is in the journal");
   const historyCount = async (db: PgPool) =>
     Number(
       (
@@ -58,17 +60,18 @@ try {
       ).rows[0]?.count
     );
 
-  // 1. Pending path: a database migrated to 0044, with notes in every state, gets only 0045.
+  // 1. Pending path: a database migrated to 0044, with notes in every state, gets 0045 (and any
+  // later migration) as pending.
   const db = createPgPool({ connectionString: connection.connectionString, max: 3 });
   pools.push(db);
   const previousFolder = join(workDir, "drizzle-0044");
   await cp(migrationsFolder, previousFolder, { recursive: true });
   await writeFile(
     join(previousFolder, "meta/_journal.json"),
-    JSON.stringify({ ...journal, entries: journal.entries.slice(0, -1) })
+    JSON.stringify({ ...journal, entries: journal.entries.slice(0, tagIndex) })
   );
   await runMigrations(db, previousFolder);
-  assert.equal(await historyCount(db), journal.entries.length - 1, "history before 0045");
+  assert.equal(await historyCount(db), tagIndex, "history before 0045");
 
   const source = await createSourceItemRepository(db).create({
     type: "StandaloneArticle",
