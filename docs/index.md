@@ -34,6 +34,8 @@ dated measurements, not rules.
   Decisions API as an optional remote relation decider, on the same data.
 - [spikes/spike-b-topic-tree.md](spikes/spike-b-topic-tree.md) — a deterministic
   topic tree built on real embeddings.
+- [kpi-golden.md](kpi-golden.md) — the golden library baseline: pipeline time, AI calls, first v6
+  matching measurement and replay determinism.
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only
   AI cassettes (record/replay) and the golden runner.
 

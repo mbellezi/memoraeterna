@@ -283,13 +283,16 @@ or revised on measured data, not facts.
       setInterval, product lines over 200 characters: numbers only go down; rule lines: fixed 800-line budget).
 - [x] Wall-clock instrumentation (migration 0043: stage attempts/attempt start/end, AI `queue_ms`/`attempt`)
       and `npm run kpi`; baseline in `docs/kpi-baseline.md` (owner library: 13 sources, 0 notes).
-- [ ] First measurement of the v6 matching contract (wave 3, DEV app).
-- [ ] Reference libraries: golden-small public manifest (licenses + SHA-256 only in the repo) with AI
+- [x] First measurement of the v6 matching contract: 10.4 s/note, ~1,044 output tokens/call (`docs/kpi-golden.md`).
+- [x] Reference libraries: golden-small public manifest (licenses + SHA-256 only in the repo) with AI
       cassettes recorded on a small subset via the current route; read-only golden-private snapshot (never
       versioned); a large public corpus of 5-20k notes with real embeddings for tree calibration
-      (done: 18,632 Wikipedia pt/en pseudo-notes, MLX embeddings; golden-small + cassettes pending, wave 3).
+      (done: 18,632 Wikipedia pt/en pseudo-notes, MLX embeddings; golden-small recorded with cassettes:
+      10 roots, 2,477 calls, 79.8 min; replay exact on the 2-source dry run, full replay diverges on retry
+      timing until F1a — `docs/kpi-golden.md`).
 - [x] Backup restore path into a scratch sidecar, with a verification script (`npm run db:restore`).
-- [ ] e2e harness reusing the existing `phase4:e2e` (inspected: already fails at `pre-strangler`; wave 3).
+- [x] e2e harness reusing the existing `phase4:e2e` (repaired; now also covers captures, atomic import,
+      batch release and empty-content refusal).
 - [x] Spike A: Qwen3-Reranker-0.6B on the MLX helper (yes/no logits), then GGUF `createRankingContext`, then
       bge: artifact check, smoke, AUC on human labels, ms per 250-300-token pair on the owner's Mac.
       Result `docs/spikes/spike-a-reranker.md`: conditional GO for MLX scoring both directions (held-out
