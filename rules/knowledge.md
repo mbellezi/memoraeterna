@@ -81,7 +81,7 @@ Ask, or background maintenance (Gardener).
 
 - The Topic Tree Engine owns AI-managed structure and is the single writer of AI
   topic parents. Placement is deterministic on embeddings; a decider is consulted
-  only for ambiguous cases; LLMs only name topics and write prose.
+  only for ambiguous cases; LLMs name topics in the content language and write prose.
 - Every current note and root source is reachable from the root, each with one
   primary parent and a few secondary placements, with no cycles. Shape targets
   (fan-out, leaf size, depth) live in typed config and are enforced by

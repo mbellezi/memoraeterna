@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Avaliação da árvore</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f5f1;
+        --surface: #ffffff;
+        --surface-2: #efede6;
+        --border: #d9d6cc;
+        --text: #1d1f21;
+        --muted: #55595e;
+        --accent: #07707f;
+        --accent-soft: #e0f0f2;
+        --accent-text: #ffffff;
+        --yes: #1d6b3a;
+        --yes-soft: #e1f1e6;
+        --no: #9c2f22;
+        --no-soft: #f7e3df;
+        --owner: #6a4a9c;
+        --owner-soft: #eee7f7;
+        --focus: #07707f;
+        --shadow: 0 1px 2px rgb(0 0 0 / 6%);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #161819;
+          --surface: #1f2224;
+          --surface-2: #292d30;
+          --border: #3a3f43;
+          --text: #e9e7e1;
+          --muted: #a9adb1;
+          --accent: #65d6e8;
+          --accent-soft: #173238;
+          --accent-text: #0b1c1f;
+          --yes: #7dd69a;
+          --yes-soft: #193424;
+          --no: #f2a093;
+          --no-soft: #3d201b;
+          --owner: #c6a8f0;
+          --owner-soft: #2c2340;
+          --focus: #65d6e8;
+          --shadow: none;
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #161819;
+        --surface: #1f2224;
+        --surface-2: #292d30;
+        --border: #3a3f43;
+        --text: #e9e7e1;
+        --muted: #a9adb1;
+        --accent: #65d6e8;
+        --accent-soft: #173238;
+        --accent-text: #0b1c1f;
+        --yes: #7dd69a;
+        --yes-soft: #193424;
+        --no: #f2a093;
+        --no-soft: #3d201b;
+        --owner: #c6a8f0;
+        --owner-soft: #2c2340;
+        --focus: #65d6e8;
+        --shadow: none;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          16px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+      main,
+      .top-inner {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header.top {
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+      .top-inner {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 16px;
+        padding-bottom: 16px;
+      }
+      .eyebrow {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.25;
+      }
+      h2 {
+        margin: 40px 0 12px;
+        font-size: 20px;
+      }
+      h3 {
+        margin: 0;
+        font-size: 17px;
+        line-height: 1.35;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .small {
+        font-size: 13px;
+      }
+      button,
+      textarea {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 8px;
+        padding: 6px 12px;
+        min-height: 36px;
+      }
+      button:hover {
+        border-color: var(--accent);
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-text);
+        font-weight: 600;
+      }
+      :focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+      .segmented {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .segmented button {
+        border: 0;
+        border-radius: 0;
+        min-height: 32px;
+        padding: 4px 12px;
+        font-size: 14px;
+      }
+      .segmented button + button {
+        border-left: 1px solid var(--border);
+      }
+      .segmented button[aria-pressed="true"] {
+        background: var(--accent);
+        color: var(--accent-text);
+        font-weight: 600;
+      }
+      .intro {
+        margin-top: 24px;
+      }
+      .facts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 12px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .facts li {
+        background: var(--surface-2);
+        border-radius: 999px;
+        padding: 2px 12px;
+        font-size: 13px;
+      }
+      .howto {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .howto li {
+        margin-bottom: 6px;
+      }
+      .progress {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        margin: 24px -16px 0;
+        padding: 10px 16px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        align-items: center;
+        font-size: 14px;
+      }
+      .bar {
+        flex: 1 1 160px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+      .bar > span {
+        display: block;
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        transition: width 0.2s;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .bar > span {
+          transition: none;
+        }
+      }
+      ol.samples {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: var(--shadow);
+      }
+      .card.done {
+        border-color: var(--accent);
+      }
+      .card-head {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .num {
+        flex: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--surface-2);
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .card.done .num {
+        background: var(--accent);
+        color: var(--accent-text);
+      }
+      .path {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .badge {
+        font-size: 12px;
+        border-radius: 999px;
+        padding: 1px 10px;
+        background: var(--surface-2);
+        color: var(--muted);
+      }
+      .badge.owner {
+        background: var(--owner-soft);
+        color: var(--owner);
+        font-weight: 600;
+      }
+      ul.members {
+        list-style: none;
+        margin: 12px 0;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+      }
+      ul.members li {
+        border-left: 3px solid var(--border);
+        padding: 2px 0 2px 10px;
+      }
+      ul.members strong {
+        display: block;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      ul.members span {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      .rating {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        align-items: center;
+        margin: 4px 0 10px;
+      }
+      .rating fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .rating legend {
+        float: left;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .rating button[data-value="true"][aria-pressed="true"] {
+        background: var(--yes);
+        color: var(--surface);
+      }
+      .rating button[data-value="false"][aria-pressed="true"] {
+        background: var(--no);
+        color: var(--surface);
+      }
+      label.notes {
+        display: block;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      label.notes textarea,
+      #export-text {
+        display: block;
+        width: 100%;
+        margin-top: 4px;
+        padding: 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        resize: vertical;
+      }
+      label.notes textarea {
+        min-height: 44px;
+      }
+      #export-text {
+        font:
+          12px/1.4 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        min-height: 160px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      [role="tablist"] {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      [role="tab"][aria-selected="true"] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--accent-text);
+        font-weight: 600;
+      }
+      .tree {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 8px 12px;
+        margin-bottom: 48px;
+      }
+      .tree ul {
+        list-style: none;
+        margin: 0;
+        padding-left: 16px;
+        border-left: 1px solid var(--border);
+      }
+      .tree > ul {
+        border-left: 0;
+        padding-left: 0;
+      }
+      .tree summary {
+        cursor: pointer;
+        padding: 4px 0;
+        overflow-wrap: anywhere;
+      }
+      .tree summary .count {
+        color: var(--muted);
+        font-size: 13px;
+        margin-left: 6px;
+      }
+      .tree .central {
+        margin: 2px 0 6px 4px;
+        padding: 6px 10px;
+        background: var(--surface-2);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      .tree .central ol {
+        margin: 2px 0 0;
+        padding-left: 18px;
+      }
+      .tree .leaf-tag {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: 6px;
+      }
+      .error {
+        border: 1px solid var(--no);
+        background: var(--no-soft);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 12px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <div class="top-inner">
+        <div>
+          <p class="eyebrow">Memora Eterna · Spike B (F0)</p>
+          <h1>Avaliação da árvore de tópicos</h1>
+        </div>
+        <div class="segmented" role="group" aria-label="Tema">
+          <button type="button" data-theme-choice="system">Sistema</button>
+          <button type="button" data-theme-choice="light">Claro</button>
+          <button type="button" data-theme-choice="dark">Escuro</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <div id="load-error" class="error" role="alert" hidden>
+        Não foi possível ler os dados desta página. Gere-a novamente com
+        <code>scripts/spikes/topic-tree/evaluation-page.ts</code>.
+      </div>
+      <section class="intro" aria-labelledby="sobre">
+        <h2 id="sobre" hidden>Sobre</h2>
+        <p>
+          Esta árvore foi construída automaticamente, sem LLM, a partir dos embeddings das notas. Os
+          nomes são <strong>provisórios</strong>: termos TF-IDF no formato “Pai › termos”. Na versão
+          final, um modelo dará títulos de verdade aos tópicos.
+        </p>
+        <ul class="facts" id="facts"></ul>
+      </section>
+
+      <section aria-labelledby="como">
+        <h2 id="como">Como avaliar</h2>
+        <ol class="howto">
+          <li>
+            Leia as 8 notas sorteadas de cada tópico (o título vem do artigo e da seção de origem).
+          </li>
+          <li>
+            <strong>Coerente:</strong> “Sim” se as notas tratam claramente de um mesmo assunto, que
+            você colocaria numa mesma pasta. Uma ou outra nota destoante ainda pode ser “Sim”.
+          </li>
+          <li>
+            <strong>Bem nomeado:</strong> “Sim” se o nome provisório indica esse assunto, mesmo
+            sendo só uma lista de termos.
+          </li>
+          <li>
+            As respostas ficam salvas neste navegador. Ao terminar, use
+            <strong>Exportar respostas</strong> e cole o JSON de volta na conversa.
+          </li>
+        </ol>
+      </section>
+
+      <div class="progress" aria-live="polite">
+        <span>Avaliados <strong id="rated">0</strong>/<span id="total">30</span></span>
+        <span>Coerentes <strong id="coherent">0</strong></span>
+        <span>Bem nomeados <strong id="named">0</strong></span>
+        <div class="bar" aria-hidden="true"><span id="bar"></span></div>
+      </div>
+
+      <section aria-labelledby="amostra">
+        <h2 id="amostra">Tópicos para avaliar</h2>
+        <ol class="samples" id="samples"></ol>
+      </section>
+
+      <section aria-labelledby="exportar">
+        <h2 id="exportar">Exportar respostas</h2>
+        <div class="actions">
+          <button type="button" class="primary" id="export">Exportar respostas</button>
+          <button type="button" id="copy">Copiar</button>
+          <button type="button" id="clear">Limpar respostas</button>
+        </div>
+        <textarea
+          id="export-text"
+          readonly
+          aria-label="Respostas em JSON"
+          placeholder="Clique em “Exportar respostas” para gerar o JSON."
+        ></textarea>
+        <p id="status" class="small muted" role="status"></p>
+      </section>
+
+      <section aria-labelledby="arvore">
+        <h2 id="arvore">Navegar pela árvore</h2>
+        <p class="small muted">
+          Abra um tópico para ver as 5 notas mais centrais e os subtópicos. O número ao lado é a
+          quantidade de notas no tópico.
+        </p>
+        <div role="tablist" aria-label="Árvores">
+          <button type="button" role="tab" id="tab-corpus" aria-selected="true">
+            Corpus público
+          </button>
+          <button type="button" role="tab" id="tab-owner" aria-selected="false" hidden>
+            Sua biblioteca
+          </button>
+        </div>
+        <div class="tree" id="tree" role="tabpanel"></div>
+      </section>
+    </main>
+
+    <script id="page-data" type="application/json">
+      __PAGE_DATA__
+    </script>
+    <script>
+      (function () {
+        "use strict";
+        var data;
+        try {
+          data = JSON.parse(document.getElementById("page-data").textContent);
+        } catch (error) {
+          document.getElementById("load-error").hidden = false;
+          return;
+        }
+
+        function store(key, value) {
+          try {
+            if (value === undefined) return window.localStorage.getItem(key);
+            window.localStorage.setItem(key, value);
+          } catch (error) {
+            return null;
+          }
+          return null;
+        }
+
+        function el(tag, attrs, children) {
+          var node = document.createElement(tag);
+          Object.keys(attrs || {}).forEach(function (key) {
+            if (key === "text") node.textContent = attrs[key];
+            else if (key === "className") node.className = attrs[key];
+            else node.setAttribute(key, attrs[key]);
+          });
+          (children || []).forEach(function (child) {
+            if (child) node.appendChild(child);
+          });
+          return node;
+        }
+
+        // Theme
+        var themeKey = "memora.spikeB.theme";
+        function applyTheme(choice) {
+          if (choice === "light" || choice === "dark")
+            document.documentElement.dataset.theme = choice;
+          else delete document.documentElement.dataset.theme;
+          document.querySelectorAll("[data-theme-choice]").forEach(function (button) {
+            button.setAttribute(
+              "aria-pressed",
+              String(button.dataset.themeChoice === (choice || "system"))
+            );
+          });
+        }
+        applyTheme(store(themeKey) || "system");
+        document.querySelectorAll("[data-theme-choice]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            store(themeKey, button.dataset.themeChoice);
+            applyTheme(button.dataset.themeChoice);
+          });
+        });
+
+        // Facts
+        var builderNames = {
+          "top-down": "top-down (k-means balanceado)",
+          "bottom-up": "bottom-up (estilo Clio)",
+          louvain: "Louvain sobre grafo kNN"
+        };
+        var facts = [
+          data.corpus.items.toLocaleString("pt-BR") +
+            " pseudo-notas da Wikipédia (" +
+            data.corpus.pt.toLocaleString("pt-BR") +
+            " pt, " +
+            data.corpus.en.toLocaleString("pt-BR") +
+            " en)",
+          data.corpus.domains + " áreas",
+          "Construtor: " + (builderNames[data.builder] || data.builder),
+          "Embeddings: " + data.model,
+          "Semente " + data.seed
+        ];
+        if (data.owner) facts.push("Sua biblioteca: " + data.owner.items + " pseudo-notas");
+        facts.forEach(function (fact) {
+          document.getElementById("facts").appendChild(el("li", { text: fact }));
+        });
+
+        // Answers
+        var answersKey = "memora.spikeB.avaliacao." + data.pageId;
+        var answers = {};
+        try {
+          answers = JSON.parse(store(answersKey) || "{}") || {};
+        } catch (error) {
+          answers = {};
+        }
+        function save() {
+          store(answersKey, JSON.stringify(answers));
+        }
+        function answerOf(key) {
+          if (!answers[key]) answers[key] = { coerente: null, bemNomeado: null, notas: "" };
+          return answers[key];
+        }
+
+        var cards = [];
+        function updateProgress() {
+          var rated = 0;
+          var coherent = 0;
+          var named = 0;
+          data.samples.forEach(function (sample, index) {
+            var answer = answers[sample.key];
+            var done = answer && answer.coerente !== null && answer.bemNomeado !== null;
+            if (done) rated += 1;
+            if (answer && answer.coerente === true) coherent += 1;
+            if (answer && answer.bemNomeado === true) named += 1;
+            cards[index].classList.toggle("done", Boolean(done));
+          });
+          document.getElementById("rated").textContent = rated;
+          document.getElementById("coherent").textContent = coherent;
+          document.getElementById("named").textContent = named;
+          document.getElementById("total").textContent = data.samples.length;
+          document.getElementById("bar").style.width =
+            Math.round((100 * rated) / Math.max(1, data.samples.length)) + "%";
+        }
+
+        function segmented(label, field, sample) {
+          var group = el("fieldset", {}, [el("legend", { text: label })]);
+          var wrap = el("div", { className: "segmented" });
+          [
+            ["true", "Sim"],
+            ["false", "Não"]
+          ].forEach(function (option) {
+            var button = el("button", {
+              type: "button",
+              "data-value": option[0],
+              "aria-pressed": "false",
+              text: option[1]
+            });
+            button.addEventListener("click", function () {
+              var answer = answerOf(sample.key);
+              var value = option[0] === "true";
+              answer[field] = answer[field] === value ? null : value;
+              save();
+              sync();
+              updateProgress();
+            });
+            wrap.appendChild(button);
+          });
+          function sync() {
+            var value = (answers[sample.key] || {})[field];
+            wrap.querySelectorAll("button").forEach(function (button) {
+              button.setAttribute(
+                "aria-pressed",
+                String(
+                  value !== null && value !== undefined && String(value) === button.dataset.value
+                )
+              );
+            });
+          }
+          sync();
+          group.appendChild(wrap);
+          return group;
+        }
+
+        var list = document.getElementById("samples");
+        data.samples.forEach(function (sample, index) {
+          var badges = el("div", { className: "badges" }, [
+            el("span", {
+              className: "badge",
+              text:
+                (sample.kind === "folha" ? "folha" : "tópico com subtópicos") +
+                " · nível " +
+                sample.depth +
+                " · " +
+                sample.n +
+                " notas"
+            }),
+            sample.source === "owner"
+              ? el("span", { className: "badge owner", text: "sua biblioteca" })
+              : null
+          ]);
+          var head = el("div", { className: "card-head" }, [
+            el("span", { className: "num", text: String(index + 1), "aria-hidden": "true" }),
+            el("div", {}, [
+              el("h3", { text: sample.name }),
+              sample.path && sample.path !== sample.name
+                ? el("p", { className: "path", text: sample.path })
+                : null,
+              badges
+            ])
+          ]);
+          var members = el(
+            "ul",
+            { className: "members", "aria-label": "Notas sorteadas" },
+            sample.members.map(function (member) {
+              return el("li", {}, [
+                el("strong", { text: member.t }),
+                el("span", { text: member.s })
+              ]);
+            })
+          );
+          var notes = el("textarea", { rows: "2" });
+          notes.value = (answers[sample.key] || {}).notas || "";
+          notes.addEventListener("input", function () {
+            answerOf(sample.key).notas = notes.value;
+            save();
+          });
+          var card = el(
+            "li",
+            {
+              className: "card",
+              id: "topico-" + (index + 1),
+              "aria-label": "Tópico " + (index + 1)
+            },
+            [
+              head,
+              members,
+              el("div", { className: "rating" }, [
+                segmented("Coerente?", "coerente", sample),
+                segmented("Bem nomeado?", "bemNomeado", sample)
+              ]),
+              el("label", { className: "notes" }, [
+                document.createTextNode("Notas (opcional)"),
+                notes
+              ])
+            ]
+          );
+          cards.push(card);
+          list.appendChild(card);
+        });
+        updateProgress();
+
+        // Export
+        var status = document.getElementById("status");
+        var output = document.getElementById("export-text");
+        document.getElementById("export").addEventListener("click", function () {
+          var rows = data.samples.map(function (sample, index) {
+            var answer = answers[sample.key] || {};
+            return {
+              posicao: index + 1,
+              chave: sample.key,
+              origem: sample.source,
+              nivel: sample.depth,
+              tipo: sample.kind,
+              notasNoTopico: sample.n,
+              nome: sample.name,
+              caminho: sample.path,
+              coerente: answer.coerente === undefined ? null : answer.coerente,
+              bemNomeado: answer.bemNomeado === undefined ? null : answer.bemNomeado,
+              notas: answer.notas || ""
+            };
+          });
+          var rated = rows.filter(function (row) {
+            return row.coerente !== null && row.bemNomeado !== null;
+          }).length;
+          output.value = JSON.stringify(
+            {
+              pagina: "spike-b-avaliacao",
+              pageId: data.pageId,
+              construtor: data.builder,
+              semente: data.seed,
+              geradaEm: data.generatedAt,
+              exportadaEm: new Date().toISOString(),
+              resumo: {
+                avaliados: rated,
+                total: rows.length,
+                coerentes: rows.filter(function (row) {
+                  return row.coerente === true;
+                }).length,
+                bemNomeados: rows.filter(function (row) {
+                  return row.bemNomeado === true;
+                }).length
+              },
+              respostas: rows
+            },
+            null,
+            2
+          );
+          output.focus();
+          output.select();
+          status.textContent =
+            rated < rows.length
+              ? "JSON gerado. Faltam " + (rows.length - rated) + " tópicos sem as duas respostas."
+              : "JSON gerado com todas as respostas.";
+        });
+        document.getElementById("copy").addEventListener("click", function () {
+          if (!output.value) document.getElementById("export").click();
+          var done = function () {
+            status.textContent = "Copiado para a área de transferência.";
+          };
+          var fail = function () {
+            output.focus();
+            output.select();
+            status.textContent = "Não foi possível copiar: o texto está selecionado, use ⌘C.";
+          };
+          try {
+            navigator.clipboard.writeText(output.value).then(done, fail);
+          } catch (error) {
+            fail();
+          }
+        });
+        var clearButton = document.getElementById("clear");
+        var clearTimer = null;
+        clearButton.addEventListener("click", function () {
+          if (!clearTimer) {
+            clearButton.textContent = "Confirmar limpeza";
+            clearTimer = setTimeout(function () {
+              clearButton.textContent = "Limpar respostas";
+              clearTimer = null;
+            }, 4000);
+            return;
+          }
+          clearTimeout(clearTimer);
+          clearTimer = null;
+          clearButton.textContent = "Limpar respostas";
+          answers = {};
+          save();
+          document.querySelectorAll("label.notes textarea").forEach(function (area) {
+            area.value = "";
+          });
+          document.querySelectorAll(".rating button").forEach(function (button) {
+            button.setAttribute("aria-pressed", "false");
+          });
+          output.value = "";
+          updateProgress();
+          status.textContent = "Respostas apagadas.";
+        });
+
+        // Tree browser (children rendered on first open)
+        var treeHost = document.getElementById("tree");
+        function renderTree(tree) {
+          var byId = {};
+          tree.nodes.forEach(function (node) {
+            byId[node.id] = node;
+          });
+          function centralBlock(node) {
+            return el("div", { className: "central" }, [
+              el("span", { className: "muted", text: "Notas centrais" }),
+              el(
+                "ol",
+                {},
+                node.central.map(function (member) {
+                  return el("li", { title: member.s, text: member.t });
+                })
+              )
+            ]);
+          }
+          function item(node) {
+            var summary = el("summary", {}, [
+              el("span", { text: node.name }),
+              el("span", { className: "count", text: node.n.toLocaleString("pt-BR") }),
+              node.leaf ? el("span", { className: "leaf-tag", text: "folha" }) : null
+            ]);
+            var details = el("details", {}, [summary]);
+            var filled = false;
+            details.addEventListener("toggle", function () {
+              if (!details.open || filled) return;
+              filled = true;
+              details.appendChild(centralBlock(node));
+              if (node.c.length > 0) {
+                details.appendChild(
+                  el(
+                    "ul",
+                    {},
+                    node.c.map(function (id) {
+                      return el("li", {}, [item(byId[id])]);
+                    })
+                  )
+                );
+              }
+            });
+            return details;
+          }
+          var root = tree.nodes[0];
+          treeHost.textContent = "";
+          if (!root) {
+            treeHost.appendChild(el("p", { className: "muted", text: "Árvore vazia." }));
+            return;
+          }
+          treeHost.appendChild(
+            el(
+              "ul",
+              {},
+              root.c.map(function (id) {
+                return el("li", {}, [item(byId[id])]);
+              })
+            )
+          );
+        }
+        var tabCorpus = document.getElementById("tab-corpus");
+        var tabOwner = document.getElementById("tab-owner");
+        function select(which) {
+          tabCorpus.setAttribute("aria-selected", String(which === "corpus"));
+          tabOwner.setAttribute("aria-selected", String(which === "owner"));
+          renderTree(which === "owner" ? data.owner : data.corpus);
+        }
+        tabCorpus.addEventListener("click", function () {
+          select("corpus");
+        });
+        if (data.owner) {
+          tabOwner.hidden = false;
+          tabOwner.addEventListener("click", function () {
+            select("owner");
+          });
+        }
+        select("corpus");
+      })();
+    </script>
+  </body>
+</html>
