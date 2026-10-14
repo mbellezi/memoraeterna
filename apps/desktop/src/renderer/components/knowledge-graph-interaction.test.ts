@@ -13,24 +13,27 @@ describe("graph hover intent", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it.each(["node", "edge"] as const)("highlights a %s after 100 ms even while moving inside it", (type) => {
-    const highlight = vi.fn();
-    const preview = vi.fn();
-    const intent = new GraphHoverIntent(highlight, preview);
-    intent.enter({ type, key: "a", x: 0, y: 0 });
-    highlight.mockClear();
-    preview.mockClear();
-    vi.advanceTimersByTime(70);
-    intent.move({ x: 1, y: 1 });
-    vi.advanceTimersByTime(29);
-    expect(highlight).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(highlight).toHaveBeenCalledWith({ type, key: "a", x: 1, y: 1 });
-    expect(preview).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(970);
-    expect(preview).toHaveBeenCalledOnce();
-    intent.dispose();
-  });
+  it.each(["node", "edge"] as const)(
+    "highlights a %s after 100 ms even while moving inside it",
+    (type) => {
+      const highlight = vi.fn();
+      const preview = vi.fn();
+      const intent = new GraphHoverIntent(highlight, preview);
+      intent.enter({ type, key: "a", x: 0, y: 0 });
+      highlight.mockClear();
+      preview.mockClear();
+      vi.advanceTimersByTime(70);
+      intent.move({ x: 1, y: 1 });
+      vi.advanceTimersByTime(29);
+      expect(highlight).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(highlight).toHaveBeenCalledWith({ type, key: "a", x: 1, y: 1 });
+      expect(preview).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(970);
+      expect(preview).toHaveBeenCalledOnce();
+      intent.dispose();
+    }
+  );
 
   it("cancels pending highlights and popups throughout a drag, including stale leave events", () => {
     const highlight = vi.fn();
@@ -39,7 +42,8 @@ describe("graph hover intent", () => {
     intent.enter({ type: "node", key: "a", x: 0, y: 0 });
     vi.advanceTimersByTime(50);
     intent.suspend();
-    highlight.mockClear(); preview.mockClear();
+    highlight.mockClear();
+    preview.mockClear();
     intent.enter({ type: "edge", key: "ab", x: 1, y: 1 });
     intent.move({ x: 3, y: 3 });
     vi.advanceTimersByTime(2_000);
@@ -77,7 +81,8 @@ describe("inertial graph wheel motion", () => {
     const deltas = [];
     for (let now = 16; now <= 800; now += 16) deltas.push(Math.abs(motion.advance(now)));
     expect(1 - Math.exp(-deltas[0]!)).toBeGreaterThan(0.12);
-    for (let index = 1; index < deltas.length; index += 1) expect(deltas[index]).toBeLessThanOrEqual(deltas[index - 1]!);
+    for (let index = 1; index < deltas.length; index += 1)
+      expect(deltas[index]).toBeLessThanOrEqual(deltas[index - 1]!);
     expect(motion.active).toBe(false);
     expect(deltas.at(-1)).toBe(0);
   });
@@ -203,9 +208,15 @@ describe("inertial graph wheel motion", () => {
   });
 
   it("derives the zoom-out boundary from a 50% viewport fit and centers only near it", () => {
-    expect(graphZoomOutRatio(1, { width: 400, height: 200 }, { width: 1_000, height: 800 })).toBeCloseTo(0.8);
-    expect(graphZoomOutRatio(2, { width: 200, height: 100 }, { width: 1_000, height: 800 })).toBeCloseTo(0.8);
-    expect(graphZoomOutRatio(1, { width: 400, height: 200 }, { width: 1_000, height: 800 }, 100)).toBeCloseTo(1);
+    expect(
+      graphZoomOutRatio(1, { width: 400, height: 200 }, { width: 1_000, height: 800 })
+    ).toBeCloseTo(0.8);
+    expect(
+      graphZoomOutRatio(2, { width: 200, height: 100 }, { width: 1_000, height: 800 })
+    ).toBeCloseTo(0.8);
+    expect(
+      graphZoomOutRatio(1, { width: 400, height: 200 }, { width: 1_000, height: 800 }, 100)
+    ).toBeCloseTo(1);
     expect(zoomOutCenteringStrength(1, 4)).toBe(0);
     expect(zoomOutCenteringStrength(3.8, 4)).toBeGreaterThan(0.9);
     expect(zoomOutCenteringStrength(4, 4)).toBe(1);

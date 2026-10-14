@@ -19,40 +19,60 @@ export type DocumentDivisionKind = z.infer<typeof DocumentDivisionKindSchema>;
 
 export const DivisionSelectorSchema = z.record(z.string(), z.unknown());
 
-export const DivisionEvidenceSchema = z.object({
-  kind: z.string().min(1),
-  source: z.string().min(1),
-  score: z.number().min(0).max(1),
-  metadata: OptionalMetadataSchema
-}).strict();
+export const DivisionEvidenceSchema = z
+  .object({
+    kind: z.string().min(1),
+    source: z.string().min(1),
+    score: z.number().min(0).max(1),
+    metadata: OptionalMetadataSchema
+  })
+  .strict();
 
-export const DocumentDivisionCandidateSchema = z.object({
-  id: StableIdSchema,
-  parentId: StableIdSchema.nullable(),
-  kind: DocumentDivisionKindSchema,
-  title: z.string().trim().min(1),
-  level: z.number().int().nonnegative(),
-  position: z.number().int().nonnegative(),
-  startSelector: DivisionSelectorSchema,
-  endSelector: DivisionSelectorSchema,
-  startPage: z.number().int().positive().optional(),
-  endPage: z.number().int().positive().optional(),
-  markdownStart: z.number().int().nonnegative().optional(),
-  markdownEnd: z.number().int().nonnegative().optional(),
-  confidence: z.number().min(0).max(1),
-  evidence: z.array(DivisionEvidenceSchema),
-  reviewStatus: z.enum(["proposed", "accepted", "rejected", "edited"]),
-  isProcessable: z.boolean().default(true),
-  metadata: OptionalMetadataSchema
-}).strict().superRefine((division, context) => {
-  if (division.endPage !== undefined && division.startPage !== undefined && division.endPage < division.startPage) {
-    context.addIssue({ code: "custom", message: "endPage must not precede startPage", path: ["endPage"] });
-  }
-  if (division.markdownEnd !== undefined && division.markdownStart !== undefined
-      && division.markdownEnd < division.markdownStart) {
-    context.addIssue({ code: "custom", message: "markdownEnd must not precede markdownStart", path: ["markdownEnd"] });
-  }
-});
+export const DocumentDivisionCandidateSchema = z
+  .object({
+    id: StableIdSchema,
+    parentId: StableIdSchema.nullable(),
+    kind: DocumentDivisionKindSchema,
+    title: z.string().trim().min(1),
+    level: z.number().int().nonnegative(),
+    position: z.number().int().nonnegative(),
+    startSelector: DivisionSelectorSchema,
+    endSelector: DivisionSelectorSchema,
+    startPage: z.number().int().positive().optional(),
+    endPage: z.number().int().positive().optional(),
+    markdownStart: z.number().int().nonnegative().optional(),
+    markdownEnd: z.number().int().nonnegative().optional(),
+    confidence: z.number().min(0).max(1),
+    evidence: z.array(DivisionEvidenceSchema),
+    reviewStatus: z.enum(["proposed", "accepted", "rejected", "edited"]),
+    isProcessable: z.boolean().default(true),
+    metadata: OptionalMetadataSchema
+  })
+  .strict()
+  .superRefine((division, context) => {
+    if (
+      division.endPage !== undefined &&
+      division.startPage !== undefined &&
+      division.endPage < division.startPage
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "endPage must not precede startPage",
+        path: ["endPage"]
+      });
+    }
+    if (
+      division.markdownEnd !== undefined &&
+      division.markdownStart !== undefined &&
+      division.markdownEnd < division.markdownStart
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "markdownEnd must not precede markdownStart",
+        path: ["markdownEnd"]
+      });
+    }
+  });
 
 export type DocumentDivisionCandidate = z.infer<typeof DocumentDivisionCandidateSchema>;
 
@@ -64,19 +84,21 @@ export const DocumentStructureStatusSchema = z.enum([
   "superseded"
 ]);
 
-export const DocumentStructureDraftSchema = z.object({
-  id: StableIdSchema,
-  rootSourceItemId: StableIdSchema,
-  rootDocumentId: StableIdSchema,
-  format: z.enum(["epub", "pdf", "markdown", "other"]),
-  detectorVersion: z.string().min(1),
-  status: DocumentStructureStatusSchema,
-  overallConfidence: z.number().min(0).max(1),
-  revision: z.number().int().positive(),
-  divisions: z.array(DocumentDivisionCandidateSchema),
-  warnings: z.array(z.string()),
-  metadata: OptionalMetadataSchema
-}).strict();
+export const DocumentStructureDraftSchema = z
+  .object({
+    id: StableIdSchema,
+    rootSourceItemId: StableIdSchema,
+    rootDocumentId: StableIdSchema,
+    format: z.enum(["epub", "pdf", "markdown", "other"]),
+    detectorVersion: z.string().min(1),
+    status: DocumentStructureStatusSchema,
+    overallConfidence: z.number().min(0).max(1),
+    revision: z.number().int().positive(),
+    divisions: z.array(DocumentDivisionCandidateSchema),
+    warnings: z.array(z.string()),
+    metadata: OptionalMetadataSchema
+  })
+  .strict();
 
 export type DocumentStructureDraft = z.infer<typeof DocumentStructureDraftSchema>;
 
@@ -122,16 +144,33 @@ export const PreviousArtifactPolicySchema = z.enum([
   "preserve_reviewed_archive_pending"
 ]);
 
-export const ProcessingPlanRequestSchema = z.object({
-  integrateWiki:z.object({version:z.literal(2),policyId:z.string().uuid(),policyRevisionId:z.string().uuid()}).strict().optional(),
-  organization: z.object({title:z.string().trim().min(1).max(300),profileId:z.string().uuid().optional(),privacy:z.enum(["offline_only","allow_remote"]),domainId:z.string().uuid().nullable().default(null)}).strict().optional(),
-  preset: ProcessingPresetSchema,
-  requestedStages: z.array(ProcessingStageSchema),
-  scope: ProcessingScopeSchema.default("source_only"),
-  targetSourceItemIds: z.array(StableIdSchema).default([]),
-  forceRegeneration: z.boolean().default(false),
-  previousArtifactPolicy: PreviousArtifactPolicySchema.default("reuse_valid")
-}).strict();
+export const ProcessingPlanRequestSchema = z
+  .object({
+    integrateWiki: z
+      .object({
+        version: z.literal(2),
+        policyId: z.string().uuid(),
+        policyRevisionId: z.string().uuid()
+      })
+      .strict()
+      .optional(),
+    organization: z
+      .object({
+        title: z.string().trim().min(1).max(300),
+        profileId: z.string().uuid().optional(),
+        privacy: z.enum(["offline_only", "allow_remote"]),
+        domainId: z.string().uuid().nullable().default(null)
+      })
+      .strict()
+      .optional(),
+    preset: ProcessingPresetSchema,
+    requestedStages: z.array(ProcessingStageSchema),
+    scope: ProcessingScopeSchema.default("source_only"),
+    targetSourceItemIds: z.array(StableIdSchema).default([]),
+    forceRegeneration: z.boolean().default(false),
+    previousArtifactPolicy: PreviousArtifactPolicySchema.default("reuse_valid")
+  })
+  .strict();
 
 export type ProcessingPlanRequest = z.infer<typeof ProcessingPlanRequestSchema>;
 
@@ -143,7 +182,9 @@ export const EffectiveProcessingPlanSchema = ProcessingPlanRequestSchema.extend(
 
 export type EffectiveProcessingPlan = z.infer<typeof EffectiveProcessingPlanSchema>;
 
-export const processingStageDependencies: Readonly<Record<ProcessingStage, readonly ProcessingStage[]>> = {
+export const processingStageDependencies: Readonly<
+  Record<ProcessingStage, readonly ProcessingStage[]>
+> = {
   conversion: [],
   structureDetection: ["conversion"],
   structureReview: ["structureDetection"],
@@ -160,21 +201,48 @@ export const processingStageDependencies: Readonly<Record<ProcessingStage, reado
   aggregateSummarization: ["summarization"]
 };
 
-export const processingPresetStages: Readonly<Record<Exclude<ProcessingPreset, "custom">, readonly ProcessingStage[]>> = {
+export const processingPresetStages: Readonly<
+  Record<Exclude<ProcessingPreset, "custom">, readonly ProcessingStage[]>
+> = {
   import_only: ["conversion", "structureDetection", "structureReview", "materialization"],
-  search_ready: ["conversion", "structureDetection", "structureReview", "materialization", "chunking", "embedding"],
-  summary: ["conversion", "structureDetection", "structureReview", "materialization", "chunking", "summarization"],
+  search_ready: [
+    "conversion",
+    "structureDetection",
+    "structureReview",
+    "materialization",
+    "chunking",
+    "embedding"
+  ],
+  summary: [
+    "conversion",
+    "structureDetection",
+    "structureReview",
+    "materialization",
+    "chunking",
+    "summarization"
+  ],
   full_knowledge: [
-    "conversion", "structureDetection", "structureReview", "materialization", "chunking", "embedding",
-    "summarization", "atomicNotes", "knowledgeGraph", "atomicNoteMatching", "sourceMatching", "organizeKnowledge"
+    "conversion",
+    "structureDetection",
+    "structureReview",
+    "materialization",
+    "chunking",
+    "embedding",
+    "summarization",
+    "atomicNotes",
+    "knowledgeGraph",
+    "atomicNoteMatching",
+    "sourceMatching",
+    "organizeKnowledge"
   ]
 };
 
 export function resolveProcessingPlan(input: ProcessingPlanRequest): EffectiveProcessingPlan {
   const parsed = ProcessingPlanRequestSchema.parse(input);
-  const requested = parsed.preset === "custom"
-    ? parsed.requestedStages
-    : [...processingPresetStages[parsed.preset]];
+  const requested =
+    parsed.preset === "custom"
+      ? parsed.requestedStages
+      : [...processingPresetStages[parsed.preset]];
   const effective = new Set<ProcessingStage>();
 
   function include(stage: ProcessingStage): void {
@@ -199,7 +267,9 @@ export interface DivisionValidationIssue {
   divisionIds: string[];
 }
 
-export function validateDivisionTree(divisions: readonly DocumentDivisionCandidate[]): DivisionValidationIssue[] {
+export function validateDivisionTree(
+  divisions: readonly DocumentDivisionCandidate[]
+): DivisionValidationIssue[] {
   const issues: DivisionValidationIssue[] = [];
   const byId = new Map(divisions.map((division) => [division.id, division]));
   const siblingPositions = new Map<string, Map<number, string>>();
@@ -211,7 +281,8 @@ export function validateDivisionTree(divisions: readonly DocumentDivisionCandida
     const siblingKey = division.parentId ?? "root";
     const positions = siblingPositions.get(siblingKey) ?? new Map<number, string>();
     const duplicate = positions.get(division.position);
-    if (duplicate) issues.push({ code: "duplicate_position", divisionIds: [duplicate, division.id] });
+    if (duplicate)
+      issues.push({ code: "duplicate_position", divisionIds: [duplicate, division.id] });
     positions.set(division.position, division.id);
     siblingPositions.set(siblingKey, positions);
 
@@ -231,8 +302,13 @@ export function validateDivisionTree(divisions: readonly DocumentDivisionCandida
   }
 
   const processable = divisions
-    .filter((division) => division.isProcessable && division.reviewStatus !== "rejected"
-      && division.markdownStart !== undefined && division.markdownEnd !== undefined)
+    .filter(
+      (division) =>
+        division.isProcessable &&
+        division.reviewStatus !== "rejected" &&
+        division.markdownStart !== undefined &&
+        division.markdownEnd !== undefined
+    )
     .toSorted((left, right) => left.markdownStart! - right.markdownStart!);
   for (let index = 1; index < processable.length; index += 1) {
     const previous = processable[index - 1];

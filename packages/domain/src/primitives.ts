@@ -13,9 +13,7 @@ export type IsoDateTime = z.infer<typeof IsoDateTimeSchema>;
 
 export const NonEmptyStringSchema = z.string().trim().min(1);
 
-export const Sha256Schema = z
-  .string()
-  .regex(/^(sha256:)?[a-f0-9]{64}$/i);
+export const Sha256Schema = z.string().regex(/^(sha256:)?[a-f0-9]{64}$/i);
 
 export const JsonObjectSchema = z.record(z.string(), z.unknown());
 

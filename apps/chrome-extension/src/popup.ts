@@ -14,30 +14,36 @@ void send({ type: "get-settings" }).then((response) => {
   tokenInput.value = response.settings.pairingToken;
 });
 
-element<HTMLButtonElement>("save").addEventListener("click", () => run(async () => {
-  const response = await send({
-    type: "save-settings",
-    settings: {
-      gatewayBaseUrl: gatewayInput.value.trim(),
-      clientId: clientIdInput.value.trim(),
-      pairingToken: tokenInput.value.trim()
-    }
-  });
-  if (!response.ok) throw new Error(response.error);
-  return "statusConnected";
-}));
+element<HTMLButtonElement>("save").addEventListener("click", () =>
+  run(async () => {
+    const response = await send({
+      type: "save-settings",
+      settings: {
+        gatewayBaseUrl: gatewayInput.value.trim(),
+        clientId: clientIdInput.value.trim(),
+        pairingToken: tokenInput.value.trim()
+      }
+    });
+    if (!response.ok) throw new Error(response.error);
+    return "statusConnected";
+  })
+);
 
-element<HTMLButtonElement>("capturePage").addEventListener("click", () => run(async () => {
-  const response = await send({ type: "capture", mode: "page" });
-  if (!response.ok) throw new Error(response.error);
-  return "statusCaptured";
-}));
+element<HTMLButtonElement>("capturePage").addEventListener("click", () =>
+  run(async () => {
+    const response = await send({ type: "capture", mode: "page" });
+    if (!response.ok) throw new Error(response.error);
+    return "statusCaptured";
+  })
+);
 
-element<HTMLButtonElement>("captureSelection").addEventListener("click", () => run(async () => {
-  const response = await send({ type: "capture", mode: "selection" });
-  if (!response.ok) throw new Error(response.error);
-  return "statusCaptured";
-}));
+element<HTMLButtonElement>("captureSelection").addEventListener("click", () =>
+  run(async () => {
+    const response = await send({ type: "capture", mode: "selection" });
+    if (!response.ok) throw new Error(response.error);
+    return "statusCaptured";
+  })
+);
 
 async function run(action: () => Promise<string>) {
   status.textContent = chrome.i18n.getMessage("statusWorking");
@@ -45,7 +51,9 @@ async function run(action: () => Promise<string>) {
     status.textContent = chrome.i18n.getMessage(await action());
   } catch (error) {
     const code = error instanceof Error ? error.message : "unknown_error";
-    status.textContent = chrome.i18n.getMessage(code === "pairing_required" ? "statusPairingRequired" : "statusDesktopUnavailable");
+    status.textContent = chrome.i18n.getMessage(
+      code === "pairing_required" ? "statusPairingRequired" : "statusDesktopUnavailable"
+    );
   }
 }
 

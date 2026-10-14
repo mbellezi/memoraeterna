@@ -6,12 +6,37 @@ import { appSettingsSchema, defaultAppSettings, defaultStorageSettings } from ".
 import { SettingsView } from "./SettingsView";
 
 describe("matching preset interface", () => {
-  const settings = appSettingsSchema.parse({ ...defaultAppSettings, language: "en", updatedAt: new Date().toISOString() });
+  const settings = appSettingsSchema.parse({
+    ...defaultAppSettings,
+    language: "en",
+    updatedAt: new Date().toISOString()
+  });
   function render(custom: boolean) {
     const id = "afbec711-07cd-43b1-8088-153df3dc5f73";
-    return renderToStaticMarkup(<SettingsView activeScope="matching" appSettings={custom ? { ...settings, activeMatchingPresetId: id, matchingPresets: [{ id, name: "My preset", settings: MatchingConfigurationSchema.parse(settings) }] } : settings}
-      settings={{ ...defaultStorageSettings, updatedAt: settings.updatedAt }} isSaving={false} t={createTranslator("en")}
-      onAppSettingsChange={() => {}} onChange={() => {}} onSelectObsidianVault={async () => {}} onScopeChange={() => {}} onToast={() => {}} />);
+    return renderToStaticMarkup(
+      <SettingsView
+        activeScope="matching"
+        appSettings={
+          custom
+            ? {
+                ...settings,
+                activeMatchingPresetId: id,
+                matchingPresets: [
+                  { id, name: "My preset", settings: MatchingConfigurationSchema.parse(settings) }
+                ]
+              }
+            : settings
+        }
+        settings={{ ...defaultStorageSettings, updatedAt: settings.updatedAt }}
+        isSaving={false}
+        t={createTranslator("en")}
+        onAppSettingsChange={() => {}}
+        onChange={() => {}}
+        onSelectObsidianVault={async () => {}}
+        onScopeChange={() => {}}
+        onToast={() => {}}
+      />
+    );
   }
   it("keeps the built-in recommendation visible and protected, with individual reset actions for every variable", () => {
     const html = render(false);

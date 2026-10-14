@@ -7,10 +7,14 @@ interface PlacedPage {
 }
 
 /** Editorial siblings keep their explicit order; every parent precedes its children. */
-export function wikiNavigationOrder<T extends PlacedPage>(pages: readonly T[]): Array<{ page: T; depth: number }> {
+export function wikiNavigationOrder<T extends PlacedPage>(
+  pages: readonly T[]
+): Array<{ page: T; depth: number }> {
   const visible = pages.filter((page) => !page.archived);
   const ids = new Set(visible.map((page) => page.id));
-  const ordered = [...visible].sort((a, b) => a.position - b.position || a.title.localeCompare(b.title) || a.id.localeCompare(b.id));
+  const ordered = [...visible].sort(
+    (a, b) => a.position - b.position || a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
+  );
   const children = new Map<string | null, T[]>();
   for (const page of ordered) {
     const parent = page.parentId && ids.has(page.parentId) ? page.parentId : null;
@@ -39,9 +43,25 @@ export function wikiNavigationOrder<T extends PlacedPage>(pages: readonly T[]): 
 }
 
 /** Visibility follows the normalized forest, including defensive orphan/cyclic roots. */
-export function visibleWikiNavigation<T extends PlacedPage>(pages:readonly T[],expanded:ReadonlySet<string>){
- const stack:string[]=[],ordered=wikiNavigationOrder(pages).map(row=>{stack.length=row.depth;const parentId=stack.at(-1)??null;stack.push(row.page.id);return{...row,parentId};});
- const parentsWithChildren=new Set(ordered.map(row=>row.parentId));
- const visible=new Set<string>();
- return ordered.filter(row=>{const shown=row.parentId===null||visible.has(row.parentId)&&expanded.has(row.parentId);if(shown)visible.add(row.page.id);return shown;}).map(row=>({...row,hasChildren:parentsWithChildren.has(row.page.id)}));
+export function visibleWikiNavigation<T extends PlacedPage>(
+  pages: readonly T[],
+  expanded: ReadonlySet<string>
+) {
+  const stack: string[] = [],
+    ordered = wikiNavigationOrder(pages).map((row) => {
+      stack.length = row.depth;
+      const parentId = stack.at(-1) ?? null;
+      stack.push(row.page.id);
+      return { ...row, parentId };
+    });
+  const parentsWithChildren = new Set(ordered.map((row) => row.parentId));
+  const visible = new Set<string>();
+  return ordered
+    .filter((row) => {
+      const shown =
+        row.parentId === null || (visible.has(row.parentId) && expanded.has(row.parentId));
+      if (shown) visible.add(row.page.id);
+      return shown;
+    })
+    .map((row) => ({ ...row, hasChildren: parentsWithChildren.has(row.page.id) }));
 }

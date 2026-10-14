@@ -17,7 +17,7 @@ function send(message: WorkerMessage): void {
 
 async function run(): Promise<void> {
   send({ kind: "progress", progress: 0.05 });
-  const result = await ({
+  const result = await {
     ingestion: runIngestion,
     "markdown-conversion": runMarkdownConversion,
     chunking: runChunking,
@@ -25,7 +25,7 @@ async function run(): Promise<void> {
     "atomic-note-generation": runAtomicNoteGeneration,
     "obsidian-sync": runObsidianSync,
     "asset-storage": runAssetStorage
-  }[task.type])(task.payload);
+  }[task.type](task.payload);
   send({ kind: "progress", progress: 1 });
   send({ kind: "result", result });
 }

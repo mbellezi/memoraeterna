@@ -1,31 +1,58 @@
-import { z } from 'zod';
-import { HierarchyPolicySchema, HierarchyPlacementInventorySchema, HierarchyPlacementEntrySchema, wikiAreaIds, type HierarchyPolicy, type HierarchyPlacementInventory } from '@app/domain';
-import type { PgPool } from '../client.js';
-import { curatorHash } from './wikiCuratorRepository.js';
-type Db = Pick<PgPool, 'query'>;
-export const HierarchyInventoryRequestSchema = z.object({
-  pageIds: z.array(z.string().uuid()).max(300).default([]),
-  editablePageIds: z.array(z.string().uuid()).max(100).default([]),
-  sourceIds: z.array(z.string().uuid()).default([]),
-  after: z.string().uuid().nullable().default(null),
-  limit: z.number().int().min(1).max(300).default(100),
-  maxBytes: z.number().int().min(1024).max(2_000_000).default(256_000)
-}).strict();
+import { z } from "zod";
+import {
+  HierarchyPolicySchema,
+  HierarchyPlacementInventorySchema,
+  HierarchyPlacementEntrySchema,
+  wikiAreaIds,
+  type HierarchyPolicy,
+  type HierarchyPlacementInventory
+} from "@app/domain";
+import type { PgPool } from "../client.js";
+import { curatorHash } from "./wikiCuratorRepository.js";
+type Db = Pick<PgPool, "query">;
+export const HierarchyInventoryRequestSchema = z
+  .object({
+    pageIds: z.array(z.string().uuid()).max(300).default([]),
+    editablePageIds: z.array(z.string().uuid()).max(100).default([]),
+    sourceIds: z.array(z.string().uuid()).default([]),
+    after: z.string().uuid().nullable().default(null),
+    limit: z.number().int().min(1).max(300).default(100),
+    maxBytes: z.number().int().min(1024).max(2_000_000).default(256_000)
+  })
+  .strict();
 export type HierarchyInventoryRequest = z.input<typeof HierarchyInventoryRequestSchema>;
 export async function hierarchyAllowedSources(db: Db, policy: HierarchyPolicy): Promise<string[]> {
-  return (await db.query(`with recursive excluded as(select id from source_items where id=any($4::uuid[]) union select s.id from source_items s join excluded e on s.parent_source_item_id=e.id),
-    allowed as(select id from source_items where ($1 or id=any($2::uuid[])) and id not in(select id from excluded) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $3 and s.id not in(select id from excluded)) select id from allowed order by id`, [policy.scope.wholeLibrary, policy.scope.sourceIds, policy.scope.includeDescendants, policy.scope.excludedSourceIds])).rows.map(r => r.id as string);
+  return (
+    await db.query(
+      `with recursive excluded as(select id from source_items where id=any($4::uuid[]) union select s.id from source_items s join excluded e on s.parent_source_item_id=e.id),
+    allowed as(select id from source_items where ($1 or id=any($2::uuid[])) and id not in(select id from excluded) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $3 and s.id not in(select id from excluded)) select id from allowed order by id`,
+      [
+        policy.scope.wholeLibrary,
+        policy.scope.sourceIds,
+        policy.scope.includeDescendants,
+        policy.scope.excludedSourceIds
+      ]
+    )
+  ).rows.map((r) => r.id as string);
 }
 
 /** Metadata discovery only. Reissue with nextCursor, merge pages, then revalidate admission.
  * Recursive UNION reaches complete ancestry and designated TOC descent without a depth cap.
  * The response count and bytes are calibrated transport bounds, never depth/target limits.
  */
-export async function readHierarchyPlacementInventory(db: Db, policyInput: HierarchyPolicy, input: HierarchyInventoryRequest): Promise<HierarchyPlacementInventory> {
-  const policy = HierarchyPolicySchema.parse(policyInput), request = HierarchyInventoryRequestSchema.parse(input);
+export async function readHierarchyPlacementInventory(
+  db: Db,
+  policyInput: HierarchyPolicy,
+  input: HierarchyInventoryRequest
+): Promise<HierarchyPlacementInventory> {
+  const policy = HierarchyPolicySchema.parse(policyInput),
+    request = HierarchyInventoryRequestSchema.parse(input);
   const allowed = await hierarchyAllowedSources(db, policy);
-  if (request.sourceIds.some(id => !allowed.includes(id))) throw new Error('organization.errors.scope');
-  const rows = (await db.query(`with recursive
+  if (request.sourceIds.some((id) => !allowed.includes(id)))
+    throw new Error("organization.errors.scope");
+  const rows = (
+    await db.query(
+      `with recursive
     seeds(id) as (select unnest($1::uuid[]) union select p.id from wiki_pages p where
       exists(select 1 from wiki_dependencies d where d.revision_id=p.current_revision_id and d.kind='source' and d.input_id=any($2::uuid[]))),
     discovery(id) as (select id from seeds union select edge.id from discovery d join lateral (
@@ -84,25 +111,66 @@ export async function readHierarchyPlacementInventory(db: Db, policyInput: Hiera
             where link->>'kind'='page' and (link->>'id')::uuid in(select id from descendants where root=p.id))), '[]'::jsonb)
       ) else null end as "reviewFootprint",
       (select md5(string_agg(reach.id::text||':'||rp.current_revision_id::text,',' order by reach.id)) from reachable reach join wiki_pages rp on rp.id=reach.id where reach.root=p.id) lineage
-    from selected s join wiki_pages p on p.id=s.id join wiki_page_revisions r on r.id=p.current_revision_id order by p.id`, [request.pageIds, request.sourceIds, request.after, request.limit + 1, Object.values(wikiAreaIds), [wikiAreaIds.people,wikiAreaIds.organizations,wikiAreaIds.places,wikiAreaIds.works],wikiAreaIds.entities,request.editablePageIds])).rows;
-  const pages: HierarchyPlacementInventory['pages'] = [];
-  let bytes = 0, after = request.after, more = false;
+    from selected s join wiki_pages p on p.id=s.id join wiki_page_revisions r on r.id=p.current_revision_id order by p.id`,
+      [
+        request.pageIds,
+        request.sourceIds,
+        request.after,
+        request.limit + 1,
+        Object.values(wikiAreaIds),
+        [wikiAreaIds.people, wikiAreaIds.organizations, wikiAreaIds.places, wikiAreaIds.works],
+        wikiAreaIds.entities,
+        request.editablePageIds
+      ]
+    )
+  ).rows;
+  const pages: HierarchyPlacementInventory["pages"] = [];
+  let bytes = 0,
+    after = request.after,
+    more = false;
   for (const row of rows) {
-    if (pages.length === request.limit) { more = true; break; }
-    const reserved=Object.values(wikiAreaIds).some(id=>id===row.pageId);
-    const permitted = row.navigationArea || row.sourceIds.length > 0 && row.sourceIds.every((id: string) => allowed.includes(id));
+    if (pages.length === request.limit) {
+      more = true;
+      break;
+    }
+    const reserved = Object.values(wikiAreaIds).some((id) => id === row.pageId);
+    const permitted =
+      row.navigationArea ||
+      (row.sourceIds.length > 0 && row.sourceIds.every((id: string) => allowed.includes(id)));
     // Excluded metadata is not sent to the model. Missing ancestry is an explicit admission failure.
-    if (!permitted) { after = row.pageId; continue; }
+    if (!permitted) {
+      after = row.pageId;
+      continue;
+    }
     const { lineage, navigationArea, reviewFootprint, ...rawMetadata } = row;
-    if(reviewFootprint&&!navigationArea)rawMetadata.reviewFootprint=reviewFootprint;
+    if (reviewFootprint && !navigationArea) rawMetadata.reviewFootprint = reviewFootprint;
     // Reserved areas grant only their immutable destination identity, never descendant lineage.
-    const metadata=navigationArea?{...rawMetadata,sourceIds:[],subtopicIds:[],descendantCount:0,membershipCount:0}:rawMetadata;
-    const page = HierarchyPlacementEntrySchema.parse({ ...metadata, fingerprint: curatorHash({ ...metadata, lineage:navigationArea?row.revisionId:lineage }), canEdit: !reserved && !row.archived && request.editablePageIds.includes(row.pageId), canReceiveChildren: !row.archived && policy.operations.includes('use_scoped_destinations') });
+    const metadata = navigationArea
+      ? { ...rawMetadata, sourceIds: [], subtopicIds: [], descendantCount: 0, membershipCount: 0 }
+      : rawMetadata;
+    const page = HierarchyPlacementEntrySchema.parse({
+      ...metadata,
+      fingerprint: curatorHash({ ...metadata, lineage: navigationArea ? row.revisionId : lineage }),
+      canEdit: !reserved && !row.archived && request.editablePageIds.includes(row.pageId),
+      canReceiveChildren: !row.archived && policy.operations.includes("use_scoped_destinations")
+    });
     const size = Buffer.byteLength(JSON.stringify(page));
-    if (bytes + size > request.maxBytes) { if (!pages.length) throw new Error('organization.errors.scopeLimit'); more = true; break; }
-    pages.push(page); bytes += size; after = row.pageId;
+    if (bytes + size > request.maxBytes) {
+      if (!pages.length) throw new Error("organization.errors.scopeLimit");
+      more = true;
+      break;
+    }
+    pages.push(page);
+    bytes += size;
+    after = row.pageId;
   }
   if (rows.length > request.limit) more = true;
   const scopeFingerprint = curatorHash(policy.scope);
-  return HierarchyPlacementInventorySchema.parse({ version: 'automatic-wiki-v1', pages, scopeFingerprint, fingerprint: curatorHash({ scopeFingerprint, pages }), nextCursor: more ? after : null });
+  return HierarchyPlacementInventorySchema.parse({
+    version: "automatic-wiki-v1",
+    pages,
+    scopeFingerprint,
+    fingerprint: curatorHash({ scopeFingerprint, pages }),
+    nextCursor: more ? after : null
+  });
 }

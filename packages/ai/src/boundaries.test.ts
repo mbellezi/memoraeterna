@@ -14,7 +14,11 @@ describe("local runtime boundaries", () => {
     for (const root of roots) {
       for (const file of await sourceFiles(root)) {
         const source = await readFile(file, "utf8");
-        if (/from\s+["']node-llama-cpp|import\(["']node-llama-cpp|from\s+["'][^"']*mlx-swift/i.test(source)) {
+        if (
+          /from\s+["']node-llama-cpp|import\(["']node-llama-cpp|from\s+["'][^"']*mlx-swift/i.test(
+            source
+          )
+        ) {
           violations.push(file);
         }
       }
@@ -27,7 +31,7 @@ async function sourceFiles(path: string): Promise<string[]> {
   const result: string[] = [];
   for (const entry of await readdir(path, { withFileTypes: true })) {
     const child = resolve(path, entry.name);
-    if (entry.isDirectory()) result.push(...await sourceFiles(child));
+    if (entry.isDirectory()) result.push(...(await sourceFiles(child)));
     else if (/\.[cm]?[jt]sx?$/.test(entry.name)) result.push(child);
   }
   return result;

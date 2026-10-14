@@ -6,9 +6,14 @@ import type { JsonObject, Queryable, SourceItemType } from "./types.js";
 export const librarySemanticCandidateFloor = 0.4;
 export const librarySemanticStandaloneFloor = 0.48;
 
-export function qualifiesLibrarySemanticMatch(embeddingScore: number, corroborated: boolean): boolean {
-  return embeddingScore >= librarySemanticStandaloneFloor
-    || (corroborated && embeddingScore >= librarySemanticCandidateFloor);
+export function qualifiesLibrarySemanticMatch(
+  embeddingScore: number,
+  corroborated: boolean
+): boolean {
+  return (
+    embeddingScore >= librarySemanticStandaloneFloor ||
+    (corroborated && embeddingScore >= librarySemanticCandidateFloor)
+  );
 }
 
 export interface LibrarySourceRecord {
@@ -67,9 +72,28 @@ interface LibrarySourceRow extends QueryResultRow {
 
 export function createLibraryRepository(db: Queryable) {
   return {
-    async listSources(input: { embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;  sourceTypes?: SourceItemType[] | undefined; limit?: number | undefined; offset?: number | undefined; query?: string | undefined; parentId?: string | null | undefined; ids?: string[] | undefined; queryEmbedding?: number[] | undefined; embeddingModel?: string | undefined } = {}): Promise<LibrarySourceRecord[]> {
+    async listSources(
+      input: {
+        embeddingSpaceKey?: string | undefined;
+        embeddingProvider?: string | undefined;
+        embeddingRuntime?: string | undefined;
+        sourceTypes?: SourceItemType[] | undefined;
+        limit?: number | undefined;
+        offset?: number | undefined;
+        query?: string | undefined;
+        parentId?: string | null | undefined;
+        ids?: string[] | undefined;
+        queryEmbedding?: number[] | undefined;
+        embeddingModel?: string | undefined;
+      } = {}
+    ): Promise<LibrarySourceRecord[]> {
       const dimensions = input.queryEmbedding?.length;
-      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
+      if (
+        dimensions !== undefined &&
+        dimensions !== 256 &&
+        dimensions !== 768 &&
+        dimensions !== 1_024
+      ) {
         throw new Error(`Unsupported embedding dimension: ${dimensions}`);
       }
       if (input.queryEmbedding?.some((value) => !Number.isFinite(value))) {
@@ -214,7 +238,22 @@ export function createLibraryRepository(db: Queryable) {
                           coalesce(graph_scores.graph_score, 0))) * 0.15 end desc nulls last,
                   hierarchy.position nulls last, case when source.parent_source_item_id is not null then source.created_at end asc, source.updated_at desc, source.id
          limit $2 offset $6`,
-        [input.sourceTypes ?? [], input.limit ?? 100, input.query ?? "", input.parentId !== undefined, input.parentId ?? null, input.offset ?? 0, input.ids ?? null, queryVector, input.embeddingModel ?? null, librarySemanticStandaloneFloor, librarySemanticCandidateFloor,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+        [
+          input.sourceTypes ?? [],
+          input.limit ?? 100,
+          input.query ?? "",
+          input.parentId !== undefined,
+          input.parentId ?? null,
+          input.offset ?? 0,
+          input.ids ?? null,
+          queryVector,
+          input.embeddingModel ?? null,
+          librarySemanticStandaloneFloor,
+          librarySemanticCandidateFloor,
+          input.embeddingSpaceKey ?? null,
+          input.embeddingProvider ?? null,
+          input.embeddingRuntime ?? null
+        ]
       );
       return result.rows.map((row) => ({
         ...row,

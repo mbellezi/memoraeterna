@@ -5,7 +5,10 @@ import {
   type AiReasoningLevel
 } from "@app/domain";
 
-import { openAiCodexSupportedReasoningLevels, openAiSupportedReasoningLevels } from "./reasoning.js";
+import {
+  openAiCodexSupportedReasoningLevels,
+  openAiSupportedReasoningLevels
+} from "./reasoning.js";
 
 const contextWindow = { min: 128, max: 2_000_000, step: 1 } as const;
 const maxTokens = { min: 1, max: 1_000_000, step: 1 } as const;
@@ -26,8 +29,9 @@ export function openAiCompatibleParameterCapabilities(input: {
   if (!hasGeneration(input.capabilities)) return parseCapabilities(common);
 
   const qwen35 = isQwen35Model(input.modelId);
-  const reasoning = qwen35ReasoningCapabilities(input.modelId, input.baseUrl)
-    ?? reasoningLevels(openAiSupportedReasoningLevels(input.modelId));
+  const reasoning =
+    qwen35ReasoningCapabilities(input.modelId, input.baseUrl) ??
+    reasoningLevels(openAiSupportedReasoningLevels(input.modelId));
   return parseCapabilities({
     ...common,
     temperature,
@@ -63,10 +67,12 @@ export function openAiCodexParameterCapabilities(input: {
 }): AiModelParameterCapabilities {
   const levels = openAiCodexSupportedReasoningLevels(input.modelId);
   return parseCapabilities({
-    ...(hasGeneration(input.capabilities) ? {
-      contextWindow,
-      ...(levels ? { reasoning: { levels: [...levels] } } : {})
-    } : {}),
+    ...(hasGeneration(input.capabilities)
+      ? {
+          contextWindow,
+          ...(levels ? { reasoning: { levels: [...levels] } } : {})
+        }
+      : {}),
     ...(input.capabilities.includes("embedding") ? { dimensions } : {})
   });
 }
@@ -77,7 +83,8 @@ export function localParameterCapabilities(input: {
   catalogId?: string;
   capabilities: readonly AiCapability[];
 }): AiModelParameterCapabilities {
-  const embeddingOnly = input.capabilities.includes("embedding") && !hasGeneration(input.capabilities);
+  const embeddingOnly =
+    input.capabilities.includes("embedding") && !hasGeneration(input.capabilities);
   if (embeddingOnly) {
     return input.runtime === "gguf" ? parseCapabilities({ contextWindow, dimensions }) : {};
   }
@@ -92,7 +99,8 @@ export function localParameterCapabilities(input: {
       seed
     });
   }
-  const qwen35 = input.catalogId === "mlx-qwen3.5-9b-4bit" || /qwen3\.5[-/ ]?9b/i.test(input.modelId);
+  const qwen35 =
+    input.catalogId === "mlx-qwen3.5-9b-4bit" || /qwen3\.5[-/ ]?9b/i.test(input.modelId);
   return parseCapabilities({
     contextWindow,
     maxTokens: localMaxTokens,
@@ -126,10 +134,12 @@ export function providerParameterCapabilities(input: {
 export function isDashScopeBaseUrl(baseUrl: string): boolean {
   try {
     const hostname = new URL(baseUrl).hostname.toLowerCase();
-    return hostname === "dashscope.aliyuncs.com"
-      || hostname.endsWith(".dashscope.aliyuncs.com")
-      || hostname === "aliyuncs.com"
-      || hostname.endsWith(".aliyuncs.com");
+    return (
+      hostname === "dashscope.aliyuncs.com" ||
+      hostname.endsWith(".dashscope.aliyuncs.com") ||
+      hostname === "aliyuncs.com" ||
+      hostname.endsWith(".aliyuncs.com")
+    );
   } catch {
     return false;
   }
@@ -147,20 +157,24 @@ function commonRemoteCapabilities(capabilities: readonly AiCapability[]): Record
 }
 
 function hasGeneration(capabilities: readonly AiCapability[]): boolean {
-  return capabilities.some((capability) => [
-    "text-generation",
-    "structured-output",
-    "summarization",
-    "knowledge-graph-generation",
-    "atomic-note-generation",
-    "reranking"
-  ].includes(capability));
+  return capabilities.some((capability) =>
+    [
+      "text-generation",
+      "structured-output",
+      "summarization",
+      "knowledge-graph-generation",
+      "atomic-note-generation",
+      "reranking"
+    ].includes(capability)
+  );
 }
 
 function qwen35ReasoningCapabilities(
   modelId: string,
   baseUrl: string
-): { levels: AiReasoningLevel[]; maxTokens?: { min: number; max?: number; step: number } } | undefined {
+):
+  | { levels: AiReasoningLevel[]; maxTokens?: { min: number; max?: number; step: number } }
+  | undefined {
   if (!isQwen35Model(modelId)) return undefined;
   if (!isDashScopeBaseUrl(baseUrl)) return { levels: ["off", "on"] };
   const maximum = /qwen3[._-]?5-plus/i.test(modelId) ? 81_920 : undefined;
@@ -172,7 +186,9 @@ function qwen35ReasoningCapabilities(
 
 function googleReasoningCapabilities(
   modelId: string
-): { levels: AiReasoningLevel[]; maxTokens?: { min: number; max: number; step: number } } | undefined {
+):
+  | { levels: AiReasoningLevel[]; maxTokens?: { min: number; max: number; step: number } }
+  | undefined {
   const id = modelId.toLowerCase();
   if (id.includes("gemini-2.5")) {
     if (id.includes("pro")) {

@@ -10,14 +10,7 @@ const [{ stdout: changedStdout }, { stdout: untrackedStdout }] = await Promise.a
   execFileAsync("git", ["ls-files", "--others", "--exclude-standard"], { cwd: root })
 ]);
 
-const checkedExtensions = new Set([
-  ".css",
-  ".json",
-  ".md",
-  ".mjs",
-  ".ts",
-  ".tsx"
-]);
+const checkedExtensions = new Set([".css", ".json", ".md", ".mjs", ".ts", ".tsx"]);
 
 const failures = [];
 

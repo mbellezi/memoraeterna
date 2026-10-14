@@ -1,10 +1,15 @@
 import type { HTMLAttributes, ReactElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
-import { clampWikiTreeWidth, wikiTreeBounds, wikiTreeKeyboardWidth, WikiNavigationPane } from "./WikiNavigationPane";
+import {
+  clampWikiTreeWidth,
+  wikiTreeBounds,
+  wikiTreeKeyboardWidth,
+  WikiNavigationPane
+} from "./WikiNavigationPane";
 
-vi.mock("react", async importOriginal => ({
-  ...await importOriginal<typeof import("react")>(),
+vi.mock("react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react")>()),
   useState: (value: unknown) => [value, vi.fn()],
   useRef: (value: unknown) => ({ current: value }),
   useId: () => "wiki-navigation-test",
@@ -30,11 +35,21 @@ describe("wiki tree resizing", () => {
   });
   function controls() {
     const onWidthChange = vi.fn();
-    const tree = WikiNavigationPane({ children: null, width: 320, onWidthChange, t: createTranslator("en") });
+    const tree = WikiNavigationPane({
+      children: null,
+      width: 320,
+      onWidthChange,
+      t: createTranslator("en")
+    });
     const children = tree.props.children as ReactElement<HTMLAttributes<HTMLDivElement>>[];
     const separator = children[1]!.props;
-    const currentTarget = { focus: vi.fn(), setPointerCapture: vi.fn(), releasePointerCapture: vi.fn() };
-    const event = (clientX: number) => ({ button: 0, pointerId: 1, clientX, currentTarget, preventDefault: vi.fn() }) as never;
+    const currentTarget = {
+      focus: vi.fn(),
+      setPointerCapture: vi.fn(),
+      releasePointerCapture: vi.fn()
+    };
+    const event = (clientX: number) =>
+      ({ button: 0, pointerId: 1, clientX, currentTarget, preventDefault: vi.fn() }) as never;
     return { onWidthChange, separator, currentTarget, event };
   }
   it("captures pointer movement and persists only the completed gesture", () => {
@@ -48,12 +63,17 @@ describe("wiki tree resizing", () => {
     separator.onLostPointerCapture!(event(480));
     expect(onWidthChange).toHaveBeenCalledExactlyOnceWith(400);
   });
-  it.each(["cancel", "escape", "lost capture"])("discards a drag after %s", reason => {
+  it.each(["cancel", "escape", "lost capture"])("discards a drag after %s", (reason) => {
     const { separator, onWidthChange, event } = controls();
     separator.onPointerDown!(event(400));
     separator.onPointerMove!(event(480));
     if (reason === "cancel") separator.onPointerCancel!(event(480));
-    else if (reason === "escape") separator.onKeyDown!({ key: "Escape", preventDefault: vi.fn(), stopPropagation: vi.fn() } as never);
+    else if (reason === "escape")
+      separator.onKeyDown!({
+        key: "Escape",
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn()
+      } as never);
     else separator.onLostPointerCapture!(event(480));
     separator.onPointerUp!(event(480));
     expect(onWidthChange).not.toHaveBeenCalled();

@@ -2,7 +2,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "../../lib/cn";
 import { loadCoverDataUrl } from "../../lib/cover-cache";
 
-export function CoverImage({ assetId, alt, className, fallback }: {
+export function CoverImage({
+  assetId,
+  alt,
+  className,
+  fallback
+}: {
   assetId: string | null;
   alt: string;
   className?: string;

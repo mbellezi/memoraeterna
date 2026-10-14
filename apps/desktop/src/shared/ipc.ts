@@ -1,15 +1,39 @@
-import { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema } from '@app/integration-contracts';
+import {
+  obsidianLayoutStatusSchema,
+  obsidianLayoutConfigSchema,
+  obsidianLayoutApplyInputSchema
+} from "@app/integration-contracts";
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
-import type {FollowedInvestigation,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
+import type {
+  FollowedInvestigation,
+  FollowInvestigationInputSchema,
+  InvestigationStateInputSchema
+} from "@app/domain";
 import type { PromptCommand } from "@app/domain";
-import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, type ObsidianEditReceipt } from "@app/integration-contracts";
+import {
+  obsidianEditorialConflictsSchema,
+  obsidianResolveInputSchema,
+  type ObsidianEditReceipt
+} from "@app/integration-contracts";
 export { obsidianEditorialConflictsSchema, obsidianResolveInputSchema };
 import type { ObsidianDeepLink } from "./obsidian-deep-link.js";
 import type { MaintenanceCommand } from "@app/domain";
 import type { ConsultationInput, ConsultationResult, OrganizationRun } from "@app/domain";
 import type { OrganizationCommand } from "@app/domain";
-import type { WikiPage, WikiSaveInput, WikiQuery, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
-import type { MonitoringQuery, MonitoringPage, MonitoringDetail, MonitoringPrune } from "./monitoring.js";
+import type {
+  WikiPage,
+  WikiSaveInput,
+  WikiQuery,
+  WikiPageListSchema,
+  WikiResultsSchema,
+  WikiHistorySchema
+} from "@app/domain";
+import type {
+  MonitoringQuery,
+  MonitoringPage,
+  MonitoringDetail,
+  MonitoringPrune
+} from "./monitoring.js";
 import { z } from "zod";
 import {
   AiCapabilitySchema,
@@ -38,14 +62,27 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
-  investigationList:"app:investigation:list",investigationGet:"app:investigation:get",investigationFollow:"app:investigation:follow",investigationState:"app:investigation:state",
-  consultationAsk:"app:consultation:ask",consultationCancel:"app:consultation:cancel",consultationSave:"app:consultation:save",
-  maintenanceCommand:"app:maintenance:command",
-  promptCommand:"app:prompts:command",
-  curatorCommand:"app:curator:command",
+  investigationList: "app:investigation:list",
+  investigationGet: "app:investigation:get",
+  investigationFollow: "app:investigation:follow",
+  investigationState: "app:investigation:state",
+  consultationAsk: "app:consultation:ask",
+  consultationCancel: "app:consultation:cancel",
+  consultationSave: "app:consultation:save",
+  maintenanceCommand: "app:maintenance:command",
+  promptCommand: "app:prompts:command",
+  curatorCommand: "app:curator:command",
   organizationCommand: "app:organization:command",
-  wikiCollection:"app:wiki:collection", wikiTree:"app:wiki:tree", wikiContext:"app:wiki:context", wikiMove:"app:wiki:move", wikiLinkedTarget:"app:wiki:linked-target",
-  wikiList: "app:wiki:list", wikiGet: "app:wiki:get", wikiSave: "app:wiki:save", wikiSearch: "app:wiki:search", wikiHistory: "app:wiki:history",
+  wikiCollection: "app:wiki:collection",
+  wikiTree: "app:wiki:tree",
+  wikiContext: "app:wiki:context",
+  wikiMove: "app:wiki:move",
+  wikiLinkedTarget: "app:wiki:linked-target",
+  wikiList: "app:wiki:list",
+  wikiGet: "app:wiki:get",
+  wikiSave: "app:wiki:save",
+  wikiSearch: "app:wiki:search",
+  wikiHistory: "app:wiki:history",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   databaseGetStatus: "app:database:get-status",
@@ -62,10 +99,10 @@ export const ipcChannels = {
   obsidianEditorialConflicts: "app:obsidian:editorial:conflicts",
   obsidianEditorialComparison: "app:obsidian:editorial:comparison",
   obsidianEditorialResolve: "app:obsidian:editorial:resolve",
-  obsidianLayoutStatus: 'app:obsidian:layout:status',
-  obsidianLayoutPreview: 'app:obsidian:layout:preview',
-  obsidianLayoutApply: 'app:obsidian:layout:apply',
-  obsidianLayoutRollback: 'app:obsidian:layout:rollback',
+  obsidianLayoutStatus: "app:obsidian:layout:status",
+  obsidianLayoutPreview: "app:obsidian:layout:preview",
+  obsidianLayoutApply: "app:obsidian:layout:apply",
+  obsidianLayoutRollback: "app:obsidian:layout:rollback",
   obsidianWikiStatus: "app:obsidian:wiki:status",
   obsidianWikiScope: "app:obsidian:wiki:scope",
   obsidianWikiDiff: "app:obsidian:wiki:diff",
@@ -99,7 +136,7 @@ export const ipcChannels = {
   relationLabelsStatus: "app:knowledge:relation-labels:status",
   jobsList: "app:jobs:list",
   jobsChanged: "app:jobs:changed",
-  jobsCancelBatch:"app:jobs:cancel-batch",
+  jobsCancelBatch: "app:jobs:cancel-batch",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
   jobsDelete: "app:jobs:delete",
@@ -117,7 +154,8 @@ export const ipcChannels = {
   knowledgeGraphDashboardGet: "app:knowledge:graph-dashboard:get",
   sourceRelationsList: "app:knowledge:source-relations:list",
   sourceRelationsReview: "app:knowledge:source-relations:review",
-  knowledgeGraphSourceConnectionDetailsGet: "app:knowledge:graph-dashboard:source-connection-details:get",
+  knowledgeGraphSourceConnectionDetailsGet:
+    "app:knowledge:graph-dashboard:source-connection-details:get",
   aiProvidersList: "app:ai:providers:list",
   aiProvidersSave: "app:ai:providers:save",
   aiProvidersDelete: "app:ai:providers:delete",
@@ -185,16 +223,34 @@ export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
 export const languageCodeSchema = z.enum(appLanguageCodes);
 export const windowNavigationDirectionSchema = z.enum(["back", "forward"]);
 
-export const savedProcessingPresetSchema = z.object({
-  id: z.string().uuid(), name: z.string().trim().min(1).max(100), requestedStages: ProcessingPlanRequestSchema.shape.requestedStages
-}).strict();
+export const savedProcessingPresetSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).max(100),
+    requestedStages: ProcessingPlanRequestSchema.shape.requestedStages
+  })
+  .strict();
 
-export const googleBooksKeyInputSchema = z.object({ apiKey: z.string().trim().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).nullable() }).strict();
+export const googleBooksKeyInputSchema = z
+  .object({
+    apiKey: z
+      .string()
+      .trim()
+      .min(1)
+      .max(512)
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .nullable()
+  })
+  .strict();
 export const googleBooksKeyStatusSchema = z.object({ configured: z.boolean() }).strict();
 
-export const relationLabelsInputSchema = z.object({ mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema }).strict();
+export const relationLabelsInputSchema = z
+  .object({ mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema })
+  .strict();
 export const relationLabelJobPayloadSchema = z.object({
-  mode: z.enum(["missing", "all"]), contentLanguage: languageCodeSchema, before: z.string().datetime()
+  mode: z.enum(["missing", "all"]),
+  contentLanguage: languageCodeSchema,
+  before: z.string().datetime()
 });
 
 export const appSettingsSchema = z.object({
@@ -212,43 +268,55 @@ export const appSettingsSchema = z.object({
   metadataEnrichmentEnabled: z.boolean().default(true),
   keepLocalEmbeddingModelsLoaded: z.boolean().default(true),
   bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).default("auto"),
-  atomicNoteRelationThreshold: z.number().min(0).max(1).default(recommendedMatchingConfiguration.atomicNoteRelationThreshold),
+  atomicNoteRelationThreshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(recommendedMatchingConfiguration.atomicNoteRelationThreshold),
   summaryMinimumWordCount: z.number().int().min(0).max(1_000).default(40),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1).default(0.92),
   relationTypeSimilarityThreshold: z.number().min(0).max(1).default(0.92),
   knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).default(250),
   knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).default(500),
-  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault(recommendedMatchingConfiguration.atomicNoteMatchingSettings),
-  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.prefault(recommendedMatchingConfiguration.canonicalMatchingSettings),
-  sourceRelationSettings: SourceRelationSettingsSchema.default(() => structuredClone(recommendedMatchingConfiguration.sourceRelationSettings)),
+  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.prefault(
+    recommendedMatchingConfiguration.atomicNoteMatchingSettings
+  ),
+  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.prefault(
+    recommendedMatchingConfiguration.canonicalMatchingSettings
+  ),
+  sourceRelationSettings: SourceRelationSettingsSchema.default(() =>
+    structuredClone(recommendedMatchingConfiguration.sourceRelationSettings)
+  ),
   updatedAt: z.string().datetime()
 });
 
-export const appSettingsUpdateSchema = z.object({
-  matchingPresets: MatchingPresetsSchema.optional(),
-  activeMatchingPresetId: MatchingPresetIdSchema.optional(),
-  processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
-  language: languageCodeSchema.optional(),
-  contentLanguage: languageCodeSchema.optional(),
-  themeMode: themeModeSchema.optional(),
-  graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
-  navigationCollapsed: z.boolean().optional(),
-  wikiTreeWidth: z.number().int().min(240).max(520).optional(),
-  debugMode: z.boolean().optional(),
-  debugFullCapture: z.boolean().optional(),
-  metadataEnrichmentEnabled: z.boolean().optional(),
-  keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
-  bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
-  atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
-  summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional(),
-  entityIdentitySimilarityThreshold: z.number().min(0).max(1).optional(),
-  relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),
-  knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
-  knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional(),
-  atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.optional(),
-  canonicalMatchingSettings: CanonicalMatchingSettingsSchema.optional(),
-  sourceRelationSettings: SourceRelationSettingsSchema.optional()
-}).strict();
+export const appSettingsUpdateSchema = z
+  .object({
+    matchingPresets: MatchingPresetsSchema.optional(),
+    activeMatchingPresetId: MatchingPresetIdSchema.optional(),
+    processingPresets: savedProcessingPresetSchema.array().max(50).optional(),
+    language: languageCodeSchema.optional(),
+    contentLanguage: languageCodeSchema.optional(),
+    themeMode: themeModeSchema.optional(),
+    graphWheelZoomSensitivity: z.number().min(0.5).max(1.5).optional(),
+    navigationCollapsed: z.boolean().optional(),
+    wikiTreeWidth: z.number().int().min(240).max(520).optional(),
+    debugMode: z.boolean().optional(),
+    debugFullCapture: z.boolean().optional(),
+    metadataEnrichmentEnabled: z.boolean().optional(),
+    keepLocalEmbeddingModelsLoaded: z.boolean().optional(),
+    bookMetadataProvider: z.enum(["auto", "open-library", "google-books"]).optional(),
+    atomicNoteRelationThreshold: z.number().min(0).max(1).optional(),
+    summaryMinimumWordCount: z.number().int().min(0).max(1_000).optional(),
+    entityIdentitySimilarityThreshold: z.number().min(0).max(1).optional(),
+    relationTypeSimilarityThreshold: z.number().min(0).max(1).optional(),
+    knowledgeGraphMaxEntitiesPerSource: z.number().int().min(1).max(10_000).optional(),
+    knowledgeGraphMaxRelationsPerSource: z.number().int().min(1).max(20_000).optional(),
+    atomicNoteMatchingSettings: AtomicNoteMatchingSettingsSchema.optional(),
+    canonicalMatchingSettings: CanonicalMatchingSettingsSchema.optional(),
+    sourceRelationSettings: SourceRelationSettingsSchema.optional()
+  })
+  .strict();
 
 export const storageSettingsSchema = z.object({
   obsidianVaultPath: z.string().nullable(),
@@ -266,23 +334,62 @@ export const storageSettingsUpdateSchema = storageSettingsSchema
   .partial()
   .strict();
 
-export const obsidianWikiScopeSchema = z.object({sourceIds:z.array(z.string().uuid()).max(100).default([]),pageIds:z.array(z.string().uuid()).max(100).default([]),includeDescendants:z.boolean().default(true)}).strict();
-export const obsidianWikiStatusSchema = z.object({active:z.boolean(),job:z.object({status:z.enum(["queued","running","succeeded","failed","canceled","retrying"]),error:z.string().nullable()}).nullable(),scope:obsidianWikiScopeSchema,conflicts:z.array(z.object({id:z.string().uuid(),memora_id:z.string().uuid(),relative_path:z.string(),status:z.string(),error:z.string().nullable()}))}).strict();
-export const obsidianWikiDiffSchema = z.object({id:z.string().uuid(),relativePath:z.string(),base:z.string(),local:z.string(),proposed:z.string(),localHash:z.string().nullable()}).strict();
-export const obsidianWikiRecoverSchema = z.object({id:z.string().uuid(),expectedHash:z.string().nullable()}).strict();
-export const obsidianSyncStatusSchema = z.object({
-  state: z.enum(["idle", "running", "completed", "failed"]),
-  stage: z.enum(["idle", "reconciling", "projecting", "completed", "failed"]),
-  progress: z.number().min(0).max(1),
-  processed: z.number().int().nonnegative(),
-  total: z.number().int().nonnegative(),
-  synced: z.number().int().nonnegative(),
-  conflicts: z.number().int().nonnegative(),
-  projected: z.number().int().nonnegative(),
-  startedAt: z.string().datetime().nullable(),
-  finishedAt: z.string().datetime().nullable(),
-  error: z.string().nullable()
-}).strict();
+export const obsidianWikiScopeSchema = z
+  .object({
+    sourceIds: z.array(z.string().uuid()).max(100).default([]),
+    pageIds: z.array(z.string().uuid()).max(100).default([]),
+    includeDescendants: z.boolean().default(true)
+  })
+  .strict();
+export const obsidianWikiStatusSchema = z
+  .object({
+    active: z.boolean(),
+    job: z
+      .object({
+        status: z.enum(["queued", "running", "succeeded", "failed", "canceled", "retrying"]),
+        error: z.string().nullable()
+      })
+      .nullable(),
+    scope: obsidianWikiScopeSchema,
+    conflicts: z.array(
+      z.object({
+        id: z.string().uuid(),
+        memora_id: z.string().uuid(),
+        relative_path: z.string(),
+        status: z.string(),
+        error: z.string().nullable()
+      })
+    )
+  })
+  .strict();
+export const obsidianWikiDiffSchema = z
+  .object({
+    id: z.string().uuid(),
+    relativePath: z.string(),
+    base: z.string(),
+    local: z.string(),
+    proposed: z.string(),
+    localHash: z.string().nullable()
+  })
+  .strict();
+export const obsidianWikiRecoverSchema = z
+  .object({ id: z.string().uuid(), expectedHash: z.string().nullable() })
+  .strict();
+export const obsidianSyncStatusSchema = z
+  .object({
+    state: z.enum(["idle", "running", "completed", "failed"]),
+    stage: z.enum(["idle", "reconciling", "projecting", "completed", "failed"]),
+    progress: z.number().min(0).max(1),
+    processed: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+    synced: z.number().int().nonnegative(),
+    conflicts: z.number().int().nonnegative(),
+    projected: z.number().int().nonnegative(),
+    startedAt: z.string().datetime().nullable(),
+    finishedAt: z.string().datetime().nullable(),
+    error: z.string().nullable()
+  })
+  .strict();
 
 export const systemInfoSchema = z.object({
   appName: z.string().min(1),
@@ -297,55 +404,82 @@ export const systemInfoSchema = z.object({
 
 export const duplicatePolicySchema = z.enum(["ignore", "update", "version"]);
 
-export const manualIngestionInputSchema = z.object({
-  descriptor: SourceDescriptorSchema,
-  content: z.string().default(""),
-  duplicatePolicy: duplicatePolicySchema.default("ignore"),
-  processingPlan: ProcessingPlanRequestSchema.default({
-    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
-    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+export const manualIngestionInputSchema = z
+  .object({
+    descriptor: SourceDescriptorSchema,
+    content: z.string().default(""),
+    duplicatePolicy: duplicatePolicySchema.default("ignore"),
+    processingPlan: ProcessingPlanRequestSchema.default({
+      preset: "full_knowledge",
+      requestedStages: [],
+      scope: "source_only",
+      targetSourceItemIds: [],
+      forceRegeneration: false,
+      previousArtifactPolicy: "reuse_valid"
+    })
   })
-}).strict().superRefine((input, context) => {
-  const containerType = ["Book", "PeriodicalIssue", "AcademicPaper"].includes(input.descriptor.type);
-  if (!containerType && input.content.trim().length === 0) {
-    context.addIssue({ code: "custom", message: "Content is required for this source type.", path: ["content"] });
-  }
-});
+  .strict()
+  .superRefine((input, context) => {
+    const containerType = ["Book", "PeriodicalIssue", "AcademicPaper"].includes(
+      input.descriptor.type
+    );
+    if (!containerType && input.content.trim().length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Content is required for this source type.",
+        path: ["content"]
+      });
+    }
+  });
 
-export const fileImportInputSchema = z.object({
-  fileToken: z.string().uuid().optional(),
-  descriptor: SourceDescriptorSchema,
-  duplicatePolicy: duplicatePolicySchema.default("ignore"),
-  processingPlan: ProcessingPlanRequestSchema.default({
-    preset: "full_knowledge", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
-    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+export const fileImportInputSchema = z
+  .object({
+    fileToken: z.string().uuid().optional(),
+    descriptor: SourceDescriptorSchema,
+    duplicatePolicy: duplicatePolicySchema.default("ignore"),
+    processingPlan: ProcessingPlanRequestSchema.default({
+      preset: "full_knowledge",
+      requestedStages: [],
+      scope: "source_only",
+      targetSourceItemIds: [],
+      forceRegeneration: false,
+      previousArtifactPolicy: "reuse_valid"
+    })
   })
-}).strict();
+  .strict();
 
-export const containerSourceInputSchema = z.object({
-  descriptor: SourceDescriptorSchema.refine(
-    (descriptor) => ["Book", "PeriodicalIssue", "AcademicPaper"].includes(descriptor.type),
-    "Only hierarchical root types can be containers."
-  ),
-  duplicatePolicy: duplicatePolicySchema.default("ignore")
-}).strict();
+export const containerSourceInputSchema = z
+  .object({
+    descriptor: SourceDescriptorSchema.refine(
+      (descriptor) => ["Book", "PeriodicalIssue", "AcademicPaper"].includes(descriptor.type),
+      "Only hierarchical root types can be containers."
+    ),
+    duplicatePolicy: duplicatePolicySchema.default("ignore")
+  })
+  .strict();
 
-export const duplicateCheckInputSchema = z.object({
-  descriptor: SourceDescriptorSchema,
-  content: z.string().optional(),
-  fileToken: z.string().uuid().optional()
-}).strict();
+export const duplicateCheckInputSchema = z
+  .object({
+    descriptor: SourceDescriptorSchema,
+    content: z.string().optional(),
+    fileToken: z.string().uuid().optional()
+  })
+  .strict();
 
-export const duplicateCandidateSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(1),
-  type: SourceItemTypeSchema
-}).strict();
+export const duplicateCandidateSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().min(1),
+    type: SourceItemTypeSchema
+  })
+  .strict();
 
-export const fileMetadataExtractionInputSchema = z.object({
-  sourceType: SourceItemTypeSchema.default("GenericDocument"),
-  requestId: z.string().uuid().optional()
-}).strict();
+export const fileMetadataExtractionInputSchema = z
+  .object({
+    sourceType: SourceItemTypeSchema.default("GenericDocument"),
+    requestId: z.string().uuid().optional()
+  })
+  .strict();
 
 export const fileImportProgressStageSchema = z.enum([
   "selecting_file",
@@ -359,462 +493,699 @@ export const fileImportProgressStageSchema = z.enum([
   "completed"
 ]);
 
-export const fileImportProgressSchema = z.object({
-  requestId: z.string().uuid(),
-  stage: fileImportProgressStageSchema,
-  progress: z.number().min(0).max(1),
-  completedPages: z.number().int().nonnegative().optional(),
-  totalPages: z.number().int().positive().optional()
-}).strict().superRefine((event, context) => {
-  if (event.completedPages !== undefined && event.totalPages !== undefined
-      && event.completedPages > event.totalPages) {
-    context.addIssue({
-      code: "custom",
-      message: "Completed pages cannot exceed total pages.",
-      path: ["completedPages"]
-    });
-  }
-});
+export const fileImportProgressSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    stage: fileImportProgressStageSchema,
+    progress: z.number().min(0).max(1),
+    completedPages: z.number().int().nonnegative().optional(),
+    totalPages: z.number().int().positive().optional()
+  })
+  .strict()
+  .superRefine((event, context) => {
+    if (
+      event.completedPages !== undefined &&
+      event.totalPages !== undefined &&
+      event.completedPages > event.totalPages
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Completed pages cannot exceed total pages.",
+        path: ["completedPages"]
+      });
+    }
+  });
 
-export const fileMetadataExtractionResultSchema = z.object({
-  fileToken: z.string().uuid(),
-  fileName: z.string().min(1),
-  mimeType: z.string().min(1),
-  draft: SourceDescriptorDraftSchema,
-  preview: z.object({ text: z.string().max(20_000), truncated: z.boolean() }).strict().optional()
-}).strict();
+export const fileMetadataExtractionResultSchema = z
+  .object({
+    fileToken: z.string().uuid(),
+    fileName: z.string().min(1),
+    mimeType: z.string().min(1),
+    draft: SourceDescriptorDraftSchema,
+    preview: z
+      .object({ text: z.string().max(20_000), truncated: z.boolean() })
+      .strict()
+      .optional()
+  })
+  .strict();
 
 export const metadataEnrichmentInputSchema = MetadataEnrichmentQuerySchema;
-export const fileStructurePreviewInputSchema = z.object({
-  fileToken: z.string().uuid(),
-  sourceType: z.enum(["Book", "AcademicPaper", "PeriodicalIssue"])
-}).strict();
+export const fileStructurePreviewInputSchema = z
+  .object({
+    fileToken: z.string().uuid(),
+    sourceType: z.enum(["Book", "AcademicPaper", "PeriodicalIssue"])
+  })
+  .strict();
 export const metadataEnrichmentResultSchema = EnrichmentCandidateSchema.array();
 export const enrichmentCoverInputSchema = z.object({ coverUrl: z.string().url() }).strict();
-export const enrichmentCoverResultSchema = z.object({
-  assetId: z.string().uuid(),
-  mimeType: z.string().min(1)
-}).strict();
+export const enrichmentCoverResultSchema = z
+  .object({
+    assetId: z.string().uuid(),
+    mimeType: z.string().min(1)
+  })
+  .strict();
 
-export const ingestionResultSchema = z.object({
-  sourceItemId: z.string().uuid(),
-  documentId: z.string().uuid().nullable(),
-  ingestionRunId: z.string().uuid().nullable(),
-  jobId: z.string().uuid().nullable(),
-  batchId: z.string().uuid().nullable(),
-  structureId: z.string().uuid().nullable(),
-  requiresStructureReview: z.boolean(),
-  duplicate: z.boolean()
-}).strict();
+export const ingestionResultSchema = z
+  .object({
+    sourceItemId: z.string().uuid(),
+    documentId: z.string().uuid().nullable(),
+    ingestionRunId: z.string().uuid().nullable(),
+    jobId: z.string().uuid().nullable(),
+    batchId: z.string().uuid().nullable(),
+    structureId: z.string().uuid().nullable(),
+    requiresStructureReview: z.boolean(),
+    duplicate: z.boolean()
+  })
+  .strict();
 
 export const documentDivisionViewSchema = DocumentDivisionCandidateSchema.safeExtend({
   childSourceItemId: z.string().uuid().nullable(),
   childDocumentId: z.string().uuid().nullable()
 });
 
-export const documentStructureViewSchema = z.object({
-  id: z.string().uuid(),
-  rootSourceItemId: z.string().uuid(),
-  rootDocumentId: z.string().uuid(),
-  format: z.string().min(1),
-  detectorVersion: z.string().min(1),
-  status: z.enum(["draft", "in_review", "confirmed", "materialized", "superseded"]),
-  overallConfidence: z.number().min(0).max(1),
-  revision: z.number().int().positive(),
-  warnings: z.array(z.string()),
-  rootMarkdown: z.string(),
-  boundaries: z.array(z.object({
-    offset: z.number().int().nonnegative(),
-    label: z.string().min(1),
-    kind: z.enum(["heading", "division", "page"]),
-    page: z.number().int().positive().optional()
-  }).strict()),
-  divisions: z.array(documentDivisionViewSchema),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-}).strict();
+export const documentStructureViewSchema = z
+  .object({
+    id: z.string().uuid(),
+    rootSourceItemId: z.string().uuid(),
+    rootDocumentId: z.string().uuid(),
+    format: z.string().min(1),
+    detectorVersion: z.string().min(1),
+    status: z.enum(["draft", "in_review", "confirmed", "materialized", "superseded"]),
+    overallConfidence: z.number().min(0).max(1),
+    revision: z.number().int().positive(),
+    warnings: z.array(z.string()),
+    rootMarkdown: z.string(),
+    boundaries: z.array(
+      z
+        .object({
+          offset: z.number().int().nonnegative(),
+          label: z.string().min(1),
+          kind: z.enum(["heading", "division", "page"]),
+          page: z.number().int().positive().optional()
+        })
+        .strict()
+    ),
+    divisions: z.array(documentDivisionViewSchema),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
 
-export const fileStructurePreviewSchema = documentStructureViewSchema.pick({ rootMarkdown: true, boundaries: true })
-  .extend({ divisions: z.array(DocumentDivisionCandidateSchema) }).strict();
+export const fileStructurePreviewSchema = documentStructureViewSchema
+  .pick({ rootMarkdown: true, boundaries: true })
+  .extend({ divisions: z.array(DocumentDivisionCandidateSchema) })
+  .strict();
 export type FileStructurePreview = z.infer<typeof fileStructurePreviewSchema>;
 export type FileStructurePreviewInput = z.infer<typeof fileStructurePreviewInputSchema>;
 
-export const structureConfirmInputSchema = z.object({
-  structureId: z.string().uuid(),
-  divisions: z.array(DocumentDivisionCandidateSchema),
-  plan: ProcessingPlanRequestSchema
-}).strict();
+export const structureConfirmInputSchema = z
+  .object({
+    structureId: z.string().uuid(),
+    divisions: z.array(DocumentDivisionCandidateSchema),
+    plan: ProcessingPlanRequestSchema
+  })
+  .strict();
 
-export const structureSaveInputSchema = z.object({
-  structureId: z.string().uuid(),
-  divisions: z.array(DocumentDivisionCandidateSchema)
-}).strict();
+export const structureSaveInputSchema = z
+  .object({
+    structureId: z.string().uuid(),
+    divisions: z.array(DocumentDivisionCandidateSchema)
+  })
+  .strict();
 
-export const processingRequestSchema = z.object({
-  plan: ProcessingPlanRequestSchema,
-  runKind: z.enum(["initial", "missing_stages", "reingestion"]),
-  trigger: z.enum(["library_action", "interactive_import", "integration", "recovery"]).optional()
-}).strict();
+export const processingRequestSchema = z
+  .object({
+    plan: ProcessingPlanRequestSchema,
+    runKind: z.enum(["initial", "missing_stages", "reingestion"]),
+    trigger: z.enum(["library_action", "interactive_import", "integration", "recovery"]).optional()
+  })
+  .strict();
 
-export const processingQueueResultSchema = z.object({
-  batchId: z.string().uuid(),
-  queued: z.array(z.object({
-    sourceItemId: z.string().uuid(),
-    documentId: z.string().uuid(),
-    ingestionRunId: z.string().uuid(),
-    jobId: z.string().uuid().nullable()
-  }).strict())
-}).strict();
+export const processingQueueResultSchema = z
+  .object({
+    batchId: z.string().uuid(),
+    queued: z.array(
+      z
+        .object({
+          sourceItemId: z.string().uuid(),
+          documentId: z.string().uuid(),
+          ingestionRunId: z.string().uuid(),
+          jobId: z.string().uuid().nullable()
+        })
+        .strict()
+    )
+  })
+  .strict();
 
-export const processingBatchSchema = z.object({
-  id: z.string().uuid(), trigger: z.string(), requestedPlan: z.record(z.string(), z.unknown()),
-  effectivePlan: z.record(z.string(), z.unknown()), reingestionPolicy: z.string(), status: z.string(),
-  progress: z.number().min(0).max(1), totalItems: z.number().int().nonnegative(),
-  completedItems: z.number().int().nonnegative(), failedItems: z.number().int().nonnegative(),
-  createdAt: z.string().datetime(), updatedAt: z.string().datetime()
-}).strict();
+export const processingBatchSchema = z
+  .object({
+    id: z.string().uuid(),
+    trigger: z.string(),
+    requestedPlan: z.record(z.string(), z.unknown()),
+    effectivePlan: z.record(z.string(), z.unknown()),
+    reingestionPolicy: z.string(),
+    status: z.string(),
+    progress: z.number().min(0).max(1),
+    totalItems: z.number().int().nonnegative(),
+    completedItems: z.number().int().nonnegative(),
+    failedItems: z.number().int().nonnegative(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
 
-export const sourceSuggestionSchema = z.object({
-  id: z.string().uuid(),
-  title: z.string().min(1),
-  type: SourceItemTypeSchema
-}).strict();
-
-export const sourceLookupInputSchema = z.object({
-  query: z.string().trim().min(1).max(200),
-  sourceTypes: z.array(SourceItemTypeSchema).max(11).default([])
-}).strict();
-
-export const jobRecordSchema = z.object({
-  labelResult: z.object({ updated: z.number().int().nonnegative(), contentLanguage: languageCodeSchema }).nullable().optional(),
-  id: z.string().uuid(),
-  type: z.string().min(1),
-  status: z.enum(["queued", "running", "succeeded", "failed", "canceled"]),
-  progress: z.number().min(0).max(1),
-  attempts: z.number().int().nonnegative(),
-  maxAttempts: z.number().int().positive(),
-  canCancel: z.boolean(),
-  canRetry: z.boolean(),
-  canDelete: z.boolean().default(false),
-  error: z.string().nullable(),
-  errorHistory: z.array(z.object({
-    message: z.string().min(1),
-    stage: z.string().min(1),
-    attempt: z.number().int().nonnegative(),
-    occurredAt: z.string().datetime()
-  }).strict()).default([]),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  aiExecution: z.object({
-    provider: z.string().min(1),
-    modelId: z.string().min(1),
-    reasoningLevel: AiReasoningLevelSchema.nullable()
-  }).strict().nullable(),
-  source: z.object({
+export const sourceSuggestionSchema = z
+  .object({
     id: z.string().uuid(),
     title: z.string().min(1),
-    type: SourceItemTypeSchema,
-    origin: z.string().min(1)
-  }).strict().nullable().optional(),
-  ingestionRun: z.object({
+    type: SourceItemTypeSchema
+  })
+  .strict();
+
+export const sourceLookupInputSchema = z
+  .object({
+    query: z.string().trim().min(1).max(200),
+    sourceTypes: z.array(SourceItemTypeSchema).max(11).default([])
+  })
+  .strict();
+
+export const jobRecordSchema = z
+  .object({
+    labelResult: z
+      .object({ updated: z.number().int().nonnegative(), contentLanguage: languageCodeSchema })
+      .nullable()
+      .optional(),
     id: z.string().uuid(),
-    batchId: z.string().uuid().nullable().default(null),
-    status: z.enum(["pending", "running", "succeeded", "failed", "canceled"]),
+    type: z.string().min(1),
+    status: z.enum(["queued", "running", "succeeded", "failed", "canceled"]),
+    progress: z.number().min(0).max(1),
+    attempts: z.number().int().nonnegative(),
+    maxAttempts: z.number().int().positive(),
+    canCancel: z.boolean(),
+    canRetry: z.boolean(),
+    canDelete: z.boolean().default(false),
+    error: z.string().nullable(),
+    errorHistory: z
+      .array(
+        z
+          .object({
+            message: z.string().min(1),
+            stage: z.string().min(1),
+            attempt: z.number().int().nonnegative(),
+            occurredAt: z.string().datetime()
+          })
+          .strict()
+      )
+      .default([]),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    aiExecution: z
+      .object({
+        provider: z.string().min(1),
+        modelId: z.string().min(1),
+        reasoningLevel: AiReasoningLevelSchema.nullable()
+      })
+      .strict()
+      .nullable(),
+    source: z
+      .object({
+        id: z.string().uuid(),
+        title: z.string().min(1),
+        type: SourceItemTypeSchema,
+        origin: z.string().min(1)
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    ingestionRun: z
+      .object({
+        id: z.string().uuid(),
+        batchId: z.string().uuid().nullable().default(null),
+        status: z.enum(["pending", "running", "succeeded", "failed", "canceled"]),
+        currentStage: z.string().min(1),
+        effectiveStages: z.array(z.string()).default([]),
+        stagesCheckpoint: z.record(z.string(), z.unknown())
+      })
+      .strict()
+      .nullable()
+      .optional()
+  })
+  .strict();
+
+export const jobsClearResultSchema = z
+  .object({
+    deletedCount: z.number().int().nonnegative()
+  })
+  .strict();
+
+export const jobsDeleteResultSchema = z
+  .object({
+    deletedJobs: z.number().int().nonnegative(),
+    deletedRuns: z.number().int().nonnegative()
+  })
+  .strict();
+
+export const libraryResetResultSchema = z
+  .object({
+    deletedSources: z.number().int().nonnegative(),
+    deletedAtomicNotes: z.number().int().nonnegative(),
+    deletedFiles: z.number().int().nonnegative(),
+    failedFiles: z.number().int().nonnegative()
+  })
+  .strict();
+
+export const sourceDeletionResultSchema = z
+  .object({
+    deletedSources: z.number().int().nonnegative(),
+    deletedAtomicNotes: z.number().int().nonnegative(),
+    deletedFiles: z.number().int().nonnegative(),
+    failedFiles: z.number().int().nonnegative(),
+    graphCleanupFailed: z.boolean()
+  })
+  .strict();
+
+export const librarySourceSchema = z
+  .object({
+    id: z.string().uuid(),
+    parentSourceItemId: z.string().uuid().nullable(),
+    parentTitle: z.string().nullable().default(null),
+    structurePosition: z.number().int().nonnegative().nullable(),
+    childCount: z.number().int().nonnegative(),
+    hasDocument: z.boolean(),
+    type: SourceItemTypeSchema,
+    title: z.string().min(1),
+    subtitle: z.string().nullable(),
+    sourceUri: z.string().nullable(),
+    language: z.string().min(1),
+    summary: z.string().nullable(),
+    metadata: z.record(z.string(), z.unknown()),
+    processingStatus: z.string().min(1),
     currentStage: z.string().min(1),
-    effectiveStages: z.array(z.string()).default([]),
-    stagesCheckpoint: z.record(z.string(), z.unknown())
-  }).strict().nullable().optional()
-}).strict();
+    textScore: z.number().min(0).max(1).nullable().default(null),
+    embeddingScore: z.number().min(0).max(1).nullable().default(null),
+    graphScore: z.number().min(0).max(1).nullable().default(null),
+    rankingScore: z.number().nonnegative().nullable().default(null),
+    matchKind: z.enum(["traditional", "embedding", "graph", "combined"]).nullable().default(null),
+    matchExcerpt: z.string().nullable().default(null),
+    matchLocation: z.string().nullable().default(null),
+    embeddingNeedsRefresh: z.boolean().default(false),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
 
-export const jobsClearResultSchema = z.object({
-  deletedCount: z.number().int().nonnegative()
-}).strict();
-
-export const jobsDeleteResultSchema = z.object({
-  deletedJobs: z.number().int().nonnegative(),
-  deletedRuns: z.number().int().nonnegative()
-}).strict();
-
-export const libraryResetResultSchema = z.object({
-  deletedSources: z.number().int().nonnegative(),
-  deletedAtomicNotes: z.number().int().nonnegative(),
-  deletedFiles: z.number().int().nonnegative(),
-  failedFiles: z.number().int().nonnegative()
-}).strict();
-
-export const sourceDeletionResultSchema = z.object({
-  deletedSources: z.number().int().nonnegative(),
-  deletedAtomicNotes: z.number().int().nonnegative(),
-  deletedFiles: z.number().int().nonnegative(),
-  failedFiles: z.number().int().nonnegative(),
-  graphCleanupFailed: z.boolean()
-}).strict();
-
-export const librarySourceSchema = z.object({
-  id: z.string().uuid(),
-  parentSourceItemId: z.string().uuid().nullable(),
-  parentTitle: z.string().nullable().default(null),
-  structurePosition: z.number().int().nonnegative().nullable(),
-  childCount: z.number().int().nonnegative(),
-  hasDocument: z.boolean(),
-  type: SourceItemTypeSchema,
-  title: z.string().min(1),
-  subtitle: z.string().nullable(),
-  sourceUri: z.string().nullable(),
-  language: z.string().min(1),
-  summary: z.string().nullable(),
-  metadata: z.record(z.string(), z.unknown()),
-  processingStatus: z.string().min(1),
-  currentStage: z.string().min(1),
-  textScore: z.number().min(0).max(1).nullable().default(null),
-  embeddingScore: z.number().min(0).max(1).nullable().default(null),
-  graphScore: z.number().min(0).max(1).nullable().default(null),
-  rankingScore: z.number().nonnegative().nullable().default(null),
-  matchKind: z.enum(["traditional", "embedding", "graph", "combined"]).nullable().default(null),
-  matchExcerpt: z.string().nullable().default(null),
-  matchLocation: z.string().nullable().default(null),
-  embeddingNeedsRefresh: z.boolean().default(false),
-  updatedAt: z.string().datetime()
-}).strict();
-
-export const libraryBrowseInputSchema = z.object({
-  sourceTypes: SourceItemTypeSchema.array().default([]), query: z.string().max(500).default(""),
-  searchMode: z.enum(["traditional", "hybrid"]).default("hybrid"),
-  parentId: z.string().uuid().nullable().optional(), ids: z.string().uuid().array().max(100).optional(),
-  offset: z.number().int().nonnegative().default(0), limit: z.number().int().min(1).max(100).default(48)
-}).strict();
-export const sourceUrlPreviewInputSchema = z.object({ type: z.enum(["WebArticle", "Video"]), url: z.string().url().max(4000) }).strict();
-export const sourceUrlPreviewSchema = z.object({ draft: SourceDescriptorDraftSchema, markdown: z.string().max(20_000_000) }).strict();
-export const sourceEditInputSchema = z.object({
-  sourceItemId: z.string().uuid(), expectedUpdatedAt: z.string().datetime(), descriptor: SourceDescriptorSchema,
-  content: z.object({ documentId: z.string().uuid().nullable(), markdown: z.string().min(1).max(20_000_000) }).strict().optional()
-}).strict();
-export const sourceEditResultSchema = z.object({
-  sourceItemId: z.string().uuid(), documentId: z.string().uuid().nullable(), contentChanged: z.boolean()
-}).strict();
+export const libraryBrowseInputSchema = z
+  .object({
+    sourceTypes: SourceItemTypeSchema.array().default([]),
+    query: z.string().max(500).default(""),
+    searchMode: z.enum(["traditional", "hybrid"]).default("hybrid"),
+    parentId: z.string().uuid().nullable().optional(),
+    ids: z.string().uuid().array().max(100).optional(),
+    offset: z.number().int().nonnegative().default(0),
+    limit: z.number().int().min(1).max(100).default(48)
+  })
+  .strict();
+export const sourceUrlPreviewInputSchema = z
+  .object({ type: z.enum(["WebArticle", "Video"]), url: z.string().url().max(4000) })
+  .strict();
+export const sourceUrlPreviewSchema = z
+  .object({ draft: SourceDescriptorDraftSchema, markdown: z.string().max(20_000_000) })
+  .strict();
+export const sourceEditInputSchema = z
+  .object({
+    sourceItemId: z.string().uuid(),
+    expectedUpdatedAt: z.string().datetime(),
+    descriptor: SourceDescriptorSchema,
+    content: z
+      .object({
+        documentId: z.string().uuid().nullable(),
+        markdown: z.string().min(1).max(20_000_000)
+      })
+      .strict()
+      .optional()
+  })
+  .strict();
+export const sourceEditResultSchema = z
+  .object({
+    sourceItemId: z.string().uuid(),
+    documentId: z.string().uuid().nullable(),
+    contentChanged: z.boolean()
+  })
+  .strict();
 export type LibraryBrowseInput = z.input<typeof libraryBrowseInputSchema>;
 export type SourceEditInput = z.infer<typeof sourceEditInputSchema>;
 
-export const atomicNoteViewSchema = z.object({
-  ownership: z.enum(["source", "knowledge"]).default("source"),
-  supersessionStatus: z.string().default("current"),
-  id: z.string().uuid(),
-  title: z.string().min(1),
-  bodyMarkdown: z.string().min(1),
-  ideaStatement: z.string().min(1),
-  language: z.string().min(1),
-  status: z.enum(["pending_review", "approved", "rejected", "archived"]),
-  sourceItemId: z.string().uuid(),
-  sourceSpanId: z.string().uuid().nullable(),
-  evidenceChunkId: z.string().uuid(),
-  generationModel: z.string().min(1),
-  generationPromptVersion: z.string().min(1),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime()
-}).strict();
+export const atomicNoteViewSchema = z
+  .object({
+    ownership: z.enum(["source", "knowledge"]).default("source"),
+    supersessionStatus: z.string().default("current"),
+    id: z.string().uuid(),
+    title: z.string().min(1),
+    bodyMarkdown: z.string().min(1),
+    ideaStatement: z.string().min(1),
+    language: z.string().min(1),
+    status: z.enum(["pending_review", "approved", "rejected", "archived"]),
+    sourceItemId: z.string().uuid(),
+    sourceSpanId: z.string().uuid().nullable(),
+    evidenceChunkId: z.string().uuid(),
+    generationModel: z.string().min(1),
+    generationPromptVersion: z.string().min(1),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime()
+  })
+  .strict();
 
 export const knowledgeGraphDashboardModeSchema = z.enum(["sources", "atomic_notes"]);
-export const knowledgeGraphDashboardInputSchema = z.object({
-  mode: knowledgeGraphDashboardModeSchema,
-  sourceView: z.enum(["relations", "entities"]).default("relations")
-}).strict();
-export const knowledgeGraphDashboardNodeSchema = z.object({
-  id: z.string().uuid(),
-  kind: z.enum(["source", "atomic_note"]),
-  title: z.string().min(1),
-  subtitle: z.string().nullable(),
-  content: z.string().max(4_000).nullable(),
-  sourceItemId: z.string().uuid(),
-  sourceType: SourceItemTypeSchema.nullable(),
-  noteStatus: z.enum(["pending_review", "approved", "rejected", "archived"]).nullable(),
-  detailCount: z.number().int().nonnegative(),
-  parentSourceItemId: z.string().uuid().nullable(),
-  childCount: z.number().int().nonnegative()
-}).strict();
-export const knowledgeGraphDashboardEdgeSchema = z.object({
-  id: z.string().min(1),
-  source: z.string().uuid(),
-  target: z.string().uuid(),
-  kind: z.enum(["shared_entity", "semantic_relation", "atomic_note_relation", "source_relation"]),
-  label: z.string().min(1),
-  description: z.string().nullable(),
-  weight: z.number().positive(),
-  confidence: z.number().min(0).max(1),
-  details: z.array(z.string())
-}).strict();
-export const knowledgeGraphDashboardSchema = z.object({
-  mode: knowledgeGraphDashboardModeSchema,
-  sourceView: z.enum(["relations", "entities"]).optional(),
-  nodes: z.array(knowledgeGraphDashboardNodeSchema).max(20_000),
-  edges: z.array(knowledgeGraphDashboardEdgeSchema).max(50_000),
-  truncated: z.boolean()
-}).strict();
-export const knowledgeGraphSourceConnectionDetailsInputSchema = z.object({
-  sourceItemId: z.string().uuid(),
-  targetSourceItemId: z.string().uuid()
-}).strict();
-export const knowledgeGraphSourceConnectionDetailsSchema = z.object({
-  sharedEntities: z.array(z.string().min(1)).max(20_000),
-  semanticRelations: z.array(z.string().min(1)).max(20_000),
-  entities: z.array(z.object({ id: z.string().uuid(), label: z.string().min(1), shared: z.boolean() }).strict()).max(60_000),
-  relations: z.array(z.object({ id: z.string().uuid(), source: z.string().uuid(), target: z.string().uuid(), label: z.string().min(1) }).strict()).max(20_000)
-}).strict();
+export const knowledgeGraphDashboardInputSchema = z
+  .object({
+    mode: knowledgeGraphDashboardModeSchema,
+    sourceView: z.enum(["relations", "entities"]).default("relations")
+  })
+  .strict();
+export const knowledgeGraphDashboardNodeSchema = z
+  .object({
+    id: z.string().uuid(),
+    kind: z.enum(["source", "atomic_note"]),
+    title: z.string().min(1),
+    subtitle: z.string().nullable(),
+    content: z.string().max(4_000).nullable(),
+    sourceItemId: z.string().uuid(),
+    sourceType: SourceItemTypeSchema.nullable(),
+    noteStatus: z.enum(["pending_review", "approved", "rejected", "archived"]).nullable(),
+    detailCount: z.number().int().nonnegative(),
+    parentSourceItemId: z.string().uuid().nullable(),
+    childCount: z.number().int().nonnegative()
+  })
+  .strict();
+export const knowledgeGraphDashboardEdgeSchema = z
+  .object({
+    id: z.string().min(1),
+    source: z.string().uuid(),
+    target: z.string().uuid(),
+    kind: z.enum(["shared_entity", "semantic_relation", "atomic_note_relation", "source_relation"]),
+    label: z.string().min(1),
+    description: z.string().nullable(),
+    weight: z.number().positive(),
+    confidence: z.number().min(0).max(1),
+    details: z.array(z.string())
+  })
+  .strict();
+export const knowledgeGraphDashboardSchema = z
+  .object({
+    mode: knowledgeGraphDashboardModeSchema,
+    sourceView: z.enum(["relations", "entities"]).optional(),
+    nodes: z.array(knowledgeGraphDashboardNodeSchema).max(20_000),
+    edges: z.array(knowledgeGraphDashboardEdgeSchema).max(50_000),
+    truncated: z.boolean()
+  })
+  .strict();
+export const knowledgeGraphSourceConnectionDetailsInputSchema = z
+  .object({
+    sourceItemId: z.string().uuid(),
+    targetSourceItemId: z.string().uuid()
+  })
+  .strict();
+export const knowledgeGraphSourceConnectionDetailsSchema = z
+  .object({
+    sharedEntities: z.array(z.string().min(1)).max(20_000),
+    semanticRelations: z.array(z.string().min(1)).max(20_000),
+    entities: z
+      .array(
+        z.object({ id: z.string().uuid(), label: z.string().min(1), shared: z.boolean() }).strict()
+      )
+      .max(60_000),
+    relations: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            source: z.string().uuid(),
+            target: z.string().uuid(),
+            label: z.string().min(1)
+          })
+          .strict()
+      )
+      .max(20_000)
+  })
+  .strict();
 
-export const pendingAtomicNoteSchema = atomicNoteViewSchema.extend({
-  sourceTitle: z.string().nullable()
-}).strict();
+export const pendingAtomicNoteSchema = atomicNoteViewSchema
+  .extend({
+    sourceTitle: z.string().nullable()
+  })
+  .strict();
 
-export const sourceRelationsInputSchema = z.object({
-  relationId: z.string().uuid().optional(),
-  sourceItemId: z.string().uuid(), targetSourceItemId: z.string().uuid().nullable().default(null),
-  offset: z.number().int().min(0).max(1_000_000).default(0), limit: z.number().int().min(1).max(100).default(30)
-}).strict();
+export const sourceRelationsInputSchema = z
+  .object({
+    relationId: z.string().uuid().optional(),
+    sourceItemId: z.string().uuid(),
+    targetSourceItemId: z.string().uuid().nullable().default(null),
+    offset: z.number().int().min(0).max(1_000_000).default(0),
+    limit: z.number().int().min(1).max(100).default(30)
+  })
+  .strict();
 export const sourceRelationsPageSchema = SourceRelationsPageSchema;
 export const sourceRelationReviewSchema = SourceRelationReviewInputSchema;
 
-export const sourceDocumentInputSchema = z.object({ sourceItemId: z.string().uuid(), documentId: z.string().uuid() }).strict();
+export const sourceDocumentInputSchema = z
+  .object({ sourceItemId: z.string().uuid(), documentId: z.string().uuid() })
+  .strict();
 export const sourceDocumentSchema = z.object({ title: z.string(), markdown: z.string() }).strict();
-export const sourceDetailSchema = z.object({
-  history: z.array(z.object({ id: z.string().uuid(), title: z.string(), createdAt: z.string().datetime(), isCurrent: z.boolean() })).default([]),
-  breadcrumbs: z.array(z.object({ id: z.string().uuid(), title: z.string() })).default([]),
-  parentSourceItemId: z.string().uuid().nullable().default(null),
-  id: z.string().uuid(),
-  type: SourceItemTypeSchema,
-  title: z.string().min(1),
-  subtitle: z.string().nullable(),
-  sourceUri: z.string().nullable(),
-  language: z.string().min(1),
-  summary: z.string().nullable(),
-  metadata: z.record(z.string(), z.unknown()),
-  updatedAt: z.string().datetime(),
-  assets: z.array(z.object({
-    id: z.string().uuid(), originalFileName: z.string().min(1), mimeType: z.string().min(1), role: z.string().min(1)
-  }).strict()),
-  documents: z.array(z.object({
+export const sourceDetailSchema = z
+  .object({
+    history: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          title: z.string(),
+          createdAt: z.string().datetime(),
+          isCurrent: z.boolean()
+        })
+      )
+      .default([]),
+    breadcrumbs: z.array(z.object({ id: z.string().uuid(), title: z.string() })).default([]),
+    parentSourceItemId: z.string().uuid().nullable().default(null),
     id: z.string().uuid(),
+    type: SourceItemTypeSchema,
     title: z.string().min(1),
-    canonicalMarkdown: z.string(),
+    subtitle: z.string().nullable(),
+    sourceUri: z.string().nullable(),
     language: z.string().min(1),
-    chunks: z.array(z.object({
-      id: z.string().uuid(),
-      content: z.string(),
-      chunkIndex: z.number().int().nonnegative(),
-      sourceSpanId: z.string().uuid().nullable()
-    }).strict()),
-    assets: z.array(z.object({
-      id: z.string().uuid(),
-      originalFileName: z.string().min(1),
-      mimeType: z.string().min(1),
-      role: z.string().min(1)
-    }).strict())
-  }).strict()),
-  summaries: z.array(z.object({
-    id: z.string().uuid(),
-    summary: z.string().min(1),
-    provider: z.string().min(1),
-    model: z.string().min(1),
-    promptVersion: z.string().min(1),
-    generatedAt: z.string().datetime()
-  }).strict()),
-  atomicNotes: z.array(atomicNoteViewSchema),
-  graph: z.object({
-    entities: z.array(z.object({
-      id: z.string().uuid(), type: GraphEntityTypeSchema, name: z.string().min(1), confidence: z.number().min(0).max(1)
-    }).strict()),
-    relations: z.array(z.object({
-      id: z.string().uuid(), subjectEntityId: z.string().uuid().optional(), objectEntityId: z.string().uuid().optional(), subject: z.string().min(1), predicate: z.string().min(1), displayLabel: z.string().max(300).optional(),
-      object: z.string().min(1), confidence: z.number().min(0).max(1)
-    }).strict()),
-    sourceConnections: z.array(z.object({
-      sourceItemId: z.string().uuid(), sourceTitle: z.string().min(1), entityId: z.string().uuid().optional(), relatedEntityId: z.string().uuid().optional(), entityName: z.string().min(1),
-      relatedEntityName: z.string().min(1), predicate: z.string().min(1), displayLabel: z.string().max(300).optional(), confidence: z.number().min(0).max(1)
-    }).strict())
-  }).strict().default({ entities: [], relations: [], sourceConnections: [] }),
-  relations: z.array(z.object({
-    id: z.string().uuid(),
-    sourceAtomicNoteId: z.string().uuid(),
-    targetAtomicNoteId: z.string().uuid(),
-    sourceTitle: z.string().min(1),
-    targetTitle: z.string().min(1),
-    sourceStatus: z.string().min(1),
-    targetStatus: z.string().min(1),
-    relationType: z.string().min(1),
-    finalScore: z.number().min(0).max(1),
-    explanation: z.string().min(1)
-  }).strict())
-}).strict();
+    summary: z.string().nullable(),
+    metadata: z.record(z.string(), z.unknown()),
+    updatedAt: z.string().datetime(),
+    assets: z.array(
+      z
+        .object({
+          id: z.string().uuid(),
+          originalFileName: z.string().min(1),
+          mimeType: z.string().min(1),
+          role: z.string().min(1)
+        })
+        .strict()
+    ),
+    documents: z.array(
+      z
+        .object({
+          id: z.string().uuid(),
+          title: z.string().min(1),
+          canonicalMarkdown: z.string(),
+          language: z.string().min(1),
+          chunks: z.array(
+            z
+              .object({
+                id: z.string().uuid(),
+                content: z.string(),
+                chunkIndex: z.number().int().nonnegative(),
+                sourceSpanId: z.string().uuid().nullable()
+              })
+              .strict()
+          ),
+          assets: z.array(
+            z
+              .object({
+                id: z.string().uuid(),
+                originalFileName: z.string().min(1),
+                mimeType: z.string().min(1),
+                role: z.string().min(1)
+              })
+              .strict()
+          )
+        })
+        .strict()
+    ),
+    summaries: z.array(
+      z
+        .object({
+          id: z.string().uuid(),
+          summary: z.string().min(1),
+          provider: z.string().min(1),
+          model: z.string().min(1),
+          promptVersion: z.string().min(1),
+          generatedAt: z.string().datetime()
+        })
+        .strict()
+    ),
+    atomicNotes: z.array(atomicNoteViewSchema),
+    graph: z
+      .object({
+        entities: z.array(
+          z
+            .object({
+              id: z.string().uuid(),
+              type: GraphEntityTypeSchema,
+              name: z.string().min(1),
+              confidence: z.number().min(0).max(1)
+            })
+            .strict()
+        ),
+        relations: z.array(
+          z
+            .object({
+              id: z.string().uuid(),
+              subjectEntityId: z.string().uuid().optional(),
+              objectEntityId: z.string().uuid().optional(),
+              subject: z.string().min(1),
+              predicate: z.string().min(1),
+              displayLabel: z.string().max(300).optional(),
+              object: z.string().min(1),
+              confidence: z.number().min(0).max(1)
+            })
+            .strict()
+        ),
+        sourceConnections: z.array(
+          z
+            .object({
+              sourceItemId: z.string().uuid(),
+              sourceTitle: z.string().min(1),
+              entityId: z.string().uuid().optional(),
+              relatedEntityId: z.string().uuid().optional(),
+              entityName: z.string().min(1),
+              relatedEntityName: z.string().min(1),
+              predicate: z.string().min(1),
+              displayLabel: z.string().max(300).optional(),
+              confidence: z.number().min(0).max(1)
+            })
+            .strict()
+        )
+      })
+      .strict()
+      .default({ entities: [], relations: [], sourceConnections: [] }),
+    relations: z.array(
+      z
+        .object({
+          id: z.string().uuid(),
+          sourceAtomicNoteId: z.string().uuid(),
+          targetAtomicNoteId: z.string().uuid(),
+          sourceTitle: z.string().min(1),
+          targetTitle: z.string().min(1),
+          sourceStatus: z.string().min(1),
+          targetStatus: z.string().min(1),
+          relationType: z.string().min(1),
+          finalScore: z.number().min(0).max(1),
+          explanation: z.string().min(1)
+        })
+        .strict()
+    )
+  })
+  .strict();
 
-export const atomicNoteReviewInputSchema = z.object({
-  expectedUpdatedAt: z.string().datetime().optional(),
-  id: z.string().uuid(),
-  action: z.enum(["approve", "edit", "discard"]),
-  title: z.string().trim().min(1).optional(),
-  bodyMarkdown: z.string().min(1).refine(value=>Boolean(value.trim())).optional(),
-  ideaStatement: z.string().trim().min(1).optional()
-}).strict().superRefine((input, context) => {
-  if(input.action==='edit'&&!input.expectedUpdatedAt)context.addIssue({code:'custom',message:'Edit requires its expected revision.',path:['expectedUpdatedAt']});
-  if (input.action === "edit" && input.title === undefined
-      && input.bodyMarkdown === undefined && input.ideaStatement === undefined) {
-    context.addIssue({ code: "custom", message: "Edit requires content.", path: ["action"] });
-  }
-});
+export const atomicNoteReviewInputSchema = z
+  .object({
+    expectedUpdatedAt: z.string().datetime().optional(),
+    id: z.string().uuid(),
+    action: z.enum(["approve", "edit", "discard"]),
+    title: z.string().trim().min(1).optional(),
+    bodyMarkdown: z
+      .string()
+      .min(1)
+      .refine((value) => Boolean(value.trim()))
+      .optional(),
+    ideaStatement: z.string().trim().min(1).optional()
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.action === "edit" && !input.expectedUpdatedAt)
+      context.addIssue({
+        code: "custom",
+        message: "Edit requires its expected revision.",
+        path: ["expectedUpdatedAt"]
+      });
+    if (
+      input.action === "edit" &&
+      input.title === undefined &&
+      input.bodyMarkdown === undefined &&
+      input.ideaStatement === undefined
+    ) {
+      context.addIssue({ code: "custom", message: "Edit requires content.", path: ["action"] });
+    }
+  });
 
-export const searchInputSchema = z.object({
-  text: z.string().trim().min(1),
-  sourceTypes: z.array(SourceItemTypeSchema).default([]),
-  rootSourceItemId: z.string().uuid().optional(),
-  mode: z.enum(["text", "hybrid"]).default("hybrid"),
-  limit: z.number().int().min(1).max(100).default(20)
-}).strict();
+export const searchInputSchema = z
+  .object({
+    text: z.string().trim().min(1),
+    sourceTypes: z.array(SourceItemTypeSchema).default([]),
+    rootSourceItemId: z.string().uuid().optional(),
+    mode: z.enum(["text", "hybrid"]).default("hybrid"),
+    limit: z.number().int().min(1).max(100).default(20)
+  })
+  .strict();
 
 export const searchResultsSchema = z.array(SearchResultSchema);
 
-export const localEmbeddingLoadStatusSchema = z.object({
-  state: z.enum(["loading", "ready", "failed"]),
-  modelId: z.string().min(1)
-}).strict();
+export const localEmbeddingLoadStatusSchema = z
+  .object({
+    state: z.enum(["loading", "ready", "failed"]),
+    modelId: z.string().min(1)
+  })
+  .strict();
 
-export const similarityDebugResultSchema = z.object({
-  id: z.string().uuid(),
-  runId: z.string().uuid(),
-  targetType: z.enum(["chunk", "atomic_note"]),
-  targetId: z.string().uuid(),
-  targetLabel: z.string().nullable(),
-  finalRank: z.number().int().positive(),
-  textRank: z.number().int().positive().nullable(),
-  vectorRank: z.number().int().positive().nullable(),
-  graphRank: z.number().int().positive().nullable(),
-  textScore: z.number().finite().nullable(),
-  vectorScore: z.number().finite().nullable(),
-  metadataScore: z.number().finite().nullable(),
-  graphScore: z.number().finite().nullable(),
-  rerankScore: z.number().finite().nullable(),
-  fusionScore: z.number().finite().nullable(),
-  finalScore: z.number().finite(),
-  passedThreshold: z.boolean().nullable(),
-  explanation: z.string().nullable(),
-  metadata: z.record(z.string(), z.unknown()),
-  createdAt: z.string().datetime()
-}).strict();
+export const similarityDebugResultSchema = z
+  .object({
+    id: z.string().uuid(),
+    runId: z.string().uuid(),
+    targetType: z.enum(["chunk", "atomic_note"]),
+    targetId: z.string().uuid(),
+    targetLabel: z.string().nullable(),
+    finalRank: z.number().int().positive(),
+    textRank: z.number().int().positive().nullable(),
+    vectorRank: z.number().int().positive().nullable(),
+    graphRank: z.number().int().positive().nullable(),
+    textScore: z.number().finite().nullable(),
+    vectorScore: z.number().finite().nullable(),
+    metadataScore: z.number().finite().nullable(),
+    graphScore: z.number().finite().nullable(),
+    rerankScore: z.number().finite().nullable(),
+    fusionScore: z.number().finite().nullable(),
+    finalScore: z.number().finite(),
+    passedThreshold: z.boolean().nullable(),
+    explanation: z.string().nullable(),
+    metadata: z.record(z.string(), z.unknown()),
+    createdAt: z.string().datetime()
+  })
+  .strict();
 
-export const similarityDebugRunSchema = z.object({
-  id: z.string().uuid(),
-  kind: z.enum(["chunk_search", "atomic_note_matching"]),
-  queryText: z.string(),
-  queryTargetId: z.string().uuid().nullable(),
-  mode: z.string().min(1),
-  model: z.string().nullable(),
-  dimensions: z.number().int().positive().nullable(),
-  requestedLimit: z.number().int().positive(),
-  strategy: z.string().min(1),
-  metadata: z.record(z.string(), z.unknown()),
-  createdAt: z.string().datetime(),
-  results: z.array(similarityDebugResultSchema)
-}).strict();
+export const similarityDebugRunSchema = z
+  .object({
+    id: z.string().uuid(),
+    kind: z.enum(["chunk_search", "atomic_note_matching"]),
+    queryText: z.string(),
+    queryTargetId: z.string().uuid().nullable(),
+    mode: z.string().min(1),
+    model: z.string().nullable(),
+    dimensions: z.number().int().positive().nullable(),
+    requestedLimit: z.number().int().positive(),
+    strategy: z.string().min(1),
+    metadata: z.record(z.string(), z.unknown()),
+    createdAt: z.string().datetime(),
+    results: z.array(similarityDebugResultSchema)
+  })
+  .strict();
 
-export const similarityDebugClearResultSchema = z.object({
-  deletedCount: z.number().int().nonnegative()
-}).strict();
+export const similarityDebugClearResultSchema = z
+  .object({
+    deletedCount: z.number().int().nonnegative()
+  })
+  .strict();
 
 export const aiProviderKindSchema = z.enum(["google", "openai-compatible", "openai-codex"]);
 export const aiReasoningLevelSchema = AiReasoningLevelSchema;
@@ -830,211 +1201,274 @@ export const aiConfigurableTaskSchema = z.enum([
   "reranking"
 ]);
 export const aiOutputLanguageSchema = z.union([languageCodeSchema, z.literal("ui")]);
-export const aiProviderConfigInputSchema = z.object({
-  id: z.string().uuid().optional(),
-  provider: aiProviderKindSchema,
-  displayName: z.string().trim().min(1),
-  baseUrl: z.string().url().nullable().optional(),
-  apiKey: z.string().min(1).optional(),
-  modelId: z.string().trim().min(1),
-  capabilities: z.array(AiCapabilitySchema).default([]),
-  defaultParameters: aiModelParametersSchema.default({})
-}).strict();
+export const aiProviderConfigInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    provider: aiProviderKindSchema,
+    displayName: z.string().trim().min(1),
+    baseUrl: z.string().url().nullable().optional(),
+    apiKey: z.string().min(1).optional(),
+    modelId: z.string().trim().min(1),
+    capabilities: z.array(AiCapabilitySchema).default([]),
+    defaultParameters: aiModelParametersSchema.default({})
+  })
+  .strict();
 
-export const aiModelDiscoveryInputSchema = z.object({
-  provider: aiProviderKindSchema,
-  baseUrl: z.string().url().nullable().optional(),
-  apiKey: z.string().min(1).optional()
-}).strict().superRefine((input, context) => {
-  if (input.provider !== "openai-codex" && !input.apiKey) {
-    context.addIssue({ code: "custom", message: "API key is required.", path: ["apiKey"] });
-  }
-});
+export const aiModelDiscoveryInputSchema = z
+  .object({
+    provider: aiProviderKindSchema,
+    baseUrl: z.string().url().nullable().optional(),
+    apiKey: z.string().min(1).optional()
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.provider !== "openai-codex" && !input.apiKey) {
+      context.addIssue({ code: "custom", message: "API key is required.", path: ["apiKey"] });
+    }
+  });
 
-export const aiParameterCapabilitiesInputSchema = z.object({
-  provider: aiProviderKindSchema,
-  modelId: z.string().trim().min(1),
-  baseUrl: z.string().url().nullable().optional(),
-  capabilities: z.array(AiCapabilitySchema).default([])
-}).strict();
+export const aiParameterCapabilitiesInputSchema = z
+  .object({
+    provider: aiProviderKindSchema,
+    modelId: z.string().trim().min(1),
+    baseUrl: z.string().url().nullable().optional(),
+    capabilities: z.array(AiCapabilitySchema).default([])
+  })
+  .strict();
 
 export const aiModelListSchema = z.array(z.string().min(1));
 
-export const aiProviderConfigSchema = aiProviderConfigInputSchema.omit({ apiKey: true }).extend({
-  id: z.string().uuid(),
-  parameterCapabilities: aiModelParameterCapabilitiesSchema,
-  secretConfigured: z.boolean(),
-  status: z.string().min(1)
-}).strict();
+export const aiProviderConfigSchema = aiProviderConfigInputSchema
+  .omit({ apiKey: true })
+  .extend({
+    id: z.string().uuid(),
+    parameterCapabilities: aiModelParameterCapabilitiesSchema,
+    secretConfigured: z.boolean(),
+    status: z.string().min(1)
+  })
+  .strict();
 
-export const aiProfileSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1),
-  description: z.string().nullable(),
-  isDefault: z.boolean(),
-  privacyMode: z.string().min(1),
-  outputLanguage: aiOutputLanguageSchema,
-  providerConfigId: z.string().uuid().nullable(),
-  localModelId: z.string().uuid().nullable(),
-  modelId: z.string().min(1).nullable(),
-  runtime: z.enum(["remote", "gguf", "mlx"]).nullable(),
-  capabilities: z.array(AiCapabilitySchema),
-  status: z.string().min(1)
-}).strict();
+export const aiProfileSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().min(1),
+    description: z.string().nullable(),
+    isDefault: z.boolean(),
+    privacyMode: z.string().min(1),
+    outputLanguage: aiOutputLanguageSchema,
+    providerConfigId: z.string().uuid().nullable(),
+    localModelId: z.string().uuid().nullable(),
+    modelId: z.string().min(1).nullable(),
+    runtime: z.enum(["remote", "gguf", "mlx"]).nullable(),
+    capabilities: z.array(AiCapabilitySchema),
+    status: z.string().min(1)
+  })
+  .strict();
 
-export const aiProfileCreateSchema = z.object({
-  name: z.string().trim().min(1),
-  description: z.string().nullable().optional(),
-  isDefault: z.boolean().default(false),
-  privacyMode: z.enum(["allow_remote", "offline_only"]).default("allow_remote"),
-  outputLanguage: aiOutputLanguageSchema.default("ui")
-}).strict();
+export const aiProfileCreateSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    description: z.string().nullable().optional(),
+    isDefault: z.boolean().default(false),
+    privacyMode: z.enum(["allow_remote", "offline_only"]).default("allow_remote"),
+    outputLanguage: aiOutputLanguageSchema.default("ui")
+  })
+  .strict();
 
-export const aiProfileUpdateSchema = z.object({
-  id: z.string().uuid(),
-  name: z.string().trim().min(1).optional(),
-  privacyMode: z.enum(["allow_remote", "offline_only"]).optional(),
-  outputLanguage: aiOutputLanguageSchema.optional(),
-  providerConfigId: z.string().uuid().nullable().optional(),
-  localModelId: z.string().uuid().nullable().optional(),
-  modelId: z.string().trim().min(1).nullable().optional(),
-  runtime: z.enum(["remote", "gguf", "mlx"]).nullable().optional(),
-  capabilities: z.array(AiCapabilitySchema).optional()
-}).strict().superRefine((input, context) => {
-  const updatesModel = input.providerConfigId !== undefined || input.localModelId !== undefined
-    || input.modelId !== undefined || input.runtime !== undefined || input.capabilities !== undefined;
-  if (updatesModel) {
-    const hasRemote = Boolean(input.providerConfigId);
-    const hasLocal = Boolean(input.localModelId);
-    if (hasRemote === hasLocal) {
-      context.addIssue({ code: "custom", message: "Select exactly one remote or local model.", path: ["modelId"] });
+export const aiProfileUpdateSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string().trim().min(1).optional(),
+    privacyMode: z.enum(["allow_remote", "offline_only"]).optional(),
+    outputLanguage: aiOutputLanguageSchema.optional(),
+    providerConfigId: z.string().uuid().nullable().optional(),
+    localModelId: z.string().uuid().nullable().optional(),
+    modelId: z.string().trim().min(1).nullable().optional(),
+    runtime: z.enum(["remote", "gguf", "mlx"]).nullable().optional(),
+    capabilities: z.array(AiCapabilitySchema).optional()
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const updatesModel =
+      input.providerConfigId !== undefined ||
+      input.localModelId !== undefined ||
+      input.modelId !== undefined ||
+      input.runtime !== undefined ||
+      input.capabilities !== undefined;
+    if (updatesModel) {
+      const hasRemote = Boolean(input.providerConfigId);
+      const hasLocal = Boolean(input.localModelId);
+      if (hasRemote === hasLocal) {
+        context.addIssue({
+          code: "custom",
+          message: "Select exactly one remote or local model.",
+          path: ["modelId"]
+        });
+      }
+      if (!input.modelId || !input.runtime || input.capabilities === undefined) {
+        context.addIssue({
+          code: "custom",
+          message: "Model id, runtime and capabilities are required together.",
+          path: ["modelId"]
+        });
+      }
     }
-    if (!input.modelId || !input.runtime || input.capabilities === undefined) {
-      context.addIssue({ code: "custom", message: "Model id, runtime and capabilities are required together.", path: ["modelId"] });
-    }
-  }
-});
+  });
 
-export const aiProfileCloneSchema = z.object({
-  profileId: z.string().uuid(),
-  name: z.string().trim().min(1)
-}).strict();
+export const aiProfileCloneSchema = z
+  .object({
+    profileId: z.string().uuid(),
+    name: z.string().trim().min(1)
+  })
+  .strict();
 
-export const aiProfileTaskInputSchema = z.object({
-  profileId: z.string().uuid(),
-  task: aiConfigurableTaskSchema,
-  parameters: aiModelParametersSchema.default({})
-}).strict();
+export const aiProfileTaskInputSchema = z
+  .object({
+    profileId: z.string().uuid(),
+    task: aiConfigurableTaskSchema,
+    parameters: aiModelParametersSchema.default({})
+  })
+  .strict();
 
-export const aiProfileTaskSchema = z.object({
-  profileId: z.string().uuid(),
-  task: aiConfigurableTaskSchema,
-  parameters: aiModelParametersSchema
-}).strict();
+export const aiProfileTaskSchema = z
+  .object({
+    profileId: z.string().uuid(),
+    task: aiConfigurableTaskSchema,
+    parameters: aiModelParametersSchema
+  })
+  .strict();
 
-export const aiTaskRouteSchema = z.object({
-  task: aiConfigurableTaskSchema,
-  profileId: z.string().uuid()
-}).strict();
+export const aiTaskRouteSchema = z
+  .object({
+    task: aiConfigurableTaskSchema,
+    profileId: z.string().uuid()
+  })
+  .strict();
 
 export const localModelStatusSchema = z.enum([
-  "not_downloaded", "downloading", "verifying", "ready", "failed", "removing"
+  "not_downloaded",
+  "downloading",
+  "verifying",
+  "ready",
+  "failed",
+  "removing"
 ]);
 
-export const localModelRecommendedParametersSchema = z.object({
-  reasoning: aiModelParametersSchema.optional(),
-  nonReasoning: aiModelParametersSchema.optional()
-}).strict().refine(
-  (presets) => presets.reasoning !== undefined || presets.nonReasoning !== undefined,
-  { message: "At least one recommended parameter preset is required." }
-);
+export const localModelRecommendedParametersSchema = z
+  .object({
+    reasoning: aiModelParametersSchema.optional(),
+    nonReasoning: aiModelParametersSchema.optional()
+  })
+  .strict()
+  .refine((presets) => presets.reasoning !== undefined || presets.nonReasoning !== undefined, {
+    message: "At least one recommended parameter preset is required."
+  });
 
-export const localModelViewSchema = z.object({
-  id: z.string().uuid(),
-  catalogId: z.string().min(1),
-  modelId: z.string().min(1),
-  displayName: z.string().min(1),
-  family: z.string().min(1),
-  variant: z.string().min(1),
-  repository: z.string().min(1),
-  revision: z.string().min(1),
-  runtime: z.enum(["gguf", "mlx"]),
-  format: z.string().min(1),
-  quantization: z.string().min(1),
-  capabilities: z.array(AiCapabilitySchema),
-  parameterCapabilities: aiModelParameterCapabilitiesSchema,
-  defaultParameters: aiModelParametersSchema,
-  recommendedParameters: localModelRecommendedParametersSchema.nullable(),
-  minimumMemoryBytes: z.number().int().nonnegative(),
-  recommendedMemoryBytes: z.number().int().nonnegative(),
-  expectedSizeBytes: z.number().int().nonnegative(),
-  installedSizeBytes: z.number().int().nonnegative(),
-  licenseName: z.string().min(1),
-  licenseUrl: z.string().url(),
-  requiresLicenseAcceptance: z.boolean(),
-  licenseAccepted: z.boolean(),
-  status: localModelStatusSchema,
-  compatible: z.boolean(),
-  compatibilityReason: z.enum(["compatible", "unsupported_platform", "insufficient_memory"]),
-  profilesUsing: z.array(z.string()),
-  lastError: z.string().nullable(),
-  download: z.object({
-    jobId: z.string().uuid(),
-    currentFile: z.string().nullable(),
-    downloadedBytes: z.number().int().nonnegative(),
-    totalBytes: z.number().int().nonnegative(),
-    bytesPerSecond: z.number().int().nonnegative(),
-    etaSeconds: z.number().int().nonnegative().nullable()
-  }).strict().nullable()
-}).strict();
+export const localModelViewSchema = z
+  .object({
+    id: z.string().uuid(),
+    catalogId: z.string().min(1),
+    modelId: z.string().min(1),
+    displayName: z.string().min(1),
+    family: z.string().min(1),
+    variant: z.string().min(1),
+    repository: z.string().min(1),
+    revision: z.string().min(1),
+    runtime: z.enum(["gguf", "mlx"]),
+    format: z.string().min(1),
+    quantization: z.string().min(1),
+    capabilities: z.array(AiCapabilitySchema),
+    parameterCapabilities: aiModelParameterCapabilitiesSchema,
+    defaultParameters: aiModelParametersSchema,
+    recommendedParameters: localModelRecommendedParametersSchema.nullable(),
+    minimumMemoryBytes: z.number().int().nonnegative(),
+    recommendedMemoryBytes: z.number().int().nonnegative(),
+    expectedSizeBytes: z.number().int().nonnegative(),
+    installedSizeBytes: z.number().int().nonnegative(),
+    licenseName: z.string().min(1),
+    licenseUrl: z.string().url(),
+    requiresLicenseAcceptance: z.boolean(),
+    licenseAccepted: z.boolean(),
+    status: localModelStatusSchema,
+    compatible: z.boolean(),
+    compatibilityReason: z.enum(["compatible", "unsupported_platform", "insufficient_memory"]),
+    profilesUsing: z.array(z.string()),
+    lastError: z.string().nullable(),
+    download: z
+      .object({
+        jobId: z.string().uuid(),
+        currentFile: z.string().nullable(),
+        downloadedBytes: z.number().int().nonnegative(),
+        totalBytes: z.number().int().nonnegative(),
+        bytesPerSecond: z.number().int().nonnegative(),
+        etaSeconds: z.number().int().nonnegative().nullable()
+      })
+      .strict()
+      .nullable()
+  })
+  .strict();
 
-export const localModelDefaultsInputSchema = z.object({
-  localModelId: z.string().uuid(),
-  defaultParameters: aiModelParametersSchema
-}).strict();
+export const localModelDefaultsInputSchema = z
+  .object({
+    localModelId: z.string().uuid(),
+    defaultParameters: aiModelParametersSchema
+  })
+  .strict();
 
-export const localModelDownloadInputSchema = z.object({
-  catalogId: z.string().min(1),
-  acceptLicense: z.boolean().default(false)
-}).strict();
+export const localModelDownloadInputSchema = z
+  .object({
+    catalogId: z.string().min(1),
+    acceptLicense: z.boolean().default(false)
+  })
+  .strict();
 
 export const repositoryTokenInputSchema = z.object({ token: z.string().min(1) }).strict();
 
-export const backupResultSchema = z.object({
-  path: z.string().min(1),
-  createdAt: z.string().datetime(),
-  included: z.array(z.enum(["database", "obsidian", "uploadedFiles"]))
-}).strict();
+export const backupResultSchema = z
+  .object({
+    path: z.string().min(1),
+    createdAt: z.string().datetime(),
+    included: z.array(z.enum(["database", "obsidian", "uploadedFiles"]))
+  })
+  .strict();
 
-export const integrationGatewayStatusSchema = z.object({
-  state: z.enum(["stopped", "starting", "ready", "failed"]),
-  host: z.literal("127.0.0.1"),
-  port: z.number().int().positive().nullable(),
-  baseUrl: z.string().url().nullable()
-}).strict();
+export const integrationGatewayStatusSchema = z
+  .object({
+    state: z.enum(["stopped", "starting", "ready", "failed"]),
+    host: z.literal("127.0.0.1"),
+    port: z.number().int().positive().nullable(),
+    baseUrl: z.string().url().nullable()
+  })
+  .strict();
 
-export const integrationPairingInputSchema = z.object({
-  clientType: z.enum(["chrome-extension", "obsidian-plugin"]),
-  displayName: z.string().trim().min(1).max(120)
-}).strict();
+export const integrationPairingInputSchema = z
+  .object({
+    clientType: z.enum(["chrome-extension", "obsidian-plugin"]),
+    displayName: z.string().trim().min(1).max(120)
+  })
+  .strict();
 
-export const integrationPairingResultSchema = z.object({
-  clientId: z.string().uuid(),
-  token: z.string().min(32)
-}).strict();
+export const integrationPairingResultSchema = z
+  .object({
+    clientId: z.string().uuid(),
+    token: z.string().min(32)
+  })
+  .strict();
 
-export const integrationClientSchema = z.object({
-  id: z.string().uuid(),
-  clientType: z.string().min(1),
-  displayName: z.string().min(1),
-  scopes: z.array(z.string()),
-  capabilities: z.array(z.string()),
-  contractVersion: z.string().min(1),
-  status: z.enum(["paired", "revoked", "disabled"]),
-  lastSeenAt: z.date().nullable(),
-  createdAt: z.date(),
-  updatedAt: z.date()
-}).strict();
+export const integrationClientSchema = z
+  .object({
+    id: z.string().uuid(),
+    clientType: z.string().min(1),
+    displayName: z.string().min(1),
+    scopes: z.array(z.string()),
+    capabilities: z.array(z.string()),
+    contractVersion: z.string().min(1),
+    status: z.enum(["paired", "revoked", "disabled"]),
+    lastSeenAt: z.date().nullable(),
+    createdAt: z.date(),
+    updatedAt: z.date()
+  })
+  .strict();
 
 export type DeletionPolicy = z.infer<typeof deletionPolicySchema>;
 export type DatabaseLifecycleState = z.infer<typeof databaseLifecycleStateSchema>;
@@ -1080,7 +1514,9 @@ export type SourceDetail = z.infer<typeof sourceDetailSchema>;
 export type AtomicNoteView = z.infer<typeof atomicNoteViewSchema>;
 export type KnowledgeGraphDashboardMode = z.infer<typeof knowledgeGraphDashboardModeSchema>;
 export type KnowledgeGraphDashboard = z.infer<typeof knowledgeGraphDashboardSchema>;
-export type KnowledgeGraphSourceConnectionDetails = z.infer<typeof knowledgeGraphSourceConnectionDetailsSchema>;
+export type KnowledgeGraphSourceConnectionDetails = z.infer<
+  typeof knowledgeGraphSourceConnectionDetailsSchema
+>;
 export type PendingAtomicNote = z.infer<typeof pendingAtomicNoteSchema>;
 export type AtomicNoteReviewInput = z.infer<typeof atomicNoteReviewInputSchema>;
 export type AiProviderConfigInput = z.infer<typeof aiProviderConfigInputSchema>;
@@ -1137,13 +1573,47 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
-  investigations:{list:()=>Promise<FollowedInvestigation[]>;get:(id:string)=>Promise<FollowedInvestigation|null>;follow:(input:z.infer<typeof FollowInvestigationInputSchema>)=>Promise<FollowedInvestigation|null>;state:(input:z.infer<typeof InvestigationStateInputSchema>)=>Promise<FollowedInvestigation|null>};
-  consultation:{ask:(input:ConsultationInput)=>Promise<ConsultationResult>;cancel:(id:string)=>Promise<null>;save:(id:string)=>Promise<OrganizationRun>};
-  maintenance:{command:(input:MaintenanceCommand)=>Promise<unknown>};
-  prompts:{command:(input:PromptCommand)=>Promise<unknown>};
-  curator: { command:(input:import("@app/domain").CuratorCommand)=>Promise<unknown> };
+  investigations: {
+    list: () => Promise<FollowedInvestigation[]>;
+    get: (id: string) => Promise<FollowedInvestigation | null>;
+    follow: (
+      input: z.infer<typeof FollowInvestigationInputSchema>
+    ) => Promise<FollowedInvestigation | null>;
+    state: (
+      input: z.infer<typeof InvestigationStateInputSchema>
+    ) => Promise<FollowedInvestigation | null>;
+  };
+  consultation: {
+    ask: (input: ConsultationInput) => Promise<ConsultationResult>;
+    cancel: (id: string) => Promise<null>;
+    save: (id: string) => Promise<OrganizationRun>;
+  };
+  maintenance: { command: (input: MaintenanceCommand) => Promise<unknown> };
+  prompts: { command: (input: PromptCommand) => Promise<unknown> };
+  curator: { command: (input: import("@app/domain").CuratorCommand) => Promise<unknown> };
   organization: { command: (input: OrganizationCommand) => Promise<unknown> };
-  wiki: { collection:(input:z.input<typeof import("@app/domain").WikiCollectionCommandSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiCollectionResponseSchema>>; tree:(input: z.input<typeof import("@app/domain").WikiTreeInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiTreeSchema>>; context:(input:z.input<typeof import("@app/domain").WikiContextInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiContextSchema>>; move:(input:z.input<typeof import("@app/domain").WikiMoveInputSchema>)=>Promise<WikiPage>; linkedTarget:(input:z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>)=>Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema>|null>; list: () => Promise<z.infer<typeof WikiPageListSchema>>; get: (id: string, revisionId?: string) => Promise<WikiPage | null>; save: (input: WikiSaveInput) => Promise<WikiPage>; search: (input: z.input<typeof import("@app/domain").WikiQuerySchema>) => Promise<z.infer<typeof WikiResultsSchema>>; history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>> };
+  wiki: {
+    collection: (
+      input: z.input<typeof import("@app/domain").WikiCollectionCommandSchema>
+    ) => Promise<z.infer<typeof import("@app/domain").WikiCollectionResponseSchema>>;
+    tree: (
+      input: z.input<typeof import("@app/domain").WikiTreeInputSchema>
+    ) => Promise<z.infer<typeof import("@app/domain").WikiTreeSchema>>;
+    context: (
+      input: z.input<typeof import("@app/domain").WikiContextInputSchema>
+    ) => Promise<z.infer<typeof import("@app/domain").WikiContextSchema>>;
+    move: (input: z.input<typeof import("@app/domain").WikiMoveInputSchema>) => Promise<WikiPage>;
+    linkedTarget: (
+      input: z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>
+    ) => Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema> | null>;
+    list: () => Promise<z.infer<typeof WikiPageListSchema>>;
+    get: (id: string, revisionId?: string) => Promise<WikiPage | null>;
+    save: (input: WikiSaveInput) => Promise<WikiPage>;
+    search: (
+      input: z.input<typeof import("@app/domain").WikiQuerySchema>
+    ) => Promise<z.infer<typeof WikiResultsSchema>>;
+    history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>>;
+  };
   system: {
     getInfo: () => Promise<SystemInfo>;
     subscribeNavigation: (listener: (direction: WindowNavigationDirection) => void) => () => void;
@@ -1163,19 +1633,31 @@ export interface DesktopApi {
     resetLibrary: () => Promise<LibraryResetResult>;
   };
   obsidian: {
-    onOpen: (listener:(target:ObsidianDeepLink)=>void)=>()=>void;
-    pendingOpen: ()=>Promise<ObsidianDeepLink|null>;
+    onOpen: (listener: (target: ObsidianDeepLink) => void) => () => void;
+    pendingOpen: () => Promise<ObsidianDeepLink | null>;
     editorialConflicts: () => Promise<z.infer<typeof obsidianEditorialConflictsSchema>>;
-    editorialComparison: (id:string) => Promise<ObsidianEditReceipt>;
-    resolveEditorial: (input:z.infer<typeof obsidianResolveInputSchema>) => Promise<ObsidianEditReceipt>;
-    layoutStatus: ()=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
-    previewLayout: (input:z.infer<typeof obsidianLayoutConfigSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
-    applyLayout: (input:z.infer<typeof obsidianLayoutApplyInputSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
-    rollbackLayout: (input:z.infer<typeof obsidianLayoutApplyInputSchema>)=>Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    editorialComparison: (id: string) => Promise<ObsidianEditReceipt>;
+    resolveEditorial: (
+      input: z.infer<typeof obsidianResolveInputSchema>
+    ) => Promise<ObsidianEditReceipt>;
+    layoutStatus: () => Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    previewLayout: (
+      input: z.infer<typeof obsidianLayoutConfigSchema>
+    ) => Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    applyLayout: (
+      input: z.infer<typeof obsidianLayoutApplyInputSchema>
+    ) => Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
+    rollbackLayout: (
+      input: z.infer<typeof obsidianLayoutApplyInputSchema>
+    ) => Promise<z.infer<typeof obsidianLayoutStatusSchema>>;
     wikiStatus: () => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
-    saveWikiScope: (input: z.infer<typeof obsidianWikiScopeSchema>) => Promise<z.infer<typeof obsidianWikiScopeSchema>>;
-    wikiDiff: (id:string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;
-    recoverWiki: (input:z.infer<typeof obsidianWikiRecoverSchema>) => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
+    saveWikiScope: (
+      input: z.infer<typeof obsidianWikiScopeSchema>
+    ) => Promise<z.infer<typeof obsidianWikiScopeSchema>>;
+    wikiDiff: (id: string) => Promise<z.infer<typeof obsidianWikiDiffSchema>>;
+    recoverWiki: (
+      input: z.infer<typeof obsidianWikiRecoverSchema>
+    ) => Promise<z.infer<typeof obsidianWikiStatusSchema>>;
     startSync: () => Promise<ObsidianSyncStatus>;
     getSyncStatus: () => Promise<ObsidianSyncStatus>;
   };
@@ -1190,7 +1672,9 @@ export interface DesktopApi {
   };
   ingestion: {
     createManual: (input: ManualIngestionInput) => Promise<IngestionResult>;
-    previewUrl: (input: z.infer<typeof sourceUrlPreviewInputSchema>) => Promise<z.infer<typeof sourceUrlPreviewSchema>>;
+    previewUrl: (
+      input: z.infer<typeof sourceUrlPreviewInputSchema>
+    ) => Promise<z.infer<typeof sourceUrlPreviewSchema>>;
     editSource: (input: SourceEditInput) => Promise<z.infer<typeof sourceEditResultSchema>>;
     extractFileMetadata: (
       input: FileMetadataExtractionInput,
@@ -1210,7 +1694,7 @@ export interface DesktopApi {
     listBatches: () => Promise<ProcessingBatch[]>;
   };
   jobs: {
-    cancelBatch:(id:string)=>Promise<null>;
+    cancelBatch: (id: string) => Promise<null>;
     list: () => Promise<JobRecord[]>;
     subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;
@@ -1226,15 +1710,22 @@ export interface DesktopApi {
     relationLabelsStatus: () => Promise<JobRecord | null>;
     listLibrary: (sourceTypes?: SourceItemType[]) => Promise<LibrarySource[]>;
     browseLibrary: (input: LibraryBrowseInput) => Promise<LibrarySource[]>;
-    getSourceDocument: (input: z.infer<typeof sourceDocumentInputSchema>) => Promise<z.infer<typeof sourceDocumentSchema>>;
+    getSourceDocument: (
+      input: z.infer<typeof sourceDocumentInputSchema>
+    ) => Promise<z.infer<typeof sourceDocumentSchema>>;
     getSourceDetail: (sourceItemId: string) => Promise<SourceDetail | null>;
     deleteSource: (sourceItemId: string) => Promise<SourceDeletionResult>;
     openAsset: (assetId: string) => Promise<boolean>;
     getAssetDataUrl: (assetId: string) => Promise<string | null>;
     listPendingNotes: () => Promise<PendingAtomicNote[]>;
     reviewNote: (input: AtomicNoteReviewInput) => Promise<AtomicNoteView | null>;
-    getGraphDashboard: (mode: KnowledgeGraphDashboardMode, sourceView?: "relations" | "entities") => Promise<KnowledgeGraphDashboard>;
-    listSourceRelations: (input: z.input<typeof sourceRelationsInputSchema>) => Promise<z.infer<typeof sourceRelationsPageSchema>>;
+    getGraphDashboard: (
+      mode: KnowledgeGraphDashboardMode,
+      sourceView?: "relations" | "entities"
+    ) => Promise<KnowledgeGraphDashboard>;
+    listSourceRelations: (
+      input: z.input<typeof sourceRelationsInputSchema>
+    ) => Promise<z.infer<typeof sourceRelationsPageSchema>>;
     reviewSourceRelation: (input: z.infer<typeof sourceRelationReviewSchema>) => Promise<boolean>;
     getGraphSourceConnectionDetails: (
       sourceItemId: string,
@@ -1248,7 +1739,9 @@ export interface DesktopApi {
     testProvider: (providerId: string) => Promise<boolean>;
     listModels: (providerId: string) => Promise<string[]>;
     discoverModels: (input: AiModelDiscoveryInput) => Promise<string[]>;
-    getParameterCapabilities: (input: AiParameterCapabilitiesInput) => Promise<AiModelParameterCapabilities>;
+    getParameterCapabilities: (
+      input: AiParameterCapabilitiesInput
+    ) => Promise<AiModelParameterCapabilities>;
     connectOpenAiCodex: () => Promise<string[]>;
     disconnectOpenAiCodex: () => Promise<void>;
     listProfiles: () => Promise<AiProfile[]>;
@@ -1260,7 +1753,9 @@ export interface DesktopApi {
     setProfileTask: (input: AiProfileTaskInput) => Promise<void>;
     listTaskRoutes: () => Promise<AiTaskRoute[]>;
     setTaskRoute: (input: AiTaskRoute) => Promise<void>;
-    subscribeLocalEmbeddingLoadStatus: (listener: (status: LocalEmbeddingLoadStatus) => void) => () => void;
+    subscribeLocalEmbeddingLoadStatus: (
+      listener: (status: LocalEmbeddingLoadStatus) => void
+    ) => () => void;
   };
   localModels: {
     list: () => Promise<LocalModelView[]>;
@@ -1269,7 +1764,10 @@ export interface DesktopApi {
     resume: (catalogId: string) => Promise<LocalModelView>;
     remove: (catalogId: string) => Promise<LocalModelView>;
     test: (catalogId: string) => Promise<string>;
-    setDefaults: (localModelId: string, defaultParameters: AiModelParameters) => Promise<LocalModelView>;
+    setDefaults: (
+      localModelId: string,
+      defaultParameters: AiModelParameters
+    ) => Promise<LocalModelView>;
     importGguf: () => Promise<LocalModelView | null>;
     setRepositoryToken: (token: string) => Promise<boolean>;
     hasRepositoryToken: () => Promise<boolean>;

@@ -57,17 +57,24 @@ export async function refreshOpenAiCodexCredential(
   refreshToken: string,
   fetchImplementation: typeof fetch = fetch
 ): Promise<OpenAiCodexCredential> {
-  return requestTokens(new URLSearchParams({
-    grant_type: "refresh_token",
-    refresh_token: refreshToken,
-    client_id: clientId
-  }), fetchImplementation);
+  return requestTokens(
+    new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId
+    }),
+    fetchImplementation
+  );
 }
 
 export function parseOpenAiCodexCredential(value: string): OpenAiCodexCredential {
   const parsed = JSON.parse(value) as Partial<OpenAiCodexCredential>;
-  if (typeof parsed.access !== "string" || typeof parsed.refresh !== "string"
-      || typeof parsed.expires !== "number" || typeof parsed.accountId !== "string") {
+  if (
+    typeof parsed.access !== "string" ||
+    typeof parsed.refresh !== "string" ||
+    typeof parsed.expires !== "number" ||
+    typeof parsed.accountId !== "string"
+  ) {
     throw new Error("errors.ai.oauthCredentialInvalid");
   }
   return {
@@ -99,13 +106,16 @@ async function exchangeAuthorizationCode(
   verifier: string,
   fetchImplementation: typeof fetch
 ): Promise<OpenAiCodexCredential> {
-  return requestTokens(new URLSearchParams({
-    grant_type: "authorization_code",
-    client_id: clientId,
-    code,
-    code_verifier: verifier,
-    redirect_uri: redirectUri
-  }), fetchImplementation);
+  return requestTokens(
+    new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      code,
+      code_verifier: verifier,
+      redirect_uri: redirectUri
+    }),
+    fetchImplementation
+  );
 }
 
 async function requestTokens(
@@ -119,12 +129,17 @@ async function requestTokens(
     signal: AbortSignal.timeout(tokenTimeoutMs)
   });
   const text = await response.text();
-  if (Buffer.byteLength(text) > maximumTokenResponseBytes) throw new Error("errors.ai.oauthTokenResponseInvalid");
+  if (Buffer.byteLength(text) > maximumTokenResponseBytes)
+    throw new Error("errors.ai.oauthTokenResponseInvalid");
   if (!response.ok) throw new Error(`errors.ai.oauthTokenExchangeFailed:${response.status}`);
   const payload = JSON.parse(text) as TokenResponse;
-  if (typeof payload.access_token !== "string" || typeof payload.refresh_token !== "string"
-      || typeof payload.expires_in !== "number" || !Number.isFinite(payload.expires_in)
-      || payload.expires_in <= 0) {
+  if (
+    typeof payload.access_token !== "string" ||
+    typeof payload.refresh_token !== "string" ||
+    typeof payload.expires_in !== "number" ||
+    !Number.isFinite(payload.expires_in) ||
+    payload.expires_in <= 0
+  ) {
     throw new Error("errors.ai.oauthTokenResponseInvalid");
   }
   const identity = readTokenIdentity(payload.access_token);
@@ -147,7 +162,9 @@ function readTokenIdentity(accessToken: string): { accountId?: string; planType?
     };
     const auth = payload["https://api.openai.com/auth"];
     return {
-      ...(typeof auth?.chatgpt_account_id === "string" ? { accountId: auth.chatgpt_account_id } : {}),
+      ...(typeof auth?.chatgpt_account_id === "string"
+        ? { accountId: auth.chatgpt_account_id }
+        : {}),
       ...(typeof auth?.chatgpt_plan_type === "string" ? { planType: auth.chatgpt_plan_type } : {})
     };
   } catch {
@@ -174,7 +191,10 @@ async function waitForCallback(
     server = createServer((request, response) => {
       const url = new URL(request.url ?? "/", redirectUri);
       response.setHeader("content-type", "text/html; charset=utf-8");
-      response.setHeader("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'");
+      response.setHeader(
+        "content-security-policy",
+        "default-src 'none'; style-src 'unsafe-inline'"
+      );
       if (url.pathname !== callbackPath) {
         response.statusCode = 404;
         response.end(renderPage(pageText.errorTitle, pageText.closeWindow));
@@ -186,23 +206,37 @@ async function waitForCallback(
       if (oauthError || state !== expectedState || !authorizationCode) {
         response.statusCode = 400;
         response.end(renderPage(pageText.errorTitle, pageText.closeWindow));
-        settle(() => reject(new Error(state !== expectedState
-          ? "errors.ai.oauthStateMismatch"
-          : "errors.ai.oauthLoginFailed")));
+        settle(() =>
+          reject(
+            new Error(
+              state !== expectedState
+                ? "errors.ai.oauthStateMismatch"
+                : "errors.ai.oauthLoginFailed"
+            )
+          )
+        );
         return;
       }
       response.statusCode = 200;
       response.end(renderPage(pageText.successTitle, pageText.successDescription));
       settle(() => resolve(authorizationCode));
     });
-    server.once("error", () => settle(() => reject(new Error("errors.ai.oauthCallbackUnavailable"))));
+    server.once("error", () =>
+      settle(() => reject(new Error("errors.ai.oauthCallbackUnavailable")))
+    );
     server.listen(callbackPort, callbackHost);
-    timeout = setTimeout(() => settle(() => reject(new Error("errors.ai.oauthTimedOut"))), loginTimeoutMs);
+    timeout = setTimeout(
+      () => settle(() => reject(new Error("errors.ai.oauthTimedOut"))),
+      loginTimeoutMs
+    );
     timeout.unref?.();
   });
   void code.catch(() => {});
   await new Promise<void>((resolve, reject) => {
-    if (server!.listening) { resolve(); return; }
+    if (server!.listening) {
+      resolve();
+      return;
+    }
     server!.once("listening", resolve);
     server!.once("error", reject);
   }).catch(() => {
@@ -216,9 +250,17 @@ function renderPage(title: string, description: string): string {
 }
 
 function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[character] ?? character);
+  return value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[character] ?? character
+  );
 }
 
 export const openAiCodexOAuthTesting = {

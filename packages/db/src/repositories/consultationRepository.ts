@@ -1,15 +1,35 @@
-import {retainedNoteCurrentSql} from "./noteEvidence.js";
-import { currentSourceRelationEvidenceSql,sourceRelationEvidenceJoins } from "./sourceRelationRepository.js";
-import type { PgPool } from '../client.js';
-export interface ConsultationScope {sourceIds:string[];pageId:string|null;includeDescendants:boolean}
-export function createConsultationRepository(pool:PgPool){return {
-  async scope(input:ConsultationScope){
-    return (await pool.query(`with recursive allowed as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[]) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $2)
-      select id from allowed where $3::uuid is null or id in(select e.source_item_id from wiki_evidence e join wiki_pages p on p.id=e.page_id join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where p.id=$3 and sec->'evidenceIds' ? e.id::text) order by id limit 501`,[input.sourceIds,input.includeDescendants,input.pageId])).rows.map(r=>r.id as string);
-  },
-  async candidates(sourceIds:string[],question:string,reviewedOnly:boolean,vectorIds:string[]=[]){
-    // OR lexemes preserve recall for natural questions; exact-title is a separate ranked signal.
-    const rows=(await pool.query(`with recursive roots as(select id,id as root_id from source_items where parent_source_item_id is null union all select s.id,r.root_id from source_items s join roots r on s.parent_source_item_id=r.id),terms as(select to_tsquery('simple',coalesce(nullif(string_agg(quote_literal(word),' | '),''),'''__empty__''')) as q from (select distinct unnest(tsvector_to_array(to_tsvector('simple',unaccent($2)))) as word) words), candidates as(
+import { retainedNoteCurrentSql } from "./noteEvidence.js";
+import {
+  currentSourceRelationEvidenceSql,
+  sourceRelationEvidenceJoins
+} from "./sourceRelationRepository.js";
+import type { PgPool } from "../client.js";
+export interface ConsultationScope {
+  sourceIds: string[];
+  pageId: string | null;
+  includeDescendants: boolean;
+}
+export function createConsultationRepository(pool: PgPool) {
+  return {
+    async scope(input: ConsultationScope) {
+      return (
+        await pool.query(
+          `with recursive allowed as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[]) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $2)
+      select id from allowed where $3::uuid is null or id in(select e.source_item_id from wiki_evidence e join wiki_pages p on p.id=e.page_id join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where p.id=$3 and sec->'evidenceIds' ? e.id::text) order by id limit 501`,
+          [input.sourceIds, input.includeDescendants, input.pageId]
+        )
+      ).rows.map((r) => r.id as string);
+    },
+    async candidates(
+      sourceIds: string[],
+      question: string,
+      reviewedOnly: boolean,
+      vectorIds: string[] = []
+    ) {
+      // OR lexemes preserve recall for natural questions; exact-title is a separate ranked signal.
+      const rows = (
+        await pool.query(
+          `with recursive roots as(select id,id as root_id from source_items where parent_source_item_id is null union all select s.id,r.root_id from source_items s join roots r on s.parent_source_item_id=r.id),terms as(select to_tsquery('simple',coalesce(nullif(string_agg(quote_literal(word),' | '),''),'''__empty__''')) as q from (select distinct unnest(tsvector_to_array(to_tsvector('simple',unaccent($2)))) as word) words), candidates as(
       select roots.root_id as "rootId",c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content as excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) as locator,
       ts_rank_cd(to_tsvector('simple',unaccent(c.content)),terms.q) as text,
       case when unaccent(lower(s.title))=unaccent(lower($2)) then 1 else ts_rank_cd(to_tsvector('simple',unaccent(s.title)),terms.q) end as title,
@@ -20,20 +40,61 @@ export function createConsultationRepository(pool:PgPool){return {
       coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(p.title||' '||(r.content->'aliases')::text||' '||(sec->>'markdown'))),terms.q)) from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where not p.archived and sec->>'evidenceReview'='verified' and (not $3 or r.content->>'review'='reviewed') and exists(select 1 from wiki_evidence we where we.page_id=p.id and we.chunk_id=c.id and sec->'evidenceIds' ? we.id::text) and not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.section_id=(sec->>'id')::uuid and dep.stale_reason is not null) and not exists(select 1 from wiki_evidence we where we.page_id=p.id and we.source_item_id<>all($1::uuid[]) and exists(select 1 from jsonb_array_elements(r.content->'sections') ss where ss->'evidenceIds' ? we.id::text))),0) as wiki
       from chunks c join roots on roots.id=c.source_item_id join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id cross join terms
       where c.source_item_id=any($1::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1')
-      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation,wiki) desc,"chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation,wiki) desc,"chunkId"`,[sourceIds,question,reviewedOnly,vectorIds])).rows;
-    return rows.map(r=>({...r,documentCreatedAt:new Date(r.documentCreatedAt).toISOString()}));
-  },
-  async pageSections(sourceIds:string[],chunkIds:string[],question:string,pageId:string|null,reviewedOnly:boolean){
-    return (await pool.query(`select (sec->>'id')::uuid as id,p.id as "pageId",r.id as "revisionId",sec,md5(sec::text) as fingerprint,
+      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation,wiki) desc,"chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation,wiki) desc,"chunkId"`,
+          [sourceIds, question, reviewedOnly, vectorIds]
+        )
+      ).rows;
+      return rows.map((r) => ({
+        ...r,
+        documentCreatedAt: new Date(r.documentCreatedAt).toISOString()
+      }));
+    },
+    async pageSections(
+      sourceIds: string[],
+      chunkIds: string[],
+      question: string,
+      pageId: string | null,
+      reviewedOnly: boolean
+    ) {
+      return (
+        await pool.query(
+          `select (sec->>'id')::uuid as id,p.id as "pageId",r.id as "revisionId",sec,md5(sec::text) as fingerprint,
       array(select e.chunk_id from wiki_evidence e where e.page_id=p.id and sec->'evidenceIds' ? e.id::text order by e.id) as "chunkIds"
       from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec
       where not p.archived and sec->>'evidenceReview'='verified' and (not $5 or r.content->>'review'='reviewed') and not exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id<>all($1::uuid[]) and exists(select 1 from jsonb_array_elements(r.content->'sections') section where section->'evidenceIds' ? e.id::text))
       and not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.section_id=(sec->>'id')::uuid and dep.stale_reason is not null) and jsonb_array_length(sec->'evidenceIds')>0 and not exists(select 1 from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=p.id and sec->'evidenceIds' ? e.id::text and (e.chunk_id<>all($2::uuid[]) or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null))
-      and (p.id=$4 or unaccent(lower(p.title))=unaccent(lower($3)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') a where unaccent(lower(a))=unaccent(lower($3))) or to_tsvector('simple',unaccent(sec->>'markdown')) @@ plainto_tsquery('simple',unaccent($3))) order by (p.id=$4) desc,p.id,sec->>'id' limit 6`,[sourceIds,chunkIds,question,pageId,reviewedOnly])).rows;
-  },
-  async vector(sourceIds:string[],vector:{embedding:number[];model:string;provider:string;runtime:string;spaceKey:string}){
-    const dimensions=vector.embedding.length;if(![256,768,1024].includes(dimensions)||!vector.embedding.every(Number.isFinite))return [];
-    return (await pool.query(`select e.target_id as id,1-(e.embedding <=> $2::vector) as score from embeddings_${dimensions} e join chunks c on c.id=e.target_id join documents d on d.id=c.document_id
-      where e.target_type='chunk' and c.source_item_id=any($1::uuid[]) and e.model=$3 and e.provider=$4 and e.runtime=$5 and e.strategy=$6 and e.content_hash=c.content_hash and d.metadata->>'supersededByDocumentId' is null order by e.embedding <=> $2::vector,e.target_id limit 100`,[sourceIds,JSON.stringify(vector.embedding),vector.model,vector.provider,vector.runtime,`native-v2:${vector.spaceKey}`])).rows;
-  }
-};}
+      and (p.id=$4 or unaccent(lower(p.title))=unaccent(lower($3)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') a where unaccent(lower(a))=unaccent(lower($3))) or to_tsvector('simple',unaccent(sec->>'markdown')) @@ plainto_tsquery('simple',unaccent($3))) order by (p.id=$4) desc,p.id,sec->>'id' limit 6`,
+          [sourceIds, chunkIds, question, pageId, reviewedOnly]
+        )
+      ).rows;
+    },
+    async vector(
+      sourceIds: string[],
+      vector: {
+        embedding: number[];
+        model: string;
+        provider: string;
+        runtime: string;
+        spaceKey: string;
+      }
+    ) {
+      const dimensions = vector.embedding.length;
+      if (![256, 768, 1024].includes(dimensions) || !vector.embedding.every(Number.isFinite))
+        return [];
+      return (
+        await pool.query(
+          `select e.target_id as id,1-(e.embedding <=> $2::vector) as score from embeddings_${dimensions} e join chunks c on c.id=e.target_id join documents d on d.id=c.document_id
+      where e.target_type='chunk' and c.source_item_id=any($1::uuid[]) and e.model=$3 and e.provider=$4 and e.runtime=$5 and e.strategy=$6 and e.content_hash=c.content_hash and d.metadata->>'supersededByDocumentId' is null order by e.embedding <=> $2::vector,e.target_id limit 100`,
+          [
+            sourceIds,
+            JSON.stringify(vector.embedding),
+            vector.model,
+            vector.provider,
+            vector.runtime,
+            `native-v2:${vector.spaceKey}`
+          ]
+        )
+      ).rows;
+    }
+  };
+}

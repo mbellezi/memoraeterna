@@ -19,7 +19,9 @@ describe("@app/i18n", () => {
       for (const code of ["en", "pt-BR", "it", "fr", "es", "de", "ja", "zh", "ar"]) {
         expect(getLanguageDisplayName(locale, code)).not.toBe(code);
       }
-      expect(getLanguageDisplayName(locale, "und")).toBe(messages[locale].import.unspecifiedLanguage);
+      expect(getLanguageDisplayName(locale, "und")).toBe(
+        messages[locale].import.unspecifiedLanguage
+      );
     }
   });
 

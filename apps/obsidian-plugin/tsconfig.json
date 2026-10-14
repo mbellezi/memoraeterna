@@ -7,9 +7,7 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo",
     "emitDeclarationOnly": true
   },
-  "include": [
-    "src/**/*.ts"
-  ],
+  "include": ["src/**/*.ts"],
   "references": [
     {
       "path": "../../packages/integration-contracts"

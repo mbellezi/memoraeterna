@@ -22,11 +22,16 @@ class FakeChild extends EventEmitter {
 }
 
 class FakeRunner implements SidecarCommandRunner {
-  readonly calls: Array<{ file: string; args: readonly string[]; options?: SidecarExecOptions }> = [];
+  readonly calls: Array<{ file: string; args: readonly string[]; options?: SidecarExecOptions }> =
+    [];
   readonly spawned: Array<{ file: string; args: readonly string[] }> = [];
   readonly failSpawnPorts = new Set<number>();
 
-  async execFile(file: string, args: readonly string[], options?: SidecarExecOptions): Promise<SidecarExecResult> {
+  async execFile(
+    file: string,
+    args: readonly string[],
+    options?: SidecarExecOptions
+  ): Promise<SidecarExecResult> {
     this.calls.push({ file, args, options });
     if (file.endsWith("initdb")) {
       const dataDir = args[args.indexOf("-D") + 1];
@@ -86,7 +91,9 @@ describe("PostgresSidecarManager", () => {
     expect(createdbCall?.args).toContain("--maintenance-db=postgres");
     expect(createdbCall?.options?.timeoutMs).toBe(10_000);
     expect(createdbCall?.options?.env?.PGCONNECT_TIMEOUT).toBe("5");
-    expect(runner.calls.some((call) => call.file.endsWith("pg_ctl") && call.args.includes("stop"))).toBe(true);
+    expect(
+      runner.calls.some((call) => call.file.endsWith("pg_ctl") && call.args.includes("stop"))
+    ).toBe(true);
 
     const hba = await readFile(join(dataDir, "pg_hba.conf"), "utf8");
     expect(hba).toContain("scram-sha-256");
@@ -138,7 +145,9 @@ describe("PostgresSidecarManager", () => {
     expect(runner.spawned[0]?.args).toContain("port=55432");
     expect(runner.spawned[1]?.args).not.toContain("port=55432");
     expect(connection.port).not.toBe(55432);
-    expect(warnings.some((warning) => warning.includes("falling back to a dynamic port"))).toBe(true);
+    expect(warnings.some((warning) => warning.includes("falling back to a dynamic port"))).toBe(
+      true
+    );
   });
 
   it("falls back to a dynamic port when the configured port is unavailable", async () => {
@@ -163,7 +172,9 @@ describe("PostgresSidecarManager", () => {
     expect(runner.spawned).toHaveLength(1);
     expect(runner.spawned[0]?.args).toContain("port=55434");
     expect(connection.port).toBe(55434);
-    expect(warnings.some((warning) => warning.includes("configured port 55432 is unavailable"))).toBe(true);
+    expect(
+      warnings.some((warning) => warning.includes("configured port 55432 is unavailable"))
+    ).toBe(true);
   });
 });
 
@@ -207,7 +218,11 @@ async function createSidecarDirs(): Promise<{ binDir: string; dataDir: string }>
   const binDir = join(root, "bin");
   const dataDir = join(root, "data");
   await Promise.all([mkdir(binDir), mkdir(dataDir)]);
-  await Promise.all(["initdb", "postgres", "pg_ctl", "pg_isready", "createdb"].map((binary) => touchExecutable(join(binDir, binary))));
+  await Promise.all(
+    ["initdb", "postgres", "pg_ctl", "pg_isready", "createdb"].map((binary) =>
+      touchExecutable(join(binDir, binary))
+    )
+  );
   tempDirs.push(root);
   return { binDir, dataDir };
 }

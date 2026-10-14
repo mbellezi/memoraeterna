@@ -1,5 +1,18 @@
 import { createHash } from "node:crypto";
-import { access, chmod, cp, lstat, mkdir, opendir, readFile, readlink, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  opendir,
+  readFile,
+  readlink,
+  rm,
+  stat,
+  symlink,
+  writeFile
+} from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -19,14 +32,21 @@ const platform = process.platform;
 const arch = process.arch;
 
 if (platform !== "darwin" || !["arm64", "x64"].includes(arch)) {
-  throw new Error(`PostgreSQL sidecar install currently supports macOS arm64/x64 only. Current: ${platform}-${arch}`);
+  throw new Error(
+    `PostgreSQL sidecar install currently supports macOS arm64/x64 only. Current: ${platform}-${arch}`
+  );
 }
 
 const cacheDir = resolve(rootDir, ".cache/sidecars/postgres");
 const zipPath = resolve(cacheDir, `postgresql-${postgresVersion}-${edbBuild}-osx-binaries.zip`);
 const pgvectorTarPath = resolve(cacheDir, `pgvector-${pgvectorVersion}.tar.gz`);
 const ageTarPath = resolve(cacheDir, `apache-age-${ageTag.replaceAll("/", "-")}.tar.gz`);
-const installRoot = resolve(rootDir, "vendor/sidecars/postgres", `${platform}-${arch}`, `postgresql-${postgresVersion}`);
+const installRoot = resolve(
+  rootDir,
+  "vendor/sidecars/postgres",
+  `${platform}-${arch}`,
+  `postgresql-${postgresVersion}`
+);
 const stagingRoot = resolve(cacheDir, `extract-${process.pid}`);
 const pgvectorBuildRoot = resolve(cacheDir, `pgvector-${pgvectorVersion}-build`);
 const ageBuildRoot = resolve(cacheDir, `apache-age-${ageTag.replaceAll("/", "-")}-build`);
@@ -41,7 +61,9 @@ await installPgvector();
 await installAge();
 await writeManifest(sha256);
 
-console.info(`PostgreSQL ${postgresVersion} sidecar installed at ${relative(rootDir, installRoot)}`);
+console.info(
+  `PostgreSQL ${postgresVersion} sidecar installed at ${relative(rootDir, installRoot)}`
+);
 
 async function ensureDownloaded() {
   await mkdir(cacheDir, { recursive: true });
@@ -177,11 +199,7 @@ async function writeManifest(sha256) {
 }
 
 async function findPayloadRoot(root) {
-  const candidates = [
-    resolve(root, "pgsql"),
-    resolve(root, "postgresql"),
-    root
-  ];
+  const candidates = [resolve(root, "pgsql"), resolve(root, "postgresql"), root];
 
   for (const candidate of candidates) {
     if (await exists(resolve(candidate, "bin/initdb"))) {
@@ -324,7 +342,9 @@ function run(command, args, options = {}) {
         resolvePromise({ stdout, stderr });
         return;
       }
-      reject(new Error(`${command} ${args.join(" ")} failed with code ${code}\n${stderr || stdout}`));
+      reject(
+        new Error(`${command} ${args.join(" ")} failed with code ${code}\n${stderr || stdout}`)
+      );
     });
   });
 }

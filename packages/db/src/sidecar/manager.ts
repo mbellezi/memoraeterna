@@ -140,10 +140,14 @@ export class PostgresSidecarManager {
 
     this.state = "stopping";
     try {
-      await this.runner.execFile(this.bin("pg_ctl"), ["-D", this.dataDir, "-m", "fast", "-w", "stop"], {
-        env: this.envWithPassword(),
-        timeoutMs: this.shutdownTimeoutMs
-      });
+      await this.runner.execFile(
+        this.bin("pg_ctl"),
+        ["-D", this.dataDir, "-m", "fast", "-w", "stop"],
+        {
+          env: this.envWithPassword(),
+          timeoutMs: this.shutdownTimeoutMs
+        }
+      );
     } catch (error) {
       this.logger?.warn(`pg_ctl stop failed, falling back to process signal: ${String(error)}`);
       if (this.child) {
@@ -220,7 +224,11 @@ export class PostgresSidecarManager {
   }
 
   private async ensureBinaries(): Promise<void> {
-    await Promise.all(["initdb", "postgres", "pg_ctl", "pg_isready", "createdb"].map((binary) => assertExecutable(this.bin(binary))));
+    await Promise.all(
+      ["initdb", "postgres", "pg_ctl", "pg_isready", "createdb"].map((binary) =>
+        assertExecutable(this.bin(binary))
+      )
+    );
   }
 
   private async recoverPostmasterPid(): Promise<void> {
@@ -238,10 +246,14 @@ export class PostgresSidecarManager {
     }
 
     this.logger?.warn(`Found live Postgres pid ${pid}; requesting clean shutdown before restart.`);
-    await this.runner.execFile(this.bin("pg_ctl"), ["-D", this.dataDir, "-m", "fast", "-w", "stop"], {
-      env: this.envWithPassword(),
-      timeoutMs: this.shutdownTimeoutMs
-    });
+    await this.runner.execFile(
+      this.bin("pg_ctl"),
+      ["-D", this.dataDir, "-m", "fast", "-w", "stop"],
+      {
+        env: this.envWithPassword(),
+        timeoutMs: this.shutdownTimeoutMs
+      }
+    );
   }
 
   private async waitUntilReady(port: number): Promise<void> {
@@ -249,17 +261,23 @@ export class PostgresSidecarManager {
     let lastError = "";
     while (Date.now() - startedAt < this.startupTimeoutMs) {
       try {
-        await this.runner.execFile(this.bin("pg_isready"), ["-h", this.host, "-p", String(port), "-U", this.user], {
-          env: this.envWithPassword(),
-          timeoutMs: 2_000
-        });
+        await this.runner.execFile(
+          this.bin("pg_isready"),
+          ["-h", this.host, "-p", String(port), "-U", this.user],
+          {
+            env: this.envWithPassword(),
+            timeoutMs: 2_000
+          }
+        );
         return;
       } catch (error) {
         lastError = String(error);
         await delay(150);
       }
     }
-    throw new Error(`Postgres sidecar did not become ready within ${this.startupTimeoutMs}ms. ${lastError}`);
+    throw new Error(
+      `Postgres sidecar did not become ready within ${this.startupTimeoutMs}ms. ${lastError}`
+    );
   }
 
   private async ensureDatabase(port: number): Promise<void> {
@@ -302,7 +320,9 @@ export class PostgresSidecarManager {
   }
 }
 
-export function buildConnectionString(connection: Omit<PostgresSidecarConnection, "connectionString">): string {
+export function buildConnectionString(
+  connection: Omit<PostgresSidecarConnection, "connectionString">
+): string {
   const user = encodeURIComponent(connection.user);
   const password = encodeURIComponent(connection.password);
   const database = encodeURIComponent(connection.database);

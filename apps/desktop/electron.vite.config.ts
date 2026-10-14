@@ -11,20 +11,25 @@ const i18nPackage = resolve(rootDir, "../../packages/i18n/src/index.ts");
 const aiPackage = resolve(rootDir, "../../packages/ai/src/index.ts");
 const conversionPackage = resolve(rootDir, "../../packages/conversion/src/index.ts");
 const domainPackage = resolve(rootDir, "../../packages/domain/src/index.ts");
-const integrationContractsPackage = resolve(rootDir, "../../packages/integration-contracts/src/index.ts");
+const integrationContractsPackage = resolve(
+  rootDir,
+  "../../packages/integration-contracts/src/index.ts"
+);
 
 export default defineConfig({
   main: {
     json: { stringify: true },
-    plugins: [externalizeDepsPlugin({
-      exclude: [
-        "@app/ai",
-        "@app/conversion",
-        "@app/db",
-        "@app/domain",
-        "@app/integration-contracts"
-      ]
-    })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: [
+          "@app/ai",
+          "@app/conversion",
+          "@app/db",
+          "@app/domain",
+          "@app/integration-contracts"
+        ]
+      })
+    ],
     build: {
       rollupOptions: {
         input: {
@@ -60,7 +65,11 @@ export default defineConfig({
   },
   preload: {
     json: { stringify: false },
-    plugins: [externalizeDepsPlugin({ exclude: ["@app/domain", "@app/i18n", "@app/integration-contracts", "zod"] })],
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ["@app/domain", "@app/i18n", "@app/integration-contracts", "zod"]
+      })
+    ],
     build: {
       rollupOptions: {
         output: {

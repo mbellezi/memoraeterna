@@ -12,7 +12,11 @@ export interface SidecarExecResult {
 }
 
 export interface SidecarCommandRunner {
-  execFile(file: string, args: readonly string[], options?: SidecarExecOptions): Promise<SidecarExecResult>;
+  execFile(
+    file: string,
+    args: readonly string[],
+    options?: SidecarExecOptions
+  ): Promise<SidecarExecResult>;
   spawn(file: string, args: readonly string[], options?: SidecarExecOptions): ChildProcess;
 }
 

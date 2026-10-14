@@ -66,7 +66,7 @@ export function ManualContentComposer({
 
   function updateItem(patch: Partial<ManualSubitemDraft>) {
     if (!selected) return;
-    onSubitems(subitems.map((item) => item.id === selected.id ? { ...item, ...patch } : item));
+    onSubitems(subitems.map((item) => (item.id === selected.id ? { ...item, ...patch } : item)));
   }
 
   function removeItem() {
@@ -87,47 +87,174 @@ export function ManualContentComposer({
     onSubitems(next);
   }
 
-  return <div className="@container grid min-w-0 gap-3">
-    {hierarchical && !editing ? <div className="flex flex-wrap items-center justify-between gap-2">
-      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-950" role="group" aria-label={t("import.content.modeLabel")}>
-        {(["document", "subitems"] as const).map((item) => {
-          const Icon = item === "document" ? FileText : Layers3;
-          return <button key={item} type="button" aria-pressed={mode === item} onClick={() => onMode(item)} className={cn("inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs", mode === item ? "bg-cyan-50 font-medium text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100" : "text-slate-500")}><Icon className="h-4 w-4" aria-hidden="true" />{t(item === "document" ? "intake.sourceView" : "intake.subitemsView")}</button>;
-        })}
-      </div><span className="text-xs text-slate-500">{t("intake.viewHint")}</span>
-    </div> : null}
-
-    {mode === "subitems" && hierarchical && !editing ? <div className="grid min-h-96 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 @min-[640px]:grid-cols-[12rem_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 @min-[640px]:border-b-0 @min-[640px]:border-r">
-        <div className="border-b border-slate-200 p-3 dark:border-slate-800">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">{t(subitemListKey(sourceType))}</p>
-          <p className="mt-1 text-xs text-slate-500">{t("import.content.subitemsCount", { values: { count: subitems.length } })}</p>
-        </div>
-        <ol className="grid max-h-64 gap-1 overflow-auto p-2 @min-[640px]:max-h-none @min-[640px]:flex-1">
-          {subitems.map((item, index) => <li key={item.id}><button type="button" onClick={() => setSelectedId(item.id)} className={cn("flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition", selected?.id === item.id ? "bg-cyan-100 font-medium text-cyan-950 dark:bg-cyan-950 dark:text-cyan-100" : "hover:bg-white dark:hover:bg-slate-800")}>
-            <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-xs font-semibold text-slate-500 shadow-sm dark:bg-slate-950">{index + 1}</span>
-            <span className="truncate">{item.title.trim() || t("import.content.untitledSubitem")}</span>
-          </button></li>)}
-        </ol>
-        <div className="border-t border-slate-200 p-3 dark:border-slate-800"><Button type="button" className="w-full" onClick={addItem}><Plus className="h-4 w-4" />{t("import.content.addSubitem")}</Button></div>
-      </aside>
-      <div className="grid content-start gap-4 p-4 lg:p-5">
-        {selected ? <>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="min-w-0 flex-1 grid gap-2"><Label htmlFor={`subitem-title-${selected.id}`}>{t("import.content.subitemTitle")} *</Label><Input id={`subitem-title-${selected.id}`} value={selected.title} onChange={(event) => updateItem({ title: event.target.value })} placeholder={t(subitemPlaceholderKey(sourceType))} /></div>
-            <div className="flex gap-1">
-              <button type="button" disabled={subitems.indexOf(selected) === 0} onClick={() => moveItem(-1)} aria-label={t("import.content.moveUp")} title={t("import.content.moveUp")} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"><ArrowUp className="h-4 w-4" /></button>
-              <button type="button" disabled={subitems.indexOf(selected) === subitems.length - 1} onClick={() => moveItem(1)} aria-label={t("import.content.moveDown")} title={t("import.content.moveDown")} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"><ArrowDown className="h-4 w-4" /></button>
-              <button type="button" onClick={removeItem} aria-label={t("import.content.removeSubitem")} title={t("import.content.removeSubitem")} className="grid h-9 w-9 place-items-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950"><Trash2 className="h-4 w-4" /></button>
-            </div>
+  return (
+    <div className="@container grid min-w-0 gap-3">
+      {hierarchical && !editing ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div
+            className="inline-flex rounded-lg border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-950"
+            role="group"
+            aria-label={t("import.content.modeLabel")}
+          >
+            {(["document", "subitems"] as const).map((item) => {
+              const Icon = item === "document" ? FileText : Layers3;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  aria-pressed={mode === item}
+                  onClick={() => onMode(item)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md px-3 py-2 text-xs",
+                    mode === item
+                      ? "bg-cyan-50 font-medium text-cyan-900 dark:bg-cyan-950 dark:text-cyan-100"
+                      : "text-slate-500"
+                  )}
+                >
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  {t(item === "document" ? "intake.sourceView" : "intake.subitemsView")}
+                </button>
+              );
+            })}
           </div>
-          <MarkdownEditor id={`subitem-content-${selected.id}`} value={selected.content} onChange={(value) => updateItem({ content: value })} t={t} label={t("import.content.subitemContent")} required minHeightClass="min-h-72" />
-        </> : <div className="grid min-h-80 place-items-center text-center"><div><Layers3 className="mx-auto h-8 w-8 text-slate-400" /><p className="mt-3 text-sm text-slate-500">{t("import.content.noSubitems")}</p><Button type="button" className="mt-4" onClick={addItem}><Plus className="h-4 w-4" />{t("import.content.addSubitem")}</Button></div></div>}
-      </div>
-    </div> : <MarkdownEditor id="source-content" value={content} onChange={onContent} t={t} label={t("import.fields.content")} required={!hierarchical} />}
+          <span className="text-xs text-slate-500">{t("intake.viewHint")}</span>
+        </div>
+      ) : null}
 
-    <p className="text-xs leading-5 text-slate-500">{t(editing && hierarchical ? "import.content.editingHierarchyHint" : hierarchical ? "import.content.containerHint" : "import.content.hint")}</p>
-  </div>;
+      {mode === "subitems" && hierarchical && !editing ? (
+        <div className="grid min-h-96 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950 @min-[640px]:grid-cols-[12rem_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col border-b border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-900/50 @min-[640px]:border-b-0 @min-[640px]:border-r">
+            <div className="border-b border-slate-200 p-3 dark:border-slate-800">
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                {t(subitemListKey(sourceType))}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {t("import.content.subitemsCount", { values: { count: subitems.length } })}
+              </p>
+            </div>
+            <ol className="grid max-h-64 gap-1 overflow-auto p-2 @min-[640px]:max-h-none @min-[640px]:flex-1">
+              {subitems.map((item, index) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(item.id)}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition",
+                      selected?.id === item.id
+                        ? "bg-cyan-100 font-medium text-cyan-950 dark:bg-cyan-950 dark:text-cyan-100"
+                        : "hover:bg-white dark:hover:bg-slate-800"
+                    )}
+                  >
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-white text-xs font-semibold text-slate-500 shadow-sm dark:bg-slate-950">
+                      {index + 1}
+                    </span>
+                    <span className="truncate">
+                      {item.title.trim() || t("import.content.untitledSubitem")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ol>
+            <div className="border-t border-slate-200 p-3 dark:border-slate-800">
+              <Button type="button" className="w-full" onClick={addItem}>
+                <Plus className="h-4 w-4" />
+                {t("import.content.addSubitem")}
+              </Button>
+            </div>
+          </aside>
+          <div className="grid content-start gap-4 p-4 lg:p-5">
+            {selected ? (
+              <>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-0 flex-1 grid gap-2">
+                    <Label htmlFor={`subitem-title-${selected.id}`}>
+                      {t("import.content.subitemTitle")} *
+                    </Label>
+                    <Input
+                      id={`subitem-title-${selected.id}`}
+                      value={selected.title}
+                      onChange={(event) => updateItem({ title: event.target.value })}
+                      placeholder={t(subitemPlaceholderKey(sourceType))}
+                    />
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      disabled={subitems.indexOf(selected) === 0}
+                      onClick={() => moveItem(-1)}
+                      aria-label={t("import.content.moveUp")}
+                      title={t("import.content.moveUp")}
+                      className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={subitems.indexOf(selected) === subitems.length - 1}
+                      onClick={() => moveItem(1)}
+                      aria-label={t("import.content.moveDown")}
+                      title={t("import.content.moveDown")}
+                      className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 disabled:opacity-35 dark:border-slate-700"
+                    >
+                      <ArrowDown className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeItem}
+                      aria-label={t("import.content.removeSubitem")}
+                      title={t("import.content.removeSubitem")}
+                      className="grid h-9 w-9 place-items-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <MarkdownEditor
+                  id={`subitem-content-${selected.id}`}
+                  value={selected.content}
+                  onChange={(value) => updateItem({ content: value })}
+                  t={t}
+                  label={t("import.content.subitemContent")}
+                  required
+                  minHeightClass="min-h-72"
+                />
+              </>
+            ) : (
+              <div className="grid min-h-80 place-items-center text-center">
+                <div>
+                  <Layers3 className="mx-auto h-8 w-8 text-slate-400" />
+                  <p className="mt-3 text-sm text-slate-500">{t("import.content.noSubitems")}</p>
+                  <Button type="button" className="mt-4" onClick={addItem}>
+                    <Plus className="h-4 w-4" />
+                    {t("import.content.addSubitem")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <MarkdownEditor
+          id="source-content"
+          value={content}
+          onChange={onContent}
+          t={t}
+          label={t("import.fields.content")}
+          required={!hierarchical}
+        />
+      )}
+
+      <p className="text-xs leading-5 text-slate-500">
+        {t(
+          editing && hierarchical
+            ? "import.content.editingHierarchyHint"
+            : hierarchical
+              ? "import.content.containerHint"
+              : "import.content.hint"
+        )}
+      </p>
+    </div>
+  );
 }
 
 function isHierarchicalRoot(type: SourceItemType) {
@@ -135,9 +262,17 @@ function isHierarchicalRoot(type: SourceItemType) {
 }
 
 function subitemListKey(type: SourceItemType): MessageKey {
-  return type === "Book" ? "import.content.labels.chapters" : type === "PeriodicalIssue" ? "import.content.labels.articles" : "import.content.labels.sections";
+  return type === "Book"
+    ? "import.content.labels.chapters"
+    : type === "PeriodicalIssue"
+      ? "import.content.labels.articles"
+      : "import.content.labels.sections";
 }
 
 function subitemPlaceholderKey(type: SourceItemType): MessageKey {
-  return type === "Book" ? "import.content.placeholders.chapter" : type === "PeriodicalIssue" ? "import.content.placeholders.article" : "import.content.placeholders.section";
+  return type === "Book"
+    ? "import.content.placeholders.chapter"
+    : type === "PeriodicalIssue"
+      ? "import.content.placeholders.article"
+      : "import.content.placeholders.section";
 }

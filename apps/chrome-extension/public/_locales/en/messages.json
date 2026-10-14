@@ -1,6 +1,8 @@
 {
   "extensionName": { "message": "Memora Eterna Capture" },
-  "extensionDescription": { "message": "Capture web pages, selections, and YouTube videos in Memora Eterna." },
+  "extensionDescription": {
+    "message": "Capture web pages, selections, and YouTube videos in Memora Eterna."
+  },
   "gatewayAddress": { "message": "Desktop gateway" },
   "clientId": { "message": "Client ID" },
   "pairingToken": { "message": "Pairing token" },

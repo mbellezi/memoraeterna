@@ -60,11 +60,14 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
   return {
     async existingTargets(noteId: string, candidateIds: string[]): Promise<Set<string>> {
       if (!candidateIds.length) return new Set();
-      const result = await db.query<{ target: string }>(`select case when source_atomic_note_id = $1
+      const result = await db.query<{ target: string }>(
+        `select case when source_atomic_note_id = $1
         then target_atomic_note_id else source_atomic_note_id end as target
         from atomic_note_relations where
           (source_atomic_note_id = $1 and target_atomic_note_id = any($2::uuid[]))
-          or (target_atomic_note_id = $1 and source_atomic_note_id = any($2::uuid[]))`, [noteId, candidateIds]);
+          or (target_atomic_note_id = $1 and source_atomic_note_id = any($2::uuid[]))`,
+        [noteId, candidateIds]
+      );
       return new Set(result.rows.map((row) => row.target));
     },
     async upsert(input: {
@@ -123,18 +126,24 @@ export function createAtomicNoteRelationRepository(db: Queryable) {
       return mapRelation(row);
     },
 
-    async listBySourceItem(sourceItemId: string): Promise<Array<AtomicNoteRelationRecord & {
-      sourceStatus: string;
-      targetStatus: string;
-      sourceTitle: string;
-      targetTitle: string;
-    }>> {
-      const result = await db.query<AtomicNoteRelationRow & {
-        sourceStatus: string;
-        targetStatus: string;
-        sourceTitle: string;
-        targetTitle: string;
-      }>(
+    async listBySourceItem(sourceItemId: string): Promise<
+      Array<
+        AtomicNoteRelationRecord & {
+          sourceStatus: string;
+          targetStatus: string;
+          sourceTitle: string;
+          targetTitle: string;
+        }
+      >
+    > {
+      const result = await db.query<
+        AtomicNoteRelationRow & {
+          sourceStatus: string;
+          targetStatus: string;
+          sourceTitle: string;
+          targetTitle: string;
+        }
+      >(
         `select ${joinedReturning},
                 source.status as "sourceStatus", target.status as "targetStatus",
                 source.title as "sourceTitle", target.title as "targetTitle"

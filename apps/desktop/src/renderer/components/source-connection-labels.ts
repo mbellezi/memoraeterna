@@ -18,15 +18,26 @@ export function assignSourceConnectionLabelRows(graph: Graph): void {
     const target = graph.target(edges[0]!);
     // Opposite directions occupy opposite sides of the readable text axis.
     const side = groups.has(JSON.stringify([target, source])) && source > target ? -1 : 1;
-    edges.forEach((edge, index) => graph.mergeEdgeAttributes(edge, {
-      labelLineIndex: index, labelLineCount: edges.length, labelSide: side
-    }));
+    edges.forEach((edge, index) =>
+      graph.mergeEdgeAttributes(edge, {
+        labelLineIndex: index,
+        labelLineCount: edges.length,
+        labelSide: side
+      })
+    );
   }
 }
 
-export const drawSourceConnectionLabel: EdgeLabelDrawingFunction = (context, edge, source, target, settings) => {
+export const drawSourceConnectionLabel: EdgeLabelDrawingFunction = (
+  context,
+  edge,
+  source,
+  target,
+  settings
+) => {
   if (!edge.label || edge.interactionTarget) return;
-  const dx = target.x - source.x, dy = target.y - source.y;
+  const dx = target.x - source.x,
+    dy = target.y - source.y;
   const length = Math.hypot(dx, dy);
   const available = length - source.size - target.size - 8;
   if (available <= 0 || !Number.isFinite(available)) return;
@@ -44,9 +55,12 @@ export const drawSourceConnectionLabel: EdgeLabelDrawingFunction = (context, edg
   const shift = (source.size - target.size) / (2 * length);
   context.save();
   context.font = `${settings.edgeLabelWeight} ${size}px ${settings.edgeLabelFont}`;
-  context.fillStyle = (settings.edgeLabelColor.attribute
-    ? String(edge[settings.edgeLabelColor.attribute] ?? settings.edgeLabelColor.color ?? edge.color)
-    : settings.edgeLabelColor.color) ?? edge.color;
+  context.fillStyle =
+    (settings.edgeLabelColor.attribute
+      ? String(
+          edge[settings.edgeLabelColor.attribute] ?? settings.edgeLabelColor.color ?? edge.color
+        )
+      : settings.edgeLabelColor.color) ?? edge.color;
   context.textAlign = "center";
   context.textBaseline = "middle";
   const label = fitLabel(context, edge.label, available);
@@ -60,10 +74,12 @@ function fitLabel(context: CanvasRenderingContext2D, text: string, width: number
   if (context.measureText(text).width <= width) return text;
   if (context.measureText("…").width > width) return "";
   const characters = Array.from(text);
-  let low = 0, high = characters.length;
+  let low = 0,
+    high = characters.length;
   while (low < high) {
     const middle = Math.ceil((low + high) / 2);
-    if (context.measureText(characters.slice(0, middle).join("") + "…").width <= width) low = middle;
+    if (context.measureText(characters.slice(0, middle).join("") + "…").width <= width)
+      low = middle;
     else high = middle - 1;
   }
   return characters.slice(0, low).join("") + "…";

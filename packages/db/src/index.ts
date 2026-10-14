@@ -13,15 +13,15 @@ export { createMaintenanceRepository } from "./repositories/maintenanceRepositor
 export * from "./repositories/obsidianWikiRepository.js";
 export * from "./repositories/obsidianEditorialRepository.js";
 export * from "./repositories/promptRepository.js";
-export * from './repositories/wikiCuratorRepository.js';
-export * from './repositories/wikiCollectionRepository.js';
-export * from './repositories/automaticMaintenanceRepository.js';
-export * from './repositories/knowledgeConsultationRepository.js';
-export * from './repositories/investigationRepository.js';
+export * from "./repositories/wikiCuratorRepository.js";
+export * from "./repositories/wikiCollectionRepository.js";
+export * from "./repositories/automaticMaintenanceRepository.js";
+export * from "./repositories/knowledgeConsultationRepository.js";
+export * from "./repositories/investigationRepository.js";
 export * from "./repositories/obsidianLayoutRepository.js";
-export * from './repositories/knowledgeAutomationRepository.js';
+export * from "./repositories/knowledgeAutomationRepository.js";
 
-export { createWikiRemovalRepository } from './repositories/wikiRemovalRepository.js';
-export { createWikiImpactReconciliationRepository } from './repositories/wikiImpactReconciliationRepository.js';
+export { createWikiRemovalRepository } from "./repositories/wikiRemovalRepository.js";
+export { createWikiImpactReconciliationRepository } from "./repositories/wikiImpactReconciliationRepository.js";
 
-export * from './repositories/wikiHierarchyInventory.js';
+export * from "./repositories/wikiHierarchyInventory.js";

@@ -19,9 +19,7 @@ export const BibliographicWorkTypeSchema = z.enum([
   "generic_work"
 ]);
 
-export type BibliographicWorkType = z.infer<
-  typeof BibliographicWorkTypeSchema
->;
+export type BibliographicWorkType = z.infer<typeof BibliographicWorkTypeSchema>;
 
 export const BibliographicWorkSchema = z
   .object({
@@ -52,9 +50,7 @@ export const BibliographicInstanceTypeSchema = z.enum([
   "generic_instance"
 ]);
 
-export type BibliographicInstanceType = z.infer<
-  typeof BibliographicInstanceTypeSchema
->;
+export type BibliographicInstanceType = z.infer<typeof BibliographicInstanceTypeSchema>;
 
 export const BibliographicInstanceSchema = z
   .object({
@@ -78,6 +74,4 @@ export const BibliographicInstanceSchema = z
   })
   .strict();
 
-export type BibliographicInstance = z.infer<
-  typeof BibliographicInstanceSchema
->;
+export type BibliographicInstance = z.infer<typeof BibliographicInstanceSchema>;

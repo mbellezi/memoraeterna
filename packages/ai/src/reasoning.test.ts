@@ -38,7 +38,9 @@ describe("reasoning parameter compatibility", () => {
     expect(googleThinkingConfig("gemini-2.5-flash", "off")).toEqual({ thinkingBudget: 0 });
     expect(googleThinkingConfig("gemini-2.5-pro", "off")).toEqual({ thinkingBudget: 1_024 });
     expect(googleThinkingConfig("gemini-2.5-flash", "on")).toEqual({ thinkingBudget: -1 });
-    expect(googleThinkingConfig("gemini-2.5-flash", "on", 4_096)).toEqual({ thinkingBudget: 4_096 });
+    expect(googleThinkingConfig("gemini-2.5-flash", "on", 4_096)).toEqual({
+      thinkingBudget: 4_096
+    });
     expect(googleThinkingConfig("gemini-2.5-flash", "medium")).toEqual({ thinkingBudget: 8_192 });
     expect(googleThinkingConfig("gemini-2.5-pro", "xhigh")).toEqual({ thinkingBudget: 24_576 });
   });
@@ -48,20 +50,28 @@ describe("reasoning parameter compatibility", () => {
     expect(effectiveReasoningLevel("google", "gemini-3.5-flash", "off")).toBe("minimal");
     expect(effectiveReasoningLevel("google", "gemini-3.5-flash", "xhigh")).toBe("high");
     expect(effectiveReasoningLevel("google", "gemini-3.5-flash", "max")).toBe("high");
-    expect(googleThinkingConfig("gemini-3.1-pro-preview", "minimal")).toEqual({ thinkingLevel: "low" });
+    expect(googleThinkingConfig("gemini-3.1-pro-preview", "minimal")).toEqual({
+      thinkingLevel: "low"
+    });
     expect(googleThinkingConfig("gemini-2.0-flash", "high")).toBeUndefined();
   });
 
   it("records the same effective level that is sent to the provider", () => {
-    expect(effectiveReasoningParameters("google", "gemini-3.1-pro-preview", {
-      reasoningLevel: "off",
-      maxTokens: 100
-    })).toEqual({ reasoningLevel: "low", maxTokens: 100 });
-    expect(effectiveReasoningParameters("openai-codex", "gpt-5.4", {
-      reasoningLevel: "minimal"
-    })).toEqual({ reasoningLevel: "low" });
-    expect(effectiveReasoningParameters("openai-codex", "gpt-5.6-luna", {
-      reasoningLevel: "max"
-    })).toEqual({ reasoningLevel: "max" });
+    expect(
+      effectiveReasoningParameters("google", "gemini-3.1-pro-preview", {
+        reasoningLevel: "off",
+        maxTokens: 100
+      })
+    ).toEqual({ reasoningLevel: "low", maxTokens: 100 });
+    expect(
+      effectiveReasoningParameters("openai-codex", "gpt-5.4", {
+        reasoningLevel: "minimal"
+      })
+    ).toEqual({ reasoningLevel: "low" });
+    expect(
+      effectiveReasoningParameters("openai-codex", "gpt-5.6-luna", {
+        reasoningLevel: "max"
+      })
+    ).toEqual({ reasoningLevel: "max" });
   });
 });

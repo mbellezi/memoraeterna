@@ -2,7 +2,12 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { MatchingConfigurationSchema, matchingConfigurationsEqual, recommendedMatchingConfiguration, recommendedMatchingPresetId } from "@app/domain";
+import {
+  MatchingConfigurationSchema,
+  matchingConfigurationsEqual,
+  recommendedMatchingConfiguration,
+  recommendedMatchingPresetId
+} from "@app/domain";
 import {
   closePgPool,
   createPgPool,
@@ -98,7 +103,9 @@ function withStorageTimestamp(settings: StorageSettingsUpdate): StorageSettings 
 }
 
 function validateStorageSettings(settings: StorageSettingsUpdate): void {
-  const managedRoot = validateManagedRoot(settings.managedRoot ?? defaultStorageSettings.managedRoot);
+  const managedRoot = validateManagedRoot(
+    settings.managedRoot ?? defaultStorageSettings.managedRoot
+  );
   if (!managedRoot.ok) {
     throw new Error(managedRoot.code ?? "errors.common.validationFailed");
   }
@@ -125,8 +132,11 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
 
   return {
     async getImportDirectory() {
-      try { return JSON.parse(await readFile(importDirectoryPath, "utf8")); }
-      catch { return null; }
+      try {
+        return JSON.parse(await readFile(importDirectoryPath, "utf8"));
+      } catch {
+        return null;
+      }
     },
     async saveImportDirectory(directory) {
       await mkdir(userDataPath, { recursive: true });
@@ -161,7 +171,10 @@ function createFileSettingsRepository(userDataPath: string): SettingsRepository 
   };
 }
 
-function createDbSettingsRepository(pool: Queryable, dispose?: () => Promise<void>): SettingsRepository {
+function createDbSettingsRepository(
+  pool: Queryable,
+  dispose?: () => Promise<void>
+): SettingsRepository {
   const appRepository = createSettingsRepository(pool);
   const storageRepository = createStorageSettingsRepository(pool);
 
@@ -243,16 +256,24 @@ export class SettingsService {
 
   public async getImportDirectory(): Promise<string | undefined> {
     try {
-      const saved = importDirectorySchema.safeParse(await (await this.getRepository()).getImportDirectory());
-      if (saved.success && (await stat(saved.data.directory)).isDirectory()) return saved.data.directory;
-    } catch { /* An unavailable folder or preference must not prevent file selection. */ }
+      const saved = importDirectorySchema.safeParse(
+        await (await this.getRepository()).getImportDirectory()
+      );
+      if (saved.success && (await stat(saved.data.directory)).isDirectory())
+        return saved.data.directory;
+    } catch {
+      /* An unavailable folder or preference must not prevent file selection. */
+    }
     return undefined;
   }
 
   public async rememberImportFile(filePath: string): Promise<void> {
     if (!isAbsolute(filePath)) return;
-    try { await (await this.getRepository()).saveImportDirectory(dirname(filePath)); }
-    catch { /* Remembering dialog location is best effort; continue the import. */ }
+    try {
+      await (await this.getRepository()).saveImportDirectory(dirname(filePath));
+    } catch {
+      /* Remembering dialog location is best effort; continue the import. */
+    }
   }
 
   public async getApp(): Promise<AppSettings> {
@@ -267,16 +288,28 @@ export class SettingsService {
       const current = await this.getApp();
       const next = withAppTimestamp({ ...current, ...parsedUpdate });
       const configuration = MatchingConfigurationSchema.parse(next);
-      if (parsedUpdate.matchingPresets !== undefined || parsedUpdate.activeMatchingPresetId !== undefined) {
-        const selected = next.activeMatchingPresetId === recommendedMatchingPresetId
-          ? recommendedMatchingConfiguration
-          : next.matchingPresets.find((preset) => preset.id === next.activeMatchingPresetId)?.settings;
+      if (
+        parsedUpdate.matchingPresets !== undefined ||
+        parsedUpdate.activeMatchingPresetId !== undefined
+      ) {
+        const selected =
+          next.activeMatchingPresetId === recommendedMatchingPresetId
+            ? recommendedMatchingConfiguration
+            : next.matchingPresets.find((preset) => preset.id === next.activeMatchingPresetId)
+                ?.settings;
         if (!selected) throw new Error("errors.common.validationFailed");
-        const hasMatchingPatch = Object.keys(MatchingConfigurationSchema.shape).some((key) => key in parsedUpdate);
-        if (hasMatchingPatch && !matchingConfigurationsEqual(configuration, selected)) throw new Error("errors.common.validationFailed");
+        const hasMatchingPatch = Object.keys(MatchingConfigurationSchema.shape).some(
+          (key) => key in parsedUpdate
+        );
+        if (hasMatchingPatch && !matchingConfigurationsEqual(configuration, selected))
+          throw new Error("errors.common.validationFailed");
         Object.assign(next, structuredClone(selected));
-      } else if (!matchingConfigurationsEqual(configuration, MatchingConfigurationSchema.parse(current))) {
-        const active = next.matchingPresets.find((preset) => preset.id === next.activeMatchingPresetId);
+      } else if (
+        !matchingConfigurationsEqual(configuration, MatchingConfigurationSchema.parse(current))
+      ) {
+        const active = next.matchingPresets.find(
+          (preset) => preset.id === next.activeMatchingPresetId
+        );
         if (active) active.settings = configuration;
         else {
           const id = randomUUID();
@@ -311,7 +344,8 @@ export class SettingsService {
   }
 
   public async dispose(): Promise<void> {
-    const disposableRepository = this.repository as (SettingsRepository & { dispose?: () => Promise<void> }) | null;
+    const disposableRepository = this.repository as
+      (SettingsRepository & { dispose?: () => Promise<void> }) | null;
     await disposableRepository?.dispose?.();
   }
 
@@ -330,7 +364,8 @@ export class SettingsService {
       throw new Error("errors.database.notReady");
     }
 
-    this.repository = (await createEnvDbSettingsRepository()) ?? createFileSettingsRepository(this.userDataPath);
+    this.repository =
+      (await createEnvDbSettingsRepository()) ?? createFileSettingsRepository(this.userDataPath);
     return this.repository;
   }
 }

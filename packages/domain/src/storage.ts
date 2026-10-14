@@ -2,16 +2,9 @@ import { z } from "zod";
 
 import { IsoDateTimeSchema, StableIdSchema } from "./primitives.js";
 
-export const ObsidianDeletePolicySchema = z.enum([
-  "tombstone",
-  "trash",
-  "delete",
-  "unlink"
-]);
+export const ObsidianDeletePolicySchema = z.enum(["tombstone", "trash", "delete", "unlink"]);
 
-export type ObsidianDeletePolicy = z.infer<
-  typeof ObsidianDeletePolicySchema
->;
+export type ObsidianDeletePolicy = z.infer<typeof ObsidianDeletePolicySchema>;
 
 export const StorageSettingsSchema = z
   .object({

@@ -1,6 +1,14 @@
 import type { QueryResultRow } from "pg";
 
-import { asJsonObject, findById, insertRow, listRows, mapNullableTimestamp, mapTimestamp, updateRow } from "./sql.js";
+import {
+  asJsonObject,
+  findById,
+  insertRow,
+  listRows,
+  mapNullableTimestamp,
+  mapTimestamp,
+  updateRow
+} from "./sql.js";
 import type { JsonObject, Queryable, SourceItemRecord, SourceItemType } from "./types.js";
 
 interface SourceItemRow extends QueryResultRow {
@@ -54,17 +62,17 @@ const returning = [
   "type",
   "title",
   "subtitle",
-  "source_origin as \"sourceOrigin\"",
-  "source_uri as \"sourceUri\"",
-  "external_id as \"externalId\"",
-  "parent_source_item_id as \"parentSourceItemId\"",
-  "content_hash as \"contentHash\"",
+  'source_origin as "sourceOrigin"',
+  'source_uri as "sourceUri"',
+  'external_id as "externalId"',
+  'parent_source_item_id as "parentSourceItemId"',
+  'content_hash as "contentHash"',
   "language",
   "summary",
-  "summary_generated_at as \"summaryGeneratedAt\"",
+  'summary_generated_at as "summaryGeneratedAt"',
   "metadata",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapSourceItem(row: SourceItemRow): SourceItemRecord {
@@ -151,7 +159,10 @@ export function createSourceItemRepository(db: Queryable) {
       return (result.rowCount ?? 0) > 0;
     },
 
-    async findDuplicate(input: { sourceUri?: string | null; contentHash?: string | null }): Promise<SourceItemRecord | null> {
+    async findDuplicate(input: {
+      sourceUri?: string | null;
+      contentHash?: string | null;
+    }): Promise<SourceItemRecord | null> {
       if (!input.sourceUri && !input.contentHash) {
         return null;
       }
@@ -174,7 +185,9 @@ export function createSourceItemRepository(db: Queryable) {
       identifiers?: string[];
       parentSourceItemId?: string | null;
     }): Promise<SourceItemRecord | null> {
-      const identifiers = (input.identifiers ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean);
+      const identifiers = (input.identifiers ?? [])
+        .map((value) => value.trim().toLowerCase())
+        .filter(Boolean);
       const result = await db.query<SourceItemRow>(
         `select ${returning}
          from source_items
@@ -190,13 +203,23 @@ export function createSourceItemRepository(db: Queryable) {
            )
          order by updated_at desc
          limit 1`,
-        [input.type, input.title, identifiers, input.parentSourceItemId !== undefined, input.parentSourceItemId ?? null]
+        [
+          input.type,
+          input.title,
+          identifiers,
+          input.parentSourceItemId !== undefined,
+          input.parentSourceItemId ?? null
+        ]
       );
       const row = result.rows[0];
       return row ? mapSourceItem(row) : null;
     },
 
-    async lookup(query: string, limit = 10, sourceTypes: SourceItemType[] = []): Promise<SourceItemRecord[]> {
+    async lookup(
+      query: string,
+      limit = 10,
+      sourceTypes: SourceItemType[] = []
+    ): Promise<SourceItemRecord[]> {
       const result = await db.query<SourceItemRow>(
         `select ${returning}
          from source_items
@@ -214,13 +237,22 @@ export function createSourceItemRepository(db: Queryable) {
   };
 }
 
-export async function markAncestorSummariesStale(db: Queryable, parentSourceItemId: string): Promise<void> {
-  const ancestors = await db.query<{ id: string }>(`with recursive ancestors as (
+export async function markAncestorSummariesStale(
+  db: Queryable,
+  parentSourceItemId: string
+): Promise<void> {
+  const ancestors = await db.query<{ id: string }>(
+    `with recursive ancestors as (
     select id, parent_source_item_id from source_items where id = $1
     union select s.id, s.parent_source_item_id from source_items s join ancestors a on s.id = a.parent_source_item_id
   ) update source_items set metadata = metadata || '{"summaryStale":true}'::jsonb
-    where id in (select id from ancestors) returning id`, [parentSourceItemId]);
-  await deleteSourceEmbeddings(db, ancestors.rows.map((row) => row.id));
+    where id in (select id from ancestors) returning id`,
+    [parentSourceItemId]
+  );
+  await deleteSourceEmbeddings(
+    db,
+    ancestors.rows.map((row) => row.id)
+  );
 }
 
 async function deleteSourceEmbeddings(db: Queryable, sourceItemIds: string[]): Promise<void> {

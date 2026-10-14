@@ -3,7 +3,8 @@ import type { QueryResultRow } from "pg";
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
 import type { JsonObject, Queryable } from "./types.js";
 
-export type LocalModelStatus = "not_downloaded" | "downloading" | "verifying" | "ready" | "failed" | "removing";
+export type LocalModelStatus =
+  "not_downloaded" | "downloading" | "verifying" | "ready" | "failed" | "removing";
 
 export interface LocalModelRecord {
   id: string;
@@ -60,7 +61,18 @@ export interface LocalModelDownloadRecord {
   updatedAt: Date;
 }
 
-interface LocalModelRow extends QueryResultRow, Omit<LocalModelRecord, "capabilities" | "defaultParameters" | "metadata" | "createdAt" | "updatedAt" | "licenseAcceptedAt"> {
+interface LocalModelRow
+  extends
+    QueryResultRow,
+    Omit<
+      LocalModelRecord,
+      | "capabilities"
+      | "defaultParameters"
+      | "metadata"
+      | "createdAt"
+      | "updatedAt"
+      | "licenseAcceptedAt"
+    > {
   capabilities: unknown;
   defaultParameters: unknown;
   metadata: unknown;
@@ -71,7 +83,13 @@ interface LocalModelRow extends QueryResultRow, Omit<LocalModelRecord, "capabili
 
 interface LocalModelFileRow extends QueryResultRow, LocalModelFileRecord {}
 
-interface LocalModelDownloadRow extends QueryResultRow, Omit<LocalModelDownloadRecord, "checkpoint" | "startedAt" | "completedAt" | "createdAt" | "updatedAt"> {
+interface LocalModelDownloadRow
+  extends
+    QueryResultRow,
+    Omit<
+      LocalModelDownloadRecord,
+      "checkpoint" | "startedAt" | "completedAt" | "createdAt" | "updatedAt"
+    > {
   checkpoint: unknown;
   startedAt: unknown;
   completedAt: unknown;
@@ -95,10 +113,23 @@ const downloadReturning = `id, local_model_id as "localModelId", job_id as "jobI
 export function createLocalModelRepository(db: Queryable) {
   return {
     async upsertModel(input: {
-      catalogId: string; modelId: string; displayName: string; family: string; variant: string;
-      repository: string; revision: string; runtime: "gguf" | "mlx"; format: string;
-      quantization: string; expectedSizeBytes: number; manifestHash: string; capabilities: string[];
-      defaultParameters?: JsonObject; licenseName: string; licenseUrl: string; metadata?: JsonObject;
+      catalogId: string;
+      modelId: string;
+      displayName: string;
+      family: string;
+      variant: string;
+      repository: string;
+      revision: string;
+      runtime: "gguf" | "mlx";
+      format: string;
+      quantization: string;
+      expectedSizeBytes: number;
+      manifestHash: string;
+      capabilities: string[];
+      defaultParameters?: JsonObject;
+      licenseName: string;
+      licenseUrl: string;
+      metadata?: JsonObject;
     }): Promise<LocalModelRecord> {
       const result = await db.query<LocalModelRow>(
         `insert into local_models (
@@ -120,34 +151,64 @@ export function createLocalModelRepository(db: Queryable) {
            license_name = excluded.license_name,
            license_url = excluded.license_url, metadata = excluded.metadata, updated_at = now()
          returning ${modelReturning}`,
-        [input.catalogId, input.modelId, input.displayName, input.family, input.variant, input.repository,
-          input.revision, input.runtime, input.format, input.quantization, input.expectedSizeBytes,
-          input.manifestHash, JSON.stringify(input.capabilities), input.defaultParameters ?? {},
-          input.licenseName, input.licenseUrl, input.metadata ?? {}]
+        [
+          input.catalogId,
+          input.modelId,
+          input.displayName,
+          input.family,
+          input.variant,
+          input.repository,
+          input.revision,
+          input.runtime,
+          input.format,
+          input.quantization,
+          input.expectedSizeBytes,
+          input.manifestHash,
+          JSON.stringify(input.capabilities),
+          input.defaultParameters ?? {},
+          input.licenseName,
+          input.licenseUrl,
+          input.metadata ?? {}
+        ]
       );
       return mapModel(requiredRow(result.rows[0], "Local model upsert"));
     },
 
     async listModels(): Promise<LocalModelRecord[]> {
-      const result = await db.query<LocalModelRow>(`select ${modelReturning} from local_models order by display_name`);
+      const result = await db.query<LocalModelRow>(
+        `select ${modelReturning} from local_models order by display_name`
+      );
       return result.rows.map(mapModel);
     },
 
     async findById(id: string): Promise<LocalModelRecord | null> {
-      const result = await db.query<LocalModelRow>(`select ${modelReturning} from local_models where id = $1`, [id]);
+      const result = await db.query<LocalModelRow>(
+        `select ${modelReturning} from local_models where id = $1`,
+        [id]
+      );
       return result.rows[0] ? mapModel(result.rows[0]) : null;
     },
 
     async findByCatalogId(catalogId: string): Promise<LocalModelRecord | null> {
-      const result = await db.query<LocalModelRow>(`select ${modelReturning} from local_models where catalog_id = $1`, [catalogId]);
+      const result = await db.query<LocalModelRow>(
+        `select ${modelReturning} from local_models where catalog_id = $1`,
+        [catalogId]
+      );
       return result.rows[0] ? mapModel(result.rows[0]) : null;
     },
 
-    async updateModel(id: string, input: {
-      status?: LocalModelStatus; managedPath?: string | null; installedSizeBytes?: number;
-      lastError?: string | null; licenseAcceptedAt?: Date | null; metadata?: JsonObject;
-      defaultParameters?: JsonObject;
-    }): Promise<LocalModelRecord> {
+    async updateModel(
+      id: string,
+      input: {
+        status?: LocalModelStatus;
+        managedPath?: string | null;
+        installedSizeBytes?: number;
+        lastError?: string | null;
+        licenseAcceptedAt?: Date | null;
+        metadata?: JsonObject;
+        defaultParameters?: JsonObject;
+      }
+    ): Promise<LocalModelRecord> {
       const result = await db.query<LocalModelRow>(
         `update local_models set
            status = coalesce($2, status), managed_path = case when $3::boolean then $4 else managed_path end,
@@ -157,15 +218,27 @@ export function createLocalModelRepository(db: Queryable) {
            metadata = coalesce($10, metadata), default_parameters = coalesce($11, default_parameters),
            updated_at = now()
          where id = $1 returning ${modelReturning}`,
-        [id, input.status ?? null, "managedPath" in input, input.managedPath ?? null,
-          input.installedSizeBytes ?? null, "lastError" in input, input.lastError ?? null,
-          "licenseAcceptedAt" in input, input.licenseAcceptedAt ?? null, input.metadata ?? null,
-          input.defaultParameters ?? null]
+        [
+          id,
+          input.status ?? null,
+          "managedPath" in input,
+          input.managedPath ?? null,
+          input.installedSizeBytes ?? null,
+          "lastError" in input,
+          input.lastError ?? null,
+          "licenseAcceptedAt" in input,
+          input.licenseAcceptedAt ?? null,
+          input.metadata ?? null,
+          input.defaultParameters ?? null
+        ]
       );
       return mapModel(requiredRow(result.rows[0], "Local model update"));
     },
 
-    async replaceFiles(localModelId: string, files: Array<{ path: string; sizeBytes: number; sha256: string }>): Promise<void> {
+    async replaceFiles(
+      localModelId: string,
+      files: Array<{ path: string; sizeBytes: number; sha256: string }>
+    ): Promise<void> {
       await db.query(`delete from local_model_files where local_model_id = $1`, [localModelId]);
       for (const file of files) {
         await db.query(
@@ -183,10 +256,19 @@ export function createLocalModelRepository(db: Queryable) {
                 sha256, status from local_model_files where local_model_id = $1 order by relative_path`,
         [localModelId]
       );
-      return result.rows.map((row) => ({ ...row, expectedSizeBytes: Number(row.expectedSizeBytes), downloadedSizeBytes: Number(row.downloadedSizeBytes) }));
+      return result.rows.map((row) => ({
+        ...row,
+        expectedSizeBytes: Number(row.expectedSizeBytes),
+        downloadedSizeBytes: Number(row.downloadedSizeBytes)
+      }));
     },
 
-    async updateFileProgress(localModelId: string, relativePath: string, downloadedSizeBytes: number, status: string): Promise<void> {
+    async updateFileProgress(
+      localModelId: string,
+      relativePath: string,
+      downloadedSizeBytes: number,
+      status: string
+    ): Promise<void> {
       await db.query(
         `update local_model_files set downloaded_size_bytes = $3, status = $4, updated_at = now()
          where local_model_id = $1 and relative_path = $2`,
@@ -194,7 +276,11 @@ export function createLocalModelRepository(db: Queryable) {
       );
     },
 
-    async createDownload(input: { localModelId: string; jobId: string; totalBytes: number }): Promise<LocalModelDownloadRecord> {
+    async createDownload(input: {
+      localModelId: string;
+      jobId: string;
+      totalBytes: number;
+    }): Promise<LocalModelDownloadRecord> {
       const result = await db.query<LocalModelDownloadRow>(
         `insert into local_model_downloads (local_model_id, job_id, total_bytes)
          values ($1,$2,$3) returning ${downloadReturning}`,
@@ -203,10 +289,19 @@ export function createLocalModelRepository(db: Queryable) {
       return mapDownload(requiredRow(result.rows[0], "Local model download insert"));
     },
 
-    async updateDownload(jobId: string, input: {
-      currentFile?: string | null; downloadedBytes?: number; bytesPerSecond?: number; etaSeconds?: number | null;
-      checkpoint?: JsonObject; error?: string | null; startedAt?: Date | null; completedAt?: Date | null;
-    }): Promise<LocalModelDownloadRecord> {
+    async updateDownload(
+      jobId: string,
+      input: {
+        currentFile?: string | null;
+        downloadedBytes?: number;
+        bytesPerSecond?: number;
+        etaSeconds?: number | null;
+        checkpoint?: JsonObject;
+        error?: string | null;
+        startedAt?: Date | null;
+        completedAt?: Date | null;
+      }
+    ): Promise<LocalModelDownloadRecord> {
       const result = await db.query<LocalModelDownloadRow>(
         `update local_model_downloads set
            current_file = case when $2::boolean then $3 else current_file end,
@@ -216,10 +311,22 @@ export function createLocalModelRepository(db: Queryable) {
            started_at = case when $11::boolean then $12 else started_at end,
            completed_at = case when $13::boolean then $14 else completed_at end, updated_at = now()
          where job_id = $1 returning ${downloadReturning}`,
-        [jobId, "currentFile" in input, input.currentFile ?? null, input.downloadedBytes ?? null,
-          input.bytesPerSecond ?? null, "etaSeconds" in input, input.etaSeconds ?? null,
-          input.checkpoint ?? null, "error" in input, input.error ?? null,
-          "startedAt" in input, input.startedAt ?? null, "completedAt" in input, input.completedAt ?? null]
+        [
+          jobId,
+          "currentFile" in input,
+          input.currentFile ?? null,
+          input.downloadedBytes ?? null,
+          input.bytesPerSecond ?? null,
+          "etaSeconds" in input,
+          input.etaSeconds ?? null,
+          input.checkpoint ?? null,
+          "error" in input,
+          input.error ?? null,
+          "startedAt" in input,
+          input.startedAt ?? null,
+          "completedAt" in input,
+          input.completedAt ?? null
+        ]
       );
       return mapDownload(requiredRow(result.rows[0], "Local model download update"));
     },

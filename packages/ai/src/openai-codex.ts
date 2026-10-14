@@ -1,7 +1,13 @@
 import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
-import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import type {
+  AiModelAdapter,
+  AiModelDescriptor,
+  AiProgressListener,
+  AiTaskRequest,
+  AiTaskResult
+} from "./contracts.js";
 import { readServerSentEvents, readText, streamedProgress } from "./openai-compatible.js";
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { providerHttpError } from "./provider-error.js";
@@ -18,8 +24,15 @@ export interface OpenAiCodexAdapterOptions {
 
 const defaultBaseUrl = "https://chatgpt.com/backend-api/codex";
 const generationTasks = new Set<AiTaskType>([
-  "text-generation", "structured-output", "summarization", "atomic-note-generation",
-  "entity-extraction", "claim-extraction", "knowledge-graph-generation", "reranking", "writing-assistance"
+  "text-generation",
+  "structured-output",
+  "summarization",
+  "atomic-note-generation",
+  "entity-extraction",
+  "claim-extraction",
+  "knowledge-graph-generation",
+  "reranking",
+  "writing-assistance"
 ]);
 
 export class OpenAiCodexAdapter implements AiModelAdapter {
@@ -57,8 +70,14 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
       ...(signal ? { signal } : {})
     });
     if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
-    const payload = await response.json() as {
-      models?: Array<{ slug?: string; display_name?: string; visibility?: string; context_window?: number; max_output_tokens?: number }>;
+    const payload = (await response.json()) as {
+      models?: Array<{
+        slug?: string;
+        display_name?: string;
+        visibility?: string;
+        context_window?: number;
+        max_output_tokens?: number;
+      }>;
     };
     return (payload.models ?? []).flatMap((model) => {
       if (!model.slug || model.visibility === "hide" || model.visibility === "none") return [];
@@ -66,16 +85,18 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         ...(model.context_window !== undefined ? { contextWindow: model.context_window } : {}),
         ...(model.max_output_tokens !== undefined ? { maxTokens: model.max_output_tokens } : {})
       };
-      return [{
-        ...this.describe(),
-        modelId: model.slug,
-        parameterCapabilities: openAiCodexParameterCapabilities({
+      return [
+        {
+          ...this.describe(),
           modelId: model.slug,
-          capabilities: this.options.capabilities
-        }),
-        ...(model.display_name ? { displayName: model.display_name } : {}),
-        limits
-      }];
+          parameterCapabilities: openAiCodexParameterCapabilities({
+            modelId: model.slug,
+            capabilities: this.options.capabilities
+          }),
+          ...(model.display_name ? { displayName: model.display_name } : {}),
+          limits
+        }
+      ];
     });
   }
 
@@ -105,7 +126,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         model: request.modelId ?? this.options.modelId,
         store: false,
         stream: true,
-        instructions: typeof request.metadata.applicationInstruction === "string" ? request.metadata.applicationInstruction : "",
+        instructions:
+          typeof request.metadata.applicationInstruction === "string"
+            ? request.metadata.applicationInstruction
+            : "",
         input: [{ role: "user", content: [{ type: "input_text", text: readText(request.input) }] }],
         text: { verbosity: "low" },
         include: ["reasoning.encrypted_content"],
@@ -119,26 +143,37 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     let streamError: string | undefined;
-    await readServerSentEvents(response, (data) => {
-      if (data === "[DONE]") return;
-      const event = JSON.parse(data) as {
-        type?: string;
-        delta?: string;
-        message?: string;
-        error?: { message?: string };
-        response?: { error?: { message?: string }; usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number } };
-      };
-      if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-        output += event.delta;
-        onProgress?.({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
-      }
-      if (event.type === "error" || event.type === "response.failed") {
-        streamError = event.message ?? event.error?.message ?? event.response?.error?.message ?? "AI provider request failed.";
-      }
-      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.response?.usage) };
-      inputTokens = event.response?.usage?.input_tokens ?? inputTokens;
-      outputTokens = event.response?.usage?.output_tokens ?? outputTokens;
-    }, 16 * 1024 * 1024);
+    await readServerSentEvents(
+      response,
+      (data) => {
+        if (data === "[DONE]") return;
+        const event = JSON.parse(data) as {
+          type?: string;
+          delta?: string;
+          message?: string;
+          error?: { message?: string };
+          response?: {
+            error?: { message?: string };
+            usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number };
+          };
+        };
+        if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+          output += event.delta;
+          onProgress?.({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+        }
+        if (event.type === "error" || event.type === "response.failed") {
+          streamError =
+            event.message ??
+            event.error?.message ??
+            event.response?.error?.message ??
+            "AI provider request failed.";
+        }
+        tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.response?.usage) };
+        inputTokens = event.response?.usage?.input_tokens ?? inputTokens;
+        outputTokens = event.response?.usage?.output_tokens ?? outputTokens;
+      },
+      16 * 1024 * 1024
+    );
     if (streamError) throw new Error(streamError);
     if (output.length === 0) throw new Error("AI generation response did not contain content.");
     onProgress?.({ progress: 1 });
@@ -171,16 +206,27 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
   }
 }
 
-function codexGenerationParameters(parameters: Record<string, unknown>, modelId: string): Record<string, unknown> {
-  const reasoningLevel = typeof parameters.reasoningLevel === "string"
-    ? effectiveReasoningLevel("openai-codex", modelId, parameters.reasoningLevel as AiReasoningLevel)
-    : undefined;
+function codexGenerationParameters(
+  parameters: Record<string, unknown>,
+  modelId: string
+): Record<string, unknown> {
+  const reasoningLevel =
+    typeof parameters.reasoningLevel === "string"
+      ? effectiveReasoningLevel(
+          "openai-codex",
+          modelId,
+          parameters.reasoningLevel as AiReasoningLevel
+        )
+      : undefined;
   const reasoningEffort = openAiReasoningEffort(reasoningLevel);
   return {
-    ...(reasoningEffort ? {
-      reasoning: reasoningEffort === "none"
-        ? { effort: reasoningEffort }
-        : { effort: reasoningEffort, summary: "auto" }
-    } : {})
+    ...(reasoningEffort
+      ? {
+          reasoning:
+            reasoningEffort === "none"
+              ? { effort: reasoningEffort }
+              : { effort: reasoningEffort, summary: "auto" }
+        }
+      : {})
   };
 }

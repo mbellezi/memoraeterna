@@ -18,11 +18,16 @@ const xcodeProject = join(mlxCheckout, "xcode", "MLX.xcodeproj");
 await access(xcodeProject);
 const derivedData = join(buildRoot, "xcode-derived-data");
 await run("xcodebuild", [
-  "-project", xcodeProject,
-  "-scheme", "Cmlx",
-  "-configuration", "Release",
-  "-destination", "platform=macOS,arch=arm64",
-  "-derivedDataPath", derivedData,
+  "-project",
+  xcodeProject,
+  "-scheme",
+  "Cmlx",
+  "-configuration",
+  "Release",
+  "-destination",
+  "platform=macOS,arch=arm64",
+  "-derivedDataPath",
+  derivedData,
   "-skipPackageUpdates",
   "-quiet",
   "GCC_WARN_64_TO_32_BIT_CONVERSION=NO",

@@ -1,7 +1,12 @@
 import { jobTaskPayload } from "../job-task-payload.js";
 import { promptStageProviders } from "./prompt-strategies.js";
 import { PromptPinSchema } from "@app/domain";
-import { withPromptPin, capturePromptPin, renderPrompt, stagePromptFingerprints } from "./prompt-runtime.js";
+import {
+  withPromptPin,
+  capturePromptPin,
+  renderPrompt,
+  stagePromptFingerprints
+} from "./prompt-runtime.js";
 import { createHash, randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 
@@ -34,25 +39,33 @@ import { canManuallyRetryJob } from "./job-retry.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
-  traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
+  traceOperation?: <T>(
+    operation: string,
+    context: Record<string, unknown>,
+    run: () => Promise<T>
+  ) => Promise<T>;
   getPool: () => PgPool | null;
-  maintenanceTick?:()=>Promise<void>;
-  maintenanceReady?:(job:JobRecord)=>Promise<boolean>;
-  processMaintenance?:(job:JobRecord,signal:AbortSignal)=>Promise<JsonObject>;
-  reconcileOrganization?:()=>Promise<void>;
+  maintenanceTick?: () => Promise<void>;
+  maintenanceReady?: (job: JobRecord) => Promise<boolean>;
+  processMaintenance?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
+  reconcileOrganization?: () => Promise<void>;
   processOrganization?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
   logger?: Pick<Console, "error" | "warn">;
-  generateEmbedding?: (text: string, signal?: AbortSignal, context?: {
-    jobId: string;
-    ingestionRunId: string;
-    sourceItemId: string;
-    documentId: string;
-    stage: string;
-    embeddingInputType: "document";
-    chunkId?: string;
-  }) => Promise<{
+  generateEmbedding?: (
+    text: string,
+    signal?: AbortSignal,
+    context?: {
+      jobId: string;
+      ingestionRunId: string;
+      sourceItemId: string;
+      documentId: string;
+      stage: string;
+      embeddingInputType: "document";
+      chunkId?: string;
+    }
+  ) => Promise<{
     embedding: number[];
     provider: string;
     model: string;
@@ -60,13 +73,24 @@ export interface JobSupervisorOptions {
     spaceKey?: string;
   } | null>;
   knowledgeService?: KnowledgeService;
-  obsidianSyncService?: Pick<ObsidianSyncService, "projectSource"> & { wiki?: ObsidianSyncService["wiki"] };
+  obsidianSyncService?: Pick<ObsidianSyncService, "projectSource"> & {
+    wiki?: ObsidianSyncService["wiki"];
+  };
   releaseAiRuntime?: () => Promise<void>;
 }
 
 const supportedJobTypes = new Set<string>([
-  "obsidian-wiki", "maintenance", "organization", "relation-labels", "ingestion", "markdown-conversion", "chunking", "embedding",
-  "atomic-note-generation", "obsidian-sync", "asset-storage"
+  "obsidian-wiki",
+  "maintenance",
+  "organization",
+  "relation-labels",
+  "ingestion",
+  "markdown-conversion",
+  "chunking",
+  "embedding",
+  "atomic-note-generation",
+  "obsidian-sync",
+  "asset-storage"
 ]);
 
 export class JobSupervisor {
@@ -107,36 +131,75 @@ export class JobSupervisor {
   }
 
   public async runOnce(): Promise<JobRecord | null> {
-    try{await this.options.reconcileOrganization?.();}catch{this.options.logger?.warn("Organization reconciliation is temporarily unavailable");}
+    try {
+      await this.options.reconcileOrganization?.();
+    } catch {
+      this.options.logger?.warn("Organization reconciliation is temporarily unavailable");
+    }
     const repository = createJobRepository(this.requirePool());
-    try { await this.options.obsidianSyncService?.wiki?.enqueue(); }
-    catch { this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable"); }
-    try { await this.options.maintenanceTick?.(); }
-    catch { this.options.logger?.warn("Maintenance admission is temporarily unavailable"); }
-    let job = await repository.claimNext(this.workerId, [...supportedJobTypes].filter(t=>t!=="maintenance"));
-    if(!job){const pending=await repository.nextQueuedOfType("maintenance");if(pending&&await this.options.maintenanceReady?.(pending))job=await repository.claimNext(this.workerId,["maintenance"]);}
+    try {
+      await this.options.obsidianSyncService?.wiki?.enqueue();
+    } catch {
+      this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable");
+    }
+    try {
+      await this.options.maintenanceTick?.();
+    } catch {
+      this.options.logger?.warn("Maintenance admission is temporarily unavailable");
+    }
+    let job = await repository.claimNext(
+      this.workerId,
+      [...supportedJobTypes].filter((t) => t !== "maintenance")
+    );
+    if (!job) {
+      const pending = await repository.nextQueuedOfType("maintenance");
+      if (pending && (await this.options.maintenanceReady?.(pending)))
+        job = await repository.claimNext(this.workerId, ["maintenance"]);
+    }
     if (!job) return null;
     this.notify();
     const controller = new AbortController();
     this.controllers.set(job.id, controller);
     try {
-      if (!supportedJobTypes.has(job.type as WorkerTask["type"])) throw new Error("unsupported_job_type");
-      const taskJob={...job,payload:jobTaskPayload(job.payload)};
-      const execute = async () => withPromptPin(job.payload.promptPin?PromptPinSchema.parse(job.payload.promptPin):null,async()=>job.type === "obsidian-wiki"
-        ? await this.options.obsidianSyncService!.wiki!.execute(taskJob,controller.signal)
-        : job.type === "maintenance"
-        ? await this.options.processMaintenance!(taskJob,controller.signal)
-        : job.type === "organization"
-        ? await this.options.processOrganization!(taskJob, controller.signal)
-        : job.type === "relation-labels"
-        ? await this.options.processRelationLabels!(taskJob, controller.signal)
-        : job.type === "ingestion"
-        ? await this.executeIngestion(taskJob, controller)
-        : await this.workers.execute(job.type as WorkerTask["type"], taskJob.payload, {
-            signal: controller.signal,
-            onProgress: (progress) => this.trackProgress(repository.reportProgress(job.id, progress))
-          }));
-      const result = await (this.options.traceOperation?.(job.type, { jobId: job.id, ingestionRunId: job.payload.ingestionRunId, sourceItemId: job.payload.sourceItemId, documentId: job.payload.documentId, origin: "job", attempt: job.attempts }, execute) ?? execute());
+      if (!supportedJobTypes.has(job.type as WorkerTask["type"]))
+        throw new Error("unsupported_job_type");
+      const taskJob = { ...job, payload: jobTaskPayload(job.payload) };
+      const execute = async () =>
+        withPromptPin(
+          job.payload.promptPin ? PromptPinSchema.parse(job.payload.promptPin) : null,
+          async () =>
+            job.type === "obsidian-wiki"
+              ? await this.options.obsidianSyncService!.wiki!.execute(taskJob, controller.signal)
+              : job.type === "maintenance"
+                ? await this.options.processMaintenance!(taskJob, controller.signal)
+                : job.type === "organization"
+                  ? await this.options.processOrganization!(taskJob, controller.signal)
+                  : job.type === "relation-labels"
+                    ? await this.options.processRelationLabels!(taskJob, controller.signal)
+                    : job.type === "ingestion"
+                      ? await this.executeIngestion(taskJob, controller)
+                      : await this.workers.execute(
+                          job.type as WorkerTask["type"],
+                          taskJob.payload,
+                          {
+                            signal: controller.signal,
+                            onProgress: (progress) =>
+                              this.trackProgress(repository.reportProgress(job.id, progress))
+                          }
+                        )
+        );
+      const result = await (this.options.traceOperation?.(
+        job.type,
+        {
+          jobId: job.id,
+          ingestionRunId: job.payload.ingestionRunId,
+          sourceItemId: job.payload.sourceItemId,
+          documentId: job.payload.documentId,
+          origin: "job",
+          attempt: job.attempts
+        },
+        execute
+      ) ?? execute());
       const updated = await repository.update(job.id, {
         status: controller.signal.aborted ? "canceled" : "succeeded",
         progress: controller.signal.aborted ? job.progress : 1,
@@ -147,12 +210,18 @@ export class JobSupervisor {
         finishedAt: new Date()
       });
       const batchId = optionalString(job.payload.batchId);
-      if (batchId) await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
+      if (batchId)
+        await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
       this.notify();
       return updated;
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
-      const shouldRetry = job.type !== "maintenance" && !wasCanceled && job.attempts < job.maxAttempts && (job.type !== "organization" || /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
+      const shouldRetry =
+        job.type !== "maintenance" &&
+        !wasCanceled &&
+        job.attempts < job.maxAttempts &&
+        (job.type !== "organization" ||
+          /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
         const runs = createIngestionRunRepository(this.requirePool());
         if (wasCanceled) {
@@ -165,19 +234,24 @@ export class JobSupervisor {
       const updated = await repository.update(job.id, {
         status: wasCanceled ? "canceled" : shouldRetry ? "queued" : "failed",
         error: wasCanceled ? null : normalizedError,
-        payload: wasCanceled ? job.payload : appendErrorHistory(job.payload, {
-          message: normalizedError,
-          stage: job.type,
-          attempt: job.attempts,
-          occurredAt: new Date().toISOString()
-        }),
-        runAfter: shouldRetry ? new Date(Date.now() + Math.min(30_000, 1_000 * 2 ** job.attempts)) : job.runAfter,
+        payload: wasCanceled
+          ? job.payload
+          : appendErrorHistory(job.payload, {
+              message: normalizedError,
+              stage: job.type,
+              attempt: job.attempts,
+              occurredAt: new Date().toISOString()
+            }),
+        runAfter: shouldRetry
+          ? new Date(Date.now() + Math.min(30_000, 1_000 * 2 ** job.attempts))
+          : job.runAfter,
         lockedAt: null,
         lockedBy: null,
         finishedAt: shouldRetry ? null : new Date()
       });
       const batchId = optionalString(job.payload.batchId);
-      if (batchId) await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
+      if (batchId)
+        await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(batchId);
       this.notify();
       return updated;
     } finally {
@@ -185,10 +259,18 @@ export class JobSupervisor {
     }
   }
 
-  public wake(): void { this.schedule(0); this.notify(); }
+  public wake(): void {
+    this.schedule(0);
+    this.notify();
+  }
 
-  public async queueRelationLabels(payload: { mode: "missing" | "all"; contentLanguage: string }): Promise<string> {
-    const id = await createKnowledgeGraphRepository(this.requirePool()).queueRelationLabels(payload);
+  public async queueRelationLabels(payload: {
+    mode: "missing" | "all";
+    contentLanguage: string;
+  }): Promise<string> {
+    const id = await createKnowledgeGraphRepository(this.requirePool()).queueRelationLabels(
+      payload
+    );
     this.schedule(0);
     this.notify();
     return id;
@@ -198,24 +280,38 @@ export class JobSupervisor {
     return createJobRepository(this.requirePool()).latestByType("relation-labels");
   }
 
-  public async cancelBatch(batchId:string):Promise<null>{
-    const pool=this.requirePool(),ids=await createOrganizationRepository(pool).cancelBatch(batchId);
-    for(const id of ids)await this.requestCancel(id);
-    const runs=createIngestionRunRepository(pool);
-    for(const run of await runs.listByBatch(batchId)){
-      if(['pending','running'].includes(run.status))await runs.cancel(run.id);
-      if(run.effectiveStages.includes('organizeKnowledge')&&(run.stagesCheckpoint.organizeKnowledge as {status?:string}|undefined)?.status!=='completed')await runs.failStage(run.id,'organizeKnowledge','organization.errors.canceled',true);
+  public async cancelBatch(batchId: string): Promise<null> {
+    const pool = this.requirePool(),
+      ids = await createOrganizationRepository(pool).cancelBatch(batchId);
+    for (const id of ids) await this.requestCancel(id);
+    const runs = createIngestionRunRepository(pool);
+    for (const run of await runs.listByBatch(batchId)) {
+      if (["pending", "running"].includes(run.status)) await runs.cancel(run.id);
+      if (
+        run.effectiveStages.includes("organizeKnowledge") &&
+        (run.stagesCheckpoint.organizeKnowledge as { status?: string } | undefined)?.status !==
+          "completed"
+      )
+        await runs.failStage(run.id, "organizeKnowledge", "organization.errors.canceled", true);
     }
-    await createHierarchicalIngestionRepository(pool).refreshBatch(batchId);this.notify();return null;
+    await createHierarchicalIngestionRepository(pool).refreshBatch(batchId);
+    this.notify();
+    return null;
   }
 
   public async requestCancel(jobId: string): Promise<JobRecord | null> {
-    const before=await createJobRepository(this.requirePool()).findById(jobId);
-    if(before?.type==="ingestion"&&typeof before.payload.ingestionRunId==="string")for(const linked of await createOrganizationRepository(this.requirePool()).jobsForIngestion(before.payload.ingestionRunId))await this.requestCancel(linked);
+    const before = await createJobRepository(this.requirePool()).findById(jobId);
+    if (before?.type === "ingestion" && typeof before.payload.ingestionRunId === "string")
+      for (const linked of await createOrganizationRepository(this.requirePool()).jobsForIngestion(
+        before.payload.ingestionRunId
+      ))
+        await this.requestCancel(linked);
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
-    if(job?.type === "maintenance" && typeof job.payload.maintenanceRunId === "string") await createMaintenanceRepository(this.requirePool()).cancel(job.payload.maintenanceRunId);
-    if (job?.type === "organization" && typeof job.payload.organizationRunId === "string") await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
+    if (job?.type === "maintenance" && typeof job.payload.maintenanceRunId === "string")
+      await createMaintenanceRepository(this.requirePool()).cancel(job.payload.maintenanceRunId);
+    if (job?.type === "organization" && typeof job.payload.organizationRunId === "string")
+      await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
     this.notify();
     return job;
   }
@@ -224,7 +320,7 @@ export class JobSupervisor {
     const pool = this.requirePool();
     const repository = createJobRepository(pool);
     const current = await repository.findById(jobId);
-    if (!current || ["organization","maintenance"].includes(current.type)) return null;
+    if (!current || ["organization", "maintenance"].includes(current.type)) return null;
     const ingestionRunId = optionalString(current.payload.ingestionRunId);
     const ingestionRun = ingestionRunId
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)
@@ -237,7 +333,9 @@ export class JobSupervisor {
   }
 
   public async deleteCanceledHierarchy(jobId: string) {
-    const result = await createProcessingTaskRepository(this.requirePool()).deleteCanceledHierarchy(jobId);
+    const result = await createProcessingTaskRepository(this.requirePool()).deleteCanceledHierarchy(
+      jobId
+    );
     if (!result) return null;
     if (result.batchId && !result.deletedBatch) {
       await createHierarchicalIngestionRepository(this.requirePool()).refreshBatch(result.batchId);
@@ -266,10 +364,12 @@ export class JobSupervisor {
     );
     if (jobs.rows.length === 0) return;
     const repository = createJobRepository(pool);
-    await Promise.all(jobs.rows.map(async ({ id }) => {
-      await repository.requestCancel(id);
-      this.controllers.get(id)?.abort();
-    }));
+    await Promise.all(
+      jobs.rows.map(async ({ id }) => {
+        await repository.requestCancel(id);
+        this.controllers.get(id)?.abort();
+      })
+    );
     this.notify();
     if (this.drainPromise) await this.drainPromise;
     await Promise.allSettled(this.pendingProgressUpdates);
@@ -289,7 +389,8 @@ export class JobSupervisor {
     ]);
     return jobs.map((job) => ({
       job,
-      ingestionRun: runs.find((run) => run.jobId === job.id || run.id === job.payload.ingestionRunId) ?? null,
+      ingestionRun:
+        runs.find((run) => run.jobId === job.id || run.id === job.payload.ingestionRunId) ?? null,
       source: sources.find((source) => source.id === job.payload.sourceItemId) ?? null
     }));
   }
@@ -314,7 +415,10 @@ export class JobSupervisor {
     }, delay);
   }
 
-  private async executeIngestion(job: JobRecord, controller: AbortController): Promise<Record<string, unknown>> {
+  private async executeIngestion(
+    job: JobRecord,
+    controller: AbortController
+  ): Promise<Record<string, unknown>> {
     const signal = controller.signal;
     const ingestionRunId = readString(job.payload, "ingestionRunId");
     const documentId = readString(job.payload, "documentId");
@@ -323,7 +427,8 @@ export class JobSupervisor {
     const catalogMetadataOnly = job.payload.processingMode === "catalog_metadata";
     const pool = this.requirePool();
     const inputDocument = await createDocumentRepository(pool).findById(documentId);
-    if (inputDocument?.metadata.supersededByDocumentId) throw new Error("errors.common.validationFailed");
+    if (inputDocument?.metadata.supersededByDocumentId)
+      throw new Error("errors.common.validationFailed");
     if (catalogMetadataOnly) {
       const source = await createSourceItemRepository(pool).findById(sourceItemId);
       if (source) markdown = buildCatalogMetadataMarkdown(source);
@@ -331,10 +436,17 @@ export class JobSupervisor {
     const runs = createIngestionRunRepository(pool);
     if (catalogMetadataOnly) {
       await runs.update(ingestionRunId, {
-        inputHashes: { contentHash: createHash("sha256").update(markdown).digest("hex"),promptFingerprints:stagePromptFingerprints(capturePromptPin(),false,await promptStageProviders(pool)) }
+        inputHashes: {
+          contentHash: createHash("sha256").update(markdown).digest("hex"),
+          promptFingerprints: stagePromptFingerprints(
+            capturePromptPin(),
+            false,
+            await promptStageProviders(pool)
+          )
+        }
       });
     }
-    const run = await runs.startOrResume(ingestionRunId) ?? await runs.findById(ingestionRunId);
+    const run = (await runs.startOrResume(ingestionRunId)) ?? (await runs.findById(ingestionRunId));
     if (!run) throw new Error("ingestion_run_not_found");
     const effectiveStages = new Set(
       run.effectiveStages.filter((stage): stage is string => typeof stage === "string")
@@ -349,8 +461,11 @@ export class JobSupervisor {
       const chunkRepository = createChunkRepository(pool);
       persistedChunks = catalogMetadataOnly
         ? await persistCatalogMetadataChunk(chunkRepository, documentId, sourceItemId, markdown)
-        : await chunkRepository.replaceDocumentChunks(documentId, sourceItemId,
-          await this.createContentChunks(job, markdown, signal));
+        : await chunkRepository.replaceDocumentChunks(
+            documentId,
+            sourceItemId,
+            await this.createContentChunks(job, markdown, signal)
+          );
       await runs.completeStage(ingestionRunId, "chunking", { chunkCount: persistedChunks.length });
       this.notify();
     } else {
@@ -359,41 +474,69 @@ export class JobSupervisor {
     await createJobRepository(pool).reportProgress(job.id, 0.5);
     throwIfAborted(signal);
     const summaryCheckpoint = run.stagesCheckpoint.summarization as JsonObject | undefined;
-    const aggregateHierarchyRoot = shouldRun("summarization") && this.options.knowledgeService
-      ? await this.options.knowledgeService.isHierarchicalRoot(sourceItemId)
-      : false;
+    const aggregateHierarchyRoot =
+      shouldRun("summarization") && this.options.knowledgeService
+        ? await this.options.knowledgeService.isHierarchicalRoot(sourceItemId)
+        : false;
     if (shouldRun("summarization") && summaryCheckpoint?.status !== "completed") {
       await runs.beginStage(ingestionRunId, "summarization");
       this.notify();
       const summary = aggregateHierarchyRoot
         ? { configured: true, generated: false, aggregate: true }
         : this.options.knowledgeService
-        ? await this.runInlineStageJob(
-            "summarization",
-            { ingestionRunId, sourceItemId, documentId },
-            (stageJobId) => this.options.knowledgeService!.summarizeSource(
-              sourceItemId,
-              documentId,
-              signal,
-              (progress) => this.reportInlineProgress(stageJobId, progress),
-              { jobId: stageJobId, ingestionRunId, sourceItemId, documentId, stage: "summarization" }
-            ),
-            controller
-          )
-        : { configured: false, generated: false };
+          ? await this.runInlineStageJob(
+              "summarization",
+              { ingestionRunId, sourceItemId, documentId },
+              (stageJobId) =>
+                this.options.knowledgeService!.summarizeSource(
+                  sourceItemId,
+                  documentId,
+                  signal,
+                  (progress) => this.reportInlineProgress(stageJobId, progress),
+                  {
+                    jobId: stageJobId,
+                    ingestionRunId,
+                    sourceItemId,
+                    documentId,
+                    stage: "summarization"
+                  }
+                ),
+              controller
+            )
+          : { configured: false, generated: false };
       await runs.completeStage(ingestionRunId, "summarization", summary);
       this.notify();
     }
-    const batchSummariesComplete = !run.batchId
-      || !shouldRun("summarization")
-      || await runs.countIncompleteBatchStage(run.batchId, "summarization") === 0;
+    const batchSummariesComplete =
+      !run.batchId ||
+      !shouldRun("summarization") ||
+      (await runs.countIncompleteBatchStage(run.batchId, "summarization")) === 0;
     if (aggregateHierarchyRoot && this.options.knowledgeService && batchSummariesComplete) {
-      await this.options.knowledgeService.summarizeHierarchiesForBatch(run.batchId, signal, {
-        jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
-      }, sourceItemId, run.runKind === "reingestion");
-    } else if (!aggregateHierarchyRoot && shouldRun("summarization") && run.batchId && batchSummariesComplete) {
+      await this.options.knowledgeService.summarizeHierarchiesForBatch(
+        run.batchId,
+        signal,
+        {
+          jobId: job.id,
+          ingestionRunId,
+          sourceItemId,
+          documentId,
+          stage: "aggregateSummarization"
+        },
+        sourceItemId,
+        run.runKind === "reingestion"
+      );
+    } else if (
+      !aggregateHierarchyRoot &&
+      shouldRun("summarization") &&
+      run.batchId &&
+      batchSummariesComplete
+    ) {
       await this.options.knowledgeService?.summarizeHierarchiesForBatch(run.batchId, signal, {
-        jobId: job.id, ingestionRunId, sourceItemId, documentId, stage: "aggregateSummarization"
+        jobId: job.id,
+        ingestionRunId,
+        sourceItemId,
+        documentId,
+        stage: "aggregateSummarization"
       });
     }
     const embeddingCheckpoint = run.stagesCheckpoint.embedding as JsonObject | undefined;
@@ -405,27 +548,48 @@ export class JobSupervisor {
       if (this.options.generateEmbedding) {
         const embeddings = createEmbeddingRepository(pool);
         const chunkVectors: number[][] = [];
-        let embeddingIdentity: { provider: string; model: string; runtime: string; spaceKey?: string } | null = null;
+        let embeddingIdentity: {
+          provider: string;
+          model: string;
+          runtime: string;
+          spaceKey?: string;
+        } | null = null;
         for (const chunk of persistedChunks) {
           if (signal.aborted) throw new DOMException("Ingestion canceled.", "AbortError");
-          const generated = await this.options.generateEmbedding(renderPrompt("embedding.content.chunk",{source_text:chunk.content}), signal, {
-            jobId: job.id,
-            ingestionRunId,
-            sourceItemId,
-            documentId,
-            stage: "embedding",
-            chunkId: chunk.id,
-            embeddingInputType: "document"
-          });
+          const generated = await this.options.generateEmbedding(
+            renderPrompt("embedding.content.chunk", { source_text: chunk.content }),
+            signal,
+            {
+              jobId: job.id,
+              ingestionRunId,
+              sourceItemId,
+              documentId,
+              stage: "embedding",
+              chunkId: chunk.id,
+              embeddingInputType: "document"
+            }
+          );
           if (!generated) break;
-          if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey) throw new Error("errors.sourceRelations.configurationChanged");
-          const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
-          const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+          if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey)
+            throw new Error("errors.sourceRelations.configurationChanged");
+          const validated = await this.workers.execute(
+            "embedding",
+            { embedding: generated.embedding },
+            { signal }
+          );
+          const embedding = Array.isArray(validated.embedding)
+            ? validated.embedding.map(Number)
+            : [];
           await embeddings.upsert({
-            targetType: "chunk", targetId: chunk.id, chunkId: chunk.id,
-            provider: generated.provider, model: generated.model, runtime: generated.runtime,
+            targetType: "chunk",
+            targetId: chunk.id,
+            chunkId: chunk.id,
+            provider: generated.provider,
+            model: generated.model,
+            runtime: generated.runtime,
             strategy: generated.spaceKey ? `native-v2:${generated.spaceKey}` : "native",
-            contentHash: chunk.contentHash, embedding
+            contentHash: chunk.contentHash,
+            embedding
           });
           chunkVectors.push(embedding);
           embeddingIdentity = generated;
@@ -446,13 +610,21 @@ export class JobSupervisor {
               embeddingInputType: "document"
             });
             if (!generated) break;
-            if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey) throw new Error("errors.sourceRelations.configurationChanged");
-            const validated = await this.workers.execute("embedding", { embedding: generated.embedding }, { signal });
-            const embedding = Array.isArray(validated.embedding) ? validated.embedding.map(Number) : [];
+            if (embeddingIdentity?.spaceKey && generated.spaceKey !== embeddingIdentity.spaceKey)
+              throw new Error("errors.sourceRelations.configurationChanged");
+            const validated = await this.workers.execute(
+              "embedding",
+              { embedding: generated.embedding },
+              { signal }
+            );
+            const embedding = Array.isArray(validated.embedding)
+              ? validated.embedding.map(Number)
+              : [];
             headerVectors.push(embedding);
             embeddingIdentity = generated;
           }
-          const descendants = await createHierarchicalIngestionRepository(pool).listDescendants(sourceItemId);
+          const descendants =
+            await createHierarchicalIngestionRepository(pool).listDescendants(sourceItemId);
           let contentVectors = chunkVectors;
           let hierarchyContentComplete = true;
           if (descendants.length > 0 && embeddingIdentity) {
@@ -462,7 +634,9 @@ export class JobSupervisor {
                 descendants.map((descendant) => descendant.id),
                 embeddingIdentity.model,
                 dimensions,
-                embeddingIdentity.spaceKey ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}` : undefined
+                embeddingIdentity.spaceKey
+                  ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}`
+                  : undefined
               );
               hierarchyContentComplete = childVectors.length === descendants.length;
               contentVectors = childVectors.map((item) => item.embedding);
@@ -481,7 +655,9 @@ export class JobSupervisor {
               provider: embeddingIdentity.provider,
               model: embeddingIdentity.model,
               runtime: embeddingIdentity.runtime,
-              strategy: embeddingIdentity.spaceKey ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}` : "source-composite-centroid-v1",
+              strategy: embeddingIdentity.spaceKey
+                ? `source-composite-centroid-v2:${embeddingIdentity.spaceKey}`
+                : "source-composite-centroid-v1",
               contentHash: sourceContentHash,
               embedding: sourceEmbedding
             });
@@ -512,12 +688,17 @@ export class JobSupervisor {
         ? await this.runInlineStageJob(
             "atomic-note-generation",
             { ingestionRunId, sourceItemId, documentId },
-            (jobId) => this.options.knowledgeService!.generateAtomicNotes(
-              sourceItemId,
-              documentId,
-              { jobId, ingestionRunId, onProgress: (progress) => this.reportInlineProgress(jobId, progress) },
-              signal
-            ),
+            (jobId) =>
+              this.options.knowledgeService!.generateAtomicNotes(
+                sourceItemId,
+                documentId,
+                {
+                  jobId,
+                  ingestionRunId,
+                  onProgress: (progress) => this.reportInlineProgress(jobId, progress)
+                },
+                signal
+              ),
             controller
           )
         : { configured: false, generatedCount: 0, noteIds: [] };
@@ -536,41 +717,42 @@ export class JobSupervisor {
         ? await this.runInlineStageJob(
             "knowledge-graph-generation",
             { ingestionRunId, sourceItemId, documentId },
-            (stageJobId) => (catalogMetadataOnly
-              ? this.options.knowledgeService!.generateCatalogKnowledgeGraph(
-                  sourceItemId,
-                  documentId,
-                  {
-                    jobId: stageJobId,
-                    ingestionRunId,
-                    onProgress: (progress) => this.reportInlineProgress(stageJobId, progress)
-                  },
-                  signal
-                )
-              : this.options.knowledgeService!.generateKnowledgeGraph(
-              sourceItemId,
-              documentId,
-              {
-                jobId: stageJobId,
-                ingestionRunId,
-                includeAtomicNotesGraph: shouldRun("atomicNotes"),
-                completedBatches: graphMetadata?.completedBatches,
-                onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
-                onBatchCompleted: async ({ completed, total, checkpoints }) => {
-                  const progress = total > 0 ? completed / total : 1;
-                  await Promise.all([
-                    createJobRepository(pool).reportProgress(stageJobId, progress),
-                    createJobRepository(pool).reportProgress(job.id, 0.84 + progress * 0.05),
-                    runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, {
-                      completed,
-                      total,
-                      completedBatches: checkpoints
-                    })
-                  ]);
-                }
-              },
-              signal
-            )),
+            (stageJobId) =>
+              catalogMetadataOnly
+                ? this.options.knowledgeService!.generateCatalogKnowledgeGraph(
+                    sourceItemId,
+                    documentId,
+                    {
+                      jobId: stageJobId,
+                      ingestionRunId,
+                      onProgress: (progress) => this.reportInlineProgress(stageJobId, progress)
+                    },
+                    signal
+                  )
+                : this.options.knowledgeService!.generateKnowledgeGraph(
+                    sourceItemId,
+                    documentId,
+                    {
+                      jobId: stageJobId,
+                      ingestionRunId,
+                      includeAtomicNotesGraph: shouldRun("atomicNotes"),
+                      completedBatches: graphMetadata?.completedBatches,
+                      onProgress: (progress) => this.reportInlineProgress(stageJobId, progress),
+                      onBatchCompleted: async ({ completed, total, checkpoints }) => {
+                        const progress = total > 0 ? completed / total : 1;
+                        await Promise.all([
+                          createJobRepository(pool).reportProgress(stageJobId, progress),
+                          createJobRepository(pool).reportProgress(job.id, 0.84 + progress * 0.05),
+                          runs.updateStageProgress(ingestionRunId, "knowledgeGraph", progress, {
+                            completed,
+                            total,
+                            completedBatches: checkpoints
+                          })
+                        ]);
+                      }
+                    },
+                    signal
+                  ),
             controller
           )
         : { configured: false, generated: false, projected: false };
@@ -581,50 +763,100 @@ export class JobSupervisor {
     await createJobRepository(pool).reportProgress(job.id, 0.89);
     const batchId = run.batchId ?? optionalString(job.payload.batchId);
     const noteMatchingRuns = batchId
-      ? (await runs.listByBatch(batchId)).filter((item) => participatesInAtomicNoteMatching(item.effectiveStages))
-      : shouldRun("atomicNoteMatching") ? [run] : [];
-    const pendingNoteMatching = noteMatchingRuns.filter((item) => item.sourceItemId
-      && (item.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined)?.status !== "completed");
+      ? (await runs.listByBatch(batchId)).filter((item) =>
+          participatesInAtomicNoteMatching(item.effectiveStages)
+        )
+      : shouldRun("atomicNoteMatching")
+        ? [run]
+        : [];
+    const pendingNoteMatching = noteMatchingRuns.filter(
+      (item) =>
+        item.sourceItemId &&
+        (item.stagesCheckpoint.atomicNoteMatching as JsonObject | undefined)?.status !== "completed"
+    );
     if (pendingNoteMatching.length > 0) {
-      const waiting = batchId ? await runs.countIncompleteBatchStage(batchId,"atomicNotes") > 0 : false;
+      const waiting = batchId
+        ? (await runs.countIncompleteBatchStage(batchId, "atomicNotes")) > 0
+        : false;
       if (waiting) {
-        if (shouldRun("atomicNoteMatching")) await runs.waitForBatchStage(ingestionRunId,"atomicNoteMatching");
+        if (shouldRun("atomicNoteMatching"))
+          await runs.waitForBatchStage(ingestionRunId, "atomicNoteMatching");
       } else {
         const failures = await runIndividualStageBatch({
-          runs: pendingNoteMatching, signal,
+          runs: pendingNoteMatching,
+          signal,
           wait: async (item) => {
-            await runs.waitForBatchStage(item.id,"atomicNoteMatching");
-            await runs.update(item.id,{currentStage:"atomicNoteMatching"});
+            await runs.waitForBatchStage(item.id, "atomicNoteMatching");
+            await runs.update(item.id, { currentStage: "atomicNoteMatching" });
             this.notify();
           },
           start: async (item) => {
-            await runs.updateStageProgress(item.id,"atomicNoteMatching",0,{});
+            await runs.updateStageProgress(item.id, "atomicNoteMatching", 0, {});
             this.notify();
           },
           process: async (item) => {
             const itemSourceId = item.sourceItemId!;
-            const itemNoteIds = (await createAtomicNoteRepository(pool).listBySourceItem(itemSourceId))
-              .filter((note) => note.status !== "rejected").map((note) => note.id);
-            const itemDocumentId = item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
-            const itemContext = {ingestionRunId:item.id,sourceItemId:itemSourceId,
-              ...(itemDocumentId ? {documentId:itemDocumentId} : {})};
+            const itemNoteIds = (
+              await createAtomicNoteRepository(pool).listBySourceItem(itemSourceId)
+            )
+              .filter((note) => note.status !== "rejected")
+              .map((note) => note.id);
+            const itemDocumentId =
+              item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
+            const itemContext = {
+              ingestionRunId: item.id,
+              sourceItemId: itemSourceId,
+              ...(itemDocumentId ? { documentId: itemDocumentId } : {})
+            };
             return this.options.knowledgeService && itemNoteIds.length > 0
-              ? this.runInlineStageJob("atomic-note-matching",{...itemContext,noteIds:itemNoteIds},
-                async (stageJobId) => {
-                  await runs.updateStageProgress(item.id,"atomicNoteMatching",0,{completed:0,total:itemNoteIds.length});
-                  const matching = await this.options.knowledgeService!.matchAtomicNotes(itemNoteIds,signal,
-                    async (progress) => {
-                      const completed = Math.min(itemNoteIds.length,Math.floor(progress * itemNoteIds.length));
-                      await createJobRepository(pool).reportProgress(stageJobId,progress);
-                      await runs.updateStageProgress(item.id,"atomicNoteMatching",progress,{completed,total:itemNoteIds.length});
-                      this.notify();
-                    }, {...itemContext,jobId:stageJobId,stage:"atomic_note_matching"});
-                  return {...matching,completed:itemNoteIds.length,total:itemNoteIds.length};
-                },controller)
-              : {persistedCount:0,completed:0,total:0};
+              ? this.runInlineStageJob(
+                  "atomic-note-matching",
+                  { ...itemContext, noteIds: itemNoteIds },
+                  async (stageJobId) => {
+                    await runs.updateStageProgress(item.id, "atomicNoteMatching", 0, {
+                      completed: 0,
+                      total: itemNoteIds.length
+                    });
+                    const matching = await this.options.knowledgeService!.matchAtomicNotes(
+                      itemNoteIds,
+                      signal,
+                      async (progress) => {
+                        const completed = Math.min(
+                          itemNoteIds.length,
+                          Math.floor(progress * itemNoteIds.length)
+                        );
+                        await createJobRepository(pool).reportProgress(stageJobId, progress);
+                        await runs.updateStageProgress(item.id, "atomicNoteMatching", progress, {
+                          completed,
+                          total: itemNoteIds.length
+                        });
+                        this.notify();
+                      },
+                      { ...itemContext, jobId: stageJobId, stage: "atomic_note_matching" }
+                    );
+                    return {
+                      ...matching,
+                      completed: itemNoteIds.length,
+                      total: itemNoteIds.length
+                    };
+                  },
+                  controller
+                )
+              : { persistedCount: 0, completed: 0, total: 0 };
           },
-          complete: async (item,result) => {await runs.completeStage(item.id,"atomicNoteMatching",result);this.notify();},
-          fail: async (item,error) => {await runs.failStage(item.id,"atomicNoteMatching",normalizeWorkerError(error),signal.aborted);this.notify();}
+          complete: async (item, result) => {
+            await runs.completeStage(item.id, "atomicNoteMatching", result);
+            this.notify();
+          },
+          fail: async (item, error) => {
+            await runs.failStage(
+              item.id,
+              "atomicNoteMatching",
+              normalizeWorkerError(error),
+              signal.aborted
+            );
+            this.notify();
+          }
         });
         if (failures.has(ingestionRunId)) throw failures.get(ingestionRunId);
       }
@@ -634,54 +866,87 @@ export class JobSupervisor {
     // A collective stage runs after every selected summary/embedding and optional note match.
     // The final participant may be a catalog job, so inspect the batch rather than only this run.
     const sourceMatchingRuns = batchId
-      ? (await runs.listByBatch(batchId)).filter((item) => item.effectiveStages.includes("sourceMatching"))
-      : effectiveStages.has("sourceMatching") ? [run] : [];
-    const pendingSourceMatching = sourceMatchingRuns.filter((item) =>
-      (item.stagesCheckpoint.sourceMatching as JsonObject | undefined)?.status !== "completed");
+      ? (await runs.listByBatch(batchId)).filter((item) =>
+          item.effectiveStages.includes("sourceMatching")
+        )
+      : effectiveStages.has("sourceMatching")
+        ? [run]
+        : [];
+    const pendingSourceMatching = sourceMatchingRuns.filter(
+      (item) =>
+        (item.stagesCheckpoint.sourceMatching as JsonObject | undefined)?.status !== "completed"
+    );
     if (pendingSourceMatching.length > 0) {
-      const waiting = batchId ? (await Promise.all(["summarization", "embedding", "atomicNotes", "atomicNoteMatching"]
-        .map((stage) => runs.countIncompleteBatchStage(batchId,stage)))).some((count) => count > 0) : false;
+      const waiting = batchId
+        ? (
+            await Promise.all(
+              ["summarization", "embedding", "atomicNotes", "atomicNoteMatching"].map((stage) =>
+                runs.countIncompleteBatchStage(batchId, stage)
+              )
+            )
+          ).some((count) => count > 0)
+        : false;
       if (waiting) {
-        if (effectiveStages.has("sourceMatching")) await runs.waitForBatchStage(ingestionRunId,"sourceMatching");
+        if (effectiveStages.has("sourceMatching"))
+          await runs.waitForBatchStage(ingestionRunId, "sourceMatching");
       } else if (this.options.knowledgeService) {
         const failures = await runIndividualStageBatch({
-          runs: pendingSourceMatching.filter((item) => item.sourceItemId !== null), signal,
+          runs: pendingSourceMatching.filter((item) => item.sourceItemId !== null),
+          signal,
           wait: async (item) => {
-            await runs.waitForBatchStage(item.id,"sourceMatching");
-            await runs.update(item.id,{currentStage:"sourceMatching"});
+            await runs.waitForBatchStage(item.id, "sourceMatching");
+            await runs.update(item.id, { currentStage: "sourceMatching" });
             this.notify();
           },
           start: async (item) => {
-            await runs.updateStageProgress(item.id,"sourceMatching",0,{});
+            await runs.updateStageProgress(item.id, "sourceMatching", 0, {});
             this.notify();
           },
           process: (item) => {
             const itemSourceId = item.sourceItemId!;
-            const itemDocumentId = item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
-            const itemContext = {ingestionRunId:item.id,sourceItemId:itemSourceId,
-              ...(itemDocumentId ? {documentId:itemDocumentId} : {})};
-            return this.runInlineStageJob("source-matching",itemContext,
-              (stageJobId) => this.options.knowledgeService!.matchSourceRelations(
-                [itemSourceId],batchId ?? item.id,signal,
-                async (progress, counts) => {
-                  await this.reportInlineProgress(stageJobId,progress);
-                  await runs.updateStageProgress(item.id,"sourceMatching",progress,counts);
-                  this.notify();
-                }, {...itemContext,jobId:stageJobId,stage:"sourceMatching"},
-                job.payload.regenerateSourceRelations === true || item.previousArtifactPolicy === "regenerate_selected"
-              ),controller);
+            const itemDocumentId =
+              item.id === ingestionRunId ? documentId : item.inputDocumentRevisionId;
+            const itemContext = {
+              ingestionRunId: item.id,
+              sourceItemId: itemSourceId,
+              ...(itemDocumentId ? { documentId: itemDocumentId } : {})
+            };
+            return this.runInlineStageJob(
+              "source-matching",
+              itemContext,
+              (stageJobId) =>
+                this.options.knowledgeService!.matchSourceRelations(
+                  [itemSourceId],
+                  batchId ?? item.id,
+                  signal,
+                  async (progress, counts) => {
+                    await this.reportInlineProgress(stageJobId, progress);
+                    await runs.updateStageProgress(item.id, "sourceMatching", progress, counts);
+                    this.notify();
+                  },
+                  { ...itemContext, jobId: stageJobId, stage: "sourceMatching" },
+                  job.payload.regenerateSourceRelations === true ||
+                    item.previousArtifactPolicy === "regenerate_selected"
+                ),
+              controller
+            );
           },
-          complete: async (item,result) => {
-            await runs.completeStage(item.id,"sourceMatching",result);
+          complete: async (item, result) => {
+            await runs.completeStage(item.id, "sourceMatching", result);
             this.notify();
           },
-          fail: async (item,error) => {
-            await runs.failStage(item.id,"sourceMatching",normalizeWorkerError(error),signal.aborted);
+          fail: async (item, error) => {
+            await runs.failStage(
+              item.id,
+              "sourceMatching",
+              normalizeWorkerError(error),
+              signal.aborted
+            );
             this.notify();
           }
         });
         if (failures.has(ingestionRunId)) {
-          await runs.update(ingestionRunId,{currentStage:"sourceMatching"});
+          await runs.update(ingestionRunId, { currentStage: "sourceMatching" });
           throw failures.get(ingestionRunId);
         }
       }
@@ -701,23 +966,31 @@ export class JobSupervisor {
       this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
-    if(effectiveStages.has("organizeKnowledge"))await runs.waitForBatchStage(ingestionRunId,"organizeKnowledge");
+    if (effectiveStages.has("organizeKnowledge"))
+      await runs.waitForBatchStage(ingestionRunId, "organizeKnowledge");
     await runs.complete(ingestionRunId);
     this.notify();
     return { ingestionRunId, documentId, sourceItemId };
   }
 
   private async createContentChunks(job: JobRecord, markdown: string, signal: AbortSignal) {
-    const chunkResult = await this.workers.execute("chunking", {
-      markdown,
-      blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
-    }, {
-      signal,
-      onProgress: (progress) => this.trackProgress(
-        createJobRepository(this.requirePool()).reportProgress(job.id, 0.05 + progress * 0.3)
-      )
-    });
-    return (Array.isArray(chunkResult.chunks) ? chunkResult.chunks : []).map((raw) => parseWorkerChunk(raw));
+    const chunkResult = await this.workers.execute(
+      "chunking",
+      {
+        markdown,
+        blocks: Array.isArray(job.payload.blocks) ? job.payload.blocks : []
+      },
+      {
+        signal,
+        onProgress: (progress) =>
+          this.trackProgress(
+            createJobRepository(this.requirePool()).reportProgress(job.id, 0.05 + progress * 0.3)
+          )
+      }
+    );
+    return (Array.isArray(chunkResult.chunks) ? chunkResult.chunks : []).map((raw) =>
+      parseWorkerChunk(raw)
+    );
   }
 
   private async runInlineStageJob(
@@ -727,7 +1000,7 @@ export class JobSupervisor {
     controller?: AbortController
   ): Promise<Record<string, unknown>> {
     const repository = createJobRepository(this.requirePool());
-    payload={...payload,promptPin:capturePromptPin()};
+    payload = { ...payload, promptPin: capturePromptPin() };
     const job = await repository.create({ type, payload, maxAttempts: 1 });
     await repository.update(job.id, {
       status: "running",
@@ -738,7 +1011,17 @@ export class JobSupervisor {
     this.notify();
     if (controller) this.controllers.set(job.id, controller);
     try {
-      const result = await (this.options.traceOperation?.(type, { jobId: job.id, ingestionRunId: payload.ingestionRunId, sourceItemId: payload.sourceItemId, documentId: payload.documentId, origin: "ingestion" }, () => run(job.id)) ?? run(job.id));
+      const result = await (this.options.traceOperation?.(
+        type,
+        {
+          jobId: job.id,
+          ingestionRunId: payload.ingestionRunId,
+          sourceItemId: payload.sourceItemId,
+          documentId: payload.documentId,
+          origin: "ingestion"
+        },
+        () => run(job.id)
+      ) ?? run(job.id));
       await repository.update(job.id, {
         status: "succeeded",
         progress: 1,
@@ -751,25 +1034,33 @@ export class JobSupervisor {
       this.notify();
       return result;
     } catch (error) {
-      logStructuredError(this.options.logger, "job_failed", {
-        jobId: job.id,
-        jobType: type,
-        ingestionRunId: optionalString(payload.ingestionRunId),
-        sourceItemId: optionalString(payload.sourceItemId),
-        documentId: optionalString(payload.documentId),
-        stage: type
-      }, error, "job_failed");
+      logStructuredError(
+        this.options.logger,
+        "job_failed",
+        {
+          jobId: job.id,
+          jobType: type,
+          ingestionRunId: optionalString(payload.ingestionRunId),
+          sourceItemId: optionalString(payload.sourceItemId),
+          documentId: optionalString(payload.documentId),
+          stage: type
+        },
+        error,
+        "job_failed"
+      );
       const canceled = controller?.signal.aborted ?? false;
       const normalizedError = normalizeWorkerError(error);
       await repository.update(job.id, {
         status: canceled ? "canceled" : "failed",
         error: canceled ? null : normalizedError,
-        payload: canceled ? payload : appendErrorHistory(payload, {
-          message: normalizedError,
-          stage: type,
-          attempt: 1,
-          occurredAt: new Date().toISOString()
-        }),
+        payload: canceled
+          ? payload
+          : appendErrorHistory(payload, {
+              message: normalizedError,
+              stage: type,
+              attempt: 1,
+              occurredAt: new Date().toISOString()
+            }),
         lockedAt: null,
         lockedBy: null,
         finishedAt: new Date()
@@ -828,9 +1119,10 @@ function readString(payload: Record<string, unknown>, key: string): string {
 function parseWorkerChunk(raw: unknown) {
   if (typeof raw !== "object" || raw === null) throw new Error("invalid_worker_chunk");
   const value = raw as Record<string, unknown>;
-  const boundingBox = typeof value.boundingBox === "object" && value.boundingBox !== null
-    ? value.boundingBox as JsonObject
-    : null;
+  const boundingBox =
+    typeof value.boundingBox === "object" && value.boundingBox !== null
+      ? (value.boundingBox as JsonObject)
+      : null;
   return {
     id: readString(value, "id"),
     sourceSpanId: readString(value, "sourceSpanId"),
@@ -851,7 +1143,10 @@ function parseWorkerChunk(raw: unknown) {
 }
 
 export async function persistCatalogMetadataChunk(
-  repository: Pick<ReturnType<typeof createChunkRepository>, "listByDocument" | "replaceDocumentChunks">,
+  repository: Pick<
+    ReturnType<typeof createChunkRepository>,
+    "listByDocument" | "replaceDocumentChunks"
+  >,
   documentId: string,
   sourceItemId: string,
   content: string
@@ -859,10 +1154,15 @@ export async function persistCatalogMetadataChunk(
   const chunk = createCatalogMetadataChunk(content);
   const existing = await repository.listByDocument(documentId);
   // Replacing identical catalog chunks cascades to graph evidence even when only embedding was requested.
-  if (existing.length === 1 && existing[0]!.sourceItemId === sourceItemId
-    && existing[0]!.content === content && existing[0]!.contentHash === chunk.contentHash
-    && existing[0]!.chunkingVersion === chunk.chunkingVersion
-    && existing[0]!.metadata.processingMode === "catalog_metadata") return existing;
+  if (
+    existing.length === 1 &&
+    existing[0]!.sourceItemId === sourceItemId &&
+    existing[0]!.content === content &&
+    existing[0]!.contentHash === chunk.contentHash &&
+    existing[0]!.chunkingVersion === chunk.chunkingVersion &&
+    existing[0]!.metadata.processingMode === "catalog_metadata"
+  )
+    return existing;
   return repository.replaceDocumentChunks(documentId, sourceItemId, [chunk]);
 }
 
@@ -889,7 +1189,10 @@ export function createCatalogMetadataChunk(content: string) {
   };
 }
 
-export function aggregateSourceEmbedding(headerVectors: number[][], contentVectors: number[][]): number[] | null {
+export function aggregateSourceEmbedding(
+  headerVectors: number[][],
+  contentVectors: number[][]
+): number[] | null {
   const dimensions = headerVectors[0]?.length ?? contentVectors[0]?.length;
   if (!dimensions) return null;
   const compatibleHeaders = headerVectors.filter((vector) => vector.length === dimensions);
@@ -897,9 +1200,10 @@ export function aggregateSourceEmbedding(headerVectors: number[][], contentVecto
   const header = meanVector(compatibleHeaders);
   const content = meanVector(compatibleContent);
   if (!header && !content) return null;
-  const combined = Array.from({ length: dimensions }, (_, index) =>
-    (header?.[index] ?? 0) * (content ? 0.35 : 1)
-      + (content?.[index] ?? 0) * (header ? 0.65 : 1)
+  const combined = Array.from(
+    { length: dimensions },
+    (_, index) =>
+      (header?.[index] ?? 0) * (content ? 0.35 : 1) + (content?.[index] ?? 0) * (header ? 0.65 : 1)
   );
   const magnitude = Math.sqrt(combined.reduce((sum, value) => sum + value * value, 0));
   return magnitude > 0 ? combined.map((value) => value / magnitude) : combined;
@@ -908,8 +1212,9 @@ export function aggregateSourceEmbedding(headerVectors: number[][], contentVecto
 function meanVector(vectors: number[][]): number[] | null {
   const dimensions = vectors[0]?.length;
   if (!dimensions) return null;
-  return Array.from({ length: dimensions }, (_, index) =>
-    vectors.reduce((sum, vector) => sum + (vector[index] ?? 0), 0) / vectors.length
+  return Array.from(
+    { length: dimensions },
+    (_, index) => vectors.reduce((sum, vector) => sum + (vector[index] ?? 0), 0) / vectors.length
   );
 }
 
@@ -923,7 +1228,9 @@ function normalizeWorkerError(error: unknown): string {
 }
 
 function readStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function optionalString(value: unknown): string | undefined {

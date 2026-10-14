@@ -42,10 +42,9 @@ export function createProcessingTaskRepository(pool: PgPool) {
            where id = $1 or payload->>'ingestionRunId' = $2`,
           [jobId, target.runId]
         );
-        const deletedRuns = await client.query(
-          `delete from ingestion_runs where id = $1`,
-          [target.runId]
-        );
+        const deletedRuns = await client.query(`delete from ingestion_runs where id = $1`, [
+          target.runId
+        ]);
 
         let deletedBatch = false;
         if (target.batchId) {
@@ -54,10 +53,9 @@ export function createProcessingTaskRepository(pool: PgPool) {
             [target.batchId]
           );
           if (Number(remainingResult.rows[0]?.count ?? 0) === 0) {
-            const batchResult = await client.query(
-              `delete from processing_batches where id = $1`,
-              [target.batchId]
-            );
+            const batchResult = await client.query(`delete from processing_batches where id = $1`, [
+              target.batchId
+            ]);
             deletedBatch = (batchResult.rowCount ?? 0) > 0;
           }
         }

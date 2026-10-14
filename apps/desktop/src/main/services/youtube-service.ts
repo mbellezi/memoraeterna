@@ -20,9 +20,13 @@ export class YouTubeService {
     const basic = info.basic_info ?? {};
     const title = readString(basic.title) ?? fallbackTitle ?? videoId;
     const channel = basic.channel;
-    const author = readString(basic.author) ?? readString(
-      channel && typeof channel === "object" ? (channel as Record<string, unknown>).name : undefined
-    );
+    const author =
+      readString(basic.author) ??
+      readString(
+        channel && typeof channel === "object"
+          ? (channel as Record<string, unknown>).name
+          : undefined
+      );
     const durationSeconds = readNumber(basic.duration);
     const shortDescription = readString(basic.short_description);
     let transcriptSegments: string[] = [];
@@ -60,7 +64,7 @@ export class YouTubeService {
 async function loadYoutubeInfo(videoId: string): Promise<YouTubeInfoLike> {
   const { Innertube } = await import("youtubei.js");
   const client = await Innertube.create({ generate_session_locally: true });
-  return await client.getInfo(videoId) as unknown as YouTubeInfoLike;
+  return (await client.getInfo(videoId)) as unknown as YouTubeInfoLike;
 }
 
 function collectTranscriptText(value: unknown): string[] {
@@ -76,10 +80,13 @@ function collectTranscriptText(value: unknown): string[] {
       return;
     }
     const record = current as Record<string, unknown>;
-    const text = readString(record.text)
-      ?? readString(record.snippet && typeof record.snippet === "object"
-        ? (record.snippet as Record<string, unknown>).text
-        : undefined);
+    const text =
+      readString(record.text) ??
+      readString(
+        record.snippet && typeof record.snippet === "object"
+          ? (record.snippet as Record<string, unknown>).text
+          : undefined
+      );
     const start = readNumber(record.start_ms) ?? readNumber(record.startMs);
     if (text && (start !== undefined || "snippet" in record)) result.push(text.trim());
     for (const nested of Object.values(record)) visit(nested);
@@ -97,6 +104,7 @@ function readString(value: unknown): string | undefined {
 }
 
 function readNumber(value: unknown): number | undefined {
-  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  const parsed =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
   return Number.isFinite(parsed) ? parsed : undefined;
 }

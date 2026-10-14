@@ -1,4 +1,7 @@
-import { persistKnowledgeGeneration,type KnowledgeGenerationInput } from "./hierarchicalIngestionRepository.js";
+import {
+  persistKnowledgeGeneration,
+  type KnowledgeGenerationInput
+} from "./hierarchicalIngestionRepository.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 
@@ -56,13 +59,22 @@ export interface ReplaceKnowledgeGraphInput {
   language: string;
   batches: KnowledgeGraphBatchInput[];
   generation: JsonObject;
-  generationReceipt?: Omit<KnowledgeGenerationInput,"sourceItemId"|"stage">;
+  generationReceipt?: Omit<KnowledgeGenerationInput, "sourceItemId" | "stage">;
 }
 
 export interface AtomicNoteGraphElements {
   entities: Array<{ id: string; type: string; name: string; confidence: number }>;
   claims: Array<{ id: string; text: string; confidence: number }>;
-  relations: Array<{ id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number }>;
+  relations: Array<{
+    id: string;
+    subject: string;
+    subjectEntityId?: string;
+    objectEntityId?: string;
+    predicate: string;
+    displayLabel?: string;
+    object: string;
+    confidence: number;
+  }>;
 }
 
 export interface AtomicNoteGraphCandidate {
@@ -75,18 +87,23 @@ export interface SourceGraphElements {
   entities: Array<{ id: string; type: string; name: string; confidence: number }>;
   relations: Array<{
     id: string;
-    subject: string; subjectEntityId?: string; objectEntityId?: string;
-    predicate: string; displayLabel?: string;
+    subject: string;
+    subjectEntityId?: string;
+    objectEntityId?: string;
+    predicate: string;
+    displayLabel?: string;
     object: string;
     confidence: number;
   }>;
   sourceConnections: Array<{
     sourceItemId: string;
     sourceTitle: string;
-    entityId?: string; relatedEntityId?: string;
+    entityId?: string;
+    relatedEntityId?: string;
     entityName: string;
     relatedEntityName: string;
-    predicate: string; displayLabel?: string;
+    predicate: string;
+    displayLabel?: string;
     confidence: number;
   }>;
 }
@@ -158,22 +175,38 @@ const entityReturning = `id, type, canonical_name as "canonicalName", normalized
 
 export function createKnowledgeGraphRepository(pool: PgPool) {
   return {
-    async queueRelationLabels(payload: { mode: "missing" | "all"; contentLanguage: string }): Promise<string> {
+    async queueRelationLabels(payload: {
+      mode: "missing" | "all";
+      contentLanguage: string;
+    }): Promise<string> {
       const client = await pool.connect();
       try {
         await client.query("begin");
         await client.query("select pg_advisory_xact_lock(hashtext('relation-labels'))");
         const repository = createJobRepository(client);
         const latest = await repository.latestByType("relation-labels");
-        const job = latest && ["queued", "running"].includes(latest.status) ? latest
-          : await repository.create({ type: "relation-labels", payload: { ...payload, before: new Date().toISOString() } });
+        const job =
+          latest && ["queued", "running"].includes(latest.status)
+            ? latest
+            : await repository.create({
+                type: "relation-labels",
+                payload: { ...payload, before: new Date().toISOString() }
+              });
         await client.query("commit");
         return job.id;
-      } catch (error) { await client.query("rollback"); throw error; }
-      finally { client.release(); }
+      } catch (error) {
+        await client.query("rollback");
+        throw error;
+      } finally {
+        client.release();
+      }
     },
 
-    async countRelationLabels(input: { jobId: string; mode: "missing" | "all"; before: string }): Promise<number> {
+    async countRelationLabels(input: {
+      jobId: string;
+      mode: "missing" | "all";
+      before: string;
+    }): Promise<number> {
       const result = await pool.query<{ count: string }>(
         `select count(*)::text as count from entity_relations r
          where r.created_at <= $1::timestamptz
@@ -186,7 +219,13 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
 
     async listRelationLabels(input: { jobId: string; mode: "missing" | "all"; before: string }) {
       const result = await pool.query<{
-        id: string; predicate: string; subject: string; subjectEntityId?: string; objectEntityId?: string; object: string; sourceItemId: string | null;
+        id: string;
+        predicate: string;
+        subject: string;
+        subjectEntityId?: string;
+        objectEntityId?: string;
+        object: string;
+        sourceItemId: string | null;
       }>(
         `select r.id, r.predicate, s.canonical_name as subject, o.canonical_name as object,
                 r.source_item_id as "sourceItemId"
@@ -195,12 +234,16 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          where r.created_at <= $1::timestamptz
            and coalesce(r.metadata->>'labelJobId', '') <> $2
            and ($3 = 'all' or coalesce(trim(r.metadata->>'displayLabel'), '') = '')
-         order by r.id limit 20`, [input.before, input.jobId, input.mode]
+         order by r.id limit 20`,
+        [input.before, input.jobId, input.mode]
       );
       return result.rows;
     },
 
-    async saveRelationLabels(labels: Array<{ id: string; displayLabel: string }>, metadata: JsonObject) {
+    async saveRelationLabels(
+      labels: Array<{ id: string; displayLabel: string }>,
+      metadata: JsonObject
+    ) {
       const client = await pool.connect();
       try {
         await client.query("begin");
@@ -217,12 +260,15 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       } catch (error) {
         await client.query("rollback");
         throw error;
-      } finally { client.release(); }
+      } finally {
+        client.release();
+      }
     },
 
     async relationLabelProgress(jobId: string): Promise<number> {
       const result = await pool.query<{ count: string }>(
-        "select count(*)::text as count from entity_relations where metadata->>'labelJobId' = $1", [jobId]
+        "select count(*)::text as count from entity_relations where metadata->>'labelJobId' = $1",
+        [jobId]
       );
       return Number(result.rows[0]?.count ?? 0);
     },
@@ -231,7 +277,9 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       const client = await pool.connect();
       try {
         await prepareAge(client);
-        const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [graphName]);
+        const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [
+          graphName
+        ]);
         if (existing.rowCount !== 0) {
           await client.query("select ag_catalog.drop_graph($1, $2)", [graphName, true]);
         }
@@ -250,16 +298,22 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       const client = await pool.connect();
       try {
         await client.query("begin");
-        await client.query("select id from source_items where id=$1 for update",[input.sourceItemId]);
+        await client.query("select id from source_items where id=$1 for update", [
+          input.sourceItemId
+        ]);
         await client.query(
           `delete from atomic_note_entity_links where atomic_note_id in (
              select id from atomic_notes where created_from_source_item_id = $1
            )`,
           [input.sourceItemId]
         );
-        await client.query("delete from entity_relations where source_item_id = $1", [input.sourceItemId]);
+        await client.query("delete from entity_relations where source_item_id = $1", [
+          input.sourceItemId
+        ]);
         await client.query("delete from claims where source_item_id = $1", [input.sourceItemId]);
-        await client.query("delete from entity_mentions where source_item_id = $1", [input.sourceItemId]);
+        await client.query("delete from entity_mentions where source_item_id = $1", [
+          input.sourceItemId
+        ]);
 
         const entityIds = new Set<string>();
         let mentionCount = 0;
@@ -283,8 +337,15 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                  updated_at = now()
                returning ${entityReturning}`,
               [
-                entity.type, entity.canonicalName, normalizedName, JSON.stringify([...new Set([entity.canonicalName, ...entity.aliases])]),
-                entity.description ?? null, input.language, entity.confidence, input.generation, entity.canonicalEntityId ?? randomUUID()
+                entity.type,
+                entity.canonicalName,
+                normalizedName,
+                JSON.stringify([...new Set([entity.canonicalName, ...entity.aliases])]),
+                entity.description ?? null,
+                input.language,
+                entity.confidence,
+                input.generation,
+                entity.canonicalEntityId ?? randomUUID()
               ]
             );
             const row = result.rows[0];
@@ -303,7 +364,14 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                    confidence = greatest(entity_mentions.confidence, excluded.confidence),
                    metadata = excluded.metadata
                  returning id`,
-                [mapped.id, input.sourceItemId, entity.canonicalName, entity.confidence, input.generation, chunkId]
+                [
+                  mapped.id,
+                  input.sourceItemId,
+                  entity.canonicalName,
+                  entity.confidence,
+                  input.generation,
+                  chunkId
+                ]
               );
               mentionCount += mention.rowCount ?? 0;
             }
@@ -327,8 +395,12 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                  updated_at = now()
                returning id`,
               [
-                input.sourceItemId, claim.text, hash, claim.confidence,
-                { ...input.generation, evidenceChunkIds: claim.evidenceChunkIds }, evidenceChunkId
+                input.sourceItemId,
+                claim.text,
+                hash,
+                claim.confidence,
+                { ...input.generation, evidenceChunkIds: claim.evidenceChunkIds },
+                evidenceChunkId
               ]
             );
             const claimId = result.rows[0]?.id;
@@ -360,7 +432,22 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
                  do update set confidence = greatest(entity_relations.confidence, excluded.confidence),
                    relation_type_id = excluded.relation_type_id, metadata = excluded.metadata, updated_at = now()
                  returning id`,
-                [subjectId, relation.predicate, objectId, input.sourceItemId, relation.confidence, { ...input.generation, ...(relation.originalPredicate ? { originalPredicate: relation.originalPredicate } : {}), ...(relation.displayLabel ? { displayLabel: relation.displayLabel } : {}) }, chunkId, relation.relationTypeId ?? null]
+                [
+                  subjectId,
+                  relation.predicate,
+                  objectId,
+                  input.sourceItemId,
+                  relation.confidence,
+                  {
+                    ...input.generation,
+                    ...(relation.originalPredicate
+                      ? { originalPredicate: relation.originalPredicate }
+                      : {}),
+                    ...(relation.displayLabel ? { displayLabel: relation.displayLabel } : {})
+                  },
+                  chunkId,
+                  relation.relationTypeId ?? null
+                ]
               );
               relationCount += result.rowCount ?? 0;
             }
@@ -379,7 +466,12 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
            returning id`,
           [input.sourceItemId]
         );
-        if(input.generationReceipt)await persistKnowledgeGeneration(client,{...input.generationReceipt,sourceItemId:input.sourceItemId,stage:"knowledgeGraph"});
+        if (input.generationReceipt)
+          await persistKnowledgeGeneration(client, {
+            ...input.generationReceipt,
+            sourceItemId: input.sourceItemId,
+            stage: "knowledgeGraph"
+          });
         await client.query("commit");
         return {
           entityCount: entityIds.size,
@@ -424,29 +516,68 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
           [sourceItemId]
         );
         await client.query("begin");
-        await writeCypher(client, `MATCH (c:Chunk {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
-        await writeCypher(client, `MATCH (c:Claim {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
-        await writeCypher(client, `MATCH (n:AtomicNote {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE n RETURN count(n)`);
-        await writeCypher(client, `MATCH ()-[r:RELATED]->() WHERE r.sourceItemId = '${uuid(sourceItemId)}' DELETE r RETURN count(r)`);
+        await writeCypher(
+          client,
+          `MATCH (c:Chunk {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`
+        );
+        await writeCypher(
+          client,
+          `MATCH (c:Claim {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`
+        );
+        await writeCypher(
+          client,
+          `MATCH (n:AtomicNote {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE n RETURN count(n)`
+        );
+        await writeCypher(
+          client,
+          `MATCH ()-[r:RELATED]->() WHERE r.sourceItemId = '${uuid(sourceItemId)}' DELETE r RETURN count(r)`
+        );
 
         for (const mention of mentions.rows) {
-          await writeCypher(client, `MERGE (e:Entity {id: '${uuid(mention.entityId)}'}) RETURN e.id`);
-          await writeCypher(client, `MERGE (c:Chunk {id: '${uuid(mention.chunkId)}'}) SET c.sourceItemId = '${uuid(sourceItemId)}' RETURN c.id`);
-          await writeCypher(client, `MATCH (e:Entity {id: '${uuid(mention.entityId)}'}), (c:Chunk {id: '${uuid(mention.chunkId)}'}) MERGE (e)-[m:MENTIONED_IN {sourceItemId: '${uuid(sourceItemId)}', chunkId: '${uuid(mention.chunkId)}'}]->(c) SET m.confidence = ${score(mention.confidence)} RETURN m.confidence`);
+          await writeCypher(
+            client,
+            `MERGE (e:Entity {id: '${uuid(mention.entityId)}'}) RETURN e.id`
+          );
+          await writeCypher(
+            client,
+            `MERGE (c:Chunk {id: '${uuid(mention.chunkId)}'}) SET c.sourceItemId = '${uuid(sourceItemId)}' RETURN c.id`
+          );
+          await writeCypher(
+            client,
+            `MATCH (e:Entity {id: '${uuid(mention.entityId)}'}), (c:Chunk {id: '${uuid(mention.chunkId)}'}) MERGE (e)-[m:MENTIONED_IN {sourceItemId: '${uuid(sourceItemId)}', chunkId: '${uuid(mention.chunkId)}'}]->(c) SET m.confidence = ${score(mention.confidence)} RETURN m.confidence`
+          );
         }
         for (const relation of relations.rows) {
-          await writeCypher(client, `MATCH (s:Entity {id: '${uuid(relation.subjectEntityId)}'}), (o:Entity {id: '${uuid(relation.objectEntityId)}'}) MERGE (s)-[r:RELATED {id: '${uuid(relation.id)}'}]->(o) SET r.sourceItemId = '${uuid(sourceItemId)}', r.confidence = ${score(relation.confidence)} RETURN r.id`);
+          await writeCypher(
+            client,
+            `MATCH (s:Entity {id: '${uuid(relation.subjectEntityId)}'}), (o:Entity {id: '${uuid(relation.objectEntityId)}'}) MERGE (s)-[r:RELATED {id: '${uuid(relation.id)}'}]->(o) SET r.sourceItemId = '${uuid(sourceItemId)}', r.confidence = ${score(relation.confidence)} RETURN r.id`
+          );
         }
         for (const claim of claims.rows) {
-          await writeCypher(client, `MERGE (c:Claim {id: '${uuid(claim.id)}'}) SET c.sourceItemId = '${uuid(sourceItemId)}' RETURN c.id`);
-          await writeCypher(client, `MATCH (c:Claim {id: '${uuid(claim.id)}'}), (chunk:Chunk {id: '${uuid(claim.evidenceChunkId)}'}) MERGE (c)-[:SUPPORTED_BY]->(chunk) RETURN c.id`);
+          await writeCypher(
+            client,
+            `MERGE (c:Claim {id: '${uuid(claim.id)}'}) SET c.sourceItemId = '${uuid(sourceItemId)}' RETURN c.id`
+          );
+          await writeCypher(
+            client,
+            `MATCH (c:Claim {id: '${uuid(claim.id)}'}), (chunk:Chunk {id: '${uuid(claim.evidenceChunkId)}'}) MERGE (c)-[:SUPPORTED_BY]->(chunk) RETURN c.id`
+          );
           if (claim.entityId) {
-            await writeCypher(client, `MATCH (c:Claim {id: '${uuid(claim.id)}'}), (e:Entity {id: '${uuid(claim.entityId)}'}) MERGE (c)-[:ABOUT]->(e) RETURN c.id`);
+            await writeCypher(
+              client,
+              `MATCH (c:Claim {id: '${uuid(claim.id)}'}), (e:Entity {id: '${uuid(claim.entityId)}'}) MERGE (c)-[:ABOUT]->(e) RETURN c.id`
+            );
           }
         }
         for (const link of atomicLinks.rows) {
-          await writeCypher(client, `MERGE (n:AtomicNote {id: '${uuid(link.atomicNoteId)}'}) SET n.sourceItemId = '${uuid(sourceItemId)}' RETURN n.id`);
-          await writeCypher(client, `MATCH (n:AtomicNote {id: '${uuid(link.atomicNoteId)}'}), (e:Entity {id: '${uuid(link.entityId)}'}) MERGE (n)-[a:ABOUT]->(e) SET a.confidence = ${score(link.confidence)} RETURN a.confidence`);
+          await writeCypher(
+            client,
+            `MERGE (n:AtomicNote {id: '${uuid(link.atomicNoteId)}'}) SET n.sourceItemId = '${uuid(sourceItemId)}' RETURN n.id`
+          );
+          await writeCypher(
+            client,
+            `MATCH (n:AtomicNote {id: '${uuid(link.atomicNoteId)}'}), (e:Entity {id: '${uuid(link.entityId)}'}) MERGE (n)-[a:ABOUT]->(e) SET a.confidence = ${score(link.confidence)} RETURN a.confidence`
+          );
         }
         await client.query("commit");
       } catch (error) {
@@ -457,20 +588,38 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       }
     },
 
-    async removeSourceProjections(sourceItemIds: string[], entityIds: string[] = []): Promise<void> {
+    async removeSourceProjections(
+      sourceItemIds: string[],
+      entityIds: string[] = []
+    ): Promise<void> {
       if (sourceItemIds.length === 0 && entityIds.length === 0) return;
       const client = await pool.connect();
       try {
         await initializeAge(client);
         await client.query("begin");
         for (const sourceItemId of sourceItemIds) {
-          await writeCypher(client, `MATCH (c:Chunk {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
-          await writeCypher(client, `MATCH (c:Claim {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`);
-          await writeCypher(client, `MATCH (n:AtomicNote {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE n RETURN count(n)`);
-          await writeCypher(client, `MATCH ()-[r:RELATED]->() WHERE r.sourceItemId = '${uuid(sourceItemId)}' DELETE r RETURN count(r)`);
+          await writeCypher(
+            client,
+            `MATCH (c:Chunk {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`
+          );
+          await writeCypher(
+            client,
+            `MATCH (c:Claim {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE c RETURN count(c)`
+          );
+          await writeCypher(
+            client,
+            `MATCH (n:AtomicNote {sourceItemId: '${uuid(sourceItemId)}'}) DETACH DELETE n RETURN count(n)`
+          );
+          await writeCypher(
+            client,
+            `MATCH ()-[r:RELATED]->() WHERE r.sourceItemId = '${uuid(sourceItemId)}' DELETE r RETURN count(r)`
+          );
         }
         for (const entityId of entityIds) {
-          await writeCypher(client, `MATCH (e:Entity {id: '${uuid(entityId)}'}) DETACH DELETE e RETURN count(e)`);
+          await writeCypher(
+            client,
+            `MATCH (e:Entity {id: '${uuid(entityId)}'}) DETACH DELETE e RETURN count(e)`
+          );
         }
         await client.query("commit");
       } catch (error) {
@@ -508,11 +657,13 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       try {
         await initializeAge(client);
         const seedIds = seeds.rows.map((seed) => `'${uuid(seed.id)}'`).join(", ");
-        const direct = await readCypher<AgDirectRow>(client,
+        const direct = await readCypher<AgDirectRow>(
+          client,
           `MATCH (seed:Entity)-[m:MENTIONED_IN]->(chunk:Chunk) WHERE seed.id IN [${seedIds}] RETURN seed.id, chunk.id, m.confidence`,
           `"seedId" agtype, "chunkId" agtype, "mentionConfidence" agtype`
         );
-        const related = await readCypher<AgRelatedRow>(client,
+        const related = await readCypher<AgRelatedRow>(
+          client,
           `MATCH (seed:Entity)-[r:RELATED]-(related:Entity)-[m:MENTIONED_IN]->(chunk:Chunk) WHERE seed.id IN [${seedIds}] RETURN seed.id, chunk.id, r.confidence, m.confidence`,
           `"seedId" agtype, "chunkId" agtype, "relationConfidence" agtype, "mentionConfidence" agtype`
         );
@@ -520,16 +671,22 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         const scores = new Map<string, number>();
         for (const row of direct.rows) {
           const chunkId = agString(row.chunkId);
-          const value = (seedScores.get(agString(row.seedId)) ?? 0) * agNumber(row.mentionConfidence);
+          const value =
+            (seedScores.get(agString(row.seedId)) ?? 0) * agNumber(row.mentionConfidence);
           scores.set(chunkId, Math.max(scores.get(chunkId) ?? 0, value));
         }
         for (const row of related.rows) {
           const chunkId = agString(row.chunkId);
-          const value = (seedScores.get(agString(row.seedId)) ?? 0)
-            * agNumber(row.relationConfidence) * agNumber(row.mentionConfidence) * 0.75;
+          const value =
+            (seedScores.get(agString(row.seedId)) ?? 0) *
+            agNumber(row.relationConfidence) *
+            agNumber(row.mentionConfidence) *
+            0.75;
           scores.set(chunkId, Math.max(scores.get(chunkId) ?? 0, value));
         }
-        const ranked = [...scores.entries()].sort((left, right) => right[1] - left[1]).slice(0, input.limit ?? 60);
+        const ranked = [...scores.entries()]
+          .sort((left, right) => right[1] - left[1])
+          .slice(0, input.limit ?? 60);
         if (ranked.length === 0) return [];
         const evidence = await pool.query<SearchEvidenceRecord & QueryResultRow>(
           `select s.id as "sourceItemId", s.title as "sourceTitle", s.type as "sourceType",
@@ -549,15 +706,19 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         const byId = new Map(evidence.rows.map((row) => [row.chunkId, row]));
         return ranked.flatMap(([chunkId, graphScore]) => {
           const row = byId.get(chunkId);
-          return row ? [{
-            ...row,
-            page: row.page === null ? null : Number(row.page),
-            boundingBox: row.boundingBox === null ? null : asJsonObject(row.boundingBox),
-            textScore: 0,
-            vectorScore: 0,
-            graphScore: Math.max(0, Math.min(1, graphScore)),
-            finalScore: Math.max(0, Math.min(1, graphScore))
-          }] : [];
+          return row
+            ? [
+                {
+                  ...row,
+                  page: row.page === null ? null : Number(row.page),
+                  boundingBox: row.boundingBox === null ? null : asJsonObject(row.boundingBox),
+                  textScore: 0,
+                  vectorScore: 0,
+                  graphScore: Math.max(0, Math.min(1, graphScore)),
+                  finalScore: Math.max(0, Math.min(1, graphScore))
+                }
+              ]
+            : [];
         });
       } finally {
         client.release();
@@ -570,7 +731,12 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       sourceItemIds?: string[];
       limit?: number;
     }): Promise<{ entities: GraphEntitySearchRecord[]; relations: GraphRelationSearchRecord[] }> {
-      const values = [input.text, input.sourceTypes ?? [], input.sourceItemIds ?? [], input.limit ?? 60];
+      const values = [
+        input.text,
+        input.sourceTypes ?? [],
+        input.sourceItemIds ?? [],
+        input.limit ?? 60
+      ];
       const entities = await pool.query<GraphEntitySearchRecord & QueryResultRow>(
         `select * from (
            select distinct on (e.id) e.id as "entityId", e.type as "entityType",
@@ -632,7 +798,9 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       return {
         entities: entities.rows.map((row) => ({
           ...row,
-          aliases: Array.isArray(row.aliases) ? row.aliases.filter((alias): alias is string => typeof alias === "string") : [],
+          aliases: Array.isArray(row.aliases)
+            ? row.aliases.filter((alias): alias is string => typeof alias === "string")
+            : [],
           graphScore: score(Number(row.graphScore)),
           finalScore: score(Number(row.finalScore))
         })),
@@ -644,15 +812,29 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       };
     },
 
-    async findAtomicNoteCandidates(noteId: string, limit = 20): Promise<AtomicNoteGraphCandidate[]> {
-      const candidates = await scoreAtomicNoteGraphPaths(pool, noteId, null, Math.max(200, limit * 25));
+    async findAtomicNoteCandidates(
+      noteId: string,
+      limit = 20
+    ): Promise<AtomicNoteGraphCandidate[]> {
+      const candidates = await scoreAtomicNoteGraphPaths(
+        pool,
+        noteId,
+        null,
+        Math.max(200, limit * 25)
+      );
       return [...candidates.entries()]
         .map(([candidateId, candidate]) => ({ noteId: candidateId, ...candidate }))
-        .sort((left, right) => right.graphScore - left.graphScore || left.noteId.localeCompare(right.noteId))
+        .sort(
+          (left, right) =>
+            right.graphScore - left.graphScore || left.noteId.localeCompare(right.noteId)
+        )
         .slice(0, limit);
     },
 
-    async scoreAtomicNoteCandidates(noteId: string, candidateIds: string[]): Promise<Map<string, number>> {
+    async scoreAtomicNoteCandidates(
+      noteId: string,
+      candidateIds: string[]
+    ): Promise<Map<string, number>> {
       if (candidateIds.length === 0) return new Map();
       const candidates = await scoreAtomicNoteGraphPaths(pool, noteId, candidateIds);
       return new Map([...candidates].map(([id, candidate]) => [id, candidate.graphScore]));
@@ -663,7 +845,11 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
       for (const noteId of noteIds) result.set(noteId, emptyAtomicNoteElements());
       if (noteIds.length === 0) return result;
       const entityRows = await pool.query<{
-        noteId: string; id: string; type: string; name: string; confidence: number;
+        noteId: string;
+        id: string;
+        type: string;
+        name: string;
+        confidence: number;
       }>(
         `select l.atomic_note_id as "noteId", e.id, e.type, e.canonical_name as name, l.confidence
          from atomic_note_entity_links l join entities e on e.id = l.entity_id
@@ -674,7 +860,10 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         result.get(row.noteId)?.entities.push({ ...row, confidence: Number(row.confidence) });
       }
       const claimRows = await pool.query<{
-        noteId: string; id: string; text: string; confidence: number;
+        noteId: string;
+        id: string;
+        text: string;
+        confidence: number;
       }>(
         `select distinct l.atomic_note_id as "noteId", c.id, c.text, c.confidence
          from atomic_note_source_links l join claims c on c.evidence_chunk_id = l.chunk_id
@@ -685,7 +874,15 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         result.get(row.noteId)?.claims.push({ ...row, confidence: Number(row.confidence) });
       }
       const relationRows = await pool.query<{
-        noteId: string; id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number;
+        noteId: string;
+        id: string;
+        subject: string;
+        subjectEntityId?: string;
+        objectEntityId?: string;
+        predicate: string;
+        displayLabel?: string;
+        object: string;
+        confidence: number;
       }>(
         `select distinct l.atomic_note_id as "noteId", r.id,
                 subject.canonical_name as subject, subject.id as "subjectEntityId", object.id as "objectEntityId", r.predicate, coalesce(r.metadata->>'displayLabel', '') as "displayLabel",
@@ -718,9 +915,14 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
     },
 
     async listSourceElements(sourceItemId: string): Promise<SourceGraphElements> {
-      const entityRows = await pool.query<{
-        id: string; type: string; name: string; confidence: number;
-      } & QueryResultRow>(
+      const entityRows = await pool.query<
+        {
+          id: string;
+          type: string;
+          name: string;
+          confidence: number;
+        } & QueryResultRow
+      >(
         `select entity.id, entity.type, entity.canonical_name as name, max(mention.confidence) as confidence
          from entity_mentions mention join entities entity on entity.id = mention.entity_id
          where mention.source_item_id = $1
@@ -728,9 +930,18 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          order by entity.canonical_name`,
         [sourceItemId]
       );
-      const relationRows = await pool.query<{
-        id: string; subject: string; subjectEntityId?: string; objectEntityId?: string; predicate: string; displayLabel?: string; object: string; confidence: number;
-      } & QueryResultRow>(
+      const relationRows = await pool.query<
+        {
+          id: string;
+          subject: string;
+          subjectEntityId?: string;
+          objectEntityId?: string;
+          predicate: string;
+          displayLabel?: string;
+          object: string;
+          confidence: number;
+        } & QueryResultRow
+      >(
         `select relation.id, subject.canonical_name as subject, subject.id as "subjectEntityId", object.id as "objectEntityId", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
                 object.canonical_name as object, relation.confidence
          from entity_relations relation
@@ -740,9 +951,16 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          order by subject.canonical_name, relation.predicate, object.canonical_name`,
         [sourceItemId]
       );
-      const sharedRows = await pool.query<{
-        sourceItemId: string; sourceTitle: string; entityId?: string; relatedEntityId?: string; entityName: string; confidence: number;
-      } & QueryResultRow>(
+      const sharedRows = await pool.query<
+        {
+          sourceItemId: string;
+          sourceTitle: string;
+          entityId?: string;
+          relatedEntityId?: string;
+          entityName: string;
+          confidence: number;
+        } & QueryResultRow
+      >(
         `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
                 entity.canonical_name as "entityName", entity.id as "entityId", entity.id as "relatedEntityId",
                 max(least(current_mention.confidence, other_mention.confidence)) as confidence
@@ -756,10 +974,17 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
          order by other_source.title, entity.canonical_name`,
         [sourceItemId]
       );
-      const relatedRows = await pool.query<{
-        sourceItemId: string; sourceTitle: string; entityName: string; relatedEntityName: string;
-        predicate: string; displayLabel?: string; confidence: number;
-      } & QueryResultRow>(
+      const relatedRows = await pool.query<
+        {
+          sourceItemId: string;
+          sourceTitle: string;
+          entityName: string;
+          relatedEntityName: string;
+          predicate: string;
+          displayLabel?: string;
+          confidence: number;
+        } & QueryResultRow
+      >(
         `select other_source.id as "sourceItemId", other_source.title as "sourceTitle",
                 subject_entity.canonical_name as "entityName", subject_entity.id as "entityId", object_entity.id as "relatedEntityId",
                 object_entity.canonical_name as "relatedEntityName", relation.predicate, coalesce(relation.metadata->>'displayLabel', '') as "displayLabel",
@@ -782,8 +1007,14 @@ export function createKnowledgeGraphRepository(pool: PgPool) {
         [sourceItemId]
       );
       return {
-        entities: entityRows.rows.map((row) => ({ ...row, confidence: score(Number(row.confidence)) })),
-        relations: relationRows.rows.map((row) => ({ ...row, confidence: score(Number(row.confidence)) })),
+        entities: entityRows.rows.map((row) => ({
+          ...row,
+          confidence: score(Number(row.confidence))
+        })),
+        relations: relationRows.rows.map((row) => ({
+          ...row,
+          confidence: score(Number(row.confidence))
+        })),
         sourceConnections: [
           ...sharedRows.rows.map((row) => ({
             ...row,
@@ -812,33 +1043,44 @@ async function scoreAtomicNoteGraphPaths(
       : "";
     const pathLimit = maxPaths ? ` LIMIT ${Math.max(1, Math.floor(maxPaths))}` : "";
     const sourceId = uuid(noteId);
-    const direct = await readCypher<AgAtomicDirectRow>(client,
+    const direct = await readCypher<AgAtomicDirectRow>(
+      client,
       `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(entity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, entity, a.confidence * b.confidence AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, entity.id, pathScore`,
       `"targetId" agtype, "entityId" agtype, "relationConfidence" agtype`
     );
-    const related = await readCypher<AgAtomicRelatedRow>(client,
+    const related = await readCypher<AgAtomicRelatedRow>(
+      client,
       `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(sourceEntity:Entity)-[r:RELATED]-(targetEntity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, sourceEntity, targetEntity, a.confidence * r.confidence * b.confidence * 0.75 AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, sourceEntity.id, targetEntity.id, pathScore`,
       `"targetId" agtype, "sourceEntityId" agtype, "targetEntityId" agtype, "relationConfidence" agtype`
     );
-    const targetIds = [...new Set([
-      ...direct.rows.map((row) => agString(row.targetId)),
-      ...related.rows.map((row) => agString(row.targetId))
-    ])];
+    const targetIds = [
+      ...new Set([
+        ...direct.rows.map((row) => agString(row.targetId)),
+        ...related.rows.map((row) => agString(row.targetId))
+      ])
+    ];
     if (targetIds.length === 0) return new Map();
     const activeTargets = await client.query<{ id: string } & QueryResultRow>(
       `select id from atomic_notes where id = any($1::uuid[]) and status <> 'rejected'`,
       [targetIds]
     );
     const allowedTargets = new Set(activeTargets.rows.map((row) => row.id));
-    const entityIds = [...new Set([
-      ...direct.rows.map((row) => agString(row.entityId)),
-      ...related.rows.flatMap((row) => [agString(row.sourceEntityId), agString(row.targetEntityId)])
-    ])];
-    const frequencyRows = await client.query<{
-      entityId: string;
-      noteCount: string;
-      totalNotes: string;
-    } & QueryResultRow>(
+    const entityIds = [
+      ...new Set([
+        ...direct.rows.map((row) => agString(row.entityId)),
+        ...related.rows.flatMap((row) => [
+          agString(row.sourceEntityId),
+          agString(row.targetEntityId)
+        ])
+      ])
+    ];
+    const frequencyRows = await client.query<
+      {
+        entityId: string;
+        noteCount: string;
+        totalNotes: string;
+      } & QueryResultRow
+    >(
       `select links.entity_id as "entityId", count(distinct links.atomic_note_id)::text as "noteCount",
               (select count(*)::text from atomic_notes where status <> 'rejected') as "totalNotes"
        from atomic_note_entity_links links
@@ -848,12 +1090,18 @@ async function scoreAtomicNoteGraphPaths(
       [entityIds]
     );
     const totalNotes = Number(frequencyRows.rows[0]?.totalNotes ?? 0);
-    const entityWeights = new Map(frequencyRows.rows.map((row) => [
-      row.entityId,
-      inverseEntityFrequency(totalNotes, Number(row.noteCount))
-    ]));
+    const entityWeights = new Map(
+      frequencyRows.rows.map((row) => [
+        row.entityId,
+        inverseEntityFrequency(totalNotes, Number(row.noteCount))
+      ])
+    );
     const candidates = new Map<string, Omit<AtomicNoteGraphCandidate, "noteId">>();
-    const record = (targetId: string, graphScore: number, pathType: AtomicNoteGraphCandidate["pathType"]) => {
+    const record = (
+      targetId: string,
+      graphScore: number,
+      pathType: AtomicNoteGraphCandidate["pathType"]
+    ) => {
       if (!allowedTargets.has(targetId)) return;
       const previous = candidates.get(targetId);
       if (!previous || graphScore > previous.graphScore) {
@@ -896,7 +1144,9 @@ function emptyAtomicNoteElements(): AtomicNoteGraphElements {
 function mapEntity(row: EntityRow): GraphEntityRecord {
   return {
     ...row,
-    aliases: Array.isArray(row.aliases) ? row.aliases.filter((value): value is string => typeof value === "string") : [],
+    aliases: Array.isArray(row.aliases)
+      ? row.aliases.filter((value): value is string => typeof value === "string")
+      : [],
     confidence: Number(row.confidence),
     metadata: asJsonObject(row.metadata),
     createdAt: mapTimestamp(row.createdAt),
@@ -905,13 +1155,20 @@ function mapEntity(row: EntityRow): GraphEntityRecord {
 }
 
 function normalizeEntityName(value: string): string {
-  return value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase();
+  return value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase();
 }
 
 async function initializeAge(client: PoolClient): Promise<void> {
   await prepareAge(client);
-  const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [graphName]);
-  if (existing.rowCount === 0) await client.query("select ag_catalog.create_graph($1)", [graphName]);
+  const existing = await client.query("select 1 from ag_catalog.ag_graph where name = $1", [
+    graphName
+  ]);
+  if (existing.rowCount === 0)
+    await client.query("select ag_catalog.create_graph($1)", [graphName]);
 }
 
 async function prepareAge(client: PoolClient): Promise<void> {
@@ -924,8 +1181,14 @@ async function writeCypher(client: PoolClient, statement: string): Promise<void>
   await client.query(`select * from cypher('${graphName}', $$ ${statement} $$) as (result agtype)`);
 }
 
-function readCypher<T extends QueryResultRow>(client: PoolClient, statement: string, columns: string) {
-  return client.query<T>(`select * from cypher('${graphName}', $$ ${statement} $$) as (${columns})`);
+function readCypher<T extends QueryResultRow>(
+  client: PoolClient,
+  statement: string,
+  columns: string
+) {
+  return client.query<T>(
+    `select * from cypher('${graphName}', $$ ${statement} $$) as (${columns})`
+  );
 }
 
 function uuid(value: string): string {

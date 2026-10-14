@@ -35,32 +35,42 @@ export function useToasts(): ToastController {
     setToasts((current) => removeToast(current, id));
   }, []);
 
-  const push = useCallback((text: string, tone: ToastTone = "info") => {
-    const id = nextIdRef.current;
-    nextIdRef.current += 1;
-    setToasts((current) => addToast(current, { id, text, tone }));
-    setTimeout(() => dismiss(id), toastAutoDismissMs);
-  }, [dismiss]);
+  const push = useCallback(
+    (text: string, tone: ToastTone = "info") => {
+      const id = nextIdRef.current;
+      nextIdRef.current += 1;
+      setToasts((current) => addToast(current, { id, text, tone }));
+      setTimeout(() => dismiss(id), toastAutoDismissMs);
+    },
+    [dismiss]
+  );
 
   return { toasts, push, dismiss };
 }
 
 const toneStyles: Record<ToastTone, { container: string; icon: typeof Info }> = {
   success: {
-    container: "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100",
+    container:
+      "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100",
     icon: CheckCircle2
   },
   error: {
-    container: "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100",
+    container:
+      "border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100",
     icon: AlertTriangle
   },
   info: {
-    container: "border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100",
+    container:
+      "border-slate-300 bg-white text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100",
     icon: Info
   }
 };
 
-export function ToastViewport({ toasts, dismissLabel, onDismiss }: {
+export function ToastViewport({
+  toasts,
+  dismissLabel,
+  onDismiss
+}: {
   toasts: ToastItem[];
   dismissLabel: string;
   onDismiss: (id: number) => void;

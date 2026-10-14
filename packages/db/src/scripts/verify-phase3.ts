@@ -53,7 +53,8 @@ try {
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected Drizzle migration history.");
+  if (Number(history.rows[0]?.count) !== 11)
+    throw new Error("Unexpected Drizzle migration history.");
   const tables = await pool.query<{ table_name: string }>(
     `select table_name from information_schema.tables
      where table_schema = 'public' and table_name in (
@@ -93,14 +94,16 @@ try {
   });
   const chunkId = randomUUID();
   const spanId = randomUUID();
-  await createChunkRepository(pool).replaceDocumentChunks(document.id, source.id, [{
-    id: chunkId,
-    sourceSpanId: spanId,
-    chunkIndex: 0,
-    content: "Atomic notes preserve evidence.",
-    contentHash: "b".repeat(64),
-    span: { id: spanId, startOffset: 23, endOffset: 54, page: 1 }
-  }]);
+  await createChunkRepository(pool).replaceDocumentChunks(document.id, source.id, [
+    {
+      id: chunkId,
+      sourceSpanId: spanId,
+      chunkIndex: 0,
+      content: "Atomic notes preserve evidence.",
+      contentHash: "b".repeat(64),
+      span: { id: spanId, startOffset: 23, endOffset: 54, page: 1 }
+    }
+  ]);
 
   const ai = createAiConfigRepository(pool);
   const provider = await ai.upsertProvider({
@@ -112,8 +115,11 @@ try {
   });
   const profile = await ai.createProfile({ name: "Phase 3", isDefault: true });
   await ai.updateProfile({
-    id: profile.id, providerConfigId: provider.id, modelId: "mock-model",
-    runtime: "remote", capabilities: ["summarization"]
+    id: profile.id,
+    providerConfigId: provider.id,
+    modelId: "mock-model",
+    runtime: "remote",
+    capabilities: ["summarization"]
   });
   await ai.setProfileTask({ profileId: profile.id, task: "summarization" });
   const aiTaskRunId = await ai.recordTaskRun({
@@ -139,7 +145,10 @@ try {
     outputHash: "c".repeat(64),
     metadata: { mapReduce: false }
   });
-  await sources.update(source.id, { summary: summary.summary, summaryGeneratedAt: summary.generatedAt });
+  await sources.update(source.id, {
+    summary: summary.summary,
+    summaryGeneratedAt: summary.generatedAt
+  });
   if ((await sources.findById(source.id))?.summary !== summary.summary) {
     throw new Error("Source summary was not promoted to source_items.");
   }
@@ -202,15 +211,27 @@ try {
     throw new Error("Atomic note generation was not idempotent.");
   }
 
-  const vector = Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0);
+  const vector = Array.from({ length: 256 }, (_, index) => (index === 0 ? 1 : 0));
   const embeddings = createEmbeddingRepository(pool);
   await embeddings.upsert({
-    targetType: "atomic_note", targetId: firstNote.id, provider: "test", model: "test-256",
-    runtime: "local", usage: "matching", contentHash: "d".repeat(64), embedding: vector
+    targetType: "atomic_note",
+    targetId: firstNote.id,
+    provider: "test",
+    model: "test-256",
+    runtime: "local",
+    usage: "matching",
+    contentHash: "d".repeat(64),
+    embedding: vector
   });
   await embeddings.upsert({
-    targetType: "atomic_note", targetId: secondNote.id, provider: "test", model: "test-256",
-    runtime: "local", usage: "matching", contentHash: "e".repeat(64), embedding: vector
+    targetType: "atomic_note",
+    targetId: secondNote.id,
+    provider: "test",
+    model: "test-256",
+    runtime: "local",
+    usage: "matching",
+    contentHash: "e".repeat(64),
+    embedding: vector
   });
   const candidates = await notes.findMatchingCandidates({
     noteId: firstNote.id,
@@ -245,26 +266,30 @@ try {
     dimensions: 256,
     requestedLimit: 20,
     strategy: "weighted_scores_with_optional_reranking",
-    results: [{
-      targetType: "atomic_note",
-      targetId: secondNote.id,
-      targetLabel: secondNote.title,
-      finalRank: 1,
-      textScore: candidates[0].textScore,
-      vectorScore: candidates[0].vectorScore,
-      rerankScore: 0.8,
-      finalScore: 0.9,
-      passedThreshold: true
-    }]
+    results: [
+      {
+        targetType: "atomic_note",
+        targetId: secondNote.id,
+        targetLabel: secondNote.title,
+        finalRank: 1,
+        textScore: candidates[0].textScore,
+        vectorScore: candidates[0].vectorScore,
+        rerankScore: 0.8,
+        finalScore: 0.9,
+        passedThreshold: true
+      }
+    ]
   });
-  if ((await debug.list(5))[0]?.id !== debugRunId) throw new Error("Similarity debug log was not persisted.");
+  if ((await debug.list(5))[0]?.id !== debugRunId)
+    throw new Error("Similarity debug log was not persisted.");
   const approved = await notes.review({ id: firstNote.id, action: "approve" });
   if (approved?.status !== "approved") throw new Error("Atomic note approval failed.");
   const reviewEvents = await pool.query<{ count: string }>(
     "select count(*)::text as count from atomic_note_review_events where atomic_note_id = $1",
     [firstNote.id]
   );
-  if (Number(reviewEvents.rows[0]?.count) !== 1) throw new Error("Review transition was not recorded.");
+  if (Number(reviewEvents.rows[0]?.count) !== 1)
+    throw new Error("Review transition was not recorded.");
 
   const ingestionRun = await createIngestionRunRepository(pool).create({
     sourceItemId: source.id,
@@ -276,17 +301,23 @@ try {
     throw new Error("Library processing state query failed.");
   }
 
-  console.info(JSON.stringify({
-    baselineMigrations: firstRun.seed.seededMigrations,
-    migrationHistoryCount: Number(history.rows[0]?.count),
-    verifiedTables: tables.rows.map((row) => row.table_name),
-    verifiedIndexes: indexes.rows.map((row) => row.indexname),
-    sourceSummaryId: summary.id,
-    pendingNotesCreated: 2,
-    candidateTopMatch: candidates[0]?.note.id,
-    relationId: relation.id,
-    reviewEventCount: Number(reviewEvents.rows[0]?.count)
-  }, null, 2));
+  console.info(
+    JSON.stringify(
+      {
+        baselineMigrations: firstRun.seed.seededMigrations,
+        migrationHistoryCount: Number(history.rows[0]?.count),
+        verifiedTables: tables.rows.map((row) => row.table_name),
+        verifiedIndexes: indexes.rows.map((row) => row.indexname),
+        sourceSummaryId: summary.id,
+        pendingNotesCreated: 2,
+        candidateTopMatch: candidates[0]?.note.id,
+        relationId: relation.id,
+        reviewEventCount: Number(reviewEvents.rows[0]?.count)
+      },
+      null,
+      2
+    )
+  );
 } finally {
   if (pool) await closePgPool(pool);
   await manager.stop().catch(() => undefined);

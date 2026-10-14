@@ -1,18 +1,156 @@
-import type { HierarchyCheckpointSchema } from '@app/domain';
-import type { z } from 'zod';
-import type { MessageKey, Translator } from '@app/i18n';
-type Hierarchy=z.infer<typeof HierarchyCheckpointSchema>;
-export function hierarchyProgress(hierarchy:Hierarchy|null,reason:string|null=null){
-  const canceled=hierarchy?.outcome==='canceled'||hierarchy?.routes.some(r=>r.state==='canceled')||reason==='organization.errors.canceled';
-  const deferredReason=reason&&/^(?:maintenance\.errors\.(?:budget|period|wait|idle|busy|sync)|organization\.errors\.(?:budget|deadline|context|scopeLimit)|paused)$/.test(reason);
-  const failedReason=!!reason&&!deferredReason&&reason!=='organization.errors.review';
-  if(!hierarchy)return {state:canceled?'canceled':failedReason?'error':deferredReason?'deferred':reason==='organization.errors.review'?'review':'empty',ancestors:0,targets:0,decisions:0};
-  const routes=hierarchy.routes,linked=new Set(routes.flatMap(r=>[r.planningRunId,r.currentChildRunId,r.deferredChildRunId].filter(Boolean)));
-  const decisions=hierarchy.decisions.filter(d=>!linked.has(d.runId));
-  const state=canceled?'canceled':failedReason||hierarchy.outcome==='rejected'||decisions.some(d=>d.outcome==='failed'||d.outcome==='rejected')?'error':hierarchy.outcome==='awaiting_review'||reason==='organization.errors.review'?'review':routes.some(r=>r.state==='deferred'||r.reason==='paused')?'deferred':hierarchy.outcome==='complete'||hierarchy.outcome==='no_change'?'complete':deferredReason?'deferred':hierarchy.counts.changedPages||hierarchy.outcome==='partial'?'partial':'pending';
-  return {state,ancestors:routes.reduce((n,r)=>n+r.remainingPath.length,0),targets:routes.reduce((n,r)=>n+r.intendedTargets.filter(t=>!t.resolvedPageId).length,0),decisions:decisions.filter(d=>['pending','awaiting_review','failed','rejected'].includes(d.outcome)).length};
+import type { HierarchyCheckpointSchema } from "@app/domain";
+import type { z } from "zod";
+import type { MessageKey, Translator } from "@app/i18n";
+type Hierarchy = z.infer<typeof HierarchyCheckpointSchema>;
+export function hierarchyProgress(hierarchy: Hierarchy | null, reason: string | null = null) {
+  const canceled =
+    hierarchy?.outcome === "canceled" ||
+    hierarchy?.routes.some((r) => r.state === "canceled") ||
+    reason === "organization.errors.canceled";
+  const deferredReason =
+    reason &&
+    /^(?:maintenance\.errors\.(?:budget|period|wait|idle|busy|sync)|organization\.errors\.(?:budget|deadline|context|scopeLimit)|paused)$/.test(
+      reason
+    );
+  const failedReason = !!reason && !deferredReason && reason !== "organization.errors.review";
+  if (!hierarchy)
+    return {
+      state: canceled
+        ? "canceled"
+        : failedReason
+          ? "error"
+          : deferredReason
+            ? "deferred"
+            : reason === "organization.errors.review"
+              ? "review"
+              : "empty",
+      ancestors: 0,
+      targets: 0,
+      decisions: 0
+    };
+  const routes = hierarchy.routes,
+    linked = new Set(
+      routes.flatMap((r) =>
+        [r.planningRunId, r.currentChildRunId, r.deferredChildRunId].filter(Boolean)
+      )
+    );
+  const decisions = hierarchy.decisions.filter((d) => !linked.has(d.runId));
+  const state = canceled
+    ? "canceled"
+    : failedReason ||
+        hierarchy.outcome === "rejected" ||
+        decisions.some((d) => d.outcome === "failed" || d.outcome === "rejected")
+      ? "error"
+      : hierarchy.outcome === "awaiting_review" || reason === "organization.errors.review"
+        ? "review"
+        : routes.some((r) => r.state === "deferred" || r.reason === "paused")
+          ? "deferred"
+          : hierarchy.outcome === "complete" || hierarchy.outcome === "no_change"
+            ? "complete"
+            : deferredReason
+              ? "deferred"
+              : hierarchy.counts.changedPages || hierarchy.outcome === "partial"
+                ? "partial"
+                : "pending";
+  return {
+    state,
+    ancestors: routes.reduce((n, r) => n + r.remainingPath.length, 0),
+    targets: routes.reduce(
+      (n, r) => n + r.intendedTargets.filter((t) => !t.resolvedPageId).length,
+      0
+    ),
+    decisions: decisions.filter((d) =>
+      ["pending", "awaiting_review", "failed", "rejected"].includes(d.outcome)
+    ).length
+  };
 }
-export function HierarchyProgress({hierarchy,t,loading=false,reason=null,contentComplete,notesComplete,onAnalysis}:{hierarchy:Hierarchy|null;t:Translator;loading?:boolean;reason?:string|null;contentComplete?:boolean|undefined;notesComplete?:boolean|undefined;onAnalysis?:(id:string)=>void}){
-  const progress=hierarchyProgress(hierarchy,reason);
-  return <section className="grid min-w-0 gap-2 rounded-xl border border-border p-3 text-sm" aria-label={t('hierarchy.progress')}><h4 className="font-medium">{t('hierarchy.progress')}</h4>{loading?<p role="status">{t('shell.states.loading')}</p>:<><p role="status">{t(`hierarchy.progressState.${progress.state}` as MessageKey)}</p>{contentComplete!==undefined&&<p className="text-xs">{t('hierarchy.originals')}: {t(contentComplete?'hierarchy.complete':'hierarchy.pending')} · {t('hierarchy.notes')}: {t(notesComplete?'hierarchy.complete':'hierarchy.pending')}</p>}{hierarchy&&<><p>{t('hierarchy.appliedCounts',{values:hierarchy.counts})}</p><p>{t('hierarchy.remaining',{values:{ancestors:progress.ancestors,targets:progress.targets,decisions:progress.decisions}})}</p>{hierarchy.routes.map(route=><div className="min-w-0 border-t border-border pt-2" key={route.routeId}><p className="break-words">{route.intendedTargets.map(target=>target.title).join(' · ')}</p><p className="text-xs">{t(`hierarchy.route.${route.state}`)}{route.reason&&` · ${t(('hierarchy.reason.'+route.reason) as MessageKey)}`}</p>{route.remainingPath.length>0&&<p className="break-words text-xs text-muted-foreground">{t('hierarchy.ancestors')}: {route.remainingPath.map(p=>p.title).join(' · ')}</p>}{onAnalysis&&(route.currentChildRunId||route.deferredChildRunId||route.planningRunId)&&<button className="min-h-9 text-accent underline" onClick={()=>onAnalysis((route.currentChildRunId??route.deferredChildRunId??route.planningRunId)!)}>{t('automation.analysisDetails')}</button>}</div>)}</>}</>}</section>;
+export function HierarchyProgress({
+  hierarchy,
+  t,
+  loading = false,
+  reason = null,
+  contentComplete,
+  notesComplete,
+  onAnalysis
+}: {
+  hierarchy: Hierarchy | null;
+  t: Translator;
+  loading?: boolean;
+  reason?: string | null;
+  contentComplete?: boolean | undefined;
+  notesComplete?: boolean | undefined;
+  onAnalysis?: (id: string) => void;
+}) {
+  const progress = hierarchyProgress(hierarchy, reason);
+  return (
+    <section
+      className="grid min-w-0 gap-2 rounded-xl border border-border p-3 text-sm"
+      aria-label={t("hierarchy.progress")}
+    >
+      <h4 className="font-medium">{t("hierarchy.progress")}</h4>
+      {loading ? (
+        <p role="status">{t("shell.states.loading")}</p>
+      ) : (
+        <>
+          <p role="status">{t(`hierarchy.progressState.${progress.state}` as MessageKey)}</p>
+          {contentComplete !== undefined && (
+            <p className="text-xs">
+              {t("hierarchy.originals")}:{" "}
+              {t(contentComplete ? "hierarchy.complete" : "hierarchy.pending")} ·{" "}
+              {t("hierarchy.notes")}:{" "}
+              {t(notesComplete ? "hierarchy.complete" : "hierarchy.pending")}
+            </p>
+          )}
+          {hierarchy && (
+            <>
+              <p>{t("hierarchy.appliedCounts", { values: hierarchy.counts })}</p>
+              <p>
+                {t("hierarchy.remaining", {
+                  values: {
+                    ancestors: progress.ancestors,
+                    targets: progress.targets,
+                    decisions: progress.decisions
+                  }
+                })}
+              </p>
+              {hierarchy.routes.map((route) => (
+                <div className="min-w-0 border-t border-border pt-2" key={route.routeId}>
+                  <p className="break-words">
+                    {route.intendedTargets.map((target) => target.title).join(" · ")}
+                  </p>
+                  <p className="text-xs">
+                    {t(`hierarchy.route.${route.state}`)}
+                    {route.reason && ` · ${t(("hierarchy.reason." + route.reason) as MessageKey)}`}
+                  </p>
+                  {route.remainingPath.length > 0 && (
+                    <p className="break-words text-xs text-muted-foreground">
+                      {t("hierarchy.ancestors")}:{" "}
+                      {route.remainingPath.map((p) => p.title).join(" · ")}
+                    </p>
+                  )}
+                  {onAnalysis &&
+                    (route.currentChildRunId ||
+                      route.deferredChildRunId ||
+                      route.planningRunId) && (
+                      <button
+                        className="min-h-9 text-accent underline"
+                        onClick={() =>
+                          onAnalysis(
+                            (route.currentChildRunId ??
+                              route.deferredChildRunId ??
+                              route.planningRunId)!
+                          )
+                        }
+                      >
+                        {t("automation.analysisDetails")}
+                      </button>
+                    )}
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
 }

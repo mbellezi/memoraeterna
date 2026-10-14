@@ -69,26 +69,26 @@ export interface UpdateIngestionRunInput {
 
 const returning = [
   "id",
-  "source_item_id as \"sourceItemId\"",
-  "job_id as \"jobId\"",
-  "batch_id as \"batchId\"",
-  "run_kind as \"runKind\"",
-  "requested_stages as \"requestedStages\"",
-  "effective_stages as \"effectiveStages\"",
-  "plan_version as \"planVersion\"",
-  "input_document_revision_id as \"inputDocumentRevisionId\"",
-  "input_hashes as \"inputHashes\"",
-  "supersedes_run_id as \"supersedesRunId\"",
-  "previous_artifact_policy as \"previousArtifactPolicy\"",
+  'source_item_id as "sourceItemId"',
+  'job_id as "jobId"',
+  'batch_id as "batchId"',
+  'run_kind as "runKind"',
+  'requested_stages as "requestedStages"',
+  'effective_stages as "effectiveStages"',
+  'plan_version as "planVersion"',
+  'input_document_revision_id as "inputDocumentRevisionId"',
+  'input_hashes as "inputHashes"',
+  'supersedes_run_id as "supersedesRunId"',
+  'previous_artifact_policy as "previousArtifactPolicy"',
   "trigger",
   "status",
-  "current_stage as \"currentStage\"",
-  "stages_checkpoint as \"stagesCheckpoint\"",
+  'current_stage as "currentStage"',
+  'stages_checkpoint as "stagesCheckpoint"',
   "error",
-  "started_at as \"startedAt\"",
-  "completed_at as \"completedAt\"",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'started_at as "startedAt"',
+  'completed_at as "completedAt"',
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapIngestionRun(row: IngestionRunRow): IngestionRunRecord {
@@ -183,7 +183,8 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async listByBatch(batchId: string): Promise<IngestionRunRecord[]> {
       const result = await db.query<IngestionRunRow>(
-        `select ${returning} from ingestion_runs where batch_id = $1 order by created_at asc`, [batchId]
+        `select ${returning} from ingestion_runs where batch_id = $1 order by created_at asc`,
+        [batchId]
       );
       return result.rows.map(mapIngestionRun);
     },
@@ -325,14 +326,25 @@ export function createIngestionRunRepository(db: Queryable) {
       return row ? mapIngestionRun(row) : null;
     },
 
-    async initializeStages(id: string, effectiveStages: readonly string[], allStages: readonly string[]): Promise<void> {
+    async initializeStages(
+      id: string,
+      effectiveStages: readonly string[],
+      allStages: readonly string[]
+    ): Promise<void> {
       for (const stage of allStages) {
         const requested = effectiveStages.includes(stage);
         await db.query(
           `insert into ingestion_run_stages (ingestion_run_id, stage, status, skip_reason, progress, completed_at)
            values ($1, $2, $3::ingestion_run_stage_status, $4, $5, $6)
            on conflict (ingestion_run_id, stage) do nothing`,
-          [id, stage, requested ? "pending" : "skipped", requested ? null : "not_requested", requested ? 0 : 10000, requested ? null : new Date()]
+          [
+            id,
+            stage,
+            requested ? "pending" : "skipped",
+            requested ? null : "not_requested",
+            requested ? 0 : 10000,
+            requested ? null : new Date()
+          ]
         );
       }
     },
@@ -340,12 +352,14 @@ export function createIngestionRunRepository(db: Queryable) {
     async waitForBatchStage(id: string, stage: string, metadata: JsonObject = {}): Promise<void> {
       await db.query(
         `update ingestion_run_stages set status = 'waiting_for_review', skip_reason = 'batch_barrier', metadata=$3, updated_at = now()
-         where ingestion_run_id = $1 and stage = $2`, [id, stage, metadata]
+         where ingestion_run_id = $1 and stage = $2`,
+        [id, stage, metadata]
       );
       await db.query(
         `update ingestion_runs set stages_checkpoint = jsonb_set(
            stages_checkpoint, array[$2], jsonb_build_object('status', 'waiting_for_batch', 'metadata', $3::jsonb), true
-         ), updated_at = now() where id = $1`, [id, stage, metadata]
+         ), updated_at = now() where id = $1`,
+        [id, stage, metadata]
       );
     },
 
@@ -360,7 +374,11 @@ export function createIngestionRunRepository(db: Queryable) {
       return Number(result.rows[0]?.count ?? 0);
     },
 
-    async completeStageForBatch(batchId: string, stage: string, metadata: JsonObject = {}): Promise<void> {
+    async completeStageForBatch(
+      batchId: string,
+      stage: string,
+      metadata: JsonObject = {}
+    ): Promise<void> {
       await db.query(
         `update ingestion_run_stages stage_state set status = 'completed', progress = 10000, metadata = $3::jsonb,
            completed_at = now(), error = null, updated_at = now()
@@ -410,11 +428,17 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async failStage(id: string, stage: string, error: string, canceled = false): Promise<void> {
       const status = canceled ? "canceled" : "failed";
-      await db.query(`update ingestion_run_stages set status = $3::ingestion_run_stage_status,error = $4,updated_at = now()
-        where ingestion_run_id = $1 and stage = $2`,[id,stage,status,canceled ? null : error]);
-      await db.query(`update ingestion_runs set stages_checkpoint = jsonb_set(stages_checkpoint,array[$2],
+      await db.query(
+        `update ingestion_run_stages set status = $3::ingestion_run_stage_status,error = $4,updated_at = now()
+        where ingestion_run_id = $1 and stage = $2`,
+        [id, stage, status, canceled ? null : error]
+      );
+      await db.query(
+        `update ingestion_runs set stages_checkpoint = jsonb_set(stages_checkpoint,array[$2],
         coalesce(stages_checkpoint->$2,'{}'::jsonb) || jsonb_build_object('status',$3::text,'error',$4::text),true),updated_at = now()
-        where id = $1`,[id,stage,status,canceled ? null : error]);
+        where id = $1`,
+        [id, stage, status, canceled ? null : error]
+      );
     },
 
     async cancel(id: string): Promise<IngestionRunRecord | null> {

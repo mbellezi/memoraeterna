@@ -36,7 +36,9 @@ for (let attempt = 1; attempt <= 2; attempt += 1) {
     metadata: { purpose: "mlx-real-model-smoke", attempt }
   });
   if (typeof result.output !== "string" || result.output.trim() !== "OK") {
-    throw new Error(`The MLX helper returned an unexpected smoke result: ${JSON.stringify(result.output)}`);
+    throw new Error(
+      `The MLX helper returned an unexpected smoke result: ${JSON.stringify(result.output)}`
+    );
   }
   results.push(result);
 }
@@ -66,7 +68,9 @@ async function resolveModelPath(): Promise<string> {
     } catch {
       continue;
     }
-    for (const entry of entries.filter((candidate) => candidate.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of entries
+      .filter((candidate) => candidate.isDirectory())
+      .sort((a, b) => a.name.localeCompare(b.name))) {
       const candidate = join(modelsRoot, entry.name);
       try {
         await assertModelDirectory(candidate);
@@ -77,13 +81,18 @@ async function resolveModelPath(): Promise<string> {
     }
   }
 
-  throw new Error("No installed MLX model was found. Set MEMORA_MLX_MODEL_PATH or pass --model-path <path>.");
+  throw new Error(
+    "No installed MLX model was found. Set MEMORA_MLX_MODEL_PATH or pass --model-path <path>."
+  );
 }
 
 async function assertModelDirectory(path: string): Promise<void> {
   const files = await readdir(path);
-  if (!files.includes("config.json") || !files.includes("tokenizer.json")
-      || !files.some((file) => file.endsWith(".safetensors"))) {
+  if (
+    !files.includes("config.json") ||
+    !files.includes("tokenizer.json") ||
+    !files.some((file) => file.endsWith(".safetensors"))
+  ) {
     throw new Error(`The MLX model directory is incomplete: ${path}`);
   }
 }

@@ -10,14 +10,23 @@ describe("OpenAI Codex adapter", () => {
       modelId: "gpt-test",
       capabilities: ["text-generation"],
       fetch: async (input, init) => {
-        expect(String(input)).toBe("https://chatgpt.com/backend-api/codex/models?client_version=1.0.0");
+        expect(String(input)).toBe(
+          "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0"
+        );
         const headers = new Headers(init?.headers);
         expect(headers.get("authorization")).toBe("Bearer oauth-access");
         expect(headers.get("chatgpt-account-id")).toBe("account-1");
-        return Response.json({ models: [
-          { slug: "gpt-visible", display_name: "Visible", visibility: "list", max_output_tokens: 128_000 },
-          { slug: "gpt-hidden", visibility: "hide" }
-        ] });
+        return Response.json({
+          models: [
+            {
+              slug: "gpt-visible",
+              display_name: "Visible",
+              visibility: "list",
+              max_output_tokens: 128_000
+            },
+            { slug: "gpt-hidden", visibility: "hide" }
+          ]
+        });
       }
     });
 
@@ -45,7 +54,9 @@ describe("OpenAI Codex adapter", () => {
         capabilities: ["summarization", "streaming"],
         fetch: async (_input, init) => {
           const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
-          expect(payload).not.toHaveProperty("max_output_tokens");expect(payload).not.toHaveProperty("contextWindow");expect(payload).not.toHaveProperty("context_window");
+          expect(payload).not.toHaveProperty("max_output_tokens");
+          expect(payload).not.toHaveProperty("contextWindow");
+          expect(payload).not.toHaveProperty("context_window");
           expect(payload).toMatchObject({
             model: modelId,
             reasoning: { effort: "low", summary: "auto" }
@@ -54,13 +65,15 @@ describe("OpenAI Codex adapter", () => {
         }
       });
 
-      await expect(adapter.run({
-        taskType: "summarization",
-        input: "test",
-        requiredCapabilities: ["summarization"],
-        parameters: { contextWindow:128000,maxTokens: 16_384, reasoningLevel: "off" },
-        metadata: {}
-      })).resolves.toMatchObject({ output: "summary", modelId });
+      await expect(
+        adapter.run({
+          taskType: "summarization",
+          input: "test",
+          requiredCapabilities: ["summarization"],
+          parameters: { contextWindow: 128000, maxTokens: 16_384, reasoningLevel: "off" },
+          metadata: {}
+        })
+      ).resolves.toMatchObject({ output: "summary", modelId });
     }
   );
 
@@ -87,20 +100,24 @@ describe("OpenAI Codex adapter", () => {
       }
     });
 
-    await expect(adapter.run({
-      taskType: "text-generation",
-      input: "test",
-      requiredCapabilities: ["text-generation"],
-      parameters: { reasoningLevel: "max" },
-      metadata: {}
-    })).resolves.toMatchObject({ output: "hello world", inputTokens: 2, outputTokens: 2 });
-    await expect(adapter.run({
-      taskType: "embedding",
-      input: "test",
-      requiredCapabilities: ["embedding"],
-      parameters: {},
-      metadata: {}
-    })).rejects.toThrow("errors.ai.unsupportedTask");
+    await expect(
+      adapter.run({
+        taskType: "text-generation",
+        input: "test",
+        requiredCapabilities: ["text-generation"],
+        parameters: { reasoningLevel: "max" },
+        metadata: {}
+      })
+    ).resolves.toMatchObject({ output: "hello world", inputTokens: 2, outputTokens: 2 });
+    await expect(
+      adapter.run({
+        taskType: "embedding",
+        input: "test",
+        requiredCapabilities: ["embedding"],
+        parameters: {},
+        metadata: {}
+      })
+    ).rejects.toThrow("errors.ai.unsupportedTask");
   });
 
   it("preserves the detailed provider response when a request fails", async () => {
@@ -109,18 +126,24 @@ describe("OpenAI Codex adapter", () => {
       accountId: "account-1",
       modelId: "gpt-5.6-terra",
       capabilities: ["summarization"],
-      fetch: async () => Response.json({
-        detail: "Request rejected for account policy"
-      }, { status: 400 })
+      fetch: async () =>
+        Response.json(
+          {
+            detail: "Request rejected for account policy"
+          },
+          { status: 400 }
+        )
     });
 
-    const error = await adapter.run({
-      taskType: "summarization",
-      input: "test",
-      requiredCapabilities: ["summarization"],
-      parameters: {},
-      metadata: {}
-    }).catch((caught: unknown) => caught);
+    const error = await adapter
+      .run({
+        taskType: "summarization",
+        input: "test",
+        requiredCapabilities: ["summarization"],
+        parameters: {},
+        metadata: {}
+      })
+      .catch((caught: unknown) => caught);
 
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain("AI provider request failed (400).");

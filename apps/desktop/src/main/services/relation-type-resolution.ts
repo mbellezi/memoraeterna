@@ -3,26 +3,74 @@ import { CanonicalMatchingSettingsSchema, type CanonicalMatchingSettings } from 
 import { createCanonicalEmbedder } from "./canonical-embedding.js";
 import { z } from "zod";
 import type { KnowledgeGraphGenerationOutput } from "@app/domain";
-import { createRelationTypeRepository, type CanonicalRelationType, type PgPool, type RelationTypeDecision, type RelationTypeVector } from "@app/db";
+import {
+  createRelationTypeRepository,
+  type CanonicalRelationType,
+  type PgPool,
+  type RelationTypeDecision,
+  type RelationTypeVector
+} from "@app/db";
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
 
 export const relationTypeResolutionVersion = "relation-type-resolution-v1";
 export const defaultRelationTypeSimilarityThreshold = 0.92;
-const matchSchema = z.object({ matches: z.array(z.tuple([z.string(), z.string().nullable()])).max(12) }).strict();
-type Candidate = { sourceItemIds?: string[]; key: string; predicate: string; definition: string; score: number; target: NonNullable<RelationTypeDecision["target"]> };
-export interface RelationMatchRow { key: string; predicate: string; definition: string; candidates: Array<Pick<Candidate, "key" | "predicate" | "definition" | "sourceItemIds">> }
-
-export function buildRelationMatchPrompt(rows: RelationMatchRow[], entityIdentity = false): string {
-  const candidates = new Map(rows.flatMap((row) => row.candidates.map((candidate) => [candidate.key, candidate] as const)));
-  return renderPrompt(entityIdentity ? "graph.entity_identity" : "graph.relation_identity", { candidates: { relations: rows.map((row) => [row.key, row.predicate, row.definition, row.candidates.map((candidate) => candidate.key)]), candidates: [...candidates.values()].map((candidate) => [candidate.key, candidate.predicate, candidate.definition]) }, });
+const matchSchema = z
+  .object({ matches: z.array(z.tuple([z.string(), z.string().nullable()])).max(12) })
+  .strict();
+type Candidate = {
+  sourceItemIds?: string[];
+  key: string;
+  predicate: string;
+  definition: string;
+  score: number;
+  target: NonNullable<RelationTypeDecision["target"]>;
+};
+export interface RelationMatchRow {
+  key: string;
+  predicate: string;
+  definition: string;
+  candidates: Array<Pick<Candidate, "key" | "predicate" | "definition" | "sourceItemIds">>;
 }
 
-export function parseRelationMatches(output: unknown, rows: RelationMatchRow[]): Map<string, string | null> {
+export function buildRelationMatchPrompt(rows: RelationMatchRow[], entityIdentity = false): string {
+  const candidates = new Map(
+    rows.flatMap((row) => row.candidates.map((candidate) => [candidate.key, candidate] as const))
+  );
+  return renderPrompt(entityIdentity ? "graph.entity_identity" : "graph.relation_identity", {
+    candidates: {
+      relations: rows.map((row) => [
+        row.key,
+        row.predicate,
+        row.definition,
+        row.candidates.map((candidate) => candidate.key)
+      ]),
+      candidates: [...candidates.values()].map((candidate) => [
+        candidate.key,
+        candidate.predicate,
+        candidate.definition
+      ])
+    }
+  });
+}
+
+export function parseRelationMatches(
+  output: unknown,
+  rows: RelationMatchRow[]
+): Map<string, string | null> {
   const parsed = matchSchema.parse(typeof output === "string" ? JSON.parse(output) : output);
-  const allowed = new Map(rows.map((row) => [row.key, new Set(row.candidates.map((candidate) => candidate.key))]));
+  const allowed = new Map(
+    rows.map((row) => [row.key, new Set(row.candidates.map((candidate) => candidate.key))])
+  );
   const result = new Map(parsed.matches);
-  if (parsed.matches.length !== rows.length || result.size !== rows.length || parsed.matches.some(([key, candidate]) =>
-    !allowed.has(key) || (candidate !== null && !allowed.get(key)!.has(candidate)))) throw new Error("errors.relationTypes.invalidOutput");
+  if (
+    parsed.matches.length !== rows.length ||
+    result.size !== rows.length ||
+    parsed.matches.some(
+      ([key, candidate]) =>
+        !allowed.has(key) || (candidate !== null && !allowed.get(key)!.has(candidate))
+    )
+  )
+    throw new Error("errors.relationTypes.invalidOutput");
   return result;
 }
 
@@ -33,16 +81,29 @@ export function relationTypeCosine(left: number[], right: number[]): number {
   return norms > 0 ? Math.max(-1, Math.min(1, dot / norms)) : -1;
 }
 
-export function embeddingText(input: { predicate: string; definition: string }): string { return renderPrompt("embedding.content.relation", {predicate:input.predicate.replaceAll("_", " "),definition:input.definition}); }
+export function embeddingText(input: { predicate: string; definition: string }): string {
+  return renderPrompt("embedding.content.relation", {
+    predicate: input.predicate.replaceAll("_", " "),
+    definition: input.definition
+  });
+}
 
 export function createRelationTypeResolver(options: {
   settings?: CanonicalMatchingSettings;
-  pool: PgPool; ai: Pick<AiService, "runDefaultTask">; threshold: number; context: AiTaskLogContext; signal?: AbortSignal;
+  pool: PgPool;
+  ai: Pick<AiService, "runDefaultTask">;
+  threshold: number;
+  context: AiTaskLogContext;
+  signal?: AbortSignal;
 }) {
   const settings = CanonicalMatchingSettingsSchema.parse(options.settings ?? {});
   const repository = createRelationTypeRepository(options.pool);
-  const embedText = createCanonicalEmbedder({ ...options, strategy: relationTypeResolutionVersion });
-  const embed = (input: { predicate: string; definition: string; sourceItemIds?: string[] }) => embedText(embeddingText(input), input.sourceItemIds);
+  const embedText = createCanonicalEmbedder({
+    ...options,
+    strategy: relationTypeResolutionVersion
+  });
+  const embed = (input: { predicate: string; definition: string; sourceItemIds?: string[] }) =>
+    embedText(embeddingText(input), input.sourceItemIds);
   async function indexMissing(vector: RelationTypeVector) {
     for (;;) {
       options.signal?.throwIfAborted();
@@ -59,29 +120,57 @@ export function createRelationTypeResolver(options: {
       const group: RelationMatchRow[] = [];
       while (pending.length && group.length < settings.confirmationBatchSize) {
         const next = pending[0]!;
-        if (group.length && buildRelationMatchPrompt([...group, next]).length > settings.confirmationMaxCharacters) break;
+        if (
+          group.length &&
+          buildRelationMatchPrompt([...group, next]).length > settings.confirmationMaxCharacters
+        )
+          break;
         group.push(pending.shift()!);
       }
       const prompt = buildRelationMatchPrompt(group);
       let valid = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         options.signal?.throwIfAborted();
-        const execution = await options.ai.runDefaultTask("knowledge-graph-generation", joinPrompts(prompt, attempt ? renderPrompt("graph.relation_identity.repair") : ""),
-          { ...options.context, sourceItemIds: [...new Set([...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : []), ...group.flatMap((row) => row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? []))])], attempt, promptVersion: relationTypeResolutionVersion, contentLanguage: "en", stage: "relation_type_resolution" }, options.signal);
+        const execution = await options.ai.runDefaultTask(
+          "knowledge-graph-generation",
+          joinPrompts(prompt, attempt ? renderPrompt("graph.relation_identity.repair") : ""),
+          {
+            ...options.context,
+            sourceItemIds: [
+              ...new Set([
+                ...(options.context.sourceItemIds ?? []),
+                ...(options.context.sourceItemId ? [options.context.sourceItemId] : []),
+                ...group.flatMap((row) =>
+                  row.candidates.flatMap((candidate) => candidate.sourceItemIds ?? [])
+                )
+              ])
+            ],
+            attempt,
+            promptVersion: relationTypeResolutionVersion,
+            contentLanguage: "en",
+            stage: "relation_type_resolution"
+          },
+          options.signal
+        );
         if (!execution) throw new Error("errors.ai.noCompatibleModel");
         try {
           const matches = parseRelationMatches(execution.output, group);
-          for (const [key, candidate] of matches) decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
+          for (const [key, candidate] of matches)
+            decisions.set(key, { candidate, aiTaskRunId: execution.aiTaskRunId });
           valid = true;
           break;
-        } catch { /* One bounded repair attempt; invalid output never creates an alias. */ }
+        } catch {
+          /* One bounded repair attempt; invalid output never creates an alias. */
+        }
       }
       if (!valid) throw new Error("errors.relationTypes.invalidOutput");
     }
     return decisions;
   }
   return async (batch: KnowledgeGraphGenerationOutput): Promise<KnowledgeGraphGenerationOutput> => {
-    const unique = [...new Map(batch.relations.map((relation) => [relation.predicate, relation])).values()];
+    const unique = [
+      ...new Map(batch.relations.map((relation) => [relation.predicate, relation])).values()
+    ];
     const resolved = await repository.findExact(unique.map((relation) => relation.predicate));
     let pending = unique.filter((relation) => !resolved.has(relation.predicate));
     while (pending.length) {
@@ -92,35 +181,84 @@ export function createRelationTypeResolver(options: {
         const exact = await repository.findExact(group.map((relation) => relation.predicate));
         for (const [key, value] of exact) resolved.set(key, value);
         const unknown = group.filter((relation) => !exact.has(relation.predicate));
-        if (!unknown.length) { committed = exact; break; }
-        const embedded: Array<{ predicate: string; definition: string; vector: RelationTypeVector }> = [];
+        if (!unknown.length) {
+          committed = exact;
+          break;
+        }
+        const embedded: Array<{
+          predicate: string;
+          definition: string;
+          vector: RelationTypeVector;
+        }> = [];
         const candidatesByRow = new Map<string, Candidate[]>();
         const candidateKeys = new Map<string, string>();
         for (const [index, relation] of unknown.entries()) {
           const vector = await embed(relation);
           await indexMissing(vector);
-          const candidates: Candidate[] = (await repository.candidates(vector, options.threshold, settings.relationTypeCandidateLimit)).map((candidate) => ({
-            ...candidate, key: `id:${candidate.id}`, target: { id: candidate.id }
+          const candidates: Candidate[] = (
+            await repository.candidates(
+              vector,
+              options.threshold,
+              settings.relationTypeCandidateLimit
+            )
+          ).map((candidate) => ({
+            ...candidate,
+            key: `id:${candidate.id}`,
+            target: { id: candidate.id }
           }));
           for (const previous of embedded) {
             const score = relationTypeCosine(vector.embedding, previous.vector.embedding);
-            if (score >= options.threshold) candidates.push({ ...previous, key: `new:${previous.predicate}`, score, target: { predicate: previous.predicate } });
+            if (score >= options.threshold)
+              candidates.push({
+                ...previous,
+                key: `new:${previous.predicate}`,
+                score,
+                target: { predicate: previous.predicate }
+              });
           }
-          const selected = candidates.sort((a, b) => b.score - a.score || a.key.localeCompare(b.key)).slice(0, settings.relationTypeCandidateLimit).map((candidate) => {
-            if (!candidateKeys.has(candidate.key)) candidateKeys.set(candidate.key, `c${candidateKeys.size + 1}`);
-            return { ...candidate, key: candidateKeys.get(candidate.key)! };
-          });
+          const selected = candidates
+            .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+            .slice(0, settings.relationTypeCandidateLimit)
+            .map((candidate) => {
+              if (!candidateKeys.has(candidate.key))
+                candidateKeys.set(candidate.key, `c${candidateKeys.size + 1}`);
+              return { ...candidate, key: candidateKeys.get(candidate.key)! };
+            });
           candidatesByRow.set(`r${index + 1}`, selected);
           embedded.push({ predicate: relation.predicate, definition: relation.definition, vector });
         }
-        const rows = unknown.map((relation, index) => ({ key: `r${index + 1}`, predicate: relation.predicate, definition: relation.definition, candidates: candidatesByRow.get(`r${index + 1}`)! })).filter((row) => row.candidates.length > 0);
+        const rows = unknown
+          .map((relation, index) => ({
+            key: `r${index + 1}`,
+            predicate: relation.predicate,
+            definition: relation.definition,
+            candidates: candidatesByRow.get(`r${index + 1}`)!
+          }))
+          .filter((row) => row.candidates.length > 0);
         const matches = await confirm(rows);
         const decisions: RelationTypeDecision[] = unknown.map((relation, index) => {
-          const key = `r${index + 1}`, match = matches.get(key);
+          const key = `r${index + 1}`,
+            match = matches.get(key);
           const candidate = candidatesByRow.get(key)!.find((item) => item.key === match?.candidate);
-          return { predicate: relation.predicate, definition: relation.definition, target: candidate?.target ?? null, vector: embedded[index]!.vector,
-            metadata: { sourceItemIds: [...(options.context.sourceItemIds ?? []), ...(options.context.sourceItemId ? [options.context.sourceItemId] : [])], settings, promptVersion: relationTypeResolutionVersion, threshold: options.threshold, method: candidate ? "llm_equivalent" : "new_type",
-              ...(match ? { aiTaskRunId: match.aiTaskRunId } : {}), ...(candidate ? { score: candidate.score } : {}), embeddingSpaceKey: embedded[index]!.vector.spaceKey } };
+          return {
+            predicate: relation.predicate,
+            definition: relation.definition,
+            target: candidate?.target ?? null,
+            vector: embedded[index]!.vector,
+            metadata: {
+              sourceItemIds: [
+                ...(options.context.sourceItemIds ?? []),
+                ...(options.context.sourceItemId ? [options.context.sourceItemId] : [])
+              ],
+              settings,
+              promptVersion: relationTypeResolutionVersion,
+              threshold: options.threshold,
+              method: candidate ? "llm_equivalent" : "new_type",
+              ...(match ? { aiTaskRunId: match.aiTaskRunId } : {}),
+              ...(candidate ? { score: candidate.score } : {}),
+              embeddingSpaceKey: embedded[index]!.vector.spaceKey
+            }
+          };
         });
         options.signal?.throwIfAborted();
         committed = await repository.commit(decisions, revision);
@@ -128,9 +266,18 @@ export function createRelationTypeResolver(options: {
       if (!committed) throw new Error("errors.relationTypes.catalogChanged");
       for (const [key, value] of committed) resolved.set(key, value);
     }
-    return { ...batch, relations: batch.relations.map((relation) => {
-      const type = resolved.get(relation.predicate)!;
-      return { ...relation, originalPredicate: relation.predicate, predicate: type.predicate, definition: type.definition, relationTypeId: type.id };
-    }) };
+    return {
+      ...batch,
+      relations: batch.relations.map((relation) => {
+        const type = resolved.get(relation.predicate)!;
+        return {
+          ...relation,
+          originalPredicate: relation.predicate,
+          predicate: type.predicate,
+          definition: type.definition,
+          relationTypeId: type.id
+        };
+      })
+    };
   };
 }

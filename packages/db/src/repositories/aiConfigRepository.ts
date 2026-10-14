@@ -34,16 +34,33 @@ export interface AiProfileRecord {
 }
 
 interface ProviderRow extends QueryResultRow {
-  id: string; provider: string; displayName: string; credentialRef: string | null;
-  baseUrl: string | null; defaultParameters: unknown; status: string; metadata: unknown;
-  createdAt: unknown; updatedAt: unknown;
+  id: string;
+  provider: string;
+  displayName: string;
+  credentialRef: string | null;
+  baseUrl: string | null;
+  defaultParameters: unknown;
+  status: string;
+  metadata: unknown;
+  createdAt: unknown;
+  updatedAt: unknown;
 }
 
 interface ProfileRow extends QueryResultRow {
-  id: string; name: string; description: string | null; isDefault: boolean;
-  privacyMode: string; outputLanguage: string; providerConfigId: string | null;
-  localModelId: string | null; modelId: string | null; runtime: string | null;
-  capabilities: unknown; status: string; createdAt: unknown; updatedAt: unknown;
+  id: string;
+  name: string;
+  description: string | null;
+  isDefault: boolean;
+  privacyMode: string;
+  outputLanguage: string;
+  providerConfigId: string | null;
+  localModelId: string | null;
+  modelId: string | null;
+  runtime: string | null;
+  capabilities: unknown;
+  status: string;
+  createdAt: unknown;
+  updatedAt: unknown;
 }
 
 const providerReturning = `id, provider, display_name as "displayName", credential_ref as "credentialRef",
@@ -101,17 +118,30 @@ export function createAiConfigRepository(db: Queryable) {
              )
              select * from updated_provider
              where (select count(*) from updated_profiles) >= 0`,
-            [input.id, input.provider, input.displayName, input.credentialRef ?? null,
-              input.baseUrl ?? null, input.defaultParameters ?? {}, input.status ?? "configured",
-              input.metadata ?? {}]
+            [
+              input.id,
+              input.provider,
+              input.displayName,
+              input.credentialRef ?? null,
+              input.baseUrl ?? null,
+              input.defaultParameters ?? {},
+              input.status ?? "configured",
+              input.metadata ?? {}
+            ]
           )
         : await db.query<ProviderRow>(
             `insert into ai_provider_configs (
                provider, display_name, credential_ref, base_url, default_parameters, status, metadata
              ) values ($1, $2, $3, $4, $5, $6, $7) returning ${providerReturning}`,
-            [input.provider, input.displayName, input.credentialRef ?? null,
-              input.baseUrl ?? null, input.defaultParameters ?? {}, input.status ?? "configured",
-              input.metadata ?? {}]
+            [
+              input.provider,
+              input.displayName,
+              input.credentialRef ?? null,
+              input.baseUrl ?? null,
+              input.defaultParameters ?? {},
+              input.status ?? "configured",
+              input.metadata ?? {}
+            ]
           );
       const row = result.rows[0];
       if (!row) throw new Error("AI provider configuration write returned no row.");
@@ -119,7 +149,9 @@ export function createAiConfigRepository(db: Queryable) {
     },
 
     async listProviders(): Promise<AiProviderConfigRecord[]> {
-      const result = await db.query<ProviderRow>(`select ${providerReturning} from ai_provider_configs order by display_name`);
+      const result = await db.query<ProviderRow>(
+        `select ${providerReturning} from ai_provider_configs order by display_name`
+      );
       return result.rows.map(mapProvider);
     },
 
@@ -190,8 +222,13 @@ export function createAiConfigRepository(db: Queryable) {
          insert into ai_profile_sets (name, description, is_default, privacy_mode, output_language)
          select $1, $2, $3, $4, $5 where (select count(*) from unset_default) >= 0
          returning ${profileReturning}`,
-        [input.name, input.description ?? null, input.isDefault ?? false,
-          input.privacyMode ?? "allow_remote", input.outputLanguage ?? "ui"]
+        [
+          input.name,
+          input.description ?? null,
+          input.isDefault ?? false,
+          input.privacyMode ?? "allow_remote",
+          input.outputLanguage ?? "ui"
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI profile insert returned no row.");
@@ -226,7 +263,9 @@ export function createAiConfigRepository(db: Queryable) {
     },
 
     async listProfiles(): Promise<AiProfileRecord[]> {
-      const result = await db.query<ProfileRow>(`select ${profileReturning} from ai_profile_sets order by is_default desc, name`);
+      const result = await db.query<ProfileRow>(
+        `select ${profileReturning} from ai_profile_sets order by is_default desc, name`
+      );
       return result.rows.map(mapProfile);
     },
 
@@ -257,20 +296,31 @@ export function createAiConfigRepository(db: Queryable) {
            capabilities = case when $5::boolean then $10::jsonb else capabilities end,
            updated_at = now()
          where id = $1 returning ${profileReturning}`,
-        [input.id, input.name ?? null, input.privacyMode ?? null, input.outputLanguage ?? null,
-          input.modelId !== undefined, input.providerConfigId ?? null, input.localModelId ?? null,
-          input.modelId ?? null, input.runtime ?? null, JSON.stringify(input.capabilities ?? [])]
+        [
+          input.id,
+          input.name ?? null,
+          input.privacyMode ?? null,
+          input.outputLanguage ?? null,
+          input.modelId !== undefined,
+          input.providerConfigId ?? null,
+          input.localModelId ?? null,
+          input.modelId ?? null,
+          input.runtime ?? null,
+          JSON.stringify(input.capabilities ?? [])
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI profile update returned no row.");
       return mapProfile(row);
     },
 
-    async listProfileTasks(profileId?: string): Promise<Array<{
-      profileId: string;
-      task: string;
-      parameters: JsonObject;
-    }>> {
+    async listProfileTasks(profileId?: string): Promise<
+      Array<{
+        profileId: string;
+        task: string;
+        parameters: JsonObject;
+      }>
+    > {
       const result = await db.query<QueryResultRow & Record<string, unknown>>(
         `select profile_id as "profileId", task, parameters
          from ai_profile_tasks
@@ -300,11 +350,23 @@ export function createAiConfigRepository(db: Queryable) {
       );
     },
 
-    async cacheProviderModelContext(id:string,provider:string,modelId:string,baseUrl:string|null,limits:JsonObject):Promise<void>{
-      await db.query("update ai_provider_configs set metadata=jsonb_set(metadata,'{modelLimits}',$4::jsonb) where id=$1 and metadata->>'modelId'=$2 and base_url is not distinct from $3 and provider=$5",[id,modelId,baseUrl,limits,provider]);
+    async cacheProviderModelContext(
+      id: string,
+      provider: string,
+      modelId: string,
+      baseUrl: string | null,
+      limits: JsonObject
+    ): Promise<void> {
+      await db.query(
+        "update ai_provider_configs set metadata=jsonb_set(metadata,'{modelLimits}',$4::jsonb) where id=$1 and metadata->>'modelId'=$2 and base_url is not distinct from $3 and provider=$5",
+        [id, modelId, baseUrl, limits, provider]
+      );
     },
 
-    async getDefaultTask(task: string, explicitProfileId?: string): Promise<{
+    async getDefaultTask(
+      task: string,
+      explicitProfileId?: string
+    ): Promise<{
       profileId: string;
       privacyMode: string;
       providerConfigId: string | null;
@@ -356,14 +418,18 @@ export function createAiConfigRepository(db: Queryable) {
         privacyMode: String(row.privacyMode),
         providerConfigId: row.providerConfigId === null ? null : String(row.providerConfigId),
         localModelId: row.localModelId === null ? null : String(row.localModelId),
-        provider: String(row.provider), credentialRef: row.credentialRef === null ? null : String(row.credentialRef),
-        baseUrl: row.baseUrl === null ? null : String(row.baseUrl), modelId: String(row.modelId),
+        provider: String(row.provider),
+        credentialRef: row.credentialRef === null ? null : String(row.credentialRef),
+        baseUrl: row.baseUrl === null ? null : String(row.baseUrl),
+        modelId: String(row.modelId),
         runtime: String(row.runtime),
         managedPath: row.managedPath === null ? null : String(row.managedPath),
         repository: row.repository === null ? null : String(row.repository),
         revision: row.revision === null ? null : String(row.revision),
         quantization: row.quantization === null ? null : String(row.quantization),
-        requiredCapabilities: Array.isArray(row.requiredCapabilities) ? row.requiredCapabilities.map(String) : [],
+        requiredCapabilities: Array.isArray(row.requiredCapabilities)
+          ? row.requiredCapabilities.map(String)
+          : [],
         parameters: asJsonObject(row.parameters),
         modelDefaultParameters: asJsonObject(row.modelDefaultParameters),
         providerMetadata: asJsonObject(row.providerMetadata),
@@ -372,7 +438,10 @@ export function createAiConfigRepository(db: Queryable) {
     },
 
     async setProfileTask(input: {
-      profileId: string; task: string; parameters?: JsonObject; fallbackPolicy?: string;
+      profileId: string;
+      task: string;
+      parameters?: JsonObject;
+      fallbackPolicy?: string;
     }): Promise<void> {
       await db.query(
         `insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy)
@@ -385,14 +454,31 @@ export function createAiConfigRepository(db: Queryable) {
     },
 
     async recordTaskRun(input: {
-      profileId?: string | null; taskType: string; provider: string; modelId: string;
-      runtime: string; capabilitiesUsed?: string[]; inputHash?: string | null;
-      adapter?: string | null; repository?: string | null; revision?: string | null;
-      quantization?: string | null; parameters?: JsonObject;
-      outputHash?: string | null; inputTokens?: number | null; outputTokens?: number | null;
-      costEstimate?: number | null; durationMs: number; status: string; error?: string | null;
-      sourceItemIds?: string[]; promptCompositions?: unknown[];
-      organizationRunId?: string; organizationStep?: number; maintenanceRunId?: string; maintenanceStep?: number;
+      profileId?: string | null;
+      taskType: string;
+      provider: string;
+      modelId: string;
+      runtime: string;
+      capabilitiesUsed?: string[];
+      inputHash?: string | null;
+      adapter?: string | null;
+      repository?: string | null;
+      revision?: string | null;
+      quantization?: string | null;
+      parameters?: JsonObject;
+      outputHash?: string | null;
+      inputTokens?: number | null;
+      outputTokens?: number | null;
+      costEstimate?: number | null;
+      durationMs: number;
+      status: string;
+      error?: string | null;
+      sourceItemIds?: string[];
+      promptCompositions?: unknown[];
+      organizationRunId?: string;
+      organizationStep?: number;
+      maintenanceRunId?: string;
+      maintenanceStep?: number;
     }): Promise<string> {
       const result = await db.query<QueryResultRow & { id: string }>(
         `with inserted_run as (
@@ -414,12 +500,34 @@ export function createAiConfigRepository(db: Queryable) {
          ${input.maintenanceRunId ? ", inserted_maintenance_step as (insert into maintenance_steps(run_id,sequence,ai_task_run_id,artifact) select $22::uuid,$23::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
          select id from inserted_run
          where (select count(*) from inserted_sources) >= 0`,
-        [input.profileId ?? null, input.taskType, input.provider, input.modelId, input.runtime,
-          input.adapter ?? null, input.repository ?? null, input.revision ?? null, input.quantization ?? null,
-          input.parameters ?? {}, JSON.stringify(input.capabilitiesUsed ?? []), input.inputHash ?? null,
-          input.outputHash ?? null, input.inputTokens ?? null, input.outputTokens ?? null,
-          input.costEstimate ?? null, input.durationMs, input.status, input.error ?? null,
-          [...new Set(input.sourceItemIds ?? [])], JSON.stringify(input.promptCompositions ?? []), ...(input.organizationRunId ? [input.organizationRunId,input.organizationStep] : input.maintenanceRunId ? [input.maintenanceRunId,input.maintenanceStep] : [])]
+        [
+          input.profileId ?? null,
+          input.taskType,
+          input.provider,
+          input.modelId,
+          input.runtime,
+          input.adapter ?? null,
+          input.repository ?? null,
+          input.revision ?? null,
+          input.quantization ?? null,
+          input.parameters ?? {},
+          JSON.stringify(input.capabilitiesUsed ?? []),
+          input.inputHash ?? null,
+          input.outputHash ?? null,
+          input.inputTokens ?? null,
+          input.outputTokens ?? null,
+          input.costEstimate ?? null,
+          input.durationMs,
+          input.status,
+          input.error ?? null,
+          [...new Set(input.sourceItemIds ?? [])],
+          JSON.stringify(input.promptCompositions ?? []),
+          ...(input.organizationRunId
+            ? [input.organizationRunId, input.organizationStep]
+            : input.maintenanceRunId
+              ? [input.maintenanceRunId, input.maintenanceStep]
+              : [])
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("AI task run insert returned no row.");

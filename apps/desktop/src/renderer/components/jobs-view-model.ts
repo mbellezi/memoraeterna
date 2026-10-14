@@ -30,8 +30,8 @@ export interface JobCardModel {
   source: NonNullable<JobRecord["source"]> | null;
   status: JobRecord["status"] | "retrying";
   progress: number;
-  currentStage:string;
-  stageError:string|null;
+  currentStage: string;
+  stageError: string | null;
   updatedAt: string;
   errors: JobRecord["errorHistory"];
 }
@@ -41,62 +41,96 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
   for (const job of jobs) {
     // Organization and maintenance are shown through their canonical runs in
     // Knowledge Automation, including work that outlives its dispatch job.
-    if (job.type === 'organization' || job.type === 'maintenance') continue;
+    if (job.type === "organization" || job.type === "maintenance") continue;
     const key = job.ingestionRun?.id ?? job.id;
     groups.set(key, [...(groups.get(key) ?? []), job]);
   }
-  return [...groups.entries()].map(([id, groupedJobs]) => {
-    const mainJob = groupedJobs.find((job) => job.type === "ingestion") ?? groupedJobs[0]!;
-    const ingestionRun = groupedJobs.find((job) => job.ingestionRun)?.ingestionRun ?? null;
-    const childErrors = groupedJobs.filter((job) => job.type !== "ingestion").flatMap((job) => job.errorHistory);
-    const errors = deduplicateErrors(childErrors.length > 0 ? childErrors : mainJob.errorHistory);
-    const matching = deferredStagePresentation(mainJob,ingestionRun);
-    const status = matching?.status ?? (mainJob.status === "queued" && mainJob.attempts > 0 && errors.length > 0
-      ? "retrying" as const
-      : mainJob.status);
-    return {
-      id,
-      mainJob,
-      jobs: groupedJobs,
-      ingestionRun,
-      source: groupedJobs.find((job) => job.source)?.source ?? null,
-      status,
-      progress: matching?.progress ?? mainJob.progress,
-      currentStage:matching?.stage??ingestionRun?.currentStage??mainJob.type,
-      stageError:matching?.status==="failed"?matching.error:null,
-      updatedAt: groupedJobs.map((job) => job.updatedAt).toSorted().at(-1) ?? mainJob.updatedAt,
-      errors
-    };
-  }).toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  return [...groups.entries()]
+    .map(([id, groupedJobs]) => {
+      const mainJob = groupedJobs.find((job) => job.type === "ingestion") ?? groupedJobs[0]!;
+      const ingestionRun = groupedJobs.find((job) => job.ingestionRun)?.ingestionRun ?? null;
+      const childErrors = groupedJobs
+        .filter((job) => job.type !== "ingestion")
+        .flatMap((job) => job.errorHistory);
+      const errors = deduplicateErrors(childErrors.length > 0 ? childErrors : mainJob.errorHistory);
+      const matching = deferredStagePresentation(mainJob, ingestionRun);
+      const status =
+        matching?.status ??
+        (mainJob.status === "queued" && mainJob.attempts > 0 && errors.length > 0
+          ? ("retrying" as const)
+          : mainJob.status);
+      return {
+        id,
+        mainJob,
+        jobs: groupedJobs,
+        ingestionRun,
+        source: groupedJobs.find((job) => job.source)?.source ?? null,
+        status,
+        progress: matching?.progress ?? mainJob.progress,
+        currentStage: matching?.stage ?? ingestionRun?.currentStage ?? mainJob.type,
+        stageError: matching?.status === "failed" ? matching.error : null,
+        updatedAt:
+          groupedJobs
+            .map((job) => job.updatedAt)
+            .toSorted()
+            .at(-1) ?? mainJob.updatedAt,
+        errors
+      };
+    })
+    .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }
 
-function deferredStagePresentation(mainJob: JobRecord, run: JobCardModel["ingestionRun"]): {status: JobRecord["status"]; progress:number;stage:string;error:string|null} | null {
+function deferredStagePresentation(
+  mainJob: JobRecord,
+  run: JobCardModel["ingestionRun"]
+): { status: JobRecord["status"]; progress: number; stage: string; error: string | null } | null {
   if (!run || mainJob.type !== "ingestion") return null;
-  const deferredStages = ["atomicNoteMatching","sourceMatching","organizeKnowledge"];
-  const stage = deferredStages.includes(run.currentStage) ? run.currentStage : mainJob.status === "succeeded"
-    ? deferredStages.find((key) => {
-      const saved = run.stagesCheckpoint[key] as {status?:unknown} | undefined;
-      return saved && !["completed","skipped"].includes(String(saved.status));
-    }) : undefined;
+  const deferredStages = ["atomicNoteMatching", "sourceMatching", "organizeKnowledge"];
+  const stage = deferredStages.includes(run.currentStage)
+    ? run.currentStage
+    : mainJob.status === "succeeded"
+      ? deferredStages.find((key) => {
+          const saved = run.stagesCheckpoint[key] as { status?: unknown } | undefined;
+          return saved && !["completed", "skipped"].includes(String(saved.status));
+        })
+      : undefined;
   if (!stage) return null;
   const checkpoint = run.stagesCheckpoint[stage];
   if (!checkpoint || typeof checkpoint !== "object") return null;
-  const state = checkpoint as Record<string,unknown>;
-  const fraction = typeof state.progress === "number" && Number.isFinite(state.progress) ? Math.max(0,Math.min(1,state.progress)) : 0;
-  const error=typeof state.error==="string"?state.error:null;
+  const state = checkpoint as Record<string, unknown>;
+  const fraction =
+    typeof state.progress === "number" && Number.isFinite(state.progress)
+      ? Math.max(0, Math.min(1, state.progress))
+      : 0;
+  const error = typeof state.error === "string" ? state.error : null;
   const base = stage === "organizeKnowledge" ? 0.98 : stage === "sourceMatching" ? 0.95 : 0.89;
-  if (state.status === "waiting_for_batch" || state.status === "pending") return {status:"queued",progress:base,stage,error};
-  if (state.status === "running" || state.status === "failed" || state.status === "canceled") return {status:state.status,progress:base + fraction * (stage === "organizeKnowledge"?0.02:stage === "sourceMatching" ? 0.04 : 0.06),stage,error};
-  if (state.status === "completed" && run.effectiveStages.every((key) => {
-    const other = run.stagesCheckpoint[key] as {status?: unknown} | undefined;
-    return key === stage || other?.status === "completed" || other?.status === "skipped";
-  })) return {status:"succeeded",progress:1,stage,error};
+  if (state.status === "waiting_for_batch" || state.status === "pending")
+    return { status: "queued", progress: base, stage, error };
+  if (state.status === "running" || state.status === "failed" || state.status === "canceled")
+    return {
+      status: state.status,
+      progress:
+        base +
+        fraction *
+          (stage === "organizeKnowledge" ? 0.02 : stage === "sourceMatching" ? 0.04 : 0.06),
+      stage,
+      error
+    };
+  if (
+    state.status === "completed" &&
+    run.effectiveStages.every((key) => {
+      const other = run.stagesCheckpoint[key] as { status?: unknown } | undefined;
+      return key === stage || other?.status === "completed" || other?.status === "skipped";
+    })
+  )
+    return { status: "succeeded", progress: 1, stage, error };
   return null;
 }
 
 export function matchesFilter(card: JobCardModel, filter: JobFilter): boolean {
   if (filter === "all") return true;
-  if (filter === "active") return card.status === "queued" || card.status === "running" || card.status === "retrying";
+  if (filter === "active")
+    return card.status === "queued" || card.status === "running" || card.status === "retrying";
   if (filter === "completed") return card.status === "succeeded";
   return card.status === "failed" || card.status === "canceled";
 }
@@ -108,10 +142,12 @@ export function listActivityJobs(card: JobCardModel): JobRecord[] {
 
 function deduplicateErrors(errors: JobRecord["errorHistory"]): JobRecord["errorHistory"] {
   const seen = new Set<string>();
-  return errors.filter((error) => {
-    const key = `${error.message}:${error.stage}:${error.attempt}:${error.occurredAt}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).toSorted((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+  return errors
+    .filter((error) => {
+      const key = `${error.message}:${error.stage}:${error.attempt}:${error.occurredAt}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .toSorted((left, right) => left.occurredAt.localeCompare(right.occurredAt));
 }

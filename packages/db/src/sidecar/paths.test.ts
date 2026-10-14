@@ -35,6 +35,8 @@ describe("resolvePostgresSidecarPaths", () => {
         arch: "arm64",
         env: {}
       }).binDir
-    ).toBe("/Applications/Memora.app/Contents/Resources/sidecars/postgres/darwin-arm64/postgresql-18.4/bin");
+    ).toBe(
+      "/Applications/Memora.app/Contents/Resources/sidecars/postgres/darwin-arm64/postgresql-18.4/bin"
+    );
   });
 });

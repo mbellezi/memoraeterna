@@ -28,12 +28,24 @@ export class ChromeGatewayClient {
     const settings = await this.getSettings();
     const response = await fetch(`${trimUrl(settings.gatewayBaseUrl)}/v1/handshake`, {
       method: "POST",
-      headers: { authorization: `Bearer ${settings.pairingToken}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${settings.pairingToken}`,
+        "content-type": "application/json"
+      },
       body: JSON.stringify({
         contractVersion: integrationContractVersion,
         clientId: settings.clientId,
-        client: { kind: "chrome-extension", name: "Memora Chrome", contractVersion: integrationContractVersion },
-        capabilities: ["capture-web-page", "capture-selection", "capture-youtube-video", "receive-job-progress"],
+        client: {
+          kind: "chrome-extension",
+          name: "Memora Chrome",
+          contractVersion: integrationContractVersion
+        },
+        capabilities: [
+          "capture-web-page",
+          "capture-selection",
+          "capture-youtube-video",
+          "receive-job-progress"
+        ],
         instanceId: chrome.runtime.id
       })
     });
@@ -59,7 +71,7 @@ export class ChromeGatewayClient {
       return this.post(path, payload);
     }
     if (!response.ok) throw await responseError(response);
-    return await response.json() as IntegrationCommandResult;
+    return (await response.json()) as IntegrationCommandResult;
   }
 
   public disconnect(): void {
@@ -78,9 +90,15 @@ export class ChromeGatewayClient {
     previous?.close();
     const socket = new WebSocket(this.eventUrl);
     this.socket = socket;
-    socket.addEventListener("open", () => { this.reconnectAttempt = 0; });
+    socket.addEventListener("open", () => {
+      this.reconnectAttempt = 0;
+    });
     socket.addEventListener("message", (event) => {
-      try { this.onEvent(JSON.parse(String(event.data)) as IntegrationEvent); } catch { /* ignore invalid events */ }
+      try {
+        this.onEvent(JSON.parse(String(event.data)) as IntegrationEvent);
+      } catch {
+        /* ignore invalid events */
+      }
     });
     socket.addEventListener("close", () => {
       if (this.socket === socket) this.socket = null;
@@ -101,7 +119,7 @@ export class ChromeGatewayClient {
 
 async function responseError(response: Response): Promise<Error> {
   try {
-    const body = await response.json() as { code?: string };
+    const body = (await response.json()) as { code?: string };
     return new Error(body.code ?? `gateway_${response.status}`);
   } catch {
     return new Error(`gateway_${response.status}`);

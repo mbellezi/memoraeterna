@@ -1,6 +1,16 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { access, cp, lstat, mkdir, readFile, readlink, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  readdir,
+  rm,
+  writeFile
+} from "node:fs/promises";
 import { arch, platform } from "node:process";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,7 +74,7 @@ const artifacts = [
 const manifestArtifacts = [];
 for (const artifact of artifacts) {
   const targeted = !artifact.platform || artifact.platform === platformArch;
-  const available = targeted && await exists(artifact.source);
+  const available = targeted && (await exists(artifact.source));
   if (targeted && !available && artifact.required) {
     throw new Error(`Required package artifact is missing: ${relative(root, artifact.source)}`);
   }
@@ -73,14 +83,26 @@ for (const artifact of artifacts) {
       await mkdir(artifact.destination, { recursive: true });
       for (const item of artifact.include) {
         const source = join(artifact.source, item);
-        if (!await exists(source)) {
-          throw new Error(`Required ${artifact.id} runtime directory is missing: ${relative(root, source)}`);
+        if (!(await exists(source))) {
+          throw new Error(
+            `Required ${artifact.id} runtime directory is missing: ${relative(root, source)}`
+          );
         }
-        await cp(source, join(artifact.destination, item), { recursive: true, force: false, errorOnExist: true, filter: stageFile });
+        await cp(source, join(artifact.destination, item), {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+          filter: stageFile
+        });
       }
     } else {
       await mkdir(dirname(artifact.destination), { recursive: true });
-      await cp(artifact.source, artifact.destination, { recursive: true, force: false, errorOnExist: true, filter: stageFile });
+      await cp(artifact.source, artifact.destination, {
+        recursive: true,
+        force: false,
+        errorOnExist: true,
+        filter: stageFile
+      });
     }
   }
   const files = available ? await inventory(artifact.destination, output) : [];
@@ -90,9 +112,10 @@ for (const artifact of artifacts) {
     available,
     files,
     packageChecksum: checksumInventory(files),
-    components: artifact.id === "docling-sidecar" && available
-      ? await readDoclingComponents(artifact.destination)
-      : []
+    components:
+      artifact.id === "docling-sidecar" && available
+        ? await readDoclingComponents(artifact.destination)
+        : []
   });
 }
 
@@ -109,16 +132,22 @@ const topLevelPackages = manifestArtifacts.map((artifact) => ({
   versionInfo: artifact.version,
   downloadLocation: "NOASSERTION",
   filesAnalyzed: false,
-  ...(artifact.available ? { checksums: [{ algorithm: "SHA256", checksumValue: artifact.packageChecksum }] } : {})
+  ...(artifact.available
+    ? { checksums: [{ algorithm: "SHA256", checksumValue: artifact.packageChecksum }] }
+    : {})
 }));
-const componentPackages = manifestArtifacts.flatMap((artifact) => artifact.components.map((component, index) => ({
-  name: component.name,
-  SPDXID: componentSpdxId(artifact.id, component.name, index),
-  versionInfo: component.version,
-  downloadLocation: component.repository ?? "NOASSERTION",
-  filesAnalyzed: false,
-  ...(component.sha256 ? { checksums: [{ algorithm: "SHA256", checksumValue: component.sha256 }] } : {})
-})));
+const componentPackages = manifestArtifacts.flatMap((artifact) =>
+  artifact.components.map((component, index) => ({
+    name: component.name,
+    SPDXID: componentSpdxId(artifact.id, component.name, index),
+    versionInfo: component.version,
+    downloadLocation: component.repository ?? "NOASSERTION",
+    filesAnalyzed: false,
+    ...(component.sha256
+      ? { checksums: [{ algorithm: "SHA256", checksumValue: component.sha256 }] }
+      : {})
+  }))
+);
 await writeJson(join(output, "sbom.spdx.json"), {
   spdxVersion: "SPDX-2.3",
   dataLicense: "CC0-1.0",
@@ -128,11 +157,13 @@ await writeJson(join(output, "sbom.spdx.json"), {
   creationInfo: { created: generatedAt, creators: ["Tool: scripts/prepare-desktop-resources.mjs"] },
   documentDescribes: topLevelPackages.map((artifact) => artifact.SPDXID),
   packages: [...topLevelPackages, ...componentPackages],
-  relationships: manifestArtifacts.flatMap((artifact) => artifact.components.map((component, index) => ({
-    spdxElementId: `SPDXRef-Package-${artifact.id}`,
-    relationshipType: "CONTAINS",
-    relatedSpdxElement: componentSpdxId(artifact.id, component.name, index)
-  })))
+  relationships: manifestArtifacts.flatMap((artifact) =>
+    artifact.components.map((component, index) => ({
+      spdxElementId: `SPDXRef-Package-${artifact.id}`,
+      relationshipType: "CONTAINS",
+      relatedSpdxElement: componentSpdxId(artifact.id, component.name, index)
+    }))
+  )
 });
 
 console.info(`Prepared desktop resources for ${platformArch}.`);
@@ -147,19 +178,21 @@ async function inventory(path, rootPath) {
   const info = await lstat(path);
   if (info.isSymbolicLink()) {
     const target = await readlink(path);
-    return [{
-      path: relative(rootPath, path),
-      sizeBytes: Buffer.byteLength(target),
-      sha256: createHash("sha256").update(target).digest("hex"),
-      symlink: target
-    }];
+    return [
+      {
+        path: relative(rootPath, path),
+        sizeBytes: Buffer.byteLength(target),
+        sha256: createHash("sha256").update(target).digest("hex"),
+        symlink: target
+      }
+    ];
   }
   if (info.isFile()) {
     return [{ path: relative(rootPath, path), sizeBytes: info.size, sha256: await sha256(path) }];
   }
   const result = [];
   for (const entry of await readdir(path, { withFileTypes: true })) {
-    result.push(...await inventory(join(path, entry.name), rootPath));
+    result.push(...(await inventory(join(path, entry.name), rootPath)));
   }
   return result.sort((left, right) => left.path.localeCompare(right.path));
 }

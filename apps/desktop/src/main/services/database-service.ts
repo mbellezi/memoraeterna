@@ -188,7 +188,11 @@ export class DatabaseService {
         ...(this.logger ? { logger: this.logger } : {})
       });
 
-      this.connection = await withTimeout(this.manager.start(), 45_000, "Postgres sidecar start timed out.");
+      this.connection = await withTimeout(
+        this.manager.start(),
+        45_000,
+        "Postgres sidecar start timed out."
+      );
       this.setStatus("migrating");
       this.pool = createPgPool({
         connectionString: this.connection.connectionString,
@@ -291,7 +295,9 @@ export class DatabaseService {
       psqlPath: join(binDir, process.platform === "win32" ? "psql.exe" : "psql"),
       updatedAt: new Date().toISOString()
     };
-    await writeFile(this.developmentConnectionPath, `${JSON.stringify(descriptor, null, 2)}\n`, { mode: 0o600 });
+    await writeFile(this.developmentConnectionPath, `${JSON.stringify(descriptor, null, 2)}\n`, {
+      mode: 0o600
+    });
     await chmod(this.developmentConnectionPath, 0o600);
     this.logger?.debug(`DEV database connection descriptor: ${this.developmentConnectionPath}`);
   }
@@ -401,7 +407,9 @@ function resolveConfiguredDatabasePort(
 
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
-    logger?.warn(`Ignoring invalid MEMORA_DATABASE_PORT "${rawPort}"; falling back to a dynamic port.`);
+    logger?.warn(
+      `Ignoring invalid MEMORA_DATABASE_PORT "${rawPort}"; falling back to a dynamic port.`
+    );
     return undefined;
   }
 

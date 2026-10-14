@@ -95,7 +95,20 @@
     "eventCreated": "Creato",
     "eventChanged": "Modificato",
     "eventRemoved": "Rimosso",
-    "eventTypes": {"source":"Fonte","document":"Documento","chunk":"Passaggio originale","summary":"Riassunto","atomicNote":"Nota atomica","entity":"Entità","entityMention":"Menzione di entità","noteRelation":"Relazione tra note","sourceRelation":"Relazione tra fonti","wikiPage":"Pagina Wiki","wikiSection":"Sezione Wiki","other":"Altre modifiche"},
+    "eventTypes": {
+      "source": "Fonte",
+      "document": "Documento",
+      "chunk": "Passaggio originale",
+      "summary": "Riassunto",
+      "atomicNote": "Nota atomica",
+      "entity": "Entità",
+      "entityMention": "Menzione di entità",
+      "noteRelation": "Relazione tra note",
+      "sourceRelation": "Relazione tra fonti",
+      "wikiPage": "Pagina Wiki",
+      "wikiSection": "Sezione Wiki",
+      "other": "Altre modifiche"
+    },
     "journeyError": "Impossibile caricare lo stato delle fonti. Riprova.",
     "reviewRetainedTitle": "Proposta disponibile per la revisione",
     "reviewRetainedHint": "La proposta esistente attende la tua decisione. La routine la conserva senza creare un altro tentativo.",
@@ -217,7 +230,9 @@
     }
   },
   "consultation": {
-    "errors": {"noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti."},
+    "errors": {
+      "noRelevantEvidence": "Non è stato possibile selezionare brani originali pertinenti per questa richiesta. Modifica la domanda o l’ambito delle fonti."
+    },
     "contextCoverage": "Contesto facoltativo: {included} di {available} elementi rientrano nel budget del modello. I passaggi originali restano disponibili.",
     "sourceCount": "Fonti nell’ambito: {count}",
     "title": "Risposte con fonti",
@@ -350,9 +365,24 @@
       "unsupported": "La proposta non ha superato la verifica di fedeltà alle fonti. Consulta la diagnosi dell’analisi."
     }
   },
-  "entityIdentity": {"threshold":"Soglia di similarità dell’identità delle entità","hint":"L’IA verifica candidati dello stesso tipo usando nomi e fatti identificativi. Nomi uguali da soli non autorizzano un’unione. Le identità ambigue restano separate. Predefinito: 0,92 (provvisorio). Vengono verificati anche nomi esatti e alias. Le entità esistenti vengono riutilizzate dopo conferma; i duplicati storici non vengono uniti in massa."},
-  "relationTypes": {"threshold":"Soglia di similarità dei tipi di relazione","thresholdHint":"I candidati sopra questa soglia vengono verificati insieme dall’IA per equivalenza esatta. Valori più alti recuperano meno candidati. Non è una percentuale di certezza. Predefinito: 0,92 (provvisorio). Usa i profili di embedding e del grafo; i tipi sconosciuti richiedono un modello di embedding."},
-  "relationLabel": {"title":"Descrizioni delle relazioni","description":"Usa il profilo IA del grafo per generare le descrizioni mancanti o riscriverle tutte nella lingua selezionata. Identificatori e prove esistenti vengono preservati. Se il profilo usa un modello remoto, i nomi delle relazioni e delle entità verranno inviati al modello e potrebbero comportare costi.","generateMissing":"Genera descrizioni mancanti","regenerate":"Rigenera tutte le descrizioni","ready":"Nessuna elaborazione ancora richiesta.","updated":"Descrizioni aggiornate","failed":"Elaborazione non riuscita. Controlla il profilo IA del grafo e riprova; le descrizioni completate vengono preservate.","missing":"Descrizione non ancora generata"},
+  "entityIdentity": {
+    "threshold": "Soglia di similarità dell’identità delle entità",
+    "hint": "L’IA verifica candidati dello stesso tipo usando nomi e fatti identificativi. Nomi uguali da soli non autorizzano un’unione. Le identità ambigue restano separate. Predefinito: 0,92 (provvisorio). Vengono verificati anche nomi esatti e alias. Le entità esistenti vengono riutilizzate dopo conferma; i duplicati storici non vengono uniti in massa."
+  },
+  "relationTypes": {
+    "threshold": "Soglia di similarità dei tipi di relazione",
+    "thresholdHint": "I candidati sopra questa soglia vengono verificati insieme dall’IA per equivalenza esatta. Valori più alti recuperano meno candidati. Non è una percentuale di certezza. Predefinito: 0,92 (provvisorio). Usa i profili di embedding e del grafo; i tipi sconosciuti richiedono un modello di embedding."
+  },
+  "relationLabel": {
+    "title": "Descrizioni delle relazioni",
+    "description": "Usa il profilo IA del grafo per generare le descrizioni mancanti o riscriverle tutte nella lingua selezionata. Identificatori e prove esistenti vengono preservati. Se il profilo usa un modello remoto, i nomi delle relazioni e delle entità verranno inviati al modello e potrebbero comportare costi.",
+    "generateMissing": "Genera descrizioni mancanti",
+    "regenerate": "Rigenera tutte le descrizioni",
+    "ready": "Nessuna elaborazione ancora richiesta.",
+    "updated": "Descrizioni aggiornate",
+    "failed": "Elaborazione non riuscita. Controlla il profilo IA del grafo e riprova; le descrizioni completate vengono preservate.",
+    "missing": "Descrizione non ancora generata"
+  },
   "app": {
     "title": "Memora Eterna",
     "tagline": "Memoria local-first per fonti, note ed evidenze.",
@@ -363,7 +393,7 @@
   },
   "shell": {
     "navigation": {
-    "label": "Navigazione principale",
+      "label": "Navigazione principale",
       "library": "Libreria",
       "import": "Aggiungi contenuti",
       "search": "Cerca",
@@ -373,8 +403,8 @@
       "settings": "Impostazioni"
     },
     "actions": {
-    "expandNavigation": "Espandi menu principale",
-    "collapseNavigation": "Comprimi menu principale",
+      "expandNavigation": "Espandi menu principale",
+      "collapseNavigation": "Comprimi menu principale",
       "save": "Salva",
       "cancel": "Annulla",
       "close": "Chiudi",
@@ -415,7 +445,15 @@
     "zoomIn": "Aumenta zoom",
     "fit": "Adatta il grafo alla vista",
     "graphPopup": "Grafo interattivo nel popup delle relazioni",
-    "subitems": { "showAll": "Mostra tutti i sottoelementi", "groupAll": "Raggruppa i sottoelementi per fonte", "expand": "Espandi {count} sottoelementi", "collapse": "Comprimi i sottoelementi", "focus": "Apri il grafo della gerarchia", "closeFocus": "Torna al grafo principale", "focusDescription": "Gerarchia della fonte e fonti collegate direttamente" },
+    "subitems": {
+      "showAll": "Mostra tutti i sottoelementi",
+      "groupAll": "Raggruppa i sottoelementi per fonte",
+      "expand": "Espandi {count} sottoelementi",
+      "collapse": "Comprimi i sottoelementi",
+      "focus": "Apri il grafo della gerarchia",
+      "closeFocus": "Torna al grafo principale",
+      "focusDescription": "Gerarchia della fonte e fonti collegate direttamente"
+    },
     "relayout": "Riorganizza il grafo",
     "refresh": "Aggiorna il grafo",
     "backToGraph": "Torna al grafo della conoscenza",
@@ -466,8 +504,16 @@
       "staleEvidence": "Le evidenze sono cambiate durante l’analisi. Elabora nuovamente la fonte.",
       "configurationChanged": "La configurazione è cambiata durante l’esecuzione. Avvia un nuovo lotto."
     },
-    "relationTypes": {"embeddingRequired":"Configura un modello di embedding compatibile per canonizzare i tipi di relazione.","invalidEmbedding":"L’embedding della relazione non è valido o ha una dimensione non supportata.","modelChanged":"Il modello di embedding è cambiato durante l’elaborazione. Riprova con una configurazione stabile.","invalidOutput":"L’IA ha restituito una decisione di equivalenza non valida.","catalogChanged":"Il catalogo delle relazioni è cambiato ripetutamente. Riprova."},
-    "relationLabels": {"invalidOutput":"L’IA ha restituito descrizioni delle relazioni non valide."},
+    "relationTypes": {
+      "embeddingRequired": "Configura un modello di embedding compatibile per canonizzare i tipi di relazione.",
+      "invalidEmbedding": "L’embedding della relazione non è valido o ha una dimensione non supportata.",
+      "modelChanged": "Il modello di embedding è cambiato durante l’elaborazione. Riprova con una configurazione stabile.",
+      "invalidOutput": "L’IA ha restituito una decisione di equivalenza non valida.",
+      "catalogChanged": "Il catalogo delle relazioni è cambiato ripetutamente. Riprova."
+    },
+    "relationLabels": {
+      "invalidOutput": "L’IA ha restituito descrizioni delle relazioni non valide."
+    },
     "common": {
       "unknown": "Qualcosa e andato storto.",
       "network": "La richiesta di rete non e riuscita.",
@@ -490,19 +536,19 @@
       "doclingUnavailable": "Il convertitore locale di documenti non e installato.",
       "doclingFailed": "Il convertitore locale di documenti non e riuscito."
     },
-  "ingestion": {
-    "aggregateSummaryUnavailable": "Non e stato possibile generare il riepilogo aggregato.",
-    "aggregateSummaryMissingSubparts": "Il riepilogo aggregato attende i riepiloghi di tutte le sottoparti.",
-    "urlInvalid": "Inserisci un indirizzo HTTPS valido.",
-    "urlUnsafe": "Questo indirizzo non può essere caricato in modo sicuro.",
-    "urlTooManyRedirects": "La pagina ha eseguito troppi reindirizzamenti.",
-    "urlAccessDenied": "Il sito ha bloccato l’accesso automatico a questa pagina. Puoi comunque incollare manualmente il contenuto.",
-    "urlNotFound": "La pagina non è stata trovata.",
-    "urlUnsupportedContent": "Questo indirizzo non ha restituito una pagina HTML.",
-    "urlTooLarge": "La pagina è troppo grande per essere importata automaticamente.",
-    "urlTimeout": "Il sito ha impiegato troppo tempo a rispondere.",
-    "urlFetchFailed": "Impossibile caricare la pagina. Controlla l’indirizzo o incolla manualmente il contenuto."
-  },
+    "ingestion": {
+      "aggregateSummaryUnavailable": "Non e stato possibile generare il riepilogo aggregato.",
+      "aggregateSummaryMissingSubparts": "Il riepilogo aggregato attende i riepiloghi di tutte le sottoparti.",
+      "urlInvalid": "Inserisci un indirizzo HTTPS valido.",
+      "urlUnsafe": "Questo indirizzo non può essere caricato in modo sicuro.",
+      "urlTooManyRedirects": "La pagina ha eseguito troppi reindirizzamenti.",
+      "urlAccessDenied": "Il sito ha bloccato l’accesso automatico a questa pagina. Puoi comunque incollare manualmente il contenuto.",
+      "urlNotFound": "La pagina non è stata trovata.",
+      "urlUnsupportedContent": "Questo indirizzo non ha restituito una pagina HTML.",
+      "urlTooLarge": "La pagina è troppo grande per essere importata automaticamente.",
+      "urlTimeout": "Il sito ha impiegato troppo tempo a rispondere.",
+      "urlFetchFailed": "Impossibile caricare la pagina. Controlla l’indirizzo o incolla manualmente il contenuto."
+    },
     "ai": {
       "noCompatibleModel": "Nessun modello compatibile e configurato.",
       "unsupportedTask": "Il modello selezionato non puo eseguire questa attivita.",
@@ -521,14 +567,22 @@
       "oauthTokenExchangeFailed": "ChatGPT non ha potuto completare lo scambio del token."
     },
     "localModels": {
-      "notFound": "Il modello locale non e stato trovato.", "notReady": "Il modello locale non e installato e pronto.",
-      "licenseRequired": "Accetta la licenza del modello prima del download.", "unsupported_platform": "MLX richiede un Mac con Apple Silicon.",
-      "insufficient_memory": "Questa macchina non ha memoria sufficiente per il modello.", "insufficientDisk": "Spazio su disco insufficiente per il modello.",
-      "downloadHttp": "Download del modello non riuscito.", "sizeMismatch": "Un file del modello ha dimensioni errate.",
-      "checksumMismatch": "Un file del modello non ha superato la verifica checksum.", "unsafePath": "Il modello contiene un percorso non sicuro.",
-      "invalidRuntimeResponse": "Il runtime locale ha restituito una risposta non valida.", "runtimeFailed": "Il runtime del modello locale non e riuscito.",
-      "runtimeUnavailable": "Il runtime del modello locale non e installato.", "modelBusy": "Il modello e attualmente in uso.",
-      "profileInUse": "Sostituisci il modello nei profili interessati prima di rimuoverlo.", "canceled": "Il download del modello e stato annullato.",
+      "notFound": "Il modello locale non e stato trovato.",
+      "notReady": "Il modello locale non e installato e pronto.",
+      "licenseRequired": "Accetta la licenza del modello prima del download.",
+      "unsupported_platform": "MLX richiede un Mac con Apple Silicon.",
+      "insufficient_memory": "Questa macchina non ha memoria sufficiente per il modello.",
+      "insufficientDisk": "Spazio su disco insufficiente per il modello.",
+      "downloadHttp": "Download del modello non riuscito.",
+      "sizeMismatch": "Un file del modello ha dimensioni errate.",
+      "checksumMismatch": "Un file del modello non ha superato la verifica checksum.",
+      "unsafePath": "Il modello contiene un percorso non sicuro.",
+      "invalidRuntimeResponse": "Il runtime locale ha restituito una risposta non valida.",
+      "runtimeFailed": "Il runtime del modello locale non e riuscito.",
+      "runtimeUnavailable": "Il runtime del modello locale non e installato.",
+      "modelBusy": "Il modello e attualmente in uso.",
+      "profileInUse": "Sostituisci il modello nei profili interessati prima di rimuoverlo.",
+      "canceled": "Il download del modello e stato annullato.",
       "invalidGguf": "Scegli un file modello GGUF valido."
     }
   },
@@ -540,19 +594,55 @@
       "description": "Segui in tempo reale dalla conversione al grafo della conoscenza, con checkpoint, tentativi ed errori riuniti."
     },
     "summary": { "active": "Attive ora", "completed": "Completate", "attention": "Da controllare" },
-    "batch": { "label": "Lotto di elaborazione", "plan": "Piano: {plan}", "custom": "Personalizzato", "items": "{completed} di {total} elementi" },
-    "filters": { "label": "Filtra attivita", "all": "Tutte", "active": "Attive", "completed": "Completate", "attention": "Da controllare" },
+    "batch": {
+      "label": "Lotto di elaborazione",
+      "plan": "Piano: {plan}",
+      "custom": "Personalizzato",
+      "items": "{completed} di {total} elementi"
+    },
+    "filters": {
+      "label": "Filtra attivita",
+      "all": "Tutte",
+      "active": "Attive",
+      "completed": "Completate",
+      "attention": "Da controllare"
+    },
     "liveUpdates": "Aggiornamenti in tempo reale connessi",
     "streaming": "Elaborazione del modello in tempo reale",
     "updatedAt": "Aggiornata {date}",
     "details": "Attivita di elaborazione ({count})",
     "errorCount": "{count} errori",
-    "activity": { "title": "Attivita di elaborazione", "reasoning": "Ragionamento: {level}", "modelDefault": "Predefinito del modello" },
-    "attemptDetails": { "title": "Dettagli del tentativo", "open": "Apri i dettagli di {type}", "attempt": "Tentativo", "startedAt": "Avviato", "jobId": "ID attivita", "provider": "Provider", "model": "Modello", "failureReason": "Motivo completo dell'errore", "noFailureReason": "Non e stato registrato alcun motivo di errore per questo tentativo." },
-    "errors": { "title": "Cronologia errori", "empty": "Nessun errore registrato per questo flusso.", "unknownEvidence": "Il modello ha citato una prova esterna al lotto. Il checkpoint valido e stato conservato e il lotto verra riprovato.", "invalidModelOutput": "Il modello ha restituito un grafo non valido. Il checkpoint valido e stato conservato per un nuovo tentativo." },
+    "activity": {
+      "title": "Attivita di elaborazione",
+      "reasoning": "Ragionamento: {level}",
+      "modelDefault": "Predefinito del modello"
+    },
+    "attemptDetails": {
+      "title": "Dettagli del tentativo",
+      "open": "Apri i dettagli di {type}",
+      "attempt": "Tentativo",
+      "startedAt": "Avviato",
+      "jobId": "ID attivita",
+      "provider": "Provider",
+      "model": "Modello",
+      "failureReason": "Motivo completo dell'errore",
+      "noFailureReason": "Non e stato registrato alcun motivo di errore per questo tentativo."
+    },
+    "errors": {
+      "title": "Cronologia errori",
+      "empty": "Nessun errore registrato per questo flusso.",
+      "unknownEvidence": "Il modello ha citato una prova esterna al lotto. Il checkpoint valido e stato conservato e il lotto verra riprovato.",
+      "invalidModelOutput": "Il modello ha restituito un grafo non valido. Il checkpoint valido e stato conservato per un nuovo tentativo."
+    },
     "loadError": "Impossibile aggiornare le attivita.",
-    "emptyState": { "title": "Il centro di elaborazione e pronto", "description": "Importa un file o aggiungi contenuto. L'intero percorso apparira qui in un'unica scheda live." },
-    "filteredEmpty": { "title": "Nessuna attivita in questa vista", "description": "Scegli un altro filtro per vedere gli altri flussi." },
+    "emptyState": {
+      "title": "Il centro di elaborazione e pronto",
+      "description": "Importa un file o aggiungi contenuto. L'intero percorso apparira qui in un'unica scheda live."
+    },
+    "filteredEmpty": {
+      "title": "Nessuna attivita in questa vista",
+      "description": "Scegli un altro filtro per vedere gli altri flussi."
+    },
     "status": {
       "queued": "In coda",
       "running": "In esecuzione",
@@ -572,7 +662,8 @@
       "atomicNoteMatching": "Collegamento note atomiche",
       "sourceMatching": "Relazioni tra fonti",
       "obsidianSync": "Sincronizzazione Obsidian",
-      "assetStorage": "Archiviazione asset", "localModelDownload": "Download modello locale"
+      "assetStorage": "Archiviazione asset",
+      "localModelDownload": "Download modello locale"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
@@ -600,8 +691,12 @@
       "completed": "Completata"
     },
     "stageStatus": {
-      "pending": "In attesa", "running": "In esecuzione", "completed": "Completata",
-      "failed": "Non riuscita", "canceled": "Annullata", "skipped": "Saltata"
+      "pending": "In attesa",
+      "running": "In esecuzione",
+      "completed": "Completata",
+      "failed": "Non riuscita",
+      "canceled": "Annullata",
+      "skipped": "Saltata"
     },
     "empty": "Nessuna attivita.",
     "actions": {
@@ -613,7 +708,11 @@
       "clearCompletedOrFailedConfirm": "Rimuovere tutte le attivita completate e non riuscite?"
     }
   },
-  "tagInput": {"placeholder":"Aggiungi tag","hint":"Premi Tab o Invio per aggiungere.","remove":"Rimuovi tag {tag}"},
+  "tagInput": {
+    "placeholder": "Aggiungi tag",
+    "hint": "Premi Tab o Invio per aggiungere.",
+    "remove": "Rimuovi tag {tag}"
+  },
   "intake": {
     "confirmSelection": "Conferma selezione ({count})",
     "rootOnly": "Nessun sottoelemento selezionato. Verrà importata solo la fonte completa.",
@@ -678,44 +777,126 @@
   "import": {
     "unspecifiedLanguage": "Non specificata",
     "modes": { "manual": "Contenuto manuale", "file": "File locale" },
-    "steps": { "type": "Tipo", "origin": "Origine", "metadata": "Metadati", "content": "Contenuto", "confirm": "Conferma", "structure": "Struttura" },
+    "steps": {
+      "type": "Tipo",
+      "origin": "Origine",
+      "metadata": "Metadati",
+      "content": "Contenuto",
+      "confirm": "Conferma",
+      "structure": "Struttura"
+    },
     "searchTypes": "Cerca tipi di fonte",
     "groups": { "notes": "Note", "publications": "Pubblicazioni", "media": "Web, video e file" },
     "badges": { "container": "Contenitore", "child": "Richiede fonte principale" },
     "hierarchyHint": "Questo tipo puo rilevare capitoli, articoli e sezioni prima dell'elaborazione.",
     "fields": {
-      "sourceType": "Tipo di fonte", "title": "Titolo", "content": "Contenuto",
-      "originalUri": "URL originale", "workTitle": "Opera correlata", "isbn": "ISBN",
-      "doi": "DOI", "pages": "Pagine"
+      "sourceType": "Tipo di fonte",
+      "title": "Titolo",
+      "content": "Contenuto",
+      "originalUri": "URL originale",
+      "workTitle": "Opera correlata",
+      "isbn": "ISBN",
+      "doi": "DOI",
+      "pages": "Pagine"
     },
     "sourceTypes": {
-      "PersonalNote": "Nota personale", "DailyNote": "Nota giornaliera", "WebArticle": "Articolo web",
-      "Book": "Libro", "BookChapter": "Capitolo di libro", "StandaloneArticle": "Articolo autonomo",
-      "PeriodicalIssue": "Numero di periodico", "AcademicPaper": "Articolo accademico", "DocumentSection": "Sezione documento",
-      "Video": "Video", "GenericDocument": "Documento generico"
+      "PersonalNote": "Nota personale",
+      "DailyNote": "Nota giornaliera",
+      "WebArticle": "Articolo web",
+      "Book": "Libro",
+      "BookChapter": "Capitolo di libro",
+      "StandaloneArticle": "Articolo autonomo",
+      "PeriodicalIssue": "Numero di periodico",
+      "AcademicPaper": "Articolo accademico",
+      "DocumentSection": "Sezione documento",
+      "Video": "Video",
+      "GenericDocument": "Documento generico"
     },
     "sourceDescriptions": {
-      "PersonalNote": "Un pensiero, estratto o nota scritta da te.", "DailyNote": "Una voce di diario collegata a una data.", "WebArticle": "Un articolo acquisito con il suo indirizzo web originale.",
-      "Book": "Un libro completo, con capitoli aggiunti ora o in seguito.", "BookChapter": "Un capitolo collegato a un libro della libreria.", "StandaloneArticle": "Un articolo autonomo o collegato a un numero di periodico.",
-      "PeriodicalIssue": "Un numero di rivista o giornale che puo contenere articoli.", "AcademicPaper": "Un lavoro accademico con DOI, pubblicazione, autori e sezioni.", "DocumentSection": "Una sezione collegata a un lavoro accademico.",
-      "Video": "Un video con canale, piattaforma, durata e miniatura.", "GenericDocument": "Qualsiasi altro documento o file senza un tipo piu specifico."
+      "PersonalNote": "Un pensiero, estratto o nota scritta da te.",
+      "DailyNote": "Una voce di diario collegata a una data.",
+      "WebArticle": "Un articolo acquisito con il suo indirizzo web originale.",
+      "Book": "Un libro completo, con capitoli aggiunti ora o in seguito.",
+      "BookChapter": "Un capitolo collegato a un libro della libreria.",
+      "StandaloneArticle": "Un articolo autonomo o collegato a un numero di periodico.",
+      "PeriodicalIssue": "Un numero di rivista o giornale che puo contenere articoli.",
+      "AcademicPaper": "Un lavoro accademico con DOI, pubblicazione, autori e sezioni.",
+      "DocumentSection": "Una sezione collegata a un lavoro accademico.",
+      "Video": "Un video con canale, piattaforma, durata e miniatura.",
+      "GenericDocument": "Qualsiasi altro documento o file senza un tipo piu specifico."
     },
-    "originDescriptions": { "manual": "Inserisci metadati e contenuto. I contenitori possono essere salvati senza contenuto.", "file": "Seleziona un file, estrai i metadati localmente e rivedi tutto prima dell'importazione." },
+    "originDescriptions": {
+      "manual": "Inserisci metadati e contenuto. I contenitori possono essere salvati senza contenuto.",
+      "file": "Seleziona un file, estrai i metadati localmente e rivedi tutto prima dell'importazione."
+    },
     "metadataFields": {
-      "title": "Titolo", "subtitle": "Sottotitolo", "creators": "Autori e collaboratori", "language": "Lingua", "description": "Descrizione", "tags": "Tag", "context": "Contesto", "noteDate": "Data della nota", "url": "URL originale", "siteName": "Nome del sito", "publicationDate": "Data di pubblicazione", "imageUrl": "URL immagine principale",
-      "edition": "Edizione", "publisher": "Editore", "isbn10": "ISBN-10", "isbn13": "ISBN-13", "series": "Serie", "volume": "Volume", "pageCount": "Numero di pagine", "subjects": "Argomenti", "chapterNumber": "Numero capitolo", "pageStart": "Pagina iniziale", "pageEnd": "Pagina finale", "publicationTitle": "Titolo pubblicazione", "issn": "ISSN", "issue": "Numero", "doi": "DOI", "venue": "Pubblicazione", "year": "Anno", "abstract": "Abstract", "keywords": "Parole chiave", "sectionNumber": "Numero sezione", "periodicalTitle": "Titolo periodico", "channel": "Canale", "durationSeconds": "Durata (secondi)", "platform": "Piattaforma", "videoId": "ID video", "thumbnailUrl": "URL miniatura", "creationDate": "Data di creazione", "mimeType": "Tipo MIME"
+      "title": "Titolo",
+      "subtitle": "Sottotitolo",
+      "creators": "Autori e collaboratori",
+      "language": "Lingua",
+      "description": "Descrizione",
+      "tags": "Tag",
+      "context": "Contesto",
+      "noteDate": "Data della nota",
+      "url": "URL originale",
+      "siteName": "Nome del sito",
+      "publicationDate": "Data di pubblicazione",
+      "imageUrl": "URL immagine principale",
+      "edition": "Edizione",
+      "publisher": "Editore",
+      "isbn10": "ISBN-10",
+      "isbn13": "ISBN-13",
+      "series": "Serie",
+      "volume": "Volume",
+      "pageCount": "Numero di pagine",
+      "subjects": "Argomenti",
+      "chapterNumber": "Numero capitolo",
+      "pageStart": "Pagina iniziale",
+      "pageEnd": "Pagina finale",
+      "publicationTitle": "Titolo pubblicazione",
+      "issn": "ISSN",
+      "issue": "Numero",
+      "doi": "DOI",
+      "venue": "Pubblicazione",
+      "year": "Anno",
+      "abstract": "Abstract",
+      "keywords": "Parole chiave",
+      "sectionNumber": "Numero sezione",
+      "periodicalTitle": "Titolo periodico",
+      "channel": "Canale",
+      "durationSeconds": "Durata (secondi)",
+      "platform": "Piattaforma",
+      "videoId": "ID video",
+      "thumbnailUrl": "URL miniatura",
+      "creationDate": "Data di creazione",
+      "mimeType": "Tipo MIME"
     },
-    "parent": { "label": "Fonte principale", "create": "Crea fonte principale", "createTitle": "Crea la fonte principale senza uscire da questa importazione" },
-    "enrichment": { "title": "Metadati suggeriti", "waiting": "I suggerimenti appaiono automaticamente con titolo, ISBN o DOI.", "apply": "Applica suggerimento" },
+    "parent": {
+      "label": "Fonte principale",
+      "create": "Crea fonte principale",
+      "createTitle": "Crea la fonte principale senza uscire da questa importazione"
+    },
+    "enrichment": {
+      "title": "Metadati suggeriti",
+      "waiting": "I suggerimenti appaiono automaticamente con titolo, ISBN o DOI.",
+      "apply": "Applica suggerimento"
+    },
     "content": {
       "hint": "Il contenuto Markdown viene conservato come documento fonte.",
       "containerHint": "Componi qui i sottoelementi o passa a un documento unico. Potrai verificare la struttura rilevata prima del salvataggio.",
       "editingHierarchyHint": "Questa modifica riguarda il documento della fonte corrente. I sottoelementi esistenti mantengono il proprio contenuto e possono essere modificati singolarmente dalla biblioteca.",
       "modeLabel": "Organizzazione del contenuto",
       "modes": { "subitems": "Componi sottoelementi", "document": "Documento unico" },
-      "modeDescriptions": { "subitems": "Scrivi separatamente capitoli, articoli o sezioni e organizzane l’ordine.", "document": "Scrivi o incolla un documento Markdown e rileva automaticamente i titoli." },
+      "modeDescriptions": {
+        "subitems": "Scrivi separatamente capitoli, articoli o sezioni e organizzane l’ordine.",
+        "document": "Scrivi o incolla un documento Markdown e rileva automaticamente i titoli."
+      },
       "labels": { "chapters": "Capitoli", "articles": "Articoli", "sections": "Sezioni" },
-      "placeholders": { "chapter": "Titolo del capitolo", "article": "Titolo dell’articolo", "section": "Titolo della sezione" },
+      "placeholders": {
+        "chapter": "Titolo del capitolo",
+        "article": "Titolo dell’articolo",
+        "section": "Titolo della sezione"
+      },
       "subitemsCount": "{count} sottoelementi",
       "untitledSubitem": "Sottoelemento senza titolo",
       "addSubitem": "Aggiungi sottoelemento",
@@ -726,18 +907,65 @@
       "removeSubitem": "Rimuovi sottoelemento",
       "noSubitems": "Aggiungi un sottoelemento o continua con un contenitore di catalogo vuoto."
     },
-    "confirmation": { "origin": "Origine", "content": "Contenuto", "container": "Contenitore con soli metadati" },
-    "duplicate": { "found": "Trovato un possibile duplicato: {title}", "none": "Nessun duplicato rilevato.", "ignore": "Mantieni esistente", "update": "Aggiorna esistente", "version": "Crea nuova versione" },
-    "validation": { "chooseFile": "Scegli un file prima di continuare.", "contentRequired": "Questo tipo di fonte richiede contenuto.", "subitemsIncomplete": "Ogni sottoelemento iniziato deve avere titolo e contenuto." },
-    "actions": { "queue": "Accoda importazione", "chooseFile": "Scegli file", "changeFile": "Cambia file", "back": "Indietro", "continue": "Continua", "import": "Importa fonte" },
-    "file": { "title": "Scegli il file originale", "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA." },
+    "confirmation": {
+      "origin": "Origine",
+      "content": "Contenuto",
+      "container": "Contenitore con soli metadati"
+    },
+    "duplicate": {
+      "found": "Trovato un possibile duplicato: {title}",
+      "none": "Nessun duplicato rilevato.",
+      "ignore": "Mantieni esistente",
+      "update": "Aggiorna esistente",
+      "version": "Crea nuova versione"
+    },
+    "validation": {
+      "chooseFile": "Scegli un file prima di continuare.",
+      "contentRequired": "Questo tipo di fonte richiede contenuto.",
+      "subitemsIncomplete": "Ogni sottoelemento iniziato deve avere titolo e contenuto."
+    },
+    "actions": {
+      "queue": "Accoda importazione",
+      "chooseFile": "Scegli file",
+      "changeFile": "Cambia file",
+      "back": "Indietro",
+      "continue": "Continua",
+      "import": "Importa fonte"
+    },
+    "file": {
+      "title": "Scegli il file originale",
+      "description": "L'originale viene conservato. Per libri, periodici e articoli rivedi la struttura prima di qualsiasi elaborazione IA."
+    },
     "progress": {
       "title": "Preparazione del file",
-      "stages": { "selectingFile": "Selezione del file locale…", "inspectingFile": "Analisi del file…", "loadingEngine": "Caricamento del motore di conversione locale…", "convertingDocument": "Conversione del documento…", "processingPages": "Elaborazione delle pagine…", "serializing": "Organizzazione del contenuto convertito…", "extractingMetadata": "Estrazione dei metadati…", "storingCover": "Salvataggio della copertina incorporata…", "completed": "Preparazione del file completata" },
-      "percent": "{percent}%", "pagesProcessed": "{completed} pagine elaborate su {total}", "pagesFound": "{total} pagine trovate", "elapsed": "Tempo trascorso: {time}",
+      "stages": {
+        "selectingFile": "Selezione del file locale…",
+        "inspectingFile": "Analisi del file…",
+        "loadingEngine": "Caricamento del motore di conversione locale…",
+        "convertingDocument": "Conversione del documento…",
+        "processingPages": "Elaborazione delle pagine…",
+        "serializing": "Organizzazione del contenuto convertito…",
+        "extractingMetadata": "Estrazione dei metadati…",
+        "storingCover": "Salvataggio della copertina incorporata…",
+        "completed": "Preparazione del file completata"
+      },
+      "percent": "{percent}%",
+      "pagesProcessed": "{completed} pagine elaborate su {total}",
+      "pagesFound": "{total} pagine trovate",
+      "elapsed": "Tempo trascorso: {time}",
       "keepOpen": "Mantieni aperta questa schermata; le pagine scansionate possono richiedere più tempo."
     },
-    "status": { "queued": "Importazione in coda.", "canceled": "Selezione file annullata.", "saved": "Fonte salvata senza elaborazione in background.", "metadataExtracted": "Metadati estratti localmente. Rivedili prima di continuare.", "duplicateHandled": "Politica duplicati applicata.", "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.", "draftSaved": "Bozza della struttura salvata.", "queuedChildren": "Struttura confermata e elementi selezionati in coda.", "savedChildren": "Struttura confermata e elementi selezionati salvati." }
+    "status": {
+      "queued": "Importazione in coda.",
+      "canceled": "Selezione file annullata.",
+      "saved": "Fonte salvata senza elaborazione in background.",
+      "metadataExtracted": "Metadati estratti localmente. Rivedili prima di continuare.",
+      "duplicateHandled": "Politica duplicati applicata.",
+      "reviewStructure": "Struttura rilevata. Rivedila prima di continuare.",
+      "draftSaved": "Bozza della struttura salvata.",
+      "queuedChildren": "Struttura confermata e elementi selezionati in coda.",
+      "savedChildren": "Struttura confermata e elementi selezionati salvati."
+    }
   },
   "processing": {
     "invalidPlan": "Controlla le opzioni di elaborazione prima di continuare.",
@@ -753,8 +981,14 @@
     "profileNotice": "Usa il profilo IA configurato",
     "noAiNotice": "Non e necessaria alcuna chiamata IA",
     "presets": {
-      "import_only": { "title": "Solo importazione", "description": "Conserva e organizza la fonte senza IA." },
-      "search_ready": { "title": "Pronto per la ricerca", "description": "Crea segmenti ed embedding per la ricerca." },
+      "import_only": {
+        "title": "Solo importazione",
+        "description": "Conserva e organizza la fonte senza IA."
+      },
+      "search_ready": {
+        "title": "Pronto per la ricerca",
+        "description": "Crea segmenti ed embedding per la ricerca."
+      },
       "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
       "full_knowledge": {
         "title": "Elaborazione completa",
@@ -763,20 +997,77 @@
     }
   },
   "structure": {
-    "eyebrow": "Controllo umano", "title": "Rivedi la struttura rilevata", "description": "Rivedi i segmenti, regola i confini e scegli quali diventano sottoelementi.",
-    "treeTitle": "Struttura del documento", "selectedCount": "{count} elementi da creare", "fields": { "title": "Titolo", "kind": "Tipo", "range": "Intervallo fonte", "behavior": "Includi ed elabora", "metadata": "Sottoelemento", "creators": "Autori (ruolo: nome | affiliazione)" },
-    "cutoffLevel": "Crea fino al livello", "createSubelement": "Crea come sottoelemento", "createSubelementHint": "Questo segmento diventa una fonte figlia con documento proprio.", "previewTitle": "Anteprima del contenuto", "previewUnavailable": "Nessuna anteprima testuale per questo segmento basato sulle pagine.", "splitBoundary": "Dividi al confine rilevato", "boundaryStart": "Confine iniziale", "boundaryEnd": "Confine finale", "boundaryPage": "Pagina {page} · {label}",
-    "pageRange": "Pagine {start}-{end}", "offsetRange": "Testo {start}-{end}", "includeNavigation": "Mantieni questa voce", "includeNavigationHint": "Le voci escluse non vengono materializzate ne mostrate nella navigazione.",
-    "processable": "Crea una fonte indipendente", "processableHint": "Trasforma questa divisione in un elemento selezionabile della libreria.", "evidenceTitle": "Perche questa divisione e stata rilevata", "evidence": "{source} · affidabilita {score}%", "noSelection": "Seleziona un elemento da rivedere.",
-    "blockingIssues": "Risolvi {count} problemi prima di continuare.", "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.", "ready": "La struttura e valida e pronta per la conferma.", "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
-    "kinds": { "part": "Parte", "chapter": "Capitolo", "article": "Articolo", "section": "Sezione", "subsection": "Sottosezione", "frontmatter": "Pagine iniziali", "backmatter": "Pagine finali", "appendix": "Appendice", "unknown": "Altro" },
-    "actions": { "undo": "Annulla", "redo": "Ripeti", "restore": "Ripristina versione rilevata", "split": "Dividi", "mergePrevious": "Unisci al precedente", "moveUp": "Sposta su", "moveDown": "Sposta giu", "saveDraft": "Salva bozza", "confirm": "Conferma e continua", "confirmCount": "Importa fonte con {count} sottoelementi" }
+    "eyebrow": "Controllo umano",
+    "title": "Rivedi la struttura rilevata",
+    "description": "Rivedi i segmenti, regola i confini e scegli quali diventano sottoelementi.",
+    "treeTitle": "Struttura del documento",
+    "selectedCount": "{count} elementi da creare",
+    "fields": {
+      "title": "Titolo",
+      "kind": "Tipo",
+      "range": "Intervallo fonte",
+      "behavior": "Includi ed elabora",
+      "metadata": "Sottoelemento",
+      "creators": "Autori (ruolo: nome | affiliazione)"
+    },
+    "cutoffLevel": "Crea fino al livello",
+    "createSubelement": "Crea come sottoelemento",
+    "createSubelementHint": "Questo segmento diventa una fonte figlia con documento proprio.",
+    "previewTitle": "Anteprima del contenuto",
+    "previewUnavailable": "Nessuna anteprima testuale per questo segmento basato sulle pagine.",
+    "splitBoundary": "Dividi al confine rilevato",
+    "boundaryStart": "Confine iniziale",
+    "boundaryEnd": "Confine finale",
+    "boundaryPage": "Pagina {page} · {label}",
+    "pageRange": "Pagine {start}-{end}",
+    "offsetRange": "Testo {start}-{end}",
+    "includeNavigation": "Mantieni questa voce",
+    "includeNavigationHint": "Le voci escluse non vengono materializzate ne mostrate nella navigazione.",
+    "processable": "Crea una fonte indipendente",
+    "processableHint": "Trasforma questa divisione in un elemento selezionabile della libreria.",
+    "evidenceTitle": "Perche questa divisione e stata rilevata",
+    "evidence": "{source} · affidabilita {score}%",
+    "noSelection": "Seleziona un elemento da rivedere.",
+    "blockingIssues": "Risolvi {count} problemi prima di continuare.",
+    "selectAtLeastOne": "Seleziona almeno un elemento da creare come fonte indipendente.",
+    "ready": "La struttura e valida e pronta per la conferma.",
+    "confidence": { "high": "Alta", "medium": "Rivedi", "low": "Bassa" },
+    "kinds": {
+      "part": "Parte",
+      "chapter": "Capitolo",
+      "article": "Articolo",
+      "section": "Sezione",
+      "subsection": "Sottosezione",
+      "frontmatter": "Pagine iniziali",
+      "backmatter": "Pagine finali",
+      "appendix": "Appendice",
+      "unknown": "Altro"
+    },
+    "actions": {
+      "undo": "Annulla",
+      "redo": "Ripeti",
+      "restore": "Ripristina versione rilevata",
+      "split": "Dividi",
+      "mergePrevious": "Unisci al precedente",
+      "moveUp": "Sposta su",
+      "moveDown": "Sposta giu",
+      "saveDraft": "Salva bozza",
+      "confirm": "Conferma e continua",
+      "confirmCount": "Importa fonte con {count} sottoelementi"
+    }
   },
   "search": {
-    "placeholder": "Cerca fonti ed evidenze", "action": "Cerca", "empty": "Nessuna evidenza corrispondente.",
-    "localEmbeddingLoading": { "title": "Caricamento del modello di embedding locale", "description": "Preparazione del modello in memoria. La ricerca continuera automaticamente quando sara pronto." },
-    "scope": "Cerca in", "scopeAll": "Intera libreria",
-    "page": "Pagina", "markdownEvidence": "Evidenza Markdown",
+    "placeholder": "Cerca fonti ed evidenze",
+    "action": "Cerca",
+    "empty": "Nessuna evidenza corrispondente.",
+    "localEmbeddingLoading": {
+      "title": "Caricamento del modello di embedding locale",
+      "description": "Preparazione del modello in memoria. La ricerca continuera automaticamente quando sara pronto."
+    },
+    "scope": "Cerca in",
+    "scopeAll": "Intera libreria",
+    "page": "Pagina",
+    "markdownEvidence": "Evidenza Markdown",
     "kinds": {
       "source": "Fonte",
       "subitem": "Sezione",
@@ -784,26 +1075,76 @@
       "entity": "Entita del grafo",
       "relation": "Relazione del grafo"
     },
-    "resultsCount": "{count} risultati", "graphResults": "Grafo della conoscenza",
+    "resultsCount": "{count} risultati",
+    "graphResults": "Grafo della conoscenza",
     "openHint": "Apri nella libreria"
   },
   "library": {
-    "filterByType": "Filtra per tipo di fonte", "allTypes": "Tutti i tipi di fonte",
-    "refresh": "Aggiorna libreria", "error": "Impossibile caricare la libreria.",
-    "empty": "Nessuna fonte nella libreria.", "container": "Contenitore", "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.", "selectionCount": "{count} fonti selezionate", "childCount": "{count} elementi diretti", "parentSource": "Da {title}",
-    "searchMatches": { "traditional": "Corrispondenza testuale", "embedding": "Similarita vettoriale", "graph": "Corrispondenza nel grafo", "combined": "Corrispondenza combinata", "embeddingNeedsRefresh": "Rielabora embedding" },
-    "actions": { "selectSource": "Seleziona {title}", "process": "Elabora questa fonte", "processSelected": "Elabora selezionate", "clearSelection": "Cancella selezione", "queueProcessing": "Accoda elaborazione" },
-    "processingDialog": { "title": "Elabora fonti della libreria", "description": "Scegli cosa generare per {count} fonti selezionate.", "scope": "Applica a", "regenerate": "Rigenera artefatti esistenti", "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate." },
-    "scopes": { "source_only": "Solo questa fonte", "children_only": "Solo elementi figli", "source_and_children": "Questa fonte e tutti i figli" },
-    "delete": { "action": "Elimina fonte", "deleting": "Eliminazione...", "confirmation": "Eliminare definitivamente “{title}”, i suoi capitoli e sezioni, riassunti, embedding, grafi, note atomiche, relazioni e file gestiti appartenenti alla fonte (inclusi i file sincronizzati con Obsidian)? Le note di conoscenza evolute e le loro evidenze storiche saranno conservate. Questa azione non può essere annullata.", "completedWithWarnings": "La fonte e stata eliminata, ma non e stato possibile rimuovere alcuni file o dati della proiezione del grafo.", "failed": "Impossibile eliminare la fonte." },
+    "filterByType": "Filtra per tipo di fonte",
+    "allTypes": "Tutti i tipi di fonte",
+    "refresh": "Aggiorna libreria",
+    "error": "Impossibile caricare la libreria.",
+    "empty": "Nessuna fonte nella libreria.",
+    "container": "Contenitore",
+    "containerHint": "Questo contenitore di metadati e pronto a ricevere fonti figlie.",
+    "selectionCount": "{count} fonti selezionate",
+    "childCount": "{count} elementi diretti",
+    "parentSource": "Da {title}",
+    "searchMatches": {
+      "traditional": "Corrispondenza testuale",
+      "embedding": "Similarita vettoriale",
+      "graph": "Corrispondenza nel grafo",
+      "combined": "Corrispondenza combinata",
+      "embeddingNeedsRefresh": "Rielabora embedding"
+    },
+    "actions": {
+      "selectSource": "Seleziona {title}",
+      "process": "Elabora questa fonte",
+      "processSelected": "Elabora selezionate",
+      "clearSelection": "Cancella selezione",
+      "queueProcessing": "Accoda elaborazione"
+    },
+    "processingDialog": {
+      "title": "Elabora fonti della libreria",
+      "description": "Scegli cosa generare per {count} fonti selezionate.",
+      "scope": "Applica a",
+      "regenerate": "Rigenera artefatti esistenti",
+      "regenerateHint": "Le note revisionate vengono conservate; le generazioni in attesa sono archiviate."
+    },
+    "scopes": {
+      "source_only": "Solo questa fonte",
+      "children_only": "Solo elementi figli",
+      "source_and_children": "Questa fonte e tutti i figli"
+    },
+    "delete": {
+      "action": "Elimina fonte",
+      "deleting": "Eliminazione...",
+      "confirmation": "Eliminare definitivamente “{title}”, i suoi capitoli e sezioni, riassunti, embedding, grafi, note atomiche, relazioni e file gestiti appartenenti alla fonte (inclusi i file sincronizzati con Obsidian)? Le note di conoscenza evolute e le loro evidenze storiche saranno conservate. Questa azione non può essere annullata.",
+      "completedWithWarnings": "La fonte e stata eliminata, ma non e stato possibile rimuovere alcuni file o dati della proiezione del grafo.",
+      "failed": "Impossibile eliminare la fonte."
+    },
     "currentStage": "Fase corrente: {stage}",
-    "back": "Torna alla libreria", "openOriginal": "Apri originale", "openFile": "Apri file originale",
-    "noSummary": "Non e stato generato alcun riepilogo.", "chunk": "Frammento {index}",
-    "processing": { "pending": "In attesa", "running": "Elaborazione", "succeeded": "Pronta", "failed": "Non riuscita", "canceled": "Annullata" },
+    "back": "Torna alla libreria",
+    "openOriginal": "Apri originale",
+    "openFile": "Apri file originale",
+    "noSummary": "Non e stato generato alcun riepilogo.",
+    "chunk": "Frammento {index}",
+    "processing": {
+      "pending": "In attesa",
+      "running": "Elaborazione",
+      "succeeded": "Pronta",
+      "failed": "Non riuscita",
+      "canceled": "Annullata"
+    },
     "sections": {
-      "metadata": "Metadati", "summary": "Riepilogo", "document": "Documento Markdown",
-      "originals": "File originali", "chunks": "Frammenti della fonte",
-      "atomicNotes": "Note atomiche", "knowledgeGraph": "Grafo della conoscenza", "relations": "Relazioni tra note"
+      "metadata": "Metadati",
+      "summary": "Riepilogo",
+      "document": "Documento Markdown",
+      "originals": "File originali",
+      "chunks": "Frammenti della fonte",
+      "atomicNotes": "Note atomiche",
+      "knowledgeGraph": "Grafo della conoscenza",
+      "relations": "Relazioni tra note"
     },
     "cards": {
       "openDetail": "Apri i dettagli di {title}"
@@ -822,20 +1163,72 @@
   },
   "knowledge": {
     "review": {
-      "title": "Revisione note atomiche", "error": "Impossibile caricare la coda di revisione.",
-      "empty": "Nessuna nota atomica attende revisione.", "unknownSource": "Fonte sconosciuta",
+      "title": "Revisione note atomiche",
+      "error": "Impossibile caricare la coda di revisione.",
+      "empty": "Nessuna nota atomica attende revisione.",
+      "unknownSource": "Fonte sconosciuta",
       "fields": { "title": "Titolo", "idea": "Idea principale", "body": "Corpo della nota" },
-      "actions": { "approve": "Approva", "edit": "Modifica", "discard": "Scarta", "saveEdit": "Salva modifica" }
+      "actions": {
+        "approve": "Approva",
+        "edit": "Modifica",
+        "discard": "Scarta",
+        "saveEdit": "Salva modifica"
+      }
     },
     "notes": {
       "emptyForSource": "Questa fonte non ha ancora note atomiche.",
-      "status": { "pending_review": "In attesa di revisione", "approved": "Approvata", "rejected": "Scartata", "archived": "Archiviata" }
+      "status": {
+        "pending_review": "In attesa di revisione",
+        "approved": "Approvata",
+        "rejected": "Scartata",
+        "archived": "Archiviata"
+      }
     },
-    "graph": { "entities": "Entità", "entityRelations": "Relazioni tra entità", "relatedSources": "Fonti correlate", "empty": "Questa fonte non contiene ancora entità nel grafo.", "noRelations": "Questa fonte non contiene ancora relazioni tra entità.", "noEntityRelations": "Nessuna relazione per questa entità.", "noRelatedSources": "Non sono state trovate connessioni con altre fonti.", "sharedEntity": "Entità condivisa: {entity}", "expandDetails": "Espandi dettagli", "collapseDetails": "Comprimi dettagli", "openRelatedSource": "Apri fonte correlata", "entityTypes": { "Person": "Persona", "Organization": "Organizzazione", "Place": "Luogo", "Event": "Evento", "Concept": "Concetto", "Work": "Opera", "Publication": "Pubblicazione", "Publisher": "Editore", "Project": "Progetto", "Product": "Prodotto", "FieldOfStudy": "Campo di studio", "Tag": "Etichetta", "Collection": "Collezione" } },
+    "graph": {
+      "entities": "Entità",
+      "entityRelations": "Relazioni tra entità",
+      "relatedSources": "Fonti correlate",
+      "empty": "Questa fonte non contiene ancora entità nel grafo.",
+      "noRelations": "Questa fonte non contiene ancora relazioni tra entità.",
+      "noEntityRelations": "Nessuna relazione per questa entità.",
+      "noRelatedSources": "Non sono state trovate connessioni con altre fonti.",
+      "sharedEntity": "Entità condivisa: {entity}",
+      "expandDetails": "Espandi dettagli",
+      "collapseDetails": "Comprimi dettagli",
+      "openRelatedSource": "Apri fonte correlata",
+      "entityTypes": {
+        "Person": "Persona",
+        "Organization": "Organizzazione",
+        "Place": "Luogo",
+        "Event": "Evento",
+        "Concept": "Concetto",
+        "Work": "Opera",
+        "Publication": "Pubblicazione",
+        "Publisher": "Editore",
+        "Project": "Progetto",
+        "Product": "Prodotto",
+        "FieldOfStudy": "Campo di studio",
+        "Tag": "Etichetta",
+        "Collection": "Collezione"
+      }
+    },
     "relations": {
-      "empty": "Nessuna relazione rilevante tra note.", "pendingInvolved": "Include una nota in attesa di revisione",
-      "explanations": { "hybrid": "Le note hanno superato la soglia di similarita ibrida.", "reranked": "Le note hanno superato la soglia di similarita ibrida dopo il reranking in batch." },
-      "types": { "supports": "Supporta", "contrasts": "Contrasta", "extends": "Estende", "similar_to": "Simile a", "depends_on": "Dipende da", "clarifies": "Chiarisce", "mentions": "Menziona", "related": "Correlata" }
+      "empty": "Nessuna relazione rilevante tra note.",
+      "pendingInvolved": "Include una nota in attesa di revisione",
+      "explanations": {
+        "hybrid": "Le note hanno superato la soglia di similarita ibrida.",
+        "reranked": "Le note hanno superato la soglia di similarita ibrida dopo il reranking in batch."
+      },
+      "types": {
+        "supports": "Supporta",
+        "contrasts": "Contrasta",
+        "extends": "Estende",
+        "similar_to": "Simile a",
+        "depends_on": "Dipende da",
+        "clarifies": "Chiarisce",
+        "mentions": "Menziona",
+        "related": "Correlata"
+      }
     }
   },
   "settings": {
@@ -844,7 +1237,9 @@
       "eyebrow": "Centro di controllo",
       "title": "Configura il tuo spazio di conoscenza",
       "description": "Gestisci aspetto, intelligenza, integrazioni e dati di Memora Eterna da un unico spazio mirato.",
-      "navigation": { "externalServices": "Servizi esterni", "externalServicesDescription": "Cataloghi, metadati e chiavi API",
+      "navigation": {
+        "externalServices": "Servizi esterni",
+        "externalServicesDescription": "Cataloghi, metadati e chiavi API",
         "label": "Ambiti di configurazione",
         "overview": "Panoramica",
         "overviewDescription": "Stato e scorciatoie",
@@ -949,7 +1344,12 @@
       "noClients": "Nessun client esterno associato.",
       "chromeExtension": "Estensione Chrome",
       "obsidianPlugin": "Plugin Obsidian",
-      "states": { "stopped": "Arrestato", "starting": "Avvio", "ready": "Pronto", "failed": "Errore" }
+      "states": {
+        "stopped": "Arrestato",
+        "starting": "Avvio",
+        "ready": "Pronto",
+        "failed": "Errore"
+      }
     },
     "matching": {
       "resetDefault": "Ripristina valore consigliato",
@@ -1023,53 +1423,231 @@
         "sourcesHint": "I limiti delle evidenze bilanciano contesto e costo. I limiti di output rispettano il profilo selezionato. Riassunti e altre fasi hanno consumi separati."
       }
     },
-    "summarization": { "title": "Generazione dei riassunti", "description": "Evita una chiamata IA per elementi troppo piccoli per contenere informazioni utili.", "minimumWordCount": "Parole minime per un riassunto", "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA." },
-    "knowledgeGraphLimits": { "title": "Limiti del grafo della conoscenza", "description": "Limita l’estrazione per documento autonomo o sottoelemento elaborabile.", "entities": "Entità massime", "relations": "Relazioni massime", "hint": "Il limite residuo viene incluso in ogni prompt IA e il backend applica gli stessi limiti prima del salvataggio." },
-    "metadataEnrichment": { "apiKey":"Chiave API Google Books","saveKey":"Salva chiave","removeKey":"Rimuovi chiave","keySaved":"Chiave salvata in modo sicuro.","noKey":"Nessuna chiave configurata. Le ricerche usano accesso senza chiave.","keyError":"Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.", "provider":"Fornitore di metadati dei libri","auto":"Automatico (Open Library → Google Books)","providerHint":"Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.","openLibrary":"Open Library","googleBooks":"Google Books", "title": "Arricchimento automatico dei metadati", "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati." },
-    "reset": {"title":"Reimposta tutto","description":"Elimina biblioteca, wiki, vettori, grafi, cronologia, routine, connessioni, altre preferenze, file gestiti e download temporanei. Conserva profili LLM ed embedding, provider, parametri, instradamenti e modelli installati. Backup e file personali non vengono eliminati.","action":"Reimposta tutto","confirmation":"Reimpostare definitivamente contenuti, wiki, grafi, routine, connessioni e altre preferenze, inclusi file gestiti e download temporanei? Verranno conservati solo la configurazione LLM/embedding e i modelli installati. Backup e file personali restano intatti.","completed":"Reimpostazione completata.","completedWithWarnings":"Reimpostazione completata, ma alcuni file gestiti non sono stati eliminati.","failed":"Impossibile completare la reimpostazione. Verifica i permessi dei file e riprova."},
+    "summarization": {
+      "title": "Generazione dei riassunti",
+      "description": "Evita una chiamata IA per elementi troppo piccoli per contenere informazioni utili.",
+      "minimumWordCount": "Parole minime per un riassunto",
+      "minimumWordCountHint": "Usa 0 per disattivare questa euristica. Le sezioni strutturali o di soli riferimenti restano escluse dalle istruzioni IA."
+    },
+    "knowledgeGraphLimits": {
+      "title": "Limiti del grafo della conoscenza",
+      "description": "Limita l’estrazione per documento autonomo o sottoelemento elaborabile.",
+      "entities": "Entità massime",
+      "relations": "Relazioni massime",
+      "hint": "Il limite residuo viene incluso in ogni prompt IA e il backend applica gli stessi limiti prima del salvataggio."
+    },
+    "metadataEnrichment": {
+      "apiKey": "Chiave API Google Books",
+      "saveKey": "Salva chiave",
+      "removeKey": "Rimuovi chiave",
+      "keySaved": "Chiave salvata in modo sicuro.",
+      "noKey": "Nessuna chiave configurata. Le ricerche usano accesso senza chiave.",
+      "keyError": "Impossibile accedere alla chiave o salvarla in modo sicuro. Riprova.",
+      "provider": "Fornitore di metadati dei libri",
+      "auto": "Automatico (Open Library → Google Books)",
+      "providerHint": "Scegli un servizio per i libri. Automatico prova Google Books se Open Library non funziona o non trova risultati. Gli articoli scientifici usano Crossref.",
+      "openLibrary": "Open Library",
+      "googleBooks": "Google Books",
+      "title": "Arricchimento automatico dei metadati",
+      "description": "Cerca ISBN, DOI, titoli e autori in Open Library, Google Books e Crossref. Disattiva per impedire tutte le richieste di metadati."
+    },
+    "reset": {
+      "title": "Reimposta tutto",
+      "description": "Elimina biblioteca, wiki, vettori, grafi, cronologia, routine, connessioni, altre preferenze, file gestiti e download temporanei. Conserva profili LLM ed embedding, provider, parametri, instradamenti e modelli installati. Backup e file personali non vengono eliminati.",
+      "action": "Reimposta tutto",
+      "confirmation": "Reimpostare definitivamente contenuti, wiki, grafi, routine, connessioni e altre preferenze, inclusi file gestiti e download temporanei? Verranno conservati solo la configurazione LLM/embedding e i modelli installati. Backup e file personali restano intatti.",
+      "completed": "Reimpostazione completata.",
+      "completedWithWarnings": "Reimpostazione completata, ma alcuni file gestiti non sono stati eliminati.",
+      "failed": "Impossibile completare la reimpostazione. Verifica i permessi dei file e riprova."
+    },
     "ai": {
-      "title": "Provider e profili IA", "provider": "Provider", "google": "Google Gemini",
+      "title": "Provider e profili IA",
+      "provider": "Provider",
+      "google": "Google Gemini",
       "sections": {
-        "providers": "Provider e modelli", "providersDescription": "Credenziali remote e valori predefiniti",
-        "profiles": "Profili", "profilesDescription": "Privacy, modello e parametri",
-        "routing": "Instradamento attivita", "routingDescription": "Scegli il profilo per ogni attivita"
+        "providers": "Provider e modelli",
+        "providersDescription": "Credenziali remote e valori predefiniti",
+        "profiles": "Profili",
+        "profilesDescription": "Privacy, modello e parametri",
+        "routing": "Instradamento attivita",
+        "routingDescription": "Scegli il profilo per ogni attivita"
       },
-      "openAiCompatible": "Compatibile OpenAI", "openAiCodex": "Abbonamento ChatGPT (OAuth)", "displayName": "Nome visualizzato", "baseUrl": "URL base",
-      "model": "Modello", "apiKey": "Chiave API", "saveProvider": "Salva provider", "test": "Testa", "loadModels": "Carica modelli",
-      "connectionOk": "Connessione riuscita.", "profiles": "Profili", "profileName": "Nome profilo",
-      "createProfile": "Crea profilo", "saveProfile": "Salva profilo", "defaultProfile": "Predefinito", "cloneProfile": "Clona profilo", "removeProfile": "Rimuovi profilo", "removeProfileConfirmation": "Rimuovere questo profilo e i relativi instradamenti? I modelli scaricati saranno conservati.", "selectModel": "Seleziona un modello remoto o locale",
-      "remoteModels": "Aggiungi modello remoto", "modelPurpose": "Scopo del modello", "saveModel": "Salva modello",
-      "embeddingModels": "Modelli di embedding remoti", "generationModels": "Modelli remoti di generazione e reranking",
-      "keepLocalEmbeddingModelsLoaded": "Mantieni caricati i modelli di embedding locali", "keepLocalEmbeddingModelsLoadedDescription": "Dopo il primo utilizzo, mantieni il modello in memoria fino alla chiusura dell'applicazione per velocizzare le ricerche successive.",
-      "noModels": "Nessun modello configurato.", "saveDefaults": "Salva predefiniti", "editModel": "Modifica", "saveModelChanges": "Salva modifiche", "deleteModel": "Elimina", "deleteModelConfirmation": "Eliminare questo modello remoto? I profili collegati verranno mantenuti, ma sara necessario selezionare un altro modello.", "noProfiles": "Crea un profilo per configurare le attivita.",
-      "outputLanguage": "Lingua delle risposte", "selectProfile": "Seleziona un profilo", "taskRouting": "Profilo usato per attivita",
+      "openAiCompatible": "Compatibile OpenAI",
+      "openAiCodex": "Abbonamento ChatGPT (OAuth)",
+      "displayName": "Nome visualizzato",
+      "baseUrl": "URL base",
+      "model": "Modello",
+      "apiKey": "Chiave API",
+      "saveProvider": "Salva provider",
+      "test": "Testa",
+      "loadModels": "Carica modelli",
+      "connectionOk": "Connessione riuscita.",
+      "profiles": "Profili",
+      "profileName": "Nome profilo",
+      "createProfile": "Crea profilo",
+      "saveProfile": "Salva profilo",
+      "defaultProfile": "Predefinito",
+      "cloneProfile": "Clona profilo",
+      "removeProfile": "Rimuovi profilo",
+      "removeProfileConfirmation": "Rimuovere questo profilo e i relativi instradamenti? I modelli scaricati saranno conservati.",
+      "selectModel": "Seleziona un modello remoto o locale",
+      "remoteModels": "Aggiungi modello remoto",
+      "modelPurpose": "Scopo del modello",
+      "saveModel": "Salva modello",
+      "embeddingModels": "Modelli di embedding remoti",
+      "generationModels": "Modelli remoti di generazione e reranking",
+      "keepLocalEmbeddingModelsLoaded": "Mantieni caricati i modelli di embedding locali",
+      "keepLocalEmbeddingModelsLoadedDescription": "Dopo il primo utilizzo, mantieni il modello in memoria fino alla chiusura dell'applicazione per velocizzare le ricerche successive.",
+      "noModels": "Nessun modello configurato.",
+      "saveDefaults": "Salva predefiniti",
+      "editModel": "Modifica",
+      "saveModelChanges": "Salva modifiche",
+      "deleteModel": "Elimina",
+      "deleteModelConfirmation": "Eliminare questo modello remoto? I profili collegati verranno mantenuti, ma sara necessario selezionare un altro modello.",
+      "noProfiles": "Crea un profilo per configurare le attivita.",
+      "outputLanguage": "Lingua delle risposte",
+      "selectProfile": "Seleziona un profilo",
+      "taskRouting": "Profilo usato per attivita",
       "taskRoutingDescription": "Scegli indipendentemente quale profilo configurato usa ogni attivita IA.",
-      "purposes": { "generation": "Generazione testo", "embedding": "Embedding", "reranking": "Reranking" },
+      "purposes": {
+        "generation": "Generazione testo",
+        "embedding": "Embedding",
+        "reranking": "Reranking"
+      },
       "privacy": { "allowRemote": "Consenti modelli remoti", "offlineOnly": "Solo modelli locali" },
       "languages": { "interface": "Come l'interfaccia" },
-      "oauth": { "authentication": "Autenticazione ChatGPT", "connect": "Accedi con ChatGPT", "reconnect": "Accedi di nuovo", "connected": "Connesso; scegli e salva un modello.", "description": "Usa la quota dell'abbonamento ChatGPT/Codex per le attivita generative. Gli embedding richiedono ancora una chiave API o un modello locale.", "modelSelectionHint": "Digita per cercare e selezionare un modello dall'elenco oppure inserisci il nome manualmente.", "callbackSuccessTitle": "ChatGPT connesso", "callbackSuccessDescription": "Torna a Memora Eterna per scegliere e salvare un modello.", "callbackErrorTitle": "Autenticazione non riuscita", "callbackCloseWindow": "Chiudi questa finestra e riprova in Memora Eterna." },
-      "tasks": { "embedding": "Embedding", "summarization": "Riepilogo", "text-generation": "Generazione testo", "structured-output": "Output strutturato", "knowledge-graph-generation": "Generazione grafo della conoscenza", "atomic-note-generation": "Generazione note atomiche", "reranking": "Reranking" },
-      "parameters": { "contextWindow": "Contesto totale (token)", "contextWorkflowDefault": "Predefinito del flusso", "contextPlanningLocal": "Budget dell’app per input e output; non modifica il runtime MLX né la memoria allocata.", "contextPlanning": "Budget dell’app per input e output; non aumenta la capacità del modello remoto.", "contextInherited": "Predefinito / ereditato:", "contextEffective": "Effettivo:", "temperature": "Temperatura", "maxTokens": "Token massimi di output", "reasoningLevel": "Ragionamento", "reasoningMaxTokens": "Token massimi di ragionamento", "topP": "Top P", "topK": "Top K", "presencePenalty": "Penalita di presenza", "dimensions": "Dimensioni embedding", "seed": "Seed", "inherit": "Usa valore ereditato/predefinito", "reasoning": { "off": "Disattivato", "on": "Attivato", "minimal": "Minimo", "low": "Basso", "medium": "Medio", "high": "Alto", "xhigh": "Molto alto", "max": "Massimo" } }
+      "oauth": {
+        "authentication": "Autenticazione ChatGPT",
+        "connect": "Accedi con ChatGPT",
+        "reconnect": "Accedi di nuovo",
+        "connected": "Connesso; scegli e salva un modello.",
+        "description": "Usa la quota dell'abbonamento ChatGPT/Codex per le attivita generative. Gli embedding richiedono ancora una chiave API o un modello locale.",
+        "modelSelectionHint": "Digita per cercare e selezionare un modello dall'elenco oppure inserisci il nome manualmente.",
+        "callbackSuccessTitle": "ChatGPT connesso",
+        "callbackSuccessDescription": "Torna a Memora Eterna per scegliere e salvare un modello.",
+        "callbackErrorTitle": "Autenticazione non riuscita",
+        "callbackCloseWindow": "Chiudi questa finestra e riprova in Memora Eterna."
+      },
+      "tasks": {
+        "embedding": "Embedding",
+        "summarization": "Riepilogo",
+        "text-generation": "Generazione testo",
+        "structured-output": "Output strutturato",
+        "knowledge-graph-generation": "Generazione grafo della conoscenza",
+        "atomic-note-generation": "Generazione note atomiche",
+        "reranking": "Reranking"
+      },
+      "parameters": {
+        "contextWindow": "Contesto totale (token)",
+        "contextWorkflowDefault": "Predefinito del flusso",
+        "contextPlanningLocal": "Budget dell’app per input e output; non modifica il runtime MLX né la memoria allocata.",
+        "contextPlanning": "Budget dell’app per input e output; non aumenta la capacità del modello remoto.",
+        "contextInherited": "Predefinito / ereditato:",
+        "contextEffective": "Effettivo:",
+        "temperature": "Temperatura",
+        "maxTokens": "Token massimi di output",
+        "reasoningLevel": "Ragionamento",
+        "reasoningMaxTokens": "Token massimi di ragionamento",
+        "topP": "Top P",
+        "topK": "Top K",
+        "presencePenalty": "Penalita di presenza",
+        "dimensions": "Dimensioni embedding",
+        "seed": "Seed",
+        "inherit": "Usa valore ereditato/predefinito",
+        "reasoning": {
+          "off": "Disattivato",
+          "on": "Attivato",
+          "minimal": "Minimo",
+          "low": "Basso",
+          "medium": "Medio",
+          "high": "Alto",
+          "xhigh": "Molto alto",
+          "max": "Massimo"
+        }
+      }
     }
   },
   "localModels": {
-    "title": "Modelli locali", "repositoryToken": "Token Hugging Face", "tokenConfigured": "Token configurato", "tokenOptional": "Facoltativo per repository privati o limitati", "saveToken": "Salva token", "empty": "Nessun modello corrisponde ai filtri.",
-    "licenseAccept": "Accetto la licenza del modello:", "profileUsage": "Usato dai profili", "removeConfirmation": "Rimuovere questo modello e i file gestiti da questa macchina?", "testSucceeded": "Inferenza locale riuscita.", "defaultParameters": "Parametri predefiniti del modello",
-    "filters": { "runtime": "Runtime", "family": "Famiglia", "allRuntimes": "Tutti i runtime", "allFamilies": "Tutte le famiglie", "compatibleOnly": "Solo compatibili", "capability": "Capacita", "allCapabilities": "Tutte le capacita", "generation": "Generazione testo", "embedding": "Embedding" },
-    "compatibility": { "compatible": "Compatibile con questa macchina", "unsupported_platform": "Richiede macOS su Apple Silicon", "insufficient_memory": "Memoria insufficiente" },
-    "status": { "not_downloaded": "Non scaricato", "downloading": "Download", "verifying": "Verifica", "ready": "Installato", "failed": "Errore", "removing": "Rimozione" },
-    "actions": { "download": "Scarica", "resume": "Riprendi", "test": "Test inferenza", "remove": "Rimuovi", "importGguf": "Importa GGUF", "reloadRecommended": "Ricarica valori consigliati" },
-    "progress": { "loading": "Caricamento modello", "generating": "Generazione locale", "completed": "Completato", "verifying": "Verifica file", "etaUnknown": "Stima del tempo" }
+    "title": "Modelli locali",
+    "repositoryToken": "Token Hugging Face",
+    "tokenConfigured": "Token configurato",
+    "tokenOptional": "Facoltativo per repository privati o limitati",
+    "saveToken": "Salva token",
+    "empty": "Nessun modello corrisponde ai filtri.",
+    "licenseAccept": "Accetto la licenza del modello:",
+    "profileUsage": "Usato dai profili",
+    "removeConfirmation": "Rimuovere questo modello e i file gestiti da questa macchina?",
+    "testSucceeded": "Inferenza locale riuscita.",
+    "defaultParameters": "Parametri predefiniti del modello",
+    "filters": {
+      "runtime": "Runtime",
+      "family": "Famiglia",
+      "allRuntimes": "Tutti i runtime",
+      "allFamilies": "Tutte le famiglie",
+      "compatibleOnly": "Solo compatibili",
+      "capability": "Capacita",
+      "allCapabilities": "Tutte le capacita",
+      "generation": "Generazione testo",
+      "embedding": "Embedding"
+    },
+    "compatibility": {
+      "compatible": "Compatibile con questa macchina",
+      "unsupported_platform": "Richiede macOS su Apple Silicon",
+      "insufficient_memory": "Memoria insufficiente"
+    },
+    "status": {
+      "not_downloaded": "Non scaricato",
+      "downloading": "Download",
+      "verifying": "Verifica",
+      "ready": "Installato",
+      "failed": "Errore",
+      "removing": "Rimozione"
+    },
+    "actions": {
+      "download": "Scarica",
+      "resume": "Riprendi",
+      "test": "Test inferenza",
+      "remove": "Rimuovi",
+      "importGguf": "Importa GGUF",
+      "reloadRecommended": "Ricarica valori consigliati"
+    },
+    "progress": {
+      "loading": "Caricamento modello",
+      "generating": "Generazione locale",
+      "completed": "Completato",
+      "verifying": "Verifica file",
+      "etaUnknown": "Stima del tempo"
+    }
   },
-  "backup": { "title": "Backup", "description": "Crea un dump PostgreSQL e copia i file gestiti configurati in una cartella datata.", "action": "Crea backup", "completed": "Backup completato:", "failed": "Impossibile creare il backup." },
+  "backup": {
+    "title": "Backup",
+    "description": "Crea un dump PostgreSQL e copia i file gestiti configurati in una cartella datata.",
+    "action": "Crea backup",
+    "completed": "Backup completato:",
+    "failed": "Impossibile creare il backup."
+  },
   "obsidianSync": {
     "title": "Sincronizzazione Obsidian",
     "description": "Riconcilia in sicurezza i file gestiti e proietta la libreria corrente nel vault configurato.",
     "action": "Sincronizza ora",
     "unavailable": "Configura e abilita un vault Obsidian per avviare la sincronizzazione.",
-    "processed": "Fonti elaborate", "synced": "Modifiche importate", "projected": "File proiettati", "conflicts": "Conflitti",
-    "states": { "idle": "Inattivo", "running": "Sincronizzazione", "completed": "Completata", "failed": "Non riuscita" },
-    "stages": { "idle": "In attesa", "reconciling": "Riconciliazione file gestiti", "projecting": "Proiezione libreria", "completed": "Sincronizzazione completata", "failed": "Sincronizzazione interrotta" }
+    "processed": "Fonti elaborate",
+    "synced": "Modifiche importate",
+    "projected": "File proiettati",
+    "conflicts": "Conflitti",
+    "states": {
+      "idle": "Inattivo",
+      "running": "Sincronizzazione",
+      "completed": "Completata",
+      "failed": "Non riuscita"
+    },
+    "stages": {
+      "idle": "In attesa",
+      "reconciling": "Riconciliazione file gestiti",
+      "projecting": "Proiezione libreria",
+      "completed": "Sincronizzazione completata",
+      "failed": "Sincronizzazione interrotta"
+    }
   },
   "monitoring": {
     "title": "Monitoraggio",
@@ -1156,8 +1734,52 @@
     "scope": "Ambito della pulizia"
   },
   "debug": {
-    "title": "Monitoraggio", "captureTitle": "Diagnostica di similarità", "captureDescription": "Registra i punteggi testuali, vettoriali, del grafo, dei metadati, di reranking e finali usati nelle ricerche e nel matching delle note atomiche.", "enabled": "Debug attivo", "disabled": "Debug disattivato", "executions": "Esecuzioni", "candidates": "Candidati", "captureState": "Stato acquisizione", "recording": "Registrazione", "paused": "In pausa", "refresh": "Aggiorna", "clear": "Cancella log", "clearConfirmation": "Eliminare tutti i log di debug della similarità?", "empty": "Nessuna diagnostica registrata", "emptyDescription": "Attiva il debug ed esegui una ricerca o importa contenuti per ispezionare i calcoli di similarità.", "chunkSearch": "Ricerca chunk", "noteMatching": "Matching note atomiche", "noModel": "Nessun modello embedding", "passed": "Superato", "rejected": "Sotto soglia", "thresholdUsed": "Soglia usata", "textRank": "Posizione testo", "vectorRank": "Posizione vettore", "graphRank": "Posizione grafo", "textScore": "Testo", "vectorScore": "Vettore", "graphScore": "Grafo", "metadataScore": "Metadati", "rerankScore": "Reranking", "fusionScore": "Fusione RRF", "finalScore": "Finale", "beforeRerank": "Punteggio prima del reranking", "rerankError": "Errore di reranking", "rerankNotConfigured": "Il reranking non è stato eseguito perché non è configurato un profilo compatibile.", "graphError": "Errore query del grafo", "graphUnavailable": "Il segnale del grafo è stato omesso perché la query AGE non è riuscita.", "sourceElements": "Elementi collegati alla nota di origine", "candidateElements": "Elementi collegati a questa candidata", "entities": "Entità", "claims": "Affermazioni", "relations": "Relazioni",
-    "filters": { "all": "Tutti", "chunk_search": "Ricerche chunk", "atomic_note_matching": "Matching note" }
+    "title": "Monitoraggio",
+    "captureTitle": "Diagnostica di similarità",
+    "captureDescription": "Registra i punteggi testuali, vettoriali, del grafo, dei metadati, di reranking e finali usati nelle ricerche e nel matching delle note atomiche.",
+    "enabled": "Debug attivo",
+    "disabled": "Debug disattivato",
+    "executions": "Esecuzioni",
+    "candidates": "Candidati",
+    "captureState": "Stato acquisizione",
+    "recording": "Registrazione",
+    "paused": "In pausa",
+    "refresh": "Aggiorna",
+    "clear": "Cancella log",
+    "clearConfirmation": "Eliminare tutti i log di debug della similarità?",
+    "empty": "Nessuna diagnostica registrata",
+    "emptyDescription": "Attiva il debug ed esegui una ricerca o importa contenuti per ispezionare i calcoli di similarità.",
+    "chunkSearch": "Ricerca chunk",
+    "noteMatching": "Matching note atomiche",
+    "noModel": "Nessun modello embedding",
+    "passed": "Superato",
+    "rejected": "Sotto soglia",
+    "thresholdUsed": "Soglia usata",
+    "textRank": "Posizione testo",
+    "vectorRank": "Posizione vettore",
+    "graphRank": "Posizione grafo",
+    "textScore": "Testo",
+    "vectorScore": "Vettore",
+    "graphScore": "Grafo",
+    "metadataScore": "Metadati",
+    "rerankScore": "Reranking",
+    "fusionScore": "Fusione RRF",
+    "finalScore": "Finale",
+    "beforeRerank": "Punteggio prima del reranking",
+    "rerankError": "Errore di reranking",
+    "rerankNotConfigured": "Il reranking non è stato eseguito perché non è configurato un profilo compatibile.",
+    "graphError": "Errore query del grafo",
+    "graphUnavailable": "Il segnale del grafo è stato omesso perché la query AGE non è riuscita.",
+    "sourceElements": "Elementi collegati alla nota di origine",
+    "candidateElements": "Elementi collegati a questa candidata",
+    "entities": "Entità",
+    "claims": "Affermazioni",
+    "relations": "Relazioni",
+    "filters": {
+      "all": "Tutti",
+      "chunk_search": "Ricerche chunk",
+      "atomic_note_matching": "Matching note"
+    }
   },
   "integrations": {
     "title": "Integrazioni",
@@ -1167,7 +1789,11 @@
     "gatewayAddress": "Indirizzo del gateway",
     "clientId": "ID client",
     "pairingToken": "Token di associazione",
-    "commands": { "importCurrentNote": "Invia la nota corrente a Memora Eterna", "reconnect": "Riconnetti a Memora Eterna", "reconcile": "Riconcilia le note gestite" },
+    "commands": {
+      "importCurrentNote": "Invia la nota corrente a Memora Eterna",
+      "reconnect": "Riconnetti a Memora Eterna",
+      "reconcile": "Riconcilia le note gestite"
+    },
     "states": {
       "connected": "Connesso",
       "disconnected": "Disconnesso",
@@ -1200,8 +1826,30 @@
     "placeholder": "Scrivi in Markdown…",
     "markdownSupported": "Markdown supportato",
     "stats": "{words} parole · {characters} caratteri",
-    "toolbar": { "heading1": "Titolo principale", "heading2": "Titolo di sezione", "bold": "Grassetto", "italic": "Corsivo", "strikethrough": "Barrato", "link": "Link", "list": "Elenco puntato", "orderedList": "Elenco numerato", "checklist": "Lista attività", "quote": "Citazione", "code": "Codice in linea", "codeBlock": "Blocco di codice", "rule": "Linea orizzontale" },
-    "placeholders": { "heading": "Titolo", "text": "testo", "link": "testo del link", "listItem": "Elemento elenco", "quote": "Citazione", "code": "codice", "codeBlock": "codice" }
+    "toolbar": {
+      "heading1": "Titolo principale",
+      "heading2": "Titolo di sezione",
+      "bold": "Grassetto",
+      "italic": "Corsivo",
+      "strikethrough": "Barrato",
+      "link": "Link",
+      "list": "Elenco puntato",
+      "orderedList": "Elenco numerato",
+      "checklist": "Lista attività",
+      "quote": "Citazione",
+      "code": "Codice in linea",
+      "codeBlock": "Blocco di codice",
+      "rule": "Linea orizzontale"
+    },
+    "placeholders": {
+      "heading": "Titolo",
+      "text": "testo",
+      "link": "testo del link",
+      "listItem": "Elemento elenco",
+      "quote": "Citazione",
+      "code": "codice",
+      "codeBlock": "codice"
+    }
   },
   "sourceWorkspace": {
     "outdated": "Riepilogo da aggiornare",
@@ -1662,7 +2310,7 @@
       "guidance": "Indicazioni editoriali",
       "advanced": "Istruzioni della funzione",
       "curator": "Organizzazione automatica",
-        "support": "Verifica del supporto semantico",
+      "support": "Verifica del supporto semantico",
       "temporal": "Interpretare date e cambiamenti",
       "procedure": "Apprendere una procedura",
       "consolidation": "Consentire evoluzione delle note con revisione",
@@ -1719,9 +2367,9 @@
       "page_title": "Titolo della pagina o domanda",
       "catalog_metadata": "Metadati sicuri del catalogo",
       "group_id": "Identità della proposta coerente fornita dall’applicazione.",
-        "reference_guide": "Riferimenti di navigazione a fonti, note, pagine ed entità esistenti. I riferimenti eN sono solo citazioni.",
-        "required_notes": "Note esistenti selezionate da includere in un indice senza copiarne il contenuto.",
-        "candidate_knowledge": "Proposta completa, inclusi titoli, finalità, testo e attribuzione degli indici, verificata rispetto alle prove originali."
+      "reference_guide": "Riferimenti di navigazione a fonti, note, pagine ed entità esistenti. I riferimenti eN sono solo citazioni.",
+      "required_notes": "Note esistenti selezionate da includere in un indice senza copiarne il contenuto.",
+      "candidate_knowledge": "Proposta completa, inclusi titoli, finalità, testo e attribuzione degli indici, verificata rispetto alle prove originali."
     },
     "purposes": {
       "shared": "Testo riutilizzabile incluso nelle richieste al modello indicate.",

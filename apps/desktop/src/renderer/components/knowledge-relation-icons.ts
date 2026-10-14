@@ -1,5 +1,15 @@
 import type { ReactElement } from "react";
-import { AtSign, CircleDot, Check, EqualApproximately, GitBranchPlus, GitCompareArrows, Lightbulb, Link2, Workflow } from "lucide-react";
+import {
+  AtSign,
+  CircleDot,
+  Check,
+  EqualApproximately,
+  GitBranchPlus,
+  GitCompareArrows,
+  Lightbulb,
+  Link2,
+  Workflow
+} from "lucide-react";
 import type { IconNode, LucideIcon } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
 
@@ -32,9 +42,11 @@ export function atomicRelationColor(type: string | null): string {
 export const atomicRelationMarkerRadius = 8.8;
 
 function extractLucideIconNode(icon: LucideIcon): IconNode {
-  const element = (icon as unknown as {
-    render: (props: Record<string, never>, ref: null) => ReactElement<{ iconNode: IconNode }>;
-  }).render({}, null);
+  const element = (
+    icon as unknown as {
+      render: (props: Record<string, never>, ref: null) => ReactElement<{ iconNode: IconNode }>;
+    }
+  ).render({}, null);
   return element.props.iconNode;
 }
 
@@ -54,4 +66,3 @@ export function formatEdgeLabel(label: string, t: Translator): string {
   if (atomicRelationKey) return t(atomicRelationKey);
   return label.replaceAll("_", " ");
 }
-

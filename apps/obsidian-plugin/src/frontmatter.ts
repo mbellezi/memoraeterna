@@ -1,7 +1,4 @@
-import {
-  parseObsidianMarkdown,
-  type ObsidianManagedFrontmatter
-} from "@app/integration-contracts";
+import { parseObsidianMarkdown, type ObsidianManagedFrontmatter } from "@app/integration-contracts";
 
 export interface ParsedManagedNote {
   frontmatter: ObsidianManagedFrontmatter;
@@ -10,7 +7,14 @@ export interface ParsedManagedNote {
 
 export function parseManagedNote(content: string): ParsedManagedNote | null {
   const parsed = parseObsidianMarkdown(content);
-  return parsed ? { frontmatter: parsed.frontmatter, markdown: parsed.frontmatter.memoraWikiSchema ? parsed.bodyMarkdown : parsed.bodyMarkdown.trim() } : null;
+  return parsed
+    ? {
+        frontmatter: parsed.frontmatter,
+        markdown: parsed.frontmatter.memoraWikiSchema
+          ? parsed.bodyMarkdown
+          : parsed.bodyMarkdown.trim()
+      }
+    : null;
 }
 
 export async function hashMarkdown(markdown: string): Promise<string> {

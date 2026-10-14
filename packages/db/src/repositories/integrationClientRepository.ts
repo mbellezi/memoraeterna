@@ -1,11 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import { mapNullableTimestamp, mapTimestamp } from "./sql.js";
-import type {
-  IntegrationClientRecord,
-  IntegrationClientStatus,
-  Queryable
-} from "./types.js";
+import type { IntegrationClientRecord, IntegrationClientStatus, Queryable } from "./types.js";
 
 interface IntegrationClientRow extends QueryResultRow {
   id: string;
@@ -26,7 +22,9 @@ const returning = `id, client_type as "clientType", display_name as "displayName
   status, last_seen_at as "lastSeenAt", created_at as "createdAt", updated_at as "updatedAt"`;
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function mapClient(row: IntegrationClientRow): IntegrationClientRecord {
@@ -92,7 +90,10 @@ export function createIntegrationClientRepository(db: Queryable) {
       return row ? mapClient(row) : null;
     },
 
-    async touch(id: string, input: { capabilities: string[]; contractVersion: string }): Promise<void> {
+    async touch(
+      id: string,
+      input: { capabilities: string[]; contractVersion: string }
+    ): Promise<void> {
       await db.query(
         `update integration_clients set capabilities = $2, contract_version = $3,
            last_seen_at = now(), updated_at = now() where id = $1`,
@@ -100,7 +101,10 @@ export function createIntegrationClientRepository(db: Queryable) {
       );
     },
 
-    async setStatus(id: string, status: IntegrationClientStatus): Promise<IntegrationClientRecord | null> {
+    async setStatus(
+      id: string,
+      status: IntegrationClientStatus
+    ): Promise<IntegrationClientRecord | null> {
       const result = await db.query<IntegrationClientRow>(
         `update integration_clients set status = $2, updated_at = now()
          where id = $1 returning ${returning}`,

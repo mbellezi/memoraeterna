@@ -6,8 +6,9 @@ export function effectiveReasoningLevel(
   level: AiReasoningLevel | undefined
 ): AiReasoningLevel | undefined {
   if (!level) return undefined;
-  const usesGeminiReasoning = providerId === "google"
-    || (providerId === "openai-compatible" && modelId.toLowerCase().includes("gemini"));
+  const usesGeminiReasoning =
+    providerId === "google" ||
+    (providerId === "openai-compatible" && modelId.toLowerCase().includes("gemini"));
   if (usesGeminiReasoning) {
     if (isGemini25(modelId)) {
       if (level === "xhigh" || level === "max") return "high";
@@ -24,12 +25,14 @@ export function effectiveReasoningLevel(
     return level === "off" ? "minimal" : level;
   }
 
-  const usesOpenAiReasoning = providerId === "openai-codex"
-    || (providerId === "openai-compatible" && isOpenAiReasoningModel(modelId));
+  const usesOpenAiReasoning =
+    providerId === "openai-codex" ||
+    (providerId === "openai-compatible" && isOpenAiReasoningModel(modelId));
   if (!usesOpenAiReasoning) return level;
-  const supported = providerId === "openai-codex"
-    ? openAiCodexSupportedReasoningLevels(modelId)
-    : openAiSupportedReasoningLevels(modelId);
+  const supported =
+    providerId === "openai-codex"
+      ? openAiCodexSupportedReasoningLevels(modelId)
+      : openAiSupportedReasoningLevels(modelId);
   return supported ? closestSupportedReasoningLevel(level, supported) : level;
 }
 
@@ -107,7 +110,9 @@ export function isOpenAiReasoningModel(modelId: string): boolean {
   return id.startsWith("gpt-5") || /^o[134](?:-|$)/.test(id) || id.startsWith("gpt-realtime-2");
 }
 
-export function openAiSupportedReasoningLevels(modelId: string): readonly AiReasoningLevel[] | undefined {
+export function openAiSupportedReasoningLevels(
+  modelId: string
+): readonly AiReasoningLevel[] | undefined {
   const id = unqualifiedModelId(modelId);
   if (id.startsWith("gpt-realtime-2")) return ["minimal", "low", "medium", "high", "xhigh"];
   if (/^o[134](?:-|$)/.test(id)) return ["low", "medium", "high"];
@@ -139,7 +144,9 @@ export function openAiSupportedReasoningLevels(modelId: string): readonly AiReas
   return ["low", "medium", "high"];
 }
 
-export function openAiCodexSupportedReasoningLevels(modelId: string): readonly AiReasoningLevel[] | undefined {
+export function openAiCodexSupportedReasoningLevels(
+  modelId: string
+): readonly AiReasoningLevel[] | undefined {
   const id = unqualifiedModelId(modelId);
   if (/^gpt-5\.6-(?:sol|terra|luna)$/.test(id)) {
     // Codex exposes Ultra for Sol and Terra as max reasoning plus subagent orchestration.
@@ -154,8 +161,16 @@ function closestSupportedReasoningLevel(
   supported: readonly AiReasoningLevel[]
 ): AiReasoningLevel {
   if (supported.includes(level)) return level;
-  if (level === "on") return supported.includes("medium") ? "medium" : supported[0] ?? level;
-  const ordered: readonly AiReasoningLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  if (level === "on") return supported.includes("medium") ? "medium" : (supported[0] ?? level);
+  const ordered: readonly AiReasoningLevel[] = [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ];
   const requestedIndex = ordered.indexOf(level);
   for (let distance = 1; distance < ordered.length; distance += 1) {
     const higher = ordered[requestedIndex + distance];

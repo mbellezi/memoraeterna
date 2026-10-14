@@ -55,50 +55,76 @@ export const AiCapabilitySchema = z.enum(AiCapabilities);
 
 export type AiCapability = z.infer<typeof AiCapabilitySchema>;
 
-export const AiReasoningLevelSchema = z.enum(["off", "on", "minimal", "low", "medium", "high", "xhigh", "max"]);
+export const AiReasoningLevelSchema = z.enum([
+  "off",
+  "on",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max"
+]);
 export type AiReasoningLevel = z.infer<typeof AiReasoningLevelSchema>;
 
-export const AiModelParametersSchema = z.object({
-  contextWindow: z.number().int().min(128).max(2_000_000).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  maxTokens: z.number().int().min(1).max(1_000_000).optional(),
-  reasoningLevel: AiReasoningLevelSchema.optional(),
-  reasoningMaxTokens: z.number().int().min(1).max(1_000_000).optional(),
-  topP: z.number().min(0).max(1).optional(),
-  topK: z.number().int().min(1).max(1_000_000).optional(),
-  presencePenalty: z.number().min(-2).max(2).optional(),
-  dimensions: z.union([z.literal(256), z.literal(768), z.literal(1024)]).optional(),
-  seed: z.number().int().nonnegative().optional()
-}).strict();
+export const AiModelParametersSchema = z
+  .object({
+    contextWindow: z.number().int().min(128).max(2_000_000).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+    reasoningLevel: AiReasoningLevelSchema.optional(),
+    reasoningMaxTokens: z.number().int().min(1).max(1_000_000).optional(),
+    topP: z.number().min(0).max(1).optional(),
+    topK: z.number().int().min(1).max(1_000_000).optional(),
+    presencePenalty: z.number().min(-2).max(2).optional(),
+    dimensions: z.union([z.literal(256), z.literal(768), z.literal(1024)]).optional(),
+    seed: z.number().int().nonnegative().optional()
+  })
+  .strict();
 export type AiModelParameters = z.infer<typeof AiModelParametersSchema>;
 
-export const AiParameterRangeSchema = z.object({
-  min: z.number(),
-  max: z.number().optional(),
-  step: z.number().positive().optional()
-}).strict().superRefine((range, context) => {
-  if (range.max !== undefined && range.max < range.min) {
-    context.addIssue({ code: "custom", message: "Parameter maximum must be greater than or equal to its minimum.", path: ["max"] });
-  }
-});
+export const AiParameterRangeSchema = z
+  .object({
+    min: z.number(),
+    max: z.number().optional(),
+    step: z.number().positive().optional()
+  })
+  .strict()
+  .superRefine((range, context) => {
+    if (range.max !== undefined && range.max < range.min) {
+      context.addIssue({
+        code: "custom",
+        message: "Parameter maximum must be greater than or equal to its minimum.",
+        path: ["max"]
+      });
+    }
+  });
 export type AiParameterRange = z.infer<typeof AiParameterRangeSchema>;
 
-export const AiModelParameterCapabilitiesSchema = z.object({
-  contextWindow: AiParameterRangeSchema.optional(),
-  temperature: AiParameterRangeSchema.optional(),
-  maxTokens: AiParameterRangeSchema.optional(),
-  reasoning: z.object({
-    levels: z.array(AiReasoningLevelSchema).min(1),
-    maxTokens: AiParameterRangeSchema.optional()
-  }).strict().optional(),
-  topP: AiParameterRangeSchema.optional(),
-  topK: AiParameterRangeSchema.optional(),
-  presencePenalty: AiParameterRangeSchema.optional(),
-  dimensions: z.object({
-    values: z.array(z.union([z.literal(256), z.literal(768), z.literal(1024)])).min(1)
-  }).strict().optional(),
-  seed: AiParameterRangeSchema.optional()
-}).strict();
+export const AiModelParameterCapabilitiesSchema = z
+  .object({
+    contextWindow: AiParameterRangeSchema.optional(),
+    temperature: AiParameterRangeSchema.optional(),
+    maxTokens: AiParameterRangeSchema.optional(),
+    reasoning: z
+      .object({
+        levels: z.array(AiReasoningLevelSchema).min(1),
+        maxTokens: AiParameterRangeSchema.optional()
+      })
+      .strict()
+      .optional(),
+    topP: AiParameterRangeSchema.optional(),
+    topK: AiParameterRangeSchema.optional(),
+    presencePenalty: AiParameterRangeSchema.optional(),
+    dimensions: z
+      .object({
+        values: z.array(z.union([z.literal(256), z.literal(768), z.literal(1024)])).min(1)
+      })
+      .strict()
+      .optional(),
+    seed: AiParameterRangeSchema.optional()
+  })
+  .strict();
 export type AiModelParameterCapabilities = z.infer<typeof AiModelParameterCapabilitiesSchema>;
 
 export function normalizeAiModelParameters(
@@ -114,15 +140,27 @@ export function normalizeAiModelParameters(
   copySupportedNumber("presencePenalty", parameters, capabilities, normalized);
   copySupportedNumber("seed", parameters, capabilities, normalized);
 
-  if (parameters.dimensions !== undefined && capabilities.dimensions?.values.includes(parameters.dimensions)) {
+  if (
+    parameters.dimensions !== undefined &&
+    capabilities.dimensions?.values.includes(parameters.dimensions)
+  ) {
     normalized.dimensions = parameters.dimensions;
   }
   if (parameters.reasoningLevel !== undefined && capabilities.reasoning) {
-    normalized.reasoningLevel = normalizeReasoningLevel(parameters.reasoningLevel, capabilities.reasoning.levels);
+    normalized.reasoningLevel = normalizeReasoningLevel(
+      parameters.reasoningLevel,
+      capabilities.reasoning.levels
+    );
   }
-  if (parameters.reasoningMaxTokens !== undefined && capabilities.reasoning?.maxTokens
-      && normalized.reasoningLevel !== "off") {
-    normalized.reasoningMaxTokens = clampToRange(parameters.reasoningMaxTokens, capabilities.reasoning.maxTokens);
+  if (
+    parameters.reasoningMaxTokens !== undefined &&
+    capabilities.reasoning?.maxTokens &&
+    normalized.reasoningLevel !== "off"
+  ) {
+    normalized.reasoningMaxTokens = clampToRange(
+      parameters.reasoningMaxTokens,
+      capabilities.reasoning.maxTokens
+    );
   }
   return normalized;
 }
@@ -150,9 +188,17 @@ function normalizeReasoningLevel(
   if (supported.includes(level)) return level;
   if (supported.includes("on") && level !== "off") return "on";
   if (level === "on") {
-    return supported.includes("medium") ? "medium" : supported[0] ?? level;
+    return supported.includes("medium") ? "medium" : (supported[0] ?? level);
   }
-  const ordered: readonly AiReasoningLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const ordered: readonly AiReasoningLevel[] = [
+    "off",
+    "minimal",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ];
   const requestedIndex = ordered.indexOf(level);
   for (let distance = 1; distance < ordered.length; distance += 1) {
     const higher = ordered[requestedIndex + distance];

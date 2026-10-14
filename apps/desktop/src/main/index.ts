@@ -1,4 +1,4 @@
-import {InvestigationService} from './services/investigation-service.js';
+import { InvestigationService } from "./services/investigation-service.js";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
@@ -16,7 +16,19 @@ import { MonitoringService } from "./services/monitoring-service.js";
 import { processRelationLabels } from "./services/relation-label-processing.js";
 import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
-import { app, powerMonitor, Notification, BrowserWindow, ipcMain, Menu, nativeImage, net, shell, Tray, webContents } from "electron";
+import {
+  app,
+  powerMonitor,
+  Notification,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  net,
+  shell,
+  Tray,
+  webContents
+} from "electron";
 import { createTranslator } from "@app/i18n";
 import { registerIpcHandlers } from "./ipc";
 import { DatabaseService } from "./services/database-service";
@@ -153,19 +165,36 @@ let shutdownPromise: Promise<void> | null = null;
 let isShutdownInProgress = false;
 let isQuittingAfterShutdown = false;
 
-const primaryInstance=app.requestSingleInstanceLock();
-if(!primaryInstance)app.quit();
-let pendingObsidianOpen:ObsidianDeepLink|null=null;
-function receiveObsidianOpen(raw:string){const target=parseObsidianDeepLink(raw);if(!target)return;pendingObsidianOpen=target;for(const window of BrowserWindow.getAllWindows()){if(!window.webContents.isLoading())window.webContents.send(ipcChannels.obsidianDeepLink,target);}}
-app.on('open-url',(event,url)=>{event.preventDefault();receiveObsidianOpen(url);});
-app.on('second-instance',(_event,args)=>{for(const arg of args)if(arg.startsWith('memora:'))receiveObsidianOpen(arg);});
-for(const arg of process.argv)if(arg.startsWith('memora:'))receiveObsidianOpen(arg);
-ipcMain.handle(ipcChannels.obsidianDeepLinkPending,()=>{const target=pendingObsidianOpen;pendingObsidianOpen=null;return target;});
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) app.quit();
+let pendingObsidianOpen: ObsidianDeepLink | null = null;
+function receiveObsidianOpen(raw: string) {
+  const target = parseObsidianDeepLink(raw);
+  if (!target) return;
+  pendingObsidianOpen = target;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.webContents.isLoading())
+      window.webContents.send(ipcChannels.obsidianDeepLink, target);
+  }
+}
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  receiveObsidianOpen(url);
+});
+app.on("second-instance", (_event, args) => {
+  for (const arg of args) if (arg.startsWith("memora:")) receiveObsidianOpen(arg);
+});
+for (const arg of process.argv) if (arg.startsWith("memora:")) receiveObsidianOpen(arg);
+ipcMain.handle(ipcChannels.obsidianDeepLinkPending, () => {
+  const target = pendingObsidianOpen;
+  pendingObsidianOpen = null;
+  return target;
+});
 
 void app.whenReady().then(() => {
-  if(!primaryInstance)return;
+  if (!primaryInstance) return;
   app.setName(createTranslator(app.getLocale())("app.title"));
-  if(app.isPackaged)app.setAsDefaultProtocolClient("memora");
+  if (app.isPackaged) app.setAsDefaultProtocolClient("memora");
   databaseService = new DatabaseService({
     userDataPath: app.getPath("userData"),
     cwd: process.cwd(),
@@ -179,7 +208,10 @@ void app.whenReady().then(() => {
     desktopLocale: app.getLocale()
   });
   const workspaceRoot = resolveWorkspaceRoot(process.cwd());
-  const monitoringService = new MonitoringService(() => databaseService?.getPool() ?? null, () => settingsService!.getApp());
+  const monitoringService = new MonitoringService(
+    () => databaseService?.getPool() ?? null,
+    () => settingsService!.getApp()
+  );
   aiService = new AiService({
     monitoring: monitoringService,
     userDataPath: app.getPath("userData"),
@@ -191,7 +223,8 @@ void app.whenReady().then(() => {
     openExternal: (url) => shell.openExternal(url),
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getUiLanguage: async () => (await settingsService!.getApp()).language,
-    getKeepLocalEmbeddingModelsLoaded: async () => (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
+    getKeepLocalEmbeddingModelsLoaded: async () =>
+      (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded,
     onLocalEmbeddingLoadStatus: (status) => {
       const payload = localEmbeddingLoadStatusSchema.parse(status);
       for (const contents of webContents.getAllWebContents()) {
@@ -210,7 +243,7 @@ void app.whenReady().then(() => {
     getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
-  async function initializeKnowledgeDefaults(){
+  async function initializeKnowledgeDefaults() {
     await promptService.initialize();
     await investigationService.initialize();
     await organizationService.initializeAutomation();
@@ -225,7 +258,8 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null
   });
   ingestionService = new IngestionService({
-    traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
+    traceOperation: (operation, context, run) =>
+      monitoringService.operation(operation, context, run),
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData"),
@@ -233,7 +267,8 @@ void app.whenReady().then(() => {
     workspaceRoot,
     isPackaged: app.isPackaged,
     hierarchicalIngestionService,
-    fetchExternalPage: (url, init) => net.fetch(url, { ...init, bypassCustomProtocolHandlers: true })
+    fetchExternalPage: (url, init) =>
+      net.fetch(url, { ...init, bypassCustomProtocolHandlers: true })
   });
   metadataEnrichmentService = new MetadataEnrichmentService({
     credentials: new CredentialService(app.getPath("userData")),
@@ -249,7 +284,9 @@ void app.whenReady().then(() => {
     async () => (await settingsService!.getApp()).debugMode
   );
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
-  const relationThreshold = readRelationThreshold(process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD);
+  const relationThreshold = readRelationThreshold(
+    process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD
+  );
   knowledgeService = new KnowledgeService({
     getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     getPool: () => databaseService?.getPool() ?? null,
@@ -259,12 +296,17 @@ void app.whenReady().then(() => {
     getUploadedFilesBasePath: async () => (await settingsService!.get()).uploadCopiesFolderPath,
     isDebugEnabled: async () => (await settingsService!.getApp()).debugMode,
     getRelationThreshold: async () => (await settingsService!.getApp()).atomicNoteRelationThreshold,
-    getAtomicNoteMatchingSettings: async () => (await settingsService!.getApp()).atomicNoteMatchingSettings,
-    getCanonicalMatchingSettings: async () => (await settingsService!.getApp()).canonicalMatchingSettings,
+    getAtomicNoteMatchingSettings: async () =>
+      (await settingsService!.getApp()).atomicNoteMatchingSettings,
+    getCanonicalMatchingSettings: async () =>
+      (await settingsService!.getApp()).canonicalMatchingSettings,
     getSourceRelationSettings: async () => (await settingsService!.getApp()).sourceRelationSettings,
-    getSummaryMinimumWordCount: async () => (await settingsService!.getApp()).summaryMinimumWordCount,
-    getEntityIdentitySimilarityThreshold: async () => (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
-    getRelationTypeSimilarityThreshold: async () => (await settingsService!.getApp()).relationTypeSimilarityThreshold,
+    getSummaryMinimumWordCount: async () =>
+      (await settingsService!.getApp()).summaryMinimumWordCount,
+    getEntityIdentitySimilarityThreshold: async () =>
+      (await settingsService!.getApp()).entityIdentitySimilarityThreshold,
+    getRelationTypeSimilarityThreshold: async () =>
+      (await settingsService!.getApp()).relationTypeSimilarityThreshold,
     getKnowledgeGraphLimits: async () => {
       const settings = await settingsService!.getApp();
       return {
@@ -276,27 +318,85 @@ void app.whenReady().then(() => {
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
   obsidianSyncService = new ObsidianSyncService({
-    getLocale:async()=>(await settingsService!.getApp()).contentLanguage,
-    assetRoots:async()=>({app_internal:join(app.getPath('userData'),'assets'),...((await settingsService!.get()).uploadCopiesFolderPath?{uploaded_files:(await settingsService!.get()).uploadCopiesFolderPath!}:{})}),
+    getLocale: async () => (await settingsService!.getApp()).contentLanguage,
+    assetRoots: async () => ({
+      app_internal: join(app.getPath("userData"), "assets"),
+      ...((await settingsService!.get()).uploadCopiesFolderPath
+        ? { uploaded_files: (await settingsService!.get()).uploadCopiesFolderPath! }
+        : {})
+    }),
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
-  const promptService=new PromptService({getPool:()=>databaseService?.getPool()??null,ai:aiService,sample:(contexts,options)=>runPromptSamples(aiService!,contexts,options)});
-  registerPromptIpc(ipcMain,promptService);
-  const consultationService=new ConsultationService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake()});
-  const investigationService=new InvestigationService({getPool:()=>databaseService?.getPool()??null,consultation:consultationService,wake:()=>jobSupervisor?.wake(),notify:({question})=>{void settingsService!.getApp().then(settings=>{if(Notification.isSupported())new Notification({title:createTranslator(settings.language)("investigation.updated"),body:question}).show();}).catch(()=>{});}});
-  app.once("before-quit",()=>investigationService.shutdown());
-  const maintenanceService=new MaintenanceService({getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:id=>jobSupervisor!.requestCancel(id),idleSeconds:()=>powerMonitor.getSystemIdleTime(),aiBusy:()=>aiService!.isBusy(),investigations:investigationService});
-  ipcMain.handle(ipcChannels.maintenanceCommand,(_event,input:unknown)=>maintenanceService.command(MaintenanceCommandSchema.parse(input)));
-  const organizationService = new OrganizationService({sampleMaintenance:(...args)=>maintenanceService.sample(...args),validateMaintenanceActivation:(...args)=>maintenanceService.validateActivation(...args),sampleConsultation:(revisionId,profileId,privacy,domainId)=>consultationService.sample(revisionId,profileId,privacy,domainId),getPool:()=>databaseService?.getPool()??null,ai:aiService,contentLanguage:async()=>(await settingsService!.getApp()).contentLanguage,wake:()=>jobSupervisor?.wake(),cancelJob:(id)=>jobSupervisor!.requestCancel(id)});
-  registerOrganizationIpc(ipcMain,organizationService);
-  registerConsultationIpc(ipcMain,consultationService,investigationService);
+  const promptService = new PromptService({
+    getPool: () => databaseService?.getPool() ?? null,
+    ai: aiService,
+    sample: (contexts, options) => runPromptSamples(aiService!, contexts, options)
+  });
+  registerPromptIpc(ipcMain, promptService);
+  const consultationService = new ConsultationService({
+    getPool: () => databaseService?.getPool() ?? null,
+    ai: aiService,
+    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    wake: () => jobSupervisor?.wake()
+  });
+  const investigationService = new InvestigationService({
+    getPool: () => databaseService?.getPool() ?? null,
+    consultation: consultationService,
+    wake: () => jobSupervisor?.wake(),
+    notify: ({ question }) => {
+      void settingsService!
+        .getApp()
+        .then((settings) => {
+          if (Notification.isSupported())
+            new Notification({
+              title: createTranslator(settings.language)("investigation.updated"),
+              body: question
+            }).show();
+        })
+        .catch(() => {});
+    }
+  });
+  app.once("before-quit", () => investigationService.shutdown());
+  const maintenanceService = new MaintenanceService({
+    getPool: () => databaseService?.getPool() ?? null,
+    ai: aiService,
+    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    wake: () => jobSupervisor?.wake(),
+    cancelJob: (id) => jobSupervisor!.requestCancel(id),
+    idleSeconds: () => powerMonitor.getSystemIdleTime(),
+    aiBusy: () => aiService!.isBusy(),
+    investigations: investigationService
+  });
+  ipcMain.handle(ipcChannels.maintenanceCommand, (_event, input: unknown) =>
+    maintenanceService.command(MaintenanceCommandSchema.parse(input))
+  );
+  const organizationService = new OrganizationService({
+    sampleMaintenance: (...args) => maintenanceService.sample(...args),
+    validateMaintenanceActivation: (...args) => maintenanceService.validateActivation(...args),
+    sampleConsultation: (revisionId, profileId, privacy, domainId) =>
+      consultationService.sample(revisionId, profileId, privacy, domainId),
+    getPool: () => databaseService?.getPool() ?? null,
+    ai: aiService,
+    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
+    wake: () => jobSupervisor?.wake(),
+    cancelJob: (id) => jobSupervisor!.requestCancel(id)
+  });
+  registerOrganizationIpc(ipcMain, organizationService);
+  registerConsultationIpc(ipcMain, consultationService, investigationService);
   jobSupervisor = new JobSupervisor({
-    maintenanceTick:()=>maintenanceService.tick(),maintenanceReady:job=>maintenanceService.ready(job),processMaintenance:(job,signal)=>maintenanceService.execute(job,signal),
-    reconcileOrganization:async()=>{await reconcileOrganizationParticipation(databaseService!.getPool()!,organizationService);await organizationService.automaticTick();},
-    processOrganization:(job,signal)=>organizationService.execute(job,signal),
-    traceOperation: (operation, context, run) => monitoringService.operation(operation, context, run),
-    processRelationLabels: (job, signal) => processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),
+    maintenanceTick: () => maintenanceService.tick(),
+    maintenanceReady: (job) => maintenanceService.ready(job),
+    processMaintenance: (job, signal) => maintenanceService.execute(job, signal),
+    reconcileOrganization: async () => {
+      await reconcileOrganizationParticipation(databaseService!.getPool()!, organizationService);
+      await organizationService.automaticTick();
+    },
+    processOrganization: (job, signal) => organizationService.execute(job, signal),
+    traceOperation: (operation, context, run) =>
+      monitoringService.operation(operation, context, run),
+    processRelationLabels: (job, signal) =>
+      processRelationLabels(databaseService!.getPool()!, aiService!, job, signal),
     getPool: () => databaseService?.getPool() ?? null,
     logger: console,
     knowledgeService,
@@ -312,10 +412,11 @@ void app.whenReady().then(() => {
         ...(result.embeddingSpaceKey ? { spaceKey: result.embeddingSpaceKey } : {})
       };
     },
-    releaseAiRuntime: async () => aiService!.releaseLocalRuntime(
-      false,
-      (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
-    )
+    releaseAiRuntime: async () =>
+      aiService!.releaseLocalRuntime(
+        false,
+        (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
+      )
   });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
@@ -348,36 +449,74 @@ void app.whenReady().then(() => {
   );
   createApplicationTray();
   activeMainWindow = createMainWindow();
-  serviceStartupPromise = databaseService.start().then(async (status) => {
-    if (status.state === "ready") {
-      await initializeKnowledgeDefaults();
-      await monitoringService.recover();
-      await Promise.all([
-        localModelService?.start(),
-        jobSupervisor?.start(),
-        integrationGateway?.start(),
-        obsidianSyncService?.reconcileVault()
-      ]);
-      if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
-        void import("./services/matching-pilot.js").then(({ runMatchingPilot }) => runMatchingPilot({
-          mode: process.env.MEMORA_MATCHING_PILOT!, isPackaged: app.isPackaged,
-          userDataPath: app.getPath("userData"), workspaceRoot, pool: databaseService!.getPool()!,
-          ingestion: ingestionService!, hierarchy: hierarchicalIngestionService!, settings: settingsService!, jobs: jobSupervisor!, backup: backupService!
-        })).catch((error: unknown) => console.error("MATCHING_PILOT failed:", error instanceof Error ? error.message : String(error)));
+  serviceStartupPromise = databaseService
+    .start()
+    .then(async (status) => {
+      if (status.state === "ready") {
+        await initializeKnowledgeDefaults();
+        await monitoringService.recover();
+        await Promise.all([
+          localModelService?.start(),
+          jobSupervisor?.start(),
+          integrationGateway?.start(),
+          obsidianSyncService?.reconcileVault()
+        ]);
+        if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
+          void import("./services/matching-pilot.js")
+            .then(({ runMatchingPilot }) =>
+              runMatchingPilot({
+                mode: process.env.MEMORA_MATCHING_PILOT!,
+                isPackaged: app.isPackaged,
+                userDataPath: app.getPath("userData"),
+                workspaceRoot,
+                pool: databaseService!.getPool()!,
+                ingestion: ingestionService!,
+                hierarchy: hierarchicalIngestionService!,
+                settings: settingsService!,
+                jobs: jobSupervisor!,
+                backup: backupService!
+              })
+            )
+            .catch((error: unknown) =>
+              console.error(
+                "MATCHING_PILOT failed:",
+                error instanceof Error ? error.message : String(error)
+              )
+            );
+        }
+        if (!app.isPackaged && process.env.MEMORA_MATCHING_BENCHMARK) {
+          void import("./services/matching-benchmark.js")
+            .then(({ runMatchingBenchmark }) =>
+              runMatchingBenchmark({
+                mode: "benchmark",
+                isPackaged: app.isPackaged,
+                userDataPath: app.getPath("userData"),
+                workspaceRoot,
+                pool: databaseService!.getPool()!,
+                ingestion: ingestionService!,
+                hierarchy: hierarchicalIngestionService!,
+                settings: settingsService!,
+                jobs: jobSupervisor!,
+                backup: backupService!,
+                ai: aiService!
+              })
+            )
+            .catch((error: unknown) =>
+              console.error(
+                "MATCHING_BENCHMARK failed:",
+                error instanceof Error ? error.message : String(error)
+              )
+            );
+        }
+        const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
+        if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
       }
-      if (!app.isPackaged && process.env.MEMORA_MATCHING_BENCHMARK) {
-        void import("./services/matching-benchmark.js").then(({ runMatchingBenchmark }) => runMatchingBenchmark({
-          mode: "benchmark", isPackaged: app.isPackaged, userDataPath: app.getPath("userData"), workspaceRoot,
-          pool: databaseService!.getPool()!, ingestion: ingestionService!, hierarchy: hierarchicalIngestionService!,
-          settings: settingsService!, jobs: jobSupervisor!, backup: backupService!, ai: aiService!
-        })).catch((error: unknown) => console.error("MATCHING_BENCHMARK failed:", error instanceof Error ? error.message : String(error)));
-      }
-      const autoQuitMs = readPositiveInteger(process.env.MEMORA_SMOKE_AUTO_QUIT_MS);
-      if (autoQuitMs !== undefined) setTimeout(() => app.quit(), autoQuitMs);
-    }
-  }).catch((error: unknown) => {
-    console.error(`Service startup failed: ${error instanceof Error ? error.message : String(error)}`);
-  });
+    })
+    .catch((error: unknown) => {
+      console.error(
+        `Service startup failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+    });
 
   app.on("activate", () => {
     showMainWindow();

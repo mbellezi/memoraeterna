@@ -1,12 +1,18 @@
-import type { PgPool } from '../client.js';
+import type { PgPool } from "../client.js";
 
 /** Projection authorization, not retrieval: keep unavailable original IDs and all
  * retained derivatives. Related links contribute provenance, never tree placement.
  * UNION terminates cycles without imposing a logical hierarchy depth limit.
  */
-export async function scopedProjectionPages(db: Pick<PgPool, 'query'>, pageIds: string[], allowed: string[]): Promise<string[]> {
-  if (pageIds.length > 1000) throw new Error('obsidianWiki.errors.limit');
-  const rows = (await db.query(`with recursive
+export async function scopedProjectionPages(
+  db: Pick<PgPool, "query">,
+  pageIds: string[],
+  allowed: string[]
+): Promise<string[]> {
+  if (pageIds.length > 1000) throw new Error("obsidianWiki.errors.limit");
+  const rows = (
+    await db.query(
+      `with recursive
     pages as (select p.*,r.content from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id),
     refs(page_id,kind,id) as (
       select page_id,case target_kind when 'page' then 'wiki_page' else target_kind end,target_id from wiki_memberships
@@ -46,6 +52,9 @@ export async function scopedProjectionPages(db: Pick<PgPool, 'query'>, pageIds: 
       select id,'wiki_page'::text,id from pages where id=any($1::uuid[])
       union select l.page_id,e.target_kind,e.target_id from lineage l join edges e on e.kind=l.kind and e.id=l.id
     ) select page_id from lineage group by page_id
-      having count(*) filter(where kind='source')>0 and bool_and(kind<>'source' or coalesce(id=any($2::uuid[]),false))`, [pageIds, allowed])).rows;
-  return rows.map(r => String(r.page_id));
+      having count(*) filter(where kind='source')>0 and bool_and(kind<>'source' or coalesce(id=any($2::uuid[]),false))`,
+      [pageIds, allowed]
+    )
+  ).rows;
+  return rows.map((r) => String(r.page_id));
 }

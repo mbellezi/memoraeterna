@@ -55,26 +55,50 @@ describe("phase 2 renderer views", () => {
   });
 
   it("allows writing before metadata but gates confirmation", () => {
-    expect(wizardStepAvailability({ busy: false, canChooseOrigin: true, studioReady: true,
-      descriptorReady: false, contentReady: false })).toEqual({ origin: true, file: true, content: true, confirm: false, structure: false });
-    expect(wizardStepAvailability({ busy: false, canChooseOrigin: false, studioReady: true,
-      descriptorReady: true, contentReady: true })).toEqual({ origin: false, file: false, content: true, confirm: true, structure: false });
-    expect(wizardStepAvailability({ busy: true, canChooseOrigin: true, studioReady: true,
-      descriptorReady: true, contentReady: true, structureReady: true })).toEqual({ origin: false, file: false, content: false, confirm: false, structure: false });
+    expect(
+      wizardStepAvailability({
+        busy: false,
+        canChooseOrigin: true,
+        studioReady: true,
+        descriptorReady: false,
+        contentReady: false
+      })
+    ).toEqual({ origin: true, file: true, content: true, confirm: false, structure: false });
+    expect(
+      wizardStepAvailability({
+        busy: false,
+        canChooseOrigin: false,
+        studioReady: true,
+        descriptorReady: true,
+        contentReady: true
+      })
+    ).toEqual({ origin: false, file: false, content: true, confirm: true, structure: false });
+    expect(
+      wizardStepAvailability({
+        busy: true,
+        canChooseOrigin: true,
+        studioReady: true,
+        descriptorReady: true,
+        contentReady: true,
+        structureReady: true
+      })
+    ).toEqual({ origin: false, file: false, content: false, confirm: false, structure: false });
   });
 
   it("renders real file page progress with elapsed time", () => {
-    const html = renderToString(<FileImportProgressCard
-      progress={{
-        requestId: "00000000-0000-4000-8000-000000000001",
-        stage: "processing_pages",
-        progress: 0.37,
-        completedPages: 37,
-        totalPages: 100
-      }}
-      elapsedSeconds={83}
-      t={t}
-    />);
+    const html = renderToString(
+      <FileImportProgressCard
+        progress={{
+          requestId: "00000000-0000-4000-8000-000000000001",
+          stage: "processing_pages",
+          progress: 0.37,
+          completedPages: 37,
+          totalPages: 100
+        }}
+        elapsedSeconds={83}
+        t={t}
+      />
+    );
     expect(html).toContain("37 of 100 pages processed");
     expect(html).toContain("37%");
     expect(html).toContain("01:23");
@@ -94,31 +118,38 @@ describe("phase 2 renderer views", () => {
   });
 
   it("localizes knowledge-graph entity types in search results", () => {
-    const html = renderToString(<SearchResultCard t={createTranslator("pt-BR")} result={{
-      kind: "entity",
-      entityId: "00000000-0000-4000-8000-000000000001",
-      entityType: "Organization",
-      canonicalName: "OpenAI",
-      aliases: [],
-      description: null,
-      sourceItemId: "00000000-0000-4000-8000-000000000002",
-      sourceTitle: "Fonte",
-      sourceType: "WebArticle",
-      breadcrumbs: [],
-      excerpt: "Evidência",
-      graphScore: 0.9,
-      finalScore: 0.9
-    }} />);
+    const html = renderToString(
+      <SearchResultCard
+        t={createTranslator("pt-BR")}
+        result={{
+          kind: "entity",
+          entityId: "00000000-0000-4000-8000-000000000001",
+          entityType: "Organization",
+          canonicalName: "OpenAI",
+          aliases: [],
+          description: null,
+          sourceItemId: "00000000-0000-4000-8000-000000000002",
+          sourceTitle: "Fonte",
+          sourceType: "WebArticle",
+          breadcrumbs: [],
+          excerpt: "Evidência",
+          graphScore: 0.9,
+          finalScore: 0.9
+        }}
+      />
+    );
 
     expect(html).toContain("Organização");
     expect(html).not.toContain(">Organization<");
   });
 
   it("renders an animated modal while a local embedding model is loading", () => {
-    const html = renderToString(<LocalEmbeddingLoadDialog
-      status={{ state: "loading", modelId: "embeddinggemma-test" }}
-      t={t}
-    />);
+    const html = renderToString(
+      <LocalEmbeddingLoadDialog
+        status={{ state: "loading", modelId: "embeddinggemma-test" }}
+        t={t}
+      />
+    );
     expect(html).toContain('role="dialog"');
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain("Loading local embedding model");
@@ -128,9 +159,19 @@ describe("phase 2 renderer views", () => {
   });
 
   it("reports remote model connection test results", async () => {
-    await expect(resolveProviderTestStatus(async () => true)).resolves.toBe("settings.ai.connectionOk");
-    await expect(resolveProviderTestStatus(async () => { throw new Error("errors.ai.oauthRefreshFailed"); })).resolves.toBe("errors.ai.oauthRefreshFailed");
-    await expect(resolveProviderTestStatus(async () => { throw new Error("request failed"); })).resolves.toBe("errors.ai.connectionFailed");
+    await expect(resolveProviderTestStatus(async () => true)).resolves.toBe(
+      "settings.ai.connectionOk"
+    );
+    await expect(
+      resolveProviderTestStatus(async () => {
+        throw new Error("errors.ai.oauthRefreshFailed");
+      })
+    ).resolves.toBe("errors.ai.oauthRefreshFailed");
+    await expect(
+      resolveProviderTestStatus(async () => {
+        throw new Error("request failed");
+      })
+    ).resolves.toBe("errors.ai.connectionFailed");
   });
 
   it("renders all profile task parameters with one compact save action", () => {
@@ -194,68 +235,104 @@ describe("phase 2 renderer views", () => {
     expect(html).toContain("Use model defaults");
   });
 
-  it.each(['en','pt-BR','es','fr','it'] as const)('labels inherited context independently of OS number formatting in %s',locale=>{
-    const html=renderToString(<AiParameterFields remote value={{}} inheritedContextWindow={64000} onChange={()=>{}} capabilities={{contextWindow:{min:128,max:2000000}}} t={createTranslator(locale)} />);expect(html).toContain('placeholder="64000"');expect(html).toContain('aria-describedby=');expect(html).toContain('for=');expect(html).not.toContain('64.000');
-    const local=renderToString(<AiParameterFields planningContext value={{}} onChange={()=>{}} capabilities={{contextWindow:{min:128,max:2000000}}} t={createTranslator(locale)} />);expect(local).not.toContain('placeholder=');expect(local).not.toContain('128000');
-  });
+  it.each(["en", "pt-BR", "es", "fr", "it"] as const)(
+    "labels inherited context independently of OS number formatting in %s",
+    (locale) => {
+      const html = renderToString(
+        <AiParameterFields
+          remote
+          value={{}}
+          inheritedContextWindow={64000}
+          onChange={() => {}}
+          capabilities={{ contextWindow: { min: 128, max: 2000000 } }}
+          t={createTranslator(locale)}
+        />
+      );
+      expect(html).toContain('placeholder="64000"');
+      expect(html).toContain("aria-describedby=");
+      expect(html).toContain("for=");
+      expect(html).not.toContain("64.000");
+      const local = renderToString(
+        <AiParameterFields
+          planningContext
+          value={{}}
+          onChange={() => {}}
+          capabilities={{ contextWindow: { min: 128, max: 2000000 } }}
+          t={createTranslator(locale)}
+        />
+      );
+      expect(local).not.toContain("placeholder=");
+      expect(local).not.toContain("128000");
+    }
+  );
 
   it("renders only the reasoning controls declared by the model", () => {
-    const qwen = renderToString(<AiParameterFields
-      value={{}}
-      onChange={() => undefined}
-      capabilities={{ reasoning: { levels: ["off", "on"] } }}
-      t={t}
-    />);
+    const qwen = renderToString(
+      <AiParameterFields
+        value={{}}
+        onChange={() => undefined}
+        capabilities={{ reasoning: { levels: ["off", "on"] } }}
+        t={t}
+      />
+    );
     expect(qwen).toContain("Off");
     expect(qwen).toContain("On");
     expect(qwen).not.toContain("Minimal");
     expect(qwen).not.toContain("Maximum reasoning tokens");
 
-    const budget = renderToString(<AiParameterFields
-      value={{ reasoningLevel: "on", reasoningMaxTokens: 4_096 }}
-      onChange={() => undefined}
-      capabilities={{
-        reasoning: {
-          levels: ["off", "on"],
-          maxTokens: { min: 1, max: 24_576, step: 1 }
-        }
-      }}
-      t={t}
-    />);
+    const budget = renderToString(
+      <AiParameterFields
+        value={{ reasoningLevel: "on", reasoningMaxTokens: 4_096 }}
+        onChange={() => undefined}
+        capabilities={{
+          reasoning: {
+            levels: ["off", "on"],
+            maxTokens: { min: 1, max: 24_576, step: 1 }
+          }
+        }}
+        t={t}
+      />
+    );
     expect(budget).toContain("Maximum reasoning tokens");
     expect(budget).toContain('max="24576"');
   });
 
   it("does not clamp a numeric field while the user is still typing", () => {
-    const html = renderToString(<AiParameterFields
-      value={{ contextWindow: 8 }}
-      onChange={() => undefined}
-      capabilities={{ contextWindow: { min: 128, max: 32_768, step: 1 } }}
-      t={t}
-    />);
+    const html = renderToString(
+      <AiParameterFields
+        value={{ contextWindow: 8 }}
+        onChange={() => undefined}
+        capabilities={{ contextWindow: { min: 128, max: 32_768, step: 1 } }}
+        t={t}
+      />
+    );
 
     expect(html).toContain('value="8"');
     expect(html).not.toContain('value="128"');
   });
 
   it("renders sampling controls only when the model declares them", () => {
-    const supported = renderToString(<AiParameterFields
-      value={{ temperature: 1, topP: 0.95, topK: 20, presencePenalty: 1.5 }}
-      onChange={() => undefined}
-      capabilities={{
-        temperature: { min: 0, max: 2, step: 0.1 },
-        topP: { min: 0, max: 1, step: 0.05 },
-        topK: { min: 1, step: 1 },
-        presencePenalty: { min: 0, max: 2, step: 0.1 }
-      }}
-      t={t}
-    />);
-    const unsupported = renderToString(<AiParameterFields
-      value={{}}
-      onChange={() => undefined}
-      capabilities={{ temperature: { min: 0, max: 2, step: 0.1 } }}
-      t={t}
-    />);
+    const supported = renderToString(
+      <AiParameterFields
+        value={{ temperature: 1, topP: 0.95, topK: 20, presencePenalty: 1.5 }}
+        onChange={() => undefined}
+        capabilities={{
+          temperature: { min: 0, max: 2, step: 0.1 },
+          topP: { min: 0, max: 1, step: 0.05 },
+          topK: { min: 1, step: 1 },
+          presencePenalty: { min: 0, max: 2, step: 0.1 }
+        }}
+        t={t}
+      />
+    );
+    const unsupported = renderToString(
+      <AiParameterFields
+        value={{}}
+        onChange={() => undefined}
+        capabilities={{ temperature: { min: 0, max: 2, step: 0.1 } }}
+        t={t}
+      />
+    );
 
     expect(supported).toContain("Temperature");
     expect(supported).toContain("Top P");
@@ -270,14 +347,18 @@ describe("phase 2 renderer views", () => {
       reasoning: { reasoningLevel: "on" as const, temperature: 1, topP: 0.95, topK: 20 },
       nonReasoning: { reasoningLevel: "off" as const, temperature: 0.7, topP: 0.8, topK: 20 }
     };
-    expect(recommendedParametersForCurrentMode(
-      { recommendedParameters },
-      { reasoningLevel: "on", temperature: 0.2 }
-    )).toEqual(recommendedParameters.reasoning);
-    expect(recommendedParametersForCurrentMode(
-      { recommendedParameters },
-      { reasoningLevel: "off", temperature: 0.2 }
-    )).toEqual(recommendedParameters.nonReasoning);
+    expect(
+      recommendedParametersForCurrentMode(
+        { recommendedParameters },
+        { reasoningLevel: "on", temperature: 0.2 }
+      )
+    ).toEqual(recommendedParameters.reasoning);
+    expect(
+      recommendedParametersForCurrentMode(
+        { recommendedParameters },
+        { reasoningLevel: "off", temperature: 0.2 }
+      )
+    ).toEqual(recommendedParameters.nonReasoning);
 
     const model = localModelViewSchema.parse({
       id: "00000000-0000-4000-8000-000000000001",
@@ -315,7 +396,9 @@ describe("phase 2 renderer views", () => {
       lastError: null,
       download: null
     });
-    const html = renderToString(<LocalModelDefaults model={model} t={t} onSave={async () => undefined} />);
+    const html = renderToString(
+      <LocalModelDefaults model={model} t={t} onSave={async () => undefined} />
+    );
     expect(html).toContain("Reload recommended defaults");
   });
 
@@ -522,7 +605,10 @@ describe("phase 2 renderer views", () => {
       id: "00000000-0000-4000-8000-000000000010",
       status: "running" as const,
       currentStage: "summarization",
-      stagesCheckpoint: { conversion: { status: "completed" }, summarization: { status: "running" } }
+      stagesCheckpoint: {
+        conversion: { status: "completed" },
+        summarization: { status: "running" }
+      }
     };
     const source = {
       id: "00000000-0000-4000-8000-000000000020",
@@ -545,7 +631,12 @@ describe("phase 2 renderer views", () => {
       source
     };
     const grouped = groupJobs([
-      jobRecordSchema.parse({ ...common, id: "00000000-0000-4000-8000-000000000001", type: "ingestion", progress: 0.68 }),
+      jobRecordSchema.parse({
+        ...common,
+        id: "00000000-0000-4000-8000-000000000001",
+        type: "ingestion",
+        progress: 0.68
+      }),
       jobRecordSchema.parse({
         ...common,
         id: "00000000-0000-4000-8000-000000000002",
@@ -570,20 +661,52 @@ describe("phase 2 renderer views", () => {
   });
 
   it.each([
-    ["running",0,8], ["running",3,8], ["failed",3,8], ["canceled",3,8], ["succeeded",8,8], ["succeeded",0,0]
-  ])("shows source-pair counts in the progress card and timeline: %s %s/%s", (status,completed,total) => {
-    const job = jobRecordSchema.parse({
-      id:"00000000-0000-4000-8000-000000000001",type:"ingestion",status,progress:0.95,
-      attempts:1,maxAttempts:3,canCancel:false,canRetry:false,error:null,errorHistory:[],aiExecution:null,
-      createdAt:"2026-07-18T20:12:52.308Z",updatedAt:"2026-07-18T20:12:52.560Z",
-      ingestionRun:{id:"00000000-0000-4000-8000-000000000010",status,currentStage:"sourceMatching",
-        effectiveStages:["sourceMatching"],stagesCheckpoint:{sourceMatching:{status,metadata:{completed,total}}}}
-    });
-    const html=renderToString(<JobCard card={groupJobs([job])[0]!} expanded={false} busy={false} t={t}
-      onToggle={() => undefined} onAction={() => undefined} onSelectAttempt={() => undefined} />);
-    expect(html).toContain(`${completed} of ${total} pair analyses completed`);
-    expect(html).toContain(`${completed}/${total}`);
-  });
+    ["running", 0, 8],
+    ["running", 3, 8],
+    ["failed", 3, 8],
+    ["canceled", 3, 8],
+    ["succeeded", 8, 8],
+    ["succeeded", 0, 0]
+  ])(
+    "shows source-pair counts in the progress card and timeline: %s %s/%s",
+    (status, completed, total) => {
+      const job = jobRecordSchema.parse({
+        id: "00000000-0000-4000-8000-000000000001",
+        type: "ingestion",
+        status,
+        progress: 0.95,
+        attempts: 1,
+        maxAttempts: 3,
+        canCancel: false,
+        canRetry: false,
+        error: null,
+        errorHistory: [],
+        aiExecution: null,
+        createdAt: "2026-07-18T20:12:52.308Z",
+        updatedAt: "2026-07-18T20:12:52.560Z",
+        ingestionRun: {
+          id: "00000000-0000-4000-8000-000000000010",
+          status,
+          currentStage: "sourceMatching",
+          effectiveStages: ["sourceMatching"],
+          stagesCheckpoint: { sourceMatching: { status, metadata: { completed, total } } }
+        }
+      });
+      const html = renderToString(
+        <JobCard
+          card={groupJobs([job])[0]!}
+          expanded={false}
+          busy={false}
+          t={t}
+          onToggle={() => undefined}
+          onAction={() => undefined}
+          onSelectAttempt={() => undefined}
+        />
+      );
+      expect(html).toContain(`${completed} of ${total} pair analyses completed`);
+      expect(html).toContain(`${completed}/${total}`);
+    }
+  );
 
   it("places Delete beside Retry for a user-canceled incomplete job", () => {
     const job = jobRecordSchema.parse({
@@ -606,19 +729,24 @@ describe("phase 2 renderer views", () => {
         status: "canceled",
         currentStage: "summarization",
         effectiveStages: ["chunking", "summarization"],
-        stagesCheckpoint: { chunking: { status: "completed" }, summarization: { status: "canceled" } }
+        stagesCheckpoint: {
+          chunking: { status: "completed" },
+          summarization: { status: "canceled" }
+        }
       }
     });
     const card = groupJobs([job])[0]!;
-    const html = renderToString(<JobCard
-      card={card}
-      expanded={false}
-      busy={false}
-      t={t}
-      onToggle={() => undefined}
-      onAction={() => undefined}
-      onSelectAttempt={() => undefined}
-    />);
+    const html = renderToString(
+      <JobCard
+        card={card}
+        expanded={false}
+        busy={false}
+        t={t}
+        onToggle={() => undefined}
+        onAction={() => undefined}
+        onSelectAttempt={() => undefined}
+      />
+    );
 
     expect(html).toContain("Retry");
     expect(html).toContain("Delete");
@@ -635,7 +763,8 @@ describe("phase 2 renderer views", () => {
       maxAttempts: 1,
       canCancel: false,
       canRetry: true,
-      error: "AI provider request failed (400).\n{\"error\":{\"message\":\"max_output_tokens must be less than or equal to 8192\",\"param\":\"max_output_tokens\"}}",
+      error:
+        'AI provider request failed (400).\n{"error":{"message":"max_output_tokens must be less than or equal to 8192","param":"max_output_tokens"}}',
       errorHistory: [],
       createdAt: "2026-07-18T20:12:52.308Z",
       updatedAt: "2026-07-18T20:12:52.560Z",
@@ -659,17 +788,64 @@ describe("phase 2 renderer views", () => {
   });
 
   it("collapses repeated graph entities, relations, and related sources", () => {
-    expect(groupGraphEntities([
-      { id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memória", confidence: 0.7 },
-      { id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }
-    ])).toEqual([{ id: "00000000-0000-4000-8000-000000000002", type: "Concept", name: "Memoria", confidence: 0.9 }]);
-    expect(groupGraphRelations([
-      { id: "00000000-0000-4000-8000-000000000003", subject: "Memory", predicate: "supports", object: "Recall", confidence: 0.6 },
-      { id: "00000000-0000-4000-8000-000000000004", subject: "Memory", predicate: "supports", object: "Recall", confidence: 0.8 }
-    ])).toHaveLength(1);
+    expect(
+      groupGraphEntities([
+        {
+          id: "00000000-0000-4000-8000-000000000002",
+          type: "Concept",
+          name: "Memória",
+          confidence: 0.7
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000002",
+          type: "Concept",
+          name: "Memoria",
+          confidence: 0.9
+        }
+      ])
+    ).toEqual([
+      {
+        id: "00000000-0000-4000-8000-000000000002",
+        type: "Concept",
+        name: "Memoria",
+        confidence: 0.9
+      }
+    ]);
+    expect(
+      groupGraphRelations([
+        {
+          id: "00000000-0000-4000-8000-000000000003",
+          subject: "Memory",
+          predicate: "supports",
+          object: "Recall",
+          confidence: 0.6
+        },
+        {
+          id: "00000000-0000-4000-8000-000000000004",
+          subject: "Memory",
+          predicate: "supports",
+          object: "Recall",
+          confidence: 0.8
+        }
+      ])
+    ).toHaveLength(1);
     const sources = groupRelatedSources([
-      { sourceItemId: "00000000-0000-4000-8000-000000000005", sourceTitle: "Related", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: 0.6 },
-      { sourceItemId: "00000000-0000-4000-8000-000000000005", sourceTitle: "Related", entityName: "Memory", relatedEntityName: "Recall", predicate: "supports", confidence: 0.9 }
+      {
+        sourceItemId: "00000000-0000-4000-8000-000000000005",
+        sourceTitle: "Related",
+        entityName: "Memory",
+        relatedEntityName: "Recall",
+        predicate: "supports",
+        confidence: 0.6
+      },
+      {
+        sourceItemId: "00000000-0000-4000-8000-000000000005",
+        sourceTitle: "Related",
+        entityName: "Memory",
+        relatedEntityName: "Recall",
+        predicate: "supports",
+        confidence: 0.9
+      }
     ]);
     expect(sources).toHaveLength(1);
     expect(sources[0]).toMatchObject({ sourceTitle: "Related", confidence: 0.9 });
@@ -683,38 +859,70 @@ describe("phase 2 renderer views", () => {
       title: string;
       parentSourceItemId: string | null;
       structurePosition: number | null;
-    }) => librarySourceSchema.parse({
-      ...input,
-      childCount: 0,
-      hasDocument: true,
-      type: input.parentSourceItemId ? "DocumentSection" : "AcademicPaper",
-      subtitle: null,
-      sourceUri: null,
-      language: "en",
-      summary: null,
-      metadata: {},
-      processingStatus: "pending",
-      currentStage: "queued",
-      updatedAt
-    });
+    }) =>
+      librarySourceSchema.parse({
+        ...input,
+        childCount: 0,
+        hasDocument: true,
+        type: input.parentSourceItemId ? "DocumentSection" : "AcademicPaper",
+        subtitle: null,
+        sourceUri: null,
+        language: "en",
+        summary: null,
+        metadata: {},
+        processingStatus: "pending",
+        currentStage: "queued",
+        updatedAt
+      });
     const rootId = "00000000-0000-4000-8000-000000000001";
     const firstId = "00000000-0000-4000-8000-000000000002";
     const ordered = orderHierarchically([
       source({ id: rootId, title: "Paper", parentSourceItemId: null, structurePosition: null }),
-      source({ id: "00000000-0000-4000-8000-000000000004", title: "Third", parentSourceItemId: rootId, structurePosition: 4 }),
+      source({
+        id: "00000000-0000-4000-8000-000000000004",
+        title: "Third",
+        parentSourceItemId: rootId,
+        structurePosition: 4
+      }),
       source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
-      source({ id: "00000000-0000-4000-8000-000000000005", title: "First detail", parentSourceItemId: firstId, structurePosition: 1 }),
-      source({ id: "00000000-0000-4000-8000-000000000003", title: "Second", parentSourceItemId: rootId, structurePosition: 2 })
+      source({
+        id: "00000000-0000-4000-8000-000000000005",
+        title: "First detail",
+        parentSourceItemId: firstId,
+        structurePosition: 1
+      }),
+      source({
+        id: "00000000-0000-4000-8000-000000000003",
+        title: "Second",
+        parentSourceItemId: rootId,
+        structurePosition: 2
+      })
     ]);
 
     expect(ordered.map(({ source: item }) => item.title)).toEqual([
-      "Paper", "First", "First detail", "Second", "Third"
+      "Paper",
+      "First",
+      "First detail",
+      "Second",
+      "Third"
     ]);
-    expect(orderHierarchically([
-      source({ id: "00000000-0000-4000-8000-000000000004", title: "Third", parentSourceItemId: rootId, structurePosition: 4 }),
-      source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
-      source({ id: "00000000-0000-4000-8000-000000000003", title: "Second", parentSourceItemId: rootId, structurePosition: 2 })
-    ]).map(({ source: item }) => item.title)).toEqual(["First", "Second", "Third"]);
+    expect(
+      orderHierarchically([
+        source({
+          id: "00000000-0000-4000-8000-000000000004",
+          title: "Third",
+          parentSourceItemId: rootId,
+          structurePosition: 4
+        }),
+        source({ id: firstId, title: "First", parentSourceItemId: rootId, structurePosition: 0 }),
+        source({
+          id: "00000000-0000-4000-8000-000000000003",
+          title: "Second",
+          parentSourceItemId: rootId,
+          structurePosition: 2
+        })
+      ]).map(({ source: item }) => item.title)
+    ).toEqual(["First", "Second", "Third"]);
   });
 
   it("resolves children and breadcrumb chains from the flat library list", () => {
@@ -724,33 +932,48 @@ describe("phase 2 renderer views", () => {
       title: string;
       parentSourceItemId: string | null;
       structurePosition: number | null;
-    }) => librarySourceSchema.parse({
-      ...input,
-      childCount: 0,
-      hasDocument: true,
-      type: input.parentSourceItemId ? "BookChapter" : "Book",
-      subtitle: null,
-      sourceUri: null,
-      language: "en",
-      summary: null,
-      metadata: {},
-      processingStatus: "pending",
-      currentStage: "queued",
-      updatedAt
-    });
+    }) =>
+      librarySourceSchema.parse({
+        ...input,
+        childCount: 0,
+        hasDocument: true,
+        type: input.parentSourceItemId ? "BookChapter" : "Book",
+        subtitle: null,
+        sourceUri: null,
+        language: "en",
+        summary: null,
+        metadata: {},
+        processingStatus: "pending",
+        currentStage: "queued",
+        updatedAt
+      });
     const rootId = "00000000-0000-4000-8000-000000000001";
     const chapterId = "00000000-0000-4000-8000-000000000002";
     const sectionId = "00000000-0000-4000-8000-000000000003";
     const sources = [
       source({ id: rootId, title: "Book", parentSourceItemId: null, structurePosition: null }),
-      source({ id: sectionId, title: "Section", parentSourceItemId: chapterId, structurePosition: 0 }),
+      source({
+        id: sectionId,
+        title: "Section",
+        parentSourceItemId: chapterId,
+        structurePosition: 0
+      }),
       source({ id: chapterId, title: "Chapter", parentSourceItemId: rootId, structurePosition: 0 }),
-      source({ id: "00000000-0000-4000-8000-000000000004", title: "Chapter 2", parentSourceItemId: rootId, structurePosition: 1 })
+      source({
+        id: "00000000-0000-4000-8000-000000000004",
+        title: "Chapter 2",
+        parentSourceItemId: rootId,
+        structurePosition: 1
+      })
     ];
 
     expect(childrenOf(sources, rootId).map((item) => item.title)).toEqual(["Chapter", "Chapter 2"]);
     expect(childrenOf(sources, sectionId)).toEqual([]);
-    expect(breadcrumbChain(sources, sectionId).map((item) => item.title)).toEqual(["Book", "Chapter", "Section"]);
+    expect(breadcrumbChain(sources, sectionId).map((item) => item.title)).toEqual([
+      "Book",
+      "Chapter",
+      "Section"
+    ]);
     expect(breadcrumbChain(sources, rootId).map((item) => item.title)).toEqual(["Book"]);
   });
 
@@ -758,21 +981,31 @@ describe("phase 2 renderer views", () => {
     const rootId = "00000000-0000-4000-8000-000000000001";
     const childId = "00000000-0000-4000-8000-000000000002";
 
-    expect(libraryHistoryEntryFromState(createLibraryHistoryState({
-      view: "library",
-      path: [rootId, childId],
-      fromSearch: false
-    }))).toEqual({ view: "library", path: [rootId, childId], fromSearch: false });
-    expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "search" })))
-      .toEqual({ view: "search" });
-    expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "knowledgeGraph" })))
-      .toEqual({ view: "knowledgeGraph" });
-    expect(libraryHistoryEntryFromState({ memoraEternaLibrary: {
-      version: 1,
-      view: "library",
-      path: [rootId, 2],
-      fromSearch: false
-    } })).toBeNull();
+    expect(
+      libraryHistoryEntryFromState(
+        createLibraryHistoryState({
+          view: "library",
+          path: [rootId, childId],
+          fromSearch: false
+        })
+      )
+    ).toEqual({ view: "library", path: [rootId, childId], fromSearch: false });
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState({ view: "search" }))).toEqual({
+      view: "search"
+    });
+    expect(
+      libraryHistoryEntryFromState(createLibraryHistoryState({ view: "knowledgeGraph" }))
+    ).toEqual({ view: "knowledgeGraph" });
+    expect(
+      libraryHistoryEntryFromState({
+        memoraEternaLibrary: {
+          version: 1,
+          view: "library",
+          path: [rootId, 2],
+          fromSearch: false
+        }
+      })
+    ).toBeNull();
   });
 
   it("maps auxiliary mouse buttons to library history navigation", () => {
@@ -791,7 +1024,9 @@ describe("phase 2 renderer views", () => {
   it("scrolls an expanded source card only when it leaves the visible viewport", () => {
     const viewport = { top: 64, bottom: 764, height: 700 };
     expect(expandedCardScrollBlock({ top: 100, bottom: 500, height: 400 }, viewport)).toBeNull();
-    expect(expandedCardScrollBlock({ top: 500, bottom: 820, height: 320 }, viewport)).toBe("nearest");
+    expect(expandedCardScrollBlock({ top: 500, bottom: 820, height: 320 }, viewport)).toBe(
+      "nearest"
+    );
     expect(expandedCardScrollBlock({ top: 80, bottom: 900, height: 820 }, viewport)).toBe("start");
   });
 
@@ -805,8 +1040,24 @@ describe("phase 2 renderer views", () => {
 });
 
 it("keeps homonymous canonical entities and their endpoint relations separate", () => {
-  const a = "00000000-0000-4000-8000-000000000001", b = "00000000-0000-4000-8000-000000000002";
-  expect(groupGraphEntities([a, b].map((id) => ({ id, type: "Person", name: "John Smith", confidence: 0.9 })))).toHaveLength(2);
-  expect(groupGraphRelations([a, b].map((id) => ({ id, subjectEntityId: id, objectEntityId: "00000000-0000-4000-8000-000000000003",
-    subject: "John Smith", object: "University", predicate: "works_at", confidence: 0.9 })))).toHaveLength(2);
+  const a = "00000000-0000-4000-8000-000000000001",
+    b = "00000000-0000-4000-8000-000000000002";
+  expect(
+    groupGraphEntities(
+      [a, b].map((id) => ({ id, type: "Person", name: "John Smith", confidence: 0.9 }))
+    )
+  ).toHaveLength(2);
+  expect(
+    groupGraphRelations(
+      [a, b].map((id) => ({
+        id,
+        subjectEntityId: id,
+        objectEntityId: "00000000-0000-4000-8000-000000000003",
+        subject: "John Smith",
+        object: "University",
+        predicate: "works_at",
+        confidence: 0.9
+      }))
+    )
+  ).toHaveLength(2);
 });

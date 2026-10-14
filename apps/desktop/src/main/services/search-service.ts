@@ -30,7 +30,8 @@ type MergedCandidate =
   | { kind: "chunk"; candidate: FusedSearchCandidate }
   | { kind: "atomic_note"; candidate: FusedNoteCandidate };
 
-type DisplayCandidate = MergedCandidate
+type DisplayCandidate =
+  | MergedCandidate
   | { kind: "entity"; candidate: GraphEntitySearchRecord }
   | { kind: "relation"; candidate: GraphRelationSearchRecord };
 
@@ -46,11 +47,16 @@ export class SearchService {
     const repository = createSearchRepository(pool);
     const hierarchy = createHierarchicalIngestionRepository(pool);
     const sourceItemIds = input.rootSourceItemId
-      ? [input.rootSourceItemId, ...(await hierarchy.listDescendants(input.rootSourceItemId)).map((source) => source.id)]
+      ? [
+          input.rootSourceItemId,
+          ...(await hierarchy.listDescendants(input.rootSourceItemId)).map((source) => source.id)
+        ]
       : [];
     let embedding: number[] | undefined;
     let embeddingModel: string | undefined;
-    let embeddingIdentity:{embeddingSpaceKey:string;embeddingProvider:string;embeddingRuntime:string}|undefined;
+    let embeddingIdentity:
+      | { embeddingSpaceKey: string; embeddingProvider: string; embeddingRuntime: string }
+      | undefined;
     if (input.mode === "hybrid") {
       try {
         const generated = await this.aiService.runDefaultTask("embedding", input.text, {
@@ -59,11 +65,17 @@ export class SearchService {
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
-          if ((candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024)
-              && candidate.every(Number.isFinite)) {
+          if (
+            (candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024) &&
+            candidate.every(Number.isFinite)
+          ) {
             embedding = candidate;
             embeddingModel = generated.modelId;
-            embeddingIdentity={embeddingSpaceKey:generated.embeddingSpaceKey??"",embeddingProvider:generated.providerId,embeddingRuntime:generated.runtime};
+            embeddingIdentity = {
+              embeddingSpaceKey: generated.embeddingSpaceKey ?? "",
+              embeddingProvider: generated.providerId,
+              embeddingRuntime: generated.runtime
+            };
           }
         }
       } catch {
@@ -78,15 +90,17 @@ export class SearchService {
       sourceItemIds,
       limit: candidateLimit
     });
-    const vectorCandidates = embedding && embeddingModel
-      ? await repository.searchVector({
-          embedding,
-          embeddingModel,...embeddingIdentity,
-          sourceTypes: input.sourceTypes,
-          sourceItemIds,
-          limit: candidateLimit
-        })
-      : [];
+    const vectorCandidates =
+      embedding && embeddingModel
+        ? await repository.searchVector({
+            embedding,
+            embeddingModel,
+            ...embeddingIdentity,
+            sourceTypes: input.sourceTypes,
+            sourceItemIds,
+            limit: candidateLimit
+          })
+        : [];
     let graphCandidates: SearchEvidenceRecord[] = [];
     let graphEntities: GraphEntitySearchRecord[] = [];
     let graphRelations: GraphRelationSearchRecord[] = [];
@@ -99,7 +113,8 @@ export class SearchService {
         limit: candidateLimit
       });
     } catch (error) {
-      graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+      graphError =
+        error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
     }
     try {
       const elements = await createKnowledgeGraphRepository(pool).searchElements({
@@ -111,7 +126,8 @@ export class SearchService {
       graphEntities = elements.entities;
       graphRelations = elements.relations;
     } catch (error) {
-      graphError ??= error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+      graphError ??=
+        error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
     }
     const noteTextCandidates = await repository.searchNotesText({
       text: input.text,
@@ -119,47 +135,57 @@ export class SearchService {
       sourceItemIds,
       limit: candidateLimit
     });
-    const noteVectorCandidates = embedding && embeddingModel
-      ? await repository.searchNotesVector({
-          embedding,
-          embeddingModel,...embeddingIdentity,
-          sourceTypes: input.sourceTypes,
-          sourceItemIds,
-          limit: candidateLimit
-        })
-      : [];
+    const noteVectorCandidates =
+      embedding && embeddingModel
+        ? await repository.searchNotesVector({
+            embedding,
+            embeddingModel,
+            ...embeddingIdentity,
+            sourceTypes: input.sourceTypes,
+            sourceItemIds,
+            limit: candidateLimit
+          })
+        : [];
 
-    const candidates = (input.mode === "hybrid" && vectorCandidates.length > 0) || graphCandidates.length > 0
-      ? fuseSearchRankings(textCandidates, vectorCandidates, graphCandidates)
-      : textCandidates.map((candidate, index) => ({
-          ...candidate,
-          textRank: index + 1,
-          vectorRank: null,
-          graphRank: null,
-          fusionScore: candidate.textScore,
-          finalScore: candidate.textScore
-        }));
-    const noteCandidates = noteVectorCandidates.length > 0
-      ? fuseRankings((candidate) => candidate.noteId, noteTextCandidates, noteVectorCandidates)
-      : noteTextCandidates.map((candidate, index) => ({
-          ...candidate,
-          textRank: index + 1,
-          vectorRank: null,
-          graphRank: null,
-          fusionScore: candidate.textScore,
-          finalScore: candidate.textScore
-        }));
+    const candidates =
+      (input.mode === "hybrid" && vectorCandidates.length > 0) || graphCandidates.length > 0
+        ? fuseSearchRankings(textCandidates, vectorCandidates, graphCandidates)
+        : textCandidates.map((candidate, index) => ({
+            ...candidate,
+            textRank: index + 1,
+            vectorRank: null,
+            graphRank: null,
+            fusionScore: candidate.textScore,
+            finalScore: candidate.textScore
+          }));
+    const noteCandidates =
+      noteVectorCandidates.length > 0
+        ? fuseRankings((candidate) => candidate.noteId, noteTextCandidates, noteVectorCandidates)
+        : noteTextCandidates.map((candidate, index) => ({
+            ...candidate,
+            textRank: index + 1,
+            vectorRank: null,
+            graphRank: null,
+            fusionScore: candidate.textScore,
+            finalScore: candidate.textScore
+          }));
     const merged: MergedCandidate[] = [
       ...candidates.map((candidate) => ({ kind: "chunk" as const, candidate })),
       ...noteCandidates.map((candidate) => ({ kind: "atomic_note" as const, candidate }))
-    ].sort((left, right) => right.candidate.finalScore - left.candidate.finalScore
-      || mergedCandidateId(left).localeCompare(mergedCandidateId(right)));
+    ].sort(
+      (left, right) =>
+        right.candidate.finalScore - left.candidate.finalScore ||
+        mergedCandidateId(left).localeCompare(mergedCandidateId(right))
+    );
     const displayCandidates: DisplayCandidate[] = [
       ...merged,
       ...graphEntities.map((candidate) => ({ kind: "entity" as const, candidate })),
       ...graphRelations.map((candidate) => ({ kind: "relation" as const, candidate }))
-    ].sort((left, right) => right.candidate.finalScore - left.candidate.finalScore
-      || displayCandidateId(left).localeCompare(displayCandidateId(right)));
+    ].sort(
+      (left, right) =>
+        right.candidate.finalScore - left.candidate.finalScore ||
+        displayCandidateId(left).localeCompare(displayCandidateId(right))
+    );
 
     await this.recordDebugRun(pool, input, merged, {
       embeddingModel,
@@ -174,12 +200,18 @@ export class SearchService {
     });
 
     const selected = displayCandidates.slice(0, input.limit);
-    const breadcrumbs = await hierarchy.getBreadcrumbs([...new Set(selected.map(({ candidate }) => candidate.sourceItemId))]);
+    const breadcrumbs = await hierarchy.getBreadcrumbs([
+      ...new Set(selected.map(({ candidate }) => candidate.sourceItemId))
+    ]);
     return selected.map((entry) => {
-      const candidate = { ...entry.candidate, breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? [] };
+      const candidate = {
+        ...entry.candidate,
+        breadcrumbs: breadcrumbs.get(entry.candidate.sourceItemId) ?? []
+      };
       if (entry.kind === "chunk") return toSearchResult(candidate as FusedSearchCandidate);
       if (entry.kind === "atomic_note") return toNoteSearchResult(candidate as FusedNoteCandidate);
-      if (entry.kind === "entity") return toEntitySearchResult(candidate as GraphEntitySearchRecord);
+      if (entry.kind === "entity")
+        return toEntitySearchResult(candidate as GraphEntitySearchRecord);
       return toRelationSearchResult(candidate as GraphRelationSearchRecord);
     });
   }
@@ -201,7 +233,7 @@ export class SearchService {
     }
   ): Promise<void> {
     try {
-      if (!await this.isDebugEnabled()) return;
+      if (!(await this.isDebugEnabled())) return;
       await createSimilarityDebugRepository(pool).record({
         kind: "chunk_search",
         queryText: input.text,
@@ -209,9 +241,10 @@ export class SearchService {
         model: context.embeddingModel ?? null,
         dimensions: context.dimensions ?? null,
         requestedLimit: input.limit,
-        strategy: context.vectorCandidateCount > 0 || context.graphCandidateCount > 0
-          ? "reciprocal_rank_fusion"
-          : "text_only",
+        strategy:
+          context.vectorCandidateCount > 0 || context.graphCandidateCount > 0
+            ? "reciprocal_rank_fusion"
+            : "text_only",
         metadata: {
           reciprocalRankConstant,
           candidateLimit: context.candidateLimit,
@@ -220,16 +253,21 @@ export class SearchService {
           graphCandidateCount: context.graphCandidateCount,
           noteTextCandidateCount: context.noteTextCandidateCount,
           noteVectorCandidateCount: context.noteVectorCandidateCount,
-          graphStatus: context.graphError ? "failed" : context.graphCandidateCount > 0 ? "succeeded" : "no_signal",
+          graphStatus: context.graphError
+            ? "failed"
+            : context.graphCandidateCount > 0
+              ? "succeeded"
+              : "no_signal",
           graphError: context.graphError,
           sourceTypes: input.sourceTypes
         },
         results: candidates.map((entry, index) => ({
           targetType: entry.kind,
           targetId: entry.kind === "chunk" ? entry.candidate.chunkId : entry.candidate.noteId,
-          targetLabel: entry.kind === "chunk"
-            ? `${entry.candidate.sourceTitle} — ${entry.candidate.excerpt.slice(0, 180)}`
-            : `${entry.candidate.sourceTitle} — ${entry.candidate.title}`,
+          targetLabel:
+            entry.kind === "chunk"
+              ? `${entry.candidate.sourceTitle} — ${entry.candidate.excerpt.slice(0, 180)}`
+              : `${entry.candidate.sourceTitle} — ${entry.candidate.title}`,
           finalRank: index + 1,
           textRank: entry.candidate.textRank,
           vectorRank: entry.candidate.vectorRank,
@@ -239,17 +277,18 @@ export class SearchService {
           graphScore: entry.candidate.graphScore,
           fusionScore: entry.candidate.fusionScore,
           finalScore: entry.candidate.finalScore,
-          metadata: entry.kind === "chunk"
-            ? {
-                sourceItemId: entry.candidate.sourceItemId,
-                documentId: entry.candidate.documentId,
-                sourceSpanId: entry.candidate.sourceSpanId,
-                page: entry.candidate.page
-              }
-            : {
-                sourceItemId: entry.candidate.sourceItemId,
-                noteStatus: entry.candidate.status
-              }
+          metadata:
+            entry.kind === "chunk"
+              ? {
+                  sourceItemId: entry.candidate.sourceItemId,
+                  documentId: entry.candidate.documentId,
+                  sourceSpanId: entry.candidate.sourceSpanId,
+                  page: entry.candidate.page
+                }
+              : {
+                  sourceItemId: entry.candidate.sourceItemId,
+                  noteStatus: entry.candidate.status
+                }
         }))
       });
     } catch {
@@ -318,24 +357,30 @@ export function fuseRankings<T extends FusableCandidate>(
     });
   });
 
-  const activeRankings = Math.max(1,
-    (textCandidates.length > 0 ? 1 : 0)
-      + (vectorCandidates.length > 0 ? 1 : 0)
-      + (graphCandidates.length > 0 ? 1 : 0));
+  const activeRankings = Math.max(
+    1,
+    (textCandidates.length > 0 ? 1 : 0) +
+      (vectorCandidates.length > 0 ? 1 : 0) +
+      (graphCandidates.length > 0 ? 1 : 0)
+  );
   const maximumRrf = activeRankings / (reciprocalRankConstant + 1);
   return [...candidates.values()]
     .map((candidate) => {
-      const rawRrf = (candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0)
-        + (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0);
+      const rawRrf =
+        (candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0) +
+        (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0);
       const graphRrf = candidate.graphRank ? 1 / (reciprocalRankConstant + candidate.graphRank) : 0;
       const fusionScore = (rawRrf + graphRrf) / maximumRrf;
       return { ...candidate, fusionScore, finalScore: fusionScore };
     })
-    .sort((left, right) => right.fusionScore - left.fusionScore
-      || right.vectorScore - left.vectorScore
-      || right.graphScore - left.graphScore
-      || right.textScore - left.textScore
-      || keyOf(left).localeCompare(keyOf(right)));
+    .sort(
+      (left, right) =>
+        right.fusionScore - left.fusionScore ||
+        right.vectorScore - left.vectorScore ||
+        right.graphScore - left.graphScore ||
+        right.textScore - left.textScore ||
+        keyOf(left).localeCompare(keyOf(right))
+    );
 }
 
 export function fuseSearchRankings(
@@ -343,7 +388,12 @@ export function fuseSearchRankings(
   vectorCandidates: SearchEvidenceRecord[],
   graphCandidates: SearchEvidenceRecord[] = []
 ): FusedSearchCandidate[] {
-  return fuseRankings((candidate) => candidate.chunkId, textCandidates, vectorCandidates, graphCandidates);
+  return fuseRankings(
+    (candidate) => candidate.chunkId,
+    textCandidates,
+    vectorCandidates,
+    graphCandidates
+  );
 }
 
 function mergedCandidateId(entry: MergedCandidate): string {

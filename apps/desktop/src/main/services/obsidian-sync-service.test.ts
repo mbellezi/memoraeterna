@@ -24,11 +24,13 @@ describe("ObsidianSyncService safety", () => {
       getStorageSettings: async () => settings
     });
 
-    await expect(service.reconcileSnapshot({
-      requestId: "00000000-0000-4000-8000-000000000001",
-      scannedAt: new Date(0).toISOString(),
-      files: []
-    })).resolves.toEqual({ synced: 0, conflicts: 0, deleted: 0 });
+    await expect(
+      service.reconcileSnapshot({
+        requestId: "00000000-0000-4000-8000-000000000001",
+        scannedAt: new Date(0).toISOString(),
+        files: []
+      })
+    ).resolves.toEqual({ synced: 0, conflicts: 0, deleted: 0 });
   });
 
   it("rejects a deletion event while a file still exists at the managed path", async () => {
@@ -42,13 +44,15 @@ describe("ObsidianSyncService safety", () => {
       getStorageSettings: async () => ({ ...settings, obsidianVaultPath: vaultPath })
     });
 
-    await expect(service.handleDeleted({
-      eventId: "00000000-0000-4000-8000-000000000002",
-      occurredAt: new Date(0).toISOString(),
-      memoraId: "11111111-1111-4111-8111-111111111111",
-      relativePath,
-      syncVersion: 1
-    })).resolves.toMatchObject({ accepted: false, syncStatus: "conflict" });
+    await expect(
+      service.handleDeleted({
+        eventId: "00000000-0000-4000-8000-000000000002",
+        occurredAt: new Date(0).toISOString(),
+        memoraId: "11111111-1111-4111-8111-111111111111",
+        relativePath,
+        syncVersion: 1
+      })
+    ).resolves.toMatchObject({ accepted: false, syncStatus: "conflict" });
     expect(pool.queries.some((query) => query.startsWith("delete from source_items"))).toBe(false);
     await rm(vaultPath, { recursive: true, force: true });
   });
@@ -58,7 +62,9 @@ describe("ObsidianSyncService safety", () => {
       getPool: () => new ContainerPool() as unknown as PgPool,
       getStorageSettings: async () => settings
     });
-    await expect(service.projectSource("11111111-1111-4111-8111-111111111111")).resolves.toEqual({ projected: 0 });
+    await expect(service.projectSource("11111111-1111-4111-8111-111111111111")).resolves.toEqual({
+      projected: 0
+    });
   });
 });
 
@@ -96,18 +102,51 @@ class SyncRecordPool {
       updatedAt: new Date(0)
     };
     const rows = text.includes("obsidian_sync_files") ? [row] : [];
-    return { command: "SELECT", rowCount: rows.length, oid: 0, fields: [], rows: rows as unknown as T[] };
+    return {
+      command: "SELECT",
+      rowCount: rows.length,
+      oid: 0,
+      fields: [],
+      rows: rows as unknown as T[]
+    };
   }
 }
 
 class ContainerPool {
-  async query<T extends QueryResultRow = QueryResultRow>(text: string,values?:unknown[]): Promise<QueryResult<T>> {
-    const rows = text.includes("from settings")&&values?.[0]==='obsidian.layout'?[{key:'obsidian.layout',value:{version:1},updatedAt:new Date(0)}]:text.includes("from source_items") ? [{
-      id: "11111111-1111-4111-8111-111111111111", type: "Book", title: "Container", subtitle: null,
-      sourceOrigin: "manual", sourceUri: null, externalId: null, parentSourceItemId: null,
-      contentHash: null, language: "en", summary: null, summaryGeneratedAt: null,
-      metadata: {}, createdAt: new Date(0), updatedAt: new Date(0)
-    }] : [];
-    return { command: "SELECT", rowCount: rows.length, oid: 0, fields: [], rows: rows as unknown as T[] };
+  async query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: unknown[]
+  ): Promise<QueryResult<T>> {
+    const rows =
+      text.includes("from settings") && values?.[0] === "obsidian.layout"
+        ? [{ key: "obsidian.layout", value: { version: 1 }, updatedAt: new Date(0) }]
+        : text.includes("from source_items")
+          ? [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                type: "Book",
+                title: "Container",
+                subtitle: null,
+                sourceOrigin: "manual",
+                sourceUri: null,
+                externalId: null,
+                parentSourceItemId: null,
+                contentHash: null,
+                language: "en",
+                summary: null,
+                summaryGeneratedAt: null,
+                metadata: {},
+                createdAt: new Date(0),
+                updatedAt: new Date(0)
+              }
+            ]
+          : [];
+    return {
+      command: "SELECT",
+      rowCount: rows.length,
+      oid: 0,
+      fields: [],
+      rows: rows as unknown as T[]
+    };
   }
 }

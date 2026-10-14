@@ -15,8 +15,7 @@ import {
 
 const now = "2026-07-05T12:00:00.000Z";
 const later = "2026-07-05T12:30:00.000Z";
-const hash =
-  "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const hash = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 const validSourceItem = {
   id: "src_01JABCDEF123456789",
@@ -107,24 +106,35 @@ describe("@app/domain schemas", () => {
       createdAt: now
     };
 
-    expect(AtomicNoteRelationSchema.safeParse(invalidRelation).success).toBe(
-      false
-    );
+    expect(AtomicNoteRelationSchema.safeParse(invalidRelation).success).toBe(false);
   });
 
   it("validates structured atomic note generation output", () => {
-    expect(AtomicNoteGenerationOutputSchema.parse({
-      notes: [{
-        title: "One idea",
-        bodyMarkdown: "A self-contained explanation.",
-        ideaStatement: "One source idea becomes one note.",
-        evidenceChunkIds: ["chunk_01JABCDEF123456789"]
-      }]
-    }).notes).toHaveLength(1);
+    expect(
+      AtomicNoteGenerationOutputSchema.parse({
+        notes: [
+          {
+            title: "One idea",
+            bodyMarkdown: "A self-contained explanation.",
+            ideaStatement: "One source idea becomes one note.",
+            evidenceChunkIds: ["chunk_01JABCDEF123456789"]
+          }
+        ]
+      }).notes
+    ).toHaveLength(1);
 
-    expect(AtomicNoteGenerationOutputSchema.safeParse({
-      notes: [{ title: "Missing evidence", bodyMarkdown: "Body", ideaStatement: "Idea", evidenceChunkIds: [] }]
-    }).success).toBe(false);
+    expect(
+      AtomicNoteGenerationOutputSchema.safeParse({
+        notes: [
+          {
+            title: "Missing evidence",
+            bodyMarkdown: "Body",
+            ideaStatement: "Idea",
+            evidenceChunkIds: []
+          }
+        ]
+      }).success
+    ).toBe(false);
   });
 
   it("distinguishes graph entities and relations in search results", () => {
@@ -137,25 +147,29 @@ describe("@app/domain schemas", () => {
       graphScore: 0.9,
       finalScore: 0.9
     } as const;
-    expect(SearchResultSchema.parse({
-      ...context,
-      kind: "entity",
-      entityId: "00000000-0000-4000-8000-000000000002",
-      entityType: "Concept",
-      canonicalName: "Knowledge graph",
-      aliases: [],
-      description: null
-    }).kind).toBe("entity");
-    expect(SearchResultSchema.parse({
-      ...context,
-      kind: "relation",
-      relationId: "00000000-0000-4000-8000-000000000003",
-      subjectEntityId: "00000000-0000-4000-8000-000000000002",
-      subjectName: "Knowledge graph",
-      predicate: "connects",
-      objectEntityId: "00000000-0000-4000-8000-000000000004",
-      objectName: "Source"
-    }).kind).toBe("relation");
+    expect(
+      SearchResultSchema.parse({
+        ...context,
+        kind: "entity",
+        entityId: "00000000-0000-4000-8000-000000000002",
+        entityType: "Concept",
+        canonicalName: "Knowledge graph",
+        aliases: [],
+        description: null
+      }).kind
+    ).toBe("entity");
+    expect(
+      SearchResultSchema.parse({
+        ...context,
+        kind: "relation",
+        relationId: "00000000-0000-4000-8000-000000000003",
+        subjectEntityId: "00000000-0000-4000-8000-000000000002",
+        subjectName: "Knowledge graph",
+        predicate: "connects",
+        objectEntityId: "00000000-0000-4000-8000-000000000004",
+        objectName: "Source"
+      }).kind
+    ).toBe("relation");
   });
 
   it("rejects storage settings that enable paths without configured roots", () => {

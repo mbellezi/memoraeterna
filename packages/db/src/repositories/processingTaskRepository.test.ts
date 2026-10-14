@@ -13,7 +13,9 @@ class FakeProcessingTaskPool {
   async connect() {
     return {
       query: this.query.bind(this),
-      release: () => { this.released = true; }
+      release: () => {
+        this.released = true;
+      }
     };
   }
 
@@ -23,15 +25,19 @@ class FakeProcessingTaskPool {
   ): Promise<QueryResult<T>> {
     this.queries.push({ text, values });
     const normalized = text.trim();
-    const rows = normalized.startsWith("select run.id") && this.hasTarget
-      ? [{ runId: "run-1", batchId: "batch-1" }]
-      : normalized.startsWith("select count(*)")
-        ? [{ count: 0 }]
-        : [];
-    const rowCount = normalized.startsWith("delete from jobs") ? 3
-      : normalized.startsWith("delete from ingestion_runs") ? 1
-      : normalized.startsWith("delete from processing_batches") ? 1
-      : rows.length;
+    const rows =
+      normalized.startsWith("select run.id") && this.hasTarget
+        ? [{ runId: "run-1", batchId: "batch-1" }]
+        : normalized.startsWith("select count(*)")
+          ? [{ count: 0 }]
+          : [];
+    const rowCount = normalized.startsWith("delete from jobs")
+      ? 3
+      : normalized.startsWith("delete from ingestion_runs")
+        ? 1
+        : normalized.startsWith("delete from processing_batches")
+          ? 1
+          : rows.length;
     return {
       command: "SELECT",
       rowCount,
@@ -45,8 +51,9 @@ class FakeProcessingTaskPool {
 describe("processing task repository", () => {
   it("atomically deletes a user-canceled run, all child jobs, and its orphaned batch", async () => {
     const pool = new FakeProcessingTaskPool();
-    const result = await createProcessingTaskRepository(pool as unknown as PgPool)
-      .deleteCanceledHierarchy("job-1");
+    const result = await createProcessingTaskRepository(
+      pool as unknown as PgPool
+    ).deleteCanceledHierarchy("job-1");
 
     expect(result).toEqual({
       deletedJobs: 3,
@@ -70,8 +77,9 @@ describe("processing task repository", () => {
 
   it("does not delete a task that fails the canceled-by-user guard", async () => {
     const pool = new FakeProcessingTaskPool(false);
-    const result = await createProcessingTaskRepository(pool as unknown as PgPool)
-      .deleteCanceledHierarchy("job-1");
+    const result = await createProcessingTaskRepository(
+      pool as unknown as PgPool
+    ).deleteCanceledHierarchy("job-1");
 
     expect(result).toBeNull();
     expect(pool.queries.map((query) => query.text.trim())).toEqual([

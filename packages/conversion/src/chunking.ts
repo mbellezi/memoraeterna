@@ -40,7 +40,9 @@ export function chunkMarkdown(
     const endOffset = pending.at(-1)?.end ?? startOffset;
     const content = markdown.slice(startOffset, endOffset).trim();
     if (!content) return;
-    const sourceBlock = blocks.find((block) => block.markdownStart <= startOffset && block.markdownEnd >= startOffset);
+    const sourceBlock = blocks.find(
+      (block) => block.markdownStart <= startOffset && block.markdownEnd >= startOffset
+    );
     chunks.push({
       id: randomUUID(),
       sourceSpanId: randomUUID(),
@@ -51,7 +53,9 @@ export function chunkMarkdown(
       startOffset,
       endOffset,
       ...(sourceBlock?.page ? { page: sourceBlock.page } : {}),
-      ...(sourceBlock ? { sourceBlockId: sourceBlock.id, selector: `/blocks/${blocks.indexOf(sourceBlock)}` } : {}),
+      ...(sourceBlock
+        ? { sourceBlockId: sourceBlock.id, selector: `/blocks/${blocks.indexOf(sourceBlock)}` }
+        : {}),
       ...(sourceBlock?.boundingBox ? { boundingBox: sourceBlock.boundingBox } : {})
     });
     pending = [];
@@ -66,7 +70,10 @@ export function chunkMarkdown(
   return chunks;
 }
 
-function splitSections(markdown: string, maximum: number): Array<{ text: string; start: number; end: number }> {
+function splitSections(
+  markdown: string,
+  maximum: number
+): Array<{ text: string; start: number; end: number }> {
   const parts: Array<{ text: string; start: number; end: number }> = [];
   const boundary = /(?=^#{1,6}\s)|\n{2,}/gm;
   let start = 0;
@@ -89,7 +96,10 @@ function addSizedPart(
   let cursor = start;
   while (cursor < end) {
     const candidateEnd = Math.min(end, cursor + maximum);
-    const splitAt = candidateEnd < end ? Math.max(cursor + 1, markdown.lastIndexOf(" ", candidateEnd)) : candidateEnd;
+    const splitAt =
+      candidateEnd < end
+        ? Math.max(cursor + 1, markdown.lastIndexOf(" ", candidateEnd))
+        : candidateEnd;
     output.push({ text: markdown.slice(cursor, splitAt), start: cursor, end: splitAt });
     cursor = splitAt;
   }

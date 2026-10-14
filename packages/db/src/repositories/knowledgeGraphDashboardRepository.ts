@@ -98,7 +98,10 @@ function score(value: number): number {
 
 export function createKnowledgeGraphDashboardRepository(pool: PgPool) {
   return {
-    async get(mode: KnowledgeGraphDashboardMode, sourceView: "relations" | "entities" = "entities"): Promise<KnowledgeGraphDashboardRecord> {
+    async get(
+      mode: KnowledgeGraphDashboardMode,
+      sourceView: "relations" | "entities" = "entities"
+    ): Promise<KnowledgeGraphDashboardRecord> {
       return mode === "sources" ? listSourceGraph(pool, sourceView) : listAtomicNoteGraph(pool);
     },
     async getSourceConnectionDetails(
@@ -135,7 +138,16 @@ async function getSourceConnectionDetails(
        order by detail`,
       [sourceItemId, targetSourceItemId]
     ),
-    pool.query<SourceConnectionDetailRow & { id: string; source: string; target: string; sourceLabel: string; targetLabel: string; label: string }>(
+    pool.query<
+      SourceConnectionDetailRow & {
+        id: string;
+        source: string;
+        target: string;
+        sourceLabel: string;
+        targetLabel: string;
+        label: string;
+      }
+    >(
       `with recursive source_tree(id) as (
          select id from source_items where id = $1
          union all
@@ -168,20 +180,31 @@ async function getSourceConnectionDetails(
     )
   ]);
   const entities = new Map<string, { id: string; label: string; shared: boolean }>();
-  for (const row of sharedResult.rows) entities.set(row.id, { id: row.id, label: row.detail, shared: true });
+  for (const row of sharedResult.rows)
+    entities.set(row.id, { id: row.id, label: row.detail, shared: true });
   for (const row of semanticResult.rows) {
-    if (!entities.has(row.source)) entities.set(row.source, { id: row.source, label: row.sourceLabel, shared: false });
-    if (!entities.has(row.target)) entities.set(row.target, { id: row.target, label: row.targetLabel, shared: false });
+    if (!entities.has(row.source))
+      entities.set(row.source, { id: row.source, label: row.sourceLabel, shared: false });
+    if (!entities.has(row.target))
+      entities.set(row.target, { id: row.target, label: row.targetLabel, shared: false });
   }
   return {
     sharedEntities: [...new Set(sharedResult.rows.map((row) => row.detail))],
     semanticRelations: [...new Set(semanticResult.rows.map((row) => row.detail))],
     entities: [...entities.values()],
-    relations: semanticResult.rows.map(({ id, source, target, label }) => ({ id, source, target, label }))
+    relations: semanticResult.rows.map(({ id, source, target, label }) => ({
+      id,
+      source,
+      target,
+      label
+    }))
   };
 }
 
-async function listSourceGraph(pool: PgPool, sourceView: "relations" | "entities"): Promise<KnowledgeGraphDashboardRecord> {
+async function listSourceGraph(
+  pool: PgPool,
+  sourceView: "relations" | "entities"
+): Promise<KnowledgeGraphDashboardRecord> {
   const nodeResult = await pool.query<SourceNodeRow>(
     `select source.id, source.type, source.title, source.subtitle,
             source.parent_source_item_id as "parentSourceItemId",
@@ -201,16 +224,43 @@ async function listSourceGraph(pool: PgPool, sourceView: "relations" | "entities
   if (sourceIds.length === 0) return { mode: "sources", nodes: [], edges: [], truncated: false };
 
   if (sourceView === "relations") {
-    const result = await pool.query(`select r.id,r.source_item_id as source,r.target_source_item_id as target,
+    const result = await pool.query(
+      `select r.id,r.source_item_id as source,r.target_source_item_id as target,
       r.relation_type as label,r.explanation as description,r.confidence,r.importance
       from source_relations r where r.status <> 'rejected' and ${currentSourceRelationSql}
       and r.source_item_id = any($1::uuid[]) and r.target_source_item_id = any($1::uuid[])
-      order by r.importance desc,r.id limit $2`, [sourceIds,maxEdges + 1]);
-    return { mode:"sources",sourceView,nodes:selectedRows.map((row) => ({id:row.id,kind:"source",title:row.title,subtitle:row.subtitle,
-      content:null,sourceItemId:row.id,sourceType:row.type,noteStatus:null,detailCount:Number(row.entityCount),parentSourceItemId:row.parentSourceItemId,childCount:Number(row.childCount)})),
-      edges:result.rows.slice(0,maxEdges).map((row) => ({id:row.id,source:row.source,target:row.target,kind:"source_relation",label:row.label,
-        description:row.description,confidence:Number(row.confidence),weight:1,details:[row.description]})),
-      truncated:hasMoreNodes || result.rows.length > maxEdges };
+      order by r.importance desc,r.id limit $2`,
+      [sourceIds, maxEdges + 1]
+    );
+    return {
+      mode: "sources",
+      sourceView,
+      nodes: selectedRows.map((row) => ({
+        id: row.id,
+        kind: "source",
+        title: row.title,
+        subtitle: row.subtitle,
+        content: null,
+        sourceItemId: row.id,
+        sourceType: row.type,
+        noteStatus: null,
+        detailCount: Number(row.entityCount),
+        parentSourceItemId: row.parentSourceItemId,
+        childCount: Number(row.childCount)
+      })),
+      edges: result.rows.slice(0, maxEdges).map((row) => ({
+        id: row.id,
+        source: row.source,
+        target: row.target,
+        kind: "source_relation",
+        label: row.label,
+        description: row.description,
+        confidence: Number(row.confidence),
+        weight: 1,
+        details: [row.description]
+      })),
+      truncated: hasMoreNodes || result.rows.length > maxEdges
+    };
   }
 
   const [sharedResult, semanticResult] = await Promise.all([
@@ -304,8 +354,8 @@ async function listSourceGraph(pool: PgPool, sourceView: "relations" | "entities
         details: row.details
       }))
     ],
-    truncated: hasMoreNodes || sharedResult.rows.length > maxEdges
-      || semanticResult.rows.length > remaining
+    truncated:
+      hasMoreNodes || sharedResult.rows.length > maxEdges || semanticResult.rows.length > remaining
   };
 }
 

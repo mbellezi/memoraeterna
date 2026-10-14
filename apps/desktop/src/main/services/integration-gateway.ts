@@ -1,5 +1,5 @@
-import { obsidianLayoutCapability, obsidianEditorPresenceSchema } from '@app/integration-contracts';
-import { createObsidianLayoutRepository } from '@app/db';
+import { obsidianLayoutCapability, obsidianEditorPresenceSchema } from "@app/integration-contracts";
+import { createObsidianLayoutRepository } from "@app/db";
 import { obsidianEditingCapability, obsidianEditOperationSchema } from "@app/integration-contracts";
 import { hasReservedObsidianContent, wikiProjectionCapability } from "@app/integration-contracts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -67,11 +67,24 @@ export interface IntegrationClientStore {
 
 export interface IntegrationGatewayOptions {
   getPool: () => PgPool | null;
-  ingestionService: Pick<IngestionService, "captureWebPage" | "captureSelection" | "captureYouTube" | "importObsidianNote">;
+  ingestionService: Pick<
+    IngestionService,
+    "captureWebPage" | "captureSelection" | "captureYouTube" | "importObsidianNote"
+  >;
   obsidianSyncService: Pick<
     ObsidianSyncService,
     "handleChanged" | "handleMoved" | "handleDeleted" | "reconcileSnapshot" | "reconcileVault"
-  > & Partial<Pick<ObsidianSyncService,"assertUnmanagedImport" | "editorial" | "layoutPresence" | "setLayoutClientCheck" | "isLayoutMigrating">>;
+  > &
+    Partial<
+      Pick<
+        ObsidianSyncService,
+        | "assertUnmanagedImport"
+        | "editorial"
+        | "layoutPresence"
+        | "setLayoutClientCheck"
+        | "isLayoutMigrating"
+      >
+    >;
   jobSupervisor: Pick<JobSupervisor, "list">;
   preferredPort?: number;
   clientStore?: IntegrationClientStore;
@@ -102,9 +115,23 @@ export class IntegrationGateway {
   private pollPromise: Promise<void> | null = null;
   private stopping = false;
   private readonly jobSignatures = new Map<string, string>();
-  private status: IntegrationGatewayStatus = { state: "stopped", host: "127.0.0.1", port: null, baseUrl: null };
+  private status: IntegrationGatewayStatus = {
+    state: "stopped",
+    host: "127.0.0.1",
+    port: null,
+    baseUrl: null
+  };
 
-  public constructor(private readonly options: IntegrationGatewayOptions) {this.options.obsidianSyncService.setLayoutClientCheck?.(()=>[...this.sockets].some(c=>c.socket.readyState===WebSocket.OPEN&&c.session.capabilities.has('watch-obsidian-files')&&!c.session.capabilities.has(obsidianLayoutCapability)));}
+  public constructor(private readonly options: IntegrationGatewayOptions) {
+    this.options.obsidianSyncService.setLayoutClientCheck?.(() =>
+      [...this.sockets].some(
+        (c) =>
+          c.socket.readyState === WebSocket.OPEN &&
+          c.session.capabilities.has("watch-obsidian-files") &&
+          !c.session.capabilities.has(obsidianLayoutCapability)
+      )
+    );
+  }
 
   public getStatus(): IntegrationGatewayStatus {
     return { ...this.status };
@@ -213,7 +240,8 @@ export class IntegrationGateway {
     const payload = JSON.stringify(event);
     for (const client of this.sockets) {
       if (client.socket.readyState !== WebSocket.OPEN) continue;
-      if (event.type === "job-progress" && !client.session.capabilities.has("receive-job-progress")) continue;
+      if (event.type === "job-progress" && !client.session.capabilities.has("receive-job-progress"))
+        continue;
       client.socket.send(payload);
     }
   }
@@ -227,7 +255,10 @@ export class IntegrationGateway {
     const path = safePath(request.url);
     try {
       if (request.method === "GET" && path === "/health") {
-        this.sendJson(response, 200, { status: "ready", contractVersion: integrationContractVersion });
+        this.sendJson(response, 200, {
+          status: "ready",
+          contractVersion: integrationContractVersion
+        });
         return;
       }
       if (request.method === "POST" && path === handshakePath) {
@@ -235,8 +266,10 @@ export class IntegrationGateway {
         return;
       }
       const session = this.authenticateSession(request);
-      if (!session) throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
-      if (request.method !== "POST") throw new GatewayError("not_found", "integrations.errors.notFound", false, 404);
+      if (!session)
+        throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
+      if (request.method !== "POST")
+        throw new GatewayError("not_found", "integrations.errors.notFound", false, 404);
       const body = await readJson(request);
       if (path === "/v1/capture/web-page") {
         requireCapability(session, "capture-web-page");
@@ -259,38 +292,121 @@ export class IntegrationGateway {
         this.sendJson(response, 202, { requestId: input.requestId, accepted: true, ...result });
         return;
       }
-      if(path==='/v1/obsidian/layout/presence'){requireCapability(session,obsidianLayoutCapability);const input=obsidianEditorPresenceSchema.parse(body);const binding=await this.options.obsidianSyncService.editorial!.bind(session.clientId,input.vaultId);this.sendJson(response,200,await this.options.obsidianSyncService.layoutPresence!(session.clientId,binding.binding,input));return;}
+      if (path === "/v1/obsidian/layout/presence") {
+        requireCapability(session, obsidianLayoutCapability);
+        const input = obsidianEditorPresenceSchema.parse(body);
+        const binding = await this.options.obsidianSyncService.editorial!.bind(
+          session.clientId,
+          input.vaultId
+        );
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.layoutPresence!(
+            session.clientId,
+            binding.binding,
+            input
+          )
+        );
+        return;
+      }
       if (path === "/v1/obsidian/editorial/manifest") {
         requireCapability(session, obsidianEditingCapability);
-        const input = z.object({vaultId:z.string().uuid(),cursor:z.number().int().min(0).max(10000).default(0),pendingOperationIds:z.array(z.string().uuid()).max(1000).optional()}).strict().parse(body);
-        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.manifest(session.clientId,input.vaultId,input.cursor,input.pendingOperationIds,session.capabilities.has(obsidianLayoutCapability))); return;
+        const input = z
+          .object({
+            vaultId: z.string().uuid(),
+            cursor: z.number().int().min(0).max(10000).default(0),
+            pendingOperationIds: z.array(z.string().uuid()).max(1000).optional()
+          })
+          .strict()
+          .parse(body);
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.editorial!.manifest(
+            session.clientId,
+            input.vaultId,
+            input.cursor,
+            input.pendingOperationIds,
+            session.capabilities.has(obsidianLayoutCapability)
+          )
+        );
+        return;
       }
-      if(path==='/v1/obsidian/editorial/compare'){requireCapability(session,obsidianEditingCapability);const input=z.object({operationId:z.string().uuid(),content:z.string().max(2_000_000)}).strict().parse(body);this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.compare(session.clientId,input.operationId,input.content));return;}
+      if (path === "/v1/obsidian/editorial/compare") {
+        requireCapability(session, obsidianEditingCapability);
+        const input = z
+          .object({ operationId: z.string().uuid(), content: z.string().max(2_000_000) })
+          .strict()
+          .parse(body);
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.editorial!.compare(
+            session.clientId,
+            input.operationId,
+            input.content
+          )
+        );
+        return;
+      }
       if (path === "/v1/obsidian/editorial/acknowledge") {
         requireCapability(session, obsidianEditingCapability);
-        const input=z.object({operationId:z.string().uuid(),vaultId:z.string().uuid()}).strict().parse(body);
-        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.acknowledge(session.clientId,input.operationId,input.vaultId)); return;
+        const input = z
+          .object({ operationId: z.string().uuid(), vaultId: z.string().uuid() })
+          .strict()
+          .parse(body);
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.editorial!.acknowledge(
+            session.clientId,
+            input.operationId,
+            input.vaultId
+          )
+        );
+        return;
       }
       if (path === "/v1/obsidian/editorial/operation") {
         requireCapability(session, obsidianEditingCapability);
-        this.sendJson(response,200,await this.options.obsidianSyncService.editorial!.apply(session.clientId,obsidianEditOperationSchema.parse(body),session.capabilities.has(obsidianLayoutCapability))); return;
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.editorial!.apply(
+            session.clientId,
+            obsidianEditOperationSchema.parse(body),
+            session.capabilities.has(obsidianLayoutCapability)
+          )
+        );
+        return;
       }
       if (path === "/v1/obsidian/file-changed") {
         requireCapability(session, "watch-obsidian-files");
-        this.sendJson(response, 200, await this.options.obsidianSyncService.handleChanged(obsidianFileChangedEventSchema.parse(body)));
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.handleChanged(
+            obsidianFileChangedEventSchema.parse(body)
+          )
+        );
         return;
       }
       if (path === "/v1/obsidian/import") {
         requireCapability(session, "import-obsidian-note");
         const input = importObsidianNoteRequestSchema.parse(body);
-        if (!input.frontmatter && hasReservedObsidianContent(input.markdown)) throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
+        if (!input.frontmatter && hasReservedObsidianContent(input.markdown))
+          throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
         if (input.frontmatter) {
-          this.sendJson(response, 200, await this.options.obsidianSyncService.handleChanged({
-            eventId: input.requestId,
-            kind: "modified",
-            occurredAt: new Date().toISOString(),
-            note: { ...input, frontmatter: input.frontmatter }
-          }));
+          this.sendJson(
+            response,
+            200,
+            await this.options.obsidianSyncService.handleChanged({
+              eventId: input.requestId,
+              kind: "modified",
+              occurredAt: new Date().toISOString(),
+              note: { ...input, frontmatter: input.frontmatter }
+            })
+          );
         } else {
           await this.options.obsidianSyncService.assertUnmanagedImport?.(input.relativePath);
           const result = await this.options.ingestionService.importObsidianNote(input);
@@ -300,17 +416,35 @@ export class IntegrationGateway {
       }
       if (path === "/v1/obsidian/file-moved") {
         requireCapability(session, "watch-obsidian-files");
-        this.sendJson(response, 200, await this.options.obsidianSyncService.handleMoved(obsidianFileMovedEventSchema.parse(body)));
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.handleMoved(
+            obsidianFileMovedEventSchema.parse(body)
+          )
+        );
         return;
       }
       if (path === "/v1/obsidian/file-deleted") {
         requireCapability(session, "watch-obsidian-files");
-        this.sendJson(response, 200, await this.options.obsidianSyncService.handleDeleted(obsidianFileDeletedEventSchema.parse(body)));
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.handleDeleted(
+            obsidianFileDeletedEventSchema.parse(body)
+          )
+        );
         return;
       }
       if (path === "/v1/obsidian/reconcile") {
         requireCapability(session, "reconcile-obsidian-vault");
-        this.sendJson(response, 200, await this.options.obsidianSyncService.reconcileSnapshot(obsidianReconciliationRequestSchema.parse(body)));
+        this.sendJson(
+          response,
+          200,
+          await this.options.obsidianSyncService.reconcileSnapshot(
+            obsidianReconciliationRequestSchema.parse(body)
+          )
+        );
         return;
       }
       throw new GatewayError("not_found", "integrations.errors.notFound", false, 404);
@@ -323,16 +457,25 @@ export class IntegrationGateway {
 
   private async handleHandshake(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const token = readBearerToken(request);
-    if (!token) throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
+    if (!token)
+      throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
     const client = await this.store().findAuthorizedByTokenHash(hashToken(token));
-    if (!client) throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
+    if (!client)
+      throw new GatewayError("unauthorized", "integrations.errors.unauthorized", false, 401);
     const input = integrationHandshakeSchema.parse(await readJson(request));
     if (client.id !== input.clientId || client.clientType !== input.client.kind) {
       throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
     }
-    if (!isIntegrationContractVersionCompatible(input.contractVersion)
-        || !isIntegrationContractVersionCompatible(input.client.contractVersion)) {
-      throw new GatewayError("incompatible_contract", "integrations.errors.incompatibleContract", false, 409);
+    if (
+      !isIntegrationContractVersionCompatible(input.contractVersion) ||
+      !isIntegrationContractVersionCompatible(input.client.contractVersion)
+    ) {
+      throw new GatewayError(
+        "incompatible_contract",
+        "integrations.errors.incompatibleContract",
+        false,
+        409
+      );
     }
     const allowed = new Set(client.scopes);
     if (client.clientType === "obsidian-plugin") allowed.add(wikiProjectionCapability);
@@ -340,7 +483,12 @@ export class IntegrationGateway {
     if (capabilities.length !== input.capabilities.length) {
       throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
     }
-    if(client.clientType==='obsidian-plugin'&&!capabilities.includes(obsidianLayoutCapability)&&await this.options.obsidianSyncService.isLayoutMigrating?.())throw new GatewayError('forbidden','integrations.errors.forbidden',false,403);
+    if (
+      client.clientType === "obsidian-plugin" &&
+      !capabilities.includes(obsidianLayoutCapability) &&
+      (await this.options.obsidianSyncService.isLayoutMigrating?.())
+    )
+      throw new GatewayError("forbidden", "integrations.errors.forbidden", false, 403);
     await this.store().touch(client.id, { capabilities, contractVersion: input.contractVersion });
     const sessionToken = randomBytes(32).toString("base64url");
     const expiresAt = Date.now() + sessionLifetimeMs;
@@ -352,16 +500,21 @@ export class IntegrationGateway {
     const baseUrl = this.status.baseUrl;
     if (!baseUrl) throw new Error("integration_gateway_not_ready");
     const eventUrl = `${baseUrl.replace(/^http/, "ws")}/v1/events?session=${encodeURIComponent(sessionToken)}`;
-    this.sendJson(response, 200, integrationHandshakeResponseSchema.parse({
-      contractVersion: integrationContractVersion,
-      clientId: client.id,
-      sessionToken,
-      sessionExpiresAt: new Date(expiresAt).toISOString(),
-      eventUrl,
-      capabilities
-    }));
+    this.sendJson(
+      response,
+      200,
+      integrationHandshakeResponseSchema.parse({
+        contractVersion: integrationContractVersion,
+        clientId: client.id,
+        sessionToken,
+        sessionExpiresAt: new Date(expiresAt).toISOString(),
+        eventUrl,
+        capabilities
+      })
+    );
     if (client.clientType === "obsidian-plugin") {
-      if (!capabilities.includes(obsidianEditingCapability)) void this.options.obsidianSyncService.reconcileVault().catch(() => undefined);
+      if (!capabilities.includes(obsidianEditingCapability))
+        void this.options.obsidianSyncService.reconcileVault().catch(() => undefined);
     }
   }
 
@@ -447,9 +600,22 @@ class GatewayError extends Error {
 
 function gatewayError(error: unknown): { status: number; body: IntegrationError } {
   if (error instanceof GatewayError) {
-    return { status: error.status, body: { code: error.code, messageKey: error.messageKey, retryable: error.retryable } };
+    return {
+      status: error.status,
+      body: { code: error.code, messageKey: error.messageKey, retryable: error.retryable }
+    };
   }
-  if(error instanceof Error && ['obsidianEditing.paused','obsidianWiki.errors.limit','obsidianWiki.errors.binding','obsidianWiki.errors.conflict','obsidianWiki.errors.format'].includes(error.message))return {status:409,body:{code:'conflict',messageKey:error.message,retryable:false}};
+  if (
+    error instanceof Error &&
+    [
+      "obsidianEditing.paused",
+      "obsidianWiki.errors.limit",
+      "obsidianWiki.errors.binding",
+      "obsidianWiki.errors.conflict",
+      "obsidianWiki.errors.format"
+    ].includes(error.message)
+  )
+    return { status: 409, body: { code: "conflict", messageKey: error.message, retryable: false } };
   if (error instanceof z.ZodError) return { status: 400, body: normalizeIntegrationError(error) };
   return { status: 500, body: normalizeIntegrationError(error) };
 }
@@ -460,10 +626,20 @@ function requireCapability(session: Session, capability: IntegrationCapability):
   }
 }
 
-function capabilitiesForClient(kind: "chrome-extension" | "obsidian-plugin"): IntegrationCapability[] {
+function capabilitiesForClient(
+  kind: "chrome-extension" | "obsidian-plugin"
+): IntegrationCapability[] {
   return kind === "chrome-extension"
     ? ["capture-web-page", "capture-selection", "capture-youtube-video", "receive-job-progress"]
-    : ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability, obsidianEditingCapability, obsidianLayoutCapability];
+    : [
+        "import-obsidian-note",
+        "watch-obsidian-files",
+        "reconcile-obsidian-vault",
+        "receive-job-progress",
+        wikiProjectionCapability,
+        obsidianEditingCapability,
+        obsidianLayoutCapability
+      ];
 }
 
 function hashToken(token: string): string {
@@ -481,7 +657,8 @@ async function readJson(request: IncomingMessage): Promise<unknown> {
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += buffer.length;
-    if (size > maxBodyBytes) throw new GatewayError("invalid_request", "integrations.errors.payloadTooLarge", false, 413);
+    if (size > maxBodyBytes)
+      throw new GatewayError("invalid_request", "integrations.errors.payloadTooLarge", false, 413);
     chunks.push(buffer);
   }
   try {
@@ -499,11 +676,17 @@ function setCorsHeaders(response: ServerResponse): void {
 }
 
 function safePath(url: string | undefined): string {
-  try { return new URL(url ?? "/", "http://127.0.0.1").pathname; } catch { return "/"; }
+  try {
+    return new URL(url ?? "/", "http://127.0.0.1").pathname;
+  } catch {
+    return "/";
+  }
 }
 
 function normalizePort(port: number | undefined): number | null {
-  return typeof port === "number" && Number.isInteger(port) && port >= 0 && port <= 65535 ? port : null;
+  return typeof port === "number" && Number.isInteger(port) && port >= 0 && port <= 65535
+    ? port
+    : null;
 }
 
 function listen(server: Server, port: number): Promise<number> {
@@ -515,7 +698,8 @@ function listen(server: Server, port: number): Promise<number> {
     const onListening = (): void => {
       server.off("error", onError);
       const address = server.address();
-      if (!address || typeof address === "string") reject(new Error("integration_gateway_address_unavailable"));
+      if (!address || typeof address === "string")
+        reject(new Error("integration_gateway_address_unavailable"));
       else resolve(address.port);
     };
     server.once("error", onError);

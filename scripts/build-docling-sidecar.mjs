@@ -25,7 +25,9 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const platformArch = `${platform}-${arch}`;
 const definitionPath = join(root, "packages", "conversion", "sidecar", "runtime-manifest.json");
 const definition = JSON.parse(await readFile(definitionPath, "utf8"));
-const target = definition.platformArtifacts.find((candidate) => candidate.platform === platformArch);
+const target = definition.platformArtifacts.find(
+  (candidate) => candidate.platform === platformArch
+);
 if (!target) throw new Error(`No pinned Docling sidecar definition exists for ${platformArch}.`);
 
 const managedRoot = resolve(root, "vendor", "sidecars", "docling");
@@ -64,9 +66,11 @@ if (argumentsSet.has("--verify") || argumentsSet.has("--smoke")) {
   process.exit(0);
 }
 
-if (await exists(destination) && !argumentsSet.has("--force")) {
+if ((await exists(destination)) && !argumentsSet.has("--force")) {
   await verifyRuntime(destination, target);
-  console.info(`Docling sidecar already exists at ${relative(root, destination)}. Use --force to rebuild it.`);
+  console.info(
+    `Docling sidecar already exists at ${relative(root, destination)}. Use --force to rebuild it.`
+  );
   process.exit(0);
 }
 
@@ -74,14 +78,22 @@ await mkdir(managedRoot, { recursive: true });
 const staging = await mkdtemp(join(managedRoot, `.${platformArch}-build-`));
 const archivePath = join(tmpdir(), `memora-cpython-${platformArch}-${randomUUID()}.tar.gz`);
 try {
-  await downloadPinned(target.pythonDistribution.source, target.pythonDistribution.sha256, archivePath);
+  await downloadPinned(
+    target.pythonDistribution.source,
+    target.pythonDistribution.sha256,
+    archivePath
+  );
   await run("tar", ["-xzf", archivePath, "-C", staging, "--strip-components=1"]);
   const python = pythonPath(staging);
   const requirementsPath = resolve(dirname(definitionPath), target.requirements);
-  await run(python, ["-m", "pip", "install", "--no-cache-dir", "--no-compile", "--requirement", requirementsPath], {
-    PIP_DISABLE_PIP_VERSION_CHECK: "1",
-    PYTHONNOUSERSITE: "1"
-  });
+  await run(
+    python,
+    ["-m", "pip", "install", "--no-cache-dir", "--no-compile", "--requirement", requirementsPath],
+    {
+      PIP_DISABLE_PIP_VERSION_CHECK: "1",
+      PYTHONNOUSERSITE: "1"
+    }
+  );
   await downloadPinnedModels(staging, target.models);
   await cleanDownloadMetadata(staging);
   await verifyPackages(staging, target);
@@ -112,28 +124,36 @@ async function downloadPinnedModels(runtimeRoot, models) {
       PYTHONNOUSERSITE: "1"
     });
   }
-  await run(join(runtimeRoot, "bin", "docling-tools"), [
-    "models", "download", "rapidocr", "--output-dir", artifacts, "--quiet"
-  ], {
-    HF_HOME: join(runtimeRoot, ".hf-cache"),
-    HF_HUB_DISABLE_TELEMETRY: "1",
-    PYTHONNOUSERSITE: "1"
-  });
+  await run(
+    join(runtimeRoot, "bin", "docling-tools"),
+    ["models", "download", "rapidocr", "--output-dir", artifacts, "--quiet"],
+    {
+      HF_HOME: join(runtimeRoot, ".hf-cache"),
+      HF_HUB_DISABLE_TELEMETRY: "1",
+      PYTHONNOUSERSITE: "1"
+    }
+  );
 }
 
 async function verifyRuntime(runtimeRoot, targetDefinition) {
   await requireDirectory(runtimeRoot);
   const manifestPath = join(runtimeRoot, "runtime-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  if (manifest.platform !== platformArch || manifest.pythonVersion !== definition.pythonVersion
-      || manifest.doclingVersion !== definition.doclingVersion) {
+  if (
+    manifest.platform !== platformArch ||
+    manifest.pythonVersion !== definition.pythonVersion ||
+    manifest.doclingVersion !== definition.doclingVersion
+  ) {
     throw new Error("Docling runtime manifest does not match the pinned definition.");
   }
   await verifyPackages(runtimeRoot, targetDefinition);
   for (const expected of manifest.models) {
     const actual = await summarizeDirectory(resolve(runtimeRoot, expected.path), runtimeRoot);
-    if (actual.fileCount !== expected.fileCount || actual.sizeBytes !== expected.sizeBytes
-        || actual.manifestSha256 !== expected.manifestSha256) {
+    if (
+      actual.fileCount !== expected.fileCount ||
+      actual.sizeBytes !== expected.sizeBytes ||
+      actual.manifestSha256 !== expected.manifestSha256
+    ) {
       throw new Error(`Docling model artifact verification failed: ${expected.repository}`);
     }
   }
@@ -142,25 +162,41 @@ async function verifyRuntime(runtimeRoot, targetDefinition) {
 async function verifyPackages(runtimeRoot, targetDefinition) {
   const requirementsPath = resolve(dirname(definitionPath), targetDefinition.requirements);
   const expected = parseRequirements(await readFile(requirementsPath, "utf8"));
-  const { stdout } = await execFileAsync(pythonPath(runtimeRoot), ["-m", "pip", "freeze", "--all"], {
-    env: { PATH: join(runtimeRoot, "bin"), PYTHONNOUSERSITE: "1", PIP_DISABLE_PIP_VERSION_CHECK: "1" },
-    maxBuffer: 4 * 1024 * 1024
-  });
+  const { stdout } = await execFileAsync(
+    pythonPath(runtimeRoot),
+    ["-m", "pip", "freeze", "--all"],
+    {
+      env: {
+        PATH: join(runtimeRoot, "bin"),
+        PYTHONNOUSERSITE: "1",
+        PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      },
+      maxBuffer: 4 * 1024 * 1024
+    }
+  );
   const installed = parseRequirements(stdout);
   for (const [name, version] of expected) {
-    if (installed.get(name) !== version) throw new Error(`Pinned Docling package mismatch: ${name}==${version}`);
+    if (installed.get(name) !== version)
+      throw new Error(`Pinned Docling package mismatch: ${name}==${version}`);
   }
-  const { stdout: version } = await execFileAsync(pythonPath(runtimeRoot), [
-    "-c", "import importlib.metadata as m; print(m.version('docling'))"
-  ], { env: minimalOfflineEnvironment(runtimeRoot), maxBuffer: 1024 * 1024 });
-  if (version.trim() !== definition.doclingVersion) throw new Error("Unexpected bundled Docling version.");
+  const { stdout: version } = await execFileAsync(
+    pythonPath(runtimeRoot),
+    ["-c", "import importlib.metadata as m; print(m.version('docling'))"],
+    { env: minimalOfflineEnvironment(runtimeRoot), maxBuffer: 1024 * 1024 }
+  );
+  if (version.trim() !== definition.doclingVersion)
+    throw new Error("Unexpected bundled Docling version.");
 }
 
 async function writeRuntimeManifest(runtimeRoot, targetDefinition, verification) {
   const requirementsPath = resolve(dirname(definitionPath), targetDefinition.requirements);
-  const packages = [...parseRequirements(await readFile(requirementsPath, "utf8"))].map(([name, version]) => ({
-    type: "python-package", name, version
-  }));
+  const packages = [...parseRequirements(await readFile(requirementsPath, "utf8"))].map(
+    ([name, version]) => ({
+      type: "python-package",
+      name,
+      version
+    })
+  );
   const models = [];
   for (const model of targetDefinition.models) {
     const path = model.repository.includes("/")
@@ -171,7 +207,7 @@ async function writeRuntimeManifest(runtimeRoot, targetDefinition, verification)
       repository: model.repository,
       revision: model.revision,
       path,
-      ...await summarizeDirectory(resolve(runtimeRoot, path), runtimeRoot)
+      ...(await summarizeDirectory(resolve(runtimeRoot, path), runtimeRoot))
     });
   }
   await writeJson(join(runtimeRoot, "runtime-manifest.json"), {
@@ -205,22 +241,32 @@ async function runOfflineSmoke(runtimeRoot) {
       "image.save(os.environ['MEMORA_SMOKE_PDF'],'PDF')"
     ].join("; ");
     await run(python, ["-c", createPdf], { MEMORA_SMOKE_PDF: pdfPath, PYTHONNOUSERSITE: "1" });
-    const messages = await requestJsonLines(python, [
-      join(root, "packages", "conversion", "sidecar", "docling_sidecar.py")
-    ], {
-      protocolVersion: 3,
-      requestId: randomUUID(),
-      command: "convert",
-      inputPath: pdfPath,
-      profile: "standard",
-      options: { maxPages: 5 }
-    }, minimalOfflineEnvironment(runtimeRoot));
-    const response = messages.find((message) => typeof message?.ok === "boolean");
-    const pageProgress = messages.find((message) =>
-      message?.type === "progress" && message?.stage === "processing_pages"
-      && message?.completedPages === 1 && message?.totalPages === 1
+    const messages = await requestJsonLines(
+      python,
+      [join(root, "packages", "conversion", "sidecar", "docling_sidecar.py")],
+      {
+        protocolVersion: 3,
+        requestId: randomUUID(),
+        command: "convert",
+        inputPath: pdfPath,
+        profile: "standard",
+        options: { maxPages: 5 }
+      },
+      minimalOfflineEnvironment(runtimeRoot)
     );
-    if (!response?.ok || response.result?.engine !== "docling" || response.result?.engineVersion !== definition.doclingVersion) {
+    const response = messages.find((message) => typeof message?.ok === "boolean");
+    const pageProgress = messages.find(
+      (message) =>
+        message?.type === "progress" &&
+        message?.stage === "processing_pages" &&
+        message?.completedPages === 1 &&
+        message?.totalPages === 1
+    );
+    if (
+      !response?.ok ||
+      response.result?.engine !== "docling" ||
+      response.result?.engineVersion !== definition.doclingVersion
+    ) {
       throw new Error("Offline Docling smoke conversion failed.");
     }
     if (!pageProgress) throw new Error("Offline Docling smoke did not report page progress.");
@@ -237,8 +283,12 @@ function requestJsonLines(executable, args, request, env) {
     const timeout = setTimeout(() => child.kill("SIGTERM"), 180_000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout = `${stdout}${chunk}`.slice(-32 * 1024 * 1024); });
-    child.stderr.on("data", (chunk) => { stderr = `${stderr}${chunk}`.slice(-4 * 1024); });
+    child.stdout.on("data", (chunk) => {
+      stdout = `${stdout}${chunk}`.slice(-32 * 1024 * 1024);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr = `${stderr}${chunk}`.slice(-4 * 1024);
+    });
     child.once("error", rejectPromise);
     child.once("exit", (code) => {
       clearTimeout(timeout);
@@ -247,7 +297,8 @@ function requestJsonLines(executable, args, request, env) {
         return;
       }
       try {
-        const messages = stdout.split(/\r?\n/)
+        const messages = stdout
+          .split(/\r?\n/)
           .filter((candidate) => candidate.trim().startsWith("{"))
           .map((line) => JSON.parse(line));
         resolvePromise(messages);
@@ -281,7 +332,7 @@ function minimalOfflineEnvironment(runtimeRoot) {
 async function cleanDownloadMetadata(runtimeRoot) {
   await rm(join(runtimeRoot, ".hf-cache"), { recursive: true, force: true });
   const artifacts = join(runtimeRoot, "artifacts");
-  if (!await exists(artifacts)) return;
+  if (!(await exists(artifacts))) return;
   for (const entry of await readdir(artifacts, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     await rm(join(artifacts, entry.name, ".cache"), { recursive: true, force: true });
@@ -302,33 +353,41 @@ async function inventory(path, relativeRoot) {
   const info = await lstat(path);
   if (info.isSymbolicLink()) {
     const targetPath = await readlink(path);
-    return [{
-      path: relative(relativeRoot, path),
-      sizeBytes: Buffer.byteLength(targetPath),
-      sha256: createHash("sha256").update(targetPath).digest("hex")
-    }];
+    return [
+      {
+        path: relative(relativeRoot, path),
+        sizeBytes: Buffer.byteLength(targetPath),
+        sha256: createHash("sha256").update(targetPath).digest("hex")
+      }
+    ];
   }
-  if (info.isFile()) return [{ path: relative(relativeRoot, path), sizeBytes: info.size, sha256: await sha256File(path) }];
+  if (info.isFile())
+    return [
+      { path: relative(relativeRoot, path), sizeBytes: info.size, sha256: await sha256File(path) }
+    ];
   const files = [];
   for (const entry of await readdir(path, { withFileTypes: true })) {
-    files.push(...await inventory(join(path, entry.name), relativeRoot));
+    files.push(...(await inventory(join(path, entry.name), relativeRoot)));
   }
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 async function downloadPinned(url, expectedSha256, destinationPath) {
   const response = await fetch(url, { redirect: "follow" });
-  if (!response.ok || !response.body) throw new Error(`Download failed with HTTP ${response.status}.`);
+  if (!response.ok || !response.body)
+    throw new Error(`Download failed with HTTP ${response.status}.`);
   await pipeline(response.body, createWriteStream(destinationPath, { mode: 0o600 }));
   const actualSha256 = await sha256File(destinationPath);
   if (actualSha256 !== expectedSha256) throw new Error("Pinned CPython archive checksum mismatch.");
 }
 
 function parseRequirements(raw) {
-  return new Map(raw.split(/\r?\n/).flatMap((line) => {
-    const match = line.trim().match(/^([^#=\s]+)==([^\s]+)$/);
-    return match ? [[normalizePackageName(match[1]), match[2]]] : [];
-  }));
+  return new Map(
+    raw.split(/\r?\n/).flatMap((line) => {
+      const match = line.trim().match(/^([^#=\s]+)==([^\s]+)$/);
+      return match ? [[normalizePackageName(match[1]), match[2]]] : [];
+    })
+  );
 }
 
 function normalizePackageName(name) {
@@ -336,7 +395,9 @@ function normalizePackageName(name) {
 }
 
 function pythonPath(runtimeRoot) {
-  return platform === "win32" ? join(runtimeRoot, "python.exe") : join(runtimeRoot, "bin", "python3.13");
+  return platform === "win32"
+    ? join(runtimeRoot, "python.exe")
+    : join(runtimeRoot, "bin", "python3.13");
 }
 
 async function run(executable, args, extraEnv = {}) {
@@ -362,7 +423,7 @@ async function exists(path) {
 }
 
 async function requireDirectory(path) {
-  if (!await exists(path) || !(await lstat(path)).isDirectory()) {
+  if (!(await exists(path)) || !(await lstat(path)).isDirectory()) {
     throw new Error(`Docling sidecar is missing: ${relative(root, path)}`);
   }
 }

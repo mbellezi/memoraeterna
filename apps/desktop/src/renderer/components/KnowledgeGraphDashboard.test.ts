@@ -13,20 +13,41 @@ describe("popup pointer corridor", () => {
       const target = { x: (card.left + card.right) / 2, y: (card.top + card.bottom) / 2 };
       for (let step = 0; step <= 30; step++) {
         const fraction = step / 30;
-        expect(isInGraphPopupCorridor({ x: anchor.x + (target.x - anchor.x) * fraction,
-          y: anchor.y + (target.y - anchor.y) * fraction }, anchor, card)).toBe(true);
+        expect(
+          isInGraphPopupCorridor(
+            {
+              x: anchor.x + (target.x - anchor.x) * fraction,
+              y: anchor.y + (target.y - anchor.y) * fraction
+            },
+            anchor,
+            card
+          )
+        ).toBe(true);
       }
       expect(isInGraphPopupCorridor({ x: 600, y: 20 }, anchor, card)).toBe(false);
     }
   });
 });
 import { GraphHoverIntent } from "./knowledge-graph-interaction";
-import { sourceHierarchyRelationTarget, prevalentSourceRelationTypes, isGraphConnectionEnabled } from "./KnowledgeGraphDashboard";
+import {
+  sourceHierarchyRelationTarget,
+  prevalentSourceRelationTypes,
+  isGraphConnectionEnabled
+} from "./KnowledgeGraphDashboard";
 
 describe("connection type filters", () => {
   it("retains grouped source edges while another type is enabled", () => {
-    const attributes = { kind: "source_connection" as const, relationType: null,
-      sourceRelations: ["supports", "contrasts"].map((relationType) => ({ kind: "source_relation" as const, relationType, weight: 1, confidence: 1, details: [] })) };
+    const attributes = {
+      kind: "source_connection" as const,
+      relationType: null,
+      sourceRelations: ["supports", "contrasts"].map((relationType) => ({
+        kind: "source_relation" as const,
+        relationType,
+        weight: 1,
+        confidence: 1,
+        details: []
+      }))
+    };
     expect(isGraphConnectionEnabled(attributes, new Set(["supports"]))).toBe(true);
     expect(isGraphConnectionEnabled(attributes, new Set(["supports", "contrasts"]))).toBe(false);
     expect(isGraphConnectionEnabled(attributes, new Set())).toBe(true);
@@ -45,40 +66,96 @@ describe("connection type filters", () => {
   });
 });
 
-import { atomicRelationColor, atomicRelationIconNode, atomicRelationMarkerRadius, buildGraph, formatAtomicRelationExplanation, prepareGraphEdges, projectSourceHierarchy, reconcileGraphProjection, reduceNode, reduceEdge, restoreKnowledgeGraphViewState } from "./KnowledgeGraphDashboard";
+import {
+  atomicRelationColor,
+  atomicRelationIconNode,
+  atomicRelationMarkerRadius,
+  buildGraph,
+  formatAtomicRelationExplanation,
+  prepareGraphEdges,
+  projectSourceHierarchy,
+  reconcileGraphProjection,
+  reduceNode,
+  reduceEdge,
+  restoreKnowledgeGraphViewState
+} from "./KnowledgeGraphDashboard";
 
 function nestedHierarchyFixture(): KnowledgeGraphDashboard {
   const source = (id: string, parentSourceItemId: string | null, childCount = 0) => ({
-    id, kind: "source" as const, title: id, subtitle: null, content: null,
-    sourceItemId: id, sourceType: "Book" as const, noteStatus: null,
-    detailCount: 1, parentSourceItemId, childCount
+    id,
+    kind: "source" as const,
+    title: id,
+    subtitle: null,
+    content: null,
+    sourceItemId: id,
+    sourceType: "Book" as const,
+    noteStatus: null,
+    detailCount: 1,
+    parentSourceItemId,
+    childCount
   });
   const edge = (id: string, source: string, target: string, weight: number) => ({
-    id, source, target, kind: "shared_entity" as const, label: "shared_entity",
-    description: null, weight, confidence: 0.8, details: [id]
+    id,
+    source,
+    target,
+    kind: "shared_entity" as const,
+    label: "shared_entity",
+    description: null,
+    weight,
+    confidence: 0.8,
+    details: [id]
   });
   return {
-    mode: "sources", truncated: false,
-    nodes: [source("root", null, 4), source("chapter", "root", 2), source("section", "chapter", 1),
-      source("leaf", "section"), source("sibling", "root"), source("external", null), source("second-hop", null)],
-    edges: [edge("section-edge", "section", "external", 2), edge("leaf-edge", "leaf", "external", 3),
-      edge("external-edge", "external", "second-hop", 1)]
+    mode: "sources",
+    truncated: false,
+    nodes: [
+      source("root", null, 4),
+      source("chapter", "root", 2),
+      source("section", "chapter", 1),
+      source("leaf", "section"),
+      source("sibling", "root"),
+      source("external", null),
+      source("second-hop", null)
+    ],
+    edges: [
+      edge("section-edge", "section", "external", 2),
+      edge("leaf-edge", "leaf", "external", 3),
+      edge("external-edge", "external", "second-hop", 1)
+    ]
   };
 }
 
-describe("conceptual source graph",() => {
-  it("reveals conceptual relation icons with zoom like atomic notes at every hierarchy level",() => {
-    const fixture=nestedHierarchyFixture();
-    const conceptual: KnowledgeGraphDashboard={...fixture,sourceView:"relations",edges:[
-      {id:"one",source:"section",target:"external",kind:"source_relation",label:"supports",description:"First idea",weight:1,confidence:0.9,details:[]}
-    ]};
-    for (const showAll of [false,true]) {
-      const data=projectSourceHierarchy(conceptual,{showAll,expandedSourceIds:new Set<string>(),focusSourceId:null});
-      const {graph}=buildGraph(data,((key:string) => key) as Translator);
-      const edge=graph.findEdge((_id,attributes) => attributes.kind === "source_connection")!;
+describe("conceptual source graph", () => {
+  it("reveals conceptual relation icons with zoom like atomic notes at every hierarchy level", () => {
+    const fixture = nestedHierarchyFixture();
+    const conceptual: KnowledgeGraphDashboard = {
+      ...fixture,
+      sourceView: "relations",
+      edges: [
+        {
+          id: "one",
+          source: "section",
+          target: "external",
+          kind: "source_relation",
+          label: "supports",
+          description: "First idea",
+          weight: 1,
+          confidence: 0.9,
+          details: []
+        }
+      ]
+    };
+    for (const showAll of [false, true]) {
+      const data = projectSourceHierarchy(conceptual, {
+        showAll,
+        expandedSourceIds: new Set<string>(),
+        focusSourceId: null
+      });
+      const { graph } = buildGraph(data, ((key: string) => key) as Translator);
+      const edge = graph.findEdge((_id, attributes) => attributes.kind === "source_connection")!;
       let previousOpacity = 0;
-      for (const ratio of [20,5,1,0.8,0.6,0.4,0.16,0.01]) {
-        const display=reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,null,0);
+      for (const ratio of [20, 5, 1, 0.8, 0.6, 0.4, 0.16, 0.01]) {
+        const display = reduceEdge(graph, edge, graph.getEdgeAttributes(edge), ratio, null, 0);
         expect(display.labelOpacity).toBeGreaterThanOrEqual(previousOpacity);
         previousOpacity = display.labelOpacity;
         if (ratio >= 1.25) {
@@ -87,36 +164,91 @@ describe("conceptual source graph",() => {
           expect(display.labelOpacity).toBe(0);
         }
         if (ratio <= 0.16) expect(display.labelOpacity).toBe(0.9);
-        const atomicAttributes = { ...graph.getEdgeAttributes(edge), kind: "atomic_note_relation" as const, sourceRelations: [] };
-        expect(display.labelOpacity).toBe(reduceEdge(graph,edge,atomicAttributes,ratio,null,0).labelOpacity);
-        expect(reduceEdge(graph,edge,graph.getEdgeAttributes(edge),ratio,edge,1).labelOpacity).toBe(1);
+        const atomicAttributes = {
+          ...graph.getEdgeAttributes(edge),
+          kind: "atomic_note_relation" as const,
+          sourceRelations: []
+        };
+        expect(display.labelOpacity).toBe(
+          reduceEdge(graph, edge, atomicAttributes, ratio, null, 0).labelOpacity
+        );
+        expect(
+          reduceEdge(graph, edge, graph.getEdgeAttributes(edge), ratio, edge, 1).labelOpacity
+        ).toBe(1);
       }
     }
   });
-  it("keeps entity-connection descriptions hidden until hover",() => {
-    const {graph}=buildGraph(nestedHierarchyFixture(),((key:string) => key) as Translator);
-    const edge=graph.findEdge((_id,attributes) => attributes.kind === "source_connection")!;
-    const display=reduceEdge(graph,edge,graph.getEdgeAttributes(edge),1,null,0);
+  it("keeps entity-connection descriptions hidden until hover", () => {
+    const { graph } = buildGraph(nestedHierarchyFixture(), ((key: string) => key) as Translator);
+    const edge = graph.findEdge((_id, attributes) => attributes.kind === "source_connection")!;
+    const display = reduceEdge(graph, edge, graph.getEdgeAttributes(edge), 1, null, 0);
     expect(display.forceLabel).toBe(false);
     expect(display.label).toBeNull();
   });
-  it("keeps type prevalence when chapters collapse and retains a single visual edge",() => {
-    const fixture=nestedHierarchyFixture();
-    const conceptual: KnowledgeGraphDashboard = {...fixture,sourceView:"relations",edges:[
-      {id:"one",source:"section",target:"external",kind:"source_relation",label:"supports",description:"First idea",weight:1,confidence:0.9,details:[]},
-      {id:"two",source:"leaf",target:"external",kind:"source_relation",label:"supports",description:"Second idea",weight:1,confidence:0.9,details:[]},
-      {id:"three",source:"external",target:"section",kind:"source_relation",label:"contrasts",description:"Counterpoint",weight:1,confidence:0.9,details:[]}
-    ]};
-    const projected=projectSourceHierarchy(conceptual,{showAll:false,expandedSourceIds:new Set(),focusSourceId:null});
+  it("keeps type prevalence when chapters collapse and retains a single visual edge", () => {
+    const fixture = nestedHierarchyFixture();
+    const conceptual: KnowledgeGraphDashboard = {
+      ...fixture,
+      sourceView: "relations",
+      edges: [
+        {
+          id: "one",
+          source: "section",
+          target: "external",
+          kind: "source_relation",
+          label: "supports",
+          description: "First idea",
+          weight: 1,
+          confidence: 0.9,
+          details: []
+        },
+        {
+          id: "two",
+          source: "leaf",
+          target: "external",
+          kind: "source_relation",
+          label: "supports",
+          description: "Second idea",
+          weight: 1,
+          confidence: 0.9,
+          details: []
+        },
+        {
+          id: "three",
+          source: "external",
+          target: "section",
+          kind: "source_relation",
+          label: "contrasts",
+          description: "Counterpoint",
+          weight: 1,
+          confidence: 0.9,
+          details: []
+        }
+      ]
+    };
+    const projected = projectSourceHierarchy(conceptual, {
+      showAll: false,
+      expandedSourceIds: new Set(),
+      focusSourceId: null
+    });
     expect(projected.edges).toHaveLength(2);
-    const edges=prepareGraphEdges(projected,((key:string) => key) as Translator);
+    const edges = prepareGraphEdges(projected, ((key: string) => key) as Translator);
     expect(edges).toHaveLength(1);
-    expect(prevalentSourceRelationTypes(edges[0]!.sourceRelations)).toEqual([{type:"supports",count:2},{type:"contrasts",count:1}]);
+    expect(prevalentSourceRelationTypes(edges[0]!.sourceRelations)).toEqual([
+      { type: "supports", count: 2 },
+      { type: "contrasts", count: 1 }
+    ]);
     expect(edges[0]!.label).not.toBe("");
   });
-  it("orders ties stably without collapsing distinct relation types",() => {
-    expect(prevalentSourceRelationTypes([{relationType:"supports",weight:1},{relationType:"extends",weight:1},{relationType:"clarifies",weight:1},{relationType:"contrasts",weight:1}]).map((item) => item.type))
-      .toEqual(["clarifies","contrasts","extends","supports"]);
+  it("orders ties stably without collapsing distinct relation types", () => {
+    expect(
+      prevalentSourceRelationTypes([
+        { relationType: "supports", weight: 1 },
+        { relationType: "extends", weight: 1 },
+        { relationType: "clarifies", weight: 1 },
+        { relationType: "contrasts", weight: 1 }
+      ]).map((item) => item.type)
+    ).toEqual(["clarifies", "contrasts", "extends", "supports"]);
   });
 });
 
@@ -124,10 +256,12 @@ describe("atomic-note relation explanations", () => {
   const t = ((key: string) => `translated:${key}`) as Translator;
 
   it("localizes stored explanation keys and preserves generated prose", () => {
-    expect(formatAtomicRelationExplanation("knowledge.relations.explanations.reranked", t))
-      .toBe("translated:knowledge.relations.explanations.reranked");
-    expect(formatAtomicRelationExplanation("The second note supplies the missing premise.", t))
-      .toBe("The second note supplies the missing premise.");
+    expect(formatAtomicRelationExplanation("knowledge.relations.explanations.reranked", t)).toBe(
+      "translated:knowledge.relations.explanations.reranked"
+    );
+    expect(
+      formatAtomicRelationExplanation("The second note supplies the missing premise.", t)
+    ).toBe("The second note supplies the missing premise.");
     expect(formatAtomicRelationExplanation(null, t)).toBeNull();
   });
 
@@ -136,14 +270,23 @@ describe("atomic-note relation explanations", () => {
       mode: "atomic_notes",
       truncated: false,
       nodes: [],
-      edges: [{
-        id: "relation", source: "one", target: "two", kind: "atomic_note_relation",
-        label: "supports", description: "knowledge.relations.explanations.hybrid",
-        weight: 1, confidence: 0.82, details: []
-      }]
+      edges: [
+        {
+          id: "relation",
+          source: "one",
+          target: "two",
+          kind: "atomic_note_relation",
+          label: "supports",
+          description: "knowledge.relations.explanations.hybrid",
+          weight: 1,
+          confidence: 0.82,
+          details: []
+        }
+      ]
     };
-    expect(prepareGraphEdges(data, t)[0]?.description)
-      .toBe("translated:knowledge.relations.explanations.hybrid");
+    expect(prepareGraphEdges(data, t)[0]?.description).toBe(
+      "translated:knowledge.relations.explanations.hybrid"
+    );
   });
 });
 
@@ -164,7 +307,12 @@ describe("hierarchy action hover corridor", () => {
   });
 
   it("allows dismissal outside the node, buttons and connecting corridor", () => {
-    for (const pointer of [{ x: 250, y: 137 }, { x: 150, y: 137 }, { x: 200, y: 175 }, { x: 200, y: 90 }]) {
+    for (const pointer of [
+      { x: 250, y: 137 },
+      { x: 150, y: 137 },
+      { x: 200, y: 175 },
+      { x: 200, y: 90 }
+    ]) {
       expect(isInHierarchyActionCorridor(pointer, node, actions)).toBe(false);
     }
   });
@@ -178,7 +326,9 @@ describe("source hierarchy relation hover", () => {
     const intent = new GraphHoverIntent(highlight, preview);
     try {
       const data = projectSourceHierarchy(nestedHierarchyFixture(), {
-        showAll: false, expandedSourceIds: new Set(), focusSourceId: "chapter"
+        showAll: false,
+        expandedSourceIds: new Set(),
+        focusSourceId: "chapter"
       });
       const { graph } = buildGraph(data, ((key: string) => key) as Translator);
       const edge = graph.findEdge((_id, attributes) => attributes.kind === "source_connection")!;
@@ -193,7 +343,9 @@ describe("source hierarchy relation hover", () => {
       expect(emphasized.color).toBe("rgba(252, 165, 165, 1)");
       vi.advanceTimersByTime(900);
       expect(preview).toHaveBeenLastCalledWith(target);
-      expect(graph.extremities(key).map((id) => graph.getNodeAttribute(id, "rawId"))).toEqual(expect.arrayContaining(["external"]));
+      expect(graph.extremities(key).map((id) => graph.getNodeAttribute(id, "rawId"))).toEqual(
+        expect.arrayContaining(["external"])
+      );
       const hierarchy = graph.findEdge((_id, attributes) => attributes.kind === "hierarchy_link")!;
       expect(sourceHierarchyRelationTarget(graph, hierarchy)).toBeNull();
       expect(sourceHierarchyRelationTarget(graph, "missing")).toBeNull();
@@ -224,36 +376,82 @@ import {
 describe("knowledge graph level of detail", () => {
   it("makes the background nearly transparent and monochrome, highlights relations in light red, and restores the original colors", () => {
     const data: KnowledgeGraphDashboard = {
-      mode: "sources", truncated: false,
+      mode: "sources",
+      truncated: false,
       nodes: ["a", "b", "c", "orphan"].map((id) => ({
-        id, kind: "source", title: id, subtitle: null, content: null,
-        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0,
-        parentSourceItemId: null, childCount: 0
+        id,
+        kind: "source",
+        title: id,
+        subtitle: null,
+        content: null,
+        sourceItemId: id,
+        sourceType: "Book",
+        noteStatus: null,
+        detailCount: 0,
+        parentSourceItemId: null,
+        childCount: 0
       })),
-      edges: [["a", "b"], ["b", "c"]].map(([source, target]) => ({
-        id: `${source}-${target}`, source: source!, target: target!, kind: "shared_entity",
-        label: "", description: null, weight: 1, confidence: 1, details: []
+      edges: [
+        ["a", "b"],
+        ["b", "c"]
+      ].map(([source, target]) => ({
+        id: `${source}-${target}`,
+        source: source!,
+        target: target!,
+        kind: "shared_entity",
+        label: "",
+        description: null,
+        weight: 1,
+        confidence: 1,
+        details: []
       }))
     };
     const { graph } = buildGraph(data, ((key: string) => key) as Translator);
-    const edgeAB = graph.edges().find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:a"))!;
-    const edgeBC = graph.edges().find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:c"))!;
+    const edgeAB = graph
+      .edges()
+      .find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:a"))!;
+    const edgeBC = graph
+      .edges()
+      .find((edge) => edge.startsWith("item-edge:") && graph.extremities(edge).includes("item:c"))!;
     const alpha = (color: string) => Number.parseFloat(color.slice(color.lastIndexOf(",") + 1));
-    const rgb = (color: string) => color.match(/^rgba\((\d+), (\d+), (\d+),/)?.slice(1).map(Number);
+    const rgb = (color: string) =>
+      color
+        .match(/^rgba\((\d+), (\d+), (\d+),/)
+        ?.slice(1)
+        .map(Number);
     for (const target of ["item:a", edgeAB]) {
       const backgroundOpacity = target === "item:a" ? 0.1 : 0.04;
-      const neighbors = new Set(target === "item:a" ? graph.neighbors(target) : graph.extremities(target));
+      const neighbors = new Set(
+        target === "item:a" ? graph.neighbors(target) : graph.extremities(target)
+      );
       const unrelated = graph.getNodeAttributes("item:c");
       const start = reduceNode("item:c", unrelated, 0.16, target, neighbors, 0, backgroundOpacity);
-      const middle = reduceNode("item:c", unrelated, 0.16, target, neighbors, 0.5, backgroundOpacity);
+      const middle = reduceNode(
+        "item:c",
+        unrelated,
+        0.16,
+        target,
+        neighbors,
+        0.5,
+        backgroundOpacity
+      );
       const end = reduceNode("item:c", unrelated, 0.16, target, neighbors, 1, backgroundOpacity);
       expect(alpha(start.color)).toBe(1);
       expect(alpha(middle.color)).toBeGreaterThan(alpha(end.color));
       expect(alpha(end.color)).toBeCloseTo(backgroundOpacity);
       expect(rgb(end.color)).toEqual([148, 148, 148]);
       expect(end.labelOpacity).toBeLessThan(0.04);
-      expect(reduceNode("item:b", graph.getNodeAttributes("item:b"), 0.16, target, neighbors, 1).color).toBe(graph.getNodeAttribute("item:b", "color"));
-      const selectedEdge = reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, target, 1);
+      expect(
+        reduceNode("item:b", graph.getNodeAttributes("item:b"), 0.16, target, neighbors, 1).color
+      ).toBe(graph.getNodeAttribute("item:b", "color"));
+      const selectedEdge = reduceEdge(
+        graph,
+        edgeAB,
+        graph.getEdgeAttributes(edgeAB),
+        0.16,
+        target,
+        1
+      );
       const otherEdge = reduceEdge(graph, edgeBC, graph.getEdgeAttributes(edgeBC), 0.16, target, 1);
       expect(alpha(selectedEdge.color)).toBe(1);
       expect(rgb(selectedEdge.color)).toEqual([252, 165, 165]);
@@ -261,24 +459,53 @@ describe("knowledge graph level of detail", () => {
       if (target === "item:a") {
         expect(alpha(otherEdge.color)).toBeCloseTo(0.1);
         for (const ratio of [2, 0.08]) {
-          expect(alpha(reduceEdge(graph, edgeBC, graph.getEdgeAttributes(edgeBC), ratio, target, 1).color)).toBeCloseTo(0.1);
+          expect(
+            alpha(
+              reduceEdge(graph, edgeBC, graph.getEdgeAttributes(edgeBC), ratio, target, 1).color
+            )
+          ).toBeCloseTo(0.1);
         }
       } else expect(alpha(otherEdge.color)).toBeLessThan(0.02);
-      expect(rgb(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color)).toEqual([56, 189, 248]);
+      expect(
+        rgb(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color)
+      ).toEqual([56, 189, 248]);
       // The reverse fade converges to exactly the resting palette before clearing hover state.
-      expect(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, target, 0).color).toBe(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color);
+      expect(
+        reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, target, 0).color
+      ).toBe(reduceEdge(graph, edgeAB, graph.getEdgeAttributes(edgeAB), 0.16, null, 0).color);
       expect(reduceNode("item:c", unrelated, 0.16, null, new Set(), 0).color).toBe(unrelated.color);
     }
   });
   it("keeps items, orphans and connections visible across the former LOD boundaries", () => {
     const data: KnowledgeGraphDashboard = {
-      mode: "sources", truncated: false,
+      mode: "sources",
+      truncated: false,
       nodes: ["a", "b", "orphan"].map((id) => ({
-        id, kind: "source", title: id, subtitle: null, content: null,
-        sourceItemId: id, sourceType: "Book", noteStatus: null, detailCount: 0,
-        parentSourceItemId: null, childCount: 0
+        id,
+        kind: "source",
+        title: id,
+        subtitle: null,
+        content: null,
+        sourceItemId: id,
+        sourceType: "Book",
+        noteStatus: null,
+        detailCount: 0,
+        parentSourceItemId: null,
+        childCount: 0
       })),
-      edges: [{ id: "ab", source: "a", target: "b", kind: "shared_entity", label: "", description: null, weight: 1, confidence: 1, details: [] }]
+      edges: [
+        {
+          id: "ab",
+          source: "a",
+          target: "b",
+          kind: "shared_entity",
+          label: "",
+          description: null,
+          weight: 1,
+          confidence: 1,
+          details: []
+        }
+      ]
     };
     const { graph } = buildGraph(data, ((key: string) => key) as Translator);
     expect(graph.nodes()).toEqual(["item:a", "item:b", "item:orphan"]);
@@ -291,13 +518,24 @@ describe("knowledge graph level of detail", () => {
       });
     }
     for (const boundary of [1.25, 0.52]) {
-      expect(Math.abs(nodeLabelOpacity(boundary - 0.001, 5) - nodeLabelOpacity(boundary + 0.001, 5))).toBeLessThan(0.01);
+      expect(
+        Math.abs(nodeLabelOpacity(boundary - 0.001, 5) - nodeLabelOpacity(boundary + 0.001, 5))
+      ).toBeLessThan(0.01);
     }
-    const positions = { "item:a": { x: 12.34, y: 56.78 }, "item:b": { x: 90, y: -10 }, "item:orphan": { x: -88, y: 99 } };
-    const saved = { stateKey: "snapshot", camera: { x: 0.3, y: 0.7, ratio: 0.42, angle: 0 }, nodePositions: positions };
+    const positions = {
+      "item:a": { x: 12.34, y: 56.78 },
+      "item:b": { x: 90, y: -10 },
+      "item:orphan": { x: -88, y: 99 }
+    };
+    const saved = {
+      stateKey: "snapshot",
+      camera: { x: 0.3, y: 0.7, ratio: 0.42, angle: 0 },
+      nodePositions: positions
+    };
     expect(restoreKnowledgeGraphViewState(graph, "changed", saved)).toBe(false);
     expect(restoreKnowledgeGraphViewState(graph, "snapshot", saved)).toBe(true);
-    for (const [node, position] of Object.entries(positions)) expect(graph.getNodeAttributes(node)).toMatchObject(position);
+    for (const [node, position] of Object.entries(positions))
+      expect(graph.getNodeAttributes(node)).toMatchObject(position);
   });
 
   it("increases visual strength continuously while zooming closer", () => {
@@ -347,16 +585,20 @@ describe("knowledge graph level of detail", () => {
   });
 
   it("keeps information overlays inside every viewport edge", () => {
-    expect(positionOverlayWithinViewport(
-      { x: 780, y: 580 },
-      { width: 300, height: 200 },
-      { width: 800, height: 600 }
-    )).toEqual({ x: 466, y: 366 });
-    expect(positionOverlayWithinViewport(
-      { x: 4, y: 4 },
-      { width: 300, height: 200 },
-      { width: 800, height: 600 }
-    )).toEqual({ x: 18, y: 18 });
+    expect(
+      positionOverlayWithinViewport(
+        { x: 780, y: 580 },
+        { width: 300, height: 200 },
+        { width: 800, height: 600 }
+      )
+    ).toEqual({ x: 466, y: 366 });
+    expect(
+      positionOverlayWithinViewport(
+        { x: 4, y: 4 },
+        { width: 300, height: 200 },
+        { width: 800, height: 600 }
+      )
+    ).toEqual({ x: 18, y: 18 });
   });
 
   it("collapses every source pair into one unlabeled connection with grouped details", () => {
@@ -401,20 +643,44 @@ describe("knowledge graph level of detail", () => {
   });
 
   it("groups hierarchical sources, expands them in place, and limits focus to one hop", () => {
-    const source = (id: string, parentSourceItemId: string | null, childCount = 0, detailCount = 1) => ({
-      id, kind: "source" as const, title: id, subtitle: null, content: null,
-      sourceItemId: id, sourceType: parentSourceItemId ? "BookChapter" as const : "Book" as const,
-      noteStatus: null, detailCount, parentSourceItemId, childCount
+    const source = (
+      id: string,
+      parentSourceItemId: string | null,
+      childCount = 0,
+      detailCount = 1
+    ) => ({
+      id,
+      kind: "source" as const,
+      title: id,
+      subtitle: null,
+      content: null,
+      sourceItemId: id,
+      sourceType: parentSourceItemId ? ("BookChapter" as const) : ("Book" as const),
+      noteStatus: null,
+      detailCount,
+      parentSourceItemId,
+      childCount
     });
     const edge = (id: string, source: string, target: string, weight = 1) => ({
-      id, source, target, kind: "shared_entity" as const, label: "shared_entity",
-      description: null, weight, confidence: 0.8, details: [id]
+      id,
+      source,
+      target,
+      kind: "shared_entity" as const,
+      label: "shared_entity",
+      description: null,
+      weight,
+      confidence: 0.8,
+      details: [id]
     });
     const data = {
       mode: "sources" as const,
       nodes: [
-        source("root-a", null, 2), source("child-a1", "root-a"), source("child-a2", "root-a"),
-        source("root-b", null, 1), source("child-b1", "root-b"), source("standalone", null),
+        source("root-a", null, 2),
+        source("child-a1", "root-a"),
+        source("child-a2", "root-a"),
+        source("root-b", null, 1),
+        source("child-b1", "root-b"),
+        source("standalone", null),
         source("second-hop", null)
       ],
       edges: [
@@ -426,35 +692,54 @@ describe("knowledge graph level of detail", () => {
     } satisfies KnowledgeGraphDashboard;
 
     const grouped = projectSourceHierarchy(data, {
-      showAll: false, expandedSourceIds: new Set(), focusSourceId: null
+      showAll: false,
+      expandedSourceIds: new Set(),
+      focusSourceId: null
     });
-    expect(grouped.nodes.map((node) => node.id)).toEqual(["root-a", "root-b", "standalone", "second-hop"]);
+    expect(grouped.nodes.map((node) => node.id)).toEqual([
+      "root-a",
+      "root-b",
+      "standalone",
+      "second-hop"
+    ]);
     expect(grouped.nodes.find((node) => node.id === "root-a")?.detailCount).toBe(3);
-    expect(grouped.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "root-a", target: "root-b", weight: 2 }),
-      expect.objectContaining({ source: "root-a", target: "standalone" })
-    ]));
+    expect(grouped.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "root-a", target: "root-b", weight: 2 }),
+        expect.objectContaining({ source: "root-a", target: "standalone" })
+      ])
+    );
 
     const expanded = projectSourceHierarchy(data, {
-      showAll: false, expandedSourceIds: new Set(["root-a"]), focusSourceId: null
+      showAll: false,
+      expandedSourceIds: new Set(["root-a"]),
+      focusSourceId: null
     });
     expect(expanded.nodes.map((node) => node.id)).toContain("child-a1");
     expect(expanded.nodes.map((node) => node.id)).not.toContain("child-b1");
-    expect(expanded.edges).toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "child-a1", target: "root-b" })
-    ]));
+    expect(expanded.edges).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source: "child-a1", target: "root-b" })])
+    );
     const graph = buildGraph(expanded, ((key: string) => key) as Translator);
-    expect(graph.hierarchyGroups).toEqual([{
-      root: "item:root-a",
-      children: ["item:child-a1", "item:child-a2"],
-      title: "root-a"
-    }]);
+    expect(graph.hierarchyGroups).toEqual([
+      {
+        root: "item:root-a",
+        children: ["item:child-a1", "item:child-a2"],
+        title: "root-a"
+      }
+    ]);
 
     const focused = projectSourceHierarchy(data, {
-      showAll: false, expandedSourceIds: new Set(), focusSourceId: "root-a"
+      showAll: false,
+      expandedSourceIds: new Set(),
+      focusSourceId: "root-a"
     });
     expect(focused.nodes.map((node) => node.id)).toEqual([
-      "root-a", "child-a1", "child-a2", "root-b", "standalone"
+      "root-a",
+      "child-a1",
+      "child-a2",
+      "root-b",
+      "standalone"
     ]);
     expect(focused.nodes.map((node) => node.id)).not.toContain("second-hop");
     expect(focused.edges.some((item) => item.id.includes("b1-second"))).toBe(false);
@@ -462,35 +747,71 @@ describe("knowledge graph level of detail", () => {
 
   it("expands each depth independently and collapses entire nested branches without losing connections", () => {
     const data = nestedHierarchyFixture();
-    const project = (expanded: string[], showAll = false, focusSourceId: string | null = null) => projectSourceHierarchy(data, {
-      expandedSourceIds: new Set(expanded), showAll, focusSourceId
-    });
-    expect(project(["root"]).nodes.map((node) => node.id)).toEqual(["root", "chapter", "sibling", "external", "second-hop"]);
+    const project = (expanded: string[], showAll = false, focusSourceId: string | null = null) =>
+      projectSourceHierarchy(data, {
+        expandedSourceIds: new Set(expanded),
+        showAll,
+        focusSourceId
+      });
+    expect(project(["root"]).nodes.map((node) => node.id)).toEqual([
+      "root",
+      "chapter",
+      "sibling",
+      "external",
+      "second-hop"
+    ]);
     const collapsed = project(["root", "section"]);
     expect(collapsed.nodes.map((node) => node.id)).not.toContain("leaf");
     expect(collapsed.nodes.find((node) => node.id === "chapter")?.detailCount).toBe(3);
-    expect(collapsed.edges).toContainEqual(expect.objectContaining({ source: "chapter", target: "external", weight: 5, details: ["section-edge", "leaf-edge"] }));
+    expect(collapsed.edges).toContainEqual(
+      expect.objectContaining({
+        source: "chapter",
+        target: "external",
+        weight: 5,
+        details: ["section-edge", "leaf-edge"]
+      })
+    );
     const all = project([], true);
     expect(all.nodes).toHaveLength(data.nodes.length);
     expect(project(["root", "chapter", "section"]).nodes).toEqual(all.nodes);
     const collapsedRoot = project(["chapter", "section"]);
     expect(collapsedRoot.nodes.map((node) => node.id)).toEqual(["root", "external", "second-hop"]);
     expect(collapsedRoot.nodes.find((node) => node.id === "root")?.detailCount).toBe(5);
-    expect(collapsedRoot.edges).toContainEqual(expect.objectContaining({ source: "external", target: "root", weight: 5 }));
+    expect(collapsedRoot.edges).toContainEqual(
+      expect.objectContaining({ source: "external", target: "root", weight: 5 })
+    );
     const focused = project([], false, "chapter");
-    expect(focused.nodes.map((node) => node.id)).toEqual(["chapter", "section", "leaf", "external"]);
+    expect(focused.nodes.map((node) => node.id)).toEqual([
+      "chapter",
+      "section",
+      "leaf",
+      "external"
+    ]);
     expect(focused.edges).toHaveLength(2);
   });
 
   it("reconciles repeated nested expansion in the live graph with nearby seeds and exact surviving positions", () => {
     const data = nestedHierarchyFixture();
-    const project = (expanded: string[]) => buildGraph(projectSourceHierarchy(data, {
-      expandedSourceIds: new Set(expanded), showAll: false, focusSourceId: null
-    }), ((key: string) => key) as Translator).graph;
+    const project = (expanded: string[]) =>
+      buildGraph(
+        projectSourceHierarchy(data, {
+          expandedSourceIds: new Set(expanded),
+          showAll: false,
+          focusSourceId: null
+        }),
+        ((key: string) => key) as Translator
+      ).graph;
     const graph = project([]);
     graph.mergeNodeAttributes("item:root", { x: 200, y: -150 });
     graph.mergeNodeAttributes("item:external", { x: -300, y: 240 });
-    for (const expanded of [["root"], ["root", "chapter"], ["root", "chapter", "section"], ["root", "section"], [], ["root", "chapter", "section"]]) {
+    for (const expanded of [
+      ["root"],
+      ["root", "chapter"],
+      ["root", "chapter", "section"],
+      ["root", "section"],
+      [],
+      ["root", "chapter", "section"]
+    ]) {
       const before = new Map(graph.mapNodes((id, { x, y }) => [id, { x, y }] as const));
       const next = project(expanded);
       reconcileGraphProjection(graph, next, 55);
@@ -509,9 +830,16 @@ describe("knowledge graph level of detail", () => {
       });
       graph.forEachEdge((id, attributes) => expect(attributes).toEqual(next.getEdgeAttributes(id)));
       // Simulate positions changed by physics before the next projection.
-      graph.updateEachNodeAttributes((_id, attributes) => ({ ...attributes, x: attributes.x + 20, y: attributes.y - 10 }));
+      graph.updateEachNodeAttributes((_id, attributes) => ({
+        ...attributes,
+        x: attributes.x + 20,
+        y: attributes.y - 10
+      }));
     }
-    const empty = buildGraph({ mode: "sources", nodes: [], edges: [], truncated: false }, ((key: string) => key) as Translator).graph;
+    const empty = buildGraph(
+      { mode: "sources", nodes: [], edges: [], truncated: false },
+      ((key: string) => key) as Translator
+    ).graph;
     reconcileGraphProjection(graph, empty, 55);
     expect(graph.order).toBe(0);
     expect(graph.size).toBe(0);
@@ -521,22 +849,23 @@ describe("knowledge graph level of detail", () => {
     const data = {
       mode: "atomic_notes",
       nodes: [],
-      edges: [{
-        id: "relation",
-        source: "00000000-0000-4000-8000-000000000001",
-        target: "00000000-0000-4000-8000-000000000002",
-        kind: "atomic_note_relation",
-        label: "supports",
-        description: null,
-        weight: 1,
-        confidence: 0.9,
-        details: []
-      }],
+      edges: [
+        {
+          id: "relation",
+          source: "00000000-0000-4000-8000-000000000001",
+          target: "00000000-0000-4000-8000-000000000002",
+          kind: "atomic_note_relation",
+          label: "supports",
+          description: null,
+          weight: 1,
+          confidence: 0.9,
+          details: []
+        }
+      ],
       truncated: false
     } satisfies KnowledgeGraphDashboard;
-    const translator = ((key: string) => key === "knowledge.relations.types.supports"
-      ? "Sustenta"
-      : key) as Translator;
+    const translator = ((key: string) =>
+      key === "knowledge.relations.types.supports" ? "Sustenta" : key) as Translator;
 
     expect(prepareGraphEdges(data, translator)[0]).toMatchObject({
       label: "Sustenta",
@@ -545,10 +874,21 @@ describe("knowledge graph level of detail", () => {
   });
 
   it("assigns a distinct icon color to every canonical atomic-note relation", () => {
-    const types = ["supports", "contrasts", "extends", "similar_to", "depends_on", "clarifies", "mentions", "related"];
+    const types = [
+      "supports",
+      "contrasts",
+      "extends",
+      "similar_to",
+      "depends_on",
+      "clarifies",
+      "mentions",
+      "related"
+    ];
     const colors = types.map(atomicRelationColor);
     expect(new Set(colors)).toHaveLength(types.length);
-    expect(new Set(types.map((type) => JSON.stringify(atomicRelationIconNode(type))))).toHaveLength(types.length);
+    expect(new Set(types.map((type) => JSON.stringify(atomicRelationIconNode(type))))).toHaveLength(
+      types.length
+    );
     expect(types.every((type) => atomicRelationIconNode(type).length > 0)).toBe(true);
     expect(atomicRelationColor("unknown")).toBe("#cbd5e1");
     expect(atomicRelationIconNode("unknown").length).toBeGreaterThan(0);

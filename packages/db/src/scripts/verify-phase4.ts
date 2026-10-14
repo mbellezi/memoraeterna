@@ -39,15 +39,21 @@ try {
   const seedFolder = resolve(packageRoot, "seed");
 
   const migrated = await runMigrations(pool, migrationsFolder);
-  if (migrated.seed.applied) throw new Error("Migration-only flow unexpectedly applied the baseline.");
+  if (migrated.seed.applied)
+    throw new Error("Migration-only flow unexpectedly applied the baseline.");
   const existingRun = await runMigrations(pool, migrationsFolder, { seedFolder });
   if (existingRun.seed.applied) throw new Error("Existing database reapplied the baseline.");
   const history = await pool.query<{ count: string }>(
     "select count(*)::text as count from drizzle.__drizzle_migrations"
   );
-  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected phase 4 migration history.");
+  if (Number(history.rows[0]?.count) !== 11)
+    throw new Error("Unexpected phase 4 migration history.");
 
-  const columns = await pool.query<{ table_name: string; column_name: string; is_nullable: string }>(
+  const columns = await pool.query<{
+    table_name: string;
+    column_name: string;
+    is_nullable: string;
+  }>(
     `select table_name, column_name, is_nullable from information_schema.columns
      where table_schema = 'public' and (
        (table_name = 'integration_clients' and column_name in ('capabilities', 'contract_version')) or
@@ -77,11 +83,17 @@ try {
     throw new Error("Integration client authorization lookup failed.");
   }
   await clients.touch(client.id, { capabilities: ["capture-web-page"], contractVersion: "1.0.0" });
-  if (!(await clients.setStatus(client.id, "revoked")) || await clients.findAuthorizedByTokenHash(client.tokenHash)) {
+  if (
+    !(await clients.setStatus(client.id, "revoked")) ||
+    (await clients.findAuthorizedByTokenHash(client.tokenHash))
+  ) {
     throw new Error("Integration client revocation failed.");
   }
 
-  const source = await createSourceItemRepository(pool).create({ type: "PersonalNote", title: "Projected note" });
+  const source = await createSourceItemRepository(pool).create({
+    type: "PersonalNote",
+    title: "Projected note"
+  });
   const document = await createDocumentRepository(pool).create({
     sourceItemId: source.id,
     title: source.title,
@@ -105,8 +117,11 @@ try {
   if ((await syncFiles.findByMemoraId(source.id))?.id !== syncFile.id) {
     throw new Error("Obsidian identity lookup failed.");
   }
-  const moved = await syncFiles.update(syncFile.id, { relativePath: "Memora/Sources/Notes/moved.md" });
-  if (moved?.relativePath !== "Memora/Sources/Notes/moved.md") throw new Error("Obsidian path update failed.");
+  const moved = await syncFiles.update(syncFile.id, {
+    relativePath: "Memora/Sources/Notes/moved.md"
+  });
+  if (moved?.relativePath !== "Memora/Sources/Notes/moved.md")
+    throw new Error("Obsidian path update failed.");
 
   await pool.query("create database memora_phase4_seed");
   const seedUrl = new URL(connection.connectionString);
@@ -120,14 +135,20 @@ try {
     throw new Error("Seed database reapplied the baseline.");
   }
 
-  console.info(JSON.stringify({
-    migrationHistoryCount: Number(history.rows[0]?.count),
-    verifiedColumns: columns.rows.map((column) => `${column.table_name}.${column.column_name}`),
-    verifiedIndexes: indexes.rows.map((index) => index.indexname),
-    integrationClientRevoked: client.id,
-    obsidianSyncFile: syncFile.id,
-    baselineMigrations: baseline.seed.seededMigrations
-  }, null, 2));
+  console.info(
+    JSON.stringify(
+      {
+        migrationHistoryCount: Number(history.rows[0]?.count),
+        verifiedColumns: columns.rows.map((column) => `${column.table_name}.${column.column_name}`),
+        verifiedIndexes: indexes.rows.map((index) => index.indexname),
+        integrationClientRevoked: client.id,
+        obsidianSyncFile: syncFile.id,
+        baselineMigrations: baseline.seed.seededMigrations
+      },
+      null,
+      2
+    )
+  );
 } finally {
   if (seedPool) await closePgPool(seedPool);
   if (pool) await closePgPool(pool);

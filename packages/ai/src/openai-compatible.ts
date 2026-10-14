@@ -1,14 +1,24 @@
 import { normalizeTokenUsage } from "./token-usage.js";
 import type { AiCapability, AiReasoningLevel, AiTaskType } from "@app/domain";
 
-import type { AiModelAdapter, AiModelDescriptor, AiProgressListener, AiTaskRequest, AiTaskResult } from "./contracts.js";
+import type {
+  AiModelAdapter,
+  AiModelDescriptor,
+  AiProgressListener,
+  AiTaskRequest,
+  AiTaskResult
+} from "./contracts.js";
 import {
   isDashScopeBaseUrl,
   isQwen35Model,
   openAiCompatibleParameterCapabilities
 } from "./parameter-capabilities.js";
 import { providerHttpError } from "./provider-error.js";
-import { effectiveReasoningLevel, isOpenAiReasoningModel, openAiReasoningEffort } from "./reasoning.js";
+import {
+  effectiveReasoningLevel,
+  isOpenAiReasoningModel,
+  openAiReasoningEffort
+} from "./reasoning.js";
 
 export interface OpenAiCompatibleAdapterOptions {
   baseUrl: string;
@@ -19,8 +29,15 @@ export interface OpenAiCompatibleAdapterOptions {
 }
 
 const generationTasks = new Set<AiTaskType>([
-  "text-generation", "structured-output", "summarization", "atomic-note-generation",
-  "entity-extraction", "claim-extraction", "knowledge-graph-generation", "reranking", "writing-assistance"
+  "text-generation",
+  "structured-output",
+  "summarization",
+  "atomic-note-generation",
+  "entity-extraction",
+  "claim-extraction",
+  "knowledge-graph-generation",
+  "reranking",
+  "writing-assistance"
 ]);
 
 export class OpenAiCompatibleAdapter implements AiModelAdapter {
@@ -47,20 +64,40 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   }
 
   public async testConnection(signal?: AbortSignal): Promise<void> {
-    const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
+    const response = await this.request("/models", {
+      method: "GET",
+      ...(signal ? { signal } : {})
+    });
     if (!response.ok) throw await providerHttpError(response, "AI provider connection failed");
   }
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
-    const response = await this.request("/models", { method: "GET", ...(signal ? { signal } : {}) });
+    const response = await this.request("/models", {
+      method: "GET",
+      ...(signal ? { signal } : {})
+    });
     if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
-    const payload = await response.json() as { data?: Array<{ id?: string; context_window?: number }> };
-    return (payload.data ?? []).flatMap((model) => model.id ? [{
-      ...this.describe(),
-      modelId: model.id,
-      limits: Number.isInteger(model.context_window)&&model.context_window!>0?{contextWindow:model.context_window}:{},
-      parameterCapabilities: openAiCompatibleParameterCapabilities({ ...this.options, modelId: model.id })
-    }] : []);
+    const payload = (await response.json()) as {
+      data?: Array<{ id?: string; context_window?: number }>;
+    };
+    return (payload.data ?? []).flatMap((model) =>
+      model.id
+        ? [
+            {
+              ...this.describe(),
+              modelId: model.id,
+              limits:
+                Number.isInteger(model.context_window) && model.context_window! > 0
+                  ? { contextWindow: model.context_window }
+                  : {},
+              parameterCapabilities: openAiCompatibleParameterCapabilities({
+                ...this.options,
+                modelId: model.id
+              })
+            }
+          ]
+        : []
+    );
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
@@ -72,10 +109,14 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         body: JSON.stringify({
           model: request.modelId ?? this.options.modelId,
           input: readText(request.input),
-          dimensions: typeof request.parameters.dimensions === "number" ? request.parameters.dimensions : 768
+          dimensions:
+            typeof request.parameters.dimensions === "number" ? request.parameters.dimensions : 768
         })
       });
-      const payload = await parseResponse<{ data?: Array<{ embedding?: number[] }>; usage?: Record<string, unknown> & { prompt_tokens?: number; total_tokens?: number } }>(response);
+      const payload = await parseResponse<{
+        data?: Array<{ embedding?: number[] }>;
+        usage?: Record<string, unknown> & { prompt_tokens?: number; total_tokens?: number };
+      }>(response);
       const embedding = payload.data?.[0]?.embedding;
       if (!embedding) throw new Error("AI embedding response did not contain a vector.");
       return {
@@ -86,7 +127,9 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
         tokenUsage: normalizeTokenUsage(payload.usage),
-        ...(payload.usage?.prompt_tokens !== undefined ? { inputTokens: payload.usage.prompt_tokens } : {})
+        ...(payload.usage?.prompt_tokens !== undefined
+          ? { inputTokens: payload.usage.prompt_tokens }
+          : {})
       };
     }
     const response = await this.request("/chat/completions", {
@@ -95,10 +138,19 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       body: JSON.stringify({
         model: request.modelId ?? this.options.modelId,
         messages: [{ role: "user", content: readText(request.input) }],
-        ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
+        ...([
+          "structured-output",
+          "knowledge-graph-generation",
+          "atomic-note-generation",
+          "reranking"
+        ].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId, this.options.baseUrl)
+        ...openAiGenerationParameters(
+          request.parameters,
+          request.modelId ?? this.options.modelId,
+          this.options.baseUrl
+        )
       })
     });
     const payload = await parseResponse<{
@@ -115,8 +167,12 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
       tokenUsage: normalizeTokenUsage(payload.usage),
-      ...(payload.usage?.prompt_tokens !== undefined ? { inputTokens: payload.usage.prompt_tokens } : {}),
-      ...(payload.usage?.completion_tokens !== undefined ? { outputTokens: payload.usage.completion_tokens } : {})
+      ...(payload.usage?.prompt_tokens !== undefined
+        ? { inputTokens: payload.usage.prompt_tokens }
+        : {}),
+      ...(payload.usage?.completion_tokens !== undefined
+        ? { outputTokens: payload.usage.completion_tokens }
+        : {})
     };
   }
 
@@ -135,10 +191,19 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
         messages: [{ role: "user", content: readText(request.input) }],
         stream: true,
         stream_options: { include_usage: true },
-        ...(["structured-output", "knowledge-graph-generation", "atomic-note-generation", "reranking"].includes(request.taskType)
+        ...([
+          "structured-output",
+          "knowledge-graph-generation",
+          "atomic-note-generation",
+          "reranking"
+        ].includes(request.taskType)
           ? { response_format: { type: "json_object" } }
           : {}),
-        ...openAiGenerationParameters(request.parameters, request.modelId ?? this.options.modelId, this.options.baseUrl)
+        ...openAiGenerationParameters(
+          request.parameters,
+          request.modelId ?? this.options.modelId,
+          this.options.baseUrl
+        )
       })
     });
     let output = "";
@@ -175,7 +240,10 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   private request(path: string, init: RequestInit): Promise<Response> {
     return this.fetchImplementation(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
       ...init,
-      headers: { "content-type": "application/json", authorization: `Bearer ${this.options.apiKey}` }
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.options.apiKey}`
+      }
     });
   }
 }
@@ -185,22 +253,34 @@ function openAiGenerationParameters(
   modelId: string,
   baseUrl: string
 ): Record<string, unknown> {
-  const reasoningLevel = typeof parameters.reasoningLevel === "string"
-    ? effectiveReasoningLevel("openai-compatible", modelId, parameters.reasoningLevel as AiReasoningLevel)
-    : undefined;
-  const reasoningMaxTokens = typeof parameters.reasoningMaxTokens === "number"
-    ? parameters.reasoningMaxTokens
-    : undefined;
-  const qwenReasoning = qwenGenerationReasoningParameters(modelId, baseUrl, reasoningLevel, reasoningMaxTokens);
-  const reasoningEffort = qwenReasoning === undefined && isOpenAiReasoningModel(modelId)
-    ? openAiReasoningEffort(reasoningLevel)
-    : undefined;
+  const reasoningLevel =
+    typeof parameters.reasoningLevel === "string"
+      ? effectiveReasoningLevel(
+          "openai-compatible",
+          modelId,
+          parameters.reasoningLevel as AiReasoningLevel
+        )
+      : undefined;
+  const reasoningMaxTokens =
+    typeof parameters.reasoningMaxTokens === "number" ? parameters.reasoningMaxTokens : undefined;
+  const qwenReasoning = qwenGenerationReasoningParameters(
+    modelId,
+    baseUrl,
+    reasoningLevel,
+    reasoningMaxTokens
+  );
+  const reasoningEffort =
+    qwenReasoning === undefined && isOpenAiReasoningModel(modelId)
+      ? openAiReasoningEffort(reasoningLevel)
+      : undefined;
   return {
     ...(typeof parameters.maxTokens === "number" ? { max_tokens: parameters.maxTokens } : {}),
     ...(typeof parameters.temperature === "number" ? { temperature: parameters.temperature } : {}),
     ...(typeof parameters.topP === "number" ? { top_p: parameters.topP } : {}),
     ...(typeof parameters.topK === "number" ? { top_k: parameters.topK } : {}),
-    ...(typeof parameters.presencePenalty === "number" ? { presence_penalty: parameters.presencePenalty } : {}),
+    ...(typeof parameters.presencePenalty === "number"
+      ? { presence_penalty: parameters.presencePenalty }
+      : {}),
     ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {}),
     ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     ...(qwenReasoning ?? {})
@@ -213,12 +293,15 @@ function qwenGenerationReasoningParameters(
   reasoningLevel: AiReasoningLevel | undefined,
   reasoningMaxTokens: number | undefined
 ): Record<string, unknown> | undefined {
-  if (!isQwen35Model(modelId) || (reasoningLevel === undefined && reasoningMaxTokens === undefined)) return undefined;
+  if (!isQwen35Model(modelId) || (reasoningLevel === undefined && reasoningMaxTokens === undefined))
+    return undefined;
   const enabled = reasoningLevel !== "off";
   if (isDashScopeBaseUrl(baseUrl)) {
     return {
       enable_thinking: enabled,
-      ...(enabled && reasoningMaxTokens !== undefined ? { thinking_budget: reasoningMaxTokens } : {})
+      ...(enabled && reasoningMaxTokens !== undefined
+        ? { thinking_budget: reasoningMaxTokens }
+        : {})
     };
   }
   return { chat_template_kwargs: { enable_thinking: enabled } };
@@ -226,13 +309,19 @@ function qwenGenerationReasoningParameters(
 
 export function readText(input: unknown): string {
   if (typeof input === "string") return input;
-  if (typeof input === "object" && input !== null && "text" in input && typeof input.text === "string") return input.text;
+  if (
+    typeof input === "object" &&
+    input !== null &&
+    "text" in input &&
+    typeof input.text === "string"
+  )
+    return input.text;
   return JSON.stringify(input);
 }
 
 export async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) throw await providerHttpError(response);
-  return await response.json() as T;
+  return (await response.json()) as T;
 }
 
 export async function readServerSentEvents(
@@ -257,7 +346,8 @@ export async function readServerSentEvents(
     const events = buffer.split("\n\n");
     buffer = events.pop() ?? "";
     for (const event of events) {
-      const data = event.split("\n")
+      const data = event
+        .split("\n")
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trimStart())
         .join("\n");
@@ -265,7 +355,8 @@ export async function readServerSentEvents(
     }
     if (done) break;
   }
-  const trailing = buffer.split("\n")
+  const trailing = buffer
+    .split("\n")
     .filter((line) => line.startsWith("data:"))
     .map((line) => line.slice(5).trimStart())
     .join("\n");
@@ -273,6 +364,9 @@ export async function readServerSentEvents(
 }
 
 export function streamedProgress(outputCharacters: number, configuredMaxTokens: unknown): number {
-  const maxTokens = typeof configuredMaxTokens === "number" && configuredMaxTokens > 0 ? configuredMaxTokens : 1_024;
+  const maxTokens =
+    typeof configuredMaxTokens === "number" && configuredMaxTokens > 0
+      ? configuredMaxTokens
+      : 1_024;
   return Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4)));
 }

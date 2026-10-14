@@ -17,13 +17,7 @@ type LeafMessageKey<T> = {
 
 export const defaultLanguageCode = "en";
 
-export const supportedLanguageCodes = [
-  "en",
-  "pt-BR",
-  "it",
-  "fr",
-  "es"
-] as const;
+export const supportedLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
 
 export type LanguageCode = (typeof supportedLanguageCodes)[number];
 export type MessageKey = LeafMessageKey<typeof en>;
@@ -183,6 +177,14 @@ function handleMissingKey(key: string, behavior: MissingKeyBehavior = "marker"):
 }
 
 /** Five-locale metadata for the browser-safe prompt registry. Keys remain stable. */
-export function promptMetadataLabels(group:'categories'|'labels'|'variables'|'purposes',key:string):Record<LanguageCode,string>{
- return Object.fromEntries(supportedLanguageCodes.map(language=>[language,createTranslator(language)(`promptCatalogMetadata.${group}.${key}` as MessageKey)])) as Record<LanguageCode,string>;
+export function promptMetadataLabels(
+  group: "categories" | "labels" | "variables" | "purposes",
+  key: string
+): Record<LanguageCode, string> {
+  return Object.fromEntries(
+    supportedLanguageCodes.map((language) => [
+      language,
+      createTranslator(language)(`promptCatalogMetadata.${group}.${key}` as MessageKey)
+    ])
+  ) as Record<LanguageCode, string>;
 }

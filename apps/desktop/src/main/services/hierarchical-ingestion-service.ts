@@ -1,7 +1,12 @@
 import { knowledgeAutomationPolicyKey } from "@app/domain";
 import { createSettingsRepository, createWikiCuratorRepository } from "@app/db";
 import { promptStageProviders } from "./prompt-strategies.js";
-import { renderPrompt, capturePromptPin, stagePromptFingerprints, legacyStagePromptFingerprints } from "./prompt-runtime.js";
+import {
+  renderPrompt,
+  capturePromptPin,
+  stagePromptFingerprints,
+  legacyStagePromptFingerprints
+} from "./prompt-runtime.js";
 import {
   DocumentDivisionCandidateSchema,
   ProcessingStages,
@@ -65,7 +70,11 @@ export class HierarchicalIngestionService {
     if (!structure) return null;
     const document = await createDocumentRepository(pool).findById(structure.rootDocumentId);
     const rootMarkdown = document?.canonicalMarkdown ?? "";
-    return { ...structure, rootMarkdown, boundaries: structureBoundaries(rootMarkdown, structure.divisions) };
+    return {
+      ...structure,
+      rootMarkdown,
+      boundaries: structureBoundaries(rootMarkdown, structure.divisions)
+    };
   }
 
   public async saveStructure(structureId: string, divisions: DocumentDivisionCandidate[]) {
@@ -83,7 +92,9 @@ export class HierarchicalIngestionService {
     divisions: DocumentDivisionCandidate[];
     plan: ProcessingPlanRequest;
   }) {
-    const divisions = input.divisions.map((division) => DocumentDivisionCandidateSchema.parse(division));
+    const divisions = input.divisions.map((division) =>
+      DocumentDivisionCandidateSchema.parse(division)
+    );
     const issues = validateDivisionTree(divisions);
     const blocking = issues.filter((issue) => issue.code !== "empty_range");
     if (blocking.length > 0) {
@@ -152,24 +163,39 @@ export class HierarchicalIngestionService {
     const documents = createDocumentRepository(pool);
     const sources = createSourceItemRepository(pool);
     const catalogStages = catalogMetadataStages(plan.effectiveStages);
-    if (plan.effectiveStages.includes("organizeKnowledge") && !plan.organization && !plan.integrateWiki) {
-      const policyId = (await createSettingsRepository(pool).get<{policyId:string}>(knowledgeAutomationPolicyKey))?.policyId;
+    if (
+      plan.effectiveStages.includes("organizeKnowledge") &&
+      !plan.organization &&
+      !plan.integrateWiki
+    ) {
+      const policyId = (
+        await createSettingsRepository(pool).get<{ policyId: string }>(knowledgeAutomationPolicyKey)
+      )?.policyId;
       const policy = policyId ? await createWikiCuratorRepository(pool).policy(policyId) : null;
       if (!policy) throw new Error("organization.errors.policy");
-      plan = { ...plan, integrateWiki: { version: 2, policyId: policy.id, policyRevisionId: policy.revisionId } };
+      plan = {
+        ...plan,
+        integrateWiki: { version: 2, policyId: policy.id, policyRevisionId: policy.revisionId }
+      };
     }
     const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
     const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
-    const promptPin=capturePromptPin(plan.organization?.domainId),promptProviders=await promptStageProviders(pool);
+    const promptPin = capturePromptPin(plan.organization?.domainId),
+      promptProviders = await promptStageProviders(pool);
     const batch = await hierarchy.createBatch({
-      ...(plan.integrateWiki?{promptPin}:{}),
+      ...(plan.integrateWiki ? { promptPin } : {}),
       trigger,
       requestedPlan: plan,
       effectivePlan: plan,
       reingestionPolicy: plan.previousArtifactPolicy,
       targetSourceItemIds: uniqueSourceIds
     });
-    const queued: Array<{ sourceItemId: string; documentId: string; ingestionRunId: string; jobId: string | null }> = [];
+    const queued: Array<{
+      sourceItemId: string;
+      documentId: string;
+      ingestionRunId: string;
+      jobId: string | null;
+    }> = [];
     for (const sourceItemId of uniqueSourceIds) {
       const catalogMetadataOnly = catalogIds.has(sourceItemId);
       const source = catalogMetadataOnly ? await sources.findById(sourceItemId) : null;
@@ -177,25 +203,36 @@ export class HierarchicalIngestionService {
       const catalogInput = catalogMetadataOnly
         ? await prepareCatalogMetadataDocument(documents, source!)
         : null;
-      const document = catalogInput?.document ?? (await documents.listBySourceItem(sourceItemId))[0];
+      const document =
+        catalogInput?.document ?? (await documents.listBySourceItem(sourceItemId))[0];
       if (!document) continue;
       const processingMarkdown = catalogInput?.markdown ?? document.canonicalMarkdown;
-      const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(
+        document.id,
+        document.contentHash
+      );
       const effectiveStages = catalogMetadataOnly ? catalogStages : plan.effectiveStages;
       const requestedStages = catalogMetadataOnly
         ? effectiveStages.filter((stage) => stage !== "chunking")
         : plan.requestedStages;
-      const aggregateHierarchyRoot = !catalogMetadataOnly
-        && effectiveStages.includes("summarization")
-        && (await hierarchy.listDescendants(sourceItemId)).length > 0;
-      if (!catalogMetadataOnly && effectiveStages.includes("atomicNotes") && runKind === "reingestion" && plan.previousArtifactPolicy === "preserve_reviewed_archive_pending") {
+      const aggregateHierarchyRoot =
+        !catalogMetadataOnly &&
+        effectiveStages.includes("summarization") &&
+        (await hierarchy.listDescendants(sourceItemId)).length > 0;
+      if (
+        !catalogMetadataOnly &&
+        effectiveStages.includes("atomicNotes") &&
+        runKind === "reingestion" &&
+        plan.previousArtifactPolicy === "preserve_reviewed_archive_pending"
+      ) {
         await pool.query(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
            where created_from_source_item_id = $1 and ownership='source' and status = 'pending_review' and metadata->>'humanProtected' is distinct from 'true'`,
           [sourceItemId]
         );
       }
-      const previousRun = runKind === "reingestion" ? (await runs.listBySourceItem(sourceItemId))[0] : undefined;
+      const previousRun =
+        runKind === "reingestion" ? (await runs.listBySourceItem(sourceItemId))[0] : undefined;
       const run = await runs.create({
         supersedesRunId: previousRun?.id ?? null,
         sourceItemId,
@@ -205,46 +242,80 @@ export class HierarchicalIngestionService {
         effectiveStages,
         planVersion: plan.planVersion,
         inputDocumentRevisionId: revisionId,
-        inputHashes: { contentHash: catalogMetadataOnly ? sha256(processingMarkdown) : document.contentHash,promptFingerprints:stagePromptFingerprints(promptPin,false,promptProviders) },
+        inputHashes: {
+          contentHash: catalogMetadataOnly ? sha256(processingMarkdown) : document.contentHash,
+          promptFingerprints: stagePromptFingerprints(promptPin, false, promptProviders)
+        },
         previousArtifactPolicy: plan.previousArtifactPolicy,
         trigger,
         currentStage: "queued"
       });
       await runs.initializeStages(run.id, effectiveStages, ProcessingStages);
-      const artifactState = catalogMetadataOnly ? {} : await hierarchy.getArtifactState(sourceItemId, document.id,{current:stagePromptFingerprints(promptPin,false,promptProviders),shipped:legacyStagePromptFingerprints(promptProviders)});
-      if (effectiveStages.includes("sourceMatching") && artifactState.embedding
-        && !await createEmbeddingRepository(pool).hasSourceMatchingCoverage(sourceItemId,document.id)) artifactState.embedding = false;
-      for (const stage of ["conversion", "structureDetection", "structureReview", "materialization"] as const) {
-        if (effectiveStages.includes(stage)) await runs.completeStage(run.id, stage, { reused: true });
+      const artifactState = catalogMetadataOnly
+        ? {}
+        : await hierarchy.getArtifactState(sourceItemId, document.id, {
+            current: stagePromptFingerprints(promptPin, false, promptProviders),
+            shipped: legacyStagePromptFingerprints(promptProviders)
+          });
+      if (
+        effectiveStages.includes("sourceMatching") &&
+        artifactState.embedding &&
+        !(await createEmbeddingRepository(pool).hasSourceMatchingCoverage(
+          sourceItemId,
+          document.id
+        ))
+      )
+        artifactState.embedding = false;
+      for (const stage of [
+        "conversion",
+        "structureDetection",
+        "structureReview",
+        "materialization"
+      ] as const) {
+        if (effectiveStages.includes(stage))
+          await runs.completeStage(run.id, stage, { reused: true });
       }
-      if (!catalogMetadataOnly && !plan.forceRegeneration && plan.previousArtifactPolicy === "reuse_valid") {
+      if (
+        !catalogMetadataOnly &&
+        !plan.forceRegeneration &&
+        plan.previousArtifactPolicy === "reuse_valid"
+      ) {
         for (const stage of executableStages) {
-          if (effectiveStages.includes(stage) && (artifactState as Record<string,boolean|undefined>)[stage]
-            && canReuseArtifactStage(stage, aggregateHierarchyRoot)) {
+          if (
+            effectiveStages.includes(stage) &&
+            (artifactState as Record<string, boolean | undefined>)[stage] &&
+            canReuseArtifactStage(stage, aggregateHierarchyRoot)
+          ) {
             await runs.completeStage(run.id, stage, { reused: true });
           }
         }
       }
       if (effectiveStages.includes("chunking") && artifactState.chunking) {
-        await runs.completeStage(run.id, "chunking", { reused: true, reason: "same_document_revision" });
+        await runs.completeStage(run.id, "chunking", {
+          reused: true,
+          reason: "same_document_revision"
+        });
       }
       const refreshed = await runs.findById(run.id);
-      const pending = executableStages.filter((stage) =>
-        effectiveStages.includes(stage)
-        && (refreshed?.stagesCheckpoint[stage] as { status?: string } | undefined)?.status !== "completed"
+      const pending = executableStages.filter(
+        (stage) =>
+          effectiveStages.includes(stage) &&
+          (refreshed?.stagesCheckpoint[stage] as { status?: string } | undefined)?.status !==
+            "completed"
       );
       let jobId: string | null = null;
       if (pending.length > 0) {
         const job = await jobs.create({
           type: "ingestion",
-          payload: {promptPin,
+          payload: {
+            promptPin,
             ingestionRunId: run.id,
             batchId: batch.id,
             sourceItemId,
             documentId: document.id,
             markdown: processingMarkdown,
             effectiveStages,
-            ...(plan.forceRegeneration ? { regenerateSourceRelations:true } : {}),
+            ...(plan.forceRegeneration ? { regenerateSourceRelations: true } : {}),
             processingMode: catalogMetadataOnly ? catalogMetadataProcessingMode : "content"
           }
         });
@@ -307,22 +378,39 @@ export function buildCatalogMetadataMarkdown(source: {
     ? descriptor.creators.flatMap((creator) => {
         const value = asObject(creator);
         return typeof value.name === "string" && value.name.trim()
-          ? [{ name: value.name.trim(), ...(typeof value.role === "string" ? { role: value.role } : {}) }]
+          ? [
+              {
+                name: value.name.trim(),
+                ...(typeof value.role === "string" ? { role: value.role } : {})
+              }
+            ]
           : [];
       })
     : [];
-  const excluded = new Set(["type", "title", "subtitle", "creators", "provenance", "cover", "parentSourceItemId"]);
-  const metadata = Object.fromEntries(Object.entries(descriptor).filter(([key]) => !excluded.has(key)));
-  return renderPrompt("embedding.content.catalog",{catalog_metadata:{
-    sourceType: source.type,
-    title: source.title,
-    ...(source.subtitle ? { subtitle: source.subtitle } : {}),
-    creators,
-    language: source.language,
-    ...(source.summary ? { summary: source.summary } : {}),
-    ...(source.sourceUri ? { sourceUri: source.sourceUri } : {}),
-    metadata
-  }});
+  const excluded = new Set([
+    "type",
+    "title",
+    "subtitle",
+    "creators",
+    "provenance",
+    "cover",
+    "parentSourceItemId"
+  ]);
+  const metadata = Object.fromEntries(
+    Object.entries(descriptor).filter(([key]) => !excluded.has(key))
+  );
+  return renderPrompt("embedding.content.catalog", {
+    catalog_metadata: {
+      sourceType: source.type,
+      title: source.title,
+      ...(source.subtitle ? { subtitle: source.subtitle } : {}),
+      creators,
+      language: source.language,
+      ...(source.summary ? { summary: source.summary } : {}),
+      ...(source.sourceUri ? { sourceUri: source.sourceUri } : {}),
+      metadata
+    }
+  });
 }
 
 async function prepareCatalogMetadataDocument(
@@ -362,7 +450,7 @@ async function prepareCatalogMetadataDocument(
 
 function asObject(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
+    ? (value as Record<string, unknown>)
     : {};
 }
 
@@ -376,14 +464,18 @@ export function structureBoundaries(
     endPage?: number | undefined;
   }>
 ) {
-  const boundaries = new Map<number, { offset: number; label: string; kind: "heading" | "division" | "page"; page?: number }>();
+  const boundaries = new Map<
+    number,
+    { offset: number; label: string; kind: "heading" | "division" | "page"; page?: number }
+  >();
   for (const match of markdown.matchAll(/^(#{1,6})\s+(.+)$/gm)) {
     boundaries.set(match.index, { offset: match.index, label: match[2]!.trim(), kind: "heading" });
   }
   for (const division of divisions) {
     if (division.markdownStart !== undefined && !boundaries.has(division.markdownStart)) {
       boundaries.set(division.markdownStart, {
-        offset: division.markdownStart, label: division.title,
+        offset: division.markdownStart,
+        label: division.title,
         kind: division.startPage ? "page" : "division",
         ...(division.startPage ? { page: division.startPage } : {})
       });
@@ -398,6 +490,10 @@ export function structureBoundaries(
     }
   }
   boundaries.set(0, { offset: 0, label: "Document start", kind: "division" });
-  boundaries.set(markdown.length, { offset: markdown.length, label: "Document end", kind: "division" });
+  boundaries.set(markdown.length, {
+    offset: markdown.length,
+    label: "Document end",
+    kind: "division"
+  });
   return [...boundaries.values()].sort((left, right) => left.offset - right.offset);
 }

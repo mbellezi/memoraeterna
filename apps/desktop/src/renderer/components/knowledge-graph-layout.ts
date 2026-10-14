@@ -1,4 +1,11 @@
-import { graphLayoutCommandSchema, graphLayoutEventSchema, type GraphForceSettings, type GraphLayoutCommand, type GraphLayoutEdge, type GraphLayoutNode } from "./knowledge-graph-layout-contract";
+import {
+  graphLayoutCommandSchema,
+  graphLayoutEventSchema,
+  type GraphForceSettings,
+  type GraphLayoutCommand,
+  type GraphLayoutEdge,
+  type GraphLayoutNode
+} from "./knowledge-graph-layout-contract";
 
 /** Accepts ongoing network motion while protecting the pointer-controlled node from stale snapshots. */
 export class KnowledgeGraphLayout {
@@ -17,16 +24,29 @@ export class KnowledgeGraphLayout {
     onError: () => void
   ) {
     this.indices = new Map(nodes.map((node, index) => [node.id, index]));
-    this.worker = new Worker(new URL("./knowledge-graph-layout.worker.ts", import.meta.url), { type: "module" });
-    const fail = () => { if (!this.disposed) { this.kill(); onError(); } };
+    this.worker = new Worker(new URL("./knowledge-graph-layout.worker.ts", import.meta.url), {
+      type: "module"
+    });
+    const fail = () => {
+      if (!this.disposed) {
+        this.kill();
+        onError();
+      }
+    };
     this.worker.onerror = fail;
     this.worker.onmessageerror = fail;
     this.worker.onmessage = (event: MessageEvent<unknown>) => {
       if (this.disposed) return;
       const parsed = graphLayoutEventSchema.safeParse(event.data);
-      if (!parsed.success || parsed.data.type === "error") { fail(); return; }
+      if (!parsed.success || parsed.data.type === "error") {
+        fail();
+        return;
+      }
       const update = parsed.data;
-      if (update.positions.length !== nodes.length * 2) { fail(); return; }
+      if (update.positions.length !== nodes.length * 2) {
+        fail();
+        return;
+      }
       if (this.pointer) {
         if (!this.pointer.released || update.sequence < this.sequence) {
           update.positions[this.pointer.index * 2] = this.pointer.x;
@@ -42,8 +62,12 @@ export class KnowledgeGraphLayout {
     if (!this.disposed) this.worker.postMessage(graphLayoutCommandSchema.parse(message));
   }
 
-  configure(settings: GraphForceSettings) { this.send({ type: "configure", settings }); }
-  reheat() { this.send({ type: "reheat" }); }
+  configure(settings: GraphForceSettings) {
+    this.send({ type: "configure", settings });
+  }
+  reheat() {
+    this.send({ type: "reheat" });
+  }
   drag(id: string, x: number, y: number, release: boolean) {
     const index = this.indices.get(id);
     if (index === undefined) return;

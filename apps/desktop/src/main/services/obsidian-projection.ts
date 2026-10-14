@@ -1,10 +1,7 @@
 import { posix } from "node:path";
 
 import { translate, type MessageKey } from "@app/i18n";
-import {
-  parseObsidianMarkdown,
-  type ObsidianManagedFrontmatter
-} from "@app/integration-contracts";
+import { parseObsidianMarkdown, type ObsidianManagedFrontmatter } from "@app/integration-contracts";
 
 const relationsStartMarker = "<!-- memora:relations:start -->";
 const relationsEndMarker = "<!-- memora:relations:end -->";
@@ -20,8 +17,8 @@ const relationTypeMessageKeys: Readonly<Record<string, MessageKey>> = {
 };
 
 export interface ObsidianRelatedNote {
-  noteId?:string;
-  appSourceId?:string;
+  noteId?: string;
+  appSourceId?: string;
   relationType: string;
   title: string;
   target: string;
@@ -55,7 +52,9 @@ export interface RenderedObsidianProjection {
   markdown: string;
 }
 
-export function renderObsidianProjection(input: ObsidianProjectionInput): RenderedObsidianProjection {
+export function renderObsidianProjection(
+  input: ObsidianProjectionInput
+): RenderedObsidianProjection {
   const frontmatter: ObsidianManagedFrontmatter = {
     memoraId: input.memoraId,
     memoraType: input.memoraType,
@@ -96,8 +95,15 @@ export function appendObsidianRelations(
       const key = relationTypeMessageKeys[relationType];
       const heading = key ? translate(locale, key) : relationType;
       const links = entries
-        .sort((left, right) => left.title.localeCompare(right.title) || left.target.localeCompare(right.target))
-        .map((entry) => entry.appSourceId ? `- [${escapeWikilink(entry.title)}](memora://open/source/${entry.appSourceId})` : `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`);
+        .sort(
+          (left, right) =>
+            left.title.localeCompare(right.title) || left.target.localeCompare(right.target)
+        )
+        .map((entry) =>
+          entry.appSourceId
+            ? `- [${escapeWikilink(entry.title)}](memora://open/source/${entry.appSourceId})`
+            : `- [[${escapeWikilink(entry.target)}|${escapeWikilink(entry.title)}]]`
+        );
       return `### ${heading}\n\n${links.join("\n")}`;
     });
   return [
@@ -117,13 +123,19 @@ export function stripObsidianRelations(bodyMarkdown: string): string {
   return `${bodyMarkdown.slice(0, start)}${bodyMarkdown.slice(end + relationsEndMarker.length)}`.trim();
 }
 
-export function collisionFileName(baseFileName: string, date: Date, attempt: number, memoraId: string): string {
+export function collisionFileName(
+  baseFileName: string,
+  date: Date,
+  attempt: number,
+  memoraId: string
+): string {
   if (attempt === 0) return baseFileName;
   const extension = posix.extname(baseFileName);
   const stem = baseFileName.slice(0, -extension.length);
   const dateSuffix = compactDate(date);
   if (attempt === 1) return `${stem}--${dateSuffix}${extension}`;
-  if (attempt <= 99) return `${stem}--${dateSuffix}-${String(attempt).padStart(2, "0")}${extension}`;
+  if (attempt <= 99)
+    return `${stem}--${dateSuffix}-${String(attempt).padStart(2, "0")}${extension}`;
   return `${stem}--${memoraId.replace(/-/g, "").slice(0, 6).toUpperCase()}${extension}`;
 }
 
@@ -140,11 +152,21 @@ function serializeFrontmatter(frontmatter: ObsidianManagedFrontmatter): string {
     "---",
     `memora_id: ${yamlString(frontmatter.memoraId)}`,
     `memora_type: ${yamlString(frontmatter.memoraType)}`,
-    ...(frontmatter.memoraSourceId ? [`memora_source_id: ${yamlString(frontmatter.memoraSourceId)}`] : []),
-    ...(frontmatter.memoraDocumentId ? [`memora_document_id: ${yamlString(frontmatter.memoraDocumentId)}`] : []),
-    ...(frontmatter.memoraRootSourceId ? [`memora_root_source_id: ${yamlString(frontmatter.memoraRootSourceId)}`] : []),
-    ...(frontmatter.memoraDivisionId ? [`memora_division_id: ${yamlString(frontmatter.memoraDivisionId)}`] : []),
-    ...(frontmatter.memoraDocumentRevisionId ? [`memora_document_revision_id: ${yamlString(frontmatter.memoraDocumentRevisionId)}`] : []),
+    ...(frontmatter.memoraSourceId
+      ? [`memora_source_id: ${yamlString(frontmatter.memoraSourceId)}`]
+      : []),
+    ...(frontmatter.memoraDocumentId
+      ? [`memora_document_id: ${yamlString(frontmatter.memoraDocumentId)}`]
+      : []),
+    ...(frontmatter.memoraRootSourceId
+      ? [`memora_root_source_id: ${yamlString(frontmatter.memoraRootSourceId)}`]
+      : []),
+    ...(frontmatter.memoraDivisionId
+      ? [`memora_division_id: ${yamlString(frontmatter.memoraDivisionId)}`]
+      : []),
+    ...(frontmatter.memoraDocumentRevisionId
+      ? [`memora_document_revision_id: ${yamlString(frontmatter.memoraDocumentRevisionId)}`]
+      : []),
     "memora_managed: true",
     `memora_sync_version: ${frontmatter.memoraSyncVersion}`,
     `memora_content_hash: ${yamlString(frontmatter.memoraContentHash)}`,
@@ -164,28 +186,43 @@ function projectionDirectory(input: ObsidianProjectionInput): string {
   }
   if (input.sourceType === "Video") return posix.join(root, "Sources", "Videos", year, month);
   if (input.sourceType === "Book") return posix.join(root, "Books", slugify(input.title));
-  if (input.sourceType === "BookChapter") return posix.join(root, "Books", slugify(input.rootTitle ?? "book"), "Chapters");
-  if (input.sourceType === "PeriodicalIssue") return posix.join(root, "Periodicals", slugify(input.title));
-  if (input.sourceType === "StandaloneArticle" && input.rootTitle) return posix.join(root, "Periodicals", slugify(input.rootTitle), "Articles");
+  if (input.sourceType === "BookChapter")
+    return posix.join(root, "Books", slugify(input.rootTitle ?? "book"), "Chapters");
+  if (input.sourceType === "PeriodicalIssue")
+    return posix.join(root, "Periodicals", slugify(input.title));
+  if (input.sourceType === "StandaloneArticle" && input.rootTitle)
+    return posix.join(root, "Periodicals", slugify(input.rootTitle), "Articles");
   if (input.sourceType === "AcademicPaper") return posix.join(root, "Papers", slugify(input.title));
-  if (input.sourceType === "DocumentSection") return posix.join(root, "Papers", slugify(input.rootTitle ?? "paper"), "Sections");
+  if (input.sourceType === "DocumentSection")
+    return posix.join(root, "Papers", slugify(input.rootTitle ?? "paper"), "Sections");
   if (input.sourceType === "DailyNote") return posix.join(root, "Sources", "Daily", year, month);
   if (input.sourceType === "PersonalNote") return posix.join(root, "Sources", "Notes");
   return posix.join(root, "Sources", "Documents");
 }
 
 export function slugify(value: string): string {
-  const slug = value.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120);
+  const slug = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120);
   return slug || "untitled";
 }
 
 function sanitizeSegment(value: string): string {
-  return value.replace(/[\\/:*?"<>|]/g, "-").replace(/^\.+$/, "").trim();
+  return value
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/^\.+$/, "")
+    .trim();
 }
 
 function sanitizeManagedRoot(value: string): string {
-  const segments = value.split(/[\\/]+/).map(sanitizeSegment).filter(Boolean);
+  const segments = value
+    .split(/[\\/]+/)
+    .map(sanitizeSegment)
+    .filter(Boolean);
   return segments.length > 0 ? posix.join(...segments) : "Memora";
 }
 

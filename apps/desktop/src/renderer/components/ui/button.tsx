@@ -7,12 +7,19 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variants = {
   primary: "border-accent bg-accent text-accent-foreground hover:brightness-95",
-  secondary: "border-border bg-surface text-foreground hover:bg-soft aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:border-accent/40",
-  ghost: "border-transparent bg-transparent text-muted-foreground hover:bg-soft hover:text-foreground",
+  secondary:
+    "border-border bg-surface text-foreground hover:bg-soft aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:border-accent/40",
+  ghost:
+    "border-transparent bg-transparent text-muted-foreground hover:bg-soft hover:text-foreground",
   danger: "border-rose-700 bg-rose-700 text-white hover:bg-rose-800"
 };
 
-export function Button({ className, type = "button", variant = type === "submit" ? "primary" : "secondary", ...props }: ButtonProps) {
+export function Button({
+  className,
+  type = "button",
+  variant = type === "submit" ? "primary" : "secondary",
+  ...props
+}: ButtonProps) {
   return (
     <button
       type={type}

@@ -24,7 +24,10 @@ describe("conversion", () => {
   });
 
   it("converts quoted CSV to a Markdown table", () => {
-    const result = convertCsv({ data: encoder.encode('name,note\nAda,"one, two"'), fileName: "data.csv" });
+    const result = convertCsv({
+      data: encoder.encode('name,note\nAda,"one, two"'),
+      fileName: "data.csv"
+    });
     expect(result.markdown).toContain("| Ada | one, two |");
   });
 
@@ -47,7 +50,9 @@ describe("conversion", () => {
 
   it("extracts a rendered web article with Defuddle", async () => {
     const result = await convertWebHtml({
-      data: encoder.encode("<html><head><title>Article</title></head><body><article><h1>Article</h1><p>Main evidence with enough useful content for extraction.</p></article></body></html>"),
+      data: encoder.encode(
+        "<html><head><title>Article</title></head><body><article><h1>Article</h1><p>Main evidence with enough useful content for extraction.</p></article></body></html>"
+      ),
       fileName: "article.html",
       mimeType: "text/html",
       sourceUrl: "https://example.test/article"
@@ -59,16 +64,15 @@ describe("conversion", () => {
   it("validates Docling JSONL responses and handles crash, timeout and cancellation", async () => {
     const client = new DoclingClient({
       executablePath: process.execPath,
-      sidecarScriptPath: fileURLToPath(new URL("./test-fixtures/fake-docling.mjs", import.meta.url)),
+      sidecarScriptPath: fileURLToPath(
+        new URL("./test-fixtures/fake-docling.mjs", import.meta.url)
+      ),
       timeoutMs: 50
     });
     const progress: import("./types.js").ConversionProgress[] = [];
-    await expect(client.convert(
-      "success.pdf",
-      "standard",
-      undefined,
-      (event) => progress.push(event)
-    )).resolves.toMatchObject({ engine: "docling" });
+    await expect(
+      client.convert("success.pdf", "standard", undefined, (event) => progress.push(event))
+    ).resolves.toMatchObject({ engine: "docling" });
     expect(progress).toEqual([
       expect.objectContaining({ stage: "loading_engine", progress: 0.05 }),
       expect.objectContaining({ stage: "processing_pages", completedPages: 2, totalPages: 4 }),
@@ -84,21 +88,25 @@ describe("conversion", () => {
 
     const limitedClient = new DoclingClient({
       executablePath: process.execPath,
-      sidecarScriptPath: fileURLToPath(new URL("./test-fixtures/fake-docling.mjs", import.meta.url)),
+      sidecarScriptPath: fileURLToPath(
+        new URL("./test-fixtures/fake-docling.mjs", import.meta.url)
+      ),
       maxOutputBytes: 128
     });
     await expect(limitedClient.convert("output-limit.pdf")).rejects.toThrow("output-limit");
   });
 
   it("rejects inconsistent Docling page progress", () => {
-    expect(() => doclingProgressSchema.parse({
-      protocolVersion: 3,
-      requestId: "00000000-0000-4000-8000-000000000001",
-      type: "progress",
-      stage: "processing_pages",
-      progress: 0.5,
-      completedPages: 5,
-      totalPages: 4
-    })).toThrow();
+    expect(() =>
+      doclingProgressSchema.parse({
+        protocolVersion: 3,
+        requestId: "00000000-0000-4000-8000-000000000001",
+        type: "progress",
+        stage: "processing_pages",
+        progress: 0.5,
+        completedPages: 5,
+        totalPages: 4
+      })
+    ).toThrow();
   });
 });

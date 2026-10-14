@@ -45,7 +45,9 @@ console.info(
   [
     `Wrote ${relative(rootEnvPath)}`,
     `Wrote ${relative(desktopEnvPath)}`,
-    force ? "Random database credentials were regenerated." : "Existing database credentials were preserved when present."
+    force
+      ? "Random database credentials were regenerated."
+      : "Existing database credentials were preserved when present."
   ].join("\n")
 );
 

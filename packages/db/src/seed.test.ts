@@ -8,7 +8,9 @@ import { applyBaselineSeedIfNeeded, splitSqlStatements, verifyBaselineSeed } fro
 class FakePool {
   readonly queries: Array<{ text: string; values: readonly unknown[] }> = [];
 
-  constructor(private readonly options: { hasMigrationHistory?: boolean; isEmpty?: boolean } = {}) {}
+  constructor(
+    private readonly options: { hasMigrationHistory?: boolean; isEmpty?: boolean } = {}
+  ) {}
 
   async query<T extends QueryResultRow = QueryResultRow>(
     text: string,
@@ -17,7 +19,9 @@ class FakePool {
     this.queries.push({ text, values });
 
     if (text.includes("to_regclass")) {
-      return createResult([{ migrationTable: this.options.hasMigrationHistory ? "drizzle.__drizzle_migrations" : null }]);
+      return createResult([
+        { migrationTable: this.options.hasMigrationHistory ? "drizzle.__drizzle_migrations" : null }
+      ]);
     }
 
     if (text.includes("from drizzle.__drizzle_migrations")) {
@@ -122,31 +126,31 @@ describe("baseline seed", () => {
         "0015_chunky_marvel_apes",
         "0016_awesome_dragon_man",
         "0017_wooden_thunderbird",
-      "0018_fair_golden_guardian",
-      "0019_vengeful_wasp",
-      "0020_light_stick",
-      "0021_small_supernaut",
-      "0022_even_alex_wilder",
-      "0023_graceful_carnage",
-      "0024_awesome_mole_man",
-      "0025_clean_the_spike",
-      "0026_broad_celestials",
-      "0027_curvy_doomsday",
-      "0028_elite_preak",
-      "0029_slow_valeria_richards",
-      "0030_damp_phil_sheldon",
-      "0031_luxuriant_nova",
-      "0032_faulty_leech",
-      "0033_wakeful_kulan_gath",
-      "0034_wiki_impact_expression_fix",
-      "0035_acoustic_nemesis",
-      "0036_hot_scarlet_witch",
-      "0037_flawless_norrin_radd",
-      "0038_investigation_descendant_impacts",
-      "0039_sturdy_lila_cheney",
-      "0040_mysterious_talon",
-      "0041_knowledge_note_ownership",
-      "0042_wiki_editorial_review_impacts"
+        "0018_fair_golden_guardian",
+        "0019_vengeful_wasp",
+        "0020_light_stick",
+        "0021_small_supernaut",
+        "0022_even_alex_wilder",
+        "0023_graceful_carnage",
+        "0024_awesome_mole_man",
+        "0025_clean_the_spike",
+        "0026_broad_celestials",
+        "0027_curvy_doomsday",
+        "0028_elite_preak",
+        "0029_slow_valeria_richards",
+        "0030_damp_phil_sheldon",
+        "0031_luxuriant_nova",
+        "0032_faulty_leech",
+        "0033_wakeful_kulan_gath",
+        "0034_wiki_impact_expression_fix",
+        "0035_acoustic_nemesis",
+        "0036_hot_scarlet_witch",
+        "0037_flawless_norrin_radd",
+        "0038_investigation_descendant_impacts",
+        "0039_sturdy_lila_cheney",
+        "0040_mysterious_talon",
+        "0041_knowledge_note_ownership",
+        "0042_wiki_editorial_review_impacts"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

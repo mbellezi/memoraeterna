@@ -12,14 +12,21 @@ const encoder = new TextEncoder();
 
 describe("metadata extraction", () => {
   it("keeps identifiers before the user chooses a source type", async () => {
-    const draft = await extractFileMetadata({ sourceType: "GenericDocument", fileName: "paper.md", conversion: converted("# Paper\n\nDOI: 10.5555/example.42") });
+    const draft = await extractFileMetadata({
+      sourceType: "GenericDocument",
+      fileName: "paper.md",
+      conversion: converted("# Paper\n\nDOI: 10.5555/example.42")
+    });
     expect(draft.values.doi).toBe("10.5555/example.42");
     expect(draft.provenance.doi?.source).toBe("extracted");
   });
   it("extracts EPUB OPF metadata, ISBN and cover", async () => {
     const epub = zipSync({
-      "META-INF/container.xml": encoder.encode(`<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/package.opf"/></rootfiles></container>`),
-      "OEBPS/package.opf": encoder.encode(`<?xml version="1.0"?><package xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><metadata>
+      "META-INF/container.xml": encoder.encode(
+        `<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/package.opf"/></rootfiles></container>`
+      ),
+      "OEBPS/package.opf":
+        encoder.encode(`<?xml version="1.0"?><package xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><metadata>
         <dc:title>Precise Book</dc:title><dc:creator opf:role="aut">Ada Author</dc:creator>
         <dc:publisher>Local Press</dc:publisher><dc:language>pt-BR</dc:language>
         <dc:identifier>0-306-40615-2</dc:identifier><dc:subject>Knowledge</dc:subject>
@@ -48,7 +55,9 @@ describe("metadata extraction", () => {
   });
 
   it("uses PDF page heuristics when Info metadata is unavailable", async () => {
-    const conversion = converted(`# Reliable Paper\n\nISBN 978-0-306-40615-7\n\nDOI: 10.5555/example.42`);
+    const conversion = converted(
+      `# Reliable Paper\n\nISBN 978-0-306-40615-7\n\nDOI: 10.5555/example.42`
+    );
     const draft = await extractFileMetadata({
       sourceType: "AcademicPaper",
       data: new Uint8Array([1, 2, 3]),
@@ -101,21 +110,24 @@ function converted(markdown: string): MarkdownConversionResult {
     status: "converted",
     markdown,
     contentHash: "a".repeat(64),
-    blocks: [{
-      id: "heading-1",
-      type: "section_header",
-      text: "Reliable Paper",
-      page: 1,
-      markdownStart: 0,
-      markdownEnd: 16
-    }, {
-      id: "text-1",
-      type: "text",
-      text: markdown,
-      page: 1,
-      markdownStart: 0,
-      markdownEnd: markdown.length
-    }],
+    blocks: [
+      {
+        id: "heading-1",
+        type: "section_header",
+        text: "Reliable Paper",
+        page: 1,
+        markdownStart: 0,
+        markdownEnd: 16
+      },
+      {
+        id: "text-1",
+        type: "text",
+        text: markdown,
+        page: 1,
+        markdownStart: 0,
+        markdownEnd: markdown.length
+      }
+    ],
     assets: [],
     engine: "docling",
     engineVersion: "test",

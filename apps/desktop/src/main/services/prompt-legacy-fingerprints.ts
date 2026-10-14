@@ -1,5 +1,5 @@
 // Frozen A0-compatible effective input formats. Never regenerate from newer shipped defaults.
-export const legacyPromptEntryHashes:Record<string,string> = {
+export const legacyPromptEntryHashes: Record<string, string> = {
   "summary.short": "77f801f2f83a2b5a5fd936c2c91542944b1cf8f6e91a5f0792c7508d4f926c58",
   "summary.partial": "9f4dc187f2cd6eadb5a9b2d944ec2a82fd15621987170e5a97a62479c36b00fa",
   "summary.reduce": "1dcef4b0a0cef3889567bf92c9f65a8de60c12057bb10652fbd5f860f6347265",
@@ -12,29 +12,36 @@ export const legacyPromptEntryHashes:Record<string,string> = {
   "graph.catalog_metadata": "a8b9e2c0bf8f97ec5ed02a5b29023ae3bc949da164ab3a3ec5d4bf6dd1f6dc0c",
   "graph.atomic_notes.repair": "eaeb55115f7b992467cd0103c9d3981a5e99e3a08c5a5aa4eb29e12086a09b4c",
   "graph.source_chunks.repair": "eaeb55115f7b992467cd0103c9d3981a5e99e3a08c5a5aa4eb29e12086a09b4c",
-  "graph.catalog_metadata.repair": "eaeb55115f7b992467cd0103c9d3981a5e99e3a08c5a5aa4eb29e12086a09b4c",
+  "graph.catalog_metadata.repair":
+    "eaeb55115f7b992467cd0103c9d3981a5e99e3a08c5a5aa4eb29e12086a09b4c",
   "graph.relation_labels": "32044be101b9f77689156150a29d61131fd7de631fc70661bc4f8a49d941241a",
   "graph.relation_identity": "95e6836082525b0e99888fec701a1fdd183b6820d28fc75ddb7234e52f47a86b",
   "graph.entity_identity": "01c1ce4cd34137b8cee401215dea340f736f763574fb1c1a77829e480d6d63a4",
   "sources.match": "316ef1cab46b68fed0ee4cc4ffe8cb98f9b0c878065575569a12bf40886f20c7",
   "consultation.answer": "7978851cd4a41e70087991c7c38ca595cae957c4db7fc27f3f43616808ea2d64",
-  "organization.legacy_synthesis": "da1e677308ca965b2853db3c22117b67a2321114a765591266cd2d4e9d285dda",
+  "organization.legacy_synthesis":
+    "da1e677308ca965b2853db3c22117b67a2321114a765591266cd2d4e9d285dda",
   "maintenance.weekly": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
   "maintenance.monthly": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
   "maintenance.cleanup": "ed95bcd3095c09ac9f3cdde4076e54f46a9cd24740e6b45cddf1d0ba562e09e1",
   "shared.output_language": "17d56c5b74d22f87bbc854c93ee87f36edbc8b004cba6d9b6a50f8854c7806a3",
-  "shared.codex_adapter_instruction": "10acd87620579a6128e8b83794a4fec20b81b5a2fc70c9e84728bdae80c0814f",
+  "shared.codex_adapter_instruction":
+    "10acd87620579a6128e8b83794a4fec20b81b5a2fc70c9e84728bdae80c0814f",
   "embedding.query_instruction": "d5868833064318813e744e2732eb9032130e42315296a66c6a4af0622c2a9a88",
   "embedding.query": "cfbcef1df27c038a7669b12047219c21f851f338938e99e9672d94ebf4c18677",
   "embedding.content.chunk": "eae790c535b1fcec4d4764cd59ae395ed799fd02b7dd635d4d4a0dac18dd0e5d",
   "embedding.content.note": "f733542c3efe795fdc89de189e57d45a2809cd82a74d1eb30aad87b78e878964",
   "embedding.content.entity": "efb2340b794245406f203931688672053f5512c8b287c747709ba790093e84c5",
   "embedding.content.relation": "285557812ffeacb4cb5f419d159be3de5478667e413ce138de434132c7a4ab5a",
-  "diagnostics.local_generation": "dea868bc8f6efbe36dcd6b78109925c5239e43d11416ad3dee47973bcea5943f",
+  "diagnostics.local_generation":
+    "dea868bc8f6efbe36dcd6b78109925c5239e43d11416ad3dee47973bcea5943f",
   "diagnostics.local_embedding": "b73f4b272733dc2daa4270528e99e755bd7712120824626c9bc07bbba9bc27a8",
-  "graph.relation_identity.repair": "32583f7165ad9e08c508132d6af88ac0b7b5ec57a04ae8f21148235c0abf2d0a",
-  "graph.entity_identity.repair": "b28be564288ebf39721721e2da5222e2785f282a745fa8ca4db6e976e5f90eea",
-  "graph.relation_labels.repair": "fe4785fdfbba033b9cdca2eb9e2b8d3a9f239393672bd10dca3afe32b3b3af1e",
+  "graph.relation_identity.repair":
+    "32583f7165ad9e08c508132d6af88ac0b7b5ec57a04ae8f21148235c0abf2d0a",
+  "graph.entity_identity.repair":
+    "b28be564288ebf39721721e2da5222e2785f282a745fa8ca4db6e976e5f90eea",
+  "graph.relation_labels.repair":
+    "fe4785fdfbba033b9cdca2eb9e2b8d3a9f239393672bd10dca3afe32b3b3af1e",
   "consultation.repair": "f98b4ee1838bd1413fb7de825c3d710a6d9ac6089e1b5e1057b337cb5901768b",
   "organization.repair": "7e74d254f996460fa605f298ec0fde19337b9ca9e36a8b67c0922cfdfbca95da",
   "organization.state.discover": "8796666cbb0dfa59f4e6cde525fdb781b171d48d7f8a0041a57ce60a7d341ff5",
@@ -42,7 +49,8 @@ export const legacyPromptEntryHashes:Record<string,string> = {
   "organization.state.propose": "0b63b01c756575e4fb80714759fd0d9bc391a568a83aab2d942a3517e35da9cd",
   "sources.repair": "c0705900bd686dae66dcfc670a7f1043a70bdc1976c6c504a110eee255f0df5b",
   "sources.validation.default": "240a09a976fe0da1a6b51e0d169632eacbbfd371f64a6750ec48ae31cc47c956",
-  "sources.validation.same_root": "e62f1edee33e828d48b72100b6cfa03328b9ef1eb8df2086562705e412ed31dd",
+  "sources.validation.same_root":
+    "e62f1edee33e828d48b72100b6cfa03328b9ef1eb8df2086562705e412ed31dd",
   "shared.relation_language": "2f522b95ec0b99ac1da708c50e07b4279931b2aef98f787b82233cb5b6e40f90",
   "embedding.content.catalog": "6a1b5ee967a0a546677614a0401dd704feaf7cf0d2cd8a5c70af0e4a61d1c3db",
   "organization.guidance": "66b2cdb1b7d0eeda582e87b1273ea735c541d09aaa357f10ca25320474e1a371",
@@ -51,8 +59,11 @@ export const legacyPromptEntryHashes:Record<string,string> = {
   "consultation.advanced": "342a520e815eee7cc0d1314c50c4611962d621b957106070199787b4d6dd79c3",
   "maintenance.weekly.guidance": "22b31809de48a35b912329eb00656b210087cf39c365ae1578f5dc8763ac1aaa",
   "maintenance.weekly.advanced": "eb8ec7e08396e63764378ee6414aa16c8c24dda580bb7ccbe984093686c3021d",
-  "maintenance.monthly.guidance": "00f9891b35eb442f7bf0f0bb12712cf3e4c07b909fed0cf5ce86dad216062090",
-  "maintenance.monthly.advanced": "a37a67a7103ee61b2f99167660e03553ea0afc5ff3b92d4806207904ee36544b",
-  "maintenance.cleanup.guidance": "53c001168bc402934e55f445c5a7357acb479b8203fa01b184bb93b9adc096f8",
+  "maintenance.monthly.guidance":
+    "00f9891b35eb442f7bf0f0bb12712cf3e4c07b909fed0cf5ce86dad216062090",
+  "maintenance.monthly.advanced":
+    "a37a67a7103ee61b2f99167660e03553ea0afc5ff3b92d4806207904ee36544b",
+  "maintenance.cleanup.guidance":
+    "53c001168bc402934e55f445c5a7357acb479b8203fa01b184bb93b9adc096f8",
   "maintenance.cleanup.advanced": "85a5f0a372984ef0ac27c5424979b4837239fd7cd49c41e9f3f5c1b489069be8"
 };

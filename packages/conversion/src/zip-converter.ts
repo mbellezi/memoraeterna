@@ -29,15 +29,21 @@ export async function convertZip(
   const parts: string[] = [];
   const warnings = [];
   for (const name of names) {
-    if (name.startsWith("/") || name.split(/[\\/]/).includes("..")) throw new Error("ZIP path traversal rejected.");
-    if (name.split(/[\\/]/).filter(Boolean).length > limits.maxDepth) throw new Error("ZIP depth limit exceeded.");
+    if (name.startsWith("/") || name.split(/[\\/]/).includes(".."))
+      throw new Error("ZIP path traversal rejected.");
+    if (name.split(/[\\/]/).filter(Boolean).length > limits.maxDepth)
+      throw new Error("ZIP depth limit exceeded.");
     const data = entries[name];
     if (!data || name.endsWith("/")) continue;
     if (data.byteLength > limits.maxEntryBytes) throw new Error("ZIP entry size limit exceeded.");
     totalBytes += data.byteLength;
     if (totalBytes > limits.maxTotalBytes) throw new Error("ZIP total size limit exceeded.");
     try {
-      const converted = await convertEntry({ data, fileName: name, ...(input.profile ? { profile: input.profile } : {}) });
+      const converted = await convertEntry({
+        data,
+        fileName: name,
+        ...(input.profile ? { profile: input.profile } : {})
+      });
       parts.push(`# ${name}\n\n${converted.markdown}`);
       warnings.push(...converted.warnings);
     } catch {

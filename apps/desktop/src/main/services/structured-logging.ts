@@ -22,16 +22,20 @@ export function logStructuredError(
 ): void {
   if (!logger) return;
   const fields = Object.fromEntries(
-    Object.entries(context).filter((entry): entry is [string, string | null] => entry[1] !== undefined)
+    Object.entries(context).filter(
+      (entry): entry is [string, string | null] => entry[1] !== undefined
+    )
   );
-  logger.error(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    level: "error",
-    event,
-    ...fields,
-    errorType: safeToken(error instanceof Error ? error.name : "UnknownError", "UnknownError"),
-    errorCode: safeErrorCode(error, fallbackErrorCode)
-  }));
+  logger.error(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: "error",
+      event,
+      ...fields,
+      errorType: safeToken(error instanceof Error ? error.name : "UnknownError", "UnknownError"),
+      errorCode: safeErrorCode(error, fallbackErrorCode)
+    })
+  );
 }
 
 function safeErrorCode(error: unknown, fallback: string): string {

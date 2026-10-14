@@ -71,10 +71,16 @@ export type IntegrationHandshakeResponse = z.infer<typeof integrationHandshakeRe
 const requestIdSchema = z.string().uuid();
 const metadataSchema = z.record(z.string(), z.unknown());
 const sha256Schema = z.string().regex(/^(?:sha256:)?[a-f0-9]{64}$/i);
-const relativePathSchema = z.string().trim().min(1).max(1024).refine(
-  (path) => !path.startsWith("/") && !path.startsWith("\\") && !/(^|[\\/])\.\.([\\/]|$)/.test(path),
-  "Path must be relative and cannot traverse parent directories."
-);
+const relativePathSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1024)
+  .refine(
+    (path) =>
+      !path.startsWith("/") && !path.startsWith("\\") && !/(^|[\\/])\.\.([\\/]|$)/.test(path),
+    "Path must be relative and cannot traverse parent directories."
+  );
 
 const captureBaseShape = {
   requestId: requestIdSchema,
@@ -121,7 +127,14 @@ export const captureYouTubeVideoRequestSchema = z
   .strict();
 export type CaptureYouTubeVideoRequest = z.infer<typeof captureYouTubeVideoRequestSchema>;
 
-export const obsidianMemoraTypeSchema = z.enum(["source_item", "atomic_note", "wiki_page", "wiki_index", "source_reference", "source_relation"]);
+export const obsidianMemoraTypeSchema = z.enum([
+  "source_item",
+  "atomic_note",
+  "wiki_page",
+  "wiki_index",
+  "source_reference",
+  "source_relation"
+]);
 export const obsidianManagedFrontmatterSchema = z
   .object({
     memoraId: z.string().uuid(),
@@ -133,7 +146,10 @@ export const obsidianManagedFrontmatterSchema = z
     memoraDocumentRevisionId: z.string().uuid().optional(),
     memoraWikiSchema: z.union([z.literal(1), z.literal(2)]).optional(),
     memoraLayout: z.literal(2).optional(),
-    memoraLinkMap:z.array(z.object({rendered:z.string().max(2000),canonical:z.string().max(2000)}).strict()).max(1000).optional(),
+    memoraLinkMap: z
+      .array(z.object({ rendered: z.string().max(2000), canonical: z.string().max(2000) }).strict())
+      .max(1000)
+      .optional(),
     memoraLayoutLanguage: z.enum(["en", "pt-BR", "it", "fr", "es"]).optional(),
     memoraRevisionId: z.string().min(1).optional(),
     memoraManaged: z.literal(true),
@@ -279,7 +295,9 @@ export function normalizeIntegrationError(error: unknown): IntegrationError {
       code: "invalid_request",
       messageKey: "integrations.errors.invalidRequest",
       retryable: false,
-      details: { issues: error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code })) }
+      details: {
+        issues: error.issues.map((issue) => ({ path: issue.path.join("."), code: issue.code }))
+      }
     };
   }
   return {

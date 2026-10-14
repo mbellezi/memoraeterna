@@ -22,7 +22,8 @@ export class AssetStorageService {
     basePath: string;
     storageBase: StoredAsset["storageBase"];
   }): Promise<StoredAsset> {
-    if (input.sourcePath && input.data === undefined) return this.storeFromPath(input.sourcePath, input);
+    if (input.sourcePath && input.data === undefined)
+      return this.storeFromPath(input.sourcePath, input);
     const data = input.data ?? (input.sourcePath ? await readFile(input.sourcePath) : null);
     if (!data) throw new Error("Asset storage requires data or a source path.");
     const hash = createHash("sha256").update(data).digest("hex");
@@ -47,27 +48,55 @@ export class AssetStorageService {
     };
   }
 
-  private async storeFromPath(sourcePath: string, input: {
-    originalFileName: string; basePath: string; storageBase: StoredAsset["storageBase"];
-  }): Promise<StoredAsset> {
+  private async storeFromPath(
+    sourcePath: string,
+    input: {
+      originalFileName: string;
+      basePath: string;
+      storageBase: StoredAsset["storageBase"];
+    }
+  ): Promise<StoredAsset> {
     const incoming = resolveInside(input.basePath, join(".incoming", randomUUID()));
     await mkdir(resolve(incoming, ".."), { recursive: true });
     const hash = createHash("sha256");
-    const hashingStream = new Transform({ transform(chunk: Buffer, _encoding, callback) { hash.update(chunk); callback(null, chunk); } });
+    const hashingStream = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        hash.update(chunk);
+        callback(null, chunk);
+      }
+    });
     try {
-      await pipeline(createReadStream(sourcePath), hashingStream, createWriteStream(incoming, { flags: "wx", mode: 0o600 }));
+      await pipeline(
+        createReadStream(sourcePath),
+        hashingStream,
+        createWriteStream(incoming, { flags: "wx", mode: 0o600 })
+      );
       const digest = hash.digest("hex");
       const extension = sanitizeExtension(extname(input.originalFileName));
-      const relativePath = join("sha256", digest.slice(0, 2), digest.slice(2, 4), `${digest}${extension}`);
+      const relativePath = join(
+        "sha256",
+        digest.slice(0, 2),
+        digest.slice(2, 4),
+        `${digest}${extension}`
+      );
       const absolutePath = resolveInside(input.basePath, relativePath);
       await mkdir(resolve(absolutePath, ".."), { recursive: true });
       let deduplicated = false;
-      try { await link(incoming, absolutePath); } catch (error) {
+      try {
+        await link(incoming, absolutePath);
+      } catch (error) {
         if (!isAlreadyExists(error)) throw error;
         deduplicated = true;
       }
       const file = await stat(incoming);
-      return { sha256: digest, sizeBytes: file.size, storageBase: input.storageBase, relativePath, absolutePath, deduplicated };
+      return {
+        sha256: digest,
+        sizeBytes: file.size,
+        storageBase: input.storageBase,
+        relativePath,
+        absolutePath,
+        deduplicated
+      };
     } finally {
       await unlink(incoming).catch(() => undefined);
     }
@@ -85,7 +114,8 @@ export class AssetStorageService {
 }
 
 export function resolveInside(basePath: string, relativePath: string): string {
-  if (!relativePath || relativePath.includes("\0")) throw new Error("errors.common.validationFailed");
+  if (!relativePath || relativePath.includes("\0"))
+    throw new Error("errors.common.validationFailed");
   const base = resolve(basePath);
   const target = resolve(base, relativePath);
   const fromBase = relative(base, target);

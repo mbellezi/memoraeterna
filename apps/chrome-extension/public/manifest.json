@@ -9,6 +9,10 @@
   "background": { "service_worker": "assets/background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_title": "__MSG_extensionName__" },
   "content_scripts": [
-    { "matches": ["http://*/*", "https://*/*"], "js": ["assets/content.js"], "run_at": "document_idle" }
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["assets/content.js"],
+      "run_at": "document_idle"
+    }
   ]
 }

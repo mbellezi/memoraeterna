@@ -30,11 +30,15 @@ describe("window navigation", () => {
     expect(navigationDirectionFromInput(input({ key: "BrowserBack" }))).toBe("back");
     expect(navigationDirectionFromInput(input({ key: "ArrowLeft", alt: true }))).toBe("back");
     expect(navigationDirectionFromInput(input({ key: "[", meta: true }))).toBe("back");
-    expect(navigationDirectionFromInput(input({ key: "Dead", code: "BracketLeft", meta: true }))).toBe("back");
+    expect(
+      navigationDirectionFromInput(input({ key: "Dead", code: "BracketLeft", meta: true }))
+    ).toBe("back");
     expect(navigationDirectionFromInput(input({ key: "BrowserForward" }))).toBe("forward");
     expect(navigationDirectionFromInput(input({ key: "ArrowRight", alt: true }))).toBe("forward");
     expect(navigationDirectionFromInput(input({ key: "]", meta: true }))).toBe("forward");
-    expect(navigationDirectionFromInput(input({ key: "Dead", code: "BracketRight", meta: true }))).toBe("forward");
+    expect(
+      navigationDirectionFromInput(input({ key: "Dead", code: "BracketRight", meta: true }))
+    ).toBe("forward");
     expect(navigationDirectionFromInput(input({ type: "keyUp", key: "BrowserBack" }))).toBeNull();
     expect(navigationDirectionFromInput(input({ key: "ArrowLeft" }))).toBeNull();
   });

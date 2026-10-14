@@ -23,11 +23,7 @@ export const ClaimSchema = z
 
 export type Claim = z.infer<typeof ClaimSchema>;
 
-export const QuestionStatusSchema = z.enum([
-  "open",
-  "answered",
-  "archived"
-]);
+export const QuestionStatusSchema = z.enum(["open", "answered", "archived"]);
 
 export type QuestionStatus = z.infer<typeof QuestionStatusSchema>;
 
@@ -89,9 +85,7 @@ export const AtomicNoteGenerationCandidateSchema = z
   })
   .strict();
 
-export type AtomicNoteGenerationCandidate = z.infer<
-  typeof AtomicNoteGenerationCandidateSchema
->;
+export type AtomicNoteGenerationCandidate = z.infer<typeof AtomicNoteGenerationCandidateSchema>;
 
 export const AtomicNoteGenerationOutputSchema = z
   .object({
@@ -99,9 +93,7 @@ export const AtomicNoteGenerationOutputSchema = z
   })
   .strict();
 
-export type AtomicNoteGenerationOutput = z.infer<
-  typeof AtomicNoteGenerationOutputSchema
->;
+export type AtomicNoteGenerationOutput = z.infer<typeof AtomicNoteGenerationOutputSchema>;
 
 export const AtomicNoteSourceLinkSchema = z
   .object({
@@ -119,15 +111,9 @@ export const AtomicNoteSourceLinkSchema = z
 
 export type AtomicNoteSourceLink = z.infer<typeof AtomicNoteSourceLinkSchema>;
 
-export const AtomicNoteReviewActionSchema = z.enum([
-  "approve",
-  "edit",
-  "discard"
-]);
+export const AtomicNoteReviewActionSchema = z.enum(["approve", "edit", "discard"]);
 
-export type AtomicNoteReviewAction = z.infer<
-  typeof AtomicNoteReviewActionSchema
->;
+export type AtomicNoteReviewAction = z.infer<typeof AtomicNoteReviewActionSchema>;
 
 export const AtomicNoteRelationTypeSchema = z.enum([
   "supports",
@@ -140,19 +126,11 @@ export const AtomicNoteRelationTypeSchema = z.enum([
   "related"
 ]);
 
-export type AtomicNoteRelationType = z.infer<
-  typeof AtomicNoteRelationTypeSchema
->;
+export type AtomicNoteRelationType = z.infer<typeof AtomicNoteRelationTypeSchema>;
 
-export const AtomicNoteRelationStatusSchema = z.enum([
-  "pending_review",
-  "accepted",
-  "rejected"
-]);
+export const AtomicNoteRelationStatusSchema = z.enum(["pending_review", "accepted", "rejected"]);
 
-export type AtomicNoteRelationStatus = z.infer<
-  typeof AtomicNoteRelationStatusSchema
->;
+export type AtomicNoteRelationStatus = z.infer<typeof AtomicNoteRelationStatusSchema>;
 
 export const AtomicNoteRelationSchema = z
   .object({

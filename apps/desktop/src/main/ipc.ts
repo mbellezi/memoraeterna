@@ -1,6 +1,19 @@
-import { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema } from '@app/integration-contracts';
-import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
-import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
+import {
+  obsidianLayoutStatusSchema,
+  obsidianLayoutConfigSchema,
+  obsidianLayoutApplyInputSchema
+} from "@app/integration-contracts";
+import {
+  obsidianEditorialConflictsSchema,
+  obsidianResolveInputSchema,
+  obsidianEditReceiptSchema
+} from "@app/integration-contracts";
+import {
+  obsidianWikiScopeSchema,
+  obsidianWikiStatusSchema,
+  obsidianWikiDiffSchema,
+  obsidianWikiRecoverSchema
+} from "../shared/ipc.js";
 import type { MonitoringService } from "./services/monitoring-service.js";
 import { monitoringQuerySchema, monitoringPruneSchema } from "../shared/monitoring.js";
 import { randomUUID } from "node:crypto";
@@ -13,10 +26,12 @@ import {
   databaseStatusSchema,
   sourceDocumentInputSchema,
   sourceUrlPreviewInputSchema,
-  libraryBrowseInputSchema, sourceEditInputSchema,
+  libraryBrowseInputSchema,
+  sourceEditInputSchema,
   ipcChannels,
   appSettingsUpdateSchema,
-  googleBooksKeyInputSchema, googleBooksKeyStatusSchema,
+  googleBooksKeyInputSchema,
+  googleBooksKeyStatusSchema,
   aiProfileCloneSchema,
   aiProfileCreateSchema,
   aiProfileUpdateSchema,
@@ -96,15 +111,24 @@ export function registerIpcHandlers(
 ): void {
   const chooseImportFile = async (): Promise<string | null> => {
     const defaultPath = await settingsService.getImportDirectory();
-    const selection = await dialog.showOpenDialog({ properties: ["openFile"], ...(defaultPath ? { defaultPath } : {}) });
+    const selection = await dialog.showOpenDialog({
+      properties: ["openFile"],
+      ...(defaultPath ? { defaultPath } : {})
+    });
     const path = selection.filePaths[0];
     if (selection.canceled || !path) return null;
     await settingsService.rememberImportFile(path);
     return path;
   };
-  ipcMain.handle(ipcChannels.monitoringList, (_event, payload: unknown) => monitoringService!.list(monitoringQuerySchema.parse(payload)));
-  ipcMain.handle(ipcChannels.monitoringDetail, (_event, payload: unknown) => monitoringService!.detail(z.string().uuid().parse(payload)));
-  ipcMain.handle(ipcChannels.monitoringPrune, (_event, payload: unknown) => monitoringService!.prune(monitoringPruneSchema.parse(payload)));
+  ipcMain.handle(ipcChannels.monitoringList, (_event, payload: unknown) =>
+    monitoringService!.list(monitoringQuerySchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.monitoringDetail, (_event, payload: unknown) =>
+    monitoringService!.detail(z.string().uuid().parse(payload))
+  );
+  ipcMain.handle(ipcChannels.monitoringPrune, (_event, payload: unknown) =>
+    monitoringService!.prune(monitoringPruneSchema.parse(payload))
+  );
   const t = createTranslator(app.getLocale());
   ipcMain.handle(ipcChannels.relationLabelsStart, async (_event, payload: unknown) => {
     const input = relationLabelsInputSchema.parse(payload);
@@ -127,14 +151,22 @@ export function registerIpcHandlers(
     }
   }));
 
-  ipcMain.handle(ipcChannels.databaseGetStatus, () => databaseStatusSchema.parse(databaseService.getStatus()));
+  ipcMain.handle(ipcChannels.databaseGetStatus, () =>
+    databaseStatusSchema.parse(databaseService.getStatus())
+  );
 
-  ipcMain.handle(ipcChannels.databaseStart, async () => databaseStatusSchema.parse(await databaseService.start()));
+  ipcMain.handle(ipcChannels.databaseStart, async () =>
+    databaseStatusSchema.parse(await databaseService.start())
+  );
 
-  ipcMain.handle(ipcChannels.googleBooksKeyStatus, async () => googleBooksKeyStatusSchema.parse(await metadataEnrichmentService.getGoogleBooksKeyStatus()));
+  ipcMain.handle(ipcChannels.googleBooksKeyStatus, async () =>
+    googleBooksKeyStatusSchema.parse(await metadataEnrichmentService.getGoogleBooksKeyStatus())
+  );
   ipcMain.handle(ipcChannels.googleBooksKeyUpdate, async (_event, payload: unknown) => {
     const { apiKey } = googleBooksKeyInputSchema.parse(payload);
-    return googleBooksKeyStatusSchema.parse(await metadataEnrichmentService.updateGoogleBooksKey(apiKey));
+    return googleBooksKeyStatusSchema.parse(
+      await metadataEnrichmentService.updateGoogleBooksKey(apiKey)
+    );
   });
 
   ipcMain.handle(ipcChannels.appSettingsGet, () => settingsService.getApp());
@@ -154,7 +186,9 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(ipcChannels.settingsSelectObsidianVault, async () => {
-    const selection = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    const selection = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"]
+    });
     const path = selection.filePaths[0];
     if (selection.canceled || !path) return null;
     const settings = await settingsService.update({
@@ -166,19 +200,58 @@ export function registerIpcHandlers(
     return settings;
   });
 
-  ipcMain.handle(ipcChannels.obsidianEditorialConflicts, async()=>obsidianEditorialConflictsSchema.parse(await obsidianSyncService.editorial.conflicts()));
-  ipcMain.handle(ipcChannels.obsidianEditorialComparison, async(_event,id:unknown)=>obsidianEditReceiptSchema.parse(await obsidianSyncService.editorial.compareDesktop(z.string().uuid().parse(id))));
-  ipcMain.handle(ipcChannels.obsidianEditorialResolve, async(_event,input:unknown)=>obsidianEditReceiptSchema.parse(await obsidianSyncService.editorial.resolveDesktop(obsidianResolveInputSchema.parse(input))));
-  ipcMain.handle(ipcChannels.obsidianLayoutStatus,async()=>obsidianLayoutStatusSchema.parse(await obsidianSyncService.layoutMigration.status()));
-  ipcMain.handle(ipcChannels.obsidianLayoutPreview,async(_event,input:unknown)=>obsidianLayoutStatusSchema.parse(await obsidianSyncService.layoutMigration.preview(obsidianLayoutConfigSchema.parse(input))));
-  ipcMain.handle(ipcChannels.obsidianLayoutApply,async(_event,input:unknown)=>obsidianLayoutStatusSchema.parse(await obsidianSyncService.layoutMigration.apply(obsidianLayoutApplyInputSchema.parse(input))));
-  ipcMain.handle(ipcChannels.obsidianLayoutRollback,async(_event,input:unknown)=>obsidianLayoutStatusSchema.parse(await obsidianSyncService.layoutMigration.rollback(obsidianLayoutApplyInputSchema.parse(input))));
-  ipcMain.handle(ipcChannels.obsidianWikiStatus, async()=>obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.status()));
-  ipcMain.handle(ipcChannels.obsidianWikiScope, async(_event,input:unknown)=>obsidianWikiScopeSchema.parse(await obsidianSyncService.wiki.saveScope(input)));
-  ipcMain.handle(ipcChannels.obsidianWikiDiff, async(_event,id:unknown)=>obsidianWikiDiffSchema.parse(await obsidianSyncService.wiki.diff(z.string().uuid().parse(id))));
-  ipcMain.handle(ipcChannels.obsidianWikiRecover, async(_event,input:unknown)=>{const value=obsidianWikiRecoverSchema.parse(input);return obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.recover(value.id,value.expectedHash));});
+  ipcMain.handle(ipcChannels.obsidianEditorialConflicts, async () =>
+    obsidianEditorialConflictsSchema.parse(await obsidianSyncService.editorial.conflicts())
+  );
+  ipcMain.handle(ipcChannels.obsidianEditorialComparison, async (_event, id: unknown) =>
+    obsidianEditReceiptSchema.parse(
+      await obsidianSyncService.editorial.compareDesktop(z.string().uuid().parse(id))
+    )
+  );
+  ipcMain.handle(ipcChannels.obsidianEditorialResolve, async (_event, input: unknown) =>
+    obsidianEditReceiptSchema.parse(
+      await obsidianSyncService.editorial.resolveDesktop(obsidianResolveInputSchema.parse(input))
+    )
+  );
+  ipcMain.handle(ipcChannels.obsidianLayoutStatus, async () =>
+    obsidianLayoutStatusSchema.parse(await obsidianSyncService.layoutMigration.status())
+  );
+  ipcMain.handle(ipcChannels.obsidianLayoutPreview, async (_event, input: unknown) =>
+    obsidianLayoutStatusSchema.parse(
+      await obsidianSyncService.layoutMigration.preview(obsidianLayoutConfigSchema.parse(input))
+    )
+  );
+  ipcMain.handle(ipcChannels.obsidianLayoutApply, async (_event, input: unknown) =>
+    obsidianLayoutStatusSchema.parse(
+      await obsidianSyncService.layoutMigration.apply(obsidianLayoutApplyInputSchema.parse(input))
+    )
+  );
+  ipcMain.handle(ipcChannels.obsidianLayoutRollback, async (_event, input: unknown) =>
+    obsidianLayoutStatusSchema.parse(
+      await obsidianSyncService.layoutMigration.rollback(
+        obsidianLayoutApplyInputSchema.parse(input)
+      )
+    )
+  );
+  ipcMain.handle(ipcChannels.obsidianWikiStatus, async () =>
+    obsidianWikiStatusSchema.parse(await obsidianSyncService.wiki.status())
+  );
+  ipcMain.handle(ipcChannels.obsidianWikiScope, async (_event, input: unknown) =>
+    obsidianWikiScopeSchema.parse(await obsidianSyncService.wiki.saveScope(input))
+  );
+  ipcMain.handle(ipcChannels.obsidianWikiDiff, async (_event, id: unknown) =>
+    obsidianWikiDiffSchema.parse(await obsidianSyncService.wiki.diff(z.string().uuid().parse(id)))
+  );
+  ipcMain.handle(ipcChannels.obsidianWikiRecover, async (_event, input: unknown) => {
+    const value = obsidianWikiRecoverSchema.parse(input);
+    return obsidianWikiStatusSchema.parse(
+      await obsidianSyncService.wiki.recover(value.id, value.expectedHash)
+    );
+  });
   ipcMain.handle(ipcChannels.obsidianSyncStart, () => obsidianSyncService.startSynchronization());
-  ipcMain.handle(ipcChannels.obsidianSyncStatus, () => obsidianSyncService.getSynchronizationStatus());
+  ipcMain.handle(ipcChannels.obsidianSyncStatus, () =>
+    obsidianSyncService.getSynchronizationStatus()
+  );
 
   ipcMain.handle(ipcChannels.debugSimilarityRunsList, () => similarityDebugService.list());
   ipcMain.handle(ipcChannels.debugSimilarityRunsClear, () => similarityDebugService.clear());
@@ -187,24 +260,32 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.libraryReset, () => {
     if (resetInProgress) return resetInProgress;
     resetInProgress = (async () => {
-      let resetCompleted=false;
+      let resetCompleted = false;
       try {
         await integrationGateway.stop();
         await Promise.all([jobSupervisor.stop(), localModelService.shutdown()]);
         await metadataEnrichmentService.clearCache();
         await session.defaultSession.clearCache();
-        const result=await libraryResetService.reset();
-        resetCompleted=true;
+        const result = await libraryResetService.reset();
+        resetCompleted = true;
         return result;
       } finally {
-        if(resetCompleted)await Promise.all([localModelService.start(), jobSupervisor.start(), integrationGateway.start()]);
+        if (resetCompleted)
+          await Promise.all([
+            localModelService.start(),
+            jobSupervisor.start(),
+            integrationGateway.start()
+          ]);
       }
-    })().finally(() => { resetInProgress = null; });
+    })().finally(() => {
+      resetInProgress = null;
+    });
     return resetInProgress;
   });
 
   ipcMain.handle(ipcChannels.ingestionPreviewUrl, async (_event, payload: unknown) => {
-    if (!(await settingsService.getApp()).metadataEnrichmentEnabled) throw new Error("errors.common.validationFailed");
+    if (!(await settingsService.getApp()).metadataEnrichmentEnabled)
+      throw new Error("errors.common.validationFailed");
     return ingestionService.previewUrl(sourceUrlPreviewInputSchema.parse(payload));
   });
   ipcMain.handle(ipcChannels.ingestionEditSource, (_event, payload: unknown) =>
@@ -228,10 +309,13 @@ export function registerIpcHandlers(
     if (!path) return null;
     const report = (progress: Omit<FileImportProgress, "requestId">) => {
       if (event.sender.isDestroyed()) return;
-      event.sender.send(ipcChannels.ingestionFileProgress, fileImportProgressSchema.parse({
-        requestId,
-        ...progress
-      }));
+      event.sender.send(
+        ipcChannels.ingestionFileProgress,
+        fileImportProgressSchema.parse({
+          requestId,
+          ...progress
+        })
+      );
     };
     return ingestionService.prepareFileMetadata(path, input.sourceType, report);
   });
@@ -239,7 +323,11 @@ export function registerIpcHandlers(
     metadataEnrichmentService.search(metadataEnrichmentInputSchema.parse(payload))
   );
   ipcMain.handle(ipcChannels.ingestionPreviewFileStructure, async (_event, payload: unknown) =>
-    fileStructurePreviewSchema.parse(await ingestionService.previewPreparedFileStructure(fileStructurePreviewInputSchema.parse(payload)))
+    fileStructurePreviewSchema.parse(
+      await ingestionService.previewPreparedFileStructure(
+        fileStructurePreviewInputSchema.parse(payload)
+      )
+    )
   );
   ipcMain.handle(ipcChannels.ingestionApplyEnrichmentCover, (_event, payload: unknown) => {
     const input = enrichmentCoverInputSchema.parse(payload);
@@ -263,12 +351,16 @@ export function registerIpcHandlers(
     return ingestionService.lookupSources(input.query, input.sourceTypes);
   });
   ipcMain.handle(ipcChannels.ingestionStructureGet, async (_event, payload: unknown) => {
-    const structure = await hierarchicalIngestionService.getStructure(z.string().uuid().parse(payload));
+    const structure = await hierarchicalIngestionService.getStructure(
+      z.string().uuid().parse(payload)
+    );
     return structure ? serializeStructure(structure) : null;
   });
   ipcMain.handle(ipcChannels.ingestionStructureSave, async (_event, payload: unknown) => {
     const input = structureSaveInputSchema.parse(payload);
-    return serializeStructure(await hierarchicalIngestionService.saveStructure(input.structureId, input.divisions));
+    return serializeStructure(
+      await hierarchicalIngestionService.saveStructure(input.structureId, input.divisions)
+    );
   });
   ipcMain.handle(ipcChannels.ingestionStructureConfirm, async (_event, payload: unknown) => {
     const input = structureConfirmInputSchema.parse(payload);
@@ -291,15 +383,19 @@ export function registerIpcHandlers(
     }))
   );
 
-  ipcMain.handle(ipcChannels.jobsList, async () => (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun, source }) =>
-    serializeJob(job, ingestionRun, source)
-  ));
+  ipcMain.handle(ipcChannels.jobsList, async () =>
+    (await jobSupervisor.listWithRuns()).map(({ job, ingestionRun, source }) =>
+      serializeJob(job, ingestionRun, source)
+    )
+  );
   jobSupervisor.subscribe(() => {
     for (const contents of webContents.getAllWebContents()) {
       if (!contents.isDestroyed()) contents.send(ipcChannels.jobsChanged);
     }
   });
-  ipcMain.handle(ipcChannels.jobsCancelBatch,(_event,id:unknown)=>jobSupervisor.cancelBatch(z.string().uuid().parse(id)));
+  ipcMain.handle(ipcChannels.jobsCancelBatch, (_event, id: unknown) =>
+    jobSupervisor.cancelBatch(z.string().uuid().parse(id))
+  );
   ipcMain.handle(ipcChannels.jobsCancel, async (_event, payload: unknown) => {
     const job = await jobSupervisor.requestCancel(z.string().uuid().parse(payload));
     return job ? serializeJob(job) : null;
@@ -343,16 +439,26 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.knowledgeNoteReview, (_event, payload: unknown) =>
     knowledgeService.reviewNote(atomicNoteReviewInputSchema.parse(payload))
   );
-  ipcMain.handle(ipcChannels.sourceRelationsList, (_event, payload: unknown) => knowledgeService.listSourceRelations(sourceRelationsInputSchema.parse(payload)));
-  ipcMain.handle(ipcChannels.sourceRelationsReview, (_event, payload: unknown) => knowledgeService.reviewSourceRelation(sourceRelationReviewSchema.parse(payload)));
+  ipcMain.handle(ipcChannels.sourceRelationsList, (_event, payload: unknown) =>
+    knowledgeService.listSourceRelations(sourceRelationsInputSchema.parse(payload))
+  );
+  ipcMain.handle(ipcChannels.sourceRelationsReview, (_event, payload: unknown) =>
+    knowledgeService.reviewSourceRelation(sourceRelationReviewSchema.parse(payload))
+  );
   ipcMain.handle(ipcChannels.knowledgeGraphDashboardGet, (_event, payload: unknown) => {
     const input = knowledgeGraphDashboardInputSchema.parse(payload);
-    return knowledgeService.getGraphDashboard(input.mode,input.sourceView);
+    return knowledgeService.getGraphDashboard(input.mode, input.sourceView);
   });
-  ipcMain.handle(ipcChannels.knowledgeGraphSourceConnectionDetailsGet, (_event, payload: unknown) => {
-    const input = knowledgeGraphSourceConnectionDetailsInputSchema.parse(payload);
-    return knowledgeService.getGraphSourceConnectionDetails(input.sourceItemId, input.targetSourceItemId);
-  });
+  ipcMain.handle(
+    ipcChannels.knowledgeGraphSourceConnectionDetailsGet,
+    (_event, payload: unknown) => {
+      const input = knowledgeGraphSourceConnectionDetailsInputSchema.parse(payload);
+      return knowledgeService.getGraphSourceConnectionDetails(
+        input.sourceItemId,
+        input.targetSourceItemId
+      );
+    }
+  );
 
   ipcMain.handle(ipcChannels.aiProvidersList, () => aiService.listProviders());
   ipcMain.handle(ipcChannels.aiProvidersSave, (_event, payload: unknown) =>
@@ -431,10 +537,14 @@ export function registerIpcHandlers(
   ipcMain.handle(ipcChannels.localModelsRepositoryTokenSet, (_event, payload: unknown) =>
     localModelService.setRepositoryToken(repositoryTokenInputSchema.parse(payload).token)
   );
-  ipcMain.handle(ipcChannels.localModelsRepositoryTokenStatus, () => localModelService.hasRepositoryToken());
+  ipcMain.handle(ipcChannels.localModelsRepositoryTokenStatus, () =>
+    localModelService.hasRepositoryToken()
+  );
 
   ipcMain.handle(ipcChannels.backupCreate, async () => {
-    const selection = await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
+    const selection = await dialog.showOpenDialog({
+      properties: ["openDirectory", "createDirectory"]
+    });
     const path = selection.filePaths[0];
     return selection.canceled || !path ? null : backupService.create(path);
   });
@@ -449,7 +559,9 @@ export function registerIpcHandlers(
   );
 }
 
-function serializeStructure(structure: NonNullable<Awaited<ReturnType<HierarchicalIngestionService["getStructure"]>>>) {
+function serializeStructure(
+  structure: NonNullable<Awaited<ReturnType<HierarchicalIngestionService["getStructure"]>>>
+) {
   const rawWarnings = structure.rawEvidence.warnings;
   return {
     id: structure.id,
@@ -460,7 +572,9 @@ function serializeStructure(structure: NonNullable<Awaited<ReturnType<Hierarchic
     status: structure.status,
     overallConfidence: structure.overallConfidence,
     revision: structure.revision,
-    warnings: Array.isArray(rawWarnings) ? rawWarnings.filter((item): item is string => typeof item === "string") : [],
+    warnings: Array.isArray(rawWarnings)
+      ? rawWarnings.filter((item): item is string => typeof item === "string")
+      : [],
     rootMarkdown: structure.rootMarkdown,
     boundaries: structure.boundaries,
     divisions: structure.divisions.map((division) => ({
@@ -494,7 +608,13 @@ function serializeJob(
   ingestionRun: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["ingestionRun"] = null,
   source: Awaited<ReturnType<JobSupervisor["listWithRuns"]>>[number]["source"] = null
 ) {
-  const errorHistory = readJobErrorHistory(job.payload, job.error, job.type, job.attempts, job.updatedAt);
+  const errorHistory = readJobErrorHistory(
+    job.payload,
+    job.error,
+    job.type,
+    job.attempts,
+    job.updatedAt
+  );
   return {
     id: job.id,
     type: job.type,
@@ -502,30 +622,45 @@ function serializeJob(
     progress: job.progress,
     attempts: job.attempts,
     maxAttempts: job.maxAttempts,
-    canCancel: (job.type === "relation-labels" || job.type === "ingestion" || isCancelableAiStage(job.type))
-      && (job.status === "queued" || job.status === "running"),
+    canCancel:
+      (job.type === "relation-labels" ||
+        job.type === "ingestion" ||
+        isCancelableAiStage(job.type)) &&
+      (job.status === "queued" || job.status === "running"),
     canRetry: canManuallyRetryJob(job, ingestionRun),
     canDelete: canDeleteCanceledJob(job, ingestionRun),
-    labelResult: job.type === "relation-labels" ? { updated: Number(job.result?.updated ?? 0), contentLanguage: String(job.payload.contentLanguage ?? "en") } : null,
+    labelResult:
+      job.type === "relation-labels"
+        ? {
+            updated: Number(job.result?.updated ?? 0),
+            contentLanguage: String(job.payload.contentLanguage ?? "en")
+          }
+        : null,
     error: job.error,
     errorHistory,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     aiExecution: readJobAiExecution(job.payload),
-    source: source ? {
-      id: source.id,
-      title: source.title,
-      type: source.type,
-      origin: source.sourceOrigin
-    } : null,
-    ingestionRun: ingestionRun ? {
-      id: ingestionRun.id,
-      batchId: ingestionRun.batchId,
-      status: ingestionRun.status,
-      currentStage: ingestionRun.currentStage,
-      effectiveStages: ingestionRun.effectiveStages.filter((stage): stage is string => typeof stage === "string"),
-      stagesCheckpoint: ingestionRun.stagesCheckpoint
-    } : null
+    source: source
+      ? {
+          id: source.id,
+          title: source.title,
+          type: source.type,
+          origin: source.sourceOrigin
+        }
+      : null,
+    ingestionRun: ingestionRun
+      ? {
+          id: ingestionRun.id,
+          batchId: ingestionRun.batchId,
+          status: ingestionRun.status,
+          currentStage: ingestionRun.currentStage,
+          effectiveStages: ingestionRun.effectiveStages.filter(
+            (stage): stage is string => typeof stage === "string"
+          ),
+          stagesCheckpoint: ingestionRun.stagesCheckpoint
+        }
+      : null
   };
 }
 
@@ -534,9 +669,8 @@ function readJobAiExecution(payload: Record<string, unknown>) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (typeof record.provider !== "string" || typeof record.modelId !== "string") return null;
-  const reasoningLevel = record.reasoningLevel === null
-    ? null
-    : AiReasoningLevelSchema.safeParse(record.reasoningLevel);
+  const reasoningLevel =
+    record.reasoningLevel === null ? null : AiReasoningLevelSchema.safeParse(record.reasoningLevel);
   if (reasoningLevel !== null && !reasoningLevel.success) return null;
   return {
     provider: record.provider,
@@ -556,17 +690,38 @@ function readJobErrorHistory(
     ? payload.errorHistory.flatMap((item) => {
         if (typeof item !== "object" || item === null) return [];
         const record = item as Record<string, unknown>;
-        if (typeof record.message !== "string" || typeof record.stage !== "string"
-            || typeof record.attempt !== "number" || typeof record.occurredAt !== "string") return [];
-        return [{ message: record.message, stage: record.stage, attempt: record.attempt, occurredAt: record.occurredAt }];
+        if (
+          typeof record.message !== "string" ||
+          typeof record.stage !== "string" ||
+          typeof record.attempt !== "number" ||
+          typeof record.occurredAt !== "string"
+        )
+          return [];
+        return [
+          {
+            message: record.message,
+            stage: record.stage,
+            attempt: record.attempt,
+            occurredAt: record.occurredAt
+          }
+        ];
       })
     : [];
-  if (currentError && !history.some((item) => item.message === currentError && item.attempt === attempt)) {
+  if (
+    currentError &&
+    !history.some((item) => item.message === currentError && item.attempt === attempt)
+  ) {
     history.push({ message: currentError, stage, attempt, occurredAt: updatedAt.toISOString() });
   }
   return history;
 }
 
 function isCancelableAiStage(type: string): boolean {
-  return ["summarization", "atomic-note-generation", "knowledge-graph-generation", "atomic-note-matching", "source-matching"].includes(type);
+  return [
+    "summarization",
+    "atomic-note-generation",
+    "knowledge-graph-generation",
+    "atomic-note-matching",
+    "source-matching"
+  ].includes(type);
 }

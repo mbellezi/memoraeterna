@@ -7,7 +7,9 @@ import { fileURLToPath } from "node:url";
 
 // Isolated, hidden renderer: no application UI, preload, database or user profile is loaded.
 app.setPath("userData", mkdtempSync(join(tmpdir(), "memora-graph-webgl-")));
-const programs = fileURLToPath(new URL("../apps/desktop/src/renderer/components/knowledge-graph-programs.ts", import.meta.url));
+const programs = fileURLToPath(
+  new URL("../apps/desktop/src/renderer/components/knowledge-graph-programs.ts", import.meta.url)
+);
 const fixture = `
 import { GraphNodeProgram, GraphEdgeProgram } from ${JSON.stringify(programs)};
 import { NodeCircleProgram, EdgeRectangleProgram } from "sigma/rendering";
@@ -79,29 +81,50 @@ export function verify() {
 
 async function verify() {
   let window;
-  const deadline = setTimeout(() => { console.error("WebGL verification timed out"); app.exit(1); }, 30_000);
+  const deadline = setTimeout(() => {
+    console.error("WebGL verification timed out");
+    app.exit(1);
+  }, 30_000);
   try {
     console.log("Building isolated WebGL fixture...");
     const bundle = await build({
       configFile: false,
       logLevel: "silent",
-      build: { write: false, minify: false, lib: { entry: "graph-alpha-check", name: "GraphAlphaCheck", formats: ["iife"] } },
-      plugins: [{
-        name: "graph-alpha-fixture",
-        resolveId(id) { if (id === "graph-alpha-check" || id.endsWith("/graph-alpha-check")) return "\0graph-alpha-check"; },
-        load(id) { if (id === "\0graph-alpha-check") return fixture; }
-      }]
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: "graph-alpha-check", name: "GraphAlphaCheck", formats: ["iife"] }
+      },
+      plugins: [
+        {
+          name: "graph-alpha-fixture",
+          resolveId(id) {
+            if (id === "graph-alpha-check" || id.endsWith("/graph-alpha-check"))
+              return "\0graph-alpha-check";
+          },
+          load(id) {
+            if (id === "\0graph-alpha-check") return fixture;
+          }
+        }
+      ]
     });
-    const output = (Array.isArray(bundle) ? bundle[0] : bundle).output.find((item) => item.type === "chunk");
+    const output = (Array.isArray(bundle) ? bundle[0] : bundle).output.find(
+      (item) => item.type === "chunk"
+    );
     if (!output) throw new Error("Missing test bundle");
     console.log("Waiting for Electron...");
     await app.whenReady();
     app.dock?.hide();
-    window = new BrowserWindow({ show: false, webPreferences: { offscreen: true, sandbox: true, contextIsolation: true } });
+    window = new BrowserWindow({
+      show: false,
+      webPreferences: { offscreen: true, sandbox: true, contextIsolation: true }
+    });
     console.log("Loading isolated renderer...");
     await window.loadURL("data:text/html,<html><body></body></html>");
     console.log("Checking rendered pixels...");
-    const results = await window.webContents.executeJavaScript(output.code + "\nGraphAlphaCheck.verify();");
+    const results = await window.webContents.executeJavaScript(
+      output.code + "\nGraphAlphaCheck.verify();"
+    );
     console.log(JSON.stringify({ passed: true, results }, null, 2));
   } catch (error) {
     console.error(error);

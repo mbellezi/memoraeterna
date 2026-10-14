@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MatchingSlider } from "./MatchingSlider";
 
 vi.mock("react", async (importOriginal) => ({
-  ...await importOriginal<typeof import("react")>(),
+  ...(await importOriginal<typeof import("react")>()),
   useState: (value: number) => [value, vi.fn()],
   useRef: (value: boolean) => ({ current: value }),
   useEffect: vi.fn()
@@ -14,10 +14,20 @@ describe("MatchingSlider commits", () => {
   beforeEach(() => onCommit.mockClear());
 
   function controls() {
-    const tree = MatchingSlider({ id: "threshold", label: "Threshold", value: 0.8, defaultValue: 0.7, resetLabel: "Restore", onCommit });
+    const tree = MatchingSlider({
+      id: "threshold",
+      label: "Threshold",
+      value: 0.8,
+      defaultValue: 0.7,
+      resetLabel: "Restore",
+      onCommit
+    });
     const children = tree.props.children as ReactElement[];
-    const input = children.find((child) => child.type === "input")!.props as InputHTMLAttributes<HTMLInputElement>;
-    const header = children.find((child) => child.type === "div")!.props as { children: ReactElement[] };
+    const input = children.find((child) => child.type === "input")!
+      .props as InputHTMLAttributes<HTMLInputElement>;
+    const header = children.find((child) => child.type === "div")!.props as {
+      children: ReactElement[];
+    };
     const reset = header.children[1]!.props as ButtonHTMLAttributes<HTMLButtonElement>;
     return { input, reset };
   }

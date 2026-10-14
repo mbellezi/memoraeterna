@@ -26,7 +26,9 @@ try {
     const output = await runPackagedApp(executable, userData);
     for (const state of ["starting", "migrating", "ready", "stopping", "stopped"]) {
       if (!output.includes(`Database status: ${state}`)) {
-        throw new Error(`Packaged desktop attempt ${attempt} did not reach database state ${state}.\n${output}`);
+        throw new Error(
+          `Packaged desktop attempt ${attempt} did not reach database state ${state}.\n${output}`
+        );
       }
     }
     await access(join(userData, "database", "postgres-data", "PG_VERSION"));
@@ -51,8 +53,12 @@ function runPackagedApp(path, userDataPath) {
     const timeout = setTimeout(() => child.kill("SIGTERM"), 60_000);
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { output = `${output}${chunk}`.slice(-64 * 1024); });
-    child.stderr.on("data", (chunk) => { output = `${output}${chunk}`.slice(-64 * 1024); });
+    child.stdout.on("data", (chunk) => {
+      output = `${output}${chunk}`.slice(-64 * 1024);
+    });
+    child.stderr.on("data", (chunk) => {
+      output = `${output}${chunk}`.slice(-64 * 1024);
+    });
     child.once("error", rejectPromise);
     child.once("exit", (code) => {
       clearTimeout(timeout);

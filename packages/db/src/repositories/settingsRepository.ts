@@ -9,7 +9,7 @@ interface SettingRow extends QueryResultRow {
   updatedAt: unknown;
 }
 
-const returning = ["key", "value", "updated_at as \"updatedAt\""].join(", ");
+const returning = ["key", "value", 'updated_at as "updatedAt"'].join(", ");
 
 function mapSetting(row: SettingRow): SettingRecord {
   return {
@@ -22,7 +22,10 @@ function mapSetting(row: SettingRow): SettingRecord {
 export function createSettingsRepository(db: Queryable) {
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
-      const result = await db.query<SettingRow>(`select ${returning} from settings where key = $1`, [key]);
+      const result = await db.query<SettingRow>(
+        `select ${returning} from settings where key = $1`,
+        [key]
+      );
       const row = firstRow(result.rows);
       return row ? (row.value as T) : null;
     },

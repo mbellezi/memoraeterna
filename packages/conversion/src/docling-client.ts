@@ -87,7 +87,8 @@ export class DoclingClient {
           if (finalResponse.requestId !== request.requestId) {
             throw new Error("Docling response request id mismatch.");
           }
-          if (responseHolder.value) throw new Error("Docling sidecar returned more than one final response.");
+          if (responseHolder.value)
+            throw new Error("Docling sidecar returned more than one final response.");
           responseHolder.value = finalResponse;
         });
       } catch (error) {
@@ -95,7 +96,9 @@ export class DoclingClient {
         child.kill("SIGTERM");
       }
     });
-    child.stderr.on("data", (chunk: string) => { stderr = `${stderr}${chunk}`.slice(-64 * 1024); });
+    child.stderr.on("data", (chunk: string) => {
+      stderr = `${stderr}${chunk}`.slice(-64 * 1024);
+    });
 
     const abort = () => child.kill("SIGTERM");
     signal?.addEventListener("abort", abort, { once: true });
@@ -120,7 +123,8 @@ export class DoclingClient {
             if (finalResponse.requestId !== request.requestId) {
               throw new Error("Docling response request id mismatch.");
             }
-            if (responseHolder.value) throw new Error("Docling sidecar returned more than one final response.");
+            if (responseHolder.value)
+              throw new Error("Docling sidecar returned more than one final response.");
             responseHolder.value = finalResponse;
           });
         } catch (error) {
@@ -128,7 +132,10 @@ export class DoclingClient {
         }
       }
       if (protocolError) throw protocolError;
-      if (exitCode !== 0) throw new Error(`Docling sidecar exited with code ${String(exitCode)}: ${stderr.slice(-500)}`);
+      if (exitCode !== 0)
+        throw new Error(
+          `Docling sidecar exited with code ${String(exitCode)}: ${stderr.slice(-500)}`
+        );
       const response = responseHolder.value;
       if (!response) throw new Error("Docling sidecar returned no response.");
       if (!response.ok) throw new Error(response.error.messageKey);
@@ -147,7 +154,7 @@ function consumeJsonLines(
   consume: (line: string) => void
 ): string {
   const lines = buffer.split(/\r?\n/);
-  const remainder = includeRemainder ? "" : lines.pop() ?? "";
+  const remainder = includeRemainder ? "" : (lines.pop() ?? "");
   for (const line of lines) {
     if (line.trim()) consume(line);
   }

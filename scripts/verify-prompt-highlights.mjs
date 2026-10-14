@@ -1,13 +1,13 @@
-import {app,BrowserWindow} from 'electron';
-import {build} from 'vite';
-import {mkdtempSync,readFileSync,readdirSync} from 'node:fs';
-import {tmpdir} from 'node:os';
-import {join,resolve} from 'node:path';
-app.setPath('userData',mkdtempSync(join(tmpdir(),'memora-prompt-layout-')));
-const root=resolve(import.meta.dirname,'..');
-const fixture=String.raw`
+import { app, BrowserWindow } from "electron";
+import { build } from "vite";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+app.setPath("userData", mkdtempSync(join(tmpdir(), "memora-prompt-layout-")));
+const root = resolve(import.meta.dirname, "..");
+const fixture = String.raw`
 import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
-import {PromptField} from ${JSON.stringify(join(root,'apps/desktop/src/renderer/components/PromptsSettingsView.tsx'))};
+import {PromptField} from ${JSON.stringify(join(root, "apps/desktop/src/renderer/components/PromptsSettingsView.tsx"))};
 import {promptDefinition} from '@app/domain';import {createTranslator} from '@app/i18n';
 export async function verify(){
  const host=document.createElement('div');document.body.append(host);const root=createRoot(host),d=promptDefinition('organization.curator');const results=[];
@@ -29,15 +29,63 @@ export async function verify(){
  }
  root.unmount();return {passed:true,results};
 }`;
-async function verify(){
-let win;const timeout=setTimeout(()=>app.exit(1),30000);
-try{const result=await build({configFile:false,logLevel:'silent',define:{'process.env.NODE_ENV':'"production"'},esbuild:{jsx:'automatic'},build:{write:false,minify:false,lib:{entry:'prompt-layout-fixture',name:'PromptLayout',formats:['iife']}},plugins:[{name:'fixture',resolveId(id){if(id==='prompt-layout-fixture'||id.endsWith('/prompt-layout-fixture'))return '\0prompt-layout-fixture';},load(id){if(id==='\0prompt-layout-fixture')return fixture;}}]});
-const code=(Array.isArray(result)?result[0]:result).output.find(x=>x.type==='chunk').code;
-const assets=join(root,'apps/desktop/out/renderer/assets'),css=readdirSync(assets).filter(x=>x.endsWith('.css')).map(x=>readFileSync(join(assets,x),'utf8')).join('\n');
-await app.whenReady();app.dock?.hide();win=new BrowserWindow({show:false,width:900,height:700,webPreferences:{offscreen:true,sandbox:true,contextIsolation:true}});
-await win.loadURL('data:text/html,'+encodeURIComponent('<html><head><style>'+css+'</style></head><body></body></html>'));
-console.log(JSON.stringify(await win.webContents.executeJavaScript(code+'\nPromptLayout.verify()')));
-}catch(e){console.error(e);process.exitCode=1;}finally{clearTimeout(timeout);win?.destroy();app.exit(process.exitCode??0);}
-
+async function verify() {
+  let win;
+  const timeout = setTimeout(() => app.exit(1), 30000);
+  try {
+    const result = await build({
+      configFile: false,
+      logLevel: "silent",
+      define: { "process.env.NODE_ENV": '"production"' },
+      esbuild: { jsx: "automatic" },
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: "prompt-layout-fixture", name: "PromptLayout", formats: ["iife"] }
+      },
+      plugins: [
+        {
+          name: "fixture",
+          resolveId(id) {
+            if (id === "prompt-layout-fixture" || id.endsWith("/prompt-layout-fixture"))
+              return "\0prompt-layout-fixture";
+          },
+          load(id) {
+            if (id === "\0prompt-layout-fixture") return fixture;
+          }
+        }
+      ]
+    });
+    const code = (Array.isArray(result) ? result[0] : result).output.find(
+      (x) => x.type === "chunk"
+    ).code;
+    const assets = join(root, "apps/desktop/out/renderer/assets"),
+      css = readdirSync(assets)
+        .filter((x) => x.endsWith(".css"))
+        .map((x) => readFileSync(join(assets, x), "utf8"))
+        .join("\n");
+    await app.whenReady();
+    app.dock?.hide();
+    win = new BrowserWindow({
+      show: false,
+      width: 900,
+      height: 700,
+      webPreferences: { offscreen: true, sandbox: true, contextIsolation: true }
+    });
+    await win.loadURL(
+      "data:text/html," +
+        encodeURIComponent("<html><head><style>" + css + "</style></head><body></body></html>")
+    );
+    console.log(
+      JSON.stringify(await win.webContents.executeJavaScript(code + "\nPromptLayout.verify()"))
+    );
+  } catch (e) {
+    console.error(e);
+    process.exitCode = 1;
+  } finally {
+    clearTimeout(timeout);
+    win?.destroy();
+    app.exit(process.exitCode ?? 0);
+  }
 }
 void verify();

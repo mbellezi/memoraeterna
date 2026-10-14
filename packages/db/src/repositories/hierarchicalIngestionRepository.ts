@@ -183,8 +183,15 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
              (root_source_item_id, root_document_id, format, detector_version, status, overall_confidence, revision, raw_evidence)
            values ($1, $2, $3, $4, 'in_review', $5, $6, $7::jsonb)
            returning ${structureColumns}`,
-          [input.rootSourceItemId, input.rootDocumentId, input.format, input.detectorVersion,
-            input.overallConfidence, revision, input.rawEvidence]
+          [
+            input.rootSourceItemId,
+            input.rootDocumentId,
+            input.format,
+            input.detectorVersion,
+            input.overallConfidence,
+            revision,
+            input.rawEvidence
+          ]
         );
         const structure = structureResult.rows[0];
         if (!structure) throw new Error("document_structure_insert_failed");
@@ -213,13 +220,17 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
     },
 
     async findById(id: string): Promise<DocumentStructureRecord | null> {
-      const result = await pool.query<StructureRow>(`select ${structureColumns} from document_structures where id = $1`, [id]);
+      const result = await pool.query<StructureRow>(
+        `select ${structureColumns} from document_structures where id = $1`,
+        [id]
+      );
       const row = result.rows[0];
       if (!row) return null;
       const divisions = await pool.query<DivisionRow>(
         `select ${divisionColumns} from document_divisions division
          left join document_divisions parent on parent.id = division.parent_division_id
-         where division.structure_id = $1 order by division.position asc`, [id]
+         where division.structure_id = $1 order by division.position asc`,
+        [id]
       );
       return mapStructure(row, divisions.rows.map(mapDivision));
     },
@@ -234,18 +245,27 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return row ? this.findById(row.id) : null;
     },
 
-    async saveDraft(id: string, divisions: DivisionPersistenceInput[]): Promise<DocumentStructureRecord | null> {
+    async saveDraft(
+      id: string,
+      divisions: DivisionPersistenceInput[]
+    ): Promise<DocumentStructureRecord | null> {
       const client = await pool.connect();
       try {
         await client.query("begin");
-        const status = await client.query<{ status: string }>("select status from document_structures where id = $1 for update", [id]);
+        const status = await client.query<{ status: string }>(
+          "select status from document_structures where id = $1 for update",
+          [id]
+        );
         if (!status.rows[0] || !["draft", "in_review"].includes(status.rows[0].status)) {
           await client.query("rollback");
           return null;
         }
         await client.query("delete from document_divisions where structure_id = $1", [id]);
         await replaceDivisions(client, id, divisions);
-        await client.query("update document_structures set status = 'in_review', updated_at = now() where id = $1", [id]);
+        await client.query(
+          "update document_structures set status = 'in_review', updated_at = now() where id = $1",
+          [id]
+        );
         await client.query("commit");
         return this.findById(id);
       } catch (error) {
@@ -266,10 +286,15 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
     },
 
     async markMaterialized(id: string): Promise<void> {
-      await pool.query("update document_structures set status = 'materialized', updated_at = now() where id = $1", [id]);
+      await pool.query(
+        "update document_structures set status = 'materialized', updated_at = now() where id = $1",
+        [id]
+      );
     },
 
-    async materializeStructure(id: string): Promise<Array<{ sourceItemId: string; documentId: string; divisionId: string }>> {
+    async materializeStructure(
+      id: string
+    ): Promise<Array<{ sourceItemId: string; documentId: string; divisionId: string }>> {
       const client = await pool.connect();
       try {
         await client.query("begin");
@@ -300,7 +325,11 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            where division.structure_id = $1 order by division.position asc for update of division`,
           [id]
         );
-        const materialized: Array<{ sourceItemId: string; documentId: string; divisionId: string }> = [];
+        const materialized: Array<{
+          sourceItemId: string;
+          documentId: string;
+          divisionId: string;
+        }> = [];
         const sourceByDivision = new Map<string, string>();
         for (const row of divisionResult.rows) {
           const division = mapDivision(row);
@@ -312,7 +341,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           const contentHash = createHash("sha256").update(markdown).digest("hex");
           const childType = childTypeForRoot(structure.rootType);
           const parentSourceItemId = division.parentId
-            ? sourceByDivision.get(division.parentId) ?? structure.rootSourceItemId
+            ? (sourceByDivision.get(division.parentId) ?? structure.rootSourceItemId)
             : structure.rootSourceItemId;
           const childMetadata = materializedChildMetadata({
             structureId: id,
@@ -327,15 +356,29 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
             await client.query(
               `update source_items set type = $2, title = $3, parent_source_item_id = $4, content_hash = $5,
                  metadata = metadata || $6::jsonb, updated_at = now() where id = $1`,
-              [sourceItemId, childType, division.title, parentSourceItemId, contentHash, childMetadata]
+              [
+                sourceItemId,
+                childType,
+                division.title,
+                parentSourceItemId,
+                contentHash,
+                childMetadata
+              ]
             );
           } else {
             const sourceResult = await client.query<{ id: string }>(
               `insert into source_items
                  (type, title, source_origin, parent_source_item_id, content_hash, language, metadata)
                values ($1::source_item_type, $2, $3, $4, $5, $6, $7::jsonb) returning id`,
-              [childType, division.title, structure.sourceOrigin, parentSourceItemId, contentHash,
-                structure.language, childMetadata]
+              [
+                childType,
+                division.title,
+                structure.sourceOrigin,
+                parentSourceItemId,
+                contentHash,
+                structure.language,
+                childMetadata
+              ]
             );
             sourceItemId = sourceResult.rows[0]?.id ?? null;
           }
@@ -349,25 +392,49 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
              from source_item_bibliographic_links where source_item_id = $2
              on conflict (source_item_id, work_id) do update set
                instance_id = excluded.instance_id, relation_type = excluded.relation_type, pages = excluded.pages`,
-            [sourceItemId, structure.rootSourceItemId,
-              childType === "BookChapter" ? "chapter_of" : childType === "StandaloneArticle" ? "article_in" : "section_of",
-              pages]
+            [
+              sourceItemId,
+              structure.rootSourceItemId,
+              childType === "BookChapter"
+                ? "chapter_of"
+                : childType === "StandaloneArticle"
+                  ? "article_in"
+                  : "section_of",
+              pages
+            ]
           );
 
           let documentId = division.childDocumentId;
           const currentDocument = documentId
-            ? await client.query<{ contentHash: string }>("select content_hash as \"contentHash\" from documents where id = $1", [documentId])
+            ? await client.query<{ contentHash: string }>(
+                'select content_hash as "contentHash" from documents where id = $1',
+                [documentId]
+              )
             : null;
           if (!documentId || currentDocument?.rows[0]?.contentHash !== contentHash) {
             if (documentId) {
-              await client.query("update document_revisions set is_current = false where document_id = $1 and is_current = true", [documentId]);
+              await client.query(
+                "update document_revisions set is_current = false where document_id = $1 and is_current = true",
+                [documentId]
+              );
             }
             const documentResult = await client.query<{ id: string }>(
               `insert into documents (source_item_id, title, canonical_markdown, content_hash, language, metadata)
                values ($1, $2, $3, $4, $5, $6::jsonb) returning id`,
-              [sourceItemId, division.title, markdown, contentHash, structure.language,
-                { derivedFromDocumentId: structure.rootDocumentId, divisionId: division.id, structureId: id,
-                  startSelector: division.startSelector, endSelector: division.endSelector }]
+              [
+                sourceItemId,
+                division.title,
+                markdown,
+                contentHash,
+                structure.language,
+                {
+                  derivedFromDocumentId: structure.rootDocumentId,
+                  divisionId: division.id,
+                  structureId: id,
+                  startSelector: division.startSelector,
+                  endSelector: division.endSelector
+                }
+              ]
             );
             documentId = documentResult.rows[0]?.id ?? null;
             if (!documentId) throw new Error("division_document_materialization_failed");
@@ -380,8 +447,13 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
               `insert into document_revisions
                  (document_id, revision, is_current, content_hash, structure_hash, reason, metadata)
                values ($1, $2, true, $3, $4, 'structure_materialization', $5::jsonb)`,
-              [documentId, Number(revisionResult.rows[0]?.revision ?? 1), contentHash,
-                createHash("sha256").update(`${id}:${division.id}`).digest("hex"), { structureId: id, divisionId: division.id }]
+              [
+                documentId,
+                Number(revisionResult.rows[0]?.revision ?? 1),
+                contentHash,
+                createHash("sha256").update(`${id}:${division.id}`).digest("hex"),
+                { structureId: id, divisionId: division.id }
+              ]
             );
           }
           await client.query(
@@ -392,7 +464,10 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
           sourceByDivision.set(division.id, sourceItemId);
           materialized.push({ sourceItemId, documentId, divisionId: division.id });
         }
-        await client.query("update document_structures set status = 'materialized', updated_at = now() where id = $1", [id]);
+        await client.query(
+          "update document_structures set status = 'materialized', updated_at = now() where id = $1",
+          [id]
+        );
         await client.query("commit");
         return materialized;
       } catch (error) {
@@ -403,7 +478,13 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       }
     },
 
-    async linkMaterializedDivision(structureId: string, stableId: string, childSourceItemId: string, childDocumentId: string, contentHash: string): Promise<void> {
+    async linkMaterializedDivision(
+      structureId: string,
+      stableId: string,
+      childSourceItemId: string,
+      childDocumentId: string,
+      contentHash: string
+    ): Promise<void> {
       await pool.query(
         `update document_divisions set child_source_item_id = $2, child_document_id = $3, content_hash = $4, updated_at = now()
          where structure_id = $1 and stable_id = $5`,
@@ -417,15 +498,22 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       effectivePlan: JsonObject;
       reingestionPolicy: string;
       targetSourceItemIds: string[];
-      promptPin?:unknown;
+      promptPin?: unknown;
     }): Promise<ProcessingBatchRecord> {
       const result = await pool.query<BatchRow>(
         `insert into processing_batches
            (trigger, requested_plan, effective_plan, reingestion_policy, total_items, metadata)
          values ($1, $2::jsonb, $3::jsonb, $4, $5, jsonb_build_object('targetSourceItemIds', $6::jsonb)||$7::jsonb)
          returning ${batchColumns}`,
-        [input.trigger, input.requestedPlan, input.effectivePlan, input.reingestionPolicy,
-          input.targetSourceItemIds.length, JSON.stringify(input.targetSourceItemIds),JSON.stringify(input.promptPin?{promptPin:input.promptPin}:{})]
+        [
+          input.trigger,
+          input.requestedPlan,
+          input.effectivePlan,
+          input.reingestionPolicy,
+          input.targetSourceItemIds.length,
+          JSON.stringify(input.targetSourceItemIds),
+          JSON.stringify(input.promptPin ? { promptPin: input.promptPin } : {})
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("processing_batch_insert_failed");
@@ -433,7 +521,10 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
     },
 
     async listBatches(limit = 100): Promise<ProcessingBatchRecord[]> {
-      const result = await pool.query<BatchRow>(`select ${batchColumns} from processing_batches order by created_at desc limit $1`, [limit]);
+      const result = await pool.query<BatchRow>(
+        `select ${batchColumns} from processing_batches order by created_at desc limit $1`,
+        [limit]
+      );
       return result.rows.map(mapBatch);
     },
 
@@ -467,8 +558,17 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return row ? mapBatch(row) : null;
     },
 
-    async listDescendants(rootSourceItemId: string): Promise<Array<{ id: string; type: SourceItemType; title: string; parentSourceItemId: string | null }>> {
-      const result = await pool.query<{ id: string; type: SourceItemType; title: string; parentSourceItemId: string | null }>(
+    async listDescendants(
+      rootSourceItemId: string
+    ): Promise<
+      Array<{ id: string; type: SourceItemType; title: string; parentSourceItemId: string | null }>
+    > {
+      const result = await pool.query<{
+        id: string;
+        type: SourceItemType;
+        title: string;
+        parentSourceItemId: string | null;
+      }>(
         `with recursive tree as (
            select id, type, title, parent_source_item_id, 0 as depth from source_items where id = $1
            union all
@@ -481,10 +581,17 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return [...result.rows];
     },
 
-    async getBreadcrumbs(sourceItemIds: string[]): Promise<Map<string, Array<{ id: string; title: string }>>> {
+    async getBreadcrumbs(
+      sourceItemIds: string[]
+    ): Promise<Map<string, Array<{ id: string; title: string }>>> {
       const breadcrumbs = new Map<string, Array<{ id: string; title: string }>>();
       if (sourceItemIds.length === 0) return breadcrumbs;
-      const result = await pool.query<{ originId: string; id: string; title: string; depth: number }>(
+      const result = await pool.query<{
+        originId: string;
+        id: string;
+        title: string;
+        depth: number;
+      }>(
         `with recursive ancestors as (
            select source.id as origin_id, source.id, source.title, source.parent_source_item_id, 0 as depth
            from source_items source where source.id = any($1::uuid[])
@@ -496,14 +603,22 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
         [sourceItemIds]
       );
       for (const row of result.rows) {
-        breadcrumbs.set(row.originId, [...(breadcrumbs.get(row.originId) ?? []), { id: row.id, title: row.title }]);
+        breadcrumbs.set(row.originId, [
+          ...(breadcrumbs.get(row.originId) ?? []),
+          { id: row.id, title: row.title }
+        ]);
       }
       return breadcrumbs;
     },
 
-    async ensureCurrentDocumentRevision(documentId: string, contentHash: string, reason = "initial"): Promise<string> {
+    async ensureCurrentDocumentRevision(
+      documentId: string,
+      contentHash: string,
+      reason = "initial"
+    ): Promise<string> {
       const current = await pool.query<{ id: string }>(
-        "select id from document_revisions where document_id = $1 and is_current = true limit 1", [documentId]
+        "select id from document_revisions where document_id = $1 and is_current = true limit 1",
+        [documentId]
       );
       if (current.rows[0]) return current.rows[0].id;
       const result = await pool.query<{ id: string }>(
@@ -516,7 +631,11 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return id;
     },
 
-    async getArtifactState(sourceItemId: string, documentId: string,prompts?:{current:Record<string,string>;shipped:Record<string,string>}): Promise<Record<string, boolean>> {
+    async getArtifactState(
+      sourceItemId: string,
+      documentId: string,
+      prompts?: { current: Record<string, string>; shipped: Record<string, string> }
+    ): Promise<Record<string, boolean>> {
       const result = await pool.query<QueryResultRow & Record<string, boolean>>(
         `select
            true as conversion,
@@ -568,8 +687,10 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
         [sourceItemId, documentId]
       );
       const state = result.rows[0] ?? {};
-      if(prompts){
-        const fingerprints=(await pool.query<{stage:string;fingerprint:string|null}>(`select distinct on(stage) stage,fingerprint from (
+      if (prompts) {
+        const fingerprints = (
+          await pool.query<{ stage: string; fingerprint: string | null }>(
+            `select distinct on(stage) stage,fingerprint from (
           select 'summarization' as stage,g.metadata->>'promptFingerprint' as fingerprint,summary.created_at as at
             from source_summaries summary left join knowledge_generations g on g.id=summary.generation_id
             where summary.source_item_id=$1 and summary.is_current
@@ -582,40 +703,80 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
                 or stage.key='embedding' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,sourceEmbedded}'='true' and coalesce((stage.value#>>'{metadata,embeddedCount}')::int,0)>0
                 or stage.key='summarization' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,generated}'='false' and stage.value#>>'{metadata,skippedReason}'='non_content'
                 or stage.key='atomicNotes' and stage.value#>>'{metadata,configured}'='true' and stage.value#>>'{metadata,generatedCount}'='0')
-        ) history order by stage,at desc nulls last`,[sourceItemId,documentId])).rows;
-        for(const [stage,current] of Object.entries(prompts.current))if(state[stage]&&(fingerprints.find(row=>row.stage===stage)?.fingerprint??prompts.shipped[stage])!==current)state[stage]=false;
+        ) history order by stage,at desc nulls last`,
+            [sourceItemId, documentId]
+          )
+        ).rows;
+        for (const [stage, current] of Object.entries(prompts.current))
+          if (
+            state[stage] &&
+            (fingerprints.find((row) => row.stage === stage)?.fingerprint ??
+              prompts.shipped[stage]) !== current
+          )
+            state[stage] = false;
         // Every current note owns its generation; a partial replacement cannot borrow a previous complete receipt.
-        if(prompts.current.atomicNotes){const owners=(await pool.query<{fingerprint:string|null;complete:string|null}>(`select g.metadata->>'promptFingerprint' as fingerprint,g.metadata->>'promptComplete' as complete from atomic_notes n left join knowledge_generations g on g.id=n.generation_id where n.created_from_source_item_id=$1 and n.supersession_status='current'`,[sourceItemId])).rows;if(owners.length)state.atomicNotes=owners.every(owner=>owner.complete!=='false'&&(owner.fingerprint??prompts.shipped.atomicNotes)===prompts.current.atomicNotes);}
-
+        if (prompts.current.atomicNotes) {
+          const owners = (
+            await pool.query<{ fingerprint: string | null; complete: string | null }>(
+              `select g.metadata->>'promptFingerprint' as fingerprint,g.metadata->>'promptComplete' as complete from atomic_notes n left join knowledge_generations g on g.id=n.generation_id where n.created_from_source_item_id=$1 and n.supersession_status='current'`,
+              [sourceItemId]
+            )
+          ).rows;
+          if (owners.length)
+            state.atomicNotes = owners.every(
+              (owner) =>
+                owner.complete !== "false" &&
+                (owner.fingerprint ?? prompts.shipped.atomicNotes) === prompts.current.atomicNotes
+            );
+        }
       }
-      const revision = await pool.query<{ editorial: boolean; checkpoints: Record<string, { status?: string }> | null }>(
+      const revision = await pool.query<{
+        editorial: boolean;
+        checkpoints: Record<string, { status?: string }> | null;
+      }>(
         `select coalesce((document.metadata->>'editorialRevision')::boolean, false) as editorial,
            run.stages_checkpoint as checkpoints
          from documents document
          left join document_revisions revision on revision.document_id = document.id and revision.is_current
          left join ingestion_runs run on run.input_document_revision_id = revision.id
-         where document.id = $1`, [documentId]
+         where document.id = $1`,
+        [documentId]
       );
       if (revision.rows.some((row) => row.editorial)) {
         for (const stage of Object.keys(state)) {
           if (["conversion", "materialization", "chunking", "embedding"].includes(stage)) continue;
-          state[stage] = Boolean(state[stage]) && revision.rows.some((row) => row.checkpoints?.[stage]?.status === "completed");
+          state[stage] =
+            Boolean(state[stage]) &&
+            revision.rows.some((row) => row.checkpoints?.[stage]?.status === "completed");
         }
       }
       return state;
     },
 
-    async completeKnowledgeGeneration(id:string){await pool.query("update knowledge_generations set metadata=metadata || jsonb_build_object('promptComplete',true),updated_at=now() where id=$1",[id]);},
+    async completeKnowledgeGeneration(id: string) {
+      await pool.query(
+        "update knowledge_generations set metadata=metadata || jsonb_build_object('promptComplete',true),updated_at=now() where id=$1",
+        [id]
+      );
+    },
 
-    async createKnowledgeGeneration(input:KnowledgeGenerationInput){return persistKnowledgeGeneration(pool,input); }
+    async createKnowledgeGeneration(input: KnowledgeGenerationInput) {
+      return persistKnowledgeGeneration(pool, input);
+    }
   };
 }
 
-async function replaceDivisions(client: PoolClient, structureId: string, divisions: DivisionPersistenceInput[]): Promise<void> {
+async function replaceDivisions(
+  client: PoolClient,
+  structureId: string,
+  divisions: DivisionPersistenceInput[]
+): Promise<void> {
   const pending = [...divisions];
   const inserted = new Map<string, string>();
   while (pending.length > 0) {
-    const ready = pending.filter((division) => !division.parentId || inserted.has(division.parentId));
+    const ready = pending.filter(
+      (division) => !division.parentId || inserted.has(division.parentId)
+    );
     if (ready.length === 0) throw new Error("document_division_cycle_or_missing_parent");
     for (const division of ready) {
       const result = await client.query<{ id: string }>(
@@ -625,10 +786,27 @@ async function replaceDivisions(client: PoolClient, structureId: string, divisio
             is_processable, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13, $14, $15, $16::jsonb,
                  $17::document_division_review_status, $18, $19::jsonb) returning id`,
-        [division.id, structureId, division.parentId ? inserted.get(division.parentId) : null, division.kind, division.title, division.level, division.position,
-          division.startSelector, division.endSelector, division.startPage ?? null, division.endPage ?? null,
-          division.markdownStart ?? null, division.markdownEnd ?? null, division.contentHash ?? null,
-          division.confidence, JSON.stringify(division.evidence), division.reviewStatus, division.isProcessable, division.metadata]
+        [
+          division.id,
+          structureId,
+          division.parentId ? inserted.get(division.parentId) : null,
+          division.kind,
+          division.title,
+          division.level,
+          division.position,
+          division.startSelector,
+          division.endSelector,
+          division.startPage ?? null,
+          division.endPage ?? null,
+          division.markdownStart ?? null,
+          division.markdownEnd ?? null,
+          division.contentHash ?? null,
+          division.confidence,
+          JSON.stringify(division.evidence),
+          division.reviewStatus,
+          division.isProcessable,
+          division.metadata
+        ]
       );
       const rowId = result.rows[0]?.id;
       if (!rowId) throw new Error("document_division_insert_failed");
@@ -638,7 +816,10 @@ async function replaceDivisions(client: PoolClient, structureId: string, divisio
   }
 }
 
-function mapStructure(row: StructureRow, divisions: DocumentDivisionRecord[]): DocumentStructureRecord {
+function mapStructure(
+  row: StructureRow,
+  divisions: DocumentDivisionRecord[]
+): DocumentStructureRecord {
   return {
     ...row,
     overallConfidence: Number(row.overallConfidence),
@@ -653,28 +834,44 @@ function mapStructure(row: StructureRow, divisions: DocumentDivisionRecord[]): D
 
 function mapDivision(row: DivisionRow): DocumentDivisionRecord {
   return {
-    id: row.id, rowId: row.rowId, structureId: row.structureId, parentId: row.parentId,
-    childSourceItemId: row.childSourceItemId, childDocumentId: row.childDocumentId,
-    kind: row.kind, title: row.title, level: Number(row.level), position: Number(row.position),
-    startSelector: asJsonObject(row.startSelector), endSelector: asJsonObject(row.endSelector),
+    id: row.id,
+    rowId: row.rowId,
+    structureId: row.structureId,
+    parentId: row.parentId,
+    childSourceItemId: row.childSourceItemId,
+    childDocumentId: row.childDocumentId,
+    kind: row.kind,
+    title: row.title,
+    level: Number(row.level),
+    position: Number(row.position),
+    startSelector: asJsonObject(row.startSelector),
+    endSelector: asJsonObject(row.endSelector),
     ...(row.startPage === null ? {} : { startPage: Number(row.startPage) }),
     ...(row.endPage === null ? {} : { endPage: Number(row.endPage) }),
     ...(row.markdownStart === null ? {} : { markdownStart: Number(row.markdownStart) }),
     ...(row.markdownEnd === null ? {} : { markdownEnd: Number(row.markdownEnd) }),
     ...(row.contentHash === null ? {} : { contentHash: row.contentHash }),
-    confidence: Number(row.confidence), evidence: Array.isArray(row.evidence) ? row.evidence : [],
-    reviewStatus: row.reviewStatus, isProcessable: row.isProcessable, metadata: asJsonObject(row.metadata),
-    createdAt: mapTimestamp(row.createdAt), updatedAt: mapTimestamp(row.updatedAt)
+    confidence: Number(row.confidence),
+    evidence: Array.isArray(row.evidence) ? row.evidence : [],
+    reviewStatus: row.reviewStatus,
+    isProcessable: row.isProcessable,
+    metadata: asJsonObject(row.metadata),
+    createdAt: mapTimestamp(row.createdAt),
+    updatedAt: mapTimestamp(row.updatedAt)
   };
 }
 
 function mapBatch(row: BatchRow): ProcessingBatchRecord {
   return {
     ...row,
-    requestedPlan: asJsonObject(row.requestedPlan), effectivePlan: asJsonObject(row.effectivePlan),
-    progress: Number(row.progress) / 10_000, totalItems: Number(row.totalItems),
-    completedItems: Number(row.completedItems), failedItems: Number(row.failedItems),
-    createdAt: mapTimestamp(row.createdAt), updatedAt: mapTimestamp(row.updatedAt)
+    requestedPlan: asJsonObject(row.requestedPlan),
+    effectivePlan: asJsonObject(row.effectivePlan),
+    progress: Number(row.progress) / 10_000,
+    totalItems: Number(row.totalItems),
+    completedItems: Number(row.completedItems),
+    failedItems: Number(row.failedItems),
+    createdAt: mapTimestamp(row.createdAt),
+    updatedAt: mapTimestamp(row.updatedAt)
   };
 }
 
@@ -698,20 +895,24 @@ function materializedChildMetadata(input: {
     ? input.division.metadata.creators.flatMap((creator) => {
         const value = asJsonObject(creator);
         return typeof value.name === "string" && value.name.trim()
-          ? [{
-              name: value.name.trim(),
-              role: typeof value.role === "string" ? value.role : "author",
-              ...(typeof value.affiliation === "string" && value.affiliation.trim()
-                ? { affiliation: value.affiliation.trim() }
-                : {})
-            }]
+          ? [
+              {
+                name: value.name.trim(),
+                role: typeof value.role === "string" ? value.role : "author",
+                ...(typeof value.affiliation === "string" && value.affiliation.trim()
+                  ? { affiliation: value.affiliation.trim() }
+                  : {})
+              }
+            ]
           : [];
       })
     : [];
-  const pageRange = input.division.startPage ? {
-    start: String(input.division.startPage),
-    ...(input.division.endPage ? { end: String(input.division.endPage) } : {})
-  } : undefined;
+  const pageRange = input.division.startPage
+    ? {
+        start: String(input.division.startPage),
+        ...(input.division.endPage ? { end: String(input.division.endPage) } : {})
+      }
+    : undefined;
   const common = {
     type: input.childType,
     title: input.division.title,
@@ -721,21 +922,29 @@ function materializedChildMetadata(input: {
     parentSourceItemId: input.parentSourceItemId,
     provenance: {
       title: { source: "extracted", evidence: "document structure" },
-      creators: { source: divisionCreators.length ? "manual" : "extracted", evidence: "structure review" }
+      creators: {
+        source: divisionCreators.length ? "manual" : "extracted",
+        evidence: "structure review"
+      }
     },
-    ...(typeof rootDescriptor.publicationDate === "string" ? { publicationDate: rootDescriptor.publicationDate } : {})
+    ...(typeof rootDescriptor.publicationDate === "string"
+      ? { publicationDate: rootDescriptor.publicationDate }
+      : {})
   };
-  const descriptor = input.childType === "BookChapter"
-    ? { ...common, ...(pageRange ? { pages: pageRange } : {}) }
-    : input.childType === "StandaloneArticle"
-      ? {
-          ...common,
-          ...(typeof rootDescriptor.publicationTitle === "string" ? { periodicalTitle: rootDescriptor.publicationTitle } : {}),
-          ...(typeof rootDescriptor.volume === "string" ? { volume: rootDescriptor.volume } : {}),
-          ...(typeof rootDescriptor.issue === "string" ? { issue: rootDescriptor.issue } : {}),
-          ...(pageRange ? { pages: pageRange } : {})
-        }
-      : { ...common, ...(pageRange ? { pages: pageRange } : {}) };
+  const descriptor =
+    input.childType === "BookChapter"
+      ? { ...common, ...(pageRange ? { pages: pageRange } : {}) }
+      : input.childType === "StandaloneArticle"
+        ? {
+            ...common,
+            ...(typeof rootDescriptor.publicationTitle === "string"
+              ? { periodicalTitle: rootDescriptor.publicationTitle }
+              : {}),
+            ...(typeof rootDescriptor.volume === "string" ? { volume: rootDescriptor.volume } : {}),
+            ...(typeof rootDescriptor.issue === "string" ? { issue: rootDescriptor.issue } : {}),
+            ...(pageRange ? { pages: pageRange } : {})
+          }
+        : { ...common, ...(pageRange ? { pages: pageRange } : {}) };
   return {
     divisionId: input.division.id,
     structureId: input.structureId,
@@ -744,7 +953,9 @@ function materializedChildMetadata(input: {
     descriptor,
     inheritedBibliographic: {
       ...(typeof rootDescriptor.edition === "string" ? { edition: rootDescriptor.edition } : {}),
-      ...(typeof rootDescriptor.publisher === "string" ? { publisher: rootDescriptor.publisher } : {}),
+      ...(typeof rootDescriptor.publisher === "string"
+        ? { publisher: rootDescriptor.publisher }
+        : {}),
       ...(typeof rootDescriptor.isbn10 === "string" ? { isbn10: rootDescriptor.isbn10 } : {}),
       ...(typeof rootDescriptor.isbn13 === "string" ? { isbn13: rootDescriptor.isbn13 } : {}),
       ...(typeof rootDescriptor.issn === "string" ? { issn: rootDescriptor.issn } : {})
@@ -752,29 +963,40 @@ function materializedChildMetadata(input: {
   };
 }
 
-export type KnowledgeGenerationInput={
-      sourceItemId: string;
-      documentRevisionId?: string | null;
-      stage: string;
-      ingestionRunId?: string | null;
-      jobId?: string | null;
-      aiTaskRunId?: string | null;
-      inputHash?: string | null;
-      metadata?: JsonObject;
-    };
-export async function persistKnowledgeGeneration(db:Pick<PgPool,"query">,input:KnowledgeGenerationInput):Promise<string>{
-      const result = await db.query<{ id: string }>(
-        `insert into knowledge_generations
+export type KnowledgeGenerationInput = {
+  sourceItemId: string;
+  documentRevisionId?: string | null;
+  stage: string;
+  ingestionRunId?: string | null;
+  jobId?: string | null;
+  aiTaskRunId?: string | null;
+  inputHash?: string | null;
+  metadata?: JsonObject;
+};
+export async function persistKnowledgeGeneration(
+  db: Pick<PgPool, "query">,
+  input: KnowledgeGenerationInput
+): Promise<string> {
+  const result = await db.query<{ id: string }>(
+    `insert into knowledge_generations
            (source_item_id, document_revision_id, stage, ingestion_run_id, job_id, ai_task_run_id, input_hash, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
          on conflict (ingestion_run_id, stage) where ingestion_run_id is not null do update
          set ai_task_run_id = coalesce(excluded.ai_task_run_id, knowledge_generations.ai_task_run_id),
              metadata = knowledge_generations.metadata || excluded.metadata, updated_at = now()
          returning id`,
-        [input.sourceItemId, input.documentRevisionId ?? null, input.stage, input.ingestionRunId ?? null,
-          input.jobId ?? null, input.aiTaskRunId ?? null, input.inputHash ?? null, input.metadata ?? {}]
-      );
-      const id = result.rows[0]?.id;
-      if (!id) throw new Error("knowledge_generation_insert_failed");
-      return id;
+    [
+      input.sourceItemId,
+      input.documentRevisionId ?? null,
+      input.stage,
+      input.ingestionRunId ?? null,
+      input.jobId ?? null,
+      input.aiTaskRunId ?? null,
+      input.inputHash ?? null,
+      input.metadata ?? {}
+    ]
+  );
+  const id = result.rows[0]?.id;
+  if (!id) throw new Error("knowledge_generation_insert_failed");
+  return id;
 }

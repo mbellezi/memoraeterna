@@ -6,7 +6,11 @@ import type { ConversionInput, MarkdownConversionResult } from "./types.js";
 
 const textDecoder = new TextDecoder("utf-8", { fatal: false });
 
-function result(markdown: string, engine: string, metadata: Record<string, unknown> = {}): MarkdownConversionResult {
+function result(
+  markdown: string,
+  engine: string,
+  metadata: Record<string, unknown> = {}
+): MarkdownConversionResult {
   const normalized = normalizeMarkdown(markdown);
   return {
     status: normalized ? "converted" : "requires_ocr",
@@ -18,11 +22,15 @@ function result(markdown: string, engine: string, metadata: Record<string, unkno
     engineVersion: "1",
     profile: "standard",
     options: {},
-    warnings: normalized ? [] : [{
-      code: "empty_result",
-      messageKey: "errors.conversion.emptyResult",
-      recoverable: true
-    }],
+    warnings: normalized
+      ? []
+      : [
+          {
+            code: "empty_result",
+            messageKey: "errors.conversion.emptyResult",
+            recoverable: true
+          }
+        ],
     quality: { textCoverage: normalized ? 1 : 0 },
     metadata
   };
@@ -84,7 +92,9 @@ export function convertCsv(input: ConversionInput): MarkdownConversionResult {
   const rows = parseCsv(textDecoder.decode(input.data));
   const width = Math.max(0, ...rows.map((row) => row.length));
   if (width === 0) return result("", "native-csv");
-  const normalizedRows = rows.map((row) => Array.from({ length: width }, (_, index) => escapeTableCell(row[index] ?? "")));
+  const normalizedRows = rows.map((row) =>
+    Array.from({ length: width }, (_, index) => escapeTableCell(row[index] ?? ""))
+  );
   const header = normalizedRows[0] ?? [];
   const body = normalizedRows.slice(1);
   const markdown = [
@@ -105,16 +115,24 @@ export function convertXml(input: ConversionInput): MarkdownConversionResult {
   if (!document) throw new Error("Invalid XML document.");
   const entries = [...document.querySelectorAll("item, entry")];
   if (entries.length > 0) {
-    const markdown = entries.map((entry) => {
-      const title = entry.querySelector("title")?.textContent?.trim() ?? "";
-      const link = entry.querySelector("link")?.getAttribute("href") ?? entry.querySelector("link")?.textContent?.trim();
-      const content = entry.querySelector("content, description, summary")?.textContent?.trim() ?? "";
-      return `${title ? `## ${escapeMarkdown(title)}\n\n` : ""}${link ? `[${link}](${link})\n\n` : ""}${content}`;
-    }).join("\n\n");
+    const markdown = entries
+      .map((entry) => {
+        const title = entry.querySelector("title")?.textContent?.trim() ?? "";
+        const link =
+          entry.querySelector("link")?.getAttribute("href") ??
+          entry.querySelector("link")?.textContent?.trim();
+        const content =
+          entry.querySelector("content, description, summary")?.textContent?.trim() ?? "";
+        return `${title ? `## ${escapeMarkdown(title)}\n\n` : ""}${link ? `[${link}](${link})\n\n` : ""}${content}`;
+      })
+      .join("\n\n");
     return result(markdown, "native-xml-feed", { entryCount: entries.length });
   }
   const rootName = document.documentElement?.localName ?? "document";
-  return result(`# ${escapeMarkdown(rootName)}\n\n${document.documentElement?.textContent?.trim() ?? ""}`, "native-xml");
+  return result(
+    `# ${escapeMarkdown(rootName)}\n\n${document.documentElement?.textContent?.trim() ?? ""}`,
+    "native-xml"
+  );
 }
 
 export function convertNotebook(input: ConversionInput): MarkdownConversionResult {
@@ -122,10 +140,12 @@ export function convertNotebook(input: ConversionInput): MarkdownConversionResul
     cells?: Array<{ cell_type?: string; source?: string | string[]; outputs?: unknown[] }>;
     metadata?: Record<string, unknown>;
   };
-  const markdown = (notebook.cells ?? []).map((cell) => {
-    const source = Array.isArray(cell.source) ? cell.source.join("") : (cell.source ?? "");
-    return cell.cell_type === "code" ? `\`\`\`python\n${source.trimEnd()}\n\`\`\`` : source;
-  }).join("\n\n");
+  const markdown = (notebook.cells ?? [])
+    .map((cell) => {
+      const source = Array.isArray(cell.source) ? cell.source.join("") : (cell.source ?? "");
+      return cell.cell_type === "code" ? `\`\`\`python\n${source.trimEnd()}\n\`\`\`` : source;
+    })
+    .join("\n\n");
   return result(markdown, "native-ipynb", { notebookMetadata: notebook.metadata ?? {} });
 }
 
@@ -133,13 +153,18 @@ export function convertLocalHtml(input: ConversionInput): MarkdownConversionResu
   const { document } = parseHTML(textDecoder.decode(input.data));
   for (const element of document.querySelectorAll("script, style, template, nav")) element.remove();
   const title = document.querySelector("title, h1")?.textContent?.trim();
-  const body = document.body.textContent.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  const body = document.body.textContent
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
   return result(`${title ? `# ${escapeMarkdown(title)}\n\n` : ""}${body}`, "native-html");
 }
 
 export async function convertWebHtml(input: ConversionInput): Promise<MarkdownConversionResult> {
   const { document } = parseHTML(textDecoder.decode(input.data));
-  const extracted = await Defuddle(document as unknown as Document, input.sourceUrl, { markdown: true });
+  const extracted = await Defuddle(document as unknown as Document, input.sourceUrl, {
+    markdown: true
+  });
   return result(extracted.content, "defuddle", {
     title: extracted.title,
     author: extracted.author,

@@ -1,6 +1,8 @@
 {
   "extensionName": { "message": "Cattura Memora Eterna" },
-  "extensionDescription": { "message": "Cattura pagine, selezioni e video YouTube in Memora Eterna." },
+  "extensionDescription": {
+    "message": "Cattura pagine, selezioni e video YouTube in Memora Eterna."
+  },
   "gatewayAddress": { "message": "Gateway desktop" },
   "clientId": { "message": "ID client" },
   "pairingToken": { "message": "Token di associazione" },

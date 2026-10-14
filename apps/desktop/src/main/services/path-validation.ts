@@ -1,8 +1,7 @@
 import path from "node:path";
 
 export type PathValidationCode =
-  | "errors.common.validationFailed"
-  | "errors.common.missingConfiguration";
+  "errors.common.validationFailed" | "errors.common.missingConfiguration";
 
 export interface PathValidationResult {
   ok: boolean;

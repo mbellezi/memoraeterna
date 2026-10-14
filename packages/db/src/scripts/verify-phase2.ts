@@ -50,8 +50,11 @@ try {
   const secondRun = await runMigrations(pool, migrationsFolder, { seedFolder });
   if (secondRun.seed.applied) throw new Error("Existing database reapplied the baseline.");
 
-  const history = await pool.query<{ count: string }>("select count(*)::text as count from drizzle.__drizzle_migrations");
-  if (Number(history.rows[0]?.count) !== 11) throw new Error("Unexpected Drizzle migration history.");
+  const history = await pool.query<{ count: string }>(
+    "select count(*)::text as count from drizzle.__drizzle_migrations"
+  );
+  if (Number(history.rows[0]?.count) !== 11)
+    throw new Error("Unexpected Drizzle migration history.");
   const extensions = await pool.query<{ extname: string }>(
     "select extname from pg_extension where extname in ('vector', 'unaccent', 'pg_trgm') order by extname"
   );
@@ -73,50 +76,87 @@ try {
   const sources = createSourceItemRepository(pool);
   const documents = createDocumentRepository(pool);
   const source = await sources.create({
-    type: "PersonalNote", title: "Memória permanente", sourceOrigin: "manual",
-    contentHash: "a".repeat(64), language: "pt-BR"
+    type: "PersonalNote",
+    title: "Memória permanente",
+    sourceOrigin: "manual",
+    contentHash: "a".repeat(64),
+    language: "pt-BR"
   });
   if ((await sources.lookup("Memoria", 5))[0]?.id !== source.id) {
     throw new Error("Accent-insensitive source lookup failed.");
   }
   const book = await sources.create({ type: "Book", title: "Parent book" });
   const chapter = await sources.create({
-    type: "BookChapter", title: "Linked chapter", parentSourceItemId: book.id
+    type: "BookChapter",
+    title: "Linked chapter",
+    parentSourceItemId: book.id
   });
   if ((await sources.findById(chapter.id))?.parentSourceItemId !== book.id) {
     throw new Error("Book chapter parent linkage was not persisted.");
   }
   const document = await documents.create({
-    sourceItemId: source.id, title: source.title,
+    sourceItemId: source.id,
+    title: source.title,
     canonicalMarkdown: "# Memória\n\nUma memória eterna e pesquisável.\n",
-    contentHash: "b".repeat(64), language: "pt-BR"
+    contentHash: "b".repeat(64),
+    language: "pt-BR"
   });
   const chunks = createChunkRepository(pool);
   const chunkId = randomUUID();
   const spanId = randomUUID();
-  const chunkInput = [{
-    id: chunkId, sourceSpanId: spanId, chunkIndex: 0,
-    content: "Uma memória eterna e pesquisável.", tokenCount: 8,
-    contentHash: "c".repeat(64), language: "pt-BR",
-    span: { id: spanId, startOffset: 11, endOffset: 45, page: 1, sourceBlockId: "block-1", selector: "/blocks/1" }
-  }];
+  const chunkInput = [
+    {
+      id: chunkId,
+      sourceSpanId: spanId,
+      chunkIndex: 0,
+      content: "Uma memória eterna e pesquisável.",
+      tokenCount: 8,
+      contentHash: "c".repeat(64),
+      language: "pt-BR",
+      span: {
+        id: spanId,
+        startOffset: 11,
+        endOffset: 45,
+        page: 1,
+        sourceBlockId: "block-1",
+        selector: "/blocks/1"
+      }
+    }
+  ];
   await chunks.replaceDocumentChunks(document.id, source.id, chunkInput);
   await chunks.replaceDocumentChunks(document.id, source.id, chunkInput);
-  if ((await chunks.listByDocument(document.id)).length !== 1) throw new Error("Chunk replacement is not idempotent.");
+  if ((await chunks.listByDocument(document.id)).length !== 1)
+    throw new Error("Chunk replacement is not idempotent.");
 
-  const vector = Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0);
+  const vector = Array.from({ length: 256 }, (_, index) => (index === 0 ? 1 : 0));
   await createEmbeddingRepository(pool).upsert({
-    targetType: "chunk", targetId: chunkId, chunkId, provider: "test", model: "test-256",
-    runtime: "local", contentHash: "c".repeat(64), embedding: vector
+    targetType: "chunk",
+    targetId: chunkId,
+    chunkId,
+    provider: "test",
+    model: "test-256",
+    runtime: "local",
+    contentHash: "c".repeat(64),
+    embedding: vector
   });
   const matches = await createEmbeddingRepository(pool).search(vector, 5, "test-256");
-  if (matches[0]?.chunkId !== chunkId) throw new Error("Vector search did not return the expected chunk.");
-  const vector1024 = Array.from({ length: 1_024 }, (_, index) => index === 0 ? 1 : 0);
+  if (matches[0]?.chunkId !== chunkId)
+    throw new Error("Vector search did not return the expected chunk.");
+  const vector1024 = Array.from({ length: 1_024 }, (_, index) => (index === 0 ? 1 : 0));
   await createEmbeddingRepository(pool).upsert({
-    targetType: "chunk", targetId: chunkId, chunkId, provider: "test", model: "test-1024",
-    runtime: "local", contentHash: "c".repeat(64), embedding: vector1024
+    targetType: "chunk",
+    targetId: chunkId,
+    chunkId,
+    provider: "test",
+    model: "test-1024",
+    runtime: "local",
+    contentHash: "c".repeat(64),
+    embedding: vector1024
   });
-  if ((await createEmbeddingRepository(pool).search(vector1024, 5, "test-1024"))[0]?.chunkId !== chunkId) {
+  if (
+    (await createEmbeddingRepository(pool).search(vector1024, 5, "test-1024"))[0]?.chunkId !==
+    chunkId
+  ) {
     throw new Error("1024-dimension vector search did not return the expected chunk.");
   }
   const search = await createSearchRepository(pool).searchText({ text: "memoria", limit: 5 });
@@ -126,7 +166,9 @@ try {
 
   const bibliographic = createBibliographicRepository(pool);
   const work = await bibliographic.createWork({
-    type: "book", title: "A República", identifiers: { isbn: "9780000000001" }
+    type: "book",
+    title: "A República",
+    identifiers: { isbn: "9780000000001" }
   });
   await bibliographic.createInstance({ workId: work.id, type: "edition", isbn: "9780000000001" });
   if ((await bibliographic.lookup("9780000000001"))[0]?.id !== work.id) {
@@ -135,13 +177,19 @@ try {
 
   const ai = createAiConfigRepository(pool);
   const provider = await ai.upsertProvider({
-    provider: "openai-compatible", displayName: "Test provider", credentialRef: "test:secret",
-    baseUrl: "https://example.test/v1", metadata: { modelId: "test-256", capabilities: ["embedding"] }
+    provider: "openai-compatible",
+    displayName: "Test provider",
+    credentialRef: "test:secret",
+    baseUrl: "https://example.test/v1",
+    metadata: { modelId: "test-256", capabilities: ["embedding"] }
   });
   const profile = await ai.createProfile({ name: "Default", isDefault: true });
   await ai.updateProfile({
-    id: profile.id, providerConfigId: provider.id, modelId: "test-256",
-    runtime: "remote", capabilities: ["embedding"]
+    id: profile.id,
+    providerConfigId: provider.id,
+    modelId: "test-256",
+    runtime: "remote",
+    capabilities: ["embedding"]
   });
   await ai.setProfileTask({ profileId: profile.id, task: "embedding" });
   if ((await ai.getDefaultTask("embedding"))?.providerConfigId !== provider.id) {
@@ -155,25 +203,40 @@ try {
     baseUrl: "https://example.test/v1",
     metadata: { modelId: "test-768", capabilities: ["text-generation"] }
   });
-  if ((await ai.listProfiles()).find((candidate) => candidate.id === profile.id)?.modelId !== "test-768") {
+  if (
+    (await ai.listProfiles()).find((candidate) => candidate.id === profile.id)?.modelId !==
+    "test-768"
+  ) {
     throw new Error("Remote model edit did not update its linked profile selection.");
   }
-  if (await ai.ensureRemoteRerankingCapabilities() !== 1) {
+  if ((await ai.ensureRemoteRerankingCapabilities()) !== 1) {
     throw new Error("Existing generative remote model was not marked for reranking.");
   }
-  const rerankingProvider = (await ai.listProviders()).find((candidate) => candidate.id === provider.id);
-  const rerankingProfile = (await ai.listProfiles()).find((candidate) => candidate.id === profile.id);
-  if (!Array.isArray(rerankingProvider?.metadata.capabilities)
-      || !rerankingProvider.metadata.capabilities.includes("reranking")
-      || !rerankingProfile?.capabilities.includes("reranking")) {
+  const rerankingProvider = (await ai.listProviders()).find(
+    (candidate) => candidate.id === provider.id
+  );
+  const rerankingProfile = (await ai.listProfiles()).find(
+    (candidate) => candidate.id === profile.id
+  );
+  if (
+    !Array.isArray(rerankingProvider?.metadata.capabilities) ||
+    !rerankingProvider.metadata.capabilities.includes("reranking") ||
+    !rerankingProfile?.capabilities.includes("reranking")
+  ) {
     throw new Error("Remote reranking capability was not synchronized to its linked profile.");
   }
   if (!(await ai.deleteProvider(provider.id))) {
     throw new Error("Remote model deletion failed.");
   }
-  const unlinkedProfile = (await ai.listProfiles()).find((candidate) => candidate.id === profile.id);
-  if (unlinkedProfile?.providerConfigId !== null || unlinkedProfile.modelId !== null
-      || unlinkedProfile.runtime !== null || unlinkedProfile.capabilities.length !== 0) {
+  const unlinkedProfile = (await ai.listProfiles()).find(
+    (candidate) => candidate.id === profile.id
+  );
+  if (
+    unlinkedProfile?.providerConfigId !== null ||
+    unlinkedProfile.modelId !== null ||
+    unlinkedProfile.runtime !== null ||
+    unlinkedProfile.capabilities.length !== 0
+  ) {
     throw new Error("Remote model deletion did not clear its linked profile selection.");
   }
 
@@ -183,20 +246,24 @@ try {
   await runs.completeStage(ingestionRun.id, "chunking", { chunkCount: 1 });
   await runs.fail(ingestionRun.id, "simulated_restart");
   const resumed = await runs.startOrResume(ingestionRun.id);
-  if ((resumed?.stagesCheckpoint.chunking as { status?: string } | undefined)?.status !== "completed") {
+  if (
+    (resumed?.stagesCheckpoint.chunking as { status?: string } | undefined)?.status !== "completed"
+  ) {
     throw new Error("Ingestion checkpoint was not preserved on resume.");
   }
 
   const jobs = createJobRepository(pool);
   const job = await jobs.create({ type: "chunking", payload: { documentId: document.id } });
   const claimed = await jobs.claimNext("phase2-verifier");
-  if (claimed?.id !== job.id || claimed.status !== "running") throw new Error("SKIP LOCKED queue claim failed.");
+  if (claimed?.id !== job.id || claimed.status !== "running")
+    throw new Error("SKIP LOCKED queue claim failed.");
   const jobWithAiExecution = await jobs.setAiExecution(job.id, {
     provider: "google",
     modelId: "gemini-3.1-pro-preview",
     reasoningLevel: "low"
   });
-  const aiExecution = jobWithAiExecution?.payload.aiExecution as Record<string, unknown> | undefined;
+  const aiExecution = jobWithAiExecution?.payload.aiExecution as
+    Record<string, unknown> | undefined;
   if (aiExecution?.modelId !== "gemini-3.1-pro-preview" || aiExecution.reasoningLevel !== "low") {
     throw new Error("Job AI execution metadata was not persisted.");
   }
@@ -218,19 +285,29 @@ try {
   await runs.recoverInterrupted();
   const recoveredJob = await jobs.findById(interruptedJob.id);
   const recoveredRun = await runs.findById(interruptedRun.id);
-  if (recoveredJob?.status !== "queued" || recoveredRun?.status !== "pending"
-      || (recoveredRun.stagesCheckpoint.chunking as { status?: string } | undefined)?.status !== "pending") {
+  if (
+    recoveredJob?.status !== "queued" ||
+    recoveredRun?.status !== "pending" ||
+    (recoveredRun.stagesCheckpoint.chunking as { status?: string } | undefined)?.status !==
+      "pending"
+  ) {
     throw new Error("Interrupted queue state was not recovered on startup.");
   }
 
-  console.info(JSON.stringify({
-    baselineMigrations: firstRun.seed.seededMigrations,
-    migrationHistoryCount: Number(history.rows[0]?.count),
-    extensions: extensions.rows.map((row) => row.extname),
-    verifiedIndexes: indexes.rows.map((row) => row.indexname),
-    vectorTopMatch: matches[0]?.chunkId,
-    textTopMatch: search[0]?.chunkId
-  }, null, 2));
+  console.info(
+    JSON.stringify(
+      {
+        baselineMigrations: firstRun.seed.seededMigrations,
+        migrationHistoryCount: Number(history.rows[0]?.count),
+        extensions: extensions.rows.map((row) => row.extname),
+        verifiedIndexes: indexes.rows.map((row) => row.indexname),
+        vectorTopMatch: matches[0]?.chunkId,
+        textTopMatch: search[0]?.chunkId
+      },
+      null,
+      2
+    )
+  );
 } finally {
   if (pool) await closePgPool(pool);
   await manager.stop().catch(() => undefined);

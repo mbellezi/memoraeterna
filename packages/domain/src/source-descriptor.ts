@@ -14,44 +14,52 @@ export const CreatorRoles = [
 
 export const CreatorRoleSchema = z.enum(CreatorRoles);
 
-export const CreatorSchema = z.object({
-  name: z.string().trim().min(1).max(300),
-  role: CreatorRoleSchema,
-  sortName: z.string().trim().min(1).max(300).optional(),
-  affiliation: z.string().trim().min(1).max(300).optional(),
-  externalIds: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional()
-}).strict();
+export const CreatorSchema = z
+  .object({
+    name: z.string().trim().min(1).max(300),
+    role: CreatorRoleSchema,
+    sortName: z.string().trim().min(1).max(300).optional(),
+    affiliation: z.string().trim().min(1).max(300).optional(),
+    externalIds: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional()
+  })
+  .strict();
 
 export type Creator = z.infer<typeof CreatorSchema>;
 
 export const MetadataProvenanceSourceSchema = z.enum(["manual", "extracted", "enriched"]);
 
-export const MetadataFieldProvenanceSchema = z.object({
-  source: MetadataProvenanceSourceSchema,
-  evidence: z.string().trim().min(1).optional(),
-  provider: z.string().trim().min(1).optional(),
-  observedAt: z.string().datetime().optional()
-}).strict();
+export const MetadataFieldProvenanceSchema = z
+  .object({
+    source: MetadataProvenanceSourceSchema,
+    evidence: z.string().trim().min(1).optional(),
+    provider: z.string().trim().min(1).optional(),
+    observedAt: z.string().datetime().optional()
+  })
+  .strict();
 
 export type MetadataFieldProvenance = z.infer<typeof MetadataFieldProvenanceSchema>;
 
-export const SourceDescriptorProvenanceSchema = z.record(
-  z.string().trim().min(1),
-  MetadataFieldProvenanceSchema
-).default({});
+export const SourceDescriptorProvenanceSchema = z
+  .record(z.string().trim().min(1), MetadataFieldProvenanceSchema)
+  .default({});
 
-export const CoverReferenceSchema = z.object({
-  assetId: StableIdSchema.optional(),
-  sourceUrl: z.string().url().optional(),
-  mimeType: z.string().trim().min(1).optional()
-}).strict().refine((cover) => cover.assetId !== undefined || cover.sourceUrl !== undefined, {
-  message: "A cover must reference an asset or source URL."
-});
+export const CoverReferenceSchema = z
+  .object({
+    assetId: StableIdSchema.optional(),
+    sourceUrl: z.string().url().optional(),
+    mimeType: z.string().trim().min(1).optional()
+  })
+  .strict()
+  .refine((cover) => cover.assetId !== undefined || cover.sourceUrl !== undefined, {
+    message: "A cover must reference an asset or source URL."
+  });
 
-export const PageRangeSchema = z.object({
-  start: z.string().trim().min(1),
-  end: z.string().trim().min(1).optional()
-}).strict();
+export const PageRangeSchema = z
+  .object({
+    start: z.string().trim().min(1),
+    end: z.string().trim().min(1).optional()
+  })
+  .strict();
 
 const commonDescriptorShape = {
   title: z.string().trim().min(1).max(1000),
@@ -69,105 +77,147 @@ const parentShape = {
   parentSourceItemId: StableIdSchema
 } as const;
 
-export const PersonalNoteDescriptorSchema = z.object({
-  type: z.literal("PersonalNote"),
-  ...commonDescriptorShape,
-  context: z.string().trim().min(1).max(10_000).optional()
-}).strict();
+export const PersonalNoteDescriptorSchema = z
+  .object({
+    type: z.literal("PersonalNote"),
+    ...commonDescriptorShape,
+    context: z.string().trim().min(1).max(10_000).optional()
+  })
+  .strict();
 
-export const DailyNoteDescriptorSchema = z.object({
-  type: z.literal("DailyNote"),
-  ...commonDescriptorShape,
-  noteDate: z.iso.date()
-}).strict();
+export const DailyNoteDescriptorSchema = z
+  .object({
+    type: z.literal("DailyNote"),
+    ...commonDescriptorShape,
+    noteDate: z.iso.date()
+  })
+  .strict();
 
-export const WebArticleDescriptorSchema = z.object({
-  type: z.literal("WebArticle"),
-  ...commonDescriptorShape,
-  url: z.string().url().optional(),
-  siteName: z.string().trim().min(1).max(500).optional(),
-  imageUrl: z.string().url().optional()
-}).strict();
+export const WebArticleDescriptorSchema = z
+  .object({
+    type: z.literal("WebArticle"),
+    ...commonDescriptorShape,
+    url: z.string().url().optional(),
+    siteName: z.string().trim().min(1).max(500).optional(),
+    imageUrl: z.string().url().optional()
+  })
+  .strict();
 
-export const BookDescriptorSchema = z.object({
-  type: z.literal("Book"),
-  ...commonDescriptorShape,
-  edition: z.string().trim().min(1).max(100).optional(),
-  publisher: z.string().trim().min(1).max(500).optional(),
-  isbn10: z.string().transform(normalizeIsbn).pipe(z.string().refine(isValidIsbn10, "Invalid ISBN-10")).optional(),
-  isbn13: z.string().transform(normalizeIsbn).pipe(z.string().refine(isValidIsbn13, "Invalid ISBN-13")).optional(),
-  series: z.string().trim().min(1).max(500).optional(),
-  volume: z.string().trim().min(1).max(100).optional(),
-  pageCount: z.number().int().positive().optional(),
-  subjects: z.array(z.string().trim().min(1).max(300)).max(200).default([])
-}).strict();
+export const BookDescriptorSchema = z
+  .object({
+    type: z.literal("Book"),
+    ...commonDescriptorShape,
+    edition: z.string().trim().min(1).max(100).optional(),
+    publisher: z.string().trim().min(1).max(500).optional(),
+    isbn10: z
+      .string()
+      .transform(normalizeIsbn)
+      .pipe(z.string().refine(isValidIsbn10, "Invalid ISBN-10"))
+      .optional(),
+    isbn13: z
+      .string()
+      .transform(normalizeIsbn)
+      .pipe(z.string().refine(isValidIsbn13, "Invalid ISBN-13"))
+      .optional(),
+    series: z.string().trim().min(1).max(500).optional(),
+    volume: z.string().trim().min(1).max(100).optional(),
+    pageCount: z.number().int().positive().optional(),
+    subjects: z.array(z.string().trim().min(1).max(300)).max(200).default([])
+  })
+  .strict();
 
-export const BookChapterDescriptorSchema = z.object({
-  type: z.literal("BookChapter"),
-  ...commonDescriptorShape,
-  ...parentShape,
-  chapterNumber: z.string().trim().min(1).max(100).optional(),
-  pages: PageRangeSchema.optional()
-}).strict();
+export const BookChapterDescriptorSchema = z
+  .object({
+    type: z.literal("BookChapter"),
+    ...commonDescriptorShape,
+    ...parentShape,
+    chapterNumber: z.string().trim().min(1).max(100).optional(),
+    pages: PageRangeSchema.optional()
+  })
+  .strict();
 
-export const PeriodicalIssueDescriptorSchema = z.object({
-  type: z.literal("PeriodicalIssue"),
-  ...commonDescriptorShape,
-  publicationTitle: z.string().trim().min(1).max(1000),
-  issn: z.string().trim().regex(/^\d{4}-?\d{3}[\dXx]$/).optional(),
-  volume: z.string().trim().min(1).max(100).optional(),
-  issue: z.string().trim().min(1).max(100).optional(),
-  publisher: z.string().trim().min(1).max(500).optional(),
-  pageCount: z.number().int().positive().optional()
-}).strict();
+export const PeriodicalIssueDescriptorSchema = z
+  .object({
+    type: z.literal("PeriodicalIssue"),
+    ...commonDescriptorShape,
+    publicationTitle: z.string().trim().min(1).max(1000),
+    issn: z
+      .string()
+      .trim()
+      .regex(/^\d{4}-?\d{3}[\dXx]$/)
+      .optional(),
+    volume: z.string().trim().min(1).max(100).optional(),
+    issue: z.string().trim().min(1).max(100).optional(),
+    publisher: z.string().trim().min(1).max(500).optional(),
+    pageCount: z.number().int().positive().optional()
+  })
+  .strict();
 
-export const AcademicPaperDescriptorSchema = z.object({
-  type: z.literal("AcademicPaper"),
-  ...commonDescriptorShape,
-  doi: z.string().transform(normalizeDoi).pipe(z.string().regex(/^10\.\d{4,9}\/\S+$/i)).optional(),
-  venue: z.string().trim().min(1).max(1000).optional(),
-  year: z.number().int().min(1000).max(9999).optional(),
-  abstract: z.string().trim().min(1).max(100_000).optional(),
-  keywords: z.array(z.string().trim().min(1).max(300)).max(200).default([]),
-  pages: PageRangeSchema.optional()
-}).strict();
+export const AcademicPaperDescriptorSchema = z
+  .object({
+    type: z.literal("AcademicPaper"),
+    ...commonDescriptorShape,
+    doi: z
+      .string()
+      .transform(normalizeDoi)
+      .pipe(z.string().regex(/^10\.\d{4,9}\/\S+$/i))
+      .optional(),
+    venue: z.string().trim().min(1).max(1000).optional(),
+    year: z.number().int().min(1000).max(9999).optional(),
+    abstract: z.string().trim().min(1).max(100_000).optional(),
+    keywords: z.array(z.string().trim().min(1).max(300)).max(200).default([]),
+    pages: PageRangeSchema.optional()
+  })
+  .strict();
 
-export const DocumentSectionDescriptorSchema = z.object({
-  type: z.literal("DocumentSection"),
-  ...commonDescriptorShape,
-  ...parentShape,
-  sectionNumber: z.string().trim().min(1).max(100).optional(),
-  pages: PageRangeSchema.optional()
-}).strict();
+export const DocumentSectionDescriptorSchema = z
+  .object({
+    type: z.literal("DocumentSection"),
+    ...commonDescriptorShape,
+    ...parentShape,
+    sectionNumber: z.string().trim().min(1).max(100).optional(),
+    pages: PageRangeSchema.optional()
+  })
+  .strict();
 
-export const StandaloneArticleDescriptorSchema = z.object({
-  type: z.literal("StandaloneArticle"),
-  ...commonDescriptorShape,
-  parentSourceItemId: StableIdSchema.optional(),
-  doi: z.string().transform(normalizeDoi).pipe(z.string().regex(/^10\.\d{4,9}\/\S+$/i)).optional(),
-  periodicalTitle: z.string().trim().min(1).max(1000).optional(),
-  volume: z.string().trim().min(1).max(100).optional(),
-  issue: z.string().trim().min(1).max(100).optional(),
-  pages: PageRangeSchema.optional()
-}).strict();
+export const StandaloneArticleDescriptorSchema = z
+  .object({
+    type: z.literal("StandaloneArticle"),
+    ...commonDescriptorShape,
+    parentSourceItemId: StableIdSchema.optional(),
+    doi: z
+      .string()
+      .transform(normalizeDoi)
+      .pipe(z.string().regex(/^10\.\d{4,9}\/\S+$/i))
+      .optional(),
+    periodicalTitle: z.string().trim().min(1).max(1000).optional(),
+    volume: z.string().trim().min(1).max(100).optional(),
+    issue: z.string().trim().min(1).max(100).optional(),
+    pages: PageRangeSchema.optional()
+  })
+  .strict();
 
-export const VideoDescriptorSchema = z.object({
-  type: z.literal("Video"),
-  ...commonDescriptorShape,
-  url: z.string().url().optional(),
-  channel: z.string().trim().min(1).max(500).optional(),
-  durationSeconds: z.number().int().nonnegative().optional(),
-  platform: z.string().trim().min(1).max(100).optional(),
-  videoId: z.string().trim().min(1).max(200).optional(),
-  thumbnailUrl: z.string().url().optional()
-}).strict();
+export const VideoDescriptorSchema = z
+  .object({
+    type: z.literal("Video"),
+    ...commonDescriptorShape,
+    url: z.string().url().optional(),
+    channel: z.string().trim().min(1).max(500).optional(),
+    durationSeconds: z.number().int().nonnegative().optional(),
+    platform: z.string().trim().min(1).max(100).optional(),
+    videoId: z.string().trim().min(1).max(200).optional(),
+    thumbnailUrl: z.string().url().optional()
+  })
+  .strict();
 
-export const GenericDocumentDescriptorSchema = z.object({
-  type: z.literal("GenericDocument"),
-  ...commonDescriptorShape,
-  creationDate: z.string().trim().min(4).max(32).optional(),
-  mimeType: z.string().trim().min(1).max(300).optional()
-}).strict();
+export const GenericDocumentDescriptorSchema = z
+  .object({
+    type: z.literal("GenericDocument"),
+    ...commonDescriptorShape,
+    creationDate: z.string().trim().min(4).max(32).optional(),
+    mimeType: z.string().trim().min(1).max(300).optional()
+  })
+  .strict();
 
 export const SourceDescriptorSchema = z.discriminatedUnion("type", [
   PersonalNoteDescriptorSchema,
@@ -185,20 +235,34 @@ export const SourceDescriptorSchema = z.discriminatedUnion("type", [
 
 export type SourceDescriptor = z.infer<typeof SourceDescriptorSchema>;
 
-export const SourceDescriptorDraftSchema = z.object({
-  sourceType: z.enum([
-    "PersonalNote", "DailyNote", "WebArticle", "Book", "BookChapter", "PeriodicalIssue",
-    "AcademicPaper", "DocumentSection", "StandaloneArticle", "Video", "GenericDocument"
-  ]),
-  values: z.record(z.string(), z.unknown()).default({}),
-  provenance: SourceDescriptorProvenanceSchema,
-  warnings: z.array(z.string()).default([]),
-  coverData: z.object({
-    data: z.instanceof(Uint8Array),
-    mimeType: z.string().trim().min(1),
-    fileName: z.string().trim().min(1)
-  }).strict().optional()
-}).strict();
+export const SourceDescriptorDraftSchema = z
+  .object({
+    sourceType: z.enum([
+      "PersonalNote",
+      "DailyNote",
+      "WebArticle",
+      "Book",
+      "BookChapter",
+      "PeriodicalIssue",
+      "AcademicPaper",
+      "DocumentSection",
+      "StandaloneArticle",
+      "Video",
+      "GenericDocument"
+    ]),
+    values: z.record(z.string(), z.unknown()).default({}),
+    provenance: SourceDescriptorProvenanceSchema,
+    warnings: z.array(z.string()).default([]),
+    coverData: z
+      .object({
+        data: z.instanceof(Uint8Array),
+        mimeType: z.string().trim().min(1),
+        fileName: z.string().trim().min(1)
+      })
+      .strict()
+      .optional()
+  })
+  .strict();
 
 export type SourceDescriptorDraft = z.infer<typeof SourceDescriptorDraftSchema>;
 
@@ -222,10 +286,21 @@ export function mergeDescriptorFields<T extends Record<string, unknown>>(
     if (key === "provenance" || value === undefined) continue;
     const existing = currentProvenance[key];
     const next = incomingProvenance[key];
-    if (!next || !existing || provenancePriority[next.source] > provenancePriority[existing.source]
-        || (existing.source === "extracted" && next.source === "enriched" && options.acceptEnrichedOverExtracted)) {
+    if (
+      !next ||
+      !existing ||
+      provenancePriority[next.source] > provenancePriority[existing.source] ||
+      (existing.source === "extracted" &&
+        next.source === "enriched" &&
+        options.acceptEnrichedOverExtracted)
+    ) {
       if (existing?.source === "manual" && next?.source !== "manual") continue;
-      if (existing?.source === "extracted" && next?.source === "enriched" && !options.acceptEnrichedOverExtracted) continue;
+      if (
+        existing?.source === "extracted" &&
+        next?.source === "enriched" &&
+        !options.acceptEnrichedOverExtracted
+      )
+        continue;
       merged[key] = value;
       if (next) mergedProvenance[key] = next;
     }
@@ -270,7 +345,10 @@ export function isbn10To13(value: string): string | null {
 }
 
 export function normalizeDoi(value: string): string {
-  return value.trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "").replace(/^doi:\s*/i, "");
+  return value
+    .trim()
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, "")
+    .replace(/^doi:\s*/i, "");
 }
 
 function readProvenance(value: unknown): Record<string, MetadataFieldProvenance> {

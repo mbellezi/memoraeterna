@@ -12,10 +12,17 @@ const migrations = await Promise.all(
 );
 
 await writeFile(seedPath, migrations.join("\n\n"));
-await writeFile(manifestPath, `${JSON.stringify({
-  version: 1,
-  seedFile: "baseline.sql",
-  includedMigrations: tags
-}, null, 2)}\n`);
+await writeFile(
+  manifestPath,
+  `${JSON.stringify(
+    {
+      version: 1,
+      seedFile: "baseline.sql",
+      includedMigrations: tags
+    },
+    null,
+    2
+  )}\n`
+);
 
 console.info(`Synchronized baseline seed with ${tags.length} migration(s).`);

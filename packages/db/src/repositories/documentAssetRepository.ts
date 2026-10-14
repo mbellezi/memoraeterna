@@ -47,18 +47,18 @@ export interface UpdateDocumentAssetInput {
 
 const returning = [
   "id",
-  "document_id as \"documentId\"",
-  "source_item_id as \"sourceItemId\"",
-  "original_file_name as \"originalFileName\"",
+  'document_id as "documentId"',
+  'source_item_id as "sourceItemId"',
+  'original_file_name as "originalFileName"',
   "sha256",
-  "mime_type as \"mimeType\"",
-  "size_bytes as \"sizeBytes\"",
-  "storage_base as \"storageBase\"",
-  "relative_path as \"relativePath\"",
+  'mime_type as "mimeType"',
+  'size_bytes as "sizeBytes"',
+  'storage_base as "storageBase"',
+  'relative_path as "relativePath"',
   "role",
   "metadata",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapDocumentAsset(row: DocumentAssetRow): DocumentAssetRecord {

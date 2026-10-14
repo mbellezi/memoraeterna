@@ -36,7 +36,9 @@ export interface DownloadLocalModelResult {
   sizeBytes: number;
 }
 
-export async function downloadLocalModel(options: DownloadLocalModelOptions): Promise<DownloadLocalModelResult> {
+export async function downloadLocalModel(
+  options: DownloadLocalModelOptions
+): Promise<DownloadLocalModelResult> {
   const fetchImpl = options.fetch ?? fetch;
   const modelPath = resolveManagedModelPath(options.destinationRoot, options.entry.id);
   await mkdir(modelPath, { recursive: true });
@@ -103,15 +105,17 @@ export async function downloadLocalModel(options: DownloadLocalModelOptions): Pr
         const bytesPerSecond = Math.max(0, (receivedBytes - partialBytes) / elapsedSeconds);
         const aggregateBytes = downloadedBytes + receivedBytes;
         const remaining = Math.max(0, totalBytes - aggregateBytes);
-        Promise.resolve(options.onProgress?.({
-          currentFile: file.path,
-          currentFileBytes: receivedBytes,
-          currentFileSizeBytes: file.sizeBytes,
-          downloadedBytes: aggregateBytes,
-          totalBytes,
-          bytesPerSecond,
-          etaSeconds: bytesPerSecond > 0 ? Math.ceil(remaining / bytesPerSecond) : null
-        })).then(() => callback(null, chunk), callback);
+        Promise.resolve(
+          options.onProgress?.({
+            currentFile: file.path,
+            currentFileBytes: receivedBytes,
+            currentFileSizeBytes: file.sizeBytes,
+            downloadedBytes: aggregateBytes,
+            totalBytes,
+            bytesPerSecond,
+            etaSeconds: bytesPerSecond > 0 ? Math.ceil(remaining / bytesPerSecond) : null
+          })
+        ).then(() => callback(null, chunk), callback);
       }
     });
     await pipeline(
@@ -143,9 +147,19 @@ export async function downloadLocalModel(options: DownloadLocalModelOptions): Pr
   return { modelPath, sizeBytes: totalBytes };
 }
 
-export async function verifyLocalModelFiles(entry: LocalModelCatalogEntry, modelPath: string): Promise<boolean> {
+export async function verifyLocalModelFiles(
+  entry: LocalModelCatalogEntry,
+  modelPath: string
+): Promise<boolean> {
   for (const file of entry.files) {
-    if (!await fileMatches(resolveManagedModelPath(modelPath, file.path), file.sizeBytes, file.sha256)) return false;
+    if (
+      !(await fileMatches(
+        resolveManagedModelPath(modelPath, file.path),
+        file.sizeBytes,
+        file.sha256
+      ))
+    )
+      return false;
   }
   return true;
 }
@@ -173,12 +187,19 @@ export function redactSensitiveText(value: unknown): string {
     .replace(/([?&](?:token|signature|x-amz-signature)=)[^&\s]+/gi, "$1[redacted]");
 }
 
-async function assertDiskSpace(path: string, entry: LocalModelCatalogEntry, reserveBytes: number): Promise<void> {
+async function assertDiskSpace(
+  path: string,
+  entry: LocalModelCatalogEntry,
+  reserveBytes: number
+): Promise<void> {
   const filesystem = await statfs(path);
   const availableBytes = Number(filesystem.bavail) * Number(filesystem.bsize);
   let existingBytes = 0;
   for (const file of entry.files) {
-    existingBytes += Math.min(file.sizeBytes, await fileSize(`${resolveManagedModelPath(path, file.path)}.partial`));
+    existingBytes += Math.min(
+      file.sizeBytes,
+      await fileSize(`${resolveManagedModelPath(path, file.path)}.partial`)
+    );
     if (await fileExists(resolveManagedModelPath(path, file.path))) existingBytes += file.sizeBytes;
   }
   const requiredBytes = Math.max(0, localModelExpectedSize(entry) - existingBytes) + reserveBytes;
@@ -192,9 +213,13 @@ function createHeaders(token: string | undefined, partialBytes: number): Headers
   return headers;
 }
 
-async function fileMatches(path: string, sizeBytes: number, expectedSha256: string): Promise<boolean> {
-  if (await fileSize(path) !== sizeBytes) return false;
-  return await sha256File(path) === expectedSha256;
+async function fileMatches(
+  path: string,
+  sizeBytes: number,
+  expectedSha256: string
+): Promise<boolean> {
+  if ((await fileSize(path)) !== sizeBytes) return false;
+  return (await sha256File(path)) === expectedSha256;
 }
 
 export async function sha256File(path: string): Promise<string> {

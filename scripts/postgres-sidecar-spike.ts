@@ -19,7 +19,8 @@ const defaultSidecarRoot = join(
   "postgresql-18.4"
 );
 const binDir = process.env.MEMORA_POSTGRES_BIN_DIR ?? join(defaultSidecarRoot, "bin");
-const extensionDir = process.env.MEMORA_POSTGRES_EXTENSION_DIR ?? join(defaultSidecarRoot, "lib/postgresql");
+const extensionDir =
+  process.env.MEMORA_POSTGRES_EXTENSION_DIR ?? join(defaultSidecarRoot, "lib/postgresql");
 
 if (!binDir) {
   throw new Error("MEMORA_POSTGRES_BIN_DIR must point to a PostgreSQL 18 sidecar bin directory.");
@@ -93,7 +94,10 @@ try {
     const pgVersion = await readFile(join(dataDir, "PG_VERSION"), "utf8");
     await psql("create extension if not exists vector;", env);
     await psql("create extension if not exists age;", env);
-    await psql("load 'age'; set search_path = ag_catalog, '$user', public; select create_graph('memora_spike_graph');", env);
+    await psql(
+      "load 'age'; set search_path = ag_catalog, '$user', public; select create_graph('memora_spike_graph');",
+      env
+    );
     await psql(
       "load 'age'; set search_path = ag_catalog, '$user', public; select * from cypher('memora_spike_graph', $$ return 1 as ok $$) as (ok agtype);",
       env
@@ -128,7 +132,9 @@ try {
       )
     );
   } catch (error) {
-    await run(bin("pg_ctl"), ["-D", dataDir, "-m", "fast", "-w", "stop"], { env }).catch(() => undefined);
+    await run(bin("pg_ctl"), ["-D", dataDir, "-m", "fast", "-w", "stop"], { env }).catch(
+      () => undefined
+    );
     throw error;
   }
 } finally {
@@ -150,7 +156,20 @@ async function assertExecutable(path: string): Promise<void> {
 async function psql(sql: string, env: NodeJS.ProcessEnv): Promise<CommandResult> {
   return run(
     bin("psql"),
-    ["-h", "127.0.0.1", "-p", String(port), "-U", user, "-d", database, "-v", "ON_ERROR_STOP=1", "-c", sql],
+    [
+      "-h",
+      "127.0.0.1",
+      "-p",
+      String(port),
+      "-U",
+      user,
+      "-d",
+      database,
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      sql
+    ],
     { env }
   );
 }
@@ -214,7 +233,9 @@ function run(
         resolve({ stdout, stderr });
         return;
       }
-      reject(new Error(`Command failed (${code}): ${command} ${args.join(" ")}\n${stderr || stdout}`));
+      reject(
+        new Error(`Command failed (${code}): ${command} ${args.join(" ")}\n${stderr || stdout}`)
+      );
     });
   });
 }

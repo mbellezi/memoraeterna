@@ -34,14 +34,14 @@ export interface UpdateDocumentInput {
 
 const returning = [
   "id",
-  "source_item_id as \"sourceItemId\"",
+  'source_item_id as "sourceItemId"',
   "title",
-  "canonical_markdown as \"canonicalMarkdown\"",
-  "content_hash as \"contentHash\"",
+  'canonical_markdown as "canonicalMarkdown"',
+  'content_hash as "contentHash"',
   "language",
   "metadata",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapDocument(row: DocumentRow): DocumentRecord {
@@ -91,9 +91,16 @@ export function createDocumentRepository(db: Queryable) {
     },
 
     async listHistory(sourceItemId: string) {
-      const result = await db.query<{ id: string; title: string; createdAt: Date; isCurrent: boolean }>(
+      const result = await db.query<{
+        id: string;
+        title: string;
+        createdAt: Date;
+        isCurrent: boolean;
+      }>(
         `select id, title, created_at as "createdAt", not (metadata ? 'supersededByDocumentId') as "isCurrent"
-         from documents where source_item_id = $1 order by created_at desc limit 100`, [sourceItemId]);
+         from documents where source_item_id = $1 order by created_at desc limit 100`,
+        [sourceItemId]
+      );
       return result.rows;
     },
 

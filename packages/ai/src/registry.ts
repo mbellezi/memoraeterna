@@ -1,6 +1,12 @@
 import type { AiCapability } from "@app/domain";
 
-import { createTaskHandle, hasCapabilities, type AiModelAdapter, type AiTaskHandle, type AiTaskRequest } from "./contracts.js";
+import {
+  createTaskHandle,
+  hasCapabilities,
+  type AiModelAdapter,
+  type AiTaskHandle,
+  type AiTaskRequest
+} from "./contracts.js";
 
 export class AiModelRegistry {
   private readonly adapters = new Map<string, AiModelAdapter>();
@@ -15,7 +21,9 @@ export class AiModelRegistry {
   }
 
   public list(required: readonly AiCapability[] = []): AiModelAdapter[] {
-    return [...this.adapters.values()].filter((adapter) => hasCapabilities(adapter.describe(), required));
+    return [...this.adapters.values()].filter((adapter) =>
+      hasCapabilities(adapter.describe(), required)
+    );
   }
 
   public resolve(input: {
@@ -26,9 +34,11 @@ export class AiModelRegistry {
   }): AiModelAdapter {
     const adapter = this.list(input.requiredCapabilities).find((candidate) => {
       const descriptor = candidate.describe();
-      return (!input.providerId || descriptor.providerId === input.providerId)
-        && (!input.modelId || descriptor.modelId === input.modelId)
-        && (!input.offlineOnly || descriptor.capabilities.includes("offline"));
+      return (
+        (!input.providerId || descriptor.providerId === input.providerId) &&
+        (!input.modelId || descriptor.modelId === input.modelId) &&
+        (!input.offlineOnly || descriptor.capabilities.includes("offline"))
+      );
     });
     if (!adapter) throw new Error("errors.ai.noCompatibleModel");
     return adapter;

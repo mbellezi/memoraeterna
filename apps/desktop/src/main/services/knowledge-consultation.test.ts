@@ -1,28 +1,177 @@
-import {randomUUID} from 'node:crypto';
-import {describe,it,expect,vi} from 'vitest';
-import {ConsultationInputSchema} from '@app/domain';
-import {ConsultationService,packKnowledgeSnapshot,consultationPrompt} from './consultation-service.js';
-import {investigationContent,investigationFingerprint} from './investigation-service.js';
-import {defaultPromptPin,withPromptPin,promptAudit} from './prompt-runtime.js';
-import {promptSampleSnapshot} from './prompt-samples.js';
-describe('knowledge-first consultation contract',()=>{
- it('bounds complementary raw volume at generous context and retains original-only fallback',()=>{
-  const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation');snapshot.consultationVersion='knowledge-consultation-v2';snapshot.profile.contextWindow=128000;
-  const originals=snapshot.evidence;
-  const distracting=Array.from({length:12},(_,i)=>({...originals[0]!,handle:'e'+(i+3),chunkId:randomUUID(),excerpt:i===0?'Unrelated '.repeat(1100):'Unrelated lexical match.'}));
-  snapshot.evidence=[...distracting,...originals];snapshot.contexts=[{id:randomUUID(),kind:'wiki_section',sourceItemId:originals[0]!.sourceItemId,text:'Faithful compiled synthesis.',review:'unreviewed',fingerprint:'fixture',handles:originals.map(e=>e.handle),dependencies:[]}];
-  const packed=packKnowledgeSnapshot(snapshot,'What do the studies report?');
-  expect(packed.evidence.slice(0,originals.length)).toEqual(originals);
-  const raw=packed.evidence.filter(e=>!originals.some(o=>o.chunkId===e.chunkId));
-  expect(raw.length).toBeLessThanOrEqual(originals.length);expect(raw.length).toBeGreaterThan(0);
-  expect(Buffer.byteLength(JSON.stringify(raw))).toBeLessThanOrEqual(Buffer.byteLength(JSON.stringify(originals)));
-  expect(raw.some(e=>e.chunkId===distracting[0]!.chunkId)).toBe(false);
-  snapshot.contexts=[];expect(packKnowledgeSnapshot(snapshot,'What do the studies report?').evidence.length).toBe(12);
- });
- it('dispatches legacy inputs explicitly and rejects unknown versions',()=>{const input={requestId:randomUUID(),question:'Question'};expect(ConsultationInputSchema.parse(input).version).toBe('wiki-answer-v1');expect(()=>ConsultationInputSchema.parse({...input,version:'future'})).toThrow();});
- it('packs compiled knowledge together with all its complete support before raw candidates',()=>{const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation');snapshot.consultationVersion='knowledge-consultation-v2';snapshot.profile.contextWindow=10000;const originals=snapshot.evidence;const distracting=Array.from({length:12},(_,i)=>({...originals[0]!,handle:'e'+(i+3),chunkId:randomUUID(),excerpt:'Unrelated '.repeat(80)}));snapshot.evidence=[...distracting,...originals];snapshot.contexts=[{id:randomUUID(),kind:'wiki_section',sourceItemId:originals[0]!.sourceItemId,text:'Faithful compiled synthesis.',review:'unreviewed',fingerprint:'fixture',handles:originals.map(e=>e.handle),dependencies:[]}];const packed=packKnowledgeSnapshot(snapshot,'What do the studies report?');expect(packed.evidence.slice(0,2)).toEqual(originals);expect(packed.contexts).toHaveLength(1);expect(packed.evidence.length).toBeLessThanOrEqual(12);expect(consultationPrompt(packed,'Question')).toContain('COMPILED KNOWLEDGE');});
- it('never marks followed-answer prose as machine checked from citation parsing',()=>{const original=promptSampleSnapshot(defaultPromptPin(),'consultation').evidence[0]!;const content=investigationContent({question:'Question',answer:{paragraphs:[{markdown:'Reported finding [e1]',citations:['e1'],contextIds:[]}],gaps:[]},evidence:[original]} as any);expect(content.automatic!.role.role).toBe('investigation');expect(content.sections[0]!.assessment).toBeUndefined();expect(content.sections[0]!.evidenceReview).toBe('needs_review');});
- it('fingerprints effective investigation/gap/shared wording and preserves admitted pins',()=>{const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation'),initial=investigationFingerprint(snapshot);for(const id of ['consultation.investigation','consultation.gaps','consultation.guidance','shared.output_language']){const changed=structuredClone(snapshot);changed.promptPin!.entries.find(e=>e.id===id)!.fields.body+='\nDifferent';expect(investigationFingerprint(changed)).not.toBe(initial);}expect(investigationFingerprint(snapshot)).toBe(initial);const unrelated=structuredClone(snapshot);unrelated.promptPin!.entries.find(e=>e.id==='notes.extract')!.fields.body+='\nDifferent';expect(investigationFingerprint(unrelated)).toBe(initial);});
- it('maps the common prepared-context guard to the actionable consultation error',async()=>{const snapshot=promptSampleSnapshot(defaultPromptPin(),'consultation');snapshot.consultationVersion='knowledge-consultation-v2';const service=new ConsultationService({getPool:()=>null,ai:{runOrganizationTask:async()=>{throw new Error('errors.ai.contextWindowLimit');}},contentLanguage:async()=> 'en',wake:()=>{}} as any);await expect(service.generate(snapshot,'Question',{},new AbortController().signal)).rejects.toThrow('organization.errors.context');});
- it.each(['answer','comparison','investigation'] as const)('uses actual registered %s and gap leaves with one bounded repair',async intent=>{const pin=defaultPromptPin(),snapshot=promptSampleSnapshot(pin,'consultation');snapshot.consultationVersion='knowledge-consultation-v2';snapshot.consultationIntent=intent;const calls:Array<{prompt:string;ids:string[]}>=[];let attempt=0;const runOrganizationTask=vi.fn(async(_profile:unknown,prompt:string)=>{calls.push({prompt,ids:promptAudit(prompt).map(s=>s.promptId)});return{aiTaskRunId:randomUUID(),output:++attempt===1?'{':{paragraphs:[{markdown:'Qualified finding [e1]',citations:['e1'],contextIds:[]}],gaps:[],...(intent==='investigation'?{change:{meaningful:false,explanation:[]}}:{})}};});const service=new ConsultationService({getPool:()=>null,ai:{runOrganizationTask},contentLanguage:async()=> 'en',wake:()=>{}} as any);await withPromptPin(pin,()=>service.generate(snapshot,'Question',{},new AbortController().signal));expect(calls).toHaveLength(2);expect(calls[0]!.ids).toContain('consultation.knowledge');expect(calls[0]!.ids).toContain('consultation.gaps');if(intent!=='answer')expect(calls[0]!.ids).toContain('consultation.'+intent);expect(calls[1]!.ids).toContain('consultation.repair');});
+import { randomUUID } from "node:crypto";
+import { describe, it, expect, vi } from "vitest";
+import { ConsultationInputSchema } from "@app/domain";
+import {
+  ConsultationService,
+  packKnowledgeSnapshot,
+  consultationPrompt
+} from "./consultation-service.js";
+import { investigationContent, investigationFingerprint } from "./investigation-service.js";
+import { defaultPromptPin, withPromptPin, promptAudit } from "./prompt-runtime.js";
+import { promptSampleSnapshot } from "./prompt-samples.js";
+describe("knowledge-first consultation contract", () => {
+  it("bounds complementary raw volume at generous context and retains original-only fallback", () => {
+    const snapshot = promptSampleSnapshot(defaultPromptPin(), "consultation");
+    snapshot.consultationVersion = "knowledge-consultation-v2";
+    snapshot.profile.contextWindow = 128000;
+    const originals = snapshot.evidence;
+    const distracting = Array.from({ length: 12 }, (_, i) => ({
+      ...originals[0]!,
+      handle: "e" + (i + 3),
+      chunkId: randomUUID(),
+      excerpt: i === 0 ? "Unrelated ".repeat(1100) : "Unrelated lexical match."
+    }));
+    snapshot.evidence = [...distracting, ...originals];
+    snapshot.contexts = [
+      {
+        id: randomUUID(),
+        kind: "wiki_section",
+        sourceItemId: originals[0]!.sourceItemId,
+        text: "Faithful compiled synthesis.",
+        review: "unreviewed",
+        fingerprint: "fixture",
+        handles: originals.map((e) => e.handle),
+        dependencies: []
+      }
+    ];
+    const packed = packKnowledgeSnapshot(snapshot, "What do the studies report?");
+    expect(packed.evidence.slice(0, originals.length)).toEqual(originals);
+    const raw = packed.evidence.filter((e) => !originals.some((o) => o.chunkId === e.chunkId));
+    expect(raw.length).toBeLessThanOrEqual(originals.length);
+    expect(raw.length).toBeGreaterThan(0);
+    expect(Buffer.byteLength(JSON.stringify(raw))).toBeLessThanOrEqual(
+      Buffer.byteLength(JSON.stringify(originals))
+    );
+    expect(raw.some((e) => e.chunkId === distracting[0]!.chunkId)).toBe(false);
+    snapshot.contexts = [];
+    expect(packKnowledgeSnapshot(snapshot, "What do the studies report?").evidence.length).toBe(12);
+  });
+  it("dispatches legacy inputs explicitly and rejects unknown versions", () => {
+    const input = { requestId: randomUUID(), question: "Question" };
+    expect(ConsultationInputSchema.parse(input).version).toBe("wiki-answer-v1");
+    expect(() => ConsultationInputSchema.parse({ ...input, version: "future" })).toThrow();
+  });
+  it("packs compiled knowledge together with all its complete support before raw candidates", () => {
+    const snapshot = promptSampleSnapshot(defaultPromptPin(), "consultation");
+    snapshot.consultationVersion = "knowledge-consultation-v2";
+    snapshot.profile.contextWindow = 10000;
+    const originals = snapshot.evidence;
+    const distracting = Array.from({ length: 12 }, (_, i) => ({
+      ...originals[0]!,
+      handle: "e" + (i + 3),
+      chunkId: randomUUID(),
+      excerpt: "Unrelated ".repeat(80)
+    }));
+    snapshot.evidence = [...distracting, ...originals];
+    snapshot.contexts = [
+      {
+        id: randomUUID(),
+        kind: "wiki_section",
+        sourceItemId: originals[0]!.sourceItemId,
+        text: "Faithful compiled synthesis.",
+        review: "unreviewed",
+        fingerprint: "fixture",
+        handles: originals.map((e) => e.handle),
+        dependencies: []
+      }
+    ];
+    const packed = packKnowledgeSnapshot(snapshot, "What do the studies report?");
+    expect(packed.evidence.slice(0, 2)).toEqual(originals);
+    expect(packed.contexts).toHaveLength(1);
+    expect(packed.evidence.length).toBeLessThanOrEqual(12);
+    expect(consultationPrompt(packed, "Question")).toContain("COMPILED KNOWLEDGE");
+  });
+  it("never marks followed-answer prose as machine checked from citation parsing", () => {
+    const original = promptSampleSnapshot(defaultPromptPin(), "consultation").evidence[0]!;
+    const content = investigationContent({
+      question: "Question",
+      answer: {
+        paragraphs: [{ markdown: "Reported finding [e1]", citations: ["e1"], contextIds: [] }],
+        gaps: []
+      },
+      evidence: [original]
+    } as any);
+    expect(content.automatic!.role.role).toBe("investigation");
+    expect(content.sections[0]!.assessment).toBeUndefined();
+    expect(content.sections[0]!.evidenceReview).toBe("needs_review");
+  });
+  it("fingerprints effective investigation/gap/shared wording and preserves admitted pins", () => {
+    const snapshot = promptSampleSnapshot(defaultPromptPin(), "consultation"),
+      initial = investigationFingerprint(snapshot);
+    for (const id of [
+      "consultation.investigation",
+      "consultation.gaps",
+      "consultation.guidance",
+      "shared.output_language"
+    ]) {
+      const changed = structuredClone(snapshot);
+      changed.promptPin!.entries.find((e) => e.id === id)!.fields.body += "\nDifferent";
+      expect(investigationFingerprint(changed)).not.toBe(initial);
+    }
+    expect(investigationFingerprint(snapshot)).toBe(initial);
+    const unrelated = structuredClone(snapshot);
+    unrelated.promptPin!.entries.find((e) => e.id === "notes.extract")!.fields.body +=
+      "\nDifferent";
+    expect(investigationFingerprint(unrelated)).toBe(initial);
+  });
+  it("maps the common prepared-context guard to the actionable consultation error", async () => {
+    const snapshot = promptSampleSnapshot(defaultPromptPin(), "consultation");
+    snapshot.consultationVersion = "knowledge-consultation-v2";
+    const service = new ConsultationService({
+      getPool: () => null,
+      ai: {
+        runOrganizationTask: async () => {
+          throw new Error("errors.ai.contextWindowLimit");
+        }
+      },
+      contentLanguage: async () => "en",
+      wake: () => {}
+    } as any);
+    await expect(
+      service.generate(snapshot, "Question", {}, new AbortController().signal)
+    ).rejects.toThrow("organization.errors.context");
+  });
+  it.each(["answer", "comparison", "investigation"] as const)(
+    "uses actual registered %s and gap leaves with one bounded repair",
+    async (intent) => {
+      const pin = defaultPromptPin(),
+        snapshot = promptSampleSnapshot(pin, "consultation");
+      snapshot.consultationVersion = "knowledge-consultation-v2";
+      snapshot.consultationIntent = intent;
+      const calls: Array<{ prompt: string; ids: string[] }> = [];
+      let attempt = 0;
+      const runOrganizationTask = vi.fn(async (_profile: unknown, prompt: string) => {
+        calls.push({ prompt, ids: promptAudit(prompt).map((s) => s.promptId) });
+        return {
+          aiTaskRunId: randomUUID(),
+          output:
+            ++attempt === 1
+              ? "{"
+              : {
+                  paragraphs: [
+                    { markdown: "Qualified finding [e1]", citations: ["e1"], contextIds: [] }
+                  ],
+                  gaps: [],
+                  ...(intent === "investigation"
+                    ? { change: { meaningful: false, explanation: [] } }
+                    : {})
+                }
+        };
+      });
+      const service = new ConsultationService({
+        getPool: () => null,
+        ai: { runOrganizationTask },
+        contentLanguage: async () => "en",
+        wake: () => {}
+      } as any);
+      await withPromptPin(pin, () =>
+        service.generate(snapshot, "Question", {}, new AbortController().signal)
+      );
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.ids).toContain("consultation.knowledge");
+      expect(calls[0]!.ids).toContain("consultation.gaps");
+      if (intent !== "answer") expect(calls[0]!.ids).toContain("consultation." + intent);
+      expect(calls[1]!.ids).toContain("consultation.repair");
+    }
+  );
 });

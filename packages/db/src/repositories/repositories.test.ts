@@ -52,7 +52,9 @@ class TransactionalSummaryPool implements Queryable {
   async connect() {
     return {
       query: this.query.bind(this),
-      release: () => { this.released = true; }
+      release: () => {
+        this.released = true;
+      }
     };
   }
 
@@ -108,53 +110,64 @@ describe("repositories", () => {
 
   it("invalidates source-level embeddings when searchable source data changes", async () => {
     const now = new Date("2026-09-06T00:00:00.000Z");
-    const db = new FakeQueryable([[{
-      id: "00000000-0000-4000-8000-000000000001",
-      type: "PersonalNote",
-      title: "Updated source",
-      subtitle: null,
-      sourceOrigin: "manual",
-      sourceUri: null,
-      externalId: null,
-      parentSourceItemId: null,
-      contentHash: null,
-      language: "en",
-      summary: null,
-      summaryGeneratedAt: null,
-      metadata: {},
-      createdAt: now,
-      updatedAt: now
-    }], [], [], []]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          type: "PersonalNote",
+          title: "Updated source",
+          subtitle: null,
+          sourceOrigin: "manual",
+          sourceUri: null,
+          externalId: null,
+          parentSourceItemId: null,
+          contentHash: null,
+          language: "en",
+          summary: null,
+          summaryGeneratedAt: null,
+          metadata: {},
+          createdAt: now,
+          updatedAt: now
+        }
+      ],
+      [],
+      [],
+      []
+    ]);
 
     await createSourceItemRepository(db).update("00000000-0000-4000-8000-000000000001", {
       title: "Updated source"
     });
 
     expect(db.queries.slice(1)).toHaveLength(3);
-    expect(db.queries.slice(1).every((query) => query.text.includes("target_type = 'source_item'"))).toBe(true);
+    expect(
+      db.queries.slice(1).every((query) => query.text.includes("target_type = 'source_item'"))
+    ).toBe(true);
   });
 
   it("exposes the latest materialized division position to the library", async () => {
     const now = new Date("2026-07-16T10:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "source-1",
-        parentSourceItemId: "root-1",
-        structurePosition: 2,
-        childCount: 0,
-        hasDocument: true,
-        type: "DocumentSection",
-        title: "Third section",
-        subtitle: null,
-        sourceUri: null,
-        language: "en",
-        summary: null,
-        metadata: {},
-        processingStatus: "pending",
-        currentStage: "queued",
-        updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "source-1",
+          parentSourceItemId: "root-1",
+          structurePosition: 2,
+          childCount: 0,
+          hasDocument: true,
+          type: "DocumentSection",
+          title: "Third section",
+          subtitle: null,
+          sourceUri: null,
+          language: "en",
+          summary: null,
+          metadata: {},
+          processingStatus: "pending",
+          currentStage: "queued",
+          updatedAt: now
+        }
+      ]
+    ]);
 
     const sources = await createLibraryRepository(db).listSources();
 
@@ -168,7 +181,7 @@ describe("repositories", () => {
     const db = new FakeQueryable([[]]);
     await createLibraryRepository(db).listSources({
       query: "semantic memory",
-      queryEmbedding: Array.from({ length: 256 }, (_, index) => index === 0 ? 1 : 0),
+      queryEmbedding: Array.from({ length: 256 }, (_, index) => (index === 0 ? 1 : 0)),
       embeddingModel: "embedding-model"
     });
 
@@ -194,10 +207,14 @@ describe("repositories", () => {
   });
 
   it("reads stored source embeddings for hierarchical aggregation", async () => {
-    const db = new FakeQueryable([[{
-      targetId: "00000000-0000-4000-8000-000000000001",
-      embedding: "[0.25,-0.5,0.75]"
-    }]]);
+    const db = new FakeQueryable([
+      [
+        {
+          targetId: "00000000-0000-4000-8000-000000000001",
+          embedding: "[0.25,-0.5,0.75]"
+        }
+      ]
+    ]);
     const rows = await createEmbeddingRepository(db).listSourceEmbeddings(
       ["00000000-0000-4000-8000-000000000001"],
       "embedding-model",
@@ -234,24 +251,24 @@ describe("repositories", () => {
   it("records traceable source summaries", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
     const db = new TransactionalSummaryPool({
-        id: "summary-1",
-        generationId: null,
-        isCurrent: true,
-        sourceItemId: "source-1",
-        summary: "A concise summary.",
-        language: "en",
-        profileId: "profile-1",
-        aiTaskRunId: "run-1",
-        provider: "test",
-        model: "mock-model",
-        runtime: "remote",
-        promptVersion: "summary-v1",
-        inputHash: "a".repeat(64),
-        outputHash: "b".repeat(64),
-        generatedAt: now,
-        metadata: { mapReduce: false },
-        createdAt: now
-      });
+      id: "summary-1",
+      generationId: null,
+      isCurrent: true,
+      sourceItemId: "source-1",
+      summary: "A concise summary.",
+      language: "en",
+      profileId: "profile-1",
+      aiTaskRunId: "run-1",
+      provider: "test",
+      model: "mock-model",
+      runtime: "remote",
+      promptVersion: "summary-v1",
+      inputHash: "a".repeat(64),
+      outputHash: "b".repeat(64),
+      generatedAt: now,
+      metadata: { mapReduce: false },
+      createdAt: now
+    });
     const summary = await createSourceSummaryRepository(db).create({
       sourceItemId: "source-1",
       summary: "A concise summary.",
@@ -269,16 +286,34 @@ describe("repositories", () => {
   it("replaces the current summary in separate statements inside a source-scoped transaction", async () => {
     const now = new Date("2026-07-18T20:00:00.000Z");
     const db = new TransactionalSummaryPool({
-      id: "summary-3", generationId: null, isCurrent: true, sourceItemId: "source-1",
-      summary: "Aggregate summary.", language: "en", profileId: null, aiTaskRunId: null,
-      provider: "test", model: "mock-model", runtime: "remote", promptVersion: "hierarchy-aggregate-v1",
-      inputHash: "e".repeat(64), outputHash: "f".repeat(64), generatedAt: now, metadata: {}, createdAt: now
+      id: "summary-3",
+      generationId: null,
+      isCurrent: true,
+      sourceItemId: "source-1",
+      summary: "Aggregate summary.",
+      language: "en",
+      profileId: null,
+      aiTaskRunId: null,
+      provider: "test",
+      model: "mock-model",
+      runtime: "remote",
+      promptVersion: "hierarchy-aggregate-v1",
+      inputHash: "e".repeat(64),
+      outputHash: "f".repeat(64),
+      generatedAt: now,
+      metadata: {},
+      createdAt: now
     });
 
     await createSourceSummaryRepository(db).create({
-      sourceItemId: "source-1", summary: "Aggregate summary.", provider: "test", model: "mock-model",
-      runtime: "remote", promptVersion: "hierarchy-aggregate-v1",
-      inputHash: "e".repeat(64), outputHash: "f".repeat(64)
+      sourceItemId: "source-1",
+      summary: "Aggregate summary.",
+      provider: "test",
+      model: "mock-model",
+      runtime: "remote",
+      promptVersion: "hierarchy-aggregate-v1",
+      inputHash: "e".repeat(64),
+      outputHash: "f".repeat(64)
     });
 
     expect(db.queries).toEqual([
@@ -297,30 +332,61 @@ describe("repositories", () => {
 
     await createSourceSummaryRepository(db as never).clearCurrent("source-1");
 
-    expect(db.queries).toEqual([{
-      text: "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
-      values: ["source-1"]
-    }]);
+    expect(db.queries).toEqual([
+      {
+        text: "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
+        values: ["source-1"]
+      }
+    ]);
   });
 
   it("persists an immutable local model descriptor with parameterized SQL", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "model-1", catalogId: "mlx-test", modelId: "repo/model", displayName: "Model",
-        family: "Test", variant: "4-bit", repository: "repo/model", revision: "a".repeat(40),
-        runtime: "mlx", format: "safetensors", quantization: "4-bit", managedPath: null,
-        expectedSizeBytes: 10, installedSizeBytes: 0, manifestHash: "b".repeat(64),
-        capabilities: ["offline"], licenseName: "Test", licenseUrl: "https://example.test/license",
-        licenseAcceptedAt: null, status: "not_downloaded", lastError: null, metadata: {},
-        createdAt: now, updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "model-1",
+          catalogId: "mlx-test",
+          modelId: "repo/model",
+          displayName: "Model",
+          family: "Test",
+          variant: "4-bit",
+          repository: "repo/model",
+          revision: "a".repeat(40),
+          runtime: "mlx",
+          format: "safetensors",
+          quantization: "4-bit",
+          managedPath: null,
+          expectedSizeBytes: 10,
+          installedSizeBytes: 0,
+          manifestHash: "b".repeat(64),
+          capabilities: ["offline"],
+          licenseName: "Test",
+          licenseUrl: "https://example.test/license",
+          licenseAcceptedAt: null,
+          status: "not_downloaded",
+          lastError: null,
+          metadata: {},
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
     const model = await createLocalModelRepository(db).upsertModel({
-      catalogId: "mlx-test", modelId: "repo/model", displayName: "Model", family: "Test",
-      variant: "4-bit", repository: "repo/model", revision: "a".repeat(40), runtime: "mlx",
-      format: "safetensors", quantization: "4-bit", expectedSizeBytes: 10,
-      manifestHash: "b".repeat(64), capabilities: ["offline"], licenseName: "Test",
+      catalogId: "mlx-test",
+      modelId: "repo/model",
+      displayName: "Model",
+      family: "Test",
+      variant: "4-bit",
+      repository: "repo/model",
+      revision: "a".repeat(40),
+      runtime: "mlx",
+      format: "safetensors",
+      quantization: "4-bit",
+      expectedSizeBytes: 10,
+      manifestHash: "b".repeat(64),
+      capabilities: ["offline"],
+      licenseName: "Test",
       licenseUrl: "https://example.test/license"
     });
     expect(model.catalogId).toBe("mlx-test");
@@ -330,14 +396,29 @@ describe("repositories", () => {
 
   it("starts a fresh attempt budget when manually retrying an exhausted job", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "job-1", type: "ingestion", status: "queued", priority: 0,
-        payload: {}, result: null, error: null, progress: 0, attempts: 0,
-        maxAttempts: 3, runAfter: now, lockedAt: null, lockedBy: null,
-        finishedAt: null, cancelRequestedAt: null, createdAt: now, updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "job-1",
+          type: "ingestion",
+          status: "queued",
+          priority: 0,
+          payload: {},
+          result: null,
+          error: null,
+          progress: 0,
+          attempts: 0,
+          maxAttempts: 3,
+          runAfter: now,
+          lockedAt: null,
+          lockedBy: null,
+          finishedAt: null,
+          cancelRequestedAt: null,
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     const retried = await createJobRepository(db).retry("job-1");
 
@@ -375,16 +456,33 @@ describe("repositories", () => {
     const now = new Date("2026-07-15T10:00:00.000Z");
     const requestedStages = ["conversion", "chunking"];
     const effectiveStages = ["conversion", "chunking", "embedding"];
-    const db = new FakeQueryable([[
-      {
-        id: "run-1", sourceItemId: "source-1", jobId: null, batchId: "batch-1",
-        runKind: "initial", requestedStages, effectiveStages, planVersion: "1",
-        inputDocumentRevisionId: null, inputHashes: {}, supersedesRunId: null,
-        previousArtifactPolicy: "reuse_valid", trigger: "interactive_import",
-        status: "pending", currentStage: "queued", stagesCheckpoint: {}, error: null,
-        startedAt: null, completedAt: null, createdAt: now, updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "run-1",
+          sourceItemId: "source-1",
+          jobId: null,
+          batchId: "batch-1",
+          runKind: "initial",
+          requestedStages,
+          effectiveStages,
+          planVersion: "1",
+          inputDocumentRevisionId: null,
+          inputHashes: {},
+          supersedesRunId: null,
+          previousArtifactPolicy: "reuse_valid",
+          trigger: "interactive_import",
+          status: "pending",
+          currentStage: "queued",
+          stagesCheckpoint: {},
+          error: null,
+          startedAt: null,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     await createIngestionRunRepository(db).create({
       sourceItemId: "source-1",
@@ -415,7 +513,9 @@ describe("repositories", () => {
   it("dismisses terminal jobs and task history without deleting audit records", async () => {
     let queryText = "";
     const db: Queryable = {
-      async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
+      async query<T extends QueryResultRow = QueryResultRow>(
+        text: string
+      ): Promise<QueryResult<T>> {
         queryText = text;
         return {
           command: "UPDATE",
@@ -442,15 +542,35 @@ describe("repositories", () => {
 
   it("attaches effective AI execution metadata to a running job", async () => {
     const now = new Date("2026-07-11T12:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "job-1", type: "summarization", status: "running", priority: 0,
-        payload: { aiExecution: { provider: "google", modelId: "gemini-3.1-pro-preview", reasoningLevel: "low" } },
-        result: null, error: null, progress: 2_000, attempts: 1, maxAttempts: 1,
-        runAfter: now, lockedAt: now, lockedBy: "worker", finishedAt: null,
-        cancelRequestedAt: null, createdAt: now, updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "job-1",
+          type: "summarization",
+          status: "running",
+          priority: 0,
+          payload: {
+            aiExecution: {
+              provider: "google",
+              modelId: "gemini-3.1-pro-preview",
+              reasoningLevel: "low"
+            }
+          },
+          result: null,
+          error: null,
+          progress: 2_000,
+          attempts: 1,
+          maxAttempts: 1,
+          runAfter: now,
+          lockedAt: now,
+          lockedBy: "worker",
+          finishedAt: null,
+          cancelRequestedAt: null,
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     const updated = await createJobRepository(db).setAiExecution("job-1", {
       provider: "google",
@@ -458,26 +578,31 @@ describe("repositories", () => {
       reasoningLevel: "low"
     });
 
-    expect(updated?.payload.aiExecution).toMatchObject({ modelId: "gemini-3.1-pro-preview", reasoningLevel: "low" });
+    expect(updated?.payload.aiExecution).toMatchObject({
+      modelId: "gemini-3.1-pro-preview",
+      reasoningLevel: "low"
+    });
     expect(db.queries[0]?.text).toContain("jsonb_set(payload, '{aiExecution}'");
   });
 
   it("deletes a remote model and clears linked profile model selections atomically", async () => {
     const now = new Date("2026-07-11T12:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "provider-1",
-        provider: "openai-codex",
-        displayName: "ChatGPT",
-        credentialRef: "ai:secret",
-        baseUrl: "https://chatgpt.com/backend-api/codex",
-        defaultParameters: {},
-        status: "configured",
-        metadata: { modelId: "gpt-test" },
-        createdAt: now,
-        updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "provider-1",
+          provider: "openai-codex",
+          displayName: "ChatGPT",
+          credentialRef: "ai:secret",
+          baseUrl: "https://chatgpt.com/backend-api/codex",
+          defaultParameters: {},
+          status: "configured",
+          metadata: { modelId: "gpt-test" },
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     const deleted = await createAiConfigRepository(db).deleteProvider("provider-1");
 
@@ -490,20 +615,22 @@ describe("repositories", () => {
 
   it("updates linked profiles when a remote model id changes", async () => {
     const now = new Date("2026-07-11T12:00:00.000Z");
-    const db = new FakeQueryable([[
-      {
-        id: "provider-1",
-        provider: "openai-codex",
-        displayName: "ChatGPT renamed",
-        credentialRef: "ai:secret",
-        baseUrl: "https://chatgpt.com/backend-api/codex",
-        defaultParameters: {},
-        status: "configured",
-        metadata: { modelId: "gpt-new", capabilities: ["text-generation"] },
-        createdAt: now,
-        updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "provider-1",
+          provider: "openai-codex",
+          displayName: "ChatGPT renamed",
+          credentialRef: "ai:secret",
+          baseUrl: "https://chatgpt.com/backend-api/codex",
+          defaultParameters: {},
+          status: "configured",
+          metadata: { modelId: "gpt-new", capabilities: ["text-generation"] },
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     await createAiConfigRepository(db).upsertProvider({
       id: "provider-1",
@@ -549,15 +676,17 @@ describe("repositories", () => {
   });
 
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {
-    const db = new FakeQueryable([[
-      {
-        id: "note-1",
-        title: "Atomic title",
-        ideaStatement: "Atomic idea",
-        bodyMarkdown: "Atomic body",
-        evidenceChunkIds: ["chunk-1", "chunk-2"]
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [
+        {
+          id: "note-1",
+          title: "Atomic title",
+          ideaStatement: "Atomic idea",
+          bodyMarkdown: "Atomic body",
+          evidenceChunkIds: ["chunk-1", "chunk-2"]
+        }
+      ]
+    ]);
 
     const notes = await createAtomicNoteRepository(db).listGraphInputsBySourceItem("source-1");
 
@@ -590,15 +719,30 @@ describe("repositories", () => {
 
   it("persists per-batch ingestion progress without replacing the stage checkpoint", async () => {
     const now = new Date("2026-07-10T10:00:00.000Z");
-    const db = new FakeQueryable([[], [
-      {
-        id: "run-1", sourceItemId: "source-1", jobId: "job-1", status: "running",
-        currentStage: "knowledgeGraph", stagesCheckpoint: {
-          knowledgeGraph: { status: "running", progress: 0.5, metadata: { completed: 1, total: 2 } }
-        },
-        error: null, startedAt: now, completedAt: null, createdAt: now, updatedAt: now
-      }
-    ]]);
+    const db = new FakeQueryable([
+      [],
+      [
+        {
+          id: "run-1",
+          sourceItemId: "source-1",
+          jobId: "job-1",
+          status: "running",
+          currentStage: "knowledgeGraph",
+          stagesCheckpoint: {
+            knowledgeGraph: {
+              status: "running",
+              progress: 0.5,
+              metadata: { completed: 1, total: 2 }
+            }
+          },
+          error: null,
+          startedAt: now,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    ]);
 
     const run = await createIngestionRunRepository(db).updateStageProgress(
       "run-1",
@@ -611,7 +755,10 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("ingestion_run_stages");
     expect(db.queries[1]?.text).toContain("coalesce(stages_checkpoint -> $2");
     expect(db.queries[1]?.values).toEqual([
-      "run-1", "knowledgeGraph", 0.5, { completed: 1, total: 2 }
+      "run-1",
+      "knowledgeGraph",
+      0.5,
+      { completed: 1, total: 2 }
     ]);
   });
 });

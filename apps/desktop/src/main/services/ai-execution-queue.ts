@@ -1,7 +1,9 @@
 /** One inference at a time; cancellation while waiting never releases an active call. */
 export class AiExecutionQueue {
   private pending = 0;
-  public get busy(): boolean { return this.pending > 0; }
+  public get busy(): boolean {
+    return this.pending > 0;
+  }
   private tail: Promise<void> = Promise.resolve();
 
   public run<T>(execute: () => Promise<T>, signal?: AbortSignal): Promise<T> {
@@ -15,7 +17,14 @@ export class AiExecutionQueue {
         signal?.throwIfAborted();
         return execute();
       });
-      this.tail = result.then(() => { this.pending--; }, () => { this.pending--; });
+      this.tail = result.then(
+        () => {
+          this.pending--;
+        },
+        () => {
+          this.pending--;
+        }
+      );
       result.then(resolve, reject);
     });
   }

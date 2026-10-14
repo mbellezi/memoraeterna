@@ -19,8 +19,13 @@ export function isInHierarchyActionCorridor(
 ): boolean {
   const margin = 6;
   if (Math.hypot(pointer.x - node.x, pointer.y - node.y) <= node.radius + margin) return true;
-  if (pointer.y >= actions.top - margin && pointer.y <= actions.bottom + margin
-    && pointer.x >= actions.left - margin && pointer.x <= actions.right + margin) return true;
+  if (
+    pointer.y >= actions.top - margin &&
+    pointer.y <= actions.bottom + margin &&
+    pointer.x >= actions.left - margin &&
+    pointer.x <= actions.right + margin
+  )
+    return true;
   if (pointer.y < actions.bottom || pointer.y > node.y) return false;
   const progress = (pointer.y - actions.bottom) / Math.max(1, node.y - actions.bottom);
   const left = actions.left + (node.x - node.radius - actions.left) * progress - margin;
@@ -43,15 +48,26 @@ export function isLabelOutsideViewport(
   horizontalMargin: number,
   verticalMargin: number
 ): boolean {
-  return x < horizontalMargin || x > width - horizontalMargin ||
-    y < verticalMargin || y > height - verticalMargin;
+  return (
+    x < horizontalMargin ||
+    x > width - horizontalMargin ||
+    y < verticalMargin ||
+    y > height - verticalMargin
+  );
 }
 
-export function relationLabelRevealAt(edgeKey: string, confidence: number, edgeCount: number): number {
+export function relationLabelRevealAt(
+  edgeKey: string,
+  confidence: number,
+  edgeCount: number
+): number {
   const samplingFraction = Math.min(1, 2_400 / Math.max(1, edgeCount));
   const eligibility = stableFraction(edgeKey, 17);
   if (eligibility > samplingFraction) return 2;
-  return Math.max(0.22, Math.min(0.9, 0.72 - confidence * 0.22 + stableFraction(edgeKey, 31) * 0.34));
+  return Math.max(
+    0.22,
+    Math.min(0.9, 0.72 - confidence * 0.22 + stableFraction(edgeKey, 31) * 0.34)
+  );
 }
 
 export function nodeLabelOpacity(cameraRatio: number, importance: number): number {
@@ -74,11 +90,19 @@ export function isInGraphPopupCorridor(
   card: { left: number; right: number; top: number; bottom: number }
 ): boolean {
   const margin = 8;
-  const left = card.left - margin, right = card.right + margin;
-  const top = card.top - margin, bottom = card.bottom + margin;
-  if (pointer.x >= left && pointer.x <= right && pointer.y >= top && pointer.y <= bottom) return true;
+  const left = card.left - margin,
+    right = card.right + margin;
+  const top = card.top - margin,
+    bottom = card.bottom + margin;
+  if (pointer.x >= left && pointer.x <= right && pointer.y >= top && pointer.y <= bottom)
+    return true;
   if (Math.hypot(pointer.x - anchor.x, pointer.y - anchor.y) <= margin) return true;
-  const corners = [{ x: left, y: top }, { x: right, y: top }, { x: right, y: bottom }, { x: left, y: bottom }];
+  const corners = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom }
+  ];
   const cross = (a: typeof pointer, b: typeof pointer, p: typeof pointer) =>
     (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
   return corners.some((a, index) => {

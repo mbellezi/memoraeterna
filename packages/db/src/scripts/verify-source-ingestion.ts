@@ -34,7 +34,9 @@ try {
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const migrationsFolder = resolve(packageRoot, "drizzle");
   const seedFolder = resolve(packageRoot, "seed");
-  const migrationCount = JSON.parse(await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8")).entries.length;
+  const migrationCount = JSON.parse(
+    await readFile(join(migrationsFolder, "meta/_journal.json"), "utf8")
+  ).entries.length;
   await runMigrations(pool, migrationsFolder);
 
   const history = await pool.query<{ count: string }>(
@@ -62,8 +64,14 @@ try {
   );
   if (columns.rows.length !== 4) throw new Error("Source descriptor columns are missing.");
   const creatorColumns = columns.rows.filter((column) => column.columnName === "creators");
-  if (creatorColumns.some((column) => column.isNullable !== "NO" || column.dataType !== "jsonb"
-      || !column.columnDefault?.includes("[]"))) {
+  if (
+    creatorColumns.some(
+      (column) =>
+        column.isNullable !== "NO" ||
+        column.dataType !== "jsonb" ||
+        !column.columnDefault?.includes("[]")
+    )
+  ) {
     throw new Error("Creator columns do not have the required JSONB default.");
   }
 
@@ -90,8 +98,11 @@ try {
        from bibliographic_instances where id = $1`,
     [instanceId]
   );
-  if (!Array.isArray(persisted.rows[0]?.creators) || persisted.rows[0]?.pageCount !== 321
-      || persisted.rows[0]?.series !== "Verification series") {
+  if (
+    !Array.isArray(persisted.rows[0]?.creators) ||
+    persisted.rows[0]?.pageCount !== 321 ||
+    persisted.rows[0]?.series !== "Verification series"
+  ) {
     throw new Error("Structured bibliographic metadata did not round-trip.");
   }
 
@@ -107,13 +118,19 @@ try {
     throw new Error("Source-ingestion baseline was reapplied to an existing database.");
   }
 
-  console.info(JSON.stringify({
-    migrationHistoryCount: Number(history.rows[0]?.count),
-    columns: columns.rows,
-    workId: work.id,
-    instanceId,
-    baselineMigrations: baseline.seed.seededMigrations
-  }, null, 2));
+  console.info(
+    JSON.stringify(
+      {
+        migrationHistoryCount: Number(history.rows[0]?.count),
+        columns: columns.rows,
+        workId: work.id,
+        instanceId,
+        baselineMigrations: baseline.seed.seededMigrations
+      },
+      null,
+      2
+    )
+  );
 } finally {
   if (seedPool) await closePgPool(seedPool);
   if (pool) await closePgPool(pool);

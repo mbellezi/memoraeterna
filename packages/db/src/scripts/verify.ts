@@ -17,28 +17,28 @@ const expectedTables = [
   "settings",
   "storage_settings",
   "integration_clients",
-  "obsidian_sync_files"
-  ,"bibliographic_works"
-  ,"bibliographic_instances"
-  ,"source_item_bibliographic_links"
-  ,"ai_provider_configs"
-  ,"ai_profile_sets"
-  ,"ai_profile_tasks"
-  ,"ai_task_profile_routes"
-  ,"ai_model_capabilities"
-  ,"ai_task_runs"
-  ,"ai_task_run_sources"
-  ,"embeddings_256"
-  ,"embeddings_768"
-  ,"embeddings_1024"
-  ,"similarity_debug_runs"
-  ,"similarity_debug_results"
-  ,"entities"
-  ,"entity_mentions"
-  ,"claims"
-  ,"claim_entity_links"
-  ,"entity_relations"
-  ,"atomic_note_entity_links"
+  "obsidian_sync_files",
+  "bibliographic_works",
+  "bibliographic_instances",
+  "source_item_bibliographic_links",
+  "ai_provider_configs",
+  "ai_profile_sets",
+  "ai_profile_tasks",
+  "ai_task_profile_routes",
+  "ai_model_capabilities",
+  "ai_task_runs",
+  "ai_task_run_sources",
+  "embeddings_256",
+  "embeddings_768",
+  "embeddings_1024",
+  "similarity_debug_runs",
+  "similarity_debug_results",
+  "entities",
+  "entity_mentions",
+  "claims",
+  "claim_entity_links",
+  "entity_relations",
+  "atomic_note_entity_links"
 ];
 
 const pool = createPgPool({ connectionString, max: 1 });
@@ -73,7 +73,9 @@ try {
     throw new Error("Missing one or more phase 2 PostgreSQL extensions.");
   }
 
-  console.info(`Verified ${migrationCount} Drizzle migration(s) and ${foundTables.size} expected table(s).`);
+  console.info(
+    `Verified ${migrationCount} Drizzle migration(s) and ${foundTables.size} expected table(s).`
+  );
 } finally {
   await closePgPool(pool);
 }

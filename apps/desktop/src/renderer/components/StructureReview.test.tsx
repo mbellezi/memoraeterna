@@ -23,40 +23,44 @@ function createStructure(isProcessable: boolean): DocumentStructureView {
       { offset: 30, label: "Chapter 2", kind: "heading" },
       { offset: 59, label: "Document end", kind: "division" }
     ],
-    divisions: [{
-      id: "00000000-0000-4000-8000-000000000004",
-      parentId: null,
-      childSourceItemId: null,
-      childDocumentId: null,
-      kind: "section",
-      title: "Introduction",
-      level: 0,
-      position: 0,
-      startSelector: { page: 1 },
-      endSelector: { page: 2 },
-      startPage: 1,
-      endPage: 2,
-      markdownStart: 0,
-      markdownEnd: 59,
-      confidence: 0.9,
-      evidence: [],
-      reviewStatus: "accepted",
-      isProcessable,
-      metadata: {}
-    }],
+    divisions: [
+      {
+        id: "00000000-0000-4000-8000-000000000004",
+        parentId: null,
+        childSourceItemId: null,
+        childDocumentId: null,
+        kind: "section",
+        title: "Introduction",
+        level: 0,
+        position: 0,
+        startSelector: { page: 1 },
+        endSelector: { page: 2 },
+        startPage: 1,
+        endPage: 2,
+        markdownStart: 0,
+        markdownEnd: 59,
+        confidence: 0.9,
+        evidence: [],
+        reviewStatus: "accepted",
+        isProcessable,
+        metadata: {}
+      }
+    ],
     createdAt: "2026-07-15T12:00:00.000Z",
     updatedAt: "2026-07-15T12:00:00.000Z"
   };
 }
 
 function renderReview(isProcessable: boolean) {
-  return renderToStaticMarkup(<StructureReview
-    structure={createStructure(isProcessable)}
-    t={createTranslator("pt-BR")}
-    busy={false}
-    onSave={vi.fn()}
-    onConfirm={vi.fn()}
-  />);
+  return renderToStaticMarkup(
+    <StructureReview
+      structure={createStructure(isProcessable)}
+      t={createTranslator("pt-BR")}
+      busy={false}
+      onSave={vi.fn()}
+      onConfirm={vi.fn()}
+    />
+  );
 }
 
 function confirmButton(markup: string) {

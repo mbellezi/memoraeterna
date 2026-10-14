@@ -32,13 +32,31 @@ interface WorkRow extends QueryResultRow {
 }
 
 const workReturning = [
-  "id", "type", "title", "subtitle", "canonical_title as \"canonicalTitle\"", "language",
-  "creators", "identifiers", "metadata", "created_at as \"createdAt\"", "updated_at as \"updatedAt\""
+  "id",
+  "type",
+  "title",
+  "subtitle",
+  'canonical_title as "canonicalTitle"',
+  "language",
+  "creators",
+  "identifiers",
+  "metadata",
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 const workSelection = [
-  "w.id", "w.type", "w.title", "w.subtitle", "w.canonical_title as \"canonicalTitle\"", "w.language",
-  "w.creators", "w.identifiers", "w.metadata", "w.created_at as \"createdAt\"", "w.updated_at as \"updatedAt\""
+  "w.id",
+  "w.type",
+  "w.title",
+  "w.subtitle",
+  'w.canonical_title as "canonicalTitle"',
+  "w.language",
+  "w.creators",
+  "w.identifiers",
+  "w.metadata",
+  'w.created_at as "createdAt"',
+  'w.updated_at as "updatedAt"'
 ].join(", ");
 
 function mapWork(row: WorkRow): BibliographicWorkRecord {
@@ -69,8 +87,16 @@ export function createBibliographicRepository(db: Queryable) {
            (type, title, subtitle, canonical_title, language, creators, identifiers, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning ${workReturning}`,
-        [input.type, input.title, input.subtitle ?? null, input.canonicalTitle ?? null,
-          input.language ?? "und", JSON.stringify(input.creators ?? []), input.identifiers ?? {}, input.metadata ?? {}]
+        [
+          input.type,
+          input.title,
+          input.subtitle ?? null,
+          input.canonicalTitle ?? null,
+          input.language ?? "und",
+          JSON.stringify(input.creators ?? []),
+          input.identifiers ?? {},
+          input.metadata ?? {}
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic work insert returned no row.");
@@ -117,10 +143,22 @@ export function createBibliographicRepository(db: Queryable) {
             creators, page_count, series, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          returning id`,
-        [input.workId, input.type, input.edition ?? null, input.volume ?? null, input.issue ?? null,
-          input.publicationDate ?? null, input.publisher ?? null, input.isbn ?? null,
-          input.issn ?? null, input.doi ?? null, JSON.stringify(input.creators ?? []), input.pageCount ?? null,
-          input.series ?? null, input.metadata ?? {}]
+        [
+          input.workId,
+          input.type,
+          input.edition ?? null,
+          input.volume ?? null,
+          input.issue ?? null,
+          input.publicationDate ?? null,
+          input.publisher ?? null,
+          input.isbn ?? null,
+          input.issn ?? null,
+          input.doi ?? null,
+          JSON.stringify(input.creators ?? []),
+          input.pageCount ?? null,
+          input.series ?? null,
+          input.metadata ?? {}
+        ]
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic instance insert returned no row.");
@@ -142,8 +180,13 @@ export function createBibliographicRepository(db: Queryable) {
            instance_id = excluded.instance_id,
            relation_type = excluded.relation_type,
            pages = excluded.pages`,
-        [input.sourceItemId, input.workId, input.instanceId ?? null,
-          input.relationType ?? "instance_of", input.pages ?? null]
+        [
+          input.sourceItemId,
+          input.workId,
+          input.instanceId ?? null,
+          input.relationType ?? "instance_of",
+          input.pages ?? null
+        ]
       );
     }
   };

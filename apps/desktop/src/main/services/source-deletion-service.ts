@@ -28,13 +28,15 @@ export interface SourceDeletionResult {
 }
 
 export class SourceDeletionService {
-  public constructor(private readonly options: {
-    getPool: () => PgPool | null;
-    getStorageSettings: () => Promise<StorageSettings>;
-    userDataPath: string;
-    removeGraphProjections?: (sourceItemIds: string[], entityIds: string[]) => Promise<void>;
-    logger?: Pick<Console, "warn">;
-  }) {}
+  public constructor(
+    private readonly options: {
+      getPool: () => PgPool | null;
+      getStorageSettings: () => Promise<StorageSettings>;
+      userDataPath: string;
+      removeGraphProjections?: (sourceItemIds: string[], entityIds: string[]) => Promise<void>;
+      logger?: Pick<Console, "warn">;
+    }
+  ) {}
 
   public async listSourceTreeIds(sourceItemId: string): Promise<string[]> {
     const result = await this.requirePool().query<IdRow>(sourceTreeQuery, [sourceItemId]);
@@ -53,28 +55,36 @@ export class SourceDeletionService {
 
     try {
       await client.query("begin");
-      sourceItemIds = (await client.query<IdRow>(sourceTreeQuery, [sourceItemId])).rows.map((row) => row.id);
+      sourceItemIds = (await client.query<IdRow>(sourceTreeQuery, [sourceItemId])).rows.map(
+        (row) => row.id
+      );
       if (sourceItemIds.length === 0) {
         await client.query("commit");
         return emptyResult();
       }
 
-      const documentIds = (await client.query<IdRow>(
-        `select id from documents where source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
-      atomicNoteIds = (await client.query<IdRow>(
-        `select id from atomic_notes where owning_source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
-      const chunkIds = (await client.query<IdRow>(
-        `select id from chunks where source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
+      const documentIds = (
+        await client.query<IdRow>(
+          `select id from documents where source_item_id = any($1::uuid[])`,
+          [sourceItemIds]
+        )
+      ).rows.map((row) => row.id);
+      atomicNoteIds = (
+        await client.query<IdRow>(
+          `select id from atomic_notes where owning_source_item_id = any($1::uuid[])`,
+          [sourceItemIds]
+        )
+      ).rows.map((row) => row.id);
+      const chunkIds = (
+        await client.query<IdRow>(`select id from chunks where source_item_id = any($1::uuid[])`, [
+          sourceItemIds
+        ])
+      ).rows.map((row) => row.id);
       const relatedTargetIds = [...sourceItemIds, ...documentIds, ...atomicNoteIds, ...chunkIds];
 
-      assetPaths = (await client.query<AssetPathRow>(
-        `select distinct asset.storage_base as "storageBase", asset.relative_path as "relativePath"
+      assetPaths = (
+        await client.query<AssetPathRow>(
+          `select distinct asset.storage_base as "storageBase", asset.relative_path as "relativePath"
          from document_assets asset
          left join documents document on document.id = asset.document_id
          where (asset.source_item_id = any($1::uuid[]) or document.source_item_id = any($1::uuid[]))
@@ -87,33 +97,46 @@ export class SourceDeletionService {
                  or coalesce(other_document.source_item_id = any($1::uuid[]), false)
                )
            )`,
-        [sourceItemIds]
-      )).rows;
-      syncPaths = (await client.query<SyncPathRow>(
-        `select memora_id as "memoraId", relative_path as "relativePath"
+          [sourceItemIds]
+        )
+      ).rows;
+      syncPaths = (
+        await client.query<SyncPathRow>(
+          `select memora_id as "memoraId", relative_path as "relativePath"
          from obsidian_sync_files
          where source_item_id = any($1::uuid[])
             or document_id = any($2::uuid[])
             or entity_id = any($3::uuid[])`,
-        [sourceItemIds, documentIds, [...sourceItemIds, ...atomicNoteIds]]
-      )).rows;
+          [sourceItemIds, documentIds, [...sourceItemIds, ...atomicNoteIds]]
+        )
+      ).rows;
 
-      const ingestionRows = await client.query<{ id: string; jobId: string | null; batchId: string | null }>(
+      const ingestionRows = await client.query<{
+        id: string;
+        jobId: string | null;
+        batchId: string | null;
+      }>(
         `select id, job_id as "jobId", batch_id as "batchId"
          from ingestion_runs where source_item_id = any($1::uuid[])`,
         [sourceItemIds]
       );
       const ingestionRunIds = ingestionRows.rows.map((row) => row.id);
-      const batchIds = unique(ingestionRows.rows.flatMap((row) => row.batchId ? [row.batchId] : []));
+      const batchIds = unique(
+        ingestionRows.rows.flatMap((row) => (row.batchId ? [row.batchId] : []))
+      );
       const jobIds = unique([
-        ...ingestionRows.rows.flatMap((row) => row.jobId ? [row.jobId] : []),
-        ...(await client.query<IdRow>(
-          `select id from jobs where payload->>'sourceItemId' = any($1::text[])`,
-          [sourceItemIds]
-        )).rows.map((row) => row.id)
+        ...ingestionRows.rows.flatMap((row) => (row.jobId ? [row.jobId] : [])),
+        ...(
+          await client.query<IdRow>(
+            `select id from jobs where payload->>'sourceItemId' = any($1::text[])`,
+            [sourceItemIds]
+          )
+        ).rows.map((row) => row.id)
       ]);
-      const aiTaskRunIds = unique((await client.query<IdRow>(
-        `select ai_task_run_id::text as id from ai_task_run_sources
+      const aiTaskRunIds = unique(
+        (
+          await client.query<IdRow>(
+            `select ai_task_run_id::text as id from ai_task_run_sources
            where source_item_id = any($1::uuid[])
          union select ai_task_run_id::text from source_summaries
            where source_item_id = any($1::uuid[]) and ai_task_run_id is not null
@@ -135,27 +158,41 @@ export class SourceDeletionService {
                then generation.metadata->'aiTaskRunIds' else '[]'::jsonb end
            ) execution(id)
            where generation.source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id).filter(isUuid));
-      const workIds = (await client.query<IdRow>(
-        `select distinct work_id as id from source_item_bibliographic_links
+            [sourceItemIds]
+          )
+        ).rows
+          .map((row) => row.id)
+          .filter(isUuid)
+      );
+      const workIds = (
+        await client.query<IdRow>(
+          `select distinct work_id as id from source_item_bibliographic_links
          where source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
-      const instanceIds = (await client.query<IdRow>(
-        `select distinct instance_id as id from source_item_bibliographic_links
+          [sourceItemIds]
+        )
+      ).rows.map((row) => row.id);
+      const instanceIds = (
+        await client.query<IdRow>(
+          `select distinct instance_id as id from source_item_bibliographic_links
          where source_item_id = any($1::uuid[]) and instance_id is not null`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
-      const debugRunIds = relatedTargetIds.length === 0 ? [] : (await client.query<IdRow>(
-        `select distinct run.id
+          [sourceItemIds]
+        )
+      ).rows.map((row) => row.id);
+      const debugRunIds =
+        relatedTargetIds.length === 0
+          ? []
+          : (
+              await client.query<IdRow>(
+                `select distinct run.id
          from similarity_debug_runs run
          left join similarity_debug_results result on result.run_id = run.id
          where run.query_target_id = any($1::uuid[]) or result.target_id = any($1::uuid[])`,
-        [relatedTargetIds]
-      )).rows.map((row) => row.id);
-      const entityIds = (await client.query<IdRow>(
-        `select entity_id as id from entity_mentions where source_item_id = any($1::uuid[])
+                [relatedTargetIds]
+              )
+            ).rows.map((row) => row.id);
+      const entityIds = (
+        await client.query<IdRow>(
+          `select entity_id as id from entity_mentions where source_item_id = any($1::uuid[])
          union select link.entity_id from claim_entity_links link
            join claims claim on claim.id = link.claim_id where claim.source_item_id = any($1::uuid[])
          union select subject_entity_id from entity_relations where source_item_id = any($1::uuid[])
@@ -163,14 +200,19 @@ export class SourceDeletionService {
          union select link.entity_id from atomic_note_entity_links link
            join atomic_notes note on note.id = link.atomic_note_id
            where note.created_from_source_item_id = any($1::uuid[])`,
-        [sourceItemIds]
-      )).rows.map((row) => row.id);
+          [sourceItemIds]
+        )
+      ).rows.map((row) => row.id);
 
       if (debugRunIds.length > 0) {
-        await client.query(`delete from similarity_debug_runs where id = any($1::uuid[])`, [debugRunIds]);
+        await client.query(`delete from similarity_debug_runs where id = any($1::uuid[])`, [
+          debugRunIds
+        ]);
       }
       for (const table of ["embeddings_256", "embeddings_768", "embeddings_1024"]) {
-        await client.query(`delete from ${table} where target_id = any($1::uuid[])`, [relatedTargetIds]);
+        await client.query(`delete from ${table} where target_id = any($1::uuid[])`, [
+          relatedTargetIds
+        ]);
       }
       await client.query(
         `delete from obsidian_sync_files
@@ -180,9 +222,12 @@ export class SourceDeletionService {
         [sourceItemIds, documentIds, [...sourceItemIds, ...atomicNoteIds]]
       );
       if (ingestionRunIds.length > 0) {
-        await client.query(`delete from ingestion_runs where id = any($1::uuid[])`, [ingestionRunIds]);
+        await client.query(`delete from ingestion_runs where id = any($1::uuid[])`, [
+          ingestionRunIds
+        ]);
       }
-      if (jobIds.length > 0) await client.query(`delete from jobs where id = any($1::uuid[])`, [jobIds]);
+      if (jobIds.length > 0)
+        await client.query(`delete from jobs where id = any($1::uuid[])`, [jobIds]);
 
       const deletedSources = await client.query(
         `delete from source_items where id = any($1::uuid[])`,
@@ -223,19 +268,25 @@ export class SourceDeletionService {
           [workIds]
         );
       }
-      deletedEntityIds = (await client.query<IdRow>(
-        `delete from entities entity
+      deletedEntityIds = (
+        await client.query<IdRow>(
+          `delete from entities entity
          where entity.id = any($1::uuid[])
            and not exists (select 1 from entity_mentions mention where mention.entity_id = entity.id)
            and not exists (select 1 from claim_entity_links link where link.entity_id = entity.id)
            and not exists (select 1 from atomic_note_entity_links link where link.entity_id = entity.id)
            and not exists (select 1 from entity_relations relation where relation.subject_entity_id = entity.id or relation.object_entity_id = entity.id)
          returning entity.id`,
-        [entityIds]
-      )).rows.map((row) => row.id);
+          [entityIds]
+        )
+      ).rows.map((row) => row.id);
       await client.query("commit");
 
-      const graphCleanupFailed = await this.removeGraphProjections(pool, sourceItemIds, deletedEntityIds);
+      const graphCleanupFailed = await this.removeGraphProjections(
+        pool,
+        sourceItemIds,
+        deletedEntityIds
+      );
       const fileResults = await this.removeFiles(settings, assetPaths, syncPaths);
       return {
         deletedSources: deletedSources.rowCount ?? sourceItemIds.length,
@@ -276,11 +327,12 @@ export class SourceDeletionService {
     const targets = new Set<string>();
     const invalidTargets: PromiseRejectedResult[] = [];
     for (const asset of assetPaths) {
-      const basePath = asset.storageBase === "app_internal"
-        ? join(this.options.userDataPath, "assets")
-        : asset.storageBase === "uploaded_files"
-          ? settings.uploadCopiesFolderPath
-          : null;
+      const basePath =
+        asset.storageBase === "app_internal"
+          ? join(this.options.userDataPath, "assets")
+          : asset.storageBase === "uploaded_files"
+            ? settings.uploadCopiesFolderPath
+            : null;
       if (basePath) {
         try {
           targets.add(resolveInside(basePath, asset.relativePath));
@@ -296,7 +348,10 @@ export class SourceDeletionService {
         for (const file of syncPaths) {
           try {
             const target = resolveInside(vaultPath, file.relativePath);
-            if (isInside(managedPath, target) && await isOwnedManagedFile(target, file.memoraId)) {
+            if (
+              isInside(managedPath, target) &&
+              (await isOwnedManagedFile(target, file.memoraId))
+            ) {
               targets.add(target);
             }
           } catch (error) {
@@ -307,7 +362,10 @@ export class SourceDeletionService {
         invalidTargets.push({ status: "rejected", reason: error });
       }
     }
-    return [...invalidTargets, ...await Promise.allSettled([...targets].map((path) => rm(path, { force: true })))];
+    return [
+      ...invalidTargets,
+      ...(await Promise.allSettled([...targets].map((path) => rm(path, { force: true }))))
+    ];
   }
 
   private requirePool(): PgPool {
@@ -343,7 +401,8 @@ async function isOwnedManagedFile(path: string, memoraId: string): Promise<boole
 }
 
 function resolveInside(basePath: string, relativePath: string): string {
-  if (!relativePath || relativePath.includes("\0")) throw new Error("errors.common.validationFailed");
+  if (!relativePath || relativePath.includes("\0"))
+    throw new Error("errors.common.validationFailed");
   const base = resolve(basePath);
   const target = resolve(base, relativePath);
   if (!isInside(base, target)) throw new Error("errors.common.permissionDenied");
@@ -352,7 +411,12 @@ function resolveInside(basePath: string, relativePath: string): string {
 
 function isInside(basePath: string, targetPath: string): boolean {
   const fromBase = relative(basePath, targetPath);
-  return fromBase !== "" && fromBase !== ".." && !fromBase.startsWith(`..${sep}`) && !fromBase.startsWith(sep);
+  return (
+    fromBase !== "" &&
+    fromBase !== ".." &&
+    !fromBase.startsWith(`..${sep}`) &&
+    !fromBase.startsWith(sep)
+  );
 }
 
 function unique(values: string[]): string[] {

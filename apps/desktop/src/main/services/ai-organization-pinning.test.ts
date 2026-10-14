@@ -1,47 +1,300 @@
 import { randomUUID } from "node:crypto";
-import { afterEach,beforeEach,describe,expect,it,vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AiService } from "./ai-service.js";
-const state=vi.hoisted(()=>({selection:null as any,select:vi.fn(),record:vi.fn(async()=> '00000000-0000-4000-8000-000000000001')}));
-vi.mock('@app/db',async()=>({...await vi.importActual('@app/db'),createAiConfigRepository:()=>({getDefaultTask:async(...args:unknown[])=>{state.select(...args);return state.selection;},ensureRemoteRerankingCapabilities:async()=>{},recordTaskRun:state.record})}));
-function service(){return new AiService({userDataPath:'/tmp/organization-ai-test',getPool:()=>({}) as any,workspaceRoot:'/tmp',resourcesPath:'/tmp',isPackaged:false});}
-beforeEach(()=>{state.record.mockClear();state.select.mockClear();state.selection={profileId:randomUUID(),privacyMode:'allow_remote',providerConfigId:randomUUID(),localModelId:null,provider:'test',credentialRef:null,baseUrl:'https://provider.test',modelId:'model',runtime:'remote',managedPath:null,repository:null,revision:'1',quantization:null,requiredCapabilities:['structured-output'],parameters:{temperature:.2,maxTokens:4096},modelDefaultParameters:{},providerMetadata:{},outputLanguage:'en'};});
-afterEach(()=>vi.unstubAllGlobals());
-describe('organization profile pinning and shared inference queue',()=>{
-  it('uses the routed model regardless of legacy privacy flags',async()=>{
-    const s=service(),fetch=vi.fn();vi.stubGlobal('fetch',fetch);const adapter=vi.spyOn(s as any,'createAdapter');
-    await expect(s.pinOrganizationProfile(undefined,'offline_only')).resolves.toMatchObject({modelId:'model',privacy:'allow_remote'});expect(state.select).toHaveBeenCalledWith('structured-output',undefined);
-    state.selection.privacyMode='offline_only';await expect(s.pinOrganizationProfile(state.selection.profileId,'allow_remote')).resolves.toMatchObject({privacy:'allow_remote'});expect(state.select).toHaveBeenLastCalledWith('structured-output',state.selection.profileId);state.selection.localModelId=randomUUID();await expect(s.pinOrganizationProfile(undefined,'allow_remote')).resolves.toMatchObject({privacy:'offline_only'});expect(adapter).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();
+const state = vi.hoisted(() => ({
+  selection: null as any,
+  select: vi.fn(),
+  record: vi.fn(async () => "00000000-0000-4000-8000-000000000001")
+}));
+vi.mock("@app/db", async () => ({
+  ...(await vi.importActual("@app/db")),
+  createAiConfigRepository: () => ({
+    getDefaultTask: async (...args: unknown[]) => {
+      state.select(...args);
+      return state.selection;
+    },
+    ensureRemoteRerankingCapabilities: async () => {},
+    recordTaskRun: state.record
+  })
+}));
+function service() {
+  return new AiService({
+    userDataPath: "/tmp/organization-ai-test",
+    getPool: () => ({}) as any,
+    workspaceRoot: "/tmp",
+    resourcesPath: "/tmp",
+    isPackaged: false
   });
-  it('preserves pinned parameters while waiting in the same FIFO and cancels queued work without invoking a model',async()=>{
-    const s=service();const pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote');let release!:()=>void,entered!:()=>void;const waiting=new Promise<void>(r=>entered=r),blocked=new Promise<void>(r=>release=r);const requests:any[]=[];
-    const run=vi.fn(async(request:any)=>{requests.push(request);if(requests.length===1){entered();await blocked;}return {taskType:request.taskType,output:'{}',providerId:'test',modelId:'model',runtime:'remote',durationMs:1,inputTokens:2,outputTokens:1};});
-    const adapter={describe:()=>({providerId:'test',modelId:'model',capabilities:['structured-output'],parameterCapabilities:{temperature:{min:0,max:2},maxTokens:{min:1,max:8192}}}),run,canHandle:()=>true};
-    vi.spyOn(s as any,'createAdapter').mockImplementation(async()=> (s as any).registerAdapter(adapter));
-    const one=s.runOrganizationTask(pinned,'first',{},new AbortController().signal,4096);await waiting;
-    const controller=new AbortController();const canceled=s.runOrganizationTask(pinned,'must not execute',{},controller.signal,4096);const rejected=expect(canceled).rejects.toBeDefined();controller.abort();await rejected;
-    const two=s.runOrganizationTask(pinned,'second',{},new AbortController().signal,4096);state.selection.parameters={temperature:1.9,maxTokens:1000};release();await Promise.all([one,two]);expect(run).toHaveBeenCalledTimes(2);expect(requests[1].parameters).toMatchObject({temperature:.2,maxTokens:4096});expect(state.record).toHaveBeenCalledTimes(2);
+}
+beforeEach(() => {
+  state.record.mockClear();
+  state.select.mockClear();
+  state.selection = {
+    profileId: randomUUID(),
+    privacyMode: "allow_remote",
+    providerConfigId: randomUUID(),
+    localModelId: null,
+    provider: "test",
+    credentialRef: null,
+    baseUrl: "https://provider.test",
+    modelId: "model",
+    runtime: "remote",
+    managedPath: null,
+    repository: null,
+    revision: "1",
+    quantization: null,
+    requiredCapabilities: ["structured-output"],
+    parameters: { temperature: 0.2, maxTokens: 4096 },
+    modelDefaultParameters: {},
+    providerMetadata: {},
+    outputLanguage: "en"
+  };
+});
+afterEach(() => vi.unstubAllGlobals());
+describe("organization profile pinning and shared inference queue", () => {
+  it("uses the routed model regardless of legacy privacy flags", async () => {
+    const s = service(),
+      fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    const adapter = vi.spyOn(s as any, "createAdapter");
+    await expect(s.pinOrganizationProfile(undefined, "offline_only")).resolves.toMatchObject({
+      modelId: "model",
+      privacy: "allow_remote"
+    });
+    expect(state.select).toHaveBeenCalledWith("structured-output", undefined);
+    state.selection.privacyMode = "offline_only";
+    await expect(
+      s.pinOrganizationProfile(state.selection.profileId, "allow_remote")
+    ).resolves.toMatchObject({ privacy: "allow_remote" });
+    expect(state.select).toHaveBeenLastCalledWith("structured-output", state.selection.profileId);
+    state.selection.localModelId = randomUUID();
+    await expect(s.pinOrganizationProfile(undefined, "allow_remote")).resolves.toMatchObject({
+      privacy: "offline_only"
+    });
+    expect(adapter).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
-  it('checks consultation input freshness inside FIFO before adapter exposure and uses the independent embedding route',async()=>{
-    const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),adapter=vi.spyOn(s as any,'createAdapter');
-    const guard=vi.fn(async()=>{throw new Error('organization.errors.evidence');});
-    await expect(s.runOrganizationTask(pinned,'question',{},new AbortController().signal,2048,guard)).rejects.toThrow('organization.errors.evidence');expect(guard).toHaveBeenCalledOnce();expect(adapter).not.toHaveBeenCalled();
-    state.selection.requiredCapabilities=['embedding'];
-    adapter.mockRejectedValue(new Error('routed adapter reached'));await expect(s.runConsultationEmbedding('private query','offline_only',[],new AbortController().signal)).rejects.toThrow('routed adapter reached');expect(state.select).toHaveBeenCalledWith('embedding',undefined);expect(state.select).toHaveBeenLastCalledWith('embedding',state.selection.profileId);expect(adapter).toHaveBeenCalledOnce();
+  it("preserves pinned parameters while waiting in the same FIFO and cancels queued work without invoking a model", async () => {
+    const s = service();
+    const pinned = await s.pinOrganizationProfile(state.selection.profileId, "allow_remote");
+    let release!: () => void, entered!: () => void;
+    const waiting = new Promise<void>((r) => (entered = r)),
+      blocked = new Promise<void>((r) => (release = r));
+    const requests: any[] = [];
+    const run = vi.fn(async (request: any) => {
+      requests.push(request);
+      if (requests.length === 1) {
+        entered();
+        await blocked;
+      }
+      return {
+        taskType: request.taskType,
+        output: "{}",
+        providerId: "test",
+        modelId: "model",
+        runtime: "remote",
+        durationMs: 1,
+        inputTokens: 2,
+        outputTokens: 1
+      };
+    });
+    const adapter = {
+      describe: () => ({
+        providerId: "test",
+        modelId: "model",
+        capabilities: ["structured-output"],
+        parameterCapabilities: { temperature: { min: 0, max: 2 }, maxTokens: { min: 1, max: 8192 } }
+      }),
+      run,
+      canHandle: () => true
+    };
+    vi.spyOn(s as any, "createAdapter").mockImplementation(async () =>
+      (s as any).registerAdapter(adapter)
+    );
+    const one = s.runOrganizationTask(pinned, "first", {}, new AbortController().signal, 4096);
+    await waiting;
+    const controller = new AbortController();
+    const canceled = s.runOrganizationTask(pinned, "must not execute", {}, controller.signal, 4096);
+    const rejected = expect(canceled).rejects.toBeDefined();
+    controller.abort();
+    await rejected;
+    const two = s.runOrganizationTask(pinned, "second", {}, new AbortController().signal, 4096);
+    state.selection.parameters = { temperature: 1.9, maxTokens: 1000 };
+    release();
+    await Promise.all([one, two]);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(requests[1].parameters).toMatchObject({ temperature: 0.2, maxTokens: 4096 });
+    expect(state.record).toHaveBeenCalledTimes(2);
   });
-  it('rejects changed model identity before creating an adapter',async()=>{
-    const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),adapter=vi.spyOn(s as any,'createAdapter');state.selection.modelId='replacement';await expect(s.runOrganizationTask(pinned,'private prompt',{},new AbortController().signal,4096)).rejects.toThrow('organization.errors.modelChanged');expect(adapter).not.toHaveBeenCalled();
+  it("checks consultation input freshness inside FIFO before adapter exposure and uses the independent embedding route", async () => {
+    const s = service(),
+      pinned = await s.pinOrganizationProfile(state.selection.profileId, "allow_remote"),
+      adapter = vi.spyOn(s as any, "createAdapter");
+    const guard = vi.fn(async () => {
+      throw new Error("organization.errors.evidence");
+    });
+    await expect(
+      s.runOrganizationTask(pinned, "question", {}, new AbortController().signal, 2048, guard)
+    ).rejects.toThrow("organization.errors.evidence");
+    expect(guard).toHaveBeenCalledOnce();
+    expect(adapter).not.toHaveBeenCalled();
+    state.selection.requiredCapabilities = ["embedding"];
+    adapter.mockRejectedValue(new Error("routed adapter reached"));
+    await expect(
+      s.runConsultationEmbedding("private query", "offline_only", [], new AbortController().signal)
+    ).rejects.toThrow("routed adapter reached");
+    expect(state.select).toHaveBeenCalledWith("embedding", undefined);
+    expect(state.select).toHaveBeenLastCalledWith("embedding", state.selection.profileId);
+    expect(adapter).toHaveBeenCalledOnce();
   });
-  it('marks provider start only after the final guarded boundary, independently of UI progress',async()=>{const s=service(),pinned=await s.pinOrganizationProfile(state.selection.profileId,'allow_remote'),events:string[]=[];const run=vi.fn(async()=>{events.push('adapter');return{taskType:'structured-output',output:'{}',providerId:'test',modelId:'model',runtime:'remote',durationMs:1};});const adapter={describe:()=>({providerId:'test',modelId:'model',capabilities:['structured-output'],parameterCapabilities:{maxTokens:{min:1,max:8192}}}),run,canHandle:()=>true};vi.spyOn(s as any,'createAdapter').mockImplementation(async()=>(s as any).registerAdapter(adapter));let checks=0;const start=vi.fn(async()=>{events.push('start');}),progress=vi.fn();await expect(s.runOrganizationTask(pinned,'first',{onProgress:progress,onProviderStart:start},new AbortController().signal,2048,async()=>{if(++checks===2)throw new Error('organization.errors.policy');})).rejects.toThrow('organization.errors.policy');expect(progress).toHaveBeenCalled();expect(start).not.toHaveBeenCalled();expect(run).not.toHaveBeenCalled();await s.runOrganizationTask(pinned,'second',{onProviderStart:start},new AbortController().signal,2048,async()=>{});expect(events).toEqual(['start','adapter']);for(const call of state.record.mock.calls as unknown as Array<[Record<string,unknown>]>)expect('onProviderStart' in call[0]).toBe(false);});
-  it.each(['google','openai-compatible','openai-codex'])('resolves remote context for %s with pinned compatibility and truthful audit',async(provider)=>{
-    state.selection.provider=provider;state.selection.providerMetadata={capabilities:['structured-output']};const s=service();expect((await s.pinOrganizationProfile(undefined,'allow_remote')).contextWindow).toBe(128000);
-    state.selection.modelDefaultParameters={contextWindow:64000};state.selection.parameters={contextWindow:32000,maxTokens:2048};const pin=await s.pinOrganizationProfile(undefined,'allow_remote');expect(pin.contextWindow).toBe(32000);
-    const requests:any[]=[],adapter={describe:()=>({providerId:provider,modelId:'model',capabilities:['structured-output'],parameterCapabilities:{contextWindow:{min:128,max:2000000},maxTokens:{min:1,max:32768}},limits:{}}),run:vi.fn(async(request:any)=>{requests.push(request);return{taskType:'structured-output',output:'{}',providerId:provider,modelId:'model',runtime:'remote',durationMs:1};}),canHandle:()=>true};vi.spyOn(s as any,'createAdapter').mockImplementation(async()=>(s as any).registerAdapter(adapter));
-    state.selection.parameters={contextWindow:96000};await s.runOrganizationTask(pin,'short',{contentLanguage:'en'},new AbortController().signal,2048);expect(requests[0].parameters.contextWindow).toBe(32000);expect((state.record.mock.calls.at(-1) as any)[0].parameters.contextWindow).toBe(32000);
-    const old={...pin,parameters:{maxTokens:2048},contextWindow:null},before=JSON.stringify(old);await s.runOrganizationTask(old,'old admitted work',{},new AbortController().signal,2048);expect(requests[1].parameters).not.toHaveProperty('contextWindow');expect(JSON.stringify(old)).toBe(before);
-    state.selection.providerMetadata.modelLimits={contextWindow:16000};expect((await s.pinOrganizationProfile(undefined,'allow_remote')).contextWindow).toBe(16000);await expect(s.runOrganizationTask(pin,'stale capacity',{},new AbortController().signal,2048)).rejects.toThrow('errors.ai.contextWindowLimit');expect(adapter.run).toHaveBeenCalledTimes(2);
+  it("rejects changed model identity before creating an adapter", async () => {
+    const s = service(),
+      pinned = await s.pinOrganizationProfile(state.selection.profileId, "allow_remote"),
+      adapter = vi.spyOn(s as any, "createAdapter");
+    state.selection.modelId = "replacement";
+    await expect(
+      s.runOrganizationTask(pinned, "private prompt", {}, new AbortController().signal, 4096)
+    ).rejects.toThrow("organization.errors.modelChanged");
+    expect(adapter).not.toHaveBeenCalled();
   });
-  it('enforces prepared context before provider start and retains the failed audit parameters',async()=>{
-    state.selection.provider='openai-compatible';state.selection.parameters={contextWindow:2048,maxTokens:1024};const s=service(),adapter=vi.spyOn(s as any,'createAdapter'),start=vi.fn();await expect(s.runDefaultTask('structured-output','😀'.repeat(1000),{onProviderStart:start})).rejects.toThrow('errors.ai.contextWindowLimit');expect(start).not.toHaveBeenCalled();expect(adapter).not.toHaveBeenCalled();expect((state.record.mock.calls.at(-1) as any)[0]).toMatchObject({status:'failed',parameters:{contextWindow:2048,maxTokens:1024}});
+  it("marks provider start only after the final guarded boundary, independently of UI progress", async () => {
+    const s = service(),
+      pinned = await s.pinOrganizationProfile(state.selection.profileId, "allow_remote"),
+      events: string[] = [];
+    const run = vi.fn(async () => {
+      events.push("adapter");
+      return {
+        taskType: "structured-output",
+        output: "{}",
+        providerId: "test",
+        modelId: "model",
+        runtime: "remote",
+        durationMs: 1
+      };
+    });
+    const adapter = {
+      describe: () => ({
+        providerId: "test",
+        modelId: "model",
+        capabilities: ["structured-output"],
+        parameterCapabilities: { maxTokens: { min: 1, max: 8192 } }
+      }),
+      run,
+      canHandle: () => true
+    };
+    vi.spyOn(s as any, "createAdapter").mockImplementation(async () =>
+      (s as any).registerAdapter(adapter)
+    );
+    let checks = 0;
+    const start = vi.fn(async () => {
+        events.push("start");
+      }),
+      progress = vi.fn();
+    await expect(
+      s.runOrganizationTask(
+        pinned,
+        "first",
+        { onProgress: progress, onProviderStart: start },
+        new AbortController().signal,
+        2048,
+        async () => {
+          if (++checks === 2) throw new Error("organization.errors.policy");
+        }
+      )
+    ).rejects.toThrow("organization.errors.policy");
+    expect(progress).toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    await s.runOrganizationTask(
+      pinned,
+      "second",
+      { onProviderStart: start },
+      new AbortController().signal,
+      2048,
+      async () => {}
+    );
+    expect(events).toEqual(["start", "adapter"]);
+    for (const call of state.record.mock.calls as unknown as Array<[Record<string, unknown>]>)
+      expect("onProviderStart" in call[0]).toBe(false);
   });
-
+  it.each(["google", "openai-compatible", "openai-codex"])(
+    "resolves remote context for %s with pinned compatibility and truthful audit",
+    async (provider) => {
+      state.selection.provider = provider;
+      state.selection.providerMetadata = { capabilities: ["structured-output"] };
+      const s = service();
+      expect((await s.pinOrganizationProfile(undefined, "allow_remote")).contextWindow).toBe(
+        128000
+      );
+      state.selection.modelDefaultParameters = { contextWindow: 64000 };
+      state.selection.parameters = { contextWindow: 32000, maxTokens: 2048 };
+      const pin = await s.pinOrganizationProfile(undefined, "allow_remote");
+      expect(pin.contextWindow).toBe(32000);
+      const requests: any[] = [],
+        adapter = {
+          describe: () => ({
+            providerId: provider,
+            modelId: "model",
+            capabilities: ["structured-output"],
+            parameterCapabilities: {
+              contextWindow: { min: 128, max: 2000000 },
+              maxTokens: { min: 1, max: 32768 }
+            },
+            limits: {}
+          }),
+          run: vi.fn(async (request: any) => {
+            requests.push(request);
+            return {
+              taskType: "structured-output",
+              output: "{}",
+              providerId: provider,
+              modelId: "model",
+              runtime: "remote",
+              durationMs: 1
+            };
+          }),
+          canHandle: () => true
+        };
+      vi.spyOn(s as any, "createAdapter").mockImplementation(async () =>
+        (s as any).registerAdapter(adapter)
+      );
+      state.selection.parameters = { contextWindow: 96000 };
+      await s.runOrganizationTask(
+        pin,
+        "short",
+        { contentLanguage: "en" },
+        new AbortController().signal,
+        2048
+      );
+      expect(requests[0].parameters.contextWindow).toBe(32000);
+      expect((state.record.mock.calls.at(-1) as any)[0].parameters.contextWindow).toBe(32000);
+      const old = { ...pin, parameters: { maxTokens: 2048 }, contextWindow: null },
+        before = JSON.stringify(old);
+      await s.runOrganizationTask(old, "old admitted work", {}, new AbortController().signal, 2048);
+      expect(requests[1].parameters).not.toHaveProperty("contextWindow");
+      expect(JSON.stringify(old)).toBe(before);
+      state.selection.providerMetadata.modelLimits = { contextWindow: 16000 };
+      expect((await s.pinOrganizationProfile(undefined, "allow_remote")).contextWindow).toBe(16000);
+      await expect(
+        s.runOrganizationTask(pin, "stale capacity", {}, new AbortController().signal, 2048)
+      ).rejects.toThrow("errors.ai.contextWindowLimit");
+      expect(adapter.run).toHaveBeenCalledTimes(2);
+    }
+  );
+  it("enforces prepared context before provider start and retains the failed audit parameters", async () => {
+    state.selection.provider = "openai-compatible";
+    state.selection.parameters = { contextWindow: 2048, maxTokens: 1024 };
+    const s = service(),
+      adapter = vi.spyOn(s as any, "createAdapter"),
+      start = vi.fn();
+    await expect(
+      s.runDefaultTask("structured-output", "😀".repeat(1000), { onProviderStart: start })
+    ).rejects.toThrow("errors.ai.contextWindowLimit");
+    expect(start).not.toHaveBeenCalled();
+    expect(adapter).not.toHaveBeenCalled();
+    expect((state.record.mock.calls.at(-1) as any)[0]).toMatchObject({
+      status: "failed",
+      parameters: { contextWindow: 2048, maxTokens: 1024 }
+    });
+  });
 });

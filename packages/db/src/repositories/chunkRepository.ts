@@ -44,18 +44,18 @@ export interface PersistedChunkInput {
 
 const chunkReturning = [
   "id",
-  "document_id as \"documentId\"",
-  "source_item_id as \"sourceItemId\"",
-  "source_span_id as \"sourceSpanId\"",
-  "chunk_index as \"chunkIndex\"",
+  'document_id as "documentId"',
+  'source_item_id as "sourceItemId"',
+  'source_span_id as "sourceSpanId"',
+  'chunk_index as "chunkIndex"',
   "content",
-  "token_count as \"tokenCount\"",
-  "content_hash as \"contentHash\"",
+  'token_count as "tokenCount"',
+  'content_hash as "contentHash"',
   "language",
-  "chunking_version as \"chunkingVersion\"",
+  'chunking_version as "chunkingVersion"',
   "metadata",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapChunk(row: ChunkRow): ChunkRecord {
@@ -71,9 +71,11 @@ function mapChunk(row: ChunkRow): ChunkRecord {
 
 export function createChunkRepository(db: Queryable) {
   return {
-    async findById(id:string):Promise<ChunkRecord|null>{
-      const result=await db.query<ChunkRow>(`select ${chunkReturning} from chunks where id=$1`,[id]);
-      return result.rows[0]?mapChunk(result.rows[0]):null;
+    async findById(id: string): Promise<ChunkRecord | null> {
+      const result = await db.query<ChunkRow>(`select ${chunkReturning} from chunks where id=$1`, [
+        id
+      ]);
+      return result.rows[0] ? mapChunk(result.rows[0]) : null;
     },
     async replaceDocumentChunks(
       documentId: string,

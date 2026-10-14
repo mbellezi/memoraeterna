@@ -31,12 +31,7 @@ import {
   Trash2
 } from "lucide-react";
 import type { MessageKey, Translator } from "@app/i18n";
-import type {
-  AppSettings,
-  AppSettingsUpdate,
-  StorageSettings,
-  ThemeMode
-} from "../../shared/ipc";
+import type { AppSettings, AppSettingsUpdate, StorageSettings, ThemeMode } from "../../shared/ipc";
 import { appLanguageCodes, defaultAppSettings } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { AiSettingsView } from "./AiSettingsView";
@@ -65,7 +60,17 @@ interface SettingsViewProps {
   onReset?: () => Promise<void>;
 }
 
-export type SettingsScope = "prompts" | "organization" | "overview" | "personalization" | "matching" | "intelligence" | "models" | "external-services" | "connections" | "data";
+export type SettingsScope =
+  | "prompts"
+  | "organization"
+  | "overview"
+  | "personalization"
+  | "matching"
+  | "intelligence"
+  | "models"
+  | "external-services"
+  | "connections"
+  | "data";
 
 const deletionPolicies: Array<{
   policy: StorageSettings["deletionPolicy"];
@@ -126,7 +131,14 @@ const scopes: Array<{
     accent: "from-violet-500/20 via-fuchsia-500/10 to-transparent",
     iconStyle: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200"
   },
-  {id:"prompts",icon:Sparkles,label:"prompts.title",description:"prompts.navigationDescription",accent:"from-cyan-500/20 via-teal-500/10 to-transparent",iconStyle:"bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"},
+  {
+    id: "prompts",
+    icon: Sparkles,
+    label: "prompts.title",
+    description: "prompts.navigationDescription",
+    accent: "from-cyan-500/20 via-teal-500/10 to-transparent",
+    iconStyle: "bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200"
+  },
   {
     id: "matching",
     icon: Network,
@@ -177,7 +189,12 @@ const scopes: Array<{
   }
 ];
 
-export function SettingsScopeMenu({ activeScope, t, onScopeChange, collapsed = false }: {
+export function SettingsScopeMenu({
+  activeScope,
+  t,
+  onScopeChange,
+  collapsed = false
+}: {
   collapsed?: boolean;
   activeScope: SettingsScope;
   t: SettingsViewProps["t"];
@@ -185,10 +202,19 @@ export function SettingsScopeMenu({ activeScope, t, onScopeChange, collapsed = f
 }) {
   return (
     <div className="mt-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-      <p className={cn("px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400", collapsed && "sr-only")}>
+      <p
+        className={cn(
+          "px-3 pb-2 text-[0.68rem] font-bold uppercase tracking-[0.18em] text-slate-400",
+          collapsed && "sr-only"
+        )}
+      >
         {t("settings.dashboard.navigation.label")}
       </p>
-      <div className="grid gap-1" role="tablist" aria-label={t("settings.dashboard.navigation.label")}>
+      <div
+        className="grid gap-1"
+        role="tablist"
+        aria-label={t("settings.dashboard.navigation.label")}
+      >
         {scopes.map((scope) => {
           const Icon = scope.icon;
           const isActive = activeScope === scope.id;
@@ -211,18 +237,24 @@ export function SettingsScopeMenu({ activeScope, t, onScopeChange, collapsed = f
               )}
               onClick={() => onScopeChange(scope.id)}
             >
-              <span className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
-                isActive ? "bg-white/10 dark:bg-slate-950/10" : scope.iconStyle
-              )}>
+              <span
+                className={cn(
+                  "grid h-8 w-8 shrink-0 place-items-center rounded-lg",
+                  isActive ? "bg-white/10 dark:bg-slate-950/10" : scope.iconStyle
+                )}
+              >
                 <Icon className="h-4 w-4" aria-hidden="true" />
               </span>
               <span className={cn("min-w-0 flex-1", collapsed && "sr-only")}>
                 <span className="block text-sm font-semibold">{t(scope.label)}</span>
-                <span className={cn(
-                  "mt-0.5 block truncate text-[0.69rem]",
-                  isActive ? "text-slate-300 dark:text-slate-600" : "text-slate-500"
-                )}>{t(scope.description)}</span>
+                <span
+                  className={cn(
+                    "mt-0.5 block truncate text-[0.69rem]",
+                    isActive ? "text-slate-300 dark:text-slate-600" : "text-slate-500"
+                  )}
+                >
+                  {t(scope.description)}
+                </span>
               </span>
             </button>
           );
@@ -245,7 +277,10 @@ export function SettingsView({
   onToast,
   onReset
 }: SettingsViewProps) {
-  const [promptTarget,setPromptTarget]=useState<{id:string;domainId:string|null}>({id:"summary.short",domainId:null});
+  const [promptTarget, setPromptTarget] = useState<{ id: string; domainId: string | null }>({
+    id: "summary.short",
+    domainId: null
+  });
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
@@ -261,7 +296,9 @@ export function SettingsView({
     try {
       const result = await window.app.settings.resetLibrary();
       await onReset?.();
-      setResetStatus(result.failedFiles > 0 ? "settings.reset.completedWithWarnings" : "settings.reset.completed");
+      setResetStatus(
+        result.failedFiles > 0 ? "settings.reset.completedWithWarnings" : "settings.reset.completed"
+      );
     } catch {
       setResetStatus("settings.reset.failed");
     } finally {
@@ -281,24 +318,40 @@ export function SettingsView({
                 <Sparkles className="h-4 w-4" aria-hidden="true" />
                 {t("settings.dashboard.eyebrow")}
               </div>
-              <h2 className="text-2xl font-semibold tracking-tight">{t("settings.dashboard.title")}</h2>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{t("settings.dashboard.description")}</p>
+              <h2 className="text-2xl font-semibold tracking-tight">
+                {t("settings.dashboard.title")}
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">
+                {t("settings.dashboard.description")}
+              </p>
             </div>
             <div className="grid min-w-[16rem] gap-2 rounded-xl border border-white/10 bg-white/5 p-3 backdrop-blur">
               <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
                 <span>{t("settings.dashboard.summary.interface")}</span>
-                <strong className="text-white">{t(`settings.language.languages.${appSettings.language}` as MessageKey)}</strong>
+                <strong className="text-white">
+                  {t(`settings.language.languages.${appSettings.language}` as MessageKey)}
+                </strong>
               </div>
               <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
                 <span>{t("settings.dashboard.summary.knowledgeMatching")}</span>
-                <strong className="text-amber-300">{appSettings.atomicNoteRelationThreshold.toFixed(2)}</strong>
+                <strong className="text-amber-300">
+                  {appSettings.atomicNoteRelationThreshold.toFixed(2)}
+                </strong>
               </div>
               <div className="flex items-center justify-between gap-4 text-xs text-slate-300">
                 <span>{t("settings.dashboard.summary.obsidian")}</span>
-                <strong className={settings.obsidianSyncEnabled && settings.obsidianVaultPath ? "text-emerald-300" : "text-slate-400"}>
-                  {t(settings.obsidianSyncEnabled && settings.obsidianVaultPath
-                    ? "settings.dashboard.states.active"
-                    : "settings.dashboard.states.needsSetup")}
+                <strong
+                  className={
+                    settings.obsidianSyncEnabled && settings.obsidianVaultPath
+                      ? "text-emerald-300"
+                      : "text-slate-400"
+                  }
+                >
+                  {t(
+                    settings.obsidianSyncEnabled && settings.obsidianVaultPath
+                      ? "settings.dashboard.states.active"
+                      : "settings.dashboard.states.needsSetup"
+                  )}
                 </strong>
               </div>
             </div>
@@ -313,131 +366,164 @@ export function SettingsView({
         aria-labelledby={`settings-tab-${activeScope}`}
         className="motion-fade-in-up min-w-0"
       >
-          {activeScope === "overview" ? (
-            <OverviewPanel
+        {activeScope === "overview" ? (
+          <OverviewPanel
+            appSettings={appSettings}
+            settings={settings}
+            t={t}
+            onNavigate={onScopeChange}
+          />
+        ) : null}
+
+        {activeScope === "personalization" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <div className="grid gap-5 xl:grid-cols-2">
+              <AppearanceCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+              <SummarizationCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+              <KnowledgeGraphLimitsCard
+                appSettings={appSettings}
+                t={t}
+                onChange={onAppSettingsChange}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {activeScope === "prompts" ? (
+          <PromptsSettingsView
+            t={t as Translator}
+            language={appSettings.language}
+            initialId={promptTarget.id}
+            initialDomainId={promptTarget.domainId}
+          />
+        ) : null}
+        {activeScope === "organization" ? (
+          <OrganizationSettingsView
+            t={t as Translator}
+            contentLanguage={appSettings.contentLanguage}
+            onPrompts={(id = "organization.legacy_synthesis", domainId = null) => {
+              setPromptTarget({ id, domainId });
+              onScopeChange("prompts");
+            }}
+          />
+        ) : null}
+        {activeScope === "matching" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <MatchingCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+          </div>
+        ) : null}
+
+        {activeScope === "intelligence" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <LocalEmbeddingRuntimeCard
               appSettings={appSettings}
-              settings={settings}
               t={t}
-              onNavigate={onScopeChange}
+              onChange={onAppSettingsChange}
             />
-          ) : null}
+            <AiSettingsView t={t} interfaceLanguage={appSettings.language} onToast={onToast} />
+          </div>
+        ) : null}
 
-          {activeScope === "personalization" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <div className="grid gap-5 xl:grid-cols-2">
-                <AppearanceCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-                <SummarizationCard
-                  appSettings={appSettings}
-                  t={t}
-                  onChange={onAppSettingsChange}
-                />
-                <KnowledgeGraphLimitsCard
-                  appSettings={appSettings}
-                  t={t}
-                  onChange={onAppSettingsChange}
-                />
-              </div>
-            </div>
-          ) : null}
+        {activeScope === "models" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <LocalModelsView t={t} onToast={onToast} />
+          </div>
+        ) : null}
 
-          {activeScope === "prompts" ? <PromptsSettingsView t={t as Translator} language={appSettings.language} initialId={promptTarget.id} initialDomainId={promptTarget.domainId}/> : null}
-          {activeScope === "organization" ? <OrganizationSettingsView t={t as Translator} contentLanguage={appSettings.contentLanguage} onPrompts={(id="organization.legacy_synthesis",domainId=null)=>{setPromptTarget({id,domainId});onScopeChange("prompts");}}/> : null}
-          {activeScope === "matching" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <MatchingCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-            </div>
-          ) : null}
+        {activeScope === "external-services" ? (
+          <div className="grid min-w-0 gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <ExternalServicesCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
+          </div>
+        ) : null}
 
-          {activeScope === "intelligence" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <LocalEmbeddingRuntimeCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-              <AiSettingsView t={t} interfaceLanguage={appSettings.language} onToast={onToast} />
-            </div>
-          ) : null}
+        {activeScope === "connections" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <IntegrationGatewaySettings t={t} />
+            <ObsidianCard
+              settings={settings}
+              isSaving={isSaving}
+              t={t}
+              onUpdate={update}
+              onSelectVault={onSelectObsidianVault}
+            />
+            <ObsidianWikiCard t={t} />
+          </div>
+        ) : null}
 
-          {activeScope === "models" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <LocalModelsView t={t} onToast={onToast} />
-            </div>
-          ) : null}
-
-          {activeScope === "external-services" ? (
-            <div className="grid min-w-0 gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <ExternalServicesCard appSettings={appSettings} t={t} onChange={onAppSettingsChange} />
-            </div>
-          ) : null}
-
-          {activeScope === "connections" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <IntegrationGatewaySettings t={t} />
-              <ObsidianCard
-                settings={settings}
-                isSaving={isSaving}
-                t={t}
-                onUpdate={update}
-                onSelectVault={onSelectObsidianVault}
-              />
-              <ObsidianWikiCard t={t} />
-            </div>
-          ) : null}
-
-          {activeScope === "data" ? (
-            <div className="grid gap-5">
-              <ScopeHeader scope={activeScopeDefinition} t={t} />
-              <StorageCard settings={settings} t={t} onUpdate={update} />
-              <ObsidianSyncStatusCard
-                available={Boolean(settings.obsidianVaultPath) && settings.obsidianSyncEnabled && !settings.obsidianSyncPaused}
-                showAction
-                t={t}
-              />
-              <RelationLabelsCard appSettings={appSettings} onChange={onAppSettingsChange} t={t} />
-              <BackupView t={t} />
-              <ResetCard
-                isResetting={isResetting}
-                resetStatus={resetStatus}
-                t={t}
-                onReset={resetLibrary}
-              />
-            </div>
-          ) : null}
+        {activeScope === "data" ? (
+          <div className="grid gap-5">
+            <ScopeHeader scope={activeScopeDefinition} t={t} />
+            <StorageCard settings={settings} t={t} onUpdate={update} />
+            <ObsidianSyncStatusCard
+              available={
+                Boolean(settings.obsidianVaultPath) &&
+                settings.obsidianSyncEnabled &&
+                !settings.obsidianSyncPaused
+              }
+              showAction
+              t={t}
+            />
+            <RelationLabelsCard appSettings={appSettings} onChange={onAppSettingsChange} t={t} />
+            <BackupView t={t} />
+            <ResetCard
+              isResetting={isResetting}
+              resetStatus={resetStatus}
+              t={t}
+              onReset={resetLibrary}
+            />
+          </div>
+        ) : null}
       </div>
     </section>
   );
 }
 
-function LocalEmbeddingRuntimeCard({ appSettings, t, onChange }: {
+function LocalEmbeddingRuntimeCard({
+  appSettings,
+  t,
+  onChange
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
 }) {
-  return <section className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-    <div className="flex min-w-0 items-start gap-3">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
-        <Cpu className="h-5 w-5" aria-hidden="true" />
-      </span>
-      <div>
-        <Label htmlFor="keepLocalEmbeddingModelsLoaded">{t("settings.ai.keepLocalEmbeddingModelsLoaded")}</Label>
-        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
-          {t("settings.ai.keepLocalEmbeddingModelsLoadedDescription")}
-        </p>
+  return (
+    <section className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-200">
+          <Cpu className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <div>
+          <Label htmlFor="keepLocalEmbeddingModelsLoaded">
+            {t("settings.ai.keepLocalEmbeddingModelsLoaded")}
+          </Label>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+            {t("settings.ai.keepLocalEmbeddingModelsLoadedDescription")}
+          </p>
+        </div>
       </div>
-    </div>
-    <Switch
-      id="keepLocalEmbeddingModelsLoaded"
-      checked={appSettings.keepLocalEmbeddingModelsLoaded}
-      aria-label={t("settings.ai.keepLocalEmbeddingModelsLoaded")}
-      onChange={(event) => onChange({ keepLocalEmbeddingModelsLoaded: event.target.checked })}
-    />
-  </section>;
+      <Switch
+        id="keepLocalEmbeddingModelsLoaded"
+        checked={appSettings.keepLocalEmbeddingModelsLoaded}
+        aria-label={t("settings.ai.keepLocalEmbeddingModelsLoaded")}
+        onChange={(event) => onChange({ keepLocalEmbeddingModelsLoaded: event.target.checked })}
+      />
+    </section>
+  );
 }
 
-function OverviewPanel({ appSettings, settings, t, onNavigate }: {
+function OverviewPanel({
+  appSettings,
+  settings,
+  t,
+  onNavigate
+}: {
   appSettings: AppSettings;
   settings: StorageSettings;
   t: SettingsViewProps["t"];
@@ -452,8 +538,12 @@ function OverviewPanel({ appSettings, settings, t, onNavigate }: {
             <ShieldCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.dashboard.overview.title")}</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">{t("settings.dashboard.overview.description")}</p>
+            <h3 className="font-semibold text-slate-950 dark:text-white">
+              {t("settings.dashboard.overview.title")}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-400">
+              {t("settings.dashboard.overview.description")}
+            </p>
           </div>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -466,17 +556,21 @@ function OverviewPanel({ appSettings, settings, t, onNavigate }: {
           <StatusTile
             icon={Network}
             label={t("settings.dashboard.summary.obsidian")}
-            value={t(settings.obsidianSyncEnabled && settings.obsidianVaultPath
-              ? "settings.dashboard.states.active"
-              : "settings.dashboard.states.needsSetup")}
+            value={t(
+              settings.obsidianSyncEnabled && settings.obsidianVaultPath
+                ? "settings.dashboard.states.active"
+                : "settings.dashboard.states.needsSetup"
+            )}
             tone="amber"
           />
           <StatusTile
             icon={HardDrive}
             label={t("settings.dashboard.summary.uploadCopies")}
-            value={t(settings.uploadCopiesEnabled
-              ? "settings.dashboard.states.enabled"
-              : "settings.dashboard.states.internalOnly")}
+            value={t(
+              settings.uploadCopiesEnabled
+                ? "settings.dashboard.states.enabled"
+                : "settings.dashboard.states.internalOnly"
+            )}
             tone="emerald"
           />
         </div>
@@ -492,16 +586,30 @@ function OverviewPanel({ appSettings, settings, t, onNavigate }: {
               className="group relative min-h-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700"
               onClick={() => onNavigate(scope.id)}
             >
-              <span className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br opacity-70", scope.accent)} />
+              <span
+                className={cn(
+                  "pointer-events-none absolute inset-0 bg-gradient-to-br opacity-70",
+                  scope.accent
+                )}
+              />
               <span className="relative flex h-full flex-col">
-                <span className={cn("grid h-10 w-10 place-items-center rounded-xl", scope.iconStyle)}>
+                <span
+                  className={cn("grid h-10 w-10 place-items-center rounded-xl", scope.iconStyle)}
+                >
                   <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
-                <span className="mt-5 text-base font-semibold text-slate-950 dark:text-white">{t(scope.label)}</span>
-                <span className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t(scope.description)}</span>
+                <span className="mt-5 text-base font-semibold text-slate-950 dark:text-white">
+                  {t(scope.label)}
+                </span>
+                <span className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+                  {t(scope.description)}
+                </span>
                 <span className="mt-auto flex items-center gap-1 pt-4 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 dark:text-slate-300">
                   {t("settings.dashboard.openScope")}
-                  <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+                  <ChevronRight
+                    className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                    aria-hidden="true"
+                  />
                 </span>
               </span>
             </button>
@@ -516,21 +624,36 @@ function ScopeHeader({ scope, t }: { scope: (typeof scopes)[number]; t: Settings
   const Icon = scope.icon;
   return (
     <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
-      <span className={cn("pointer-events-none absolute inset-0 bg-gradient-to-r opacity-70", scope.accent)} />
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-0 bg-gradient-to-r opacity-70",
+          scope.accent
+        )}
+      />
       <div className="relative flex items-start gap-3">
-        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl", scope.iconStyle)}>
+        <span
+          className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl", scope.iconStyle)}
+        >
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">{t(scope.label)}</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">{t(scope.description)}</p>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-950 dark:text-white">
+            {t(scope.label)}
+          </h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-400">
+            {t(scope.description)}
+          </p>
         </div>
       </div>
     </section>
   );
 }
 
-function AppearanceCard({ appSettings, t, onChange }: {
+function AppearanceCard({
+  appSettings,
+  t,
+  onChange
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
@@ -542,8 +665,12 @@ function AppearanceCard({ appSettings, t, onChange }: {
           <Paintbrush className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.appearance.title")}</h3>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t("settings.dashboard.appearanceDescription")}</p>
+          <h3 className="font-semibold text-slate-950 dark:text-white">
+            {t("settings.appearance.title")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            {t("settings.dashboard.appearanceDescription")}
+          </p>
         </div>
       </div>
       <div className="grid gap-2">
@@ -557,7 +684,9 @@ function AppearanceCard({ appSettings, t, onChange }: {
           id="uiLocale"
           className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-violet-500 focus:ring-4 focus:ring-violet-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50 dark:focus:border-violet-400 dark:focus:ring-violet-950"
           value={appSettings.language}
-          onChange={(event) => onChange({ language: event.target.value as AppSettings["language"] })}
+          onChange={(event) =>
+            onChange({ language: event.target.value as AppSettings["language"] })
+          }
         >
           {appLanguageCodes.map((languageCode) => (
             <option key={languageCode} value={languageCode}>
@@ -592,9 +721,14 @@ function AppearanceCard({ appSettings, t, onChange }: {
       </div>
       <div className="grid gap-2">
         <div className="flex items-center justify-between gap-4">
-          <Label htmlFor="graphWheelZoomSensitivity">{t("settings.appearance.graphWheelZoomSensitivity")}</Label>
+          <Label htmlFor="graphWheelZoomSensitivity">
+            {t("settings.appearance.graphWheelZoomSensitivity")}
+          </Label>
           <output className="text-sm font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-            {appSettings.graphWheelZoomSensitivity.toLocaleString(appSettings.language, { maximumFractionDigits: 2 })}×
+            {appSettings.graphWheelZoomSensitivity.toLocaleString(appSettings.language, {
+              maximumFractionDigits: 2
+            })}
+            ×
           </output>
         </div>
         <input
@@ -606,13 +740,21 @@ function AppearanceCard({ appSettings, t, onChange }: {
           value={appSettings.graphWheelZoomSensitivity}
           aria-describedby="graphWheelZoomSensitivityDescription"
           className="h-2 w-full cursor-pointer accent-violet-600"
-          onChange={(event) => onChange({ graphWheelZoomSensitivity: event.currentTarget.valueAsNumber })}
+          onChange={(event) =>
+            onChange({ graphWheelZoomSensitivity: event.currentTarget.valueAsNumber })
+          }
         />
-        <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400" aria-hidden="true">
+        <div
+          className="flex justify-between text-xs text-slate-500 dark:text-slate-400"
+          aria-hidden="true"
+        >
           <span>{t("settings.appearance.zoomSensitivitySlower")}</span>
           <span>{t("settings.appearance.zoomSensitivityFaster")}</span>
         </div>
-        <p id="graphWheelZoomSensitivityDescription" className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+        <p
+          id="graphWheelZoomSensitivityDescription"
+          className="text-xs leading-5 text-slate-500 dark:text-slate-400"
+        >
           {t("settings.appearance.graphWheelZoomSensitivityDescription")}
         </p>
       </div>
@@ -620,7 +762,11 @@ function AppearanceCard({ appSettings, t, onChange }: {
   );
 }
 
-function MatchingCard({ appSettings, t, onChange: saveSettings }: {
+function MatchingCard({
+  appSettings,
+  t,
+  onChange: saveSettings
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
@@ -629,8 +775,15 @@ function MatchingCard({ appSettings, t, onChange: saveSettings }: {
   const onChange = (update: AppSettingsUpdate) => {
     if (isRecommended) return;
     const configuration = MatchingConfigurationSchema.parse({ ...appSettings, ...update });
-    saveSettings({ ...configuration, activeMatchingPresetId: appSettings.activeMatchingPresetId,
-      matchingPresets: appSettings.matchingPresets.map((preset) => preset.id === appSettings.activeMatchingPresetId ? { ...preset, settings: configuration } : preset) });
+    saveSettings({
+      ...configuration,
+      activeMatchingPresetId: appSettings.activeMatchingPresetId,
+      matchingPresets: appSettings.matchingPresets.map((preset) =>
+        preset.id === appSettings.activeMatchingPresetId
+          ? { ...preset, settings: configuration }
+          : preset
+      )
+    });
   };
   return (
     <section className="grid content-start gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -640,97 +793,240 @@ function MatchingCard({ appSettings, t, onChange: saveSettings }: {
             <Network className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.matching.title")}</h3>
-            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.matching.description")}</p>
+            <h3 className="font-semibold text-slate-950 dark:text-white">
+              {t("settings.matching.title")}
+            </h3>
+            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+              {t("settings.matching.description")}
+            </p>
           </div>
         </div>
       </div>
       <MatchingPresetControls settings={appSettings} onChange={saveSettings} t={t} />
-      <fieldset key={appSettings.activeMatchingPresetId} disabled={isRecommended} className="grid min-w-0 gap-5">
-      <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900">
-        <MatchingSlider
-          id="atomicNoteRelationThreshold"
-          label={t("settings.matching.minimumScore")}
-          defaultValue={defaultAppSettings.atomicNoteRelationThreshold} resetLabel={t("settings.matching.resetDefault")}
-          value={appSettings.atomicNoteRelationThreshold}
-          onCommit={(value) => onChange({ atomicNoteRelationThreshold: value })}
-        />
-        <div className="mt-2 flex justify-between text-xs font-medium text-slate-500">
-          <span>{t("settings.matching.moreRelations")}</span>
-          <span>{t("settings.matching.fewerRelations")}</span>
+      <fieldset
+        key={appSettings.activeMatchingPresetId}
+        disabled={isRecommended}
+        className="grid min-w-0 gap-5"
+      >
+        <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-900">
+          <MatchingSlider
+            id="atomicNoteRelationThreshold"
+            label={t("settings.matching.minimumScore")}
+            defaultValue={defaultAppSettings.atomicNoteRelationThreshold}
+            resetLabel={t("settings.matching.resetDefault")}
+            value={appSettings.atomicNoteRelationThreshold}
+            onCommit={(value) => onChange({ atomicNoteRelationThreshold: value })}
+          />
+          <div className="mt-2 flex justify-between text-xs font-medium text-slate-500">
+            <span>{t("settings.matching.moreRelations")}</span>
+            <span>{t("settings.matching.fewerRelations")}</span>
+          </div>
         </div>
-      </div>
-      <div className="grid gap-2">
-        <MatchingSlider id="relationTypeSimilarityThreshold" label={t("relationTypes.threshold")}
-          defaultValue={defaultAppSettings.relationTypeSimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
-          value={appSettings.relationTypeSimilarityThreshold} onCommit={(value) => onChange({ relationTypeSimilarityThreshold: value })} />
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("relationTypes.thresholdHint")}</p>
-      </div>
-      <div className="grid gap-2">
-        <MatchingSlider id="entityIdentitySimilarityThreshold" label={t("entityIdentity.threshold")}
-          defaultValue={defaultAppSettings.entityIdentitySimilarityThreshold} resetLabel={t("settings.matching.resetDefault")}
-          value={appSettings.entityIdentitySimilarityThreshold} onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })} />
-        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("entityIdentity.hint")}</p>
-      </div>
-      <AdvancedMatchingSettings settings={appSettings} onChange={onChange} t={t} />
-      <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-        <div><h3 className="font-semibold">{t("sourceRelations.title")}</h3><p className="mt-1 text-xs leading-5 text-slate-500">{t("sourceRelations.budgetHint")}</p></div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {([
-            ["maxCandidates",1,200],["maxPairs",1,50],["maxRelations",1,200],["maxRelationsPerPair",1,20],["maxInputTokens",2000,200000]
-          ] as const).map(([key,min,max]) => <label key={key} className="grid gap-1 text-xs">
-            <span className="flex items-center justify-between gap-2">{t(`sourceRelations.${key}`)}<MatchingResetButton label={`${t(`sourceRelations.${key}`)}: ${t("settings.matching.resetDefault")}`} onReset={() => onChange({ sourceRelationSettings: { ...appSettings.sourceRelationSettings, [key]: defaultAppSettings.sourceRelationSettings[key] } })} /></span>
-            <SourceRelationLimitInput min={min} max={max} value={appSettings.sourceRelationSettings[key]}
-              onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />
-          </label>)}
+        <div className="grid gap-2">
+          <MatchingSlider
+            id="relationTypeSimilarityThreshold"
+            label={t("relationTypes.threshold")}
+            defaultValue={defaultAppSettings.relationTypeSimilarityThreshold}
+            resetLabel={t("settings.matching.resetDefault")}
+            value={appSettings.relationTypeSimilarityThreshold}
+            onCommit={(value) => onChange({ relationTypeSimilarityThreshold: value })}
+          />
+          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t("relationTypes.thresholdHint")}
+          </p>
         </div>
-        {(["minImportance","minConfidence"] as const).map((key) => <MatchingSlider key={key} id={`sourceRelations-${key}`}
-          label={t(`sourceRelations.${key}`)} value={appSettings.sourceRelationSettings[key]}
-          defaultValue={defaultAppSettings.sourceRelationSettings[key]} resetLabel={t("settings.matching.resetDefault")}
-          onCommit={(value) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,[key]:value}})} />)}
-        <label className="flex items-center justify-between gap-3 text-sm">{t("sourceRelations.includeWeakTypes")}
-          <span className="flex items-center gap-2"><MatchingResetButton label={`${t("sourceRelations.includeWeakTypes")}: ${t("settings.matching.resetDefault")}`} onReset={() => onChange({ sourceRelationSettings: { ...appSettings.sourceRelationSettings, includeWeakTypes: defaultAppSettings.sourceRelationSettings.includeWeakTypes } })} /><Switch checked={appSettings.sourceRelationSettings.includeWeakTypes} onChange={(event) => onChange({sourceRelationSettings:{...appSettings.sourceRelationSettings,includeWeakTypes:event.target.checked}})} /></span>
-        </label>
-      </div>
+        <div className="grid gap-2">
+          <MatchingSlider
+            id="entityIdentitySimilarityThreshold"
+            label={t("entityIdentity.threshold")}
+            defaultValue={defaultAppSettings.entityIdentitySimilarityThreshold}
+            resetLabel={t("settings.matching.resetDefault")}
+            value={appSettings.entityIdentitySimilarityThreshold}
+            onCommit={(value) => onChange({ entityIdentitySimilarityThreshold: value })}
+          />
+          <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+            {t("entityIdentity.hint")}
+          </p>
+        </div>
+        <AdvancedMatchingSettings settings={appSettings} onChange={onChange} t={t} />
+        <div className="grid min-w-0 gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <div>
+            <h3 className="font-semibold">{t("sourceRelations.title")}</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              {t("sourceRelations.budgetHint")}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {(
+              [
+                ["maxCandidates", 1, 200],
+                ["maxPairs", 1, 50],
+                ["maxRelations", 1, 200],
+                ["maxRelationsPerPair", 1, 20],
+                ["maxInputTokens", 2000, 200000]
+              ] as const
+            ).map(([key, min, max]) => (
+              <label key={key} className="grid gap-1 text-xs">
+                <span className="flex items-center justify-between gap-2">
+                  {t(`sourceRelations.${key}`)}
+                  <MatchingResetButton
+                    label={`${t(`sourceRelations.${key}`)}: ${t("settings.matching.resetDefault")}`}
+                    onReset={() =>
+                      onChange({
+                        sourceRelationSettings: {
+                          ...appSettings.sourceRelationSettings,
+                          [key]: defaultAppSettings.sourceRelationSettings[key]
+                        }
+                      })
+                    }
+                  />
+                </span>
+                <SourceRelationLimitInput
+                  min={min}
+                  max={max}
+                  value={appSettings.sourceRelationSettings[key]}
+                  onCommit={(value) =>
+                    onChange({
+                      sourceRelationSettings: {
+                        ...appSettings.sourceRelationSettings,
+                        [key]: value
+                      }
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          {(["minImportance", "minConfidence"] as const).map((key) => (
+            <MatchingSlider
+              key={key}
+              id={`sourceRelations-${key}`}
+              label={t(`sourceRelations.${key}`)}
+              value={appSettings.sourceRelationSettings[key]}
+              defaultValue={defaultAppSettings.sourceRelationSettings[key]}
+              resetLabel={t("settings.matching.resetDefault")}
+              onCommit={(value) =>
+                onChange({
+                  sourceRelationSettings: { ...appSettings.sourceRelationSettings, [key]: value }
+                })
+              }
+            />
+          ))}
+          <label className="flex items-center justify-between gap-3 text-sm">
+            {t("sourceRelations.includeWeakTypes")}
+            <span className="flex items-center gap-2">
+              <MatchingResetButton
+                label={`${t("sourceRelations.includeWeakTypes")}: ${t("settings.matching.resetDefault")}`}
+                onReset={() =>
+                  onChange({
+                    sourceRelationSettings: {
+                      ...appSettings.sourceRelationSettings,
+                      includeWeakTypes: defaultAppSettings.sourceRelationSettings.includeWeakTypes
+                    }
+                  })
+                }
+              />
+              <Switch
+                checked={appSettings.sourceRelationSettings.includeWeakTypes}
+                onChange={(event) =>
+                  onChange({
+                    sourceRelationSettings: {
+                      ...appSettings.sourceRelationSettings,
+                      includeWeakTypes: event.target.checked
+                    }
+                  })
+                }
+              />
+            </span>
+          </label>
+        </div>
       </fieldset>
     </section>
   );
 }
 
-function SourceRelationLimitInput({value,min,max,onCommit}:{value:number;min:number;max:number;onCommit:(value:number)=>void}) {
-  const [draft,setDraft]=useState(String(value));
-  useEffect(()=>setDraft(String(value)),[value]);
-  const commit=()=>{
-    const number=Number(draft);
-    const next=draft.trim() && Number.isFinite(number) ? Math.max(min,Math.min(max,Math.floor(number))) : value;
-    setDraft(String(next));if(next!==value)onCommit(next);
+function SourceRelationLimitInput({
+  value,
+  min,
+  max,
+  onCommit
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const number = Number(draft);
+    const next =
+      draft.trim() && Number.isFinite(number)
+        ? Math.max(min, Math.min(max, Math.floor(number)))
+        : value;
+    setDraft(String(next));
+    if (next !== value) onCommit(next);
   };
-  return <Input type="number" min={min} max={max} step={1} value={draft} onChange={(event)=>setDraft(event.target.value)} onBlur={commit}
-    onKeyDown={(event)=>{if(event.key==="Enter")event.currentTarget.blur();else if(event.key==="Escape"){event.preventDefault();setDraft(String(value));}}} />;
+  return (
+    <Input
+      type="number"
+      min={min}
+      max={max}
+      step={1}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        else if (event.key === "Escape") {
+          event.preventDefault();
+          setDraft(String(value));
+        }
+      }}
+    />
+  );
 }
 
-function ExternalServicesCard({ appSettings, t, onChange }: {
+function ExternalServicesCard({
+  appSettings,
+  t,
+  onChange
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
 }) {
-  return <section className="grid min-w-0 gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+  return (
+    <section className="grid min-w-0 gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
       <div className="flex min-w-0 items-start justify-between gap-4">
         <div className="grid min-w-0 flex-1 gap-1">
-          <Label htmlFor="metadataEnrichmentEnabled">{t("settings.metadataEnrichment.title")}</Label>
+          <Label htmlFor="metadataEnrichmentEnabled">
+            {t("settings.metadataEnrichment.title")}
+          </Label>
           <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
             {t("settings.metadataEnrichment.description")}
           </p>
-          <Label htmlFor="bookMetadataProvider" className="mt-3">{t("settings.metadataEnrichment.provider")}</Label>
-          <select id="bookMetadataProvider" value={appSettings.bookMetadataProvider}
+          <Label htmlFor="bookMetadataProvider" className="mt-3">
+            {t("settings.metadataEnrichment.provider")}
+          </Label>
+          <select
+            id="bookMetadataProvider"
+            value={appSettings.bookMetadataProvider}
             disabled={!appSettings.metadataEnrichmentEnabled}
-            onChange={(event) => onChange({ bookMetadataProvider: event.target.value as AppSettings["bookMetadataProvider"] })}
-            className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950">
+            onChange={(event) =>
+              onChange({
+                bookMetadataProvider: event.target.value as AppSettings["bookMetadataProvider"]
+              })
+            }
+            className="h-9 min-w-0 w-full rounded-md border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-950"
+          >
             <option value="auto">{t("settings.metadataEnrichment.auto")}</option>
             <option value="open-library">{t("settings.metadataEnrichment.openLibrary")}</option>
             <option value="google-books">{t("settings.metadataEnrichment.googleBooks")}</option>
           </select>
-          <p className="text-xs leading-5 text-slate-500">{t("settings.metadataEnrichment.providerHint")}</p>
+          <p className="text-xs leading-5 text-slate-500">
+            {t("settings.metadataEnrichment.providerHint")}
+          </p>
           <GoogleBooksKeySettings t={t} />
         </div>
         <Switch
@@ -740,10 +1036,15 @@ function ExternalServicesCard({ appSettings, t, onChange }: {
           onChange={(event) => onChange({ metadataEnrichmentEnabled: event.target.checked })}
         />
       </div>
-  </section>;
+    </section>
+  );
 }
 
-function SummarizationCard({ appSettings, t, onChange }: {
+function SummarizationCard({
+  appSettings,
+  t,
+  onChange
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
@@ -755,12 +1056,18 @@ function SummarizationCard({ appSettings, t, onChange }: {
           <Sparkles className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.summarization.title")}</h3>
-          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.summarization.description")}</p>
+          <h3 className="font-semibold text-slate-950 dark:text-white">
+            {t("settings.summarization.title")}
+          </h3>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+            {t("settings.summarization.description")}
+          </p>
         </div>
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="summaryMinimumWordCount">{t("settings.summarization.minimumWordCount")}</Label>
+        <Label htmlFor="summaryMinimumWordCount">
+          {t("settings.summarization.minimumWordCount")}
+        </Label>
         <Input
           id="summaryMinimumWordCount"
           type="number"
@@ -768,9 +1075,14 @@ function SummarizationCard({ appSettings, t, onChange }: {
           max={1000}
           step={1}
           value={appSettings.summaryMinimumWordCount}
-          onChange={(event) => onChange({
-            summaryMinimumWordCount: Math.max(0, Math.min(1000, Math.floor(Number(event.target.value))))
-          })}
+          onChange={(event) =>
+            onChange({
+              summaryMinimumWordCount: Math.max(
+                0,
+                Math.min(1000, Math.floor(Number(event.target.value)))
+              )
+            })
+          }
         />
         <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
           {t("settings.summarization.minimumWordCountHint")}
@@ -780,7 +1092,11 @@ function SummarizationCard({ appSettings, t, onChange }: {
   );
 }
 
-function KnowledgeGraphLimitsCard({ appSettings, t, onChange }: {
+function KnowledgeGraphLimitsCard({
+  appSettings,
+  t,
+  onChange
+}: {
   appSettings: AppSettings;
   t: SettingsViewProps["t"];
   onChange: SettingsViewProps["onAppSettingsChange"];
@@ -792,30 +1108,72 @@ function KnowledgeGraphLimitsCard({ appSettings, t, onChange }: {
           <Network className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.knowledgeGraphLimits.title")}</h3>
-          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">{t("settings.knowledgeGraphLimits.description")}</p>
+          <h3 className="font-semibold text-slate-950 dark:text-white">
+            {t("settings.knowledgeGraphLimits.title")}
+          </h3>
+          <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-400">
+            {t("settings.knowledgeGraphLimits.description")}
+          </p>
         </div>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid gap-2">
-          <Label htmlFor="knowledgeGraphMaxEntitiesPerSource">{t("settings.knowledgeGraphLimits.entities")}</Label>
-          <Input id="knowledgeGraphMaxEntitiesPerSource" type="number" min={1} max={10000} step={1}
+          <Label htmlFor="knowledgeGraphMaxEntitiesPerSource">
+            {t("settings.knowledgeGraphLimits.entities")}
+          </Label>
+          <Input
+            id="knowledgeGraphMaxEntitiesPerSource"
+            type="number"
+            min={1}
+            max={10000}
+            step={1}
             value={appSettings.knowledgeGraphMaxEntitiesPerSource}
-            onChange={(event) => onChange({ knowledgeGraphMaxEntitiesPerSource: Math.max(1, Math.min(10000, Math.floor(Number(event.target.value)))) })} />
+            onChange={(event) =>
+              onChange({
+                knowledgeGraphMaxEntitiesPerSource: Math.max(
+                  1,
+                  Math.min(10000, Math.floor(Number(event.target.value)))
+                )
+              })
+            }
+          />
         </div>
         <div className="grid gap-2">
-          <Label htmlFor="knowledgeGraphMaxRelationsPerSource">{t("settings.knowledgeGraphLimits.relations")}</Label>
-          <Input id="knowledgeGraphMaxRelationsPerSource" type="number" min={1} max={20000} step={1}
+          <Label htmlFor="knowledgeGraphMaxRelationsPerSource">
+            {t("settings.knowledgeGraphLimits.relations")}
+          </Label>
+          <Input
+            id="knowledgeGraphMaxRelationsPerSource"
+            type="number"
+            min={1}
+            max={20000}
+            step={1}
             value={appSettings.knowledgeGraphMaxRelationsPerSource}
-            onChange={(event) => onChange({ knowledgeGraphMaxRelationsPerSource: Math.max(1, Math.min(20000, Math.floor(Number(event.target.value)))) })} />
+            onChange={(event) =>
+              onChange({
+                knowledgeGraphMaxRelationsPerSource: Math.max(
+                  1,
+                  Math.min(20000, Math.floor(Number(event.target.value)))
+                )
+              })
+            }
+          />
         </div>
       </div>
-      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{t("settings.knowledgeGraphLimits.hint")}</p>
+      <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+        {t("settings.knowledgeGraphLimits.hint")}
+      </p>
     </section>
   );
 }
 
-function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
+function ObsidianCard({
+  settings,
+  isSaving,
+  t,
+  onUpdate,
+  onSelectVault
+}: {
   settings: StorageSettings;
   isSaving: boolean;
   t: SettingsViewProps["t"];
@@ -830,19 +1188,27 @@ function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
             <ServerCog className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <h3 className="font-semibold text-slate-950 dark:text-white">{t("integrations.obsidianPlugin")}</h3>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t("settings.dashboard.obsidianDescription")}</p>
+            <h3 className="font-semibold text-slate-950 dark:text-white">
+              {t("integrations.obsidianPlugin")}
+            </h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {t("settings.dashboard.obsidianDescription")}
+            </p>
           </div>
         </div>
-        <span className={cn(
-          "rounded-full px-3 py-1 text-xs font-bold",
-          settings.obsidianSyncEnabled && settings.obsidianVaultPath
-            ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
-            : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"
-        )}>
-          {t(settings.obsidianSyncEnabled && settings.obsidianVaultPath
-            ? "settings.dashboard.states.active"
-            : "settings.dashboard.states.needsSetup")}
+        <span
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-bold",
+            settings.obsidianSyncEnabled && settings.obsidianVaultPath
+              ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+              : "bg-slate-100 text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+          )}
+        >
+          {t(
+            settings.obsidianSyncEnabled && settings.obsidianVaultPath
+              ? "settings.dashboard.states.active"
+              : "settings.dashboard.states.needsSetup"
+          )}
         </span>
       </div>
       <div className="grid min-w-0 gap-4 md:grid-cols-2">
@@ -855,7 +1221,12 @@ function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
               value={settings.obsidianVaultPath ?? ""}
               onChange={(event) => onUpdate("obsidianVaultPath", event.target.value || null)}
             />
-            <Button type="button" className="shrink-0 whitespace-nowrap" disabled={isSaving} onClick={() => void onSelectVault()}>
+            <Button
+              type="button"
+              className="shrink-0 whitespace-nowrap"
+              disabled={isSaving}
+              onClick={() => void onSelectVault()}
+            >
               <FolderOpen className="h-4 w-4 shrink-0" aria-hidden="true" />
               {t("settings.storage.selectObsidianVault")}
             </Button>
@@ -900,10 +1271,17 @@ function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
               )}
               onClick={() => onUpdate("deletionPolicy", policy)}
             >
-              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300" aria-hidden="true" />
+              <Icon
+                className="mt-0.5 h-4 w-4 shrink-0 text-cyan-700 dark:text-cyan-300"
+                aria-hidden="true"
+              />
               <span>
-                <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{t(label)}</span>
-                <span className="mt-1 block text-xs leading-4 text-slate-500">{t(description)}</span>
+                <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  {t(label)}
+                </span>
+                <span className="mt-1 block text-xs leading-4 text-slate-500">
+                  {t(description)}
+                </span>
               </span>
             </button>
           ))}
@@ -913,7 +1291,11 @@ function ObsidianCard({ settings, isSaving, t, onUpdate, onSelectVault }: {
   );
 }
 
-function StorageCard({ settings, t, onUpdate }: {
+function StorageCard({
+  settings,
+  t,
+  onUpdate
+}: {
   settings: StorageSettings;
   t: SettingsViewProps["t"];
   onUpdate: <K extends keyof StorageSettings>(key: K, value: StorageSettings[K]) => void;
@@ -925,8 +1307,12 @@ function StorageCard({ settings, t, onUpdate }: {
           <HardDrive className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h3 className="font-semibold text-slate-950 dark:text-white">{t("settings.storage.title")}</h3>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">{t("settings.dashboard.storageDescription")}</p>
+          <h3 className="font-semibold text-slate-950 dark:text-white">
+            {t("settings.storage.title")}
+          </h3>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+            {t("settings.dashboard.storageDescription")}
+          </p>
         </div>
       </div>
       <ToggleCard
@@ -948,7 +1334,12 @@ function StorageCard({ settings, t, onUpdate }: {
   );
 }
 
-function ResetCard({ isResetting, resetStatus, t, onReset }: {
+function ResetCard({
+  isResetting,
+  resetStatus,
+  t,
+  onReset
+}: {
   isResetting: boolean;
   resetStatus: MessageKey | null;
   t: SettingsViewProps["t"];
@@ -963,10 +1354,18 @@ function ResetCard({ isResetting, resetStatus, t, onReset }: {
             <RotateCcw className="h-5 w-5" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-rose-700 dark:text-rose-300">{t("settings.dashboard.dangerZone")}</p>
-            <h3 className="mt-1 font-semibold text-rose-950 dark:text-rose-100">{t("settings.reset.title")}</h3>
-            <p className="mt-1 text-sm leading-5 text-rose-900 dark:text-rose-200">{t("settings.reset.description")}</p>
-            <p className="mt-2 text-sm text-rose-800 dark:text-rose-200" role="status">{resetStatus ? t(resetStatus) : ""}</p>
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.18em] text-rose-700 dark:text-rose-300">
+              {t("settings.dashboard.dangerZone")}
+            </p>
+            <h3 className="mt-1 font-semibold text-rose-950 dark:text-rose-100">
+              {t("settings.reset.title")}
+            </h3>
+            <p className="mt-1 text-sm leading-5 text-rose-900 dark:text-rose-200">
+              {t("settings.reset.description")}
+            </p>
+            <p className="mt-2 text-sm text-rose-800 dark:text-rose-200" role="status">
+              {resetStatus ? t(resetStatus) : ""}
+            </p>
           </div>
         </div>
         <Button
@@ -983,29 +1382,43 @@ function ResetCard({ isResetting, resetStatus, t, onReset }: {
   );
 }
 
-function ToggleCard({ checked, label, description, onChange }: {
+function ToggleCard({
+  checked,
+  label,
+  description,
+  onChange
+}: {
   checked: boolean;
   label: string;
   description: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className={cn(
-      "flex min-h-20 cursor-pointer items-center gap-4 rounded-xl border p-4 transition",
-      checked
-        ? "border-cyan-300 bg-cyan-50/70 dark:border-cyan-900 dark:bg-cyan-950/30"
-        : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
-    )}>
+    <label
+      className={cn(
+        "flex min-h-20 cursor-pointer items-center gap-4 rounded-xl border p-4 transition",
+        checked
+          ? "border-cyan-300 bg-cyan-50/70 dark:border-cyan-900 dark:bg-cyan-950/30"
+          : "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900"
+      )}
+    >
       <Switch checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <span>
-        <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">{label}</span>
+        <span className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+          {label}
+        </span>
         <span className="mt-1 block text-xs leading-4 text-slate-500">{description}</span>
       </span>
     </label>
   );
 }
 
-function StatusTile({ icon: Icon, label, value, tone }: {
+function StatusTile({
+  icon: Icon,
+  label,
+  value,
+  tone
+}: {
   icon: typeof Paintbrush;
   label: string;
   value: string;
@@ -1023,7 +1436,9 @@ function StatusTile({ icon: Icon, label, value, tone }: {
       </span>
       <span className="min-w-0">
         <span className="block text-xs text-slate-500">{label}</span>
-        <span className="mt-0.5 block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{value}</span>
+        <span className="mt-0.5 block truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+          {value}
+        </span>
       </span>
     </div>
   );
@@ -1036,29 +1451,77 @@ function GoogleBooksKeySettings({ t }: { t: SettingsViewProps["t"] }) {
   const [error, setError] = useState(false);
   useEffect(() => {
     let active = true;
-    void window.app.settings.getGoogleBooksKeyStatus().then((status) => {
-      if (active) setConfigured(status.configured);
-    }).catch(() => { if (active) setError(true); }).finally(() => { if (active) setBusy(false); });
-    return () => { active = false; };
+    void window.app.settings
+      .getGoogleBooksKeyStatus()
+      .then((status) => {
+        if (active) setConfigured(status.configured);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      })
+      .finally(() => {
+        if (active) setBusy(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
   async function update(value: string | null) {
-    setBusy(true); setError(false);
+    setBusy(true);
+    setError(false);
     try {
       const status = await window.app.settings.updateGoogleBooksKey({ apiKey: value });
-      setConfigured(status.configured); setApiKey("");
-    } catch { setError(true); }
-    finally { setBusy(false); }
+      setConfigured(status.configured);
+      setApiKey("");
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
   }
-  return <div className="mt-3 grid min-w-0 gap-2">
-    <Label htmlFor="googleBooksApiKey">{t("settings.metadataEnrichment.apiKey")}</Label>
-    <div className="flex min-w-0 flex-wrap gap-2">
-      <Input id="googleBooksApiKey" type="password" autoComplete="off" spellCheck={false}
-        className="min-w-0 flex-1 basis-48" value={apiKey} disabled={busy}
-        onChange={(event) => setApiKey(event.target.value)} />
-      <Button className="shrink-0 whitespace-nowrap" disabled={busy || !apiKey.trim()} onClick={() => void update(apiKey.trim())}>{t("settings.metadataEnrichment.saveKey")}</Button>
-      <Button className="shrink-0 whitespace-nowrap" disabled={busy || !configured} onClick={() => void update(null)}>{t("settings.metadataEnrichment.removeKey")}</Button>
+  return (
+    <div className="mt-3 grid min-w-0 gap-2">
+      <Label htmlFor="googleBooksApiKey">{t("settings.metadataEnrichment.apiKey")}</Label>
+      <div className="flex min-w-0 flex-wrap gap-2">
+        <Input
+          id="googleBooksApiKey"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          className="min-w-0 flex-1 basis-48"
+          value={apiKey}
+          disabled={busy}
+          onChange={(event) => setApiKey(event.target.value)}
+        />
+        <Button
+          className="shrink-0 whitespace-nowrap"
+          disabled={busy || !apiKey.trim()}
+          onClick={() => void update(apiKey.trim())}
+        >
+          {t("settings.metadataEnrichment.saveKey")}
+        </Button>
+        <Button
+          className="shrink-0 whitespace-nowrap"
+          disabled={busy || !configured}
+          onClick={() => void update(null)}
+        >
+          {t("settings.metadataEnrichment.removeKey")}
+        </Button>
+      </div>
+      <p role="status" className="text-xs text-slate-500">
+        {t(
+          busy
+            ? "shell.states.loading"
+            : configured
+              ? "settings.metadataEnrichment.keySaved"
+              : "settings.metadataEnrichment.noKey"
+        )}
+      </p>
+      {error ? (
+        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+          {t("settings.metadataEnrichment.keyError")}
+        </p>
+      ) : null}
     </div>
-    <p role="status" className="text-xs text-slate-500">{t(busy ? "shell.states.loading" : configured ? "settings.metadataEnrichment.keySaved" : "settings.metadataEnrichment.noKey")}</p>
-    {error ? <p role="alert" className="text-xs text-red-600 dark:text-red-400">{t("settings.metadataEnrichment.keyError")}</p> : null}
-  </div>;
+  );
 }

@@ -57,7 +57,10 @@ export function createSelectionCapture(page: ExtractedPage): CaptureSelectionReq
   });
 }
 
-export function createYouTubeCapture(page: ExtractedPage, videoId: string): CaptureYouTubeVideoRequest {
+export function createYouTubeCapture(
+  page: ExtractedPage,
+  videoId: string
+): CaptureYouTubeVideoRequest {
   return captureYouTubeVideoRequestSchema.parse({
     requestId: randomUUID(),
     url: page.url,

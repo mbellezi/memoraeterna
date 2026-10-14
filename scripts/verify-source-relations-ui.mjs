@@ -5,8 +5,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const temporary = mkdtempSync(join(tmpdir(),"memora-source-relations-ui-"));
-app.setPath("userData",join(temporary,"profile"));
+const temporary = mkdtempSync(join(tmpdir(), "memora-source-relations-ui-"));
+app.setPath("userData", join(temporary, "profile"));
 const component = resolve("apps/desktop/src/renderer/components/SourceRelationsList.tsx");
 const graph = resolve("apps/desktop/src/renderer/components/KnowledgeGraphDashboard.tsx");
 const styles = resolve("apps/desktop/src/renderer/styles.css");
@@ -54,28 +54,86 @@ export async function verify(){
  return {cards:cards.length,overlap:false,review:true,pagination:true,empty:true,error:true,noteNavigation:true};
 }
 `;
-async function verify(){
+async function verify() {
   let window;
-  const deadline=setTimeout(()=>{console.error("Source relation UI timed out");app.exit(1);},45000);
+  const deadline = setTimeout(() => {
+    console.error("Source relation UI timed out");
+    app.exit(1);
+  }, 45000);
   try {
-    const bundle=await build({configFile:false,logLevel:"silent",esbuild:{jsx:"automatic"},define:{"process.env.NODE_ENV":"\"production\""},
-      build:{write:false,minify:false,lib:{entry:"source-relations-ui",name:"SourceRelationsUI",formats:["iife"]}},
-      plugins:[tailwindcss(),{name:"fixture",resolveId(id){if(id==="source-relations-ui"||id.endsWith("/source-relations-ui"))return "\0source-relations-ui";},load(id){if(id==="\0source-relations-ui")return fixture;}}]});
-    const output=(Array.isArray(bundle)?bundle[0]:bundle).output;
-    const code=output.find(item=>item.type==="chunk")?.code;
-    const css=output.filter(item=>item.type==="asset"&&item.fileName.endsWith(".css")).map(item=>item.source).join("\n");
-    if(!code)throw new Error("Missing UI bundle");
-    await app.whenReady();app.dock?.hide();
-    window=new BrowserWindow({show:false,width:1000,height:900,webPreferences:{offscreen:true,backgroundThrottling:false,sandbox:true,contextIsolation:true}});
-    await window.loadURL("data:text/html;charset=utf-8,"+encodeURIComponent(`<html class="dark"><head><meta charset="utf-8"><style>${css}</style></head><body style="margin:0;background:#020617;color:#e2e8f0"><h2 style="padding:20px 24px 0;font-size:18px;font-weight:600">Relações entre ideias</h2><canvas width="400" height="70" style="margin-left:20px"></canvas><div id="root" style="height:730px;overflow:auto;padding:0 12px"></div></body></html>`));
-    const result=await window.webContents.executeJavaScript("(async()=>{try{"+code+"\nreturn await SourceRelationsUI.verify();}catch(error){return {failure:String(error),stack:error.stack};}})()");
-    if(result.failure)throw new Error(JSON.stringify(result));
-    await window.webContents.executeJavaScript("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+    const bundle = await build({
+      configFile: false,
+      logLevel: "silent",
+      esbuild: { jsx: "automatic" },
+      define: { "process.env.NODE_ENV": '"production"' },
+      build: {
+        write: false,
+        minify: false,
+        lib: { entry: "source-relations-ui", name: "SourceRelationsUI", formats: ["iife"] }
+      },
+      plugins: [
+        tailwindcss(),
+        {
+          name: "fixture",
+          resolveId(id) {
+            if (id === "source-relations-ui" || id.endsWith("/source-relations-ui"))
+              return "\0source-relations-ui";
+          },
+          load(id) {
+            if (id === "\0source-relations-ui") return fixture;
+          }
+        }
+      ]
+    });
+    const output = (Array.isArray(bundle) ? bundle[0] : bundle).output;
+    const code = output.find((item) => item.type === "chunk")?.code;
+    const css = output
+      .filter((item) => item.type === "asset" && item.fileName.endsWith(".css"))
+      .map((item) => item.source)
+      .join("\n");
+    if (!code) throw new Error("Missing UI bundle");
+    await app.whenReady();
+    app.dock?.hide();
+    window = new BrowserWindow({
+      show: false,
+      width: 1000,
+      height: 900,
+      webPreferences: {
+        offscreen: true,
+        backgroundThrottling: false,
+        sandbox: true,
+        contextIsolation: true
+      }
+    });
+    await window.loadURL(
+      "data:text/html;charset=utf-8," +
+        encodeURIComponent(
+          `<html class="dark"><head><meta charset="utf-8"><style>${css}</style></head><body style="margin:0;background:#020617;color:#e2e8f0"><h2 style="padding:20px 24px 0;font-size:18px;font-weight:600">Relações entre ideias</h2><canvas width="400" height="70" style="margin-left:20px"></canvas><div id="root" style="height:730px;overflow:auto;padding:0 12px"></div></body></html>`
+        )
+    );
+    const result = await window.webContents.executeJavaScript(
+      "(async()=>{try{" +
+        code +
+        "\nreturn await SourceRelationsUI.verify();}catch(error){return {failure:String(error),stack:error.stack};}})()"
+    );
+    if (result.failure) throw new Error(JSON.stringify(result));
+    await window.webContents.executeJavaScript(
+      "new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))"
+    );
     await window.webContents.executeJavaScript("document.fonts.ready");
     window.webContents.invalidate();
-    await new Promise(resolve=>setTimeout(resolve,250));
-    const image=await window.webContents.capturePage();const screenshot=join(temporary,"source-relations.png");writeFileSync(screenshot,image.toPNG());
-    console.log(JSON.stringify({passed:true,...result,screenshot}));
-  }catch(error){console.error(error);process.exitCode=1;}finally{clearTimeout(deadline);window?.destroy();app.exit(process.exitCode??0);}
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    const image = await window.webContents.capturePage();
+    const screenshot = join(temporary, "source-relations.png");
+    writeFileSync(screenshot, image.toPNG());
+    console.log(JSON.stringify({ passed: true, ...result, screenshot }));
+  } catch (error) {
+    console.error(error);
+    process.exitCode = 1;
+  } finally {
+    clearTimeout(deadline);
+    window?.destroy();
+    app.exit(process.exitCode ?? 0);
+  }
 }
 void verify();

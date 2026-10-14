@@ -8,7 +8,10 @@ export function resolveWorkspaceRoot(cwd: string, env: NodeJS.ProcessEnv = proce
 
   let current = resolve(cwd);
   for (let depth = 0; depth < 8; depth += 1) {
-    if (existsSync(join(current, "packages/db/drizzle")) || existsSync(join(current, "vendor/sidecars"))) {
+    if (
+      existsSync(join(current, "packages/db/drizzle")) ||
+      existsSync(join(current, "vendor/sidecars"))
+    ) {
       return current;
     }
 

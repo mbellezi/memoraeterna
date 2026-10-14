@@ -1,5 +1,15 @@
-import { obsidianLayoutCapability, obsidianPresenceResponseSchema } from '@app/integration-contracts';
-import { obsidianEditingCapability, obsidianManifestSchema, obsidianEditReceiptSchema, integrationCommandResultSchema, integrationEventSchema, type ObsidianEditOperation } from "@app/integration-contracts";
+import {
+  obsidianLayoutCapability,
+  obsidianPresenceResponseSchema
+} from "@app/integration-contracts";
+import {
+  obsidianEditingCapability,
+  obsidianManifestSchema,
+  obsidianEditReceiptSchema,
+  integrationCommandResultSchema,
+  integrationEventSchema,
+  type ObsidianEditOperation
+} from "@app/integration-contracts";
 import {
   integrationContractVersion,
   wikiProjectionCapability,
@@ -37,18 +47,38 @@ export class ObsidianGatewayClient {
     const settings = this.getSettings();
     const response = await gatewayFetch(`${trimUrl(settings.gatewayBaseUrl)}/v1/handshake`, {
       method: "POST",
-      headers: { authorization: `Bearer ${settings.pairingToken}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${settings.pairingToken}`,
+        "content-type": "application/json"
+      },
       body: JSON.stringify({
         contractVersion: integrationContractVersion,
         clientId: settings.clientId,
-        client: { kind: "obsidian-plugin", name: "Memora Obsidian", contractVersion: integrationContractVersion },
-        capabilities: ["import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress", wikiProjectionCapability, obsidianEditingCapability, obsidianLayoutCapability],
+        client: {
+          kind: "obsidian-plugin",
+          name: "Memora Obsidian",
+          contractVersion: integrationContractVersion
+        },
+        capabilities: [
+          "import-obsidian-note",
+          "watch-obsidian-files",
+          "reconcile-obsidian-vault",
+          "receive-job-progress",
+          wikiProjectionCapability,
+          obsidianEditingCapability,
+          obsidianLayoutCapability
+        ],
         instanceId: "obsidian"
       })
     });
     if (!response.ok) throw await responseError(response);
     const handshake = integrationHandshakeResponseSchema.parse(await response.json());
-    if (!handshake.capabilities.includes(wikiProjectionCapability) || !handshake.capabilities.includes(obsidianEditingCapability) || !handshake.capabilities.includes(obsidianLayoutCapability)) throw new Error("unsupported_wiki_projection");
+    if (
+      !handshake.capabilities.includes(wikiProjectionCapability) ||
+      !handshake.capabilities.includes(obsidianEditingCapability) ||
+      !handshake.capabilities.includes(obsidianLayoutCapability)
+    )
+      throw new Error("unsupported_wiki_projection");
     this.shouldReconnect = true;
     this.sessionToken = handshake.sessionToken;
     this.eventUrl = handshake.eventUrl;
@@ -57,7 +87,9 @@ export class ObsidianGatewayClient {
   }
 
   public importNote(input: ImportObsidianNoteRequest): Promise<IntegrationCommandResult> {
-    return this.post("/v1/obsidian/import", input).then(value=>integrationCommandResultSchema.parse(value));
+    return this.post("/v1/obsidian/import", input).then((value) =>
+      integrationCommandResultSchema.parse(value)
+    );
   }
 
   public fileChanged(event: ObsidianFileChangedEvent): Promise<IntegrationCommandResult> {
@@ -72,15 +104,51 @@ export class ObsidianGatewayClient {
     return this.post("/v1/obsidian/file-deleted", event) as Promise<IntegrationCommandResult>;
   }
 
-  public reconcile(input: ObsidianReconciliationRequest): Promise<{ synced: number; conflicts: number; deleted: number }> {
-    return this.post("/v1/obsidian/reconcile", input) as Promise<{ synced: number; conflicts: number; deleted: number }>;
+  public reconcile(
+    input: ObsidianReconciliationRequest
+  ): Promise<{ synced: number; conflicts: number; deleted: number }> {
+    return this.post("/v1/obsidian/reconcile", input) as Promise<{
+      synced: number;
+      conflicts: number;
+      deleted: number;
+    }>;
   }
 
-  public presence(vaultId:string,openPaths:string[],pendingTargetIds:string[],quiescedMigrationIds:string[]=[]){return this.post('/v1/obsidian/layout/presence',{vaultId,openPaths,pendingTargetIds,quiescedMigrationIds}).then(value=>obsidianPresenceResponseSchema.parse(value));}
-  public manifest(vaultId:string,cursor=0,pendingOperationIds?:string[]){return this.post('/v1/obsidian/editorial/manifest',{vaultId,cursor,...(pendingOperationIds?{pendingOperationIds}:{})}).then(value=>obsidianManifestSchema.parse(value));}
-  public operation(input:ObsidianEditOperation){return this.post('/v1/obsidian/editorial/operation',input).then(value=>obsidianEditReceiptSchema.parse(value));}
-  public compare(operationId:string,content:string){return this.post('/v1/obsidian/editorial/compare',{operationId,content}).then(value=>obsidianEditReceiptSchema.parse(value));}
-  public acknowledge(operationId:string,vaultId:string){return this.post('/v1/obsidian/editorial/acknowledge',{operationId,vaultId}).then(value=>obsidianEditReceiptSchema.parse(value));}
+  public presence(
+    vaultId: string,
+    openPaths: string[],
+    pendingTargetIds: string[],
+    quiescedMigrationIds: string[] = []
+  ) {
+    return this.post("/v1/obsidian/layout/presence", {
+      vaultId,
+      openPaths,
+      pendingTargetIds,
+      quiescedMigrationIds
+    }).then((value) => obsidianPresenceResponseSchema.parse(value));
+  }
+  public manifest(vaultId: string, cursor = 0, pendingOperationIds?: string[]) {
+    return this.post("/v1/obsidian/editorial/manifest", {
+      vaultId,
+      cursor,
+      ...(pendingOperationIds ? { pendingOperationIds } : {})
+    }).then((value) => obsidianManifestSchema.parse(value));
+  }
+  public operation(input: ObsidianEditOperation) {
+    return this.post("/v1/obsidian/editorial/operation", input).then((value) =>
+      obsidianEditReceiptSchema.parse(value)
+    );
+  }
+  public compare(operationId: string, content: string) {
+    return this.post("/v1/obsidian/editorial/compare", { operationId, content }).then((value) =>
+      obsidianEditReceiptSchema.parse(value)
+    );
+  }
+  public acknowledge(operationId: string, vaultId: string) {
+    return this.post("/v1/obsidian/editorial/acknowledge", { operationId, vaultId }).then((value) =>
+      obsidianEditReceiptSchema.parse(value)
+    );
+  }
   public disconnect(): void {
     this.sessionToken = null;
     this.shouldReconnect = false;
@@ -121,7 +189,11 @@ export class ObsidianGatewayClient {
       this.onStatus(true);
     });
     socket.addEventListener("message", (event) => {
-      try { this.onEvent(integrationEventSchema.parse(JSON.parse(String(event.data)))); } catch { /* invalid events are ignored */ }
+      try {
+        this.onEvent(integrationEventSchema.parse(JSON.parse(String(event.data))));
+      } catch {
+        /* invalid events are ignored */
+      }
     });
     socket.addEventListener("close", () => {
       if (this.socket !== socket) return;
@@ -144,21 +216,52 @@ export class ObsidianGatewayClient {
 
 async function responseError(response: Response): Promise<Error> {
   try {
-    const body = await response.json() as { code?: string;messageKey?:string };
-    return new Error(['obsidianEditing.paused','obsidianWiki.errors.limit'].includes(body.messageKey??'')?body.messageKey!:body.code ?? `gateway_${response.status}`);
+    const body = (await response.json()) as { code?: string; messageKey?: string };
+    return new Error(
+      ["obsidianEditing.paused", "obsidianWiki.errors.limit"].includes(body.messageKey ?? "")
+        ? body.messageKey!
+        : (body.code ?? `gateway_${response.status}`)
+    );
   } catch {
     return new Error(`gateway_${response.status}`);
   }
 }
 
 function trimUrl(value: string): string {
-  const url=new URL(value);if(url.protocol!=='http:'||!['localhost','127.0.0.1','[::1]'].includes(url.hostname)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw new Error('unsupported_gateway');
+  const url = new URL(value);
+  if (
+    url.protocol !== "http:" ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.username ||
+    url.password ||
+    url.pathname !== "/" ||
+    url.search ||
+    url.hash
+  )
+    throw new Error("unsupported_gateway");
   return url.origin;
 }
 
-export async function gatewayFetch(url:string,options:RequestInit,timeoutMs=10000):Promise<Response>{
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
-  try{const response=await fetch(url,{...options,signal:controller.signal});const body=await response.arrayBuffer();if(body.byteLength>20_000_000)throw new Error('obsidianWiki.errors.limit');return new Response(body,{status:response.status,statusText:response.statusText,headers:response.headers});}
-  catch(error){if(controller.signal.aborted)throw new Error('gateway_timeout');throw error;}
-  finally{clearTimeout(timer);}
+export async function gatewayFetch(
+  url: string,
+  options: RequestInit,
+  timeoutMs = 10000
+): Promise<Response> {
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    const body = await response.arrayBuffer();
+    if (body.byteLength > 20_000_000) throw new Error("obsidianWiki.errors.limit");
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("gateway_timeout");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }

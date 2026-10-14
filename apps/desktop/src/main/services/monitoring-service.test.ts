@@ -5,15 +5,33 @@ import { monitoringPruneSchema, monitoringQuerySchema } from "../../shared/monit
 
 function harness(debugMode = false, debugFullCapture = false) {
   const settings = { debugMode, debugFullCapture };
-  const query = vi.fn().mockResolvedValue({ rows: [{ id: "11111111-1111-4111-8111-111111111111" }] });
+  const query = vi
+    .fn()
+    .mockResolvedValue({ rows: [{ id: "11111111-1111-4111-8111-111111111111" }] });
   const error = vi.fn();
-  const service = new MonitoringService(() => ({ query }) as unknown as PgPool, async () => settings, { error });
+  const service = new MonitoringService(
+    () => ({ query }) as unknown as PgPool,
+    async () => settings,
+    { error }
+  );
   return { settings, query, service, error };
 }
-const start = { kind: "ai" as const, operation: "embedding", stage: "chunk_embedding", context: {}, sourceItemIds: [], input: "full source" };
+const start = {
+  kind: "ai" as const,
+  operation: "embedding",
+  stage: "chunk_embedding",
+  context: {},
+  sourceItemIds: [],
+  input: "full source"
+};
 describe("monitoring capture and retention", () => {
   it("always records AI metadata but captures content only behind both switches", async () => {
-    for (const flags of [[false, false], [false, true], [true, false], [true, true]] as const) {
+    for (const flags of [
+      [false, false],
+      [false, true],
+      [true, false],
+      [true, true]
+    ] as const) {
       const { service, query } = harness(...flags);
       const capture = await service.start(start);
       await service.finish(capture, { status: "succeeded", durationMs: 3, output: "response" });
@@ -34,20 +52,32 @@ describe("monitoring capture and retention", () => {
     expect(query).not.toHaveBeenCalled();
     settings.debugMode = true;
     const failure = new DOMException("canceled", "AbortError");
-    await expect(service.operation("canonicalization", {}, async () => { throw failure; })).rejects.toBe(failure);
+    await expect(
+      service.operation("canonicalization", {}, async () => {
+        throw failure;
+      })
+    ).rejects.toBe(failure);
     expect(query.mock.calls[1]![1][1]).toBe("canceled");
   });
   it("does not let monitoring storage failures break processing", async () => {
     const { service, query, error } = harness(true);
     query.mockRejectedValue(new Error("storage unavailable"));
-    expect(await service.operation("normalization", {}, async () => "normalized")).toBe("normalized");
+    expect(await service.operation("normalization", {}, async () => "normalized")).toBe(
+      "normalized"
+    );
     await expect(service.recover()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalled();
   });
   it("clamps calendar-month cutoffs and uses UTC days across DST", () => {
-    expect(monitoringCutoff(new Date("2024-03-31T12:34:56Z"), 1, "months").toISOString()).toBe("2024-02-29T12:34:56.000Z");
-    expect(monitoringCutoff(new Date("2026-03-31T12:34:56Z"), 1, "months").toISOString()).toBe("2026-02-28T12:34:56.000Z");
-    expect(monitoringCutoff(new Date("2026-03-30T12:34:56Z"), 1, "days").toISOString()).toBe("2026-03-29T12:34:56.000Z");
+    expect(monitoringCutoff(new Date("2024-03-31T12:34:56Z"), 1, "months").toISOString()).toBe(
+      "2024-02-29T12:34:56.000Z"
+    );
+    expect(monitoringCutoff(new Date("2026-03-31T12:34:56Z"), 1, "months").toISOString()).toBe(
+      "2026-02-28T12:34:56.000Z"
+    );
+    expect(monitoringCutoff(new Date("2026-03-30T12:34:56Z"), 1, "days").toISOString()).toBe(
+      "2026-03-29T12:34:56.000Z"
+    );
   });
   it("rejects unbounded or invalid boundary requests", () => {
     expect(monitoringPruneSchema.safeParse({ amount: 0, unit: "days" }).success).toBe(false);

@@ -24,13 +24,18 @@ describe("model parameter capabilities", () => {
     expect(capabilities.topP).toEqual({ min: 0, max: 1, step: 0.05 });
     expect(capabilities.topK).toEqual({ min: 1, step: 1 });
     expect(capabilities.presencePenalty).toEqual({ min: -2, max: 2, step: 0.1 });
-    expect(normalizeAiModelParameters({
-      reasoningLevel: "high",
-      reasoningMaxTokens: 4_096,
-      topP: 0.9,
-      topK: 20,
-      presencePenalty: 1.5
-    }, capabilities)).toEqual({
+    expect(
+      normalizeAiModelParameters(
+        {
+          reasoningLevel: "high",
+          reasoningMaxTokens: 4_096,
+          topP: 0.9,
+          topK: 20,
+          presencePenalty: 1.5
+        },
+        capabilities
+      )
+    ).toEqual({
       reasoningLevel: "on",
       topP: 0.9,
       topK: 20,
@@ -39,26 +44,34 @@ describe("model parameter capabilities", () => {
   });
 
   it("distinguishes app context controls from unsupported runtime parameters", () => {
-    expect(openAiCompatibleParameterCapabilities({
-      modelId: "gpt-4.1-mini",
-      baseUrl: "https://api.openai.com/v1",
-      capabilities: generationCapabilities
-    })).toHaveProperty("contextWindow");
-    expect(localParameterCapabilities({
-      runtime: "mlx",
-      modelId: "mlx-community/gemma-3-4b-it-4bit",
-      capabilities: generationCapabilities
-    })).toHaveProperty("contextWindow");
-    expect(localParameterCapabilities({
-      runtime: "gguf",
-      modelId: "generic-instruct.gguf",
-      capabilities: generationCapabilities
-    })).not.toHaveProperty("presencePenalty");
-    expect(openAiCompatibleParameterCapabilities({
-      modelId: "gpt-4.1-mini",
-      baseUrl: "https://api.openai.com/v1",
-      capabilities: generationCapabilities
-    })).not.toHaveProperty("topK");
+    expect(
+      openAiCompatibleParameterCapabilities({
+        modelId: "gpt-4.1-mini",
+        baseUrl: "https://api.openai.com/v1",
+        capabilities: generationCapabilities
+      })
+    ).toHaveProperty("contextWindow");
+    expect(
+      localParameterCapabilities({
+        runtime: "mlx",
+        modelId: "mlx-community/gemma-3-4b-it-4bit",
+        capabilities: generationCapabilities
+      })
+    ).toHaveProperty("contextWindow");
+    expect(
+      localParameterCapabilities({
+        runtime: "gguf",
+        modelId: "generic-instruct.gguf",
+        capabilities: generationCapabilities
+      })
+    ).not.toHaveProperty("presencePenalty");
+    expect(
+      openAiCompatibleParameterCapabilities({
+        modelId: "gpt-4.1-mini",
+        baseUrl: "https://api.openai.com/v1",
+        capabilities: generationCapabilities
+      })
+    ).not.toHaveProperty("topK");
   });
 
   it("exposes OAuth wire controls and app-side context budget for GPT-5.6 Terra and Luna", () => {
@@ -69,13 +82,18 @@ describe("model parameter capabilities", () => {
       });
 
       expect(capabilities).toEqual({
-        contextWindow:{min:128,max:2_000_000,step:1},
+        contextWindow: { min: 128, max: 2_000_000, step: 1 },
         reasoning: { levels: ["low", "medium", "high", "xhigh", "max"] }
       });
-      expect(normalizeAiModelParameters({
-        maxTokens: 16_384,
-        reasoningLevel: "off"
-      }, capabilities)).toEqual({ reasoningLevel: "low" });
+      expect(
+        normalizeAiModelParameters(
+          {
+            maxTokens: 16_384,
+            reasoningLevel: "off"
+          },
+          capabilities
+        )
+      ).toEqual({ reasoningLevel: "low" });
     }
   });
 
@@ -99,21 +117,27 @@ describe("model parameter capabilities", () => {
   });
 
   it("distinguishes Gemini thinking budgets from thinking levels", () => {
-    expect(googleParameterCapabilities({
-      modelId: "gemini-2.5-flash",
-      capabilities: generationCapabilities
-    }).reasoning).toEqual({
+    expect(
+      googleParameterCapabilities({
+        modelId: "gemini-2.5-flash",
+        capabilities: generationCapabilities
+      }).reasoning
+    ).toEqual({
       levels: ["off", "on"],
       maxTokens: { min: 1, max: 24_576, step: 1 }
     });
-    expect(googleParameterCapabilities({
-      modelId: "gemini-3.1-pro-preview",
-      capabilities: generationCapabilities
-    }).reasoning).toEqual({ levels: ["low", "medium", "high"] });
-    expect(googleParameterCapabilities({
-      modelId: "gemini-3.5-flash",
-      capabilities: generationCapabilities
-    })).toMatchObject({
+    expect(
+      googleParameterCapabilities({
+        modelId: "gemini-3.1-pro-preview",
+        capabilities: generationCapabilities
+      }).reasoning
+    ).toEqual({ levels: ["low", "medium", "high"] });
+    expect(
+      googleParameterCapabilities({
+        modelId: "gemini-3.5-flash",
+        capabilities: generationCapabilities
+      })
+    ).toMatchObject({
       temperature: { min: 0, max: 2 },
       topP: { min: 0, max: 1 },
       topK: { min: 1 },

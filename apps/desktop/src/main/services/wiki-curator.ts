@@ -1,269 +1,2167 @@
-import {isDeepStrictEqual} from 'node:util';
-import {hierarchyRouteProposal,proposalFitsBytes} from './wiki-hierarchy-continuation.js';
-import { promptLanguageName, HierarchySupportSnapshotSchema, validateHierarchyAdmission, countHierarchyChanges, hierarchyChangedHandles, HierarchyPlacementInventorySchema, HierarchyResourceBoundsSchema, hierarchyResourceDecision, wikiAreaIds, type HierarchyParent } from "@app/domain";
-import {estimateAiPlanningTokens,organizationAiFailure} from './ai-task-parameters.js';
-import { createAutomaticMaintenanceRepository,createWikiCollectionRepository } from '@app/db';
-import {withAutomaticMaintenanceClock} from './automatic-maintenance-clock.js';
-import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import { createWikiCuratorRepository, createOrganizationRepository, curatorHash, type PgPool, type JobRecord, type JsonObject } from '@app/db';
-import { noteEvolutionReplacementIds,CuratorSupportVerdictSchema,CuratorDraftSchema,CuratorStartSchema, CuratorCommandSchema, CuratorRunSchema, CuratorSnapshotSchema, CuratorCheckpointSchema, CuratorChangeSetSchema, AutomaticWikiPolicySchema, CuratorPreviewSchema, curatorVersion, type CuratorSnapshot, type CuratorCheckpoint, type CuratorChangeSet, type CuratorCommand } from '@app/domain';
-import {withOutputLanguageInstruction} from './prompt-runtime.js';
-import type { AiService } from './ai-service.js';
-import { capturePromptPin, promptFingerprint, renderPrompt, joinPrompts, withPromptPin } from './prompt-runtime.js';
-export function validateCuratorProposal(snapshot:CuratorSnapshot,proposal:CuratorChangeSet){
- if(snapshot.structuralIntent?.kind==='missing_toc'){
-  const owners=snapshot.structuralIntent.owners.map(o=>o.pageId);
-  if(proposal.moves.length||proposal.targets.length!==owners.length||!owners.every(owner=>proposal.targets.some(t=>!t.pageId&&t.role.kind==='collection'&&t.role.role==='topic_toc'&&t.role.owner?.reference==='existing'&&t.role.owner.target.id===owner&&t.tocGroups.some(g=>g.memberships.length))))throw new Error('organization.errors.scope');
- }
- if(snapshot.structuralIntent?.kind==='unplaced'&&(proposal.targets.some(t=>t.pageId)||!proposal.moves.some(m=>m.pageId===snapshot.structuralIntent!.owners[0]!.pageId)))throw new Error('organization.errors.scope');
- const admission=validateHierarchyAdmission(proposal,snapshot.policy,snapshot.placement,snapshot.references,snapshot.continuationRoute);if(!admission.valid)throw new z.ZodError(admission.issues.map(message=>({code:"custom" as const,path:["hierarchy"],message})));
- if(hierarchyResourceDecision(proposal,snapshot.resources.maxProposalBytes).decision!=="fits")throw new Error("organization.errors.scopeLimit");
- for(const note of proposal.continuation?[]:snapshot.references.filter(r=>r.kind==='atomic_note'))if(!proposal.targets.some(t=>t.tocGroups.some(g=>g.memberships.some(m=>m.target.reference==='existing'&&m.target.target.kind==='atomic_note'&&m.target.target.id===note.id)))&&!snapshot.pages.some(p=>(proposal.targets.some(t=>t.pageId===p.id)||proposal.moves.some(m=>m.pageId===p.id))&&p.automatic?.memberships.some(m=>m.target.kind==='atomic_note'&&m.target.id===note.id)))throw new z.ZodError([{code:'custom',path:['targets'],message:'Include every selected existing atomic note in a TOC reading group.'}]);
- const evolution=proposal.noteEvolution;
- if(evolution){
-  if(!snapshot.intent||!['merge','split','cross_source','consolidation'].includes(snapshot.intent)||snapshot.intent!=='consolidation'&&snapshot.intent!==evolution.kind||!snapshot.policy.operations.includes('evolve_notes'))throw new Error('organization.errors.policy');
-  const affected=snapshot.pages.filter(p=>[...(p.automatic?.links??[]),...(p.automatic?.memberships??[]).map(m=>m.target)].some(t=>t.kind==='atomic_note'&&evolution.noteIds.includes(t.id)));if(new Set([...affected.map(p=>p.id),...proposal.targets.map(t=>t.pageId??t.handle)]).size>snapshot.limits.targets)throw new Error('organization.errors.budget');
-  const notes=snapshot.references.filter(r=>r.kind==='atomic_note');if(evolution.noteIds.length!==notes.length||notes.some(n=>!evolution.noteIds.includes(n.id)))throw new Error('organization.errors.scope');
-  for(const [index,note]of evolution.notes.entries())for(const key of ['title','ideaStatement']as const)if(/\[e[1-9][0-9]{0,3}\]/.test(note[key]))throw new z.ZodError([{code:'custom',path:['noteEvolution','notes',index,key],message:'Inline citation handles belong only in bodyMarkdown, not title or ideaStatement.'}]);
-  for(const [index,note]of evolution.notes.entries())for(const [,h]of note.bodyMarkdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g))if(!note.originalHandles.includes(h!))throw new z.ZodError([{code:'custom',path:['noteEvolution','notes',index,'bodyMarkdown'],message:'Every inline eN citation must belong to this note.originalHandles.'}]);
-  const chunks=[...new Set(notes.flatMap(n=>n.chunkIds))],used=evolution.notes.flatMap(n=>n.originalHandles.map(h=>snapshot.evidence.find(e=>e.handle===h)?.chunkId));
-  if(chunks.some(id=>!used.includes(id))||evolution.notes.some(n=>new Set(n.originalHandles).size!==n.originalHandles.length||n.originalHandles.some(h=>!snapshot.evidence.some(e=>e.handle===h))))throw new Error('organization.errors.evidence');
-  if(evolution.kind==='cross_source'&&new Set(evolution.notes.flatMap(n=>n.originalHandles.map(h=>snapshot.evidence.find(e=>e.handle===h)!.sourceItemId))).size<2)throw new Error('organization.errors.evidence');
- }
- if(snapshot.intent&&['merge','split','cross_source'].includes(snapshot.intent)&&!evolution)throw new Error('organization.errors.invalid');
- if(proposal.groupId!==snapshot.groupId||proposal.policyRevisionId!==snapshot.policy.revisionId)throw new Error('organization.errors.scope');
- if(snapshot.requiredPageIds.some(id=>!proposal.targets.some(t=>t.pageId===id)&&!proposal.moves.some(m=>m.pageId===id)))throw new Error('organization.errors.scope');
- if(countHierarchyChanges(proposal).workTargets>snapshot.limits.targets)throw new Error('organization.errors.budget');
- const ref=(r:CuratorChangeSet['targets'][number]['links'][number])=>{if(r.reference==='existing'&&!snapshot.references.some(a=>a.kind===r.target.kind&&a.id===r.target.id&&a.fingerprint===r.fingerprint))throw new Error('organization.errors.scope');};
- const originals=(handles:string[],markdown:string)=>{if(new Set(handles).size!==handles.length||handles.some(h=>!snapshot.evidence.some(e=>e.handle===h)))throw new Error('organization.errors.evidence');for(const [,h]of markdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g))if(!handles.includes(h!))throw new Error('organization.errors.evidence');};
- for(const [targetIndex,target] of proposal.targets.entries()){
-  if(target.sections.length>snapshot.limits.sectionPatchesPerPage)throw new Error('organization.errors.budget');
-  const old=snapshot.pages.find(p=>p.id===target.pageId);
-  if(target.pageId&&(!old||old.revisionId!==target.expectedRevisionId||old.kind!==target.role.kind))throw new Error('organization.errors.conflict');
-  const ops=snapshot.policy.operations;if(!ops.includes(target.pageId?'update_unprotected':'create_grounded')||target.initialParent&&!ops.includes('initial_placement')||target.tocGroups.length&&!ops.includes('repair_navigation'))throw new Error('organization.errors.policy');
-  if(target.tocGroups.length&&target.role.kind!=='collection')throw new Error('organization.errors.invalid');
-  if(!target.pageId&&target.role.kind!=='collection'&&target.role.kind!=='topic'&&!target.sections.length){if(target.role.kind==='entity')throw new z.ZodError([{code:'custom',path:['targets',targetIndex,'sections'],message:'New entity pages need at least one grounded section with originalHandles; omit this target if no entity prose is supported.'}]);throw new Error('organization.errors.evidence');}
-  if(target.role.kind==='entity'&&!snapshot.references.some(r=>r.kind==='entity'&&r.id===(target.role as {entityId:string}).entityId))throw new Error('organization.errors.scope');
-  for(const patch of target.sections){const section=old?.sections.find(s=>s.id===patch.sectionId);if(patch.sectionId&&(!section||section.sectionRevisionId!==patch.expectedSectionRevisionId))throw new Error('organization.errors.conflict');originals(patch.originalHandles,patch.markdown);
-   if(patch.interpretation){const interpretation=patch.interpretation;if(!snapshot.policy.operations.includes('interpret_memory')||!['temporal','procedure'].includes(snapshot.intent??''))throw new z.ZodError([{code:'custom',path:['targets',proposal.targets.indexOf(target),'sections',target.sections.indexOf(patch),'interpretation'],message:'This note-evolution intent does not permit interpretation fields. Omit interpretation entirely; keep the ordinary section fields and noteEvolution. Only temporal/procedure intent with interpret_memory grants this field.'}]);originals(interpretation.originalHandles,interpretation.statement);if(interpretation.originalHandles.some(h=>!patch.originalHandles.includes(h)))throw new Error('organization.errors.evidence');const prior=section?.interpretations??[];if(interpretation.relationships.some(r=>!prior.some(p=>p.revisionId===r.revisionId)))throw new Error('organization.errors.evidence');if((interpretation.perspective==='user_statement'||interpretation.procedure)&&interpretation.originalHandles.some(h=>!snapshot.personalSourceIds?.includes(snapshot.evidence.find(e=>e.handle===h)!.sourceItemId)))throw new Error('organization.errors.evidence');}
+import { isDeepStrictEqual } from "node:util";
+import { hierarchyRouteProposal, proposalFitsBytes } from "./wiki-hierarchy-continuation.js";
+import {
+  promptLanguageName,
+  HierarchySupportSnapshotSchema,
+  validateHierarchyAdmission,
+  countHierarchyChanges,
+  hierarchyChangedHandles,
+  HierarchyPlacementInventorySchema,
+  HierarchyResourceBoundsSchema,
+  hierarchyResourceDecision,
+  wikiAreaIds,
+  type HierarchyParent
+} from "@app/domain";
+import { estimateAiPlanningTokens, organizationAiFailure } from "./ai-task-parameters.js";
+import { createAutomaticMaintenanceRepository, createWikiCollectionRepository } from "@app/db";
+import { withAutomaticMaintenanceClock } from "./automatic-maintenance-clock.js";
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import {
+  createWikiCuratorRepository,
+  createOrganizationRepository,
+  curatorHash,
+  type PgPool,
+  type JobRecord,
+  type JsonObject
+} from "@app/db";
+import {
+  noteEvolutionReplacementIds,
+  CuratorSupportVerdictSchema,
+  CuratorDraftSchema,
+  CuratorStartSchema,
+  CuratorCommandSchema,
+  CuratorRunSchema,
+  CuratorSnapshotSchema,
+  CuratorCheckpointSchema,
+  CuratorChangeSetSchema,
+  AutomaticWikiPolicySchema,
+  CuratorPreviewSchema,
+  curatorVersion,
+  type CuratorSnapshot,
+  type CuratorCheckpoint,
+  type CuratorChangeSet,
+  type CuratorCommand
+} from "@app/domain";
+import { withOutputLanguageInstruction } from "./prompt-runtime.js";
+import type { AiService } from "./ai-service.js";
+import {
+  capturePromptPin,
+  promptFingerprint,
+  renderPrompt,
+  joinPrompts,
+  withPromptPin
+} from "./prompt-runtime.js";
+export function validateCuratorProposal(snapshot: CuratorSnapshot, proposal: CuratorChangeSet) {
+  if (snapshot.structuralIntent?.kind === "missing_toc") {
+    const owners = snapshot.structuralIntent.owners.map((o) => o.pageId);
+    if (
+      proposal.moves.length ||
+      proposal.targets.length !== owners.length ||
+      !owners.every((owner) =>
+        proposal.targets.some(
+          (t) =>
+            !t.pageId &&
+            t.role.kind === "collection" &&
+            t.role.role === "topic_toc" &&
+            t.role.owner?.reference === "existing" &&
+            t.role.owner.target.id === owner &&
+            t.tocGroups.some((g) => g.memberships.length)
+        )
+      )
+    )
+      throw new Error("organization.errors.scope");
   }
-  for(const r of [...target.links,...(target.role.kind==='collection'&&target.role.owner?[target.role.owner]:[])])ref(r);
-  for(const group of target.tocGroups){const previous=old?.automatic?.groups.find(g=>g.id===group.id);const retained=old?.automatic?.memberships.filter(m=>m.groupId===group.id&&!group.memberships.some(next=>next.target.reference==='existing'&&next.target.target.kind===m.target.kind&&next.target.target.id===m.target.id))??[];if(previous&&retained.length&&(previous.title!==group.title||previous.explanation!==group.explanation))throw new Error('organization.errors.evidence');if(group.id&&(!old?.automatic?.groups.some(g=>g.id===group.id)||group.expectedRevisionId!==old.revisionId))throw new Error('organization.errors.conflict');originals(group.originalHandles,group.explanation??'');const targets=new Set<string>();for(const m of group.memberships){ref(m.target);const key=JSON.stringify(m.target);if(targets.has(key))throw new Error('organization.errors.invalid');targets.add(key);if(m.id&&!old?.automatic?.memberships.some(a=>a.id===m.id&&a.groupId===group.id))throw new Error('organization.errors.scope');}}
- }
+  if (
+    snapshot.structuralIntent?.kind === "unplaced" &&
+    (proposal.targets.some((t) => t.pageId) ||
+      !proposal.moves.some((m) => m.pageId === snapshot.structuralIntent!.owners[0]!.pageId))
+  )
+    throw new Error("organization.errors.scope");
+  const admission = validateHierarchyAdmission(
+    proposal,
+    snapshot.policy,
+    snapshot.placement,
+    snapshot.references,
+    snapshot.continuationRoute
+  );
+  if (!admission.valid)
+    throw new z.ZodError(
+      admission.issues.map((message) => ({ code: "custom" as const, path: ["hierarchy"], message }))
+    );
+  if (hierarchyResourceDecision(proposal, snapshot.resources.maxProposalBytes).decision !== "fits")
+    throw new Error("organization.errors.scopeLimit");
+  for (const note of proposal.continuation
+    ? []
+    : snapshot.references.filter((r) => r.kind === "atomic_note"))
+    if (
+      !proposal.targets.some((t) =>
+        t.tocGroups.some((g) =>
+          g.memberships.some(
+            (m) =>
+              m.target.reference === "existing" &&
+              m.target.target.kind === "atomic_note" &&
+              m.target.target.id === note.id
+          )
+        )
+      ) &&
+      !snapshot.pages.some(
+        (p) =>
+          (proposal.targets.some((t) => t.pageId === p.id) ||
+            proposal.moves.some((m) => m.pageId === p.id)) &&
+          p.automatic?.memberships.some(
+            (m) => m.target.kind === "atomic_note" && m.target.id === note.id
+          )
+      )
+    )
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path: ["targets"],
+          message: "Include every selected existing atomic note in a TOC reading group."
+        }
+      ]);
+  const evolution = proposal.noteEvolution;
+  if (evolution) {
+    if (
+      !snapshot.intent ||
+      !["merge", "split", "cross_source", "consolidation"].includes(snapshot.intent) ||
+      (snapshot.intent !== "consolidation" && snapshot.intent !== evolution.kind) ||
+      !snapshot.policy.operations.includes("evolve_notes")
+    )
+      throw new Error("organization.errors.policy");
+    const affected = snapshot.pages.filter((p) =>
+      [
+        ...(p.automatic?.links ?? []),
+        ...(p.automatic?.memberships ?? []).map((m) => m.target)
+      ].some((t) => t.kind === "atomic_note" && evolution.noteIds.includes(t.id))
+    );
+    if (
+      new Set([...affected.map((p) => p.id), ...proposal.targets.map((t) => t.pageId ?? t.handle)])
+        .size > snapshot.limits.targets
+    )
+      throw new Error("organization.errors.budget");
+    const notes = snapshot.references.filter((r) => r.kind === "atomic_note");
+    if (
+      evolution.noteIds.length !== notes.length ||
+      notes.some((n) => !evolution.noteIds.includes(n.id))
+    )
+      throw new Error("organization.errors.scope");
+    for (const [index, note] of evolution.notes.entries())
+      for (const key of ["title", "ideaStatement"] as const)
+        if (/\[e[1-9][0-9]{0,3}\]/.test(note[key]))
+          throw new z.ZodError([
+            {
+              code: "custom",
+              path: ["noteEvolution", "notes", index, key],
+              message:
+                "Inline citation handles belong only in bodyMarkdown, not title or ideaStatement."
+            }
+          ]);
+    for (const [index, note] of evolution.notes.entries())
+      for (const [, h] of note.bodyMarkdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g))
+        if (!note.originalHandles.includes(h!))
+          throw new z.ZodError([
+            {
+              code: "custom",
+              path: ["noteEvolution", "notes", index, "bodyMarkdown"],
+              message: "Every inline eN citation must belong to this note.originalHandles."
+            }
+          ]);
+    const chunks = [...new Set(notes.flatMap((n) => n.chunkIds))],
+      used = evolution.notes.flatMap((n) =>
+        n.originalHandles.map((h) => snapshot.evidence.find((e) => e.handle === h)?.chunkId)
+      );
+    if (
+      chunks.some((id) => !used.includes(id)) ||
+      evolution.notes.some(
+        (n) =>
+          new Set(n.originalHandles).size !== n.originalHandles.length ||
+          n.originalHandles.some((h) => !snapshot.evidence.some((e) => e.handle === h))
+      )
+    )
+      throw new Error("organization.errors.evidence");
+    if (
+      evolution.kind === "cross_source" &&
+      new Set(
+        evolution.notes.flatMap((n) =>
+          n.originalHandles.map((h) => snapshot.evidence.find((e) => e.handle === h)!.sourceItemId)
+        )
+      ).size < 2
+    )
+      throw new Error("organization.errors.evidence");
+  }
+  if (snapshot.intent && ["merge", "split", "cross_source"].includes(snapshot.intent) && !evolution)
+    throw new Error("organization.errors.invalid");
+  if (
+    proposal.groupId !== snapshot.groupId ||
+    proposal.policyRevisionId !== snapshot.policy.revisionId
+  )
+    throw new Error("organization.errors.scope");
+  if (
+    snapshot.requiredPageIds.some(
+      (id) =>
+        !proposal.targets.some((t) => t.pageId === id) &&
+        !proposal.moves.some((m) => m.pageId === id)
+    )
+  )
+    throw new Error("organization.errors.scope");
+  if (countHierarchyChanges(proposal).workTargets > snapshot.limits.targets)
+    throw new Error("organization.errors.budget");
+  const ref = (r: CuratorChangeSet["targets"][number]["links"][number]) => {
+    if (
+      r.reference === "existing" &&
+      !snapshot.references.some(
+        (a) => a.kind === r.target.kind && a.id === r.target.id && a.fingerprint === r.fingerprint
+      )
+    )
+      throw new Error("organization.errors.scope");
+  };
+  const originals = (handles: string[], markdown: string) => {
+    if (
+      new Set(handles).size !== handles.length ||
+      handles.some((h) => !snapshot.evidence.some((e) => e.handle === h))
+    )
+      throw new Error("organization.errors.evidence");
+    for (const [, h] of markdown.matchAll(/\[(e[1-9][0-9]{0,3})\]/g))
+      if (!handles.includes(h!)) throw new Error("organization.errors.evidence");
+  };
+  for (const [targetIndex, target] of proposal.targets.entries()) {
+    if (target.sections.length > snapshot.limits.sectionPatchesPerPage)
+      throw new Error("organization.errors.budget");
+    const old = snapshot.pages.find((p) => p.id === target.pageId);
+    if (
+      target.pageId &&
+      (!old || old.revisionId !== target.expectedRevisionId || old.kind !== target.role.kind)
+    )
+      throw new Error("organization.errors.conflict");
+    const ops = snapshot.policy.operations;
+    if (
+      !ops.includes(target.pageId ? "update_unprotected" : "create_grounded") ||
+      (target.initialParent && !ops.includes("initial_placement")) ||
+      (target.tocGroups.length && !ops.includes("repair_navigation"))
+    )
+      throw new Error("organization.errors.policy");
+    if (target.tocGroups.length && target.role.kind !== "collection")
+      throw new Error("organization.errors.invalid");
+    if (
+      !target.pageId &&
+      target.role.kind !== "collection" &&
+      target.role.kind !== "topic" &&
+      !target.sections.length
+    ) {
+      if (target.role.kind === "entity")
+        throw new z.ZodError([
+          {
+            code: "custom",
+            path: ["targets", targetIndex, "sections"],
+            message:
+              "New entity pages need at least one grounded section with originalHandles; omit this target if no entity prose is supported."
+          }
+        ]);
+      throw new Error("organization.errors.evidence");
+    }
+    if (
+      target.role.kind === "entity" &&
+      !snapshot.references.some(
+        (r) => r.kind === "entity" && r.id === (target.role as { entityId: string }).entityId
+      )
+    )
+      throw new Error("organization.errors.scope");
+    for (const patch of target.sections) {
+      const section = old?.sections.find((s) => s.id === patch.sectionId);
+      if (
+        patch.sectionId &&
+        (!section || section.sectionRevisionId !== patch.expectedSectionRevisionId)
+      )
+        throw new Error("organization.errors.conflict");
+      originals(patch.originalHandles, patch.markdown);
+      if (patch.interpretation) {
+        const interpretation = patch.interpretation;
+        if (
+          !snapshot.policy.operations.includes("interpret_memory") ||
+          !["temporal", "procedure"].includes(snapshot.intent ?? "")
+        )
+          throw new z.ZodError([
+            {
+              code: "custom",
+              path: [
+                "targets",
+                proposal.targets.indexOf(target),
+                "sections",
+                target.sections.indexOf(patch),
+                "interpretation"
+              ],
+              message:
+                "This note-evolution intent does not permit interpretation fields. Omit interpretation entirely; keep the ordinary section fields and noteEvolution. Only temporal/procedure intent with interpret_memory grants this field."
+            }
+          ]);
+        originals(interpretation.originalHandles, interpretation.statement);
+        if (interpretation.originalHandles.some((h) => !patch.originalHandles.includes(h)))
+          throw new Error("organization.errors.evidence");
+        const prior = section?.interpretations ?? [];
+        if (
+          interpretation.relationships.some(
+            (r) => !prior.some((p) => p.revisionId === r.revisionId)
+          )
+        )
+          throw new Error("organization.errors.evidence");
+        if (
+          (interpretation.perspective === "user_statement" || interpretation.procedure) &&
+          interpretation.originalHandles.some(
+            (h) =>
+              !snapshot.personalSourceIds?.includes(
+                snapshot.evidence.find((e) => e.handle === h)!.sourceItemId
+              )
+          )
+        )
+          throw new Error("organization.errors.evidence");
+      }
+    }
+    for (const r of [
+      ...target.links,
+      ...(target.role.kind === "collection" && target.role.owner ? [target.role.owner] : [])
+    ])
+      ref(r);
+    for (const group of target.tocGroups) {
+      const previous = old?.automatic?.groups.find((g) => g.id === group.id);
+      const retained =
+        old?.automatic?.memberships.filter(
+          (m) =>
+            m.groupId === group.id &&
+            !group.memberships.some(
+              (next) =>
+                next.target.reference === "existing" &&
+                next.target.target.kind === m.target.kind &&
+                next.target.target.id === m.target.id
+            )
+        ) ?? [];
+      if (
+        previous &&
+        retained.length &&
+        (previous.title !== group.title || previous.explanation !== group.explanation)
+      )
+        throw new Error("organization.errors.evidence");
+      if (
+        group.id &&
+        (!old?.automatic?.groups.some((g) => g.id === group.id) ||
+          group.expectedRevisionId !== old.revisionId)
+      )
+        throw new Error("organization.errors.conflict");
+      originals(group.originalHandles, group.explanation ?? "");
+      const targets = new Set<string>();
+      for (const m of group.memberships) {
+        ref(m.target);
+        const key = JSON.stringify(m.target);
+        if (targets.has(key)) throw new Error("organization.errors.invalid");
+        targets.add(key);
+        if (
+          m.id &&
+          !old?.automatic?.memberships.some((a) => a.id === m.id && a.groupId === group.id)
+        )
+          throw new Error("organization.errors.scope");
+      }
+    }
+  }
 }
-export function expandCuratorDraft(output:unknown,snapshot:CuratorSnapshot){
- const draft=CuratorDraftSchema.parse(output);
- const reference=(handle:string):CuratorChangeSet['targets'][number]['links'][number]=>{
-  if(handle.startsWith('new_'))return{reference:'proposed',handle};
-  const known=snapshot.references[Number(handle.slice(1))-1];if(!known)throw new Error('organization.errors.scope');
-  return{reference:'existing',target:{kind:known.kind,id:known.id},fingerprint:known.fingerprint};
- };
- const parent=(handle:string|null):HierarchyParent|null=>{
-  if(!handle)return null;const ref=reference(handle);if(ref.reference==='proposed')return ref;
-  const entry=snapshot.placement.pages.find(p=>ref.target.kind==='page'&&p.pageId===ref.target.id);
-  if(!entry)throw new Error('organization.errors.scope');
-  return{reference:'existing',target:{kind:'page',id:entry.pageId},expectedRevisionId:entry.revisionId,fingerprint:entry.fingerprint};
- };
- const pageFor=(handle:string,path:Array<string|number>,kind?:'topic'|'entity'|'collection')=>{
-  if(handle.startsWith('new_'))return undefined;const ref=snapshot.references[Number(handle.slice(1))-1];
-  const page=ref?.kind==='page'?snapshot.pages.find(p=>p.id===ref.id):undefined;
-  if(!page||kind&&page.kind!==kind)throw new z.ZodError([{code:'custom',path,message:'Use an admitted editable '+(kind?kind+' ':'')+'page rN handle; entity/source/note references are not page handles. A new page requires a new_ handle.'}]);return page;
- };
- const outputHandle=(handle:string)=>handle.startsWith('new_')?handle:'new_existing_'+handle;
- const prose=(topic:typeof draft.topics[number],role:Extract<CuratorChangeSet['targets'][number]['role'],{kind:'topic'|'entity'}>,path:Array<string|number>)=>{
-  const old=pageFor(topic.handle,path,role.kind);
-  if(!old&&topic.sections.some(s=>s.id))throw new Error('organization.errors.invalid');
-  return{handle:outputHandle(topic.handle),pageId:old?.id??null,expectedRevisionId:old?.revisionId??null,title:topic.title,purpose:topic.purpose,role,initialParent:parent(topic.initialParent),sections:topic.sections.map(section=>({sectionId:section.id,expectedSectionRevisionId:section.id?old?.sections.find(s=>s.id===section.id)?.sectionRevisionId??null:null,interpretation:section.interpretation,title:section.title,markdown:section.markdown,originalHandles:section.originalHandles})),links:topic.links.map(reference),tocGroups:[]};
- };
- const topics=draft.topics.map((topic,i)=>prose(topic,{kind:'topic',role:'topic'},['topics',i,'handle']));
- const entities=draft.entities.map((entity,i)=>{const ref=snapshot.references[Number(entity.entity.slice(1))-1];if(ref?.kind!=='entity')throw new z.ZodError([{code:'custom',path:['entities',i,'entity'],message:'Use the supplied canonical entity rN string, not a page/source/note handle.'}]);return prose(entity,{kind:'entity',role:'entity',entityId:ref.id},['entities',i,'handle']);});
- const indexes=draft.indexes.map((index,i)=>{
-  const old=pageFor(index.handle,['indexes',i,'handle'],'collection'),owner='topic' in index.owner?reference(index.owner.topic):'source' in index.owner?reference(index.owner.source):null;
-  if(!old&&index.groups.some(g=>g.id))throw new Error('organization.errors.invalid');
-  return{handle:outputHandle(index.handle),pageId:old?.id??null,expectedRevisionId:old?.revisionId??null,title:index.title,purpose:index.purpose,role:{kind:'collection' as const,role:'topic' in index.owner?'topic_toc' as const:'source' in index.owner?'source_toc' as const:'map' as const,owner},initialParent:parent(index.initialParent),sections:[],links:[],tocGroups:index.groups.map((g,gi)=>({handle:'new_group_'+i+'_'+gi,id:g.id,expectedRevisionId:g.id?old?.revisionId??null:null,title:g.title,explanation:g.explanation,originalHandles:g.originalHandles,memberships:g.targets.map((member,order)=>{const target=reference(member.target),prior=target.reference==='existing'?old?.automatic?.memberships.find(m=>m.groupId===g.id&&m.target.kind===target.target.kind&&m.target.id===target.target.id):undefined;return{id:prior?.id??null,target,purpose:member.purpose,order};})}))};
- });
- const ancestors=draft.ancestors.map(a=>({...a,initialParent:parent(a.initialParent)}));
- const moves=draft.moves.map((move,i)=>{const old=pageFor(move.handle,['moves',i,'handle'])!;const entry=snapshot.placement.pages.find(p=>p.pageId===old.id);if(!entry)throw new Error('organization.errors.scope');const from=entry.parentId?snapshot.placement.pages.find(p=>p.pageId===entry.parentId):null;if(entry.parentId&&!from)throw new Error('organization.errors.scope');return{handle:outputHandle(move.handle),operation:'reviewed_reparent' as const,pageId:old.id,expectedRevisionId:old.revisionId,fromParent:from?{reference:'existing' as const,target:{kind:'page' as const,id:from.pageId},expectedRevisionId:from.revisionId,fingerprint:from.fingerprint}:null,toParent:parent(move.toParent),reason:move.reason};});
- return CuratorChangeSetSchema.parse({version:'automatic-wiki-v1',groupId:snapshot.groupId,policyRevisionId:snapshot.policy.revisionId,explanation:draft.explanation,...(draft.noteEvolution?{noteEvolution:draft.noteEvolution}:{}),targets:[...topics,...entities,...indexes],ancestors,moves});
+export function expandCuratorDraft(output: unknown, snapshot: CuratorSnapshot) {
+  const draft = CuratorDraftSchema.parse(output);
+  const reference = (handle: string): CuratorChangeSet["targets"][number]["links"][number] => {
+    if (handle.startsWith("new_")) return { reference: "proposed", handle };
+    const known = snapshot.references[Number(handle.slice(1)) - 1];
+    if (!known) throw new Error("organization.errors.scope");
+    return {
+      reference: "existing",
+      target: { kind: known.kind, id: known.id },
+      fingerprint: known.fingerprint
+    };
+  };
+  const parent = (handle: string | null): HierarchyParent | null => {
+    if (!handle) return null;
+    const ref = reference(handle);
+    if (ref.reference === "proposed") return ref;
+    const entry = snapshot.placement.pages.find(
+      (p) => ref.target.kind === "page" && p.pageId === ref.target.id
+    );
+    if (!entry) throw new Error("organization.errors.scope");
+    return {
+      reference: "existing",
+      target: { kind: "page", id: entry.pageId },
+      expectedRevisionId: entry.revisionId,
+      fingerprint: entry.fingerprint
+    };
+  };
+  const pageFor = (
+    handle: string,
+    path: Array<string | number>,
+    kind?: "topic" | "entity" | "collection"
+  ) => {
+    if (handle.startsWith("new_")) return undefined;
+    const ref = snapshot.references[Number(handle.slice(1)) - 1];
+    const page = ref?.kind === "page" ? snapshot.pages.find((p) => p.id === ref.id) : undefined;
+    if (!page || (kind && page.kind !== kind))
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path,
+          message:
+            "Use an admitted editable " +
+            (kind ? kind + " " : "") +
+            "page rN handle; entity/source/note references are not page handles. A new page requires a new_ handle."
+        }
+      ]);
+    return page;
+  };
+  const outputHandle = (handle: string) =>
+    handle.startsWith("new_") ? handle : "new_existing_" + handle;
+  const prose = (
+    topic: (typeof draft.topics)[number],
+    role: Extract<CuratorChangeSet["targets"][number]["role"], { kind: "topic" | "entity" }>,
+    path: Array<string | number>
+  ) => {
+    const old = pageFor(topic.handle, path, role.kind);
+    if (!old && topic.sections.some((s) => s.id)) throw new Error("organization.errors.invalid");
+    return {
+      handle: outputHandle(topic.handle),
+      pageId: old?.id ?? null,
+      expectedRevisionId: old?.revisionId ?? null,
+      title: topic.title,
+      purpose: topic.purpose,
+      role,
+      initialParent: parent(topic.initialParent),
+      sections: topic.sections.map((section) => ({
+        sectionId: section.id,
+        expectedSectionRevisionId: section.id
+          ? (old?.sections.find((s) => s.id === section.id)?.sectionRevisionId ?? null)
+          : null,
+        interpretation: section.interpretation,
+        title: section.title,
+        markdown: section.markdown,
+        originalHandles: section.originalHandles
+      })),
+      links: topic.links.map(reference),
+      tocGroups: []
+    };
+  };
+  const topics = draft.topics.map((topic, i) =>
+    prose(topic, { kind: "topic", role: "topic" }, ["topics", i, "handle"])
+  );
+  const entities = draft.entities.map((entity, i) => {
+    const ref = snapshot.references[Number(entity.entity.slice(1)) - 1];
+    if (ref?.kind !== "entity")
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path: ["entities", i, "entity"],
+          message: "Use the supplied canonical entity rN string, not a page/source/note handle."
+        }
+      ]);
+    return prose(entity, { kind: "entity", role: "entity", entityId: ref.id }, [
+      "entities",
+      i,
+      "handle"
+    ]);
+  });
+  const indexes = draft.indexes.map((index, i) => {
+    const old = pageFor(index.handle, ["indexes", i, "handle"], "collection"),
+      owner =
+        "topic" in index.owner
+          ? reference(index.owner.topic)
+          : "source" in index.owner
+            ? reference(index.owner.source)
+            : null;
+    if (!old && index.groups.some((g) => g.id)) throw new Error("organization.errors.invalid");
+    return {
+      handle: outputHandle(index.handle),
+      pageId: old?.id ?? null,
+      expectedRevisionId: old?.revisionId ?? null,
+      title: index.title,
+      purpose: index.purpose,
+      role: {
+        kind: "collection" as const,
+        role:
+          "topic" in index.owner
+            ? ("topic_toc" as const)
+            : "source" in index.owner
+              ? ("source_toc" as const)
+              : ("map" as const),
+        owner
+      },
+      initialParent: parent(index.initialParent),
+      sections: [],
+      links: [],
+      tocGroups: index.groups.map((g, gi) => ({
+        handle: "new_group_" + i + "_" + gi,
+        id: g.id,
+        expectedRevisionId: g.id ? (old?.revisionId ?? null) : null,
+        title: g.title,
+        explanation: g.explanation,
+        originalHandles: g.originalHandles,
+        memberships: g.targets.map((member, order) => {
+          const target = reference(member.target),
+            prior =
+              target.reference === "existing"
+                ? old?.automatic?.memberships.find(
+                    (m) =>
+                      m.groupId === g.id &&
+                      m.target.kind === target.target.kind &&
+                      m.target.id === target.target.id
+                  )
+                : undefined;
+          return { id: prior?.id ?? null, target, purpose: member.purpose, order };
+        })
+      }))
+    };
+  });
+  const ancestors = draft.ancestors.map((a) => ({ ...a, initialParent: parent(a.initialParent) }));
+  const moves = draft.moves.map((move, i) => {
+    const old = pageFor(move.handle, ["moves", i, "handle"])!;
+    const entry = snapshot.placement.pages.find((p) => p.pageId === old.id);
+    if (!entry) throw new Error("organization.errors.scope");
+    const from = entry.parentId
+      ? snapshot.placement.pages.find((p) => p.pageId === entry.parentId)
+      : null;
+    if (entry.parentId && !from) throw new Error("organization.errors.scope");
+    return {
+      handle: outputHandle(move.handle),
+      operation: "reviewed_reparent" as const,
+      pageId: old.id,
+      expectedRevisionId: old.revisionId,
+      fromParent: from
+        ? {
+            reference: "existing" as const,
+            target: { kind: "page" as const, id: from.pageId },
+            expectedRevisionId: from.revisionId,
+            fingerprint: from.fingerprint
+          }
+        : null,
+      toParent: parent(move.toParent),
+      reason: move.reason
+    };
+  });
+  return CuratorChangeSetSchema.parse({
+    version: "automatic-wiki-v1",
+    groupId: snapshot.groupId,
+    policyRevisionId: snapshot.policy.revisionId,
+    explanation: draft.explanation,
+    ...(draft.noteEvolution ? { noteEvolution: draft.noteEvolution } : {}),
+    targets: [...topics, ...entities, ...indexes],
+    ancestors,
+    moves
+  });
 }
-export function parseCuratorProposal(output:unknown,snapshot?:CuratorSnapshot){if(typeof output==='string'){if(output.length>90000)throw new Error('organization.errors.invalid');const raw=output.trim(),fence=/^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(raw);output=JSON.parse(fence?.[1]??raw);}return snapshot&&output&&typeof output==='object'&&!('version' in output)?expandCuratorDraft(output,snapshot):CuratorChangeSetSchema.parse(output);}
+export function parseCuratorProposal(output: unknown, snapshot?: CuratorSnapshot) {
+  if (typeof output === "string") {
+    if (output.length > 90000) throw new Error("organization.errors.invalid");
+    const raw = output.trim(),
+      fence = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(raw);
+    output = JSON.parse(fence?.[1] ?? raw);
+  }
+  return snapshot && output && typeof output === "object" && !("version" in output)
+    ? expandCuratorDraft(output, snapshot)
+    : CuratorChangeSetSchema.parse(output);
+}
 /** A patch inventory is not current evidence. Missing originals never hide a replaceable section identity. */
-export function curatorSectionPatchView(snapshot:CuratorSnapshot,page:CuratorSnapshot['pages'][number]){
- return page.sections.map(section=>{
-  const lineage=section.evidenceIds.map(id=>page.evidence.find(e=>e.id===id));
-  const scoped=lineage.length>0&&lineage.every(e=>e&&snapshot.sourceIds.includes(e.sourceItemId));
-  const originalsAdmitted=scoped&&lineage.every(e=>snapshot.evidence.some(original=>original.sourceItemId===e!.sourceItemId&&(e!.current?original.chunkId===e!.chunkId&&original.contentHash===e!.contentHash:true)));
-  const current=originalsAdmitted&&lineage.every(e=>e!.current)&&section.assessment?.freshness!=='stale'&&section.assessment?.freshness!=='missing';
-  const patchable=!section.protected&&originalsAdmitted;
-  const state=section.protected?'protected_preserve':!originalsAdmitted?'originals_not_admitted':current?'current_originals_admitted':'stale_requires_replacement';
-  return {...(section.interpretations?{interpretations:section.interpretations}:{}),id:section.id,title:section.title,kind:section.kind,provenance:section.provenance,protected:section.protected,patchable,evidenceState:state,
-   ...(patchable?{previousMarkdown:section.markdown,previousProseIsCurrentSupport:false,availableOriginalHandles:snapshot.evidence.filter(original=>lineage.some(e=>e!.sourceItemId===original.sourceItemId&&(e!.current?e!.chunkId===original.chunkId:true))).map(e=>e.handle)}:{})};
- });
+export function curatorSectionPatchView(
+  snapshot: CuratorSnapshot,
+  page: CuratorSnapshot["pages"][number]
+) {
+  return page.sections.map((section) => {
+    const lineage = section.evidenceIds.map((id) => page.evidence.find((e) => e.id === id));
+    const scoped =
+      lineage.length > 0 && lineage.every((e) => e && snapshot.sourceIds.includes(e.sourceItemId));
+    const originalsAdmitted =
+      scoped &&
+      lineage.every((e) =>
+        snapshot.evidence.some(
+          (original) =>
+            original.sourceItemId === e!.sourceItemId &&
+            (e!.current
+              ? original.chunkId === e!.chunkId && original.contentHash === e!.contentHash
+              : true)
+        )
+      );
+    const current =
+      originalsAdmitted &&
+      lineage.every((e) => e!.current) &&
+      section.assessment?.freshness !== "stale" &&
+      section.assessment?.freshness !== "missing";
+    const patchable = !section.protected && originalsAdmitted;
+    const state = section.protected
+      ? "protected_preserve"
+      : !originalsAdmitted
+        ? "originals_not_admitted"
+        : current
+          ? "current_originals_admitted"
+          : "stale_requires_replacement";
+    return {
+      ...(section.interpretations ? { interpretations: section.interpretations } : {}),
+      id: section.id,
+      title: section.title,
+      kind: section.kind,
+      provenance: section.provenance,
+      protected: section.protected,
+      patchable,
+      evidenceState: state,
+      ...(patchable
+        ? {
+            previousMarkdown: section.markdown,
+            previousProseIsCurrentSupport: false,
+            availableOriginalHandles: snapshot.evidence
+              .filter((original) =>
+                lineage.some(
+                  (e) =>
+                    e!.sourceItemId === original.sourceItemId &&
+                    (e!.current ? e!.chunkId === original.chunkId : true)
+                )
+              )
+              .map((e) => e.handle)
+          }
+        : {})
+    };
+  });
 }
 /** Explanation lineage needs a patch even when the navigation wording remains accurate. */
-export function curatorGroupPatchView(snapshot:CuratorSnapshot,page:CuratorSnapshot['pages'][number]){
- const handle=(kind:string,id:string)=>{const index=snapshot.references.findIndex(r=>r.kind===kind&&r.id===id);return index<0?null:'r'+(index+1);};
- return (page.automatic?.groups??[]).map(group=>{
-  const lineage=group.explanationEvidenceIds.map(id=>page.evidence.find(e=>e.id===id));
-  const admitted=lineage.every(e=>e&&snapshot.sourceIds.includes(e.sourceItemId)&&snapshot.evidence.some(original=>original.sourceItemId===e.sourceItemId&&(!e.current||original.chunkId===e.chunkId&&original.contentHash===e.contentHash)));
-  const stale=lineage.some(e=>!e?.current),patchable=group.origin!=='human'&&!group.orderProtected&&admitted;
-  return {id:group.id,title:group.title,orderProtected:group.orderProtected,origin:group.origin,explanation:patchable?group.explanation:null,patchable,evidenceState:!patchable?'protected_or_originals_not_admitted':stale?'stale_requires_replacement':lineage.length?'current_originals_admitted':'no_authored_explanation',previousProseIsCurrentSupport:false,
-   originalLineage:lineage.map(e=>e?{sourceHandle:handle('source',e.sourceItemId),current:e.current}:null),
-   availableOriginalHandles:patchable?snapshot.evidence.filter(original=>lineage.some(e=>e!.sourceItemId===original.sourceItemId&&(!e!.current||e!.chunkId===original.chunkId))).map(e=>e.handle):[],
-   memberships:(page.automatic?.memberships??[]).filter(m=>m.groupId===group.id).map(m=>({targetHandle:handle(m.target.kind,m.target.id),purpose:m.purpose,order:m.order,placementProtected:m.placementProtected}))};
- });
+export function curatorGroupPatchView(
+  snapshot: CuratorSnapshot,
+  page: CuratorSnapshot["pages"][number]
+) {
+  const handle = (kind: string, id: string) => {
+    const index = snapshot.references.findIndex((r) => r.kind === kind && r.id === id);
+    return index < 0 ? null : "r" + (index + 1);
+  };
+  return (page.automatic?.groups ?? []).map((group) => {
+    const lineage = group.explanationEvidenceIds.map((id) =>
+      page.evidence.find((e) => e.id === id)
+    );
+    const admitted = lineage.every(
+      (e) =>
+        e &&
+        snapshot.sourceIds.includes(e.sourceItemId) &&
+        snapshot.evidence.some(
+          (original) =>
+            original.sourceItemId === e.sourceItemId &&
+            (!e.current ||
+              (original.chunkId === e.chunkId && original.contentHash === e.contentHash))
+        )
+    );
+    const stale = lineage.some((e) => !e?.current),
+      patchable = group.origin !== "human" && !group.orderProtected && admitted;
+    return {
+      id: group.id,
+      title: group.title,
+      orderProtected: group.orderProtected,
+      origin: group.origin,
+      explanation: patchable ? group.explanation : null,
+      patchable,
+      evidenceState: !patchable
+        ? "protected_or_originals_not_admitted"
+        : stale
+          ? "stale_requires_replacement"
+          : lineage.length
+            ? "current_originals_admitted"
+            : "no_authored_explanation",
+      previousProseIsCurrentSupport: false,
+      originalLineage: lineage.map((e) =>
+        e ? { sourceHandle: handle("source", e.sourceItemId), current: e.current } : null
+      ),
+      availableOriginalHandles: patchable
+        ? snapshot.evidence
+            .filter((original) =>
+              lineage.some(
+                (e) =>
+                  e!.sourceItemId === original.sourceItemId &&
+                  (!e!.current || e!.chunkId === original.chunkId)
+              )
+            )
+            .map((e) => e.handle)
+        : [],
+      memberships: (page.automatic?.memberships ?? [])
+        .filter((m) => m.groupId === group.id)
+        .map((m) => ({
+          targetHandle: handle(m.target.kind, m.target.id),
+          purpose: m.purpose,
+          order: m.order,
+          placementProtected: m.placementProtected
+        }))
+    };
+  });
 }
-export function curatorPrompt(snapshot:CuratorSnapshot,checkpoint:CuratorCheckpoint){const handle=(kind:string,id:string)=>{const index=snapshot.references.findIndex(r=>r.kind===kind&&r.id===id);return index>=0?'r'+(index+1):null;};const guide={reference_guide:snapshot.references.map((r,i)=>({handle:'r'+(i+1),kind:r.kind,title:r.title})),required_notes:snapshot.references.flatMap((r,i)=>r.kind==='atomic_note'?['r'+(i+1)]:[])};const base=renderPrompt(snapshot.intent==='temporal'?'organization.temporal':snapshot.intent==='procedure'?'organization.procedure':snapshot.intent?'organization.consolidation':'organization.curator',{...guide,policy:{structuralIntent:snapshot.structuralIntent?{kind:snapshot.structuralIntent.kind,owners:snapshot.structuralIntent.owners.map(o=>handle('page',o.pageId))}:null,intent:snapshot.intent,sourceDates:snapshot.sourceDates,personalSourceIds:snapshot.personalSourceIds,selectedNotes:snapshot.references.filter(r=>r.kind==='atomic_note').map(r=>({id:r.id,title:r.title})),contentLanguage:promptLanguageName(snapshot.contentLanguage),operations:snapshot.policy.operations,limits:snapshot.limits,placement:snapshot.placement.pages.map(p=>({handle:handle("page",p.pageId),title:p.title,role:p.role,parent:handle("page",p.parentId??""),canEdit:p.canEdit,canReceiveChildren:p.canReceiveChildren,subtopics:p.subtopicIds.map(id=>handle("page",id))})),...(snapshot.priorRejections?.length?{historicalValidationFeedback:{isEvidence:false,grantsAuthority:false,recheckAgainstCurrentOriginals:true,items:snapshot.priorRejections}}:{})},group_id:snapshot.groupId,current_page:snapshot.pages.map(p=>({requiredTarget:snapshot.requiredPageIds.includes(p.id),handle:handle('page',p.id),title:p.title,purpose:p.automatic?.purpose??'',role:p.automatic?.role??{kind:p.kind},sections:curatorSectionPatchView(snapshot,p),groups:curatorGroupPatchView(snapshot,p)})),related_knowledge:snapshot.references.map((r,i)=>({handle:'r'+(i+1),kind:r.kind,title:r.title,text:r.text,...(r.kind==='entity'?{canonicalPage:handle('page',snapshot.placement.pages.find(p=>p.role.kind==='entity'&&p.role.entityId===r.id)?.pageId??'')}:{}),originalHandles:r.kind==='source'?snapshot.evidence.filter(e=>e.sourceItemId===r.id).map(e=>e.handle):r.chunkIds.map(id=>snapshot.evidence.find(e=>e.chunkId===id)?.handle).filter(Boolean)})),original_evidence:snapshot.evidence.map(e=>({handle:e.handle,sourceHandle:handle('source',e.sourceItemId),sourceTitle:e.sourceTitle,excerpt:e.excerpt,locator:e.locator,...(snapshot.intent?{recordedImportedAt:e.documentCreatedAt}:{} )}))});if(!checkpoint.repairs)return base;const ceiling=Math.min(120000,Math.max(1000,(snapshot.profile.contextWindow??8192)-snapshot.outputTokens)*2),repair=(previous:string)=>joinPrompts(base,renderPrompt(snapshot.intent?'organization.evolution.repair':'organization.curator.repair',{...guide,validation_errors:checkpoint.validationIssues.length?JSON.stringify(checkpoint.validationIssues):checkpoint.error??'invalid_contract',previous_output:previous}));const full=repair(checkpoint.previousOutput);return full.length<=ceiling?full:repair('');}
+export function curatorPrompt(snapshot: CuratorSnapshot, checkpoint: CuratorCheckpoint) {
+  const handle = (kind: string, id: string) => {
+    const index = snapshot.references.findIndex((r) => r.kind === kind && r.id === id);
+    return index >= 0 ? "r" + (index + 1) : null;
+  };
+  const guide = {
+    reference_guide: snapshot.references.map((r, i) => ({
+      handle: "r" + (i + 1),
+      kind: r.kind,
+      title: r.title
+    })),
+    required_notes: snapshot.references.flatMap((r, i) =>
+      r.kind === "atomic_note" ? ["r" + (i + 1)] : []
+    )
+  };
+  const base = renderPrompt(
+    snapshot.intent === "temporal"
+      ? "organization.temporal"
+      : snapshot.intent === "procedure"
+        ? "organization.procedure"
+        : snapshot.intent
+          ? "organization.consolidation"
+          : "organization.curator",
+    {
+      ...guide,
+      policy: {
+        structuralIntent: snapshot.structuralIntent
+          ? {
+              kind: snapshot.structuralIntent.kind,
+              owners: snapshot.structuralIntent.owners.map((o) => handle("page", o.pageId))
+            }
+          : null,
+        intent: snapshot.intent,
+        sourceDates: snapshot.sourceDates,
+        personalSourceIds: snapshot.personalSourceIds,
+        selectedNotes: snapshot.references
+          .filter((r) => r.kind === "atomic_note")
+          .map((r) => ({ id: r.id, title: r.title })),
+        contentLanguage: promptLanguageName(snapshot.contentLanguage),
+        operations: snapshot.policy.operations,
+        limits: snapshot.limits,
+        placement: snapshot.placement.pages.map((p) => ({
+          handle: handle("page", p.pageId),
+          title: p.title,
+          role: p.role,
+          parent: handle("page", p.parentId ?? ""),
+          canEdit: p.canEdit,
+          canReceiveChildren: p.canReceiveChildren,
+          subtopics: p.subtopicIds.map((id) => handle("page", id))
+        })),
+        ...(snapshot.priorRejections?.length
+          ? {
+              historicalValidationFeedback: {
+                isEvidence: false,
+                grantsAuthority: false,
+                recheckAgainstCurrentOriginals: true,
+                items: snapshot.priorRejections
+              }
+            }
+          : {})
+      },
+      group_id: snapshot.groupId,
+      current_page: snapshot.pages.map((p) => ({
+        requiredTarget: snapshot.requiredPageIds.includes(p.id),
+        handle: handle("page", p.id),
+        title: p.title,
+        purpose: p.automatic?.purpose ?? "",
+        role: p.automatic?.role ?? { kind: p.kind },
+        sections: curatorSectionPatchView(snapshot, p),
+        groups: curatorGroupPatchView(snapshot, p)
+      })),
+      related_knowledge: snapshot.references.map((r, i) => ({
+        handle: "r" + (i + 1),
+        kind: r.kind,
+        title: r.title,
+        text: r.text,
+        ...(r.kind === "entity"
+          ? {
+              canonicalPage: handle(
+                "page",
+                snapshot.placement.pages.find(
+                  (p) => p.role.kind === "entity" && p.role.entityId === r.id
+                )?.pageId ?? ""
+              )
+            }
+          : {}),
+        originalHandles:
+          r.kind === "source"
+            ? snapshot.evidence.filter((e) => e.sourceItemId === r.id).map((e) => e.handle)
+            : r.chunkIds
+                .map((id) => snapshot.evidence.find((e) => e.chunkId === id)?.handle)
+                .filter(Boolean)
+      })),
+      original_evidence: snapshot.evidence.map((e) => ({
+        handle: e.handle,
+        sourceHandle: handle("source", e.sourceItemId),
+        sourceTitle: e.sourceTitle,
+        excerpt: e.excerpt,
+        locator: e.locator,
+        ...(snapshot.intent ? { recordedImportedAt: e.documentCreatedAt } : {})
+      }))
+    }
+  );
+  if (!checkpoint.repairs) return base;
+  const ceiling = Math.min(
+      120000,
+      Math.max(1000, (snapshot.profile.contextWindow ?? 8192) - snapshot.outputTokens) * 2
+    ),
+    repair = (previous: string) =>
+      joinPrompts(
+        base,
+        renderPrompt(
+          snapshot.intent ? "organization.evolution.repair" : "organization.curator.repair",
+          {
+            ...guide,
+            validation_errors: checkpoint.validationIssues.length
+              ? JSON.stringify(checkpoint.validationIssues)
+              : (checkpoint.error ?? "invalid_contract"),
+            previous_output: previous
+          }
+        )
+      );
+  const full = repair(checkpoint.previousOutput);
+  return full.length <= ceiling ? full : repair("");
+}
 /** Review scopes carry their own originals; canonical identity stays in the proposal hash. */
-export function curatorSupportView(snapshot:CuratorSnapshot,proposal:CuratorChangeSet){
- const originals=(handles:readonly string[])=>snapshot.evidence.filter(e=>handles.includes(e.handle)).map(e=>({handle:e.handle}));
- type Reference=CuratorChangeSet['targets'][number]['links'][number];
- const referenceOriginals=(reference:Reference,visited=new Set<string>()):string[]=>{
-  if(reference.reference==='existing'){const known=snapshot.references.find(r=>r.kind===reference.target.kind&&r.id===reference.target.id);return snapshot.evidence.filter(e=>known?.kind==='source'?e.sourceItemId===known.id:known?.chunkIds.includes(e.chunkId)).map(e=>e.handle);}
-  if(visited.has(reference.handle))return[];visited.add(reference.handle);const target=proposal.targets.find(t=>t.handle===reference.handle);return target?[...new Set([...target.sections.flatMap(s=>s.originalHandles),...target.links.flatMap(r=>referenceOriginals(r,new Set(visited))),...(target.pageId?snapshot.evidence.filter(e=>snapshot.pages.find(p=>p.id===target.pageId)?.evidence.some(old=>old.sourceItemId===e.sourceItemId&&(!old.current||old.chunkId===e.chunkId))).map(e=>e.handle):[]),...target.tocGroups.flatMap(g=>[...g.originalHandles,...g.memberships.flatMap(m=>referenceOriginals(m.target,new Set(visited)))])])]:[];
- };
- const pageOriginals=(pageId:string)=>{
-  const page=snapshot.pages.find(p=>p.id===pageId);return [...new Set([...(page?.evidence??[]).flatMap(old=>snapshot.evidence.filter(e=>old.sourceItemId===e.sourceItemId&&(!old.current||old.chunkId===e.chunkId)).map(e=>e.handle)),...(page?.automatic?.memberships??[]).flatMap(m=>{const ref=snapshot.references.find(r=>r.id===m.target.id&&r.kind===m.target.kind);return ref?referenceOriginals({reference:'existing',target:m.target,fingerprint:ref.fingerprint}):[];})])];
- };
- const descendantOriginals=(handle:string,visited=new Set<string>()):string[]=>{
-  if(proposal.continuation&&snapshot.continuationRoute)return snapshot.evidence.filter(e=>snapshot.continuationRoute!.remainingPath.find(p=>p.key===handle)?.chunkIds.includes(e.chunkId)).map(e=>e.handle);
-  if(visited.has(handle))return[];visited.add(handle);
-  return [...new Set([...proposal.targets.filter(t=>t.initialParent?.reference==='proposed'&&t.initialParent.handle===handle).flatMap(t=>[...referenceOriginals({reference:'proposed',handle:t.handle}),...descendantOriginals(t.handle,new Set(visited))]),...proposal.ancestors.filter(a=>a.initialParent?.reference==='proposed'&&a.initialParent.handle===handle).flatMap(a=>descendantOriginals(a.handle,new Set(visited))),...proposal.moves.filter(m=>m.toParent?.reference==='proposed'&&m.toParent.handle===handle).flatMap(m=>pageOriginals(m.pageId))])];
- };
- const member=(reference:Reference)=>{const known=reference.reference==='existing'?snapshot.references.find(r=>r.kind===reference.target.kind&&r.id===reference.target.id):undefined,target=reference.reference==='proposed'?proposal.targets.find(t=>t.handle===reference.handle):undefined;return{referenceKind:known?.kind??target?.role.kind,referenceTitle:known?.title??target?.title,referenceText:known?.kind==='atomic_note'?known.text:undefined,originals:originals(referenceOriginals(reference))};};
- const afterMembers=(reference:Reference)=>{const existing=member(reference),change=proposal.noteEvolution;if(!change||reference.reference!=='existing'||reference.target.kind!=='atomic_note'||!change.noteIds.includes(reference.target.id))return[existing];const outputs=change.notes.map((n,i)=>({referenceKind:'atomic_note',referenceTitle:n.title,referenceText:n.bodyMarkdown,ideaStatement:n.ideaStatement,proposedNote:i+1,referenceRole:'proposed_note_output',originals:originals(n.originalHandles)}));return noteEvolutionReplacementIds(reference.target.id,change,outputs.map((_,i)=>'proposed_note_'+i)).map(id=>id===reference.target.id?existing:outputs[Number(id.slice('proposed_note_'.length))]!);};
- const review=HierarchySupportSnapshotSchema.parse({version:curatorVersion,proposalHash:curatorHash(proposal),proposal,originals:snapshot.evidence,associations:hierarchyChangedHandles(proposal).map(handle=>{const target=proposal.targets.find(t=>t.handle===handle),move=proposal.moves.find(m=>m.handle===handle);return{handle,originalHandles:[...new Set([...(target?referenceOriginals({reference:'proposed',handle}):[]),...descendantOriginals(handle),...(move?pageOriginals(move.pageId):[])])]};})});
- return{associations:review.associations,originals:review.originals.map(e=>({handle:e.handle,sourceTitle:e.sourceTitle,excerpt:e.excerpt,locator:e.locator,...(snapshot.intent?{recordedImportedAt:e.documentCreatedAt,suppliedPersonalAuthorship:snapshot.personalSourceIds?.includes(e.sourceItemId)??false}:{} )})),changedHandles:hierarchyChangedHandles(proposal),ancestors:proposal.ancestors.map(a=>({...a,editorialScopeOriginals:originals(descendantOriginals(a.handle))})),moves:proposal.moves.map(m=>({...m,before:snapshot.pages.find(p=>p.id===m.pageId)?.breadcrumbs,editorialScopeOriginals:originals(pageOriginals(m.pageId))})),placementContext:snapshot.placement.pages.map(p=>({pageId:p.pageId,title:p.title,purpose:p.purpose,role:p.role,parentId:p.parentId})),...(snapshot.intent?{canonicalOriginalsRule:'Every supplied original is a canonical original source revision, including PersonalNote and DailyNote. A source title containing interpretation never changes that role. Only explicitly labeled historical interpretation records are derived context.',finalMembershipRule:'The backend atomically substitutes reviewed merge/split outputs for selected old-note memberships. cross_source retains the inputs and adds the new note. The model must continue to name old input-note handles; it cannot allocate or reference output IDs. Assess the final resolved members shown below, not a fictional unchanged old-note index.'}:{}),noteEvolution:proposal.noteEvolution?{...proposal.noteEvolution,notes:proposal.noteEvolution.notes.map(n=>({...n,originals:originals(n.originalHandles)}))}:undefined,curationAction:proposal.explanation,targets:proposal.targets.map((target,index)=>({handle:target.handle,kind:target.role.kind,role:target.role,initialParent:target.initialParent,title:target.title,purpose:target.purpose,links:target.links.map(member),editorialScopeOriginals:originals([...referenceOriginals({reference:'proposed',handle:target.handle}),...descendantOriginals(target.handle)]),sections:target.sections.map((section,i)=>({path:'targets.'+index+'.sections.'+i,interpretation:section.interpretation?{...section.interpretation,originals:originals(section.interpretation.originalHandles)}:undefined,title:section.title,markdown:section.markdown,originals:originals(section.originalHandles)})),tocGroups:target.tocGroups.map((group,i)=>({path:'targets.'+index+'.tocGroups.'+i,title:group.title,explanation:group.explanation,explanationOriginals:originals(group.originalHandles),members:group.memberships.toSorted((a,b)=>a.order-b.order).flatMap(m=>afterMembers(m.target).map(member=>({...member,purpose:m.purpose,order:m.order}))).filter((m,i,all)=>all.findIndex(x=>JSON.stringify(x)===JSON.stringify(m))===i)}))}))};
+export function curatorSupportView(snapshot: CuratorSnapshot, proposal: CuratorChangeSet) {
+  const originals = (handles: readonly string[]) =>
+    snapshot.evidence.filter((e) => handles.includes(e.handle)).map((e) => ({ handle: e.handle }));
+  type Reference = CuratorChangeSet["targets"][number]["links"][number];
+  const referenceOriginals = (reference: Reference, visited = new Set<string>()): string[] => {
+    if (reference.reference === "existing") {
+      const known = snapshot.references.find(
+        (r) => r.kind === reference.target.kind && r.id === reference.target.id
+      );
+      return snapshot.evidence
+        .filter((e) =>
+          known?.kind === "source"
+            ? e.sourceItemId === known.id
+            : known?.chunkIds.includes(e.chunkId)
+        )
+        .map((e) => e.handle);
+    }
+    if (visited.has(reference.handle)) return [];
+    visited.add(reference.handle);
+    const target = proposal.targets.find((t) => t.handle === reference.handle);
+    return target
+      ? [
+          ...new Set([
+            ...target.sections.flatMap((s) => s.originalHandles),
+            ...target.links.flatMap((r) => referenceOriginals(r, new Set(visited))),
+            ...(target.pageId
+              ? snapshot.evidence
+                  .filter((e) =>
+                    snapshot.pages
+                      .find((p) => p.id === target.pageId)
+                      ?.evidence.some(
+                        (old) =>
+                          old.sourceItemId === e.sourceItemId &&
+                          (!old.current || old.chunkId === e.chunkId)
+                      )
+                  )
+                  .map((e) => e.handle)
+              : []),
+            ...target.tocGroups.flatMap((g) => [
+              ...g.originalHandles,
+              ...g.memberships.flatMap((m) => referenceOriginals(m.target, new Set(visited)))
+            ])
+          ])
+        ]
+      : [];
+  };
+  const pageOriginals = (pageId: string) => {
+    const page = snapshot.pages.find((p) => p.id === pageId);
+    return [
+      ...new Set([
+        ...(page?.evidence ?? []).flatMap((old) =>
+          snapshot.evidence
+            .filter(
+              (e) =>
+                old.sourceItemId === e.sourceItemId && (!old.current || old.chunkId === e.chunkId)
+            )
+            .map((e) => e.handle)
+        ),
+        ...(page?.automatic?.memberships ?? []).flatMap((m) => {
+          const ref = snapshot.references.find(
+            (r) => r.id === m.target.id && r.kind === m.target.kind
+          );
+          return ref
+            ? referenceOriginals({
+                reference: "existing",
+                target: m.target,
+                fingerprint: ref.fingerprint
+              })
+            : [];
+        })
+      ])
+    ];
+  };
+  const descendantOriginals = (handle: string, visited = new Set<string>()): string[] => {
+    if (proposal.continuation && snapshot.continuationRoute)
+      return snapshot.evidence
+        .filter((e) =>
+          snapshot
+            .continuationRoute!.remainingPath.find((p) => p.key === handle)
+            ?.chunkIds.includes(e.chunkId)
+        )
+        .map((e) => e.handle);
+    if (visited.has(handle)) return [];
+    visited.add(handle);
+    return [
+      ...new Set([
+        ...proposal.targets
+          .filter(
+            (t) => t.initialParent?.reference === "proposed" && t.initialParent.handle === handle
+          )
+          .flatMap((t) => [
+            ...referenceOriginals({ reference: "proposed", handle: t.handle }),
+            ...descendantOriginals(t.handle, new Set(visited))
+          ]),
+        ...proposal.ancestors
+          .filter(
+            (a) => a.initialParent?.reference === "proposed" && a.initialParent.handle === handle
+          )
+          .flatMap((a) => descendantOriginals(a.handle, new Set(visited))),
+        ...proposal.moves
+          .filter((m) => m.toParent?.reference === "proposed" && m.toParent.handle === handle)
+          .flatMap((m) => pageOriginals(m.pageId))
+      ])
+    ];
+  };
+  const member = (reference: Reference) => {
+    const known =
+        reference.reference === "existing"
+          ? snapshot.references.find(
+              (r) => r.kind === reference.target.kind && r.id === reference.target.id
+            )
+          : undefined,
+      target =
+        reference.reference === "proposed"
+          ? proposal.targets.find((t) => t.handle === reference.handle)
+          : undefined;
+    return {
+      referenceKind: known?.kind ?? target?.role.kind,
+      referenceTitle: known?.title ?? target?.title,
+      referenceText: known?.kind === "atomic_note" ? known.text : undefined,
+      originals: originals(referenceOriginals(reference))
+    };
+  };
+  const afterMembers = (reference: Reference) => {
+    const existing = member(reference),
+      change = proposal.noteEvolution;
+    if (
+      !change ||
+      reference.reference !== "existing" ||
+      reference.target.kind !== "atomic_note" ||
+      !change.noteIds.includes(reference.target.id)
+    )
+      return [existing];
+    const outputs = change.notes.map((n, i) => ({
+      referenceKind: "atomic_note",
+      referenceTitle: n.title,
+      referenceText: n.bodyMarkdown,
+      ideaStatement: n.ideaStatement,
+      proposedNote: i + 1,
+      referenceRole: "proposed_note_output",
+      originals: originals(n.originalHandles)
+    }));
+    return noteEvolutionReplacementIds(
+      reference.target.id,
+      change,
+      outputs.map((_, i) => "proposed_note_" + i)
+    ).map((id) =>
+      id === reference.target.id ? existing : outputs[Number(id.slice("proposed_note_".length))]!
+    );
+  };
+  const review = HierarchySupportSnapshotSchema.parse({
+    version: curatorVersion,
+    proposalHash: curatorHash(proposal),
+    proposal,
+    originals: snapshot.evidence,
+    associations: hierarchyChangedHandles(proposal).map((handle) => {
+      const target = proposal.targets.find((t) => t.handle === handle),
+        move = proposal.moves.find((m) => m.handle === handle);
+      return {
+        handle,
+        originalHandles: [
+          ...new Set([
+            ...(target ? referenceOriginals({ reference: "proposed", handle }) : []),
+            ...descendantOriginals(handle),
+            ...(move ? pageOriginals(move.pageId) : [])
+          ])
+        ]
+      };
+    })
+  });
+  return {
+    associations: review.associations,
+    originals: review.originals.map((e) => ({
+      handle: e.handle,
+      sourceTitle: e.sourceTitle,
+      excerpt: e.excerpt,
+      locator: e.locator,
+      ...(snapshot.intent
+        ? {
+            recordedImportedAt: e.documentCreatedAt,
+            suppliedPersonalAuthorship:
+              snapshot.personalSourceIds?.includes(e.sourceItemId) ?? false
+          }
+        : {})
+    })),
+    changedHandles: hierarchyChangedHandles(proposal),
+    ancestors: proposal.ancestors.map((a) => ({
+      ...a,
+      editorialScopeOriginals: originals(descendantOriginals(a.handle))
+    })),
+    moves: proposal.moves.map((m) => ({
+      ...m,
+      before: snapshot.pages.find((p) => p.id === m.pageId)?.breadcrumbs,
+      editorialScopeOriginals: originals(pageOriginals(m.pageId))
+    })),
+    placementContext: snapshot.placement.pages.map((p) => ({
+      pageId: p.pageId,
+      title: p.title,
+      purpose: p.purpose,
+      role: p.role,
+      parentId: p.parentId
+    })),
+    ...(snapshot.intent
+      ? {
+          canonicalOriginalsRule:
+            "Every supplied original is a canonical original source revision, including PersonalNote and DailyNote. A source title containing interpretation never changes that role. Only explicitly labeled historical interpretation records are derived context.",
+          finalMembershipRule:
+            "The backend atomically substitutes reviewed merge/split outputs for selected old-note memberships. cross_source retains the inputs and adds the new note. The model must continue to name old input-note handles; it cannot allocate or reference output IDs. Assess the final resolved members shown below, not a fictional unchanged old-note index."
+        }
+      : {}),
+    noteEvolution: proposal.noteEvolution
+      ? {
+          ...proposal.noteEvolution,
+          notes: proposal.noteEvolution.notes.map((n) => ({
+            ...n,
+            originals: originals(n.originalHandles)
+          }))
+        }
+      : undefined,
+    curationAction: proposal.explanation,
+    targets: proposal.targets.map((target, index) => ({
+      handle: target.handle,
+      kind: target.role.kind,
+      role: target.role,
+      initialParent: target.initialParent,
+      title: target.title,
+      purpose: target.purpose,
+      links: target.links.map(member),
+      editorialScopeOriginals: originals([
+        ...referenceOriginals({ reference: "proposed", handle: target.handle }),
+        ...descendantOriginals(target.handle)
+      ]),
+      sections: target.sections.map((section, i) => ({
+        path: "targets." + index + ".sections." + i,
+        interpretation: section.interpretation
+          ? {
+              ...section.interpretation,
+              originals: originals(section.interpretation.originalHandles)
+            }
+          : undefined,
+        title: section.title,
+        markdown: section.markdown,
+        originals: originals(section.originalHandles)
+      })),
+      tocGroups: target.tocGroups.map((group, i) => ({
+        path: "targets." + index + ".tocGroups." + i,
+        title: group.title,
+        explanation: group.explanation,
+        explanationOriginals: originals(group.originalHandles),
+        members: group.memberships
+          .toSorted((a, b) => a.order - b.order)
+          .flatMap((m) =>
+            afterMembers(m.target).map((member) => ({
+              ...member,
+              purpose: m.purpose,
+              order: m.order
+            }))
+          )
+          .filter(
+            (m, i, all) => all.findIndex((x) => JSON.stringify(x) === JSON.stringify(m)) === i
+          )
+      }))
+    }))
+  };
 }
-export function curatorSupportPrompt(snapshot:CuratorSnapshot,checkpoint:CuratorCheckpoint){if(!checkpoint.proposal)throw new Error('organization.errors.invalid');return renderPrompt(snapshot.intent?'organization.evolution.support':'organization.curator.support',{original_evidence:[],related_knowledge:[],candidate_knowledge:curatorSupportView(snapshot,checkpoint.proposal),validation_errors:checkpoint.error==='organization.errors.invalid'?JSON.stringify(checkpoint.validationIssues):''});}
-export function parseCuratorSupport(output:unknown,proposal:CuratorChangeSet){if(typeof output==='string'){const raw=output.trim(),fence=/^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(raw);output=JSON.parse(fence?.[1]??raw);}const verdict=CuratorSupportVerdictSchema.parse(output);if(new Set(verdict.checkedTargets).size!==hierarchyChangedHandles(proposal).length||verdict.checkedTargets.length!==hierarchyChangedHandles(proposal).length||hierarchyChangedHandles(proposal).some(h=>!verdict.checkedTargets.includes(h)))throw new z.ZodError([{code:'custom',path:['checkedTargets'],message:'Check every proposed target handle exactly once: '+hierarchyChangedHandles(proposal).join(', ')}]);for(const [index,issue]of verdict.issues.entries())if(/(?:referenceTitle|referenceText|referenceKind|referenceSourceTitle|editorialScopeOriginals|explanationOriginals|originals|sourceTitle)|(?:members|memberships)(?:\[\d+\]|\.\d+)\.(?:title|text|body)/i.test(issue.path))throw new z.ZodError([{code:'custom',path:['issues',index,'path'],message:'Read-only reference metadata/originals cannot be edited. Assess authored target/group fields or a membership association, not an existing source/note title or text.'}]);return verdict;}
+export function curatorSupportPrompt(snapshot: CuratorSnapshot, checkpoint: CuratorCheckpoint) {
+  if (!checkpoint.proposal) throw new Error("organization.errors.invalid");
+  return renderPrompt(
+    snapshot.intent ? "organization.evolution.support" : "organization.curator.support",
+    {
+      original_evidence: [],
+      related_knowledge: [],
+      candidate_knowledge: curatorSupportView(snapshot, checkpoint.proposal),
+      validation_errors:
+        checkpoint.error === "organization.errors.invalid"
+          ? JSON.stringify(checkpoint.validationIssues)
+          : ""
+    }
+  );
+}
+export function parseCuratorSupport(output: unknown, proposal: CuratorChangeSet) {
+  if (typeof output === "string") {
+    const raw = output.trim(),
+      fence = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(raw);
+    output = JSON.parse(fence?.[1] ?? raw);
+  }
+  const verdict = CuratorSupportVerdictSchema.parse(output);
+  if (
+    new Set(verdict.checkedTargets).size !== hierarchyChangedHandles(proposal).length ||
+    verdict.checkedTargets.length !== hierarchyChangedHandles(proposal).length ||
+    hierarchyChangedHandles(proposal).some((h) => !verdict.checkedTargets.includes(h))
+  )
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["checkedTargets"],
+        message:
+          "Check every proposed target handle exactly once: " +
+          hierarchyChangedHandles(proposal).join(", ")
+      }
+    ]);
+  for (const [index, issue] of verdict.issues.entries())
+    if (
+      /(?:referenceTitle|referenceText|referenceKind|referenceSourceTitle|editorialScopeOriginals|explanationOriginals|originals|sourceTitle)|(?:members|memberships)(?:\[\d+\]|\.\d+)\.(?:title|text|body)/i.test(
+        issue.path
+      )
+    )
+      throw new z.ZodError([
+        {
+          code: "custom",
+          path: ["issues", index, "path"],
+          message:
+            "Read-only reference metadata/originals cannot be edited. Assess authored target/group fields or a membership association, not an existing source/note title or text."
+        }
+      ]);
+  return verdict;
+}
 /** Plan synthesis, semantic checking and one repair cycle before buying the first call. */
-export function curatorUnitPlanningTokens(prompt:string,snapshot:Pick<CuratorSnapshot,'outputTokens'|'limits'|'profile'|'contentLanguage'>){
- const first=estimateAiPlanningTokens(withOutputLanguageInstruction(prompt,snapshot.contentLanguage),'',snapshot.outputTokens);
- const calls=snapshot.limits.repairs ? 4 : 2;
- if(snapshot.limits.modelCalls<calls)throw new Error("organization.errors.budget");
- return first+(calls-1)*(first+snapshot.outputTokens*4+4096);
+export function curatorUnitPlanningTokens(
+  prompt: string,
+  snapshot: Pick<CuratorSnapshot, "outputTokens" | "limits" | "profile" | "contentLanguage">
+) {
+  const first = estimateAiPlanningTokens(
+    withOutputLanguageInstruction(prompt, snapshot.contentLanguage),
+    "",
+    snapshot.outputTokens
+  );
+  const calls = snapshot.limits.repairs ? 4 : 2;
+  if (snapshot.limits.modelCalls < calls) throw new Error("organization.errors.budget");
+  return first + (calls - 1) * (first + snapshot.outputTokens * 4 + 4096);
 }
 export class WikiCurator {
- constructor(private options:{getPool:()=>PgPool|null;ai:Pick<AiService,'pinOrganizationProfile'|'runOrganizationTask'>;contentLanguage:()=>Promise<string>;wake:()=>void;cancelJob:(id:string)=>Promise<unknown>;now?:()=>number;hierarchyResources?:Partial<CuratorSnapshot['resources']>}){}
- private pool(){const p=this.options.getPool();if(!p)throw new Error('wiki.errors.unavailable');return p;}
- private repo(){return createWikiCuratorRepository(this.pool());}
- private async authorize(snapshot:CuratorSnapshot){const current=await this.options.ai.pinOrganizationProfile(snapshot.policy.profileOverrideId??undefined,snapshot.profile.privacy);if(current.identityHash!==snapshot.profile.identityHash||current.profileId!==snapshot.profile.profileId)throw new Error('organization.errors.modelChanged');}
- private runs(){return createOrganizationRepository(this.pool());}
- async get(id:string){const row=await this.runs().get(id);if(!row)return null;const usage=await this.runs().usage(id);row.checkpoint={...row.checkpoint,reportedInputTokens:Math.max(row.checkpoint.reportedInputTokens,usage.inputTokens),reportedOutputTokens:Math.max(row.checkpoint.reportedOutputTokens,usage.outputTokens),costEstimate:Math.max(row.checkpoint.costEstimate,usage.costEstimate),usageCounts:{input:usage.knownInputCalls,output:usage.knownOutputCalls,cost:usage.knownCostCalls},usageIncomplete:row.checkpoint.usageIncomplete||usage.incomplete||usage.knownInputCalls<row.checkpoint.calls||usage.knownOutputCalls<row.checkpoint.calls||usage.knownCostCalls<row.checkpoint.calls};const parsed=CuratorRunSchema.parse(row),candidate=parsed.proposal??parsed.checkpoint.proposal;parsed.candidateSupportMatches=!!candidate&&parsed.checkpoint.supportAssessment?.proposalHash===curatorHash(candidate);return parsed;}
- async command(raw:CuratorCommand):Promise<unknown>{const c=CuratorCommandSchema.parse(raw),repo=this.repo();switch(c.command){
- case 'preview':{const policy=AutomaticWikiPolicySchema.parse({version:'automatic-wiki-v1',id:c.input.policyId??randomUUID(),revisionId:randomUUID(),state:'draft',scope:{wholeLibrary:c.input.wholeLibrary,sourceIds:c.input.sourceIds,includeDescendants:c.input.includeDescendants,excludedSourceIds:c.input.excludedSourceIds,domainId:null},triggers:['processing_settled','input_changed'],operations:['repair_navigation','create_grounded','update_unprotected','initial_placement','use_scoped_destinations','reviewed_reparent','refresh_investigation',...(c.input.interpretMemory?['interpret_memory']:[]),...(c.input.evolveNotes?['evolve_notes']:[])],profileOverrideId:c.input.profileOverrideId,limits:c.input.limits,allowancePreset:null});const sourceIds=await repo.scope(policy,c.input.sourceIds);const sourceTitles=(await repo.references(sourceIds,[])).filter(r=>r.kind==='source').map(r=>({id:r.id,title:r.title}));let profile=null,modelError=null;try{profile=await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote');}catch{modelError='organization.errors.model';}const maintenance={...await createAutomaticMaintenanceRepository(this.pool()).preview(policy,c.input.timezone??'UTC'),promptPin:capturePromptPin(policy.scope.domainId)};const previewHash=curatorHash({policy,sourceTitles,profile,maintenance});const preview=CuratorPreviewSchema.parse({maintenance,policy,sourceTitles,profile,modelError,previewHash,promptIds:['organization.curator','organization.curator.repair','organization.curator.support',...(c.input.interpretMemory?['organization.temporal','organization.procedure']:[]),...(c.input.evolveNotes?['organization.consolidation']:[]),...(c.input.interpretMemory||c.input.evolveNotes?['organization.evolution.repair','organization.evolution.support']:[])]});await repo.draft(policy,preview,previewHash);return preview;}
- case 'activate':return repo.activate(c.policyId,c.revisionId,c.previewHash,c.state);
- case 'pause':{const policy=await repo.pause(c.policyId),maintenance=createAutomaticMaintenanceRepository(this.pool());for(const r of await maintenance.active(c.policyId))for(const job of await maintenance.cancel(r.id)??[])await this.options.cancelJob(job);return policy;}
- case 'resume':return repo.resume(c.policyId);
- case 'policies':return repo.policies();
- case 'start':{const maintenance=createAutomaticMaintenanceRepository(this.pool());if(await maintenance.installed(c.input.policyId)){const policy=await this.repo().policy(c.input.policyId);await maintenance.manualAuthority(c.input.policyId,new Date((this.options.now??Date.now)()),{profile:await this.options.ai.pinOrganizationProfile(policy!.profileOverrideId??undefined,'allow_remote'),promptPin:capturePromptPin(policy!.scope.domainId),contentLanguage:await this.options.contentLanguage()});}return this.start(c.input);}
- case 'list':return Promise.all((await this.runs().curatorIds()).map(id=>this.get(id)));
- case 'get':return this.get(c.id);
- case 'cancel':{const run=await this.get(c.id);await this.runs().cancel(c.id);if(run?.jobId)await this.options.cancelJob(run.jobId);return this.get(c.id);}
- case 'retry':{const run=await this.get(c.id);if(!run||run.checkpoint.callPending||run.checkpoint.error==='organization.errors.uncertain'||!(run.snapshot.maintenanceRunId&&run.checkpoint.calls===0)&&Date.now()>=Date.parse(run.checkpoint.executionAdmittedAt??run.snapshot.admittedAt)+run.snapshot.limits.deadlineMs)throw new Error('organization.errors.budget');await this.runs().retry(c.id);this.options.wake();return this.get(c.id);}
- case 'accept':{const run=await this.get(c.id);if(!run)throw new Error('organization.errors.invalid');await repo.apply(c.id,true,validateCuratorProposal,()=>this.authorize(run.snapshot));return this.get(c.id);}
- case 'reject':await this.runs().reject(c.id);return this.get(c.id);
- }}
- async start(raw:z.input<typeof CuratorStartSchema>,participation:CuratorSnapshot["participation"]=null,admission?:{inputGeneration?:string;causalRunId?:string|null;causalGroupId?:string|null;targetPageId?:string;targetPageIds?:string[];destinationPageIds?:string[];parentBootstrapId?:string;structuralIntent?:CuratorSnapshot['structuralIntent'];continuationRouteId?:string}){const input=CuratorStartSchema.parse(raw),repo=this.repo(),policy=await repo.policy(input.policyId);if(policy?.state!=='enabled'||policy.revisionId!==input.policyRevisionId)throw new Error('organization.errors.policy');
- const personalSourceIds=await repo.personalSources(input.sourceIds);let intent=admission?.structuralIntent||admission?.continuationRouteId?undefined:input.intent??(policy.operations.includes('interpret_memory')&&personalSourceIds.length?'temporal':undefined);if(intent&&!policy.operations.includes(['temporal','procedure'].includes(intent)?'interpret_memory':'evolve_notes'))throw new Error('organization.errors.policy');if(intent==='procedure'&&!personalSourceIds.length)throw new Error('organization.errors.evidence');if(intent&&['merge','split','cross_source','consolidation'].includes(intent)&&!input.noteIds.length)throw new Error('organization.errors.evidence');
- const now=(this.options.now??Date.now)(),admittedAt=new Date(now).toISOString(),maintenanceRepo=createAutomaticMaintenanceRepository(this.pool()),installed=await maintenanceRepo.installed(policy.id),currentMaintenance=installed?await maintenanceRepo.authority(policy.id,new Date(now)):null,maintenance=installed&&!currentMaintenance&&!admission?await maintenanceRepo.manualAuthority(policy.id,new Date(now),{profile:await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote'),promptPin:capturePromptPin(policy.scope.domainId),contentLanguage:await this.options.contentLanguage()}):currentMaintenance;if(installed&&!maintenance)throw new Error('maintenance.errors.wait');
- if(!admission?.structuralIntent&&!admission?.continuationRouteId&&!input.intent&&maintenance?.snapshot.policy.kind==='daily'&&personalSourceIds.length&&policy.operations.includes('interpret_memory'))intent='procedure';
- const parent=admission?.parentBootstrapId?await createWikiCollectionRepository(this.pool()).get(admission.parentBootstrapId):null;
- const continuationRoute=admission?.continuationRouteId?parent?.checkpoint.hierarchy?.routes.find(r=>r.routeId===admission.continuationRouteId)??null:null;
- if(admission?.continuationRouteId&&(!continuationRoute||!continuationRoute.planningRunId||parent?.checkpoint.state!=='running'))throw new Error('organization.errors.scope');
- if(continuationRoute?.currentChildRunId)return this.get(continuationRoute.currentChildRunId);
- const planning=continuationRoute?.planningRunId?await this.get(continuationRoute.planningRunId):null;
- const deferred=continuationRoute?.deferredChildRunId?await this.get(continuationRoute.deferredChildRunId):null;
- if(continuationRoute?.deferredChildRunId&&(!deferred?.checkpoint.routeDeferral||deferred.checkpoint.routeDeferral.successorRunId||deferred.snapshot.maintenanceRunId===maintenance?.id))throw new Error('maintenance.errors.wait');
- if(planning?.snapshot.intent)throw new Error('organization.errors.scopeLimit');
- const profile=parent?.snapshot.profile??maintenance?.snapshot.profile??await this.options.ai.pinOrganizationProfile(policy.profileOverrideId??undefined,'allow_remote');
- const selected=await repo.scope(policy,input.sourceIds),initial=await repo.evidencePage(selected,null,policy.limits.originalPassages,input.evidenceChunkIds);
- if(initial.next||input.evidenceChunkIds&&initial.items.length!==new Set(input.evidenceChunkIds).size)throw new Error('organization.errors.scopeLimit');
- if(!initial.items.length)throw new Error('organization.errors.noEvidence');
- const discovery=await repo.discover(policy,selected,initial.items.map(e=>e.sourceTitle+' '+e.excerpt).join(' ').slice(0,24000));
- if(!admission?.targetPageId&&!admission?.targetPageIds?.length&&discovery.excluded.length)throw new Error('organization.errors.scopeDecision');
- const structuralIntent=admission?.structuralIntent??null;
- const requiredPageIds=[...new Set([...(admission?.targetPageIds??[]),...(admission?.targetPageId?[admission.targetPageId]:[])])];
- let pages=requiredPageIds.length?await repo.exactPages(policy,requiredPageIds):structuralIntent?.kind==='missing_toc'||admission?.continuationRouteId?[]:discovery.pages;
- if(intent&&['merge','split','cross_source','consolidation'].includes(intent)){const affected=await repo.notePages(input.noteIds);if(affected.length>policy.limits.targets)throw new Error('organization.errors.scopeLimit');if(affected.length)pages=await repo.exactPages(policy,affected);if(pages.length>policy.limits.targets)throw new Error('organization.errors.scopeLimit');}
- if(planning)pages=await repo.exactPages(policy,planning.snapshot.pages.map(p=>p.id));
- const entityCandidates=(await repo.references(selected,[],initial.items.map(e=>e.chunkId))).filter(r=>r.kind==='entity');
- for(const entity of structuralIntent||admission?.continuationRouteId?[]:entityCandidates){const canonical=await repo.hierarchy.canonicalEntityPage(entity.id);if(canonical&&!pages.some(p=>p.id===canonical)){if(pages.length>=policy.limits.targets)continue;pages.push(...await repo.exactPages(policy,[canonical]));}}
- const priorChunks=[...new Set(pages.flatMap(p=>p.evidence.filter(e=>e.current).map(e=>e.chunkId)))].filter(id=>!initial.items.some(e=>e.chunkId===id));
- const permitted=await repo.allowed(policy),additional=priorChunks.length?await repo.evidencePage(permitted,null,Math.max(1,policy.limits.originalPassages-initial.items.length),priorChunks):{items:[],next:null};
- const evidence=[...initial.items,...additional.items.slice(0,policy.limits.originalPassages-initial.items.length)].toSorted((a,b)=>a.chunkId.localeCompare(b.chunkId)).map((e,i)=>({...e,handle:'e'+(i+1)}));
- const sourceIds=[...new Set([...selected,...evidence.map(e=>e.sourceItemId),...pages.flatMap(p=>p.evidence.map(e=>e.sourceItemId))])].toSorted();
- if(additional.next||additional.items.length!==priorChunks.length)throw new Error('organization.errors.scopeLimit');
- if(sourceIds.some(id=>!permitted.includes(id)))throw new Error('organization.errors.scopeDecision');
- const availableReferences=await repo.references(sourceIds,[...new Set(input.noteIds)],evidence.map(e=>e.chunkId));let entityCount=0;const entityLimit=Math.max(0,Math.min(40,Math.floor(((profile.contextWindow??8192)-2048-4000)/256))),references=availableReferences.filter(r=>r.kind!=='entity'||entityCount++<entityLimit);if(references.some(r=>r.kind==='atomic_note'&&r.chunkIds.some(id=>!evidence.some(e=>e.chunkId===id))))throw new Error('organization.errors.evidence');
- const optionalReferenceCoverage={includedEntities:references.filter(r=>r.kind==='entity').length,omittedEntities:Math.max(0,await repo.entityReferenceCount(sourceIds,evidence.map(e=>e.chunkId))-references.filter(r=>r.kind==='entity').length)};
- const resources=HierarchyResourceBoundsSchema.parse({maxInventoryBytes:Math.min(256000,this.options.hierarchyResources?.maxInventoryBytes??256000),maxProposalBytes:Math.min(90000,this.options.hierarchyResources?.maxProposalBytes??90000)});
- const seedIds=[...new Set([...Object.values(wikiAreaIds),...(planning?.snapshot.placement.pages.map(p=>p.pageId)??[]),...(continuationRoute?.resolvedPrefix.map(p=>p.pageId)??[]),...(admission?.destinationPageIds??[]),...(structuralIntent?.owners.map(o=>o.pageId)??[]),...pages.map(p=>p.id)])],placementPages:CuratorSnapshot['placement']['pages']=[];let after:string|null=null;
- for(let offset=0;offset<Math.max(1,seedIds.length);offset+=300){after=null;do{const part=await repo.hierarchy.inventory(policy,{pageIds:seedIds.slice(offset,offset+300),editablePageIds:pages.map(p=>p.id),after,limit:300,maxBytes:resources.maxInventoryBytes});placementPages.push(...part.pages.filter(p=>!placementPages.some(old=>old.pageId===p.pageId)));after=part.nextCursor;if(hierarchyResourceDecision(placementPages,resources.maxInventoryBytes).decision!=='fits')throw new Error('organization.errors.scopeLimit');}while(after);}
- const scopeFingerprint=curatorHash(policy.scope),placement=HierarchyPlacementInventorySchema.parse({version:'automatic-wiki-v1',pages:placementPages.toSorted((a,b)=>a.pageId.localeCompare(b.pageId)),scopeFingerprint,fingerprint:curatorHash({scopeFingerprint,pages:placementPages.toSorted((a,b)=>a.pageId.localeCompare(b.pageId))}),nextCursor:null});
- if(pages.some(p=>!placement.pages.some(entry=>entry.pageId===p.id&&entry.canEdit)))throw new Error('organization.errors.scopeDecision');
- if(structuralIntent?.owners.some(o=>!placement.pages.some(p=>p.pageId===o.pageId&&(structuralIntent.kind==='unplaced'||p.role.kind==='topic'&&p.canReceiveChildren&&!p.canEdit))))throw new Error('organization.errors.scopeDecision');
- const contentLanguage=parent?.snapshot.contentLanguage??maintenance?.snapshot.contentLanguage??await this.options.contentLanguage();
- const promptPin=parent?.snapshot.promptPin??maintenance?.snapshot.promptPin??capturePromptPin(policy.scope.domainId),inputFingerprint=curatorHash({...(intent?{intent}:{}),continuationRoute,structuralIntent,requiredTargets:requiredPageIds,destinations:admission?.destinationPageIds??[],contentLanguage,policy:policy.revisionId,evidence:evidence.map(e=>[e.chunkId,e.contentHash,e.documentId]),references,generation:admission?.inputGeneration??await repo.editorialGeneration(sourceIds),prompts:promptFingerprint(intent?[intent==='temporal'?'organization.temporal':intent==='procedure'?'organization.procedure':'organization.consolidation','organization.evolution.repair','organization.evolution.support']:['organization.curator','organization.curator.repair','organization.curator.support'],promptPin,profile.provider),profile:{identityHash:profile.identityHash,parameters:profile.parameters,contextWindow:profile.contextWindow}});
- const prior=await repo.unchanged(inputFingerprint,policy.id)??await repo.rejected(inputFingerprint,policy.id);if(prior)return this.get(prior);
- const snapshot=CuratorSnapshotSchema.parse({version:curatorVersion,continuedFromRunId:deferred?.id??null,continuationRoute,structuralIntent,placement,resources,supportCompositionHash:promptFingerprint([intent?'organization.evolution.support':'organization.curator.support'],promptPin,false),priorRejections:await repo.rejectionFeedback(sourceIds),...(intent?{intent,personalSourceIds,sourceDates:await repo.sourceDates(sourceIds)}:{}),maintenanceRunId:maintenance?.id??null,optionalReferenceCoverage,parentBootstrapId:admission?.parentBootstrapId??null,requiredPageIds,causalRunId:admission?.causalRunId??null,causalGroupId:admission?.causalGroupId??null,policy,sourceIds,profile,promptPin,contentLanguage,evidence,references:[...references,...placement.pages.map(p=>({kind:'page',id:p.pageId,fingerprint:p.revisionId,title:p.title,text:'',sourceIds:p.sourceIds,chunkIds:pages.find(page=>page.id===p.pageId)?.evidence.map(e=>e.chunkId)??[]}))],pages,inputFingerprint,groupId:randomUUID(),outputTokens:Math.min(8192,Math.max(2048,policy.limits.targets*1024),Math.max(512,Math.floor((profile.contextWindow??8192)/3)),typeof profile.parameters.maxTokens==='number'?profile.parameters.maxTokens:8192),limits:{...policy.limits,deadlineMs:maintenance?Math.min(policy.limits.deadlineMs,maintenance.snapshot.policy.groupMs,maintenance.snapshot.policy.executionMs-maintenance.checkpoint.executionMs):policy.limits.deadlineMs},admittedAt,participation});
- if(continuationRoute){
-  if(placement.fingerprint!==continuationRoute.fingerprint.branchFingerprint||placement.scopeFingerprint!==continuationRoute.fingerprint.scopeFingerprint||policy.revisionId!==continuationRoute.fingerprint.policyRevisionId||curatorHash(profile)!==continuationRoute.fingerprint.modelFingerprint||promptFingerprint(['organization.curator','organization.curator.repair','organization.curator.support'],promptPin,profile.provider)!==continuationRoute.fingerprint.promptFingerprint||!planning||!isDeepStrictEqual(evidence,planning.snapshot.evidence))throw new Error('organization.errors.conflict');
-  for(const prefix of continuationRoute.resolvedPrefix)if(!placement.pages.some(p=>p.pageId===prefix.pageId&&p.revisionId===prefix.revisionId&&p.fingerprint===prefix.fingerprint))throw new Error('organization.errors.conflict');
- }
- const checkpoint=CuratorCheckpointSchema.parse({version:curatorVersion,calls:0,tools:3,repairs:0,startedAt:admittedAt,callPending:false,waitingForModel:false,proposal:null,previousOutput:'',error:null,reportedInputTokens:0,reportedOutputTokens:0,costEstimate:0,usageCounts:{input:0,output:0,cost:0},usageIncomplete:false});
- if(deferred){if(!deferred.checkpoint.proposal)throw new Error('organization.errors.invalid');checkpoint.proposal=CuratorChangeSetSchema.parse({...deferred.checkpoint.proposal,groupId:snapshot.groupId});validateCuratorProposal(snapshot,checkpoint.proposal);}
- else if(planning){checkpoint.proposal=hierarchyRouteProposal(snapshot,planning,proposal=>proposalFitsBytes(snapshot,proposal)&&withPromptPin(promptPin,()=>curatorSupportPrompt(snapshot,{...checkpoint,proposal})).length<=Math.min(120000,Math.max(1000,(profile.contextWindow??8192)-snapshot.outputTokens)*2));validateCuratorProposal(snapshot,checkpoint.proposal);}
- const prompt=withPromptPin(promptPin,()=>checkpoint.proposal?curatorSupportPrompt(snapshot,checkpoint):curatorPrompt(snapshot,checkpoint));const availableOutput=(profile.contextWindow??8192)-Math.ceil(prompt.length/2)-256;if(availableOutput<512)throw new Error('organization.errors.context');snapshot.outputTokens=Math.min(snapshot.outputTokens,availableOutput);if(prompt.length>Math.min(120000,Math.max(1000,(profile.contextWindow??8192)-snapshot.outputTokens)*2))throw new Error('organization.errors.context');
- if(continuationRoute)await this.authorize(snapshot);
- if(maintenance)await maintenanceRepo.capacity(maintenance.id,0,0,new Date(now));
- const id=await this.runs().create(snapshot,checkpoint);this.options.wake();return this.get(id);
- }
- async execute(job:JobRecord,signal:AbortSignal):Promise<JsonObject>{
-  const id=z.string().uuid().parse(job.payload.organizationRunId),run=await this.get(id);if(!run)throw new Error('organization.errors.invalid');
-  if(['applied','rejected','canceled'].includes(run.status))return{organizationRunId:id,status:run.status};
-  const work=(clockSignal:AbortSignal)=>withPromptPin(run.snapshot.promptPin,async()=>{
-   const snapshot=run.snapshot,checkpoint=structuredClone(run.checkpoint),now=this.options.now??Date.now;
-   if(snapshot.maintenanceRunId&&(checkpoint.calls===0||checkpoint.calls===1&&checkpoint.callPending&&checkpoint.waitingForModel&&!await this.runs().hasProviderAudit(id))){const parent=await createAutomaticMaintenanceRepository(this.pool()).get(snapshot.maintenanceRunId);checkpoint.executionBaseMs??=parent?.checkpoint.executionMs??0;const consumed=Math.max(0,(parent?.checkpoint.executionMs??0)-checkpoint.executionBaseMs);checkpoint.executionAdmittedAt=new Date(now()-consumed).toISOString();checkpoint.callPending=false;checkpoint.waitingForModel=false;if(checkpoint.error==='organization.errors.deadline'||checkpoint.error==='organization.errors.uncertain')checkpoint.error=null;await this.runs().checkpoint(id,run.status,checkpoint);}
-   const deadline=Date.parse(snapshot.maintenanceRunId?checkpoint.executionAdmittedAt??snapshot.admittedAt:snapshot.admittedAt)+snapshot.limits.deadlineMs;
-   if(['applied','rejected','canceled'].includes(run.status))return{organizationRunId:id,status:run.status};
-   const apply=async()=>{try{await this.repo().apply(id,false,validateCuratorProposal,()=>this.authorize(snapshot));}catch(e){if(!/organization.errors.(review|conflict)|wiki.errors.conflict/.test(String(e)))throw e;}return{organizationRunId:id,status:(await this.get(id))!.status};};
-   if(run.status==='awaiting_review')return apply();
-   if(checkpoint.callPending||checkpoint.error==='organization.errors.uncertain'){checkpoint.error='organization.errors.uncertain';checkpoint.usageIncomplete=true;await this.runs().checkpoint(id,'failed',checkpoint);throw new Error(checkpoint.error);}
-   if(checkpoint.proposal&&checkpoint.supportAssessment?.verdict.supported&&checkpoint.supportAssessment.proposalHash===curatorHash(checkpoint.proposal)){await this.runs().propose(id,checkpoint.proposal,checkpoint,false);return apply();}
-   if(run.status==='failed'&&checkpoint.error&&!['organization.errors.failed','organization.errors.canceled'].includes(checkpoint.error))throw new Error(checkpoint.error);
-   const timeout=AbortSignal.timeout(Math.max(1,deadline-now())),combined=AbortSignal.any([signal,timeout,clockSignal]);
-   const guard=async()=>{combined.throwIfAborted();await this.authorize(snapshot);if(now()>=deadline)throw new Error('organization.errors.deadline');if((await this.get(id))?.status==='canceled')throw new Error('organization.errors.canceled');await this.repo().validate(snapshot);};
-   const issues=(e:unknown)=>e instanceof z.ZodError?e.issues.slice(0,12).map(issue=>({path:issue.path.map(String).join('.').slice(0,300),message:issue.message.slice(0,500)})):[{path:'proposal',message:String(e).match(/(?:organization|maintenance)\.errors\.[A-Za-z]+/)?.[0]??'Return one valid JSON object matching all required fields.'}];
-   try{while(true){
-    await guard();if(checkpoint.calls>=snapshot.limits.modelCalls||checkpoint.tools>=snapshot.limits.tools)throw new Error('organization.errors.budget');
-    const checking=Boolean(checkpoint.proposal),prompt=checking?curatorSupportPrompt(snapshot,checkpoint):curatorPrompt(snapshot,checkpoint),maxOutput=checking?Math.min(snapshot.outputTokens,Math.max(1024,512+hierarchyChangedHandles(checkpoint.proposal!).join('').length)):snapshot.outputTokens;
-    if(prompt.length>Math.min(120000,Math.max(1000,(snapshot.profile.contextWindow??8192)-maxOutput)*2))throw new Error('organization.errors.context');
-    if(snapshot.maintenanceRunId)await createAutomaticMaintenanceRepository(this.pool()).reserve(snapshot.maintenanceRunId,id,checkpoint.calls+1,estimateAiPlanningTokens(withOutputLanguageInstruction(prompt,snapshot.contentLanguage),snapshot.profile.provider==='openai-codex'?renderPrompt('shared.codex_adapter_instruction'):'',maxOutput),new Date(now()));
-    checkpoint.calls++;checkpoint.callPending=true;checkpoint.waitingForModel=true;await this.runs().checkpoint(id,'analyzing',checkpoint);
-    let result;try{result=await this.options.ai.runOrganizationTask(snapshot.profile,prompt,{organizationRunId:id,organizationStep:checkpoint.calls,jobId:job.id,sourceItemIds:snapshot.sourceIds,operation:'wiki-organization',stage:checking?'support':'curate',origin:'organization',promptVersion:curatorVersion,contentLanguage:snapshot.contentLanguage,attempt:checkpoint.calls,onProviderStart:async()=>{await this.runs().modelStarted(id,checkpoint.calls);checkpoint.waitingForModel=false;}},combined,maxOutput,async()=>{await guard();if(snapshot.maintenanceRunId)await createAutomaticMaintenanceRepository(this.pool()).capacity(snapshot.maintenanceRunId);});}catch(e){checkpoint.usageIncomplete=true;checkpoint.callPending=!checkpoint.waitingForModel;checkpoint.error=checkpoint.callPending?'organization.errors.uncertain':null;throw e;}
-    checkpoint.callPending=false;checkpoint.waitingForModel=false;checkpoint.reportedInputTokens+=result.inputTokens??0;checkpoint.reportedOutputTokens+=result.outputTokens??0;checkpoint.costEstimate+=result.costEstimate??0;checkpoint.usageIncomplete ||= result.inputTokens===undefined||result.outputTokens===undefined||result.costEstimate===undefined;checkpoint.tools++;
-    let failed=false;
-    if(checking){
-     try{const verdict=parseCuratorSupport(result.output,checkpoint.proposal!);checkpoint.supportAssessment={proposalHash:curatorHash(checkpoint.proposal),aiTaskRunId:result.aiTaskRunId,verdict};checkpoint.validationIssues=verdict.issues;checkpoint.error=verdict.supported?null:'organization.errors.evidence';failed=!verdict.supported;}
-     catch(e){checkpoint.supportAssessment=null;checkpoint.validationIssues=issues(e);checkpoint.error='organization.errors.invalid';failed=true;}
-     const artifact={support:checkpoint.supportAssessment?.verdict??null,proposalHash:curatorHash(checkpoint.proposal),status:checkpoint.error??'supported'},canRepair=failed&&checkpoint.repairs<snapshot.limits.repairs&&!(snapshot.continuationRoute&&checkpoint.supportAssessment?.verdict.supported===false);
-     if(canRepair){checkpoint.repairs++;if(checkpoint.supportAssessment?.verdict.supported===false)checkpoint.proposal=null;}
-     await this.runs().step(id,checkpoint.calls,checkpoint,artifact,result.aiTaskRunId);
-     if(!failed){await guard();await this.runs().propose(id,checkpoint.proposal,checkpoint,false);return apply();}
-     if(!canRepair)throw new Error(checkpoint.error!);
-    }else{
-     checkpoint.previousOutput=typeof result.output==='string'?result.output.slice(0,90000):JSON.stringify(result.output).slice(0,90000);
-     try{const proposal=parseCuratorProposal(result.output,snapshot);if(hierarchyResourceDecision(proposal,snapshot.resources.maxProposalBytes).decision!=='fits'){checkpoint.proposal=proposal;checkpoint.supportAssessment=null;checkpoint.error='organization.errors.scopeLimit';await this.runs().persistCuratorCandidate(id,proposal,checkpoint);await this.runs().step(id,checkpoint.calls,checkpoint,{proposal,status:'resource_deferred'},result.aiTaskRunId);throw new Error(checkpoint.error);}validateCuratorProposal(snapshot,proposal);checkpoint.proposal=proposal;checkpoint.supportAssessment=null;checkpoint.error=null;checkpoint.validationIssues=[];await this.runs().persistCuratorCandidate(id,proposal,checkpoint);}
-     catch(e){if(String(e).includes('organization.errors.scopeLimit'))throw e;checkpoint.validationIssues=issues(e);checkpoint.error='organization.errors.invalid';failed=true;}
-     const canRepair=failed&&checkpoint.repairs<snapshot.limits.repairs;if(canRepair)checkpoint.repairs++;
-     await this.runs().step(id,checkpoint.calls,checkpoint,{proposal:checkpoint.proposal,status:failed?'invalid':'structurally_valid'},result.aiTaskRunId);
-     if(failed&&!canRepair)throw new Error(checkpoint.error!);
+  constructor(
+    private options: {
+      getPool: () => PgPool | null;
+      ai: Pick<AiService, "pinOrganizationProfile" | "runOrganizationTask">;
+      contentLanguage: () => Promise<string>;
+      wake: () => void;
+      cancelJob: (id: string) => Promise<unknown>;
+      now?: () => number;
+      hierarchyResources?: Partial<CuratorSnapshot["resources"]>;
     }
-   }}catch(e){checkpoint.error=checkpoint.error==='organization.errors.uncertain'?checkpoint.error:signal.aborted?'organization.errors.canceled':timeout.aborted||now()>=deadline?'organization.errors.deadline':organizationAiFailure(e);await this.runs().checkpoint(id,'failed',checkpoint);if(await this.runs().rejectValidation(id))return{organizationRunId:id,status:'rejected'};throw new Error(checkpoint.error);}
-  });
-  return run.snapshot.maintenanceRunId?withAutomaticMaintenanceClock((at,elapsed,unobserved)=>createAutomaticMaintenanceRepository(this.pool()).heartbeat(run.snapshot.maintenanceRunId!,at,elapsed,unobserved),work,this.options.now??Date.now):work(new AbortController().signal);
- }
+  ) {}
+  private pool() {
+    const p = this.options.getPool();
+    if (!p) throw new Error("wiki.errors.unavailable");
+    return p;
+  }
+  private repo() {
+    return createWikiCuratorRepository(this.pool());
+  }
+  private async authorize(snapshot: CuratorSnapshot) {
+    const current = await this.options.ai.pinOrganizationProfile(
+      snapshot.policy.profileOverrideId ?? undefined,
+      snapshot.profile.privacy
+    );
+    if (
+      current.identityHash !== snapshot.profile.identityHash ||
+      current.profileId !== snapshot.profile.profileId
+    )
+      throw new Error("organization.errors.modelChanged");
+  }
+  private runs() {
+    return createOrganizationRepository(this.pool());
+  }
+  async get(id: string) {
+    const row = await this.runs().get(id);
+    if (!row) return null;
+    const usage = await this.runs().usage(id);
+    row.checkpoint = {
+      ...row.checkpoint,
+      reportedInputTokens: Math.max(row.checkpoint.reportedInputTokens, usage.inputTokens),
+      reportedOutputTokens: Math.max(row.checkpoint.reportedOutputTokens, usage.outputTokens),
+      costEstimate: Math.max(row.checkpoint.costEstimate, usage.costEstimate),
+      usageCounts: {
+        input: usage.knownInputCalls,
+        output: usage.knownOutputCalls,
+        cost: usage.knownCostCalls
+      },
+      usageIncomplete:
+        row.checkpoint.usageIncomplete ||
+        usage.incomplete ||
+        usage.knownInputCalls < row.checkpoint.calls ||
+        usage.knownOutputCalls < row.checkpoint.calls ||
+        usage.knownCostCalls < row.checkpoint.calls
+    };
+    const parsed = CuratorRunSchema.parse(row),
+      candidate = parsed.proposal ?? parsed.checkpoint.proposal;
+    parsed.candidateSupportMatches =
+      !!candidate && parsed.checkpoint.supportAssessment?.proposalHash === curatorHash(candidate);
+    return parsed;
+  }
+  async command(raw: CuratorCommand): Promise<unknown> {
+    const c = CuratorCommandSchema.parse(raw),
+      repo = this.repo();
+    switch (c.command) {
+      case "preview": {
+        const policy = AutomaticWikiPolicySchema.parse({
+          version: "automatic-wiki-v1",
+          id: c.input.policyId ?? randomUUID(),
+          revisionId: randomUUID(),
+          state: "draft",
+          scope: {
+            wholeLibrary: c.input.wholeLibrary,
+            sourceIds: c.input.sourceIds,
+            includeDescendants: c.input.includeDescendants,
+            excludedSourceIds: c.input.excludedSourceIds,
+            domainId: null
+          },
+          triggers: ["processing_settled", "input_changed"],
+          operations: [
+            "repair_navigation",
+            "create_grounded",
+            "update_unprotected",
+            "initial_placement",
+            "use_scoped_destinations",
+            "reviewed_reparent",
+            "refresh_investigation",
+            ...(c.input.interpretMemory ? ["interpret_memory"] : []),
+            ...(c.input.evolveNotes ? ["evolve_notes"] : [])
+          ],
+          profileOverrideId: c.input.profileOverrideId,
+          limits: c.input.limits,
+          allowancePreset: null
+        });
+        const sourceIds = await repo.scope(policy, c.input.sourceIds);
+        const sourceTitles = (await repo.references(sourceIds, []))
+          .filter((r) => r.kind === "source")
+          .map((r) => ({ id: r.id, title: r.title }));
+        let profile = null,
+          modelError = null;
+        try {
+          profile = await this.options.ai.pinOrganizationProfile(
+            policy.profileOverrideId ?? undefined,
+            "allow_remote"
+          );
+        } catch {
+          modelError = "organization.errors.model";
+        }
+        const maintenance = {
+          ...(await createAutomaticMaintenanceRepository(this.pool()).preview(
+            policy,
+            c.input.timezone ?? "UTC"
+          )),
+          promptPin: capturePromptPin(policy.scope.domainId)
+        };
+        const previewHash = curatorHash({ policy, sourceTitles, profile, maintenance });
+        const preview = CuratorPreviewSchema.parse({
+          maintenance,
+          policy,
+          sourceTitles,
+          profile,
+          modelError,
+          previewHash,
+          promptIds: [
+            "organization.curator",
+            "organization.curator.repair",
+            "organization.curator.support",
+            ...(c.input.interpretMemory ? ["organization.temporal", "organization.procedure"] : []),
+            ...(c.input.evolveNotes ? ["organization.consolidation"] : []),
+            ...(c.input.interpretMemory || c.input.evolveNotes
+              ? ["organization.evolution.repair", "organization.evolution.support"]
+              : [])
+          ]
+        });
+        await repo.draft(policy, preview, previewHash);
+        return preview;
+      }
+      case "activate":
+        return repo.activate(c.policyId, c.revisionId, c.previewHash, c.state);
+      case "pause": {
+        const policy = await repo.pause(c.policyId),
+          maintenance = createAutomaticMaintenanceRepository(this.pool());
+        for (const r of await maintenance.active(c.policyId))
+          for (const job of (await maintenance.cancel(r.id)) ?? [])
+            await this.options.cancelJob(job);
+        return policy;
+      }
+      case "resume":
+        return repo.resume(c.policyId);
+      case "policies":
+        return repo.policies();
+      case "start": {
+        const maintenance = createAutomaticMaintenanceRepository(this.pool());
+        if (await maintenance.installed(c.input.policyId)) {
+          const policy = await this.repo().policy(c.input.policyId);
+          await maintenance.manualAuthority(
+            c.input.policyId,
+            new Date((this.options.now ?? Date.now)()),
+            {
+              profile: await this.options.ai.pinOrganizationProfile(
+                policy!.profileOverrideId ?? undefined,
+                "allow_remote"
+              ),
+              promptPin: capturePromptPin(policy!.scope.domainId),
+              contentLanguage: await this.options.contentLanguage()
+            }
+          );
+        }
+        return this.start(c.input);
+      }
+      case "list":
+        return Promise.all((await this.runs().curatorIds()).map((id) => this.get(id)));
+      case "get":
+        return this.get(c.id);
+      case "cancel": {
+        const run = await this.get(c.id);
+        await this.runs().cancel(c.id);
+        if (run?.jobId) await this.options.cancelJob(run.jobId);
+        return this.get(c.id);
+      }
+      case "retry": {
+        const run = await this.get(c.id);
+        if (
+          !run ||
+          run.checkpoint.callPending ||
+          run.checkpoint.error === "organization.errors.uncertain" ||
+          (!(run.snapshot.maintenanceRunId && run.checkpoint.calls === 0) &&
+            Date.now() >=
+              Date.parse(run.checkpoint.executionAdmittedAt ?? run.snapshot.admittedAt) +
+                run.snapshot.limits.deadlineMs)
+        )
+          throw new Error("organization.errors.budget");
+        await this.runs().retry(c.id);
+        this.options.wake();
+        return this.get(c.id);
+      }
+      case "accept": {
+        const run = await this.get(c.id);
+        if (!run) throw new Error("organization.errors.invalid");
+        await repo.apply(c.id, true, validateCuratorProposal, () => this.authorize(run.snapshot));
+        return this.get(c.id);
+      }
+      case "reject":
+        await this.runs().reject(c.id);
+        return this.get(c.id);
+    }
+  }
+  async start(
+    raw: z.input<typeof CuratorStartSchema>,
+    participation: CuratorSnapshot["participation"] = null,
+    admission?: {
+      inputGeneration?: string;
+      causalRunId?: string | null;
+      causalGroupId?: string | null;
+      targetPageId?: string;
+      targetPageIds?: string[];
+      destinationPageIds?: string[];
+      parentBootstrapId?: string;
+      structuralIntent?: CuratorSnapshot["structuralIntent"];
+      continuationRouteId?: string;
+    }
+  ) {
+    const input = CuratorStartSchema.parse(raw),
+      repo = this.repo(),
+      policy = await repo.policy(input.policyId);
+    if (policy?.state !== "enabled" || policy.revisionId !== input.policyRevisionId)
+      throw new Error("organization.errors.policy");
+    const personalSourceIds = await repo.personalSources(input.sourceIds);
+    let intent =
+      admission?.structuralIntent || admission?.continuationRouteId
+        ? undefined
+        : (input.intent ??
+          (policy.operations.includes("interpret_memory") && personalSourceIds.length
+            ? "temporal"
+            : undefined));
+    if (
+      intent &&
+      !policy.operations.includes(
+        ["temporal", "procedure"].includes(intent) ? "interpret_memory" : "evolve_notes"
+      )
+    )
+      throw new Error("organization.errors.policy");
+    if (intent === "procedure" && !personalSourceIds.length)
+      throw new Error("organization.errors.evidence");
+    if (
+      intent &&
+      ["merge", "split", "cross_source", "consolidation"].includes(intent) &&
+      !input.noteIds.length
+    )
+      throw new Error("organization.errors.evidence");
+    const now = (this.options.now ?? Date.now)(),
+      admittedAt = new Date(now).toISOString(),
+      maintenanceRepo = createAutomaticMaintenanceRepository(this.pool()),
+      installed = await maintenanceRepo.installed(policy.id),
+      currentMaintenance = installed
+        ? await maintenanceRepo.authority(policy.id, new Date(now))
+        : null,
+      maintenance =
+        installed && !currentMaintenance && !admission
+          ? await maintenanceRepo.manualAuthority(policy.id, new Date(now), {
+              profile: await this.options.ai.pinOrganizationProfile(
+                policy.profileOverrideId ?? undefined,
+                "allow_remote"
+              ),
+              promptPin: capturePromptPin(policy.scope.domainId),
+              contentLanguage: await this.options.contentLanguage()
+            })
+          : currentMaintenance;
+    if (installed && !maintenance) throw new Error("maintenance.errors.wait");
+    if (
+      !admission?.structuralIntent &&
+      !admission?.continuationRouteId &&
+      !input.intent &&
+      maintenance?.snapshot.policy.kind === "daily" &&
+      personalSourceIds.length &&
+      policy.operations.includes("interpret_memory")
+    )
+      intent = "procedure";
+    const parent = admission?.parentBootstrapId
+      ? await createWikiCollectionRepository(this.pool()).get(admission.parentBootstrapId)
+      : null;
+    const continuationRoute = admission?.continuationRouteId
+      ? (parent?.checkpoint.hierarchy?.routes.find(
+          (r) => r.routeId === admission.continuationRouteId
+        ) ?? null)
+      : null;
+    if (
+      admission?.continuationRouteId &&
+      (!continuationRoute ||
+        !continuationRoute.planningRunId ||
+        parent?.checkpoint.state !== "running")
+    )
+      throw new Error("organization.errors.scope");
+    if (continuationRoute?.currentChildRunId) return this.get(continuationRoute.currentChildRunId);
+    const planning = continuationRoute?.planningRunId
+      ? await this.get(continuationRoute.planningRunId)
+      : null;
+    const deferred = continuationRoute?.deferredChildRunId
+      ? await this.get(continuationRoute.deferredChildRunId)
+      : null;
+    if (
+      continuationRoute?.deferredChildRunId &&
+      (!deferred?.checkpoint.routeDeferral ||
+        deferred.checkpoint.routeDeferral.successorRunId ||
+        deferred.snapshot.maintenanceRunId === maintenance?.id)
+    )
+      throw new Error("maintenance.errors.wait");
+    if (planning?.snapshot.intent) throw new Error("organization.errors.scopeLimit");
+    const profile =
+      parent?.snapshot.profile ??
+      maintenance?.snapshot.profile ??
+      (await this.options.ai.pinOrganizationProfile(
+        policy.profileOverrideId ?? undefined,
+        "allow_remote"
+      ));
+    const selected = await repo.scope(policy, input.sourceIds),
+      initial = await repo.evidencePage(
+        selected,
+        null,
+        policy.limits.originalPassages,
+        input.evidenceChunkIds
+      );
+    if (
+      initial.next ||
+      (input.evidenceChunkIds && initial.items.length !== new Set(input.evidenceChunkIds).size)
+    )
+      throw new Error("organization.errors.scopeLimit");
+    if (!initial.items.length) throw new Error("organization.errors.noEvidence");
+    const discovery = await repo.discover(
+      policy,
+      selected,
+      initial.items
+        .map((e) => e.sourceTitle + " " + e.excerpt)
+        .join(" ")
+        .slice(0, 24000)
+    );
+    if (!admission?.targetPageId && !admission?.targetPageIds?.length && discovery.excluded.length)
+      throw new Error("organization.errors.scopeDecision");
+    const structuralIntent = admission?.structuralIntent ?? null;
+    const requiredPageIds = [
+      ...new Set([
+        ...(admission?.targetPageIds ?? []),
+        ...(admission?.targetPageId ? [admission.targetPageId] : [])
+      ])
+    ];
+    let pages = requiredPageIds.length
+      ? await repo.exactPages(policy, requiredPageIds)
+      : structuralIntent?.kind === "missing_toc" || admission?.continuationRouteId
+        ? []
+        : discovery.pages;
+    if (intent && ["merge", "split", "cross_source", "consolidation"].includes(intent)) {
+      const affected = await repo.notePages(input.noteIds);
+      if (affected.length > policy.limits.targets)
+        throw new Error("organization.errors.scopeLimit");
+      if (affected.length) pages = await repo.exactPages(policy, affected);
+      if (pages.length > policy.limits.targets) throw new Error("organization.errors.scopeLimit");
+    }
+    if (planning)
+      pages = await repo.exactPages(
+        policy,
+        planning.snapshot.pages.map((p) => p.id)
+      );
+    const entityCandidates = (
+      await repo.references(
+        selected,
+        [],
+        initial.items.map((e) => e.chunkId)
+      )
+    ).filter((r) => r.kind === "entity");
+    for (const entity of structuralIntent || admission?.continuationRouteId
+      ? []
+      : entityCandidates) {
+      const canonical = await repo.hierarchy.canonicalEntityPage(entity.id);
+      if (canonical && !pages.some((p) => p.id === canonical)) {
+        if (pages.length >= policy.limits.targets) continue;
+        pages.push(...(await repo.exactPages(policy, [canonical])));
+      }
+    }
+    const priorChunks = [
+      ...new Set(pages.flatMap((p) => p.evidence.filter((e) => e.current).map((e) => e.chunkId)))
+    ].filter((id) => !initial.items.some((e) => e.chunkId === id));
+    const permitted = await repo.allowed(policy),
+      additional = priorChunks.length
+        ? await repo.evidencePage(
+            permitted,
+            null,
+            Math.max(1, policy.limits.originalPassages - initial.items.length),
+            priorChunks
+          )
+        : { items: [], next: null };
+    const evidence = [
+      ...initial.items,
+      ...additional.items.slice(0, policy.limits.originalPassages - initial.items.length)
+    ]
+      .toSorted((a, b) => a.chunkId.localeCompare(b.chunkId))
+      .map((e, i) => ({ ...e, handle: "e" + (i + 1) }));
+    const sourceIds = [
+      ...new Set([
+        ...selected,
+        ...evidence.map((e) => e.sourceItemId),
+        ...pages.flatMap((p) => p.evidence.map((e) => e.sourceItemId))
+      ])
+    ].toSorted();
+    if (additional.next || additional.items.length !== priorChunks.length)
+      throw new Error("organization.errors.scopeLimit");
+    if (sourceIds.some((id) => !permitted.includes(id)))
+      throw new Error("organization.errors.scopeDecision");
+    const availableReferences = await repo.references(
+      sourceIds,
+      [...new Set(input.noteIds)],
+      evidence.map((e) => e.chunkId)
+    );
+    let entityCount = 0;
+    const entityLimit = Math.max(
+        0,
+        Math.min(40, Math.floor(((profile.contextWindow ?? 8192) - 2048 - 4000) / 256))
+      ),
+      references = availableReferences.filter(
+        (r) => r.kind !== "entity" || entityCount++ < entityLimit
+      );
+    if (
+      references.some(
+        (r) =>
+          r.kind === "atomic_note" &&
+          r.chunkIds.some((id) => !evidence.some((e) => e.chunkId === id))
+      )
+    )
+      throw new Error("organization.errors.evidence");
+    const optionalReferenceCoverage = {
+      includedEntities: references.filter((r) => r.kind === "entity").length,
+      omittedEntities: Math.max(
+        0,
+        (await repo.entityReferenceCount(
+          sourceIds,
+          evidence.map((e) => e.chunkId)
+        )) - references.filter((r) => r.kind === "entity").length
+      )
+    };
+    const resources = HierarchyResourceBoundsSchema.parse({
+      maxInventoryBytes: Math.min(
+        256000,
+        this.options.hierarchyResources?.maxInventoryBytes ?? 256000
+      ),
+      maxProposalBytes: Math.min(90000, this.options.hierarchyResources?.maxProposalBytes ?? 90000)
+    });
+    const seedIds = [
+        ...new Set([
+          ...Object.values(wikiAreaIds),
+          ...(planning?.snapshot.placement.pages.map((p) => p.pageId) ?? []),
+          ...(continuationRoute?.resolvedPrefix.map((p) => p.pageId) ?? []),
+          ...(admission?.destinationPageIds ?? []),
+          ...(structuralIntent?.owners.map((o) => o.pageId) ?? []),
+          ...pages.map((p) => p.id)
+        ])
+      ],
+      placementPages: CuratorSnapshot["placement"]["pages"] = [];
+    let after: string | null = null;
+    for (let offset = 0; offset < Math.max(1, seedIds.length); offset += 300) {
+      after = null;
+      do {
+        const part = await repo.hierarchy.inventory(policy, {
+          pageIds: seedIds.slice(offset, offset + 300),
+          editablePageIds: pages.map((p) => p.id),
+          after,
+          limit: 300,
+          maxBytes: resources.maxInventoryBytes
+        });
+        placementPages.push(
+          ...part.pages.filter((p) => !placementPages.some((old) => old.pageId === p.pageId))
+        );
+        after = part.nextCursor;
+        if (
+          hierarchyResourceDecision(placementPages, resources.maxInventoryBytes).decision !== "fits"
+        )
+          throw new Error("organization.errors.scopeLimit");
+      } while (after);
+    }
+    const scopeFingerprint = curatorHash(policy.scope),
+      placement = HierarchyPlacementInventorySchema.parse({
+        version: "automatic-wiki-v1",
+        pages: placementPages.toSorted((a, b) => a.pageId.localeCompare(b.pageId)),
+        scopeFingerprint,
+        fingerprint: curatorHash({
+          scopeFingerprint,
+          pages: placementPages.toSorted((a, b) => a.pageId.localeCompare(b.pageId))
+        }),
+        nextCursor: null
+      });
+    if (pages.some((p) => !placement.pages.some((entry) => entry.pageId === p.id && entry.canEdit)))
+      throw new Error("organization.errors.scopeDecision");
+    if (
+      structuralIntent?.owners.some(
+        (o) =>
+          !placement.pages.some(
+            (p) =>
+              p.pageId === o.pageId &&
+              (structuralIntent.kind === "unplaced" ||
+                (p.role.kind === "topic" && p.canReceiveChildren && !p.canEdit))
+          )
+      )
+    )
+      throw new Error("organization.errors.scopeDecision");
+    const contentLanguage =
+      parent?.snapshot.contentLanguage ??
+      maintenance?.snapshot.contentLanguage ??
+      (await this.options.contentLanguage());
+    const promptPin =
+        parent?.snapshot.promptPin ??
+        maintenance?.snapshot.promptPin ??
+        capturePromptPin(policy.scope.domainId),
+      inputFingerprint = curatorHash({
+        ...(intent ? { intent } : {}),
+        continuationRoute,
+        structuralIntent,
+        requiredTargets: requiredPageIds,
+        destinations: admission?.destinationPageIds ?? [],
+        contentLanguage,
+        policy: policy.revisionId,
+        evidence: evidence.map((e) => [e.chunkId, e.contentHash, e.documentId]),
+        references,
+        generation: admission?.inputGeneration ?? (await repo.editorialGeneration(sourceIds)),
+        prompts: promptFingerprint(
+          intent
+            ? [
+                intent === "temporal"
+                  ? "organization.temporal"
+                  : intent === "procedure"
+                    ? "organization.procedure"
+                    : "organization.consolidation",
+                "organization.evolution.repair",
+                "organization.evolution.support"
+              ]
+            : [
+                "organization.curator",
+                "organization.curator.repair",
+                "organization.curator.support"
+              ],
+          promptPin,
+          profile.provider
+        ),
+        profile: {
+          identityHash: profile.identityHash,
+          parameters: profile.parameters,
+          contextWindow: profile.contextWindow
+        }
+      });
+    const prior =
+      (await repo.unchanged(inputFingerprint, policy.id)) ??
+      (await repo.rejected(inputFingerprint, policy.id));
+    if (prior) return this.get(prior);
+    const snapshot = CuratorSnapshotSchema.parse({
+      version: curatorVersion,
+      continuedFromRunId: deferred?.id ?? null,
+      continuationRoute,
+      structuralIntent,
+      placement,
+      resources,
+      supportCompositionHash: promptFingerprint(
+        [intent ? "organization.evolution.support" : "organization.curator.support"],
+        promptPin,
+        false
+      ),
+      priorRejections: await repo.rejectionFeedback(sourceIds),
+      ...(intent
+        ? { intent, personalSourceIds, sourceDates: await repo.sourceDates(sourceIds) }
+        : {}),
+      maintenanceRunId: maintenance?.id ?? null,
+      optionalReferenceCoverage,
+      parentBootstrapId: admission?.parentBootstrapId ?? null,
+      requiredPageIds,
+      causalRunId: admission?.causalRunId ?? null,
+      causalGroupId: admission?.causalGroupId ?? null,
+      policy,
+      sourceIds,
+      profile,
+      promptPin,
+      contentLanguage,
+      evidence,
+      references: [
+        ...references,
+        ...placement.pages.map((p) => ({
+          kind: "page",
+          id: p.pageId,
+          fingerprint: p.revisionId,
+          title: p.title,
+          text: "",
+          sourceIds: p.sourceIds,
+          chunkIds: pages.find((page) => page.id === p.pageId)?.evidence.map((e) => e.chunkId) ?? []
+        }))
+      ],
+      pages,
+      inputFingerprint,
+      groupId: randomUUID(),
+      outputTokens: Math.min(
+        8192,
+        Math.max(2048, policy.limits.targets * 1024),
+        Math.max(512, Math.floor((profile.contextWindow ?? 8192) / 3)),
+        typeof profile.parameters.maxTokens === "number" ? profile.parameters.maxTokens : 8192
+      ),
+      limits: {
+        ...policy.limits,
+        deadlineMs: maintenance
+          ? Math.min(
+              policy.limits.deadlineMs,
+              maintenance.snapshot.policy.groupMs,
+              maintenance.snapshot.policy.executionMs - maintenance.checkpoint.executionMs
+            )
+          : policy.limits.deadlineMs
+      },
+      admittedAt,
+      participation
+    });
+    if (continuationRoute) {
+      if (
+        placement.fingerprint !== continuationRoute.fingerprint.branchFingerprint ||
+        placement.scopeFingerprint !== continuationRoute.fingerprint.scopeFingerprint ||
+        policy.revisionId !== continuationRoute.fingerprint.policyRevisionId ||
+        curatorHash(profile) !== continuationRoute.fingerprint.modelFingerprint ||
+        promptFingerprint(
+          ["organization.curator", "organization.curator.repair", "organization.curator.support"],
+          promptPin,
+          profile.provider
+        ) !== continuationRoute.fingerprint.promptFingerprint ||
+        !planning ||
+        !isDeepStrictEqual(evidence, planning.snapshot.evidence)
+      )
+        throw new Error("organization.errors.conflict");
+      for (const prefix of continuationRoute.resolvedPrefix)
+        if (
+          !placement.pages.some(
+            (p) =>
+              p.pageId === prefix.pageId &&
+              p.revisionId === prefix.revisionId &&
+              p.fingerprint === prefix.fingerprint
+          )
+        )
+          throw new Error("organization.errors.conflict");
+    }
+    const checkpoint = CuratorCheckpointSchema.parse({
+      version: curatorVersion,
+      calls: 0,
+      tools: 3,
+      repairs: 0,
+      startedAt: admittedAt,
+      callPending: false,
+      waitingForModel: false,
+      proposal: null,
+      previousOutput: "",
+      error: null,
+      reportedInputTokens: 0,
+      reportedOutputTokens: 0,
+      costEstimate: 0,
+      usageCounts: { input: 0, output: 0, cost: 0 },
+      usageIncomplete: false
+    });
+    if (deferred) {
+      if (!deferred.checkpoint.proposal) throw new Error("organization.errors.invalid");
+      checkpoint.proposal = CuratorChangeSetSchema.parse({
+        ...deferred.checkpoint.proposal,
+        groupId: snapshot.groupId
+      });
+      validateCuratorProposal(snapshot, checkpoint.proposal);
+    } else if (planning) {
+      checkpoint.proposal = hierarchyRouteProposal(
+        snapshot,
+        planning,
+        (proposal) =>
+          proposalFitsBytes(snapshot, proposal) &&
+          withPromptPin(promptPin, () =>
+            curatorSupportPrompt(snapshot, { ...checkpoint, proposal })
+          ).length <=
+            Math.min(
+              120000,
+              Math.max(1000, (profile.contextWindow ?? 8192) - snapshot.outputTokens) * 2
+            )
+      );
+      validateCuratorProposal(snapshot, checkpoint.proposal);
+    }
+    const prompt = withPromptPin(promptPin, () =>
+      checkpoint.proposal
+        ? curatorSupportPrompt(snapshot, checkpoint)
+        : curatorPrompt(snapshot, checkpoint)
+    );
+    const availableOutput = (profile.contextWindow ?? 8192) - Math.ceil(prompt.length / 2) - 256;
+    if (availableOutput < 512) throw new Error("organization.errors.context");
+    snapshot.outputTokens = Math.min(snapshot.outputTokens, availableOutput);
+    if (
+      prompt.length >
+      Math.min(120000, Math.max(1000, (profile.contextWindow ?? 8192) - snapshot.outputTokens) * 2)
+    )
+      throw new Error("organization.errors.context");
+    if (continuationRoute) await this.authorize(snapshot);
+    if (maintenance) await maintenanceRepo.capacity(maintenance.id, 0, 0, new Date(now));
+    const id = await this.runs().create(snapshot, checkpoint);
+    this.options.wake();
+    return this.get(id);
+  }
+  async execute(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
+    const id = z.string().uuid().parse(job.payload.organizationRunId),
+      run = await this.get(id);
+    if (!run) throw new Error("organization.errors.invalid");
+    if (["applied", "rejected", "canceled"].includes(run.status))
+      return { organizationRunId: id, status: run.status };
+    const work = (clockSignal: AbortSignal) =>
+      withPromptPin(run.snapshot.promptPin, async () => {
+        const snapshot = run.snapshot,
+          checkpoint = structuredClone(run.checkpoint),
+          now = this.options.now ?? Date.now;
+        if (
+          snapshot.maintenanceRunId &&
+          (checkpoint.calls === 0 ||
+            (checkpoint.calls === 1 &&
+              checkpoint.callPending &&
+              checkpoint.waitingForModel &&
+              !(await this.runs().hasProviderAudit(id))))
+        ) {
+          const parent = await createAutomaticMaintenanceRepository(this.pool()).get(
+            snapshot.maintenanceRunId
+          );
+          checkpoint.executionBaseMs ??= parent?.checkpoint.executionMs ?? 0;
+          const consumed = Math.max(
+            0,
+            (parent?.checkpoint.executionMs ?? 0) - checkpoint.executionBaseMs
+          );
+          checkpoint.executionAdmittedAt = new Date(now() - consumed).toISOString();
+          checkpoint.callPending = false;
+          checkpoint.waitingForModel = false;
+          if (
+            checkpoint.error === "organization.errors.deadline" ||
+            checkpoint.error === "organization.errors.uncertain"
+          )
+            checkpoint.error = null;
+          await this.runs().checkpoint(id, run.status, checkpoint);
+        }
+        const deadline =
+          Date.parse(
+            snapshot.maintenanceRunId
+              ? (checkpoint.executionAdmittedAt ?? snapshot.admittedAt)
+              : snapshot.admittedAt
+          ) + snapshot.limits.deadlineMs;
+        if (["applied", "rejected", "canceled"].includes(run.status))
+          return { organizationRunId: id, status: run.status };
+        const apply = async () => {
+          try {
+            await this.repo().apply(id, false, validateCuratorProposal, () =>
+              this.authorize(snapshot)
+            );
+          } catch (e) {
+            if (!/organization.errors.(review|conflict)|wiki.errors.conflict/.test(String(e)))
+              throw e;
+          }
+          return { organizationRunId: id, status: (await this.get(id))!.status };
+        };
+        if (run.status === "awaiting_review") return apply();
+        if (checkpoint.callPending || checkpoint.error === "organization.errors.uncertain") {
+          checkpoint.error = "organization.errors.uncertain";
+          checkpoint.usageIncomplete = true;
+          await this.runs().checkpoint(id, "failed", checkpoint);
+          throw new Error(checkpoint.error);
+        }
+        if (
+          checkpoint.proposal &&
+          checkpoint.supportAssessment?.verdict.supported &&
+          checkpoint.supportAssessment.proposalHash === curatorHash(checkpoint.proposal)
+        ) {
+          await this.runs().propose(id, checkpoint.proposal, checkpoint, false);
+          return apply();
+        }
+        if (
+          run.status === "failed" &&
+          checkpoint.error &&
+          !["organization.errors.failed", "organization.errors.canceled"].includes(checkpoint.error)
+        )
+          throw new Error(checkpoint.error);
+        const timeout = AbortSignal.timeout(Math.max(1, deadline - now())),
+          combined = AbortSignal.any([signal, timeout, clockSignal]);
+        const guard = async () => {
+          combined.throwIfAborted();
+          await this.authorize(snapshot);
+          if (now() >= deadline) throw new Error("organization.errors.deadline");
+          if ((await this.get(id))?.status === "canceled")
+            throw new Error("organization.errors.canceled");
+          await this.repo().validate(snapshot);
+        };
+        const issues = (e: unknown) =>
+          e instanceof z.ZodError
+            ? e.issues.slice(0, 12).map((issue) => ({
+                path: issue.path.map(String).join(".").slice(0, 300),
+                message: issue.message.slice(0, 500)
+              }))
+            : [
+                {
+                  path: "proposal",
+                  message:
+                    String(e).match(/(?:organization|maintenance)\.errors\.[A-Za-z]+/)?.[0] ??
+                    "Return one valid JSON object matching all required fields."
+                }
+              ];
+        try {
+          while (true) {
+            await guard();
+            if (
+              checkpoint.calls >= snapshot.limits.modelCalls ||
+              checkpoint.tools >= snapshot.limits.tools
+            )
+              throw new Error("organization.errors.budget");
+            const checking = Boolean(checkpoint.proposal),
+              prompt = checking
+                ? curatorSupportPrompt(snapshot, checkpoint)
+                : curatorPrompt(snapshot, checkpoint),
+              maxOutput = checking
+                ? Math.min(
+                    snapshot.outputTokens,
+                    Math.max(
+                      1024,
+                      512 + hierarchyChangedHandles(checkpoint.proposal!).join("").length
+                    )
+                  )
+                : snapshot.outputTokens;
+            if (
+              prompt.length >
+              Math.min(
+                120000,
+                Math.max(1000, (snapshot.profile.contextWindow ?? 8192) - maxOutput) * 2
+              )
+            )
+              throw new Error("organization.errors.context");
+            if (snapshot.maintenanceRunId)
+              await createAutomaticMaintenanceRepository(this.pool()).reserve(
+                snapshot.maintenanceRunId,
+                id,
+                checkpoint.calls + 1,
+                estimateAiPlanningTokens(
+                  withOutputLanguageInstruction(prompt, snapshot.contentLanguage),
+                  snapshot.profile.provider === "openai-codex"
+                    ? renderPrompt("shared.codex_adapter_instruction")
+                    : "",
+                  maxOutput
+                ),
+                new Date(now())
+              );
+            checkpoint.calls++;
+            checkpoint.callPending = true;
+            checkpoint.waitingForModel = true;
+            await this.runs().checkpoint(id, "analyzing", checkpoint);
+            let result;
+            try {
+              result = await this.options.ai.runOrganizationTask(
+                snapshot.profile,
+                prompt,
+                {
+                  organizationRunId: id,
+                  organizationStep: checkpoint.calls,
+                  jobId: job.id,
+                  sourceItemIds: snapshot.sourceIds,
+                  operation: "wiki-organization",
+                  stage: checking ? "support" : "curate",
+                  origin: "organization",
+                  promptVersion: curatorVersion,
+                  contentLanguage: snapshot.contentLanguage,
+                  attempt: checkpoint.calls,
+                  onProviderStart: async () => {
+                    await this.runs().modelStarted(id, checkpoint.calls);
+                    checkpoint.waitingForModel = false;
+                  }
+                },
+                combined,
+                maxOutput,
+                async () => {
+                  await guard();
+                  if (snapshot.maintenanceRunId)
+                    await createAutomaticMaintenanceRepository(this.pool()).capacity(
+                      snapshot.maintenanceRunId
+                    );
+                }
+              );
+            } catch (e) {
+              checkpoint.usageIncomplete = true;
+              checkpoint.callPending = !checkpoint.waitingForModel;
+              checkpoint.error = checkpoint.callPending ? "organization.errors.uncertain" : null;
+              throw e;
+            }
+            checkpoint.callPending = false;
+            checkpoint.waitingForModel = false;
+            checkpoint.reportedInputTokens += result.inputTokens ?? 0;
+            checkpoint.reportedOutputTokens += result.outputTokens ?? 0;
+            checkpoint.costEstimate += result.costEstimate ?? 0;
+            checkpoint.usageIncomplete ||=
+              result.inputTokens === undefined ||
+              result.outputTokens === undefined ||
+              result.costEstimate === undefined;
+            checkpoint.tools++;
+            let failed = false;
+            if (checking) {
+              try {
+                const verdict = parseCuratorSupport(result.output, checkpoint.proposal!);
+                checkpoint.supportAssessment = {
+                  proposalHash: curatorHash(checkpoint.proposal),
+                  aiTaskRunId: result.aiTaskRunId,
+                  verdict
+                };
+                checkpoint.validationIssues = verdict.issues;
+                checkpoint.error = verdict.supported ? null : "organization.errors.evidence";
+                failed = !verdict.supported;
+              } catch (e) {
+                checkpoint.supportAssessment = null;
+                checkpoint.validationIssues = issues(e);
+                checkpoint.error = "organization.errors.invalid";
+                failed = true;
+              }
+              const artifact = {
+                  support: checkpoint.supportAssessment?.verdict ?? null,
+                  proposalHash: curatorHash(checkpoint.proposal),
+                  status: checkpoint.error ?? "supported"
+                },
+                canRepair =
+                  failed &&
+                  checkpoint.repairs < snapshot.limits.repairs &&
+                  !(
+                    snapshot.continuationRoute &&
+                    checkpoint.supportAssessment?.verdict.supported === false
+                  );
+              if (canRepair) {
+                checkpoint.repairs++;
+                if (checkpoint.supportAssessment?.verdict.supported === false)
+                  checkpoint.proposal = null;
+              }
+              await this.runs().step(
+                id,
+                checkpoint.calls,
+                checkpoint,
+                artifact,
+                result.aiTaskRunId
+              );
+              if (!failed) {
+                await guard();
+                await this.runs().propose(id, checkpoint.proposal, checkpoint, false);
+                return apply();
+              }
+              if (!canRepair) throw new Error(checkpoint.error!);
+            } else {
+              checkpoint.previousOutput =
+                typeof result.output === "string"
+                  ? result.output.slice(0, 90000)
+                  : JSON.stringify(result.output).slice(0, 90000);
+              try {
+                const proposal = parseCuratorProposal(result.output, snapshot);
+                if (
+                  hierarchyResourceDecision(proposal, snapshot.resources.maxProposalBytes)
+                    .decision !== "fits"
+                ) {
+                  checkpoint.proposal = proposal;
+                  checkpoint.supportAssessment = null;
+                  checkpoint.error = "organization.errors.scopeLimit";
+                  await this.runs().persistCuratorCandidate(id, proposal, checkpoint);
+                  await this.runs().step(
+                    id,
+                    checkpoint.calls,
+                    checkpoint,
+                    { proposal, status: "resource_deferred" },
+                    result.aiTaskRunId
+                  );
+                  throw new Error(checkpoint.error);
+                }
+                validateCuratorProposal(snapshot, proposal);
+                checkpoint.proposal = proposal;
+                checkpoint.supportAssessment = null;
+                checkpoint.error = null;
+                checkpoint.validationIssues = [];
+                await this.runs().persistCuratorCandidate(id, proposal, checkpoint);
+              } catch (e) {
+                if (String(e).includes("organization.errors.scopeLimit")) throw e;
+                checkpoint.validationIssues = issues(e);
+                checkpoint.error = "organization.errors.invalid";
+                failed = true;
+              }
+              const canRepair = failed && checkpoint.repairs < snapshot.limits.repairs;
+              if (canRepair) checkpoint.repairs++;
+              await this.runs().step(
+                id,
+                checkpoint.calls,
+                checkpoint,
+                {
+                  proposal: checkpoint.proposal,
+                  status: failed ? "invalid" : "structurally_valid"
+                },
+                result.aiTaskRunId
+              );
+              if (failed && !canRepair) throw new Error(checkpoint.error!);
+            }
+          }
+        } catch (e) {
+          checkpoint.error =
+            checkpoint.error === "organization.errors.uncertain"
+              ? checkpoint.error
+              : signal.aborted
+                ? "organization.errors.canceled"
+                : timeout.aborted || now() >= deadline
+                  ? "organization.errors.deadline"
+                  : organizationAiFailure(e);
+          await this.runs().checkpoint(id, "failed", checkpoint);
+          if (await this.runs().rejectValidation(id))
+            return { organizationRunId: id, status: "rejected" };
+          throw new Error(checkpoint.error);
+        }
+      });
+    return run.snapshot.maintenanceRunId
+      ? withAutomaticMaintenanceClock(
+          (at, elapsed, unobserved) =>
+            createAutomaticMaintenanceRepository(this.pool()).heartbeat(
+              run.snapshot.maintenanceRunId!,
+              at,
+              elapsed,
+              unobserved
+            ),
+          work,
+          this.options.now ?? Date.now
+        )
+      : work(new AbortController().signal);
+  }
 }

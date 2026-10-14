@@ -24,7 +24,9 @@ export const SearchEvidenceSchema = z
     sourceItemId: StableIdSchema,
     sourceTitle: z.string().min(1),
     sourceType: SourceItemTypeSchema,
-    breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
+    breadcrumbs: z
+      .array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict())
+      .default([]),
     documentId: StableIdSchema,
     chunkId: StableIdSchema,
     sourceSpanId: StableIdSchema.optional(),
@@ -63,7 +65,9 @@ export const AtomicNoteSearchResultSchema = z
     sourceItemId: StableIdSchema,
     sourceTitle: z.string().min(1),
     sourceType: SourceItemTypeSchema,
-    breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
+    breadcrumbs: z
+      .array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict())
+      .default([]),
     title: z.string().min(1),
     ideaStatement: z.string().min(1),
     excerpt: z.string(),
@@ -81,7 +85,9 @@ const GraphSearchContextSchema = z.object({
   sourceItemId: StableIdSchema,
   sourceTitle: z.string().min(1),
   sourceType: SourceItemTypeSchema,
-  breadcrumbs: z.array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict()).default([]),
+  breadcrumbs: z
+    .array(z.object({ id: StableIdSchema, title: z.string().min(1) }).strict())
+    .default([]),
   excerpt: z.string(),
   graphScore: z.number().min(0).max(1),
   finalScore: z.number().min(0).max(1)

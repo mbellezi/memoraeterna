@@ -1,10 +1,6 @@
 import { z } from "zod";
 
-import {
-  IsoDateTimeSchema,
-  Sha256Schema,
-  StableIdSchema
-} from "./primitives.js";
+import { IsoDateTimeSchema, Sha256Schema, StableIdSchema } from "./primitives.js";
 
 export const ObsidianSyncStatusSchema = z.enum([
   "pending",
@@ -29,9 +25,7 @@ export const ObsidianSyncEntityTypeSchema = z.enum([
   "source_relation"
 ]);
 
-export type ObsidianSyncEntityType = z.infer<
-  typeof ObsidianSyncEntityTypeSchema
->;
+export type ObsidianSyncEntityType = z.infer<typeof ObsidianSyncEntityTypeSchema>;
 
 export const ObsidianSyncFileSchema = z
   .object({

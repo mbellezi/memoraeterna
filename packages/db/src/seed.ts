@@ -89,7 +89,10 @@ export async function applyBaselineSeedIfNeeded(
   };
 }
 
-export async function verifyBaselineSeed(migrationsFolder: string, seedFolder: string): Promise<BaselineSeedPlan> {
+export async function verifyBaselineSeed(
+  migrationsFolder: string,
+  seedFolder: string
+): Promise<BaselineSeedPlan> {
   const plan = await readBaselineSeedPlan(migrationsFolder, seedFolder);
   const journal = await readMigrationJournal(migrationsFolder);
   const journalTags = journal.entries.map((entry) => entry.tag);
@@ -113,7 +116,9 @@ export async function readBaselineSeedPlan(
   migrationsFolder: string,
   seedFolder: string
 ): Promise<BaselineSeedPlan> {
-  const manifest = parseBaselineSeedManifest(await readFile(join(seedFolder, "manifest.json"), "utf8"));
+  const manifest = parseBaselineSeedManifest(
+    await readFile(join(seedFolder, "manifest.json"), "utf8")
+  );
   const journal = await readMigrationJournal(migrationsFolder);
   const journalByTag = new Map(journal.entries.map((entry) => [entry.tag, entry]));
   const includedMigrations: BaselineSeedMigration[] = [];

@@ -38,7 +38,12 @@ self.onmessage = (event: MessageEvent<unknown>) => {
       case "init":
         if (timer !== null) clearTimeout(timer);
         timer = null;
-        physics = createGraphPhysics(message.nodes, message.edges, message.settings, message.restored);
+        physics = createGraphPhysics(
+          message.nodes,
+          message.edges,
+          message.settings,
+          message.restored
+        );
         if (!message.restored) wake();
         break;
       case "configure":

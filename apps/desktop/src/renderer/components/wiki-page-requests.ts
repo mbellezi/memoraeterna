@@ -7,7 +7,12 @@ export function createWikiPageRequests() {
   };
   return {
     capture,
-    begin() { epoch += 1; return capture(); },
-    invalidate() { epoch += 1; }
+    begin() {
+      epoch += 1;
+      return capture();
+    },
+    invalidate() {
+      epoch += 1;
+    }
   };
 }

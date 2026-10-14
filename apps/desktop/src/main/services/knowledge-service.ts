@@ -1,8 +1,23 @@
-import { renderPrompt, capturePromptPin, stagePromptFingerprints, changedPromptIdentity } from "./prompt-runtime.js";
+import {
+  renderPrompt,
+  capturePromptPin,
+  stagePromptFingerprints,
+  changedPromptIdentity
+} from "./prompt-runtime.js";
 import { createEntityIdentityResolver } from "./entity-identity-resolution.js";
 import { matchSources } from "./source-relation-processing.js";
-import { AtomicNoteMatchingSettingsSchema, CanonicalMatchingSettingsSchema, type AtomicNoteMatchingSettings, type CanonicalMatchingSettings, SourceRelationSettingsSchema, type SourceRelationSettings } from "@app/domain";
-import { createRelationTypeResolver, defaultRelationTypeSimilarityThreshold } from "./relation-type-resolution.js";
+import {
+  AtomicNoteMatchingSettingsSchema,
+  CanonicalMatchingSettingsSchema,
+  type AtomicNoteMatchingSettings,
+  type CanonicalMatchingSettings,
+  SourceRelationSettingsSchema,
+  type SourceRelationSettings
+} from "@app/domain";
+import {
+  createRelationTypeResolver,
+  defaultRelationTypeSimilarityThreshold
+} from "./relation-type-resolution.js";
 import { sha256 } from "@app/conversion";
 import { readFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
@@ -147,7 +162,10 @@ export class KnowledgeService {
   public constructor(private readonly options: KnowledgeServiceOptions) {
     this.relationThreshold = clamp(options.relationThreshold ?? 0.72);
     this.summaryMaxInputCharacters = Math.max(2_000, options.summaryMaxInputCharacters ?? 12_000);
-    this.knowledgeGraphMaxInputCharacters = Math.max(2_000, options.knowledgeGraphMaxInputCharacters ?? 3_500);
+    this.knowledgeGraphMaxInputCharacters = Math.max(
+      2_000,
+      options.knowledgeGraphMaxInputCharacters ?? 3_500
+    );
     this.sourceDeletionService = new SourceDeletionService({
       getPool: options.getPool,
       getStorageSettings: options.getStorageSettings,
@@ -160,7 +178,9 @@ export class KnowledgeService {
     const query = input.query?.trim() ?? "";
     let queryEmbedding: number[] | undefined;
     let embeddingModel: string | undefined;
-    let embeddingIdentity:{embeddingSpaceKey:string;embeddingProvider:string;embeddingRuntime:string}|undefined;
+    let embeddingIdentity:
+      | { embeddingSpaceKey: string; embeddingProvider: string; embeddingRuntime: string }
+      | undefined;
     if (query && input.searchMode !== "traditional") {
       try {
         const generated = await this.options.aiService.runDefaultTask("embedding", query, {
@@ -169,61 +189,122 @@ export class KnowledgeService {
         });
         if (generated && Array.isArray(generated.output)) {
           const candidate = generated.output.map(Number);
-          if ((candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024)
-              && candidate.every(Number.isFinite)) {
+          if (
+            (candidate.length === 256 || candidate.length === 768 || candidate.length === 1_024) &&
+            candidate.every(Number.isFinite)
+          ) {
             queryEmbedding = candidate;
             embeddingModel = generated.modelId;
-            embeddingIdentity={embeddingSpaceKey:generated.embeddingSpaceKey??"",embeddingProvider:generated.providerId,embeddingRuntime:generated.runtime};
+            embeddingIdentity = {
+              embeddingSpaceKey: generated.embeddingSpaceKey ?? "",
+              embeddingProvider: generated.providerId,
+              embeddingRuntime: generated.runtime
+            };
           }
         }
       } catch {
         // Traditional catalog search remains available when vector search is unavailable.
       }
     }
-    return (await createLibraryRepository(this.requirePool()).listSources({
-      ...input, query,
-      ...(queryEmbedding && embeddingModel ? { queryEmbedding, embeddingModel,...embeddingIdentity } : {})
-    })).map((source) => ({
-      ...source, summary: source.summary ? normalizeSummaryText(source.summary) : null, updatedAt: source.updatedAt.toISOString()
-    }));
-  }
-
-  public async getGraphDashboard(mode: "sources" | "atomic_notes", sourceView: "relations" | "entities" = "relations") {
-    return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode, sourceView);
-  }
-
-  public async listSourceRelations(input: { sourceItemId: string; targetSourceItemId: string | null; offset: number; limit: number; relationId?: string | undefined }) {
-    return listSourceRelations(this.requirePool(), input.sourceItemId, input.targetSourceItemId, input.offset, input.limit, input.relationId);
-  }
-
-  public async reviewSourceRelation(input: { id: string; status: string; expectedUpdatedAt: string }) {
-    return createSourceRelationRepository(this.requirePool()).review(input.id, input.status, input.expectedUpdatedAt);
-  }
-
-  public async matchSourceRelations(sourceIds: string[], runKey: string, signal?: AbortSignal,
-    onProgress?: (progress: number, counts: { completed: number; total: number }) => void | Promise<void>, context: AiTaskLogContext = {}, regenerate = false) {
-    return matchSources({ pool: this.requirePool(), ai: this.options.aiService, sourceIds, runKey,
-      settings: SourceRelationSettingsSchema.parse(await this.options.getSourceRelationSettings?.() ?? {}),
-      contentLanguage: await this.options.getContentLanguage?.() ?? "en", regenerate,
-      ...(signal ? { signal } : {}), ...(onProgress ? { onProgress } : {}), context });
-  }
-
-  public async getGraphSourceConnectionDetails(sourceItemId: string, targetSourceItemId: string) {
-    return createKnowledgeGraphDashboardRepository(this.requirePool())
-      .getSourceConnectionDetails(sourceItemId, targetSourceItemId);
-  }
-
-  public async listLibrary(sourceTypes: SourceItemType[] = []) {
-    return (await createLibraryRepository(this.requirePool()).listSources({ sourceTypes })).map((source) => ({
+    return (
+      await createLibraryRepository(this.requirePool()).listSources({
+        ...input,
+        query,
+        ...(queryEmbedding && embeddingModel
+          ? { queryEmbedding, embeddingModel, ...embeddingIdentity }
+          : {})
+      })
+    ).map((source) => ({
       ...source,
       summary: source.summary ? normalizeSummaryText(source.summary) : null,
       updatedAt: source.updatedAt.toISOString()
     }));
   }
 
+  public async getGraphDashboard(
+    mode: "sources" | "atomic_notes",
+    sourceView: "relations" | "entities" = "relations"
+  ) {
+    return createKnowledgeGraphDashboardRepository(this.requirePool()).get(mode, sourceView);
+  }
+
+  public async listSourceRelations(input: {
+    sourceItemId: string;
+    targetSourceItemId: string | null;
+    offset: number;
+    limit: number;
+    relationId?: string | undefined;
+  }) {
+    return listSourceRelations(
+      this.requirePool(),
+      input.sourceItemId,
+      input.targetSourceItemId,
+      input.offset,
+      input.limit,
+      input.relationId
+    );
+  }
+
+  public async reviewSourceRelation(input: {
+    id: string;
+    status: string;
+    expectedUpdatedAt: string;
+  }) {
+    return createSourceRelationRepository(this.requirePool()).review(
+      input.id,
+      input.status,
+      input.expectedUpdatedAt
+    );
+  }
+
+  public async matchSourceRelations(
+    sourceIds: string[],
+    runKey: string,
+    signal?: AbortSignal,
+    onProgress?: (
+      progress: number,
+      counts: { completed: number; total: number }
+    ) => void | Promise<void>,
+    context: AiTaskLogContext = {},
+    regenerate = false
+  ) {
+    return matchSources({
+      pool: this.requirePool(),
+      ai: this.options.aiService,
+      sourceIds,
+      runKey,
+      settings: SourceRelationSettingsSchema.parse(
+        (await this.options.getSourceRelationSettings?.()) ?? {}
+      ),
+      contentLanguage: (await this.options.getContentLanguage?.()) ?? "en",
+      regenerate,
+      ...(signal ? { signal } : {}),
+      ...(onProgress ? { onProgress } : {}),
+      context
+    });
+  }
+
+  public async getGraphSourceConnectionDetails(sourceItemId: string, targetSourceItemId: string) {
+    return createKnowledgeGraphDashboardRepository(this.requirePool()).getSourceConnectionDetails(
+      sourceItemId,
+      targetSourceItemId
+    );
+  }
+
+  public async listLibrary(sourceTypes: SourceItemType[] = []) {
+    return (await createLibraryRepository(this.requirePool()).listSources({ sourceTypes })).map(
+      (source) => ({
+        ...source,
+        summary: source.summary ? normalizeSummaryText(source.summary) : null,
+        updatedAt: source.updatedAt.toISOString()
+      })
+    );
+  }
+
   public async getSourceDocument(input: { sourceItemId: string; documentId: string }) {
     const document = await createDocumentRepository(this.requirePool()).findById(input.documentId);
-    if (!document || document.sourceItemId !== input.sourceItemId) throw new Error("errors.common.validationFailed");
+    if (!document || document.sourceItemId !== input.sourceItemId)
+      throw new Error("errors.common.validationFailed");
     return { title: document.title, markdown: document.canonicalMarkdown };
   }
 
@@ -233,31 +314,41 @@ export class KnowledgeService {
     if (!source) return null;
     const documents = await createDocumentRepository(pool).listBySourceItem(sourceItemId);
     const sourceAssets = await createDocumentAssetRepository(pool).listBySourceItem(sourceItemId);
-    const documentDetails = await Promise.all(documents.map(async (document) => ({
-      id: document.id,
-      title: document.title,
-      canonicalMarkdown: document.canonicalMarkdown,
-      language: document.language,
-      chunks: (await createChunkRepository(pool).listByDocument(document.id)).map((chunk) => ({
-        id: chunk.id,
-        content: chunk.content,
-        chunkIndex: chunk.chunkIndex,
-        sourceSpanId: chunk.sourceSpanId
-      })),
-      assets: (await createDocumentAssetRepository(pool).listByDocument(document.id)).map((asset) => ({
-        id: asset.id,
-        originalFileName: asset.originalFileName,
-        mimeType: asset.mimeType,
-        role: asset.role
+    const documentDetails = await Promise.all(
+      documents.map(async (document) => ({
+        id: document.id,
+        title: document.title,
+        canonicalMarkdown: document.canonicalMarkdown,
+        language: document.language,
+        chunks: (await createChunkRepository(pool).listByDocument(document.id)).map((chunk) => ({
+          id: chunk.id,
+          content: chunk.content,
+          chunkIndex: chunk.chunkIndex,
+          sourceSpanId: chunk.sourceSpanId
+        })),
+        assets: (await createDocumentAssetRepository(pool).listByDocument(document.id)).map(
+          (asset) => ({
+            id: asset.id,
+            originalFileName: asset.originalFileName,
+            mimeType: asset.mimeType,
+            role: asset.role
+          })
+        )
       }))
-    })));
+    );
     const notes = await createAtomicNoteRepository(pool).listBySourceItem(sourceItemId);
     const relations = await createAtomicNoteRelationRepository(pool).listBySourceItem(sourceItemId);
     const summaries = await createSourceSummaryRepository(pool).listBySourceItem(sourceItemId);
     const graph = await createKnowledgeGraphRepository(pool).listSourceElements(sourceItemId);
     return {
-      history: (await createDocumentRepository(pool).listHistory(source.id)).map((item) => ({ ...item, createdAt: item.createdAt.toISOString() })),
-      breadcrumbs: (await createHierarchicalIngestionRepository(pool).getBreadcrumbs([source.id])).get(source.id) ?? [],
+      history: (await createDocumentRepository(pool).listHistory(source.id)).map((item) => ({
+        ...item,
+        createdAt: item.createdAt.toISOString()
+      })),
+      breadcrumbs:
+        (await createHierarchicalIngestionRepository(pool).getBreadcrumbs([source.id])).get(
+          source.id
+        ) ?? [],
       parentSourceItemId: source.parentSourceItemId,
       id: source.id,
       type: source.type,
@@ -269,7 +360,10 @@ export class KnowledgeService {
       metadata: source.metadata,
       updatedAt: source.updatedAt.toISOString(),
       assets: sourceAssets.map((asset) => ({
-        id: asset.id, originalFileName: asset.originalFileName, mimeType: asset.mimeType, role: asset.role
+        id: asset.id,
+        originalFileName: asset.originalFileName,
+        mimeType: asset.mimeType,
+        role: asset.role
       })),
       documents: documentDetails,
       summaries: summaries.map((summary) => ({
@@ -308,10 +402,14 @@ export class KnowledgeService {
   public async listPendingNotes() {
     const pool = this.requirePool();
     const notes = await createAtomicNoteRepository(pool).listPending();
-    return await Promise.all(notes.map(async (note) => {
-      const source = await createSourceItemRepository(pool).findById(note.createdFromSourceItemId);
-      return { ...serializeNote(note), sourceTitle: source?.title ?? null };
-    }));
+    return await Promise.all(
+      notes.map(async (note) => {
+        const source = await createSourceItemRepository(pool).findById(
+          note.createdFromSourceItemId
+        );
+        return { ...serializeNote(note), sourceTitle: source?.title ?? null };
+      })
+    );
   }
 
   public async reviewNote(input: {
@@ -329,11 +427,12 @@ export class KnowledgeService {
   public async resolveAssetPath(assetId: string): Promise<string> {
     const asset = await createDocumentAssetRepository(this.requirePool()).findById(assetId);
     if (!asset) throw new Error("errors.common.notFound");
-    const basePath = asset.storageBase === "app_internal"
-      ? join(this.options.userDataPath, "assets")
-      : asset.storageBase === "uploaded_files"
-        ? await this.options.getUploadedFilesBasePath()
-        : null;
+    const basePath =
+      asset.storageBase === "app_internal"
+        ? join(this.options.userDataPath, "assets")
+        : asset.storageBase === "uploaded_files"
+          ? await this.options.getUploadedFilesBasePath()
+          : null;
     if (!basePath) throw new Error("errors.common.notFound");
     const safeBase = resolve(basePath);
     const absolutePath = resolve(safeBase, asset.relativePath);
@@ -367,27 +466,39 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.metadata.supersededByDocumentId || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    if (
+      !source ||
+      !document ||
+      document.metadata.supersededByDocumentId ||
+      document.sourceItemId !== source.id
+    )
+      throw new Error("source_document_not_found");
     const chunks = await createChunkRepository(pool).listByDocument(documentId);
     const summary = await generateSummaryFromChunks(
       chunks.length > 0
         ? chunks.map((chunk) => ({ id: chunk.id, content: chunk.content }))
         : [{ id: document.id, content: document.canonicalMarkdown }],
-      async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
-        "summarization",
-        prompt,
-        {
-          ...withAiSourceItems(logContext, [sourceItemId]),
-          ...callContext,
-          documentId,
-          onProgress: (event) => onProgress?.(event.progress)
-        },
-        signal
-      )),
+      async (prompt, callContext) =>
+        toKnowledgeExecution(
+          await this.options.aiService.runDefaultTask(
+            "summarization",
+            prompt,
+            {
+              ...withAiSourceItems(logContext, [sourceItemId]),
+              ...callContext,
+              documentId,
+              onProgress: (event) => onProgress?.(event.progress)
+            },
+            signal
+          )
+        ),
       this.summaryMaxInputCharacters,
-      Math.max(0, Math.floor(
-        await this.options.getSummaryMinimumWordCount?.() ?? defaultSummaryMinimumWordCount
-      ))
+      Math.max(
+        0,
+        Math.floor(
+          (await this.options.getSummaryMinimumWordCount?.()) ?? defaultSummaryMinimumWordCount
+        )
+      )
     );
     if (!summary) return { configured: false, generated: false, mapReduce: false };
     if (summary.summary.length === 0) {
@@ -406,16 +517,27 @@ export class KnowledgeService {
     const finalExecution = summary.executions.at(-1);
     if (!finalExecution) throw new Error("summary_execution_missing");
     const summaryHierarchy = createHierarchicalIngestionRepository(pool);
-    const summaryRevisionId = await summaryHierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+    const summaryRevisionId = await summaryHierarchy.ensureCurrentDocumentRevision(
+      document.id,
+      document.contentHash
+    );
     const summaryGenerationId = await summaryHierarchy.createKnowledgeGeneration({
       sourceItemId,
       documentRevisionId: summaryRevisionId,
       stage: "summarization",
-      ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
+      ingestionRunId:
+        typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
       jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
       aiTaskRunId: finalExecution.aiTaskRunId,
       inputHash: sha256(document.canonicalMarkdown),
-      metadata: { promptVersion: summaryPromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,summary.executions.map(e=>e.providerId)).summarization }
+      metadata: {
+        promptVersion: summaryPromptVersion,
+        promptFingerprint: stagePromptFingerprints(
+          capturePromptPin(),
+          false,
+          summary.executions.map((e) => e.providerId)
+        ).summarization
+      }
     });
     const persisted = await createSourceSummaryRepository(pool).create({
       sourceItemId,
@@ -512,24 +634,48 @@ export class KnowledgeService {
     for (const row of rows.rows) grouped.set(row.rootId, [...(grouped.get(row.rootId) ?? []), row]);
     let generatedCount = 0;
     let reusedCount = 0;
-    const blockedRoots: Array<{ sourceItemId: string; missingSummaryCount: number; totalSubparts: number }> = [];
+    const blockedRoots: Array<{
+      sourceItemId: string;
+      missingSummaryCount: number;
+      totalSubparts: number;
+    }> = [];
     for (const children of grouped.values()) {
       const root = children[0];
       if (!root) continue;
-      const missingSummaryCount = children.filter((child) => !child.summary || !child.summaryId || !child.summaryHash).length;
-      const summarizedChildren = children.filter((child): child is typeof child & {
-        summaryId: string; summary: string; summaryHash: string;
-      } => Boolean(child.summary && child.summaryId && child.summaryHash));
+      const missingSummaryCount = children.filter(
+        (child) => !child.summary || !child.summaryId || !child.summaryHash
+      ).length;
+      const summarizedChildren = children.filter(
+        (
+          child
+        ): child is typeof child & {
+          summaryId: string;
+          summary: string;
+          summaryHash: string;
+        } => Boolean(child.summary && child.summaryId && child.summaryHash)
+      );
       if (summarizedChildren.length === 0) {
         await createSourceSummaryRepository(pool).clearCurrent(root.rootId);
-        await createSourceItemRepository(pool).update(root.rootId, { summary: null, summaryGeneratedAt: null });
+        await createSourceItemRepository(pool).update(root.rootId, {
+          summary: null,
+          summaryGeneratedAt: null
+        });
         updateGroupedChildSummary(grouped, root.rootId, null);
-        blockedRoots.push({ sourceItemId: root.rootId, missingSummaryCount, totalSubparts: children.length });
+        blockedRoots.push({
+          sourceItemId: root.rootId,
+          missingSummaryCount,
+          totalSubparts: children.length
+        });
         continue;
       }
-      const promptIdentity=changedPromptIdentity(["summary.aggregate"]);
-      const inputHash = sha256(summarizedChildren.map((child) => `${child.childId}:${child.summaryHash}`).join("\n")+(promptIdentity?`\n${promptIdentity}`:""));
-      const current = (await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)).find((summary) => summary.isCurrent);
+      const promptIdentity = changedPromptIdentity(["summary.aggregate"]);
+      const inputHash = sha256(
+        summarizedChildren.map((child) => `${child.childId}:${child.summaryHash}`).join("\n") +
+          (promptIdentity ? `\n${promptIdentity}` : "")
+      );
+      const current = (
+        await createSourceSummaryRepository(pool).listBySourceItem(root.rootId)
+      ).find((summary) => summary.isCurrent);
       if (!forceRegeneration && current?.inputHash === inputHash) {
         reusedCount += 1;
         continue;
@@ -542,8 +688,12 @@ export class KnowledgeService {
         "summarization",
         prompt,
         {
-          ...withAiSourceItems(logContext, [root.rootId, ...children.map((child) => child.childId)]),
-          operation: "hierarchy_summary", promptVersion: hierarchyAggregateSummaryPromptVersion,
+          ...withAiSourceItems(logContext, [
+            root.rootId,
+            ...children.map((child) => child.childId)
+          ]),
+          operation: "hierarchy_summary",
+          promptVersion: hierarchyAggregateSummaryPromptVersion,
           sourceItemId: root.rootId,
           documentId: root.documentId
         },
@@ -553,17 +703,27 @@ export class KnowledgeService {
       const summary = normalizeSummaryText(execution.output);
       if (summary.length === 0) {
         await createSourceSummaryRepository(pool).clearCurrent(root.rootId);
-        await createSourceItemRepository(pool).update(root.rootId, { summary: null, summaryGeneratedAt: null });
+        await createSourceItemRepository(pool).update(root.rootId, {
+          summary: null,
+          summaryGeneratedAt: null
+        });
         updateGroupedChildSummary(grouped, root.rootId, null);
         continue;
       }
       const hierarchy = createHierarchicalIngestionRepository(pool);
-      const revisionId = await hierarchy.ensureCurrentDocumentRevision(root.documentId, root.documentHash);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(
+        root.documentId,
+        root.documentHash
+      );
       const generationId = await hierarchy.createKnowledgeGeneration({
-        sourceItemId: root.rootId, documentRevisionId: revisionId, stage: "aggregateSummarization",
-        ingestionRunId: typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
+        sourceItemId: root.rootId,
+        documentRevisionId: revisionId,
+        stage: "aggregateSummarization",
+        ingestionRunId:
+          typeof logContext.ingestionRunId === "string" ? logContext.ingestionRunId : null,
         jobId: typeof logContext.jobId === "string" ? logContext.jobId : null,
-        aiTaskRunId: execution.aiTaskRunId, inputHash,
+        aiTaskRunId: execution.aiTaskRunId,
+        inputHash,
         metadata: {
           promptVersion: hierarchyAggregateSummaryPromptVersion,
           batchId,
@@ -572,18 +732,29 @@ export class KnowledgeService {
         }
       });
       const persisted = await createSourceSummaryRepository(pool).create({
-        sourceItemId: root.rootId, generationId, summary, language: execution.outputLanguage ?? root.rootLanguage,
-        profileId: execution.profileId, aiTaskRunId: execution.aiTaskRunId, provider: execution.providerId,
-        model: execution.modelId, runtime: execution.runtime,
-        promptVersion: hierarchyAggregateSummaryPromptVersion, inputHash,
-        outputHash: sha256(summary), metadata: {
+        sourceItemId: root.rootId,
+        generationId,
+        summary,
+        language: execution.outputLanguage ?? root.rootLanguage,
+        profileId: execution.profileId,
+        aiTaskRunId: execution.aiTaskRunId,
+        provider: execution.providerId,
+        model: execution.modelId,
+        runtime: execution.runtime,
+        promptVersion: hierarchyAggregateSummaryPromptVersion,
+        inputHash,
+        outputHash: sha256(summary),
+        metadata: {
           aggregate: true,
           batchId,
           childSummaryIds: summarizedChildren.map((child) => child.summaryId),
           skippedSubpartCount: missingSummaryCount
         }
       });
-      await createSourceItemRepository(pool).update(root.rootId, { summary, summaryGeneratedAt: persisted.generatedAt });
+      await createSourceItemRepository(pool).update(root.rootId, {
+        summary,
+        summaryGeneratedAt: persisted.generatedAt
+      });
       updateGroupedChildSummary(grouped, root.rootId, {
         id: persisted.id,
         summary,
@@ -619,37 +790,45 @@ export class KnowledgeService {
     try {
       const source = await createSourceItemRepository(pool).findById(sourceItemId);
       const document = await createDocumentRepository(pool).findById(documentId);
-      if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+      if (!source || !document || document.sourceItemId !== source.id)
+        throw new Error("source_document_not_found");
       const chunks = await createChunkRepository(pool).listByDocument(documentId);
-      if (chunks.length === 0) return { configured: true, generatedCount: 0, noteIds: [] as string[] };
+      if (chunks.length === 0)
+        return { configured: true, generatedCount: 0, noteIds: [] as string[] };
       stage = "ai_execution";
       const generatedResult = await generateAtomicNoteCandidates(
         source,
         chunks,
         async (prompt, callContext) => {
-          execution = toKnowledgeExecution(await this.options.aiService.runDefaultTask(
-            "atomic-note-generation",
-            prompt,
-            {
-              ...structuredLogContext,
-              ...callContext,
-              sourceItemId,
-              documentId,
-              stage: "atomic_note_generation",
-              onProgress: (event) => onProgress?.(event.progress)
-            },
-            signal
-          ));
+          execution = toKnowledgeExecution(
+            await this.options.aiService.runDefaultTask(
+              "atomic-note-generation",
+              prompt,
+              {
+                ...structuredLogContext,
+                ...callContext,
+                sourceItemId,
+                documentId,
+                stage: "atomic_note_generation",
+                onProgress: (event) => onProgress?.(event.progress)
+              },
+              signal
+            )
+          );
           stage = "output_validation";
           return execution;
         }
       );
-      if (!generatedResult) return { configured: false, generatedCount: 0, noteIds: [] as string[] };
+      if (!generatedResult)
+        return { configured: false, generatedCount: 0, noteIds: [] as string[] };
       const { output: parsed } = generatedResult;
       execution = generatedResult.execution;
       stage = "persistence";
       const hierarchy = createHierarchicalIngestionRepository(pool);
-      const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
+      const revisionId = await hierarchy.ensureCurrentDocumentRevision(
+        document.id,
+        document.contentHash
+      );
       const generationId = await hierarchy.createKnowledgeGeneration({
         sourceItemId,
         documentRevisionId: revisionId,
@@ -658,7 +837,15 @@ export class KnowledgeService {
         jobId: logContext.jobId ?? null,
         aiTaskRunId: execution.aiTaskRunId,
         inputHash: sha256(document.canonicalMarkdown),
-        metadata: { promptVersion: atomicNotePromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,execution.providerId).atomicNotes,promptComplete:false }
+        metadata: {
+          promptVersion: atomicNotePromptVersion,
+          promptFingerprint: stagePromptFingerprints(
+            capturePromptPin(),
+            false,
+            execution.providerId
+          ).atomicNotes,
+          promptComplete: false
+        }
       });
       const repository = createAtomicNoteRepository(pool);
       const noteIds: string[] = [];
@@ -669,12 +856,14 @@ export class KnowledgeService {
         });
         const primary = evidence[0];
         if (!primary) continue;
-        const generationKey = sha256(JSON.stringify({
-          promptVersion: atomicNotePromptVersion,
-          title: generated.title,
-          ideaStatement: generated.ideaStatement,
-          evidenceChunkIds: generated.evidenceChunkIds.toSorted()
-        }));
+        const generationKey = sha256(
+          JSON.stringify({
+            promptVersion: atomicNotePromptVersion,
+            title: generated.title,
+            ideaStatement: generated.ideaStatement,
+            evidenceChunkIds: generated.evidenceChunkIds.toSorted()
+          })
+        );
         const note = await repository.upsertGenerated({
           generationId,
           title: generated.title,
@@ -703,18 +892,26 @@ export class KnowledgeService {
       await hierarchy.completeKnowledgeGeneration(generationId);
       return { configured: true, generatedCount: noteIds.length, noteIds };
     } catch (error) {
-      logStructuredError(this.options.logger, "atomic_note_generation_failed", {
-        ...structuredLogContext,
-        sourceItemId,
-        documentId,
-        stage,
-        taskType: "atomic-note-generation",
-        profileId: execution?.profileId ?? null,
-        providerId: execution?.providerId ?? null,
-        modelId: execution?.modelId ?? null,
-        runtime: execution?.runtime ?? null,
-        aiTaskRunId: execution?.aiTaskRunId ?? null
-      }, error, stage === "output_validation" ? "atomic_note_output_invalid" : "atomic_note_generation_failed");
+      logStructuredError(
+        this.options.logger,
+        "atomic_note_generation_failed",
+        {
+          ...structuredLogContext,
+          sourceItemId,
+          documentId,
+          stage,
+          taskType: "atomic-note-generation",
+          profileId: execution?.profileId ?? null,
+          providerId: execution?.providerId ?? null,
+          modelId: execution?.modelId ?? null,
+          runtime: execution?.runtime ?? null,
+          aiTaskRunId: execution?.aiTaskRunId ?? null
+        },
+        error,
+        stage === "output_validation"
+          ? "atomic_note_output_invalid"
+          : "atomic_note_generation_failed"
+      );
       throw error;
     }
   }
@@ -728,10 +925,18 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    if (!source || !document || document.sourceItemId !== source.id)
+      throw new Error("source_document_not_found");
     const chunks = await createChunkRepository(pool).listByDocument(documentId);
     if (chunks.length === 0) {
-      return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+      return {
+        configured: true,
+        generated: false,
+        projected: false,
+        entityCount: 0,
+        claimCount: 0,
+        relationCount: 0
+      };
     }
     const notes = context.includeAtomicNotesGraph
       ? await createAtomicNoteRepository(pool).listGraphInputsBySourceItem(sourceItemId)
@@ -761,21 +966,31 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
+    if (!source || !document || document.sourceItemId !== source.id)
+      throw new Error("source_document_not_found");
     const chunks = await createChunkRepository(pool).listByDocument(documentId);
     if (chunks.length === 0) {
-      return { configured: true, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+      return {
+        configured: true,
+        generated: false,
+        projected: false,
+        entityCount: 0,
+        claimCount: 0,
+        relationCount: 0
+      };
     }
     return this.generateKnowledgeGraphFromInputs(
       sourceItemId,
       documentId,
-      [{
-        id: `catalog:${sourceItemId}`,
-        title: source.title,
-        ideaStatement: "Source catalog metadata",
-        bodyMarkdown: chunks.map((chunk) => chunk.content).join("\n\n"),
-        evidenceChunkIds: chunks.map((chunk) => chunk.id)
-      }],
+      [
+        {
+          id: `catalog:${sourceItemId}`,
+          title: source.title,
+          ideaStatement: "Source catalog metadata",
+          bodyMarkdown: chunks.map((chunk) => chunk.content).join("\n\n"),
+          evidenceChunkIds: chunks.map((chunk) => chunk.id)
+        }
+      ],
       [],
       context,
       signal,
@@ -795,75 +1010,77 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const source = await createSourceItemRepository(pool).findById(sourceItemId);
     const document = await createDocumentRepository(pool).findById(documentId);
-    if (!source || !document || document.sourceItemId !== source.id) throw new Error("source_document_not_found");
-    const contentLanguage = await this.options.getContentLanguage?.() ?? "en";
+    if (!source || !document || document.sourceItemId !== source.id)
+      throw new Error("source_document_not_found");
+    const contentLanguage = (await this.options.getContentLanguage?.()) ?? "en";
     const completedBatches = parseKnowledgeGraphBatchCheckpoints(context.completedBatches);
-    const extractionLimits = await this.options.getKnowledgeGraphLimits?.()
-      ?? { maxEntities: 250, maxRelations: 500 };
-    const canonicalSettings = CanonicalMatchingSettingsSchema.parse(await this.options.getCanonicalMatchingSettings?.() ?? {});
+    const extractionLimits = (await this.options.getKnowledgeGraphLimits?.()) ?? {
+      maxEntities: 250,
+      maxRelations: 500
+    };
+    const canonicalSettings = CanonicalMatchingSettingsSchema.parse(
+      (await this.options.getCanonicalMatchingSettings?.()) ?? {}
+    );
     const resolveTypes = createRelationTypeResolver({
       settings: canonicalSettings,
-      pool, ai: this.options.aiService,
-      threshold: await this.options.getRelationTypeSimilarityThreshold?.() ?? defaultRelationTypeSimilarityThreshold,
-      context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
+      pool,
+      ai: this.options.aiService,
+      threshold:
+        (await this.options.getRelationTypeSimilarityThreshold?.()) ??
+        defaultRelationTypeSimilarityThreshold,
+      context: {
+        sourceItemId,
+        documentId,
+        ...(context.jobId ? { jobId: context.jobId } : {}),
+        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {})
+      },
       ...(signal ? { signal } : {})
     });
     const resolveEntities = createEntityIdentityResolver({
       settings: canonicalSettings,
-      pool, ai: this.options.aiService, language: contentLanguage,
-      threshold: await this.options.getEntityIdentitySimilarityThreshold?.() ?? 0.92,
-      context: { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) },
+      pool,
+      ai: this.options.aiService,
+      language: contentLanguage,
+      threshold: (await this.options.getEntityIdentitySimilarityThreshold?.()) ?? 0.92,
+      context: {
+        sourceItemId,
+        documentId,
+        ...(context.jobId ? { jobId: context.jobId } : {}),
+        ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {})
+      },
       ...(signal ? { signal } : {})
     });
-    const trace = <T>(operation: string, run: () => Promise<T>, details: Record<string, unknown> = {}) =>
-      this.options.aiService.traceOperation?.(operation, { sourceItemId, documentId, ...(context.jobId ? { jobId: context.jobId } : {}), ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}) }, run, details) ?? run();
+    const trace = <T>(
+      operation: string,
+      run: () => Promise<T>,
+      details: Record<string, unknown> = {}
+    ) =>
+      this.options.aiService.traceOperation?.(
+        operation,
+        {
+          sourceItemId,
+          documentId,
+          ...(context.jobId ? { jobId: context.jobId } : {}),
+          ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {})
+        },
+        run,
+        details
+      ) ?? run();
     const resolveRelations = async (batch: Parameters<typeof resolveTypes>[0]) => {
-      const entities = await trace("entity_canonicalization", () => resolveEntities(batch), { entities: batch.entities.length });
-      return trace("relation_canonicalization", () => resolveTypes(entities), { relations: batch.relations.length });
+      const entities = await trace("entity_canonicalization", () => resolveEntities(batch), {
+        entities: batch.entities.length
+      });
+      return trace("relation_canonicalization", () => resolveTypes(entities), {
+        relations: batch.relations.length
+      });
     };
     let sourceCheckpoints: KnowledgeGraphBatchCheckpoint[] = [];
     const sourceGraph = await generateKnowledgeGraphFromAtomicNotes(
       source,
       sourceInputs,
-      async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
-        "knowledge-graph-generation",
-        prompt,
-        {
-          ...(context.jobId ? { jobId: context.jobId } : {}),
-          ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
-          sourceItemId,
-          documentId,
-          contentLanguage,
-          ...callContext,
-          stage: "knowledge_graph_generation",
-          onProgress: (event) => context.onProgress?.(event.progress)
-        },
-        signal
-      )),
-      this.knowledgeGraphMaxInputCharacters,
-      {
-        completedBatches,
-        inputKind: processingMode ? "catalog_metadata" : "source_chunks",
-        resolveRelations,
-        checkpointNamespace: "source",
-        contentLanguage,
-        extractionLimits,
-        ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
-          sourceCheckpoints = checkpoints;
-          const multiplier = atomicNoteInputs.length > 0 ? 2 : 1;
-          await context.onBatchCompleted!({ completed, total: total * multiplier, checkpoints });
-        } } : {})
-      }
-    );
-    if (!sourceGraph) {
-      return { configured: false, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
-    }
-    sourceCheckpoints = sourceGraph.checkpoints;
-    const atomicGraph = atomicNoteInputs.length > 0
-      ? await generateKnowledgeGraphFromAtomicNotes(
-          source,
-          atomicNoteInputs,
-          async (prompt, callContext) => toKnowledgeExecution(await this.options.aiService.runDefaultTask(
+      async (prompt, callContext) =>
+        toKnowledgeExecution(
+          await this.options.aiService.runDefaultTask(
             "knowledge-graph-generation",
             prompt,
             {
@@ -873,30 +1090,99 @@ export class KnowledgeService {
               documentId,
               contentLanguage,
               ...callContext,
-              stage: "atomic_note_knowledge_graph_generation",
+              stage: "knowledge_graph_generation",
               onProgress: (event) => context.onProgress?.(event.progress)
             },
             signal
-          )),
-          this.knowledgeGraphMaxInputCharacters,
-          {
-            completedBatches,
-            inputKind: "atomic_notes",
-            resolveRelations,
-            checkpointNamespace: "atomic_notes",
-            contentLanguage,
-            ...(context.onBatchCompleted ? { onBatchCompleted: async ({ completed, total, checkpoints }) => {
-              await context.onBatchCompleted!({
-                completed: sourceCheckpoints.length + completed,
-                total: sourceCheckpoints.length + total,
-                checkpoints: [...sourceCheckpoints, ...checkpoints]
-              });
-            } } : {})
-          }
-        )
-      : null;
+          )
+        ),
+      this.knowledgeGraphMaxInputCharacters,
+      {
+        completedBatches,
+        inputKind: processingMode ? "catalog_metadata" : "source_chunks",
+        resolveRelations,
+        checkpointNamespace: "source",
+        contentLanguage,
+        extractionLimits,
+        ...(context.onBatchCompleted
+          ? {
+              onBatchCompleted: async ({ completed, total, checkpoints }) => {
+                sourceCheckpoints = checkpoints;
+                const multiplier = atomicNoteInputs.length > 0 ? 2 : 1;
+                await context.onBatchCompleted!({
+                  completed,
+                  total: total * multiplier,
+                  checkpoints
+                });
+              }
+            }
+          : {})
+      }
+    );
+    if (!sourceGraph) {
+      return {
+        configured: false,
+        generated: false,
+        projected: false,
+        entityCount: 0,
+        claimCount: 0,
+        relationCount: 0
+      };
+    }
+    sourceCheckpoints = sourceGraph.checkpoints;
+    const atomicGraph =
+      atomicNoteInputs.length > 0
+        ? await generateKnowledgeGraphFromAtomicNotes(
+            source,
+            atomicNoteInputs,
+            async (prompt, callContext) =>
+              toKnowledgeExecution(
+                await this.options.aiService.runDefaultTask(
+                  "knowledge-graph-generation",
+                  prompt,
+                  {
+                    ...(context.jobId ? { jobId: context.jobId } : {}),
+                    ...(context.ingestionRunId ? { ingestionRunId: context.ingestionRunId } : {}),
+                    sourceItemId,
+                    documentId,
+                    contentLanguage,
+                    ...callContext,
+                    stage: "atomic_note_knowledge_graph_generation",
+                    onProgress: (event) => context.onProgress?.(event.progress)
+                  },
+                  signal
+                )
+              ),
+            this.knowledgeGraphMaxInputCharacters,
+            {
+              completedBatches,
+              inputKind: "atomic_notes",
+              resolveRelations,
+              checkpointNamespace: "atomic_notes",
+              contentLanguage,
+              ...(context.onBatchCompleted
+                ? {
+                    onBatchCompleted: async ({ completed, total, checkpoints }) => {
+                      await context.onBatchCompleted!({
+                        completed: sourceCheckpoints.length + completed,
+                        total: sourceCheckpoints.length + total,
+                        checkpoints: [...sourceCheckpoints, ...checkpoints]
+                      });
+                    }
+                  }
+                : {})
+            }
+          )
+        : null;
     if (atomicNoteInputs.length > 0 && !atomicGraph) {
-      return { configured: false, generated: false, projected: false, entityCount: 0, claimCount: 0, relationCount: 0 };
+      return {
+        configured: false,
+        generated: false,
+        projected: false,
+        entityCount: 0,
+        claimCount: 0,
+        relationCount: 0
+      };
     }
     const generated = {
       batches: [...sourceGraph.batches, ...(atomicGraph?.batches ?? [])],
@@ -907,50 +1193,76 @@ export class KnowledgeService {
     if (!finalExecution) throw new Error("knowledge_graph_execution_missing");
     const repository = createKnowledgeGraphRepository(pool);
     const hierarchy = createHierarchicalIngestionRepository(pool);
-    const revisionId = await hierarchy.ensureCurrentDocumentRevision(document.id, document.contentHash);
-    const graphModes = [processingMode ?? "source_chunks", ...(atomicGraph ? ["atomic_notes"] : [])];
-    const persisted = await trace("graph_relations_persistence", () => repository.replaceSourceExtraction({
-      sourceItemId,
-      language: source.language,
-      batches: generated.batches,
-      generationReceipt:{
-      documentRevisionId: revisionId,
-      ingestionRunId: context.ingestionRunId ?? null,
-      jobId: context.jobId ?? null,
-      aiTaskRunId: finalExecution.aiTaskRunId,
-      inputHash: sha256([...sourceInputs, ...atomicNoteInputs].map((input) => input.bodyMarkdown).join("\n\n")),
-      metadata: { graphModes, extractionLimits, promptVersion: knowledgeGraphPromptVersion,promptFingerprint:stagePromptFingerprints(capturePromptPin(),false,generated.executions.map(e=>e.providerId)).knowledgeGraph }
-      },
-      generation: {
-        profileId: finalExecution.profileId,
-        aiTaskRunIds: generated.executions.map((execution) => execution.aiTaskRunId),
-        provider: finalExecution.providerId,
-        model: finalExecution.modelId,
-        runtime: finalExecution.runtime,
-        promptVersion: knowledgeGraphPromptVersion,
-        displayLanguage: finalExecution.outputLanguage ?? "en",
-        extractionLimits,
-        ...(processingMode ? { processingMode } : {})
-      }
-    }));
+    const revisionId = await hierarchy.ensureCurrentDocumentRevision(
+      document.id,
+      document.contentHash
+    );
+    const graphModes = [
+      processingMode ?? "source_chunks",
+      ...(atomicGraph ? ["atomic_notes"] : [])
+    ];
+    const persisted = await trace("graph_relations_persistence", () =>
+      repository.replaceSourceExtraction({
+        sourceItemId,
+        language: source.language,
+        batches: generated.batches,
+        generationReceipt: {
+          documentRevisionId: revisionId,
+          ingestionRunId: context.ingestionRunId ?? null,
+          jobId: context.jobId ?? null,
+          aiTaskRunId: finalExecution.aiTaskRunId,
+          inputHash: sha256(
+            [...sourceInputs, ...atomicNoteInputs].map((input) => input.bodyMarkdown).join("\n\n")
+          ),
+          metadata: {
+            graphModes,
+            extractionLimits,
+            promptVersion: knowledgeGraphPromptVersion,
+            promptFingerprint: stagePromptFingerprints(
+              capturePromptPin(),
+              false,
+              generated.executions.map((e) => e.providerId)
+            ).knowledgeGraph
+          }
+        },
+        generation: {
+          profileId: finalExecution.profileId,
+          aiTaskRunIds: generated.executions.map((execution) => execution.aiTaskRunId),
+          provider: finalExecution.providerId,
+          model: finalExecution.modelId,
+          runtime: finalExecution.runtime,
+          promptVersion: knowledgeGraphPromptVersion,
+          displayLanguage: finalExecution.outputLanguage ?? "en",
+          extractionLimits,
+          ...(processingMode ? { processingMode } : {})
+        }
+      })
+    );
     let projected = true;
     let projectionError: string | null = null;
     try {
       await repository.projectSource(sourceItemId);
     } catch (error) {
       projected = false;
-      projectionError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
-      logStructuredError(this.options.logger, "knowledge_graph_projection_failed", {
-        sourceItemId,
-        documentId,
-        stage: "graph_projection",
-        taskType: "knowledge-graph-generation",
-        profileId: finalExecution.profileId,
-        providerId: finalExecution.providerId,
-        modelId: finalExecution.modelId,
-        runtime: finalExecution.runtime,
-        aiTaskRunId: finalExecution.aiTaskRunId
-      }, error, "knowledge_graph_projection_failed");
+      projectionError =
+        error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+      logStructuredError(
+        this.options.logger,
+        "knowledge_graph_projection_failed",
+        {
+          sourceItemId,
+          documentId,
+          stage: "graph_projection",
+          taskType: "knowledge-graph-generation",
+          profileId: finalExecution.profileId,
+          providerId: finalExecution.providerId,
+          modelId: finalExecution.modelId,
+          runtime: finalExecution.runtime,
+          aiTaskRunId: finalExecution.aiTaskRunId
+        },
+        error,
+        "knowledge_graph_projection_failed"
+      );
     }
     return {
       configured: true,
@@ -973,8 +1285,12 @@ export class KnowledgeService {
     const pool = this.requirePool();
     const notes = createAtomicNoteRepository(pool);
     const relations = createAtomicNoteRelationRepository(pool);
-    const relationThreshold = clamp(await this.options.getRelationThreshold?.() ?? this.relationThreshold);
-    const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(await this.options.getAtomicNoteMatchingSettings?.() ?? {});
+    const relationThreshold = clamp(
+      (await this.options.getRelationThreshold?.()) ?? this.relationThreshold
+    );
+    const matchingSettings = AtomicNoteMatchingSettingsSchema.parse(
+      (await this.options.getAtomicNoteMatchingSettings?.()) ?? {}
+    );
     let persistedCount = 0;
     for (const [noteIndex, noteId] of noteIds.entries()) {
       const note = await notes.findById(noteId);
@@ -984,9 +1300,16 @@ export class KnowledgeService {
       }
       const embeddingExecution = await this.tryRunDefaultTask(
         "embedding",
-        renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.ideaStatement,note_body:note.bodyMarkdown}),
+        renderPrompt("embedding.content.note", {
+          note_title: note.title,
+          note_idea: note.ideaStatement,
+          note_body: note.bodyMarkdown
+        }),
         signal,
-        withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" }, [note.createdFromSourceItemId])
+        withAiSourceItems(
+          { ...logContext, atomicNoteId: note.id, operation: "note_matching_embedding" },
+          [note.createdFromSourceItemId]
+        )
       );
       const embedding = readEmbedding(embeddingExecution?.output);
       if (embedding && embeddingExecution) {
@@ -997,8 +1320,16 @@ export class KnowledgeService {
           model: embeddingExecution.modelId,
           runtime: embeddingExecution.runtime,
           usage: "matching",
-          strategy: embeddingExecution.embeddingSpaceKey?`native-v2:${embeddingExecution.embeddingSpaceKey}`:"native-unidentified",
-          contentHash: sha256(renderPrompt("embedding.content.note",{note_title:note.title,note_idea:note.ideaStatement,note_body:note.bodyMarkdown})),
+          strategy: embeddingExecution.embeddingSpaceKey
+            ? `native-v2:${embeddingExecution.embeddingSpaceKey}`
+            : "native-unidentified",
+          contentHash: sha256(
+            renderPrompt("embedding.content.note", {
+              note_title: note.title,
+              note_idea: note.ideaStatement,
+              note_body: note.bodyMarkdown
+            })
+          ),
           embedding
         });
       }
@@ -1010,22 +1341,46 @@ export class KnowledgeService {
         ? await notes.findVectorMatchingCandidates({
             noteId,
             embedding,
-            ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId,embeddingSpaceKey:embeddingExecution.embeddingSpaceKey??"",embeddingProvider:embeddingExecution.providerId,embeddingRuntime:embeddingExecution.runtime } : {}),
+            ...(embeddingExecution
+              ? {
+                  embeddingModel: embeddingExecution.modelId,
+                  embeddingSpaceKey: embeddingExecution.embeddingSpaceKey ?? "",
+                  embeddingProvider: embeddingExecution.providerId,
+                  embeddingRuntime: embeddingExecution.runtime
+                }
+              : {}),
             limit: matchingSettings.vectorCandidateLimit
           })
         : [];
       const graphRepository = createKnowledgeGraphRepository(pool);
-      let graphCandidates: Awaited<ReturnType<typeof graphRepository.findAtomicNoteCandidates>> = [];
+      let graphCandidates: Awaited<ReturnType<typeof graphRepository.findAtomicNoteCandidates>> =
+        [];
       let graphError: string | null = null;
       try {
-        graphCandidates = matchingSettings.graphCandidateLimit > 0 ? await graphRepository.findAtomicNoteCandidates(noteId, matchingSettings.graphCandidateLimit) : [];
+        graphCandidates =
+          matchingSettings.graphCandidateLimit > 0
+            ? await graphRepository.findAtomicNoteCandidates(
+                noteId,
+                matchingSettings.graphCandidateLimit
+              )
+            : [];
       } catch (error) {
-        graphError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+        graphError =
+          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
       }
       const fusedCandidates = fuseAtomicNoteCandidateRankings(
-        textCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.textScore })),
-        vectorCandidates.map((candidate) => ({ noteId: candidate.note.id, score: candidate.vectorScore })),
-        graphCandidates.map((candidate) => ({ noteId: candidate.noteId, score: candidate.graphScore })),
+        textCandidates.map((candidate) => ({
+          noteId: candidate.note.id,
+          score: candidate.textScore
+        })),
+        vectorCandidates.map((candidate) => ({
+          noteId: candidate.note.id,
+          score: candidate.vectorScore
+        })),
+        graphCandidates.map((candidate) => ({
+          noteId: candidate.noteId,
+          score: candidate.graphScore
+        })),
         matchingSettings.fusedCandidateLimit,
         matchingSettings.minimumGraphOnlyCandidates,
         matchingSettings.reciprocalRankConstant
@@ -1034,20 +1389,40 @@ export class KnowledgeService {
         noteId,
         candidateIds: fusedCandidates.map((candidate) => candidate.noteId),
         ...(embedding ? { embedding } : {}),
-        ...(embeddingExecution ? { embeddingModel: embeddingExecution.modelId,embeddingSpaceKey:embeddingExecution.embeddingSpaceKey??"",embeddingProvider:embeddingExecution.providerId,embeddingRuntime:embeddingExecution.runtime } : {})
+        ...(embeddingExecution
+          ? {
+              embeddingModel: embeddingExecution.modelId,
+              embeddingSpaceKey: embeddingExecution.embeddingSpaceKey ?? "",
+              embeddingProvider: embeddingExecution.providerId,
+              embeddingRuntime: embeddingExecution.runtime
+            }
+          : {})
       });
-      const scoresById = new Map(scoredCandidates.map((candidate) => [candidate.note.id, candidate]));
-      const graphPathsById = new Map(graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType]));
-      const existingTargets = await relations.existingTargets(noteId, fusedCandidates.map((candidate) => candidate.noteId));
-      const candidates = fusedCandidates.filter((candidate) => !existingTargets.has(candidate.noteId)).flatMap((candidate) => {
-        const scored = scoresById.get(candidate.noteId);
-        return scored ? [{
-          ...candidate,
-          note: scored.note,
-          textScore: scored.textScore,
-          vectorScore: scored.vectorScore
-        }] : [];
-      });
+      const scoresById = new Map(
+        scoredCandidates.map((candidate) => [candidate.note.id, candidate])
+      );
+      const graphPathsById = new Map(
+        graphCandidates.map((candidate) => [candidate.noteId, candidate.pathType])
+      );
+      const existingTargets = await relations.existingTargets(
+        noteId,
+        fusedCandidates.map((candidate) => candidate.noteId)
+      );
+      const candidates = fusedCandidates
+        .filter((candidate) => !existingTargets.has(candidate.noteId))
+        .flatMap((candidate) => {
+          const scored = scoresById.get(candidate.noteId);
+          return scored
+            ? [
+                {
+                  ...candidate,
+                  note: scored.note,
+                  textScore: scored.textScore,
+                  vectorScore: scored.vectorScore
+                }
+              ]
+            : [];
+        });
       let graphElementsByNote = new Map<string, AtomicNoteGraphElements>();
       try {
         graphElementsByNote = await graphRepository.listAtomicNoteElements([
@@ -1060,20 +1435,33 @@ export class KnowledgeService {
       let rerankExecution: DefaultAiTaskResult | null = null;
       let rerankResults = new Map<string, BatchRerankOutput>();
       let rerankError: string | null = null;
-      const rerankAliases = new Map(candidates.map((candidate, index) => [candidate.note.id, `c${index + 1}`]));
+      const rerankAliases = new Map(
+        candidates.map((candidate, index) => [candidate.note.id, `c${index + 1}`])
+      );
       if (candidates.length > 0) {
         try {
           rerankExecution = await this.options.aiService.runDefaultTask(
             "reranking",
-            buildBatchRerankPrompt(note, candidates.map((candidate) => ({
-              alias: rerankAliases.get(candidate.note.id)!,
-              title: candidate.note.title,
-              ideaStatement: candidate.note.ideaStatement
-            }))),
-            withAiSourceItems({ ...logContext, atomicNoteId: note.id, operation: "note_matching_reranking", promptVersion: atomicNoteMatchingVersion }, [
-              note.createdFromSourceItemId,
-              ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
-            ]),
+            buildBatchRerankPrompt(
+              note,
+              candidates.map((candidate) => ({
+                alias: rerankAliases.get(candidate.note.id)!,
+                title: candidate.note.title,
+                ideaStatement: candidate.note.ideaStatement
+              }))
+            ),
+            withAiSourceItems(
+              {
+                ...logContext,
+                atomicNoteId: note.id,
+                operation: "note_matching_reranking",
+                promptVersion: atomicNoteMatchingVersion
+              },
+              [
+                note.createdFromSourceItemId,
+                ...candidates.map((candidate) => candidate.note.createdFromSourceItemId)
+              ]
+            ),
             signal,
             { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
           );
@@ -1084,32 +1472,45 @@ export class KnowledgeService {
             );
             for (const candidate of candidates) {
               const result = rerankResults.get(rerankAliases.get(candidate.note.id)!)!;
-              result.explanation = resolveAtomicNoteReferences(result.explanation, note.id, result.candidateAlias, candidate.note.id);
+              result.explanation = resolveAtomicNoteReferences(
+                result.explanation,
+                note.id,
+                result.candidateAlias,
+                candidate.note.id
+              );
             }
           }
         } catch (error) {
           if (signal?.aborted) throw error;
           rerankExecution = null;
           rerankResults.clear();
-          rerankError = error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
+          rerankError =
+            error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
           // The batch is atomic: any invalid or incomplete output discards all reranking results.
         }
       }
       if (candidates.length > 0 && matchingSettings.requireReranking && !rerankExecution) {
-        throw new Error(rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel");
+        throw new Error(
+          rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel"
+        );
       }
       candidates.sort((left, right) => {
-        const score = (candidate: typeof left) => calculateRelationScore({
-          vectorScore: candidate.vectorScore, textScore: candidate.textScore,
-          metadataScore: scoreMetadataOverlap(note.metadata, candidate.note.metadata),
-          graphScore: candidate.graphScore, hasEmbedding: Boolean(embedding),
-          rerankScore: rerankResults.get(rerankAliases.get(candidate.note.id)!)?.score ?? null,
-          settings: matchingSettings
-        });
+        const score = (candidate: typeof left) =>
+          calculateRelationScore({
+            vectorScore: candidate.vectorScore,
+            textScore: candidate.textScore,
+            metadataScore: scoreMetadataOverlap(note.metadata, candidate.note.metadata),
+            graphScore: candidate.graphScore,
+            hasEmbedding: Boolean(embedding),
+            rerankScore: rerankResults.get(rerankAliases.get(candidate.note.id)!)?.score ?? null,
+            settings: matchingSettings
+          });
         return score(right) - score(left) || left.note.id.localeCompare(right.note.id);
       });
       let notePersistedCount = 0;
-      const debugResults: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"] = [];
+      const debugResults: Parameters<
+        ReturnType<typeof createSimilarityDebugRepository>["record"]
+      >[0]["results"] = [];
       for (const [candidateIndex, candidate] of candidates.entries()) {
         const metadataScore = scoreMetadataOverlap(note.metadata, candidate.note.metadata);
         const graphScore = candidate.graphScore;
@@ -1141,7 +1542,13 @@ export class KnowledgeService {
           relationType = reranked.relationType;
           explanation = reranked.explanation;
         }
-        const passedThreshold = qualifiesAtomicNoteRelation({ finalScore, threshold: relationThreshold, rerankScore, relationType, settings: matchingSettings });
+        const passedThreshold = qualifiesAtomicNoteRelation({
+          finalScore,
+          threshold: relationThreshold,
+          rerankScore,
+          relationType,
+          settings: matchingSettings
+        });
         debugResults.push({
           targetType: "atomic_note",
           targetId: candidate.note.id,
@@ -1161,12 +1568,21 @@ export class KnowledgeService {
           explanation,
           metadata: {
             baseScore,
-            skippedByRelationLimit: passedThreshold && notePersistedCount >= matchingSettings.maxRelationsPerNote,
+            skippedByRelationLimit:
+              passedThreshold && notePersistedCount >= matchingSettings.maxRelationsPerNote,
             relationType,
             graphError,
-            graphStatus: graphError ? "failed" : graphCandidates.length > 0 ? "succeeded" : "no_signal",
+            graphStatus: graphError
+              ? "failed"
+              : graphCandidates.length > 0
+                ? "succeeded"
+                : "no_signal",
             graphPathType: graphPathsById.get(candidate.note.id) ?? null,
-            graphElements: graphElementsByNote.get(candidate.note.id) ?? { entities: [], claims: [], relations: [] },
+            graphElements: graphElementsByNote.get(candidate.note.id) ?? {
+              entities: [],
+              claims: [],
+              relations: []
+            },
             rerankError,
             rerankStatus: rerankExecution ? "succeeded" : rerankError ? "failed" : "not_configured",
             rerankProfileId: rerankExecution?.profileId ?? null,
@@ -1175,46 +1591,61 @@ export class KnowledgeService {
           }
         });
         if (passedThreshold && notePersistedCount < matchingSettings.maxRelationsPerNote) {
-          const persistRelation = () => relations.upsert({
-            sourceAtomicNoteId: note.id,
-            targetAtomicNoteId: candidate.note.id,
-            relationType,
-            vectorScore: candidate.vectorScore,
-            graphScore,
-            rerankScore,
-            finalScore,
-            explanation,
-            matchingProfileId: rerankExecution?.profileId ?? null,
-            matchingModel: rerankExecution?.modelId ?? null,
-            metadata: {
-              version: atomicNoteMatchingVersion,
-              settings: matchingSettings,
-              threshold: relationThreshold,
-              textScore: candidate.textScore,
-              metadataScore,
+          const persistRelation = () =>
+            relations.upsert({
+              sourceAtomicNoteId: note.id,
+              targetAtomicNoteId: candidate.note.id,
+              relationType,
+              vectorScore: candidate.vectorScore,
               graphScore,
-              graphPathType: graphPathsById.get(candidate.note.id) ?? null,
-              fusionScore: candidate.fusionScore,
-              textRank: candidate.textRank,
-              vectorRank: candidate.vectorRank,
-              graphRank: candidate.graphRank,
-              semanticSourceAtomicNoteId: note.id,
-              semanticTargetAtomicNoteId: candidate.note.id,
-              pendingReview: note.status === "pending_review" || candidate.note.status === "pending_review"
+              rerankScore,
+              finalScore,
+              explanation,
+              matchingProfileId: rerankExecution?.profileId ?? null,
+              matchingModel: rerankExecution?.modelId ?? null,
+              metadata: {
+                version: atomicNoteMatchingVersion,
+                settings: matchingSettings,
+                threshold: relationThreshold,
+                textScore: candidate.textScore,
+                metadataScore,
+                graphScore,
+                graphPathType: graphPathsById.get(candidate.note.id) ?? null,
+                fusionScore: candidate.fusionScore,
+                textRank: candidate.textRank,
+                vectorRank: candidate.vectorRank,
+                graphRank: candidate.graphRank,
+                semanticSourceAtomicNoteId: note.id,
+                semanticTargetAtomicNoteId: candidate.note.id,
+                pendingReview:
+                  note.status === "pending_review" || candidate.note.status === "pending_review"
+              }
+            });
+          await (this.options.aiService.traceOperation?.(
+            "atomic_note_relation_creation",
+            withAiSourceItems({ ...logContext, atomicNoteId: note.id }, [
+              note.createdFromSourceItemId,
+              candidate.note.createdFromSourceItemId
+            ]),
+            persistRelation,
+            {
+              targetAtomicNoteId: candidate.note.id,
+              relationType,
+              finalScore,
+              threshold: relationThreshold
             }
-          });
-          await (this.options.aiService.traceOperation?.("atomic_note_relation_creation",
-            withAiSourceItems({ ...logContext, atomicNoteId: note.id }, [note.createdFromSourceItemId, candidate.note.createdFromSourceItemId]),
-            persistRelation, { targetAtomicNoteId: candidate.note.id, relationType, finalScore, threshold: relationThreshold }) ?? persistRelation());
+          ) ?? persistRelation());
           persistedCount += 1;
           notePersistedCount += 1;
         }
-        await onProgress?.(calculateAtomicNoteMatchingProgress({
-          noteIndex,
-          noteCount: noteIds.length,
-          completedCandidates: candidateIndex + 1,
-          candidateCount: candidates.length
-        }));
+        await onProgress?.(
+          calculateAtomicNoteMatchingProgress({
+            noteIndex,
+            noteCount: noteIds.length,
+            completedCandidates: candidateIndex + 1,
+            candidateCount: candidates.length
+          })
+        );
       }
       await this.recordAtomicMatchingDebug({
         noteId: note.id,
@@ -1224,7 +1655,11 @@ export class KnowledgeService {
         hasEmbedding: Boolean(embedding),
         relationThreshold,
         matchingSettings,
-        sourceGraphElements: graphElementsByNote.get(note.id) ?? { entities: [], claims: [], relations: [] },
+        sourceGraphElements: graphElementsByNote.get(note.id) ?? {
+          entities: [],
+          claims: [],
+          relations: []
+        },
         results: debugResults
       });
       if (candidates.length === 0) await onProgress?.((noteIndex + 1) / noteIds.length);
@@ -1258,7 +1693,7 @@ export class KnowledgeService {
     results: Parameters<ReturnType<typeof createSimilarityDebugRepository>["record"]>[0]["results"];
   }): Promise<void> {
     try {
-      if (!await this.options.isDebugEnabled?.()) return;
+      if (!(await this.options.isDebugEnabled?.())) return;
       const matchingSettings = input.matchingSettings;
       await createSimilarityDebugRepository(this.requirePool()).record({
         kind: "atomic_note_matching",
@@ -1277,9 +1712,15 @@ export class KnowledgeService {
             graph: matchingSettings.graphCandidateLimit,
             fused: matchingSettings.fusedCandidateLimit
           },
-          fusion: { strategy: "rrf", reciprocalRankConstant: matchingSettings.reciprocalRankConstant },
+          fusion: {
+            strategy: "rrf",
+            reciprocalRankConstant: matchingSettings.reciprocalRankConstant
+          },
           settings: matchingSettings,
-          rerankWeights: { base: 1 - matchingSettings.rerankerWeight, reranker: matchingSettings.rerankerWeight },
+          rerankWeights: {
+            base: 1 - matchingSettings.rerankerWeight,
+            reranker: matchingSettings.rerankerWeight
+          },
           rerankMode: "single_atomic_batch",
           sourceGraphElements: input.sourceGraphElements
         },
@@ -1298,11 +1739,13 @@ export class KnowledgeService {
 }
 
 function withAiSourceItems(context: AiTaskLogContext, sourceItemIds: string[]): AiTaskLogContext {
-  const combined = [...new Set([
-    ...(context.sourceItemId ? [context.sourceItemId] : []),
-    ...(context.sourceItemIds ?? []),
-    ...sourceItemIds
-  ])];
+  const combined = [
+    ...new Set([
+      ...(context.sourceItemId ? [context.sourceItemId] : []),
+      ...(context.sourceItemIds ?? []),
+      ...sourceItemIds
+    ])
+  ];
   return {
     ...context,
     ...(combined[0] ? { sourceItemId: combined[0] } : {}),
@@ -1331,28 +1774,32 @@ function serializeNote(note: AtomicNoteRecord) {
 }
 
 function toKnowledgeExecution(result: DefaultAiTaskResult | null): KnowledgeAiExecution | null {
-  return result ? {
-    output: result.output,
-    providerId: result.providerId,
-    modelId: result.modelId,
-    runtime: result.runtime,
-    profileId: result.profileId,
-    aiTaskRunId: result.aiTaskRunId,
-    outputLanguage: result.outputLanguage
-  } : null;
+  return result
+    ? {
+        output: result.output,
+        providerId: result.providerId,
+        modelId: result.modelId,
+        runtime: result.runtime,
+        profileId: result.profileId,
+        aiTaskRunId: result.aiTaskRunId,
+        outputLanguage: result.outputLanguage
+      }
+    : null;
 }
 
 function readEmbedding(output: unknown): number[] | undefined {
   if (!Array.isArray(output)) return undefined;
   const embedding = output.map(Number);
-  return (embedding.length === 256 || embedding.length === 768 || embedding.length === 1_024)
-      && embedding.every(Number.isFinite)
+  return (embedding.length === 256 || embedding.length === 768 || embedding.length === 1_024) &&
+    embedding.every(Number.isFinite)
     ? embedding
     : undefined;
 }
 
 function readStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function clamp(value: number): number {

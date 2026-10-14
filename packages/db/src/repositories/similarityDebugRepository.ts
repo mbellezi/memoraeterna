@@ -136,9 +136,15 @@ export function createSimilarityDebugRepository(db: Queryable) {
          ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          returning ${runReturning}`,
         [
-          input.kind, input.queryText, input.queryTargetId ?? null, input.mode,
-          input.model ?? null, input.dimensions ?? null, input.requestedLimit,
-          input.strategy, input.metadata ?? {}
+          input.kind,
+          input.queryText,
+          input.queryTargetId ?? null,
+          input.mode,
+          input.model ?? null,
+          input.dimensions ?? null,
+          input.requestedLimit,
+          input.strategy,
+          input.metadata ?? {}
         ]
       );
       const runId = run.rows[0]?.id;
@@ -148,11 +154,24 @@ export function createSimilarityDebugRepository(db: Queryable) {
         const rows = input.results.map((result, index) => {
           const offset = index * 18;
           values.push(
-            runId, result.targetType, result.targetId, result.targetLabel ?? null,
-            result.finalRank, result.textRank ?? null, result.vectorRank ?? null, result.graphRank ?? null,
-            result.textScore ?? null, result.vectorScore ?? null, result.metadataScore ?? null, result.graphScore ?? null,
-            result.rerankScore ?? null, result.fusionScore ?? null, result.finalScore,
-            result.passedThreshold ?? null, result.explanation ?? null, result.metadata ?? {}
+            runId,
+            result.targetType,
+            result.targetId,
+            result.targetLabel ?? null,
+            result.finalRank,
+            result.textRank ?? null,
+            result.vectorRank ?? null,
+            result.graphRank ?? null,
+            result.textScore ?? null,
+            result.vectorScore ?? null,
+            result.metadataScore ?? null,
+            result.graphScore ?? null,
+            result.rerankScore ?? null,
+            result.fusionScore ?? null,
+            result.finalScore,
+            result.passedThreshold ?? null,
+            result.explanation ?? null,
+            result.metadata ?? {}
           );
           return `(${Array.from({ length: 18 }, (_, valueIndex) => `$${offset + valueIndex + 1}`).join(", ")})`;
         });

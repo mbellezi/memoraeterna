@@ -69,23 +69,23 @@ export interface UpdateObsidianSyncFileInput {
 
 const returning = [
   "id",
-  "memora_id as \"memoraId\"",
-  "entity_type as \"entityType\"",
-  "entity_id as \"entityId\"",
-  "source_item_id as \"sourceItemId\"",
-  "document_id as \"documentId\"",
-  "memora_type as \"memoraType\"",
-  "relative_path as \"relativePath\"",
-  "frontmatter_hash as \"frontmatterHash\"",
-  "content_hash as \"contentHash\"",
-  "mtime_ms as \"mtimeMs\"",
-  "sync_version as \"syncVersion\"",
+  'memora_id as "memoraId"',
+  'entity_type as "entityType"',
+  'entity_id as "entityId"',
+  'source_item_id as "sourceItemId"',
+  'document_id as "documentId"',
+  'memora_type as "memoraType"',
+  'relative_path as "relativePath"',
+  'frontmatter_hash as "frontmatterHash"',
+  'content_hash as "contentHash"',
+  'mtime_ms as "mtimeMs"',
+  'sync_version as "syncVersion"',
   "status",
-  "last_synced_at as \"lastSyncedAt\"",
-  "deleted_at as \"deletedAt\"",
+  'last_synced_at as "lastSyncedAt"',
+  'deleted_at as "deletedAt"',
   "metadata",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapObsidianSyncFile(row: ObsidianSyncFileRow): ObsidianSyncFileRecord {
@@ -161,7 +161,10 @@ export function createObsidianSyncRepository(db: Queryable) {
       return row ? mapObsidianSyncFile(row) : null;
     },
 
-    async update(id: string, input: UpdateObsidianSyncFileInput): Promise<ObsidianSyncFileRecord | null> {
+    async update(
+      id: string,
+      input: UpdateObsidianSyncFileInput
+    ): Promise<ObsidianSyncFileRecord | null> {
       const row = await updateRow<ObsidianSyncFileRow>(
         db,
         "obsidian_sync_files",

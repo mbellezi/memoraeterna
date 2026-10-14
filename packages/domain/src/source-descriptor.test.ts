@@ -30,8 +30,16 @@ describe("source descriptors", () => {
       provenance: { title: { source: "manual" } }
     });
     expect(book.type).toBe("Book");
-    expect(SourceDescriptorSchema.safeParse({ ...book, isbn13: "9780000000000" }).success).toBe(false);
-    expect(SourceDescriptorSchema.safeParse({ type: "DailyNote", title: "Today", noteDate: "15/07/2026" }).success).toBe(false);
+    expect(SourceDescriptorSchema.safeParse({ ...book, isbn13: "9780000000000" }).success).toBe(
+      false
+    );
+    expect(
+      SourceDescriptorSchema.safeParse({
+        type: "DailyNote",
+        title: "Today",
+        noteDate: "15/07/2026"
+      }).success
+    ).toBe(false);
   });
 
   it("normalizes and validates ISBN-10 and ISBN-13", () => {
@@ -58,7 +66,9 @@ describe("source descriptors", () => {
       }
     };
     expect(mergeDescriptorFields(current, incoming).title).toBe("Extracted title");
-    const accepted = mergeDescriptorFields(current, incoming, { acceptEnrichedOverExtracted: true });
+    const accepted = mergeDescriptorFields(current, incoming, {
+      acceptEnrichedOverExtracted: true
+    });
     expect(accepted.title).toBe("Enriched title");
     expect(accepted.publisher).toBe("Manual publisher");
     expect(accepted.provenance.publisher?.source).toBe("manual");

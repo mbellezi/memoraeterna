@@ -1,7 +1,12 @@
 import type { QueryResultRow } from "pg";
 
 import { asJsonObject } from "./sql.js";
-import type { AtomicNoteSearchRecord, Queryable, SearchEvidenceRecord, SourceItemType } from "./types.js";
+import type {
+  AtomicNoteSearchRecord,
+  Queryable,
+  SearchEvidenceRecord,
+  SourceItemType
+} from "./types.js";
 
 interface SearchRow extends QueryResultRow {
   sourceItemId: string;
@@ -42,7 +47,9 @@ export interface TextSearchInput {
 export interface VectorSearchInput {
   embedding: number[];
   embeddingModel: string;
-  embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
+  embeddingSpaceKey?: string | undefined;
+  embeddingProvider?: string | undefined;
+  embeddingRuntime?: string | undefined;
   sourceTypes?: SourceItemType[];
   sourceItemIds?: string[];
   limit?: number;
@@ -126,7 +133,16 @@ export function createSearchRepository(db: Queryable) {
            and (coalesce(array_length($5::uuid[], 1), 0) = 0 or s.id = any($5))
          order by e.embedding <=> $1::vector
          limit $4`,
-        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? [], input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+        [
+          `[${input.embedding.join(",")}]`,
+          input.embeddingModel,
+          input.sourceTypes ?? [],
+          input.limit ?? 20,
+          input.sourceItemIds ?? [],
+          input.embeddingSpaceKey ?? null,
+          input.embeddingProvider ?? null,
+          input.embeddingRuntime ?? null
+        ]
       );
       return result.rows.map((row) => mapSearchRow(row, Number(row.vectorScore)));
     },
@@ -175,7 +191,16 @@ export function createSearchRepository(db: Queryable) {
            and (coalesce(array_length($5::uuid[], 1), 0) = 0 or (s.id = any($5) and not exists(select 1 from atomic_note_evidence retained where retained.note_id=n.id and not(retained.source_id=any($5))) and not exists(select 1 from atomic_note_source_links link where link.atomic_note_id=n.id and not(link.source_item_id=any($5)))))
          order by e.embedding <=> $1::vector
          limit $4`,
-        [`[${input.embedding.join(",")}]`, input.embeddingModel, input.sourceTypes ?? [], input.limit ?? 20, input.sourceItemIds ?? [], input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+        [
+          `[${input.embedding.join(",")}]`,
+          input.embeddingModel,
+          input.sourceTypes ?? [],
+          input.limit ?? 20,
+          input.sourceItemIds ?? [],
+          input.embeddingSpaceKey ?? null,
+          input.embeddingProvider ?? null,
+          input.embeddingRuntime ?? null
+        ]
       );
       return result.rows.map((row) => mapNoteSearchRow(row, Number(row.vectorScore)));
     }

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { aggregateSourceEmbedding, createCatalogMetadataChunk, participatesInAtomicNoteMatching, persistCatalogMetadataChunk } from "./job-supervisor.js";
+import {
+  aggregateSourceEmbedding,
+  createCatalogMetadataChunk,
+  participatesInAtomicNoteMatching,
+  persistCatalogMetadataChunk
+} from "./job-supervisor.js";
 import {
   buildCatalogMetadataMarkdown,
   canReuseArtifactStage,
@@ -10,14 +15,30 @@ import {
 
 describe("hierarchical processing scope", () => {
   it("preserves catalog chunk and evidence identifiers when reprocessing unchanged metadata", async () => {
-    const chunk = { ...createCatalogMetadataChunk("unchanged catalog"), documentId: "document", sourceItemId: "source", language: "und", createdAt: new Date() };
-    const repository = { listByDocument: vi.fn().mockResolvedValue([chunk]), replaceDocumentChunks: vi.fn() };
-    const reused = await persistCatalogMetadataChunk(repository, "document", "source", "unchanged catalog");
+    const chunk = {
+      ...createCatalogMetadataChunk("unchanged catalog"),
+      documentId: "document",
+      sourceItemId: "source",
+      language: "und",
+      createdAt: new Date()
+    };
+    const repository = {
+      listByDocument: vi.fn().mockResolvedValue([chunk]),
+      replaceDocumentChunks: vi.fn()
+    };
+    const reused = await persistCatalogMetadataChunk(
+      repository,
+      "document",
+      "source",
+      "unchanged catalog"
+    );
     expect(reused).toEqual([chunk]);
     expect(repository.replaceDocumentChunks).not.toHaveBeenCalled();
     await persistCatalogMetadataChunk(repository, "document", "source", "changed catalog");
     expect(repository.replaceDocumentChunks).toHaveBeenCalledOnce();
-    expect(repository.replaceDocumentChunks).toHaveBeenCalledWith("document", "source", [expect.objectContaining({ content: "changed catalog" })]);
+    expect(repository.replaceDocumentChunks).toHaveBeenCalledWith("document", "source", [
+      expect.objectContaining({ content: "changed catalog" })
+    ]);
   });
 
   it("queues root summarization even when a previous hierarchical summary exists", () => {
@@ -41,7 +62,9 @@ describe("hierarchical processing scope", () => {
     expect(stages).not.toContain("atomicNotes");
     expect(stages).not.toContain("atomicNoteMatching");
     expect(participatesInAtomicNoteMatching(stages)).toBe(false);
-    expect(participatesInAtomicNoteMatching(["chunking", "atomicNotes", "knowledgeGraph"])).toBe(false);
+    expect(participatesInAtomicNoteMatching(["chunking", "atomicNotes", "knowledgeGraph"])).toBe(
+      false
+    );
     expect(participatesInAtomicNoteMatching(["atomicNoteMatching"])).toBe(true);
     expect(participatesInAtomicNoteMatching(["atomicNotes", "atomicNoteMatching"])).toBe(true);
   });
@@ -99,7 +122,13 @@ describe("hierarchical processing scope", () => {
   });
 
   it("combines metadata and segmented content into one normalized source embedding", () => {
-    const embedding = aggregateSourceEmbedding([[1, 0]], [[0, 1], [0, 1]]);
+    const embedding = aggregateSourceEmbedding(
+      [[1, 0]],
+      [
+        [0, 1],
+        [0, 1]
+      ]
+    );
     expect(embedding).not.toBeNull();
     expect(embedding?.[1]).toBeGreaterThan(embedding?.[0] ?? 0);
     expect(Math.hypot(...(embedding ?? []))).toBeCloseTo(1);

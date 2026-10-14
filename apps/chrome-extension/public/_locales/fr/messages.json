@@ -1,6 +1,8 @@
 {
   "extensionName": { "message": "Capture Memora Eterna" },
-  "extensionDescription": { "message": "Capturez des pages, des selections et des videos YouTube dans Memora Eterna." },
+  "extensionDescription": {
+    "message": "Capturez des pages, des selections et des videos YouTube dans Memora Eterna."
+  },
   "gatewayAddress": { "message": "Passerelle desktop" },
   "clientId": { "message": "ID client" },
   "pairingToken": { "message": "Jeton d'association" },

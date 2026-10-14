@@ -78,9 +78,13 @@ try {
     fetchExternalPage: async () => new Response("", { status: 500 }),
     youtubeService: new YouTubeService(async () => ({
       basic_info: { title: "Phase 4 video", author: "Memora channel" },
-      getTranscript: async () => ({ transcript: { segments: [
-        { start_ms: 0, snippet: { text: "External capture keeps traceable knowledge." } }
-      ] } })
+      getTranscript: async () => ({
+        transcript: {
+          segments: [
+            { start_ms: 0, snippet: { text: "External capture keeps traceable knowledge." } }
+          ]
+        }
+      })
     }))
   });
   obsidian = new ObsidianSyncService({
@@ -102,9 +106,15 @@ try {
   const gatewayStatus = await gateway.start();
   if (!gatewayStatus.baseUrl) throw new Error("Gateway did not start.");
 
-  const chromePairing = await gateway.createPairing({ clientType: "chrome-extension", displayName: "E2E Chrome" });
+  const chromePairing = await gateway.createPairing({
+    clientType: "chrome-extension",
+    displayName: "E2E Chrome"
+  });
   const chrome = await handshake(gatewayStatus.baseUrl, chromePairing, "chrome-extension", [
-    "capture-web-page", "capture-selection", "capture-youtube-video", "receive-job-progress"
+    "capture-web-page",
+    "capture-selection",
+    "capture-youtube-video",
+    "receive-job-progress"
   ]);
   const capturedAt = new Date().toISOString();
   const webPayload = {
@@ -115,23 +125,41 @@ try {
     html: "<html><head><title>Phase 4 article</title></head><body><main><h1>Phase 4</h1><p>Gateway evidence is searchable.</p></main></body></html>",
     metadata: { language: "en" }
   };
-  const firstCapture = await post(gatewayStatus.baseUrl, chrome.sessionToken, "/v1/capture/web-page", webPayload);
-  const repeatedCapture = await post(gatewayStatus.baseUrl, chrome.sessionToken, "/v1/capture/web-page", {
-    ...webPayload,
-    requestId: randomUUID()
-  });
+  const firstCapture = await post(
+    gatewayStatus.baseUrl,
+    chrome.sessionToken,
+    "/v1/capture/web-page",
+    webPayload
+  );
+  const repeatedCapture = await post(
+    gatewayStatus.baseUrl,
+    chrome.sessionToken,
+    "/v1/capture/web-page",
+    {
+      ...webPayload,
+      requestId: randomUUID()
+    }
+  );
   const webSourceId = requiredString(firstCapture, "sourceItemId");
-  if (webSourceId !== requiredString(repeatedCapture, "sourceItemId") || repeatedCapture.duplicate !== true) {
+  if (
+    webSourceId !== requiredString(repeatedCapture, "sourceItemId") ||
+    repeatedCapture.duplicate !== true
+  ) {
     throw new Error("Repeated web capture was not deduplicated.");
   }
-  const youtubeCapture = await post(gatewayStatus.baseUrl, chrome.sessionToken, "/v1/capture/youtube", {
-    requestId: randomUUID(),
-    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    videoId: "dQw4w9WgXcQ",
-    title: "Visible title",
-    capturedAt,
-    visibleMetadata: {}
-  });
+  const youtubeCapture = await post(
+    gatewayStatus.baseUrl,
+    chrome.sessionToken,
+    "/v1/capture/youtube",
+    {
+      requestId: randomUUID(),
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      videoId: "dQw4w9WgXcQ",
+      title: "Visible title",
+      capturedAt,
+      visibleMetadata: {}
+    }
+  );
   await post(gatewayStatus.baseUrl, chrome.sessionToken, "/v1/capture/selection", {
     requestId: randomUUID(),
     url: "https://example.com/phase-4",
@@ -153,16 +181,28 @@ try {
   if (!projected) throw new Error("Projected web frontmatter was invalid.");
 
   const offlineBody = "# Phase 4 article\n\nOffline Obsidian edit is searchable evidence.";
-  await writeFile(webPath, (await readFile(webPath, "utf8")).replace(projected.bodyMarkdown, offlineBody));
+  await writeFile(
+    webPath,
+    (await readFile(webPath, "utf8")).replace(projected.bodyMarkdown, offlineBody)
+  );
   const reconcileEdit = await obsidian.reconcileVault();
   if (reconcileEdit.synced < 1) throw new Error("Offline Obsidian edit was not reconciled.");
   const webDocument = await createDocumentRepository(pool).findById(webSync.documentId!);
   if (!webDocument?.canonicalMarkdown.includes("Offline Obsidian edit")) {
     throw new Error("Obsidian edit did not update canonical Markdown.");
   }
-  await indexDocument(pool, webDocument.id, webDocument.sourceItemId, webDocument.canonicalMarkdown);
-  const search = await createSearchRepository(pool).searchText({ text: "offline obsidian edit", limit: 5 });
-  if (search[0]?.sourceItemId !== webSourceId) throw new Error("Search did not reflect the Obsidian edit.");
+  await indexDocument(
+    pool,
+    webDocument.id,
+    webDocument.sourceItemId,
+    webDocument.canonicalMarkdown
+  );
+  const search = await createSearchRepository(pool).searchText({
+    text: "offline obsidian edit",
+    limit: 5
+  });
+  if (search[0]?.sourceItemId !== webSourceId)
+    throw new Error("Search did not reflect the Obsidian edit.");
 
   const movedPath = join(dirname(webPath), "phase-4-article-moved.md");
   await rename(webPath, movedPath);
@@ -172,50 +212,78 @@ try {
     throw new Error("Offline Obsidian move was not reconciled.");
   }
 
-  const obsidianPairing = await gateway.createPairing({ clientType: "obsidian-plugin", displayName: "E2E Obsidian" });
-  const obsidianClient = await handshake(gatewayStatus.baseUrl, obsidianPairing, "obsidian-plugin", [
-    "import-obsidian-note", "watch-obsidian-files", "reconcile-obsidian-vault", "receive-job-progress"
-  ]);
+  const obsidianPairing = await gateway.createPairing({
+    clientType: "obsidian-plugin",
+    displayName: "E2E Obsidian"
+  });
+  const obsidianClient = await handshake(
+    gatewayStatus.baseUrl,
+    obsidianPairing,
+    "obsidian-plugin",
+    [
+      "import-obsidian-note",
+      "watch-obsidian-files",
+      "reconcile-obsidian-vault",
+      "receive-job-progress"
+    ]
+  );
   const videoRaw = await readFile(join(vaultPath, videoSync.relativePath), "utf8");
   const videoManaged = parseManagedMarkdown(videoRaw);
   if (!videoManaged) throw new Error("Projected video frontmatter was invalid.");
   const conflictBody = `${videoManaged.bodyMarkdown}\n\nConflicting edit.`;
-  const conflict = await post(gatewayStatus.baseUrl, obsidianClient.sessionToken, "/v1/obsidian/file-changed", {
-    eventId: randomUUID(),
-    kind: "modified",
-    occurredAt: new Date().toISOString(),
-    note: {
-      requestId: randomUUID(),
-      relativePath: videoSync.relativePath,
-      markdown: conflictBody,
-      frontmatter: { ...videoManaged.frontmatter, memoraSyncVersion: videoManaged.frontmatter.memoraSyncVersion + 1 },
-      contentHash: sha256(`${conflictBody.trim()}\n`),
-      mtimeMs: Math.trunc((await stat(join(vaultPath, videoSync.relativePath))).mtimeMs)
+  const conflict = await post(
+    gatewayStatus.baseUrl,
+    obsidianClient.sessionToken,
+    "/v1/obsidian/file-changed",
+    {
+      eventId: randomUUID(),
+      kind: "modified",
+      occurredAt: new Date().toISOString(),
+      note: {
+        requestId: randomUUID(),
+        relativePath: videoSync.relativePath,
+        markdown: conflictBody,
+        frontmatter: {
+          ...videoManaged.frontmatter,
+          memoraSyncVersion: videoManaged.frontmatter.memoraSyncVersion + 1
+        },
+        contentHash: sha256(`${conflictBody.trim()}\n`),
+        mtimeMs: Math.trunc((await stat(join(vaultPath, videoSync.relativePath))).mtimeMs)
+      }
     }
-  });
+  );
   if (conflict.syncStatus !== "conflict") throw new Error("Version conflict was not explicit.");
 
   await unlink(movedPath);
   const reconcileDelete = await obsidian.reconcileVault();
-  if (reconcileDelete.deleted !== 0 || (await syncRepository.findByMemoraId(webSourceId))?.status === "deleted") {
+  if (
+    reconcileDelete.deleted !== 0 ||
+    (await syncRepository.findByMemoraId(webSourceId))?.status === "deleted"
+  ) {
     throw new Error("A missing file was incorrectly treated as an explicit deletion.");
   }
-  const queuedAfterEdit = (await createJobRepository(pool).list()).some((job) =>
-    job.type === "ingestion" && job.payload.sourceItemId === webSourceId
+  const queuedAfterEdit = (await createJobRepository(pool).list()).some(
+    (job) => job.type === "ingestion" && job.payload.sourceItemId === webSourceId
   );
   if (!queuedAfterEdit) throw new Error("Obsidian edit did not queue reprocessing.");
 
-  console.info(JSON.stringify({
-    gateway: gatewayStatus.baseUrl,
-    deduplicatedWebSource: webSourceId,
-    youtubeSource: youtubeSourceId,
-    projectedFiles: (await syncRepository.list()).length,
-    offlineEditReconciled: reconcileEdit.synced,
-    movedPath: movedRecord.relativePath,
-    explicitConflict: conflict.syncStatus,
-    inferredDeletions: reconcileDelete.deleted,
-    searchEvidence: search[0]?.excerpt
-  }, null, 2));
+  console.info(
+    JSON.stringify(
+      {
+        gateway: gatewayStatus.baseUrl,
+        deduplicatedWebSource: webSourceId,
+        youtubeSource: youtubeSourceId,
+        projectedFiles: (await syncRepository.list()).length,
+        offlineEditReconciled: reconcileEdit.synced,
+        movedPath: movedRecord.relativePath,
+        explicitConflict: conflict.syncStatus,
+        inferredDeletions: reconcileDelete.deleted,
+        searchEvidence: search[0]?.excerpt
+      },
+      null,
+      2
+    )
+  );
 } finally {
   await gateway?.stop().catch(() => undefined);
   await jobs?.stop().catch(() => undefined);
@@ -245,13 +313,18 @@ async function handshake(
   return integrationHandshakeResponseSchema.parse(await response.json());
 }
 
-async function post(baseUrl: string, token: string, path: string, body: unknown): Promise<Record<string, unknown>> {
+async function post(
+  baseUrl: string,
+  token: string,
+  path: string,
+  body: unknown
+): Promise<Record<string, unknown>> {
   const response = await fetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: JSON.stringify(body)
   });
-  const result = await response.json() as Record<string, unknown>;
+  const result = (await response.json()) as Record<string, unknown>;
   if (!response.ok) throw new Error(`${path} failed: ${response.status} ${JSON.stringify(result)}`);
   return result;
 }
@@ -263,15 +336,17 @@ async function indexDocument(
   markdown: string
 ): Promise<void> {
   const sourceSpanId = randomUUID();
-  await createChunkRepository(db).replaceDocumentChunks(documentId, sourceItemId, [{
-    id: randomUUID(),
-    sourceSpanId,
-    chunkIndex: 0,
-    content: markdown,
-    tokenCount: markdown.split(/\s+/).length,
-    contentHash: sha256(markdown),
-    span: { id: sourceSpanId, startOffset: 0, endOffset: markdown.length }
-  }]);
+  await createChunkRepository(db).replaceDocumentChunks(documentId, sourceItemId, [
+    {
+      id: randomUUID(),
+      sourceSpanId,
+      chunkIndex: 0,
+      content: markdown,
+      tokenCount: markdown.split(/\s+/).length,
+      contentHash: sha256(markdown),
+      span: { id: sourceSpanId, startOffset: 0, endOffset: markdown.length }
+    }
+  ]);
 }
 
 function requiredString(record: Record<string, unknown>, key: string): string {

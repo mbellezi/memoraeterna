@@ -18,9 +18,7 @@ export const DocumentConversionStatusSchema = z.enum([
   "unsupported"
 ]);
 
-export type DocumentConversionStatus = z.infer<
-  typeof DocumentConversionStatusSchema
->;
+export type DocumentConversionStatus = z.infer<typeof DocumentConversionStatusSchema>;
 
 export const DocumentSchema = z
   .object({

@@ -1,5 +1,5 @@
 import type { QueryResultRow } from "pg";
-import { taskHistoryCutoffKey, terminalTaskStatusesSql } from './taskHistory.js';
+import { taskHistoryCutoffKey, terminalTaskStatusesSql } from "./taskHistory.js";
 
 import {
   asJsonObject,
@@ -65,14 +65,14 @@ const returning = [
   "error",
   "progress",
   "attempts",
-  "max_attempts as \"maxAttempts\"",
-  "run_after as \"runAfter\"",
-  "locked_at as \"lockedAt\"",
-  "locked_by as \"lockedBy\"",
-  "finished_at as \"finishedAt\"",
-  "cancel_requested_at as \"cancelRequestedAt\"",
-  "created_at as \"createdAt\"",
-  "updated_at as \"updatedAt\""
+  'max_attempts as "maxAttempts"',
+  'run_after as "runAfter"',
+  'locked_at as "lockedAt"',
+  'locked_by as "lockedBy"',
+  'finished_at as "finishedAt"',
+  'cancel_requested_at as "cancelRequestedAt"',
+  'created_at as "createdAt"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapJob(row: JobRow): JobRecord {
@@ -116,7 +116,10 @@ export function createJobRepository(db: Queryable) {
     },
 
     async latestByType(type: string): Promise<JobRecord | null> {
-      const result = await db.query<JobRow>(`select ${returning} from jobs where type = $1 order by (status in ('queued', 'running')) desc, created_at desc limit 1`, [type]);
+      const result = await db.query<JobRow>(
+        `select ${returning} from jobs where type = $1 order by (status in ('queued', 'running')) desc, created_at desc limit 1`,
+        [type]
+      );
       return result.rows[0] ? mapJob(result.rows[0]) : null;
     },
 
@@ -172,7 +175,15 @@ export function createJobRepository(db: Queryable) {
       return result.rows.map(mapJob);
     },
 
-    async nextQueuedOfType(type:string):Promise<JobRecord|null>{const row=(await db.query<JobRow>(`select ${returning} from jobs where type=$1 and status='queued' and run_after<=now() order by priority desc,run_after asc limit 1`,[type])).rows[0];return row?mapJob(row):null;},
+    async nextQueuedOfType(type: string): Promise<JobRecord | null> {
+      const row = (
+        await db.query<JobRow>(
+          `select ${returning} from jobs where type=$1 and status='queued' and run_after<=now() order by priority desc,run_after asc limit 1`,
+          [type]
+        )
+      ).rows[0];
+      return row ? mapJob(row) : null;
+    },
     async claimNext(workerId: string, allowedTypes?: readonly string[]): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `with candidate as (
@@ -198,11 +209,14 @@ export function createJobRepository(db: Queryable) {
       return this.update(id, { progress: Math.max(0, Math.min(1, progress)) });
     },
 
-    async setAiExecution(id: string, input: {
-      provider: string;
-      modelId: string;
-      reasoningLevel: string | null;
-    }): Promise<JobRecord | null> {
+    async setAiExecution(
+      id: string,
+      input: {
+        provider: string;
+        modelId: string;
+        reasoningLevel: string | null;
+      }
+    ): Promise<JobRecord | null> {
       const result = await db.query<JobRow>(
         `update jobs set
            payload = jsonb_set(payload, '{aiExecution}', $2::jsonb, true),

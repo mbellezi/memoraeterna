@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { mlxHelperMessageSchema, mlxHelperRequestSchema, parseMlxHelperOutput } from "./local-runtime-protocol.js";
+import {
+  mlxHelperMessageSchema,
+  mlxHelperRequestSchema,
+  parseMlxHelperOutput
+} from "./local-runtime-protocol.js";
 
 const requestId = "d1b64150-63cc-4e0d-93a4-fd8560d80b2a";
 
@@ -17,17 +21,19 @@ describe("mlxHelperMessageSchema", () => {
       command: "generate",
       parameters: { enableThinking: false }
     });
-    expect(mlxHelperRequestSchema.parse({
-      ...base,
-      parameters: {
-        maxTokens: 4,
-        temperature: 0.7,
-        topP: 0.8,
-        topK: 20,
-        presencePenalty: 1.5,
-        enableThinking: true
-      }
-    })).toMatchObject({
+    expect(
+      mlxHelperRequestSchema.parse({
+        ...base,
+        parameters: {
+          maxTokens: 4,
+          temperature: 0.7,
+          topP: 0.8,
+          topK: 20,
+          presencePenalty: 1.5,
+          enableThinking: true
+        }
+      })
+    ).toMatchObject({
       command: "generate",
       parameters: { topP: 0.8, topK: 20, presencePenalty: 1.5, enableThinking: true }
     });
@@ -61,45 +67,55 @@ describe("mlxHelperMessageSchema", () => {
   });
 
   it("continues to validate progress messages strictly", () => {
-    expect(mlxHelperMessageSchema.parse({
-      protocolVersion: 1,
-      requestId,
-      kind: "progress",
-      progress: 0.65,
-      messageKey: "localModels.progress.generating"
-    })).toMatchObject({ kind: "progress", progress: 0.65 });
+    expect(
+      mlxHelperMessageSchema.parse({
+        protocolVersion: 1,
+        requestId,
+        kind: "progress",
+        progress: 0.65,
+        messageKey: "localModels.progress.generating"
+      })
+    ).toMatchObject({ kind: "progress", progress: 0.65 });
 
-    expect(() => mlxHelperMessageSchema.parse({
-      protocolVersion: 1,
-      requestId,
-      kind: "result",
-      ok: true,
-      output: "OK"
-    })).toThrow();
-  });
-
-  it("ignores native MLX diagnostics outside the JSONL protocol", () => {
-    const messages = parseMlxHelperOutput([
-      "MLX error: diagnostic emitted by the native runtime",
-      JSON.stringify({
+    expect(() =>
+      mlxHelperMessageSchema.parse({
         protocolVersion: 1,
         requestId,
         kind: "result",
         ok: true,
-        output: "OK",
-        durationMs: 12
+        output: "OK"
       })
-    ].join("\n"));
+    ).toThrow();
+  });
+
+  it("ignores native MLX diagnostics outside the JSONL protocol", () => {
+    const messages = parseMlxHelperOutput(
+      [
+        "MLX error: diagnostic emitted by the native runtime",
+        JSON.stringify({
+          protocolVersion: 1,
+          requestId,
+          kind: "result",
+          ok: true,
+          output: "OK",
+          durationMs: 12
+        })
+      ].join("\n")
+    );
 
     expect(messages).toHaveLength(1);
     expect(messages[0]).toMatchObject({ kind: "result", ok: true, output: "OK" });
   });
 
   it("rejects JSON values that do not conform to the helper protocol", () => {
-    expect(() => parseMlxHelperOutput(JSON.stringify({
-      protocolVersion: 1,
-      requestId,
-      kind: "unexpected"
-    }))).toThrow();
+    expect(() =>
+      parseMlxHelperOutput(
+        JSON.stringify({
+          protocolVersion: 1,
+          requestId,
+          kind: "unexpected"
+        })
+      )
+    ).toThrow();
   });
 });

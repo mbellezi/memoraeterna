@@ -17,15 +17,23 @@ describe("manual content composition", () => {
 
   it("accepts an empty container but rejects partially filled subitems", () => {
     expect(validateManualSubitems([{ id: "empty", title: "", content: "" }])).toBe(true);
-    expect(validateManualSubitems([{ id: "partial", title: "Chapter one", content: "" }])).toBe(false);
-    expect(validateManualSubitems([{ id: "complete", title: "Chapter one", content: "Body" }])).toBe(true);
+    expect(validateManualSubitems([{ id: "partial", title: "Chapter one", content: "" }])).toBe(
+      false
+    );
+    expect(
+      validateManualSubitems([{ id: "complete", title: "Chapter one", content: "Body" }])
+    ).toBe(true);
   });
 
   it("renders Markdown as safe semantic content", () => {
-    const html = renderToString(<MarkdownPreview
-      markdown={"# Heading\n\nA **strong** and ~~revised~~ idea with [evidence](https://example.com).\n\n- [ ] First\n- [x] Second"}
-      emptyLabel={createTranslator("en")("markdown.emptyPreview")}
-    />);
+    const html = renderToString(
+      <MarkdownPreview
+        markdown={
+          "# Heading\n\nA **strong** and ~~revised~~ idea with [evidence](https://example.com).\n\n- [ ] First\n- [x] Second"
+        }
+        emptyLabel={createTranslator("en")("markdown.emptyPreview")}
+      />
+    );
 
     expect(html).toContain("<h1");
     expect(html).toContain("<strong>strong</strong>");
@@ -36,11 +44,31 @@ describe("manual content composition", () => {
   });
 
   it("exposes the complete Markdown automation toolbar", () => {
-    const html = renderToString(<MarkdownEditor id="content" value="" onChange={() => undefined} t={createTranslator("en")} label="Content" />);
+    const html = renderToString(
+      <MarkdownEditor
+        id="content"
+        value=""
+        onChange={() => undefined}
+        t={createTranslator("en")}
+        label="Content"
+      />
+    );
 
     for (const label of [
-      "Main heading", "Section heading", "Bold", "Italic", "Strikethrough", "Link",
-      "Bulleted list", "Numbered list", "Checklist", "Quote", "Inline code", "Code block", "Horizontal rule"
-    ]) expect(html).toContain(`aria-label="${label}"`);
+      "Main heading",
+      "Section heading",
+      "Bold",
+      "Italic",
+      "Strikethrough",
+      "Link",
+      "Bulleted list",
+      "Numbered list",
+      "Checklist",
+      "Quote",
+      "Inline code",
+      "Code block",
+      "Horizontal rule"
+    ])
+      expect(html).toContain(`aria-label="${label}"`);
   });
 });

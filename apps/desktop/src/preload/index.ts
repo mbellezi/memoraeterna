@@ -1,15 +1,58 @@
-import { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema } from '@app/integration-contracts';
-import {FollowedInvestigationSchema,FollowInvestigationInputSchema,InvestigationStateInputSchema} from '@app/domain';
-import { CuratorCommandSchema,CuratorResponseSchema } from '@app/domain';
-import { PromptCommandSchema,PromptResponseSchema } from "@app/domain";
-import { obsidianEditorialConflictsSchema, obsidianResolveInputSchema, obsidianEditReceiptSchema } from "@app/integration-contracts";
+import {
+  obsidianLayoutStatusSchema,
+  obsidianLayoutConfigSchema,
+  obsidianLayoutApplyInputSchema
+} from "@app/integration-contracts";
+import {
+  FollowedInvestigationSchema,
+  FollowInvestigationInputSchema,
+  InvestigationStateInputSchema
+} from "@app/domain";
+import { CuratorCommandSchema, CuratorResponseSchema } from "@app/domain";
+import { PromptCommandSchema, PromptResponseSchema } from "@app/domain";
+import {
+  obsidianEditorialConflictsSchema,
+  obsidianResolveInputSchema,
+  obsidianEditReceiptSchema
+} from "@app/integration-contracts";
 import { obsidianDeepLinkSchema } from "../shared/obsidian-deep-link.js";
-import { obsidianWikiScopeSchema, obsidianWikiStatusSchema, obsidianWikiDiffSchema, obsidianWikiRecoverSchema } from "../shared/ipc.js";
-import { MaintenanceCommandSchema,MaintenanceResponseSchema } from "@app/domain";
-import { ConsultationInputSchema,ConsultationResultSchema,OrganizationRunSchema } from "@app/domain";
+import {
+  obsidianWikiScopeSchema,
+  obsidianWikiStatusSchema,
+  obsidianWikiDiffSchema,
+  obsidianWikiRecoverSchema
+} from "../shared/ipc.js";
+import { MaintenanceCommandSchema, MaintenanceResponseSchema } from "@app/domain";
+import {
+  ConsultationInputSchema,
+  ConsultationResultSchema,
+  OrganizationRunSchema
+} from "@app/domain";
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
-import { WikiCollectionCommandSchema,WikiCollectionResponseSchema,WikiTreeInputSchema,WikiTreeSchema,WikiContextInputSchema,WikiContextSchema,WikiMoveInputSchema,WikiLinkedTargetSchema,WikiLinkedTargetInputSchema,WikiPageSchema, WikiSaveInputSchema, WikiQuerySchema, WikiPageListSchema, WikiResultsSchema, WikiHistorySchema } from "@app/domain";
-import { monitoringQuerySchema, monitoringPageSchema, monitoringDetailSchema, monitoringPruneSchema, monitoringPruneResultSchema } from "../shared/monitoring.js";
+import {
+  WikiCollectionCommandSchema,
+  WikiCollectionResponseSchema,
+  WikiTreeInputSchema,
+  WikiTreeSchema,
+  WikiContextInputSchema,
+  WikiContextSchema,
+  WikiMoveInputSchema,
+  WikiLinkedTargetSchema,
+  WikiLinkedTargetInputSchema,
+  WikiPageSchema,
+  WikiSaveInputSchema,
+  WikiQuerySchema,
+  WikiPageListSchema,
+  WikiResultsSchema,
+  WikiHistorySchema
+} from "@app/domain";
+import {
+  monitoringQuerySchema,
+  monitoringPageSchema,
+  monitoringDetailSchema,
+  monitoringPruneSchema,
+  monitoringPruneResultSchema
+} from "../shared/monitoring.js";
 import { z } from "zod";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
@@ -41,12 +84,17 @@ import type {
 } from "../shared/ipc";
 import type { SourceItemType } from "@app/domain";
 import {
-  sourceDocumentInputSchema, sourceDocumentSchema,
-  sourceUrlPreviewInputSchema, sourceUrlPreviewSchema,
-  libraryBrowseInputSchema, sourceEditInputSchema, sourceEditResultSchema,
+  sourceDocumentInputSchema,
+  sourceDocumentSchema,
+  sourceUrlPreviewInputSchema,
+  sourceUrlPreviewSchema,
+  libraryBrowseInputSchema,
+  sourceEditInputSchema,
+  sourceEditResultSchema,
   appSettingsSchema,
   appSettingsUpdateSchema,
-  googleBooksKeyInputSchema, googleBooksKeyStatusSchema,
+  googleBooksKeyInputSchema,
+  googleBooksKeyStatusSchema,
   aiProfileCreateSchema,
   aiProfileUpdateSchema,
   aiProfileTaskInputSchema,
@@ -124,23 +172,118 @@ import {
 } from "../shared/ipc";
 
 const api: DesktopApi = {
-  investigations:{list:async()=>z.array(FollowedInvestigationSchema).parse(await ipcRenderer.invoke(ipcChannels.investigationList)),get:async id=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationGet,z.string().uuid().parse(id))),follow:async input=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationFollow,FollowInvestigationInputSchema.parse(input))),state:async input=>FollowedInvestigationSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.investigationState,InvestigationStateInputSchema.parse(input)))},
-  consultation:{ask:async(input)=>ConsultationResultSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationAsk,ConsultationInputSchema.parse(input))),cancel:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.consultationCancel,z.string().uuid().parse(id))),save:async(id)=>OrganizationRunSchema.parse(await ipcRenderer.invoke(ipcChannels.consultationSave,z.string().uuid().parse(id)))},
-  maintenance:{command:async(input)=>MaintenanceResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.maintenanceCommand,MaintenanceCommandSchema.parse(input)))},
-  prompts:{command:async(input)=>PromptResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.promptCommand,PromptCommandSchema.parse(input)))},
-  curator:{command:async(input)=>CuratorResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.curatorCommand,CuratorCommandSchema.parse(input)))},
-  organization: {command:async(input)=>OrganizationResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.organizationCommand,OrganizationCommandSchema.parse(input)))},
+  investigations: {
+    list: async () =>
+      z
+        .array(FollowedInvestigationSchema)
+        .parse(await ipcRenderer.invoke(ipcChannels.investigationList)),
+    get: async (id) =>
+      FollowedInvestigationSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.investigationGet, z.string().uuid().parse(id))
+      ),
+    follow: async (input) =>
+      FollowedInvestigationSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.investigationFollow,
+          FollowInvestigationInputSchema.parse(input)
+        )
+      ),
+    state: async (input) =>
+      FollowedInvestigationSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.investigationState,
+          InvestigationStateInputSchema.parse(input)
+        )
+      )
+  },
+  consultation: {
+    ask: async (input) =>
+      ConsultationResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.consultationAsk, ConsultationInputSchema.parse(input))
+      ),
+    cancel: async (id) =>
+      z
+        .null()
+        .parse(
+          await ipcRenderer.invoke(ipcChannels.consultationCancel, z.string().uuid().parse(id))
+        ),
+    save: async (id) =>
+      OrganizationRunSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.consultationSave, z.string().uuid().parse(id))
+      )
+  },
+  maintenance: {
+    command: async (input) =>
+      MaintenanceResponseSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.maintenanceCommand,
+          MaintenanceCommandSchema.parse(input)
+        )
+      )
+  },
+  prompts: {
+    command: async (input) =>
+      PromptResponseSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.promptCommand, PromptCommandSchema.parse(input))
+      )
+  },
+  curator: {
+    command: async (input) =>
+      CuratorResponseSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.curatorCommand, CuratorCommandSchema.parse(input))
+      )
+  },
+  organization: {
+    command: async (input) =>
+      OrganizationResponseSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.organizationCommand,
+          OrganizationCommandSchema.parse(input)
+        )
+      )
+  },
   wiki: {
-    collection:async input=>WikiCollectionResponseSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiCollection,WikiCollectionCommandSchema.parse(input))),
-    tree:async input=>WikiTreeSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiTree,WikiTreeInputSchema.parse(input))),
-    context:async input=>WikiContextSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiContext,WikiContextInputSchema.parse(input))),
-    move:async input=>WikiPageSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiMove,WikiMoveInputSchema.parse(input))),
-    linkedTarget:async(input)=>WikiLinkedTargetSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiLinkedTarget,WikiLinkedTargetInputSchema.parse(input))),
+    collection: async (input) =>
+      WikiCollectionResponseSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.wikiCollection,
+          WikiCollectionCommandSchema.parse(input)
+        )
+      ),
+    tree: async (input) =>
+      WikiTreeSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.wikiTree, WikiTreeInputSchema.parse(input))
+      ),
+    context: async (input) =>
+      WikiContextSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.wikiContext, WikiContextInputSchema.parse(input))
+      ),
+    move: async (input) =>
+      WikiPageSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.wikiMove, WikiMoveInputSchema.parse(input))
+      ),
+    linkedTarget: async (input) =>
+      WikiLinkedTargetSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.wikiLinkedTarget,
+          WikiLinkedTargetInputSchema.parse(input)
+        )
+      ),
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
-    get: async (id, revisionId) => WikiPageSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })),
-    save: async (input) => WikiPageSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiSave, WikiSaveInputSchema.parse(input))),
-    search: async (input) => WikiResultsSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiSearch, WikiQuerySchema.parse(input))),
-    history: async (id) => WikiHistorySchema.parse(await ipcRenderer.invoke(ipcChannels.wikiHistory, id))
+    get: async (id, revisionId) =>
+      WikiPageSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })
+      ),
+    save: async (input) =>
+      WikiPageSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.wikiSave, WikiSaveInputSchema.parse(input))
+      ),
+    search: async (input) =>
+      WikiResultsSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.wikiSearch, WikiQuerySchema.parse(input))
+      ),
+    history: async (id) =>
+      WikiHistorySchema.parse(await ipcRenderer.invoke(ipcChannels.wikiHistory, id))
   },
   system: {
     async getInfo() {
@@ -168,10 +311,17 @@ const api: DesktopApi = {
   },
   settings: {
     async getGoogleBooksKeyStatus() {
-      return googleBooksKeyStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.googleBooksKeyStatus));
+      return googleBooksKeyStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.googleBooksKeyStatus)
+      );
     },
     async updateGoogleBooksKey(input) {
-      return googleBooksKeyStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.googleBooksKeyUpdate, googleBooksKeyInputSchema.parse(input)));
+      return googleBooksKeyStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.googleBooksKeyUpdate,
+          googleBooksKeyInputSchema.parse(input)
+        )
+      );
     },
     async getApp() {
       const result = await ipcRenderer.invoke(ipcChannels.appSettingsGet);
@@ -200,36 +350,128 @@ const api: DesktopApi = {
     }
   },
   obsidian: {
-    onOpen(listener){const handler=(_event:unknown,payload:unknown)=>{const target=obsidianDeepLinkSchema.safeParse(payload);if(target.success)listener(target.data);};ipcRenderer.on(ipcChannels.obsidianDeepLink,handler);return()=>ipcRenderer.removeListener(ipcChannels.obsidianDeepLink,handler);},
-    async pendingOpen(){return obsidianDeepLinkSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.obsidianDeepLinkPending));},
-    async editorialConflicts(){return obsidianEditorialConflictsSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialConflicts));},
-    async editorialComparison(id){return obsidianEditReceiptSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialComparison,z.string().uuid().parse(id)));},
-    async resolveEditorial(input){return obsidianEditReceiptSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianEditorialResolve,obsidianResolveInputSchema.parse(input)));},
-    async layoutStatus(){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutStatus));},
-    async previewLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutPreview,obsidianLayoutConfigSchema.parse(input)));},
-    async applyLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutApply,obsidianLayoutApplyInputSchema.parse(input)));},
-    async rollbackLayout(input){return obsidianLayoutStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianLayoutRollback,obsidianLayoutApplyInputSchema.parse(input)));},
-    async wikiStatus(){return obsidianWikiStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiStatus));},
-    async saveWikiScope(input){return obsidianWikiScopeSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiScope,obsidianWikiScopeSchema.parse(input)));},
-    async wikiDiff(id){return obsidianWikiDiffSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiDiff,z.string().uuid().parse(id)));},
-    async recoverWiki(input){return obsidianWikiStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianWikiRecover,obsidianWikiRecoverSchema.parse(input)));},
+    onOpen(listener) {
+      const handler = (_event: unknown, payload: unknown) => {
+        const target = obsidianDeepLinkSchema.safeParse(payload);
+        if (target.success) listener(target.data);
+      };
+      ipcRenderer.on(ipcChannels.obsidianDeepLink, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.obsidianDeepLink, handler);
+    },
+    async pendingOpen() {
+      return obsidianDeepLinkSchema
+        .nullable()
+        .parse(await ipcRenderer.invoke(ipcChannels.obsidianDeepLinkPending));
+    },
+    async editorialConflicts() {
+      return obsidianEditorialConflictsSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianEditorialConflicts)
+      );
+    },
+    async editorialComparison(id) {
+      return obsidianEditReceiptSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianEditorialComparison,
+          z.string().uuid().parse(id)
+        )
+      );
+    },
+    async resolveEditorial(input) {
+      return obsidianEditReceiptSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianEditorialResolve,
+          obsidianResolveInputSchema.parse(input)
+        )
+      );
+    },
+    async layoutStatus() {
+      return obsidianLayoutStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianLayoutStatus)
+      );
+    },
+    async previewLayout(input) {
+      return obsidianLayoutStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianLayoutPreview,
+          obsidianLayoutConfigSchema.parse(input)
+        )
+      );
+    },
+    async applyLayout(input) {
+      return obsidianLayoutStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianLayoutApply,
+          obsidianLayoutApplyInputSchema.parse(input)
+        )
+      );
+    },
+    async rollbackLayout(input) {
+      return obsidianLayoutStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianLayoutRollback,
+          obsidianLayoutApplyInputSchema.parse(input)
+        )
+      );
+    },
+    async wikiStatus() {
+      return obsidianWikiStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianWikiStatus)
+      );
+    },
+    async saveWikiScope(input) {
+      return obsidianWikiScopeSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianWikiScope,
+          obsidianWikiScopeSchema.parse(input)
+        )
+      );
+    },
+    async wikiDiff(id) {
+      return obsidianWikiDiffSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianWikiDiff, z.string().uuid().parse(id))
+      );
+    },
+    async recoverWiki(input) {
+      return obsidianWikiStatusSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.obsidianWikiRecover,
+          obsidianWikiRecoverSchema.parse(input)
+        )
+      );
+    },
     async startSync() {
-      return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStart));
+      return obsidianSyncStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianSyncStart)
+      );
     },
     async getSyncStatus() {
-      return obsidianSyncStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.obsidianSyncStatus));
+      return obsidianSyncStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.obsidianSyncStatus)
+      );
     }
   },
   monitoring: {
-    async list(input) { return monitoringPageSchema.parse(await ipcRenderer.invoke(ipcChannels.monitoringList, monitoringQuerySchema.parse(input))); },
-    async detail(id) { return monitoringDetailSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.monitoringDetail, z.string().uuid().parse(id))); },
-    async prune(input) { return monitoringPruneResultSchema.parse(await ipcRenderer.invoke(ipcChannels.monitoringPrune, monitoringPruneSchema.parse(input))); }
+    async list(input) {
+      return monitoringPageSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.monitoringList, monitoringQuerySchema.parse(input))
+      );
+    },
+    async detail(id) {
+      return monitoringDetailSchema
+        .nullable()
+        .parse(await ipcRenderer.invoke(ipcChannels.monitoringDetail, z.string().uuid().parse(id)));
+    },
+    async prune(input) {
+      return monitoringPruneResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.monitoringPrune, monitoringPruneSchema.parse(input))
+      );
+    }
   },
   debug: {
     async listSimilarityRuns() {
-      return similarityDebugRunSchema.array().parse(
-        await ipcRenderer.invoke(ipcChannels.debugSimilarityRunsList)
-      );
+      return similarityDebugRunSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.debugSimilarityRunsList));
     },
     async clearSimilarityRuns() {
       return similarityDebugClearResultSchema.parse(
@@ -239,13 +481,26 @@ const api: DesktopApi = {
   },
   ingestion: {
     async previewUrl(input) {
-      return sourceUrlPreviewSchema.parse(await ipcRenderer.invoke(ipcChannels.ingestionPreviewUrl, sourceUrlPreviewInputSchema.parse(input)));
+      return sourceUrlPreviewSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionPreviewUrl,
+          sourceUrlPreviewInputSchema.parse(input)
+        )
+      );
     },
     async editSource(input) {
-      return sourceEditResultSchema.parse(await ipcRenderer.invoke(ipcChannels.ingestionEditSource, sourceEditInputSchema.parse(input)));
+      return sourceEditResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionEditSource,
+          sourceEditInputSchema.parse(input)
+        )
+      );
     },
     async createManual(input: ManualIngestionInput) {
-      const result = await ipcRenderer.invoke(ipcChannels.ingestionCreateManual, manualIngestionInputSchema.parse(input));
+      const result = await ipcRenderer.invoke(
+        ipcChannels.ingestionCreateManual,
+        manualIngestionInputSchema.parse(input)
+      );
       return ingestionResultSchema.parse(result);
     },
     async extractFileMetadata(input: FileMetadataExtractionInput, onProgress) {
@@ -266,21 +521,28 @@ const api: DesktopApi = {
       }
     },
     async previewFileStructure(input) {
-      return fileStructurePreviewSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionPreviewFileStructure, fileStructurePreviewInputSchema.parse(input)
-      ));
+      return fileStructurePreviewSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionPreviewFileStructure,
+          fileStructurePreviewInputSchema.parse(input)
+        )
+      );
     },
     async enrichMetadata(input: MetadataEnrichmentInput) {
-      return metadataEnrichmentResultSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionEnrichMetadata,
-        metadataEnrichmentInputSchema.parse(input)
-      ));
+      return metadataEnrichmentResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionEnrichMetadata,
+          metadataEnrichmentInputSchema.parse(input)
+        )
+      );
     },
     async applyEnrichmentCover(coverUrl: string) {
-      return enrichmentCoverResultSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionApplyEnrichmentCover,
-        enrichmentCoverInputSchema.parse({ coverUrl })
-      ));
+      return enrichmentCoverResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionApplyEnrichmentCover,
+          enrichmentCoverInputSchema.parse({ coverUrl })
+        )
+      );
     },
     async findDuplicate(input: DuplicateCheckInput) {
       const result = await ipcRenderer.invoke(
@@ -290,49 +552,66 @@ const api: DesktopApi = {
       return result === null ? null : duplicateCandidateSchema.parse(result);
     },
     async createContainerSource(input: ContainerSourceInput) {
-      return ingestionResultSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionCreateContainerSource,
-        containerSourceInputSchema.parse(input)
-      ));
+      return ingestionResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionCreateContainerSource,
+          containerSourceInputSchema.parse(input)
+        )
+      );
     },
     async importFile(input: FileImportInput) {
-      const result = await ipcRenderer.invoke(ipcChannels.ingestionImportFile, fileImportInputSchema.parse(input));
+      const result = await ipcRenderer.invoke(
+        ipcChannels.ingestionImportFile,
+        fileImportInputSchema.parse(input)
+      );
       return result === null ? null : ingestionResultSchema.parse(result);
     },
     async lookupSources(query: string, sourceTypes: SourceItemType[] = []) {
-      return sourceSuggestionSchema.array().parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionLookupSources,
-        sourceLookupInputSchema.parse({ query, sourceTypes })
-      ));
+      return sourceSuggestionSchema
+        .array()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.ingestionLookupSources,
+            sourceLookupInputSchema.parse({ query, sourceTypes })
+          )
+        );
     },
     async getStructure(structureId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.ingestionStructureGet, structureId);
       return result === null ? null : documentStructureViewSchema.parse(result);
     },
     async saveStructure(input: StructureSaveInput) {
-      return documentStructureViewSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionStructureSave,
-        structureSaveInputSchema.parse(input)
-      ));
+      return documentStructureViewSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionStructureSave,
+          structureSaveInputSchema.parse(input)
+        )
+      );
     },
     async confirmStructure(input: StructureConfirmInput) {
-      return processingQueueResultSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionStructureConfirm,
-        structureConfirmInputSchema.parse(input)
-      ));
+      return processingQueueResultSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.ingestionStructureConfirm,
+          structureConfirmInputSchema.parse(input)
+        )
+      );
     },
     async process(input: ProcessingRequest) {
-      return processingQueueResultSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.ingestionProcess,
-        processingRequestSchema.parse(input)
-      ));
+      return processingQueueResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.ingestionProcess, processingRequestSchema.parse(input))
+      );
     },
     async listBatches() {
-      return processingBatchSchema.array().parse(await ipcRenderer.invoke(ipcChannels.ingestionBatchesList));
+      return processingBatchSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.ingestionBatchesList));
     }
   },
   jobs: {
-    cancelBatch:async(id)=>z.null().parse(await ipcRenderer.invoke(ipcChannels.jobsCancelBatch,z.string().uuid().parse(id))),
+    cancelBatch: async (id) =>
+      z
+        .null()
+        .parse(await ipcRenderer.invoke(ipcChannels.jobsCancelBatch, z.string().uuid().parse(id))),
     async list() {
       return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
     },
@@ -361,24 +640,47 @@ const api: DesktopApi = {
   },
   search: {
     async query(input: SearchInput) {
-      return searchResultsSchema.parse(await ipcRenderer.invoke(ipcChannels.searchQuery, searchInputSchema.parse(input)));
+      return searchResultsSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.searchQuery, searchInputSchema.parse(input))
+      );
     }
   },
   knowledge: {
     async startRelationLabels(input) {
-      return z.string().uuid().parse(await ipcRenderer.invoke(ipcChannels.relationLabelsStart, relationLabelsInputSchema.parse(input)));
+      return z
+        .string()
+        .uuid()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.relationLabelsStart,
+            relationLabelsInputSchema.parse(input)
+          )
+        );
     },
     async relationLabelsStatus() {
-      return jobRecordSchema.nullable().parse(await ipcRenderer.invoke(ipcChannels.relationLabelsStatus));
+      return jobRecordSchema
+        .nullable()
+        .parse(await ipcRenderer.invoke(ipcChannels.relationLabelsStatus));
     },
     async getSourceDocument(input) {
-      return sourceDocumentSchema.parse(await ipcRenderer.invoke(ipcChannels.libraryDocumentGet, sourceDocumentInputSchema.parse(input)));
+      return sourceDocumentSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.libraryDocumentGet,
+          sourceDocumentInputSchema.parse(input)
+        )
+      );
     },
     async browseLibrary(input) {
-      return librarySourceSchema.array().parse(await ipcRenderer.invoke(ipcChannels.libraryBrowse, libraryBrowseInputSchema.parse(input)));
+      return librarySourceSchema
+        .array()
+        .parse(
+          await ipcRenderer.invoke(ipcChannels.libraryBrowse, libraryBrowseInputSchema.parse(input))
+        );
     },
     async listLibrary(sourceTypes: SourceItemType[] = []) {
-      return librarySourceSchema.array().parse(await ipcRenderer.invoke(ipcChannels.libraryList, sourceTypes));
+      return librarySourceSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.libraryList, sourceTypes));
     },
     async getSourceDetail(sourceItemId: string) {
       const result = await ipcRenderer.invoke(ipcChannels.librarySourceGet, sourceItemId);
@@ -397,9 +699,9 @@ const api: DesktopApi = {
       return typeof result === "string" ? result : null;
     },
     async listPendingNotes() {
-      return pendingAtomicNoteSchema.array().parse(
-        await ipcRenderer.invoke(ipcChannels.knowledgePendingNotesList)
-      );
+      return pendingAtomicNoteSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.knowledgePendingNotesList));
     },
     async reviewNote(input: AtomicNoteReviewInput) {
       const result = await ipcRenderer.invoke(
@@ -409,10 +711,22 @@ const api: DesktopApi = {
       return result === null ? null : atomicNoteViewSchema.parse(result);
     },
     async listSourceRelations(input) {
-      return sourceRelationsPageSchema.parse(await ipcRenderer.invoke(ipcChannels.sourceRelationsList,sourceRelationsInputSchema.parse(input)));
+      return sourceRelationsPageSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.sourceRelationsList,
+          sourceRelationsInputSchema.parse(input)
+        )
+      );
     },
     async reviewSourceRelation(input) {
-      return z.boolean().parse(await ipcRenderer.invoke(ipcChannels.sourceRelationsReview,sourceRelationReviewSchema.parse(input)));
+      return z
+        .boolean()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.sourceRelationsReview,
+            sourceRelationReviewSchema.parse(input)
+          )
+        );
     },
     async getGraphDashboard(mode, sourceView = "relations") {
       const input = knowledgeGraphDashboardInputSchema.parse({ mode, sourceView });
@@ -440,10 +754,17 @@ const api: DesktopApi = {
       return () => ipcRenderer.removeListener(ipcChannels.aiLocalEmbeddingLoadStatus, handler);
     },
     async listProviders() {
-      return aiProviderConfigSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProvidersList));
+      return aiProviderConfigSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.aiProvidersList));
     },
     async saveProvider(input: AiProviderConfigInput) {
-      return aiProviderConfigSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProvidersSave, aiProviderConfigInputSchema.parse(input)));
+      return aiProviderConfigSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiProvidersSave,
+          aiProviderConfigInputSchema.parse(input)
+        )
+      );
     },
     async deleteProvider(providerId: string) {
       return Boolean(await ipcRenderer.invoke(ipcChannels.aiProvidersDelete, providerId));
@@ -452,19 +773,25 @@ const api: DesktopApi = {
       return Boolean(await ipcRenderer.invoke(ipcChannels.aiProvidersTest, providerId));
     },
     async listModels(providerId: string) {
-      return aiModelListSchema.parse(await ipcRenderer.invoke(ipcChannels.aiModelsList, providerId));
+      return aiModelListSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiModelsList, providerId)
+      );
     },
     async discoverModels(input: AiModelDiscoveryInput) {
-      return aiModelListSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.aiModelsDiscover,
-        aiModelDiscoveryInputSchema.parse(input)
-      ));
+      return aiModelListSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiModelsDiscover,
+          aiModelDiscoveryInputSchema.parse(input)
+        )
+      );
     },
     async getParameterCapabilities(input: AiParameterCapabilitiesInput) {
-      return aiModelParameterCapabilitiesSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.aiParameterCapabilitiesGet,
-        aiParameterCapabilitiesInputSchema.parse(input)
-      ));
+      return aiModelParameterCapabilitiesSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.aiParameterCapabilitiesGet,
+          aiParameterCapabilitiesInputSchema.parse(input)
+        )
+      );
     },
     async connectOpenAiCodex() {
       return aiModelListSchema.parse(await ipcRenderer.invoke(ipcChannels.aiOpenAiCodexConnect));
@@ -476,28 +803,35 @@ const api: DesktopApi = {
       return aiProfileSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfilesList));
     },
     async createProfile(input: AiProfileCreate) {
-      return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesCreate, aiProfileCreateSchema.parse(input)));
+      return aiProfileSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiProfilesCreate, aiProfileCreateSchema.parse(input))
+      );
     },
     async updateProfile(input: AiProfileUpdate) {
-      return aiProfileSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.aiProfilesUpdate,
-        aiProfileUpdateSchema.parse(input)
-      ));
+      return aiProfileSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiProfilesUpdate, aiProfileUpdateSchema.parse(input))
+      );
     },
     async cloneProfile(profileId: string, name: string) {
-      return aiProfileSchema.parse(await ipcRenderer.invoke(ipcChannels.aiProfilesClone, { profileId, name }));
+      return aiProfileSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.aiProfilesClone, { profileId, name })
+      );
     },
     async deleteProfile(profileId: string) {
       return Boolean(await ipcRenderer.invoke(ipcChannels.aiProfilesDelete, profileId));
     },
     async listProfileTasks(profileId?: string) {
-      return aiProfileTaskSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiProfileTasksList, profileId));
+      return aiProfileTaskSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.aiProfileTasksList, profileId));
     },
     async setProfileTask(input: AiProfileTaskInput) {
       await ipcRenderer.invoke(ipcChannels.aiProfileTaskSet, aiProfileTaskInputSchema.parse(input));
     },
     async listTaskRoutes() {
-      return aiTaskRouteSchema.array().parse(await ipcRenderer.invoke(ipcChannels.aiTaskRoutesList));
+      return aiTaskRouteSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.aiTaskRoutesList));
     },
     async setTaskRoute(input: AiTaskRoute) {
       await ipcRenderer.invoke(ipcChannels.aiTaskRouteSet, aiTaskRouteSchema.parse(input));
@@ -505,41 +839,55 @@ const api: DesktopApi = {
   },
   localModels: {
     async list() {
-      return localModelViewSchema.array().parse(await ipcRenderer.invoke(ipcChannels.localModelsList));
+      return localModelViewSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.localModelsList));
     },
     async download(input: LocalModelDownloadInput) {
-      return localModelViewSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.localModelsDownload,
-        localModelDownloadInputSchema.parse(input)
-      ));
+      return localModelViewSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.localModelsDownload,
+          localModelDownloadInputSchema.parse(input)
+        )
+      );
     },
     async cancel(catalogId: string) {
-      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsCancel, catalogId));
+      return localModelViewSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.localModelsCancel, catalogId)
+      );
     },
     async resume(catalogId: string) {
-      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsResume, catalogId));
+      return localModelViewSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.localModelsResume, catalogId)
+      );
     },
     async remove(catalogId: string) {
-      return localModelViewSchema.parse(await ipcRenderer.invoke(ipcChannels.localModelsRemove, catalogId));
+      return localModelViewSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.localModelsRemove, catalogId)
+      );
     },
     async test(catalogId: string) {
       return String(await ipcRenderer.invoke(ipcChannels.localModelsTest, catalogId));
     },
     async setDefaults(localModelId: string, defaultParameters: AiModelParameters) {
-      return localModelViewSchema.parse(await ipcRenderer.invoke(
-        ipcChannels.localModelsDefaultsSet,
-        localModelDefaultsInputSchema.parse({ localModelId, defaultParameters })
-      ));
+      return localModelViewSchema.parse(
+        await ipcRenderer.invoke(
+          ipcChannels.localModelsDefaultsSet,
+          localModelDefaultsInputSchema.parse({ localModelId, defaultParameters })
+        )
+      );
     },
     async importGguf() {
       const result = await ipcRenderer.invoke(ipcChannels.localModelsImportGguf);
       return result === null ? null : localModelViewSchema.parse(result);
     },
     async setRepositoryToken(token: string) {
-      return Boolean(await ipcRenderer.invoke(
-        ipcChannels.localModelsRepositoryTokenSet,
-        repositoryTokenInputSchema.parse({ token })
-      ));
+      return Boolean(
+        await ipcRenderer.invoke(
+          ipcChannels.localModelsRepositoryTokenSet,
+          repositoryTokenInputSchema.parse({ token })
+        )
+      );
     },
     async hasRepositoryToken() {
       return Boolean(await ipcRenderer.invoke(ipcChannels.localModelsRepositoryTokenStatus));
@@ -553,14 +901,21 @@ const api: DesktopApi = {
   },
   integrations: {
     async getGatewayStatus() {
-      return integrationGatewayStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.integrationGatewayStatus));
+      return integrationGatewayStatusSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.integrationGatewayStatus)
+      );
     },
     async listClients() {
-      return integrationClientSchema.array().parse(await ipcRenderer.invoke(ipcChannels.integrationClientsList));
+      return integrationClientSchema
+        .array()
+        .parse(await ipcRenderer.invoke(ipcChannels.integrationClientsList));
     },
     async createPairing(input: IntegrationPairingInput) {
       return integrationPairingResultSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.integrationPairingCreate, integrationPairingInputSchema.parse(input))
+        await ipcRenderer.invoke(
+          ipcChannels.integrationPairingCreate,
+          integrationPairingInputSchema.parse(input)
+        )
       );
     },
     async revokeClient(clientId: string) {

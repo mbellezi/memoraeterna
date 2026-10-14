@@ -39,9 +39,7 @@ export const IngestionStageStatusSchema = z.enum([
   "skipped"
 ]);
 
-export type IngestionStageStatus = z.infer<
-  typeof IngestionStageStatusSchema
->;
+export type IngestionStageStatus = z.infer<typeof IngestionStageStatusSchema>;
 
 export const IngestionStageCheckpointSchema = z
   .object({
@@ -51,9 +49,7 @@ export const IngestionStageCheckpointSchema = z
   })
   .strict();
 
-export type IngestionStageCheckpoint = z.infer<
-  typeof IngestionStageCheckpointSchema
->;
+export type IngestionStageCheckpoint = z.infer<typeof IngestionStageCheckpointSchema>;
 
 export const IngestionRunSchema = z
   .object({
@@ -61,10 +57,7 @@ export const IngestionRunSchema = z
     sourceItemId: StableIdSchema.optional(),
     status: IngestionRunStatusSchema,
     currentStage: z.string().min(1),
-    stagesCheckpoint: z.record(
-      z.string(),
-      IngestionStageCheckpointSchema
-    ),
+    stagesCheckpoint: z.record(z.string(), IngestionStageCheckpointSchema),
     error: z.string().optional(),
     startedAt: IsoDateTimeSchema.optional(),
     finishedAt: IsoDateTimeSchema.optional(),

@@ -11,7 +11,11 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
-import { mlxHelperRequestSchema, parseMlxHelperOutput, type MlxHelperRequest } from "./local-runtime-protocol.js";
+import {
+  mlxHelperRequestSchema,
+  parseMlxHelperOutput,
+  type MlxHelperRequest
+} from "./local-runtime-protocol.js";
 import { localParameterCapabilities } from "./parameter-capabilities.js";
 
 const supportedLocalTasks = new Set([
@@ -43,13 +47,35 @@ export interface LocalExecutionResult {
 
 export class NodeLlamaCppAdapter implements AiModelAdapter {
   private readonly runtime: NodeLlamaRuntime | null;
-  private readonly execute: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal; onProgress?: AiProgressListener }) => Promise<LocalExecutionResult>;
-  private readonly executeEmbedding: (input: { modelPath: string; text: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>;
+  private readonly execute: (input: {
+    modelPath: string;
+    prompt: string;
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+    onProgress?: AiProgressListener;
+  }) => Promise<LocalExecutionResult>;
+  private readonly executeEmbedding: (input: {
+    modelPath: string;
+    text: string;
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }) => Promise<LocalExecutionResult>;
 
   public constructor(
     private readonly options: LocalAdapterOptions,
-    execute?: (input: { modelPath: string; prompt: string; parameters: Record<string, unknown>; signal?: AbortSignal; onProgress?: AiProgressListener }) => Promise<LocalExecutionResult>,
-    executeEmbedding?: (input: { modelPath: string; text: string; parameters: Record<string, unknown>; signal?: AbortSignal }) => Promise<LocalExecutionResult>
+    execute?: (input: {
+      modelPath: string;
+      prompt: string;
+      parameters: Record<string, unknown>;
+      signal?: AbortSignal;
+      onProgress?: AiProgressListener;
+    }) => Promise<LocalExecutionResult>,
+    executeEmbedding?: (input: {
+      modelPath: string;
+      text: string;
+      parameters: Record<string, unknown>;
+      signal?: AbortSignal;
+    }) => Promise<LocalExecutionResult>
   ) {
     this.runtime = execute || executeEmbedding ? null : new NodeLlamaRuntime(options.modelPath);
     this.execute = execute ?? ((input) => this.runtime!.generate(input));
@@ -61,8 +87,10 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
   }
 
   public canHandle(request: AiTaskRequest): boolean {
-    return (request.taskType === "embedding" || supportedLocalTasks.has(request.taskType))
-      && request.requiredCapabilities.every((item) => this.options.capabilities.includes(item));
+    return (
+      (request.taskType === "embedding" || supportedLocalTasks.has(request.taskType)) &&
+      request.requiredCapabilities.every((item) => this.options.capabilities.includes(item))
+    );
   }
 
   public isLoaded(): boolean {
@@ -75,22 +103,25 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
-    const abort = () => { void this.dispose(); };
+    const abort = () => {
+      void this.dispose();
+    };
     signal?.addEventListener("abort", abort, { once: true });
     try {
-      const result = input.taskType === "embedding"
-        ? await this.executeEmbedding({
-            modelPath: this.options.modelPath,
-            text: promptFromInput(input.input),
-            parameters: input.parameters,
-            ...(signal ? { signal } : {})
-          })
-        : await this.execute({
-            modelPath: this.options.modelPath,
-            prompt: promptFromInput(input.input),
-            parameters: input.parameters,
-            ...(signal ? { signal } : {})
-          });
+      const result =
+        input.taskType === "embedding"
+          ? await this.executeEmbedding({
+              modelPath: this.options.modelPath,
+              text: promptFromInput(input.input),
+              parameters: input.parameters,
+              ...(signal ? { signal } : {})
+            })
+          : await this.execute({
+              modelPath: this.options.modelPath,
+              prompt: promptFromInput(input.input),
+              parameters: input.parameters,
+              ...(signal ? { signal } : {})
+            });
       return taskResult(input, "local-gguf", this.options.modelId, result);
     } finally {
       signal?.removeEventListener("abort", abort);
@@ -137,7 +168,10 @@ export class MlxAdapter implements AiModelAdapter {
   }
 
   public canHandle(request: AiTaskRequest): boolean {
-    return supportedLocalTasks.has(request.taskType) && request.requiredCapabilities.every((item) => this.options.capabilities.includes(item));
+    return (
+      supportedLocalTasks.has(request.taskType) &&
+      request.requiredCapabilities.every((item) => this.options.capabilities.includes(item))
+    );
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
@@ -199,7 +233,9 @@ class MlxHelperRuntime {
   public async execute(input: MlxExecutionInput): Promise<LocalExecutionResult> {
     const child = this.ensureChild();
     const request = createMlxGenerateRequest(input);
-    const abort = () => { void this.dispose(); };
+    const abort = () => {
+      void this.dispose();
+    };
     input.signal?.addEventListener("abort", abort, { once: true });
     const timeout = setTimeout(abort, input.timeoutMs);
     child.stdin.write(`${JSON.stringify(request)}\n`);
@@ -220,7 +256,10 @@ class MlxHelperRuntime {
     child.kill("SIGTERM");
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(resolve, 1_000);
-      child.once("exit", () => { clearTimeout(timeout); resolve(); });
+      child.once("exit", () => {
+        clearTimeout(timeout);
+        resolve();
+      });
     });
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   }
@@ -228,13 +267,24 @@ class MlxHelperRuntime {
   private ensureChild(): ChildProcessWithoutNullStreams {
     if (this.child && !this.child.killed && this.child.exitCode === null) return this.child;
     this.persistenceConfirmed = false;
-    const child = spawn(this.helperPath, [], { stdio: ["pipe", "pipe", "pipe"], env: minimalRuntimeEnvironment() });
+    const child = spawn(this.helperPath, [], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: minimalRuntimeEnvironment()
+    });
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => { this.stdout += chunk; });
-    child.stderr.on("data", (chunk: string) => { this.stderr = `${this.stderr}${chunk}`.slice(-2_000); });
-    child.once("error", () => { if (this.child === child) this.child = null; });
-    child.once("exit", () => { if (this.child === child) this.child = null; });
+    child.stdout.on("data", (chunk: string) => {
+      this.stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      this.stderr = `${this.stderr}${chunk}`.slice(-2_000);
+    });
+    child.once("error", () => {
+      if (this.child === child) this.child = null;
+    });
+    child.once("exit", () => {
+      if (this.child === child) this.child = null;
+    });
     this.child = child;
     return child;
   }
@@ -273,7 +323,10 @@ class MlxHelperRuntime {
   private async detectPersistence(child: ChildProcessWithoutNullStreams): Promise<void> {
     if (this.persistenceConfirmed || child.exitCode !== null || child.killed) return;
     const exited = await new Promise<boolean>((resolve) => {
-      const onExit = () => { clearTimeout(timeout); resolve(true); };
+      const onExit = () => {
+        clearTimeout(timeout);
+        resolve(true);
+      };
       const timeout = setTimeout(() => {
         child.removeListener("exit", onExit);
         resolve(false);
@@ -299,9 +352,10 @@ function createMlxGenerateRequest(input: MlxExecutionInput): MlxHelperRequest {
       ...(typeof input.parameters.presencePenalty === "number"
         ? { presencePenalty: input.parameters.presencePenalty }
         : {}),
-      enableThinking: typeof input.parameters.reasoningLevel === "string"
-        ? input.parameters.reasoningLevel !== "off"
-        : false,
+      enableThinking:
+        typeof input.parameters.reasoningLevel === "string"
+          ? input.parameters.reasoningLevel !== "off"
+          : false,
       ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {})
     }
   });
@@ -316,8 +370,10 @@ export function stripThinkingOutput(output: string): string {
 
 class NodeLlamaRuntime {
   private module: typeof import("node-llama-cpp") | null = null;
-  private llama: Awaited<ReturnType<typeof import("node-llama-cpp")["getLlama"]>> | null = null;
-  private model: Awaited<ReturnType<Awaited<ReturnType<typeof import("node-llama-cpp")["getLlama"]>>["loadModel"]>> | null = null;
+  private llama: Awaited<ReturnType<(typeof import("node-llama-cpp"))["getLlama"]>> | null = null;
+  private model: Awaited<
+    ReturnType<Awaited<ReturnType<(typeof import("node-llama-cpp"))["getLlama"]>>["loadModel"]>
+  > | null = null;
   private loading: Promise<void> | null = null;
 
   public constructor(private readonly modelPath: string) {}
@@ -355,12 +411,16 @@ class NodeLlamaRuntime {
         ...(typeof input.parameters.topK === "number" ? { topK: input.parameters.topK } : {}),
         ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {}),
         ...(input.signal ? { signal: input.signal } : {}),
-        ...(input.onProgress ? {
-          onTextChunk: (chunk: string) => {
-            outputCharacters += chunk.length;
-            input.onProgress?.({ progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4))) });
-          }
-        } : {})
+        ...(input.onProgress
+          ? {
+              onTextChunk: (chunk: string) => {
+                outputCharacters += chunk.length;
+                input.onProgress?.({
+                  progress: Math.min(0.95, Math.max(0.02, outputCharacters / (maxTokens * 4)))
+                });
+              }
+            }
+          : {})
       });
       return {
         output,
@@ -373,7 +433,11 @@ class NodeLlamaRuntime {
     }
   }
 
-  public async embed(input: { text: string; parameters: Record<string, unknown>; signal?: AbortSignal }): Promise<LocalExecutionResult> {
+  public async embed(input: {
+    text: string;
+    parameters: Record<string, unknown>;
+    signal?: AbortSignal;
+  }): Promise<LocalExecutionResult> {
     const startedAt = Date.now();
     await this.load(input.signal);
     const model = this.model!;
@@ -384,9 +448,16 @@ class NodeLlamaRuntime {
     try {
       if (input.signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
       const embedding = await context.getEmbeddingFor(input.text);
-      const requestedDimensions = numberParameter(input.parameters.dimensions, embedding.vector.length);
-      if ((requestedDimensions !== 256 && requestedDimensions !== 768 && requestedDimensions !== 1_024)
-          || requestedDimensions > embedding.vector.length) {
+      const requestedDimensions = numberParameter(
+        input.parameters.dimensions,
+        embedding.vector.length
+      );
+      if (
+        (requestedDimensions !== 256 &&
+          requestedDimensions !== 768 &&
+          requestedDimensions !== 1_024) ||
+        requestedDimensions > embedding.vector.length
+      ) {
         throw new Error(`Unsupported embedding dimension: ${requestedDimensions}`);
       }
       return {
@@ -419,7 +490,10 @@ class NodeLlamaRuntime {
         const llama = await module.getLlama();
         let model;
         try {
-          model = await llama.loadModel({ modelPath: this.modelPath, ...(signal ? { loadSignal: signal } : {}) });
+          model = await llama.loadModel({
+            modelPath: this.modelPath,
+            ...(signal ? { loadSignal: signal } : {})
+          });
         } catch (error) {
           await llama.dispose();
           throw error;
@@ -432,25 +506,33 @@ class NodeLlamaRuntime {
         this.module = module;
         this.llama = llama;
         this.model = model;
-      })().finally(() => { this.loading = null; });
+      })().finally(() => {
+        this.loading = null;
+      });
     }
     await this.loading;
   }
 }
 
-function localDescriptor(providerId: string, options: LocalAdapterOptions, adapter: string): AiModelDescriptor {
+function localDescriptor(
+  providerId: string,
+  options: LocalAdapterOptions,
+  adapter: string
+): AiModelDescriptor {
   const runtime = providerId === "local-mlx" ? "mlx" : "gguf";
   return {
     providerId,
     modelId: options.modelId,
     runtime: "local",
     capabilities: options.capabilities,
-    parameterCapabilities: options.parameterCapabilities ?? localParameterCapabilities({
-      runtime,
-      modelId: options.modelId,
-      capabilities: options.capabilities,
-      ...(options.catalogId ? { catalogId: options.catalogId } : {})
-    }),
+    parameterCapabilities:
+      options.parameterCapabilities ??
+      localParameterCapabilities({
+        runtime,
+        modelId: options.modelId,
+        capabilities: options.capabilities,
+        ...(options.catalogId ? { catalogId: options.catalogId } : {})
+      }),
     limits: {},
     requirements: {
       adapter,
@@ -462,7 +544,12 @@ function localDescriptor(providerId: string, options: LocalAdapterOptions, adapt
   };
 }
 
-function taskResult(request: AiTaskRequest, providerId: string, modelId: string, result: LocalExecutionResult): AiTaskResult {
+function taskResult(
+  request: AiTaskRequest,
+  providerId: string,
+  modelId: string,
+  result: LocalExecutionResult
+): AiTaskResult {
   return {
     taskType: request.taskType,
     output: result.output,
@@ -489,7 +576,7 @@ function contextSizeParameter(value: unknown): "auto" | number {
 }
 
 function normalizeVector(vector: readonly number[]): number[] {
-  const magnitude = Math.sqrt(vector.reduce((total, value) => total + (value * value), 0));
+  const magnitude = Math.sqrt(vector.reduce((total, value) => total + value * value, 0));
   return magnitude === 0 ? [...vector] : vector.map((value) => value / magnitude);
 }
 

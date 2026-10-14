@@ -91,8 +91,9 @@ export async function listRows<T extends QueryResultRow>(
   returning: string,
   limit = 100
 ): Promise<T[]> {
-  const result = await db.query<T>(`select ${returning} from ${tableName} order by created_at desc limit $1`, [
-    limit
-  ]);
+  const result = await db.query<T>(
+    `select ${returning} from ${tableName} order by created_at desc limit $1`,
+    [limit]
+  );
   return [...result.rows];
 }

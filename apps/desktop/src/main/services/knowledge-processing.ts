@@ -20,20 +20,24 @@ export const knowledgeGraphPromptVersion = "knowledge-graph-v7";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
 
-const knowledgeGraphExecutionTraceSchema = z.object({
-  providerId: z.string(),
-  modelId: z.string(),
-  runtime: z.string(),
-  profileId: z.string(),
-  aiTaskRunId: z.string(),
-  outputLanguage: z.string().optional()
-}).strict();
+const knowledgeGraphExecutionTraceSchema = z
+  .object({
+    providerId: z.string(),
+    modelId: z.string(),
+    runtime: z.string(),
+    profileId: z.string(),
+    aiTaskRunId: z.string(),
+    outputLanguage: z.string().optional()
+  })
+  .strict();
 
-const knowledgeGraphBatchCheckpointSchema = z.object({
-  batchKey: z.string(),
-  batch: KnowledgeGraphGenerationOutputSchema,
-  execution: knowledgeGraphExecutionTraceSchema
-}).strict();
+const knowledgeGraphBatchCheckpointSchema = z
+  .object({
+    batchKey: z.string(),
+    batch: KnowledgeGraphGenerationOutputSchema,
+    execution: knowledgeGraphExecutionTraceSchema
+  })
+  .strict();
 
 export interface KnowledgeAiExecution {
   output: unknown;
@@ -45,8 +49,17 @@ export interface KnowledgeAiExecution {
   outputLanguage?: string;
 }
 
-export interface KnowledgeCallContext { operation: string; promptVersion: string; batchIndex: number; attempt: number; chunkIds: string[] }
-export type KnowledgeAiRunner = (input: string, context: KnowledgeCallContext) => Promise<KnowledgeAiExecution | null>;
+export interface KnowledgeCallContext {
+  operation: string;
+  promptVersion: string;
+  batchIndex: number;
+  attempt: number;
+  chunkIds: string[];
+}
+export type KnowledgeAiRunner = (
+  input: string,
+  context: KnowledgeCallContext
+) => Promise<KnowledgeAiExecution | null>;
 
 export interface KnowledgeGraphAtomicNoteInput {
   id: string;
@@ -93,9 +106,12 @@ export function limitKnowledgeGraphBatches(
       return true;
     });
     const relations = batch.relations.filter((relation) => {
-      if (relationCount >= maxRelations
-          || !allowedKeys.has(relation.subjectEntityKey)
-          || !allowedKeys.has(relation.objectEntityKey)) return false;
+      if (
+        relationCount >= maxRelations ||
+        !allowedKeys.has(relation.subjectEntityKey) ||
+        !allowedKeys.has(relation.objectEntityKey)
+      )
+        return false;
       relationCount += 1;
       return true;
     });
@@ -128,7 +144,9 @@ export interface KnowledgeGraphGenerationOptions {
   inputKind?: "atomic_notes" | "source_chunks" | "catalog_metadata";
   checkpointNamespace?: string;
   contentLanguage?: string;
-  resolveRelations?: (batch: KnowledgeGraphGenerationOutput) => Promise<KnowledgeGraphGenerationOutput>;
+  resolveRelations?: (
+    batch: KnowledgeGraphGenerationOutput
+  ) => Promise<KnowledgeGraphGenerationOutput>;
   extractionLimits?: KnowledgeGraphExtractionLimits;
   onBatchCompleted?: (input: {
     completed: number;
@@ -179,13 +197,24 @@ export async function generateSummaryFromChunks(
 ): Promise<SummaryResult | null> {
   const nonEmptyChunks = chunks.filter((chunk) => chunk.content.trim().length > 0);
   if (nonEmptyChunks.length === 0) return null;
-  if (!hasMinimumSummaryContent(nonEmptyChunks.map((chunk) => chunk.content), minimumWordCount)) {
+  if (
+    !hasMinimumSummaryContent(
+      nonEmptyChunks.map((chunk) => chunk.content),
+      minimumWordCount
+    )
+  ) {
     return { summary: "", mapReduce: false, executions: [], skippedReason: "too_short" };
   }
   const groups = groupChunks(nonEmptyChunks, maxInputCharacters);
   const executions: KnowledgeAiExecution[] = [];
   if (groups.length === 1) {
-    const execution = await run(summaryPrompt(groups[0] ?? [], false), { operation: "summary", promptVersion: summaryPromptVersion, batchIndex: 0, attempt: 0, chunkIds: (groups[0] ?? []).map((chunk) => chunk.id) });
+    const execution = await run(summaryPrompt(groups[0] ?? [], false), {
+      operation: "summary",
+      promptVersion: summaryPromptVersion,
+      batchIndex: 0,
+      attempt: 0,
+      chunkIds: (groups[0] ?? []).map((chunk) => chunk.id)
+    });
     if (!execution) return null;
     executions.push(execution);
     const summary = normalizeSummaryText(execution.output);
@@ -201,7 +230,13 @@ export async function generateSummaryFromChunks(
   const partials: string[] = [];
   const concepts: NonNullable<SummaryResult["concepts"]> = [];
   for (const [batchIndex, group] of groups.entries()) {
-    const execution = await run(summaryPrompt(group, true), { operation: "summary_map", promptVersion: summaryPromptVersion, batchIndex, attempt: 0, chunkIds: group.map((chunk) => chunk.id) });
+    const execution = await run(summaryPrompt(group, true), {
+      operation: "summary_map",
+      promptVersion: summaryPromptVersion,
+      batchIndex,
+      attempt: 0,
+      chunkIds: group.map((chunk) => chunk.id)
+    });
     if (!execution) return null;
     executions.push(execution);
     const partial = normalizeSummaryText(execution.output);
@@ -211,7 +246,13 @@ export async function generateSummaryFromChunks(
   if (partials.length === 0) {
     return { summary: "", mapReduce: true, executions, skippedReason: "non_content" };
   }
-  const reduction = await run(summaryReductionPrompt(partials), { operation: "summary_reduce", promptVersion: summaryPromptVersion, batchIndex: groups.length, attempt: 0, chunkIds: nonEmptyChunks.map((chunk) => chunk.id) });
+  const reduction = await run(summaryReductionPrompt(partials), {
+    operation: "summary_reduce",
+    promptVersion: summaryPromptVersion,
+    batchIndex: groups.length,
+    attempt: 0,
+    chunkIds: nonEmptyChunks.map((chunk) => chunk.id)
+  });
   if (!reduction) return null;
   executions.push(reduction);
   const summary = normalizeSummaryText(reduction.output);
@@ -228,7 +269,13 @@ export function buildAggregateSummaryPrompt(
   source: { kind: string; title: string },
   subparts: ReadonlyArray<{ title: string; summary: string }>
 ): string {
-  return renderPrompt("summary.aggregate", { source_type: source.kind, source_title: source.title, ordered_subparts: subparts.map((subpart, index) => `[Subpart ${index + 1}: ${subpart.title}]\n${subpart.summary}`).join("\n\n"), });
+  return renderPrompt("summary.aggregate", {
+    source_type: source.kind,
+    source_title: source.title,
+    ordered_subparts: subparts
+      .map((subpart, index) => `[Subpart ${index + 1}: ${subpart.title}]\n${subpart.summary}`)
+      .join("\n\n")
+  });
 }
 
 export async function generateKnowledgeGraphFromAtomicNotes(
@@ -244,21 +291,37 @@ export async function generateKnowledgeGraphFromAtomicNotes(
 } | null> {
   const inputKind = options.inputKind ?? "atomic_notes";
   const checkpointNamespace = options.checkpointNamespace ?? "";
-  const groups = groupAtomicNotes(notes.filter((note) => graphNoteContent(note).trim().length > 0), maxInputCharacters);
+  const groups = groupAtomicNotes(
+    notes.filter((note) => graphNoteContent(note).trim().length > 0),
+    maxInputCharacters
+  );
   if (groups.length === 0) return null;
   const completedBatches = checkpointNamespace
-    ? (options.completedBatches ?? []).filter((checkpoint) => checkpoint.batchKey.startsWith(`${checkpointNamespace}:`))
-    : options.completedBatches ?? [];
-  const reusable = reusableGraphCheckpoints(groups, completedBatches, checkpointNamespace, options.contentLanguage);
+    ? (options.completedBatches ?? []).filter((checkpoint) =>
+        checkpoint.batchKey.startsWith(`${checkpointNamespace}:`)
+      )
+    : (options.completedBatches ?? []);
+  const reusable = reusableGraphCheckpoints(
+    groups,
+    completedBatches,
+    checkpointNamespace,
+    options.contentLanguage
+  );
   const limitedReusable = options.extractionLimits
-    ? limitKnowledgeGraphBatches(reusable.map((checkpoint) => checkpoint.batch), options.extractionLimits)
+    ? limitKnowledgeGraphBatches(
+        reusable.map((checkpoint) => checkpoint.batch),
+        options.extractionLimits
+      )
     : reusable.map((checkpoint) => checkpoint.batch);
   const checkpoints = reusable.map((checkpoint, index) => ({
     ...checkpoint,
     batch: limitedReusable[index] ?? checkpoint.batch
   }));
   for (let batchIndex = checkpoints.length; batchIndex < groups.length; batchIndex += 1) {
-    const remaining = remainingGraphLimits(checkpoints.map((checkpoint) => checkpoint.batch), options.extractionLimits);
+    const remaining = remainingGraphLimits(
+      checkpoints.map((checkpoint) => checkpoint.batch),
+      options.extractionLimits
+    );
     if (remaining && remaining.maxEntities <= 0) break;
     const group = groups[batchIndex] ?? [];
     const evidenceAliases = createEvidenceAliases(group);
@@ -266,27 +329,47 @@ export async function generateKnowledgeGraphFromAtomicNotes(
       maxEntities: Math.min(12, remaining?.maxEntities ?? 12),
       maxRelations: Math.min(12, remaining?.maxRelations ?? 12)
     };
-    const execution = await run(buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits), { operation: `graph_${inputKind}`, promptVersion: knowledgeGraphPromptVersion, batchIndex, attempt: 0, chunkIds: [...evidenceAliases.values()] });
+    const execution = await run(
+      buildKnowledgeGraphPrompt(source, group, evidenceAliases, inputKind, batchLimits),
+      {
+        operation: `graph_${inputKind}`,
+        promptVersion: knowledgeGraphPromptVersion,
+        batchIndex,
+        attempt: 0,
+        chunkIds: [...evidenceAliases.values()]
+      }
+    );
     if (!execution) return null;
     let parsed: KnowledgeGraphGenerationOutput;
     let finalExecution = execution;
     try {
       parsed = parseKnowledgeGraphOutput(execution.output, evidenceAliases);
     } catch (initialError) {
-      const repaired = await run(buildKnowledgeGraphRepairPrompt(
-        source,
-        group,
-        evidenceAliases,
-        execution.output,
-        initialError,
-        inputKind,
-        batchLimits
-      ), { operation: `graph_${inputKind}_repair`, promptVersion: knowledgeGraphPromptVersion, batchIndex, attempt: 1, chunkIds: [...evidenceAliases.values()] });
+      const repaired = await run(
+        buildKnowledgeGraphRepairPrompt(
+          source,
+          group,
+          evidenceAliases,
+          execution.output,
+          initialError,
+          inputKind,
+          batchLimits
+        ),
+        {
+          operation: `graph_${inputKind}_repair`,
+          promptVersion: knowledgeGraphPromptVersion,
+          batchIndex,
+          attempt: 1,
+          chunkIds: [...evidenceAliases.values()]
+        }
+      );
       if (!repaired) throw initialError;
       try {
         parsed = parseKnowledgeGraphOutput(repaired.output, evidenceAliases);
       } catch (repairError) {
-        throw new Error(`knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`);
+        throw new Error(
+          `knowledge_graph_output_invalid:${knowledgeGraphValidationCode(repairError)}`
+        );
       }
       finalExecution = repaired;
     }
@@ -324,7 +407,17 @@ export function buildKnowledgeGraphPrompt(
   limits: KnowledgeGraphExtractionLimits = { maxEntities: 12, maxRelations: 12 }
 ): string {
   const inputLabel = graphInputLabel(inputKind);
-  return renderPrompt(`graph.${inputKind}`, { input_kind: inputLabel, relation_language: renderPrompt("shared.relation_language"), evidence_aliases: [...evidenceAliases.keys()], max_entities: limits.maxEntities, max_relations: limits.maxRelations, source_title: source.title, source_language: source.language, input_heading: graphInputHeading(inputKind), graph_inputs: formatGraphInputs(notes, evidenceAliases, inputKind), });
+  return renderPrompt(`graph.${inputKind}`, {
+    input_kind: inputLabel,
+    relation_language: renderPrompt("shared.relation_language"),
+    evidence_aliases: [...evidenceAliases.keys()],
+    max_entities: limits.maxEntities,
+    max_relations: limits.maxRelations,
+    source_title: source.title,
+    source_language: source.language,
+    input_heading: graphInputHeading(inputKind),
+    graph_inputs: formatGraphInputs(notes, evidenceAliases, inputKind)
+  });
 }
 
 export function parseKnowledgeGraphOutput(
@@ -334,8 +427,14 @@ export function parseKnowledgeGraphOutput(
   const value = parseJsonOutput(output);
   const resolved = evidenceAliases ? resolveGraphEvidenceAliases(value, evidenceAliases) : value;
   const parsed = KnowledgeGraphGenerationOutputSchema.parse(resolved);
-  if (parsed.entities.some((entity) => entity.canonicalEntityId !== undefined)) throw new Error("knowledge_graph_model_supplied_canonical_identity");
-  if (parsed.relations.some((relation) => relation.relationTypeId !== undefined || relation.originalPredicate !== undefined)) {
+  if (parsed.entities.some((entity) => entity.canonicalEntityId !== undefined))
+    throw new Error("knowledge_graph_model_supplied_canonical_identity");
+  if (
+    parsed.relations.some(
+      (relation) =>
+        relation.relationTypeId !== undefined || relation.originalPredicate !== undefined
+    )
+  ) {
     throw new Error("knowledge_graph_model_supplied_canonical_identity");
   }
   return parsed;
@@ -350,10 +449,24 @@ export function buildKnowledgeGraphRepairPrompt(
   inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata" = "atomic_notes",
   limits: KnowledgeGraphExtractionLimits = { maxEntities: 8, maxRelations: 8 }
 ): string {
-  return renderPrompt(`graph.${inputKind}.repair`, { input_kind: graphInputLabel(inputKind), relation_language: renderPrompt("shared.relation_language"), validation_errors: structuredOutputRepairFeedback(validationError), max_entities: Math.min(8, limits.maxEntities), max_relations: Math.min(8, limits.maxRelations), evidence_aliases: [...evidenceAliases.keys()], source_title: source.title, source_language: source.language, input_heading: graphInputHeading(inputKind), graph_inputs: formatGraphInputs(notes, evidenceAliases, inputKind), previous_output: serializeOutputForRepair(previousOutput), });
+  return renderPrompt(`graph.${inputKind}.repair`, {
+    input_kind: graphInputLabel(inputKind),
+    relation_language: renderPrompt("shared.relation_language"),
+    validation_errors: structuredOutputRepairFeedback(validationError),
+    max_entities: Math.min(8, limits.maxEntities),
+    max_relations: Math.min(8, limits.maxRelations),
+    evidence_aliases: [...evidenceAliases.keys()],
+    source_title: source.title,
+    source_language: source.language,
+    input_heading: graphInputHeading(inputKind),
+    graph_inputs: formatGraphInputs(notes, evidenceAliases, inputKind),
+    previous_output: serializeOutputForRepair(previousOutput)
+  });
 }
 
-export function parseKnowledgeGraphBatchCheckpoints(value: unknown): KnowledgeGraphBatchCheckpoint[] {
+export function parseKnowledgeGraphBatchCheckpoints(
+  value: unknown
+): KnowledgeGraphBatchCheckpoint[] {
   const parsed = z.array(knowledgeGraphBatchCheckpointSchema).safeParse(value);
   return parsed.success ? parsed.data : [];
 }
@@ -362,7 +475,10 @@ export function buildAtomicNoteGenerationPrompt(
   source: { title: string; language: string },
   chunks: ReadonlyArray<{ id: string; content: string }>
 ): string {
-  return renderPrompt("notes.extract", { source_title: source.title, chunks: chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n"), });
+  return renderPrompt("notes.extract", {
+    source_title: source.title,
+    chunks: chunks.map((chunk) => `[${chunk.id}]\n${chunk.content}`).join("\n\n")
+  });
 }
 
 export function buildAtomicNoteRepairPrompt(
@@ -370,7 +486,11 @@ export function buildAtomicNoteRepairPrompt(
   allowedChunkIds: ReadonlyArray<string>,
   validationError: unknown
 ): string {
-  return renderPrompt("notes.repair", { validation_errors: structuredOutputRepairFeedback(validationError), allowed_chunk_ids: allowedChunkIds, previous_output: serializeOutputForRepair(previousOutput), });
+  return renderPrompt("notes.repair", {
+    validation_errors: structuredOutputRepairFeedback(validationError),
+    allowed_chunk_ids: allowedChunkIds,
+    previous_output: serializeOutputForRepair(previousOutput)
+  });
 }
 
 export function parseAtomicNoteGenerationOutput(
@@ -398,7 +518,13 @@ export async function generateAtomicNoteCandidates(
   run: KnowledgeAiRunner
 ): Promise<{ output: AtomicNoteGenerationOutput; execution: KnowledgeAiExecution } | null> {
   const allowedChunkIds = new Set(chunks.map((chunk) => chunk.id));
-  const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), { operation: "atomic_note_generation", promptVersion: atomicNotePromptVersion, batchIndex: 0, attempt: 0, chunkIds: [...allowedChunkIds] });
+  const execution = await run(buildAtomicNoteGenerationPrompt(source, chunks), {
+    operation: "atomic_note_generation",
+    promptVersion: atomicNotePromptVersion,
+    batchIndex: 0,
+    attempt: 0,
+    chunkIds: [...allowedChunkIds]
+  });
   if (!execution) return null;
   try {
     return {
@@ -406,11 +532,16 @@ export async function generateAtomicNoteCandidates(
       execution
     };
   } catch (initialError) {
-    const repairedExecution = await run(buildAtomicNoteRepairPrompt(
-      execution.output,
-      [...allowedChunkIds],
-      initialError
-    ), { operation: "atomic_note_repair", promptVersion: atomicNotePromptVersion, batchIndex: 0, attempt: 1, chunkIds: [...allowedChunkIds] });
+    const repairedExecution = await run(
+      buildAtomicNoteRepairPrompt(execution.output, [...allowedChunkIds], initialError),
+      {
+        operation: "atomic_note_repair",
+        promptVersion: atomicNotePromptVersion,
+        batchIndex: 0,
+        attempt: 1,
+        chunkIds: [...allowedChunkIds]
+      }
+    );
     if (!repairedExecution) throw initialError;
     return {
       output: parseAtomicNoteGenerationOutput(repairedExecution.output, allowedChunkIds),
@@ -419,7 +550,10 @@ export async function generateAtomicNoteCandidates(
   }
 }
 
-export function scoreMetadataOverlap(left: Record<string, unknown>, right: Record<string, unknown>): number {
+export function scoreMetadataOverlap(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): number {
   const leftSignals = collectMetadataSignals(left);
   const rightSignals = collectMetadataSignals(right);
   if (leftSignals.size === 0 || rightSignals.size === 0) return 0;
@@ -433,13 +567,21 @@ export function meetsRelationThreshold(score: number, threshold: number): boolea
 }
 
 export function qualifiesAtomicNoteRelation(input: {
-  finalScore: number; threshold: number; rerankScore: number | null; relationType: string;
+  finalScore: number;
+  threshold: number;
+  rerankScore: number | null;
+  relationType: string;
   settings: AtomicNoteMatchingSettings;
 }): boolean {
-  const validated = input.rerankScore === null ? !input.settings.requireReranking
-    : input.rerankScore > 0 && input.rerankScore >= input.settings.minRerankScore;
-  return meetsRelationThreshold(input.finalScore, input.threshold) && validated
-    && (input.settings.includeWeakTypes || !["mentions", "related"].includes(input.relationType));
+  const validated =
+    input.rerankScore === null
+      ? !input.settings.requireReranking
+      : input.rerankScore > 0 && input.rerankScore >= input.settings.minRerankScore;
+  return (
+    meetsRelationThreshold(input.finalScore, input.threshold) &&
+    validated &&
+    (input.settings.includeWeakTypes || !["mentions", "related"].includes(input.relationType))
+  );
 }
 
 export function calculateRelationScore(input: {
@@ -454,15 +596,31 @@ export function calculateRelationScore(input: {
   const hasGraph = input.graphScore !== null && input.graphScore !== undefined;
   const settings = input.settings ?? defaultAtomicNoteMatchingSettings;
   const selected = input.hasEmbedding
-    ? hasGraph ? settings.withEmbeddingAndGraph : settings.withEmbedding
-    : hasGraph ? settings.withGraph : settings.textAndMetadata;
-  const scores = { vector: input.vectorScore, text: input.textScore, metadata: input.metadataScore, graph: input.graphScore ?? 0 };
+    ? hasGraph
+      ? settings.withEmbeddingAndGraph
+      : settings.withEmbedding
+    : hasGraph
+      ? settings.withGraph
+      : settings.textAndMetadata;
+  const scores = {
+    vector: input.vectorScore,
+    text: input.textScore,
+    metadata: input.metadataScore,
+    graph: input.graphScore ?? 0
+  };
   const entries = Object.entries(selected) as Array<[keyof typeof scores, number]>;
   const totalWeight = entries.reduce((total, [, value]) => total + value, 0);
-  const baseScore = entries.reduce((total, [key, value]) => total + scores[key] * value, 0) / totalWeight;
-  return Math.max(0, Math.min(1, input.rerankScore === null || input.rerankScore === undefined
-    ? baseScore
-    : baseScore * (1 - settings.rerankerWeight) + input.rerankScore * settings.rerankerWeight));
+  const baseScore =
+    entries.reduce((total, [key, value]) => total + scores[key] * value, 0) / totalWeight;
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      input.rerankScore === null || input.rerankScore === undefined
+        ? baseScore
+        : baseScore * (1 - settings.rerankerWeight) + input.rerankScore * settings.rerankerWeight
+    )
+  );
 }
 
 export function calculateAtomicNoteMatchingProgress(input: {
@@ -472,22 +630,25 @@ export function calculateAtomicNoteMatchingProgress(input: {
   candidateCount: number;
 }): number {
   if (input.noteCount <= 0) return 1;
-  const candidateProgress = input.candidateCount > 0
-    ? input.completedCandidates / input.candidateCount
-    : 1;
+  const candidateProgress =
+    input.candidateCount > 0 ? input.completedCandidates / input.candidateCount : 1;
   return Math.max(0, Math.min(1, (input.noteIndex + candidateProgress) / input.noteCount));
 }
 
-const batchRerankItemSchema = z.object({
-  candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
-  explanation: z.string().trim().min(1).max(700),
-  score: z.number().min(0).max(1),
-  relationType: AtomicNoteRelationTypeSchema
-}).strict();
+const batchRerankItemSchema = z
+  .object({
+    candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
+    explanation: z.string().trim().min(1).max(700),
+    score: z.number().min(0).max(1),
+    relationType: AtomicNoteRelationTypeSchema
+  })
+  .strict();
 
-const batchRerankOutputSchema = z.object({
-  results: z.array(z.unknown()).max(100)
-}).strict();
+const batchRerankOutputSchema = z
+  .object({
+    results: z.array(z.unknown()).max(100)
+  })
+  .strict();
 
 export interface BatchRerankOutput {
   candidateAlias: string;
@@ -521,10 +682,19 @@ export function parseBatchRerankOutput(
   return parsed;
 }
 
-export function resolveAtomicNoteReferences(text: string, sourceId: string, candidateAlias: string, targetId: string): string {
-  const aliases = new Map([["s1", sourceId], [candidateAlias, targetId]]);
+export function resolveAtomicNoteReferences(
+  text: string,
+  sourceId: string,
+  candidateAlias: string,
+  targetId: string
+): string {
+  const aliases = new Map([
+    ["s1", sourceId],
+    [candidateAlias, targetId]
+  ]);
   // Model output has aliases only; canonical tags are created exclusively here.
-  if (/<\/?(?:note|source)-ref\b/i.test(text)) throw new Error("atomic_note_rerank_invalid_reference");
+  if (/<\/?(?:note|source)-ref\b/i.test(text))
+    throw new Error("atomic_note_rerank_invalid_reference");
   return text.replace(/\b[sc][0-9]+\b/g, (alias) => {
     const id = aliases.get(alias);
     if (!id) throw new Error("atomic_note_rerank_invalid_reference");
@@ -536,9 +706,16 @@ export function buildBatchRerankPrompt(
   source: { title: string; ideaStatement: string },
   candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>
 ): string {
-  return renderPrompt("notes.match", { source_title: source.title, source_idea: source.ideaStatement, candidate_notes: candidates.map((candidate) =>
-    `[${candidate.alias}]\nTitle: ${candidate.title}\nMain idea: ${candidate.ideaStatement}`
-  ).join("\n\n"), });
+  return renderPrompt("notes.match", {
+    source_title: source.title,
+    source_idea: source.ideaStatement,
+    candidate_notes: candidates
+      .map(
+        (candidate) =>
+          `[${candidate.alias}]\nTitle: ${candidate.title}\nMain idea: ${candidate.ideaStatement}`
+      )
+      .join("\n\n")
+  });
 }
 
 export interface AtomicNoteRankingInput {
@@ -566,54 +743,54 @@ export function fuseAtomicNoteCandidateRankings(
   reciprocalRankConstant = 60
 ): FusedAtomicNoteCandidate[] {
   const candidates = new Map<string, FusedAtomicNoteCandidate>();
-  const add = (
-    ranking: ReadonlyArray<AtomicNoteRankingInput>,
-    kind: "text" | "vector" | "graph"
-  ) => ranking.forEach((candidate, index) => {
-    const current = candidates.get(candidate.noteId) ?? {
-      noteId: candidate.noteId,
-      textScore: 0,
-      vectorScore: 0,
-      graphScore: null,
-      textRank: null,
-      vectorRank: null,
-      graphRank: null,
-      fusionScore: 0
-    };
-    if (kind === "text") {
-      current.textScore = candidate.score;
-      current.textRank = index + 1;
-    } else if (kind === "vector") {
-      current.vectorScore = candidate.score;
-      current.vectorRank = index + 1;
-    } else {
-      current.graphScore = candidate.score;
-      current.graphRank = index + 1;
-    }
-    candidates.set(candidate.noteId, current);
-  });
+  const add = (ranking: ReadonlyArray<AtomicNoteRankingInput>, kind: "text" | "vector" | "graph") =>
+    ranking.forEach((candidate, index) => {
+      const current = candidates.get(candidate.noteId) ?? {
+        noteId: candidate.noteId,
+        textScore: 0,
+        vectorScore: 0,
+        graphScore: null,
+        textRank: null,
+        vectorRank: null,
+        graphRank: null,
+        fusionScore: 0
+      };
+      if (kind === "text") {
+        current.textScore = candidate.score;
+        current.textRank = index + 1;
+      } else if (kind === "vector") {
+        current.vectorScore = candidate.score;
+        current.vectorRank = index + 1;
+      } else {
+        current.graphScore = candidate.score;
+        current.graphRank = index + 1;
+      }
+      candidates.set(candidate.noteId, current);
+    });
   add(textCandidates, "text");
   add(vectorCandidates, "vector");
   add(graphCandidates, "graph");
-  const activeRankings = Math.max(1,
-    (textCandidates.length > 0 ? 1 : 0)
-      + (vectorCandidates.length > 0 ? 1 : 0)
-      + (graphCandidates.length > 0 ? 1 : 0));
+  const activeRankings = Math.max(
+    1,
+    (textCandidates.length > 0 ? 1 : 0) +
+      (vectorCandidates.length > 0 ? 1 : 0) +
+      (graphCandidates.length > 0 ? 1 : 0)
+  );
   const maximumRrf = activeRankings / (reciprocalRankConstant + 1);
   const compare = (left: FusedAtomicNoteCandidate, right: FusedAtomicNoteCandidate) =>
-    right.fusionScore - left.fusionScore
-      || (right.graphScore ?? 0) - (left.graphScore ?? 0)
-      || right.vectorScore - left.vectorScore
-      || right.textScore - left.textScore
-      || left.noteId.localeCompare(right.noteId);
+    right.fusionScore - left.fusionScore ||
+    (right.graphScore ?? 0) - (left.graphScore ?? 0) ||
+    right.vectorScore - left.vectorScore ||
+    right.textScore - left.textScore ||
+    left.noteId.localeCompare(right.noteId);
   const ranked = [...candidates.values()]
     .map((candidate) => ({
       ...candidate,
-      fusionScore: (
-        (candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0)
-        + (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0)
-        + (candidate.graphRank ? 1 / (reciprocalRankConstant + candidate.graphRank) : 0)
-      ) / maximumRrf
+      fusionScore:
+        ((candidate.textRank ? 1 / (reciprocalRankConstant + candidate.textRank) : 0) +
+          (candidate.vectorRank ? 1 / (reciprocalRankConstant + candidate.vectorRank) : 0) +
+          (candidate.graphRank ? 1 / (reciprocalRankConstant + candidate.graphRank) : 0)) /
+        maximumRrf
     }))
     .sort(compare);
   const safeLimit = Math.max(0, limit);
@@ -632,7 +809,9 @@ export function fuseAtomicNoteCandidateRankings(
   for (const noteId of reservedGraphOnlyIds) {
     if (selectedIds.has(noteId)) continue;
     const graphCandidate = ranked.find((candidate) => candidate.noteId === noteId);
-    const replacementIndex = selected.findLastIndex((candidate) => !reservedIds.has(candidate.noteId));
+    const replacementIndex = selected.findLastIndex(
+      (candidate) => !reservedIds.has(candidate.noteId)
+    );
     if (!graphCandidate || replacementIndex < 0) continue;
     selectedIds.delete(selected[replacementIndex]!.noteId);
     selected[replacementIndex] = graphCandidate;
@@ -641,23 +820,45 @@ export function fuseAtomicNoteCandidateRankings(
   return selected.sort(compare);
 }
 
-export function summaryPrompt(chunks: ReadonlyArray<{ id: string; content: string }>, partial: boolean): string {
-  return renderPrompt(partial ? "summary.partial" : "summary.short", { chunks: chunks.map((chunk,index) => `[c${index + 1}]\n${chunk.content}`).join("\n\n"), });
+export function summaryPrompt(
+  chunks: ReadonlyArray<{ id: string; content: string }>,
+  partial: boolean
+): string {
+  return renderPrompt(partial ? "summary.partial" : "summary.short", {
+    chunks: chunks.map((chunk, index) => `[c${index + 1}]\n${chunk.content}`).join("\n\n")
+  });
 }
 
-export function summaryConcepts(output: unknown, chunks: ReadonlyArray<{id:string}>) {
+export function summaryConcepts(output: unknown, chunks: ReadonlyArray<{ id: string }>) {
   try {
-    const schema = z.object({concepts:z.array(z.object({idea:z.string().trim().min(1).max(600),evidenceChunkIds:z.array(z.string()).min(1).max(6)}).strict()).max(6)});
+    const schema = z.object({
+      concepts: z
+        .array(
+          z
+            .object({
+              idea: z.string().trim().min(1).max(600),
+              evidenceChunkIds: z.array(z.string()).min(1).max(6)
+            })
+            .strict()
+        )
+        .max(6)
+    });
     const result = schema.parse(parseJsonOutput(output));
     return result.concepts.flatMap((concept) => {
-      const ids = concept.evidenceChunkIds.map((alias) => chunks.find((_,index) => alias === `c${index + 1}`)?.id);
-      return ids.every((id): id is string => Boolean(id)) ? [{idea:concept.idea,evidenceChunkIds:[...new Set(ids)]}] : [];
+      const ids = concept.evidenceChunkIds.map(
+        (alias) => chunks.find((_, index) => alias === `c${index + 1}`)?.id
+      );
+      return ids.every((id): id is string => Boolean(id))
+        ? [{ idea: concept.idea, evidenceChunkIds: [...new Set(ids)] }]
+        : [];
     });
-  } catch { return []; } // Legacy plain summaries remain readable; invalid concept references never become evidence.
+  } catch {
+    return [];
+  } // Legacy plain summaries remain readable; invalid concept references never become evidence.
 }
 
 export function summaryReductionPrompt(partials: ReadonlyArray<string>): string {
-  return renderPrompt("summary.reduce", { partial_summaries: partials.join("\n\n---\n\n"), });
+  return renderPrompt("summary.reduce", { partial_summaries: partials.join("\n\n---\n\n") });
 }
 
 function groupChunks(
@@ -706,7 +907,9 @@ function graphNoteContent(note: KnowledgeGraphAtomicNoteInput): string {
   return `${note.title}\n${note.ideaStatement}\n${note.bodyMarkdown}`;
 }
 
-function createEvidenceAliases(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>): Map<string, string> {
+function createEvidenceAliases(
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>
+): Map<string, string> {
   const chunkIds = [...new Set(notes.flatMap((note) => note.evidenceChunkIds))].sort();
   return new Map(chunkIds.map((chunkId, index) => [`c${index + 1}`, chunkId]));
 }
@@ -717,17 +920,19 @@ function formatGraphInputs(
   inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"
 ): string {
   const aliasByChunkId = new Map([...evidenceAliases].map(([alias, chunkId]) => [chunkId, alias]));
-  return notes.map((note, index) => {
-    const aliases = note.evidenceChunkIds.flatMap((chunkId) => {
-      const alias = aliasByChunkId.get(chunkId);
-      return alias ? [alias] : [];
-    });
-    const prefix = inputKind === "atomic_notes" ? "n" : "s";
-    return `[${prefix}${index + 1}; evidence=${aliases.join(",")}]
+  return notes
+    .map((note, index) => {
+      const aliases = note.evidenceChunkIds.flatMap((chunkId) => {
+        const alias = aliasByChunkId.get(chunkId);
+        return alias ? [alias] : [];
+      });
+      const prefix = inputKind === "atomic_notes" ? "n" : "s";
+      return `[${prefix}${index + 1}; evidence=${aliases.join(",")}]
 Title: ${note.title}
 ${inputKind === "atomic_notes" ? `Idea: ${note.ideaStatement}\n` : ""}
 ${note.bodyMarkdown}`;
-  }).join("\n\n");
+    })
+    .join("\n\n");
 }
 
 function graphInputLabel(inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"): string {
@@ -736,31 +941,37 @@ function graphInputLabel(inputKind: "atomic_notes" | "source_chunks" | "catalog_
   return "source excerpts";
 }
 
-function graphInputHeading(inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"): string {
+function graphInputHeading(
+  inputKind: "atomic_notes" | "source_chunks" | "catalog_metadata"
+): string {
   if (inputKind === "atomic_notes") return "Atomic notes";
   if (inputKind === "catalog_metadata") return "Source catalog metadata";
   return "Source excerpts";
 }
 
-function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMap<string, string>): unknown {
+function resolveGraphEvidenceAliases(
+  value: unknown,
+  evidenceAliases: ReadonlyMap<string, string>
+): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   const root = value as Record<string, unknown>;
-  const resolveItems = (items: unknown): unknown => Array.isArray(items)
-    ? items.map((item) => {
-        if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
-        const record = item as Record<string, unknown>;
-        if (!Array.isArray(record.evidenceChunkIds)) return record;
-        return {
-          ...record,
-          evidenceChunkIds: record.evidenceChunkIds.map((candidate) => {
-            if (typeof candidate !== "string") return candidate;
-            const chunkId = evidenceAliases.get(candidate);
-            if (!chunkId) throw new Error(`knowledge_graph_unknown_evidence_alias:${candidate}`);
-            return chunkId;
-          })
-        };
-      })
-    : items;
+  const resolveItems = (items: unknown): unknown =>
+    Array.isArray(items)
+      ? items.map((item) => {
+          if (typeof item !== "object" || item === null || Array.isArray(item)) return item;
+          const record = item as Record<string, unknown>;
+          if (!Array.isArray(record.evidenceChunkIds)) return record;
+          return {
+            ...record,
+            evidenceChunkIds: record.evidenceChunkIds.map((candidate) => {
+              if (typeof candidate !== "string") return candidate;
+              const chunkId = evidenceAliases.get(candidate);
+              if (!chunkId) throw new Error(`knowledge_graph_unknown_evidence_alias:${candidate}`);
+              return chunkId;
+            })
+          };
+        })
+      : items;
   return {
     ...root,
     entities: resolveItems(root.entities),
@@ -769,10 +980,22 @@ function resolveGraphEvidenceAliases(value: unknown, evidenceAliases: ReadonlyMa
   };
 }
 
-function knowledgeGraphBatchKey(notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>, namespace = "", contentLanguage = "en"): string {
+function knowledgeGraphBatchKey(
+  notes: ReadonlyArray<KnowledgeGraphAtomicNoteInput>,
+  namespace = "",
+  contentLanguage = "en"
+): string {
   const hash = createHash("sha256");
   hash.update(`${knowledgeGraphPromptVersion}\0${contentLanguage}\0`);
-  const promptIdentity=changedPromptIdentity(["graph.atomic_notes","graph.source_chunks","graph.catalog_metadata","graph.atomic_notes.repair","graph.source_chunks.repair","graph.catalog_metadata.repair"]);if(promptIdentity)hash.update(promptIdentity+"\0");
+  const promptIdentity = changedPromptIdentity([
+    "graph.atomic_notes",
+    "graph.source_chunks",
+    "graph.catalog_metadata",
+    "graph.atomic_notes.repair",
+    "graph.source_chunks.repair",
+    "graph.catalog_metadata.repair"
+  ]);
+  if (promptIdentity) hash.update(promptIdentity + "\0");
   for (const note of notes) {
     hash.update(note.id);
     hash.update("\0");
@@ -795,7 +1018,11 @@ function reusableGraphCheckpoints(
   for (let index = 0; index < Math.min(groups.length, completed.length); index += 1) {
     const group = groups[index] ?? [];
     const checkpoint = completed[index];
-    if (!checkpoint || checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace, contentLanguage)) break;
+    if (
+      !checkpoint ||
+      checkpoint.batchKey !== knowledgeGraphBatchKey(group, namespace, contentLanguage)
+    )
+      break;
     reusable.push(checkpoint);
   }
   return reusable;
@@ -829,14 +1056,21 @@ function normalizeSummaryValue(value: string): string {
 }
 
 function structuredOutputRepairFeedback(error: unknown): string {
-  if (error instanceof SyntaxError) return "- The response is not valid JSON. Fix its JSON syntax and close every string, array, and object.";
+  if (error instanceof SyntaxError)
+    return "- The response is not valid JSON. Fix its JSON syntax and close every string, array, and object.";
   if (error instanceof z.ZodError) {
-    return error.issues.slice(0, 8).map((issue) => {
-      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
-      return `- ${path}: ${issue.message}`;
-    }).join("\n");
+    return error.issues
+      .slice(0, 8)
+      .map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+        return `- ${path}: ${issue.message}`;
+      })
+      .join("\n");
   }
-  if (error instanceof Error && error.message.startsWith("knowledge_graph_unknown_evidence_alias:")) {
+  if (
+    error instanceof Error &&
+    error.message.startsWith("knowledge_graph_unknown_evidence_alias:")
+  ) {
     return `- ${error.message}. Use only the allowed evidence aliases listed below.`;
   }
   if (error instanceof Error && error.message === "atomic_note_unknown_evidence_chunk") {
@@ -864,7 +1098,8 @@ function normalizeAtomicNoteGenerationOutput(value: unknown): unknown {
 function knowledgeGraphValidationCode(error: unknown): string {
   if (error instanceof SyntaxError) return "invalid_json";
   if (error instanceof z.ZodError) return "schema_validation";
-  if (error instanceof Error && /^[a-zA-Z0-9_.:-]{1,100}$/.test(error.message)) return error.message;
+  if (error instanceof Error && /^[a-zA-Z0-9_.:-]{1,100}$/.test(error.message))
+    return error.message;
   return "unknown_validation_error";
 }
 
@@ -894,10 +1129,10 @@ function extractFirstJsonObject(value: string): string | null {
     if (inString) {
       if (escaped) escaped = false;
       else if (character === "\\") escaped = true;
-      else if (character === "\"") inString = false;
+      else if (character === '"') inString = false;
       continue;
     }
-    if (character === "\"") inString = true;
+    if (character === '"') inString = true;
     else if (character === "{") depth += 1;
     else if (character === "}") {
       depth -= 1;
@@ -918,7 +1153,7 @@ function serializeOutputForRepair(output: unknown): string {
 
 function collectMetadataSignals(metadata: Record<string, unknown>): Set<string> {
   const values = [metadata.entities, metadata.tags, metadata.concepts]
-    .flatMap((value) => Array.isArray(value) ? value : [])
+    .flatMap((value) => (Array.isArray(value) ? value : []))
     .filter((value): value is string => typeof value === "string")
     .map((value) => value.trim().toLocaleLowerCase())
     .filter(Boolean);

@@ -1,4 +1,9 @@
-export interface GraphHoverTarget { type: "node" | "edge"; key: string; x: number; y: number }
+export interface GraphHoverTarget {
+  type: "node" | "edge";
+  key: string;
+  x: number;
+  y: number;
+}
 
 /** Highlight dwell is independent of pointer inactivity required by the information card. */
 export class GraphHoverIntent {
@@ -14,7 +19,10 @@ export class GraphHoverIntent {
 
   enter(target: GraphHoverTarget) {
     if (this.suspended) return;
-    if (this.target?.key === target.key && this.target.type === target.type) { this.move(target); return; }
+    if (this.target?.key === target.key && this.target.type === target.type) {
+      this.move(target);
+      return;
+    }
     this.clear();
     this.target = target;
     this.highlightTimer = setTimeout(() => {
@@ -52,18 +60,40 @@ export class GraphHoverIntent {
     this.preview(null);
   }
 
-  suspend() { this.suspended = true; this.clear(); }
-  resume() { this.suspended = false; }
-  dispose() { this.suspend(); }
+  suspend() {
+    this.suspended = true;
+    this.clear();
+  }
+  resume() {
+    this.suspended = false;
+  }
+  dispose() {
+    this.suspend();
+  }
 }
 
-interface GraphWheelInput { deltaY: number; deltaMode: number; ctrlKey: boolean; shiftKey: boolean }
+interface GraphWheelInput {
+  deltaY: number;
+  deltaMode: number;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}
 
-export interface GraphZoomBounds { ratio: number; minimum: number; maximum: number }
+export interface GraphZoomBounds {
+  ratio: number;
+  minimum: number;
+  maximum: number;
+}
 
-interface Dimensions { width: number; height: number }
+interface Dimensions {
+  width: number;
+  height: number;
+}
 
-interface CapturableWheelEvent { preventDefault(): void; stopImmediatePropagation(): void }
+interface CapturableWheelEvent {
+  preventDefault(): void;
+  stopImmediatePropagation(): void;
+}
 
 export function captureGraphWheelEvent(event: CapturableWheelEvent): void {
   event.preventDefault();
@@ -80,18 +110,25 @@ export class GraphWheelMotion {
 
   constructor(private readonly sensitivity = 1) {}
 
-  get active() { return Math.abs(this.velocity) >= 0.00004; }
+  get active() {
+    return Math.abs(this.velocity) >= 0.00004;
+  }
 
   push(event: GraphWheelInput, now: number) {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
     // Normalize physical units without switching sensitivity at arbitrary pixel thresholds.
     const pixels = event.deltaY * (event.deltaMode === 1 ? 40 : event.deltaMode === 2 ? 800 : 1);
-    const elapsedInput = this.lastInputAt === null ? 1000 / 60 : Math.max(4, Math.min(80, now - this.lastInputAt));
+    const elapsedInput =
+      this.lastInputAt === null ? 1000 / 60 : Math.max(4, Math.min(80, now - this.lastInputAt));
     const adjustedPixels = pixels * (event.ctrlKey ? 4 : 1);
-    const speedBoost = 1 + 2 * Math.abs(adjustedPixels) / (Math.abs(adjustedPixels) + 80);
-    const travel = Math.sign(adjustedPixels) * 0.006 * Math.pow(Math.abs(adjustedPixels), 0.88)
-      * speedBoost * (event.shiftKey ? 0.25 : 1);
-    const measuredVelocity = travel * this.sensitivity / elapsedInput;
+    const speedBoost = 1 + (2 * Math.abs(adjustedPixels)) / (Math.abs(adjustedPixels) + 80);
+    const travel =
+      Math.sign(adjustedPixels) *
+      0.006 *
+      Math.pow(Math.abs(adjustedPixels), 0.88) *
+      speedBoost *
+      (event.shiftKey ? 0.25 : 1);
+    const measuredVelocity = (travel * this.sensitivity) / elapsedInput;
     if (!this.active || this.lastFrameAt === null || now - this.lastFrameAt > 120) {
       this.lastFrameAt = now;
     }
@@ -103,32 +140,45 @@ export class GraphWheelMotion {
 
   /** Natural-log scale change for this frame; the caller applies exp(delta) to the camera ratio. */
   advance(now: number, bounds?: GraphZoomBounds): number {
-    if (!this.active || this.lastFrameAt === null) { this.cancel(); return 0; }
+    if (!this.active || this.lastFrameAt === null) {
+      this.cancel();
+      return 0;
+    }
     const elapsed = Math.max(0, now - this.lastFrameAt);
     this.lastFrameAt = Math.max(now, this.lastFrameAt);
     if (elapsed === 0) return 0;
     // Do not catch up lost animation time in one frame after a busy/backgrounded renderer.
-    if (elapsed > 120) { this.cancel(); return 0; }
+    if (elapsed > 120) {
+      this.cancel();
+      return 0;
+    }
     const visibleElapsed = Math.min(20, elapsed);
-    const rawDelta = this.velocity * this.decayTime * (1 - Math.exp(-visibleElapsed / this.decayTime));
+    const rawDelta =
+      this.velocity * this.decayTime * (1 - Math.exp(-visibleElapsed / this.decayTime));
     this.velocity *= Math.exp(-elapsed / this.decayTime);
     const limitedDelta = Math.max(-this.maxFrameTravel, Math.min(this.maxFrameTravel, rawDelta));
     const delta = bounds ? softenGraphZoomDelta(limitedDelta, bounds) : limitedDelta;
-    if (limitedDelta !== 0 && delta === 0) { this.cancel(); return 0; }
+    if (limitedDelta !== 0 && delta === 0) {
+      this.cancel();
+      return 0;
+    }
     if (!this.active) this.cancel();
     return delta;
   }
 
-  cancel() { this.velocity = 0; this.lastFrameAt = null; this.lastInputAt = null; }
+  cancel() {
+    this.velocity = 0;
+    this.lastFrameAt = null;
+    this.lastInputAt = null;
+  }
 }
 
 /** Eases logarithmic wheel travel into either camera boundary instead of clipping abruptly. */
 export function softenGraphZoomDelta(delta: number, bounds: GraphZoomBounds): number {
   if (delta === 0) return 0;
   const boundary = delta > 0 ? bounds.maximum : bounds.minimum;
-  const remaining = delta > 0
-    ? Math.log(boundary / bounds.ratio)
-    : Math.log(bounds.ratio / boundary);
+  const remaining =
+    delta > 0 ? Math.log(boundary / bounds.ratio) : Math.log(bounds.ratio / boundary);
   if (!Number.isFinite(remaining) || remaining <= 0) return 0;
   if (remaining <= 0.001) return Math.sign(delta) * remaining;
   const proximity = Math.max(0, Math.min(1, remaining / 1.6));
@@ -176,8 +226,8 @@ export function blendGraphColor(from: string, to: string, progress: number, opac
   const end = Number.parseInt(to.slice(1), 16);
   const fraction = Math.max(0, Math.min(1, progress));
   const channels = [16, 8, 0].map((shift) => {
-    const value = start >> shift & 255;
-    return Math.round(value + ((end >> shift & 255) - value) * fraction);
+    const value = (start >> shift) & 255;
+    return Math.round(value + (((end >> shift) & 255) - value) * fraction);
   });
   return `rgba(${channels.join(", ")}, ${opacity})`;
 }

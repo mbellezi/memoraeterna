@@ -6,7 +6,11 @@ import type { SidecarCommandRunner, SidecarExecOptions, SidecarExecResult } from
 const execFileAsync = promisify(execFileCallback);
 
 export class NodeSidecarCommandRunner implements SidecarCommandRunner {
-  async execFile(file: string, args: readonly string[], options: SidecarExecOptions = {}): Promise<SidecarExecResult> {
+  async execFile(
+    file: string,
+    args: readonly string[],
+    options: SidecarExecOptions = {}
+  ): Promise<SidecarExecResult> {
     const { stdout, stderr } = await execFileAsync(file, [...args], {
       cwd: options.cwd,
       env: options.env,

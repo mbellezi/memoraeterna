@@ -88,13 +88,18 @@ export function createSourceSummaryRepository(db: TransactionPool) {
         const client = await db.connect();
         try {
           await client.query("begin");
-          await client.query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))", [input.sourceItemId]);
+          await client.query("select pg_advisory_xact_lock(hashtextextended($1::text, 0))", [
+            input.sourceItemId
+          ]);
           await client.query(
             "update source_summaries set is_current = false where source_item_id = $1 and is_current = true",
             [input.sourceItemId]
           );
           const summary = await insertCurrent(client);
-          await client.query("update source_items set metadata = metadata - 'summaryStale' where id = $1", [input.sourceItemId]);
+          await client.query(
+            "update source_items set metadata = metadata - 'summaryStale' where id = $1",
+            [input.sourceItemId]
+          );
           await client.query("commit");
           return summary;
         } catch (error) {
@@ -134,7 +139,12 @@ interface TransactionPool extends Queryable {
 }
 
 function isCurrentSummaryConflict(error: unknown): boolean {
-  return typeof error === "object" && error !== null
-    && "code" in error && error.code === "23505"
-    && "constraint" in error && error.constraint === "source_summaries_current_source_uidx";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "23505" &&
+    "constraint" in error &&
+    error.constraint === "source_summaries_current_source_uidx"
+  );
 }

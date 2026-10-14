@@ -20,7 +20,11 @@ type Provider = EnrichmentCandidate["provider"];
 type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface MetadataEnrichmentServiceOptions {
-  credentials?: { get: (reference: string) => Promise<string>; save: (secret: string, reference: string) => Promise<string>; remove: (reference: string) => Promise<boolean> };
+  credentials?: {
+    get: (reference: string) => Promise<string>;
+    save: (secret: string, reference: string) => Promise<string>;
+    remove: (reference: string) => Promise<boolean>;
+  };
   getPool: () => PgPool | null;
   getEnabled: () => Promise<boolean>;
   getBookProvider?: () => Promise<"auto" | "open-library" | "google-books">;
@@ -54,7 +58,10 @@ export class MetadataEnrichmentService {
   private readonly cacheTtlMs: number;
   private readonly cachePath: string;
   private readonly assetStorage = new AssetStorageService();
-  private readonly coverPreviewCache = new Map<string, { expiresAt: number; dataUrl: string | null }>();
+  private readonly coverPreviewCache = new Map<
+    string,
+    { expiresAt: number; dataUrl: string | null }
+  >();
   private cache: CacheFile | null = null;
   private nextOpenLibraryRequestAt = 0;
   private readonly pendingJson = new Map<string, Promise<unknown>>();
@@ -68,8 +75,9 @@ export class MetadataEnrichmentService {
 
   private async getGoogleBooksKey(): Promise<string | null> {
     if (!this.options.credentials) return null;
-    try { return await this.options.credentials.get("metadata:google-books"); }
-    catch (error) {
+    try {
+      return await this.options.credentials.get("metadata:google-books");
+    } catch (error) {
       if (error instanceof Error && error.message === "errors.ai.missingCredential") return null;
       throw new Error("errors.ai.secureStorageUnavailable");
     }
@@ -85,13 +93,15 @@ export class MetadataEnrichmentService {
       if (apiKey === null) await this.options.credentials.remove("metadata:google-books");
       else await this.options.credentials.save(apiKey, "metadata:google-books");
       return { configured: apiKey !== null };
-    } catch { throw new Error("errors.ai.secureStorageUnavailable"); }
+    } catch {
+      throw new Error("errors.ai.secureStorageUnavailable");
+    }
   }
 
   public async search(input: MetadataEnrichmentQuery): Promise<EnrichmentCandidate[]> {
     const query = MetadataEnrichmentQuerySchema.parse(input);
     if (!(await this.options.getEnabled())) return [];
-    const bookProvider = await this.options.getBookProvider?.() ?? "auto";
+    const bookProvider = (await this.options.getBookProvider?.()) ?? "auto";
     const cacheKey = `${bookProvider}:${createCacheKey(query)}`;
     const cached = await this.getCached(cacheKey);
     if (cached) return this.withCoverPreviews(cached);
@@ -107,10 +117,15 @@ export class MetadataEnrichmentService {
             this.options.logger?.warn(`metadata_enrichment_failed:${safeErrorCode(error)}`);
           }
         }
-        if (bookProvider === "google-books" || (bookProvider === "auto" && candidates.length === 0)) {
+        if (
+          bookProvider === "google-books" ||
+          (bookProvider === "auto" && candidates.length === 0)
+        ) {
           candidates = await new GoogleBooksAdapter(this.requestJson.bind(this)).search(query);
         }
-      } else if (["AcademicPaper", "StandaloneArticle", "DocumentSection"].includes(query.sourceType)) {
+      } else if (
+        ["AcademicPaper", "StandaloneArticle", "DocumentSection"].includes(query.sourceType)
+      ) {
         candidates = await new CrossrefAdapter(this.requestJson.bind(this)).search(query);
       }
       const parsed = EnrichmentCandidateSchema.array().parse(candidates).slice(0, 10);
@@ -127,9 +142,11 @@ export class MetadataEnrichmentService {
     const url = validateCoverUrl(coverUrl);
     const response = await this.request(url);
     const contentLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024) throw new Error("metadata_cover_too_large");
+    if (Number.isFinite(contentLength) && contentLength > 10 * 1024 * 1024)
+      throw new Error("metadata_cover_too_large");
     const data = new Uint8Array(await response.arrayBuffer());
-    if (data.byteLength === 0 || data.byteLength > 10 * 1024 * 1024) throw new Error("metadata_cover_too_large");
+    if (data.byteLength === 0 || data.byteLength > 10 * 1024 * 1024)
+      throw new Error("metadata_cover_too_large");
     const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() || "image/jpeg";
     if (!mimeType.startsWith("image/")) throw new Error("metadata_cover_invalid_type");
     const extension = extensionForMimeType(mimeType) ?? (extname(url.pathname) || ".img");
@@ -159,20 +176,33 @@ export class MetadataEnrichmentService {
     if (pending) return pending;
     const request = this.request(url).then((response) => response.json());
     this.pendingJson.set(key, request);
-    try { return await request; }
-    finally { if (this.pendingJson.get(key) === request) this.pendingJson.delete(key); }
+    try {
+      return await request;
+    } finally {
+      if (this.pendingJson.get(key) === request) this.pendingJson.delete(key);
+    }
   }
 
-  private async withCoverPreviews(candidates: EnrichmentCandidate[]): Promise<EnrichmentCandidate[]> {
-    return Promise.all(candidates.map(async (candidate, index) => {
-      if (!candidate.coverUrl || index >= 5) return candidate;
-      try {
-        return { ...candidate, coverPreviewDataUrl: await this.loadCoverPreview(candidate.coverUrl) };
-      } catch {
-        this.coverPreviewCache.set(candidate.coverUrl, { expiresAt: Date.now() + 5 * 60_000, dataUrl: null });
-        return candidate;
-      }
-    }));
+  private async withCoverPreviews(
+    candidates: EnrichmentCandidate[]
+  ): Promise<EnrichmentCandidate[]> {
+    return Promise.all(
+      candidates.map(async (candidate, index) => {
+        if (!candidate.coverUrl || index >= 5) return candidate;
+        try {
+          return {
+            ...candidate,
+            coverPreviewDataUrl: await this.loadCoverPreview(candidate.coverUrl)
+          };
+        } catch {
+          this.coverPreviewCache.set(candidate.coverUrl, {
+            expiresAt: Date.now() + 5 * 60_000,
+            dataUrl: null
+          });
+          return candidate;
+        }
+      })
+    );
   }
 
   private async loadCoverPreview(coverUrl: string): Promise<string> {
@@ -183,11 +213,13 @@ export class MetadataEnrichmentService {
     }
     const response = await this.request(validateCoverUrl(coverUrl));
     const contentLength = Number(response.headers.get("content-length"));
-    if (Number.isFinite(contentLength) && contentLength > 2 * 1024 * 1024) throw new Error("metadata_cover_preview_too_large");
+    if (Number.isFinite(contentLength) && contentLength > 2 * 1024 * 1024)
+      throw new Error("metadata_cover_preview_too_large");
     const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim() || "";
     if (!mimeType.startsWith("image/")) throw new Error("metadata_cover_invalid_type");
     const data = new Uint8Array(await response.arrayBuffer());
-    if (data.byteLength === 0 || data.byteLength > 2 * 1024 * 1024) throw new Error("metadata_cover_preview_too_large");
+    if (data.byteLength === 0 || data.byteLength > 2 * 1024 * 1024)
+      throw new Error("metadata_cover_preview_too_large");
     const dataUrl = `data:${mimeType};base64,${Buffer.from(data).toString("base64")}`;
     this.coverPreviewCache.set(coverUrl, { expiresAt: Date.now() + this.cacheTtlMs, dataUrl });
     return dataUrl;
@@ -201,16 +233,23 @@ export class MetadataEnrichmentService {
       this.nextOpenLibraryRequestAt = startAt + (this.options.openLibraryIntervalMs ?? 1_000);
       if (startAt > now) await new Promise((resolve) => setTimeout(resolve, startAt - now));
     }
-    this.options.logger?.debug(JSON.stringify({ event: "metadata_enrichment_request", url: url.toString() }));
+    this.options.logger?.debug(
+      JSON.stringify({ event: "metadata_enrichment_request", url: url.toString() })
+    );
     const requestUrl = new URL(url);
-    if (requestUrl.origin === "https://www.googleapis.com" && requestUrl.pathname.startsWith("/books/v1/")) {
+    if (
+      requestUrl.origin === "https://www.googleapis.com" &&
+      requestUrl.pathname.startsWith("/books/v1/")
+    ) {
       const apiKey = await this.getGoogleBooksKey();
       if (apiKey) requestUrl.searchParams.set("key", apiKey);
     }
     let response: Response;
     try {
       response = await this.fetch(requestUrl, {
-        signal: AbortSignal.timeout(isOpenLibrary ? this.options.timeoutMs ?? 15_000 : this.timeoutMs),
+        signal: AbortSignal.timeout(
+          isOpenLibrary ? (this.options.timeoutMs ?? 15_000) : this.timeoutMs
+        ),
         redirect: requestUrl.searchParams.has("key") ? "error" : "follow",
         headers: { "User-Agent": "MemoraEterna/0.1 (mailto:metadata@memora.local)" }
       });
@@ -218,9 +257,14 @@ export class MetadataEnrichmentService {
       const name = error instanceof Error ? error.name : "";
       const cause = error instanceof Error ? error.cause : undefined;
       const code = cause && typeof cause === "object" && "code" in cause ? cause.code : undefined;
-      const reason = name === "TimeoutError" || name === "AbortError" || code === "UND_ERR_CONNECT_TIMEOUT" ? "timeout"
-        : code === "ENOTFOUND" || code === "EAI_AGAIN" ? "dns_error"
-        : code === "ECONNREFUSED" || code === "ECONNRESET" ? "connection_error" : "network_error";
+      const reason =
+        name === "TimeoutError" || name === "AbortError" || code === "UND_ERR_CONNECT_TIMEOUT"
+          ? "timeout"
+          : code === "ENOTFOUND" || code === "EAI_AGAIN"
+            ? "dns_error"
+            : code === "ECONNREFUSED" || code === "ECONNRESET"
+              ? "connection_error"
+              : "network_error";
       throw new Error(`metadata_${reason}`);
     }
     if (!response.ok) throw new Error(`metadata_http_${response.status}`);
@@ -275,7 +319,10 @@ export class OpenLibraryAdapter {
     url.searchParams.set("title", query.title);
     if (query.author) url.searchParams.set("author", query.author);
     url.searchParams.set("limit", "8");
-    url.searchParams.set("fields", "key,title,subtitle,author_name,isbn,publisher,first_publish_year,publish_year,edition_key,cover_i,language,subject,number_of_pages_median");
+    url.searchParams.set(
+      "fields",
+      "key,title,subtitle,author_name,isbn,publisher,first_publish_year,publish_year,edition_key,cover_i,language,subject,number_of_pages_median"
+    );
     const payload = asObject(await this.requestJson(url));
     return asArray(payload.docs).map((raw) => {
       const document = asObject(raw);
@@ -292,9 +339,15 @@ export class OpenLibraryAdapter {
         language: stringArray(document.language)[0],
         subjects: stringArray(document.subject).slice(0, 50),
         pageCount: numberValue(document.number_of_pages_median),
-        coverUrl: numberValue(document.cover_i) ? `https://covers.openlibrary.org/b/id/${numberValue(document.cover_i)}-L.jpg` : undefined
+        coverUrl: numberValue(document.cover_i)
+          ? `https://covers.openlibrary.org/b/id/${numberValue(document.cover_i)}-L.jpg`
+          : undefined
       };
-      return candidate("open-library", stringValue(document.key) ?? JSON.stringify(values), compact(values));
+      return candidate(
+        "open-library",
+        stringValue(document.key) ?? JSON.stringify(values),
+        compact(values)
+      );
     });
   }
 
@@ -302,21 +355,36 @@ export class OpenLibraryAdapter {
     const editionUrl = new URL(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`);
     const edition = asObject(await this.requestJson(editionUrl));
     if (!stringValue(edition.title)) return [];
-    const authors = await Promise.all(asArray(edition.authors).slice(0, 20).map(async (raw) => {
-      const key = stringValue(asObject(raw).key);
-      if (!key) return null;
-      try {
-        const author = asObject(await this.requestJson(new URL(`https://openlibrary.org${key}.json`)));
-        const name = stringValue(author.name);
-        return name ? authorCreator(name) : null;
-      } catch { return null; }
-    }));
+    const authors = await Promise.all(
+      asArray(edition.authors)
+        .slice(0, 20)
+        .map(async (raw) => {
+          const key = stringValue(asObject(raw).key);
+          if (!key) return null;
+          try {
+            const author = asObject(
+              await this.requestJson(new URL(`https://openlibrary.org${key}.json`))
+            );
+            const name = stringValue(author.name);
+            return name ? authorCreator(name) : null;
+          } catch {
+            return null;
+          }
+        })
+    );
     const workKey = stringValue(asObject(asArray(edition.works)[0]).key);
     let work: Record<string, unknown> = {};
     if (workKey) {
-      try { work = asObject(await this.requestJson(new URL(`https://openlibrary.org${workKey}.json`))); } catch { work = {}; }
+      try {
+        work = asObject(await this.requestJson(new URL(`https://openlibrary.org${workKey}.json`)));
+      } catch {
+        work = {};
+      }
     }
-    const covers = numberArray(edition.covers).length > 0 ? numberArray(edition.covers) : numberArray(work.covers);
+    const covers =
+      numberArray(edition.covers).length > 0
+        ? numberArray(edition.covers)
+        : numberArray(work.covers);
     const values = compact({
       title: stringValue(edition.title),
       subtitle: stringValue(edition.subtitle),
@@ -325,7 +393,9 @@ export class OpenLibraryAdapter {
       publicationDate: stringValue(edition.publish_date),
       isbn10: stringArray(edition.isbn_10)[0],
       isbn13: stringArray(edition.isbn_13)[0],
-      language: stringValue(asObject(asArray(edition.languages)[0]).key)?.split("/").at(-1),
+      language: stringValue(asObject(asArray(edition.languages)[0]).key)
+        ?.split("/")
+        .at(-1),
       pageCount: numberValue(edition.number_of_pages),
       subjects: stringArray(work.subjects).slice(0, 50),
       description: descriptionValue(work.description),
@@ -339,32 +409,36 @@ export class GoogleBooksAdapter {
   public constructor(private readonly requestJson: JsonRequest) {}
 
   public async search(query: MetadataEnrichmentQuery): Promise<EnrichmentCandidate[]> {
-    const terms = query.isbn ? `isbn:${normalizeIsbn(query.isbn)}` : `intitle:${query.title ?? ""}${query.author ? ` inauthor:${query.author}` : ""}`;
+    const terms = query.isbn
+      ? `isbn:${normalizeIsbn(query.isbn)}`
+      : `intitle:${query.title ?? ""}${query.author ? ` inauthor:${query.author}` : ""}`;
     const url = new URL("https://www.googleapis.com/books/v1/volumes");
     url.searchParams.set("q", terms);
     url.searchParams.set("maxResults", "8");
     const payload = asObject(await this.requestJson(url));
-    return asArray(payload.items).map((raw) => {
-      const item = asObject(raw);
-      const info = asObject(item.volumeInfo);
-      const identifiers = asArray(info.industryIdentifiers).map(asObject);
-      const values = compact({
-        title: stringValue(info.title),
-        subtitle: stringValue(info.subtitle),
-        creators: stringArray(info.authors).map(authorCreator),
-        publisher: stringValue(info.publisher),
-        publicationDate: stringValue(info.publishedDate),
-        year: yearFromDate(stringValue(info.publishedDate)),
-        language: stringValue(info.language),
-        pageCount: numberValue(info.pageCount),
-        subjects: stringArray(info.categories),
-        description: stringValue(info.description),
-        isbn10: identifier(identifiers, "ISBN_10"),
-        isbn13: identifier(identifiers, "ISBN_13"),
-        coverUrl: httpsUrl(stringValue(asObject(info.imageLinks).thumbnail))
-      });
-      return candidate("google-books", stringValue(item.id) ?? JSON.stringify(values), values);
-    }).filter((item) => item.title.length > 0);
+    return asArray(payload.items)
+      .map((raw) => {
+        const item = asObject(raw);
+        const info = asObject(item.volumeInfo);
+        const identifiers = asArray(info.industryIdentifiers).map(asObject);
+        const values = compact({
+          title: stringValue(info.title),
+          subtitle: stringValue(info.subtitle),
+          creators: stringArray(info.authors).map(authorCreator),
+          publisher: stringValue(info.publisher),
+          publicationDate: stringValue(info.publishedDate),
+          year: yearFromDate(stringValue(info.publishedDate)),
+          language: stringValue(info.language),
+          pageCount: numberValue(info.pageCount),
+          subjects: stringArray(info.categories),
+          description: stringValue(info.description),
+          isbn10: identifier(identifiers, "ISBN_10"),
+          isbn13: identifier(identifiers, "ISBN_13"),
+          coverUrl: httpsUrl(stringValue(asObject(info.imageLinks).thumbnail))
+        });
+        return candidate("google-books", stringValue(item.id) ?? JSON.stringify(values), values);
+      })
+      .filter((item) => item.title.length > 0);
   }
 }
 
@@ -376,39 +450,52 @@ export class CrossrefAdapter {
       ? new URL(`https://api.crossref.org/works/${encodeURIComponent(normalizeDoi(query.doi))}`)
       : new URL("https://api.crossref.org/works");
     if (!query.doi) {
-      url.searchParams.set("query.bibliographic", [query.title, query.author].filter(Boolean).join(" "));
+      url.searchParams.set(
+        "query.bibliographic",
+        [query.title, query.author].filter(Boolean).join(" ")
+      );
       url.searchParams.set("rows", "8");
     }
     url.searchParams.set("mailto", "metadata@memora.local");
     const payload = asObject(await this.requestJson(url));
     const message = asObject(payload.message);
     const items = query.doi ? [message] : asArray(message.items).map(asObject);
-    return items.map((item) => {
-      const publicationDate = crossrefDate(item);
-      const values = compact({
-        title: stringArray(item.title)[0],
-        subtitle: stringArray(item.subtitle)[0],
-        creators: asArray(item.author).map((raw) => crossrefCreator(asObject(raw))).filter((creator): creator is Creator => creator !== null),
-        doi: stringValue(item.DOI)?.toLowerCase(),
-        venue: stringArray(item["container-title"])[0],
-        publicationDate,
-        year: yearFromDate(publicationDate),
-        publisher: stringValue(item.publisher),
-        volume: stringValue(item.volume),
-        issue: stringValue(item.issue),
-        pages: pageRange(stringValue(item.page)),
-        abstract: stripMarkup(stringValue(item.abstract)),
-        keywords: stringArray(item.subject)
-      });
-      return candidate("crossref", stringValue(item.DOI) ?? JSON.stringify(values), values);
-    }).filter((item) => item.title.length > 0);
+    return items
+      .map((item) => {
+        const publicationDate = crossrefDate(item);
+        const values = compact({
+          title: stringArray(item.title)[0],
+          subtitle: stringArray(item.subtitle)[0],
+          creators: asArray(item.author)
+            .map((raw) => crossrefCreator(asObject(raw)))
+            .filter((creator): creator is Creator => creator !== null),
+          doi: stringValue(item.DOI)?.toLowerCase(),
+          venue: stringArray(item["container-title"])[0],
+          publicationDate,
+          year: yearFromDate(publicationDate),
+          publisher: stringValue(item.publisher),
+          volume: stringValue(item.volume),
+          issue: stringValue(item.issue),
+          pages: pageRange(stringValue(item.page)),
+          abstract: stripMarkup(stringValue(item.abstract)),
+          keywords: stringArray(item.subject)
+        });
+        return candidate("crossref", stringValue(item.DOI) ?? JSON.stringify(values), values);
+      })
+      .filter((item) => item.title.length > 0);
   }
 }
 
-function candidate(provider: Provider, externalId: string, values: Record<string, unknown>): EnrichmentCandidate {
+function candidate(
+  provider: Provider,
+  externalId: string,
+  values: Record<string, unknown>
+): EnrichmentCandidate {
   const title = typeof values.title === "string" ? values.title : "";
-  const creators = Array.isArray(values.creators) ? values.creators as Creator[] : [];
-  const provenance = Object.fromEntries(Object.keys(values).map((key) => [key, { source: "enriched" as const, provider }]));
+  const creators = Array.isArray(values.creators) ? (values.creators as Creator[]) : [];
+  const provenance = Object.fromEntries(
+    Object.keys(values).map((key) => [key, { source: "enriched" as const, provider }])
+  );
   return EnrichmentCandidateSchema.parse({
     id: createHash("sha256").update(`${provider}:${externalId}`).digest("hex").slice(0, 24),
     provider,
@@ -423,47 +510,91 @@ function candidate(provider: Provider, externalId: string, values: Record<string
 }
 
 function createCacheKey(query: MetadataEnrichmentQuery): string {
-  return createHash("sha256").update(JSON.stringify({
-    sourceType: query.sourceType,
-    isbn: query.isbn ? normalizeIsbn(query.isbn) : undefined,
-    doi: query.doi ? normalizeDoi(query.doi).toLowerCase() : undefined,
-    title: query.title?.trim().toLocaleLowerCase(),
-    author: query.author?.trim().toLocaleLowerCase()
-  })).digest("hex");
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        sourceType: query.sourceType,
+        isbn: query.isbn ? normalizeIsbn(query.isbn) : undefined,
+        doi: query.doi ? normalizeDoi(query.doi).toLowerCase() : undefined,
+        title: query.title?.trim().toLocaleLowerCase(),
+        author: query.author?.trim().toLocaleLowerCase()
+      })
+    )
+    .digest("hex");
 }
 
 function validateCoverUrl(value: string): URL {
   const url = new URL(value);
   const host = url.hostname.toLowerCase();
-  const allowed = host === "covers.openlibrary.org" || host === "books.google.com"
-    || host.endsWith(".googleusercontent.com");
-  if (url.protocol !== "https:" || !allowed || url.username || url.password) throw new Error("metadata_cover_url_not_allowed");
+  const allowed =
+    host === "covers.openlibrary.org" ||
+    host === "books.google.com" ||
+    host.endsWith(".googleusercontent.com");
+  if (url.protocol !== "https:" || !allowed || url.username || url.password)
+    throw new Error("metadata_cover_url_not_allowed");
   return url;
 }
 
 function extensionForMimeType(value: string): string | null {
-  return ({ "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" } as Record<string, string>)[value] ?? null;
+  return (
+    (
+      {
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif"
+      } as Record<string, string>
+    )[value] ?? null
+  );
 }
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
-function asArray(value: unknown): unknown[] { return Array.isArray(value) ? value : []; }
-function stringArray(value: unknown): string[] { return asArray(value).filter((item): item is string => typeof item === "string" && item.length > 0); }
-function numberArray(value: unknown): number[] { return asArray(value).map(Number).filter((item) => Number.isFinite(item)); }
-function stringValue(value: unknown): string | undefined { return typeof value === "string" && value.trim() ? value.trim() : undefined; }
-function numberValue(value: unknown): number | undefined { const number = Number(value); return Number.isFinite(number) ? number : undefined; }
-function authorCreator(name: string): Creator { return { name, role: "author" }; }
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+function stringArray(value: unknown): string[] {
+  return asArray(value).filter(
+    (item): item is string => typeof item === "string" && item.length > 0
+  );
+}
+function numberArray(value: unknown): number[] {
+  return asArray(value)
+    .map(Number)
+    .filter((item) => Number.isFinite(item));
+}
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+function numberValue(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+function authorCreator(name: string): Creator {
+  return { name, role: "author" };
+}
 function identifier(values: Record<string, unknown>[], type: string): string | undefined {
   return stringValue(values.find((entry) => entry.type === type)?.identifier);
 }
 function descriptionValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : stringValue(asObject(value).value);
 }
-function yearFromDate(value: string | undefined): number | undefined { const year = Number(value?.slice(0, 4)); return year >= 1000 && year <= 9999 ? year : undefined; }
-function httpsUrl(value: string | undefined): string | undefined { return value ? value.replace(/^http:/, "https:") : undefined; }
-function compact(value: Record<string, unknown>): Record<string, unknown> { return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "")); }
+function yearFromDate(value: string | undefined): number | undefined {
+  const year = Number(value?.slice(0, 4));
+  return year >= 1000 && year <= 9999 ? year : undefined;
+}
+function httpsUrl(value: string | undefined): string | undefined {
+  return value ? value.replace(/^http:/, "https:") : undefined;
+}
+function compact(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== "")
+  );
+}
 function pageRange(value: string | undefined): { start: string; end?: string } | undefined {
   if (!value) return undefined;
   const [start, end] = value.split(/\s*[-–]\s*/, 2);
@@ -474,11 +605,30 @@ function crossrefCreator(value: Record<string, unknown>): Creator | null {
   if (!name) return null;
   const affiliation = stringValue(asObject(asArray(value.affiliation)[0]).name);
   const orcid = stringValue(value.ORCID)?.split("/").at(-1);
-  return { name, role: "author", ...(affiliation ? { affiliation } : {}), ...(orcid ? { externalIds: { orcid } } : {}) };
+  return {
+    name,
+    role: "author",
+    ...(affiliation ? { affiliation } : {}),
+    ...(orcid ? { externalIds: { orcid } } : {})
+  };
 }
 function crossrefDate(value: Record<string, unknown>): string | undefined {
   const date = asArray(asObject(value.published)["date-parts"])[0];
-  return Array.isArray(date) ? date.map(Number).filter(Number.isFinite).map((part, index) => index === 0 ? String(part) : String(part).padStart(2, "0")).join("-") : undefined;
+  return Array.isArray(date)
+    ? date
+        .map(Number)
+        .filter(Number.isFinite)
+        .map((part, index) => (index === 0 ? String(part) : String(part).padStart(2, "0")))
+        .join("-")
+    : undefined;
 }
-function stripMarkup(value: string | undefined): string | undefined { return value?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); }
-function safeErrorCode(error: unknown): string { const value = error instanceof Error ? error.message : String(error); return /^[a-zA-Z0-9_.:-]{1,120}$/.test(value) ? value : "metadata_enrichment_error"; }
+function stripMarkup(value: string | undefined): string | undefined {
+  return value
+    ?.replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function safeErrorCode(error: unknown): string {
+  const value = error instanceof Error ? error.message : String(error);
+  return /^[a-zA-Z0-9_.:-]{1,120}$/.test(value) ? value : "metadata_enrichment_error";
+}

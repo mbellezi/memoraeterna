@@ -28,14 +28,14 @@ export interface UpsertStorageSettingsInput {
 
 const returning = [
   "id",
-  "obsidian_vault_path as \"obsidianVaultPath\"",
-  "obsidian_managed_root as \"obsidianManagedRoot\"",
-  "obsidian_sync_enabled as \"obsidianSyncEnabled\"",
-  "obsidian_sync_paused as \"obsidianSyncPaused\"",
-  "delete_policy as \"deletePolicy\"",
-  "upload_copy_enabled as \"uploadCopyEnabled\"",
-  "upload_copy_base_path as \"uploadCopyBasePath\"",
-  "updated_at as \"updatedAt\""
+  'obsidian_vault_path as "obsidianVaultPath"',
+  'obsidian_managed_root as "obsidianManagedRoot"',
+  'obsidian_sync_enabled as "obsidianSyncEnabled"',
+  'obsidian_sync_paused as "obsidianSyncPaused"',
+  'delete_policy as "deletePolicy"',
+  'upload_copy_enabled as "uploadCopyEnabled"',
+  'upload_copy_base_path as "uploadCopyBasePath"',
+  'updated_at as "updatedAt"'
 ].join(", ");
 
 function mapStorageSettings(row: StorageSettingsRow): StorageSettingsRecord {
@@ -55,9 +55,10 @@ function mapStorageSettings(row: StorageSettingsRow): StorageSettingsRecord {
 export function createStorageSettingsRepository(db: Queryable) {
   return {
     async get(id = "default"): Promise<StorageSettingsRecord | null> {
-      const result = await db.query<StorageSettingsRow>(`select ${returning} from storage_settings where id = $1`, [
-        id
-      ]);
+      const result = await db.query<StorageSettingsRow>(
+        `select ${returning} from storage_settings where id = $1`,
+        [id]
+      );
       const row = firstRow(result.rows);
       return row ? mapStorageSettings(row) : null;
     },

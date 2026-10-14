@@ -31,7 +31,9 @@ const MAX_EPUB_ENTRIES = 4_000;
 const MAX_EPUB_ENTRY_BYTES = 32 * 1024 * 1024;
 const MAX_EPUB_TOTAL_BYTES = 512 * 1024 * 1024;
 
-export async function extractFileMetadata(input: FileMetadataExtractionInput): Promise<SourceDescriptorDraft> {
+export async function extractFileMetadata(
+  input: FileMetadataExtractionInput
+): Promise<SourceDescriptorDraft> {
   const fallbackTitle = cleanFileTitle(input.fileName);
   const values: Record<string, unknown> = { title: fallbackTitle };
   const provenance: Record<string, MetadataFieldProvenance> = {
@@ -50,7 +52,9 @@ export async function extractFileMetadata(input: FileMetadataExtractionInput): P
       mergeExtracted(values, provenance, pdf, "pdf-info");
     }
   } catch (error) {
-    warnings.push(`metadata.extraction.failed:${error instanceof Error ? error.message : String(error)}`);
+    warnings.push(
+      `metadata.extraction.failed:${error instanceof Error ? error.message : String(error)}`
+    );
   }
 
   if (input.conversion) {
@@ -79,7 +83,10 @@ export function descriptorDraftFromWebMetadata(input: {
   url?: string;
   metadata: Record<string, unknown>;
 }): SourceDescriptorDraft {
-  const values: Record<string, unknown> = { title: input.title, ...(input.url ? { url: input.url } : {}) };
+  const values: Record<string, unknown> = {
+    title: input.title,
+    ...(input.url ? { url: input.url } : {})
+  };
   const mapping: Record<string, string> = {
     author: "creators",
     description: "description",
@@ -97,7 +104,12 @@ export function descriptorDraftFromWebMetadata(input: {
   }
   provenance.title = { source: "extracted", evidence: "defuddle" };
   if (input.url) provenance.url = { source: "extracted", evidence: "defuddle" };
-  return SourceDescriptorDraftSchema.parse({ sourceType: "WebArticle", values, provenance, warnings: [] });
+  return SourceDescriptorDraftSchema.parse({
+    sourceType: "WebArticle",
+    values,
+    provenance,
+    warnings: []
+  });
 }
 
 export function descriptorDraftFromVideoMetadata(input: {
@@ -105,11 +117,19 @@ export function descriptorDraftFromVideoMetadata(input: {
   url?: string;
   metadata: Record<string, unknown>;
 }): SourceDescriptorDraft {
-  const values: Record<string, unknown> = { title: input.title, ...(input.url ? { url: input.url } : {}) };
+  const values: Record<string, unknown> = {
+    title: input.title,
+    ...(input.url ? { url: input.url } : {})
+  };
   const mappings = [
-    ["channel", "channel"], ["channelName", "channel"], ["durationSeconds", "durationSeconds"],
-    ["publishedAt", "publicationDate"], ["platform", "platform"], ["videoId", "videoId"],
-    ["thumbnail", "thumbnailUrl"], ["thumbnailUrl", "thumbnailUrl"]
+    ["channel", "channel"],
+    ["channelName", "channel"],
+    ["durationSeconds", "durationSeconds"],
+    ["publishedAt", "publicationDate"],
+    ["platform", "platform"],
+    ["videoId", "videoId"],
+    ["thumbnail", "thumbnailUrl"],
+    ["thumbnailUrl", "thumbnailUrl"]
   ] as const;
   const provenance: Record<string, MetadataFieldProvenance> = {
     title: { source: "extracted", evidence: "youtubei" }
@@ -125,16 +145,23 @@ export function descriptorDraftFromVideoMetadata(input: {
     values.creators = [{ name: channel, role: "channel" } satisfies Creator];
     provenance.creators = { source: "extracted", evidence: "youtubei" };
   }
-  return SourceDescriptorDraftSchema.parse({ sourceType: "Video", values, provenance, warnings: [] });
+  return SourceDescriptorDraftSchema.parse({
+    sourceType: "Video",
+    values,
+    provenance,
+    warnings: []
+  });
 }
 
 export function cleanFileTitle(fileName: string): string {
   const withoutExtension = fileName.replace(/\.[^.]+$/, "");
-  return withoutExtension
-    .replace(/[_]+/g, " ")
-    .replace(/\s+-\s+/g, " — ")
-    .replace(/\s{2,}/g, " ")
-    .trim() || "Untitled";
+  return (
+    withoutExtension
+      .replace(/[_]+/g, " ")
+      .replace(/\s+-\s+/g, " — ")
+      .replace(/\s{2,}/g, " ")
+      .trim() || "Untitled"
+  );
 }
 
 function extractEpubMetadata(data: Uint8Array): {
@@ -150,10 +177,12 @@ function extractEpubMetadata(data: Uint8Array): {
   const metadata = opf.querySelector("metadata");
   if (!metadata) throw new Error("epub_opf_missing_metadata");
   const values: Record<string, unknown> = {};
-  const text = (name: string) => elementsByLocalName(metadata, name)[0]?.textContent?.trim() || undefined;
-  const texts = (name: string) => elementsByLocalName(metadata, name)
-    .map((element) => element.textContent?.trim())
-    .filter((value): value is string => Boolean(value));
+  const text = (name: string) =>
+    elementsByLocalName(metadata, name)[0]?.textContent?.trim() || undefined;
+  const texts = (name: string) =>
+    elementsByLocalName(metadata, name)
+      .map((element) => element.textContent?.trim())
+      .filter((value): value is string => Boolean(value));
 
   assign(values, "title", text("title"));
   assign(values, "publisher", text("publisher"));
@@ -178,32 +207,43 @@ function extractEpubMetadata(data: Uint8Array): {
 
   const opfDirectory = posix.dirname(opfPath);
   const manifestItems = [...opf.querySelectorAll("manifest item")];
-  let coverItem = manifestItems.find((item) => (item.getAttribute("properties") ?? "").split(/\s+/).includes("cover-image"));
+  let coverItem = manifestItems.find((item) =>
+    (item.getAttribute("properties") ?? "").split(/\s+/).includes("cover-image")
+  );
   if (!coverItem) {
     const coverId = [...metadata.querySelectorAll("meta")]
-      .find((item) => item.getAttribute("name") === "cover")?.getAttribute("content");
-    coverItem = coverId ? manifestItems.find((item) => item.getAttribute("id") === coverId) : undefined;
+      .find((item) => item.getAttribute("name") === "cover")
+      ?.getAttribute("content");
+    coverItem = coverId
+      ? manifestItems.find((item) => item.getAttribute("id") === coverId)
+      : undefined;
   }
   const coverHref = coverItem?.getAttribute("href");
   const coverPath = coverHref ? resolveArchivePath(opfDirectory, coverHref) : undefined;
   const coverBytes = coverPath ? entries[coverPath] : undefined;
   return {
     values,
-    ...(coverBytes ? {
-      coverData: {
-        data: new Uint8Array(coverBytes),
-        mimeType: coverItem?.getAttribute("media-type") ?? "application/octet-stream",
-        fileName: posix.basename(coverPath!)
-      }
-    } : {})
+    ...(coverBytes
+      ? {
+          coverData: {
+            data: new Uint8Array(coverBytes),
+            mimeType: coverItem?.getAttribute("media-type") ?? "application/octet-stream",
+            fileName: posix.basename(coverPath!)
+          }
+        }
+      : {})
   };
 }
 
-async function extractPdfMetadata(input: FileMetadataExtractionInput): Promise<Record<string, unknown>> {
+async function extractPdfMetadata(
+  input: FileMetadataExtractionInput
+): Promise<Record<string, unknown>> {
   if (!input.sourcePath && !input.data?.byteLength) return {};
-  const loadingTask = getDocument(input.sourcePath
-    ? { url: input.sourcePath, useSystemFonts: false }
-    : { data: new Uint8Array(input.data!), useSystemFonts: false });
+  const loadingTask = getDocument(
+    input.sourcePath
+      ? { url: input.sourcePath, useSystemFonts: false }
+      : { data: new Uint8Array(input.data!), useSystemFonts: false }
+  );
   const document = await loadingTask.promise;
   try {
     const metadata = await document.getMetadata();
@@ -253,18 +293,24 @@ function extractConvertedMetadata(conversion: MarkdownConversionResult): {
     values.creators = creatorsFromUnknown(author, "author");
     evidence.creators = conversion.engine === "defuddle" ? "defuddle" : "docling";
   }
-  for (const [sourceKey, targetKey] of [["description", "description"], ["published", "publicationDate"], ["language", "language"]] as const) {
+  for (const [sourceKey, targetKey] of [
+    ["description", "description"],
+    ["published", "publicationDate"],
+    ["language", "language"]
+  ] as const) {
     const value = readString(metadata, sourceKey);
     if (value) {
       values[targetKey] = value;
       evidence[targetKey] = conversion.engine === "defuddle" ? "defuddle" : "docling";
     }
   }
-  const pageText = conversion.blocks
-    .filter((block) => block.page === undefined || block.page <= 10)
-    .map((block) => block.text)
-    .join("\n") || conversion.markdown.slice(0, 30_000);
-  const isbnCandidates = pageText.match(/(?:ISBN(?:-1[03])?\s*:?\s*)?(?:97[89][\s-]?)?\d[\d\s-]{7,15}[\dXx]/g) ?? [];
+  const pageText =
+    conversion.blocks
+      .filter((block) => block.page === undefined || block.page <= 10)
+      .map((block) => block.text)
+      .join("\n") || conversion.markdown.slice(0, 30_000);
+  const isbnCandidates =
+    pageText.match(/(?:ISBN(?:-1[03])?\s*:?\s*)?(?:97[89][\s-]?)?\d[\d\s-]{7,15}[\dXx]/g) ?? [];
   for (const candidate of isbnCandidates) {
     const isbn = normalizeIsbn(candidate.replace(/^ISBN(?:-1[03])?\s*:?\s*/i, ""));
     if (isValidIsbn10(isbn)) {
@@ -283,12 +329,18 @@ function extractConvertedMetadata(conversion: MarkdownConversionResult): {
   return { values, evidence };
 }
 
-function normalizeIdentifiers(values: Record<string, unknown>, provenance: Record<string, MetadataFieldProvenance>): void {
+function normalizeIdentifiers(
+  values: Record<string, unknown>,
+  provenance: Record<string, MetadataFieldProvenance>
+): void {
   if (typeof values.isbn10 === "string" && values.isbn13 === undefined) {
     const isbn13 = isbn10To13(values.isbn10);
     if (isbn13) {
       values.isbn13 = isbn13;
-      provenance.isbn13 = provenance.isbn10 ?? { source: "extracted", evidence: "isbn-normalization" };
+      provenance.isbn13 = provenance.isbn10 ?? {
+        source: "extracted",
+        evidence: "isbn-normalization"
+      };
     }
   }
   if (typeof values.doi === "string") values.doi = normalizeDoi(values.doi);
@@ -308,9 +360,13 @@ function mergeExtracted(
 }
 
 function creatorsFromUnknown(value: unknown, role: Creator["role"]): Creator[] {
-  const names = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\s*(?:;|\band\b|\be\b)\s*/i) : [];
+  const names = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\s*(?:;|\band\b|\be\b)\s*/i)
+      : [];
   return names
-    .map((name) => typeof name === "string" ? name.trim() : "")
+    .map((name) => (typeof name === "string" ? name.trim() : ""))
     .filter(Boolean)
     .map((name) => ({ name, role }));
 }
@@ -320,8 +376,14 @@ function creatorFromEpub(element: Element): Creator | null {
   if (!name) return null;
   const roleValue = element.getAttribute("opf:role") ?? element.getAttribute("role") ?? "author";
   const roleMap: Record<string, Creator["role"]> = {
-    aut: "author", author: "author", edt: "editor", editor: "editor", trl: "translator",
-    translator: "translator", com: "organizer", organizer: "organizer"
+    aut: "author",
+    author: "author",
+    edt: "editor",
+    editor: "editor",
+    trl: "translator",
+    translator: "translator",
+    com: "organizer",
+    organizer: "organizer"
   };
   return { name, role: roleMap[roleValue.toLowerCase()] ?? "contributor" };
 }
@@ -329,16 +391,23 @@ function creatorFromEpub(element: Element): Creator | null {
 function readSafeEpubEntries(data: Uint8Array): Record<string, Uint8Array> {
   let count = 0;
   let total = 0;
-  return unzipSync(data, { filter: (file) => {
-    count += 1;
-    if (count > MAX_EPUB_ENTRIES) throw new Error("epub_entry_limit_exceeded");
-    safeArchivePath(file.name);
-    if (!Number.isSafeInteger(file.originalSize) || file.originalSize < 0
-        || file.originalSize > MAX_EPUB_ENTRY_BYTES) throw new Error("epub_entry_size_limit_exceeded");
-    total += file.originalSize;
-    if (!Number.isSafeInteger(total) || total > MAX_EPUB_TOTAL_BYTES) throw new Error("epub_total_size_limit_exceeded");
-    return true;
-  } });
+  return unzipSync(data, {
+    filter: (file) => {
+      count += 1;
+      if (count > MAX_EPUB_ENTRIES) throw new Error("epub_entry_limit_exceeded");
+      safeArchivePath(file.name);
+      if (
+        !Number.isSafeInteger(file.originalSize) ||
+        file.originalSize < 0 ||
+        file.originalSize > MAX_EPUB_ENTRY_BYTES
+      )
+        throw new Error("epub_entry_size_limit_exceeded");
+      total += file.originalSize;
+      if (!Number.isSafeInteger(total) || total > MAX_EPUB_TOTAL_BYTES)
+        throw new Error("epub_total_size_limit_exceeded");
+      return true;
+    }
+  });
 }
 
 function parseXml(value: string) {
@@ -348,8 +417,8 @@ function parseXml(value: string) {
 }
 
 function elementsByLocalName(root: Element, name: string): Element[] {
-  return [...root.querySelectorAll("*")].filter((element) =>
-    element.localName.toLowerCase().split(":").at(-1) === name.toLowerCase()
+  return [...root.querySelectorAll("*")].filter(
+    (element) => element.localName.toLowerCase().split(":").at(-1) === name.toLowerCase()
   );
 }
 
@@ -361,7 +430,12 @@ function decodeRequired(entries: Record<string, Uint8Array>, path: string): stri
 
 function safeArchivePath(value: string): string {
   const normalized = posix.normalize(value.replace(/\\/g, "/")).replace(/^\.\//, "");
-  if (!normalized || normalized.startsWith("/") || normalized === ".." || normalized.startsWith("../")) {
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    normalized === ".." ||
+    normalized.startsWith("../")
+  ) {
     throw new Error("epub_unsafe_path");
   }
   return normalized;
@@ -372,7 +446,9 @@ function resolveArchivePath(base: string, value: string): string {
 }
 
 function isEpub(input: FileMetadataExtractionInput): boolean {
-  return input.mimeType === "application/epub+zip" || input.fileName.toLowerCase().endsWith(".epub");
+  return (
+    input.mimeType === "application/epub+zip" || input.fileName.toLowerCase().endsWith(".epub")
+  );
 }
 
 function isPdf(input: FileMetadataExtractionInput): boolean {
@@ -380,19 +456,29 @@ function isPdf(input: FileMetadataExtractionInput): boolean {
 }
 
 function firstHeading(conversion: MarkdownConversionResult): string | undefined {
-  const block = conversion.blocks.find((candidate) => /title|heading|section_header/i.test(candidate.type) && candidate.text.trim());
+  const block = conversion.blocks.find(
+    (candidate) => /title|heading|section_header/i.test(candidate.type) && candidate.text.trim()
+  );
   return block?.text.trim() ?? conversion.markdown.match(/^#{1,2}\s+(.+)$/m)?.[1]?.trim();
 }
 
 function isWeakTitle(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  return !normalized || /^microsoft word\b/.test(normalized)
-    || /^(document|untitled|final)(?:\s*[-_.—].*)?$/.test(normalized)
-    || /\.(?:docx?|pdf)$/i.test(normalized);
+  return (
+    !normalized ||
+    /^microsoft word\b/.test(normalized) ||
+    /^(document|untitled|final)(?:\s*[-_.—].*)?$/.test(normalized) ||
+    /\.(?:docx?|pdf)$/i.test(normalized)
+  );
 }
 
 function splitKeywords(value: string | undefined): string[] {
-  return value?.split(/[,;]\s*/).map((item) => item.trim()).filter(Boolean) ?? [];
+  return (
+    value
+      ?.split(/[,;]\s*/)
+      .map((item) => item.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 function normalizePdfDate(value: string | undefined): string | undefined {

@@ -4,12 +4,7 @@ import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
 
 import { asJsonObject, mapNullableTimestamp, mapTimestamp } from "./sql.js";
-import type {
-  AtomicNoteRecord,
-  AtomicNoteStatus,
-  JsonObject,
-  Queryable
-} from "./types.js";
+import type { AtomicNoteRecord, AtomicNoteStatus, JsonObject, Queryable } from "./types.js";
 
 interface AtomicNoteRow extends QueryResultRow {
   id: string;
@@ -113,7 +108,8 @@ export function createAtomicNoteRepository(db: Queryable) {
       const connection = await acquireConnection(db);
       try {
         await connection.query("begin");
-        const generationId = input.generationId ?? await ensureLegacyGeneration(connection, input);
+        const generationId =
+          input.generationId ?? (await ensureLegacyGeneration(connection, input));
         const result = await connection.query<AtomicNoteRow>(
           `insert into atomic_notes (
              title, body_markdown, idea_statement, language, status,
@@ -199,10 +195,12 @@ export function createAtomicNoteRepository(db: Queryable) {
     },
 
     async listBySourceItem(sourceItemId: string): Promise<AtomicNoteRecord[]> {
-      const retained = (await db.query("select to_regclass('public.atomic_note_evidence') is not null available")).rows[0]?.available === true;
+      const retained =
+        (await db.query("select to_regclass('public.atomic_note_evidence') is not null available"))
+          .rows[0]?.available === true;
       const result = await db.query<AtomicNoteRow>(
         `select ${returning} from atomic_notes
-         where (created_from_source_item_id = $1 or exists(select 1 from atomic_note_source_links l where l.atomic_note_id=atomic_notes.id and l.source_item_id=$1) ${retained ? 'or exists(select 1 from atomic_note_evidence e where e.note_id=atomic_notes.id and e.source_id=$1)' : ''}) and status <> 'rejected'
+         where (created_from_source_item_id = $1 or exists(select 1 from atomic_note_source_links l where l.atomic_note_id=atomic_notes.id and l.source_item_id=$1) ${retained ? "or exists(select 1 from atomic_note_evidence e where e.note_id=atomic_notes.id and e.source_id=$1)" : ""}) and status <> 'rejected'
          order by created_at`,
         [sourceItemId]
       );
@@ -238,16 +236,25 @@ export function createAtomicNoteRepository(db: Queryable) {
       return result.rows.map(mapNote);
     },
 
-    async review(input: {
-      id: string;
-      action: "approve" | "edit" | "discard";
-      title?: string | undefined;
-      bodyMarkdown?: string | undefined;
-      ideaStatement?: string | undefined;
-      expectedUpdatedAt?: string | undefined;
-    }, transaction?: PgClient): Promise<AtomicNoteRecord | null> {
-      if(input.action==='edit' && ((input.title!==undefined&&!input.title.trim())||(input.bodyMarkdown!==undefined&&!input.bodyMarkdown.trim())))throw new Error("errors.common.validationFailed");
-      const connection: Queryable & { release?: () => void } = transaction ?? await acquireConnection(db);
+    async review(
+      input: {
+        id: string;
+        action: "approve" | "edit" | "discard";
+        title?: string | undefined;
+        bodyMarkdown?: string | undefined;
+        ideaStatement?: string | undefined;
+        expectedUpdatedAt?: string | undefined;
+      },
+      transaction?: PgClient
+    ): Promise<AtomicNoteRecord | null> {
+      if (
+        input.action === "edit" &&
+        ((input.title !== undefined && !input.title.trim()) ||
+          (input.bodyMarkdown !== undefined && !input.bodyMarkdown.trim()))
+      )
+        throw new Error("errors.common.validationFailed");
+      const connection: Queryable & { release?: () => void } =
+        transaction ?? (await acquireConnection(db));
       try {
         if (!transaction) await connection.query("begin");
         const before = await connection.query<AtomicNoteRow>(
@@ -259,12 +266,17 @@ export function createAtomicNoteRepository(db: Queryable) {
           if (!transaction) await connection.query("rollback");
           return null;
         }
-        if (input.expectedUpdatedAt && mapTimestamp(current.updatedAt).toISOString() !== input.expectedUpdatedAt) throw new Error("sourceWorkspace.conflict");
-        const nextStatus: AtomicNoteStatus = input.action === "approve"
-          ? "approved"
-          : input.action === "discard"
-            ? "rejected"
-            : current.status;
+        if (
+          input.expectedUpdatedAt &&
+          mapTimestamp(current.updatedAt).toISOString() !== input.expectedUpdatedAt
+        )
+          throw new Error("sourceWorkspace.conflict");
+        const nextStatus: AtomicNoteStatus =
+          input.action === "approve"
+            ? "approved"
+            : input.action === "discard"
+              ? "rejected"
+              : current.status;
         const updated = await connection.query<AtomicNoteRow>(
           `update atomic_notes set
              title = coalesce($2, title),
@@ -275,7 +287,14 @@ export function createAtomicNoteRepository(db: Queryable) {
              reviewed_at = case when $6::text in ('approve', 'discard') then now() else reviewed_at end,
              updated_at = greatest(clock_timestamp(), date_trunc('milliseconds',updated_at)+interval '1 millisecond')
            where id = $1 returning ${returning}`,
-          [input.id, input.title ?? null, input.bodyMarkdown ?? null, input.ideaStatement ?? null, nextStatus, input.action]
+          [
+            input.id,
+            input.title ?? null,
+            input.bodyMarkdown ?? null,
+            input.ideaStatement ?? null,
+            nextStatus,
+            input.action
+          ]
         );
         await connection.query(
           `insert into atomic_note_review_events (
@@ -293,8 +312,17 @@ export function createAtomicNoteRepository(db: Queryable) {
             }
           ]
         );
-        if(input.action==='edit')for(const dimensions of [256,768,1024])await connection.query(`delete from embeddings_${dimensions} where target_type='atomic_note' and target_id=$1`,[input.id]);
-        if (input.action === "edit") await connection.query("insert into atomic_note_revisions(note_id,previous,current) values($1,$2,$3)", [input.id, current, updated.rows[0]]);
+        if (input.action === "edit")
+          for (const dimensions of [256, 768, 1024])
+            await connection.query(
+              `delete from embeddings_${dimensions} where target_type='atomic_note' and target_id=$1`,
+              [input.id]
+            );
+        if (input.action === "edit")
+          await connection.query(
+            "insert into atomic_note_revisions(note_id,previous,current) values($1,$2,$3)",
+            [input.id, current, updated.rows[0]]
+          );
         if (!transaction) await connection.query("commit");
         const row = updated.rows[0];
         return row ? mapNote(row) : null;
@@ -349,7 +377,9 @@ export function createAtomicNoteRepository(db: Queryable) {
       noteId: string;
       embedding: number[];
       embeddingModel?: string;
-      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
+      embeddingSpaceKey?: string | undefined;
+      embeddingProvider?: string | undefined;
+      embeddingRuntime?: string | undefined;
       limit?: number;
     }): Promise<AtomicNoteCandidateRecord[]> {
       const dimensions = input.embedding.length;
@@ -368,7 +398,15 @@ export function createAtomicNoteRepository(db: Queryable) {
          where source.id = $1
          order by "vectorScore" desc, candidate.id
          limit $4`,
-        [input.noteId, `[${input.embedding.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 30,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+        [
+          input.noteId,
+          `[${input.embedding.join(",")}]`,
+          input.embeddingModel ?? null,
+          input.limit ?? 30,
+          input.embeddingSpaceKey ?? null,
+          input.embeddingProvider ?? null,
+          input.embeddingRuntime ?? null
+        ]
       );
       return result.rows.map((row) => ({
         note: mapNote(row),
@@ -382,11 +420,18 @@ export function createAtomicNoteRepository(db: Queryable) {
       candidateIds: string[];
       embedding?: number[];
       embeddingModel?: string;
-      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
+      embeddingSpaceKey?: string | undefined;
+      embeddingProvider?: string | undefined;
+      embeddingRuntime?: string | undefined;
     }): Promise<AtomicNoteCandidateRecord[]> {
       if (input.candidateIds.length === 0) return [];
       const dimensions = input.embedding?.length;
-      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
+      if (
+        dimensions !== undefined &&
+        dimensions !== 256 &&
+        dimensions !== 768 &&
+        dimensions !== 1_024
+      ) {
         throw new Error(`Unsupported embedding dimension: ${dimensions}`);
       }
       const vectorJoin = dimensions
@@ -413,7 +458,15 @@ export function createAtomicNoteRepository(db: Queryable) {
          ${vectorJoin}
          where source.id = $1 and candidate.id = any($2::uuid[])`,
         dimensions
-          ? [input.noteId, input.candidateIds, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+          ? [
+              input.noteId,
+              input.candidateIds,
+              `[${input.embedding?.join(",")}]`,
+              input.embeddingModel ?? null,
+              input.embeddingSpaceKey ?? null,
+              input.embeddingProvider ?? null,
+              input.embeddingRuntime ?? null
+            ]
           : [input.noteId, input.candidateIds]
       );
       return result.rows.map((row) => ({
@@ -427,11 +480,18 @@ export function createAtomicNoteRepository(db: Queryable) {
       noteId: string;
       embedding?: number[];
       embeddingModel?: string;
-      embeddingSpaceKey?: string | undefined; embeddingProvider?: string | undefined; embeddingRuntime?: string | undefined;
+      embeddingSpaceKey?: string | undefined;
+      embeddingProvider?: string | undefined;
+      embeddingRuntime?: string | undefined;
       limit?: number;
     }): Promise<AtomicNoteCandidateRecord[]> {
       const dimensions = input.embedding?.length;
-      if (dimensions !== undefined && dimensions !== 256 && dimensions !== 768 && dimensions !== 1_024) {
+      if (
+        dimensions !== undefined &&
+        dimensions !== 256 &&
+        dimensions !== 768 &&
+        dimensions !== 1_024
+      ) {
         throw new Error(`Unsupported embedding dimension: ${dimensions}`);
       }
       const vectorJoin = dimensions
@@ -463,7 +523,15 @@ export function createAtomicNoteRepository(db: Queryable) {
                   )) * 0.4) + (${vectorScore} * 0.6)) desc
          limit ${dimensions ? "$4" : "$2"}`,
         dimensions
-          ? [input.noteId, `[${input.embedding?.join(",")}]`, input.embeddingModel ?? null, input.limit ?? 20,input.embeddingSpaceKey??null,input.embeddingProvider??null,input.embeddingRuntime??null]
+          ? [
+              input.noteId,
+              `[${input.embedding?.join(",")}]`,
+              input.embeddingModel ?? null,
+              input.limit ?? 20,
+              input.embeddingSpaceKey ?? null,
+              input.embeddingProvider ?? null,
+              input.embeddingRuntime ?? null
+            ]
           : [input.noteId, input.limit ?? 20]
       );
       return result.rows.map((row) => ({

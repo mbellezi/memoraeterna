@@ -8,7 +8,9 @@ import { resolveWorkspaceRoot } from "./workspace-paths.js";
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true, force: true }))
+  );
 });
 
 describe("resolveWorkspaceRoot", () => {

@@ -1,5 +1,5 @@
 import { KnowledgeAutomationView } from "./components/KnowledgeAutomationView";
-import { subscribeWindowNavigation } from './lib/window-navigation';
+import { subscribeWindowNavigation } from "./lib/window-navigation";
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,11 +43,7 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
-import {
-  SettingsScopeMenu,
-  SettingsView,
-  type SettingsScope
-} from "./components/SettingsView";
+import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
 import { defaultSearchViewState, SearchView, type SearchViewState } from "./components/SearchView";
@@ -58,7 +54,17 @@ import { LocalEmbeddingLoadDialog } from "./components/LocalEmbeddingLoadDialog"
 import { ToastViewport, useToasts } from "./components/ui/toast";
 import type { KnowledgeGraphViewState } from "./components/KnowledgeGraphDashboard";
 
-type ViewId = "automation" | "wiki" | "library" | "import" | "search" | "review" | "jobs" | "knowledgeGraph" | "debug" | "settings";
+type ViewId =
+  | "automation"
+  | "wiki"
+  | "library"
+  | "import"
+  | "search"
+  | "review"
+  | "jobs"
+  | "knowledgeGraph"
+  | "debug"
+  | "settings";
 
 const KnowledgeGraphDashboard = lazy(async () => {
   const module = await import("./components/KnowledgeGraphDashboard");
@@ -84,7 +90,10 @@ const navItems: NavItem[] = [
   { id: "settings", label: "shell.navigation.settings", icon: Settings }
 ];
 
-const emptyViews: Record<Exclude<ViewId, "settings" | "review" | "debug">, { title: MessageKey; empty: MessageKey }> = {
+const emptyViews: Record<
+  Exclude<ViewId, "settings" | "review" | "debug">,
+  { title: MessageKey; empty: MessageKey }
+> = {
   automation: { title: "automation.title", empty: "automation.empty" },
   wiki: { title: "wiki.title", empty: "wiki.empty" },
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
@@ -133,10 +142,33 @@ export function App({
   initialSettings,
   initialSystemInfo = null
 }: AppProps) {
-  const [obsidianTarget,setObsidianTarget]=useState<(ObsidianDeepLink&{token:number})|null>(null);
-  useEffect(()=>{const open=(target:ObsidianDeepLink)=>{if(target.kind==='wiki'){setObsidianTarget({...target,token:Date.now()});setActiveView('wiki');}else if(target.kind==='source'){libraryTargetToken.current+=1;setLibraryTarget({sourceItemId:target.id,origin:'wiki',...(target.relation?{sourceRelationId:target.relation}:{}),token:libraryTargetToken.current});setActiveView('library');}};const off=window.app.obsidian.onOpen(open);void window.app.obsidian.pendingOpen().then(target=>{if(target)open(target);});return off;},[]);
+  const [obsidianTarget, setObsidianTarget] = useState<
+    (ObsidianDeepLink & { token: number }) | null
+  >(null);
+  useEffect(() => {
+    const open = (target: ObsidianDeepLink) => {
+      if (target.kind === "wiki") {
+        setObsidianTarget({ ...target, token: Date.now() });
+        setActiveView("wiki");
+      } else if (target.kind === "source") {
+        libraryTargetToken.current += 1;
+        setLibraryTarget({
+          sourceItemId: target.id,
+          origin: "wiki",
+          ...(target.relation ? { sourceRelationId: target.relation } : {}),
+          token: libraryTargetToken.current
+        });
+        setActiveView("library");
+      }
+    };
+    const off = window.app.obsidian.onOpen(open);
+    void window.app.obsidian.pendingOpen().then((target) => {
+      if (target) open(target);
+    });
+    return off;
+  }, []);
   const [activeView, setActiveView] = useState<ViewId>("library");
-  const wikiPromptReturn=useRef(false);
+  const wikiPromptReturn = useRef(false);
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
@@ -144,15 +176,21 @@ export function App({
   const [appSettings, setAppSettings] = useState<AppSettings>(
     initialAppSettings ?? createDefaultAppSettings(initialSystemInfo?.locale ?? getBrowserLocale())
   );
-  const [settings, setSettings] = useState<StorageSettings>(initialSettings ?? createDefaultSettings());
+  const [settings, setSettings] = useState<StorageSettings>(
+    initialSettings ?? createDefaultSettings()
+  );
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(initialSystemInfo);
   const [hasLoadedAppData, setHasLoadedAppData] = useState(Boolean(initialSettings));
   const [isSaving, setIsSaving] = useState(false);
   const [searchState, setSearchState] = useState<SearchViewState>(defaultSearchViewState);
   const [libraryTarget, setLibraryTarget] = useState<LibraryExternalTarget | null>(null);
-  const [knowledgeGraphMode, setKnowledgeGraphMode] = useState<KnowledgeGraphDashboardMode>("sources");
-  const knowledgeGraphViewStates = useRef<Partial<Record<KnowledgeGraphDashboardMode, KnowledgeGraphViewState>>>({});
-  const [localEmbeddingLoadStatus, setLocalEmbeddingLoadStatus] = useState<LocalEmbeddingLoadStatus | null>(null);
+  const [knowledgeGraphMode, setKnowledgeGraphMode] =
+    useState<KnowledgeGraphDashboardMode>("sources");
+  const knowledgeGraphViewStates = useRef<
+    Partial<Record<KnowledgeGraphDashboardMode, KnowledgeGraphViewState>>
+  >({});
+  const [localEmbeddingLoadStatus, setLocalEmbeddingLoadStatus] =
+    useState<LocalEmbeddingLoadStatus | null>(null);
   const libraryTargetToken = useRef(0);
   const activeViewRef = useRef(activeView);
   const scrollPositions = useRef<Partial<Record<ViewId, number>>>({});
@@ -168,12 +206,12 @@ export function App({
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = appSettings.themeMode === "dark";
-  const preserveKnowledgeGraphViewState = useCallback((
-    mode: KnowledgeGraphDashboardMode,
-    state: KnowledgeGraphViewState
-  ) => {
-    knowledgeGraphViewStates.current[mode] = state;
-  }, []);
+  const preserveKnowledgeGraphViewState = useCallback(
+    (mode: KnowledgeGraphDashboardMode, state: KnowledgeGraphViewState) => {
+      knowledgeGraphViewStates.current[mode] = state;
+    },
+    []
+  );
 
   activeViewRef.current = activeView;
 
@@ -182,18 +220,34 @@ export function App({
     document.documentElement.style.colorScheme = isDarkMode ? "dark" : "light";
   }, [isDarkMode]);
 
-  useEffect(() => subscribeWindowNavigation((direction) => {
-    if(activeViewRef.current==='settings'&&wikiPromptReturn.current&&direction==='back'){wikiPromptReturn.current=false;setActiveView('wiki');return true;}
-    if (activeViewRef.current !== "library") return false;
-    if (direction === "back") window.history.back();
-    else window.history.forward();
-  }), []);
+  useEffect(
+    () =>
+      subscribeWindowNavigation((direction) => {
+        if (
+          activeViewRef.current === "settings" &&
+          wikiPromptReturn.current &&
+          direction === "back"
+        ) {
+          wikiPromptReturn.current = false;
+          setActiveView("wiki");
+          return true;
+        }
+        if (activeViewRef.current !== "library") return false;
+        if (direction === "back") window.history.back();
+        else window.history.forward();
+      }),
+    []
+  );
 
-  useEffect(() => window.app.ai.subscribeLocalEmbeddingLoadStatus((status) => {
-    setLocalEmbeddingLoadStatus((current) => status.state === "loading"
-      ? status
-      : current?.modelId === status.modelId ? null : current);
-  }), []);
+  useEffect(
+    () =>
+      window.app.ai.subscribeLocalEmbeddingLoadStatus((status) => {
+        setLocalEmbeddingLoadStatus((current) =>
+          status.state === "loading" ? status : current?.modelId === status.modelId ? null : current
+        );
+      }),
+    []
+  );
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -289,9 +343,10 @@ export function App({
   }, [hasLoadedAppData]);
 
   function errorToastText(error: unknown): string {
-    const key = error instanceof Error && error.message.startsWith("errors.")
-      ? (error.message as MessageKey)
-      : "shell.toasts.settingsError";
+    const key =
+      error instanceof Error && error.message.startsWith("errors.")
+        ? (error.message as MessageKey)
+        : "shell.toasts.settingsError";
     return t(key);
   }
 
@@ -310,7 +365,8 @@ export function App({
           pushToast(t("shell.toasts.settingsSaved"), "success");
         }
       } catch (error) {
-        if (revision === appSettingsRevision.current && lastPersistedAppSettings.current) setAppSettings(lastPersistedAppSettings.current);
+        if (revision === appSettingsRevision.current && lastPersistedAppSettings.current)
+          setAppSettings(lastPersistedAppSettings.current);
         pushToast(errorToastText(error), "error");
       }
     });
@@ -390,11 +446,13 @@ export function App({
 
   async function setMonitoringCapture(capture: { debugMode: boolean; debugFullCapture: boolean }) {
     const previous = appSettings;
-    setAppSettings((current) => appSettingsSchema.parse({
-      ...current,
-      ...capture,
-      updatedAt: new Date().toISOString()
-    }));
+    setAppSettings((current) =>
+      appSettingsSchema.parse({
+        ...current,
+        ...capture,
+        updatedAt: new Date().toISOString()
+      })
+    );
     try {
       const saved = await window.app.settings.updateApp(capture);
       lastPersistedAppSettings.current = saved;
@@ -437,17 +495,19 @@ export function App({
     };
   }
 
-  const pageTitle = activeView === "settings"
-    ? "settings.title"
-    : activeView === "review"
-      ? "knowledge.review.title"
-      : activeView === "debug"
-        ? "debug.title"
-      : emptyViews[activeView].title;
+  const pageTitle =
+    activeView === "settings"
+      ? "settings.title"
+      : activeView === "review"
+        ? "knowledge.review.title"
+        : activeView === "debug"
+          ? "debug.title"
+          : emptyViews[activeView].title;
 
   if (databaseStatus.state !== "ready" || !hasLoadedAppData) {
     const isFailed = databaseStatus.state === "failed";
-    const bootMessageKey = databaseStatus.state === "ready" ? "shell.states.loading" : databaseStatus.messageKey;
+    const bootMessageKey =
+      databaseStatus.state === "ready" ? "shell.states.loading" : databaseStatus.messageKey;
 
     return (
       <main
@@ -468,10 +528,7 @@ export function App({
             {isFailed ? (
               <Database className="h-6 w-6" aria-hidden="true" />
             ) : (
-              <RefreshCw
-                className="h-6 w-6 animate-spin"
-                aria-hidden="true"
-              />
+              <RefreshCw className="h-6 w-6 animate-spin" aria-hidden="true" />
             )}
           </div>
           <div className="grid gap-2">
@@ -512,50 +569,91 @@ export function App({
         isDarkMode && "dark"
       )}
     >
-      <aside className={cn("flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-surface", appSettings.navigationCollapsed ? "w-16" : "w-56")}>
-        <div className={cn("flex h-14 shrink-0 items-center gap-2.5 border-b border-border", appSettings.navigationCollapsed ? "justify-center px-2" : "px-4")}>
-          {!appSettings.navigationCollapsed && <><Database className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
-          <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">{t("app.title")}</span></>}
-          <button type="button" className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
-            aria-label={t(appSettings.navigationCollapsed ? "shell.actions.expandNavigation" : "shell.actions.collapseNavigation")}
-            title={t(appSettings.navigationCollapsed ? "shell.actions.expandNavigation" : "shell.actions.collapseNavigation")}
-            aria-expanded={!appSettings.navigationCollapsed} aria-controls="app-navigation"
-            onClick={() => updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed })}>
-            {appSettings.navigationCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden="true" /> : <PanelLeftClose className="h-4 w-4" aria-hidden="true" />}
+      <aside
+        className={cn(
+          "flex h-full min-h-0 shrink-0 flex-col border-r border-border bg-surface",
+          appSettings.navigationCollapsed ? "w-16" : "w-56"
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-14 shrink-0 items-center gap-2.5 border-b border-border",
+            appSettings.navigationCollapsed ? "justify-center px-2" : "px-4"
+          )}
+        >
+          {!appSettings.navigationCollapsed && (
+            <>
+              <Database className="h-5 w-5 shrink-0 text-accent" aria-hidden="true" />
+              <span className="min-w-0 flex-1 text-sm font-medium tracking-normal">
+                {t("app.title")}
+              </span>
+            </>
+          )}
+          <button
+            type="button"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
+            aria-label={t(
+              appSettings.navigationCollapsed
+                ? "shell.actions.expandNavigation"
+                : "shell.actions.collapseNavigation"
+            )}
+            title={t(
+              appSettings.navigationCollapsed
+                ? "shell.actions.expandNavigation"
+                : "shell.actions.collapseNavigation"
+            )}
+            aria-expanded={!appSettings.navigationCollapsed}
+            aria-controls="app-navigation"
+            onClick={() =>
+              updateAppSettings({ navigationCollapsed: !appSettings.navigationCollapsed })
+            }
+          >
+            {appSettings.navigationCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
         </div>
-        <nav id="app-navigation" aria-label={t("shell.navigation.label")} className={cn("min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain", appSettings.navigationCollapsed ? "p-2" : "p-3")}>
+        <nav
+          id="app-navigation"
+          aria-label={t("shell.navigation.label")}
+          className={cn(
+            "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain",
+            appSettings.navigationCollapsed ? "p-2" : "p-3"
+          )}
+        >
           <div className="grid gap-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeView === item.id;
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeView === item.id;
 
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-label={t(item.label)}
-                aria-current={isActive ? "page" : undefined}
-                title={appSettings.navigationCollapsed ? t(item.label) : undefined}
-                className={cn(
-                  "flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
-                  appSettings.navigationCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
-                  isActive
-                    ? "bg-accent-soft text-accent"
-                    : "text-muted-foreground hover:bg-soft hover:text-foreground"
-                )}
-                onClick={() => {
-                  wikiPromptReturn.current=false;
-                  if (item.id === "library") setLibraryTarget(null);
-                  if (item.id === "settings") selectSettingsScope("overview");
-                  setActiveView(item.id);
-                }}
-              >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!appSettings.navigationCollapsed && t(item.label)}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-label={t(item.label)}
+                  aria-current={isActive ? "page" : undefined}
+                  title={appSettings.navigationCollapsed ? t(item.label) : undefined}
+                  className={cn(
+                    "flex min-h-9 items-center rounded-lg py-2 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent",
+                    appSettings.navigationCollapsed ? "justify-center px-2" : "gap-2.5 px-3",
+                    isActive
+                      ? "bg-accent-soft text-accent"
+                      : "text-muted-foreground hover:bg-soft hover:text-foreground"
+                  )}
+                  onClick={() => {
+                    wikiPromptReturn.current = false;
+                    if (item.id === "library") setLibraryTarget(null);
+                    if (item.id === "settings") selectSettingsScope("overview");
+                    setActiveView(item.id);
+                  }}
+                >
+                  <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  {!appSettings.navigationCollapsed && t(item.label)}
+                </button>
+              );
+            })}
           </div>
           {activeView === "settings" ? (
             <SettingsScopeMenu
@@ -566,7 +664,12 @@ export function App({
             />
           ) : null}
         </nav>
-        <div className={cn("flex shrink-0 border-t border-border p-3", appSettings.navigationCollapsed && "justify-center")}>
+        <div
+          className={cn(
+            "flex shrink-0 border-t border-border p-3",
+            appSettings.navigationCollapsed && "justify-center"
+          )}
+        >
           <button
             type="button"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
@@ -597,7 +700,28 @@ export function App({
           }}
         >
           <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace onPrompts={()=>{wikiPromptReturn.current=true;setActiveSettingsScope('prompts');setActiveView('settings');}} treeWidth={appSettings.wikiTreeWidth} onTreeWidthChange={width => updateAppSettings({ wikiTreeWidth: width })} externalTarget={obsidianTarget} active={activeView === "wiki"} t={t} onOpenSource={(sourceItemId, atomicNoteId) => { libraryTargetToken.current += 1; setLibraryTarget({ sourceItemId, origin:"wiki", ...(atomicNoteId ? { atomicNoteId } : {}), token:libraryTargetToken.current }); setActiveView("library"); }} />
+            <WikiWorkspace
+              onPrompts={() => {
+                wikiPromptReturn.current = true;
+                setActiveSettingsScope("prompts");
+                setActiveView("settings");
+              }}
+              treeWidth={appSettings.wikiTreeWidth}
+              onTreeWidthChange={(width) => updateAppSettings({ wikiTreeWidth: width })}
+              externalTarget={obsidianTarget}
+              active={activeView === "wiki"}
+              t={t}
+              onOpenSource={(sourceItemId, atomicNoteId) => {
+                libraryTargetToken.current += 1;
+                setLibraryTarget({
+                  sourceItemId,
+                  origin: "wiki",
+                  ...(atomicNoteId ? { atomicNoteId } : {}),
+                  token: libraryTargetToken.current
+                });
+                setActiveView("library");
+              }}
+            />
           </div>
           {activeView === "settings" ? (
             <SettingsView
@@ -616,11 +740,17 @@ export function App({
               onToast={(message, tone) => pushToast(t(message), tone)}
             />
           ) : activeView === "automation" ? (
-            <KnowledgeAutomationView t={t} contentLanguage={appSettings.contentLanguage} onSettings={scope=>{setActiveSettingsScope(scope);setActiveView("settings");}}/>
+            <KnowledgeAutomationView
+              t={t}
+              contentLanguage={appSettings.contentLanguage}
+              onSettings={(scope) => {
+                setActiveSettingsScope(scope);
+                setActiveView("settings");
+              }}
+            />
           ) : activeView === "import" ? (
             <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
-          ) : activeView === "wiki" ? (null
-          ) : activeView === "search" ? (
+          ) : activeView === "wiki" ? null : activeView === "search" ? (
             <SearchView
               t={t}
               state={searchState}
@@ -632,11 +762,31 @@ export function App({
               }}
             />
           ) : activeView === "jobs" ? (
-            <><KnowledgeAutomationView compact t={t} contentLanguage={appSettings.contentLanguage} onSettings={scope=>{setActiveSettingsScope(scope);setActiveView("settings");}}/><JobsView t={t} showHistoryCleanup={false} /></>
+            <>
+              <KnowledgeAutomationView
+                compact
+                t={t}
+                contentLanguage={appSettings.contentLanguage}
+                onSettings={(scope) => {
+                  setActiveSettingsScope(scope);
+                  setActiveView("settings");
+                }}
+              />
+              <JobsView t={t} showHistoryCleanup={false} />
+            </>
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
           ) : activeView === "knowledgeGraph" ? (
-            <Suspense fallback={<div role="status" className="grid h-[calc(100vh-7rem)] place-items-center text-sm text-slate-500">{t("shell.states.loading")}</div>}>
+            <Suspense
+              fallback={
+                <div
+                  role="status"
+                  className="grid h-[calc(100vh-7rem)] place-items-center text-sm text-slate-500"
+                >
+                  {t("shell.states.loading")}
+                </div>
+              }
+            >
               <KnowledgeGraphDashboard
                 t={t}
                 mode={knowledgeGraphMode}
@@ -646,12 +796,21 @@ export function App({
                 onModeChange={setKnowledgeGraphMode}
                 onOpenSource={(sourceItemId) => {
                   libraryTargetToken.current += 1;
-                  setLibraryTarget({ sourceItemId, origin: "knowledgeGraph", token: libraryTargetToken.current });
+                  setLibraryTarget({
+                    sourceItemId,
+                    origin: "knowledgeGraph",
+                    token: libraryTargetToken.current
+                  });
                   setActiveView("library");
                 }}
                 onOpenAtomicNote={(sourceItemId, atomicNoteId) => {
                   libraryTargetToken.current += 1;
-                  setLibraryTarget({ sourceItemId, atomicNoteId, origin: "knowledgeGraph", token: libraryTargetToken.current });
+                  setLibraryTarget({
+                    sourceItemId,
+                    atomicNoteId,
+                    origin: "knowledgeGraph",
+                    token: libraryTargetToken.current
+                  });
                   setActiveView("library");
                 }}
               />
@@ -674,7 +833,10 @@ export function App({
               metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
               externalTarget={libraryTarget}
               onNavigate={scrollActiveViewToTop}
-              onExitToWiki={() => { setLibraryTarget(null); setActiveView("wiki"); }}
+              onExitToWiki={() => {
+                setLibraryTarget(null);
+                setActiveView("wiki");
+              }}
               onExitToSearch={() => {
                 setLibraryTarget(null);
                 setActiveView("search");
@@ -684,12 +846,14 @@ export function App({
                 setActiveView("knowledgeGraph");
               }}
             />
-          ) : (
-            null
-          )}
+          ) : null}
         </div>
       </main>
-      <ToastViewport toasts={toasts} dismissLabel={t("shell.toasts.dismiss")} onDismiss={dismissToast} />
+      <ToastViewport
+        toasts={toasts}
+        dismissLabel={t("shell.toasts.dismiss")}
+        onDismiss={dismissToast}
+      />
       <LocalEmbeddingLoadDialog status={localEmbeddingLoadStatus} t={t} />
     </div>
   );

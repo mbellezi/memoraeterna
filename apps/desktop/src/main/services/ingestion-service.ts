@@ -59,10 +59,17 @@ import type {
 import { readPublicHtml, youtubeIdFromUrl, type ExternalPageFetch } from "./source-url-preview.js";
 import { AssetStorageService } from "./asset-storage-service.js";
 import { YouTubeService } from "./youtube-service.js";
-import { HierarchicalIngestionService, structureBoundaries } from "./hierarchical-ingestion-service.js";
+import {
+  HierarchicalIngestionService,
+  structureBoundaries
+} from "./hierarchical-ingestion-service.js";
 
 export interface IngestionServiceOptions {
-  traceOperation?: <T>(operation: string, context: Record<string, unknown>, run: () => Promise<T>) => Promise<T>;
+  traceOperation?: <T>(
+    operation: string,
+    context: Record<string, unknown>,
+    run: () => Promise<T>
+  ) => Promise<T>;
   getPool: () => PgPool | null;
   getStorageSettings: () => Promise<StorageSettings>;
   userDataPath: string;
@@ -97,7 +104,9 @@ export class IngestionService {
 
   public constructor(private readonly options: IngestionServiceOptions) {
     this.youtube = options.youtubeService ?? new YouTubeService();
-    this.hierarchical = options.hierarchicalIngestionService ?? new HierarchicalIngestionService({ getPool: options.getPool });
+    this.hierarchical =
+      options.hierarchicalIngestionService ??
+      new HierarchicalIngestionService({ getPool: options.getPool });
     const docling = resolveDoclingRuntime(options);
     this.router = new ConversionRouter({
       ...(docling ? { doclingClient: new DoclingClient(docling) } : {}),
@@ -121,9 +130,17 @@ export class IngestionService {
 
   private async convertWithMonitoring(...args: Parameters<ConversionRouter["convert"]>) {
     const run = () => this.router.convert(...args);
-    return this.options.traceOperation?.("conversion_and_normalization", {
-      origin: "ingestion_preview", fileName: args[0].fileName, mimeType: args[0].mimeType
-    }, run) ?? run();
+    return (
+      this.options.traceOperation?.(
+        "conversion_and_normalization",
+        {
+          origin: "ingestion_preview",
+          fileName: args[0].fileName,
+          mimeType: args[0].mimeType
+        },
+        run
+      ) ?? run()
+    );
   }
 
   public async previewUrl(input: { type: "WebArticle" | "Video"; url: string }) {
@@ -131,14 +148,32 @@ export class IngestionService {
       const videoId = youtubeIdFromUrl(input.url);
       if (!videoId) throw new Error("errors.common.validationFailed");
       const captured = await this.youtube.capture(videoId);
-      return { draft: descriptorDraftFromVideoMetadata({ title: captured.title, url: input.url,
-        metadata: { ...captured.metadata, platform: "youtube", videoId } }), markdown: captured.markdown };
+      return {
+        draft: descriptorDraftFromVideoMetadata({
+          title: captured.title,
+          url: input.url,
+          metadata: { ...captured.metadata, platform: "youtube", videoId }
+        }),
+        markdown: captured.markdown
+      };
     }
     const page = await readPublicHtml(input.url, this.options.fetchExternalPage);
-    const converted = await this.convertWithMonitoring({ data: new TextEncoder().encode(page.html), mimeType: "text/html",
-      fileName: "article.html", sourceUrl: page.url, profile: "standard" });
+    const converted = await this.convertWithMonitoring({
+      data: new TextEncoder().encode(page.html),
+      mimeType: "text/html",
+      fileName: "article.html",
+      sourceUrl: page.url,
+      profile: "standard"
+    });
     if (!converted.markdown.trim()) throw new Error("errors.common.validationFailed");
-    return { draft: descriptorDraftFromWebMetadata({ title: String(converted.metadata.title ?? page.url), url: page.url, metadata: converted.metadata }), markdown: converted.markdown };
+    return {
+      draft: descriptorDraftFromWebMetadata({
+        title: String(converted.metadata.title ?? page.url),
+        url: page.url,
+        metadata: converted.metadata
+      }),
+      markdown: converted.markdown
+    };
   }
 
   public async editSource(input: SourceEditInput) {
@@ -147,9 +182,15 @@ export class IngestionService {
 
   public async createManual(input: ManualIngestionInput): Promise<IngestionResult> {
     if (input.content.trim().length === 0 && isHierarchicalSourceType(input.descriptor.type)) {
-      return this.createContainerSource({ descriptor: input.descriptor, duplicatePolicy: input.duplicatePolicy });
+      return this.createContainerSource({
+        descriptor: input.descriptor,
+        duplicatePolicy: input.duplicatePolicy
+      });
     }
-    const markdown = await this.normalizeWithMonitoring(input.content, { sourceTitle: input.descriptor.title, origin: "manual_ingestion" });
+    const markdown = await this.normalizeWithMonitoring(input.content, {
+      sourceTitle: input.descriptor.title,
+      origin: "manual_ingestion"
+    });
     if (!markdown.trim()) throw new Error("errors.common.validationFailed");
     const conversion: MarkdownConversionResult = {
       status: "converted",
@@ -160,7 +201,10 @@ export class IngestionService {
       engine: "manual",
       engineVersion: "1",
       profile: "standard",
-      options: {}, warnings: [], quality: { textCoverage: 1 }, metadata: {}
+      options: {},
+      warnings: [],
+      quality: { textCoverage: 1 },
+      metadata: {}
     };
     const descriptor = input.descriptor;
     const detection = isHierarchicalSourceType(descriptor.type)
@@ -184,14 +228,16 @@ export class IngestionService {
       type: descriptor.type,
       title: descriptor.title,
       identifiers: descriptorIdentifiers(descriptor),
-        parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null
+      parentSourceItemId:
+        "parentSourceItemId" in descriptor ? (descriptor.parentSourceItemId ?? null) : null
     });
     if (duplicate && input.duplicatePolicy === "ignore") return containerResult(duplicate.id, true);
 
     const values = sourceValues(descriptor, "manual", null);
-    const sourceItem = duplicate && input.duplicatePolicy === "update"
-      ? await sources.update(duplicate.id, values)
-      : await sources.create(values);
+    const sourceItem =
+      duplicate && input.duplicatePolicy === "update"
+        ? await sources.update(duplicate.id, values)
+        : await sources.create(values);
     if (!sourceItem) throw new Error("Source item persistence failed.");
     await this.persistBibliographic(sourceItem.id, descriptor);
     await this.attachDescriptorCover(sourceItem.id, descriptor);
@@ -206,12 +252,17 @@ export class IngestionService {
       sourceUri: descriptorSourceUri(input.descriptor),
       contentHash: prepared?.conversion.contentHash ?? (normalized ? sha256(normalized) : null)
     });
-    const duplicate = byContent ?? await sources.findDescriptorDuplicate({
-      type: input.descriptor.type,
-      title: input.descriptor.title,
-      identifiers: descriptorIdentifiers(input.descriptor),
-      parentSourceItemId: "parentSourceItemId" in input.descriptor ? input.descriptor.parentSourceItemId ?? null : null
-    });
+    const duplicate =
+      byContent ??
+      (await sources.findDescriptorDuplicate({
+        type: input.descriptor.type,
+        title: input.descriptor.title,
+        identifiers: descriptorIdentifiers(input.descriptor),
+        parentSourceItemId:
+          "parentSourceItemId" in input.descriptor
+            ? (input.descriptor.parentSourceItemId ?? null)
+            : null
+      }));
     return duplicate ? { id: duplicate.id, title: duplicate.title, type: duplicate.type } : null;
   }
 
@@ -222,7 +273,10 @@ export class IngestionService {
   ) {
     reportFileImportProgress(onProgress, { stage: "inspecting_file", progress: 0.02 });
     const file = await stat(path);
-    assertImportSize(file.size, readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024));
+    assertImportSize(
+      file.size,
+      readPositiveInteger(process.env.MEMORA_MAX_IMPORT_BYTES, 512 * 1024 * 1024)
+    );
     const fileName = basename(path);
     const extension = extname(fileName).toLowerCase();
     const isPdf = extension === ".pdf";
@@ -242,10 +296,8 @@ export class IngestionService {
     const conversion = await this.convertWithMonitoring(
       { data, sourcePath: path, fileName, mimeType, profile: "standard" },
       undefined,
-      (progress) => reportFileImportProgress(
-        onProgress,
-        mapConversionProgress(progress, totalPages)
-      )
+      (progress) =>
+        reportFileImportProgress(onProgress, mapConversionProgress(progress, totalPages))
     );
     reportFileImportProgress(onProgress, {
       stage: "extracting_metadata",
@@ -284,7 +336,10 @@ export class IngestionService {
       });
       draft = {
         ...draft,
-        values: { ...draft.values, cover: { assetId: asset.id, mimeType: draft.coverData.mimeType } },
+        values: {
+          ...draft.values,
+          cover: { assetId: asset.id, mimeType: draft.coverData.mimeType }
+        },
         provenance: {
           ...draft.provenance,
           cover: { source: "extracted", evidence: "embedded file cover" }
@@ -294,14 +349,30 @@ export class IngestionService {
     }
     this.removeExpiredPreparedFiles();
     const fileToken = randomUUID();
-    this.preparedFiles.set(fileToken, { path, fileName, mimeType, data, conversion, draft, preparedAt: Date.now() });
+    this.preparedFiles.set(fileToken, {
+      path,
+      fileName,
+      mimeType,
+      data,
+      conversion,
+      draft,
+      preparedAt: Date.now()
+    });
     reportFileImportProgress(onProgress, {
       stage: "completed",
       progress: 1,
       ...(totalPages ? { completedPages: totalPages, totalPages } : {})
     });
-    return { fileToken, fileName, mimeType, draft,
-      preview: { text: conversion.markdown.slice(0, 20_000), truncated: conversion.markdown.length > 20_000 } };
+    return {
+      fileToken,
+      fileName,
+      mimeType,
+      draft,
+      preview: {
+        text: conversion.markdown.slice(0, 20_000),
+        truncated: conversion.markdown.length > 20_000
+      }
+    };
   }
 
   public async importFile(path: string, input: FileImportInput): Promise<IngestionResult> {
@@ -309,7 +380,10 @@ export class IngestionService {
     return this.importPreparedFile(prepared.fileToken, input);
   }
 
-  public async importPreparedFile(fileToken: string, input: FileImportInput): Promise<IngestionResult> {
+  public async importPreparedFile(
+    fileToken: string,
+    input: FileImportInput
+  ): Promise<IngestionResult> {
     this.removeExpiredPreparedFiles();
     const prepared = this.preparedFiles.get(fileToken);
     if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
@@ -323,7 +397,11 @@ export class IngestionService {
       duplicatePolicy: input.duplicatePolicy,
       metadata: { originalFileName: prepared.fileName, mimeType: prepared.mimeType },
       conversion: prepared.conversion,
-      originalAsset: { sourcePath: prepared.path, fileName: prepared.fileName, mimeType: prepared.mimeType },
+      originalAsset: {
+        sourcePath: prepared.path,
+        fileName: prepared.fileName,
+        mimeType: prepared.mimeType
+      },
       processingPlan: input.processingPlan,
       ...(detection ? { structureDetection: detection } : {})
     });
@@ -335,23 +413,42 @@ export class IngestionService {
     const detection = await this.preparedStructure(input);
     const prepared = this.preparedFiles.get(input.fileToken);
     if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
-    return { rootMarkdown: prepared.conversion.markdown, divisions: detection.divisions,
-      boundaries: structureBoundaries(prepared.conversion.markdown, detection.divisions) };
+    return {
+      rootMarkdown: prepared.conversion.markdown,
+      divisions: detection.divisions,
+      boundaries: structureBoundaries(prepared.conversion.markdown, detection.divisions)
+    };
   }
 
-  private async preparedStructure(input: FileStructurePreviewInput): Promise<StructureDetectionResult> {
+  private async preparedStructure(
+    input: FileStructurePreviewInput
+  ): Promise<StructureDetectionResult> {
     this.removeExpiredPreparedFiles();
     const prepared = this.preparedFiles.get(input.fileToken);
     if (!prepared) throw new Error("errors.ingestion.fileSelectionExpired");
     prepared.structures ??= new Map();
     const cached = prepared.structures.get(input.sourceType);
     if (cached) return cached;
-    const detection = detectDocumentStructure({ data: prepared.data, sourcePath: prepared.path,
-      fileName: prepared.fileName, mimeType: prepared.mimeType, conversion: prepared.conversion,
-      documentKind: input.sourceType === "Book" ? "book" : input.sourceType === "PeriodicalIssue" ? "periodical" : "paper" });
+    const detection = detectDocumentStructure({
+      data: prepared.data,
+      sourcePath: prepared.path,
+      fileName: prepared.fileName,
+      mimeType: prepared.mimeType,
+      conversion: prepared.conversion,
+      documentKind:
+        input.sourceType === "Book"
+          ? "book"
+          : input.sourceType === "PeriodicalIssue"
+            ? "periodical"
+            : "paper"
+    });
     prepared.structures.set(input.sourceType, detection);
-    try { return await detection; }
-    catch (error) { prepared.structures.delete(input.sourceType); throw error; }
+    try {
+      return await detection;
+    } catch (error) {
+      prepared.structures.delete(input.sourceType);
+      throw error;
+    }
   }
 
   public async captureWebPage(input: CaptureWebPageRequest): Promise<IngestionResult> {
@@ -392,11 +489,17 @@ export class IngestionService {
       `> ${input.selection.replace(/\n/g, "\n> ")}`,
       input.surroundingText ? `## Context\n\n${input.surroundingText}` : "",
       `[Source](${input.url})`
-    ].filter(Boolean).join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     return this.persist({
       descriptor: SourceDescriptorSchema.parse({
-        type: "WebArticle", title: input.title, url: input.url,
-        language: readMetadataLanguage(input.metadata), creators: [], tags: [],
+        type: "WebArticle",
+        title: input.title,
+        url: input.url,
+        language: readMetadataLanguage(input.metadata),
+        creators: [],
+        tags: [],
         provenance: { title: { source: "extracted", evidence: "selection capture" } }
       }),
       sourceOrigin: "web_capture",
@@ -413,7 +516,12 @@ export class IngestionService {
     const descriptor = descriptorDraftFromVideoMetadata({
       title: captured.title,
       url: input.url,
-      metadata: { ...input.visibleMetadata, ...captured.metadata, videoId: input.videoId, platform: "youtube" }
+      metadata: {
+        ...input.visibleMetadata,
+        ...captured.metadata,
+        videoId: input.videoId,
+        platform: "youtube"
+      }
     });
     return this.persist({
       descriptor: descriptorFromDraft(descriptor, captured.language),
@@ -436,7 +544,10 @@ export class IngestionService {
       descriptor: SourceDescriptorSchema.parse({
         type: "PersonalNote",
         title: input.title ?? basename(input.relativePath, extname(input.relativePath)),
-        language: "und", creators: [], tags: [], provenance: {}
+        language: "und",
+        creators: [],
+        tags: [],
+        provenance: {}
       }),
       sourceOrigin: "obsidian",
       sourceUriOverride: `obsidian://${input.relativePath}`,
@@ -448,7 +559,9 @@ export class IngestionService {
   }
 
   public async lookupSources(query: string, sourceTypes: SourceItemType[] = []) {
-    return (await createSourceItemRepository(this.requirePool()).lookup(query, 10, sourceTypes)).map((source) => ({
+    return (
+      await createSourceItemRepository(this.requirePool()).lookup(query, 10, sourceTypes)
+    ).map((source) => ({
       id: source.id,
       title: source.title,
       type: source.type
@@ -472,18 +585,27 @@ export class IngestionService {
     const runs = createIngestionRunRepository(pool);
     const descriptor = input.descriptor;
     if ("parentSourceItemId" in descriptor && descriptor.parentSourceItemId) {
-      const parent = await createSourceItemRepository(this.requirePool()).findById(descriptor.parentSourceItemId);
-      const expected = descriptor.type === "BookChapter" ? "Book" : descriptor.type === "DocumentSection" ? "AcademicPaper" : "PeriodicalIssue";
+      const parent = await createSourceItemRepository(this.requirePool()).findById(
+        descriptor.parentSourceItemId
+      );
+      const expected =
+        descriptor.type === "BookChapter"
+          ? "Book"
+          : descriptor.type === "DocumentSection"
+            ? "AcademicPaper"
+            : "PeriodicalIssue";
       if (!parent || parent.type !== expected) throw new Error("errors.common.validationFailed");
     }
     const sourceUri = input.sourceUriOverride ?? descriptorSourceUri(descriptor);
-    const duplicate = await sources.findDuplicate({ sourceUri, contentHash: input.conversion.contentHash })
-      ?? await sources.findDescriptorDuplicate({
+    const duplicate =
+      (await sources.findDuplicate({ sourceUri, contentHash: input.conversion.contentHash })) ??
+      (await sources.findDescriptorDuplicate({
         type: descriptor.type,
         title: descriptor.title,
         identifiers: descriptorIdentifiers(descriptor),
-        parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null
-      });
+        parentSourceItemId:
+          "parentSourceItemId" in descriptor ? (descriptor.parentSourceItemId ?? null) : null
+      }));
     if (duplicate && input.duplicatePolicy === "ignore") {
       const existingDocuments = await documents.listBySourceItem(duplicate.id);
       const existingRuns = await runs.listBySourceItem(duplicate.id);
@@ -496,29 +618,54 @@ export class IngestionService {
         );
         const existingStructure = structureResult.rows[0];
         return {
-          sourceItemId: duplicate.id, documentId: document.id, ingestionRunId: run?.id ?? null, jobId: run?.jobId ?? null,
-          batchId: run?.batchId ?? null, structureId: existingStructure?.id ?? null,
-          requiresStructureReview: existingStructure?.status === "draft" || existingStructure?.status === "in_review", duplicate: true
+          sourceItemId: duplicate.id,
+          documentId: document.id,
+          ingestionRunId: run?.id ?? null,
+          jobId: run?.jobId ?? null,
+          batchId: run?.batchId ?? null,
+          structureId: existingStructure?.id ?? null,
+          requiresStructureReview:
+            existingStructure?.status === "draft" || existingStructure?.status === "in_review",
+          duplicate: true
         };
       }
       return containerResult(duplicate.id, true);
     }
 
-    const previousDocument = duplicate && input.duplicatePolicy === "update"
-      ? (await documents.listBySourceItem(duplicate.id))[0] : undefined;
-    const editedDuplicate = duplicate && input.duplicatePolicy === "update"
-      ? await this.editSource({ sourceItemId: duplicate.id, expectedUpdatedAt: duplicate.updatedAt.toISOString(), descriptor,
-          content: { documentId: previousDocument?.id ?? null, markdown: input.conversion.markdown } })
-      : null;
+    const previousDocument =
+      duplicate && input.duplicatePolicy === "update"
+        ? (await documents.listBySourceItem(duplicate.id))[0]
+        : undefined;
+    const editedDuplicate =
+      duplicate && input.duplicatePolicy === "update"
+        ? await this.editSource({
+            sourceItemId: duplicate.id,
+            expectedUpdatedAt: duplicate.updatedAt.toISOString(),
+            descriptor,
+            content: {
+              documentId: previousDocument?.id ?? null,
+              markdown: input.conversion.markdown
+            }
+          })
+        : null;
     let sourceItem = editedDuplicate
       ? await sources.findById(editedDuplicate.sourceItemId)
-      : await sources.create({ ...sourceValues(descriptor, input.sourceOrigin, input.conversion.contentHash, input.metadata), sourceUri });
+      : await sources.create({
+          ...sourceValues(
+            descriptor,
+            input.sourceOrigin,
+            input.conversion.contentHash,
+            input.metadata
+          ),
+          sourceUri
+        });
     sourceItem ??= duplicate;
     if (!sourceItem) throw new Error("Source item persistence failed.");
 
-    const existingDocuments = duplicate && input.duplicatePolicy === "update"
-      ? await documents.listBySourceItem(sourceItem.id)
-      : [];
+    const existingDocuments =
+      duplicate && input.duplicatePolicy === "update"
+        ? await documents.listBySourceItem(sourceItem.id)
+        : [];
     const document = existingDocuments[0]
       ? await documents.update(existingDocuments[0].id, {
           title: descriptor.title,
@@ -539,22 +686,40 @@ export class IngestionService {
 
     await this.persistBibliographic(sourceItem.id, descriptor);
     await this.attachDescriptorCover(sourceItem.id, descriptor, document.id);
-    if (input.originalAsset) await this.persistOriginalAsset(sourceItem.id, document.id, input.originalAsset);
+    if (input.originalAsset)
+      await this.persistOriginalAsset(sourceItem.id, document.id, input.originalAsset);
     if (input.conversion.rawStructuredResult !== undefined) {
-      await this.persistStructuredAsset(sourceItem.id, document.id, input.conversion.rawStructuredResult);
+      await this.persistStructuredAsset(
+        sourceItem.id,
+        document.id,
+        input.conversion.rawStructuredResult
+      );
     }
 
     if (input.structureDetection) {
-      const structure = await this.hierarchical.createStructureDraft(sourceItem.id, document.id, input.structureDetection);
+      const structure = await this.hierarchical.createStructureDraft(
+        sourceItem.id,
+        document.id,
+        input.structureDetection
+      );
       return {
-        sourceItemId: sourceItem.id, documentId: document.id, ingestionRunId: null, jobId: null,
-        batchId: null, structureId: structure.id, requiresStructureReview: true, duplicate: Boolean(duplicate)
+        sourceItemId: sourceItem.id,
+        documentId: document.id,
+        ingestionRunId: null,
+        jobId: null,
+        batchId: null,
+        structureId: structure.id,
+        requiresStructureReview: true,
+        duplicate: Boolean(duplicate)
       };
     }
     const queued = await this.hierarchical.process({
       plan: { ...input.processingPlan, targetSourceItemIds: [sourceItem.id], scope: "source_only" },
       runKind: editedDuplicate ? "reingestion" : "initial",
-      trigger: input.sourceOrigin === "manual" || input.sourceOrigin === "file_upload" ? "interactive_import" : "integration"
+      trigger:
+        input.sourceOrigin === "manual" || input.sourceOrigin === "file_upload"
+          ? "interactive_import"
+          : "integration"
     });
     const first = queued.queued[0];
     if (!first) throw new Error("ingestion_queue_failed");
@@ -574,11 +739,18 @@ export class IngestionService {
     sourceItemId: string,
     descriptor: SourceDescriptor
   ): Promise<void> {
-    if (!["Book", "BookChapter", "PeriodicalIssue", "AcademicPaper", "StandaloneArticle"].includes(descriptor.type)) {
+    if (
+      !["Book", "BookChapter", "PeriodicalIssue", "AcademicPaper", "StandaloneArticle"].includes(
+        descriptor.type
+      )
+    ) {
       return;
     }
     const repository = createBibliographicRepository(this.requirePool());
-    if ((descriptor.type === "BookChapter" || descriptor.type === "StandaloneArticle") && descriptor.parentSourceItemId) {
+    if (
+      (descriptor.type === "BookChapter" || descriptor.type === "StandaloneArticle") &&
+      descriptor.parentSourceItemId
+    ) {
       const parent = await this.requirePool().query<{ workId: string; instanceId: string | null }>(
         `select work_id as "workId", instance_id as "instanceId"
          from source_item_bibliographic_links where source_item_id = $1 limit 1`,
@@ -587,7 +759,9 @@ export class IngestionService {
       const link = parent.rows[0];
       if (link) {
         await repository.linkSource({
-          sourceItemId, workId: link.workId, instanceId: link.instanceId,
+          sourceItemId,
+          workId: link.workId,
+          instanceId: link.instanceId,
           relationType: descriptor.type === "BookChapter" ? "chapter_of" : "article_in",
           ...(descriptor.pages ? { pages: formatPageRange(descriptor.pages) } : {})
         });
@@ -607,10 +781,16 @@ export class IngestionService {
         `update bibliographic_works set type = $2, title = $3, subtitle = $4, language = $5,
            creators = $6::jsonb, identifiers = $7::jsonb,
            metadata = metadata || $8::jsonb, updated_at = now() where id = $1`,
-        [existingLink.workId, bibliographicWorkType(descriptor.type),
+        [
+          existingLink.workId,
+          bibliographicWorkType(descriptor.type),
           descriptor.type === "PeriodicalIssue" ? descriptor.publicationTitle : descriptor.title,
-          descriptor.subtitle ?? null, descriptor.language, JSON.stringify(descriptor.creators), identifiers,
-          { sourceDescriptorType: descriptor.type }]
+          descriptor.subtitle ?? null,
+          descriptor.language,
+          JSON.stringify(descriptor.creators),
+          identifiers,
+          { sourceDescriptorType: descriptor.type }
+        ]
       );
       if (existingLink.instanceId) {
         await this.updateBibliographicInstance(existingLink.instanceId, descriptor);
@@ -626,63 +806,92 @@ export class IngestionService {
       identifiers,
       metadata: { sourceDescriptorType: descriptor.type }
     });
-    const instanceId = descriptor.type === "Book"
-      ? await repository.createInstance({
-          workId: work.id, type: "book_edition", creators: descriptor.creators,
-          ...(descriptor.edition ? { edition: descriptor.edition } : {}),
-          ...(descriptor.volume ? { volume: descriptor.volume } : {}),
-          ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
-          ...(descriptor.publisher ? { publisher: descriptor.publisher } : {}),
-          ...((descriptor.isbn13 ?? descriptor.isbn10) ? { isbn: (descriptor.isbn13 ?? descriptor.isbn10)! } : {}),
-          ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {}),
-          ...(descriptor.series ? { series: descriptor.series } : {})
-        })
-      : descriptor.type === "PeriodicalIssue"
+    const instanceId =
+      descriptor.type === "Book"
         ? await repository.createInstance({
-            workId: work.id, type: "periodical_issue", creators: descriptor.creators,
+            workId: work.id,
+            type: "book_edition",
+            creators: descriptor.creators,
+            ...(descriptor.edition ? { edition: descriptor.edition } : {}),
             ...(descriptor.volume ? { volume: descriptor.volume } : {}),
-            ...(descriptor.issue ? { issue: descriptor.issue } : {}),
             ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
             ...(descriptor.publisher ? { publisher: descriptor.publisher } : {}),
-            ...(descriptor.issn ? { issn: descriptor.issn } : {}),
-            ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {})
+            ...((descriptor.isbn13 ?? descriptor.isbn10)
+              ? { isbn: (descriptor.isbn13 ?? descriptor.isbn10)! }
+              : {}),
+            ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {}),
+            ...(descriptor.series ? { series: descriptor.series } : {})
           })
-        : descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle"
+        : descriptor.type === "PeriodicalIssue"
           ? await repository.createInstance({
-              workId: work.id, type: "article", creators: descriptor.creators,
-              ...(descriptor.publicationDate ? { publicationDate: descriptor.publicationDate } : {}),
-              ...(descriptor.doi ? { doi: descriptor.doi } : {})
+              workId: work.id,
+              type: "periodical_issue",
+              creators: descriptor.creators,
+              ...(descriptor.volume ? { volume: descriptor.volume } : {}),
+              ...(descriptor.issue ? { issue: descriptor.issue } : {}),
+              ...(descriptor.publicationDate
+                ? { publicationDate: descriptor.publicationDate }
+                : {}),
+              ...(descriptor.publisher ? { publisher: descriptor.publisher } : {}),
+              ...(descriptor.issn ? { issn: descriptor.issn } : {}),
+              ...(descriptor.pageCount ? { pageCount: descriptor.pageCount } : {})
             })
-          : null;
+          : descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle"
+            ? await repository.createInstance({
+                workId: work.id,
+                type: "article",
+                creators: descriptor.creators,
+                ...(descriptor.publicationDate
+                  ? { publicationDate: descriptor.publicationDate }
+                  : {}),
+                ...(descriptor.doi ? { doi: descriptor.doi } : {})
+              })
+            : null;
     await repository.linkSource({
       sourceItemId,
       workId: work.id,
       instanceId,
-      ...("pages" in descriptor && descriptor.pages ? { pages: formatPageRange(descriptor.pages) } : {})
+      ...("pages" in descriptor && descriptor.pages
+        ? { pages: formatPageRange(descriptor.pages) }
+        : {})
     });
   }
 
-  private async updateBibliographicInstance(instanceId: string, descriptor: SourceDescriptor): Promise<void> {
-    if (descriptor.type !== "Book" && descriptor.type !== "PeriodicalIssue"
-        && descriptor.type !== "AcademicPaper" && descriptor.type !== "StandaloneArticle") return;
+  private async updateBibliographicInstance(
+    instanceId: string,
+    descriptor: SourceDescriptor
+  ): Promise<void> {
+    if (
+      descriptor.type !== "Book" &&
+      descriptor.type !== "PeriodicalIssue" &&
+      descriptor.type !== "AcademicPaper" &&
+      descriptor.type !== "StandaloneArticle"
+    )
+      return;
     await this.requirePool().query(
       `update bibliographic_instances set type = $2, edition = $3, volume = $4, issue = $5,
          publication_date = $6, publisher = $7, isbn = $8, issn = $9, doi = $10,
          creators = $11::jsonb, page_count = $12, series = $13, updated_at = now() where id = $1`,
       [
         instanceId,
-        descriptor.type === "Book" ? "book_edition" : descriptor.type === "PeriodicalIssue" ? "periodical_issue" : "article",
-        descriptor.type === "Book" ? descriptor.edition ?? null : null,
-        "volume" in descriptor ? descriptor.volume ?? null : null,
-        "issue" in descriptor ? descriptor.issue ?? null : null,
+        descriptor.type === "Book"
+          ? "book_edition"
+          : descriptor.type === "PeriodicalIssue"
+            ? "periodical_issue"
+            : "article",
+        descriptor.type === "Book" ? (descriptor.edition ?? null) : null,
+        "volume" in descriptor ? (descriptor.volume ?? null) : null,
+        "issue" in descriptor ? (descriptor.issue ?? null) : null,
         descriptor.publicationDate ?? null,
-        "publisher" in descriptor ? descriptor.publisher ?? null : null,
-        descriptor.type === "Book" ? descriptor.isbn13 ?? descriptor.isbn10 ?? null : null,
-        descriptor.type === "PeriodicalIssue" ? descriptor.issn ?? null : null,
-        descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle" ? descriptor.doi ?? null : null,
+        "publisher" in descriptor ? (descriptor.publisher ?? null) : null,
+        descriptor.type === "Book" ? (descriptor.isbn13 ?? descriptor.isbn10 ?? null) : null,
+        descriptor.type === "PeriodicalIssue" ? (descriptor.issn ?? null) : null,
+        descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle"
+          ? (descriptor.doi ?? null)
+          : null,
         JSON.stringify(descriptor.creators),
-        "pageCount" in descriptor ? descriptor.pageCount ?? null : null,
-        descriptor.type === "Book" ? descriptor.series ?? null : null
+        "pageCount" in descriptor ? (descriptor.pageCount ?? null) : null,
+        descriptor.type === "Book" ? (descriptor.series ?? null) : null
       ]
     );
   }
@@ -707,41 +916,70 @@ export class IngestionService {
     input: { data?: Uint8Array; sourcePath?: string; fileName: string; mimeType: string }
   ): Promise<void> {
     const internal = await this.assetStorage.store({
-      ...(input.data ? { data: input.data } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
+      ...(input.data ? { data: input.data } : {}),
+      ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
       originalFileName: input.fileName,
       basePath: join(this.options.userDataPath, "assets"),
       storageBase: "app_internal"
     });
     const assets = createDocumentAssetRepository(this.requirePool());
     await assets.create({
-      sourceItemId, documentId, originalFileName: input.fileName, sha256: internal.sha256,
-      mimeType: input.mimeType, sizeBytes: internal.sizeBytes, storageBase: internal.storageBase,
-      relativePath: internal.relativePath, role: "original"
+      sourceItemId,
+      documentId,
+      originalFileName: input.fileName,
+      sha256: internal.sha256,
+      mimeType: input.mimeType,
+      sizeBytes: internal.sizeBytes,
+      storageBase: internal.storageBase,
+      relativePath: internal.relativePath,
+      role: "original"
     });
     const storageSettings = await this.options.getStorageSettings();
     if (storageSettings.uploadCopiesEnabled && storageSettings.uploadCopiesFolderPath) {
       const copy = await this.assetStorage.store({
-        ...(input.data ? { data: input.data } : {}), ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}), originalFileName: input.fileName,
-        basePath: storageSettings.uploadCopiesFolderPath, storageBase: "uploaded_files"
+        ...(input.data ? { data: input.data } : {}),
+        ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
+        originalFileName: input.fileName,
+        basePath: storageSettings.uploadCopiesFolderPath,
+        storageBase: "uploaded_files"
       });
       await assets.create({
-        sourceItemId, documentId, originalFileName: input.fileName, sha256: copy.sha256,
-        mimeType: input.mimeType, sizeBytes: copy.sizeBytes, storageBase: copy.storageBase,
-        relativePath: copy.relativePath, role: "original"
+        sourceItemId,
+        documentId,
+        originalFileName: input.fileName,
+        sha256: copy.sha256,
+        mimeType: input.mimeType,
+        sizeBytes: copy.sizeBytes,
+        storageBase: copy.storageBase,
+        relativePath: copy.relativePath,
+        role: "original"
       });
     }
   }
 
-  private async persistStructuredAsset(sourceItemId: string, documentId: string, raw: unknown): Promise<void> {
+  private async persistStructuredAsset(
+    sourceItemId: string,
+    documentId: string,
+    raw: unknown
+  ): Promise<void> {
     const data = new TextEncoder().encode(JSON.stringify(raw));
     const stored = await this.assetStorage.store({
-      data, originalFileName: `${documentId}.docling.json`,
-      basePath: join(this.options.userDataPath, "assets"), storageBase: "app_internal"
+      data,
+      originalFileName: `${documentId}.docling.json`,
+      basePath: join(this.options.userDataPath, "assets"),
+      storageBase: "app_internal"
     });
     await createDocumentAssetRepository(this.requirePool()).create({
-      sourceItemId, documentId, originalFileName: `${documentId}.docling.json`, sha256: stored.sha256,
-      mimeType: "application/json", sizeBytes: stored.sizeBytes, storageBase: stored.storageBase,
-      relativePath: stored.relativePath, role: "derived", metadata: { engine: "docling" }
+      sourceItemId,
+      documentId,
+      originalFileName: `${documentId}.docling.json`,
+      sha256: stored.sha256,
+      mimeType: "application/json",
+      sizeBytes: stored.sizeBytes,
+      storageBase: stored.storageBase,
+      relativePath: stored.relativePath,
+      role: "derived",
+      metadata: { engine: "docling" }
     });
   }
 
@@ -758,19 +996,26 @@ export class IngestionService {
     }
     const excess = this.preparedFiles.size - 10;
     if (excess > 0) {
-      for (const token of [...this.preparedFiles.keys()].slice(0, excess)) this.preparedFiles.delete(token);
+      for (const token of [...this.preparedFiles.keys()].slice(0, excess))
+        this.preparedFiles.delete(token);
     }
   }
 }
 
 function importOnlyPlan(): ProcessingPlanRequest {
   return resolveProcessingPlan({
-    preset: "import_only", requestedStages: [], scope: "source_only", targetSourceItemIds: [],
-    forceRegeneration: false, previousArtifactPolicy: "reuse_valid"
+    preset: "import_only",
+    requestedStages: [],
+    scope: "source_only",
+    targetSourceItemIds: [],
+    forceRegeneration: false,
+    previousArtifactPolicy: "reuse_valid"
   });
 }
 
-function isHierarchicalSourceType(type: SourceItemType): type is "Book" | "PeriodicalIssue" | "AcademicPaper" {
+function isHierarchicalSourceType(
+  type: SourceItemType
+): type is "Book" | "PeriodicalIssue" | "AcademicPaper" {
   return type === "Book" || type === "PeriodicalIssue" || type === "AcademicPaper";
 }
 
@@ -791,20 +1036,37 @@ function descriptorFromDraft(draft: SourceDescriptorDraft, language = "und"): So
     provenance: draft.provenance
   });
   if (candidate.success) return candidate.data;
-  const title = typeof draft.values.title === "string" && draft.values.title.trim()
-    ? draft.values.title.trim()
-    : "Untitled";
+  const title =
+    typeof draft.values.title === "string" && draft.values.title.trim()
+      ? draft.values.title.trim()
+      : "Untitled";
   if (draft.sourceType === "WebArticle") {
-    const url = typeof draft.values.url === "string" && URL.canParse(draft.values.url) ? draft.values.url : undefined;
+    const url =
+      typeof draft.values.url === "string" && URL.canParse(draft.values.url)
+        ? draft.values.url
+        : undefined;
     return SourceDescriptorSchema.parse({
-      type: "WebArticle", title, language, creators: [], tags: [], provenance: draft.provenance,
+      type: "WebArticle",
+      title,
+      language,
+      creators: [],
+      tags: [],
+      provenance: draft.provenance,
       ...(url ? { url } : {})
     });
   }
   if (draft.sourceType === "Video") {
-    const url = typeof draft.values.url === "string" && URL.canParse(draft.values.url) ? draft.values.url : undefined;
+    const url =
+      typeof draft.values.url === "string" && URL.canParse(draft.values.url)
+        ? draft.values.url
+        : undefined;
     return SourceDescriptorSchema.parse({
-      type: "Video", title, language, creators: [], tags: [], provenance: draft.provenance,
+      type: "Video",
+      title,
+      language,
+      creators: [],
+      tags: [],
+      provenance: draft.provenance,
       ...(url ? { url } : {})
     });
   }
@@ -812,7 +1074,7 @@ function descriptorFromDraft(draft: SourceDescriptorDraft, language = "und"): So
 }
 
 function descriptorSourceUri(descriptor: SourceDescriptor): string | null {
-  return "url" in descriptor ? descriptor.url ?? null : null;
+  return "url" in descriptor ? (descriptor.url ?? null) : null;
 }
 
 function descriptorIdentifiers(descriptor: SourceDescriptor): string[] {
@@ -826,7 +1088,8 @@ function descriptorIdentifierMap(descriptor: SourceDescriptor): Record<string, s
       ...(descriptor.isbn13 ? { isbn13: descriptor.isbn13 } : {})
     };
   }
-  if (descriptor.type === "PeriodicalIssue") return descriptor.issn ? { issn: descriptor.issn } : {};
+  if (descriptor.type === "PeriodicalIssue")
+    return descriptor.issn ? { issn: descriptor.issn } : {};
   if (descriptor.type === "AcademicPaper" || descriptor.type === "StandaloneArticle") {
     return descriptor.doi ? { doi: descriptor.doi } : {};
   }
@@ -846,7 +1109,8 @@ function sourceValues(
     subtitle: descriptor.subtitle ?? null,
     sourceOrigin,
     sourceUri: descriptorSourceUri(descriptor),
-    parentSourceItemId: "parentSourceItemId" in descriptor ? descriptor.parentSourceItemId ?? null : null,
+    parentSourceItemId:
+      "parentSourceItemId" in descriptor ? (descriptor.parentSourceItemId ?? null) : null,
     contentHash,
     language: descriptor.language,
     metadata: { ...extraMetadata, descriptor }
@@ -855,8 +1119,14 @@ function sourceValues(
 
 function containerResult(sourceItemId: string, duplicate: boolean): IngestionResult {
   return {
-    sourceItemId, documentId: null, ingestionRunId: null, jobId: null, batchId: null,
-    structureId: null, requiresStructureReview: false, duplicate
+    sourceItemId,
+    documentId: null,
+    ingestionRunId: null,
+    jobId: null,
+    batchId: null,
+    structureId: null,
+    requiresStructureReview: false,
+    duplicate
   };
 }
 
@@ -873,9 +1143,14 @@ function bibliographicWorkType(type: SourceDescriptor["type"]): string {
 
 function conversionMetadata(result: MarkdownConversionResult): Record<string, unknown> {
   return {
-    status: result.status, engine: result.engine, engineVersion: result.engineVersion,
-    profile: result.profile, options: result.options, warnings: result.warnings,
-    quality: result.quality, metadata: result.metadata
+    status: result.status,
+    engine: result.engine,
+    engineVersion: result.engineVersion,
+    profile: result.profile,
+    options: result.options,
+    warnings: result.warnings,
+    quality: result.quality,
+    metadata: result.metadata
   };
 }
 
@@ -899,7 +1174,9 @@ function markdownResult(markdownInput: string, engine: string): MarkdownConversi
 
 function readMetadataLanguage(metadata: Record<string, unknown>): string {
   const language = metadata.language;
-  return typeof language === "string" && language.length >= 2 && language.length <= 16 ? language : "und";
+  return typeof language === "string" && language.length >= 2 && language.length <= 16
+    ? language
+    : "und";
 }
 
 function resolveDoclingRuntime(options: IngestionServiceOptions) {
@@ -907,9 +1184,8 @@ function resolveDoclingRuntime(options: IngestionServiceOptions) {
   const root = options.isPackaged
     ? join(options.resourcesPath, "sidecars", "docling", platform)
     : join(options.workspaceRoot, "vendor", "sidecars", "docling", platform);
-  const executablePath = process.platform === "win32"
-    ? join(root, "python.exe")
-    : join(root, "bin", "python3.13");
+  const executablePath =
+    process.platform === "win32" ? join(root, "python.exe") : join(root, "bin", "python3.13");
   const sidecarScriptPath = options.isPackaged
     ? join(options.resourcesPath, "docling", "docling_sidecar.py")
     : join(options.workspaceRoot, "packages", "conversion", "sidecar", "docling_sidecar.py");
@@ -918,7 +1194,10 @@ function resolveDoclingRuntime(options: IngestionServiceOptions) {
     executablePath,
     sidecarScriptPath,
     timeoutMs: readPositiveInteger(process.env.MEMORA_DOCLING_TIMEOUT_MS, 5 * 60_000),
-    maxOutputBytes: readPositiveInteger(process.env.MEMORA_DOCLING_MAX_OUTPUT_BYTES, 256 * 1024 * 1024),
+    maxOutputBytes: readPositiveInteger(
+      process.env.MEMORA_DOCLING_MAX_OUTPUT_BYTES,
+      256 * 1024 * 1024
+    ),
     conversionOptions: {
       maxPages: readPositiveInteger(process.env.MEMORA_DOCLING_MAX_PAGES, 500)
     },
@@ -947,7 +1226,7 @@ function mapConversionProgress(
   const totalPages = event.totalPages ?? fallbackTotalPages;
   return {
     stage: event.stage,
-    progress: Math.min(0.88, 0.08 + (event.progress * 0.8)),
+    progress: Math.min(0.88, 0.08 + event.progress * 0.8),
     ...(event.completedPages !== undefined ? { completedPages: event.completedPages } : {}),
     ...(totalPages !== undefined ? { totalPages } : {})
   };
@@ -977,15 +1256,29 @@ function readPositiveInteger(value: string | undefined, fallback: number): numbe
 
 function detectMimeType(fileName: string, data: Uint8Array): string {
   const extension = extname(fileName).toLowerCase();
-  if (data[0] === 0x25 && data[1] === 0x50 && data[2] === 0x44 && data[3] === 0x46) return "application/pdf";
-  return ({
-    ".md": "text/markdown", ".markdown": "text/markdown", ".txt": "text/plain",
-    ".html": "text/html", ".htm": "text/html", ".csv": "text/csv",
-    ".json": "application/json", ".xml": "application/xml", ".rss": "application/rss+xml",
-    ".atom": "application/atom+xml", ".ipynb": "application/x-ipynb+json",
-    ".pdf": "application/pdf", ".epub": "application/epub+zip", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".zip": "application/zip"
-  } as Record<string, string>)[extension] ?? "application/octet-stream";
+  if (data[0] === 0x25 && data[1] === 0x50 && data[2] === 0x44 && data[3] === 0x46)
+    return "application/pdf";
+  return (
+    (
+      {
+        ".md": "text/markdown",
+        ".markdown": "text/markdown",
+        ".txt": "text/plain",
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".csv": "text/csv",
+        ".json": "application/json",
+        ".xml": "application/xml",
+        ".rss": "application/rss+xml",
+        ".atom": "application/atom+xml",
+        ".ipynb": "application/x-ipynb+json",
+        ".pdf": "application/pdf",
+        ".epub": "application/epub+zip",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".zip": "application/zip"
+      } as Record<string, string>
+    )[extension] ?? "application/octet-stream"
+  );
 }
