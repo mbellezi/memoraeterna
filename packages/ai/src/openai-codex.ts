@@ -197,11 +197,19 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
               };
             };
             if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-              if (event.delta.length > 0) call.outputStarted();
+              if (event.delta.length > 0) call.progressed("answer");
               output += event.delta;
               progress?.({
                 progress: streamedProgress(output.length, request.parameters.maxTokens)
               });
+            } else if (
+              (event.type === "response.reasoning_summary_text.delta" ||
+                event.type === "response.reasoning_text.delta") &&
+              typeof event.delta === "string" &&
+              event.delta.length > 0
+            ) {
+              // Lifecycle events (created, in_progress, output_item.added, ...) are not progress.
+              call.progressed("reasoning");
             }
             if (event.type === "error" || event.type === "response.failed") {
               const failure = event.error ?? event.response?.error;

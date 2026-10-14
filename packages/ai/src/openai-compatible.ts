@@ -252,7 +252,9 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
           (data) => {
             if (data === "[DONE]") return;
             const event = JSON.parse(data) as {
-              choices?: Array<{ delta?: { content?: string } }>;
+              choices?: Array<{
+                delta?: { content?: string | null; reasoning_content?: string; reasoning?: string };
+              }>;
               usage?: Record<string, unknown> & {
                 prompt_tokens?: number;
                 completion_tokens?: number;
@@ -260,8 +262,10 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
               error?: { message?: string; code?: string | number; type?: string };
             };
             if (event.error) throw providerStreamError(event.error);
-            const delta = event.choices?.[0]?.delta?.content ?? "";
-            if (delta.length > 0) call.outputStarted();
+            const choice = event.choices?.[0]?.delta;
+            const delta = choice?.content ?? "";
+            if (delta.length > 0) call.progressed("answer");
+            else if (choice?.reasoning_content || choice?.reasoning) call.progressed("reasoning");
             output += delta;
             tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usage) };
             call.reportUsage(tokenUsage);
@@ -425,8 +429,9 @@ export async function parseResponse<T>(response: Response, call?: RemoteAttempt)
 }
 
 /**
- * Reads a server-sent-event stream. With `call`, every chunk restarts the stall deadline and a pending
- * read ends as soon as the attempt does, so a silent provider cannot hold the execution slot.
+ * Reads a server-sent-event stream. With `call`, the first chunk ends the first-byte deadline and a
+ * pending read ends as soon as the attempt does, so a silent provider cannot hold the execution slot.
+ * Bytes, comments and empty data restart nothing: `onData` reports progress through `call.progressed`.
  */
 export async function readServerSentEvents(
   response: Response,

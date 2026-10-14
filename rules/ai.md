@@ -1,7 +1,6 @@
 # AI runtime, models and prompts
 
-Load for providers, adapters, routing, parameters, local models, the scheduler,
-embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
+Load for providers, routing, parameters, local models, prompts or AI audit.
 
 ## Adapters and capabilities
 
@@ -47,13 +46,15 @@ embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
   embeddings, user-started actions) is admitted before background work and never
   preempts a running call; a caller's timeout excludes its wait for a slot.
 - Remote generation streams, so every remote call has deadlines counted from
-  execution start (connect, first byte, stalled stream, total). Adapters retry
-  only transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with
-  exponential backoff, full jitter and bounded attempts, honoring `Retry-After`
-  or the provider's stated reset (a wait too long for the single slot goes to
-  the job); never invalid requests, auth failures, exhausted billing quota,
-  context overflow or schema failures after the allowed repair. Job retries use
-  the same classification.
+  execution start (connect, first byte, stalled stream, total). Only progress
+  (answer text, or reasoning text before it) keeps a stream alive, not bytes or
+  lifecycle events, and unless high-reasoning or local a request must start
+  answering within a bound of the first byte. Adapters retry only transient
+  failures (timeouts, stalls, 408, 425, 429, 5xx, network) with jittered
+  exponential backoff and bounded attempts, honoring `Retry-After` or a stated
+  reset (a wait too long for the single slot goes to the job); never invalid
+  requests, auth failures, exhausted billing quota, context overflow or schema
+  failures after the allowed repair. Job retries classify the same way.
 - Structured output is requested with a schema where the runtime supports it and
   is always validated with Zod. Invalid output gets a bounded repair; valid items
   are kept and only missing ones are requested again (target F3).

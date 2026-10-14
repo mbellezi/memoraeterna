@@ -241,7 +241,9 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
           response,
           (data) => {
             const event = JSON.parse(data) as {
-              candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+              candidates?: Array<{
+                content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+              }>;
               usageMetadata?: Record<string, unknown> & {
                 promptTokenCount?: number;
                 candidatesTokenCount?: number;
@@ -254,9 +256,11 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
                 code: event.error.code,
                 type: event.error.status
               });
-            const text =
-              event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-            if (text.length > 0) call.outputStarted();
+            // Thought summaries show the model is working, but they are not the answer.
+            const parts = event.candidates?.[0]?.content?.parts ?? [];
+            const text = parts.map((part) => (part.thought ? "" : (part.text ?? ""))).join("");
+            if (text.length > 0) call.progressed("answer");
+            else if (parts.some((part) => part.thought && part.text)) call.progressed("reasoning");
             output += text;
             tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
             call.reportUsage(tokenUsage);

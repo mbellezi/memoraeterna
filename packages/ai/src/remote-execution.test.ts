@@ -40,7 +40,9 @@ describe("remote execution configuration", () => {
     expect(resolveAiRuntimeConfig().deadlines).toMatchObject({
       connectMs: 10_000,
       firstByteMs: 30_000,
-      stallMs: 20_000
+      stallMs: 20_000,
+      answerStartMs: 30_000,
+      totalMs: { embed: 30_000, decide: 45_000 }
     });
     expect(
       resolveAiRuntimeConfig({ deadlines: { totalMs: { embed: 5_000 } } }).deadlines.totalMs
@@ -362,8 +364,7 @@ describe("runRemoteCall deadlines", () => {
           call.chunkReceived();
           if (outputAt !== undefined) {
             await call.guard(new Promise<void>((resolve) => setTimeout(resolve, outputAt)));
-            call.chunkReceived();
-            call.outputStarted();
+            call.progressed("answer");
           }
           return call.guard(new Promise<string>(() => undefined));
         }
@@ -425,6 +426,214 @@ describe("runRemoteCall deadlines", () => {
       });
       await vi.advanceTimersByTimeAsync(200_000);
       await settled;
+    });
+  });
+
+  describe("progress, not bytes", () => {
+    type Step = [at: number, progress?: "reasoning" | "answer"];
+    interface Script {
+      /** Chunks the attempt receives, at times counted from its start, and the progress each carries. */
+      steps: Step[];
+      /** The attempt returns at this time; without it the stream stays open and silent. */
+      endAt?: number;
+    }
+    const play = (
+      scripts: Script[],
+      input: {
+        runtime?: AiRuntimeConfigInput;
+        parameters?: Record<string, unknown>;
+        local?: boolean;
+        taskType?: "reranking" | "structured-output";
+      } = {}
+    ) => {
+      let started = 0;
+      const result = runRemoteCall(
+        {
+          ...context({ ...input.runtime, retry: { maxAttempts: 2, ...input.runtime?.retry } }),
+          ...(input.local ? { local: true } : {})
+        },
+        {
+          streaming: true,
+          taskType: input.taskType ?? "structured-output",
+          parameters: input.parameters ?? {}
+        },
+        async (call) => {
+          const script = scripts[Math.min(started++, scripts.length - 1)]!;
+          await call.fetch(async () => new Response("{}"), "https://example.test", {});
+          let now = 0;
+          for (const [at, progress] of script.steps) {
+            await call.guard(new Promise<void>((resolve) => setTimeout(resolve, at - now)));
+            now = at;
+            call.chunkReceived();
+            if (progress) call.progressed(progress);
+          }
+          if (script.endAt === undefined) return call.guard(new Promise<string>(() => undefined));
+          await call.guard(
+            new Promise<void>((resolve) => setTimeout(resolve, script.endAt! - now))
+          );
+          return "done";
+        }
+      );
+      return { result, attempts: () => started };
+    };
+    /** A chunk every five seconds that carries no progress: lifecycle events, keep-alives, empty data. */
+    const heartbeats = (count = 12): Step[] => Array.from({ length: count }, (_, i) => [i * 5_000]);
+
+    it("stalls a stream that sends only lifecycle events or keep-alives at the stall window", async () => {
+      const { result, attempts } = play([{ steps: heartbeats() }], {
+        runtime: { retry: { maxAttempts: 1 } }
+      });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        transient: true,
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      // Bytes kept arriving every five seconds; the stall still fires 20 s after the first one.
+      await vi.advanceTimersByTimeAsync(20_000);
+      await settled;
+      expect(attempts()).toBe(1);
+    });
+
+    it("retries a stream that made no progress and returns the later answer", async () => {
+      const { result, attempts } = play([
+        { steps: heartbeats() },
+        { steps: [[0], [8_000, "reasoning"], [12_000, "answer"]], endAt: 13_000 }
+      ]);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(attempts()).toBe(1);
+      // random 0.5: the retry starts 250 ms after the stall.
+      await vi.advanceTimersByTimeAsync(250);
+      expect(attempts()).toBe(2);
+      await vi.advanceTimersByTimeAsync(14_000);
+      await expect(result).resolves.toBe("done");
+    });
+
+    it("lets steady reasoning text and then answer text keep the stream alive", async () => {
+      const { result } = play(
+        [
+          {
+            steps: [
+              [0],
+              [10_000, "reasoning"],
+              [20_000, "reasoning"],
+              [28_000, "answer"],
+              [38_000, "answer"]
+            ],
+            endAt: 40_000
+          }
+        ],
+        { runtime: { retry: { maxAttempts: 1 } } }
+      );
+      await vi.advanceTimersByTimeAsync(40_000);
+      await expect(result).resolves.toBe("done");
+    });
+
+    it("does not count reasoning text that arrives after the answer started", async () => {
+      const { result } = play([{ steps: [[0], [1_000, "answer"], [15_000, "reasoning"]] }], {
+        runtime: { retry: { maxAttempts: 1 } }
+      });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      // Armed by the answer text at 1 s, not by the reasoning text at 15 s.
+      await vi.advanceTimersByTimeAsync(21_000);
+      await settled;
+    });
+
+    it("bounds the time to the first answer text of an ordinary request, however much it reasons", async () => {
+      const reasoning: Step[] = Array.from({ length: 6 }, (_, i) => [
+        i * 5_000,
+        "reasoning" as const
+      ]);
+      const { result, attempts } = play([{ steps: reasoning }], {
+        runtime: { retry: { maxAttempts: 1 } }
+      });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        transient: true,
+        message: "AI provider produced no answer text within 30000 ms."
+      });
+      // The stall deadline is re-armed by every reasoning text; the no-answer bound is not.
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+      expect(attempts()).toBe(1);
+    });
+
+    it("retries a request whose answer did not start in time inside the total deadline", async () => {
+      const reasoning: Step[] = Array.from({ length: 12 }, (_, i) => [
+        i * 5_000,
+        "reasoning" as const
+      ]);
+      const { result, attempts } = play([
+        { steps: reasoning },
+        { steps: [[0], [2_000, "answer"]], endAt: 3_000 }
+      ]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(attempts()).toBe(1);
+      await vi.advanceTimersByTimeAsync(250);
+      expect(attempts()).toBe(2);
+      await vi.advanceTimersByTimeAsync(4_000);
+      await expect(result).resolves.toBe("done");
+    });
+
+    it("keeps the longer pre-answer window of a high-reasoning request, restarted by its reasoning text", async () => {
+      const { result } = play(
+        [
+          {
+            steps: [[0], [100_000, "reasoning"], [200_000, "reasoning"], [250_000, "answer"]],
+            endAt: 251_000
+          }
+        ],
+        {
+          runtime: { retry: { maxAttempts: 1 }, deadlines: { totalMs: { answer: 600_000 } } },
+          parameters: { reasoningLevel: "high" }
+        }
+      );
+      await vi.advanceTimersByTimeAsync(251_000);
+      await expect(result).resolves.toBe("done");
+    });
+
+    it("does not let lifecycle events stretch the long window of a high-reasoning request", async () => {
+      const { result } = play([{ steps: [[0], [60_000], [110_000]] }], {
+        runtime: { retry: { maxAttempts: 1 } },
+        parameters: { reasoningLevel: "high" }
+      });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 120000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      await settled;
+    });
+
+    it("does not bound the time to the first answer text of a server on this machine", async () => {
+      const reasoning: Step[] = Array.from({ length: 10 }, (_, i) => [
+        i * 10_000,
+        "reasoning" as const
+      ]);
+      const { result } = play([{ steps: [...reasoning, [100_000, "answer"]], endAt: 100_500 }], {
+        runtime: { retry: { maxAttempts: 1 } },
+        local: true,
+        taskType: "reranking"
+      });
+      await vi.advanceTimersByTimeAsync(100_500);
+      await expect(result).resolves.toBe("done");
+    });
+
+    it("ends a decide call that never makes progress at its 45 s total deadline after bounded retries", async () => {
+      const { result, attempts } = play([{ steps: heartbeats(20) }], {
+        runtime: { retry: { maxAttempts: 3 } },
+        taskType: "reranking"
+      });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "timeout",
+        message: "AI provider request exceeded its 45000 ms deadline."
+      });
+      await vi.advanceTimersByTimeAsync(45_000);
+      await settled;
+      // Stalled at 20 s and again at 40.25 s; the third attempt was cut by the total deadline.
+      expect(attempts()).toBe(3);
     });
   });
 

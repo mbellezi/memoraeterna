@@ -27,12 +27,17 @@ const sse = (body: string) => new Response(body, { status: 200, headers: streamH
  * neither ends nor fails.
  */
 function scheduled(chunks: Array<[atMs: number, body: string]>, endAt?: number): Response {
+  const timers: Array<ReturnType<typeof setTimeout>> = [];
   return new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
         for (const [at, body] of chunks)
-          setTimeout(() => controller.enqueue(encoder.encode(body)), at);
-        if (endAt !== undefined) setTimeout(() => controller.close(), endAt);
+          timers.push(setTimeout(() => controller.enqueue(encoder.encode(body)), at));
+        if (endAt !== undefined) timers.push(setTimeout(() => controller.close(), endAt));
+      },
+      // The adapter cancels a stalled stream; nothing may be delivered to it afterwards.
+      cancel() {
+        for (const timer of timers) clearTimeout(timer);
       }
     }),
     { status: 200, headers: streamHeaders }
@@ -187,6 +192,268 @@ describe("watchdogs of streamed calls", () => {
     });
     await vi.advanceTimersByTimeAsync(70_000);
     await settled;
+  });
+});
+
+describe("a stream is alive only while it makes progress", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The same chunk every `every` ms from 0 up to `until`. */
+  const repeated = (body: string, every = 5_000, until = 120_000): Array<[number, string]> =>
+    Array.from({ length: Math.floor(until / every) + 1 }, (_, i) => [i * every, body]);
+  const lifecycle = [
+    events({ type: "response.created" }),
+    events({ type: "response.in_progress" }),
+    events({ type: "response.output_item.added", item: { type: "reasoning" } }),
+    events({ type: "response.content_part.added" }),
+    ": keep-alive\n\n",
+    "data:\n\n"
+  ];
+  /** Lifecycle events, keep-alive comments and empty data lines in turn, every five seconds. */
+  const heartbeats = (until = 120_000): Array<[number, string]> =>
+    Array.from({ length: Math.floor(until / 5_000) + 1 }, (_, i) => [
+      i * 5_000,
+      lifecycle[i % lifecycle.length]!
+    ]);
+  const reasoningText = (delta: string) =>
+    events({ type: "response.reasoning_summary_text.delta", delta });
+  const answerText = (delta: string) => events({ type: "response.output_text.delta", delta });
+  const completed = events({
+    type: "response.completed",
+    response: { usage: { input_tokens: 1, output_tokens: 1 } }
+  });
+  const decide: AiTaskRequest = { ...request(), taskType: "reranking" };
+
+  describe("ChatGPT/Codex", () => {
+    it("stalls at the stall window when only lifecycle events and keep-alives arrive, and retries", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementationOnce(async () => scheduled(heartbeats()))
+        .mockImplementation(async () => sse(answerText("done") + completed));
+      const result = codex(fetch).run(request({ reasoningLevel: "low" }));
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      // random 0.5: the retry starts 50 ms after the stall at 20 s.
+      await vi.advanceTimersByTimeAsync(51);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await expect(result).resolves.toMatchObject({ output: "done", attempts: 2 });
+    });
+
+    it("keeps stalling a stream that only sends lifecycle events on every attempt", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () => scheduled(heartbeats()));
+      const result = codex(fetch, { retry: { maxAttempts: 2 } }).run(request());
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        transient: true,
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(40_200);
+      await settled;
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("lets steady reasoning-summary text and then answer text keep the call alive", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+        scheduled(
+          [
+            [0, lifecycle[0]!],
+            [10_000, reasoningText("Looking")],
+            [20_000, reasoningText(" at it")],
+            [28_000, answerText("par")],
+            [40_000, answerText("tial") + completed]
+          ],
+          40_000
+        )
+      );
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(
+        request({ reasoningLevel: "low" })
+      );
+      await vi.advanceTimersByTimeAsync(40_001);
+      await expect(result).resolves.toMatchObject({ output: "partial", attempts: 1 });
+    });
+
+    it("bounds the time to the first answer text of an ordinary request, however much it reasons", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementationOnce(async () => scheduled(repeated(reasoningText("Hmm"))))
+        .mockImplementation(async () => sse(answerText("done") + completed));
+      const result = codex(fetch).run(request({ reasoningLevel: "medium" }));
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(51);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      await expect(result).resolves.toMatchObject({ output: "done", attempts: 2 });
+    });
+
+    it("reports a call that never answers as a stall with the no-answer message", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () => scheduled(repeated(reasoningText("Hmm"))));
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(request());
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        transient: true,
+        message: "AI provider produced no answer text within 30000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    });
+
+    it("lets a high-reasoning call reason for longer than the no-answer bound while its text keeps coming", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+        scheduled(
+          [
+            [0, lifecycle[0]!],
+            [50_000, reasoningText("Step one")],
+            [100_000, reasoningText("Step two")],
+            [110_000, answerText("done") + completed]
+          ],
+          110_000
+        )
+      );
+      const result = codex(fetch, { retry: { maxAttempts: 1 } }).run(
+        request({ reasoningLevel: "high" })
+      );
+      await vi.advanceTimersByTimeAsync(110_001);
+      await expect(result).resolves.toMatchObject({ output: "done", attempts: 1 });
+    });
+
+    it("ends a decide call at its 45 s total deadline when no attempt makes progress", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () => scheduled(heartbeats(60_000)));
+      const result = codex(fetch).run(decide);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "timeout",
+        transient: true,
+        message: "AI provider request exceeded its 45000 ms deadline."
+      });
+      await vi.advanceTimersByTimeAsync(45_000);
+      await settled;
+      // Stalled at 20 s and at 40.05 s; the third attempt was cut by the total deadline.
+      expect(fetch).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("OpenAI-compatible", () => {
+    const baseUrl = "https://progress.example.test/v1";
+    const roleOnly = events({ choices: [{ delta: { role: "assistant", content: "" } }] });
+    const delta = (field: string, text: string) =>
+      events({ choices: [{ delta: { [field]: text } }] });
+    const run = (fetch: typeof globalThis.fetch, config?: AiRuntimeConfigInput) =>
+      openAi(fetch, baseUrl, config).runStreaming(request(), undefined, () => undefined);
+
+    it("stalls at the stall window when only empty deltas and keep-alives arrive, and retries", async () => {
+      const beats: Array<[number, string]> = Array.from({ length: 25 }, (_, i) => [
+        i * 5_000,
+        i % 2 === 0 ? roleOnly : ": keep-alive\n\n"
+      ]);
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementationOnce(async () => scheduled(beats))
+        .mockImplementation(async () => sse(delta("content", "done") + "data: [DONE]\n\n"));
+      const result = run(fetch);
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(51);
+      await expect(result).resolves.toMatchObject({ output: "done", attempts: 2 });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("counts reasoning text from either field as progress until the answer, then answer text", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+        scheduled(
+          [
+            [0, roleOnly],
+            [10_000, delta("reasoning_content", "Thinking")],
+            [20_000, delta("reasoning", "More")],
+            [28_000, delta("content", "par")],
+            [40_000, delta("content", "tial") + "data: [DONE]\n\n"]
+          ],
+          40_000
+        )
+      );
+      const result = run(fetch, { retry: { maxAttempts: 1 } });
+      await vi.advanceTimersByTimeAsync(40_001);
+      await expect(result).resolves.toMatchObject({ output: "partial", attempts: 1 });
+    });
+
+    it("bounds the time to the first answer text however much reasoning text arrives", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () => scheduled(repeated(delta("reasoning_content", "Hmm"))));
+      const result = run(fetch, { retry: { maxAttempts: 1 } });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider produced no answer text within 30000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    });
+  });
+
+  describe("Gemini", () => {
+    const usageOnly = events({
+      candidates: [{ content: { role: "model" } }],
+      usageMetadata: { promptTokenCount: 5 }
+    });
+    const thought = (text: string) =>
+      events({ candidates: [{ content: { parts: [{ text, thought: true }] } }] });
+    const text = (value: string) =>
+      events({ candidates: [{ content: { parts: [{ text: value }] } }] });
+    const run = (fetch: typeof globalThis.fetch, config?: AiRuntimeConfigInput) =>
+      google(fetch, config).runStreaming(request(), undefined, () => undefined);
+
+    it("stalls at the stall window when chunks carry no text, and retries", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementationOnce(async () => scheduled(repeated(usageOnly)))
+        .mockImplementation(async () => sse(text("done")));
+      const result = run(fetch);
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(51);
+      await expect(result).resolves.toMatchObject({ output: "done", attempts: 2 });
+      expect(fetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("counts thought summaries as progress before the answer without adding them to it", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () =>
+        scheduled(
+          [
+            [0, usageOnly],
+            [10_000, thought("Weighing")],
+            [20_000, thought("Choosing")],
+            [28_000, text("par")],
+            [40_000, text("tial")]
+          ],
+          40_000
+        )
+      );
+      const result = run(fetch, { retry: { maxAttempts: 1 } });
+      await vi.advanceTimersByTimeAsync(40_001);
+      await expect(result).resolves.toMatchObject({ output: "partial", attempts: 1 });
+    });
+
+    it("bounds the time to the first answer text however many thought summaries arrive", async () => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockImplementation(async () => scheduled(repeated(thought("Hmm"))));
+      const result = run(fetch, { retry: { maxAttempts: 1 } });
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider produced no answer text within 30000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
+    });
   });
 });
 

@@ -38,8 +38,9 @@ const milliseconds = z.number().int().positive();
 
 /**
  * Typed configuration of the remote execution deadlines and retries. Deadlines count from the start of
- * the execution (not from admission to the queue); connect, first-byte and stall deadlines apply to
- * streamed responses, the total deadline to every call and to its retries together.
+ * the execution (not from admission to the queue); connect, first-byte, no-answer and stall deadlines
+ * apply to streamed responses, the total deadline to every call and to its retries together. Bytes alone
+ * never extend a stream: only progress does (answer text, and reasoning text before the answer).
  */
 export const aiRuntimeConfigSchema = z
   .object({
@@ -51,13 +52,22 @@ export const aiRuntimeConfigSchema = z
         firstByteMs: milliseconds,
         /**
          * Replaces `firstByteMs` for high-reasoning requests, which stay silent while they think. Until
-         * their first output text arrives it is also the longest silence between body chunks (when it is
-         * longer than `stallMs`), because lifecycle events and reasoning summaries come early and the
-         * thinking that follows is silent.
+         * their first answer text arrives it is also the longest stretch without progress (when it is
+         * longer than `stallMs`), because lifecycle events come early and the thinking that follows is
+         * silent.
          */
         firstByteHighReasoningMs: milliseconds,
-        /** Longest silence between body chunks once the answer text started. */
+        /**
+         * Longest stretch without progress: answer text once the answer started, reasoning text before it.
+         * Lifecycle events, keep-alives and empty data do not count as progress.
+         */
         stallMs: milliseconds,
+        /**
+         * Longest time from the first body chunk to the first answer text of a request that is not
+         * high-reasoning and not served from this machine, whatever reasoning text arrives meanwhile. A
+         * stream that exceeds it stalls (a transient failure, retried inside the total deadline).
+         */
+        answerStartMs: milliseconds,
         /** Multiplies the total deadline of servers on this machine, which are slower to answer. */
         localTotalFactor: z.number().min(1),
         totalMs: z
@@ -100,10 +110,11 @@ export const defaultAiRuntimeConfig: AiRuntimeConfig = {
     firstByteMs: 30_000,
     firstByteHighReasoningMs: 120_000,
     stallMs: 20_000,
+    answerStartMs: 30_000,
     localTotalFactor: 3,
     totalMs: {
       embed: 30_000,
-      decide: 90_000,
+      decide: 45_000,
       "write-fast": 120_000,
       "write-quality": 300_000,
       answer: 180_000
@@ -325,6 +336,8 @@ export async function runRemoteCall<T>(
         // A reasoning model sends early events and then thinks in silence before its first output.
         preOutputStallMs: highReasoning ? Math.max(stallMs, firstByteHighReasoningMs) : stallMs,
         stallMs,
+        // A server on this machine may take long to load a model and to think, so it has no such bound.
+        answerStartMs: highReasoning || context.local ? undefined : config.deadlines.answerStartMs,
         signals: [...(caller ? [caller] : []), total.signal]
       });
       let failure: unknown;
@@ -376,9 +389,11 @@ interface RemoteAttemptOptions {
   local: boolean;
   connectMs: number;
   firstByteMs: number;
-  /** Longest silence between chunks until the first output text; {@link stallMs} afterwards. */
+  /** Longest stretch without progress until the first answer text; {@link stallMs} afterwards. */
   preOutputStallMs: number;
   stallMs: number;
+  /** Longest time from the first body chunk to the first answer text; absent when no such bound applies. */
+  answerStartMs: number | undefined;
   signals: AbortSignal[];
 }
 
@@ -391,6 +406,8 @@ export class RemoteAttempt {
   public usage: PartialTokenUsage = {};
   private readonly controller = new AbortController();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private answerTimer: ReturnType<typeof setTimeout> | undefined;
+  private firstByteSeen = false;
   private outputBegan = false;
 
   public constructor(private readonly options: RemoteAttemptOptions) {
@@ -411,21 +428,34 @@ export class RemoteAttempt {
     return response;
   }
 
-  /** Call for every body chunk of a streamed response: any bytes restart the stall deadline. */
+  /**
+   * Call for every body chunk of a streamed response. The first one ends the first-byte deadline and
+   * starts the progress deadlines; later ones restart nothing, because bytes are not progress.
+   */
   public chunkReceived(): void {
-    if (this.options.streaming)
-      this.arm("stalled", this.outputBegan ? this.options.stallMs : this.options.preOutputStallMs);
+    if (!this.options.streaming || this.firstByteSeen) return;
+    this.firstByteSeen = true;
+    this.arm("stalled", this.progressWindowMs());
+    if (this.options.answerStartMs !== undefined) this.armAnswerStart(this.options.answerStartMs);
   }
 
   /**
-   * Call when answer text arrives (not lifecycle events or reasoning): from then on a silence of
-   * `stallMs` means the stream stalled.
+   * Call when the stream made progress: answer text, or reasoning text before the answer started. This
+   * is the only thing that restarts the stall deadline. Lifecycle events, keep-alives, comments and empty
+   * data are not progress, so a stream that sends only those stalls. Once answer text arrives the
+   * no-answer deadline ends and a silence of `stallMs` means the stream stalled; reasoning text that comes
+   * after the answer started is not progress.
    */
-  public outputStarted(): void {
-    if (this.outputBegan) return;
-    this.outputBegan = true;
-    if (this.options.streaming && this.options.preOutputStallMs !== this.options.stallMs)
-      this.arm("stalled", this.options.stallMs);
+  public progressed(kind: "reasoning" | "answer"): void {
+    if (!this.options.streaming) return;
+    this.chunkReceived();
+    if (kind === "answer") {
+      this.outputBegan = true;
+      this.disarmAnswerStart();
+    } else if (this.outputBegan) {
+      return;
+    }
+    this.arm("stalled", this.progressWindowMs());
   }
 
   /** Records the usage a provider reports on a streamed response, so a failed attempt's tokens are not lost. */
@@ -455,11 +485,17 @@ export class RemoteAttempt {
 
   public dispose(): void {
     this.disarm();
+    this.disarmAnswerStart();
+  }
+
+  private progressWindowMs(): number {
+    return this.outputBegan ? this.options.stallMs : this.options.preOutputStallMs;
   }
 
   private arm(phase: "connect" | "firstByte" | "stalled", milliseconds: number): void {
     this.disarm();
     this.timer = setTimeout(() => {
+      if (this.expired) return;
       this.expired =
         phase === "stalled"
           ? new AiProviderError(`AI provider stream stalled for ${milliseconds} ms.`, {
@@ -476,9 +512,26 @@ export class RemoteAttempt {
     }, milliseconds);
   }
 
+  private armAnswerStart(milliseconds: number): void {
+    this.disarmAnswerStart();
+    this.answerTimer = setTimeout(() => {
+      if (this.expired) return;
+      this.expired = new AiProviderError(
+        `AI provider produced no answer text within ${milliseconds} ms.`,
+        { kind: "stalled", transient: true }
+      );
+      this.controller.abort(this.expired);
+    }, milliseconds);
+  }
+
   private disarm(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
+  }
+
+  private disarmAnswerStart(): void {
+    if (this.answerTimer !== undefined) clearTimeout(this.answerTimer);
+    this.answerTimer = undefined;
   }
 }
 
