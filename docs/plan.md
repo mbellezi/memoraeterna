@@ -318,19 +318,19 @@ coherent by the owner and ambiguity ≤30% *(cal.)*, otherwise retune (Louvain o
 
 ### F1a Stop the bleeding (weeks 3-4)
 
-- [ ] Lossless feasibility filter before rerank; skip the call when nothing remains.
-- [ ] Decision-only matching contract: explanation only for accepted pairs, partial acceptance with one
+- [x] Lossless feasibility filter before rerank; skip the call when nothing remains.
+- [x] Decision-only matching contract: explanation only for accepted pairs, partial acceptance with one
       repair, reasoning off on the decide route.
-- [ ] `relation_decisions` (raw scores per direction, hashes, decider) as a lossless cache, with a per-note
+- [x] `relation_decisions` (raw scores per direction, hashes, decider) as a lossless cache, with a per-note
       checkpoint.
-- [ ] Remote fetch deadlines and stream watchdog; classified retry with backoff; priority classes in the
+- [x] Remote fetch deadlines and stream watchdog; classified retry with backoff; priority classes in the
       current queue; Ask timeout counted from admission.
 - [x] A failed or canceled sibling no longer blocks batch matching.
-- [ ] Import defaults ("Second brain" when a writer route is ready, else searchable), open the source after
+- [x] Import defaults ("Second brain" when a writer route is ready, else searchable), open the source after
       import; seed all routes from the first profile; stop tagging generative models as rerankers.
-- [ ] Re-embed notes after human edits; batch wiki link resolution; keep Library mounted; stabilize graph
+- [x] Re-embed notes after human edits; batch wiki link resolution; keep Library mounted; stabilize graph
       callbacks; graph pass on notes and claims off by default.
-- [ ] Legacy wiki stopgaps only if needed before F2 (decision 4 freeze, ≤0.5 day each): weekly/monthly
+- [x] Legacy wiki stopgaps only if needed before F2 (decision 4 freeze, ≤0.5 day each): weekly/monthly
       routines and the OS idle gate off by default, never persist a null parent. The old F1 maintenance exit
       criteria (0 coverage changes on settings save; other routines run after an injected failure) are
       dropped by decision 4: routines are replaced in F4.
