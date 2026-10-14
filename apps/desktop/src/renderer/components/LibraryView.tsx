@@ -36,6 +36,7 @@ import type { MessageKey, Translator } from "@app/i18n";
 import type { LibrarySource, SearchResult, SourceDetail } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import { useWriterRouteReady } from "../lib/writer-route";
 import { ImportView, childSourceType } from "./ImportView";
 import { Tabs } from "./ui/tabs";
 import { Input } from "./ui/input";
@@ -43,6 +44,7 @@ import { Button } from "./ui/button";
 import { CoverImage } from "./ui/cover-image";
 import {
   defaultProcessingPlan,
+  interactiveProcessingPlan,
   ProcessingPlanPicker,
   processingPlanReady
 } from "./ProcessingPlanPicker";
@@ -53,7 +55,7 @@ export interface LibraryExternalTarget {
   sourceItemId: string;
   atomicNoteId?: string;
   sourceRelationId?: string;
-  origin?: "search" | "knowledgeGraph" | "wiki";
+  origin?: "search" | "knowledgeGraph" | "wiki" | "import";
   token: number;
 }
 
@@ -64,6 +66,20 @@ export type LibraryHistoryEntry =
   | { view: "wiki" };
 
 const libraryHistoryKey = "memoraEternaLibrary";
+
+/**
+ * The Library stays mounted while hidden, so opening it on a source from another view must say what
+ * Back returns to. `null` keeps the current entry: an import returns to the Library itself, and only
+ * an entry left behind by an earlier exit to another view needs repair.
+ */
+export function libraryHistoryEntryForOpening(
+  origin: LibraryExternalTarget["origin"],
+  current: LibraryHistoryEntry | null
+): LibraryHistoryEntry | null {
+  if (origin === "import")
+    return current?.view === "library" ? null : { view: "library", path: [], fromSearch: false };
+  return { view: origin ?? "search" };
+}
 
 export function createLibraryHistoryState(entry: LibraryHistoryEntry): Record<string, unknown> {
   return { [libraryHistoryKey]: { version: 1, ...entry } };
@@ -194,6 +210,7 @@ export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translat
 
 export function LibraryView({
   t,
+  active = true,
   metadataEnrichmentEnabled = true,
   externalTarget = null,
   onNavigate,
@@ -202,6 +219,8 @@ export function LibraryView({
   onExitToWiki
 }: {
   t: Translator;
+  /** The Library stays mounted while hidden; hidden means no loading and no open dialogs. */
+  active?: boolean;
   metadataEnrichmentEnabled?: boolean;
   externalTarget?: LibraryExternalTarget | null;
   onNavigate?: () => void;
@@ -230,6 +249,10 @@ export function LibraryView({
   const [error, setError] = useState(false);
   const consumedTargetToken = useRef<number | null>(null);
   const historyInitialized = useRef(false);
+  const wasActive = useRef(active);
+  const listWasHidden = useRef(false);
+  const detailWasHidden = useRef(false);
+  const writerRouteReady = useWriterRouteReady(active);
   const onNavigateRef = useRef(onNavigate);
   const onExitToWikiRef = useRef(onExitToWiki);
   onExitToWikiRef.current = onExitToWiki;
@@ -242,10 +265,13 @@ export function LibraryView({
 
   const currentId = stack.at(-1) ?? null;
 
-  async function load() {
+  /** A silent load refreshes in place (after the view was hidden) without replacing the list. */
+  async function load(silent = false) {
     const generation = ++loadGeneration.current;
-    setLoading(true);
-    setError(false);
+    if (!silent) {
+      setLoading(true);
+      setError(false);
+    }
     try {
       const sourceTypes = currentId || filter === "all" ? [] : [filter];
       const [result, graphResult] = await Promise.all([
@@ -274,26 +300,31 @@ export function LibraryView({
         setGraphResults(graphResult);
       }
     } catch {
-      if (generation === loadGeneration.current) setError(true);
+      if (generation === loadGeneration.current && !silent) setError(true);
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), query ? 250 : 0);
+    if (!active) {
+      listWasHidden.current = true;
+      return;
+    }
+    const silent = listWasHidden.current;
+    listWasHidden.current = false;
+    const timer = window.setTimeout(() => void load(silent), query && !silent ? 250 : 0);
     return () => {
       window.clearTimeout(timer);
       loadGeneration.current++;
     };
-  }, [query, filter, offset, currentId, refreshKey]);
+  }, [query, filter, offset, currentId, refreshKey, active]);
 
   useEffect(() => {
     if (!historyInitialized.current) {
+      const root: LibraryHistoryEntry = { view: "library", path: [], fromSearch: false };
       replaceLibraryHistory(
-        externalTarget
-          ? { view: externalTarget.origin ?? "search" }
-          : { view: "library", path: [], fromSearch: false }
+        externalTarget ? (libraryHistoryEntryForOpening(externalTarget.origin, null) ?? root) : root
       );
       historyInitialized.current = true;
     }
@@ -335,7 +366,17 @@ export function LibraryView({
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
     consumedTargetToken.current = externalTarget.token;
     const cameFromSearch =
-      externalTarget.origin !== "knowledgeGraph" && externalTarget.origin !== "wiki";
+      externalTarget.origin !== "knowledgeGraph" &&
+      externalTarget.origin !== "wiki" &&
+      externalTarget.origin !== "import";
+    // Opened from another view while hidden: describe where Back leads before adding the source.
+    if (!wasActive.current) {
+      const opening = libraryHistoryEntryForOpening(
+        externalTarget.origin,
+        libraryHistoryEntryFromState(window.history.state)
+      );
+      if (opening) replaceLibraryHistory(opening);
+    }
     pushLibraryHistory({
       view: "library",
       path: [externalTarget.sourceItemId],
@@ -347,30 +388,47 @@ export function LibraryView({
   }, [externalTarget, onNavigate]);
 
   useEffect(() => {
+    const reopened = active && !wasActive.current;
+    wasActive.current = active;
+    if (!reopened) return;
+    // A Back out of the Library leaves a foreign entry; repair it so the next Back stays inside.
+    if (libraryHistoryEntryFromState(window.history.state)?.view === "library") return;
+    replaceLibraryHistory({ view: "library", path: stack, fromSearch });
+  }, [active, stack, fromSearch]);
+
+  useEffect(() => {
     if (!currentId) {
       setDetail(null);
       return;
     }
-    let active = true;
-    setLoading(true);
-    setError(false);
+    if (!active) {
+      detailWasHidden.current = true;
+      return;
+    }
+    const silent = detailWasHidden.current;
+    detailWasHidden.current = false;
+    let live = true;
+    if (!silent) {
+      setLoading(true);
+      setError(false);
+    }
     window.app.knowledge
       .getSourceDetail(currentId)
       .then((loaded) => {
-        if (!active) return;
+        if (!live) return;
         setDetail(loaded);
         if (!loaded) setError(true);
       })
       .catch(() => {
-        if (active) setError(true);
+        if (live && !silent) setError(true);
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (live) setLoading(false);
       });
     return () => {
-      active = false;
+      live = false;
     };
-  }, [currentId, refreshKey]);
+  }, [currentId, refreshKey, active]);
 
   function openSource(id: string) {
     navigateToPath([...stack, id], fromSearch);
@@ -471,10 +529,11 @@ export function LibraryView({
         ) : (
           <StateCard>{t("shell.states.loading")}</StateCard>
         )}
-        {processingIds ? (
+        {processingIds && active ? (
           <ProcessingDialog
             sourceIds={processingIds}
             sources={detail ? [...sources, detailAsLibrarySource(detail)] : sources}
+            writerRouteReady={writerRouteReady}
             t={t}
             onClose={() => setProcessingIds(null)}
             onQueued={() => {
@@ -618,10 +677,11 @@ export function LibraryView({
         t={t}
         onPage={setOffset}
       />
-      {processingIds ? (
+      {processingIds && active ? (
         <ProcessingDialog
           sourceIds={processingIds}
           sources={sources}
+          writerRouteReady={writerRouteReady}
           t={t}
           onClose={() => setProcessingIds(null)}
           onQueued={() => {
@@ -797,36 +857,50 @@ function SourceCard({
   );
 }
 
+export function libraryProcessingPlan(
+  sourceIds: string[],
+  sources: Pick<LibrarySource, "id" | "hasDocument" | "embeddingNeedsRefresh">[],
+  writerRouteReady: boolean | null
+): ProcessingPlanRequest {
+  const needsEmbeddingRefresh = sources.some(
+    (source) => sourceIds.includes(source.id) && source.embeddingNeedsRefresh
+  );
+  return {
+    // Stale embeddings call for a refresh of embeddings only, never for regenerating knowledge.
+    ...(needsEmbeddingRefresh
+      ? defaultProcessingPlan("search_ready")
+      : interactiveProcessingPlan(writerRouteReady)),
+    targetSourceItemIds: sourceIds,
+    scope:
+      sourceIds.length > 1
+        ? "selected_items"
+        : sources.find((source) => source.id === sourceIds[0])?.hasDocument
+          ? "source_only"
+          : "children_only",
+    forceRegeneration: needsEmbeddingRefresh,
+    previousArtifactPolicy: needsEmbeddingRefresh ? "regenerate_selected" : "reuse_valid"
+  };
+}
+
 function ProcessingDialog({
   sourceIds,
   sources,
+  writerRouteReady,
   t,
   onClose,
   onQueued
 }: {
   sourceIds: string[];
   sources: LibrarySource[];
+  writerRouteReady: boolean | null;
   t: Translator;
   onClose: () => void;
   onQueued: () => void;
 }) {
-  const [plan, setPlan] = useState<ProcessingPlanRequest>(() => {
-    const needsEmbeddingRefresh = sources.some(
-      (source) => sourceIds.includes(source.id) && source.embeddingNeedsRefresh
-    );
-    return {
-      ...defaultProcessingPlan("search_ready"),
-      targetSourceItemIds: sourceIds,
-      scope:
-        sourceIds.length > 1
-          ? "selected_items"
-          : sources.find((source) => source.id === sourceIds[0])?.hasDocument
-            ? "source_only"
-            : "children_only",
-      forceRegeneration: needsEmbeddingRefresh,
-      previousArtifactPolicy: needsEmbeddingRefresh ? "regenerate_selected" : "reuse_valid"
-    };
-  });
+  // The default follows route readiness until the user changes the plan.
+  const [chosenPlan, setChosenPlan] = useState<ProcessingPlanRequest | null>(null);
+  const plan = chosenPlan ?? libraryProcessingPlan(sourceIds, sources, writerRouteReady);
+  const setPlan = (next: ProcessingPlanRequest) => setChosenPlan(next);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -920,6 +994,7 @@ function ProcessingDialog({
                 scope: sourceIds.length > 1 ? "selected_items" : plan.scope
               })
             }
+            writerRouteReady={writerRouteReady}
             t={t}
           />
           <label className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40">

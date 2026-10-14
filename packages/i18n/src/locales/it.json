@@ -980,6 +980,7 @@
     "stageCount": "{count} fasi in questo piano",
     "profileNotice": "Usa il profilo IA configurato",
     "noAiNotice": "Non e necessaria alcuna chiamata IA",
+    "writerRouteMissing": "Nessun modello IA è pronto per scrivere, quindi l'elaborazione predefinita rende le fonti ricercabili. Configura un modello in Impostazioni per costruire il tuo secondo cervello.",
     "presets": {
       "import_only": {
         "title": "Solo importazione",
@@ -991,7 +992,7 @@
       },
       "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
       "full_knowledge": {
-        "title": "Elaborazione completa",
+        "title": "Secondo cervello",
         "description": "Genera riassunti, note, grafo e collegamenti e integra la conoscenza nella Wiki."
       }
     }

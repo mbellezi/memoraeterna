@@ -1,11 +1,42 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
-import { WikiPageContentSchema, type CuratorSnapshot, type CuratorChangeSet } from "@app/domain";
+import {
+  WikiPageContentSchema,
+  wikiAreaIds,
+  type CuratorSnapshot,
+  type CuratorChangeSet
+} from "@app/domain";
 import type { PgPool, PgClient } from "../client.js";
 import { createWikiRepository } from "./wikiRepository.js";
 import { addWikiDependency } from "./wikiContextRepository.js";
 import { appendInterpretation } from "./knowledgeEvolution.js";
 import { curatorHash } from "./wikiCuratorRepository.js";
+
+/** The system area that holds automatic pages of a role: Themes, Entities or Maps. */
+export function wikiAreaForRole(kind: string): string {
+  return kind === "topic"
+    ? wikiAreaIds.themes
+    : kind === "entity"
+      ? wikiAreaIds.entities
+      : wikiAreaIds.maps;
+}
+
+/**
+ * The parent of a new automatic page. A draft that proposes no parent (or omits it) never creates
+ * a root: the page goes under the area of its role, as long as that area exists.
+ */
+export async function initialParentId(
+  db: Pick<PgClient, "query">,
+  target: {
+    initialParent: CuratorChangeSet["targets"][number]["initialParent"];
+    role: { kind: string };
+  },
+  resolve: (reference: NonNullable<typeof target.initialParent>) => { id: string }
+): Promise<string | null> {
+  if (target.initialParent) return resolve(target.initialParent).id;
+  const area = wikiAreaForRole(target.role.kind);
+  return (await db.query("select 1 from wiki_pages where id=$1", [area])).rows.length ? area : null;
+}
 
 /** Shared canonical target writes. Caller owns all admission, support and transaction locks. */
 export async function persistCuratorTargets(
@@ -60,12 +91,16 @@ export async function persistCuratorTargets(
         "ai_managed"
       ]);
     }
+  const initialParents = new Map<string, string | null>();
+  for (const target of proposal.targets)
+    if (!target.pageId)
+      initialParents.set(target.handle, await initialParentId(db, target, resolve));
   if (options?.explicitParent)
     for (const target of proposal.targets)
       if (!target.pageId)
         await db.query("update wiki_pages set parent_id=$2 where id=$1", [
           ids.get(target.handle),
-          target.initialParent ? resolve(target.initialParent).id : null
+          initialParents.get(target.handle) ?? null
         ]);
   const result: Array<{ pageId: string; revisionId: string }> = [];
   // Parent identities exist before saving; existing global placement lock validates canonical cycles.
@@ -87,7 +122,7 @@ export async function persistCuratorTargets(
       : WikiPageContentSchema.parse({
           title: target.title,
           kind: target.role.kind,
-          parentId: target.initialParent ? resolve(target.initialParent).id : null,
+          parentId: initialParents.get(target.handle) ?? null,
           entityId: target.role.kind === "entity" ? target.role.entityId : null
         });
     content.title = target.title;

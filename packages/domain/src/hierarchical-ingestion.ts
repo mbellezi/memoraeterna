@@ -237,6 +237,17 @@ export const processingPresetStages: Readonly<
   ]
 };
 
+/**
+ * Default preset for interactive imports and Library processing. Full knowledge needs a generative
+ * (writer) route; without one the source is still made searchable with chunks and embeddings, which
+ * never calls generative AI. Import-only stays an explicit choice.
+ */
+export function defaultInteractivePreset(
+  writerRouteReady: boolean
+): Extract<ProcessingPreset, "full_knowledge" | "search_ready"> {
+  return writerRouteReady ? "full_knowledge" : "search_ready";
+}
+
 export function resolveProcessingPlan(input: ProcessingPlanRequest): EffectiveProcessingPlan {
   const parsed = ProcessingPlanRequestSchema.parse(input);
   const requested =

@@ -168,6 +168,8 @@ import {
   obsidianSyncStatusSchema,
   similarityDebugRunSchema,
   similarityDebugClearResultSchema,
+  wikiResolveLinksInputSchema,
+  wikiResolvedLinksSchema,
   windowNavigationDirectionSchema
 } from "../shared/ipc";
 
@@ -269,6 +271,15 @@ const api: DesktopApi = {
           WikiLinkedTargetInputSchema.parse(input)
         )
       ),
+    resolveLinks: async (pageId, revisionId) =>
+      wikiResolvedLinksSchema
+        .nullable()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.wikiResolveLinks,
+            wikiResolveLinksInputSchema.parse({ pageId, revisionId })
+          )
+        ),
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
     get: async (id, revisionId) =>
       WikiPageSchema.nullable().parse(

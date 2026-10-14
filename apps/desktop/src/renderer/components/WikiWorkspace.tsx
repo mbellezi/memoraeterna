@@ -8,10 +8,17 @@ import { WikiNavigationPane } from "./WikiNavigationPane";
 import { WikiThemeTree } from "./WikiThemeTree";
 import { WikiTypedLink } from "./WikiTypedLink";
 import { createWikiPageRequests } from "./wiki-page-requests";
+import {
+  WikiPageLinksContext,
+  createWikiPageSync,
+  currentWikiPageLinks,
+  wikiLinkKey,
+  type WikiPageLinks
+} from "./wiki-page-sync";
 import type { ObsidianDeepLink } from "../../shared/obsidian-deep-link.js";
 import { ConsultationDialog } from "./ConsultationDialog";
 import { SourceTypeBadge } from "./LibraryView";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowDown,
@@ -138,7 +145,18 @@ export function WikiWorkspace({
   const [linkedInspector, setLinkedInspector] =
     useState<Awaited<ReturnType<typeof window.app.wiki.linkedTarget>>>(null);
   const [inspector, setInspector] = useState<WikiEvidence | WikiResult | null>(null);
-  const [linkRefresh, setLinkRefresh] = useState(0);
+  // Every link of the visible revision, resolved with one request per revision.
+  const [pageLinks, setPageLinks] = useState<WikiPageLinks | null>(null);
+  const [linkRetry, setLinkRetry] = useState(0);
+  const pageId = page?.id ?? null,
+    pageRevisionId = page?.revisionId ?? null;
+  const providedLinks = useMemo(() => {
+    const links = currentWikiPageLinks(
+      pageLinks,
+      pageId && pageRevisionId ? { id: pageId, revisionId: pageRevisionId } : null
+    );
+    return links ? { ...links, retry: () => setLinkRetry((n) => n + 1) } : null;
+  }, [pageLinks, pageId, pageRevisionId]);
   const refreshLinkedEvidence = useCallback(
     (value: Awaited<ReturnType<typeof window.app.wiki.linkedTarget>>) => {
       if (!value) return;
@@ -288,28 +306,49 @@ export function WikiWorkspace({
     const isCurrent = pageRequests.current.capture();
     let live = true;
     const id = page.id;
+    // An unchanged page costs one request per cycle and no render; links are resolved only when
+    // the revision or the currency of its evidence changed.
+    const sync = createWikiPageSync<WikiPage>(
+      {
+        get: (pageId, revisionId) => window.app.wiki.get(pageId, revisionId),
+        resolveLinks: (pageId, revisionId) => window.app.wiki.resolveLinks(pageId, revisionId)
+      },
+      page
+    );
+    const refreshInspectorFromLinks = (links: WikiPageLinks) => {
+      setInspector((current) => {
+        if (!current || !("chunkId" in current)) return current;
+        for (const target of links.targets.values()) {
+          const next = target.evidence.find((e) => e.chunkId === current.chunkId);
+          if (next)
+            return { ...current, current: next.current, sourceAvailable: next.sourceAvailable };
+        }
+        return current;
+      });
+      setLinkedInspector((current) =>
+        current ? (links.targets.get(wikiLinkKey(current)) ?? current) : current
+      );
+    };
+    const sink = {
+      isLive: () => live && isCurrent(),
+      onPage: (next: WikiPage) => {
+        setPage((current) => (current?.id === id ? next : current));
+        setInspector((current) => {
+          if (!current || !("chunkId" in current)) return current;
+          const evidence = next.evidence.find((e) => e.chunkId === current.chunkId);
+          return evidence
+            ? { ...current, current: evidence.current, sourceAvailable: evidence.sourceAvailable }
+            : current;
+        });
+      },
+      onLinks: (links: WikiPageLinks) => {
+        setPageLinks(links);
+        if (links.status === "ready") refreshInspectorFromLinks(links);
+      }
+    };
     const refresh = () => {
       if (document.hidden || !live || !isCurrent()) return;
-      void window.app.wiki
-        .get(id, historicalRevision)
-        .then((next) => {
-          if (next && live && isCurrent()) {
-            setPage((current) => (current?.id === id ? next : current));
-            setInspector((current) => {
-              if (!current || !("chunkId" in current)) return current;
-              const evidence = next.evidence.find((e) => e.chunkId === current.chunkId);
-              return evidence
-                ? {
-                    ...current,
-                    current: evidence.current,
-                    sourceAvailable: evidence.sourceAvailable
-                  }
-                : current;
-            });
-            setLinkRefresh((n) => n + 1);
-          }
-        })
-        .catch(() => undefined);
+      void sync.cycle(id, historicalRevision, sink).catch(() => undefined);
     };
     refresh();
     const timer = setInterval(refresh, 3000);
@@ -317,7 +356,7 @@ export function WikiWorkspace({
       live = false;
       clearInterval(timer);
     };
-  }, [active, editing, mode, page?.id, historicalRevision]);
+  }, [active, editing, mode, page?.id, historicalRevision, linkRetry]);
   useEffect(() => {
     if (page && readingRef.current)
       readingRef.current.scrollTop = readingScroll.current.get(page.id) ?? 0;
@@ -531,7 +570,6 @@ export function WikiWorkspace({
       return (
         <WikiTypedLink
           active={active}
-          refreshKey={linkRefresh}
           onRefreshed={refreshLinkedEvidence}
           inline
           onInlineOpen={setLinkedInspector}
@@ -636,7 +674,7 @@ export function WikiWorkspace({
       </div>
     </div>
   );
-  return (
+  const workspace = (
     <div className="flex h-[calc(100vh-7.5rem)] min-h-80 flex-col overflow-hidden text-slate-900 dark:text-slate-100">
       {consultationOpen && (
         <ConsultationDialog
@@ -1511,7 +1549,6 @@ export function WikiWorkspace({
                                   </span>
                                   <WikiTypedLink
                                     active={active}
-                                    refreshKey={linkRefresh}
                                     onRefreshed={refreshLinkedEvidence}
                                     pageId={page.id}
                                     revisionId={page.revisionId}
@@ -1530,7 +1567,6 @@ export function WikiWorkspace({
                         {page.automatic.links.map((target) => (
                           <WikiTypedLink
                             active={active}
-                            refreshKey={linkRefresh}
                             onRefreshed={refreshLinkedEvidence}
                             key={target.kind + target.id}
                             pageId={page.id}
@@ -1707,5 +1743,8 @@ export function WikiWorkspace({
         ) : null}
       </div>
     </div>
+  );
+  return (
+    <WikiPageLinksContext.Provider value={providedLinks}>{workspace}</WikiPageLinksContext.Provider>
   );
 }

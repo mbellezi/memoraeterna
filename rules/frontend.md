@@ -14,6 +14,9 @@ accessibility, visualizations or user-visible backend messages.
   and trees use bounded pages or virtualization.
 - Background state is shown quietly (status indicators, drawers), not by
   blocking the reading surface.
+- Views that hold navigation, filters or scroll (Library, Wiki) stay mounted
+  while hidden. A page resolves its own links in one request per revision, and
+  a refresh that found no change neither re-renders nor re-requests.
 
 ## Visual language
 
@@ -23,16 +26,14 @@ accessibility, visualizations or user-visible backend messages.
   only signal: pair it with a glyph, icon or label.
 - Text meets WCAG AA contrast (4.5:1, glyphs and large text 3:1) in light and
   dark themes. The graph and canvases read colours from tokens.
-- Fonts are bundled for offline use; the app never depends on a remote font or
-  stylesheet.
+- Fonts are bundled for offline use; no remote font or stylesheet is used.
 - Motion is short and functional and respects `prefers-reduced-motion`.
 
 ## Accessibility
 
 - Icon-only or non-obvious controls have accessible names and tooltips.
 - Everything is keyboard-operable with visible focus. Trees use one roving tab
-  stop with arrow, Home and End navigation. Dialogs trap and restore focus and
-  close with Escape.
+  stop (arrows, Home, End); dialogs trap and restore focus and close with Escape.
 - Single-key shortcuts never fire while typing in inputs or editors, and app
   shortcuts do not collide with platform conventions.
 - Canvas and WebGL views (graphs, icicles, maps) offer a text or table
@@ -44,8 +45,7 @@ accessibility, visualizations or user-visible backend messages.
 ## States and copy
 
 - Every important view covers loading, empty, error and success states (plus
-  partial or waiting states where they exist). Failures stay visible and
-  retryable.
+  partial or waiting states). Failures stay visible and retryable.
 - Product copy is written from the user's side: say what is happening and what
   the user can do. Internal state-machine terms, raw IDs and UUIDs never appear
   in normal UI; they belong in Diagnostics.
@@ -65,8 +65,7 @@ accessibility, visualizations or user-visible backend messages.
   initially follow the supported OS locale with English fallback.
 - Technical identifiers (protocol names, enum values, table names, routes) are
   not product copy unless displayed.
-- The Obsidian plugin follows host conventions; the Chrome extension stays
-  appropriate for an extension surface.
+- The Obsidian plugin and the Chrome extension follow their host conventions.
 
 ## Visualizations
 
@@ -76,7 +75,8 @@ accessibility, visualizations or user-visible backend messages.
 - Graph views show context around a focus and expand on demand instead of
   defaulting to a global hairball; global views stay bounded.
 - Renderers, workers, listeners and animation frames are disposed when a view
-  unmounts; teardown is idempotent.
+  unmounts; teardown is idempotent. They are rebuilt only when their data or
+  mode changes, never because a parent passed a new callback.
 
 ## Visual checks
 

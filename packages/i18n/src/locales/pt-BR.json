@@ -982,6 +982,7 @@
     "stageCount": "{count} etapas neste plano",
     "profileNotice": "Usa seu perfil de IA configurado",
     "noAiNotice": "Nenhuma chamada de IA e necessaria",
+    "writerRouteMissing": "Nenhum modelo de IA está pronto para escrever, então o processamento padrão torna as fontes pesquisáveis. Configure um modelo em Configurações para construir seu segundo cérebro.",
     "presets": {
       "import_only": {
         "title": "Somente importar",
@@ -993,7 +994,7 @@
       },
       "summary": { "title": "Resumo", "description": "Gera um resumo conciso com evidencias." },
       "full_knowledge": {
-        "title": "Processamento completo",
+        "title": "Segundo cérebro",
         "description": "Gera resumos, notas, grafo e conexões e integra o conhecimento à Wiki."
       }
     }

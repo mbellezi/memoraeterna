@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  defaultInteractivePreset,
   resolveProcessingPlan,
   validateDivisionTree,
   type DocumentDivisionCandidate
@@ -47,6 +48,33 @@ describe("hierarchical ingestion", () => {
     expect(plan.automaticallyIncludedStages).not.toContain("atomicNotes");
   });
 
+  it("defaults interactive processing to full knowledge only when a writer route is ready", () => {
+    const request = (preset: ReturnType<typeof defaultInteractivePreset>) =>
+      resolveProcessingPlan({
+        preset,
+        requestedStages: [],
+        scope: "source_only",
+        targetSourceItemIds: [],
+        forceRegeneration: false,
+        previousArtifactPolicy: "reuse_valid"
+      }).effectiveStages;
+    expect(defaultInteractivePreset(true)).toBe("full_knowledge");
+    expect(request(defaultInteractivePreset(true))).toEqual(
+      expect.arrayContaining(["atomicNotes", "knowledgeGraph", "sourceMatching"])
+    );
+    expect(defaultInteractivePreset(false)).toBe("search_ready");
+    const searchable = request(defaultInteractivePreset(false));
+    expect(searchable).toEqual(expect.arrayContaining(["chunking", "embedding"]));
+    for (const generative of [
+      "summarization",
+      "atomicNotes",
+      "knowledgeGraph",
+      "atomicNoteMatching",
+      "sourceMatching",
+      "organizeKnowledge"
+    ] as const)
+      expect(searchable).not.toContain(generative);
+  });
   it("keeps import-only free from AI stages", () => {
     const plan = resolveProcessingPlan({
       preset: "import_only",

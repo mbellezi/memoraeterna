@@ -44,7 +44,7 @@ import type {
 } from "../../shared/ipc";
 import { cn } from "../lib/cn";
 import {
-  defaultProcessingPlan,
+  interactiveProcessingPlan,
   ProcessingPlanPicker,
   processingPlanReady
 } from "./ProcessingPlanPicker";
@@ -65,6 +65,7 @@ import { TagInput, normalizeTags } from "./ui/tag-input";
 import { Label } from "./ui/label";
 import { CoverImage } from "./ui/cover-image";
 import { coverAssetIdFromMetadata } from "../lib/cover-cache";
+import { useWriterRouteReady } from "../lib/writer-route";
 
 type ImportOrigin = "manual" | "file";
 type FormValues = Record<string, string>;
@@ -169,7 +170,8 @@ export function ImportView({
     language: string;
     metadata?: Record<string, unknown>;
   };
-  onSaved?: (sourceItemId: string) => void;
+  /** The status key describes the outcome so a host that navigates away can still report it. */
+  onSaved?: (sourceItemId: string, status?: MessageKey) => void;
   onCancel?: () => void;
 }) {
   const initialType =
@@ -216,9 +218,15 @@ export function ImportView({
   const [coverAssetId, setCoverAssetId] = useState<string | null>(
     editing ? coverAssetIdFromMetadata(editing.metadata) : null
   );
-  const [processingPlan, setProcessingPlan] = useState<ProcessingPlanRequest>(() =>
-    defaultProcessingPlan("import_only")
+  // Interactive imports default to full knowledge when a writer route is ready, otherwise to
+  // searchable processing. An explicit choice always wins over the default.
+  const writerRouteReady = useWriterRouteReady(!editing);
+  const [chosenPlan, setChosenPlan] = useState<ProcessingPlanRequest | null>(null);
+  const processingPlan = useMemo(
+    () => chosenPlan ?? interactiveProcessingPlan(writerRouteReady),
+    [chosenPlan, writerRouteReady]
   );
+  const setProcessingPlan = (plan: ProcessingPlanRequest) => setChosenPlan(plan);
   const [duplicatePolicy, setDuplicatePolicy] = useState<DuplicatePolicy>("ignore");
   const [duplicate, setDuplicate] = useState<DuplicateCandidate | null>(null);
   const [enrichmentState, setEnrichmentState] = useState<
@@ -716,23 +724,19 @@ export function ImportView({
             plan: processingPlan
           });
           setStructure(null);
-          if (onSaved) onSaved(result.sourceItemId);
+          const savedStatus = confirmedStatus(confirmed.queued);
+          if (onSaved) onSaved(result.sourceItemId, savedStatus);
           else resetWizard();
-          setStatus(
-            confirmed.queued.some((item) => item.jobId)
-              ? "import.status.queuedChildren"
-              : "import.status.savedChildren"
-          );
+          setStatus(savedStatus);
         } else setStatus("import.status.reviewStructure");
       } else {
-        setStatus(
-          result.duplicate
-            ? "import.status.duplicateHandled"
-            : result.jobId
-              ? "import.status.queued"
-              : "import.status.saved"
-        );
-        if (onSaved) onSaved(result.sourceItemId);
+        const savedStatus: MessageKey = result.duplicate
+          ? "import.status.duplicateHandled"
+          : result.jobId
+            ? "import.status.queued"
+            : "import.status.saved";
+        setStatus(savedStatus);
+        if (onSaved) onSaved(result.sourceItemId, savedStatus);
         else resetWizard();
       }
     } catch (error) {
@@ -796,13 +800,10 @@ export function ImportView({
         plan: processingPlan
       });
       setStructure(null);
-      if (onSaved) onSaved(structure.rootSourceItemId);
+      const savedStatus = confirmedStatus(result.queued);
+      if (onSaved) onSaved(structure.rootSourceItemId, savedStatus);
       else resetWizard();
-      setStatus(
-        result.queued.some((item) => item.jobId)
-          ? "import.status.queuedChildren"
-          : "import.status.savedChildren"
-      );
+      setStatus(savedStatus);
     } catch (error) {
       setValidationError(t(errorMessageKey(error)));
     } finally {
@@ -844,7 +845,12 @@ export function ImportView({
         ) : null}
         <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <summary className="cursor-pointer text-sm">{t("intake.processing")}</summary>
-          <PlanCard plan={processingPlan} setPlan={setProcessingPlan} t={t} />
+          <PlanCard
+            plan={processingPlan}
+            setPlan={setProcessingPlan}
+            writerRouteReady={writerRouteReady}
+            t={t}
+          />
         </details>
       </div>
     );
@@ -1129,6 +1135,7 @@ export function ImportView({
             onPolicy={setDuplicatePolicy}
             plan={processingPlan}
             onPlan={setProcessingPlan}
+            writerRouteReady={writerRouteReady}
           />
         ) : null}
       </fieldset>
@@ -1949,7 +1956,8 @@ function ConfirmationStep({
   policy,
   onPolicy,
   plan,
-  onPlan
+  onPlan,
+  writerRouteReady
 }: {
   t: Translator;
   descriptor: SourceDescriptor;
@@ -1960,6 +1968,7 @@ function ConfirmationStep({
   onPolicy: (value: DuplicatePolicy) => void;
   plan: ProcessingPlanRequest;
   onPlan: (value: ProcessingPlanRequest) => void;
+  writerRouteReady: boolean | null;
 }) {
   return (
     <div className="grid gap-5">
@@ -2019,7 +2028,7 @@ function ConfirmationStep({
           {t("import.duplicate.none")}
         </p>
       )}
-      <PlanCard plan={plan} setPlan={onPlan} t={t} />
+      <PlanCard plan={plan} setPlan={onPlan} writerRouteReady={writerRouteReady} t={t} />
     </div>
   );
 }
@@ -2036,17 +2045,33 @@ function Summary({ label, value }: { label: string; value: string }) {
 function PlanCard({
   plan,
   setPlan,
+  writerRouteReady,
   t
 }: {
   plan: ProcessingPlanRequest;
   setPlan: (plan: ProcessingPlanRequest) => void;
+  writerRouteReady: boolean | null;
   t: Translator;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
-      <ProcessingPlanPicker value={plan} onChange={setPlan} t={t} />
+      <ProcessingPlanPicker
+        value={plan}
+        onChange={setPlan}
+        writerRouteReady={writerRouteReady}
+        t={t}
+      />
     </div>
   );
+}
+
+/** Outcome of confirming a hierarchical import: queued when any selected item started a job. */
+export function confirmedStatus(
+  queued: ReadonlyArray<{ jobId?: string | null | undefined }>
+): MessageKey {
+  return queued.some((item) => item.jobId)
+    ? "import.status.queuedChildren"
+    : "import.status.savedChildren";
 }
 
 function WizardSteps({

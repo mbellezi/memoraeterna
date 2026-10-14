@@ -61,6 +61,114 @@ const flatten = (row: Record<string, any>) => ({
   updatedAt: new Date(row.updatedAt).toISOString()
 });
 
+const wikiLinkKinds = new Set(["page", "source", "atomic_note", "entity"]);
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Every target a page revision links to: curated links, memberships and legacy note references. */
+function pageLinkRefs(content: any): Array<{ kind: string; id: string }> {
+  const linked = [
+    ...(content?.automatic?.links ?? []),
+    ...(content?.automatic?.memberships ?? []).map((m: any) => m.target)
+  ];
+  const legacyNoteLinks = (content?.sections ?? []).flatMap((s: any) =>
+    Array.from(String(s.markdown).matchAll(/memora:atomic_note\/([0-9a-f-]{36})/g), (m) => ({
+      kind: "atomic_note",
+      id: m[1]
+    }))
+  );
+  linked.push(...legacyNoteLinks);
+  return linked;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  run: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const index = next++;
+        results[index] = await run(items[index]!);
+      }
+    })
+  );
+  return results;
+}
+
+/** Reads one linked target. The caller has already established that the page may link to it. */
+async function readLinkedTarget(pool: PgPool, input: { kind: string; id: string }) {
+  const row =
+    input.kind === "source"
+      ? (
+          await pool.query(
+            "select id,title,id as source_id,'' as markdown from source_items where id=$1",
+            [input.id]
+          )
+        ).rows[0]
+      : input.kind === "page"
+        ? (
+            await pool.query(
+              "select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",
+              [input.id]
+            )
+          ).rows[0]
+        : input.kind === "entity"
+          ? (
+              await pool.query(
+                "select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",
+                [input.id]
+              )
+            ).rows[0]
+          : (
+              await pool.query(
+                "select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id,status,metadata,supersession_status from atomic_notes where id=$1 and status not in('rejected','archived')",
+                [input.id]
+              )
+            ).rows[0];
+  if (!row) return null;
+  const evidence =
+    input.kind === "atomic_note"
+      ? await readNoteEvidence(pool, input.id, row.evidence_chunk_id)
+      : [];
+  const successors =
+    input.kind === "atomic_note"
+      ? (
+          await pool.query(
+            "select n.id,n.title from atomic_note_evolution e join atomic_notes n on n.id=e.next_id where e.previous_id=$1 and n.status not in('rejected','archived') order by n.id",
+            [input.id]
+          )
+        ).rows
+      : undefined;
+  return {
+    ...(input.kind === "atomic_note"
+      ? {
+          noteState: {
+            status: row.status,
+            protected: row.metadata?.humanProtected === true,
+            current:
+              row.supersession_status === "current" &&
+              evidence.length > 0 &&
+              evidence.every((e) => e.current)
+          }
+        }
+      : {}),
+    ...(successors?.length ? { successors } : {}),
+    kind: input.kind,
+    id: row.id,
+    title: row.title,
+    markdown: row.markdown,
+    sourceItemId:
+      input.kind === "atomic_note" &&
+      evidence.every((e) => e.sourceItemId !== row.source_id || e.sourceAvailable === false)
+        ? null
+        : row.source_id,
+    evidence
+  };
+}
+
 export function createWikiRepository(pool: PgPool) {
   return {
     async linkedTarget(input: {
@@ -75,21 +183,9 @@ export function createWikiRepository(pool: PgPool) {
           [input.pageId, input.revisionId ?? null]
         )
       ).rows[0]?.content;
-      const linked = [
-        ...(content?.automatic?.links ?? []),
-        ...(content?.automatic?.memberships ?? []).map((m: any) => m.target)
-      ];
-      const legacyNoteLinks = (content?.sections ?? []).flatMap((s: any) =>
-        Array.from(String(s.markdown).matchAll(/memora:atomic_note\/([0-9a-f-]{36})/g), (m) => ({
-          kind: "atomic_note",
-          id: m[1]
-        }))
-      );
-      linked.push(...legacyNoteLinks);
-      if (!linked.some((r: any) => r.kind === input.kind && r.id === input.id)) {
-        const originalIds = linked
-          .filter((r: any) => r.kind === "atomic_note")
-          .map((r: any) => r.id);
+      const linked = pageLinkRefs(content);
+      if (!linked.some((r) => r.kind === input.kind && r.id === input.id)) {
+        const originalIds = linked.filter((r) => r.kind === "atomic_note").map((r) => r.id);
         const redirect =
           input.kind === "atomic_note" &&
           (
@@ -100,72 +196,30 @@ export function createWikiRepository(pool: PgPool) {
           ).rows.length;
         if (!redirect) throw new Error("wiki.errors.invalid");
       }
-      const row =
-        input.kind === "source"
-          ? (
-              await pool.query(
-                "select id,title,id as source_id,'' as markdown from source_items where id=$1",
-                [input.id]
-              )
-            ).rows[0]
-          : input.kind === "page"
-            ? (
-                await pool.query(
-                  "select id,title,null::uuid as source_id,'' as markdown from wiki_pages where id=$1",
-                  [input.id]
-                )
-              ).rows[0]
-            : input.kind === "entity"
-              ? (
-                  await pool.query(
-                    "select id,canonical_name as title,null::uuid as source_id,'' as markdown from entities where id=$1",
-                    [input.id]
-                  )
-                ).rows[0]
-              : (
-                  await pool.query(
-                    "select id,coalesce(nullif(title,''),idea_statement) as title,body_markdown as markdown,created_from_source_item_id as source_id,evidence_chunk_id,status,metadata,supersession_status from atomic_notes where id=$1 and status not in('rejected','archived')",
-                    [input.id]
-                  )
-                ).rows[0];
+      return readLinkedTarget(pool, input);
+    },
+    /** Resolves every link of one page revision at once, so the renderer needs one call per revision. */
+    async resolveLinks(input: { pageId: string; revisionId?: string | undefined }) {
+      const row = (
+        await pool.query(
+          'select r.id as "revisionId", r.content from wiki_pages p join wiki_page_revisions r on r.page_id=p.id and r.id=coalesce($2::uuid,p.current_revision_id) where p.id=$1',
+          [input.pageId, input.revisionId ?? null]
+        )
+      ).rows[0];
       if (!row) return null;
-      const evidence =
-        input.kind === "atomic_note"
-          ? await readNoteEvidence(pool, input.id, row.evidence_chunk_id)
-          : [];
-      const successors =
-        input.kind === "atomic_note"
-          ? (
-              await pool.query(
-                "select n.id,n.title from atomic_note_evolution e join atomic_notes n on n.id=e.next_id where e.previous_id=$1 and n.status not in('rejected','archived') order by n.id",
-                [input.id]
-              )
-            ).rows
-          : undefined;
+      const refs = [
+        ...new Map(
+          pageLinkRefs(row.content)
+            .filter((r) => wikiLinkKinds.has(r.kind) && uuidPattern.test(r.id))
+            .map((r) => [`${r.kind}:${r.id}`, r])
+        ).values()
+      ];
+      const resolved = await mapWithConcurrency(refs, 6, (ref) => readLinkedTarget(pool, ref));
       return {
-        ...(input.kind === "atomic_note"
-          ? {
-              noteState: {
-                status: row.status,
-                protected: row.metadata?.humanProtected === true,
-                current:
-                  row.supersession_status === "current" &&
-                  evidence.length > 0 &&
-                  evidence.every((e) => e.current)
-              }
-            }
-          : {}),
-        ...(successors?.length ? { successors } : {}),
-        kind: input.kind,
-        id: row.id,
-        title: row.title,
-        markdown: row.markdown,
-        sourceItemId:
-          input.kind === "atomic_note" &&
-          evidence.every((e) => e.sourceItemId !== row.source_id || e.sourceAvailable === false)
-            ? null
-            : row.source_id,
-        evidence
+        pageId: input.pageId,
+        revisionId: row.revisionId as string,
+        targets: resolved.filter((target): target is NonNullable<typeof target> => target !== null),
+        unresolved: refs.filter((_, index) => resolved[index] === null)
       };
     },
     async tree(input: {

@@ -1,4 +1,5 @@
 import { subscribeWindowNavigation } from "../lib/window-navigation";
+import { useStableCallback } from "../lib/stable-callback";
 import {
   atomicRelationMessageKeys,
   atomicRelationLegend,
@@ -329,11 +330,11 @@ export function KnowledgeGraphDashboard({
   t,
   mode,
   wheelZoomSensitivity,
-  initialViewState,
-  onViewStateChange,
+  initialViewState: initialViewStateProp,
+  onViewStateChange: onViewStateChangeProp,
   onModeChange,
-  onOpenSource,
-  onOpenAtomicNote
+  onOpenSource: onOpenSourceProp,
+  onOpenAtomicNote: onOpenAtomicNoteProp
 }: {
   t: Translator;
   mode: KnowledgeGraphDashboardMode;
@@ -344,6 +345,12 @@ export function KnowledgeGraphDashboard({
   onOpenSource: (sourceItemId: string) => void;
   onOpenAtomicNote: (sourceItemId: string, atomicNoteId: string) => void;
 }) {
+  // The renderer and its layout worker are expensive. Callbacks and the restored view state are
+  // read through stable identities so a parent re-render never rebuilds them.
+  const onViewStateChange = useStableCallback(onViewStateChangeProp);
+  const onOpenSource = useStableCallback(onOpenSourceProp);
+  const onOpenAtomicNote = useStableCallback(onOpenAtomicNoteProp);
+  const getInitialViewState = useStableCallback(() => initialViewStateProp);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -358,7 +365,7 @@ export function KnowledgeGraphDashboard({
   const [rendererRevision, setRendererRevision] = useState(0);
   const [popupPreferences, setPopupPreferences] = useState({ relations: false, entities: true });
   const [sourceView, setSourceView] = useState<"relations" | "entities">(
-    initialViewState?.sourceView ?? "relations"
+    initialViewStateProp?.sourceView ?? "relations"
   );
   const graphPopup = popupPreferences[sourceView];
   const setGraphPopup = (update: (value: boolean) => boolean) =>
@@ -367,10 +374,10 @@ export function KnowledgeGraphDashboard({
   const sourceViewRef = useRef(sourceView);
   sourceViewRef.current = sourceView;
   const [showAllSubitems, setShowAllSubitems] = useState(
-    initialViewState?.sourceHierarchy?.showAll ?? false
+    initialViewStateProp?.sourceHierarchy?.showAll ?? false
   );
   const [expandedSourceIds, setExpandedSourceIds] = useState<Set<string>>(
-    () => new Set(initialViewState?.sourceHierarchy?.expandedSourceIds ?? [])
+    () => new Set(initialViewStateProp?.sourceHierarchy?.expandedSourceIds ?? [])
   );
   const [hierarchyPreviewSourceId, setHierarchyPreviewSourceId] = useState<string | null>(null);
   const [hierarchyNodeActions, setHierarchyNodeActions] = useState<HierarchyNodeActions | null>(
@@ -380,7 +387,7 @@ export function KnowledgeGraphDashboard({
   sourceHierarchyRef.current = { showAll: showAllSubitems, expandedSourceIds };
   const popupInsideRef = useRef(false);
   const [forces, setForces] = useState<GraphForceSettings>(
-    initialViewState?.forces ?? defaultGraphForceSettings
+    initialViewStateProp?.forces ?? defaultGraphForceSettings
   );
   const forcesRef = useRef(forces);
   const [hover, setHover] = useState<HoverCard | null>(null);
@@ -494,6 +501,7 @@ export function KnowledgeGraphDashboard({
     const graphContainer = container;
     let disposed = false;
     let cleanupRenderer = () => {};
+    const initialViewState = getInitialViewState();
     const graph = bundle.graph;
     let rawNodeKeys = bundle.rawNodeKeys;
     let graphStateKey = bundle.stateKey;
@@ -1125,8 +1133,8 @@ export function KnowledgeGraphDashboard({
   }, [
     data,
     t,
-    initialViewState,
     mode,
+    getInitialViewState,
     onOpenAtomicNote,
     onOpenSource,
     onViewStateChange,

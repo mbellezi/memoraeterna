@@ -22,10 +22,10 @@ Ask, or background maintenance (Gardener).
   navigation unit; a chunk is a search/AI unit; never substitute one for the other.
 - Importing stays useful without AI. The processing plan DAG has one owner in
   `@app/domain`; UI and integrations never keep a second copy.
-- Interactive imports default to full knowledge processing when a writer route is
-  ready, otherwise to searchable processing (chunks and embeddings, no generative
-  AI). Non-interactive integrations use searchable processing. Import-only stays
-  an explicit choice. Interactive imports then open the source (target F1a).
+- Interactive imports and Library processing default to full knowledge when a
+  writer route is ready, otherwise to searchable processing (chunks and
+  embeddings, no generative AI); integrations use searchable processing.
+  Import-only stays an explicit choice. A finished import opens its source.
 - Saving source content or metadata creates revisions and never starts
   generative AI work. Reviewed or human-edited artifacts are never silently
   overwritten or deleted by reprocessing.

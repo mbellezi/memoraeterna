@@ -298,7 +298,7 @@
       "count": 1
     },
     "react-hooks/immutability": {
-      "count": 8
+      "count": 7
     },
     "react-hooks/refs": {
       "count": 2
@@ -657,7 +657,7 @@
   },
   "packages/db/src/repositories/wikiRepository.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 7
+      "count": 5
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 10

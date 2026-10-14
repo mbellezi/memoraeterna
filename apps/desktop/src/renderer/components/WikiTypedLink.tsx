@@ -1,15 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import type { z } from "zod";
 import type { WikiLinkedTargetSchema, WikiEvidence } from "@app/domain";
 import type { Translator } from "@app/i18n";
 import { MarkdownPreview } from "./MarkdownEditor";
+import { WikiPageLinksContext, lookupWikiLink } from "./wiki-page-sync";
+/**
+ * Links that belong to the page being read take their target from the page's single batched
+ * resolution. Only links the batch cannot know (successors of an opened note, links shown outside
+ * the page) are requested individually.
+ */
 export function WikiTypedLink({
   pageId,
   revisionId,
   target,
   t,
   active = true,
-  refreshKey,
   onRefreshed,
   onOpenPage,
   onOpenSource,
@@ -19,7 +24,6 @@ export function WikiTypedLink({
   onInlineOpen
 }: {
   active?: boolean;
-  refreshKey?: number | undefined;
   onRefreshed?: ((value: z.infer<typeof WikiLinkedTargetSchema>) => void) | undefined;
   inline?: boolean | undefined;
   onInlineOpen?: ((value: z.infer<typeof WikiLinkedTargetSchema>) => void) | undefined;
@@ -32,15 +36,21 @@ export function WikiTypedLink({
   onOpenSource: (id: string, noteId?: string) => void;
   onEvidence: (e: WikiEvidence) => void;
 }) {
-  const [value, setValue] = useState<z.infer<typeof WikiLinkedTargetSchema> | null>(null),
+  const links = useContext(WikiPageLinksContext);
+  const lookup = lookupWikiLink(links, pageId, revisionId, target);
+  const fetchNeeded = lookup.kind === "fetch";
+  // Individually requested links of this page (successors) refresh with the page's batch.
+  const pageBatch = links?.pageId === pageId ? links : null;
+  const [fetched, setFetched] = useState<z.infer<typeof WikiLinkedTargetSchema> | null>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(false),
     [retry, setRetry] = useState(0),
     [open, setOpen] = useState(false);
+  const value = lookup.kind === "value" ? lookup.value : fetchNeeded ? fetched : null;
   const refreshed = useRef(onRefreshed);
   refreshed.current = onRefreshed;
   useEffect(() => {
-    if (!active) return;
+    if (!active || !fetchNeeded) return;
     let live = true;
     setLoading(true);
     setError(false);
@@ -48,7 +58,7 @@ export function WikiTypedLink({
       .linkedTarget({ pageId, ...(revisionId ? { revisionId } : {}), ...target })
       .then((v) => {
         if (live) {
-          setValue(v);
+          setFetched(v);
           if (v) refreshed.current?.(v);
         }
       })
@@ -61,14 +71,17 @@ export function WikiTypedLink({
     return () => {
       live = false;
     };
-  }, [pageId, revisionId, target.kind, target.id, retry, active, refreshKey]);
-  if (error)
+  }, [pageId, revisionId, target.kind, target.id, retry, active, fetchNeeded, pageBatch]);
+  if (lookup.kind === "failed" || (fetchNeeded && error))
     return (
-      <button className="text-xs text-rose-600" onClick={() => setRetry((n) => n + 1)}>
+      <button
+        className="text-xs text-rose-600"
+        onClick={() => (lookup.kind === "failed" ? links?.retry?.() : setRetry((n) => n + 1))}
+      >
         {t("wiki.errors.generic")} · {t("shell.actions.retry")}
       </button>
     );
-  if (loading && !value)
+  if (lookup.kind === "pending" || (fetchNeeded && loading && !value))
     return (
       <span role="status" className="text-xs text-slate-500">
         {t("shell.states.loading")}
@@ -140,7 +153,6 @@ export function WikiTypedLink({
           {value.successors?.map((next) => (
             <WikiTypedLink
               active={active}
-              refreshKey={refreshKey}
               onRefreshed={onRefreshed}
               key={next.id}
               pageId={pageId}

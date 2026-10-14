@@ -6,6 +6,7 @@ import {
   WikiMoveInputSchema
 } from "@app/domain";
 import { createWikiRepository, type PgPool } from "@app/db";
+import { wikiResolvedLinksSchema, type wikiResolveLinksInputSchema } from "../../shared/ipc.js";
 import {
   WikiLinkedTargetSchema,
   WikiLinkedTargetInputSchema,
@@ -31,6 +32,10 @@ export class WikiService {
     return WikiLinkedTargetSchema.nullable().parse(
       await this.repository().linkedTarget(WikiLinkedTargetInputSchema.parse(input))
     );
+  }
+  /** One query-bounded response for every link of a page revision; replaces per-link reads. */
+  async resolveLinks(input: import("zod").z.infer<typeof wikiResolveLinksInputSchema>) {
+    return wikiResolvedLinksSchema.nullable().parse(await this.repository().resolveLinks(input));
   }
   async tree(input: import("zod").z.infer<typeof WikiTreeInputSchema>) {
     return WikiTreeSchema.parse(await this.repository().tree(input));

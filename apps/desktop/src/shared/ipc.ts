@@ -46,6 +46,7 @@ import {
   MetadataEnrichmentQuerySchema,
   ProcessingPlanRequestSchema,
   SearchResultSchema,
+  WikiLinkedTargetSchema,
   SourceDescriptorDraftSchema,
   SourceDescriptorSchema,
   SourceItemTypeSchema,
@@ -78,6 +79,7 @@ export const ipcChannels = {
   wikiContext: "app:wiki:context",
   wikiMove: "app:wiki:move",
   wikiLinkedTarget: "app:wiki:linked-target",
+  wikiResolveLinks: "app:wiki:resolve-links",
   wikiList: "app:wiki:list",
   wikiGet: "app:wiki:get",
   wikiSave: "app:wiki:save",
@@ -1543,6 +1545,28 @@ export type IntegrationClient = z.infer<typeof integrationClientSchema>;
 export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
 export type WindowNavigationDirection = z.infer<typeof windowNavigationDirectionSchema>;
 
+export const wikiResolveLinksInputSchema = z
+  .object({ pageId: z.string().uuid(), revisionId: z.string().uuid().optional() })
+  .strict();
+
+const wikiLinkReferenceSchema = z
+  .object({
+    kind: z.enum(["page", "source", "atomic_note", "entity"]),
+    id: z.string().uuid()
+  })
+  .strict();
+
+/** Every link of one page revision in a single response; unresolved links are listed explicitly. */
+export const wikiResolvedLinksSchema = z
+  .object({
+    pageId: z.string().uuid(),
+    revisionId: z.string().uuid(),
+    targets: z.array(WikiLinkedTargetSchema),
+    unresolved: z.array(wikiLinkReferenceSchema)
+  })
+  .strict();
+export type WikiResolvedLinks = z.infer<typeof wikiResolvedLinksSchema>;
+
 export const defaultAppSettings = {
   contentLanguage: "en",
   themeMode: "dark",
@@ -1606,6 +1630,7 @@ export interface DesktopApi {
     linkedTarget: (
       input: z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>
     ) => Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema> | null>;
+    resolveLinks: (pageId: string, revisionId?: string) => Promise<WikiResolvedLinks | null>;
     list: () => Promise<z.infer<typeof WikiPageListSchema>>;
     get: (id: string, revisionId?: string) => Promise<WikiPage | null>;
     save: (input: WikiSaveInput) => Promise<WikiPage>;

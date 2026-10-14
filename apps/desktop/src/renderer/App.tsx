@@ -43,6 +43,7 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
+import { useStableCallback } from "./lib/stable-callback";
 import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
@@ -212,6 +213,24 @@ export function App({
     },
     []
   );
+  function openLibrarySource(target: Omit<LibraryExternalTarget, "token">) {
+    libraryTargetToken.current += 1;
+    setLibraryTarget({ ...target, token: libraryTargetToken.current });
+    setActiveView("library");
+  }
+  // The graph renderer is expensive to rebuild: these keep one identity across App renders.
+  const openGraphSource = useStableCallback((sourceItemId: string) =>
+    openLibrarySource({ sourceItemId, origin: "knowledgeGraph" })
+  );
+  const openGraphNote = useStableCallback((sourceItemId: string, atomicNoteId: string) =>
+    openLibrarySource({ sourceItemId, atomicNoteId, origin: "knowledgeGraph" })
+  );
+  // After an interactive import the new source opens in the Library with the outcome as a toast.
+  function openImportedSource(sourceItemId: string, status?: MessageKey) {
+    openLibrarySource({ sourceItemId, origin: "import" });
+    if (status)
+      pushToast(t(status), status === "import.status.duplicateHandled" ? "info" : "success");
+  }
 
   activeViewRef.current = activeView;
 
@@ -254,10 +273,11 @@ export function App({
     if (container) container.scrollTop = scrollPositions.current[activeView] ?? 0;
   }, [activeView]);
 
-  function scrollActiveViewToTop() {
-    scrollPositions.current[activeView] = 0;
+  // Stable: the Library, which stays mounted while hidden, calls this on every navigation.
+  const scrollActiveViewToTop = useCallback(() => {
+    scrollPositions.current[activeViewRef.current] = 0;
     scrollContainerRef.current?.scrollTo({ top: 0 });
-  }
+  }, []);
 
   async function loadAppData() {
     const [loadedAppSettings, loadedSettings, loadedSystemInfo] = await Promise.all([
@@ -644,7 +664,6 @@ export function App({
                   )}
                   onClick={() => {
                     wikiPromptReturn.current = false;
-                    if (item.id === "library") setLibraryTarget(null);
                     if (item.id === "settings") selectSettingsScope("overview");
                     setActiveView(item.id);
                   }}
@@ -699,6 +718,27 @@ export function App({
             scrollPositions.current[activeView] = event.currentTarget.scrollTop;
           }}
         >
+          <div hidden={activeView !== "library"}>
+            <LibraryView
+              t={t}
+              active={activeView === "library"}
+              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
+              externalTarget={libraryTarget}
+              onNavigate={scrollActiveViewToTop}
+              onExitToWiki={() => {
+                setLibraryTarget(null);
+                setActiveView("wiki");
+              }}
+              onExitToSearch={() => {
+                setLibraryTarget(null);
+                setActiveView("search");
+              }}
+              onExitToKnowledgeGraph={() => {
+                setLibraryTarget(null);
+                setActiveView("knowledgeGraph");
+              }}
+            />
+          </div>
           <div hidden={activeView !== "wiki"}>
             <WikiWorkspace
               onPrompts={() => {
@@ -749,7 +789,11 @@ export function App({
               }}
             />
           ) : activeView === "import" ? (
-            <ImportView t={t} metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled} />
+            <ImportView
+              t={t}
+              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
+              onSaved={openImportedSource}
+            />
           ) : activeView === "wiki" ? null : activeView === "search" ? (
             <SearchView
               t={t}
@@ -794,25 +838,8 @@ export function App({
                 initialViewState={knowledgeGraphViewStates.current[knowledgeGraphMode]}
                 onViewStateChange={preserveKnowledgeGraphViewState}
                 onModeChange={setKnowledgeGraphMode}
-                onOpenSource={(sourceItemId) => {
-                  libraryTargetToken.current += 1;
-                  setLibraryTarget({
-                    sourceItemId,
-                    origin: "knowledgeGraph",
-                    token: libraryTargetToken.current
-                  });
-                  setActiveView("library");
-                }}
-                onOpenAtomicNote={(sourceItemId, atomicNoteId) => {
-                  libraryTargetToken.current += 1;
-                  setLibraryTarget({
-                    sourceItemId,
-                    atomicNoteId,
-                    origin: "knowledgeGraph",
-                    token: libraryTargetToken.current
-                  });
-                  setActiveView("library");
-                }}
+                onOpenSource={openGraphSource}
+                onOpenAtomicNote={openGraphNote}
               />
             </Suspense>
           ) : activeView === "debug" ? (
@@ -825,25 +852,6 @@ export function App({
                 libraryTargetToken.current += 1;
                 setLibraryTarget({ sourceItemId, token: libraryTargetToken.current });
                 setActiveView("library");
-              }}
-            />
-          ) : activeView === "library" ? (
-            <LibraryView
-              t={t}
-              metadataEnrichmentEnabled={appSettings.metadataEnrichmentEnabled}
-              externalTarget={libraryTarget}
-              onNavigate={scrollActiveViewToTop}
-              onExitToWiki={() => {
-                setLibraryTarget(null);
-                setActiveView("wiki");
-              }}
-              onExitToSearch={() => {
-                setLibraryTarget(null);
-                setActiveView("search");
-              }}
-              onExitToKnowledgeGraph={() => {
-                setLibraryTarget(null);
-                setActiveView("knowledgeGraph");
               }}
             />
           ) : null}

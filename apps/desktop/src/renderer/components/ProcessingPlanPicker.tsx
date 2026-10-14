@@ -4,6 +4,7 @@ import { Input } from "./ui/input";
 import { Check, ChevronRight, Cloud, Search, Sparkles, WandSparkles } from "lucide-react";
 import {
   ProcessingPlanRequestSchema,
+  defaultInteractivePreset,
   ProcessingStages,
   processingStageDependencies,
   resolveProcessingPlan,
@@ -53,6 +54,14 @@ export function defaultProcessingPlan(
   );
 }
 
+/**
+ * Default plan of an interactive import or Library processing: full knowledge when a writer route
+ * is ready, otherwise searchable. Unknown readiness (still loading) never promises generative AI.
+ */
+export function interactiveProcessingPlan(writerRouteReady: boolean | null): ProcessingPlanRequest {
+  return defaultProcessingPlan(defaultInteractivePreset(writerRouteReady === true));
+}
+
 export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
     ...(plan.integrateWiki ? { integrateWiki: plan.integrateWiki } : {}),
@@ -76,12 +85,15 @@ export function ProcessingPlanPicker({
   value,
   onChange,
   t,
-  compact = false
+  compact = false,
+  writerRouteReady = null
 }: {
   value: ProcessingPlanRequest;
   onChange: (value: ProcessingPlanRequest) => void;
   t: Translator;
   compact?: boolean;
+  /** `false` explains why processing defaults to searchable; `null` while still unknown. */
+  writerRouteReady?: boolean | null;
 }) {
   const resolved = resolveProcessingPlan(value);
   const [saved, setSaved] = useState<
@@ -216,6 +228,12 @@ export function ProcessingPlanPicker({
           );
         })}
       </div>
+
+      {writerRouteReady === false ? (
+        <p role="status" className="rounded-lg border border-border bg-soft px-3 py-2 text-xs">
+          {t("processing.writerRouteMissing")}
+        </p>
+      ) : null}
 
       <details className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
         <summary className="cursor-pointer text-sm font-semibold">

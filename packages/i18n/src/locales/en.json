@@ -982,6 +982,7 @@
     "stageCount": "{count} stages in this plan",
     "profileNotice": "Uses your configured AI profile",
     "noAiNotice": "No AI call is required",
+    "writerRouteMissing": "No AI model is ready for writing, so processing defaults to searchable. Set up a model in Settings to build your second brain.",
     "presets": {
       "import_only": {
         "title": "Import only",
@@ -993,7 +994,7 @@
       },
       "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },
       "full_knowledge": {
-        "title": "Complete processing",
+        "title": "Second brain",
         "description": "Generates summaries, notes, graph and connections, and integrates knowledge into the Wiki."
       }
     }

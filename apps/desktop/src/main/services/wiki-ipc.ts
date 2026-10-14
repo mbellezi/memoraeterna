@@ -1,4 +1,4 @@
-import { ipcChannels } from "../../shared/ipc.js";
+import { ipcChannels, wikiResolveLinksInputSchema } from "../../shared/ipc.js";
 import type { IpcMain } from "electron";
 import { z } from "zod";
 import {
@@ -23,6 +23,9 @@ export function registerWikiIpc(ipc: IpcMain, service: WikiService) {
   );
   ipc.handle(ipcChannels.wikiLinkedTarget, (_event, payload: unknown) =>
     service.linkedTarget(WikiLinkedTargetInputSchema.parse(payload))
+  );
+  ipc.handle(ipcChannels.wikiResolveLinks, (_event, payload: unknown) =>
+    service.resolveLinks(wikiResolveLinksInputSchema.parse(payload))
   );
   ipc.handle(ipcChannels.wikiList, () => service.list());
   ipc.handle(ipcChannels.wikiGet, (_event, payload: unknown) => {

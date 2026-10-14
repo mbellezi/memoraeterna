@@ -984,6 +984,7 @@
     "stageCount": "{count} etapes dans ce plan",
     "profileNotice": "Utilise votre profil IA configure",
     "noAiNotice": "Aucun appel IA necessaire",
+    "writerRouteMissing": "Aucun modèle IA n'est prêt pour la rédaction : le traitement par défaut rend donc les sources consultables. Configurez un modèle dans Paramètres pour construire votre second cerveau.",
     "presets": {
       "import_only": {
         "title": "Importer seulement",
@@ -995,7 +996,7 @@
       },
       "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." },
       "full_knowledge": {
-        "title": "Traitement complet",
+        "title": "Second cerveau",
         "description": "Génère résumés, notes, graphe et liens, puis intègre les connaissances au Wiki."
       }
     }
