@@ -30,6 +30,7 @@ import {
 } from "@app/conversion";
 import {
   SourceDescriptorSchema,
+  sanitizeStoredValue,
   type SourceDescriptor,
   type SourceDescriptorDraft,
   type SourceItemType,
@@ -582,7 +583,8 @@ export class IngestionService {
     const sources = createSourceItemRepository(pool);
     const documents = createDocumentRepository(pool);
     const runs = createIngestionRunRepository(pool);
-    const descriptor = input.descriptor;
+    // Descriptor text can come from a document's own metadata; U+0000 must not reach any query.
+    const descriptor = sanitizeStoredValue(input.descriptor);
     if ("parentSourceItemId" in descriptor && descriptor.parentSourceItemId) {
       const parent = await createSourceItemRepository(this.requirePool()).findById(
         descriptor.parentSourceItemId

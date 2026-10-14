@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 
+import { sanitizeConversionResult } from "./conversion-sanitizer.js";
 import {
   DOCLING_PROTOCOL_VERSION,
   doclingProgressSchema,
@@ -139,7 +140,7 @@ export class DoclingClient {
       const response = responseHolder.value;
       if (!response) throw new Error("Docling sidecar returned no response.");
       if (!response.ok) throw new Error(response.error.messageKey);
-      return response.result;
+      return sanitizeConversionResult(response.result);
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", abort);

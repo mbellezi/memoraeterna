@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 let input = "";
 for await (const chunk of process.stdin) input += chunk;
 const request = JSON.parse(input);
@@ -19,7 +21,22 @@ for (const event of [
     })}\n`
   );
 }
-const markdown = "# Fake Docling\n";
+// Docling emits U+0000 for glyphs without a Unicode mapping, for example a math font's minus sign.
+const nul = request.inputPath.includes("nul");
+const formula = "Q = e \u0000 a";
+const markdown = nul ? `# Title\n\n${formula}\n\nNext block\n` : "# Fake Docling\n";
+const blocks = nul
+  ? ["Title", formula, "Next block"].map((text, index) => {
+      const markdownStart = markdown.indexOf(text);
+      return {
+        id: `#/texts/${index}`,
+        type: "text",
+        text,
+        markdownStart,
+        markdownEnd: markdownStart + text.length
+      };
+    })
+  : [];
 process.stdout.write(
   `${JSON.stringify({
     protocolVersion: 3,
@@ -28,8 +45,8 @@ process.stdout.write(
     result: {
       status: "converted",
       markdown,
-      contentHash: "a".repeat(64),
-      blocks: [],
+      contentHash: nul ? createHash("sha256").update(markdown).digest("hex") : "a".repeat(64),
+      blocks,
       assets: [],
       engine: "docling",
       engineVersion: "test",
@@ -37,7 +54,10 @@ process.stdout.write(
       options: {},
       warnings: [],
       quality: { textCoverage: 1 },
-      metadata: {}
+      metadata: nul ? { title: "Fake\u0000 title" } : {},
+      ...(nul
+        ? { rawStructuredResult: { texts: blocks.map(({ text }) => ({ text, orig: text })) } }
+        : {})
     }
   })}\n`
 );

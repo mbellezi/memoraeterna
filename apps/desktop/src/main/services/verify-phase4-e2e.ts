@@ -166,6 +166,27 @@ try {
   const selectionSourceId = requiredString(selectionCapture, "sourceItemId");
   const youtubeSourceId = requiredString(youtubeCapture, "sourceItemId");
 
+  // Extracted text can carry U+0000 (Docling emits it for unmapped math glyphs); PostgreSQL cannot
+  // store it, so it is stripped on the way in instead of aborting the import.
+  const nulCapture = await post(baseUrl, chrome.sessionToken, "/v1/capture/selection", {
+    requestId: randomUUID(),
+    url: "https://example.com/phase-4-nul",
+    title: "Phase 4 \u0000NUL selection",
+    capturedAt,
+    selection: "A selected idea with a \u0000 math minus glyph.",
+    metadata: {}
+  });
+  const nulSourceId = requiredString(nulCapture, "sourceItemId");
+  const nulDocument = (await createDocumentRepository(pool).listBySourceItem(nulSourceId))[0];
+  const nulSource = await createSourceItemRepository(pool).findById(nulSourceId);
+  if (
+    !nulDocument?.canonicalMarkdown.includes("math minus glyph") ||
+    nulDocument.canonicalMarkdown.includes("\u0000") ||
+    nulSource?.title.includes("\u0000")
+  ) {
+    throw new Error("A capture containing U+0000 was not stored without it.");
+  }
+
   // Captures are import-only: no generative stage is planned for a non-interactive capture.
   const runs = createIngestionRunRepository(pool);
   const importOnlyStages: readonly string[] = processingPresetStages.import_only;

@@ -13,6 +13,7 @@ export * from "./search.js";
 export * from "./source-item.js";
 export * from "./source-descriptor.js";
 export * from "./storage.js";
+export * from "./text-sanitization.js";
 export * from "./source-relations.js";
 
 export * from "./matching-settings.js";

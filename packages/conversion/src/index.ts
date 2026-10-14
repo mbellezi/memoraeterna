@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./markdown-normalizer.js";
+export * from "./conversion-sanitizer.js";
 export * from "./native-converters.js";
 export * from "./docling-contracts.js";
 export * from "./docling-client.js";

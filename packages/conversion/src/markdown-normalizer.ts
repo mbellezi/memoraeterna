@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
 
+import { stripControlCharacters } from "@app/domain";
+
 import type { ConversionBlock } from "./types.js";
 
 export function normalizeMarkdown(markdown: string): string {
-  const normalized = markdown
+  const normalized = stripControlCharacters(markdown)
     .replace(/\r\n?/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{4,}/g, "\n\n\n")

@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
 
-import type { DocumentDivisionCandidate, DocumentDivisionKind } from "@app/domain";
+import {
+  sanitizeExtractedValue,
+  stripControlCharacters,
+  type DocumentDivisionCandidate,
+  type DocumentDivisionKind
+} from "@app/domain";
 import { unzipSync } from "fflate";
 import { DOMParser } from "linkedom";
 import { getDocument, type PDFDocumentProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
@@ -31,6 +36,12 @@ const MAX_EPUB_ENTRY_BYTES = 32 * 1024 * 1024;
 const MAX_EPUB_TOTAL_BYTES = 512 * 1024 * 1024;
 
 export async function detectDocumentStructure(
+  input: StructureDetectionInput
+): Promise<StructureDetectionResult> {
+  return sanitizeExtractedValue(await detectRawDocumentStructure(input));
+}
+
+async function detectRawDocumentStructure(
   input: StructureDetectionInput
 ): Promise<StructureDetectionResult> {
   const extension = input.fileName?.toLowerCase().split(".").pop();
@@ -686,10 +697,12 @@ async function readPdfNavigation(input: Uint8Array | string) {
     ) => {
       for (const item of items) {
         const page = await resolvePdfDestinationPage(document, item.dest);
+        // Outline titles are UTF-16 strings that producers often NUL pad.
+        const title = stripControlCharacters(item.title).trim();
         let currentParent = parentIndex;
-        if (page !== null && item.title.trim()) {
+        if (page !== null && title) {
           flattened.push({
-            title: item.title.trim(),
+            title,
             page,
             level,
             parentIndex,
@@ -701,7 +714,11 @@ async function readPdfNavigation(input: Uint8Array | string) {
       }
     };
     await visit(outline, 0, null);
-    return { outline: flattened, pageLabels: pageLabels ?? [], pageCount: document.numPages };
+    return {
+      outline: flattened,
+      pageLabels: (pageLabels ?? []).map(stripControlCharacters),
+      pageCount: document.numPages
+    };
   } finally {
     await loadingTask.destroy();
   }

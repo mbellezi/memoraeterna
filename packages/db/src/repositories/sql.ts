@@ -1,3 +1,4 @@
+import { sanitizeStoredValue } from "@app/domain";
 import type { QueryResultRow } from "pg";
 
 import type { Queryable } from "./types.js";
@@ -40,7 +41,7 @@ export async function insertRow<T extends QueryResultRow>(
   const entries = Object.entries(values).filter(([, value]) => value !== undefined);
   const columns = entries.map(([column]) => `"${column}"`);
   const placeholders = entries.map((_, index) => `$${index + 1}`);
-  const params = entries.map(([, value]) => value);
+  const params = entries.map(([, value]) => sanitizeStoredValue(value));
   const result = await db.query<T>(
     `insert into ${tableName} (${columns.join(", ")}) values (${placeholders.join(", ")}) returning ${returning}`,
     params
@@ -67,7 +68,7 @@ export async function updateRow<T extends QueryResultRow>(
 
   const assignments = entries.map(([column], index) => `"${column}" = $${index + 2}`);
   assignments.push(`"updated_at" = now()`);
-  const params = [id, ...entries.map(([, value]) => value)];
+  const params = [id, ...entries.map(([, value]) => sanitizeStoredValue(value))];
   const result = await db.query<T>(
     `update ${tableName} set ${assignments.join(", ")} where id = $1 returning ${returning}`,
     params

@@ -1,5 +1,6 @@
 import { extname } from "node:path";
 
+import { sanitizeConversionResult } from "./conversion-sanitizer.js";
 import {
   convertCsv,
   convertJson,
@@ -56,6 +57,14 @@ export class ConversionRouter {
   public constructor(private readonly options: ConversionRouterOptions = {}) {}
 
   public async convert(
+    input: ConversionInput,
+    signal?: AbortSignal,
+    onProgress?: ConversionProgressListener
+  ): Promise<MarkdownConversionResult> {
+    return sanitizeConversionResult(await this.route(input, signal, onProgress));
+  }
+
+  private async route(
     input: ConversionInput,
     signal?: AbortSignal,
     onProgress?: ConversionProgressListener

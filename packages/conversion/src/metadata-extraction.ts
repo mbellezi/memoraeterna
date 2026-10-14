@@ -7,6 +7,8 @@ import {
   isValidIsbn13,
   normalizeDoi,
   normalizeIsbn,
+  sanitizeExtractedValue,
+  stripControlCharacters,
   type Creator,
   type MetadataFieldProvenance,
   type SourceDescriptorDraft,
@@ -71,9 +73,9 @@ export async function extractFileMetadata(
   normalizeIdentifiers(values, provenance);
   return SourceDescriptorDraftSchema.parse({
     sourceType: input.sourceType,
-    values,
+    values: sanitizeExtractedValue(values),
     provenance,
-    warnings: [...new Set(warnings)],
+    warnings: sanitizeExtractedValue([...new Set(warnings)]),
     ...(coverData ? { coverData } : {})
   });
 }
@@ -106,7 +108,7 @@ export function descriptorDraftFromWebMetadata(input: {
   if (input.url) provenance.url = { source: "extracted", evidence: "defuddle" };
   return SourceDescriptorDraftSchema.parse({
     sourceType: "WebArticle",
-    values,
+    values: sanitizeExtractedValue(values),
     provenance,
     warnings: []
   });
@@ -147,7 +149,7 @@ export function descriptorDraftFromVideoMetadata(input: {
   }
   return SourceDescriptorDraftSchema.parse({
     sourceType: "Video",
-    values,
+    values: sanitizeExtractedValue(values),
     provenance,
     warnings: []
   });
@@ -249,12 +251,13 @@ async function extractPdfMetadata(
     const metadata = await document.getMetadata();
     const info = metadata.info as Record<string, unknown>;
     const xmp = metadata.metadata;
+    // PDF text strings are UTF-16 and are often NUL padded; U+0000 can never reach storage.
     const read = (...names: string[]): string | undefined => {
       for (const name of names) {
-        const infoValue = info[name];
-        if (typeof infoValue === "string" && infoValue.trim()) return infoValue.trim();
-        const xmpValue = xmp?.get(name);
-        if (typeof xmpValue === "string" && xmpValue.trim()) return xmpValue.trim();
+        const infoValue = cleanPdfText(info[name]);
+        if (infoValue) return infoValue;
+        const xmpValue = cleanPdfText(xmp?.get(name));
+        if (xmpValue) return xmpValue;
       }
       return undefined;
     };
@@ -274,6 +277,10 @@ async function extractPdfMetadata(
   } finally {
     await loadingTask.destroy();
   }
+}
+
+function cleanPdfText(value: unknown): string {
+  return typeof value === "string" ? stripControlCharacters(value).trim() : "";
 }
 
 function extractConvertedMetadata(conversion: MarkdownConversionResult): {

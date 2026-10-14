@@ -1,3 +1,4 @@
+import { sanitizeStoredValue } from "@app/domain";
 import type { QueryResultRow } from "pg";
 
 import { asJsonObject, mapTimestamp } from "./sql.js";
@@ -87,16 +88,16 @@ export function createBibliographicRepository(db: Queryable) {
            (type, title, subtitle, canonical_title, language, creators, identifiers, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning ${workReturning}`,
-        [
+        sanitizeStoredValue([
           input.type,
           input.title,
           input.subtitle ?? null,
           input.canonicalTitle ?? null,
           input.language ?? "und",
-          JSON.stringify(input.creators ?? []),
+          JSON.stringify(sanitizeStoredValue(input.creators ?? [])),
           input.identifiers ?? {},
           input.metadata ?? {}
-        ]
+        ])
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic work insert returned no row.");
@@ -143,7 +144,7 @@ export function createBibliographicRepository(db: Queryable) {
             creators, page_count, series, metadata)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          returning id`,
-        [
+        sanitizeStoredValue([
           input.workId,
           input.type,
           input.edition ?? null,
@@ -154,11 +155,11 @@ export function createBibliographicRepository(db: Queryable) {
           input.isbn ?? null,
           input.issn ?? null,
           input.doi ?? null,
-          JSON.stringify(input.creators ?? []),
+          JSON.stringify(sanitizeStoredValue(input.creators ?? [])),
           input.pageCount ?? null,
           input.series ?? null,
           input.metadata ?? {}
-        ]
+        ])
       );
       const row = result.rows[0];
       if (!row) throw new Error("Bibliographic instance insert returned no row.");
@@ -180,13 +181,13 @@ export function createBibliographicRepository(db: Queryable) {
            instance_id = excluded.instance_id,
            relation_type = excluded.relation_type,
            pages = excluded.pages`,
-        [
+        sanitizeStoredValue([
           input.sourceItemId,
           input.workId,
           input.instanceId ?? null,
           input.relationType ?? "instance_of",
           input.pages ?? null
-        ]
+        ])
       );
     }
   };

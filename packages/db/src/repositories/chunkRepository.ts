@@ -1,3 +1,4 @@
+import { sanitizeStoredValue } from "@app/domain";
 import type { QueryResultRow } from "pg";
 
 import { asJsonObject, mapTimestamp } from "./sql.js";
@@ -82,7 +83,7 @@ export function createChunkRepository(db: Queryable) {
       sourceItemId: string,
       chunks: PersistedChunkInput[]
     ): Promise<ChunkRecord[]> {
-      const payload = chunks.map((chunk) => ({
+      const payload = sanitizeStoredValue(chunks).map((chunk) => ({
         id: chunk.id,
         sourceSpanId: chunk.sourceSpanId,
         chunkIndex: chunk.chunkIndex,

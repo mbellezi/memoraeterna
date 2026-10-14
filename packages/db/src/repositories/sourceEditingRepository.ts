@@ -1,3 +1,5 @@
+import { sanitizeStoredValue } from "@app/domain";
+
 import type { PgPool, PgClient } from "../client.js";
 import { createDocumentRepository } from "./documentRepository.js";
 import { createSourceItemRepository, markAncestorSummariesStale } from "./sourceItemRepository.js";
@@ -7,7 +9,7 @@ import type { JsonObject } from "./types.js";
 export function createSourceEditingRepository(pool: PgPool) {
   return {
     async save(
-      input: {
+      rawInput: {
         sourceItemId: string;
         expectedUpdatedAt: string;
         title: string;
@@ -20,6 +22,7 @@ export function createSourceEditingRepository(pool: PgPool) {
       },
       transaction?: PgClient
     ) {
+      const input = sanitizeStoredValue(rawInput);
       const client = transaction ?? (await pool.connect());
       try {
         if (!transaction) await client.query("begin");

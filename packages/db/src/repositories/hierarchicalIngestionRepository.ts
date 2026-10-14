@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { sanitizeStoredValue } from "@app/domain";
 import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgPool } from "../client.js";
@@ -190,7 +191,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
             input.detectorVersion,
             input.overallConfidence,
             revision,
-            input.rawEvidence
+            sanitizeStoredValue(input.rawEvidence)
           ]
         );
         const structure = structureResult.rows[0];
@@ -771,7 +772,7 @@ async function replaceDivisions(
   structureId: string,
   divisions: DivisionPersistenceInput[]
 ): Promise<void> {
-  const pending = [...divisions];
+  const pending = sanitizeStoredValue(divisions).slice();
   const inserted = new Map<string, string>();
   while (pending.length > 0) {
     const ready = pending.filter(
