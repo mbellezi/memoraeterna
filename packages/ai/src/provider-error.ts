@@ -1,15 +1,207 @@
 import { redactSensitiveText } from "./local-model-downloader.js";
 
+/**
+ * Why a remote AI call failed. Only `transient` failures are retried (by the adapter, then by the job
+ * supervisor); everything else is deterministic and surfaces with its real error.
+ */
+export type AiProviderErrorKind =
+  "timeout" | "stalled" | "network" | "http" | "stream" | "context_overflow";
+
+export interface AiProviderErrorDetails {
+  kind: AiProviderErrorKind;
+  /** Retrying the same request can succeed: timeouts, 408, 425, 429, 5xx, transport failures, stalls. */
+  transient: boolean;
+  status?: number;
+  /** Delay requested by the provider (`Retry-After`), in milliseconds. */
+  retryAfterMs?: number;
+  /** Provider error code reported inside a stream or response body. */
+  code?: string;
+}
+
+/** A classified failure of a remote AI provider. Its message never contains credentials or URLs. */
+export class AiProviderError extends Error {
+  public readonly kind: AiProviderErrorKind;
+  public readonly transient: boolean;
+  public readonly status: number | undefined;
+  public readonly retryAfterMs: number | undefined;
+  public readonly code: string | undefined;
+
+  public constructor(message: string, details: AiProviderErrorDetails, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "AiProviderError";
+    this.kind = details.kind;
+    this.transient = details.transient;
+    this.status = details.status;
+    this.retryAfterMs = details.retryAfterMs;
+    this.code = details.code;
+  }
+}
+
+const maximumRetryAfterMs = 60 * 60_000;
+const contextOverflowPattern =
+  /context[_ ](?:length|window)|maximum context|too many tokens|token limit|prompt is too long|input token count|exceeds the (?:maximum|model)/i;
+/** Exhausted billing quota never recovers by waiting, unlike a per-minute rate limit. */
+const exhaustedQuotaPattern =
+  /insufficient_quota|exceeded your current quota|billing[_ ]hard[_ ]limit|credit balance/i;
+
+const transientSystemCodes = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ECONNABORTED",
+  "ETIMEDOUT",
+  "ENETDOWN",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  "EAI_AGAIN",
+  "EPIPE",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_HEADERS_TIMEOUT",
+  "UND_ERR_BODY_TIMEOUT",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CLOSED"
+]);
+const permanentStreamCodes = new Set([
+  "context_length_exceeded",
+  "invalid_prompt",
+  "invalid_request_error",
+  "invalid_argument",
+  "insufficient_quota",
+  "content_filter",
+  "permission_denied",
+  "unauthenticated",
+  "not_found"
+]);
+
 export async function providerHttpError(
   response: Response,
   message = "AI provider request failed"
-): Promise<Error> {
-  let responseText = "";
+): Promise<AiProviderError> {
+  let rawText = "";
   try {
-    responseText = redactSensitiveText((await response.text()).trim());
+    rawText = (await response.text()).trim();
   } catch {
     // The HTTP status remains useful when the response body cannot be read.
   }
+  const responseText = redactSensitiveText(rawText);
   const summary = `${message} (${response.status}).`;
-  return new Error(responseText.length > 0 ? `${summary}\n${responseText}` : summary);
+  const classification = classifyHttpFailure(response.status, rawText);
+  const retryAfterMs = retryAfterMilliseconds(response.headers);
+  return new AiProviderError(responseText.length > 0 ? `${summary}\n${responseText}` : summary, {
+    ...classification,
+    status: response.status,
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {})
+  });
+}
+
+/** 408, 425, 429 and 5xx are transient; 400, 401, 403, 404, 413 and context overflow are not. */
+export function classifyHttpFailure(
+  status: number,
+  body = ""
+): Pick<AiProviderErrorDetails, "kind" | "transient"> {
+  if ((status === 400 || status === 413 || status === 422) && contextOverflowPattern.test(body))
+    return { kind: "context_overflow", transient: false };
+  if (status === 429) return { kind: "http", transient: !exhaustedQuotaPattern.test(body) };
+  return { kind: "http", transient: status === 408 || status === 425 || status >= 500 };
+}
+
+/** Reads `retry-after-ms` or `Retry-After` (seconds or an HTTP date); undefined when absent or invalid. */
+export function retryAfterMilliseconds(
+  headers: Pick<Headers, "get">,
+  now: number = Date.now()
+): number | undefined {
+  const rawMilliseconds = headers.get("retry-after-ms")?.trim();
+  if (rawMilliseconds) {
+    const milliseconds = Number(rawMilliseconds);
+    if (Number.isFinite(milliseconds) && milliseconds >= 0)
+      return Math.min(Math.round(milliseconds), maximumRetryAfterMs);
+  }
+  const value = headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  if (/^\d+(?:\.\d+)?$/.test(value))
+    return Math.min(Math.round(Number(value) * 1_000), maximumRetryAfterMs);
+  // An HTTP date names a month; Date.parse would otherwise accept numbers such as "-3".
+  const date = /[a-z]/i.test(value) ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(date) ? undefined : Math.min(Math.max(0, date - now), maximumRetryAfterMs);
+}
+
+/** Maps an error reported inside a response stream to a classified error. */
+export function providerStreamError(event: {
+  message?: string | undefined;
+  code?: string | number | undefined;
+  type?: string | undefined;
+  status?: number | undefined;
+}): AiProviderError {
+  const text = event.message?.trim() || "AI provider request failed.";
+  const names = [event.code, event.type, event.status]
+    .filter((value) => value !== undefined)
+    .map((value) => String(value).toLowerCase());
+  const status = [event.status, event.code].find((value) => typeof value === "number");
+  const code = names.find((value) => !/^\d+$/.test(value));
+  const evidence = `${names.join(" ")} ${text}`;
+  const overflow = contextOverflowPattern.test(evidence);
+  // Without positive evidence of a deterministic failure the provider is assumed to have hiccuped.
+  const permanent =
+    overflow ||
+    exhaustedQuotaPattern.test(evidence) ||
+    names.some((value) => permanentStreamCodes.has(value)) ||
+    (status !== undefined && !classifyHttpFailure(status, text).transient);
+  return new AiProviderError(redactSensitiveText(text), {
+    kind: overflow ? "context_overflow" : "stream",
+    transient: !permanent,
+    ...(status !== undefined ? { status } : {}),
+    ...(code !== undefined ? { code } : {})
+  });
+}
+
+/** Whether retrying the failed operation can succeed: typed provider errors, timeouts and transport failures. */
+export function isTransientAiError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    if (current instanceof AiProviderError) return current.transient;
+    if (isTransientSystemError(current)) return true;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** The delay a failed operation asks for before it is tried again, when the provider named one. */
+export function aiErrorRetryAfterMs(error: unknown): number | undefined {
+  for (let depth = 0; depth < 5 && error !== undefined && error !== null; depth++) {
+    if (error instanceof AiProviderError) return error.retryAfterMs;
+    error = (error as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+/**
+ * Wraps a transport failure (reset, refused, DNS, undici socket errors) as a transient provider error;
+ * any other error, including invalid requests, is returned unchanged.
+ */
+export function toProviderNetworkError(error: unknown): unknown {
+  if (error instanceof AiProviderError || !isTransientSystemError(error)) return error;
+  const code = systemErrorCode(error);
+  return new AiProviderError(
+    `AI provider connection failed${code ? ` (${code})` : ""}.`,
+    { kind: "network", transient: true, ...(code ? { code } : {}) },
+    { cause: error }
+  );
+}
+
+function systemErrorCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && transientSystemCodes.has(code)) return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return undefined;
+}
+
+function isTransientSystemError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "TimeoutError") return true;
+  if (systemErrorCode(error) !== undefined) return true;
+  // undici reports a dropped connection as a bare TypeError whose cause names the reason.
+  return error.name === "TypeError" && /^(?:fetch failed|terminated)$/.test(error.message);
 }

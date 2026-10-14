@@ -783,14 +783,25 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("capabilities = coalesce");
   });
 
-  it("marks existing generative remote models and linked profiles for reranking", async () => {
-    const db = new FakeQueryable([[{ count: "2" }]]);
+  it("seeds a missing task route and its profile task without touching existing ones", async () => {
+    const db = new FakeQueryable([[{ count: "1" }], [{ count: "0" }]]);
+    const repository = createAiConfigRepository(db);
 
-    await expect(createAiConfigRepository(db).ensureRemoteRerankingCapabilities()).resolves.toBe(2);
+    await expect(repository.seedTaskRoute("summarization", "profile-1")).resolves.toBe(true);
+    await expect(repository.seedTaskRoute("summarization", "profile-2")).resolves.toBe(false);
 
-    expect(db.queries[0]?.text).toContain("'google', 'openai-compatible', 'openai-codex'");
-    expect(db.queries[0]?.text).toContain("'[\"reranking\"]'::jsonb");
-    expect(db.queries[0]?.text).toContain("update ai_profile_sets");
+    const statement = db.queries[0]?.text ?? "";
+    expect(statement).toContain("insert into ai_profile_tasks");
+    expect(statement).toContain("on conflict (profile_id, task) do nothing");
+    expect(statement).toContain("insert into ai_task_profile_routes");
+    expect(statement).toContain("on conflict (task) do nothing");
+    expect(db.queries[0]?.values).toEqual(["summarization", "profile-1"]);
+  });
+
+  it("no longer rewrites provider capabilities to mark generative models as rerankers", () => {
+    expect(createAiConfigRepository(new FakeQueryable([]))).not.toHaveProperty(
+      "ensureRemoteRerankingCapabilities"
+    );
   });
 
   it("records every source associated with an AI task run atomically", async () => {

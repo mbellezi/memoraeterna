@@ -157,16 +157,17 @@ describe("AI execution queue", () => {
       order.push("local-test");
       return "OK";
     });
-    const calls = [
-      firstService.runDefaultTask("summarization", "one"),
+    const calls: Array<Promise<unknown>> = [firstService.runDefaultTask("summarization", "one")];
+    await started.promise;
+    calls.push(
       secondService.runDefaultTask("reranking", "two"),
       secondService.testLocalModel("local"),
       secondService.runDefaultTask("embedding", "three")
-    ];
-    await started.promise;
+    );
     expect(order).toEqual(["summarization"]);
     gate.resolve();
     await Promise.all(calls);
-    expect(order).toEqual(["summarization", "reranking", "local-test", "embedding"]);
+    // One slot for all of them; the settings action is interactive, so it goes before background work.
+    expect(order).toEqual(["summarization", "local-test", "reranking", "embedding"]);
   });
 });

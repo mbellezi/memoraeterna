@@ -21,6 +21,7 @@ import {
   runMigrations,
   type PgPool
 } from "@app/db";
+import { AiProviderError } from "@app/ai";
 import { sha256 } from "@app/conversion";
 import {
   DocumentDivisionCandidateSchema,
@@ -915,7 +916,12 @@ try {
     summarizeHierarchiesForBatch: async () => ({ generatedCount: 0 }),
     generateKnowledgeGraph: async () => ({ configured: true, generated: false }),
     generateAtomicNotes: async (sourceItemId: string, documentId: string) => {
-      if (generationFailsOnce.delete(sourceItemId)) throw new Error("provider_unavailable");
+      if (generationFailsOnce.delete(sourceItemId))
+        throw new AiProviderError("provider_unavailable", {
+          kind: "http",
+          transient: true,
+          status: 503
+        });
       const [chunk] = await createChunkRepository(pool!).listByDocument(documentId);
       if (!chunk) throw new Error("The chunking stage left no chunk.");
       const note = await createAtomicNoteRepository(pool!).upsertGenerated({

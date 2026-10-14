@@ -8,7 +8,6 @@ const state = vi.hoisted(() => ({
 vi.mock("@app/db", async () => ({
   ...(await vi.importActual("@app/db")),
   createAiConfigRepository: () => ({
-    ensureRemoteRerankingCapabilities: async () => {},
     getDefaultTask: async () => state.selection,
     recordTaskRun: state.record
   }),

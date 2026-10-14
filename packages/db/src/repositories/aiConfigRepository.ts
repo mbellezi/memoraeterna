@@ -162,41 +162,6 @@ export function createAiConfigRepository(db: Queryable) {
       return result.rows.map(mapProvider);
     },
 
-    async ensureRemoteRerankingCapabilities(): Promise<number> {
-      const result = await db.query<QueryResultRow & { count: string }>(
-        `with updated_providers as (
-           update ai_provider_configs set
-             metadata = jsonb_set(
-               metadata,
-               '{capabilities}',
-               coalesce(metadata -> 'capabilities', '[]'::jsonb) || '["reranking"]'::jsonb,
-               true
-             ),
-             updated_at = now()
-           where provider in ('google', 'openai-compatible', 'openai-codex')
-             and not (coalesce(metadata -> 'capabilities', '[]'::jsonb) ? 'reranking')
-             and (
-               provider = 'openai-codex'
-               or coalesce(metadata -> 'capabilities', '[]'::jsonb) ?| array[
-                 'text-generation', 'structured-output', 'summarization',
-                 'knowledge-graph-generation', 'atomic-note-generation'
-               ]
-             )
-           returning id, metadata -> 'capabilities' as capabilities
-         ), updated_profiles as (
-           update ai_profile_sets as profile set
-             capabilities = provider.capabilities,
-             updated_at = now()
-           from updated_providers as provider
-           where profile.provider_config_id = provider.id
-           returning profile.id
-         )
-         select count(*)::text as count from updated_providers
-         where (select count(*) from updated_profiles) >= 0`
-      );
-      return Number(result.rows[0]?.count ?? 0);
-    },
-
     async deleteProvider(providerId: string): Promise<AiProviderConfigRecord | null> {
       const result = await db.query<ProviderRow>(
         `with unlinked_profiles as (
@@ -355,6 +320,29 @@ export function createAiConfigRepository(db: Queryable) {
          on conflict (task) do update set profile_id = excluded.profile_id, updated_at = now()`,
         [task, profileId]
       );
+    },
+
+    /**
+     * Routes a task that has no route to the profile, creating the profile task the route needs. An existing
+     * route or profile task is left as it is. Returns whether a route was created.
+     */
+    async seedTaskRoute(task: string, profileId: string): Promise<boolean> {
+      const result = await db.query<QueryResultRow & { count: string }>(
+        `with ensured_task as (
+           insert into ai_profile_tasks (profile_id, task, parameters, fallback_policy)
+           values ($2, $1, '{}'::jsonb, 'block')
+           on conflict (profile_id, task) do nothing
+           returning id
+         ), seeded_route as (
+           insert into ai_task_profile_routes (task, profile_id) values ($1, $2)
+           on conflict (task) do nothing
+           returning id
+         )
+         select count(*)::text as count from seeded_route
+         where (select count(*) from ensured_task) >= 0`,
+        [task, profileId]
+      );
+      return Number(result.rows[0]?.count ?? 0) > 0;
     },
 
     async cacheProviderModelContext(

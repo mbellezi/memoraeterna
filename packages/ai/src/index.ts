@@ -3,6 +3,7 @@ export * from "./registry.js";
 export * from "./openai-compatible.js";
 export * from "./openai-codex.js";
 export * from "./provider-error.js";
+export * from "./remote-execution.js";
 export * from "./reasoning.js";
 export * from "./parameter-capabilities.js";
 export * from "./google.js";

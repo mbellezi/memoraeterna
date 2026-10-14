@@ -13,7 +13,17 @@ import {
   isQwen35Model,
   openAiCompatibleParameterCapabilities
 } from "./parameter-capabilities.js";
-import { providerHttpError } from "./provider-error.js";
+import { providerHttpError, providerStreamError } from "./provider-error.js";
+import {
+  isLocalEndpoint,
+  monotonicProgress,
+  resolveAiRuntimeConfig,
+  runRemoteCall,
+  type AiRuntimeConfig,
+  type AiRuntimeConfigInput,
+  type RemoteAttempt,
+  type RemoteCallOptions
+} from "./remote-execution.js";
 import {
   effectiveReasoningLevel,
   isOpenAiReasoningModel,
@@ -26,6 +36,10 @@ export interface OpenAiCompatibleAdapterOptions {
   modelId: string;
   capabilities: AiCapability[];
   fetch?: typeof fetch;
+  /** Deadline and retry overrides; the defaults apply to everything left out. */
+  runtime?: AiRuntimeConfigInput;
+  /** Source of the retry jitter. */
+  random?: () => number;
 }
 
 const generationTasks = new Set<AiTaskType>([
@@ -42,9 +56,13 @@ const generationTasks = new Set<AiTaskType>([
 
 export class OpenAiCompatibleAdapter implements AiModelAdapter {
   private readonly fetchImplementation: typeof fetch;
+  private readonly runtime: AiRuntimeConfig;
+  private readonly local: boolean;
 
   public constructor(private readonly options: OpenAiCompatibleAdapterOptions) {
     this.fetchImplementation = options.fetch ?? fetch;
+    this.runtime = resolveAiRuntimeConfig(options.runtime);
+    this.local = isLocalEndpoint(options.baseUrl);
   }
 
   public describe(): AiModelDescriptor {
@@ -64,22 +82,25 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   }
 
   public async testConnection(signal?: AbortSignal): Promise<void> {
-    const response = await this.request("/models", {
-      method: "GET",
-      ...(signal ? { signal } : {})
+    await this.remoteCall({ streaming: false, retry: false, signal }, async (call) => {
+      const response = await this.request(call, "/models", { method: "GET" });
+      if (!response.ok)
+        throw await call.guard(providerHttpError(response, "AI provider connection failed"));
     });
-    if (!response.ok) throw await providerHttpError(response, "AI provider connection failed");
   }
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
-    const response = await this.request("/models", {
-      method: "GET",
-      ...(signal ? { signal } : {})
-    });
-    if (!response.ok) throw await providerHttpError(response, "AI model discovery failed");
-    const payload = (await response.json()) as {
-      data?: Array<{ id?: string; context_window?: number }>;
-    };
+    const payload = await this.remoteCall(
+      { streaming: false, retry: false, signal },
+      async (call) => {
+        const response = await this.request(call, "/models", { method: "GET" });
+        if (!response.ok)
+          throw await call.guard(providerHttpError(response, "AI model discovery failed"));
+        return (await call.guard(response.json())) as {
+          data?: Array<{ id?: string; context_window?: number }>;
+        };
+      }
+    );
     return (payload.data ?? []).flatMap((model) =>
       model.id
         ? [
@@ -103,20 +124,25 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const startedAt = performance.now();
     if (request.taskType === "embedding") {
-      const response = await this.request("/embeddings", {
-        method: "POST",
-        ...(signal ? { signal } : {}),
-        body: JSON.stringify({
-          model: request.modelId ?? this.options.modelId,
-          input: readText(request.input),
-          dimensions:
-            typeof request.parameters.dimensions === "number" ? request.parameters.dimensions : 768
-        })
-      });
-      const payload = await parseResponse<{
-        data?: Array<{ embedding?: number[] }>;
-        usage?: Record<string, unknown> & { prompt_tokens?: number; total_tokens?: number };
-      }>(response);
+      const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
+        parseResponse<{
+          data?: Array<{ embedding?: number[] }>;
+          usage?: Record<string, unknown> & { prompt_tokens?: number; total_tokens?: number };
+        }>(
+          await this.request(call, "/embeddings", {
+            method: "POST",
+            body: JSON.stringify({
+              model: request.modelId ?? this.options.modelId,
+              input: readText(request.input),
+              dimensions:
+                typeof request.parameters.dimensions === "number"
+                  ? request.parameters.dimensions
+                  : 768
+            })
+          }),
+          call
+        )
+      );
       const embedding = payload.data?.[0]?.embedding;
       if (!embedding) throw new Error("AI embedding response did not contain a vector.");
       return {
@@ -132,31 +158,18 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
           : {})
       };
     }
-    const response = await this.request("/chat/completions", {
-      method: "POST",
-      ...(signal ? { signal } : {}),
-      body: JSON.stringify({
-        model: request.modelId ?? this.options.modelId,
-        messages: [{ role: "user", content: readText(request.input) }],
-        ...([
-          "structured-output",
-          "knowledge-graph-generation",
-          "atomic-note-generation",
-          "reranking"
-        ].includes(request.taskType)
-          ? { response_format: { type: "json_object" } }
-          : {}),
-        ...openAiGenerationParameters(
-          request.parameters,
-          request.modelId ?? this.options.modelId,
-          this.options.baseUrl
-        )
-      })
-    });
-    const payload = await parseResponse<{
-      choices?: Array<{ message?: { content?: string } }>;
-      usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
-    }>(response);
+    const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
+      parseResponse<{
+        choices?: Array<{ message?: { content?: string } }>;
+        usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
+      }>(
+        await this.request(call, "/chat/completions", {
+          method: "POST",
+          body: JSON.stringify(this.generationBody(request, false))
+        }),
+        call
+      )
+    );
     const output = payload.choices?.[0]?.message?.content;
     if (output === undefined) throw new Error("AI generation response did not contain content.");
     return {
@@ -183,68 +196,100 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   ): Promise<AiTaskResult> {
     if (request.taskType === "embedding") return this.run(request, signal);
     const startedAt = performance.now();
-    const response = await this.request("/chat/completions", {
-      method: "POST",
-      ...(signal ? { signal } : {}),
-      body: JSON.stringify({
-        model: request.modelId ?? this.options.modelId,
-        messages: [{ role: "user", content: readText(request.input) }],
-        stream: true,
-        stream_options: { include_usage: true },
-        ...([
-          "structured-output",
-          "knowledge-graph-generation",
-          "atomic-note-generation",
-          "reranking"
-        ].includes(request.taskType)
-          ? { response_format: { type: "json_object" } }
-          : {}),
-        ...openAiGenerationParameters(
-          request.parameters,
-          request.modelId ?? this.options.modelId,
-          this.options.baseUrl
-        )
-      })
+    const progress = monotonicProgress(onProgress);
+    const streamed = await this.remoteCall({ request, streaming: true, signal }, async (call) => {
+      const response = await this.request(call, "/chat/completions", {
+        method: "POST",
+        body: JSON.stringify(this.generationBody(request, true))
+      });
+      let output = "";
+      let tokenUsage: Record<string, number> = {};
+      let inputTokens: number | undefined;
+      let outputTokens: number | undefined;
+      await readServerSentEvents(
+        response,
+        (data) => {
+          if (data === "[DONE]") return;
+          const event = JSON.parse(data) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            usage?: Record<string, unknown> & {
+              prompt_tokens?: number;
+              completion_tokens?: number;
+            };
+            error?: { message?: string; code?: string | number; type?: string };
+          };
+          if (event.error) throw providerStreamError(event.error);
+          output += event.choices?.[0]?.delta?.content ?? "";
+          tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usage) };
+          inputTokens = event.usage?.prompt_tokens ?? inputTokens;
+          outputTokens = event.usage?.completion_tokens ?? outputTokens;
+          progress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+        },
+        undefined,
+        call
+      );
+      if (output.length === 0) throw new Error("AI generation response did not contain content.");
+      return { output, tokenUsage, inputTokens, outputTokens };
     });
-    let output = "";
-    let tokenUsage: Record<string, number> = {};
-    let inputTokens: number | undefined;
-    let outputTokens: number | undefined;
-    await readServerSentEvents(response, (data) => {
-      if (data === "[DONE]") return;
-      const event = JSON.parse(data) as {
-        choices?: Array<{ delta?: { content?: string } }>;
-        usage?: Record<string, unknown> & { prompt_tokens?: number; completion_tokens?: number };
-      };
-      output += event.choices?.[0]?.delta?.content ?? "";
-      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usage) };
-      inputTokens = event.usage?.prompt_tokens ?? inputTokens;
-      outputTokens = event.usage?.completion_tokens ?? outputTokens;
-      onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
-    });
-    if (output.length === 0) throw new Error("AI generation response did not contain content.");
-    onProgress({ progress: 1 });
+    progress({ progress: 1 });
     return {
       taskType: request.taskType,
-      output,
+      output: streamed.output,
       providerId: "openai-compatible",
       modelId: request.modelId ?? this.options.modelId,
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
-      tokenUsage,
-      ...(inputTokens !== undefined ? { inputTokens } : {}),
-      ...(outputTokens !== undefined ? { outputTokens } : {})
+      tokenUsage: streamed.tokenUsage,
+      ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
+      ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
     };
   }
 
-  private request(path: string, init: RequestInit): Promise<Response> {
-    return this.fetchImplementation(`${this.options.baseUrl.replace(/\/$/, "")}${path}`, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.options.apiKey}`
+  private generationBody(request: AiTaskRequest, stream: boolean): Record<string, unknown> {
+    return {
+      model: request.modelId ?? this.options.modelId,
+      messages: [{ role: "user", content: readText(request.input) }],
+      ...(stream ? { stream: true, stream_options: { include_usage: true } } : {}),
+      ...([
+        "structured-output",
+        "knowledge-graph-generation",
+        "atomic-note-generation",
+        "reranking"
+      ].includes(request.taskType)
+        ? { response_format: { type: "json_object" } }
+        : {}),
+      ...openAiGenerationParameters(
+        request.parameters,
+        request.modelId ?? this.options.modelId,
+        this.options.baseUrl
+      )
+    };
+  }
+
+  private remoteCall<T>(
+    options: Omit<RemoteCallOptions, "taskType" | "parameters"> & { request?: AiTaskRequest },
+    attempt: (call: RemoteAttempt) => Promise<T>
+  ): Promise<T> {
+    const { request, ...call } = options;
+    return runRemoteCall(
+      { config: this.runtime, random: this.options.random, local: this.local },
+      { ...call, taskType: request?.taskType, parameters: request?.parameters },
+      attempt
+    );
+  }
+
+  private request(call: RemoteAttempt, path: string, init: RequestInit): Promise<Response> {
+    return call.fetch(
+      this.fetchImplementation,
+      `${this.options.baseUrl.replace(/\/$/, "")}${path}`,
+      {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.options.apiKey}`
+        }
       }
-    });
+    );
   }
 }
 
@@ -319,41 +364,54 @@ export function readText(input: unknown): string {
   return JSON.stringify(input);
 }
 
-export async function parseResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) throw await providerHttpError(response);
-  return (await response.json()) as T;
+export async function parseResponse<T>(response: Response, call?: RemoteAttempt): Promise<T> {
+  if (!response.ok)
+    throw await (call ? call.guard(providerHttpError(response)) : providerHttpError(response));
+  return (await (call ? call.guard(response.json()) : response.json())) as T;
 }
 
+/**
+ * Reads a server-sent-event stream. With `call`, every chunk restarts the stall deadline and a pending
+ * read ends as soon as the attempt does, so a silent provider cannot hold the execution slot.
+ */
 export async function readServerSentEvents(
   response: Response,
   onData: (data: string) => void,
-  maximumBytes?: number
+  maximumBytes?: number,
+  call?: RemoteAttempt
 ): Promise<void> {
-  if (!response.ok) throw await providerHttpError(response);
+  if (!response.ok)
+    throw await (call ? call.guard(providerHttpError(response)) : providerHttpError(response));
   if (!response.body) throw new Error("AI provider streaming response did not contain a body.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let receivedBytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    receivedBytes += value?.byteLength ?? 0;
-    if (maximumBytes !== undefined && receivedBytes > maximumBytes) {
-      await reader.cancel();
-      throw new Error("AI provider streaming response exceeded the configured size limit.");
+  try {
+    while (true) {
+      const { done, value } = await (call ? call.guard(reader.read()) : reader.read());
+      if (value?.byteLength) call?.chunkReceived();
+      receivedBytes += value?.byteLength ?? 0;
+      if (maximumBytes !== undefined && receivedBytes > maximumBytes) {
+        throw new Error("AI provider streaming response exceeded the configured size limit.");
+      }
+      buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const event of events) {
+        const data = event
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart())
+          .join("\n");
+        if (data.length > 0) onData(data);
+      }
+      if (done) break;
     }
-    buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
-    const events = buffer.split("\n\n");
-    buffer = events.pop() ?? "";
-    for (const event of events) {
-      const data = event
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (data.length > 0) onData(data);
-    }
-    if (done) break;
+  } catch (error) {
+    // Free the connection of an interrupted stream; the original failure is what the caller needs.
+    void reader.cancel().catch(() => undefined);
+    throw error;
   }
   const trailing = buffer
     .split("\n")

@@ -13,7 +13,6 @@ vi.mock("@app/db", async () => ({
       state.select(...args);
       return state.selection;
     },
-    ensureRemoteRerankingCapabilities: async () => {},
     recordTaskRun: state.record
   })
 }));

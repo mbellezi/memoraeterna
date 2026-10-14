@@ -209,21 +209,14 @@ try {
   ) {
     throw new Error("Remote model edit did not update its linked profile selection.");
   }
-  if ((await ai.ensureRemoteRerankingCapabilities()) !== 1) {
-    throw new Error("Existing generative remote model was not marked for reranking.");
+  if (!(await ai.seedTaskRoute("summarization", profile.id))) {
+    throw new Error("A missing task route was not seeded from its profile.");
   }
-  const rerankingProvider = (await ai.listProviders()).find(
-    (candidate) => candidate.id === provider.id
-  );
-  const rerankingProfile = (await ai.listProfiles()).find(
-    (candidate) => candidate.id === profile.id
-  );
-  if (
-    !Array.isArray(rerankingProvider?.metadata.capabilities) ||
-    !rerankingProvider.metadata.capabilities.includes("reranking") ||
-    !rerankingProfile?.capabilities.includes("reranking")
-  ) {
-    throw new Error("Remote reranking capability was not synchronized to its linked profile.");
+  if (await ai.seedTaskRoute("summarization", profile.id)) {
+    throw new Error("Seeding replaced an existing task route.");
+  }
+  if ((await ai.getDefaultTask("summarization"))?.providerConfigId !== provider.id) {
+    throw new Error("A seeded task route did not resolve to its profile.");
   }
   if (!(await ai.deleteProvider(provider.id))) {
     throw new Error("Remote model deletion failed.");

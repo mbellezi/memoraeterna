@@ -23,6 +23,7 @@ import {
   redactSensitiveText,
   type AiModelAdapter,
   type AiProgressEvent,
+  type AiRuntimeConfigInput,
   type AiTaskRequest,
   type AiTaskResult,
   aiCassetteReplayedUsageKey
@@ -60,10 +61,10 @@ import type {
   AiParameterCapabilitiesInput,
   LocalEmbeddingLoadStatus
 } from "../../shared/ipc.js";
-import { aiModelParametersSchema } from "../../shared/ipc.js";
+import { aiConfigurableTaskSchema, aiModelParametersSchema } from "../../shared/ipc.js";
 
 import { CredentialService } from "./credential-service.js";
-import { AiExecutionQueue } from "./ai-execution-queue.js";
+import { ActiveDeadline, AiExecutionQueue, type AiQueuePriority } from "./ai-execution-queue.js";
 import {
   withAiTaskParameterDefaults,
   discoveredContextWindow,
@@ -95,6 +96,8 @@ export interface AiServiceOptions {
   getKeepLocalEmbeddingModelsLoaded?: () => Promise<boolean>;
   onLocalEmbeddingLoadStatus?: (status: LocalEmbeddingLoadStatus) => void;
   openExternal?: (url: string) => Promise<void>;
+  /** Deadline and retry overrides of the remote adapters; the defaults apply to what is left out. */
+  runtime?: AiRuntimeConfigInput;
 }
 
 export interface AiTaskLogContext {
@@ -119,6 +122,8 @@ export interface AiTaskLogContext {
   attempt?: number;
   contentLanguage?: string;
   embeddingInputType?: "query" | "document";
+  /** Overrides the priority derived from the context; see {@link aiTaskPriority}. */
+  priority?: AiQueuePriority;
   onProgress?: (event: AiProgressEvent) => void;
   onProviderStart?: () => Promise<void>;
 }
@@ -161,6 +166,20 @@ export function reportedRetryIndex(
     ? attempt
     : undefined;
 }
+/**
+ * Queue class of a call. The user is waiting for query embeddings, Ask answers (origin `consultation`)
+ * and actions started from the settings; everything else is background work. Callers may state it.
+ */
+export function aiTaskPriority(
+  context: Pick<AiTaskLogContext, "priority" | "origin" | "embeddingInputType">
+): AiQueuePriority {
+  if (context.priority) return context.priority;
+  return context.embeddingInputType === "query" ||
+    context.origin === "consultation" ||
+    context.origin === "settings"
+    ? "interactive"
+    : "background";
+}
 /** Wall-clock fields for the AI task audit; each is omitted when it was not measured or reported. */
 function queueAndAttempt(
   admission: Pick<PromptAdmission, "queueMs"> | null | undefined,
@@ -202,7 +221,6 @@ export class AiService {
 
   public async listProviders(): Promise<AiProviderConfig[]> {
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
     const providers = await repository.listProviders();
     for (const provider of providers) {
       const limits = provider.metadata.modelLimits;
@@ -260,7 +278,7 @@ export class AiService {
         this.contextKey(input.provider, input.baseUrl ?? null, input.modelId)
       ) ?? (sameModel ? existing?.metadata.modelLimits : undefined);
     const known = discoveredContextWindow({ modelLimits });
-    const capabilities = withRemoteRerankingCapability(input.provider, input.capabilities);
+    const capabilities = input.capabilities;
     const parameterCapabilities = providerParameterCapabilities({
       provider: input.provider,
       modelId: input.modelId,
@@ -346,13 +364,15 @@ export class AiService {
               apiKey: input.apiKey!,
               modelId: "",
               capabilities: [],
-              baseUrl
+              baseUrl,
+              ...this.runtimeOption()
             })
           : new OpenAiCompatibleAdapter({
               apiKey: input.apiKey!,
               modelId: "",
               capabilities: [],
-              baseUrl
+              baseUrl,
+              ...this.runtimeOption()
             });
     const models = (await adapter.listModels?.()) ?? [];
     for (const model of models) {
@@ -374,7 +394,7 @@ export class AiService {
       provider: input.provider,
       modelId: input.modelId,
       baseUrl: input.baseUrl ?? defaultBaseUrl(input.provider),
-      capabilities: withRemoteRerankingCapability(input.provider, input.capabilities)
+      capabilities: input.capabilities
     });
     const known = discoveredContextWindow({
       modelLimits: this.discoveredContexts.get(
@@ -412,7 +432,6 @@ export class AiService {
 
   public async listProfiles(): Promise<AiProfile[]> {
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
     return (await repository.listProfiles()).map(mapProfile);
   }
 
@@ -461,7 +480,7 @@ export class AiService {
         modelCapabilities = capabilities;
       }
     }
-    return mapProfile(
+    const updated = mapProfile(
       await repository.updateProfile({
         id: input.id,
         ...(input.name !== undefined ? { name: input.name } : {}),
@@ -478,6 +497,39 @@ export class AiService {
         ...(modelCapabilities !== undefined ? { capabilities: modelCapabilities } : {})
       })
     );
+    if (input.modelId) await this.seedTaskRoutes(repository);
+    return updated;
+  }
+
+  /**
+   * Routes every task that has no route to the first configured profile that can serve it: the default
+   * profile first, then the oldest. Existing routes and task parameters are never changed.
+   */
+  private async seedTaskRoutes(
+    repository: ReturnType<typeof createAiConfigRepository>
+  ): Promise<string[]> {
+    const routed = new Set((await repository.listTaskRoutes()).map((route) => route.task));
+    const missing = aiConfigurableTaskSchema.options.filter((task) => !routed.has(task));
+    if (missing.length === 0) return [];
+    const profiles = (await repository.listProfiles())
+      .filter(
+        (profile) =>
+          profile.status === "active" &&
+          profile.modelId &&
+          (profile.providerConfigId || profile.localModelId)
+      )
+      .toSorted(
+        (left, right) =>
+          Number(right.isDefault) - Number(left.isDefault) ||
+          left.createdAt.getTime() - right.createdAt.getTime() ||
+          left.id.localeCompare(right.id)
+      );
+    const seeded: string[] = [];
+    for (const task of missing) {
+      const profile = profiles.find((candidate) => supportsTask(task, candidate.capabilities));
+      if (profile && (await repository.seedTaskRoute(task, profile.id))) seeded.push(task);
+    }
+    return seeded;
   }
 
   public async cloneProfile(profileId: string, name: string): Promise<AiProfile> {
@@ -509,7 +561,6 @@ export class AiService {
 
   public async setTaskRoute(input: AiTaskRoute): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
     const profile = (await repository.listProfiles()).find(
       (candidate) => candidate.id === input.profileId
     );
@@ -517,9 +568,7 @@ export class AiService {
       !profile ||
       profile.status !== "active" ||
       !profile.modelId ||
-      !capabilitiesForTask(input.task).every((capability) =>
-        profile.capabilities.includes(capability)
-      )
+      !supportsTask(input.task, profile.capabilities)
     ) {
       throw new Error("errors.ai.noCompatibleModel");
     }
@@ -538,17 +587,11 @@ export class AiService {
 
   public async setProfileTask(input: AiProfileTaskInput): Promise<void> {
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
     const profile = (await repository.listProfiles()).find(
       (candidate) => candidate.id === input.profileId
     );
     if (!profile) throw new Error("errors.common.notFound");
-    if (
-      !profile.modelId ||
-      !capabilitiesForTask(input.task).every((capability) =>
-        profile.capabilities.includes(capability)
-      )
-    ) {
+    if (!profile.modelId || !supportsTask(input.task, profile.capabilities)) {
       throw new Error("errors.ai.noCompatibleModel");
     }
     const parameterCapabilities = await this.parameterCapabilitiesForProfile(profile);
@@ -677,8 +720,10 @@ export class AiService {
     pinned?: OrganizationProfile
   ): Promise<PromptAdmission | null> {
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
-    const found = await repository.getDefaultTask(task, pinned?.profileId);
+    let found = await repository.getDefaultTask(task, pinned?.profileId);
+    // A task without a route is routed to the first configured profile that can serve it.
+    if (!found && !pinned && (await this.seedTaskRoutes(repository)).includes(task))
+      found = await repository.getDefaultTask(task);
     const selection = found ? structuredClone(found) : null;
     if (!selection) {
       if (pinned) throw new Error("organization.errors.model");
@@ -739,10 +784,20 @@ export class AiService {
     );
     let entered = false,
       admission: PromptAdmission | null = null;
+    // Time spent waiting for the execution slot does not count against the caller's own timeout.
+    const deadline = ActiveDeadline.of(signal);
+    deadline?.pause();
+    let waiting = true;
+    const stopWaiting = () => {
+      if (!waiting) return;
+      waiting = false;
+      deadline?.resume();
+    };
     try {
       return await aiExecutionQueue.run(
         (timing) =>
           withPromptPin(pin, async () => {
+            stopWaiting();
             const result = await prepared;
             if ("error" in result) throw result.error;
             admission = result.value ? { ...result.value, queueMs: timing.queueMs } : null;
@@ -761,7 +816,8 @@ export class AiService {
               admission
             );
           }),
-        signal
+        signal,
+        { priority: aiTaskPriority(context) }
       );
     } catch (error) {
       if (!entered || !admission || (error && typeof error === "object" && "aiTaskRunId" in error))
@@ -797,6 +853,8 @@ export class AiService {
       });
       if (error instanceof Error) Object.assign(error, { aiTaskRunId });
       throw error;
+    } finally {
+      stopWaiting();
     }
   }
 
@@ -820,7 +878,6 @@ export class AiService {
     const { onProgress, onProviderStart, ...structuredLogContext } = logContext;
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
-    await repository.ensureRemoteRerankingCapabilities();
     const selection =
       admission?.selection ?? (await repository.getDefaultTask(taskType, pinned?.profileId));
     if (!selection) {
@@ -927,8 +984,8 @@ export class AiService {
       const configuredAdapter = selection.localModelId
         ? await this.createLocalAdapter(selection.localModelId)
         : await this.createAdapter(selection.providerConfigId ?? "");
-      const requiredCapabilities = capabilitiesForTask(taskType);
       const descriptor = configuredAdapter.describe();
+      const requiredCapabilities = requiredCapabilitiesForRun(taskType, descriptor.capabilities);
       parameters = normalizeAiModelParameters(parameters, descriptor.parameterCapabilities);
       if (structuredLogContext.jobId) {
         try {
@@ -1180,8 +1237,10 @@ export class AiService {
 
   public async testLocalModel(localModelId: string): Promise<string> {
     const pin = capturePromptPin();
-    return aiExecutionQueue.run(() =>
-      withPromptPin(pin, () => this.executeLocalModelTest(localModelId))
+    return aiExecutionQueue.run(
+      () => withPromptPin(pin, () => this.executeLocalModelTest(localModelId)),
+      undefined,
+      { priority: "interactive" }
     );
   }
 
@@ -1355,7 +1414,8 @@ export class AiService {
           accountId: credential.accountId,
           modelId,
           capabilities,
-          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {})
+          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+          ...this.runtimeOption()
         })
       );
     }
@@ -1366,7 +1426,8 @@ export class AiService {
           apiKey,
           modelId,
           capabilities,
-          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {})
+          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+          ...this.runtimeOption()
         })
       );
     }
@@ -1375,7 +1436,8 @@ export class AiService {
         apiKey,
         modelId,
         capabilities,
-        baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1"
+        baseUrl: config.baseUrl ?? "http://127.0.0.1:11434/v1",
+        ...this.runtimeOption()
       })
     );
   }
@@ -1388,8 +1450,13 @@ export class AiService {
       accountId: credential.accountId,
       modelId: "",
       capabilities: [],
-      baseUrl: defaultBaseUrl("openai-codex")
+      baseUrl: defaultBaseUrl("openai-codex"),
+      ...this.runtimeOption()
     });
+  }
+
+  private runtimeOption(): { runtime?: AiRuntimeConfigInput } {
+    return this.options.runtime ? { runtime: this.options.runtime } : {};
   }
 
   private async getOpenAiCodexCredential(credentialRef: string): Promise<OpenAiCodexCredential> {
@@ -1509,24 +1576,40 @@ function capabilitiesForTask(taskType: AiTaskRequest["taskType"]): AiCapability[
   );
 }
 
-const remoteGenerativeCapabilities = new Set<AiCapability>([
-  "text-generation",
+/** Generative capabilities that qualify a model as an explicit, decision-only decider. */
+const generativeDeciderCapabilities: readonly AiCapability[] = [
   "structured-output",
-  "summarization",
-  "knowledge-graph-generation",
-  "atomic-note-generation"
-]);
+  "text-generation"
+];
 
-function withRemoteRerankingCapability(
-  provider: AiProviderConfigInput["provider"],
-  capabilities: AiCapability[]
+/**
+ * Whether a model with these capabilities can serve a task. The decision route (`reranking`) also
+ * accepts a generative model as a decision-only decider, which is how matching decides today. That is a
+ * routing rule: no `reranking` capability is ever written for the model.
+ */
+export function supportsTask(
+  taskType: AiTaskRequest["taskType"],
+  capabilities: readonly string[]
+): boolean {
+  return (
+    capabilitiesForTask(taskType).every((capability) => capabilities.includes(capability)) ||
+    (taskType === "reranking" &&
+      generativeDeciderCapabilities.some((capability) => capabilities.includes(capability)))
+  );
+}
+
+/** What the adapter has to declare to run the task: a generative decider needs generation only. */
+function requiredCapabilitiesForRun(
+  taskType: AiTaskRequest["taskType"],
+  available: readonly string[]
 ): AiCapability[] {
-  const supportsReranking =
-    provider === "openai-codex" ||
-    capabilities.some((capability) => remoteGenerativeCapabilities.has(capability));
-  return supportsReranking && !capabilities.includes("reranking")
-    ? [...capabilities, "reranking"]
-    : capabilities;
+  const required = capabilitiesForTask(taskType);
+  if (required.every((capability) => available.includes(capability))) return required;
+  const decider =
+    taskType === "reranking"
+      ? generativeDeciderCapabilities.find((capability) => available.includes(capability))
+      : undefined;
+  return decider ? [decider] : required;
 }
 
 function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {

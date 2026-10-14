@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AiProviderError } from "@app/ai";
 import type { JobRecord, PgPool } from "@app/db";
 import { JobSupervisor } from "./job-supervisor.js";
 
@@ -117,6 +118,93 @@ describe("ingestion queue scheduling", () => {
       expect.objectContaining({ status: "failed", error: "errors.conversion.emptyResult" })
     );
   });
+  describe("retrying a failed job", () => {
+    const failing = (attempts = 1, maxAttempts = 3) => ({
+      id: "job",
+      type: "ingestion",
+      attempts,
+      maxAttempts,
+      payload: { ingestionRunId: "run", documentId: "document", sourceItemId: "source" }
+    });
+    const fail = async (error: unknown, job = failing()) => {
+      supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+      vi.spyOn(
+        supervisor as never as { executeIngestion: () => Promise<unknown> },
+        "executeIngestion"
+      ).mockRejectedValue(error);
+      mocks.jobs.claimNext.mockResolvedValue(job);
+      mocks.jobs.update.mockResolvedValue({ id: "job" });
+      await supervisor.runOnce();
+      return mocks.jobs.update.mock.calls.at(-1)?.[1] as {
+        status: string;
+        error: string | null;
+        runAfter: Date;
+        finishedAt: Date | null;
+      };
+    };
+
+    it("fails invalid model output once, with its real error, instead of retrying it", async () => {
+      const update = await fail(new Error("knowledge_graph_output_invalid:schema_validation"));
+      expect(update).toMatchObject({
+        status: "failed",
+        error: "knowledge_graph_output_invalid:schema_validation"
+      });
+      expect(update.finishedAt).toBeInstanceOf(Date);
+      expect(mocks.runs.fail).toHaveBeenCalledWith(
+        "run",
+        "knowledge_graph_output_invalid:schema_validation"
+      );
+    });
+
+    it.each([
+      [
+        "a rejected request",
+        new AiProviderError("bad", { kind: "http", transient: false, status: 400 })
+      ],
+      [
+        "a context overflow",
+        new AiProviderError("long", { kind: "context_overflow", transient: false })
+      ],
+      ["an unclassified error", new Error("something unexpected")]
+    ])("does not retry %s", async (_name, error) => {
+      expect(await fail(error)).toMatchObject({ status: "failed" });
+    });
+
+    it("queues a transient provider failure again after a growing backoff", async () => {
+      const busy = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+      const before = Date.now();
+      const first = await fail(busy, failing(1));
+      expect(first).toMatchObject({ status: "queued", finishedAt: null });
+      expect(first.runAfter.getTime() - before).toBeGreaterThanOrEqual(2_000);
+      expect(first.runAfter.getTime() - before).toBeLessThan(3_000);
+      const second = await fail(busy, failing(2));
+      expect(second.runAfter.getTime() - before).toBeGreaterThanOrEqual(4_000);
+    });
+
+    it("waits at least as long as the provider asked with Retry-After", async () => {
+      const limited = new AiProviderError("limited", {
+        kind: "http",
+        transient: true,
+        status: 429,
+        retryAfterMs: 90_000
+      });
+      const before = Date.now();
+      const update = await fail(limited, failing(1));
+      expect(update.status).toBe("queued");
+      expect(update.runAfter.getTime() - before).toBeGreaterThanOrEqual(90_000);
+    });
+
+    it("stops retrying a transient failure when the attempts are used up", async () => {
+      const busy = new AiProviderError("busy", { kind: "http", transient: true, status: 503 });
+      expect(await fail(busy, failing(3, 3))).toMatchObject({ status: "failed" });
+    });
+
+    it("keeps retrying a crashed worker", async () => {
+      expect(await fail(new Error("Worker exited with code 1."))).toMatchObject({
+        status: "queued"
+      });
+    });
+  });
   describe("a batch run that fails for good", () => {
     const failingJob = (attempts: number) => ({
       id: "job",
@@ -146,11 +234,14 @@ describe("ingestion queue scheduling", () => {
 
     it("releases nothing while the failure is still going to be retried", async () => {
       supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
-      // An unreadable payload is not a deterministic document failure: the job is queued again.
-      mocks.jobs.claimNext.mockResolvedValue({
-        ...failingJob(1),
-        payload: { batchId: "batch", sourceItemId: "source" }
-      });
+      // A provider that is briefly unavailable is not a deterministic failure: the job is queued again.
+      vi.spyOn(
+        supervisor as never as { executeIngestion: () => Promise<unknown> },
+        "executeIngestion"
+      ).mockRejectedValue(
+        new AiProviderError("busy", { kind: "http", transient: true, status: 503 })
+      );
+      mocks.jobs.claimNext.mockResolvedValue(failingJob(1));
       mocks.jobs.update.mockResolvedValue({ id: "job", status: "queued" });
       await supervisor.runOnce();
       expect(mocks.jobs.update).toHaveBeenCalledWith(

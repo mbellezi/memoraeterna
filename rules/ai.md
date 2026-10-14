@@ -1,8 +1,7 @@
 # AI runtime, models and prompts
 
-Load for model providers, adapters, routing, parameters, local models, the AI
-scheduler, embeddings, rerankers, structured output, prompts, or AI audit and
-monitoring.
+Load for providers, adapters, routing, parameters, local models, the scheduler,
+embeddings, rerankers, structured output, prompts, or AI audit and monitoring.
 
 ## Adapters and capabilities
 
@@ -11,13 +10,12 @@ monitoring.
   adapters. Agent harnesses or SDKs never own canonical storage or bypass routing.
 - Remote paths: Google Gemini, OpenAI-compatible endpoints and ChatGPT/Codex
   Responses through desktop OAuth (generative only). Local models are MLX-first:
-  use the MLX implementation in the supervised Swift helper (macOS arm64) when
-  one exists; GGUF through `node-llama-cpp` is the fallback when there is no MLX
-  build or no Apple Silicon. Native runtimes never enter the renderer or
-  external clients.
+  the MLX implementation in the supervised Swift helper when one exists and the
+  host is macOS arm64, else GGUF through `node-llama-cpp`.
 - A model declares only capabilities its actual adapter and runtime validated.
-  Never infer a capability from the provider (for example, a generative model is
-  not a reranker).
+  Never infer a capability from the provider: a generative model is not a
+  reranker, but the decision route (`reranking`) may take it as an explicit
+  decision-only decider.
 - A reranker or decider gets `decide` only after its artifact is validated (GGUF
   header, or MLX config and architecture) and a smoke test scores a relevant
   pair clearly above an irrelevant one (target F1a-F2).
@@ -44,13 +42,15 @@ monitoring.
   tests), bounds its memory (e.g. the MLX buffer cache) so the host never swaps,
   and never loads two local generative models at once or starts a duplicate helper.
 - Remote calls run with bounded concurrency per provider configuration and
-  respect rate-limit signals. Interactive work is served before background work;
-  a running call is never preempted (target F1a-F3).
+  respect rate-limit signals (target F3). Interactive work (Ask, query
+  embeddings, user-started actions) is admitted before background work and never
+  preempts a running call; a caller's timeout excludes its wait for a slot.
 - Every remote call has deadlines counted from execution start (connect, first
-  byte, stalled stream, total). Retry only transient failures (timeouts, 408,
-  425, 429, 5xx, network) with backoff and jitter, honoring `Retry-After`; never
-  retry invalid requests, auth failures, context overflow or schema failures
-  after the allowed repair (target F1a).
+  byte, stalled stream, total). Adapters retry only transient failures
+  (timeouts, stalls, 408, 425, 429, 5xx, network) with exponential backoff, full
+  jitter and bounded attempts, honoring `Retry-After`; never invalid requests,
+  auth failures, exhausted quota, context overflow or schema failures after the
+  allowed repair. Job retries use the same classification.
 - Structured output is requested with a schema where the runtime supports it and
   is always validated with Zod. Invalid output gets a bounded repair; valid items
   are kept and only missing ones are requested again (target F3).

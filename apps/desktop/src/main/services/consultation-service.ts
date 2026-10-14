@@ -38,6 +38,7 @@ import {
   type OrganizationCheckpoint,
   type OrganizationProposal
 } from "@app/domain";
+import { ActiveDeadline } from "./ai-execution-queue.js";
 import type { AiService } from "./ai-service.js";
 const hash = (v: unknown) => createHash("sha256").update(JSON.stringify(v)).digest("hex");
 /** Equal scores break on document position (source title, chunk position); chunk IDs are random per import. */
@@ -330,6 +331,8 @@ export interface SavedAnswer {
   expires: number;
   proposalId?: string;
 }
+/** Time an Ask may spend working; waiting for the AI queue does not count. */
+const askTimeoutMs = 120_000;
 export class ConsultationService {
   private active = new Map<string, AbortController>();
   private answers = new Map<string, SavedAnswer>();
@@ -383,7 +386,9 @@ export class ConsultationService {
     if (this.active.has(input.requestId)) throw new Error("organization.errors.wait");
     const controller = new AbortController();
     this.active.set(input.requestId, controller);
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]);
+    // The timeout runs while the question is prepared and answered, not while it waits for the AI queue.
+    const deadline = new ActiveDeadline(askTimeoutMs, controller.signal);
+    const signal = deadline.signal;
     try {
       const { snapshot, metadata } = await this.prepare(input, signal);
       const { answer, auditIds, inputTokens, outputTokens, costEstimate, usage } =
@@ -416,6 +421,7 @@ export class ConsultationService {
       });
       return result;
     } finally {
+      deadline.dispose();
       this.active.delete(input.requestId);
     }
   }
@@ -847,7 +853,10 @@ export class ConsultationService {
         locator: null
       }))
     });
-    const result = await this.generate(snapshot, question, [], AbortSignal.timeout(120000));
+    const deadline = new ActiveDeadline(askTimeoutMs);
+    const result = await this.generate(snapshot, question, [], deadline.signal).finally(() =>
+      deadline.dispose()
+    );
     snapshot.queryAuditIds = result.auditIds;
     const checkpoint = OrganizationCheckpointSchema.parse({
       tools: 0,

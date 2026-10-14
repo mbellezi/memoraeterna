@@ -1,5 +1,6 @@
 import { jobTaskPayload } from "../job-task-payload.js";
 import { promptStageProviders } from "./prompt-strategies.js";
+import { aiErrorRetryAfterMs } from "@app/ai";
 import { PromptPinSchema } from "@app/domain";
 import {
   withPromptPin,
@@ -36,6 +37,7 @@ import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
 import { logStructuredError } from "./structured-logging.js";
 import { canManuallyRetryJob } from "./job-retry.js";
+import { isTransientJobFailure } from "./job-failure.js";
 import type { WorkerTask } from "../workers/worker-contracts.js";
 
 export interface JobSupervisorOptions {
@@ -222,10 +224,10 @@ export class JobSupervisor {
       const shouldRetry =
         job.type !== "maintenance" &&
         !wasCanceled &&
-        normalizeWorkerError(error) !== emptyDocumentError &&
         job.attempts < job.maxAttempts &&
-        (job.type !== "organization" ||
-          /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error)));
+        (job.type === "organization"
+          ? /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error))
+          : isTransientJobFailure(error));
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
         const runs = createIngestionRunRepository(this.requirePool());
         if (wasCanceled) {
@@ -247,7 +249,13 @@ export class JobSupervisor {
               occurredAt: new Date().toISOString()
             }),
         runAfter: shouldRetry
-          ? new Date(Date.now() + Math.min(30_000, 1_000 * 2 ** job.attempts))
+          ? new Date(
+              Date.now() +
+                Math.max(
+                  Math.min(30_000, 1_000 * 2 ** job.attempts),
+                  aiErrorRetryAfterMs(error) ?? 0
+                )
+            )
           : job.runAfter,
         lockedAt: null,
         lockedBy: null,

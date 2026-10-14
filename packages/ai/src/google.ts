@@ -15,8 +15,17 @@ import {
   readText,
   streamedProgress
 } from "./openai-compatible.js";
-import { providerHttpError } from "./provider-error.js";
+import { providerHttpError, providerStreamError } from "./provider-error.js";
 import { googleThinkingConfig } from "./reasoning.js";
+import {
+  monotonicProgress,
+  resolveAiRuntimeConfig,
+  runRemoteCall,
+  type AiRuntimeConfig,
+  type AiRuntimeConfigInput,
+  type RemoteAttempt,
+  type RemoteCallOptions
+} from "./remote-execution.js";
 
 export interface GoogleGeminiAdapterOptions {
   apiKey: string;
@@ -24,6 +33,10 @@ export interface GoogleGeminiAdapterOptions {
   capabilities: AiCapability[];
   baseUrl?: string;
   fetch?: typeof fetch;
+  /** Deadline and retry overrides; the defaults apply to everything left out. */
+  runtime?: AiRuntimeConfigInput;
+  /** Source of the retry jitter. */
+  random?: () => number;
 }
 
 const generationTasks = new Set<AiTaskType>([
@@ -41,10 +54,12 @@ const generationTasks = new Set<AiTaskType>([
 export class GoogleGeminiAdapter implements AiModelAdapter {
   private readonly fetchImplementation: typeof fetch;
   private readonly baseUrl: string;
+  private readonly runtime: AiRuntimeConfig;
 
   public constructor(private readonly options: GoogleGeminiAdapterOptions) {
     this.fetchImplementation = options.fetch ?? fetch;
     this.baseUrl = options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
+    this.runtime = resolveAiRuntimeConfig(options.runtime);
   }
 
   public describe(): AiModelDescriptor {
@@ -64,26 +79,26 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
   }
 
   public async testConnection(signal?: AbortSignal): Promise<void> {
-    const response = await this.fetchImplementation(
-      `${this.baseUrl}/models?key=${encodeURIComponent(this.options.apiKey)}`,
-      signal ? { signal } : {}
-    );
-    if (!response.ok) throw await providerHttpError(response, "AI provider connection failed");
+    await this.remoteCall({ streaming: false, retry: false, signal }, async (call) => {
+      const response = await this.get(call, "/models");
+      if (!response.ok)
+        throw await call.guard(providerHttpError(response, "AI provider connection failed"));
+    });
   }
 
   public async listModels(signal?: AbortSignal): Promise<AiModelDescriptor[]> {
-    const response = await this.fetchImplementation(
-      `${this.baseUrl}/models?key=${encodeURIComponent(this.options.apiKey)}`,
-      signal ? { signal } : {}
+    const payload = await this.remoteCall(
+      { streaming: false, retry: false, signal },
+      async (call) =>
+        parseResponse<{
+          models?: Array<{
+            name?: string;
+            displayName?: string;
+            inputTokenLimit?: number;
+            outputTokenLimit?: number;
+          }>;
+        }>(await this.get(call, "/models"), call)
     );
-    const payload = await parseResponse<{
-      models?: Array<{
-        name?: string;
-        displayName?: string;
-        inputTokenLimit?: number;
-        outputTokenLimit?: number;
-      }>;
-    }>(response);
     return (payload.models ?? []).flatMap((model) => {
       if (!model.name) return [];
       const modelId = model.name.replace(/^models\//, "");
@@ -113,26 +128,22 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     const startedAt = performance.now();
     const modelId = request.modelId ?? this.options.modelId;
     if (request.taskType === "embedding") {
-      const response = await this.fetchImplementation(
-        `${this.baseUrl}/models/${encodeURIComponent(modelId)}:embedContent?key=${encodeURIComponent(this.options.apiKey)}`,
-        {
-          method: "POST",
-          ...(signal ? { signal } : {}),
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+      const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
+        parseResponse<{
+          embedding?: { values?: number[] };
+          usageMetadata?: Record<string, unknown>;
+        }>(
+          await this.post(call, `/models/${encodeURIComponent(modelId)}:embedContent`, {
             model: `models/${modelId}`,
             content: { parts: [{ text: readText(request.input) }] },
             outputDimensionality:
               typeof request.parameters.dimensions === "number"
                 ? request.parameters.dimensions
                 : 768
-          })
-        }
+          }),
+          call
+        )
       );
-      const payload = await parseResponse<{
-        embedding?: { values?: number[] };
-        usageMetadata?: Record<string, unknown>;
-      }>(response);
       if (!payload.embedding?.values)
         throw new Error("AI embedding response did not contain a vector.");
       return {
@@ -145,35 +156,22 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
         tokenUsage: normalizeTokenUsage(payload.usageMetadata, "google")
       };
     }
-    const response = await this.fetchImplementation(
-      `${this.baseUrl}/models/${encodeURIComponent(modelId)}:generateContent?key=${encodeURIComponent(this.options.apiKey)}`,
-      {
-        method: "POST",
-        ...(signal ? { signal } : {}),
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
-          generationConfig: {
-            ...([
-              "structured-output",
-              "knowledge-graph-generation",
-              "atomic-note-generation",
-              "reranking"
-            ].includes(request.taskType)
-              ? { responseMimeType: "application/json" }
-              : {}),
-            ...googleGenerationParameters(request.parameters, modelId)
-          }
-        })
-      }
+    const payload = await this.remoteCall({ request, streaming: false, signal }, async (call) =>
+      parseResponse<{
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        usageMetadata?: Record<string, unknown> & {
+          promptTokenCount?: number;
+          candidatesTokenCount?: number;
+        };
+      }>(
+        await this.post(
+          call,
+          `/models/${encodeURIComponent(modelId)}:generateContent`,
+          this.generationBody(request, modelId)
+        ),
+        call
+      )
     );
-    const payload = await parseResponse<{
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      usageMetadata?: Record<string, unknown> & {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-      };
-    }>(response);
     const output = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("");
     if (output === undefined) throw new Error("AI generation response did not contain content.");
     return {
@@ -201,60 +199,111 @@ export class GoogleGeminiAdapter implements AiModelAdapter {
     if (request.taskType === "embedding") return this.run(request, signal);
     const startedAt = performance.now();
     const modelId = request.modelId ?? this.options.modelId;
-    const response = await this.fetchImplementation(
-      `${this.baseUrl}/models/${encodeURIComponent(modelId)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(this.options.apiKey)}`,
-      {
-        method: "POST",
-        ...(signal ? { signal } : {}),
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
-          generationConfig: {
-            ...([
-              "structured-output",
-              "knowledge-graph-generation",
-              "atomic-note-generation",
-              "reranking"
-            ].includes(request.taskType)
-              ? { responseMimeType: "application/json" }
-              : {}),
-            ...googleGenerationParameters(request.parameters, modelId)
-          }
-        })
-      }
-    );
-    let output = "";
-    let tokenUsage: Record<string, number> = {};
-    let inputTokens: number | undefined;
-    let outputTokens: number | undefined;
-    await readServerSentEvents(response, (data) => {
-      const event = JSON.parse(data) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-        usageMetadata?: Record<string, unknown> & {
-          promptTokenCount?: number;
-          candidatesTokenCount?: number;
-        };
-      };
-      output +=
-        event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-      tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
-      inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
-      outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
-      onProgress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+    const progress = monotonicProgress(onProgress);
+    const streamed = await this.remoteCall({ request, streaming: true, signal }, async (call) => {
+      const response = await this.post(
+        call,
+        `/models/${encodeURIComponent(modelId)}:streamGenerateContent`,
+        this.generationBody(request, modelId),
+        "alt=sse"
+      );
+      let output = "";
+      let tokenUsage: Record<string, number> = {};
+      let inputTokens: number | undefined;
+      let outputTokens: number | undefined;
+      await readServerSentEvents(
+        response,
+        (data) => {
+          const event = JSON.parse(data) as {
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+            usageMetadata?: Record<string, unknown> & {
+              promptTokenCount?: number;
+              candidatesTokenCount?: number;
+            };
+            error?: { message?: string; code?: number; status?: string };
+          };
+          if (event.error)
+            throw providerStreamError({
+              message: event.error.message,
+              code: event.error.code,
+              type: event.error.status
+            });
+          output +=
+            event.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+          tokenUsage = { ...tokenUsage, ...normalizeTokenUsage(event.usageMetadata, "google") };
+          inputTokens = event.usageMetadata?.promptTokenCount ?? inputTokens;
+          outputTokens = event.usageMetadata?.candidatesTokenCount ?? outputTokens;
+          progress({ progress: streamedProgress(output.length, request.parameters.maxTokens) });
+        },
+        undefined,
+        call
+      );
+      if (output.length === 0) throw new Error("AI generation response did not contain content.");
+      return { output, tokenUsage, inputTokens, outputTokens };
     });
-    if (output.length === 0) throw new Error("AI generation response did not contain content.");
-    onProgress({ progress: 1 });
+    progress({ progress: 1 });
     return {
       taskType: request.taskType,
-      output,
+      output: streamed.output,
       providerId: "google",
       modelId,
       runtime: "remote",
       durationMs: Math.round(performance.now() - startedAt),
-      tokenUsage,
-      ...(inputTokens !== undefined ? { inputTokens } : {}),
-      ...(outputTokens !== undefined ? { outputTokens } : {})
+      tokenUsage: streamed.tokenUsage,
+      ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
+      ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
     };
+  }
+
+  private generationBody(request: AiTaskRequest, modelId: string): Record<string, unknown> {
+    return {
+      contents: [{ role: "user", parts: [{ text: readText(request.input) }] }],
+      generationConfig: {
+        ...([
+          "structured-output",
+          "knowledge-graph-generation",
+          "atomic-note-generation",
+          "reranking"
+        ].includes(request.taskType)
+          ? { responseMimeType: "application/json" }
+          : {}),
+        ...googleGenerationParameters(request.parameters, modelId)
+      }
+    };
+  }
+
+  private remoteCall<T>(
+    options: Omit<RemoteCallOptions, "taskType" | "parameters"> & { request?: AiTaskRequest },
+    attempt: (call: RemoteAttempt) => Promise<T>
+  ): Promise<T> {
+    const { request, ...call } = options;
+    return runRemoteCall(
+      { config: this.runtime, random: this.options.random },
+      { ...call, taskType: request?.taskType, parameters: request?.parameters },
+      attempt
+    );
+  }
+
+  /** The API key travels in the query string, so URLs never appear in errors or logs. */
+  private get(call: RemoteAttempt, path: string): Promise<Response> {
+    return call.fetch(this.fetchImplementation, this.url(path), {});
+  }
+
+  private post(
+    call: RemoteAttempt,
+    path: string,
+    body: Record<string, unknown>,
+    query = ""
+  ): Promise<Response> {
+    return call.fetch(this.fetchImplementation, this.url(path, query), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
+  private url(path: string, query = ""): string {
+    return `${this.baseUrl}${path}?${query ? `${query}&` : ""}key=${encodeURIComponent(this.options.apiKey)}`;
   }
 }
 
