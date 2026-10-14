@@ -873,8 +873,15 @@ export const ingestionRunStages = pgTable(
     metadata: jsonb("metadata")
       .notNull()
       .default(sql`'{}'::jsonb`),
+    // First time the stage began; kept across retries, so it spans every attempt and the waits between them.
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    // Wall-clock instrumentation. `attempts` counts transitions into running (0 = not recorded);
+    // `attemptStartedAt` and `endedAt` bound the latest attempt whatever its outcome (completed,
+    // skipped, failed or canceled); `endedAt` is null while an attempt is running or unrecorded.
+    attempts: integer("attempts").notNull().default(0),
+    attemptStartedAt: timestamp("attempt_started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
     error: text("error"),
     ...timestamps
   },
@@ -1317,8 +1324,14 @@ export const aiTaskRuns = pgTable(
     outputTokens: integer("output_tokens"),
     costEstimate: doublePrecision("cost_estimate"),
     durationMs: integer("duration_ms").notNull(),
+    // Wall-clock instrumentation, null when unknown. `queueMs` is the wait between admission and the
+    // start of execution in the AI execution queue; `attempt` is the caller's zero-based retry index
+    // (0 = first try, 1 = first repair or retry) for pipeline calls that report one.
+    queueMs: integer("queue_ms"),
+    attempt: integer("attempt"),
     status: text("status").notNull(),
     error: text("error"),
+    // Row creation time, which equals the end of the call; the call started at finishedAt - durationMs.
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true })
   },

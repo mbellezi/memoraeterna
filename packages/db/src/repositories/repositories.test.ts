@@ -445,11 +445,71 @@ describe("repositories", () => {
 
     await createIngestionRunRepository(db).recoverInterrupted();
 
-    expect(db.queries[0]?.text).toContain("where interrupted.status = 'running'");
-    expect(db.queries[0]?.text).toContain("left join jobs");
-    expect(db.queries[0]?.text).toContain("when recovered.job_status = 'queued' then 'pending'");
-    expect(db.queries[0]?.text).toContain("when recovered.job_status = 'canceled' then 'canceled'");
-    expect(db.queries[0]?.text).toContain("'interruptedAt', now()");
+    expect(db.queries[1]?.text).toContain("where interrupted.status = 'running'");
+    expect(db.queries[1]?.text).toContain("left join jobs");
+    expect(db.queries[1]?.text).toContain("when recovered.job_status = 'queued' then 'pending'");
+    expect(db.queries[1]?.text).toContain("when recovered.job_status = 'canceled' then 'canceled'");
+    expect(db.queries[1]?.text).toContain("'interruptedAt', now()");
+  });
+
+  it("ends the open stage attempts of interrupted runs before they resume", async () => {
+    const db = new FakeQueryable([[]]);
+
+    await createIngestionRunRepository(db).recoverInterrupted();
+
+    const text = db.queries[0]?.text ?? "";
+    expect(text).toContain("update ingestion_run_stages");
+    expect(text).toContain("set ended_at = now()");
+    expect(text).toContain("job.status is distinct from 'running'");
+    expect(text).toContain("stage.status = 'running'");
+    expect(text).toContain("stage.ended_at is null");
+  });
+
+  it("opens a stage attempt only when a stage enters running from another state", async () => {
+    const db = new FakeQueryable([[], []]);
+    const runs = createIngestionRunRepository(db);
+
+    await runs.beginStage("run-1", "summarization");
+    await runs.updateStageProgress("run-1", "atomicNoteMatching", 0.5);
+
+    const inserts = db.queries.filter((q) => q.text.includes("insert into ingestion_run_stages"));
+    expect(inserts).toHaveLength(2);
+    for (const query of inserts) {
+      expect(query.text).toContain("attempts, attempt_started_at");
+      expect(query.text).toContain("ingestion_run_stages.status = 'running'");
+      expect(query.text).toContain("ingestion_run_stages.ended_at is null");
+      expect(query.text).toContain("ingestion_run_stages.attempts + 1");
+      expect(query.text).toContain("ended_at = null");
+      expect(query.text).toContain("started_at = coalesce(ingestion_run_stages.started_at, now())");
+    }
+  });
+
+  it("stamps the end of a stage attempt whatever its outcome", async () => {
+    const db = new FakeQueryable([]);
+    const runs = createIngestionRunRepository(db);
+
+    await runs.completeStage("run-1", "summarization");
+    await runs.skipStage("run-1", "embedding", "reason");
+    await runs.completeStageForBatch("batch-1", "sourceMatching");
+    await runs.failStage("run-1", "knowledgeGraph", "failed");
+    await runs.waitForBatchStage("run-1", "atomicNoteMatching");
+    await runs.fail("run-2", "failed");
+    await runs.cancel("run-3");
+
+    const stageWrites = db.queries.filter((q) =>
+      /(insert into|update) ingestion_run_stages/.test(q.text)
+    );
+    expect(stageWrites).toHaveLength(7);
+    for (const query of stageWrites) expect(query.text).toContain("ended_at");
+    // Completion and skipping always end the attempt; failure and cancellation end only open ones.
+    expect(stageWrites[0]?.text).toContain("ended_at = now()");
+    expect(stageWrites[1]?.text).toContain("ended_at = now()");
+    expect(stageWrites[2]?.text).toContain("ended_at = now()");
+    for (const query of stageWrites.slice(3)) {
+      expect(query.text).toMatch(
+        /case when \S+\.status = 'running' and \S+\.ended_at is null then now\(\)/
+      );
+    }
   });
 
   it("serializes ingestion stage lists as JSON", async () => {
@@ -673,6 +733,47 @@ describe("repositories", () => {
     expect(db.queries[0]?.text).toContain("insert into ai_task_run_sources");
     expect(db.queries[0]?.text).toContain("unnest($20::uuid[])");
     expect(db.queries[0]?.values[19]).toEqual(["source-1", "source-2"]);
+  });
+
+  it("records the queue wait and the retry index of an AI task run, or null when unknown", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }], [{ id: "run-2" }], [{ id: "run-3" }]]);
+    const repository = createAiConfigRepository(db);
+    const base = {
+      taskType: "reranking",
+      provider: "test",
+      modelId: "test-model",
+      runtime: "remote",
+      durationMs: 12,
+      status: "succeeded"
+    };
+
+    await repository.recordTaskRun({ ...base, queueMs: 1_234.4, attempt: 1 });
+    await repository.recordTaskRun(base);
+    await repository.recordTaskRun({ ...base, queueMs: -5, attempt: Number.NaN });
+
+    expect(db.queries[0]?.text).toContain("queue_ms, attempt, finished_at");
+    expect(db.queries[0]?.values.slice(21, 23)).toEqual([1_234, 1]);
+    expect(db.queries[1]?.values.slice(21, 23)).toEqual([null, null]);
+    expect(db.queries[2]?.values.slice(21, 23)).toEqual([null, null]);
+  });
+
+  it("keeps the organization step parameters after the wall-clock fields", async () => {
+    const db = new FakeQueryable([[{ id: "run-1" }]]);
+
+    await createAiConfigRepository(db).recordTaskRun({
+      taskType: "text-generation",
+      provider: "test",
+      modelId: "test-model",
+      runtime: "remote",
+      durationMs: 12,
+      status: "succeeded",
+      queueMs: 7,
+      organizationRunId: "organization-run",
+      organizationStep: 3
+    });
+
+    expect(db.queries[0]?.text).toContain("select $24::uuid,$25::int,id");
+    expect(db.queries[0]?.values.slice(21)).toEqual([7, null, "organization-run", 3]);
   });
 
   it("loads atomic-note graph inputs with their complete chunk provenance", async () => {

@@ -6,7 +6,9 @@ export default defineConfig({
       "apps/*/src/**/*.test.ts",
       "apps/*/src/**/*.test.tsx",
       "packages/*/src/**/*.test.ts",
-      "packages/*/src/**/*.test.tsx"
+      "packages/*/src/**/*.test.tsx",
+      "scripts/kpi/**/*.test.ts",
+      "scripts/db/**/*.test.ts"
     ],
     coverage: {
       reporter: ["text", "lcov"]

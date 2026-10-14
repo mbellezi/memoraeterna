@@ -89,7 +89,8 @@ describe("baseline seed", () => {
       "0039_sturdy_lila_cheney",
       "0040_mysterious_talon",
       "0041_knowledge_note_ownership",
-      "0042_wiki_editorial_review_impacts"
+      "0042_wiki_editorial_review_impacts",
+      "0043_wall_clock_instrumentation"
     ]);
   });
 
@@ -150,7 +151,8 @@ describe("baseline seed", () => {
         "0039_sturdy_lila_cheney",
         "0040_mysterious_talon",
         "0041_knowledge_note_ownership",
-        "0042_wiki_editorial_review_impacts"
+        "0042_wiki_editorial_review_impacts",
+        "0043_wall_clock_instrumentation"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);

@@ -140,6 +140,36 @@ interface PromptAdmission {
   compositions: PromptCompositionSnapshot[];
   pin: PromptPin;
   language: string;
+  /** Wait in the AI execution queue, set when execution starts. */
+  queueMs?: number;
+}
+
+/**
+ * Zero-based retry index (0 = first try) that pipeline callers report in `AiTaskLogContext.attempt`.
+ * Organization, maintenance and Ask calls reuse that field as a 1-based call counter, so they report
+ * no retry index; unknown stays unknown.
+ */
+export function reportedRetryIndex(
+  context: Pick<AiTaskLogContext, "attempt" | "origin" | "organizationRunId" | "maintenanceRunId">
+): number | undefined {
+  const { attempt, origin } = context;
+  if (context.organizationRunId || context.maintenanceRunId) return undefined;
+  if (origin === "organization" || origin === "maintenance" || origin === "consultation")
+    return undefined;
+  return typeof attempt === "number" && Number.isInteger(attempt) && attempt >= 0
+    ? attempt
+    : undefined;
+}
+/** Wall-clock fields for the AI task audit; each is omitted when it was not measured or reported. */
+function queueAndAttempt(
+  admission: Pick<PromptAdmission, "queueMs"> | null | undefined,
+  context: Parameters<typeof reportedRetryIndex>[0]
+): { queueMs?: number; attempt?: number } {
+  const attempt = reportedRetryIndex(context);
+  return {
+    ...(admission?.queueMs === undefined ? {} : { queueMs: admission.queueMs }),
+    ...(attempt === undefined ? {} : { attempt })
+  };
 }
 const selectionIdentity = (s: TaskSelection) =>
   JSON.stringify([
@@ -710,11 +740,11 @@ export class AiService {
       admission: PromptAdmission | null = null;
     try {
       return await aiExecutionQueue.run(
-        () =>
+        (timing) =>
           withPromptPin(pin, async () => {
             const result = await prepared;
             if ("error" in result) throw result.error;
-            admission = result.value;
+            admission = result.value ? { ...result.value, queueMs: timing.queueMs } : null;
             if (!admission) return null;
             await beforeProvider?.();
             signal?.throwIfAborted();
@@ -750,6 +780,7 @@ export class AiService {
         promptCompositions: completed.compositions,
         inputHash: sha256(completed.input),
         durationMs: 0,
+        ...queueAndAttempt(completed, context),
         status: signal?.aborted ? "canceled" : "failed",
         error: redactSensitiveText(error),
         sourceItemIds: taskSourceItemIds(context),
@@ -1004,6 +1035,7 @@ export class AiService {
         ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {}),
         durationMs: result.durationMs,
+        ...queueAndAttempt(admission, logContext),
         status: "succeeded",
         sourceItemIds
       });
@@ -1069,6 +1101,7 @@ export class AiService {
         promptCompositions: admission?.compositions ?? promptAudit(taskInput),
         inputHash: sha256(taskInput),
         durationMs: Date.now() - started,
+        ...queueAndAttempt(admission, logContext),
         status: signal?.aborted ? "canceled" : "failed",
         error: redactSensitiveText(error),
         sourceItemIds

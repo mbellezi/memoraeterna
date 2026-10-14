@@ -117,6 +117,29 @@ function mapIngestionRun(row: IngestionRunRow): IngestionRunRecord {
   };
 }
 
+/**
+ * Attempt accounting for a stage row that is entering `running`. An attempt is open while the row is
+ * running and has not ended; only a transition from any other state opens a new one. Progress
+ * updates of an open attempt leave its counters alone.
+ */
+const attemptTimingAssignments = `
+  attempts = case
+    when ingestion_run_stages.status = 'running' and ingestion_run_stages.ended_at is null
+      then greatest(ingestion_run_stages.attempts, 1)
+    else ingestion_run_stages.attempts + 1
+  end,
+  attempt_started_at = case
+    when ingestion_run_stages.status = 'running' and ingestion_run_stages.ended_at is null
+      then coalesce(ingestion_run_stages.attempt_started_at, now())
+    else now()
+  end,
+  ended_at = null`;
+
+/** Ends the open attempt of a stage row; a row that never began keeps `ended_at` null. */
+function attemptEndAssignment(alias: string): string {
+  return `case when ${alias}.status = 'running' and ${alias}.ended_at is null then now() else ${alias}.ended_at end`;
+}
+
 export function createIngestionRunRepository(db: Queryable) {
   return {
     async create(input: CreateIngestionRunInput): Promise<IngestionRunRecord> {
@@ -209,10 +232,12 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async beginStage(id: string, stage: string): Promise<IngestionRunRecord | null> {
       await db.query(
-        `insert into ingestion_run_stages (ingestion_run_id, stage, status, progress, started_at)
-         values ($1, $2, 'running', 0, now())
+        `insert into ingestion_run_stages (
+           ingestion_run_id, stage, status, progress, started_at, attempts, attempt_started_at
+         ) values ($1, $2, 'running', 0, now(), 1, now())
          on conflict (ingestion_run_id, stage) do update
-         set status = 'running', started_at = coalesce(ingestion_run_stages.started_at, now()),
+         set ${attemptTimingAssignments},
+             status = 'running', started_at = coalesce(ingestion_run_stages.started_at, now()),
              error = null, updated_at = now()`,
         [id, stage]
       );
@@ -246,10 +271,13 @@ export function createIngestionRunRepository(db: Queryable) {
       metadata: JsonObject = {}
     ): Promise<IngestionRunRecord | null> {
       await db.query(
-        `insert into ingestion_run_stages (ingestion_run_id, stage, status, progress, metadata, started_at)
-         values ($1, $2, 'running', $3, $4::jsonb, now())
+        `insert into ingestion_run_stages (
+           ingestion_run_id, stage, status, progress, metadata, started_at, attempts, attempt_started_at
+         ) values ($1, $2, 'running', $3, $4::jsonb, now(), 1, now())
          on conflict (ingestion_run_id, stage) do update
-         set status = 'running', progress = excluded.progress, metadata = excluded.metadata, updated_at = now()`,
+         set ${attemptTimingAssignments},
+             status = 'running', progress = excluded.progress, metadata = excluded.metadata,
+             started_at = coalesce(ingestion_run_stages.started_at, now()), updated_at = now()`,
         [id, stage, Math.round(Math.max(0, Math.min(1, progress)) * 10_000), metadata]
       );
       const result = await db.query<IngestionRunRow>(
@@ -281,11 +309,11 @@ export function createIngestionRunRepository(db: Queryable) {
       metadata: JsonObject = {}
     ): Promise<IngestionRunRecord | null> {
       await db.query(
-        `insert into ingestion_run_stages (ingestion_run_id, stage, status, progress, metadata, completed_at)
-         values ($1, $2, 'completed', 10000, $3::jsonb, now())
+        `insert into ingestion_run_stages (ingestion_run_id, stage, status, progress, metadata, completed_at, ended_at)
+         values ($1, $2, 'completed', 10000, $3::jsonb, now(), now())
          on conflict (ingestion_run_id, stage) do update
          set status = 'completed', progress = 10000, metadata = excluded.metadata,
-             completed_at = now(), error = null, updated_at = now()`,
+             completed_at = now(), ended_at = now(), error = null, updated_at = now()`,
         [id, stage, metadata]
       );
       const result = await db.query<IngestionRunRow>(
@@ -307,11 +335,11 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async skipStage(id: string, stage: string, reason: string): Promise<IngestionRunRecord | null> {
       await db.query(
-        `insert into ingestion_run_stages (ingestion_run_id, stage, status, skip_reason, progress, completed_at)
-         values ($1, $2, 'skipped', $3, 10000, now())
+        `insert into ingestion_run_stages (ingestion_run_id, stage, status, skip_reason, progress, completed_at, ended_at)
+         values ($1, $2, 'skipped', $3, 10000, now(), now())
          on conflict (ingestion_run_id, stage) do update
          set status = 'skipped', skip_reason = excluded.skip_reason, progress = 10000,
-             completed_at = now(), updated_at = now()`,
+             completed_at = now(), ended_at = now(), updated_at = now()`,
         [id, stage, reason]
       );
       const result = await db.query<IngestionRunRow>(
@@ -334,8 +362,8 @@ export function createIngestionRunRepository(db: Queryable) {
       for (const stage of allStages) {
         const requested = effectiveStages.includes(stage);
         await db.query(
-          `insert into ingestion_run_stages (ingestion_run_id, stage, status, skip_reason, progress, completed_at)
-           values ($1, $2, $3::ingestion_run_stage_status, $4, $5, $6)
+          `insert into ingestion_run_stages (ingestion_run_id, stage, status, skip_reason, progress, completed_at, ended_at)
+           values ($1, $2, $3::ingestion_run_stage_status, $4, $5, $6, $6)
            on conflict (ingestion_run_id, stage) do nothing`,
           [
             id,
@@ -351,7 +379,8 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async waitForBatchStage(id: string, stage: string, metadata: JsonObject = {}): Promise<void> {
       await db.query(
-        `update ingestion_run_stages set status = 'waiting_for_review', skip_reason = 'batch_barrier', metadata=$3, updated_at = now()
+        `update ingestion_run_stages set status = 'waiting_for_review', skip_reason = 'batch_barrier', metadata=$3,
+           ended_at = ${attemptEndAssignment("ingestion_run_stages")}, updated_at = now()
          where ingestion_run_id = $1 and stage = $2`,
         [id, stage, metadata]
       );
@@ -381,7 +410,7 @@ export function createIngestionRunRepository(db: Queryable) {
     ): Promise<void> {
       await db.query(
         `update ingestion_run_stages stage_state set status = 'completed', progress = 10000, metadata = $3::jsonb,
-           completed_at = now(), error = null, updated_at = now()
+           completed_at = now(), ended_at = now(), error = null, updated_at = now()
          from ingestion_runs run
          where run.batch_id = $1 and stage_state.ingestion_run_id = run.id and stage_state.stage = $2
            and stage_state.status <> 'skipped'`,
@@ -398,7 +427,8 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async fail(id: string, error: string): Promise<IngestionRunRecord | null> {
       await db.query(
-        `update ingestion_run_stages stage set status = 'failed', error = $2, updated_at = now()
+        `update ingestion_run_stages stage set status = 'failed', error = $2,
+           ended_at = ${attemptEndAssignment("stage")}, updated_at = now()
          from ingestion_runs run
          where run.id = $1 and stage.ingestion_run_id = run.id and stage.stage = run.current_stage`,
         [id, error]
@@ -429,7 +459,8 @@ export function createIngestionRunRepository(db: Queryable) {
     async failStage(id: string, stage: string, error: string, canceled = false): Promise<void> {
       const status = canceled ? "canceled" : "failed";
       await db.query(
-        `update ingestion_run_stages set status = $3::ingestion_run_stage_status,error = $4,updated_at = now()
+        `update ingestion_run_stages set status = $3::ingestion_run_stage_status,error = $4,
+        ended_at = ${attemptEndAssignment("ingestion_run_stages")},updated_at = now()
         where ingestion_run_id = $1 and stage = $2`,
         [id, stage, status, canceled ? null : error]
       );
@@ -443,7 +474,8 @@ export function createIngestionRunRepository(db: Queryable) {
 
     async cancel(id: string): Promise<IngestionRunRecord | null> {
       await db.query(
-        `update ingestion_run_stages stage set status = 'canceled', updated_at = now()
+        `update ingestion_run_stages stage set status = 'canceled',
+           ended_at = ${attemptEndAssignment("stage")}, updated_at = now()
          from ingestion_runs run
          where run.id = $1 and stage.ingestion_run_id = run.id and stage.stage = run.current_stage`,
         [id]
@@ -493,6 +525,19 @@ export function createIngestionRunRepository(db: Queryable) {
     },
 
     async recoverInterrupted(): Promise<number> {
+      // Close the attempts that the crash interrupted, so a resumed stage opens a fresh attempt
+      // instead of inheriting the downtime.
+      await db.query(
+        `update ingestion_run_stages as stage
+         set ended_at = now(), updated_at = now()
+         from ingestion_runs as interrupted
+         left join jobs as job on job.id = interrupted.job_id
+         where stage.ingestion_run_id = interrupted.id
+           and interrupted.status = 'running'
+           and job.status is distinct from 'running'
+           and stage.status = 'running'
+           and stage.ended_at is null`
+      );
       const result = await db.query(
         `update ingestion_runs as run
          set status = case

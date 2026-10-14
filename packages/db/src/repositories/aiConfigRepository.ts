@@ -71,6 +71,13 @@ const profileReturning = `id, name, description, is_default as "isDefault", priv
   local_model_id as "localModelId", model_id as "modelId", runtime, capabilities,
   status, created_at as "createdAt", updated_at as "updatedAt"`;
 
+/** Instrumentation counters stay null (unknown) unless they are finite and non-negative. */
+function nonNegativeInteger(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
+}
+
 function mapProvider(row: ProviderRow): AiProviderConfigRecord {
   return {
     ...row,
@@ -471,6 +478,10 @@ export function createAiConfigRepository(db: Queryable) {
       outputTokens?: number | null;
       costEstimate?: number | null;
       durationMs: number;
+      /** Wait in the AI execution queue before the call started; omitted when not measured. */
+      queueMs?: number | null;
+      /** Zero-based retry index reported by the caller; omitted when the caller reports none. */
+      attempt?: number | null;
       status: string;
       error?: string | null;
       sourceItemIds?: string[];
@@ -486,8 +497,8 @@ export function createAiConfigRepository(db: Queryable) {
              profile_id, task_type, provider, model_id, runtime, adapter, repository, revision,
              quantization, parameters, capabilities_used,
              input_hash, output_hash, input_tokens, output_tokens, cost_estimate,
-             duration_ms, status, error, prompt_compositions, finished_at
-           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,now())
+             duration_ms, status, error, prompt_compositions, queue_ms, attempt, finished_at
+           ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$21::jsonb,$22,$23,now())
            returning id
          ), inserted_sources as (
            insert into ai_task_run_sources (ai_task_run_id, source_item_id)
@@ -496,8 +507,8 @@ export function createAiConfigRepository(db: Queryable) {
            on conflict (ai_task_run_id, source_item_id) do nothing
            returning id
          )
-         ${input.organizationRunId ? ", inserted_organization_step as (insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) select $22::uuid,$23::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
-         ${input.maintenanceRunId ? ", inserted_maintenance_step as (insert into maintenance_steps(run_id,sequence,ai_task_run_id,artifact) select $22::uuid,$23::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
+         ${input.organizationRunId ? ", inserted_organization_step as (insert into organization_steps(run_id,sequence,ai_task_run_id,artifact) select $24::uuid,$25::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
+         ${input.maintenanceRunId ? ", inserted_maintenance_step as (insert into maintenance_steps(run_id,sequence,ai_task_run_id,artifact) select $24::uuid,$25::int,id,jsonb_build_object('status','model_recorded') from inserted_run returning id)" : ""}
          select id from inserted_run
          where (select count(*) from inserted_sources) >= 0`,
         [
@@ -522,6 +533,8 @@ export function createAiConfigRepository(db: Queryable) {
           input.error ?? null,
           [...new Set(input.sourceItemIds ?? [])],
           JSON.stringify(input.promptCompositions ?? []),
+          nonNegativeInteger(input.queueMs),
+          nonNegativeInteger(input.attempt),
           ...(input.organizationRunId
             ? [input.organizationRunId, input.organizationStep]
             : input.maintenanceRunId

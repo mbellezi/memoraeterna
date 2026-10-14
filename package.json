@@ -48,6 +48,8 @@
     "db:seed:sync": "node scripts/sync-db-baseline.mjs",
     "sidecar:spike": "tsx scripts/postgres-sidecar-spike.ts",
     "db:prompts:verify": "node --import tsx scripts/verify-prompts.ts",
+    "db:restore": "tsx scripts/db/restore-backup.ts",
+    "kpi": "tsx scripts/kpi/kpi.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet"
   },

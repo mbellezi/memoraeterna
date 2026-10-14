@@ -31,6 +31,30 @@ describe("AI execution queue", () => {
     expect(maximum).toBe(1);
   });
 
+  it("reports the wait between admission and the start of execution", async () => {
+    let clock = 0;
+    const queue = new AiExecutionQueue(() => clock);
+    const gate = Promise.withResolvers<void>();
+    const waits: number[] = [];
+    const first = queue.run(async ({ queueMs }) => {
+      waits.push(queueMs);
+      await gate.promise;
+    });
+    await Promise.resolve();
+    clock = 40;
+    const second = queue.run(async ({ queueMs }) => {
+      waits.push(queueMs);
+    });
+    clock = 250;
+    const third = queue.run(async ({ queueMs }) => {
+      waits.push(queueMs);
+    });
+    clock = 1_000.6;
+    gate.resolve();
+    await Promise.all([first, second, third]);
+    expect(waits).toEqual([0, 961, 751]);
+  });
+
   it("cancels waiting work promptly without invoking it or releasing the active slot", async () => {
     const queue = new AiExecutionQueue();
     const gate = Promise.withResolvers<void>();
