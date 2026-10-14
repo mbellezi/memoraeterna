@@ -1,0 +1,5 @@
+# Revisions that only reformat code; git blame skips them.
+# Enable locally with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply prettier to the codebase
+6f39053fe8daefa16981fa4d20f617139a514bc0
