@@ -1,22 +1,22 @@
 # Memora Eterna stack and dependency specification
 
-This file is always read before implementation. It records the technologies and
-versions that new work must use. Manifests and lockfiles are the executable
-record; when an approved version changes, update this file in the same change.
+Always read before implementation. The tables are executable policy: new work
+uses these exact versions. Manifests and lockfiles are the record; when an
+approved version changes, update this file in the same change.
 
 ## Dependency policy
 
-- Use npm workspaces and exact versions for direct dependencies.
-- Use Node.js `24.18.0` and npm `11.16.0`; supported engines are Node
-  `>=24.18.0 <25` and npm `>=11.16.0 <12`.
-- Prefer the existing dependency that owns a capability. Do not introduce a
-  competing framework, runtime, ORM, validator, icon set, or package manager
-  without an explicit durable decision.
-- Compatibility takes precedence over a newer published version. Native runtime
-  upgrades require build, packaging, and smoke validation.
-- PostgreSQL major upgrades require an explicit data migration strategy.
-- Python is allowed only inside the packaged Docling sidecar. Application and
-  domain logic remains TypeScript; MLX inference uses the Swift helper.
+- npm workspaces with exact versions for direct dependencies. Node.js `24.18.0`
+  and npm `11.16.0` (engines: Node `>=24.18.0 <25`, npm `>=11.16.0 <12`).
+- Prefer the dependency that already owns a capability. A competing framework,
+  runtime, ORM, validator, icon set or package manager needs an explicit decision
+  recorded here.
+- Compatibility beats novelty. Native runtime upgrades need build, packaging and
+  smoke validation; PostgreSQL major upgrades need a data migration strategy.
+- Python only inside the packaged Docling sidecar; MLX inference uses the Swift
+  helper; all application and domain logic is TypeScript.
+- Check licenses before adding a dependency or model artifact
+  (`rules/security-privacy.md`).
 
 ## Runtime and tooling
 
@@ -75,22 +75,6 @@ separate web application unless explicitly requested and specified.
 Use Drizzle over `node-postgres`. Relational tables remain canonical; pgvector
 and AGE are query and projection layers.
 
-## Second-brain harness
-
-- The initial harness is an application-specific TypeScript state executor
-  using the existing Zod contracts, PostgreSQL jobs/checkpoints and supervised
-  workers. Model execution remains behind `AiModelAdapter`.
-- LangGraph.js is the preferred external executor alternative if the M2 spike
-  demonstrates that branching/recovery requires an overly general custom
-  runtime. Evaluate it against the same acceptance cases before adoption;
-  record exact dependency versions and checkpoint ownership in a subsequent
-  stack decision. It is not a selected dependency today.
-- Vercel AI SDK is a candidate for remote-provider adapter implementation,
-  independently of the harness. It must not own domain persistence, approval
-  policy or task routing; evaluating it is not a prerequisite for the wiki.
-- DeepSeek Harness remains an experimental candidate, not the initial runtime.
-  This decision adds no external agent framework or dependency.
-
 ## Conversion and integrations
 
 | Capability | Required implementation |
@@ -111,11 +95,32 @@ and AGE are query and projection layers.
 
 | Runtime | Required version | Boundary |
 | --- | --- | --- |
-| `node-llama-cpp` | `3.19.0` | Main process or controlled workers only |
+| `node-llama-cpp` | `3.19.0` | GGUF fallback; main process or controlled workers only |
 | MLX Swift | `0.31.6` | Packaged macOS arm64 helper |
-| MLX Swift LM | `3.31.4` | Packaged macOS arm64 helper |
+| MLX Swift LM | `3.31.4` | Packaged macOS arm64 helper (MLXLLM, MLXEmbedders) |
 | Swift Transformers | `1.3.3` | Packaged macOS arm64 helper |
 
-Local model artifacts use immutable revisions, declared files, sizes, licenses,
-and SHA-256 checksums. A capability is exposed only after the actual adapter and
-runtime have been validated for it.
+Local models are MLX-first; GGUF through `node-llama-cpp` is the fallback
+(`rules/ai.md`). Local model artifacts use immutable revisions, declared files,
+sizes, licenses, and SHA-256 checksums. A capability is exposed only after the
+actual adapter and runtime have been validated for it.
+
+## Planned additions (pending their phase)
+
+Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
+
+- `d3-hierarchy` for the Shape icicle and mind maps (F2).
+- Inter and Source Serif 4 variable fonts, OFL-1.1, bundled offline (F1b).
+- MLX weights for Qwen3-Reranker-0.6B and Qwen3-Embedding-0.6B (Apache-2.0;
+  Qwen safetensors or mlx-community conversions), pinned revision plus SHA-256,
+  run on MLXLLM/MLXEmbedders (F0 spike, F2 adapter).
+- Fallback reranker GGUF artifacts: Qwen3-Reranker-0.6B Q8_0 (ggml-org) and
+  bge-reranker-v2-m3 Q8_0 (gpustack), pinned by SHA-256 (F0 spike, F2 adapter).
+- `radix-ui` and `cmdk` through vendored shadcn components (F5).
+- `@playwright/test` for Electron journeys (F5).
+- `umap-js` and `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike
+  (F6). Stay on `sigma` `3.0.3` until a sigma 4 spike decides otherwise.
+- Remote deciders (OpenAI Decisions) as fetch adapters with no new dependency.
+
+Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use `@cosmos.gl/graph`
+(MIT) instead if a GPU force layout is ever needed.

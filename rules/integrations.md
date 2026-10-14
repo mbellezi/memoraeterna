@@ -1,380 +1,80 @@
-# External integration and synchronization rules
+# Integrations
 
-Load this rule for the Integration Gateway, Chrome extension, YouTube capture,
-Obsidian plugin, vault projection, pairing, or synchronization.
+Load for the Integration Gateway, Chrome extension, YouTube capture, the
+Obsidian plugin and vault projection, pairing, synchronization or `memora://`
+deep links.
 
 ## Integration Gateway
 
-- The gateway runs in the Electron main process on loopback only. It uses HTTP
-  for requests and WebSocket for events; Native Messaging is not used.
-- The configured port may fall back to a free port on conflict, and Settings
-  displays the actual endpoint.
-- All commands/events use versioned Zod contracts in
-  `@app/integration-contracts` and are routed to the same application services
-  used by desktop IPC.
-- Pairing produces a one-time token. Store only its hash, create ephemeral
-  sessions, authorize every operation by declared capability, and support
-  revocation.
-- The gateway exposes application commands, never repositories, database
-  access, arbitrary filesystem paths, or provider credentials.
+- The gateway runs in the Electron main process on loopback only (HTTP for
+  requests, WebSocket for events). If the configured port is taken it may use a
+  free port, and Settings shows the actual endpoint.
+- Commands and events use versioned Zod contracts from
+  `@app/integration-contracts` and call the same application services as
+  desktop IPC.
+- Pairing issues a one-time token stored only as a hash, creates ephemeral
+  sessions, authorizes each operation by granted capability and supports
+  revocation. New capabilities are granted explicitly; existing pairings are
+  never silently upgraded.
+- The gateway exposes application commands only, never repositories, database
+  access, arbitrary filesystem paths or provider credentials.
 
 ## Chrome extension and YouTube
 
-- The Manifest V3 extension is an isolated client. Its service worker reconnects
-  after waking and gives clear feedback when the desktop is unavailable.
-- It captures pages, selections, metadata, and YouTube URLs through integration
-  contracts. Defuddle may run in the rendered page context.
-- The desktop owns deduplication, persistence, conversion, and processing.
-- YouTube metadata/transcripts use `youtubei.js` when available. Record video
-  ID, platform, channel, language, transcript origin/type, and capture time.
-  Missing transcripts degrade explicitly; robust transcription is not implied.
-- Non-interactive captures default to import-only processing so clients never
-  trigger an unexpected AI workflow requiring an unseen dialog.
+- The Manifest V3 extension is an isolated client. It reconnects after waking
+  and tells the user clearly when the desktop is unavailable.
+- It captures pages, selections, metadata and YouTube URLs through contracts;
+  the desktop owns deduplication, persistence, conversion and processing.
+- Non-interactive captures never trigger generative AI the user has not seen;
+  they use searchable processing at most.
+- YouTube capture records video ID, platform, channel, language, transcript
+  origin and capture time. Missing transcripts degrade explicitly.
 
 ## Obsidian projection
 
-- PostgreSQL remains canonical. The vault is a synchronized, editable Markdown
-  projection.
-- Every managed file has stable identity frontmatter including `memora_id`,
-  `memora_type`, `memora_managed`, `memora_sync_version`, and
-  `memora_content_hash`, plus source/document/root/division/revision IDs when
-  applicable.
-- Human-readable paths are default. Identity never depends on a path or
-  filename. Resolve collisions with short date, then counter, then short-ID
-  suffixes.
-- Hierarchies project as root index plus child folders while preserving root,
-  child, division, and revision IDs.
+- PostgreSQL stays canonical; the vault is a synchronized Markdown projection.
+  The plugin monitors only managed files and never accesses PostgreSQL.
+- Every managed file carries identity frontmatter (`memora_id`, `memora_type`,
+  `memora_managed`, sync version, content hash, plus source/document/revision IDs
+  when applicable). Identity never depends on path or filename; collisions get
+  deterministic suffixes. Non-reserved user frontmatter is preserved.
+- Registered paths are stable: renaming, re-parenting or archiving a topic does
+  not silently move files. Physical layout changes are explicit, recoverable
+  migrations that check local edits before moving anything.
+- The projection follows the topic tree: topics project as folder-note maps of
+  content, redirects become aliases, sources and notes keep their registered
+  paths. Delivery is paged or incremental; oversized scopes fail visibly and are
+  never silently truncated (target F2).
+- Scope and canonical revisions are revalidated immediately before every write.
+  Writes are serialized per target, compare actual file bytes before promotion,
+  reject symlinks inside the vault, use exclusive temporary files, and keep
+  recovery copies under `.memora-recovery`.
+- Retired projection files are archived or tombstoned through the recovery flow,
+  never deleted when they may hold user edits.
 
-## Bidirectional sync
+## Synchronization and editing
 
-- The plugin monitors only managed Markdown and communicates changes by
-  contract. It never accesses PostgreSQL.
-- The database stores relative path, mtime, content/frontmatter hashes, version,
-  status, and tombstone state.
-- Create/update/rename/delete events validate identity, version, and expected
-  path. Rename/move changes the recorded path without changing identity.
-- Reconciliation scans compare files that are actually present. Absence during
-  a scan is not sufficient evidence of deletion; explicit deletion events use
-  validated identity/version/path.
-- Conflicts are explicit and never resolved by silent overwrite. Prefer
-  tombstones or recoverable deletion when data loss is possible.
-- Editing synchronized source Markdown uses the shared editorial revision flow.
-  Preserve reviewed artifacts and provenance; saving never implies AI processing.
+- The database records relative path, mtime, content and frontmatter hashes,
+  version, status and tombstone state per managed file.
+- Create, update, rename and delete events validate identity, version and
+  expected path. A rename changes the recorded path, not identity. Absence during
+  a scan is never evidence of deletion.
+- Conflicts are explicit and never resolved by silent overwrite; base, local and
+  application versions stay available for an explicit choice.
+- Editorial writeback is a separately granted capability bound to one vault.
+  Accepted edits become human revisions through the same services as desktop
+  edits, mark content protected, invalidate dependents and never start
+  generative AI work.
+  Generated regions and reserved metadata are not a mutation language.
+- The plugin persists pending operations durably before delivery and never
+  discards local text on failure.
+- Projection writes suppress their own echo events, so a projection never
+  triggers ingestion or canonical deletion.
 
-## Wiki projection release 1
+## Deep links and bundles
 
-- `ObsidianSyncService.wiki` owns outward wiki projection, using the existing
-  `JobSupervisor` (`obsidian-wiki` jobs), managed writer and sync registry. The
-  saved `obsidian.wiki.scope` setting selects sources, optional descendants and
-  wiki pages; empty selections mean all eligible objects. A page with excluded
-  evidence or a note with an excluded source link is not exported. Conceptual
-  relationships require both directed endpoints in scope. Scope applies to
-  manual, queued and ingestion-triggered source/note projection as well.
-- Canonical wiki, dependency, source/document/evidence, note/relation and
-  bibliography mutations transactionally advance `obsidian_projection_clock`.
-  It coalesces invalidation, never stores canonical knowledge. The supervisor
-  queues a bounded refresh for a changed generation/configuration, only with
-  configured, enabled, unpaused sync. Every target write rechecks the admitted
-  vault/root/scope. A disabled desktop does not promise background execution.
-- Projection admission recreates a missing projection clock at generation zero
-  transactionally, without overwriting an existing generation. This repairs old
-  reset states and must not block unrelated ingestion work.
-- Bound a refresh to 1,000 sources, 1,000 pages, 2,000 notes, 1,000 conceptual
-  relations and 100 evidence occurrences per relation. Limit each managed file
-  to 2,000,000 characters/bytes on the relevant serialization/read boundary,
-  and the wiki plan to 20,000,000 characters. Oversized scopes fail visibly;
-  they never silently export a truncated bibliography, page or evidence body.
-- Wiki identities project once at their primary placement: leaves are files,
-  initial parents have an index file, secondary memberships are wikilinks.
-  Registered paths survive renaming, reparenting, archive and restoration.
-  Resolve a registered page path before computing desired parent/owner folders.
-  New logical hierarchies have no directory-per-ancestor requirement: when the
-  folder byte allowance is exhausted, place the new file in its existing Wiki
-  area, reserving collision-suffix space within the portable path limit. This
-  does not migrate registered files or change the layout version. Scoped logical
-  breadcrumbs and ordered typed reading/subtopic/related links remain independent
-  of physical placement, in both supported projection layouts.
-  Archived existing projections show recoverable archive state and leave active
-  navigation; files are not deleted. Source and note paths are reused. The wiki
-  source catalog links them; metadata-only sources have one `source_reference`
-  record with bibliography and child links, without a document identity.
-  Later substantive ingestion safely promotes that same record/path to a
-  source file; transitions in either direction preserve divergent local edits.
-- Source relationships are read-only generated files keyed by the existing
-  relation ID. Render the actual directed owners, both attributed ideas,
-  explanation, independently translated review/freshness and both original
-  evidence snapshots. Resolve source-reference tags from endpoint IDs and
-  registered paths. Historical excerpts remain explicit and never silently
-  redirect to changed current source prose. Page citations retain source,
-  document, locator, exact excerpt and stable evidence/section anchors.
-- Shared `@app/integration-contracts` Markdown format version 1 owns parsing,
-  serialization and normalization on desktop/plugin. Keep legacy fields plus
-  `memora_wiki_schema` and `memora_revision_id` for outward types. Reject unknown
-  or duplicate reserved fields. Preserve non-reserved user frontmatter. Only
-  line endings normalize; hard breaks, fences, Unicode and whitespace remain
-  meaningful. Reserved control markers inside fenced examples remain data.
-  Title/section Markdown is separated from the generated region; section UUIDs
-  and block anchors are stable. Generated regions are not a mutation language.
-- `obsidian_projection_revisions` is the per-target delivery outbox and retained
-  merge base. Before filesystem work it records serialized content, canonical
-  revision, editable/generated/rendered hashes and the exact acknowledged base.
-  The generated hash covers generated region content without delimiter markers;
-  the rendered hash includes all frontmatter, markers and prose. Recovery keeps
-  historical bases and local copies. A matching observed intended file can
-  finish a lost receipt without another write. A missing or changed target
-  becomes an explicit conflict; independent targets continue.
-- Serialize target writes with a PostgreSQL advisory lock. Recheck actual file
-  content before promotion, reject symlink descendants of the real vault root,
-  and use exclusive temporary files. Preserve independent before/proposed copies
-  and the captured original inode under `.memora-recovery`; exclusive promotion
-  preserves files recreated during its brief gap. Cross-process editor saves
-  are not a filesystem/database transaction. Late saves to the old inode remain
-  recoverable in the captured copy; real open-editor smoke is a release gate.
-- Persist an in-flight `projectionWrite` guard before source/note writes and
-  suppress their own changed/moved/deleted plugin events until the receipt.
-  This prevents a transient absent path from invoking canonical deletion and
-  prevents projection echoes from triggering ingestion. Restart reconciles the
-  observed intended hash before clearing a guard. Recovery files are excluded
-  from reconciliation and are removed only by explicit library reset when
-  their registered delivery and managed identity validate ownership. Legacy
-  recovery filenames with independent delivery IDs use the registered target
-  identity and strict recovery-directory validation specified in
-  `rules/security-and-privacy.md`.
-- The release-1 protocol negotiates `obsidian-wiki-projection-v1`. Clients without
-  separately granted editorial capability skip outward files and
-  refuse unsupported managed manual imports. The gateway also rejects reserved
-  raw Markdown when an older plugin omits its unrecognized frontmatter object.
-  Source/note import, move and delete routes cannot reinterpret registered wiki,
-  reference or conceptual-relationship identities. Stage 1 performs no wiki
-  writeback, review approval or AI execution.
-- Read-only `memora://open/wiki/<id>` and `memora://open/source/<id>` links validate
-  IDs and supported query fields. Wiki revision/evidence routes stay pinned to
-  the exact historical revision; source relation links use its existing inspector.
-  An incoming wiki link waits while a desktop draft is being edited. Protocol
-  launch forwarding respects the application single-instance lock. Packaged
-  builds register the scheme; DEV does not change OS protocol associations.
-- Desktop recovery shows base, local and proposed versions. It checks the latest
-  delivery and local file hash, preserves the local copy and explicitly applies
-  the application version; it does not import wiki prose. Keep action failures
-  visible inside the review dialog. Real plugin/vault acceptance is required in
-  addition to the isolated `scripts/verify-obsidian-wiki.ts` verifier.
-
-- Source/note writes retain the original admitted scope binding through all
-  asynchronous reads and reference-to-document promotion. Immediately before
-  a write, revalidate that binding and current source/note evidence ownership,
-  including notes named in generated relation links. A stale preloaded note set
-  is not authorization after scope or linked evidence changes.
-- Receipt reconciliation reloads the synchronized registry version before
-  rendering another wiki/source revision. Recovering an already-written file
-  cannot decrease its sync version or reuse that version for newer content.
-- Wiki links wait while editing, organization, consultation or history review
-  is active. All current-page background and dialog-close reads share the
-  navigation request epoch; a delayed response cannot replace a linked
-  historical revision, even when both responses have the same page ID.
-- The Obsidian plugin's loadable JavaScript is the Vite CommonJS bundle.
-  Its build first compiles integration contracts and translations so workspace
-  build ordering cannot embed stale protocol schemas or product copy.
-  Type checking emits declarations only and must never replace that bundle
-  with unbundled ES modules. Verify the built artifact remains loadable after
-  a subsequent workspace type check.
-
-## Editorial synchronization
-
-- `obsidian-editorial-v1` is a separately granted pairing capability. Existing
-  pairings are not silently upgraded. A compatible plugin requires an explicit
-  Obsidian pairing with editorial scope, a persistent vault UUID and the current
-  vault/root binding. Binding is first-write-wins; a different vault or root
-  needs a new pairing. Recheck the grant, target registry, original admitted
-  source/page scope and binding before commit. Scope never comes from Markdown.
-- The plugin persists versioned operations before delivery, retaining original
-  operation IDs, exact observed file bytes and their acknowledged bases across
-  restarts. Serialize durable transitions, restore them on persistence failure,
-  deduplicate identical captures inside that transition, and serialize target
-  replay. Bound the queue to 1,000 operations and 20 million content characters;
-  failures remain visible and never silently discard local text. HTTP requests
-  have a ten-second timeout and only use the loopback gateway.
-- The manifest is cursor-paged over registered files, 25 per page. Missing files
-  during scans never imply deletion. Explicit file/folder moves and deletions
-  produce separate durable operations; folder operations retain per-file results.
-  A move changes registered placement only, not a source parent or wiki parent.
-  Copying an existing identity to another path produces a conflict.
-- The editorial service uses the M4 per-target write coordinator and a receipt
-  transaction, with current canonical locks and expected revisions. That same
-  transaction saves human revisions, invalidates dependents, updates the sync
-  base and records an immutable operation/receipt. Replaying an applied ID with
-  the same request returns its receipt; reusing an ID with different data fails.
-  Serialize editorial admission to avoid exhausting the shared PostgreSQL pool.
-- Sources use `SourceEditorialService`, also used by the Library. Saving replaces
-  a current document through an editorial revision, preserves previous documents,
-  chunks and spans, and never creates ingestion/AI jobs. Body-only projection
-  edits preserve catalog metadata, bibliography and child boundaries. Legacy
-  source edits reject superseded documents and keep the new document identity;
-  the legacy input hash may normalize whitespace, but stored text never does.
-- Page H1 titles and UUID-anchored sections are editable. The plugin's explicit
-  Add human section command can wrap an empty page/index introduction or append a
-  new section. Added sections are human/protected and have no invented evidence.
-  Reordered, missing or ambiguous anchors require manual reconciliation with the
-  exact retained base. Reserved metadata, generated evidence, relation blocks,
-  source relationships and navigation are not a mutation language. User YAML is
-  retained as local metadata; it cannot change permissions or canonical review.
-- Merge only independent anchored section/title changes with intact structure
-  and unchanged generated regions. Use parser offsets, never equal body strings,
-  to identify a section. Overlap, unsupported structure and changed generated
-  bytes retain base/local/app text for explicit keep-local, keep-app or manual
-  merge in Obsidian or Connections. Confirmation rechecks canonical revisions
-  and current local bytes. Review failures remain visible in the dialog.
-- A receipt does not grant permission to overwrite a newer local file/editor.
-  The plugin uses the supported host `Vault.process` API and compares the active
-  Markdown editor; desktop resolutions use the managed CAS/recovery writer.
-  Rebased queued wire content retains its separate original observed bytes.
-  A later queued deletion can eliminate the need to reproject an earlier save;
-  the final tombstone retains the latest local content. Delivery acknowledgments
-  verify the actual file hash and never clear a newer pending operation.
-- Explicit deletion creates a recoverable projection tombstone, never a source,
-  note or cited-object cascade. Connections can restore it through the same
-  reviewed receipt flow. Pending payloads remain inspectable in the plugin even
-  if canonical data is removed separately. Acknowledged plugin payloads are
-  removed after durable receipt processing; PostgreSQL receipts/bases and note
-  revisions remain audit history until explicit library reset.
-- New editorial targets are excluded from legacy automatic import/move/delete
-  mutation paths. Projection echoes are recognized through exact acknowledged
-  content and registered versions; a newer outward version is reconciled before
-  being treated as a local edit. No-plugin and incompatible-plugin divergence
-  retains the M4 recovery behavior.
-- A duplicate-copy conflict can be explicitly detached in the plugin: retain its
-  prose/user YAML as an unmanaged local copy, remove its reserved identity fields
-  with a local CAS, and dismiss the conflict only after the backend verifies that
-  the copied path is no longer managed. The original registry identity is kept.
-- Fresh comparisons are read-only; applied receipts remain immutable. Explicit
-  resolution supersedes earlier queued snapshots of that file only after checking
-  its current observed bytes. Plugin unloading stops late queue transitions and
-  file writes; pending operations remain replayable on the next load.
-- Move, deletion and restoration receipts invalidate generated navigation in the
-  same transaction. Tombstoned targets retain their paths for restoration but
-  generated links fall back to validated application navigation. Every rendered
-  wiki change advances its sync version, including generated-only link changes
-  whose canonical page revision is unchanged.
-- Replay follows contiguous explicit move events to the final observed path;
-  intermediate paths need not exist. A legacy dirty move first persists a
-  separate editorial save while retaining the original move operation ID.
-  Generated regions rebase only when their bytes equal the accepted prior input;
-  divergent generated text remains available for conflict review.
-- Resolution receipts retain the exact locally confirmed bytes. Desktop
-  keep-local applies those bytes; plugin replay supersedes only edit snapshots
-  through that observed boundary, preserving subsequent edits and every separate
-  move/delete event. A missing local file invalidates plugin confirmation rather
-  than implicitly restoring it. Byte-identical files at different paths still
-  require duplicate-identity reconciliation.
-- Failed resolution retries reference the original conflict family. A successful
-  resolution hides only earlier attempts with the same client, target and vault
-  binding; immutable receipts remain history. The manifest identifies the exact
-  retired attempt IDs so the plugin can reconcile a replaced original without
-  dropping later drafts or independent conflicts.
-- Files and successful resolutions are separately paged, 25 each, through the
-  manifest cursor until both are exhausted. The plugin sends its stable snapshot
-  of at most 1,000 pending operation IDs in the POST body for all pages. Filter
-  resolution history and retired attempt IDs by that snapshot, so long history
-  cannot crowd out an older operation still pending on an offline client.
-
-## Automatic-wiki layout successor
-
-- Atomic-note wrappers retain primary and linked original excerpts with exact
-  document, chunk, span and locator identities. Display note review/protection
-  separately from evidence currentness. A superseded original remains labeled
-  historical; source editing updates generated metadata without replacing the
-  note's text, identity, path or historical evidence.
-
-- Keep projection language and layout version explicit and independent of UI
-  language. Stable language-independent category keys resolve registered paths;
-  language/layout changes use a reviewed migration, never a formatter-only move.
-- The successor layout retains one source reference/content identity, separate
-  original/human/generated regions, original parent-child order, shallow atomic
-  note identities and typed TOC links shared with native navigation. Assets project
-  once per registered identity and omitted binaries remain explicit.
-- Negotiate a new format/layout capability before new writeback; legacy v1 clients
-  cannot reinterpret TOCs, wrappers or generated summaries as source/note edits.
-  Preserve no-plugin Markdown usefulness and existing v1 recovery guarantees.
-- Before path changes persist an assessed identity/path/link map, exact
-  base/local/proposed bytes, backup and target journal. Dirty/open/missing/colliding
-  files require resolution or explicit exclusion. Use existing target coordination
-  and observed hashes to reconcile filesystem/registry/link crash boundaries.
-  Rollback checks subsequent edits; it never blindly restores old bytes.
-
-- `obsidian-layout-v2` is an additional explicit pairing grant. Format 2 uses
-  `memora_layout`, `memora_layout_language`, `memora_wiki_schema: 2` and the
-  existing identities/revisions. Retain explicit version-1 configuration and
-  exact v1 readers/outbox replay. New empty configured projections initialize
-  their layout language from content language; existing registries require
-  reviewed migration. Interface-language changes never move files.
-- The version-2 source wrapper exposes one exact original region. Bibliography,
-  current `source_summaries` content and its provenance/freshness, source-note
-  TOCs and reverse links are generated. Never relabel the legacy catalog summary
-  as the current generated summary. Link human interpretation only to positively
-  personal canonical sections. Materialized parents do not repeat their derived
-  child originals; independent parent originals remain available.
-- Atomic notes have one shallow registered file. Page indexes, source TOCs,
-  maps and investigations use the existing canonical roles and ordered typed
-  memberships. Section-local citation ordinals map to exact evidence anchors;
-  export provenance, protection and support separately from human verification.
-  Portable typed links retain a reserved exact inverse map; restoring the map
-  during editorial save preserves native canonical targets. A format-2 human
-  save uses native version-2 section preservation semantics.
-- Section citation lists use ordinary ordered Markdown links, preserving each
-  section's canonical evidence order and exact anchors. Do not encode citation
-  ordinals with task-list syntax that Obsidian can render as checked boxes;
-  numbering is neither task completion nor evidence verification.
-- Portable paths retain NFC Unicode, detect case/normalization collisions,
-  guard reserved filenames and enforce byte limits. Source classification uses
-  canonical type and ancestry; sibling order comes from current materialized
-  divisions. Only an actual recorded daily date creates year/month folders.
-- Page export admission checks the raw page inventory overflow before filtering.
-  Both layouts authorize complete current dependency and retained-original
-  lineage, including nested TOCs, note relations and interpretation history.
-  Metadata-only ancestors inherit descendant lineage; excluded parent headings
-  never enter breadcrumbs. Deleted original IDs remain exclusion inputs. A
-  source-scoped page needs positively attributable lineage; an empty evidence
-  array is not permission to expose unbound prose or derived headings.
-- Attachment copy is explicit, local-only and immutable. Register ownership in
-  the existing sync registry by document-asset identity; verify source bytes and
-  reuse the registered path. Bound an asset to 16 MB and a source-scope inventory
-  to 100 MB/1,000 assets. Missing, omitted or oversized assets remain visible;
-  never fetch a remote file or duplicate an original for each child source.
-- `obsidian_layout_migrations` retains assessed paths, acknowledged/local/proposed
-  snapshots and target receipts before filesystem changes. Apply/rollback process
-  at most 100 targets per action under the existing target advisory coordinator.
-  Active journals quiesce normal writes. Recheck exact local/canonical versions,
-  preserve unmanaged references for review, and verify generated-link closure.
-  Excluded registered files retain their paths and format until a later explicit
-  migration; normal refresh must not silently convert them.
-- Block migration while an incompatible Obsidian client is connected. A current
-  plugin reports every open Markdown leaf and pending target, acknowledges capture
-  quiescence, and suppresses migration echoes. Offline/stale presence requires
-  reconnection or explicit target exclusion; never discard its pending prose.
-  Reject incompatible handshakes during an active migration. Without a plugin,
-  the explicit migration review requires confirmation that managed editors in
-  all applications are closed, in addition to disk CAS and recovery copies.
-- Crash resume may acknowledge exact already-promoted bytes without another
-  write. Retirement reserves its capture destination exclusively; retries cannot
-  replace an inode containing a late human save. Guard rollback with current disk
-  bytes, preserve later human edits and retain independent successful receipts.
-  Only the latest journal returns full snapshots to the renderer; older status
-  entries remain lightweight. An unconfigured vault has an explicit empty state.
-
-- Knowledge-owned notes use one independent registered file, without source/document
-  cascade ownership. Legacy per-source writers skip these identities and use the
-  existing wiki outbox to refresh their preserved paths in either format. Keep
-  that boundary when a note is listed through secondary attribution: source-owned
-  notes are written only by their canonical owning source. Retain primary and
-  linked historical excerpts from `atomic_note_evidence` when live
-  source/chunk rows disappear; mark missing originals historical and keep surviving
-  attribution. Final note writes recheck scope and canonical note revision.
-- Retained original references in either projection format preserve the recorded
-  source title and excerpt when the canonical source is absent, with a localized
-  unavailable label and no source-opening action. A live source without a current
-  projected file can retain its valid application link. Missing current originals
-  remain historical; this presentation never broadens excluded-source scope.
-- Note evolution repairs current TOCs and exposes old-to-new note links while
-  retaining older page/managed-file revisions. Generated interpretation histories
-  include dates at their recorded precision, authorship, experience, caveats and
-  corrections outside editable regions. Native and Obsidian human edits retain
-  those immutable records; source text and wrapper metadata grant no authority.
+- `memora://` links validate IDs and supported fields, respect the
+  single-instance lock, and wait while the user is editing. Packaged builds
+  register the scheme; DEV never changes OS protocol associations.
+- The Obsidian plugin ships as a bundled CommonJS artifact built after its
+  contracts and translations; type checking must not replace that bundle.

@@ -1,0 +1,451 @@
+# Memora Eterna 2.0 refactoring plan
+
+**Current phase: F0 (weeks 1-2).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
+starting points unless marked measured.
+
+## 1. Goal and owner complaints
+
+Goal: a real second brain with a self-balancing topic tree that always leads to every source and note,
+relations found in seconds, maintenance that works without configuration, and one modern workspace where
+generating and using knowledge happen on the same objects. Confirmed complaints: (1) generation (summaries,
+notes, jobs, automation) is isolated from browsing the wiki; (2) relation reranking is extremely slow (11.9
+s per note measured, prose for every candidate); (3) the wiki tree is not built properly, never rebalances,
+and maintenance routines are confusing and do not work out of the box. Common root: structure, relations and
+maintenance were side effects of slow, serial, prose-writing LLM calls, and the old rules forbade balancing,
+concurrency and automatic correction.
+
+## 2. Owner decisions (binding)
+
+1. All work is done by Claude Code agents on branch `refactoring`.
+2. AI-managed structure and relations are **automatic with undo**. Only human-created, human-edited, pinned
+   or protected content needs approval before automation changes it.
+3. Relation decider: **local reranker by default**: Qwen3-Reranker on MLX (MLXLLM, yes/no logit score);
+   fallbacks are GGUF Qwen3-Reranker via node-llama-cpp `createRankingContext`, then bge-reranker-v2-m3.
+   The OpenAI Decisions API is an option to measure (owner provides a Platform key). Jev is not planned.
+4. **The existing wiki is wiped and ignored.** No adoption, no migration of wiki pages, no backward-compatible
+   readers. Legacy wiki/curator/maintenance code is frozen (no features, minimal fixes only) until replaced.
+5. All rules, UX, backend and API may be rewritten. Rules hold only durable invariants; numbers live in
+   typed config with tests; no versioned compatibility contracts; no implementation diaries.
+6. Agent model tiers: `RULES.md` section 4. Always set the model explicitly.
+7. Git workflow: `RULES.md` section 6 (atomic verified commits; no push, merge or history rewrite unasked).
+8. Approved downloads under `.cache/` with pinned SHA-256: Qwen3-Reranker-0.6B Q8_0 GGUF (ggml-org,
+   639,153,184 bytes, sha256 `22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48`),
+   bge-reranker-v2-m3 Q8_0 GGUF (gpustack, 635,676,416 bytes, sha256
+   `a43c7c9b11a4c1517e5bf95151960e1621d1b72f7a493364b01e386cf1aaa1d3`), and a varied public calibration
+   corpus (pt-BR + EN).
+9. Agents may start the local PostgreSQL sidecar, read the owner's library (read-only in F0), add public corpus.
+10. Golden-library cassettes are recorded via the current AI route (ChatGPT/Codex OAuth, gpt-5.6-luna).
+11. About 26 weeks for F0-F6; F0 = weeks 1-2.
+12. **Local models are MLX-first:** prefer the MLX implementation in `native/mlx-helper` (MLX Swift 0.31.6,
+    MLX Swift LM 3.31.4 with MLXLLM and MLXEmbedders) whenever one exists; GGUF via node-llama-cpp is the
+    fallback when there is no MLX build or no Apple Silicon. Approved extra downloads under `.cache/`: MLX
+    weights of Qwen/Qwen3-Reranker-0.6B and Qwen3-Embedding-0.6B (safetensors or mlx-community conversions,
+    Apache-2.0), with pinned revisions and SHA-256.
+
+## 3. The five swaps
+
+| Today | Target |
+| --- | --- |
+| LLM curator picks the tree from groups of ≤6 chunks seeing ≤3 pages | **Topic Tree Engine**: deterministic placement on embeddings, invariants, rebalancing; LLM only names topics and writes prose on demand |
+| One rerank call per note writes prose for ~20 candidates, ~94% rejected | **Relations v2**: retrieve → filter → decide → type → explain later |
+| 4 calendar routines, 37+ knobs, 21 internal states, global latches | **Gardener**: event-driven tasks, per-item failure isolation, undo, Inbox, 3 controls |
+| One global AI FIFO and one job at a time | **AI runtime lanes**: one local slot, bounded remote concurrency, interactive priority |
+| 10 silo screens and 3-4 search systems | **One workspace**: tree, stacked object pages, context panel, Cmd-K, Home, Inbox, Activity |
+
+## 4. Engines
+
+### 4.1 Topic Tree Engine
+
+The navigation tree becomes a first-class structure maintained by deterministic code over the existing
+pgvector embeddings. Code: pure domain in `packages/domain/src/topic-tree/` (Float32Array, seeded tests),
+repository in `packages/db`, service in desktop main, clustering in a `worker_thread`.
+
+- **Statistics (BIRCH-style):** per topic, count `N` and sum of unit vectors `LS`; centroid `LS/|LS|`,
+  coherence `|LS|/N`. A note uses its embedding; a root source uses the centrality-weighted mean of its
+  notes (fallback: chunk centroid, then metadata embedding). Insert adds along the path; delete, edit,
+  supersede or reject **subtracts** along the old path before re-placing.
+- **PLACE:** beam descent from the root scoring children by centroid and label similarity, with
+  node-relative admission thresholds. Clear winner → automatic (0 calls). Ambiguous → decision gate (local
+  reranker over ≤5 topic descriptors; optional remote predicate). No reranker or no acceptance → direct item
+  of the deepest admitted common ancestor, flagged for a split check. Up to 2 secondary "also in"
+  placements. A lone item never creates a topic.
+- **Invariants:** I1 every current note and root source is reachable from Topics (hard; an item may sit in
+  its area's Unsorted leaf). I2 one primary parent, ≤2 secondaries, no cycles (hard). I3 internal fan-out
+  2-12, target 4-9 (soft; hard above 16). I4 leaf holds 3-30 direct items, target ~15 (soft; hard above 45).
+  I5 target depth ≤5, cap 7 (hard at cap; sideways split). I6 no single-child chains (soft). I7 unique
+  sibling titles, case- and accent-insensitive (hard). I8 coherence above a calibrated floor, else split
+  candidate (soft). I9 IDs are never reused; retired topics become redirects (hard). Unsorted share ≤2% and
+  item age in Unsorted are soft targets that raise an Inbox suggestion, not hard violations. The
+  Broad/Balanced/Deep preference shifts I3/I4.
+- **Operations:** leaf split (balanced spherical k-means or Louvain), push-down on fan-out overflow (node
+  keeps its ID), sideways split, merge, dissolve, collapse, re-parent, rename. Each is accepted only if it
+  fixes a hard violation or `ΔQuality − λ·Churn > 0` (churn weighted up for recently opened items).
+- **Stability:** hysteresis, per-node cooldown, freeze on nodes the user recently viewed or edited, daily
+  operation and move budgets, "moved from X" hint. Pinned and human-created nodes never move automatically.
+- **Naming:** one write-fast call per operation for all new nodes (title, one-line description, aliases, in
+  the content language, Zod-validated, sibling duplicates rejected). Without an LLM: provisional "Parent ›
+  TF-IDF terms" with per-language stopwords. Mixed-language clusters are named in the dominant language.
+- **Bootstrap and cold start:** below ~12 items everything is a direct child of Topics and shown as
+  Unsorted; at ~12 items a bottom-up bootstrap builds the first named tree (chapter centroids seed k-means
+  for a single hierarchical source); the user may pin 3-10 suggested Areas.
+- **Shadow rebuild:** periodic or on quality drop; old→new topics mapped by Hungarian matching on member
+  Jaccard so IDs survive; emitted as ordinary operations.
+- **Embedding-space change:** re-embed in batches, recompute `N/LS` and label vectors, recalibrate
+  thresholds, map topics by Hungarian matching, reset Atlas positions.
+- **Events and undo:** every operation writes a structure event inside a change-set; undo applies the
+  inverse and, when later change-sets depend on it, blocks and names them (no cascade in v1).
+- **Topic page:** deterministic map of content (subtopics with counts, notes by centrality, contributing
+  sources, related topics; zero LLM calls) plus a lazy prose overview written when opened or by REFRESH,
+  with citations and a support check.
+- **Ownership:** `wiki_pages.parent_id` remains the only parent pointer; after the switch the engine is its
+  single writer for AI topics (enforced by test).
+- **Data:** topic state (stats, management ai|human|pinned, dirty flags), placements, redirects, structure
+  events, daily metrics, calibration; centroids reuse the per-dimension embedding tables.
+
+### 4.2 Relations v2
+
+Runs per note as soon as it has an embedding (MATCH task). No batch barrier; a failed source never blocks
+its siblings. No prose is generated for rejected candidates.
+
+1. **Retrieve (SQL only):** ANN on a partial HNSW index of current notes (ordered by raw distance), FTS on
+   an indexed generated `search_tsv`, shared entities; RRF into ~20 candidates, excluding superseded,
+   rejected and already-related pairs.
+2. **Filter (0 calls):** arithmetic feasibility while the legacy weighted score exists (lossless by
+   construction); a calibrated cosine floor (bypassed by strong FTS or shared entities); a decision cache
+   keyed by both note hashes and the decider; keep the top ~8.
+3. **Decide P(related):** local reranker by default, MLX first (Qwen3-Reranker on MLXLLM), then GGUF
+   Qwen3-Reranker, then bge-reranker-v2-m3; generative decision-only route as the universal fallback; OpenAI
+   Decisions as an optional measured accelerator (use `predicate` for acceptance; shuffle options if `choice`
+   is used for type). Raw scores for both directions are stored separately from calibration, so recalibration
+   never re-decides. Isotonic calibration gives accept / uncertain / reject bands; in Auto mode high-precision
+   accepts are applied, the rest of the accept band becomes suggestions.
+4. **Type and direction:** only for accepted pairs, one enum JSON call **batched per source** (supports,
+   contradicts, extends, depends_on, example_of, clarifies, same_as or none; none is a veto).
+5. **Explain later:** a fast model writes a short explanation when the relation is opened (or prefetched
+   after a hover delay), cached per pair, hashes, type, prompt and model; low-priority backfill for recently
+   viewed pages. The writer may answer NOT_RELATED, which sends the relation to the Inbox.
+
+**Source relations by aggregation:** promote a source relation when ≥2 accepted note pairs connect the two
+roots, or one high-probability pair is confirmed by the decider. Discovery pairs without note links come
+from source-centroid ANN plus a decider call. This replaces per-pair proposal calls and the Cartesian
+trigram join. **Reranker caveats (GGUF fallback):** verify the GGUF header (classification head, rank
+pooling; for MLX, the config and architecture) and a relevant-vs-irrelevant smoke test before exposing
+`decide`; do not use the custom `template` option for bge; do not quantize the KV cache for ranking;
+`rankAll` is serial and llama.cpp issue #30422 is present, so latency is budgeted only after measurement.
+
+### 4.3 Gardener (event-driven maintenance)
+
+Built on the existing `jobs` table (priority, `run_after`, attempts, SKIP LOCKED) plus `dedupe_key` and
+`lane` (heavy: ingestion; light: Gardener and Obsidian), with per-source exclusion instead of global "any
+job / any AI call" blocks.
+
+| Task | Trigger | Work |
+| --- | --- | --- |
+| PLACE | note created/edited/accepted, source chunked (debounced) | place in tree, update stats |
+| MATCH | per source, as soon as its notes exist | Relations v2 |
+| REBALANCE | hard violation (fast) or soft violation after subtree quiet | split, merge, push-down, collapse, re-parent, naming |
+| REFRESH | dirty pages, priority = dirtiness × views × recency; P0 when opened | additive overview patches with citations, "Divergences" side by side, explanation backfill |
+| AUDIT | after enough time and changes | deterministic lint: reachability, invariants, duplicates, broken links/redirects, stale embeddings, rolling re-placement |
+
+- **States:** queued → running → done | no_change | failed (retryable with backoff; quarantined after a few
+  attempts, shown in the Inbox with an action) | blocked (no model, cap, paused, offline, downloading) |
+  skipped (same input fingerprint). No policy-wide latch; a pending review never blocks unrelated work.
+- **Freshness by content only:** fingerprints use chunk, note and member hashes. Model, prompt and settings
+  are provenance; changing a model offers an optional backlog. Saving settings never invalidates coverage.
+- **Change-sets:** every applied task yields a localized, deterministic title, affected objects, risk level
+  and an undo handle (retained ~90 days).
+- **Inbox:** a read-only view over pending-review change-sets, quarantined tasks, contradictions,
+  NOT_RELATED vetoes, duplicates and Obsidian conflicts; each decision becomes a calibration label.
+- **Controls (three):** autonomy (Off: no generative or remote background work, deterministic placement
+  still runs; Suggest; Auto with undo, the default), monthly remote spend cap, pause. Plus the tree-shape
+  preference and "only idle" / "only on AC power" options. Always reviewed regardless of autonomy: changes
+  touching human, pinned or protected structure or text; large merges; Area-level changes; rebuilds moving a
+  large share of items; contradictions that would rewrite prose.
+- **Money cap semantics:** remote background spend = recorded tokens × versioned price table; unknown price
+  uses a conservative estimate, never zero. At ~80% remote background work pauses (P0 continues); at 100%
+  background continues local-only. Subscription routes without per-token price (Codex OAuth) are outside the
+  money cap and bounded by lane concurrency and a daily call cap. User-started imports show their estimate
+  in the plan chip and do not consume the background cap. In Hybrid without a local writer, generative
+  background work waits at the cap while placement and deciding continue locally; Activity says so. Local
+  work has no money cap, only a duty cycle (lower while the user is active).
+- **Status:** one sentence with ETA and an action ("why isn't it running?"); blocker precedence paused > no
+  model > cap > download > waiting > offline; shows coverage and ETA, never call counts.
+
+### 4.4 AI runtime lanes
+
+- **AiScheduler** replaces the global FIFO: one local lane with concurrency 1 shared by embedding, reranking
+  and local generation (hardware ceiling); one lane per remote provider configuration with bounded
+  concurrency (start: 4 for API-key providers, 2 for Codex OAuth; tuned from 429s and rate-limit headers);
+  OpenAI-compatible localhost/Ollama counts as local.
+- **Priorities:** P0 interactive (Ask, query embedding, explanation on open, user action), P1 focused
+  source, P2 ingestion and linking, P3 maintenance; strict with aging; never preempts a running call.
+  Background local work is split into bounded calls so P0 waits at most one of them. A P0 may use an allowed
+  remote lane when the local lane is busy.
+- **Deadlines** count from execution start (connect, first byte, stalled stream, total per workload class).
+  **Retries** in adapters: backoff with jitter for 408, 425, 429, 5xx, network and stalls, honoring
+  `Retry-After`; never for 400/401/403/404/413, context overflow or schema failure after repair.
+- **Schema output** via Zod JSON Schema: OpenAI `json_schema` strict, Gemini `responseJsonSchema`, Codex
+  `text.format`, node-llama-cpp grammar; MLX keeps one repair. Valid items are kept; only missing ones are
+  re-requested once.
+- **Workload classes:** `embed`, `decide`, `write-fast`, `write-quality`, `answer`, seeded from a Local /
+  Hybrid / Cloud preset at first run and tested with one call each. `decide` accepts only validated
+  rerankers or explicitly chosen deciders. Local mode needs MLX for generation, so it is macOS arm64 only;
+  elsewhere the default is Hybrid or Cloud.
+- **Efficiency:** `embedMany` (remote arrays; one reused local context), skip re-embedding when hash and
+  space are unchanged, cached config/credentials/adapters, telemetry written outside the slot, residency of
+  a small group (embedding + reranker) plus one generative model unloaded after idle.
+- **Lean ingestion:** graph extraction once (on notes with chunk evidence), no claims extraction, duplicate
+  notes on write become Inbox suggestions; windowed ingestion only after an A/B in F6.
+
+### 4.5 Objects and events layer
+
+- **Addresses:** five visible object kinds, each with a page and a stable address `memora://<kind>/<uuid>`
+  (Source, Note, Topic, Question, Entity), plus anchors `#passage=<chunkId>`, `#span=<sourceSpanId>`,
+  `#section=<sectionId>`. One address serves the router, links, Cmd-K, Obsidian deep links and Back.
+- **Read model:** read-only views `knowledge_objects` and `knowledge_links`, plus `current_notes` /
+  `current_relations` for currentness predicates. Canonical tables stay authoritative; materialize only if
+  EXPLAIN gates fail.
+- **Indexes:** immutable `f_unaccent` wrapper, per-row `ts_config`, generated `search_tsv` with GIN on
+  chunks, notes and wiki sections; trigram on titles; partial HNSW per target type; materialized
+  `root_source_id`; drop unused indexes.
+- **IPC (Zod-validated):** `objects.get`, `objects.resolveMany`, `objects.locate` (primary path, "also in",
+  citing pages), `objects.backlinks`, `objects.neighborhood` (DOI-ranked, bounded), and `search.omni` (FTS +
+  trigram + ANN per kind, RRF across kinds) replacing the 3-4 current searches.
+- **Push events:** a typed in-process event bus emitted after commit, coalesced and sent on one
+  Zod-validated preload channel (`object.changed`, `tree.changed`, `relation.created`, `job.progress`,
+  `inbox.changed`, `gardener.status`). It replaces the ~17 IPC pollers.
+- **State stores:** persisted Ask answers and Questions; a local, non-telemetry view history (recents, pins,
+  resurfacing schedule) that feeds REFRESH priority, the freeze and churn weighting; optional opt-in usage
+  telemetry stays separate.
+
+## 5. Target UX
+
+- **Five destinations:** Home, Explore, Library (a table of Sources), Inbox, Map; Settings in the rail
+  footer. Jobs, Automation and Monitoring become the Activity pill and an advanced Diagnostics page. Opens
+  on the last panel stack; Home on first run and the first open of the day.
+- **Three-zone workspace:** navigator (tree with counts, health, notes and sources as leaves, pins, recents,
+  Unsorted) | stacked object panels (click stacks, older panels collapse to spines, per-panel history; no
+  click switches the top-level view) | context panel (Connections, Mentions, Evidence, Graph, Activity,
+  Ask).
+- **Object pages:** Topic (MOC + lazy overview), Source (live generation strip replaces the Jobs screen),
+  Note (evidence, path in the tree, relations with who decided and who wrote), Question, Entity. Hover
+  previews and citation chips (hover shows the passage, click opens it) everywhere.
+- **Cmd-K:** jump, act and ask with prefixes (`>` actions, `?` ask, `#` topics, `@` entities) over the
+  single retriever. Ask streams and saves answers.
+- **Inbox:** the one place for human judgment, by risk, keyboard-driven, structural diffs shown as icicles
+  (never raw UUIDs). Single-key shortcuts never fire in inputs.
+- **Activity:** pill + drawer: now, waiting (with reason), needs you, done, budget.
+- **First run:** three steps (languages; AI mode Local / Cloud / Hybrid that seeds and tests all routes;
+  drop the first source). Default import is "Second brain" when a writer route is ready, otherwise
+  "Searchable + organized"; non-interactive integrations stay searchable-only; "Just store" remains an
+  explicit choice.
+- **Shortcuts:** ⌘W closes a panel (app menu); no ⌘./⌘E/⌘I clashes; undo toasts keyboard-reachable.
+- **Visual language, "quiet academic instrument":** graphite/paper chrome; colour only for object type,
+  relation stance (always with a glyph) and state. Light accent `#07707f` (AA 5.4:1), dark accent `#65d6e8`;
+  all text colours ≥4.5:1, glyphs ≥3:1 in both themes. Inter for UI and Source Serif 4 for reading, both
+  bundled offline (OFL); fixed type scale, no arbitrary sizes; 4 px grid; short functional motion honoring
+  `prefers-reduced-motion`; System theme by default; the graph reads tokens.
+
+## 6. Visualization lenses
+
+| Lens | Shows | Technique / library | Where |
+| --- | --- | --- | --- |
+| Tree navigator | topics with counts and health; notes and sources as leaves | virtualized ARIA outline, hoist, sticky breadcrumb (no new dep) | Explore, always visible |
+| Local neighbourhood | focal object with typed directed relations, depth 1-2 | DOI ego-graph, sigma 3 + d3-force worker | context panel Graph tab |
+| Shape | tree size, depth, violations, growth; before/after diffs | zoomable icicle, d3-hierarchy | Map › Shape, Home, Inbox |
+| Atlas | all notes by meaning with tree territories and labels | UMAP + Procrustes; positions are presentation state | Map › Atlas (F6, spike-gated) |
+| Evidence card | type, direction, confidence, both passages, decider and writer | progressive provenance, shadcn HoverCard | relation rows and edges |
+| Relations (advanced) | current force graph scoped to a branch, coloured by topic | force + Louvain, topic super-nodes when zoomed out | Map › Relations |
+
+Canvas/WebGL lenses always have a text or table alternative. Stay on sigma 3.0.3; the sigma 4 migration is
+decided by a spike in F6. Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.0; use
+`@cosmos.gl/graph` (MIT) instead if a GPU force layout is ever needed.
+
+## 7. Phases
+
+Phases are sequential (strangler: each engine runs in shadow mode first, new components are hosted in old
+screens, legacy code goes only after its replacement passes); each durable change ships with its rule
+update. Exit numbers marked *(cal.)* are calibration targets from literature or estimates, to be confirmed
+or revised on measured data, not facts.
+
+### F0 Foundation and go/no-go bets (weeks 1-2)
+
+- [x] Branch from tag `pre-strangler`; wiki/curator placement and Obsidian reverse editing of wiki pages frozen.
+- [x] Specification diet: `RULES.md`, `rules/` ≤700 lines, reports in `docs/archive/`.
+- [x] Prettier and ESLint (typescript-eslint, react-hooks) with a baseline suppression file; `npm run check`
+      = typecheck + vitest + prettier --check + eslint + ratchet, building on `scripts/check-format.mjs` and
+      the `lint` alias.
+- [x] `scripts/quality-ratchet.mjs` (raw palette classes, arbitrary text sizes, window dialogs, renderer
+      setInterval, product lines over 200 characters, rule lines; numbers only go down).
+- [ ] Wall-clock instrumentation (stage start/end, queue time, attempt) and `npm run kpi`; first measurement
+      of the v6 matching contract.
+- [ ] Reference libraries: golden-small public manifest (licenses + SHA-256 only in the repo) with AI
+      cassettes recorded on a small subset via the current route; read-only golden-private snapshot (never
+      versioned); a large public corpus of 5-20k notes with real embeddings for tree calibration.
+- [ ] Backup restore path into a scratch sidecar, with a verification script.
+- [ ] e2e harness reusing the existing `phase4:e2e`.
+- [ ] Spike A: Qwen3-Reranker-0.6B on the MLX helper (yes/no logits), then GGUF `createRankingContext`, then
+      bge: artifact check, smoke, AUC on human labels, ms per 250-300-token pair on the owner's Mac.
+- [ ] Spike B: offline k-means tree over real embeddings; shape metrics, ambiguity rate, HTML page with 30
+      sampled topics for the owner.
+
+Exit: `npm run check` green with the baseline; `docs/kpi-baseline.md` recorded; cassette replay
+deterministic at $0; Spike A GO at p50 ≤75 ms/pair (4-minute target for 200 notes) or ≤150 ms/pair (8-minute
+target), otherwise the fallback is recorded; Spike B GO at 100% reachability, ≥70% of 30 topics rated
+coherent by the owner and ambiguity ≤30% *(cal.)*, otherwise retune (Louvain over kNN) before F2.
+
+### F1a Stop the bleeding (weeks 3-4)
+
+- [ ] Lossless feasibility filter before rerank; skip the call when nothing remains.
+- [ ] Decision-only matching contract: explanation only for accepted pairs, partial acceptance with one
+      repair, reasoning off on the decide route.
+- [ ] `relation_decisions` (raw scores per direction, hashes, decider) as a lossless cache, with a per-note
+      checkpoint.
+- [ ] Remote fetch deadlines and stream watchdog; classified retry with backoff; priority classes in the
+      current queue; Ask timeout counted from admission.
+- [ ] A failed or canceled sibling no longer blocks batch matching.
+- [ ] Import defaults ("Second brain" when a writer route is ready, else searchable), open the source after
+      import; seed all routes from the first profile; stop tagging generative models as rerankers.
+- [ ] Re-embed notes after human edits; batch wiki link resolution; keep Library mounted; stabilize graph
+      callbacks; graph pass on notes and claims off by default.
+- [ ] Legacy wiki stopgaps only if needed before F2 (decision 4 freeze, ≤0.5 day each): weekly/monthly
+      routines and the OS idle gate off by default, never persist a null parent. The old F1 maintenance exit
+      criteria (0 coverage changes on settings save; other routines run after an injected failure) are
+      dropped by decision 4: routines are replaced in F4.
+
+Exit: matching per note ≤1/3 of the v6 baseline with fixture ≥27/28 expected and 0/35 forbidden; injected
+sibling failure does not delay others; 0 new orphan roots; 100% of new interactive imports produce chunks
+and notes; a 200-link page makes ≤2 IPC calls per cycle; Ask during import has 0 timeouts and waits for at
+most one in-flight call.
+
+### F1b The bridge (weeks 5-6)
+
+- [ ] `objects.locate` (stable contract) and a "Where is this" panel on sources and notes.
+- [ ] Note page v1 as the definitive object-page component, hosted in the Library.
+- [ ] Citations open the exact chunk and SourceSpan.
+- [ ] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
+      menu (⌘W closes a panel); local view-history store.
+- [ ] Static HTML mockups of 8 key screens (Home, Topic, Source, Note, Cmd-K, Inbox, Activity, Map) approved
+      by the owner.
+
+Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
+passes AA in both themes; mockups approved.
+
+### F2 Topic Tree Engine (weeks 7-11)
+
+- [ ] First: reranker adapter (MLX first, GGUF fallback) with validated `decide` capability and catalog entry
+      (revision, size, license, SHA-256); minimal workload classes (`decide`, `write-fast`); light supervisor
+      slot, `jobs.dedupe_key` and `jobs.lane`, with the Background jobs section of `rules/architecture.md`
+      updated in the same change.
+- [ ] Pure domain engine with property tests and offline replay (chronological and shuffled); migration with
+      the topic tables and minimal change-sets.
+- [ ] Repository, service, clustering worker; PLACE and REBALANCE in the light slot.
+- [ ] Shadow mode with a developer comparison panel on the large corpus and golden libraries; calibrate
+      admission, margin, gate temperature and threshold.
+- [ ] Naming with TF-IDF fallback; bootstrap.
+- [ ] Switch: verified `pg_dump` backup, then wipe existing wiki, organization and maintenance data
+      (decision 4); bootstrap a fresh tree from current notes and sources; the engine becomes the single
+      writer of AI topic parents.
+- [ ] Navigator v2, Topic page (MOC + lazy overview) and Shape icicle hosted in the current Wiki screen.
+- [ ] Obsidian reads placements: folder-note MOCs, aliases from redirects, paged or incremental delivery
+      replacing the fixed source/note/page/relation caps; old wiki projection files are retired through the
+      managed recovery flow.
+- [ ] Remove curator placement, route continuation and "Index of X" pages; update `rules/knowledge.md`.
+
+Exit: reachability 100%, 0 orphans and 0 hard violations after REBALANCE; mean depth ≤4.5 and ≥80% of
+internal nodes with 4-9 children *(cal.)*; primary-path churn ≤3% per week in replay *(cal.)*; owner blind
+rating ≥80% of 30 topics coherent and well named; undo restores exact placements; empty database + 1 model +
+1 PDF yields notes in named topics without opening Settings (e2e).
+
+### F3 Relations v2 and AI runtime lanes (weeks 12-15)
+
+- [ ] AiScheduler (lanes, priorities with aging, deadlines, classified retries, schema output in all
+      runtimes, `embedMany`, hot-path caches, residency); remove `ai-execution-queue.ts`; update
+      `rules/ai.md`.
+- [ ] Full workload classes with Local / Hybrid / Cloud presets; map legacy routes.
+- [ ] Decide → type (batched per source) → explain later; isotonic calibration and bands; streaming
+      `relation.explain` with cache; NOT_RELATED veto.
+- [ ] Incremental per-source matching; source aggregation and discovery pairs; SQL fixes (search_tsv,
+      raw-distance HNSW, no Cartesian join).
+- [ ] Bake-off on the held-out fixture plus ~300 owner-labeled pairs (1.5-2.5 h): decision-only generative,
+      Qwen3-Reranker-0.6B, bge-reranker-v2-m3, and OpenAI Decisions if the owner provides a key and budget.
+- [ ] Evidence card and ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours
+      from tokens); graph extraction once; claims stopped.
+
+Exit: fixture ≥27/28 expected, 0/35 forbidden, ≤5% loss of today's reverse-only acceptances; 200 notes end
+to end in ≤4-8 min local depending on Spike A (today ~40 min); 0 prose tokens for rejected candidates; a
+failing source does not delay siblings; 24 h soak with 0 calls past deadline and repairs ≤2%; ≤40 generative
+calls per reference chapter *(cal.)*.
+
+### F4 Gardener, Inbox, Activity and first run (weeks 16-18)
+
+- [ ] MATCH, REFRESH and AUDIT tasks; content fingerprints; outcome cache.
+- [ ] Money cap, duty cycle, autonomy, risk levels, complete change-sets with undo.
+- [ ] Overview writer limited to placed topics (additive patches, Divergences, non-blocking support check).
+- [ ] Event bus with push; Activity pill and drawer with the status sentence.
+- [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
+      controls and tree shape.
+- [ ] Retire routines, maintenance v1, dead screens and legacy tables (after backup).
+
+Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
+blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
+status sentence explains 100% of non-running states; clean Hybrid install places and connects the first note
+in ≤10 min (e2e); ≤6 visible automation settings (from 37+).
+
+### F5 Unified workspace (weeks 19-22)
+
+- [ ] Shell (title bar, 5-destination rail, navigator, panel stack, context panel) and the `memora://`
+      router with per-panel history and Obsidian deep links.
+- [ ] Complete objects layer and `search.omni`; Cmd-K (shadcn Command / cmdk); Ask with streaming and
+      persisted answers; Home; Library table; hover previews.
+- [ ] Remaining pollers replaced by events.
+- [ ] Playwright-Electron journeys: first run, import to tree, read topic, follow a relation, Inbox triage,
+      ask and jump to citation.
+- [ ] Remove the old top-level views and duplicate wiki browsers.
+
+Exit: import to seeing notes and their path in ≤2 clicks (today ~10-12); any object shows its path with 0
+clicks; Cmd-K p95 ≤100 ms; 0 pollers; every screen covers loading, empty, error and success; i18n parity in
+all 5 locales; 5 destinations.
+
+### F6 Lenses, lean ingestion, consolidation (weeks 23-26)
+
+- [ ] Atlas only if the spike shows contiguous branches; branch mind map; scoped Relations lens.
+- [ ] Windowed ingestion under A/B on the reference library.
+- [ ] Finish the design system (primitives, raw-class codemod, pt-BR accents); sigma 4 migration spike with
+      go/no-go.
+- [ ] Remove remaining legacy code after 2 weeks of stable KPIs and a backup; move remaining numeric
+      defaults into typed config with tests.
+
+Exit: ≤15 generative calls per reference chapter with note quality within 5% in the A/B *(cal.)*; raw
+palette classes ≤200 (from 1,854, measured); AA in both themes; KPIs green on 7 consecutive nightly runs.
+
+## 8. KPIs and risks
+
+KPIs (real library, *(cal.)* where not yet measured): zero-config install + model + PDF to connected notes
+in named topics ≤10 min Hybrid; reachability 100%, Unsorted ≤2% from 50 items; mean depth ≤4.5 with ≥80% of
+internal nodes at 4-9 children and 0 single-child chains; weekly path churn ≤3%, undo rate on automatic
+structure ≤5%; 200 notes related in ≤4-8 min local with fixture 27/28 and 0/35; 0 tasks blocked by another;
+import to notes and path ≤2 clicks; raw palette classes ≤200, pollers 0.
+
+Risks and mitigations:
+- Tree quality on short bilingual notes is unproven → Spike B, shadow mode, owner rating, pinning.
+- Local reranker latency is unknown (serial `rankAll`, #30422) → Spike A gate, bge, generative decide.
+- Automatic restructuring can break spatial memory → hysteresis, freeze, churn budget, undo, Suggest.
+- Lazy prose can make topics look unfinished → complete MOC, Ask falls back to notes and chunks.
+- The wiki wipe discards existing prose → verified backup first; accepted by the owner (decision 4).
+- Rules lagging code make agents undo work → rule in the same change, line ratchet on `rules/`.
+- New concurrency races in checkpoints → per-source exclusion, stepwise concurrency, soaks.
+- Schedule: one checkout and owner reviews are the bottleneck; any KPI regression stops the line.
+
+## 9. How agents work on this plan
+
+1. Read `RULES.md`, `STACK.md`, `rules/index.md`, then only the rules the task needs.
+2. Pick the next unchecked task of the current phase (top of this file). Split it into an agent-sized change
+   if needed; do not start a later phase early.
+3. Choose the model tier per `RULES.md` section 4 and set it explicitly.
+4. Implement the smallest complete change, with tests and the rule update in the same change.
+5. Verify with `npm run check` (or its documented fallback) and the phase exit criteria that the task
+   affects; record measurements, not estimates.
+6. Commit atomically on `refactoring` with explicit staging, tick the task here, and advance "Current phase"
+   when every exit criterion of the phase is met.

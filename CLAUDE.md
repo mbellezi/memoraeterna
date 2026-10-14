@@ -1,10 +1,10 @@
 # Repository instructions for AI coding agents
 
-Before taking any action in this repository, read these files in order:
+Before taking any action in this repository, read in order:
 
-1. `RULES.md` — the small, always-applicable engineering contract.
-2. `STACK.md` — approved technologies, runtimes, and dependency versions.
-3. `rules/index.md` — the routing table for task-specific specifications.
+1. `RULES.md` — the small engineering contract that always applies.
+2. `STACK.md` — approved technologies and exact dependency versions.
+3. `rules/index.md` — the routing table for domain rules.
 
-After reading the index, load only the domain rules that match the requested
-change. Do not read every file in `rules/` by default.
+Then load only the domain rules the task needs; do not read all of `rules/`.
+`docs/plan.md` holds the refactoring roadmap and the current phase.

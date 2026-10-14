@@ -112,5 +112,5 @@ The four affected synthetic catalogs were recovered from the baseline backup,
 with evidence remapped only after exact content/hash checks, then verified through
 normal embedding reprocessing. The second matching pass had temporarily missing
 catalog evidence, another reason not to interpret its count changes as a pure
-prompt effect. See `docs/matching-pilot-report.md` for measured outcomes and the
+prompt effect. See `docs/archive/matching-pilot-report.md` for measured outcomes and the
 provisional DEV settings.

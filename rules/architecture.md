@@ -1,80 +1,111 @@
-# Architecture rules
+# Architecture, runtime and packaging
 
-Load this rule for changes to application boundaries, package ownership, IPC,
-services, workers, or dependency direction.
+Load for new apps or packages, dependency direction, IPC/preload/main/worker
+boundaries, background jobs, repository structure, sidecars, native runtimes,
+packaging, signing or development application testing.
 
 ## Runtime topology
 
-The Electron desktop is the system core and the only application allowed to
-own PostgreSQL, privileged filesystem access, secrets, native runtimes,
-sidecars, workers, and the Integration Gateway.
-
 ```txt
-Renderer
-  -> typed preload API (`window.app`)
-  -> Zod-validated IPC
-  -> main-process application service
-  -> repository / worker / managed filesystem
+Renderer -> typed preload API (window.app) -> Zod-validated IPC
+  -> main-process application service -> repository / worker / sidecar
   -> PostgreSQL sidecar
 ```
 
-- The renderer owns presentation and interaction only. It must not import
-  Electron main code, `@app/db`, `node:fs`, secrets, or native AI runtimes.
-- The preload surface is small, explicit, typed, and treated as an internal
-  public API.
-- Browser-safe internal schemas used by the sandboxed preload must be bundled
-  into its CommonJS artifact. Do not externalize workspace contract packages
-  that the sandbox cannot resolve at runtime; verify the built preload loads.
-- Main-process handlers validate requests before invoking application services.
-- Heavy processing runs in `worker_threads` or a supervised sidecar/helper.
-  Workers never access UI state.
-- Presentation-only graph layout and community detection run in a renderer
-  Web Worker over validated graph snapshots. This worker has no privileged
-  application, storage, or domain-processing responsibilities.
-- Payloads crossing IPC, worker, sidecar, or integration boundaries are
-  versioned where compatibility matters and validated with Zod.
+- The Electron desktop main process is the only owner of PostgreSQL, privileged
+  filesystem access, secrets, native runtimes, sidecars, workers and the
+  Integration Gateway.
+- The renderer owns presentation and interaction only. It never imports
+  Electron main code, `@app/db`, `node:fs`, secrets or native AI runtimes.
+- The preload surface is small, explicit and typed. Browser-safe schemas it
+  uses are bundled into its CommonJS artifact; the built preload must load with
+  only Electron resolvable.
+- Main-process handlers validate every request before calling a service.
+  Application orchestration lives in main-process services, not in the
+  renderer, preload, repositories, external clients or the Python sidecar.
+- Heavy work runs in `worker_threads` or a supervised sidecar/helper. Workers
+  never touch UI state. Presentation-only computation (graph layout, community
+  detection) may run in a renderer Web Worker over validated snapshots.
+- New code pushes state changes to the renderer through typed events emitted
+  after commit; it does not add polling loops.
 
-## External clients
+## Packages and dependency direction
 
-The Chrome extension and Obsidian plugin are isolated applications. They use
-versioned contracts from `@app/integration-contracts` and communicate with the
-desktop through the loopback Integration Gateway. They never access the local
-database or import desktop main-process code.
+| Package | Owns |
+| --- | --- |
+| `apps/desktop` | Electron app, main-process services, preload, renderer |
+| `apps/chrome-extension`, `apps/obsidian-plugin` | Isolated external clients |
+| `@app/domain` | Canonical vocabulary and lightweight Zod schemas; no privileged deps |
+| `@app/integration-contracts` | External commands, events, errors and capabilities |
+| `@app/db` | Drizzle schema, migrations, baseline, repositories, SQL |
+| `@app/ai` | Model contracts, adapters, registry, local model catalog/downloader |
+| `@app/conversion` | Conversion, structure detection, normalization, chunking; no persistence |
+| `@app/i18n` | Locales, translation helpers, message-key types |
 
-## Package ownership
+- Desktop may depend on every internal package. External clients depend only
+  on browser/host-safe packages (`@app/integration-contracts`, `@app/i18n`).
+- `@app/db`, `@app/ai`, Node-dependent conversion code and Electron main code
+  never enter renderer or external-client bundles.
+- `@app/db` may import browser-safe `@app/domain` schemas; repositories still
+  hold no application orchestration.
+- `native/mlx-helper` is the Swift MLX helper; `scripts/` holds setup,
+  verification and packaging tools; `docs/` holds the plan and runbooks.
+- `.env`, `node_modules/`, build outputs, `.cache/`, `vendor/sidecars/` and real
+  calibration corpora are local, never source. Generalizable cases become small
+  synthetic fixtures.
 
-- `@app/domain`: canonical vocabulary and lightweight Zod schemas; no heavy or
-  privileged dependencies.
-- `@app/integration-contracts`: safe external commands, events, errors,
-  capabilities, and protocol versions; no Electron, database, filesystem, or
-  service implementation.
-- `@app/db`: Drizzle schema, migrations, seed/baseline, repositories, and
-  specialized queries.
-- `@app/ai`: model contracts, adapters, registry, capability negotiation,
-  parameter support, and local model catalog/downloader logic.
-- `@app/conversion`: format routing, conversion adapters, structure detection,
-  Markdown normalization, and chunking; it does not persist data.
-- `@app/i18n`: shared locales, translation helpers, and message-key types.
+## Background jobs
 
-Application orchestration belongs in desktop main-process services. Do not move
-business behavior into the renderer, preload, external clients, repositories,
-or Python sidecar merely for convenience.
+- Jobs, ingestion runs, stage checkpoints and processing batches persist in
+  PostgreSQL. UI progress is a view of persisted work, never its owner.
+- Workers claim jobs atomically (`FOR UPDATE SKIP LOCKED`) with bounded pools
+  and concurrency.
+- Stages are resumable from checkpoints after restart, crash, timeout or
+  cancellation, without repeating validated work or replaying an uncertain
+  provider call. Unrequested stages are recorded as skipped, not pending.
+- One failed or canceled item never blocks or invalidates its siblings or
+  unrelated tasks. Aggregate progress never hides a failed child. Cancellation
+  preserves completed results.
+- Only transient errors are retried, with bounded attempts and backoff.
+- Reuse an artifact only when its source revision, input hashes and required
+  dependencies still match; invalidation is explicit and limited to affected
+  dependents.
+- Job state, statuses and errors shown to users are localized.
 
-## Dependency direction
+## Sidecars and native runtimes
 
-- Desktop may depend on all internal packages.
-- Chrome and Obsidian may depend only on browser/host-safe packages, currently
-  `@app/integration-contracts` and `@app/i18n` where needed.
-- `@app/db`, `@app/ai`, Node-dependent conversion code, and Electron main code
-  must not enter external-client or renderer bundles.
-- Transport details stay in per-app adapters; domain semantics stay in domain
-  contracts and application services.
+- PostgreSQL, Docling (CPython) and the MLX helper are platform-specific,
+  version-pinned, built from a recorded origin with checksums, licenses and SBOM
+  data, and supervised by the desktop (start, timeout, cancellation, crash
+  recovery, shutdown).
+- Runtime code never downloads dependencies or installs packages. Optional model
+  downloads are an explicit user workflow with immutable revisions and hash
+  verification. There is no system-Python fallback.
+- MLX is macOS arm64 only. Other platforms hide or mark MLX entries
+  incompatible and use GGUF or remote adapters.
+- AGE failure degrades graph features only; relational storage is unaffected.
 
-- The browser-safe prompt registry may consume localized metadata from the existing
-  lightweight @app/i18n package. Keep template content in the registry and product
-  labels in locale resources. Bundle this transitive dependency in sandbox preload;
-  the desktop build must execute a preload check with only Electron resolvable.
+## Packaging and release
 
-- `@app/db` may import browser-safe `@app/domain` schemas for canonical automatic
-  wiki transaction validation. Keep the explicit workspace dependency and TypeScript
-  project reference; this does not move application orchestration into repositories.
+- Staging packages migrations, the baseline, sidecars, helper resources, a
+  runtime manifest and an SPDX SBOM that describe exactly the bytes shipped.
+  Missing required artifacts fail staging; never publish a partial package.
+- Native binaries stay outside ASAR where loading requires it and enter the
+  platform signing and notarization flow. Credentials stay outside the repo.
+- Distribution requires clean-install validation plus signature and
+  notarization checks. The current target is macOS arm64; a new target needs
+  all native artifacts and equivalent smoke coverage first.
+- Static archive checks never replace executable startup/shutdown smoke tests.
+- Closing the main window quits the app on every platform through graceful
+  shutdown of services, local runtimes and PostgreSQL. It never hides the app in
+  the tray, and activation never reopens a window while shutdown is in progress.
+
+## Development application testing
+
+- Start DEV only with `npm run dev -w @app/desktop` from the repository root.
+- Manual and automated UI validation uses only that DEV app. Never open an
+  installed or packaged copy unless the owner asks for release validation, and
+  never run it alongside DEV. Run one Memora Eterna instance at a time and
+  target it by repository path or `localhost` content.
+- Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does
+  not steal focus.
