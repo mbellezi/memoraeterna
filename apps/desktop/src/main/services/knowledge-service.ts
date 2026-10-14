@@ -1535,6 +1535,7 @@ export class KnowledgeService {
         );
       let rerankExecution: DefaultAiTaskResult | null = null;
       let rerankError: string | null = null;
+      let rerankCause: unknown;
       let repairedAliases: string[] = [];
       let undecidedAliases: string[] = [];
       const modelDecisions = new Map<string, BatchRerankDecision & { aiTaskRunId: string }>();
@@ -1543,6 +1544,7 @@ export class KnowledgeService {
           rerankExecution = await runRerank(pending, 0);
         } catch (error) {
           if (signal?.aborted) throw error;
+          rerankCause = error;
           rerankError =
             error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500);
         }
@@ -1594,8 +1596,10 @@ export class KnowledgeService {
           undecidedAliases = aliases.filter((alias) => !merged.has(alias));
         }
         if (matchingSettings.requireReranking && !rerankExecution) {
+          // The cause keeps a transient provider failure retryable by the job supervisor.
           throw new Error(
-            rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel"
+            rerankError ? "errors.matching.rerankingFailed" : "errors.ai.noCompatibleModel",
+            { cause: rerankCause }
           );
         }
       }

@@ -314,9 +314,13 @@ describe("atomic note matching execution", () => {
       if (task === "embedding") return null;
       throw new Error("provider_unavailable");
     });
-    await expect(service().matchAtomicNotes(["source"])).rejects.toThrow(
-      "errors.matching.rerankingFailed"
-    );
+    const failure = await service()
+      .matchAtomicNotes(["source"])
+      .catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe("errors.matching.rerankingFailed");
+    // The provider error stays as the cause, so the supervisor can still classify it as transient.
+    expect(((failure as Error).cause as Error).message).toBe("provider_unavailable");
     mocks.run.mockResolvedValue(null);
     await expect(service().matchAtomicNotes(["source"])).rejects.toThrow(
       "errors.ai.noCompatibleModel"

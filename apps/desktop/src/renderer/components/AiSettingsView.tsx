@@ -73,7 +73,6 @@ const purposeCapabilities: Record<ModelPurpose, AiCapability[]> = {
     "summarization",
     "knowledge-graph-generation",
     "atomic-note-generation",
-    "reranking",
     "requires-network",
     "requires-api-key"
   ],
@@ -1117,9 +1116,7 @@ export function ProfileEditor({
   const selected = options.find((option) => option.value === selection);
 
   const supportedTasks = selected
-    ? taskDefinitions.filter((definition) =>
-        definition.capabilities.every((capability) => selected.capabilities.includes(capability))
-      )
+    ? taskDefinitions.filter((definition) => hasTaskCapabilities(definition, selected.capabilities))
     : [];
 
   async function saveProfile() {
@@ -1268,10 +1265,22 @@ function ProfileTaskEditor({
   );
 }
 
-function supportsTask(profile: AiProfile, definition: { capabilities: AiCapability[] }): boolean {
+function supportsTask(
+  profile: AiProfile,
+  definition: { task: AiConfigurableTask; capabilities: AiCapability[] }
+): boolean {
+  return Boolean(profile.modelId) && hasTaskCapabilities(definition, profile.capabilities);
+}
+
+/** Mirrors the main-process rule: the reranking route also takes a generative model as a decider. */
+function hasTaskCapabilities(
+  definition: { task: AiConfigurableTask; capabilities: AiCapability[] },
+  capabilities: readonly AiCapability[]
+): boolean {
   return (
-    Boolean(profile.modelId) &&
-    definition.capabilities.every((capability) => profile.capabilities.includes(capability))
+    definition.capabilities.every((capability) => capabilities.includes(capability)) ||
+    (definition.task === "reranking" &&
+      (capabilities.includes("structured-output") || capabilities.includes("text-generation")))
   );
 }
 

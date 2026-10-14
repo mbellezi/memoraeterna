@@ -8,7 +8,8 @@ export default defineConfig({
       "packages/*/src/**/*.test.ts",
       "packages/*/src/**/*.test.tsx",
       "scripts/kpi/**/*.test.ts",
-      "scripts/db/**/*.test.ts"
+      "scripts/db/**/*.test.ts",
+      "scripts/golden/**/*.test.ts"
     ],
     coverage: {
       reporter: ["text", "lcov"]
