@@ -625,8 +625,15 @@ const goldenSource = (
   origin: "file_upload",
   captureRequestId: null,
   originalSha256: [],
+  // Imported sources hold a document and its original; a bare row is built with `bareLeftover`.
+  documents: 1,
+  assets: 1,
   ...overrides
 });
+/** The row a failed import left behind: no document and no asset. */
+const bareLeftover = (
+  overrides: Partial<GoldenLibrarySource> & Pick<GoldenLibrarySource, "id">
+): GoldenLibrarySource => goldenSource({ documents: 0, assets: 0, ...overrides });
 const goldenPaper = (id = "paper-1") =>
   goldenSource({ id, type: "AcademicPaper", title: "A paper", originalSha256: [sha(files.paper)] });
 const goldenWeb = (id = "web-1") =>
@@ -729,6 +736,77 @@ describe("golden library classification", () => {
   });
 });
 
+describe("golden library leftovers of a failed import", () => {
+  it("treats a root without document, asset or content under it as golden when type and title match", () => {
+    const manifest = testManifest();
+    const paper = bareLeftover({ id: "paper-1", type: "AcademicPaper", title: "A paper" });
+    const web = bareLeftover({
+      id: "web-1",
+      type: "WebArticle",
+      title: "Forgetting curve",
+      origin: "web_capture"
+    });
+    const book = bareLeftover({ id: "book-1", type: "Book", title: "O Alienista" });
+    const emptyChild = bareLeftover({
+      id: "child-1",
+      parentId: "paper-1",
+      type: "DocumentSection",
+      title: "Methods"
+    });
+    const result = classifyGoldenLibrary(manifest, [paper, web, book, emptyChild]);
+    expect(result.foreign).toEqual([]);
+    expect(result.golden.map((source) => source.id)).toEqual(["paper-1", "web-1", "book-1"]);
+  });
+
+  it("still refuses a content-less root whose title or type is not in the manifest", () => {
+    const manifest = testManifest();
+    const result = classifyGoldenLibrary(manifest, [
+      bareLeftover({ id: "other-title", type: "AcademicPaper", title: "Another paper" }),
+      bareLeftover({ id: "other-type", type: "StandaloneArticle", title: "A paper" }),
+      bareLeftover({ id: "case", type: "AcademicPaper", title: "a paper" }),
+      bareLeftover({ id: "spaces", type: "AcademicPaper", title: "A paper " })
+    ]);
+    expect(result.golden).toEqual([]);
+    expect(result.foreign.map((item) => item.id)).toEqual([
+      "other-title",
+      "other-type",
+      "case",
+      "spaces"
+    ]);
+  });
+
+  it("still refuses a matching root that has a document, an asset or content under it", () => {
+    const manifest = testManifest();
+    const paper = { id: "paper-1", type: "AcademicPaper", title: "A paper", originalSha256: [] };
+    const withDocument = bareLeftover({ ...paper, id: "with-document", documents: 1 });
+    const withAsset = bareLeftover({ ...paper, id: "with-asset", assets: 1 });
+    const parent = bareLeftover({ ...paper, id: "parent" });
+    const contentChild = bareLeftover({
+      id: "child",
+      parentId: "parent",
+      type: "DocumentSection",
+      title: "Methods"
+    });
+    const grandchild = goldenSource({
+      id: "grandchild",
+      parentId: "child",
+      type: "DocumentSection",
+      title: "Deep"
+    });
+    const result = classifyGoldenLibrary(manifest, [
+      withDocument,
+      withAsset,
+      parent,
+      contentChild,
+      grandchild
+    ]);
+    expect(result.golden).toEqual([]);
+    expect(result.foreign.map((item) => item.id).sort()).toEqual(
+      ["parent", "with-asset", "with-document"].sort()
+    );
+  });
+});
+
 describe("golden library reset (MEMORA_GOLDEN_RESET=1)", () => {
   const resetEnvironment = (manifestPath: string) => ({
     MEMORA_GOLDEN_RUN: manifestPath,
@@ -794,6 +872,37 @@ describe("golden library reset (MEMORA_GOLDEN_RESET=1)", () => {
         prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
       )
     ).rejects.toThrow('mine-1 StandaloneArticle "My own reading notes"');
+  });
+
+  it("resets a library whose only trace of a failed golden import is the bare source row", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({
+      librarySources: [
+        bareLeftover({ id: "paper-1", type: "AcademicPaper", title: "A paper" }),
+        goldenWeb()
+      ]
+    });
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+    );
+    expect(run.reset).toMatchObject({ performed: true, removedSources: 2 });
+    expect(names(services).slice(0, 2)).toEqual(["backup", "reset"]);
+  });
+
+  it("refuses a content-less source whose title is not in the manifest, changing nothing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({
+      librarySources: [
+        bareLeftover({ id: "paper-1", type: "AcademicPaper", title: "A paper" }),
+        bareLeftover({ id: "mine-1", type: "AcademicPaper", title: "My unfinished import" })
+      ]
+    });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+      )
+    ).rejects.toThrow('library holds non-golden sources (1): mine-1 AcademicPaper "My unfinished');
+    expect(services.calls).toEqual([]);
   });
 
   it("refuses a golden container that holds a foreign chapter", async () => {

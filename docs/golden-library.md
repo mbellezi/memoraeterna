@@ -115,6 +115,9 @@ empty-library check, the runner:
    bytes it stored, which must equal a pin of the manifest; the detected divisions under it come with it.
    A web capture, which stores no original bytes, is proven by the capture ID derived from its manifest key.
    A book is proven by its type and title and by each of its chapters being a pinned file of that book.
+   A root with no document, no asset and no content under it whose type and title equal a manifest entry
+   is also accepted: it is the bare leftover of a golden import that failed before the import persisted
+   atomically, and nothing in it can be lost.
    If any source is not proven, nothing is changed and the app quits with
    `GOLDEN_RUN refused: library holds non-golden sources (<count>)`, followed by the first sources and why;
 2. takes the run's `pg_dump` backup (the one section 2 describes, taken once and recorded as `backup` in

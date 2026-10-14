@@ -47,7 +47,8 @@ import { LibraryResetService } from "./library-reset-service.js";
  * library, then a record-style import of two golden sources, is reset and replayed in the same
  * database, an empty library is a no-op, and one non-golden source refuses the reset. It also
  * covers the import failing at its document insert (a database trigger rejects it): nothing is left
- * behind, no source row and no stored file.
+ * behind, no source row and no stored file, and the bare source row an earlier version of the
+ * import could leave counts as golden for the reset only when its type and title are in the manifest.
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -540,7 +541,37 @@ try {
     "the failed import left no source, document, asset, structure, new bibliographic row or new stored file"
   );
 
-  // 6e. An empty library needs no reset: the flag is a no-op and the run's usual backup is taken.
+  // 6e. The bare source row an earlier version of the import could leave (no document, no asset) is
+  //     a leftover of a failed golden import: the reset accepts it when type and title are in the
+  //     manifest, and still refuses a content-less row that is not.
+  await pool.query(
+    `insert into source_items (type, title, source_origin, language, metadata)
+     values ('AcademicPaper', 'Something I started importing', 'file_upload', 'en', '{}')`
+  );
+  await expectRejection(
+    prepareGoldenRun(input({ ...withReset, env: resetEnv() })),
+    /library holds non-golden sources \(1\).*Something I started importing/,
+    "a content-less source whose title is not in the manifest"
+  );
+  check((await rowCount("source_items")) === 1, "the refusal deleted nothing");
+  await pool.query(`delete from source_items`);
+  await pool.query(
+    `insert into source_items (type, title, source_origin, language, metadata)
+     values ('AcademicPaper', 'Replication study', 'file_upload', 'en', '{}')`
+  );
+  check(
+    (await rowCount("documents")) === 0 && (await rowCount("document_assets")) === 0,
+    "the leftover has no document and no asset"
+  );
+  const leftoverReset = await prepareGoldenRun(input({ ...withReset, env: resetEnv() }));
+  check(
+    leftoverReset.reset?.performed === true &&
+      leftoverReset.reset.removedSources === 1 &&
+      (await rowCount("source_items")) === 0,
+    `the reset removed the leftover of the failed golden import: ${JSON.stringify(leftoverReset.reset)}`
+  );
+
+  // 6f. An empty library needs no reset: the flag is a no-op and the run's usual backup is taken.
   await resetLibrary();
   const noop = await prepareGoldenRun(input({ ...withReset, env: resetEnv() }));
   check(

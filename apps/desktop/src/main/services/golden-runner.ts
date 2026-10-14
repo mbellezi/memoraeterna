@@ -556,6 +556,10 @@ export interface GoldenLibrarySource {
   captureRequestId: string | null;
   /** SHA-256 of the original file bytes the import stored (`document_assets`, role `original`). */
   originalSha256: string[];
+  /** Documents of the source (a failed import can leave a source row that has none). */
+  documents: number;
+  /** Assets of any role attached to the source or to one of its documents. */
+  assets: number;
 }
 
 export interface GoldenForeignSource {
@@ -576,7 +580,11 @@ export interface GoldenForeignSource {
  *   the manifest key (`stableUuid("golden:<key>")`) and the `web_capture` origin;
  * - a container (a book), which has no content of its own: the manifest container's type and title,
  *   and every direct child must be a pinned file of that same container. An empty container left by
- *   an interrupted import qualifies; it holds nothing to lose.
+ *   an interrupted import qualifies; it holds nothing to lose;
+ * - a leftover of a failed import: a root that has no document and no asset, with no content anywhere
+ *   under it, whose type and title equal those of a manifest entry. Imports persist atomically now, but
+ *   an earlier failure could leave the bare source row behind; it holds nothing to lose, and any
+ *   other row (a document, an asset, content under it, another type or title) keeps it foreign.
  *
  * A source that cannot be traced to a root (a parent cycle) is foreign too.
  */
@@ -597,6 +605,16 @@ export function classifyGoldenLibrary(
     )
   );
   const allShas = pinnedShas(goldenManifestFiles(manifest));
+  const entryIdentities = new Set(
+    manifest.sources.map((source) =>
+      identity(
+        source.kind === "document" && source.import === "webCapture"
+          ? "WebArticle"
+          : String(source.descriptor.type),
+        source.title
+      )
+    )
+  );
   const known = new Set(sources.map((source) => source.id));
   const children = new Map<string, GoldenLibrarySource[]>();
   for (const source of sources)
@@ -636,6 +654,7 @@ export function classifyGoldenLibrary(
       captureIds.has(root.captureRequestId)
     )
       return null;
+    if (entryIdentities.has(identity(root.type, root.title)) && !hasContent(root)) return null;
     const container = containers.find(
       ({ source }) => source.title === root.title && String(source.descriptor.type) === root.type
     );
@@ -647,7 +666,18 @@ export function classifyGoldenLibrary(
       ? `its child "${shorten(stray.title)}" is not a pinned file of the container`
       : null;
   }
+
+  /** A document or an asset on the source or anywhere under it. */
+  function hasContent(source: GoldenLibrarySource): boolean {
+    return (
+      source.documents > 0 ||
+      source.assets > 0 ||
+      (children.get(source.id) ?? []).some((child) => hasContent(child))
+    );
+  }
 }
+
+const identity = (type: string, title: string) => JSON.stringify([type, title]);
 
 const shorten = (text: string, max = 60) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -657,7 +687,11 @@ async function readLibrarySources(pool: Query): Promise<GoldenLibrarySource[]> {
     `select s.id, s.parent_source_item_id as "parentId", s.type::text as type, s.title,
             s.source_origin as origin, s.metadata->>'captureRequestId' as "captureRequestId",
             coalesce((select array_agg(distinct a.sha256::text) from document_assets a
-                      where a.source_item_id = s.id and a.role = 'original'), '{}') as "originalSha256"
+                      where a.source_item_id = s.id and a.role = 'original'), '{}') as "originalSha256",
+            (select count(*)::int from documents d where d.source_item_id = s.id) as documents,
+            (select count(*)::int from document_assets a
+              where a.source_item_id = s.id
+                 or a.document_id in (select d.id from documents d where d.source_item_id = s.id)) as assets
      from source_items s order by s.created_at, s.id`
   );
   return result.rows.map((row) => ({
@@ -667,7 +701,9 @@ async function readLibrarySources(pool: Query): Promise<GoldenLibrarySource[]> {
     title: String(row.title),
     origin: String(row.origin),
     captureRequestId: row.captureRequestId === null ? null : String(row.captureRequestId),
-    originalSha256: (row.originalSha256 ?? []).map(String)
+    originalSha256: (row.originalSha256 ?? []).map(String),
+    documents: Number(row.documents ?? 0),
+    assets: Number(row.assets ?? 0)
   }));
 }
 
