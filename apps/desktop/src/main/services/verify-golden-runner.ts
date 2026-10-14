@@ -16,6 +16,7 @@ import {
   type PgPool
 } from "@app/db";
 import { AiCassette, type AiModelAdapter, type AiTaskRequest } from "@app/ai";
+import { ProcessingPlanRequestSchema, SourceDescriptorSchema } from "@app/domain";
 
 import { BackupService } from "./backup-service.js";
 import {
@@ -24,6 +25,7 @@ import {
   goldenSourcePath,
   importSources,
   prepareGoldenRun,
+  selectGoldenSources,
   sha256File,
   type GoldenRunOptions,
   type GoldenRunSummary
@@ -31,6 +33,7 @@ import {
 import { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import { IngestionService } from "./ingestion-service.js";
 import { JobSupervisor } from "./job-supervisor.js";
+import { LibraryResetService } from "./library-reset-service.js";
 
 /**
  * Real-service check of the golden runner: no AI route, no network and no owner data. It starts a
@@ -39,7 +42,10 @@ import { JobSupervisor } from "./job-supervisor.js";
  * paper, HTML book, plain text). It covers the pre-flight refusals, the backup, the live token cap
  * and the replay divergence stop (both through the real batch cancellation), and a complete run
  * whose stages that need an AI route do not execute. What it cannot cover: a PDF through Docling,
- * and any real AI call, so source matching waits for review in the complete run.
+ * and any real AI call, so source matching waits for review in the complete run. It also covers
+ * MEMORA_GOLDEN_RESET=1 with the real LibraryResetService (the Settings reset): a complete golden
+ * library, then a record-style import of two golden sources, is reset and replayed in the same
+ * database, an empty library is a no-op, and one non-golden source refuses the reset.
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -153,6 +159,19 @@ try {
       return command.command === "dashboard" ? { schedules: [schedule], runs: [] } : {};
     }
   };
+  // The real Settings reset; restoring the defaults re-creates the (enabled) legacy automation,
+  // which the runner must pause again after the reset.
+  let defaultsRestored = 0;
+  const libraryReset = new LibraryResetService({
+    getPool: () => pool,
+    getStorageSettings: storageSettings,
+    userDataPath: userData,
+    restoreDefaults: async () => {
+      defaultsRestored += 1;
+      policy.state = "enabled";
+      schedule.policy.enabled = true;
+    }
+  });
   const events: string[] = [];
   const record = new AiCassette({ mode: "record", directory: join(workDir, "cassette") });
   const replay = new AiCassette({ mode: "replay", directory: join(workDir, "cassette") });
@@ -343,6 +362,151 @@ try {
     /web is already in the library/,
     "a repeated web capture"
   );
+  // 6. MEMORA_GOLDEN_RESET=1 with the real LibraryResetService. The app resets before the job
+  //    supervisor starts, so it is stopped here too.
+  await jobs.stop();
+  const rowCount = async (table: string) =>
+    Number(
+      (await pool!.query<{ n: number }>(`select count(*)::int as n from ${table}`)).rows[0]?.n
+    );
+  const resetEnv = (extra: Record<string, string> = {}) => ({
+    MEMORA_GOLDEN_RUN: manifestPath,
+    MEMORA_GOLDEN_MAX_TOKENS: "1000",
+    MEMORA_GOLDEN_RESET: "1",
+    ...extra
+  });
+  const withReset = { ...withRoutes, libraryReset };
+
+  // 6a. The library the complete run left (a web capture, a paper with detected sections, a book
+  //     with two chapters, a story) is proven golden by what the import stored, then reset.
+  const sourcesBefore = await rowCount("source_items");
+  check(
+    sourcesBefore > 4 && (await rowCount("document_assets")) > 0,
+    `the complete run left ${sourcesBefore} sources with their original files`
+  );
+  const backupsBeforeReset = (await backupFolders()).length;
+  const restoredBefore = defaultsRestored;
+  const fullReset = await prepareGoldenRun(input({ ...withReset, env: resetEnv() }));
+  check(
+    fullReset.reset?.performed === true && fullReset.reset.removedSources === sourcesBefore,
+    `the reset removed all ${sourcesBefore} sources: ${JSON.stringify(fullReset.reset)}`
+  );
+  check(
+    (await rowCount("source_items")) === 0 &&
+      (await rowCount("chunks")) === 0 &&
+      (await rowCount("documents")) === 0 &&
+      (await rowCount("document_assets")) === 0 &&
+      (await rowCount("atomic_notes")) === 0,
+    "the library is empty after the reset"
+  );
+  check(
+    (await readdir(join(userData, "assets"))).length === 0,
+    "the imported original files are deleted, as Settings does"
+  );
+  check(
+    (await backupFolders()).length === backupsBeforeReset + 1 &&
+      fullReset.reset?.backupPath === fullReset.backup.path,
+    "one backup, taken before the reset, is the run's backup"
+  );
+  const resetDump = await execFileAsync(join(sidecarPaths.binDir, "pg_restore"), [
+    "--list",
+    join(fullReset.backup.path, "database.dump")
+  ]);
+  check(
+    (await stat(join(fullReset.backup.path, "database.dump"))).size === fullReset.backup.bytes &&
+      /TABLE DATA public document_assets/.test(resetDump.stdout),
+    "the pre-reset backup holds a dump of the library"
+  );
+  check(
+    defaultsRestored === restoredBefore + 1 &&
+      policy.state === "paused" &&
+      !schedule.policy.enabled &&
+      fullReset.automation.pausedPolicies.length === 1,
+    "the defaults came back with the reset and the legacy automation is paused again"
+  );
+
+  // 6b. A record-style import of two golden sources, then a reset and a run in the same database.
+  const twoSources = selectGoldenSources(manifest, ["web", "story"]);
+  await importSources({ workspaceRoot: workspace, ingestion, hierarchy }, twoSources);
+  check((await rowCount("source_items")) === 2, "two golden sources were imported");
+  const replay2 = await prepareGoldenRun(
+    input({ ...withReset, env: resetEnv({ MEMORA_GOLDEN_ONLY: "web,story" }) })
+  );
+  check(
+    replay2.reset?.performed === true && replay2.reset.removedSources === 2,
+    `the reset removed the two golden sources: ${JSON.stringify(replay2.reset)}`
+  );
+  check((await rowCount("source_items")) === 0, "the library is empty before the run starts");
+  await jobs.start();
+  const replaySummary = await withTimeout(replay2.start(), 120_000, "the run after the reset");
+  check(
+    replaySummary.status !== "failed" && (replaySummary.sources as unknown[]).length === 2,
+    `the run imported the two sources again: ${replaySummary.status} ${String(replaySummary.error ?? "")}`
+  );
+  const runDirectories = (await readdir(join(workspace, ".cache", "golden", "runs"))).sort();
+  const written = JSON.parse(
+    await readFile(
+      join(workspace, ".cache", "golden", "runs", runDirectories.at(-1)!, "summary.json"),
+      "utf8"
+    )
+  ) as { reset?: unknown; backup?: { path?: string } };
+  check(
+    JSON.stringify(written.reset) ===
+      JSON.stringify({
+        performed: true,
+        removedSources: 2,
+        backupPath: replay2.backup.path
+      }) && written.backup?.path === replay2.backup.path,
+    "summary.json records reset { performed, removedSources, backupPath }"
+  );
+  check(events.includes("reset"), "the reset is logged");
+
+  // 6c. One source that is not in the manifest refuses the reset and changes nothing.
+  await jobs.stop();
+  await ingestion.createManual({
+    descriptor: SourceDescriptorSchema.parse({
+      type: "PersonalNote",
+      title: "My own note",
+      language: "en"
+    }),
+    content: "A note that belongs to the owner and not to the golden library. ".repeat(4),
+    duplicatePolicy: "ignore",
+    processingPlan: ProcessingPlanRequestSchema.parse({
+      preset: "import_only",
+      requestedStages: []
+    })
+  });
+  const mixedSources = await rowCount("source_items");
+  check(mixedSources > 2, "the owner's note sits next to the golden sources");
+  const backupsBeforeRefusal = (await backupFolders()).length;
+  const callsBeforeRefusal = automationCalls.length;
+  await expectRejection(
+    prepareGoldenRun(input({ ...withReset, env: resetEnv() })),
+    /library holds non-golden sources \(1\).*My own note/,
+    "a library with one non-golden source"
+  );
+  check(
+    (await rowCount("source_items")) === mixedSources &&
+      (await backupFolders()).length === backupsBeforeRefusal &&
+      automationCalls.length === callsBeforeRefusal,
+    "the refusal deleted nothing, took no backup and touched no automation"
+  );
+  await expectRejection(
+    prepareGoldenRun(input({ ...withRoutes, env: resetEnv({ MEMORA_GOLDEN_RESET: "yes" }) })),
+    /MEMORA_GOLDEN_RESET must be 1/,
+    "an ambiguous reset flag"
+  );
+
+  // 6d. An empty library needs no reset: the flag is a no-op and the run's usual backup is taken.
+  await resetLibrary();
+  const noop = await prepareGoldenRun(input({ ...withReset, env: resetEnv() }));
+  check(
+    noop.reset?.performed === false &&
+      noop.reset.removedSources === 0 &&
+      noop.reset.backupPath === null,
+    "an empty library is a no-op"
+  );
+
   console.log("GOLDEN_RUNNER_VERIFY ok");
 } catch (error) {
   console.error("GOLDEN_RUNNER_VERIFY failed:", error instanceof Error ? error.message : error);

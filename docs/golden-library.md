@@ -49,7 +49,8 @@ npm run dev -w @app/desktop
 Before the job supervisor starts, the runner checks the cassette, the DEV database, the files and the
 routes, and refuses a library that is not empty or has queued or running jobs (override for a library
 that holds earlier golden work: `MEMORA_GOLDEN_ALLOW_NONEMPTY=1`; the pending jobs are then only
-reported). Only then does it change anything, in this order: a `pg_dump` backup of the live database in
+reported; `MEMORA_GOLDEN_RESET=1` in section 3 empties a library of golden sources first). Only then does
+it change anything, in this order: a `pg_dump` backup of the live database in
 `.cache/f0/backups/memora-backup-<timestamp>/` (the run stops if it holds no dump; prove it restores
 with `npm run db:restore -- --from <backup> --name <slug>` before the first recording), the live token
 cap, and the pause of the legacy wiki automation (policies and maintenance schedules). A refusal logs
@@ -86,18 +87,54 @@ MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 npm run dev -w @app/desktop
 `MEMORA_GOLDEN_ONLY` takes top-level manifest keys (a container key runs the whole book). A scratch
 profile (`MEMORA_USER_DATA_DIR=<folder>`, with its own routes, for example a local OpenAI-compatible
 model) keeps the owner's profile out of it. `apps/desktop/src/main/services/verify-golden-runner.ts`
-checks the runner against the real ingestion, hierarchy and job services, a real `pg_dump` and a
-throwaway PostgreSQL, without AI or network (`cd apps/desktop && npx tsx
-src/main/services/verify-golden-runner.ts`). It does not cover a PDF through Docling or any real AI call.
+checks the runner against the real ingestion, hierarchy and job services, a real `pg_dump`, the real
+library reset behind `MEMORA_GOLDEN_RESET` and a throwaway PostgreSQL, without AI or network (`cd
+apps/desktop && npx tsx src/main/services/verify-golden-runner.ts`). It does not cover a PDF through
+Docling or any real AI call.
 
 ## 3. Replay (no provider call, no local model)
 
-Back up, reset the library from Settings (it keeps AI routes, credentials and installed models), then
-start the same command with `MEMORA_AI_CASSETTE=replay` (no token cap is needed). Every AI call is
-answered from the cassette with the recorded output and token counts; the audit row keeps the real (near
-zero) duration and no cost (nothing is spent, so the recorded cost is not replayed; it stays in the
-cassette), and its monitoring entry carries `cassette.replayed = 1`. A call the cassette does not hold
-fails loudly: the error names the key, the request is saved to `<cassette>/misses/<key>.json` (diff it
+Start the same command with `MEMORA_AI_CASSETTE=replay` (no token cap is needed) and
+`MEMORA_GOLDEN_RESET=1`, which empties the library of the record run in the same DEV profile, with no
+Settings click:
+
+```sh
+MEMORA_AI_CASSETTE=replay MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/golden-small \
+MEMORA_GOLDEN_RUN=scripts/golden/manifest.json MEMORA_GOLDEN_RESET=1 \
+MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 \
+npm run dev -w @app/desktop
+```
+
+`MEMORA_GOLDEN_RESET=1` is DEV only (packaged builds refuse it, like the runner), must be exactly `1`, and
+excludes `MEMORA_GOLDEN_ALLOW_NONEMPTY`. Without it nothing changes: a library that is not empty is
+refused. With it, after the same checks as any run (cassette, DEV database, files, routes) and before the
+empty-library check, the runner:
+
+1. lists every root source of the library and proves that each one belongs to the manifest (all of it,
+   not only the `MEMORA_GOLDEN_ONLY` subset). A file import is proven by the SHA-256 of the original
+   bytes it stored, which must equal a pin of the manifest; the detected divisions under it come with it.
+   A web capture, which stores no original bytes, is proven by the capture ID derived from its manifest key.
+   A book is proven by its type and title and by each of its chapters being a pinned file of that book.
+   If any source is not proven, nothing is changed and the app quits with
+   `GOLDEN_RUN refused: library holds non-golden sources (<count>)`, followed by the first sources and why;
+2. takes the run's `pg_dump` backup (the one section 2 describes, taken once and recorded as `backup` in
+   `summary.json`), before the reset;
+3. runs the same reset as Settings (it keeps AI routes, credentials and installed models; it deletes the
+   imported original files and restores the knowledge defaults), before the job supervisor and the
+   local-model service start;
+4. checks that no source and no note is left, logs `GOLDEN_RUN {"event":"reset",...}` and writes
+   `reset: {performed, removedSources, backupPath}` to `summary.json`; then the run continues on the empty
+   library. An empty library needs no reset (`performed: false`, no backup path).
+
+The guard proves the sources, not the rest: the reset clears what Settings clears (wiki pages, jobs, AI audit
+and monitoring history; prompts return to their defaults), so use the flag in a profile you use for golden
+runs. The alternative is the UI: back up, reset the library from Settings, then start the same command
+without the flag.
+
+Every AI call is answered from the cassette with the recorded output and token counts; the audit row keeps
+the real (near zero) duration and no cost (nothing is spent, so the recorded cost is not replayed; it stays
+in the cassette), and its monitoring entry carries `cassette.replayed = 1`. A call the cassette does not
+hold fails loudly: the error names the key, the request is saved to `<cassette>/misses/<key>.json` (diff it
 against `<cassette>/entries/<k[0..2]>/<key>.json`), and the runner cancels the batch with status
 `diverged`.
 

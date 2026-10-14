@@ -21,6 +21,7 @@ import type { BackupService } from "./backup-service.js";
 import type { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import type { IngestionService } from "./ingestion-service.js";
 import type { JobSupervisor } from "./job-supervisor.js";
+import type { LibraryResetService } from "./library-reset-service.js";
 import type { MaintenanceService } from "./maintenance-service.js";
 import type { OrganizationService } from "./organization-service.js";
 
@@ -30,7 +31,8 @@ import type { OrganizationService } from "./organization-service.js";
  * them with the full knowledge plan minus organizeKnowledge, waits until every run settles and
  * writes `.cache/golden/runs/<timestamp>/summary.json`. AI calls go through the AI cassette
  * (record or replay), which is required. Before it changes anything it takes a database backup.
- * Packaged builds refuse it.
+ * Packaged builds refuse it. With MEMORA_GOLDEN_RESET=1 it first resets a library that holds nothing
+ * but golden sources (proven against the manifest), through the same service as the Settings reset.
  */
 
 /** Full knowledge processing without the legacy wiki stage. */
@@ -281,6 +283,8 @@ function goldenDescriptor(
 export interface GoldenRunEnvironment {
   manifestPath: string;
   allowNonEmpty: boolean;
+  /** MEMORA_GOLDEN_RESET=1: reset a library that holds only golden sources before the run. */
+  resetLibrary: boolean;
   exitWhenDone: boolean;
   /** Cap on live remote tokens: required when recording, where it also stops new provider calls. */
   maxLiveTokens: number | null;
@@ -294,7 +298,11 @@ export function readGoldenRunEnvironment(
   options: { isPackaged: boolean; workspaceRoot: string }
 ): GoldenRunEnvironment | null {
   const manifest = env.MEMORA_GOLDEN_RUN?.trim();
-  if (!manifest) return null;
+  if (!manifest) {
+    if (options.isPackaged && env.MEMORA_GOLDEN_RESET?.trim() === "1")
+      throw new Error("MEMORA_GOLDEN_RESET is refused in packaged builds");
+    return null;
+  }
   if (options.isPackaged) throw new Error("MEMORA_GOLDEN_RUN is refused in packaged builds");
   const rawLimit = env.MEMORA_GOLDEN_MAX_TOKENS?.trim();
   const limit = rawLimit ? Number(rawLimit) : null;
@@ -307,9 +315,20 @@ export function readGoldenRunEnvironment(
   for (const key of only)
     if (!keySchema.safeParse(key).success)
       throw new Error(`MEMORA_GOLDEN_ONLY holds an invalid source key: ${key}`);
+  // A destructive switch: only an explicit 1 turns it on, and anything else that is set is an error.
+  const rawReset = env.MEMORA_GOLDEN_RESET?.trim();
+  if (rawReset && rawReset !== "0" && rawReset !== "1")
+    throw new Error("MEMORA_GOLDEN_RESET must be 1 (or unset)");
+  const resetLibrary = rawReset === "1";
+  if (resetLibrary && env.MEMORA_GOLDEN_ALLOW_NONEMPTY === "1")
+    throw new Error(
+      "MEMORA_GOLDEN_RESET and MEMORA_GOLDEN_ALLOW_NONEMPTY contradict each other: the reset " +
+        "empties the library, the other keeps its earlier work"
+    );
   return {
     manifestPath: resolve(options.workspaceRoot, manifest),
     allowNonEmpty: env.MEMORA_GOLDEN_ALLOW_NONEMPTY === "1",
+    resetLibrary,
     exitWhenDone: env.MEMORA_GOLDEN_EXIT === "1",
     maxLiveTokens: limit,
     only: only.length ? only : null
@@ -327,6 +346,11 @@ export interface GoldenRunOptions {
   cassette: Pick<AiCassette, "stats" | "limitLiveTokens"> | null;
   /** Takes the pre-run database backup; the runner writes nothing before it succeeded. */
   backup: Pick<BackupService, "create">;
+  /**
+   * The library reset behind MEMORA_GOLDEN_RESET: the Settings reset (it keeps AI routes, credentials
+   * and installed models), run while the job supervisor and the local-model service are not started.
+   */
+  libraryReset?: Pick<LibraryResetService, "reset">;
   ingestion: Pick<IngestionService, "importFile" | "captureWebPage" | "createContainerSource">;
   hierarchy: Pick<HierarchicalIngestionService, "process" | "getStructure" | "confirmStructure">;
   jobs: Pick<JobSupervisor, "wake" | "cancelBatch">;
@@ -346,6 +370,8 @@ export interface GoldenRun {
   manifest: GoldenManifest;
   backup: GoldenBackup;
   automation: GoldenAutomationPause;
+  /** Present only with MEMORA_GOLDEN_RESET=1. */
+  reset?: GoldenReset;
   /** Imports, processes, waits and writes the summary; never rejects. */
   start(): Promise<GoldenRunSummary>;
 }
@@ -359,6 +385,16 @@ export interface GoldenBackup {
   path: string;
   createdAt: string;
   bytes: number;
+}
+
+/** What MEMORA_GOLDEN_RESET=1 did; recorded in summary.json as `reset`. */
+export interface GoldenReset {
+  /** False when the library held no source, so there was nothing to reset. */
+  performed: boolean;
+  /** Source items the reset deleted (the roots and everything under them). */
+  removedSources: number;
+  /** The pg_dump backup taken right before the reset (the run's backup); null when none was needed. */
+  backupPath: string | null;
 }
 
 /**
@@ -395,12 +431,10 @@ export async function prepareGoldenRun(
     );
   if (!descriptor.success)
     throw new Error("The golden runner needs the DEV PostgreSQL sidecar (dev-connection.json)");
-  const manifest = selectGoldenSources(
-    goldenManifestSchema.parse(
-      JSON.parse(await readFile(options.environment.manifestPath, "utf8"))
-    ),
-    environment.only
+  const fullManifest = goldenManifestSchema.parse(
+    JSON.parse(await readFile(options.environment.manifestPath, "utf8"))
   );
+  const manifest = selectGoldenSources(fullManifest, environment.only);
   const problems: string[] = [];
   for (const file of goldenManifestFiles(manifest)) {
     const check = await verifyGoldenFile(goldenSourcePath(options.workspaceRoot, file), file);
@@ -410,14 +444,34 @@ export async function prepareGoldenRun(
     throw new Error(
       `Golden sources are not ready (run npx tsx scripts/golden/fetch.ts): ${problems.join(", ")}`
     );
-  const library = await countLibrary(options.pool);
-  const pendingJobs = await countPendingJobs(options.pool);
+  let library = await countLibrary(options.pool);
+  let pendingJobs = await countPendingJobs(options.pool);
+  let routes: unknown[] | undefined;
+  let backup: GoldenBackup | undefined;
+  let reset: GoldenReset | undefined;
+  if (environment.resetLibrary) {
+    // The guard reads the whole manifest, not the MEMORA_GOLDEN_ONLY subset: a library left by a
+    // full run may be reset before a dry run of two sources.
+    const plan = await planGoldenReset(options, fullManifest);
+    if (plan.roots === 0) {
+      reset = { performed: false, removedSources: 0, backupPath: null };
+      log(options, "reset", { ...reset, roots: 0 });
+    } else {
+      // Everything that can stop the run is checked before the library is touched; the reset keeps
+      // the AI routes, so they are read first.
+      routes = await (options.readRoutes ?? readRoutes)(options.pool);
+      backup = await backUpBeforeWriting(options);
+      reset = await resetGoldenLibrary(options, plan, backup, pendingJobs);
+      library = await countLibrary(options.pool);
+      pendingJobs = await countPendingJobs(options.pool);
+    }
+  }
   const pending = pendingJobs.reduce((sum, job) => sum + job.count, 0);
   if (!options.environment.allowNonEmpty) {
     if (library.sources > 0 || library.notes > 0)
       throw new Error(
-        `The library is not empty (${library.sources} sources, ${library.notes} notes); reset it or ` +
-          "set MEMORA_GOLDEN_ALLOW_NONEMPTY=1. Nothing was changed."
+        `The library is not empty (${library.sources} sources, ${library.notes} notes); reset it, ` +
+          "set MEMORA_GOLDEN_RESET=1 or set MEMORA_GOLDEN_ALLOW_NONEMPTY=1. Nothing was changed."
       );
     if (pending > 0)
       throw new Error(
@@ -425,8 +479,9 @@ export async function prepareGoldenRun(
           "and would run when the job supervisor starts; let them finish or cancel them. Nothing was changed."
       );
   }
-  const routes = await (options.readRoutes ?? readRoutes)(options.pool);
-  const backup = await backUpBeforeWriting(options);
+  routes ??= await (options.readRoutes ?? readRoutes)(options.pool);
+  // One backup per run: with a reset it was taken before the library was emptied.
+  backup ??= await backUpBeforeWriting(options);
   // A recording may spend the remote route: past the cap the cassette makes no further provider call.
   if (cassette.mode === "record") options.cassette.limitLiveTokens(environment.maxLiveTokens);
   const automation = await pauseLegacyAutomation(options);
@@ -437,17 +492,22 @@ export async function prepareGoldenRun(
     library,
     pendingJobs,
     backup: backup.path,
+    ...(reset ? { reset } : {}),
     ...automation
   });
+  const preparedBackup = backup;
+  const preparedRoutes = routes;
   return {
     manifest,
-    backup,
+    backup: preparedBackup,
     automation,
+    ...(reset ? { reset } : {}),
     start: () =>
-      runGolden(options, manifest, automation, routes, {
-        backup,
+      runGolden(options, manifest, automation, preparedRoutes, {
+        backup: preparedBackup,
         pendingJobs,
-        only: environment.only
+        only: environment.only,
+        ...(reset ? { reset } : {})
       })
   };
 }
@@ -483,6 +543,193 @@ async function backUpBeforeWriting(options: GoldenRunOptions): Promise<GoldenBac
       `The pre-run backup has no database dump (${backup.path}); nothing was changed`
     );
   return { path: backup.path, createdAt: backup.createdAt, bytes: dump.size };
+}
+
+/** What the reset guard reads about one source of the library. */
+export interface GoldenLibrarySource {
+  id: string;
+  parentId: string | null;
+  type: string;
+  title: string;
+  origin: string;
+  /** The capture request ID of a web capture (`metadata.captureRequestId`). */
+  captureRequestId: string | null;
+  /** SHA-256 of the original file bytes the import stored (`document_assets`, role `original`). */
+  originalSha256: string[];
+}
+
+export interface GoldenForeignSource {
+  id: string;
+  type: string;
+  title: string;
+  reason: string;
+}
+
+/**
+ * Proves which root sources of the library belong to the golden manifest. Identities, from the most
+ * to the least robust:
+ *
+ * - a file import: the SHA-256 of the original bytes that the import stored equals a pin of the
+ *   manifest (a source and everything materialized under it, such as detected divisions, is covered
+ *   by its root);
+ * - a web capture, which stores no original bytes: the capture request ID the runner derives from
+ *   the manifest key (`stableUuid("golden:<key>")`) and the `web_capture` origin;
+ * - a container (a book), which has no content of its own: the manifest container's type and title,
+ *   and every direct child must be a pinned file of that same container. An empty container left by
+ *   an interrupted import qualifies; it holds nothing to lose.
+ *
+ * A source that cannot be traced to a root (a parent cycle) is foreign too.
+ */
+export function classifyGoldenLibrary(
+  manifest: Pick<GoldenManifest, "sources">,
+  sources: readonly GoldenLibrarySource[]
+): { golden: GoldenLibrarySource[]; foreign: GoldenForeignSource[] } {
+  const pinnedShas = (files: readonly GoldenFile[]) =>
+    new Set(files.flatMap((file) => (file.import === "file" && file.sha256 ? [file.sha256] : [])));
+  const containers = manifest.sources.flatMap((source) =>
+    source.kind === "container" ? [{ source, shas: pinnedShas(source.children) }] : []
+  );
+  const captureIds = new Set(
+    manifest.sources.flatMap((source) =>
+      source.kind === "document" && source.import === "webCapture"
+        ? [stableUuid(`golden:${source.key}`)]
+        : []
+    )
+  );
+  const allShas = pinnedShas(goldenManifestFiles(manifest));
+  const known = new Set(sources.map((source) => source.id));
+  const children = new Map<string, GoldenLibrarySource[]>();
+  for (const source of sources)
+    if (source.parentId && known.has(source.parentId))
+      children.set(source.parentId, [...(children.get(source.parentId) ?? []), source]);
+  const roots = sources.filter((source) => !source.parentId || !known.has(source.parentId));
+  const golden: GoldenLibrarySource[] = [];
+  const foreign: GoldenForeignSource[] = [];
+  const reachable = new Set<string>();
+  const markReachable = (source: GoldenLibrarySource) => {
+    if (reachable.has(source.id)) return;
+    reachable.add(source.id);
+    for (const child of children.get(source.id) ?? []) markReachable(child);
+  };
+  for (const root of roots) {
+    markReachable(root);
+    const reason = foreignReason(root);
+    if (reason === null) golden.push(root);
+    else foreign.push({ id: root.id, type: root.type, title: root.title, reason });
+  }
+  for (const source of sources)
+    if (!reachable.has(source.id))
+      foreign.push({
+        id: source.id,
+        type: source.type,
+        title: source.title,
+        reason: "its parent chain never reaches a root"
+      });
+  return { golden, foreign };
+
+  /** Null when the root is golden. */
+  function foreignReason(root: GoldenLibrarySource): string | null {
+    if (root.originalSha256.some((sha) => allShas.has(sha))) return null;
+    if (
+      root.origin === "web_capture" &&
+      root.captureRequestId &&
+      captureIds.has(root.captureRequestId)
+    )
+      return null;
+    const container = containers.find(
+      ({ source }) => source.title === root.title && String(source.descriptor.type) === root.type
+    );
+    if (!container) return "it matches no source of the manifest";
+    const stray = (children.get(root.id) ?? []).find(
+      (child) => !child.originalSha256.some((sha) => container.shas.has(sha))
+    );
+    return stray
+      ? `its child "${shorten(stray.title)}" is not a pinned file of the container`
+      : null;
+  }
+}
+
+const shorten = (text: string, max = 60) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+
+async function readLibrarySources(pool: Query): Promise<GoldenLibrarySource[]> {
+  const result = await pool.query<GoldenLibrarySource>(
+    `select s.id, s.parent_source_item_id as "parentId", s.type::text as type, s.title,
+            s.source_origin as origin, s.metadata->>'captureRequestId' as "captureRequestId",
+            coalesce((select array_agg(distinct a.sha256::text) from document_assets a
+                      where a.source_item_id = s.id and a.role = 'original'), '{}') as "originalSha256"
+     from source_items s order by s.created_at, s.id`
+  );
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    parentId: row.parentId === null ? null : String(row.parentId),
+    type: String(row.type),
+    title: String(row.title),
+    origin: String(row.origin),
+    captureRequestId: row.captureRequestId === null ? null : String(row.captureRequestId),
+    originalSha256: (row.originalSha256 ?? []).map(String)
+  }));
+}
+
+/**
+ * MEMORA_GOLDEN_RESET=1, first half: lists the library and refuses unless every root source is
+ * golden. Changes nothing. `roots` is 0 for an empty library, which needs no reset.
+ */
+async function planGoldenReset(options: GoldenRunOptions, manifest: GoldenManifest) {
+  if (!options.libraryReset)
+    throw new Error("MEMORA_GOLDEN_RESET needs the library reset service; nothing was changed");
+  const { golden, foreign } = classifyGoldenLibrary(
+    manifest,
+    await readLibrarySources(options.pool)
+  );
+  if (foreign.length) {
+    const examples = foreign
+      .slice(0, 5)
+      .map((source) => `${source.id} ${source.type} "${shorten(source.title)}" (${source.reason})`);
+    throw new Error(
+      `library holds non-golden sources (${foreign.length}): ${examples.join("; ")}` +
+        `${foreign.length > examples.length ? "; ..." : ""}. MEMORA_GOLDEN_RESET only empties a ` +
+        "library of golden sources; reset a mixed library from Settings if that is intended. " +
+        "Nothing was changed."
+    );
+  }
+  return { roots: golden.length };
+}
+
+/**
+ * Second half: the same reset Settings runs (AI routes, credentials and installed models stay), after
+ * the backup. The library must be empty afterwards; the backup path is in the error otherwise.
+ */
+async function resetGoldenLibrary(
+  options: GoldenRunOptions,
+  plan: { roots: number },
+  backup: GoldenBackup,
+  pendingJobs: ReadonlyArray<{ type: string; count: number }>
+): Promise<GoldenReset> {
+  const result = await options.libraryReset!.reset().catch((error: unknown) => {
+    throw new Error(
+      `The library reset failed (${error instanceof Error ? error.message : String(error)}); ` +
+        `the pre-reset backup is ${backup.path}. The golden run stopped.`,
+      { cause: error }
+    );
+  });
+  const library = await countLibrary(options.pool);
+  if (library.sources > 0 || library.notes > 0)
+    throw new Error(
+      `The library is not empty after the reset (${library.sources} sources, ${library.notes} notes); ` +
+        `the golden run stopped. The pre-reset backup is ${backup.path}.`
+    );
+  const performed: GoldenReset = {
+    performed: true,
+    removedSources: result.deletedSources,
+    backupPath: backup.path
+  };
+  log(options, "reset", {
+    ...performed,
+    roots: plan.roots,
+    droppedPendingJobs: pendingJobs.reduce((sum, job) => sum + job.count, 0)
+  });
+  return performed;
 }
 
 const requiredRoutes = [

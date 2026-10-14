@@ -25,6 +25,7 @@ import {
   Menu,
   nativeImage,
   net,
+  session,
   shell,
   Tray,
   webContents
@@ -472,6 +473,16 @@ void app.whenReady().then(() => {
                     pool: databaseService!.getPool()!,
                     cassette: aiCassette,
                     backup: backupService!,
+                    // MEMORA_GOLDEN_RESET=1 only: the Settings reset sequence (see ipc.ts). The
+                    // gateway, job supervisor and local-model service are not started yet, so there
+                    // is nothing to stop first.
+                    libraryReset: {
+                      reset: async () => {
+                        await metadataEnrichmentService!.clearCache();
+                        await session.defaultSession.clearCache();
+                        return libraryResetService!.reset();
+                      }
+                    },
                     ingestion: ingestionService!,
                     hierarchy: hierarchicalIngestionService!,
                     jobs: jobSupervisor!,

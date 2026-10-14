@@ -8,6 +8,7 @@ import { processingPresetStages } from "@app/domain";
 import type { AiCassetteStats } from "@app/ai";
 
 import {
+  classifyGoldenLibrary,
   contentDigest,
   distribution,
   goldenManifestFiles,
@@ -25,6 +26,7 @@ import {
   trimGoldenText,
   verifyGoldenFile,
   waitForBatch,
+  type GoldenLibrarySource,
   type GoldenManifest,
   type GoldenRunOptions
 } from "./golden-runner.js";
@@ -157,10 +159,14 @@ function stats(mode: "record" | "replay", misses = 0, liveTokens = 0): AiCassett
 function fakeServices(
   input: {
     sources?: number;
+    /** The sources the reset guard reads; when set they also make up the library count. */
+    librarySources?: GoldenLibrarySource[];
     policyStates?: string[];
     scheduleEnabled?: boolean[];
     pendingJobs?: Array<{ type: string; count: number }>;
     dump?: boolean;
+    /** What the reset does: empty the library (default), throw, or leave the rows behind. */
+    reset?: "empties" | "fails" | "keeps";
   } = {}
 ) {
   const calls: Array<[string, unknown]> = [];
@@ -173,11 +179,30 @@ function fakeServices(
     revision: index + 3,
     policy: { enabled }
   }));
+  const library = {
+    rows: input.librarySources ?? [],
+    sources: input.sources ?? input.librarySources?.length ?? 0,
+    pendingJobs: input.pendingJobs ?? []
+  };
   const pool = {
     query: async (sql: string) => {
-      if (sql.includes("as sources")) return { rows: [{ sources: input.sources ?? 0, notes: 0 }] };
-      if (sql.includes("from jobs")) return { rows: input.pendingJobs ?? [] };
+      if (sql.includes("as sources")) return { rows: [{ sources: library.sources, notes: 0 }] };
+      if (sql.includes("from jobs")) return { rows: library.pendingJobs };
+      if (sql.includes("originalSha256")) return { rows: library.rows };
       return { rows: [] };
+    }
+  };
+  const libraryReset = {
+    reset: async () => {
+      calls.push(["reset", null]);
+      if (input.reset === "fails") throw new Error("errors.common.permissionDenied");
+      const deletedSources = library.sources;
+      if (input.reset !== "keeps") {
+        library.rows = [];
+        library.sources = 0;
+        library.pendingJobs = [];
+      }
+      return { deletedSources, deletedAtomicNotes: 0, deletedFiles: 0, failedFiles: 0 };
     }
   };
   const backup = {
@@ -218,7 +243,7 @@ function fakeServices(
       return command.command === "dashboard" ? { schedules, runs: [] } : {};
     }
   };
-  return { calls, pool, organization, maintenance, backup, cassette, limits };
+  return { calls, pool, organization, maintenance, backup, cassette, limits, libraryReset };
 }
 
 function prepareInput(
@@ -234,6 +259,7 @@ function prepareInput(
     pool: services.pool as unknown as GoldenRunOptions["pool"],
     cassette: services.cassette,
     backup: services.backup,
+    libraryReset: services.libraryReset,
     ingestion: {} as GoldenRunOptions["ingestion"],
     hierarchy: {} as GoldenRunOptions["hierarchy"],
     jobs: {} as GoldenRunOptions["jobs"],
@@ -260,6 +286,36 @@ describe("golden run environment", () => {
     ).toThrow("packaged");
   });
 
+  it("reads MEMORA_GOLDEN_RESET strictly: only 1 turns the destructive reset on", () => {
+    const options = { isPackaged: false, workspaceRoot: "/repo" };
+    const read = (reset: string | undefined, extra: Record<string, string> = {}) =>
+      readGoldenRunEnvironment(
+        {
+          MEMORA_GOLDEN_RUN: "m.json",
+          ...(reset === undefined ? {} : { MEMORA_GOLDEN_RESET: reset }),
+          ...extra
+        },
+        options
+      );
+    expect(read(undefined)).toMatchObject({ resetLibrary: false });
+    expect(read("")).toMatchObject({ resetLibrary: false });
+    expect(read("0")).toMatchObject({ resetLibrary: false });
+    expect(read("1")).toMatchObject({ resetLibrary: true });
+    expect(() => read("true")).toThrow("MEMORA_GOLDEN_RESET must be 1");
+    expect(() => read("1", { MEMORA_GOLDEN_ALLOW_NONEMPTY: "1" })).toThrow("contradict");
+    // Not requested without a golden run, but never honored in a packaged build either.
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RESET: "1" }, options)).toBeNull();
+    expect(() =>
+      readGoldenRunEnvironment({ MEMORA_GOLDEN_RESET: "1" }, { ...options, isPackaged: true })
+    ).toThrow("MEMORA_GOLDEN_RESET is refused in packaged builds");
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_RESET: "1" },
+        { ...options, isPackaged: true }
+      )
+    ).toThrow("packaged");
+  });
+
   it("resolves the manifest against the repository and reads the flags", () => {
     expect(
       readGoldenRunEnvironment(
@@ -274,6 +330,7 @@ describe("golden run environment", () => {
     ).toEqual({
       manifestPath: "/repo/scripts/golden/manifest.json",
       allowNonEmpty: true,
+      resetLibrary: false,
       exitWhenDone: true,
       maxLiveTokens: 500000,
       only: null
@@ -556,6 +613,311 @@ describe("golden run preparation", () => {
     );
     expect(services.calls.map(([name]) => name)).toEqual(["backup"]);
     expect(services.limits).toEqual([]);
+  });
+});
+
+const goldenSource = (
+  overrides: Partial<GoldenLibrarySource> & Pick<GoldenLibrarySource, "id">
+): GoldenLibrarySource => ({
+  parentId: null,
+  type: "StandaloneArticle",
+  title: "Some source",
+  origin: "file_upload",
+  captureRequestId: null,
+  originalSha256: [],
+  ...overrides
+});
+const goldenPaper = (id = "paper-1") =>
+  goldenSource({ id, type: "AcademicPaper", title: "A paper", originalSha256: [sha(files.paper)] });
+const goldenWeb = (id = "web-1") =>
+  goldenSource({
+    id,
+    type: "WebArticle",
+    title: "Forgetting curve",
+    origin: "web_capture",
+    captureRequestId: stableUuid("golden:web")
+  });
+const goldenBook = (id = "book-1") =>
+  goldenSource({ id, type: "Book", title: "O Alienista", origin: "manual" });
+const goldenChapter = (id = "chapter-1", parentId = "book-1") =>
+  goldenSource({
+    id,
+    parentId,
+    type: "BookChapter",
+    title: "I. Capítulo",
+    originalSha256: [sha(files.chapter)]
+  });
+const foreignSource = (id = "mine-1") =>
+  goldenSource({
+    id,
+    title: "My own reading notes",
+    originalSha256: [sha("something the owner imported")]
+  });
+
+describe("golden library classification", () => {
+  it("proves file imports by the SHA-256 of their original bytes, whatever their title", () => {
+    const result = classifyGoldenLibrary(testManifest(), [
+      { ...goldenPaper(), title: "Renamed by the owner afterwards" }
+    ]);
+    expect(result.golden.map((source) => source.id)).toEqual(["paper-1"]);
+    expect(result.foreign).toEqual([]);
+  });
+
+  it("proves web captures by the capture ID derived from the manifest key", () => {
+    const manifest = testManifest();
+    expect(classifyGoldenLibrary(manifest, [goldenWeb()]).foreign).toEqual([]);
+    const lookalikes = [
+      { ...goldenWeb("a"), captureRequestId: "11111111-1111-4111-8111-111111111111" },
+      { ...goldenWeb("b"), origin: "manual" },
+      { ...goldenWeb("c"), captureRequestId: null }
+    ];
+    expect(classifyGoldenLibrary(manifest, lookalikes).foreign.map((item) => item.id)).toEqual([
+      "a",
+      "b",
+      "c"
+    ]);
+  });
+
+  it("proves a container by its type and title and by every direct child being its pinned file", () => {
+    const manifest = testManifest();
+    expect(classifyGoldenLibrary(manifest, [goldenBook(), goldenChapter()]).foreign).toEqual([]);
+    // An interrupted import left the container empty: nothing in it can be lost.
+    expect(classifyGoldenLibrary(manifest, [goldenBook()]).foreign).toEqual([]);
+    const mixed = classifyGoldenLibrary(manifest, [
+      goldenBook(),
+      goldenChapter(),
+      { ...foreignSource("stray"), parentId: "book-1", title: "My chapter" }
+    ]);
+    expect(mixed.golden).toEqual([]);
+    expect(mixed.foreign).toEqual([
+      expect.objectContaining({
+        id: "book-1",
+        reason: expect.stringContaining('its child "My chapter" is not a pinned file')
+      })
+    ]);
+    // The chapter's SHA is pinned, but another container's chapter does not belong to this book.
+    const other = classifyGoldenLibrary(manifest, [
+      { ...goldenBook(), title: "Another book" },
+      goldenChapter()
+    ]);
+    expect(other.foreign.map((item) => item.id)).toEqual(["book-1"]);
+  });
+
+  it("covers what is materialized under a golden root and flags what no root reaches", () => {
+    const manifest = testManifest();
+    const section = goldenSource({
+      id: "section-1",
+      parentId: "paper-1",
+      type: "DocumentSection",
+      title: "Methods"
+    });
+    expect(classifyGoldenLibrary(manifest, [goldenPaper(), section]).foreign).toEqual([]);
+    const cycle = classifyGoldenLibrary(manifest, [
+      goldenSource({ id: "x", parentId: "y" }),
+      goldenSource({ id: "y", parentId: "x" })
+    ]);
+    expect(cycle.foreign.map((item) => item.id)).toEqual(["x", "y"]);
+  });
+
+  it("never matches an unpinned manifest entry or a source without original bytes", () => {
+    const unpinned = testManifest(false);
+    expect(classifyGoldenLibrary(unpinned, [goldenPaper()]).foreign).toHaveLength(1);
+    expect(
+      classifyGoldenLibrary(testManifest(), [goldenSource({ id: "manual-note", origin: "manual" })])
+        .foreign
+    ).toHaveLength(1);
+  });
+});
+
+describe("golden library reset (MEMORA_GOLDEN_RESET=1)", () => {
+  const resetEnvironment = (manifestPath: string) => ({
+    MEMORA_GOLDEN_RUN: manifestPath,
+    MEMORA_GOLDEN_MAX_TOKENS: "1000000",
+    MEMORA_GOLDEN_RESET: "1"
+  });
+  const names = (services: ReturnType<typeof fakeServices>) => services.calls.map(([name]) => name);
+
+  it("resets a library of golden sources after the backup, then continues as on an empty library", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({
+      librarySources: [goldenWeb(), goldenPaper(), goldenBook(), goldenChapter()],
+      pendingJobs: [{ type: "ingestion", count: 2 }]
+    });
+    const events: Array<[string, Record<string, unknown> | undefined]> = [];
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, {
+        env: resetEnvironment(manifestPath),
+        log: (event, data) => events.push([event, data])
+      })
+    );
+    const backupPath = join(workspace, ".cache", "f0", "backups", "memora-backup-test");
+    expect(run.reset).toEqual({ performed: true, removedSources: 4, backupPath });
+    // One backup, taken before the reset; then the cap and the pauses as in any other run.
+    expect(names(services).slice(0, 4)).toEqual([
+      "backup",
+      "reset",
+      "limitLiveTokens",
+      "organization"
+    ]);
+    expect(names(services).filter((name) => name === "backup")).toHaveLength(1);
+    expect(run.backup.path).toBe(backupPath);
+    // The automation is paused after the reset (the real reset restores its defaults first).
+    expect(run.automation.pausedPolicies).toEqual(["policy-0"]);
+    expect(events.find(([event]) => event === "reset")?.[1]).toEqual({
+      performed: true,
+      removedSources: 4,
+      backupPath,
+      roots: 3,
+      droppedPendingJobs: 2
+    });
+    expect(events.find(([event]) => event === "prepared")?.[1]).toMatchObject({
+      library: { sources: 0, notes: 0 },
+      pendingJobs: [],
+      reset: { performed: true }
+    });
+  });
+
+  it("refuses a library with a non-golden source, changing nothing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({
+      librarySources: [goldenPaper(), foreignSource("mine-1"), foreignSource("mine-2")]
+    });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+      )
+    ).rejects.toThrow("library holds non-golden sources (2)");
+    expect(services.calls).toEqual([]);
+    // The refusal names the sources so the owner can see what blocked it.
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+      )
+    ).rejects.toThrow('mine-1 StandaloneArticle "My own reading notes"');
+  });
+
+  it("refuses a golden container that holds a foreign chapter", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({
+      librarySources: [
+        goldenBook(),
+        goldenChapter(),
+        { ...foreignSource("stray"), parentId: "book-1" }
+      ]
+    });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+      )
+    ).rejects.toThrow("library holds non-golden sources (1)");
+    expect(services.calls).toEqual([]);
+  });
+
+  it("does nothing to an empty library and takes the run's single backup as usual", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices();
+    const events: string[] = [];
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, {
+        env: resetEnvironment(manifestPath),
+        log: (event) => events.push(event)
+      })
+    );
+    expect(run.reset).toEqual({ performed: false, removedSources: 0, backupPath: null });
+    expect(names(services)).not.toContain("reset");
+    expect(names(services).filter((name) => name === "backup")).toHaveLength(1);
+    expect(events).toContain("reset");
+  });
+
+  it("does not touch a library without the flag: a golden library is still refused as not empty", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({ librarySources: [goldenPaper()] });
+    await expect(prepareGoldenRun(prepareInput(manifestPath, services))).rejects.toThrow(
+      "not empty"
+    );
+    expect(services.calls).toEqual([]);
+    const run = await prepareGoldenRun(
+      prepareInput(await writeSources(testManifest()), fakeServices())
+    );
+    expect(run.reset).toBeUndefined();
+  });
+
+  it("guards against the whole manifest, not only the MEMORA_GOLDEN_ONLY subset", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({ librarySources: [goldenPaper(), goldenWeb()] });
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, {
+        env: { ...resetEnvironment(manifestPath), MEMORA_GOLDEN_ONLY: "web" }
+      })
+    );
+    expect(run.reset).toMatchObject({ performed: true, removedSources: 2 });
+  });
+
+  it("checks the routes and the files before it touches anything", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({ librarySources: [goldenPaper()] });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, {
+          env: resetEnvironment(manifestPath),
+          readRoutes: async () => {
+            throw new Error("The golden run needs a configured reranking route");
+          }
+        })
+      )
+    ).rejects.toThrow("reranking route");
+    expect(services.calls).toEqual([]);
+    await expect(
+      prepareGoldenRun(
+        prepareInput(await writeSources(testManifest(false)), services, {
+          env: resetEnvironment(manifestPath)
+        })
+      )
+    ).rejects.toThrow("web: unpinned");
+    expect(services.calls).toEqual([]);
+  });
+
+  it("does not reset when the backup holds no dump", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({ librarySources: [goldenPaper()], dump: false });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, { env: resetEnvironment(manifestPath) })
+      )
+    ).rejects.toThrow("no database dump");
+    expect(names(services)).toEqual(["backup"]);
+  });
+
+  it("stops with the backup path when the reset fails or leaves sources behind", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const failing = fakeServices({ librarySources: [goldenPaper()], reset: "fails" });
+    await expect(
+      prepareGoldenRun(prepareInput(manifestPath, failing, { env: resetEnvironment(manifestPath) }))
+    ).rejects.toThrow(/reset failed \(errors\.common\.permissionDenied\).*memora-backup-test/);
+    expect(names(failing)).toEqual(["backup", "reset"]);
+    const keeping = fakeServices({ librarySources: [goldenPaper()], reset: "keeps" });
+    await expect(
+      prepareGoldenRun(prepareInput(manifestPath, keeping, { env: resetEnvironment(manifestPath) }))
+    ).rejects.toThrow(/not empty after the reset \(1 sources, 0 notes\).*memora-backup-test/);
+    expect(names(keeping)).toEqual(["backup", "reset"]);
+  });
+
+  it("needs the library reset service, and with nothing to reset still refuses queued jobs", async () => {
+    const manifestPath = await writeSources(testManifest());
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, fakeServices(), {
+          env: resetEnvironment(manifestPath),
+          libraryReset: undefined as never
+        })
+      )
+    ).rejects.toThrow("needs the library reset service");
+    // No source to reset: queued jobs are still refused exactly as without the flag.
+    const queued = fakeServices({ pendingJobs: [{ type: "maintenance", count: 1 }] });
+    await expect(
+      prepareGoldenRun(prepareInput(manifestPath, queued, { env: resetEnvironment(manifestPath) }))
+    ).rejects.toThrow("1 jobs are queued or running");
+    expect(queued.calls).toEqual([]);
   });
 });
 
