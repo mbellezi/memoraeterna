@@ -65,6 +65,11 @@ concurrency and automatic correction.
     relations without a call and discovery judges only each source's nearest source, per source, with no batch
     barrier (~-81% simulated, quality 27-28/28, 0/35), after a spike on unjudged pairs. Analysis:
     `docs/spikes/source-relations-plan.md`.
+18. **F2 decisions** (2026-10-15): the Topic Tree Engine decisions D1-D36, the owner-question defaults Q1-Q12,
+    the gates and the measurement rules are recorded in `docs/f2-decisions.md` and bind F2; where section 4
+    differs, they win. Work proceeds on each question's default until the owner answers. Two defaults pull
+    later-phase work into F2: minimal model residency (Q11, from F3) and the removal of maintenance v1, the
+    calendar routines and the Automation screen (Q12, from F4).
 
 ## 3. The five swaps
 
@@ -82,25 +87,32 @@ concurrency and automatic correction.
 
 The navigation tree becomes a first-class structure maintained by deterministic code over the existing
 pgvector embeddings. Code: pure domain in `packages/domain/src/topic-tree/` (Float32Array, seeded tests),
-repository in `packages/db`, service in desktop main, clustering in a `worker_thread`.
+repository in `packages/db`, service in desktop main, clustering in a `worker_thread`. F2 design decisions:
+`docs/f2-decisions.md`.
 
-- **Statistics (BIRCH-style):** per topic, count `N` and sum of unit vectors `LS`; centroid `LS/|LS|`,
-  coherence `|LS|/N`. A note uses its embedding; a root source uses the centrality-weighted mean of its
-  notes (fallback: chunk centroid, then metadata embedding). Insert adds along the path; delete, edit,
-  supersede or reject **subtracts** along the old path before re-placing.
+- **Statistics (BIRCH-style, derived and exact):** per topic, count `N` and sum of unit vectors `LS`;
+  centroid `LS/|LS|`, coherence `|LS|/N`. `N`/`LS` count notes; a root source counts only while it has no
+  current placed note. A note uses its embedding; a root source uses the centrality-weighted mean of its
+  current notes (fallback: its stored composite vector; with neither it waits in Unsorted, flagged
+  `needs_vector`). After any placement change the touched path is **recomputed** bottom-up in content-key
+  order, never subtracted (an edit deletes the old vector); a member with a stale vector keeps its place and
+  leaves the stats until re-embedded. Deleted notes and sources leave by cascade, which marks their paths
+  dirty for a sweep.
 - **PLACE:** beam descent from the root scoring children by centroid and label similarity, with
-  node-relative admission thresholds. Clear winner → automatic (0 calls). Ambiguous → decision gate (local
-  reranker over ≤5 topic descriptors; optional remote predicate). No reranker or no acceptance → direct item
-  of the deepest admitted common ancestor, flagged for a split check. Up to 2 secondary "also in"
+  node-relative admission thresholds. Clear winner → automatic (0 calls). Ambiguous → applied at once at the
+  deepest admitted common ancestor and refined later by a decision gate: a validated dedicated reranker over
+  ≤5 topic descriptors (no generative gate); placement never waits for a model. No reranker → the item waits
+  there until one validates; no acceptance → flagged for a split check. Up to 2 secondary "also in"
   placements. A lone item never creates a topic.
-- **Invariants:** I1 every current note and root source is reachable from Topics (hard; an item may sit in
-  its area's Unsorted leaf). I2 one primary parent, ≤2 secondaries, no cycles (hard). I3 internal fan-out
-  2-12, target 4-9 (soft; hard above 16). I4 leaf holds 3-30 direct items, target ~15 (soft; hard above 45).
-  I5 target depth ≤5, cap 7 (hard at cap; sideways split). I6 no single-child chains (soft). I7 unique
-  sibling titles, case- and accent-insensitive (hard). I8 coherence above a calibrated floor, else split
-  candidate (soft). I9 IDs are never reused; retired topics become redirects (hard). Unsorted share ≤2% and
-  item age in Unsorted are soft targets that raise an Inbox suggestion, not hard violations. The
-  Broad/Balanced/Deep preference shifts I3/I4.
+- **Invariants:** I1 every current note and root source is reachable from Topics (hard; an item may wait in
+  Unsorted, the root's direct items, or flagged at an ancestor). I2 one primary parent, ≤2 secondaries, no
+  cycles (hard). I3 internal fan-out 2-12, target 4-9 (soft; hard above 16); the root follows the Areas band
+  instead. I4 leaf holds 3-30 direct items, target ~15 (soft; hard above 45). I5 target depth ≤5, cap 7
+  (hard at cap; sideways split). I6 no single-child chains (soft). I7 unique sibling titles, case- and
+  accent-insensitive (hard). I8 coherence above a calibrated floor, else split candidate (soft). I9 IDs are
+  never reused; retired topics become redirects (hard). Unsorted share ≤2% and item age in Unsorted are soft
+  targets that raise an Inbox suggestion, not hard violations. The Broad/Balanced/Deep preference shifts
+  I3/I4.
 - **Operations:** leaf split (balanced spherical k-means or Louvain), push-down on fan-out overflow (node
   keeps its ID), sideways split, merge, dissolve, collapse, re-parent, rename. Each is accepted only if it
   fixes a hard violation or `ΔQuality − λ·Churn > 0` (churn weighted up for recently opened items).
@@ -110,24 +122,34 @@ repository in `packages/db`, service in desktop main, clustering in a `worker_th
   the content language, Zod-validated, sibling duplicates rejected). Names are ALWAYS in the content
   language, even when a cluster's notes are mostly in another language (owner feedback on Spike B: mixed
   pt/en TF-IDF names). Without an LLM: provisional "Parent › TF-IDF terms" built only from content-language
-  items with that language's stopwords; with no such items, a localized "Unnamed topic" placeholder
-  flagged for naming. Clustering itself stays language-agnostic (pt and en notes on one subject belong together).
+  items with that language's stopwords; with no such items the topic stays unnamed (no title is stored; the
+  UI shows a localized "Unnamed topic") and flagged for naming. Names change only on create, split or merge,
+  or after enough membership drift *(cal.)*; human names never change. Clustering itself stays
+  language-agnostic (pt and en notes on one subject belong together).
 - **Bootstrap and cold start:** below ~12 items everything is a direct child of Topics and shown as
   Unsorted; at ~12 items a bottom-up bootstrap builds the first named tree (chapter centroids seed k-means
-  for a single hierarchical source); the user may pin 3-10 suggested Areas.
+  for a single hierarchical source).
+- **Areas (the top two levels):** an LLM Clio-style grouping of the level-2 topics into 7-16 Areas (target
+  10 *(cal.)*; re-based from ~10-16 on Spike B's 7-12), validated by code and accepted only if level-2
+  quality does not drop; applied automatically at bootstrap, later Area-level changes are `pending_review`.
+  The user may pin Areas, and pinned Areas stay fixed. The root's fan-out band is the Areas band, not I3.
 - **Shadow rebuild:** periodic or on quality drop; old→new topics mapped by Hungarian matching on member
   Jaccard so IDs survive; emitted as ordinary operations.
-- **Embedding-space change:** re-embed in batches, recompute `N/LS` and label vectors, recalibrate
-  thresholds, map topics by Hungarian matching, reset Atlas positions.
+- **Embedding-space change:** re-embed in batches (automatically on local routes, through an explicit action
+  on remote ones), recompute `N/LS` and label vectors, recalibrate thresholds, map topics by Hungarian
+  matching, reset Atlas positions. Vectors of two spaces are never compared.
 - **Events and undo:** every operation writes a structure event inside a change-set; undo applies the
   inverse and, when later change-sets depend on it, blocks and names them (no cascade in v1).
 - **Topic page:** deterministic map of content (subtopics with counts, notes by centrality, contributing
   sources, related topics; zero LLM calls) plus a lazy prose overview written when opened or by REFRESH,
   with citations and a support check.
-- **Ownership:** `wiki_pages.parent_id` remains the only parent pointer; after the switch the engine is its
-  single writer for AI topics (enforced by test).
-- **Data:** topic state (stats, management ai|human|pinned, dirty flags), placements, redirects, structure
-  events, daily metrics, calibration; centroids reuse the per-dimension embedding tables.
+- **Ownership:** topic identity lives in a new `topics` table whose `parent_id` is the only parent pointer;
+  the engine is the single writer of AI-managed topics and placements (enforced by a database guard and a
+  static test), and human operations go through it. `wiki_pages` stays legacy: emptied at the switch,
+  dropped in F4.
+- **Data:** new tables for trees, topics (management ai|human|pinned, redirects), stats (dirty flags),
+  placements, change-sets and structure events, gate decisions, daily metrics, calibrations and overviews;
+  topic label vectors (and later centroids) reuse the per-dimension embedding tables.
 
 ### 4.2 Relations v2
 
@@ -163,8 +185,9 @@ pooling; for MLX, the config and architecture) and a relevant-vs-irrelevant smok
 ### 4.3 Gardener (event-driven maintenance)
 
 Built on the existing `jobs` table (priority, `run_after`, attempts, SKIP LOCKED) plus `dedupe_key` and
-`lane` (heavy: ingestion; light: Gardener and Obsidian), with per-source exclusion instead of global "any
-job / any AI call" blocks.
+`lane` (heavy: ingestion; light: Gardener and Obsidian, with a `compute` worker for work without model calls
+and a `model` worker, so placement never waits for a model), with per-source exclusion instead of global
+"any job / any AI call" blocks.
 
 | Task | Trigger | Work |
 | --- | --- | --- |
@@ -220,7 +243,8 @@ job / any AI call" blocks.
   elsewhere the default is Hybrid or Cloud.
 - **Efficiency:** `embedMany` (remote arrays; one reused local context), skip re-embedding when hash and
   space are unchanged, cached config/credentials/adapters, telemetry written outside the slot, residency of
-  a small group (embedding + reranker) plus one generative model unloaded after idle.
+  a small group (embedding + reranker) plus one generative model unloaded after idle (minimal residency
+  lands in F2, Q11).
 - **Lean ingestion:** graph extraction once (on notes with chunk evidence), no claims extraction, duplicate
   notes on write become Inbox suggestions; windowed ingestion only after an A/B in F6.
 
@@ -394,39 +418,110 @@ v8 range (0/35 forbidden, ≥27/28 on notes or sources); source matching ≤16.2
 
 ### F2 Topic Tree Engine (weeks 7-11)
 
-- [ ] First: reranker adapter (MLX first, GGUF fallback) with validated `decide` capability and catalog entry
-      (revision, size, license, SHA-256); minimal workload classes (`decide`, `write-fast`); light supervisor
-      slot, `jobs.dedupe_key` and `jobs.lane`, with the Background jobs section of `rules/architecture.md`
-      updated in the same change.
-- [ ] Pure domain engine with property tests and offline replay (chronological and shuffled); migration with
-      the topic tables and minimal change-sets.
-- [ ] Repository, service, clustering worker; PLACE and REBALANCE in the light slot.
-- [ ] Shadow mode with a developer comparison panel on the large corpus and golden libraries; calibrate
-      admission, margin, gate temperature and threshold.
-- [ ] Naming in the content language (LLM; content-language TF-IDF fallback); bootstrap with the Louvain-kNN
-      builder (Spike B winner). Spike B owner evaluation (25/30 coherent): leaves and levels 3-4 were 17/17
-      coherent but level 1 only 1/4, so the top two levels get an LLM-assisted Clio-style grouping into
-      ~10-16 areas (owner can pin Areas), plus a mis-parent audit that moves a cluster whose centroid is
-      closer to another parent.
-- [ ] Switch: verified `pg_dump` backup, then wipe existing wiki, organization and maintenance data
-      (decision 4); bootstrap a fresh tree from current notes and sources; the engine becomes the single
-      writer of AI topic parents.
-- [ ] Navigator v2, Topic page (MOC + lazy overview) and Shape icicle hosted in the current Wiki screen.
-- [ ] Obsidian reads placements: folder-note MOCs, aliases from redirects, paged or incremental delivery
-      replacing the fixed source/note/page/relation caps; old wiki projection files are retired through the
-      managed recovery flow.
-- [ ] Remove curator placement, route continuation and "Index of X" pages; update `rules/knowledge.md`.
+Decisions D1-D36, the owner-question defaults Q1-Q12, the gates and the measurement rules:
+`docs/f2-decisions.md` (decision 18). Tasks run in waves: the tasks of a wave run in parallel in separate
+worktrees, a shared file has one owner at a time in task order, and a proof that starts the DEV app or a local
+model takes that slot (one holder at a time). Gates stop the line: A engine parity (end of wave 3), B
+persistence parity (wave 5), P owner preview (non-blocking, after wave 5), C quality (end of wave 7; no wipe
+before it passes), D switch safety (wave 8).
 
-Exit: reachability 100%, 0 orphans and 0 hard violations after REBALANCE; mean depth ≤4.5 and ≥80% of
-internal nodes with 4-9 children *(cal.)*; primary-path churn ≤3% per week in replay *(cal.)*; owner blind
-rating ≥80% of 30 topics coherent and well named; undo restores exact placements; empty database + 1 model +
-1 PDF yields notes in named topics without opening Settings (e2e).
+Wave 0:
+- [x] T00 Decision record: D1-D36 and Q1-Q12 (`docs/f2-decisions.md`), the re-based ambiguity bar and rating
+      rule, these task boxes.
+
+Wave 1:
+- [ ] T01 MLX helper `embed` and `score` protocol in one shared helper process, with memory limits.
+- [ ] T02 Job lanes (migration 0051): `jobs.lane` and `jobs.dedupe_key`, one heavy loop and two light workers
+      (`compute`, `model`), with the Background jobs section of `rules/architecture.md` in the same change.
+- [ ] T03 Pure engine core in `packages/domain/src/topic-tree/` (complete config, state and event vocabulary;
+      exact stats, invariants, k-means, kNN, Louvain build, metrics) with property tests.
+- [ ] T04 Legacy wiki state is never created on a library without legacy content (D3).
+- [ ] T05 Restore-verified backups with snapshot-consistent counts.
+
+Wave 2:
+- [ ] T06 Dedicated MLX and GGUF ranker adapters with artifact validation; generative models lose the
+      `reranking` tag (D17).
+- [ ] T07 Deterministic PLACE, gate rule, secondaries, root vector, human operations and exact undo (pure).
+- [ ] T08 REBALANCE, stability controls, audit and Hungarian rebuild mapping (pure).
+- [ ] T09 Offline replay (chronological, shuffled, by domain), Louvain detector and calibration harness.
+- [ ] T10 Ask answers from notes and chunks only, without the legacy wiki or organization domains (D13).
+
+Wave 3 (gate A at the end):
+- [ ] T11 Qwen3-Reranker catalog entries, MLX and GGUF (revision, size, license, SHA-256), validated for
+      `decide` on install.
+- [ ] T12 Topic tables (migration 0052) and the engine write repository: guarded single writer, minimal
+      change-sets, exact undo, deletion by cascade (D9, D32).
+- [ ] T12b Paged topic skeleton and vector loading.
+- [ ] T13 Clustering worker with transferred vectors.
+
+Wave 4:
+- [ ] T14 AiService ranker execution, explicit workload-class routes (`decide`, `write-fast`), minimal model
+      residency (Q11) and the embedding-space key, with `rules/ai.md`.
+- [ ] T15 Topic service: modes and shadow tree (D2), PLACE and sweep on the light lane, `topicsChanged` push.
+- [ ] T16 Topic read repository, IPC contracts and push channel.
+- [ ] T17 KPI and audit scripts on topics (`topics:audit`).
+- [ ] T22a Measurement profiles, `topics:export`, G1 and the topic barrier for golden runs (D23).
+
+Wave 5 (gate B after T15b and T19; owner preview P at the end):
+- [ ] T15b Place, unplace and repair on every note and source change.
+- [ ] T18 Naming in the content language (LLM; content-language TF-IDF fallback) and topic label vectors.
+- [ ] T19 Bootstrap with the Louvain-kNN builder (Spike B winner), rebalance and audit jobs, rebuilds.
+- [ ] T20 Navigator v2 (counts, notes and sources as leaves, pins, recents, Unsorted, status line) in the
+      current Wiki screen.
+- [ ] T21 Topic page with a deterministic map of content.
+- [ ] T22b Corpus environment and developer comparison report (`topics:report`, D21).
+
+Wave 6:
+- [ ] T23 Reranker decision gate for ambiguous placements (D10).
+- [ ] T24 Area grouping into 7-16 pinnable Areas (D12) and mis-parent re-parenting.
+- [ ] T25 Shape icicle with a table alternative; warnings with Apply and Dismiss (D29).
+- [ ] T26 Human structure operations (rename, move, create, pin) with undo and review.
+- [ ] T27 `objects.locate` on the topic tree (D24).
+- [ ] T33 Obsidian topic projection (migration 0053): folder-note MOCs, aliases from redirects, paged delivery
+      on the light lane replacing the fixed caps, with `rules/integrations.md`.
+
+Wave 7 (gate C at the end):
+- [ ] T28 Ask about a topic.
+- [ ] T29a Calibrate placement and the gate per decider: admission, margin, gate temperature and threshold.
+- [ ] T29b Calibrate stability, growth and structure; adopt the config defaults.
+- [ ] T29c Gate C measurement (E1-E3 on the evaluation seeds, E6).
+- [ ] T30 Owner blind rating (D20).
+- [ ] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
+- [ ] T32 Zero-config end-to-end test (`topics:e2e`).
+- [ ] T36 Verified, resumable switch service (D4), with `rules/data.md`.
+
+Wave 8 (the switch; gate D):
+- [ ] T34 Old wiki projection files retired through the managed recovery flow; `memora://topic/<id>` links.
+- [ ] T35 Legacy detach (migration 0055): impact triggers dropped (D5), `organizeKnowledge` leaves ingestion
+      (D14), legacy writers unwired.
+- [ ] T36b Switch card with a verified-backup preview; legacy Wiki screen read-only.
+- [ ] T37 Switch rehearsal on a restored copy, then the owner's switch: verified `pg_dump` backup, wipe of the
+      wiki, organization and maintenance data (decision 4), a fresh tree from current notes and sources; the
+      engine becomes the single writer of AI topic parents.
+
+Wave 9 (after the switch):
+- [ ] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
+- [ ] T38 Remove the legacy wiki, Automation and Organization screens (Q12).
+- [ ] T39 Remove curator placement and its "Index of X" pages, route continuation, the organization and
+      maintenance services, legacy IPC and job types.
+- [ ] T40 Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
+- [ ] T41 Exit measurement (`docs/kpi-f2.md`) and phase close.
+
+Exit (E1-E6, on the pre-registered evaluation seeds with the calibrated configuration): reachability 100%, 0
+orphans and 0 hard violations after REBALANCE; mean depth ≤4.5 and ≥80% of internal nodes with 4-9 children
+*(cal.)*, also on the corpus after Areas grouping (the root is reported apart); primary-path churn ≤3% per
+week in replay *(cal.)*; owner blind rating: ≥24 of 30 topics rated both coherent and well named in the
+content language (D20; both marginals reported); undo restores exact placements; empty database + 1 model + 1
+PDF yields notes in named topics without opening Settings (e2e; one AI profile from the first-run path plus
+the default local embedding model, Q4). Reported, not gating: the ambiguity bar, re-based from F0's ≤30%
+(D19) *(cal.)*: auto-placement precision ≥90% on known topics, ≤50% of new-topic notes gated, gate p95
+≤0.3 s per gated note (target 0.2 s), with gate precision on new topics against margin-only placement.
 
 ### F3 Relations v2 and AI runtime lanes (weeks 12-15)
 
 - [ ] AiScheduler (lanes, priorities with aging, deadlines, classified retries, schema output in all
-      runtimes, `embedMany`, hot-path caches, residency); remove `ai-execution-queue.ts`; update
-      `rules/ai.md`.
+      runtimes, `embedMany`, hot-path caches, idle unload of the generative model and residency group sizing;
+      minimal residency lands in F2, Q11); remove `ai-execution-queue.ts`; update `rules/ai.md`.
 - [ ] Full workload classes with Local / Hybrid / Cloud presets; map legacy routes.
 - [ ] Directed note relations: today `atomicNoteRelationRepository.upsert` sorts the two endpoints by UUID, so
       the direction of directed types (extends, supports, depends_on) is arbitrary (found by the golden replay);
@@ -457,7 +552,9 @@ calls per reference chapter *(cal.)*.
 - [ ] Event bus with push; Activity pill and drawer with the status sentence.
 - [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
       controls and tree shape.
-- [ ] Retire routines, maintenance v1, dead screens and legacy tables (after backup).
+- [ ] Drop the legacy tables the F2 switch emptied, and the source-deletion and `jobRepository` guards on them
+      (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
+      are removed in F2 (Q12).
 
 Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
 blocked by another, quarantine ≤1%, ≥95% completed within 24 h; remote cap respected within one call; the
