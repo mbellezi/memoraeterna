@@ -1,14 +1,13 @@
 // The engine port of the offline replay, and its reference implementation.
 //
 // The replay loop (replay.ts) drives any `ReplayEngine`: build, PLACE a batch, REBALANCE once,
-// optionally rebuild. The product engine is PLACE (`decidePlacement`, T07) and REBALANCE (T08)
-// over the T03 state; adapters for them plug in through `ReplayEngineFactory` when those tasks
-// merge. Until then `createReferenceEngine` supplies the Spike B incremental engine over the
-// T03 primitives: beam descent with node-relative admission, local repair with cooldowns and a
-// churn budget, the ported shape operations, plus the two stability controls the E3 protocol
-// names and Spike B lacked, a daily budget of soft operations and a freeze on given topics. It
-// is the baseline the product engine is compared against, not a second implementation to keep:
-// retire it once the T07/T08 adapter reproduces its Spike B parity numbers.
+// optionally rebuild. The product engine (T07 PLACE and T08 REBALANCE over the T03 state) plugs
+// in through `createRealEngine` (real-engine.ts), the replay's default. `createReferenceEngine`
+// (`--engine reference`) is the Spike B incremental engine over the T03 primitives: beam descent
+// with node-relative admission, local repair with cooldowns and a churn budget, the ported shape
+// operations, plus the two stability controls the E3 protocol names and Spike B lacked, a daily
+// budget of soft operations and a freeze on given topics. It is the baseline the product engine
+// was held to at gate A, not a second implementation to grow.
 import {
   addItemToPath,
   admissionThreshold,
@@ -37,7 +36,7 @@ import type {
   ItemVectorSource,
   ShapeContext,
   ShapeOperation,
-  ShapeOperationKind,
+  TopicOperationKind,
   TopicTreeConfig,
   TopicTreeState
 } from "@app/domain/topic-tree";
@@ -45,7 +44,7 @@ import type {
 /** Placement margins whose gated share is reported (Spike B: `insertMargins`). */
 export const reportedMargins = [0.01, 0.02, 0.03, 0.05] as const;
 
-export type OperationCounts = Partial<Record<ShapeOperationKind, number>>;
+export type OperationCounts = Partial<Record<TopicOperationKind, number>>;
 
 export interface BuildSummary {
   rows: number;
@@ -81,8 +80,25 @@ export interface RebalanceSummary {
   /** Soft operations skipped: a frozen topic, or the daily budget was spent. */
   skippedFrozen: number;
   skippedBudget: number;
+  /** Topics whose soft checks waited for their cooldown (engines that report it). */
+  skippedCooldown?: number;
+  /** Operations returned for review instead of applied (protected or Area-level, D12). */
+  proposals?: number;
   /** Items re-pathed by the operations applied. */
   movedItems: number;
+}
+
+/** What an engine's audit and undo checks did over a run (engines that have them). */
+export interface EngineAuditSummary {
+  /** Audits run (one before each REBALANCE). */
+  audits: number;
+  /** Mis-parent findings with a re-parent target that joined the REBALANCE checks. */
+  reparentCandidates: number;
+  /** Topics whose statistics the audit's exact sample found drifted (and recomputed). */
+  driftedTopics: number;
+  /** REBALANCE change-sets undone on a copy, and those that restored the dump exactly. */
+  undoChecked: number;
+  undoExact: number;
 }
 
 export interface RebuildSummary {
@@ -93,22 +109,33 @@ export interface RebuildSummary {
 
 export interface PlaceOptions {
   /**
-   * Repair after every insert with the Spike B local policy (cooldowns and the churn budget, no
-   * freeze or daily budget): the growth runs of the Spike B parity check. Default: only a leaf
-   * past its hard limit splits at once and REBALANCE does the rest.
+   * Repair after every insert (the growth runs of the Spike B parity check): the reference with
+   * the Spike B local policy (cooldowns and the churn budget, no freeze or daily budget), the real
+   * engine with a REBALANCE of the touched topics. Default: the reference splits a leaf past its
+   * hard limit at once, and REBALANCE does the rest.
    */
   localRepair?: boolean;
 }
 
+/**
+ * How an engine treats an item PLACE sends to the gate: `baseline` takes the best-scoring
+ * candidate (the margin-only baseline, D19), `off` leaves it waiting at the fallback ancestor.
+ */
+export type ReplayGate = "baseline" | "off";
+
 /** What the replay loop needs from an engine. */
 export interface ReplayEngine {
   readonly name: string;
+  readonly gate: ReplayGate;
   /** The live tree (a rebuild may replace the object, so read it after every call). */
   readonly state: TopicTreeState;
   readonly vectors: ItemVectorSource;
   /** Builds a fresh tree over `rows` (matrix rows) and settles it. */
   build(rows: readonly number[]): BuildSummary;
-  /** PLACE: puts each row on its topic; the tree stays valid for hard limits only. */
+  /**
+   * PLACE: puts each row on its topic. The reference splits a leaf past its hard limit at once;
+   * the real engine never changes structure in PLACE and leaves hard limits to REBALANCE.
+   */
   place(rows: readonly number[], options?: PlaceOptions): PlaceSummary;
   /** REBALANCE once: repairs under cooldowns, budgets and the freeze. */
   rebalance(context: RebalanceContext): RebalanceSummary;
@@ -118,6 +145,8 @@ export interface ReplayEngine {
   evaluateRebuild?(context: RebalanceContext): RebuildSummary | null;
   /** A full repair pass that ignores cooldowns (before a shape or parity measurement). */
   settle(): OperationCounts;
+  /** Audit and undo-check counters so far. Optional: the reference has neither. */
+  engineAudit?(): EngineAuditSummary;
 }
 
 export interface ReplayEngineInput {
@@ -156,6 +185,8 @@ export interface Decision {
 
 class ReferenceEngine implements ReplayEngine {
   readonly name = "spike-b-reference";
+  /** An ambiguous item goes to the best admitted leaf, as in Spike B. */
+  readonly gate = "baseline" as const;
   private current: TopicTreeState;
   private currentVectors: ItemVectorSource;
   private nextTopicId = 1;

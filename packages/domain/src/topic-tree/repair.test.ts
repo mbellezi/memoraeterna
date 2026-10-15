@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultTopicTreeConfig, topicTreeConfigWith } from "./config.js";
+import { topicTreeConfigWith } from "./config.js";
 import type { TopicTreeConfig } from "./config.js";
 import {
   StructureEventSchema,
@@ -37,7 +37,14 @@ import {
 import type { TopicTreeState } from "./state.js";
 import { recomputeSubtree, statsDump } from "./stats.js";
 
-const config = defaultTopicTreeConfig;
+// The mechanics are tested at the stability start values; the defaults the E3 calibration chose
+// (lambda 6, a 931-insert cooldown) leave most soft operations to the hard limits on these small
+// trees. config.test.ts asserts the calibrated defaults.
+const config = topicTreeConfigWith({
+  stability: { churnWeight: 1, dailyMovedShare: 0.02 },
+  repair: { cooldownInserts: 25 },
+  audit: { misParentMargin: 0.05 }
+});
 const data = gaussianClusters({
   groups: 4,
   clustersPerGroup: 3,
@@ -208,7 +215,7 @@ describe("REBALANCE: acceptance", () => {
     const leaf = innerLeaf(tree.state);
     growLeaf(tree, leaf, config.leaf.max + 4);
     const before = canonicalStateDump(tree.state);
-    const strict = topicTreeConfigWith({ stability: { churnWeight: 50 } });
+    const strict = topicTreeConfigWith({ stability: { churnWeight: 50 } }, config);
     const rejected = run(tree, { topics: [leaf] }, strict);
     expect(rejected.applied).toEqual([]);
     expect(rejected.skipped).toContainEqual(
@@ -330,7 +337,7 @@ describe("REBALANCE: protection", () => {
 describe("REBALANCE: stability controls", () => {
   it("holds the daily operation budget and starts again the next day", () => {
     const tree = productTree(data, config, { seed: 7 });
-    const oneADay = topicTreeConfigWith({ stability: { dailyOperations: 1 } });
+    const oneADay = topicTreeConfigWith({ stability: { dailyOperations: 1 } }, config);
     const first = run(tree, {}, oneADay);
     expect(first.applied).toHaveLength(1);
     expect(first.skipped.some((skip) => skip.reason === "budget")).toBe(true);
@@ -343,7 +350,10 @@ describe("REBALANCE: stability controls", () => {
 
   it("holds the daily move budget", () => {
     const tree = productTree(data, config, { seed: 7 });
-    const tight = topicTreeConfigWith({ stability: { dailyMovedShare: 0, dailyMovedMin: 2 } });
+    const tight = topicTreeConfigWith(
+      { stability: { dailyMovedShare: 0, dailyMovedMin: 2 } },
+      config
+    );
     const result = run(tree, {}, tight);
     const moved = result.applied.reduce(
       (total, operation) => total + operation.churn.items.length,

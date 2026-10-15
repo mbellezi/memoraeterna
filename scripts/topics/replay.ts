@@ -3,21 +3,29 @@
 //   npm run topics:replay -- parity   --dataset corpus-notitle --seed 20261014 [--repeat]
 //   npm run topics:replay -- growth   --dataset corpus-notitle --arrival chronological --share 0.2
 //   npm run topics:replay -- weekly   --dataset corpus-notitle --arrival shuffled --seeds evaluation
+//   npm run topics:replay -- weekly   --engine real --arrival chronological --seeds evaluation
+//   npm run topics:replay -- calibrate --engine real --seeds 7 --arrival shuffled
 //   npm run topics:replay -- knn      --dataset corpus-notitle --sample 3000,6000 --nprobe 8,16,32
 //   npm run topics:replay -- list
 //
 // parity   builds the Louvain tree and holds it to Spike B (depth, fan-out, leaf purity, build time).
-// growth   builds on a base, inserts the rest with the Spike B local repair, settles (E1, E2).
+// growth   builds on a base, inserts the rest with local repair after every insert, settles (E1, E2).
 // weekly   the E3 protocol: a 60% base, then 8 simulated weeks of 5% arrivals, each day a PLACE and a
 //          REBALANCE with a daily budget and a freeze on the fastest-growing topics; weekly churn.
+// calibrate  the E3 protocol over the stability grid of calibration.ts on calibration seeds, then
+//          its registered selection rule.
 // knn      IVF recall@10 against exact kNN (subset samples, and the production setting).
 // --audit  adds the E1 audit (reachability, orphans, hard violations) of the final tree.
+// --engine real (default) is the product engine, T07 PLACE and T08 REBALANCE with their stability
+//          controls (real-engine.ts); reference is the Spike B incremental engine (its reports
+//          carry a `reference` tag).
 //
 // Datasets are replay stores (export-vectors.ts): the Spike B stores in `.cache/spikes/topic-tree/
 // vectors` and the app exports of T22a/T22b in `.cache/topics/vectors`. Reports go to
 // `.cache/topics/reports/` (report-data.ts). Calibration runs (T29a, T29b) use seeds 7-12 and
 // evaluation runs 20261014 and 1-5; a run refuses the other role's seeds.
-import { resolve } from "node:path";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
@@ -26,9 +34,15 @@ import {
   canonicalPartition,
   defaultTopicTreeConfig,
   distribution,
-  shapeReport
+  shapeReport,
+  topicTreeConfigWith
 } from "@app/domain/topic-tree";
-import type { DetectCommunities, TopicTreeConfig, TopicTreeState } from "@app/domain/topic-tree";
+import type {
+  DetectCommunities,
+  TopicTreeConfig,
+  TopicTreeConfigOverrides,
+  TopicTreeState
+} from "@app/domain/topic-tree";
 
 import { detectCommunitiesLouvain } from "../../apps/desktop/src/main/workers/topic-communities.js";
 import {
@@ -74,8 +88,21 @@ import {
   rowKeys,
   truthSummary
 } from "./replay-metrics.js";
+import {
+  calibrationRow,
+  chooseStabilityPoint,
+  configForPoint,
+  gridPoints,
+  pointId,
+  readCalibrationRows,
+  renderCalibrationMarkdown,
+  summarizePoints
+} from "./calibration.js";
+import type { StabilityPoint } from "./calibration.js";
+import { createRealEngineFactory, neutralStability, replayGates } from "./real-engine.js";
+import type { RealEngineOptions } from "./real-engine.js";
 import { createReferenceEngine } from "./reference-engine.js";
-import type { OperationCounts, ReplayEngineFactory } from "./reference-engine.js";
+import type { OperationCounts, ReplayEngineFactory, ReplayGate } from "./reference-engine.js";
 
 export interface ReplayRun {
   dataset: ReplayDataset;
@@ -395,6 +422,8 @@ export function weeklyRun(
     operations: {} as OperationCounts,
     skippedFrozen: 0,
     skippedBudget: 0,
+    skippedCooldown: undefined as number | undefined,
+    proposals: undefined as number | undefined,
     ambiguous: 0,
     unadmitted: 0
   };
@@ -413,6 +442,8 @@ export function weeklyRun(
       operations: stripUndefined(week.operations),
       skippedFrozen: week.skippedFrozen,
       skippedBudget: week.skippedBudget,
+      ...(week.skippedCooldown === undefined ? {} : { skippedCooldown: week.skippedCooldown }),
+      ...(week.proposals === undefined ? {} : { proposals: week.proposals }),
       ambiguous: week.ambiguous,
       unadmitted: week.unadmitted,
       rebuild,
@@ -444,6 +475,8 @@ export function weeklyRun(
         operations: {},
         skippedFrozen: 0,
         skippedBudget: 0,
+        skippedCooldown: undefined,
+        proposals: undefined,
         ambiguous: 0,
         unadmitted: 0
       };
@@ -462,6 +495,12 @@ export function weeklyRun(
     week.unadmitted += placed.unadmitted;
     week.skippedFrozen += rebalanced.skippedFrozen;
     week.skippedBudget += rebalanced.skippedBudget;
+    if (rebalanced.skippedCooldown !== undefined) {
+      week.skippedCooldown = (week.skippedCooldown ?? 0) + rebalanced.skippedCooldown;
+    }
+    if (rebalanced.proposals !== undefined) {
+      week.proposals = (week.proposals ?? 0) + rebalanced.proposals;
+    }
     addCounts(week.operations, placed.operations);
     addCounts(week.operations, rebalanced.operations);
     if (lastDayOfWeek(index)) {
@@ -487,7 +526,7 @@ export function weeklyRun(
     ...baseFields(run, engine.name),
     kind: "weekly-replay",
     arrival: options.order,
-    gate: "off",
+    gate: engine.gate,
     schedule: {
       baseRows: schedule.base.length,
       weeks: schedule.weeks,
@@ -508,6 +547,7 @@ export function weeklyRun(
     maxChurn: round(maxChurn, 6),
     medianChurn: round(medianChurn, 6),
     final: { shape: finalShape, truth: truthSummary(engine.state, run.dataset, present) },
+    ...(engine.engineAudit ? { engineChecks: engine.engineAudit() } : {}),
     checks,
     passes: checks.every((entry) => entry.pass)
   };
@@ -616,14 +656,114 @@ export function knnRun(run: ReplayRun, options: KnnOptions): KnnRecallReport {
 }
 
 // ---------------------------------------------------------------------------
+// Stability calibration (calibration.ts)
+
+export interface CalibrateInput {
+  /** Dataset name in the report (with the sample tag of a smoke run). */
+  datasetName: string;
+  datasetFor: (seed: number) => ReplayDataset;
+  seeds: readonly number[];
+  orders: readonly ArrivalOrder[];
+  points: readonly StabilityPoint[];
+  base: TopicTreeConfig;
+  engineOptions: Omit<RealEngineOptions, "buildCache">;
+  weeklyOptions: (order: ArrivalOrder) => WeeklyOptions;
+  out: string;
+  bar: number;
+  /** Only read the rows already in `out` and apply the rule (parallel runs end with this). */
+  summarizeOnly?: boolean;
+  now?: () => string;
+}
+
+/**
+ * Replays every grid point on every calibration seed and order (one shared base build per seed
+ * and order), appends a row per run to `<out>/calibration-rows-<seed>-<order>.jsonl`, then applies
+ * the registered rule to every row in `out` and writes `calibration-<dataset>.{json,md}`.
+ * Returns 0 when a point was chosen, 1 when none is eligible.
+ */
+export async function calibrate(input: CalibrateInput): Promise<number> {
+  for (const seed of input.seeds) assertSeedAllowed(seed, "calibration");
+  const now = input.now ?? (() => new Date().toISOString());
+  let engine = "";
+  let gate = input.engineOptions.gate ?? "baseline";
+  if (!input.summarizeOnly) {
+    await mkdir(input.out, { recursive: true });
+    for (const seed of input.seeds) {
+      const dataset = input.datasetFor(seed);
+      const buildCache: NonNullable<RealEngineOptions["buildCache"]> = new Map();
+      for (const order of input.orders) {
+        const rowsPath = join(input.out, `calibration-rows-${seed}-${order}.jsonl`);
+        for (const point of input.points) {
+          const run: ReplayRun = {
+            dataset,
+            config: configForPoint(input.base, point),
+            seed,
+            detect: detectCommunitiesLouvain,
+            createEngine: createRealEngineFactory({ ...input.engineOptions, buildCache }),
+            now
+          };
+          const started = performance.now();
+          const { report } = weeklyRun(run, input.weeklyOptions(order));
+          engine = report.engine;
+          gate = report.gate;
+          await writeReport(
+            join(input.out, "calibration-runs"),
+            report,
+            `${pointId(point)}-${order}`
+          );
+          const row = calibrationRow(point, report);
+          await appendFile(rowsPath, `${JSON.stringify(row)}\n`);
+          console.info(
+            `[topics:replay] calibrate seed ${seed} ${order} ${row.point}: max churn ` +
+              `${(row.maxChurn * 100).toFixed(2)}%, fan-out ${(row.fanOutInTarget * 100).toFixed(1)}%, ` +
+              `depth ${row.depthMean}, ops ${row.operations} (${((performance.now() - started) / 1000).toFixed(0)} s)`
+          );
+        }
+      }
+    }
+  }
+  const rows = await readCalibrationRows(input.out);
+  const expected = { seeds: input.seeds, orders: input.orders };
+  const choice = chooseStabilityPoint(
+    summarizePoints(rows, input.points, expected, input.bar),
+    expected,
+    input.bar
+  );
+  const context = {
+    dataset: input.datasetName,
+    engine: engine || (rows[0]?.engine ?? "t07-t08"),
+    gate: rows[0]?.gate ?? gate,
+    createdAt: now()
+  };
+  const base = join(input.out, `calibration-${input.datasetName}`);
+  await writeFile(`${base}.json`, `${JSON.stringify({ ...context, ...choice }, null, 2)}\n`);
+  await writeFile(`${base}.md`, renderCalibrationMarkdown(choice, context));
+  for (const summary of choice.ranking.slice(0, 10)) {
+    console.info(
+      `[topics:replay] ${summary.eligible ? "eligible" : "         "} ${summary.point}: worst max ` +
+        `churn ${(summary.worstMaxChurn * 100).toFixed(2)}%, fan-out ` +
+        `${(summary.medianFanOut * 100).toFixed(1)}%, depth ${summary.medianDepth}, ops ${summary.operations}`
+    );
+  }
+  console.info(
+    choice.chosen
+      ? `[topics:replay] chosen ${choice.chosen.point} -> ${base}.md`
+      : `[topics:replay] no eligible point; closest ${choice.closest?.point ?? "-"} -> ${base}.md`
+  );
+  return choice.chosen ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------
 // Command line
 
 const usage = `Usage: npm run topics:replay -- <command> [options]
 
 Commands:
   parity   build the Louvain tree and hold it to Spike B
-  growth   build on a base, insert the rest (Spike B local repair), settle (E1, E2)
+  growth   build on a base, insert the rest (local repair after each insert), settle (E1, E2)
   weekly   E3: base + simulated weeks of arrivals, weekly primary-path churn
+  calibrate  the stability grid (calibration.ts) on calibration seeds only, then the registered rule
+           (--points <id,id> runs a subset; --summarize only applies the rule to the rows in --out)
   knn      IVF recall@10 against exact kNN
   list     replay stores found in the vector directories
 
@@ -642,7 +782,33 @@ Options:
   --weeks <n> --weekly-share <x> --base-share <x> --days-per-week <n> --freeze <n>   weekly (E3: 8, 0.05, 0.6, 7, 50)
   --max-churn <x>         weekly: the E3 bar (default 0.03)
   --sample <n,n> --nprobe <n,n> --queries <n> --full-nprobe <n,n> --target <x>        knn (3000,6000; 4,8,16,32; 300)
+  --engine <name>         growth/weekly/calibrate: real (T07 PLACE + T08 REBALANCE, default) | reference (Spike B)
+  --gate <mode>           real engine: baseline (gated items take the best candidate, default) | off (they wait)
+  --undo-check            real engine: undo every REBALANCE change-set on a copy and compare the dump
+  --areas <on|off>        real engine: the root's children are Areas (D12: Area-level operations are proposals; default on)
+  --neutral               daily budgets that constrain nothing (lambda stays: it also picks between fixes)
+  --set <group.key=value> override one configuration value (repeatable, after --neutral), e.g. stability.churnWeight=2
 `;
+
+/** `group.key=value` pairs as configuration overrides (numbers and booleans parsed). */
+export function parseConfigOverrides(entries: readonly string[]): TopicTreeConfigOverrides {
+  const overrides: Record<string, Record<string, unknown>> = {};
+  for (const entry of entries) {
+    const match = /^([A-Za-z]+)\.([A-Za-z]+)=(.+)$/u.exec(entry);
+    if (!match) throw new RangeError(`Not a group.key=value override: ${entry}`);
+    const [, group, key, raw] = match as unknown as [string, string, string, string];
+    const value =
+      raw === "true"
+        ? true
+        : raw === "false"
+          ? false
+          : Number.isFinite(Number(raw))
+            ? Number(raw)
+            : raw;
+    overrides[group] = { ...overrides[group], [key]: value };
+  }
+  return overrides as TopicTreeConfigOverrides;
+}
 
 function numberList(value: string | undefined, fallback: readonly number[]): number[] {
   if (value === undefined) return [...fallback];
@@ -704,6 +870,14 @@ export async function main(argv: readonly string[]): Promise<number> {
       queries: { type: "string" },
       "full-nprobe": { type: "string" },
       target: { type: "string" },
+      engine: { type: "string" },
+      gate: { type: "string" },
+      "undo-check": { type: "boolean" },
+      neutral: { type: "boolean" },
+      set: { type: "string", multiple: true },
+      points: { type: "string" },
+      summarize: { type: "boolean" },
+      areas: { type: "string" },
       help: { type: "boolean" }
     }
   });
@@ -717,40 +891,133 @@ export async function main(argv: readonly string[]): Promise<number> {
     for (const entry of await listReplayDatasets(dirs)) console.info(`${entry.name}\t${entry.dir}`);
     return 0;
   }
-  if (!["parity", "growth", "weekly", "knn"].includes(command)) {
+  if (!["parity", "growth", "weekly", "knn", "calibrate"].includes(command)) {
     console.error(`Unknown command ${command}\n\n${usage}`);
     return 2;
   }
-  const role = values.role as "evaluation" | "calibration" | undefined;
+  // A calibration never touches an evaluation seed, whatever --role says.
+  const role = (command === "calibrate" ? "calibration" : values.role) as
+    "evaluation" | "calibration" | undefined;
   if (role !== undefined && role !== "evaluation" && role !== "calibration") {
     console.error("--role is evaluation or calibration");
     return 2;
   }
-  const seeds = seedsFrom(values.seeds, values.seed);
+  if (command === "calibrate" && values.role !== undefined && values.role !== "calibration") {
+    console.error("calibrate runs only with --role calibration");
+    return 2;
+  }
+  const seeds = seedsFrom(
+    values.seeds ?? (command === "calibrate" ? "calibration" : undefined),
+    values.seed
+  );
   if (role) for (const seed of seeds) assertSeedAllowed(seed, role);
+  // The product engine is the default since it passed gate A's churn criterion (2026-10-15).
+  const engineName = values.engine ?? "real";
+  if (engineName !== "reference" && engineName !== "real") {
+    console.error("--engine is reference or real");
+    return 2;
+  }
+  const gate = (values.gate ?? "baseline") as ReplayGate;
+  if (!replayGates.includes(gate) || (values.gate !== undefined && engineName !== "real")) {
+    console.error("--gate is baseline or off, and only for --engine real");
+    return 2;
+  }
 
   const datasetName = values.dataset ?? "corpus-notitle";
   const fullDataset = await loadReplayDataset(datasetName, { dirs });
   const limit = values.limit === undefined ? null : Number(values.limit);
   const out = resolve(values.out ?? reportsDir());
-  const config = defaultTopicTreeConfig;
+  let config = defaultTopicTreeConfig;
+  if (values.neutral) config = neutralStability(config);
+  if (values.set) config = topicTreeConfigWith(parseConfigOverrides(values.set), config);
+  const areas = values.areas ?? "on";
+  if (
+    (areas !== "on" && areas !== "off") ||
+    (values.areas !== undefined && engineName !== "real")
+  ) {
+    console.error("--areas is on or off, and only for --engine real");
+    return 2;
+  }
+  const engineOptions = {
+    gate,
+    areasActive: areas === "on",
+    undoCheck: values["undo-check"] === true
+  };
+  const createEngine: ReplayEngineFactory =
+    engineName === "real" ? createRealEngineFactory(engineOptions) : createReferenceEngine;
   console.info(
     `[topics:replay] ${command} on ${datasetName}: ${fullDataset.rows.length} rows x ` +
-      `${fullDataset.matrix.dim}, seeds ${seeds.join(",")}`
+      `${fullDataset.matrix.dim}, seeds ${seeds.join(",")}, engine ${engineName}` +
+      `${engineName === "real" ? ` (gate ${gate})` : ""}, config ${configHash(config).slice(0, 12)}`
   );
   const limitTag = limit === null ? undefined : `n${limit}`;
+  // Real-engine reports and non-default configurations get their own files.
+  const engineTag =
+    command === "growth" || command === "weekly"
+      ? [
+          engineName === "reference" ? "reference" : "",
+          gate === "off" ? "gateoff" : "",
+          areas === "off" ? "areasoff" : ""
+        ]
+          .filter((part) => part !== "")
+          .join("-")
+      : undefined;
+  const configTag =
+    configHash(config) === configHash(defaultTopicTreeConfig)
+      ? undefined
+      : `cfg${configHash(config).slice(0, 8)}`;
   const suffixOf = (...parts: (string | undefined)[]): string | undefined => {
-    const joined = [...parts, limitTag]
+    const joined = [engineTag, configTag, ...parts, limitTag]
       .filter((part) => part !== undefined && part !== "")
       .join("-");
     return joined === "" ? undefined : joined;
   };
+  const maxChurnBar = values["max-churn"] === undefined ? 0.03 : Number(values["max-churn"]);
+  const weeklyOptions = (order: ArrivalOrder): WeeklyOptions => ({
+    order,
+    baseShare: values["base-share"] === undefined ? 0.6 : Number(values["base-share"]),
+    weeks: values.weeks === undefined ? 8 : Number(values.weeks),
+    weeklyShare: values["weekly-share"] === undefined ? 0.05 : Number(values["weekly-share"]),
+    daysPerWeek: values["days-per-week"] === undefined ? 7 : Number(values["days-per-week"]),
+    freezeTopics: values.freeze === undefined ? 50 : Number(values.freeze),
+    maxWeeklyChurn: maxChurnBar
+  });
+  const datasetFor = (seed: number): ReplayDataset =>
+    limit === null
+      ? fullDataset
+      : subsetDataset(fullDataset, sampleRows(fullDataset.rows.length, limit, seed, "limit"));
+
+  if (command === "calibrate") {
+    if (engineName !== "real") {
+      console.error("calibrate replays the real engine: pass --engine real");
+      return 2;
+    }
+    const orders = (values.arrival ?? "chronological,shuffled").split(",") as ArrivalOrder[];
+    if (orders.some((order) => !arrivalOrders.includes(order))) {
+      console.error(`--arrival for calibrate is a list of ${arrivalOrders.join(", ")}`);
+      return 2;
+    }
+    const wanted = values.points?.split(",");
+    const points = gridPoints().filter((point) => !wanted || wanted.includes(pointId(point)));
+    return calibrate({
+      datasetName: datasetName + (limitTag ? `-${limitTag}` : ""),
+      datasetFor,
+      seeds,
+      orders,
+      points,
+      base: config,
+      engineOptions,
+      weeklyOptions,
+      out,
+      bar: maxChurnBar,
+      summarizeOnly: values.summarize === true
+    });
+  }
 
   let failed = false;
   const summaries: string[] = [];
   const growthReports: GrowthReport[] = [];
   const weeklyReports: WeeklyReport[] = [];
-  const maxChurnBar = values["max-churn"] === undefined ? 0.03 : Number(values["max-churn"]);
   // Over several seeds E2 and E3 are judged on the median (aggregates below); a run then fails
   // on its own only for E1.
   const medianJudged = (report: ReplayReport): boolean =>
@@ -773,16 +1040,12 @@ export async function main(argv: readonly string[]): Promise<number> {
   };
 
   for (const seed of seeds) {
-    const dataset =
-      limit === null
-        ? fullDataset
-        : subsetDataset(fullDataset, sampleRows(fullDataset.rows.length, limit, seed, "limit"));
     const run: ReplayRun = {
-      dataset,
+      dataset: datasetFor(seed),
       config,
       seed,
       detect: detectCommunitiesLouvain,
-      createEngine: createReferenceEngine
+      createEngine
     };
     if (command === "parity") {
       const parity = parityRun(run, { repeat: values.repeat === true });
@@ -810,15 +1073,7 @@ export async function main(argv: readonly string[]): Promise<number> {
         console.error(`--arrival for weekly is one of ${arrivalOrders.join(", ")}`);
         return 2;
       }
-      const weekly = weeklyRun(run, {
-        order,
-        baseShare: values["base-share"] === undefined ? 0.6 : Number(values["base-share"]),
-        weeks: values.weeks === undefined ? 8 : Number(values.weeks),
-        weeklyShare: values["weekly-share"] === undefined ? 0.05 : Number(values["weekly-share"]),
-        daysPerWeek: values["days-per-week"] === undefined ? 7 : Number(values["days-per-week"]),
-        freezeTopics: values.freeze === undefined ? 50 : Number(values.freeze),
-        maxWeeklyChurn: maxChurnBar
-      });
+      const weekly = weeklyRun(run, weeklyOptions(order));
       await record(run, weekly.report, suffixOf(order));
       if (values.audit) {
         await record(run, auditRun(run, weekly.state, weekly.rows), suffixOf(order));

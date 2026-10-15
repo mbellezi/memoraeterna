@@ -110,8 +110,11 @@ const RepairSchema = z
     mergeMaxSize: int(1, 400).default(22),
     /** Sibling leaves merge when their centroids reach this cosine (result <= mergeMaxSize). */
     siblingMergeCosine: cosine.default(0.85),
-    /** Soft repairs on a node wait this many inserts after its previous repair. */
-    cooldownInserts: int(0, 100_000).default(25),
+    /**
+     * Soft repairs on a node wait this many inserts after its previous repair (the E3 stability
+     * calibration, see StabilitySchema; Spike B start value 25).
+     */
+    cooldownInserts: int(0, 100_000).default(931),
     /** Push-down groups children into groups of about this size. */
     pushDownGroupSize: int(2, 64).default(6),
     /** Churn budget: a soft repair re-pathing more than this share of all items is skipped. */
@@ -119,11 +122,23 @@ const RepairSchema = z
   })
   .strict();
 
-/** Stability controls of REBALANCE: acceptance dQ - lambda * churn > 0, freeze and daily budgets. */
+/**
+ * E3 stability calibration (gate A, 2026-10-15): `npm run topics:replay -- calibrate --engine real`
+ * replayed the E3 protocol with T07 PLACE and T08 REBALANCE on corpus-notitle, calibration seeds
+ * 7-12, chronological and shuffled arrival, over a 60-point grid of `stability.churnWeight`,
+ * `stability.dailyMovedShare`, `repair.cooldownInserts` and `audit.misParentMargin`
+ * (scripts/topics/calibration.ts holds the grid and the rule, registered before any evaluation
+ * seed ran; report `.cache/topics/reports/calibration-stability/calibration-corpus-notitle.md`).
+ * The rule chose lambda 6, 0.2% moved items a day, a 931-insert cooldown (one simulated week of
+ * arrivals) and a 0.1 re-parent margin: worst weekly churn 2.98% over the 12 runs (start values
+ * 5.90%), median fan-out 4-9 75.2%, median depth 3.45; leaves within 3-30 fall to 82.9% (99.5%),
+ * because lambda 6 leaves most soft splits to the hard limit. On the evaluation seeds (20261014,
+ * 1-5, both orders) the worst weekly churn was then 2.59%.
+ */
 const StabilitySchema = z
   .object({
-    /** lambda. */
-    churnWeight: z.number().min(0).max(1000).default(1),
+    /** lambda (E3 calibration, above; start value 1). */
+    churnWeight: z.number().min(0).max(1000).default(6),
     /** Churn of items in recently opened topics counts this many times. */
     recentChurnWeight: z.number().min(1).max(1000).default(3),
     /** Topics opened or edited within this many hours are frozen for soft operations. */
@@ -134,8 +149,11 @@ const StabilitySchema = z
       .default(24),
     /** Soft operations applied per local day. */
     dailyOperations: int(0, 100_000).default(60),
-    /** Items whose primary path a day's soft operations may change: max(min, share * items). */
-    dailyMovedShare: share.default(0.02),
+    /**
+     * Items whose primary path a day's soft operations may change: max(min, share * items)
+     * (E3 calibration, above; start value 0.02).
+     */
+    dailyMovedShare: share.default(0.002),
     dailyMovedMin: int(0, 1_000_000).default(30)
   })
   .strict();
@@ -280,8 +298,11 @@ const AuditSchema = z
     everyChangeSets: int(1, 100_000).default(50),
     /** Topics whose statistics an audit recomputes exactly and compares. */
     exactRecomputeSample: int(0, 100_000).default(20),
-    /** Re-parent proposals need an uncle centroid closer than the parent's by this much. */
-    misParentMargin: z.number().min(0).max(2).default(0.05)
+    /**
+     * Re-parent proposals need an uncle centroid closer than the parent's by this much: the
+     * re-parent hysteresis (the E3 stability calibration, see StabilitySchema; start value 0.05).
+     */
+    misParentMargin: z.number().min(0).max(2).default(0.1)
   })
   .strict();
 

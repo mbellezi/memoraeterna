@@ -180,10 +180,10 @@ describe("shape operations", () => {
     keys.slice(0, 31).forEach((key) => editor.updatePlacement(key, 0, { topicId: leaf }));
     keys.slice(31).forEach((key) => editor.updatePlacement(key, 0, { topicId: other }));
     recomputeSubtree(state, context.vectors);
-    state.clock = 100;
     getTopic(state, leaf).control.repairClock = 90;
+    state.clock = 90 + config.repair.cooldownInserts - 1;
     expect(repairDirty(context, new Set([leaf]))).toEqual([]);
-    state.clock = 115;
+    state.clock = 90 + config.repair.cooldownInserts;
     expect(repairDirty(context, new Set([leaf])).map((operation) => operation.kind)).toContain(
       "leaf-split"
     );

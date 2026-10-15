@@ -164,6 +164,17 @@ export const GrowthReportSchema = z
   .strict();
 export type GrowthReport = z.infer<typeof GrowthReportSchema>;
 
+/** Audits and undo checks of the real engine over a run (real-engine.ts). */
+export const EngineChecksSchema = z
+  .object({
+    audits: count,
+    reparentCandidates: count,
+    driftedTopics: count,
+    undoChecked: count,
+    undoExact: count
+  })
+  .strict();
+
 export const WeekRowSchema = z
   .object({
     week: z.number().int().min(1),
@@ -178,6 +189,10 @@ export const WeekRowSchema = z
     operations: OperationCountsSchema,
     skippedFrozen: count,
     skippedBudget: count,
+    /** Topics whose soft checks waited for their cooldown (the real engine reports it). */
+    skippedCooldown: count.optional(),
+    /** Operations returned for review instead of applied (protected or Area-level, D12). */
+    proposals: count.optional(),
     ambiguous: count,
     unadmitted: count,
     rebuild: z.object({ trigger: z.string(), movedItems: count }).strict().nullable(),
@@ -197,10 +212,12 @@ export const WeeklyReportSchema = z
     kind: z.literal("weekly-replay"),
     arrival: z.string(),
     /**
-     * `off`: the gate is not simulated (the fallback sensitivity run of E3). Serving the gate
-     * from the score cache joins the loop with the T07 gate rule and the T23 descriptors.
+     * How gated items were resolved: `baseline` takes the best-scoring candidate (the margin-only
+     * baseline, D19; the reference engine's behaviour), `off` leaves them at the fallback ancestor
+     * (the fallback sensitivity run of E3). Serving the gate from the score cache joins the loop
+     * with the T07 gate rule and the T23 descriptors.
      */
-    gate: z.literal("off"),
+    gate: z.enum(["baseline", "off"]),
     schedule: z
       .object({
         baseRows: count,
@@ -215,6 +232,8 @@ export const WeeklyReportSchema = z
     maxChurn: share,
     medianChurn: share,
     final: z.object({ shape: ShapeSummarySchema, truth: TruthSummarySchema.nullable() }).strict(),
+    /** The engine's own audit and undo checks over the run (engines that have them). */
+    engineChecks: EngineChecksSchema.nullable().optional(),
     checks: z.array(CheckSchema),
     /** E3 on this run: the largest weekly churn is within the bar. */
     passes: z.boolean()
@@ -501,8 +520,10 @@ export function renderReportMarkdown(report: ReplayReport): string {
             "Growth",
             "Churn",
             "Ops",
-            "Skipped (frozen/budget)",
+            "Skipped (frozen/budget/cooldown)",
+            "Proposals",
             "Depth",
+            "Fan-out 4-9",
             "Hard"
           ],
           report.weeks.map((week) => [
@@ -511,12 +532,20 @@ export function renderReportMarkdown(report: ReplayReport): string {
             pct(week.growth),
             pct(week.churn),
             Object.values(week.operations).reduce((total, value) => total + value, 0),
-            `${week.skippedFrozen}/${week.skippedBudget}`,
+            `${week.skippedFrozen}/${week.skippedBudget}/${week.skippedCooldown ?? "-"}`,
+            week.proposals ?? "-",
             week.depthMean.toFixed(2),
+            pct(week.fanOutInTarget),
             week.hardViolations
           ])
         ),
         `\nMaximum weekly churn ${pct(report.maxChurn)}, median ${pct(report.medianChurn)}.`,
+        report.engineChecks
+          ? `\nEngine checks: ${report.engineChecks.audits} audits (${report.engineChecks.reparentCandidates} ` +
+              `re-parent candidates, ${report.engineChecks.driftedTopics} drifted statistics); ` +
+              `${report.engineChecks.undoExact}/${report.engineChecks.undoChecked} REBALANCE change-sets ` +
+              `undone exactly.`
+          : "",
         checksTable(report.checks)
       );
       break;

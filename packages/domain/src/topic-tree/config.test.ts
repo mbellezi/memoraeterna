@@ -62,7 +62,7 @@ describe("topic tree configuration", () => {
       directItemsSplitAt: 8,
       mergeMaxSize: 22,
       siblingMergeCosine: 0.85,
-      cooldownInserts: 25,
+      cooldownInserts: 931,
       pushDownGroupSize: 6,
       softMoveShare: 0.05
     });
@@ -77,12 +77,26 @@ describe("topic tree configuration", () => {
       renameDrift: 0.3
     });
     expect(config.areas).toMatchObject({ min: 7, max: 16, target: 10 });
-    expect(config.audit.misParentMargin).toBe(0.05);
+    expect(config.audit.misParentMargin).toBe(0.1);
     expect(config.space.reembedCoverage).toBe(0.95);
     expect(config.unsorted).toEqual({ shareTarget: 0.02, minItems: 50 });
     expect(config.ai.maxBackgroundCallsPerDay).toBe(300);
     expect(config.jobs).toEqual({ debounceMs: 10_000, debounceCapMs: 60_000 });
     expect(config.build.workerThreshold).toBe(45);
+  });
+
+  it("holds the stability values the E3 calibration chose (calibration seeds 7-12)", () => {
+    const config = defaultTopicTreeConfig;
+    expect(config.stability).toEqual({
+      churnWeight: 6,
+      recentChurnWeight: 3,
+      freezeHours: 24,
+      dailyOperations: 60,
+      dailyMovedShare: 0.002,
+      dailyMovedMin: 30
+    });
+    expect(config.repair.cooldownInserts).toBe(931);
+    expect(config.audit.misParentMargin).toBe(0.1);
   });
 
   it("is frozen so no consumer can change a default", () => {

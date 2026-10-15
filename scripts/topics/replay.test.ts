@@ -567,6 +567,81 @@ describe("reports and the command line", () => {
     ).toBe(2);
   });
 
+  it("replays the real engine by default, with its gate, checks and config overrides", async () => {
+    const out = join(dir, "real");
+    const base = ["--dataset", "synthetic", "--vectors-dir", vectors, "--out", out, "--seed", "9"];
+    expect(await main(["weekly", ...base, "--undo-check", "--max-churn", "1"])).toBe(0);
+    expect(
+      await main([
+        "weekly",
+        ...base,
+        "--engine",
+        "real",
+        "--gate",
+        "off",
+        "--areas",
+        "off",
+        "--set",
+        "stability.churnWeight=2",
+        "--max-churn",
+        "1"
+      ])
+    ).toBe(0);
+    expect(await main(["growth", ...base, "--neutral", "--audit"])).toBe(0);
+    expect(await main(["weekly", ...base, "--engine", "reference", "--max-churn", "1"])).toBe(0);
+    const names = (await readdir(out)).filter((name) => name.endsWith(".json")).sort();
+    expect(names).toHaveLength(5);
+    const weekly = await readReport(join(out, "weekly-replay-synthetic-9-chronological.json"));
+    if (weekly.kind !== "weekly-replay") throw new Error("expected a weekly report");
+    expect(weekly.engine).toBe("t07-t08/gate-baseline");
+    expect(weekly.gate).toBe("baseline");
+    expect(weekly.engineChecks?.undoExact).toBe(weekly.engineChecks?.undoChecked);
+    expect(weekly.weeks.every((week) => week.proposals !== undefined)).toBe(true);
+    const off = names.find((name) =>
+      name.startsWith("weekly-replay-synthetic-9-gateoff-areasoff-cfg")
+    );
+    expect(off).toBeDefined();
+    const offReport = await readReport(join(out, off as string));
+    expect(offReport.kind === "weekly-replay" && offReport.gate).toBe("off");
+    expect(
+      names.some((name) => /^growth-synthetic-9-cfg[0-9a-f]{8}-items\.json$/u.test(name))
+    ).toBe(true);
+    const reference = await readReport(
+      join(out, "weekly-replay-synthetic-9-reference-chronological.json")
+    );
+    expect(reference.engine).toBe("spike-b-reference");
+    // The reference engine has no gate, Areas or engine checks to choose.
+    expect(await main(["weekly", ...base, "--engine", "reference", "--gate", "off"])).toBe(2);
+    expect(await main(["weekly", ...base, "--engine", "reference", "--areas", "off"])).toBe(2);
+    expect(await main(["weekly", ...base, "--engine", "bogus"])).toBe(2);
+    expect(await main(["weekly", ...base, "--gate", "sometimes"])).toBe(2);
+  });
+
+  it("calibrates on calibration seeds only and applies the registered rule", async () => {
+    const out = join(dir, "calibration");
+    const base = ["--dataset", "synthetic", "--vectors-dir", vectors, "--out", out];
+    const points = "l1-m0.02-c25-h0.05,l6-m0.002-c931-h0.1";
+    await expect(
+      main(["calibrate", ...base, "--engine", "real", "--seeds", "20261014", "--points", points])
+    ).rejects.toThrow(/reserved for evaluation/u);
+    expect(await main(["calibrate", ...base, "--role", "evaluation"])).toBe(2);
+    expect(await main(["calibrate", ...base, "--engine", "reference", "--seeds", "7"])).toBe(2);
+    const run = [...base, "--seeds", "7", "--points", points, "--max-churn", "1"];
+    expect(await main(["calibrate", ...run])).toBe(0);
+    const files = await readdir(out);
+    expect(files).toContain("calibration-rows-7-chronological.jsonl");
+    expect(files).toContain("calibration-rows-7-shuffled.jsonl");
+    expect(files).toContain("calibration-synthetic.md");
+    expect(await readdir(join(out, "calibration-runs"))).toHaveLength(8);
+    const summary = await readFile(join(out, "calibration-synthetic.md"), "utf8");
+    expect(summary).toMatch(/Chosen: \*\*l(1|6)-/u);
+    // --summarize re-applies the rule to the rows already there; an impossible bar chooses nothing.
+    expect(await main(["calibrate", ...run, "--summarize", "--max-churn=-1"])).toBe(1);
+    expect(await readFile(join(out, "calibration-synthetic.md"), "utf8")).toContain(
+      "No point is eligible"
+    );
+  });
+
   it("judges several seeds on the median: only E1 fails a run by itself", async () => {
     const out = join(dir, "multi");
     const base = ["--dataset", "synthetic", "--vectors-dir", vectors, "--out", out];

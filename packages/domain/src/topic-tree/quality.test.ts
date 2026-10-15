@@ -39,8 +39,9 @@ describe("band costs", () => {
   });
 
   it("make acceptance a function of lambda only", () => {
-    expect(acceptsChange(10, 9, config)).toBe(true);
-    expect(acceptsChange(10, 10, config)).toBe(false);
+    const unit = { ...config, stability: { ...config.stability, churnWeight: 1 } };
+    expect(acceptsChange(10, 9, unit)).toBe(true);
+    expect(acceptsChange(10, 10, unit)).toBe(false);
     expect(netGain(10, 4, { ...config, stability: { ...config.stability, churnWeight: 3 } })).toBe(
       -2
     );
