@@ -477,13 +477,13 @@ Wave 3 (gate A at the end):
       maintenance services, legacy IPC and job types, and T35b's IPC fences.
 
 Wave 4:
-- [ ] T14 AiService ranker execution, explicit workload-class routes (`decide`, `write-fast`), minimal model
+- [x] T14 AiService ranker execution, explicit workload-class routes (`decide`, `write-fast`), minimal model
       residency (Q11) and the embedding-space key, with `rules/ai.md`.
-- [ ] T15 Topic service: ensures an active tree (D39), PLACE and sweep on the light lane, `topicsChanged`
+- [x] T15 Topic service: ensures an active tree (D39), PLACE and sweep on the light lane, `topicsChanged`
       push.
-- [ ] T16 Topic read repository, IPC contracts and push channel.
-- [ ] T17 KPI and audit scripts on topics (`topics:audit`).
-- [ ] T22a Measurement profiles, `topics:export`, G1 and the topic barrier for golden runs (D23).
+- [x] T16 Topic read repository, IPC contracts and push channel.
+- [x] T17 KPI and audit scripts on topics (`topics:audit`).
+- [x] T22a Measurement profiles, `topics:export`, G1 and the topic barrier for golden runs (D23).
 
 Wave 5 (gate B after T15b and T19; owner preview P at the end):
 - [ ] T15b Place, unplace and repair on every note and source change.

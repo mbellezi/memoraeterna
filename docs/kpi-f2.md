@@ -50,6 +50,28 @@ kept until the owner asks to remove them; the old wiki can be read by restoring 
 | E3 weekly churn, Spike B reference engine (chronological / shuffled) | max 4.56% / 3.38%, median 3.36% / 3.01%; 0 hard violations | ≤3% |
 
 Gate A: parity, property tests, worker parity and IVF recall pass. The E3 churn above was measured with the
-reference engine, which has none of T08's stability controls; the gate's "measured path through stability
-settings" is being produced by replaying the real engine (T07 PLACE + T08 REBALANCE with hysteresis, cooldown,
-freeze and budgets) with the settings calibrated on the calibration seeds only.
+reference engine, which has none of T08's stability controls.
+
+### Gate A churn with the real engine (passed)
+
+The replay now runs the real engine (T07 PLACE with secondaries, T08 REBALANCE with its stability controls,
+audit before every REBALANCE, exact undo checked on a copy). Neutral settings reproduce the reference within
+the Spike B tolerances. Stability settings were calibrated on the calibration seeds (7-12, both orders, 60-point
+grid) with a rule fixed before any evaluation seed ran; frozen defaults: churn weight λ 6 (was 1), daily moved
+share 0.002 (was 0.02), cooldown 931 inserts (one simulated week; was 25), re-parent margin 0.1 (was 0.05).
+
+| Evaluation seeds (20261014, 1-5), both orders | Result | Bar |
+| --- | --- | --- |
+| Worst weekly churn | 2.59% | ≤3% |
+| Reachability / hard violations | 100% / 0 in every run | 100% / 0 |
+| REBALANCE change-sets undone exactly | all | all |
+| Final fan-out 4-9 share | 66-78% | 80% (E2, gate C; calibrated in T29) |
+
+## Wave 4 (2026-10-15)
+
+| Measure | Result | Bar |
+| --- | --- | --- |
+| Ranker through `AiService.rank`, 1 query × 5 documents, MLX, interleaved with embeddings | p50 81 ms, p95 82 ms; 0 reloads, 1 helper process | p95 ≤300 ms (target 200) |
+| Same, GGUF ranker | p50 153 ms, p95 159 ms | — |
+| PLACE job after a fresh build (3,000 notes) | 13 ms per job, 49 ms before the planner statistics settle (ANALYZE after builds lands with T19) | — |
+
