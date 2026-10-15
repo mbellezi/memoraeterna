@@ -111,6 +111,34 @@ describe("reasoning of the reranking route", () => {
     expect(await reasoningOf(undefined)).toBeUndefined();
   });
 
+  it("records the wire options the adapter chose with the effective parameters", async () => {
+    const { ai, run } = routedService();
+    const requestOptions = { reasoningEffort: "low", reasoningSummary: null, include: [] };
+    run.mockImplementationOnce(async (request) => ({
+      taskType: request.taskType,
+      output: "{}",
+      providerId: "openai-compatible",
+      modelId,
+      runtime: "remote",
+      durationMs: 1,
+      requestOptions
+    }));
+    repository.getDefaultTask.mockResolvedValue(selection());
+    await ai.runDefaultTask("reranking", "decide", {
+      operation: noteMatchDecisionOperations.decide
+    });
+    expect(repository.recordTaskRun.mock.calls[0]?.[0].parameters).toEqual(
+      expect.objectContaining({ reasoningLevel: "off", requestOptions })
+    );
+    // Without reported wire options the audit keeps the canonical parameters alone.
+    await ai.runDefaultTask("reranking", "decide", {
+      operation: noteMatchDecisionOperations.decide
+    });
+    expect(repository.recordTaskRun.mock.calls[1]?.[0].parameters).not.toHaveProperty(
+      "requestOptions"
+    );
+  });
+
   it("keeps what the profile asks for on the decision call", async () => {
     expect(await reasoningOf(noteMatchDecisionOperations.decide, { reasoningLevel: "high" })).toBe(
       "high"

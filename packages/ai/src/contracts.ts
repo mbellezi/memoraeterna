@@ -53,6 +53,11 @@ export const aiTaskResultSchema = z
     /** Requests the provider received for this call, the successful one included; absent when unknown. */
     attempts: z.number().int().positive().optional(),
     /**
+     * Wire options the adapter chose itself for the successful request (for example a decide call
+     * sent without the reasoning summary), so the audit records what the provider received.
+     */
+    requestOptions: z.record(z.string(), z.json()).optional(),
+    /**
      * Tokens the provider reported for attempts that failed before the answer. They are already part of
      * the totals above wherever the answer's own count is known.
      */

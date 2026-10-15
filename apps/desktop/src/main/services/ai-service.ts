@@ -1109,7 +1109,7 @@ export class AiService {
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters,
+        parameters: auditedParameters(parameters, result),
         promptCompositions: admission?.compositions ?? promptAudit(taskInput),
         inputHash: sha256(taskInput),
         outputHash: sha256(JSON.stringify(result.output)),
@@ -1126,7 +1126,7 @@ export class AiService {
         aiTaskRunId,
         durationMs: Date.now() - started,
         tokenUsage: monitoringUsage(result),
-        parameters,
+        parameters: auditedParameters(parameters, result),
         output: result.output,
         ...(result.attempts !== undefined
           ? { details: callDetails(result.attempts, result.retriedUsage) }
@@ -1736,6 +1736,13 @@ function failedMonitoringUsage(usage: CallTokens): Record<string, number> {
       ? { totalTokens: usage.inputTokens + usage.outputTokens }
       : {})
   };
+}
+
+/** The effective parameters plus the wire options the adapter chose itself, as the provider received them. */
+function auditedParameters(parameters: JsonObject, result: AiTaskResult): JsonObject {
+  return result.requestOptions
+    ? { ...parameters, requestOptions: result.requestOptions as JsonObject }
+    : parameters;
 }
 
 /** What the monitoring entry keeps about the requests of a call: their number and what the failed ones used. */

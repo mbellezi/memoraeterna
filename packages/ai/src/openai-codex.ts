@@ -12,6 +12,7 @@ import { readServerSentEvents, readText, streamedProgress } from "./openai-compa
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { providerHttpError, providerStreamError, type AiProviderError } from "./provider-error.js";
 import {
+  aiWorkloadClass,
   monotonicProgress,
   resolveAiRuntimeConfig,
   runRemoteCall,
@@ -38,6 +39,28 @@ export interface OpenAiCodexAdapterOptions {
 }
 
 const defaultBaseUrl = "https://chatgpt.com/backend-api/codex";
+const encryptedReasoning = "reasoning.encrypted_content";
+
+/**
+ * Backends (base URL and model) that refused a decide call without the reasoning summary and the
+ * encrypted reasoning. Decide calls of this process send them the previous request shape.
+ */
+const refusedLeanDecideShapes = new Set<string>();
+
+/**
+ * Whether a refused request names the reasoning summary or the `include` list: a deterministic 4xx
+ * about the lean decide shape, not a transient failure or a problem with the prompt.
+ */
+function refusesLeanDecideShape(error: AiProviderError): boolean {
+  return (
+    !error.transient &&
+    error.status !== undefined &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    /summary|include|encrypted_content/i.test(error.message)
+  );
+}
+
 const generationTasks = new Set<AiTaskType>([
   "text-generation",
   "structured-output",
@@ -142,6 +165,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     if (!this.canHandle(request)) throw new Error("errors.ai.unsupportedTask");
     const startedAt = performance.now();
     const progress = onProgress ? monotonicProgress(onProgress) : undefined;
+    const modelId = request.modelId ?? this.options.modelId;
+    const decide = aiWorkloadClass(request.taskType) === "decide";
+    const shapeKey = `${this.baseUrl}\u0000${modelId}`;
+    let requestOptions: Record<string, string | string[] | null> = {};
     let report: RemoteCallReport | undefined;
     const streamed = await this.remoteCall(
       {
@@ -153,28 +180,30 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         }
       },
       async (call) => {
-        const response = await this.request(call, `${this.baseUrl}/responses`, {
-          method: "POST",
-          body: JSON.stringify({
-            model: request.modelId ?? this.options.modelId,
-            store: false,
-            stream: true,
-            instructions:
-              typeof request.metadata.applicationInstruction === "string"
-                ? request.metadata.applicationInstruction
-                : "",
-            input: [
-              { role: "user", content: [{ type: "input_text", text: readText(request.input) }] }
-            ],
-            text: { verbosity: "low" },
-            include: ["reasoning.encrypted_content"],
-            ...codexGenerationParameters(
-              request.parameters,
-              request.modelId ?? this.options.modelId
-            )
-          })
-        });
-        if (!response.ok) throw await call.guard(providerHttpError(response));
+        // A decide call needs no reasoning prose: it is sent without the reasoning summary and,
+        // being a single stateless turn (store false), without the encrypted reasoning, unless this
+        // backend refused that shape before.
+        const refusedBefore = decide && refusedLeanDecideShapes.has(shapeKey);
+        const send = (lean: boolean) => {
+          const body = codexRequestBody(request, modelId, lean);
+          requestOptions = body.options;
+          return this.request(call, `${this.baseUrl}/responses`, {
+            method: "POST",
+            body: JSON.stringify(body.payload)
+          });
+        };
+        let response = await send(decide && !refusedBefore);
+        if (!response.ok) {
+          const failure = await call.guard(providerHttpError(response));
+          if (!decide || refusedBefore || !refusesLeanDecideShape(failure)) throw failure;
+          // Fall back once to the previous shape and keep it for this backend from now on.
+          refusedLeanDecideShapes.add(shapeKey);
+          response = await send(false);
+          requestOptions = { ...requestOptions, leanDecideShape: "refused" };
+          if (!response.ok) throw await call.guard(providerHttpError(response));
+        } else if (refusedBefore) {
+          requestOptions = { ...requestOptions, leanDecideShape: "refused_earlier" };
+        }
 
         let output = "";
         let tokenUsage: Record<string, number> = {};
@@ -238,9 +267,10 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         taskType: request.taskType,
         output: streamed.output,
         providerId: "openai-codex",
-        modelId: request.modelId ?? this.options.modelId,
+        modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
+        requestOptions,
         tokenUsage: streamed.tokenUsage,
         ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
         ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
@@ -277,27 +307,49 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
   }
 }
 
-function codexGenerationParameters(
-  parameters: Record<string, unknown>,
-  modelId: string
-): Record<string, unknown> {
+/**
+ * The Responses request and the wire options the audit records for it. The lean shape (decide calls)
+ * asks for neither the reasoning summary nor the encrypted reasoning; the full shape is the previous
+ * request: the encrypted reasoning always, and the summary whenever the request reasons.
+ */
+function codexRequestBody(
+  request: AiTaskRequest,
+  modelId: string,
+  lean: boolean
+): { payload: Record<string, unknown>; options: Record<string, string | string[] | null> } {
   const reasoningLevel =
-    typeof parameters.reasoningLevel === "string"
+    typeof request.parameters.reasoningLevel === "string"
       ? effectiveReasoningLevel(
           "openai-codex",
           modelId,
-          parameters.reasoningLevel as AiReasoningLevel
+          request.parameters.reasoningLevel as AiReasoningLevel
         )
       : undefined;
   const reasoningEffort = openAiReasoningEffort(reasoningLevel);
+  const summary = !lean && reasoningEffort && reasoningEffort !== "none" ? "auto" : undefined;
+  const include = lean ? [] : [encryptedReasoning];
   return {
-    ...(reasoningEffort
-      ? {
-          reasoning:
-            reasoningEffort === "none"
-              ? { effort: reasoningEffort }
-              : { effort: reasoningEffort, summary: "auto" }
-        }
-      : {})
+    payload: {
+      model: modelId,
+      store: false,
+      stream: true,
+      instructions:
+        typeof request.metadata.applicationInstruction === "string"
+          ? request.metadata.applicationInstruction
+          : "",
+      input: [{ role: "user", content: [{ type: "input_text", text: readText(request.input) }] }],
+      text: { verbosity: "low" },
+      ...(include.length > 0 ? { include } : {}),
+      ...(reasoningEffort
+        ? {
+            reasoning: summary ? { effort: reasoningEffort, summary } : { effort: reasoningEffort }
+          }
+        : {})
+    },
+    options: {
+      reasoningEffort: reasoningEffort ?? null,
+      reasoningSummary: summary ?? null,
+      include
+    }
   };
 }

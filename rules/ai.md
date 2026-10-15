@@ -11,10 +11,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   Responses through desktop OAuth (generative only). Local models are MLX-first:
   the MLX implementation in the supervised Swift helper when one exists and the
   host is macOS arm64, else GGUF through `node-llama-cpp`.
-- A model declares only capabilities its actual adapter and runtime validated.
-  Never infer a capability from the provider: a generative model is not a
-  reranker, but the decision route (`reranking`) may take it as an explicit
-  decision-only decider.
+- A model declares only capabilities its adapter and runtime validated. Never
+  infer a capability from the provider: a generative model is not a reranker,
+  though the decision route (`reranking`) may take it as an explicit decider.
 - A reranker or decider gets `decide` only after its artifact is validated (GGUF
   header, or MLX config and architecture) and a smoke test scores a relevant
   pair clearly above an irrelevant one (target F1a-F2).
@@ -49,9 +48,10 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
   execution start (connect, first byte, stalled stream, total). Only progress
   (answer text, or reasoning text before it) keeps a stream alive, not bytes or
   lifecycle events, and unless high-reasoning or local a request must start
-  answering within a bound of the first byte. Adapters retry only transient
-  failures (timeouts, stalls, 408, 425, 429, 5xx, network) with jittered
-  exponential backoff and bounded attempts, honoring `Retry-After` or a stated
+  answering within a bound of the first byte. Decide calls ask for no reasoning
+  summary (a backend that refuses gets the previous shape). Adapters retry only
+  transient failures (timeouts, stalls, 408, 425, 429, 5xx, network) with
+  bounded, jittered exponential backoff, honoring `Retry-After` or a stated
   reset (a wait too long for the single slot goes to the job); never invalid
   requests, auth failures, exhausted billing quota, context overflow or schema
   failures after the allowed repair. Job retries classify the same way.
@@ -95,9 +95,9 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 ## Audit and monitoring
 
 - Every actual AI execution (generation, embedding, reranking, repair, test)
-  records a canonical audit with provider, model, runtime, effective parameters,
-  prompt revision and composition hash, token usage, duration, cost when known,
-  status and the participating source IDs.
+  records a canonical audit with provider, model, runtime, effective parameters
+  and wire options, prompt revision and composition hash, token usage, duration,
+  cost when known, status and the participating source IDs.
 - Provider usage, billed failed attempts included, is normalized without double
   counting. Unknown tokens or cost stay absent and disclosed, never fabricated;
   no extra paid calls are made for telemetry. Budget gates: `security-privacy.md`.
