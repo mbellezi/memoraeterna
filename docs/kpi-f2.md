@@ -75,3 +75,29 @@ share 0.002 (was 0.02), cooldown 931 inserts (one simulated week; was 25), re-pa
 | Same, GGUF ranker | p50 153 ms, p95 159 ms | — |
 | PLACE job after a fresh build (3,000 notes) | 13 ms per job, 49 ms before the planner statistics settle (ANALYZE after builds lands with T19) | — |
 
+
+## Wave 5 and gate B (2026-10-15)
+
+First cold-started tree on the wiped DEV profile (golden library, 160 notes, 10 roots), built by the real
+service: 9 leaf topics under the root, named in pt-BR in 1 call with 0 repairs ("Curva do esquecimento",
+"Replicação de Ebbinghaus", "Modelos da curva do esquecimento", "Metodologia do experimento de retenção",
+"Esquecimento na memória social", "Linguagem e memória", "Princípios FAIR para dados", "Simão Bacamarte e a
+Casa Verde", "A cartomante").
+
+| Gate B check | Result |
+| --- | --- |
+| DEV tree reachable from the root (cold-started after the wipe) | 170 of 170 items (100%), 0 hard violations, 0 orphans |
+| Service placements equal the replay of the same rows | equal (160 rows) |
+| Leaf size / Unsorted share / undo rate | 11-30 items, 100% in range / 0% / 0% |
+| DB undo exact | yes (T12, `db:topics:verify`) |
+| Source deletion and re-chunking keep reachability | yes on a scratch PostgreSQL with the real services (T15b) |
+| Light lane under a held AI slot | PLACE completes while a model job holds the slot (T02, T19 scratch proofs) |
+| `golden-small-v5-a` replay with G1 deterministic | 0 misses twice in a row with identical content, equal to the recording (197 chunks, 160 notes, 111 note relations, 1 source relation, same calls and tokens) |
+
+Found and fixed on the way:
+- Naming marked renamed topics and their ancestors dirty, so every cache load ran a needless sweep (`a4408ab`).
+- An immediate job request merged into a debounced one stayed deferred (`a174f51`).
+- Graph candidates for note matching were cut at 250 paths with ties broken by the physical row order of the
+  graph tables, so replays diverged on a few notes; the cut now keeps every tied path (`4493092`, pre-F2 bug).
+
+Owner preview P: the DEV app was left open with the new navigator and topic page; feedback feeds T24/T29.

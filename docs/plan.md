@@ -486,14 +486,14 @@ Wave 4:
 - [x] T22a Measurement profiles, `topics:export`, G1 and the topic barrier for golden runs (D23).
 
 Wave 5 (gate B after T15b and T19; owner preview P at the end):
-- [ ] T15b Place, unplace and repair on every note and source change.
-- [ ] T18 Naming in the content language (LLM; content-language TF-IDF fallback) and topic label vectors.
-- [ ] T19 Bootstrap of any library with the Louvain-kNN builder (Spike B winner), rebalance and audit jobs,
+- [x] T15b Place, unplace and repair on every note and source change.
+- [x] T18 Naming in the content language (LLM; content-language TF-IDF fallback) and topic label vectors.
+- [x] T19 Bootstrap of any library with the Louvain-kNN builder (Spike B winner), rebalance and audit jobs,
       structural rebuilds (D39).
-- [ ] T20 Navigator v2 (counts, notes and sources as leaves, pins, recents, Unsorted, status line) in the
+- [x] T20 Navigator v2 (counts, notes and sources as leaves, pins, recents, Unsorted, status line) in the
       Wiki screen, replacing its empty state and keeping the Ask entry.
-- [ ] T21 Topic page with a deterministic map of content.
-- [ ] T22b Corpus environment and developer comparison report (`topics:report`, D21).
+- [x] T21 Topic page with a deterministic map of content.
+- [x] T22b Corpus environment and developer comparison report (`topics:report`, D21).
 
 Wave 6:
 - [ ] T23 Reranker decision gate for ambiguous placements (D10).
