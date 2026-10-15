@@ -2,12 +2,21 @@ import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 
-import { createRng, deriveSeed } from "@app/domain/topic-tree";
+import type { TopicPlacementDecision } from "@app/domain";
+import {
+  createRng,
+  deriveSeed,
+  itemKey,
+  placementRecord,
+  topicRecord
+} from "@app/domain/topic-tree";
+import type { ItemKey } from "@app/domain/topic-tree";
 
 import { closePgPool, createPgPool, type PgPool } from "../client.js";
+import { createTopicTreeRepository } from "../repositories/topicTreeRepository.js";
+import type { TopicStatsWrite } from "../repositories/topicTreeRepository.js";
 import {
   createTopicTreeLoadRepository,
-  encodeFloat64Vector,
   noteVectorStrategyPrefix,
   sourceVectorStrategyPrefix,
   topicLoadDefaults,
@@ -23,9 +32,9 @@ import {
 // placements, plus the pending cases PLACE and the sweep must find. The measurements run through a
 // connection that cannot write, so the proof also shows the repository only reads.
 //
-// The structure tables are written by `writeTopicStructure` alone. The engine writes them through
-// `topicTreeRepository` (D9); this seeder is the one raw-SQL stand-in until it calls that
-// repository's bulk writer.
+// The structure tables are written through `topicTreeRepository` (D9): `writeTopicStructure` creates
+// the tree and fills it with one `bootstrapSnapshot`, exactly as the engine's cold start does. The
+// library, the vectors and the root sources are written with plain SQL: they are not topic tables.
 
 export const topicLoadBars = {
   /** The skeleton of 1.5k topics and 18.8k placements, every run including the first. */
@@ -108,7 +117,7 @@ interface PlacementSeed {
   kind: "note" | "source";
   item: string;
   topic: string;
-  decided: string;
+  decided: TopicPlacementDecision;
   fingerprint: string | null;
   centrality: number;
   gate: boolean;
@@ -273,7 +282,12 @@ function planNotePlacements(plan: Plan) {
       split: false,
       needsVector: false
     };
-    const waiting = { topic: root.id, decided: "fallback", fingerprint: null, needsVector: true };
+    const waiting = {
+      topic: root.id,
+      decided: "fallback",
+      fingerprint: null,
+      needsVector: true
+    } as const;
     if (position % 400 === 1) {
       seed = { ...seed, fingerprint: "an-older-vector" };
       plan.pending.set(`note:${id}`, "stale");
@@ -481,97 +495,93 @@ function subtreeStats(plan: Plan, topicsById: Map<string, PlannedTopic>, topic: 
       cosSq += dotted * dotted;
     }
   }
-  return { n: rows.length, ls, cosSq, coherence: rows.length > 0 ? length / rows.length : 0 };
+  return { n: rows.length, ls, cosSq };
 }
 
 /**
- * The raw-SQL stand-in for `topicTreeRepository.bootstrapSnapshot` (D9): the tree, its topics, their
- * exact statistics and the placements, in one transaction under the engine writer setting.
+ * Writes the planned tree through `topicTreeRepository` (D9), as the engine's cold start does: the
+ * active tree with its root, then one `bootstrapSnapshot` change-set holding every topic, every
+ * placement and the exact statistics of every topic, in one transaction. Returns the tree
+ * generation that change-set produced.
  */
-async function writeTopicStructure(writer: PgPool, plan: Plan, seed: number) {
+async function writeTopicStructure(writer: PgPool, plan: Plan, seed: number): Promise<number> {
+  const repository = createTopicTreeRepository(writer);
   const topicsById = new Map(plan.topics.map((topic) => [topic.id, topic]));
+  const root = plan.topics[0] as PlannedTopic;
+  const topics = plan.topics.slice(1).map((topic) =>
+    topicRecord(topic.id, topic.parentId, {
+      role: "topic",
+      title: `Topic ${topic.position}-${topic.id.slice(0, 8)}`,
+      nameState: "named",
+      nameSource: "llm",
+      nameLanguage: "en",
+      position: topic.position
+    })
+  );
+  const seeds = [...plan.notePlacements, ...plan.sourcePlacements];
+  const placements = seeds.map((entry) => ({
+    item: itemKey(entry.kind, entry.item),
+    placement: placementRecord(entry.topic, {
+      decidedBy: entry.decided,
+      itemFingerprint: entry.fingerprint,
+      score: 0.5,
+      margin: 0.1,
+      needsGate: entry.gate,
+      needsSplitCheck: entry.split,
+      needsVector: entry.needsVector
+    })
+  }));
+  const centralities = new Map<string, Array<{ item: ItemKey; centrality: number }>>();
+  for (const entry of seeds) {
+    const list = centralities.get(entry.topic) ?? [];
+    list.push({ item: itemKey(entry.kind, entry.item), centrality: entry.centrality });
+    centralities.set(entry.topic, list);
+  }
+  const stats: TopicStatsWrite[] = plan.topics.map((topic) => {
+    const exact = subtreeStats(plan, topicsById, topic);
+    return {
+      topicId: topic.id,
+      n: exact.n,
+      ls: exact.ls,
+      cosSqSum: exact.cosSq,
+      lowCosPercentiles: Array.from({ length: 11 }, (_, k) => 0.2 + k * 0.01),
+      repairClock: 3,
+      centralities: centralities.get(topic.id) ?? []
+    };
+  });
   const client = await writer.connect();
   try {
     await client.query("begin");
-    await client.query("select set_config('memora.topic_writer', 'engine', true)");
-    await client.query(
-      `insert into topic_trees (id, status, space_key, embedding_provider, embedding_model, embedding_runtime,
-         dimensions, config, config_hash, seed, generation, activated_at)
-       values ($1, 'active', $2, $3, $4, $5, 1024, '{}'::jsonb, 'proof', $6, 7, now())`,
-      [
-        plan.treeId,
-        proofSpace.spaceKey,
-        proofSpace.provider,
-        proofSpace.model,
-        proofSpace.runtime,
+    const tree = await repository.createTree(
+      {
+        id: plan.treeId,
+        rootId: root.id,
+        spaceKey: proofSpace.spaceKey,
+        embeddingProvider: proofSpace.provider,
+        embeddingModel: proofSpace.model,
+        embeddingRuntime: proofSpace.runtime,
+        dimensions: 1024,
+        config: {},
+        configHash: "proof",
         seed
-      ]
+      },
+      { client }
     );
-    await client.query(
-      "insert into topic_change_sets (id, tree_id, origin) values ($1, $1, 'build')",
-      [plan.treeId]
+    const applied = await repository.bootstrapSnapshot(
+      {
+        treeId: tree.id,
+        expectedGeneration: tree.generation,
+        titleKey: "topics.changeSets.build",
+        topics,
+        placements,
+        stats
+      },
+      { client }
     );
-    for (const topic of plan.topics) {
-      const root = topic.parentId === null;
-      await client.query(
-        `insert into topics (id, tree_id, parent_id, role, title, name_state, name_source, name_language, position, aliases)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, '[]'::jsonb)`,
-        [
-          topic.id,
-          plan.treeId,
-          topic.parentId,
-          root ? "root" : "topic",
-          root ? null : `Topic ${topic.position}-${topic.id.slice(0, 8)}`,
-          root ? "unnamed" : "named",
-          root ? null : "llm",
-          root ? null : "en",
-          topic.position
-        ]
-      );
-      const stats = subtreeStats(plan, topicsById, topic);
-      await client.query(
-        `insert into topic_stats (topic_id, space_key, n, ls, cos_sq_sum, low_cos_percentiles, coherence,
-           direct_items, children, repair_clock)
-         values ($1, $2, $3, $4, $5, $6::real[], $7, $8, $9, 3)`,
-        [
-          topic.id,
-          proofSpace.spaceKey,
-          stats.n,
-          encodeFloat64Vector(stats.ls),
-          stats.cosSq,
-          Array.from({ length: 11 }, (_, k) => 0.2 + k * 0.01),
-          stats.coherence,
-          topic.members.length,
-          topic.children.length
-        ]
-      );
-    }
-    const all = [...plan.notePlacements, ...plan.sourcePlacements];
-    for (let start = 0; start < all.length; start += 4_000) {
-      const page = all.slice(start, start + 4_000);
-      await client.query(
-        `insert into topic_placements (tree_id, item_kind, note_id, source_item_id, topic_id, role, rank,
-           decided_by, item_fingerprint, score, margin, centrality, needs_gate, needs_split_check,
-           needs_vector, change_set_id)
-         select $1, t.kind, case when t.kind = 'note' then t.item end, case when t.kind = 'source' then t.item end,
-                t.topic, 'primary', 0, t.decided, t.fp, 0.5, 0.1, t.centrality, t.gate, t.split, t.vector, $1
-           from unnest($2::text[], $3::uuid[], $4::uuid[], $5::text[], $6::text[], $7::real[], $8::bool[], $9::bool[], $10::bool[])
-             as t(kind, item, topic, decided, fp, centrality, gate, split, vector)`,
-        [
-          plan.treeId,
-          page.map((row) => row.kind),
-          page.map((row) => row.item),
-          page.map((row) => row.topic),
-          page.map((row) => row.decided),
-          page.map((row) => row.fingerprint),
-          page.map((row) => row.centrality),
-          page.map((row) => row.gate),
-          page.map((row) => row.split),
-          page.map((row) => row.needsVector)
-        ]
-      );
-    }
+    assert.ok(applied.kind === "applied", `bootstrapSnapshot: ${JSON.stringify(applied)}`);
+    assert.deepEqual(applied.dirtyTopicIds, [], "every topic has exact statistics");
     await client.query("commit");
+    return applied.generation;
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;
@@ -585,6 +595,8 @@ async function writeTopicStructure(writer: PgPool, plan: Plan, seed: number) {
 
 interface Proof {
   plan: Plan;
+  /** The tree generation after the bootstrap change-set. */
+  generation: number;
   repository: TopicTreeLoadRepository;
   reader: PgPool;
   log: (line: string) => void;
@@ -595,7 +607,7 @@ async function checkSkeleton(proof: Proof, runs: number) {
   const topicsById = new Map(plan.topics.map((topic) => [topic.id, topic]));
   const skeleton = await repository.loadSkeleton(plan.treeId);
   assert.ok(skeleton);
-  assert.equal(skeleton.tree.generation, 7);
+  assert.equal(skeleton.tree.generation, proof.generation);
   assert.deepEqual(skeleton.tree.space, proofSpace);
   assert.equal(skeleton.topics.length, plan.topics.length);
   assert.equal(
@@ -603,12 +615,17 @@ async function checkSkeleton(proof: Proof, runs: number) {
     plan.notePlacements.length + plan.sourcePlacements.length
   );
   const loadedById = new Map(skeleton.topics.map((topic) => [topic.id, topic]));
+  // The repository derives the direct count from the primary placements, root sources included.
+  const direct = new Map<string, number>();
+  for (const entry of [...plan.notePlacements, ...plan.sourcePlacements]) {
+    direct.set(entry.topic, (direct.get(entry.topic) ?? 0) + 1);
+  }
   for (const planned of plan.topics) {
     const loaded = loadedById.get(planned.id);
     assert.ok(loaded, `topic ${planned.id} is missing`);
     assert.equal(loaded.parentId, planned.parentId);
     assert.equal(loaded.position, planned.position);
-    assert.equal(loaded.stats?.directItems, planned.members.length);
+    assert.equal(loaded.stats?.directItems, direct.get(planned.id) ?? 0);
     assert.equal(loaded.stats?.children, planned.children.length);
   }
   // Statistics survive the bytea round trip exactly and equal the sum of the vectors they came from.
@@ -1030,7 +1047,7 @@ export async function runTopicLoadProof(
       `vectors: ${plan.noteIds.length - plan.noVector.size} notes, ${plan.compositeRoots.length} composites (${Math.round(performance.now() - started)} ms)`
     );
     started = performance.now();
-    await writeTopicStructure(writer, plan, seed);
+    const generation = await writeTopicStructure(writer, plan, seed);
     await writer.query("analyze");
     log(
       `structure: ${plan.topics.length} topics, ${placements} placements (${Math.round(performance.now() - started)} ms)`
@@ -1042,16 +1059,23 @@ export async function runTopicLoadProof(
     );
     assert.equal(mode.rows[0]?.default_transaction_read_only, "on");
     await assert.rejects(
-      reader.query(
-        "insert into topic_change_sets (tree_id, origin) values (gen_random_uuid(), 'x')"
-      ),
+      createTopicTreeRepository(reader).createTree({
+        spaceKey: proofSpace.spaceKey,
+        embeddingProvider: proofSpace.provider,
+        embeddingModel: proofSpace.model,
+        embeddingRuntime: proofSpace.runtime,
+        dimensions: 1024,
+        config: {},
+        configHash: "proof",
+        seed
+      }),
       /read-only/
     );
 
     const repository = createTopicTreeLoadRepository(reader);
     assert.equal(await repository.activeTreeId(), plan.treeId);
     assert.equal(await repository.loadSkeleton(randomUUID()), null);
-    const proof: Proof = { plan, repository, reader, log };
+    const proof: Proof = { plan, generation, repository, reader, log };
     const { skeleton, timing: skeletonTiming } = await checkSkeleton(
       proof,
       options.skeletonRuns ?? 20
