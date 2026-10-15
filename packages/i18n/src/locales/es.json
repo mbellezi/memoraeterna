@@ -406,7 +406,8 @@
       "canceled": "Se cancelo la descarga del modelo.",
       "invalidGguf": "Elige un archivo de modelo GGUF valido.",
       "rankerInvalid": "Este modelo no es un reranker compatible.",
-      "rankerSmokeFailed": "El reranker no superó la prueba de validación."
+      "rankerSmokeFailed": "El reranker no superó la prueba de validación.",
+      "rankerNotValidated": "Ejecuta la prueba de validación de este reranker antes de usarlo."
     }
   },
   "jobs": {
@@ -1422,6 +1423,7 @@
     "profileUsage": "Usado por los perfiles",
     "removeConfirmation": "Eliminar este modelo y sus archivos gestionados del equipo?",
     "testSucceeded": "La inferencia local funciono.",
+    "rankerPending": "Ejecuta la prueba para validar este reranker en las decisiones.",
     "defaultParameters": "Parametros predeterminados del modelo",
     "filters": {
       "runtime": "Runtime",
@@ -1432,7 +1434,8 @@
       "capability": "Capacidad",
       "allCapabilities": "Todas las capacidades",
       "generation": "Generacion de texto",
-      "embedding": "Embedding"
+      "embedding": "Embedding",
+      "ranking": "Reranking"
     },
     "compatibility": {
       "compatible": "Compatible con este equipo",
@@ -1987,6 +1990,7 @@
       "relation": "Definición de relación",
       "local_generation": "Prueba de generación",
       "local_embedding": "Prueba de embeddings",
+      "local_ranking": "Prueba de reranker",
       "legacy_synthesis": "Síntesis limitada de página",
       "answer": "Respuesta fundamentada",
       "weekly": "Organización semanal",

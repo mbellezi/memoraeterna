@@ -406,7 +406,8 @@
       "canceled": "The model download was canceled.",
       "invalidGguf": "Choose a valid GGUF model file.",
       "rankerInvalid": "This model is not a supported reranker.",
-      "rankerSmokeFailed": "The reranker failed its validation test."
+      "rankerSmokeFailed": "The reranker failed its validation test.",
+      "rankerNotValidated": "Run the validation test on this reranker before using it."
     }
   },
   "jobs": {
@@ -1415,6 +1416,7 @@
     "profileUsage": "Used by profiles",
     "removeConfirmation": "Remove this model and its managed files from this machine?",
     "testSucceeded": "Local inference succeeded.",
+    "rankerPending": "Run the test to validate this reranker for decisions.",
     "defaultParameters": "Default model parameters",
     "filters": {
       "runtime": "Runtime",
@@ -1425,7 +1427,8 @@
       "capability": "Capability",
       "allCapabilities": "All capabilities",
       "generation": "Text generation",
-      "embedding": "Embedding"
+      "embedding": "Embedding",
+      "ranking": "Reranking"
     },
     "compatibility": {
       "compatible": "Compatible with this machine",
@@ -1980,6 +1983,7 @@
       "relation": "Relation definition",
       "local_generation": "Generation smoke test",
       "local_embedding": "Embedding smoke test",
+      "local_ranking": "Reranker smoke test",
       "legacy_synthesis": "Bounded page synthesis",
       "answer": "Grounded answer",
       "weekly": "Weekly organization",

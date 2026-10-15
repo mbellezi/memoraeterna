@@ -12,22 +12,34 @@ import { sha256 } from "@app/conversion";
 import { createTranslator } from "@app/i18n";
 import {
   AiModelRegistry,
+  createDecideValidation,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
+  isRankerCatalogEntry,
   localParameterCapabilities,
   MlxAdapter,
+  MlxRerankerAdapter,
   NodeLlamaCppAdapter,
+  NodeLlamaRankerAdapter,
   OpenAiCompatibleAdapter,
   OpenAiCodexAdapter,
   providerParameterCapabilities,
+  rankTaskRequest,
+  readRankResult,
   redactSensitiveText,
   remoteCallReport,
+  runRankerSmoke,
   runsStreaming,
+  validateCatalogRankerArtifact,
   type AiModelAdapter,
   type AiProgressEvent,
   type AiRuntimeConfigInput,
   type AiTaskRequest,
   type AiTaskResult,
+  type LocalModelCatalogEntry,
+  type RankerSmokeReport,
+  type RankRequest,
+  type RankResult,
   aiCassetteReplayedUsageKey
 } from "@app/ai";
 import {
@@ -462,6 +474,14 @@ export class AiService {
         );
         if (!localModel || localModel.status !== "ready")
           throw new Error("errors.localModels.notReady");
+        // A ranker exposes `reranking` only once it is validated for decide (rules/ai.md); until
+        // then it serves no task, and a profile cannot take it.
+        if (
+          !aiConfigurableTaskSchema.options.some((task) =>
+            supportsTask(task, localModel.capabilities)
+          )
+        )
+          throw new Error("errors.localModels.rankerNotValidated");
         if (
           localModel.runtime !== input.runtime ||
           localModel.modelId !== input.modelId ||
@@ -1279,6 +1299,10 @@ export class AiService {
   private async executeLocalModelTest(localModelId: string): Promise<string> {
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model) throw new Error("errors.common.notFound");
+    const catalogEntry = findLocalModelCatalogEntry(model.catalogId);
+    // A dedicated ranker is validated, not prompted: artifact checks, then the ranking smoke test.
+    if (catalogEntry && isRankerCatalogEntry(catalogEntry))
+      return this.executeRankerValidation(model, catalogEntry);
     const configuredAdapter = await this.createLocalAdapter(localModelId);
     const descriptor = configuredAdapter.describe();
     const embeddingOnly =
@@ -1387,6 +1411,167 @@ export class AiService {
       });
       throw error;
     }
+  }
+
+  /**
+   * The decide validation of a dedicated ranker (D17): its artifact against the catalog pins, then
+   * the smoke test through the ranker adapter on the model card pair and an English and a Brazilian
+   * Portuguese relevance pair. A pass is stored per install in `metadata.decideValidation`, which
+   * a revision or artifact change voids; a failure voids any earlier validation and shows on the
+   * model. The catalog sync turns a stored validation into the `reranking` capability.
+   */
+  private async executeRankerValidation(
+    model: LocalModelRecord,
+    entry: LocalModelCatalogEntry
+  ): Promise<string> {
+    const models = createLocalModelRepository(this.requirePool());
+    const repository = createAiConfigRepository(this.requirePool());
+    const instruction = renderPrompt("diagnostics.local_ranking");
+    const provider = `local-${model.runtime}`;
+    const started = Date.now();
+    const capture = await this.options.monitoring?.start({
+      kind: "ai",
+      operation: "local_model_test",
+      taskType: "reranking",
+      stage: "local_model_test",
+      context: { origin: "settings", localModelId: model.id },
+      sourceItemIds: [],
+      provider,
+      modelId: model.modelId,
+      runtime: model.runtime,
+      parameters: {},
+      input: instruction
+    });
+    let lastAiTaskRunId: string | undefined;
+    let inputTokens = 0;
+    const audit = (request: RankRequest, taskRequest: AiTaskRequest) => ({
+      taskType: "reranking",
+      provider,
+      modelId: model.modelId,
+      runtime: model.runtime,
+      adapter: localAdapterName(model.runtime),
+      repository: model.repository,
+      revision: model.revision,
+      quantization: model.quantization,
+      capabilitiesUsed: ["reranking", "offline"],
+      parameters: {},
+      inputHash: sha256(String(taskRequest.input)),
+      promptCompositions: request.instruction === instruction ? promptAudit(instruction) : []
+    });
+    try {
+      if (model.status !== "ready" || !model.managedPath)
+        throw new Error("errors.localModels.notReady");
+      const artifact = await validateCatalogRankerArtifact(entry, model.managedPath);
+      const adapter = await this.createRankerAdapter(model, entry);
+      const runtimeBuild = await adapter.runtimeBuild();
+      const descriptor = adapter.describe();
+      const registered = this.registry.resolve({
+        providerId: descriptor.providerId,
+        modelId: descriptor.modelId,
+        requiredCapabilities: ["reranking"],
+        offlineOnly: true
+      });
+      const rank = async (request: RankRequest): Promise<RankResult> => {
+        const taskRequest = rankTaskRequest(request);
+        const callStarted = Date.now();
+        try {
+          const result = await registered.run(taskRequest);
+          const output = readRankResult(result, request.documents.length);
+          lastAiTaskRunId = await repository.recordTaskRun({
+            ...audit(request, taskRequest),
+            outputHash: sha256(JSON.stringify(result.output)),
+            ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
+            ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {}),
+            costEstimate: 0,
+            durationMs: result.durationMs,
+            status: "succeeded"
+          });
+          inputTokens += result.inputTokens ?? 0;
+          return output;
+        } catch (error) {
+          lastAiTaskRunId = await repository.recordTaskRun({
+            ...audit(request, taskRequest),
+            durationMs: Date.now() - callStarted,
+            status: "failed",
+            error: redactSensitiveText(error)
+          });
+          throw error;
+        }
+      };
+      const smoke = await this.withLocalModelUsage(model.id, () =>
+        runRankerSmoke(rank, { instruction })
+      );
+      const validation = createDecideValidation(
+        {
+          runtime: entry.runtime,
+          revision: entry.revision,
+          artifactSha256: artifact.artifactSha256,
+          runtimeBuild
+        },
+        smoke
+      );
+      await models.updateModel(model.id, {
+        lastError: null,
+        metadata: { ...model.metadata, decideValidation: validation }
+      });
+      await this.options.monitoring?.finish(capture, {
+        status: "succeeded",
+        ...(lastAiTaskRunId ? { aiTaskRunId: lastAiTaskRunId } : {}),
+        durationMs: Date.now() - started,
+        tokenUsage: { inputTokens, outputTokens: 0, totalTokens: inputTokens },
+        costEstimate: 0,
+        output: smoke
+      });
+      return rankerValidationSummary(smoke);
+    } catch (error) {
+      // No verdict is reached while the model is busy or not ready; anything else closes the gate.
+      if (!rankerValidationInconclusive.has(redactSensitiveText(error))) {
+        const metadata = { ...model.metadata };
+        delete metadata.decideValidation;
+        await models
+          .updateModel(model.id, { lastError: errorKeyOf(error), metadata })
+          .catch((cause: unknown) => this.options.logger?.error("Ranker validation record", cause));
+      }
+      await this.options.monitoring?.finish(capture, {
+        status: "failed",
+        ...(lastAiTaskRunId ? { aiTaskRunId: lastAiTaskRunId } : {}),
+        durationMs: Date.now() - started,
+        error: redactSensitiveText(error)
+      });
+      throw error;
+    } finally {
+      // The ranker is not kept resident by the test; routed use manages its own residency.
+      await this.releaseLocalRuntime().catch(() => undefined);
+    }
+  }
+
+  /**
+   * A dedicated ranker adapter for the model, resident in the single local slot like any local
+   * model. It is built with the catalog's declared capabilities, because the stored ones lack
+   * `reranking` until the ranker is validated, which is what this adapter is for.
+   */
+  private async createRankerAdapter(
+    model: LocalModelRecord,
+    entry: LocalModelCatalogEntry
+  ): Promise<RankerAdapter> {
+    await this.releaseLocalRuntime();
+    if (this.residentLocalAdapter) throw new Error("errors.localModels.modelBusy");
+    const options = {
+      modelId: model.modelId,
+      modelPath: resolveLocalModelPath(model),
+      capabilities: [...entry.capabilities],
+      catalogId: model.catalogId,
+      parameterCapabilities: {},
+      repository: model.repository,
+      revision: model.revision,
+      quantization: model.quantization
+    };
+    const adapter: RankerAdapter =
+      model.runtime === "mlx"
+        ? new MlxRerankerAdapter({ ...options, helperPath: this.resolveMlxHelperPath() })
+        : new NodeLlamaRankerAdapter(options);
+    this.residentLocalAdapter = { localModelId: model.id, adapter };
+    return this.registerAdapter(adapter);
   }
 
   private async parameterCapabilitiesForProfile(
@@ -1610,6 +1795,36 @@ function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {
   if (provider === "google") return "https://generativelanguage.googleapis.com/v1beta";
   if (provider === "openai-codex") return "https://chatgpt.com/backend-api/codex";
   return "http://127.0.0.1:11434/v1";
+}
+
+type RankerAdapter = AiModelAdapter & { runtimeBuild(): Promise<string> };
+
+/** Errors that say the test could not run, not that the ranker failed it. */
+const rankerValidationInconclusive = new Set([
+  "errors.localModels.modelBusy",
+  "errors.localModels.notReady",
+  "errors.database.notReady"
+]);
+
+/** The localization key of an error, for the message a model card shows. */
+function errorKeyOf(error: unknown): string {
+  const message = redactSensitiveText(error);
+  return message.startsWith("errors.")
+    ? message.split(":")[0]!
+    : "errors.localModels.runtimeFailed";
+}
+
+/** What the model test shows after a passing validation. */
+function rankerValidationSummary(smoke: RankerSmokeReport): string {
+  const log = (value: number) => value.toFixed(3);
+  return [
+    "Reranker validated for decide",
+    `Model card pair: ${smoke.modelCard.logOdds.map(log).join(", ")} (card ${smoke.modelCard.expected.join(", ")}, largest difference ${log(smoke.modelCard.maxDelta)})`,
+    ...smoke.relevance.map(
+      (entry) =>
+        `${entry.language}: relevant ${log(entry.relevant)}, irrelevant ${log(entry.irrelevant)} (margin ${log(entry.margin)})`
+    )
+  ].join("\n");
 }
 
 function localAdapterName(runtime: string): string {

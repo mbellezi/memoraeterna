@@ -628,6 +628,14 @@ export const shippedPromptBodies = [
     keys: []
   },
   {
+    // The ranker instruction of the English and Brazilian Portuguese relevance pairs of the decide
+    // validation. The model card pair keeps the card's own instruction, a protocol constant.
+    id: "diagnostics.local_ranking",
+    template: "Given a web search query, retrieve relevant passages that answer the query",
+    caller: "AiService.testLocalModel (dedicated rankers)",
+    keys: []
+  },
+  {
     id: "graph.relation_identity.repair",
     template:
       "\nPrevious output was invalid. Include every input key exactly once and only its allowed candidate or null.",

@@ -828,7 +828,10 @@ export function promptSampleCases(ids: string[]): SampleCase[] {
         id: prefix === "consultation" ? "consultation.answer" : prefix,
         root: prefix === "consultation" ? "consultation.answer" : prefix
       });
-    } else if (!id.startsWith("shared.")) add({ id, root: id });
+    } else if (!id.startsWith("shared.") && id !== "diagnostics.local_ranking")
+      // A dedicated ranker's instruction runs only in its decide validation: the sample routes
+      // send text to generative models, which can neither score nor validate it.
+      add({ id, root: id });
   }
   if (!cases.size) throw new Error("prompts.errors.sample");
   return [...cases.values()];

@@ -35,7 +35,9 @@ import {
 } from "./LibraryView";
 import { ReviewQueueView } from "./ReviewQueueView";
 import {
+  isRankerModel,
   LocalModelDefaults,
+  localModelPurposes,
   LocalModelsView,
   recommendedParametersForCurrentMode
 } from "./LocalModelsView";
@@ -1118,6 +1120,29 @@ describe("phase 2 renderer views", () => {
     expect(localModels).toContain("Import GGUF");
     expect(localModels).not.toContain(">Ready<");
     expect(renderToString(<BackupView t={t} />)).toContain("Create backup");
+  });
+
+  it("groups local models by purpose, recognizing a ranker before and after its validation", () => {
+    const generative = { capabilities: ["text-generation", "structured-output", "offline"] };
+    const embedding = { capabilities: ["embedding", "offline", "local-files"] };
+    const validatedRanker = { capabilities: ["reranking", "offline", "local-files"] };
+    const pendingRanker = { capabilities: ["offline", "local-files"] };
+    // An old profile model may still carry a reranking tag beside generation.
+    const taggedGenerative = { capabilities: ["text-generation", "reranking"] };
+
+    expect(localModelPurposes(generative as never)).toEqual(["generation"]);
+    expect(localModelPurposes(embedding as never)).toEqual(["embedding"]);
+    expect(localModelPurposes(validatedRanker as never)).toEqual(["ranking"]);
+    expect(localModelPurposes(pendingRanker as never)).toEqual(["ranking"]);
+    expect(localModelPurposes(taggedGenerative as never)).toEqual(["generation"]);
+    expect(
+      [generative, embedding, validatedRanker, pendingRanker].map((m) => isRankerModel(m as never))
+    ).toEqual([false, false, true, true]);
+  });
+
+  it("offers the reranking purpose filter", () => {
+    const html = renderToString(<LocalModelsView t={t} />);
+    expect(html).toContain('<option value="ranking">Reranking</option>');
   });
 });
 

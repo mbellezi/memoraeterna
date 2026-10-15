@@ -249,7 +249,9 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                 : family === "diagnostics"
                   ? parts[1] === "local_embedding"
                     ? "embedding"
-                    : "text-generation"
+                    : parts[1] === "local_ranking"
+                      ? "reranking"
+                      : "text-generation"
                   : family === "shared"
                     ? "fragment"
                     : "structured-output";

@@ -32,7 +32,7 @@ export function LocalModelsView({
   const [models, setModels] = useState<LocalModelView[]>([]);
   const [runtime, setRuntime] = useState<"all" | "gguf" | "mlx">("all");
   const [family, setFamily] = useState("all");
-  const [capability, setCapability] = useState<"all" | "generation" | "embedding">("all");
+  const [capability, setCapability] = useState<"all" | LocalModelPurpose>("all");
   const [compatibleOnly, setCompatibleOnly] = useState(false);
   const [acceptedLicenses, setAcceptedLicenses] = useState<Set<string>>(new Set());
   const [repositoryToken, setRepositoryToken] = useState("");
@@ -78,10 +78,7 @@ export function LocalModelsView({
     (model) =>
       (runtime === "all" || model.runtime === runtime) &&
       (family === "all" || model.family === family) &&
-      (capability === "all" ||
-        (capability === "embedding"
-          ? model.capabilities.includes("embedding")
-          : model.capabilities.includes("text-generation"))) &&
+      (capability === "all" || localModelPurposes(model).includes(capability)) &&
       (!compatibleOnly || model.compatible)
   );
 
@@ -185,6 +182,7 @@ export function LocalModelsView({
           <option value="all">{t("localModels.filters.allCapabilities")}</option>
           <option value="generation">{t("localModels.filters.generation")}</option>
           <option value="embedding">{t("localModels.filters.embedding")}</option>
+          <option value="ranking">{t("localModels.filters.ranking")}</option>
         </select>
         <label className="flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm dark:border-slate-700">
           <input
@@ -256,16 +254,25 @@ export function LocalModelsView({
                 <p className="text-xs text-slate-600 dark:text-slate-300">
                   {model.capabilities.join(" · ")}
                 </p>
-                <LocalModelDefaults
-                  model={model}
-                  t={t}
-                  onSave={(parameters) =>
-                    run(
-                      () => window.app.localModels.setDefaults(model.id, parameters),
-                      "shell.toasts.settingsSaved"
-                    )
-                  }
-                />
+                {isRankerModel(model) ? (
+                  // A ranker has no generation parameters to default; its state is its validation.
+                  model.status === "ready" && !model.capabilities.includes("reranking") ? (
+                    <p className="text-sm text-amber-700 dark:text-amber-300">
+                      {t("localModels.rankerPending")}
+                    </p>
+                  ) : null
+                ) : (
+                  <LocalModelDefaults
+                    model={model}
+                    t={t}
+                    onSave={(parameters) =>
+                      run(
+                        () => window.app.localModels.setDefaults(model.id, parameters),
+                        "shell.toasts.settingsSaved"
+                      )
+                    }
+                  />
+                )}
                 {model.requiresLicenseAcceptance && !model.licenseAccepted ? (
                   <label className="flex items-start gap-2 text-sm">
                     <input
@@ -412,6 +419,29 @@ export function LocalModelsView({
       ) : null}
     </section>
   );
+}
+
+export type LocalModelPurpose = "generation" | "embedding" | "ranking";
+
+/**
+ * A dedicated ranker generates nothing and embeds nothing. It declares `reranking` only once it is
+ * validated for decide, so a ranker waiting for its validation is recognized by having no purpose.
+ */
+export function isRankerModel(model: Pick<LocalModelView, "capabilities">): boolean {
+  return (
+    !model.capabilities.includes("text-generation") && !model.capabilities.includes("embedding")
+  );
+}
+
+/** What a model is for, as the purpose filter groups them. */
+export function localModelPurposes(
+  model: Pick<LocalModelView, "capabilities">
+): LocalModelPurpose[] {
+  return [
+    ...(model.capabilities.includes("text-generation") ? (["generation"] as const) : []),
+    ...(model.capabilities.includes("embedding") ? (["embedding"] as const) : []),
+    ...(isRankerModel(model) ? (["ranking"] as const) : [])
+  ];
 }
 
 export function LocalModelDefaults({

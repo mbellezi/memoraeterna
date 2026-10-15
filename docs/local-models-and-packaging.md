@@ -43,10 +43,52 @@ catalog contains:
 | `mlx-qwen3.5-9b-4bit` | MLX | Text generation with validated on/off reasoning |
 | `gguf-qwen3-embedding-0.6b-q8-0` | GGUF | Embeddings |
 | `gguf-bge-m3-q8-0` | GGUF | Embeddings |
+| `mlx-qwen3-reranker-0.6b` | MLX | Dedicated ranker (decide) |
+| `gguf-qwen3-reranker-0.6b-q8-0` | GGUF | Dedicated ranker (decide), fallback |
 
 The source file is authoritative for exact revisions, sizes, and checksums.
 Capabilities not validated by the actual helper/adapter, including multimodal
 capabilities, are not exposed.
+
+## Dedicated rankers
+
+Qwen3-Reranker-0.6B ships as two catalog entries, MLX bf16 safetensors (the official
+`Qwen/Qwen3-Reranker-0.6B`, only the four files the helper loads) and the ggml-org Q8_0 GGUF.
+Both declare `reranking` and nothing generative or embedding, take no generation parameters,
+and need at least 1.5 times the peak resident memory measured while scoring (MLX helper 1,294 MB,
+GGUF in process 1,562 MB; minimums 2 GiB and 2.5 GiB).
+
+A ranker is *validated for decide* on install, and only then does it expose `reranking`:
+
+1. The download (or the DEV seed) checks every file's size and SHA-256, and the artifact check
+   follows: an MLX `config.json` must name `Qwen3ForCausalLM`, a GGUF header must be `qwen3`
+   with rank pooling, a ranking head and the labels `yes`/`no`. A file that fails leaves the
+   install `failed` with a localized error.
+2. The model test (run automatically after the install, and by **Test inference**) scores the
+   Qwen3-Reranker model card pair within one log-odd and requires a relevant passage to beat an
+   irrelevant one by at least 0.5 log-odds in English and in Brazilian Portuguese. The language
+   pairs use the `diagnostics.local_ranking` instruction from the prompt catalog.
+3. A pass is stored in `local_models.metadata.decideValidation`: runtime, revision, artifact
+   SHA-256, runtime build (the helper executable's SHA-256, or the node-llama-cpp and llama.cpp
+   build) and the smoke report. The catalog sync turns it into the `reranking` capability;
+   without it a ranker exposes no task, cannot be assigned to a profile and shows a hint on its
+   card.
+4. A failed test, a changed revision or artifact, and a removal void the validation and close the
+   capability. The validation also carries the runtime build; the routed path that loads the ranker
+   compares it (`isDecideValidationCurrent`) and asks for a new test when the build changed. A test
+   that cannot run (the single local slot is busy) reaches no verdict and changes nothing.
+
+Every rank call of the test is audited as a `reranking` task run with the evaluated tokens and no
+cost. The models screen filters by purpose (text generation, embedding, reranking).
+
+### DEV seed
+
+`MEMORA_LOCAL_MODEL_SEED_DIR` (absolute, or relative to the workspace root) names a folder of
+artifacts already fetched into `.cache/models` (`scripts/spikes/models.json`). For a catalog entry
+with a seed folder (`qwen3-reranker-0.6b-mlx`, `qwen3-reranker-0.6b-q8_0-gguf`), a pinned file
+found there with the declared size is cloned into the managed directory instead of downloaded and
+verified against its SHA-256 like any download. A seeded file whose bytes differ from the pin fails
+the install; it never falls back to the network. Packaged builds refuse the variable.
 
 ## Download and storage
 

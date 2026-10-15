@@ -4,7 +4,9 @@ import { readFile, stat } from "node:fs/promises";
 import type { GgufFileInfo } from "node-llama-cpp";
 import { z } from "zod";
 
+import { localModelManifestHash, type LocalModelCatalogEntry } from "./local-model-catalog.js";
 import { resolveManagedModelPath, sha256File } from "./local-model-downloader.js";
+import { isDedicatedRanker } from "./parameter-capabilities.js";
 import {
   LocalRankerError,
   qwen3RerankerPrompt,
@@ -176,6 +178,73 @@ export async function validateGgufRankerArtifact(input: {
     sizeBytes: size,
     architecture: ggufRankerHeader.architecture
   };
+}
+
+// --- catalog installs ---------------------------------------------------------------------------------
+
+/** Whether a catalog entry is a dedicated ranker, which exposes `reranking` only once validated. */
+export function isRankerCatalogEntry(entry: Pick<LocalModelCatalogEntry, "capabilities">): boolean {
+  return isDedicatedRanker(entry.capabilities);
+}
+
+/**
+ * The artifact digest a validation of this catalog entry carries when the install matches its pins:
+ * the manifest hash for an MLX directory, the file's SHA-256 for a GGUF.
+ */
+export function rankerCatalogArtifactSha256(
+  entry: Pick<LocalModelCatalogEntry, "runtime" | "files">
+): string {
+  if (entry.runtime === "mlx") return localModelManifestHash(entry);
+  return ggufFile(entry).sha256;
+}
+
+/**
+ * Validates an installed catalog ranker against its pins. `modelPath` is the managed folder of the
+ * entry (or, for a GGUF, the file itself). Throws the localized `LocalRankerError` of the first
+ * problem: a missing file, a size or checksum mismatch, or an artifact that is not a supported
+ * Qwen3 ranker.
+ */
+export async function validateCatalogRankerArtifact(
+  entry: Pick<LocalModelCatalogEntry, "runtime" | "files">,
+  modelPath: string
+): Promise<RankerArtifactReport> {
+  if (entry.runtime === "mlx") {
+    return validateMlxRankerArtifact({ directory: modelPath, files: entry.files });
+  }
+  const file = ggufFile(entry);
+  return validateGgufRankerArtifact({
+    path: modelPath.toLowerCase().endsWith(".gguf")
+      ? modelPath
+      : resolveManagedModelPath(modelPath, file.path),
+    sizeBytes: file.sizeBytes,
+    sha256: file.sha256
+  });
+}
+
+/**
+ * The stored validation when it names this catalog entry's runtime, revision and artifact, else
+ * null. The runtime build is not known here: the adapter about to run the ranker compares it with
+ * `isDecideValidationCurrent`, which is the full check.
+ */
+export function decideValidationForCatalogEntry(
+  value: unknown,
+  entry: Pick<LocalModelCatalogEntry, "runtime" | "revision" | "files">
+): DecideValidation | null {
+  const parsed = decideValidationSchema.safeParse(value);
+  return parsed.success &&
+    parsed.data.runtime === entry.runtime &&
+    parsed.data.revision === entry.revision &&
+    parsed.data.artifactSha256 === rankerCatalogArtifactSha256(entry)
+    ? parsed.data
+    : null;
+}
+
+function ggufFile(entry: Pick<LocalModelCatalogEntry, "files">): RankerArtifactFile {
+  const file = entry.files.find((candidate) => candidate.path.toLowerCase().endsWith(".gguf"));
+  if (!file) {
+    throw new LocalRankerError("errors.localModels.rankerInvalid", "The entry has no GGUF file.");
+  }
+  return file;
 }
 
 // --- smoke ----------------------------------------------------------------------------------------

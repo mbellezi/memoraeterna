@@ -254,6 +254,8 @@ void app.whenReady().then(() => {
     getPool: () => databaseService?.getPool() ?? null,
     userDataPath: app.getPath("userData"),
     logger: console,
+    isPackaged: app.isPackaged,
+    workspaceRoot,
     isModelInUse: (localModelId) => aiService?.isLocalModelInUse(localModelId) ?? false,
     testModel: (localModelId) => aiService!.testLocalModel(localModelId)
   });

@@ -210,6 +210,16 @@ function model() {
   };
 }
 describe("bounded catalog sample runner", () => {
+  it("leaves the ranker diagnostic out of the cases: only a dedicated ranker can run it", () => {
+    expect(promptDefinitions.find((d) => d.id === "diagnostics.local_ranking")).toMatchObject({
+      task: "reranking",
+      variables: []
+    });
+    expect(
+      promptSampleCases(["summary.short", "diagnostics.local_ranking"]).map((entry) => entry.id)
+    ).toEqual(["summary.short"]);
+    expect(() => promptSampleCases(["diagnostics.local_ranking"])).toThrow("prompts.errors.sample");
+  });
   it("executes every registered required variant with real builders and validators, including exact same-root repair and local diagnostics", async () => {
     const ai = model(),
       pin = defaultPromptPin(),

@@ -106,16 +106,26 @@ Local models are MLX-first; GGUF through `node-llama-cpp` is the fallback
 sizes, licenses, and SHA-256 checksums. A capability is exposed only after the
 actual adapter and runtime have been validated for it.
 
+Dedicated rankers (Apache-2.0, `reranking` exposed only after the install is
+validated for decide; `packages/ai/src/local-model-catalog.ts` is authoritative
+for files, sizes and checksums):
+
+| Model | Runtime | Pin |
+| --- | --- | --- |
+| Qwen3-Reranker-0.6B | MLX, bf16 safetensors on the MLX Swift LM helper | `Qwen/Qwen3-Reranker-0.6B` @ `e61197ed45024b0ed8a2d74b80b4d909f1255473`; `model.safetensors` 1,191,588,280 B, sha256 `27cd75a4…5e65b` |
+| Qwen3-Reranker-0.6B Q8_0 | GGUF through `node-llama-cpp` (fallback) | `ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF` @ `a02f48bb4f057028298c21fa033da2b30d7742d5`; 639,153,184 B, sha256 `22c9979c…23429a48` |
+
 ## Planned additions (pending their phase)
 
 Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
 
 - `d3-hierarchy` for the Shape icicle and mind maps (F2).
-- MLX weights for Qwen3-Reranker-0.6B and Qwen3-Embedding-0.6B (Apache-2.0;
-  Qwen safetensors or mlx-community conversions), pinned revision plus SHA-256,
-  run on MLXLLM/MLXEmbedders (F0 spike, F2 adapter).
-- Fallback reranker GGUF artifacts: Qwen3-Reranker-0.6B Q8_0 (ggml-org) and
-  bge-reranker-v2-m3 Q8_0 (gpustack), pinned by SHA-256 (F0 spike, F2 adapter).
+- MLX weights for Qwen3-Embedding-0.6B (Apache-2.0; Qwen safetensors or
+  mlx-community conversions), pinned revision plus SHA-256, run on MLXEmbedders
+  (F0 spike, F3 adapter).
+- Fallback reranker GGUF artifact bge-reranker-v2-m3 Q8_0 (gpustack), pinned by
+  SHA-256 (F0 spike); Spike A rejected it for matching, so it is not in the
+  catalog.
 - `radix-ui` and `cmdk` through vendored shadcn components (F5).
 - `@playwright/test` for Electron journeys (F5).
 - `umap-js` and `@sigma/layer-webgl` `3.0.0` for the Atlas, only after its spike

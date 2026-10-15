@@ -258,7 +258,7 @@ describe("AI adapters", () => {
   });
 
   it("keeps the local catalog pinned, checksummed, without unvalidated multimodal capabilities and without reranking tags on generative models", () => {
-    expect(localModelCatalog).toHaveLength(6);
+    expect(localModelCatalog).toHaveLength(8);
     const embeddingModels = localModelCatalog.filter((entry) =>
       entry.capabilities.includes("embedding")
     );

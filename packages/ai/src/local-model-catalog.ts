@@ -144,6 +144,13 @@ const textCapabilities = [
   "supports-progress-events"
 ] as const;
 
+/**
+ * Capabilities a dedicated ranker declares (D17): `reranking` and nothing generative. The catalog
+ * declares them; the install exposes `reranking` only after the ranker is validated for `decide`
+ * (`ranker-validation.ts`, `rules/ai.md`).
+ */
+const rankerCapabilities = ["reranking", "offline", "local-files"] as const;
+
 export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   {
     id: "gguf-qwen3-embedding-0.6b-q8-0",
@@ -200,6 +207,78 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
         path: "bge-m3-q8_0.gguf",
         sizeBytes: 634_553_760,
         sha256: "aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173"
+      }
+    ]
+  },
+  {
+    // Official Qwen bf16 weights (Qwen3ForCausalLM) scored by the MLX helper. Only the files the
+    // helper loads are pinned: the directory with just these four passed the real-model smoke.
+    // Memory: peak RSS of the helper during `score` was 1,294 MB (T11, M4 Max), times 1.5.
+    id: "mlx-qwen3-reranker-0.6b",
+    displayName: "Qwen3-Reranker-0.6B",
+    family: "Qwen3 Reranker",
+    variant: "0.6B bf16",
+    runtime: "mlx",
+    repository: "Qwen/Qwen3-Reranker-0.6B",
+    revision: "e61197ed45024b0ed8a2d74b80b4d909f1255473",
+    format: "safetensors",
+    quantization: "bf16",
+    capabilities: rankerCapabilities,
+    parameterCapabilities: {},
+    defaultParameters: {},
+    minimumMemoryBytes: 2 * gib,
+    recommendedMemoryBytes: 4 * gib,
+    license: "Apache-2.0",
+    licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+    requiresLicenseAcceptance: false,
+    files: [
+      {
+        path: "config.json",
+        sizeBytes: 727,
+        sha256: "d479c427a9ca5295218063d4f9aca4f297ab4ac27487cca7af42c84643d51ef0"
+      },
+      {
+        path: "model.safetensors",
+        sizeBytes: 1_191_588_280,
+        sha256: "27cd75a405b9c1b46b59abfd88aaa209e6fed2a1972cde9b70e7659537c5e65b"
+      },
+      {
+        path: "tokenizer.json",
+        sizeBytes: 11_422_654,
+        sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      },
+      {
+        path: "tokenizer_config.json",
+        sizeBytes: 9_706,
+        sha256: "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"
+      }
+    ]
+  },
+  {
+    // GGUF fallback for hosts without MLX: node-llama-cpp ranking context with the model card
+    // template. Memory: the in-process peak RSS during the smoke was 1,562 MB, times 1.5.
+    id: "gguf-qwen3-reranker-0.6b-q8-0",
+    displayName: "Qwen3-Reranker-0.6B Q8_0",
+    family: "Qwen3 Reranker",
+    variant: "0.6B Q8_0",
+    runtime: "gguf",
+    repository: "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    revision: "a02f48bb4f057028298c21fa033da2b30d7742d5",
+    format: "gguf",
+    quantization: "Q8_0",
+    capabilities: rankerCapabilities,
+    parameterCapabilities: {},
+    defaultParameters: {},
+    minimumMemoryBytes: 2.5 * gib,
+    recommendedMemoryBytes: 5 * gib,
+    license: "Apache-2.0",
+    licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+    requiresLicenseAcceptance: false,
+    files: [
+      {
+        path: "qwen3-reranker-0.6b-q8_0.gguf",
+        sizeBytes: 639_153_184,
+        sha256: "22c9979ce4fbcdc5acdc310c6641c32797eff1aa980b8f7a2db8a8ea23429a48"
       }
     ]
   },
@@ -551,7 +630,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   }
 ]);
 
-export const localModelCatalogVersion = "2026-10-15.1";
+export const localModelCatalogVersion = "2026-10-15.2";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);
@@ -561,7 +640,7 @@ export function localModelExpectedSize(entry: LocalModelCatalogEntry): number {
   return entry.files.reduce((total, file) => total + file.sizeBytes, 0);
 }
 
-export function localModelManifestHash(entry: LocalModelCatalogEntry): string {
+export function localModelManifestHash(entry: Pick<LocalModelCatalogEntry, "files">): string {
   const canonical = entry.files
     .map((file) => `${file.path}:${file.sizeBytes}:${file.sha256}`)
     .join("\n");

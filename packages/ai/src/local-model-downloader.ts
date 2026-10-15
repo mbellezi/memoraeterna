@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { access, mkdir, rename, rm, stat, statfs } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
+import { constants, createReadStream, createWriteStream } from "node:fs";
+import { access, copyFile, mkdir, rename, rm, stat, statfs } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 
@@ -24,6 +24,12 @@ export interface LocalModelDownloadProgress {
 export interface DownloadLocalModelOptions {
   entry: LocalModelCatalogEntry;
   destinationRoot: string;
+  /**
+   * DEV only (`resolveLocalModelSeedRoot`): a folder of already downloaded artifacts. A pinned file
+   * found there with the declared size is cloned (or copied) instead of fetched, and verified against
+   * its SHA-256 exactly like a download. A file that is missing there is downloaded.
+   */
+  seedRoot?: string;
   token?: string;
   signal?: AbortSignal;
   fetch?: typeof fetch;
@@ -50,7 +56,10 @@ export async function downloadLocalModel(
     const finalPath = resolveManagedModelPath(modelPath, file.path);
     const partialPath = `${finalPath}.partial`;
     await mkdir(dirname(finalPath), { recursive: true });
-    if (await fileMatches(finalPath, file.sizeBytes, file.sha256)) {
+    const alreadyInPlace =
+      (await fileMatches(finalPath, file.sizeBytes, file.sha256)) ||
+      (await seedIfAvailable(options, file, finalPath));
+    if (alreadyInPlace) {
       downloadedBytes += file.sizeBytes;
       await options.onProgress?.({
         currentFile: file.path,
@@ -161,6 +170,77 @@ export async function verifyLocalModelFiles(
     )
       return false;
   }
+  return true;
+}
+
+/**
+ * Folder of the DEV seed (`MEMORA_LOCAL_MODEL_SEED_DIR`) that holds the pinned files of each
+ * catalog entry that can be seeded, relative to the seed root. The seed is a development
+ * convenience for artifacts already fetched into `.cache/models` (`scripts/spikes/models.json`).
+ */
+export const localModelSeedDirectories: Readonly<Record<string, string>> = {
+  "mlx-qwen3-reranker-0.6b": "qwen3-reranker-0.6b-mlx",
+  "gguf-qwen3-reranker-0.6b-q8-0": "qwen3-reranker-0.6b-q8_0-gguf"
+};
+
+export type LocalModelSeedErrorCode = "packaged_build";
+
+export class LocalModelSeedError extends Error {
+  public constructor(
+    public readonly code: LocalModelSeedErrorCode,
+    message: string
+  ) {
+    super(message);
+    this.name = "LocalModelSeedError";
+  }
+}
+
+/**
+ * Reads the DEV seed folder from the environment. Returns null when seeding is off and throws when
+ * it is requested in a packaged build: a packaged app never reads model files from a folder the
+ * environment names. A relative folder is resolved against `baseDirectory` (the workspace root).
+ * Seeded files are verified against the catalog pins, so the folder is not trusted.
+ */
+export function resolveLocalModelSeedRoot(
+  env: Readonly<Record<string, string | undefined>>,
+  options: { isPackaged: boolean; baseDirectory: string }
+): string | null {
+  const configured = env.MEMORA_LOCAL_MODEL_SEED_DIR?.trim();
+  if (!configured) return null;
+  if (options.isPackaged) {
+    throw new LocalModelSeedError(
+      "packaged_build",
+      "MEMORA_LOCAL_MODEL_SEED_DIR is refused in packaged builds"
+    );
+  }
+  return isAbsolute(configured) ? resolve(configured) : resolve(options.baseDirectory, configured);
+}
+
+/**
+ * Brings one pinned file in from the seed folder, replacing whatever is at `finalPath`. Returns
+ * false when seeding is off or the seed does not have the file (the caller downloads it). A seeded
+ * file whose bytes do not match the pin is an error, never a silent fallback to the network: the
+ * seed must be exactly the pinned artifact.
+ */
+async function seedIfAvailable(
+  options: Pick<DownloadLocalModelOptions, "entry" | "seedRoot">,
+  file: LocalModelCatalogEntry["files"][number],
+  finalPath: string
+): Promise<boolean> {
+  const directory = options.seedRoot ? localModelSeedDirectories[options.entry.id] : undefined;
+  if (!options.seedRoot || !directory) return false;
+  const source = resolveManagedModelPath(join(options.seedRoot, directory), file.path);
+  if ((await fileSize(source)) !== file.sizeBytes) return false;
+  await rm(finalPath, { force: true });
+  const partialPath = `${finalPath}.partial`;
+  await rm(partialPath, { force: true });
+  // Copy-on-write clone on APFS; a plain copy elsewhere.
+  await copyFile(source, partialPath, constants.COPYFILE_FICLONE);
+  if ((await sha256File(partialPath)) !== file.sha256) {
+    await rm(partialPath, { force: true });
+    throw new Error("errors.localModels.checksumMismatch");
+  }
+  await rename(partialPath, finalPath);
   return true;
 }
 

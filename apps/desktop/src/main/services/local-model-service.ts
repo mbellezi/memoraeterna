@@ -3,17 +3,21 @@ import { totalmem } from "node:os";
 import { basename, extname, join, relative } from "node:path";
 
 import {
+  decideValidationForCatalogEntry,
   detectLocalRuntimeCompatibility,
   downloadLocalModel,
   findLocalModelCatalogEntry,
+  isRankerCatalogEntry,
   localModelCatalog,
   localModelCatalogVersion,
   localModelExpectedSize,
   localModelManifestHash,
   localParameterCapabilities,
   redactSensitiveText,
+  resolveLocalModelSeedRoot,
   resolveManagedModelPath,
   sha256File,
+  validateCatalogRankerArtifact,
   verifyLocalModelFiles,
   type LocalModelCatalogEntry
 } from "@app/ai";
@@ -41,6 +45,15 @@ export interface LocalModelServiceOptions {
   logger?: Pick<Console, "warn" | "error">;
   isModelInUse?: (localModelId: string) => boolean;
   testModel?: (localModelId: string) => Promise<string>;
+  /**
+   * Whether this is a packaged build. A missing value counts as packaged, so a service built
+   * without it never reads a DEV seed folder.
+   */
+  isPackaged?: boolean;
+  /** Base of a relative `MEMORA_LOCAL_MODEL_SEED_DIR`; defaults to the working directory. */
+  workspaceRoot?: string;
+  /** Environment the DEV seed folder is read from; defaults to `process.env`. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 const repositoryTokenSettingKey = "local-models.repository-token-ref";
@@ -49,6 +62,9 @@ export class LocalModelService {
   private readonly credentials: CredentialService;
   private readonly modelsRoot: string;
   private readonly controllers = new Map<string, AbortController>();
+  /** DEV only: a folder of already downloaded artifacts that stands in for the network. */
+  private readonly seedRoot: string | null;
+  private syncing: Promise<void> = Promise.resolve();
   private readonly queue: string[] = [];
   private activeCatalogId: string | null = null;
   private pumpPromise: Promise<void> | null = null;
@@ -57,6 +73,7 @@ export class LocalModelService {
   public constructor(private readonly options: LocalModelServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
     this.modelsRoot = join(options.userDataPath, "local-models");
+    this.seedRoot = resolveSeedRoot(options);
   }
 
   public async start(): Promise<void> {
@@ -195,13 +212,15 @@ export class LocalModelService {
       await repository.deleteModel(model.id);
       return { ...removed, download: null };
     }
-    const next = await repository.updateModel(model.id, {
+    await repository.updateModel(model.id, {
       status: "not_downloaded",
       managedPath: null,
       installedSizeBytes: 0,
       lastError: null
     });
-    return this.toView(next);
+    // A removed ranker is no longer validated: the sync closes its `reranking` capability.
+    await this.syncCatalog();
+    return this.toView((await repository.findById(model.id))!);
   }
 
   public async test(catalogId: string): Promise<string> {
@@ -209,7 +228,14 @@ export class LocalModelService {
     if (model.status !== "ready" || !model.managedPath)
       throw new Error("errors.localModels.notReady");
     if (!this.options.testModel) throw new Error("errors.localModels.runtimeUnavailable");
-    return this.options.testModel(model.id);
+    const entry = findLocalModelCatalogEntry(catalogId);
+    try {
+      return await this.options.testModel(model.id);
+    } finally {
+      // A ranker's test records or voids its decide validation, which the sync turns into the
+      // `reranking` capability (or takes it away).
+      if (entry && isRankerCatalogEntry(entry)) await this.syncCatalog();
+    }
   }
 
   public async setDefaults(
@@ -310,9 +336,30 @@ export class LocalModelService {
     );
   }
 
-  private async syncCatalog(): Promise<void> {
+  /** Catalog synchronizations run one after another: each rewrites the rows it reads. */
+  private syncCatalog(): Promise<void> {
+    const run = this.syncing.then(
+      () => this.synchronizeCatalog(),
+      () => this.synchronizeCatalog()
+    );
+    this.syncing = run.catch(() => undefined);
+    return run;
+  }
+
+  private async synchronizeCatalog(): Promise<void> {
     const repository = createLocalModelRepository(this.requirePool());
     for (const entry of localModelCatalog) {
+      // A ranker's `reranking` capability is exposed only while its decide validation names this
+      // revision and artifact on an installed model (STACK.md, rules/ai.md). A revision or
+      // artifact change, or a removal, takes the validation, and the capability, away. The row is
+      // read right before its write, because the model test stores a validation in it meanwhile.
+      const existing = isRankerCatalogEntry(entry)
+        ? await repository.findByCatalogId(entry.id)
+        : null;
+      const decideValidation =
+        existing?.status === "ready"
+          ? decideValidationForCatalogEntry(existing.metadata.decideValidation, entry)
+          : null;
       const record = await repository.upsertModel({
         catalogId: entry.id,
         modelId: entry.repository,
@@ -326,7 +373,7 @@ export class LocalModelService {
         quantization: entry.quantization,
         expectedSizeBytes: localModelExpectedSize(entry),
         manifestHash: localModelManifestHash(entry),
-        capabilities: entry.capabilities,
+        capabilities: exposedCapabilities(entry, decideValidation !== null),
         defaultParameters: entry.defaultParameters,
         licenseName: entry.license,
         licenseUrl: entry.licenseUrl,
@@ -335,7 +382,8 @@ export class LocalModelService {
           defaultParametersInitialized: true,
           minimumMemoryBytes: entry.minimumMemoryBytes,
           recommendedMemoryBytes: entry.recommendedMemoryBytes,
-          requiresLicenseAcceptance: entry.requiresLicenseAcceptance
+          requiresLicenseAcceptance: entry.requiresLicenseAcceptance,
+          ...(decideValidation ? { decideValidation } : {})
         }
       });
       const files = await repository.listFiles(record.id);
@@ -431,6 +479,7 @@ export class LocalModelService {
     if (!job || job.status === "canceled") return;
     const controller = new AbortController();
     this.controllers.set(catalogId, controller);
+    let installed = false;
     await jobs.update(job.id, {
       status: "running",
       attempts: job.attempts + 1,
@@ -444,6 +493,7 @@ export class LocalModelService {
       const result = await downloadLocalModel({
         entry,
         destinationRoot: this.modelsRoot,
+        ...(this.seedRoot ? { seedRoot: this.seedRoot } : {}),
         ...(token ? { token } : {}),
         ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
         signal: controller.signal,
@@ -475,6 +525,8 @@ export class LocalModelService {
       await repository.updateModel(model.id, { status: "verifying" });
       if (!(await verifyLocalModelFiles(entry, result.modelPath)))
         throw new Error("errors.localModels.checksumMismatch");
+      // A dedicated ranker must also be a supported Qwen3 ranker before it counts as installed.
+      if (isRankerCatalogEntry(entry)) await validateCatalogRankerArtifact(entry, result.modelPath);
       await repository.updateModel(model.id, {
         status: "ready",
         managedPath: result.modelPath,
@@ -498,6 +550,7 @@ export class LocalModelService {
         lockedBy: null,
         finishedAt: new Date()
       });
+      installed = true;
     } catch (error) {
       const canceled = controller.signal.aborted;
       const message = canceled ? "errors.localModels.canceled" : redactSensitiveText(error);
@@ -517,6 +570,27 @@ export class LocalModelService {
       if (!canceled) this.options.logger?.warn(message);
     } finally {
       this.controllers.delete(catalogId);
+    }
+    if (installed && isRankerCatalogEntry(entry)) await this.validateInstalledRanker(model.id);
+  }
+
+  /**
+   * A freshly installed ranker is validated for `decide` right away: the artifact checks ran with
+   * the install, and the smoke test follows through the model test. The install stays; a ranker that
+   * fails (or cannot be tested now, for instance while another local model runs) is left without
+   * `reranking`, and the failure shows on the model until a later test passes.
+   */
+  private async validateInstalledRanker(localModelId: string): Promise<void> {
+    if (this.stopped || !this.options.testModel) return;
+    try {
+      await this.options.testModel(localModelId);
+    } catch (error) {
+      this.options.logger?.warn(redactSensitiveText(error));
+    }
+    try {
+      await this.syncCatalog();
+    } catch (error) {
+      this.options.logger?.warn(redactSensitiveText(error));
     }
   }
 
@@ -628,6 +702,29 @@ export class LocalModelService {
     const pool = this.options.getPool();
     if (!pool) throw new Error("errors.database.notReady");
     return pool;
+  }
+}
+
+/**
+ * The capabilities a catalog install exposes. A dedicated ranker declares `reranking`, and keeps it
+ * only while it is validated for `decide`; before that it exposes no task at all.
+ */
+function exposedCapabilities(entry: LocalModelCatalogEntry, validated: boolean): string[] {
+  return isRankerCatalogEntry(entry) && !validated
+    ? entry.capabilities.filter((capability) => capability !== "reranking")
+    : [...entry.capabilities];
+}
+
+/** The DEV seed folder, or null when seeding is off, refused (packaged) or misconfigured. */
+function resolveSeedRoot(options: LocalModelServiceOptions): string | null {
+  try {
+    return resolveLocalModelSeedRoot(options.env ?? process.env, {
+      isPackaged: options.isPackaged ?? true,
+      baseDirectory: options.workspaceRoot ?? process.cwd()
+    });
+  } catch (error) {
+    options.logger?.warn(redactSensitiveText(error));
+    return null;
   }
 }
 
