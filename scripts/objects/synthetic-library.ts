@@ -97,8 +97,8 @@ export interface NoteRelationSeedOptions {
 /**
  * Note-page data on top of `librarySeedSteps` (same session): one SourceSpan per chunk (every
  * fourth with a page), relations with mixed types, scores and explanations (half are message keys,
- * half text with a note reference; a quarter lack decision metadata), hub notes, human edits on 5%
- * of the notes and retained evidence snapshots on 1%.
+ * half text with a note reference; a quarter lack decision metadata; a third have an explanation
+ * written on open), hub notes, human edits on 5% of the notes and retained evidence snapshots on 1%.
  */
 export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[] => {
   const types = "array['supports','contrasts','extends','similar_to','depends_on','clarifies']";
@@ -139,6 +139,12 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
      on conflict do nothing`,
     `alter table chunks enable trigger user`,
     `alter table atomic_note_relations enable trigger user`,
+    // A third of the relations were opened and explained (stale or current, it is the same read).
+    `insert into atomic_note_relation_explanations
+       (relation_id, text, input_hash, prompt_version, provider, model, runtime, language)
+     select id, 'An explanation written on open.', md5(id::text), 'seed', 'seed', 'seed-writer',
+            'remote', 'en'
+       from atomic_note_relations where abs(hashtext(id::text)) % 3 = 0`,
     `insert into atomic_note_review_events (atomic_note_id, action, previous_status, next_status)
      select id, 'edit', 'active', 'active' from t_note_rank where rn % 20 = 0`,
     `insert into atomic_note_evidence (note_id, chunk_id, source_id, snapshot)

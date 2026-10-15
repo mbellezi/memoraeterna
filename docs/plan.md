@@ -355,7 +355,7 @@ most one in-flight call.
 ### F1b The bridge (weeks 5-6)
 
 - [x] `objects.locate` (stable contract) and a "Where is this" panel on sources and notes.
-- [ ] Note page v1 as the definitive object-page component, hosted in the Library.
+- [x] Note page v1 as the definitive object-page component, hosted in the Library.
 - [ ] Decide-only compact matching contract v9 and on-demand, cached relation explanations (decision 16);
       decide calls without the reasoning summary if the backend accepts it.
 - [x] Citations open the exact chunk and SourceSpan.
@@ -367,6 +367,11 @@ most one in-flight call.
 Measured: `objects.locate` p95 0.75 ms on the restored fixture library and 0.90 ms on a seeded 30,000-note
 library; 326 token pairs pass AA in both themes; mockups approved on 2026-10-15
 (https://claude.ai/artifact/SDrknF4YwtDLdzGF4iwmKG).
+`notes.page` p95 3.15 ms on the seeded 30,000-note library (187,274 relations, hubs of 400) and 2.28 ms
+on the restored F1a fixture (`scripts/objects/note-page-benchmark.ts`, no sequential scan of a large
+table); a note shows its location with 0 clicks on its page and 1 click from a card, search, the graph,
+recents or the wiki. Relation explanations are written on open and cached per inputs
+(`relations.explain`, migration 0049); the v9 decide-only contract is the other half of that item.
 
 Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
 passes AA in both themes; mockups approved; golden note matching ≤3.47 s/note with fixture quality within the
