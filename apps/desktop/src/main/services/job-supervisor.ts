@@ -32,6 +32,7 @@ import {
   type JobRecord,
   type JsonObject,
   type PgPool,
+  type ReplaceDocumentChunksOptions,
   type UpdateJobInput
 } from "@app/db";
 import { chunkMarkdown } from "@app/conversion";
@@ -40,6 +41,7 @@ import { WorkerSupervisor } from "./worker-supervisor.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
 import type { KnowledgeService } from "./knowledge-service.js";
 import type { ObsidianSyncService } from "./obsidian-sync-service.js";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
 import { canManuallyRetryJob } from "./job-retry.js";
 import { isTransientJobFailure } from "./job-failure.js";
@@ -88,6 +90,11 @@ export interface JobSupervisorOptions {
   releaseAiRuntime?: () => Promise<void>;
   /** Light-lane job types; a worker runs only when it has a type (D33). */
   lightJobs?: LightJobRegistry;
+  /**
+   * The topic engine's hooks (T15b): a note whose vector was rebuilt, a source whose composite
+   * vector was written and a document whose chunks were replaced all reach the topic tree.
+   */
+  topicHooks?: TopicChangeHooks;
 }
 
 /** Deterministic: the document has no text, so a retry can only fail again. */
@@ -465,7 +472,21 @@ export class JobSupervisor {
       stage: "note_embedding",
       ...(sourceItemId ? { sourceItemId } : {})
     });
+    // The new vector, or a note that is gone or no longer current, changes its place in the tree.
+    // An unchanged vector was embedded (and handed to the tree) by matching already.
+    if (
+      result.embedded ||
+      result.reason === "note_not_found" ||
+      result.reason === "note_not_current"
+    )
+      await this.options.topicHooks?.notesChanged([atomicNoteId]);
     return { ...result };
+  }
+
+  /** Chunk replacement hands the topic tree its repair in the replacing transaction (T15b). */
+  private chunkReplacementOptions(): ReplaceDocumentChunksOptions | undefined {
+    const hooks = this.options.topicHooks;
+    return hooks ? { afterReplace: (client) => hooks.itemsRemoved({ client }) } : undefined;
   }
 
   private async executeIngestion(
@@ -514,12 +535,22 @@ export class JobSupervisor {
       await runs.beginStage(ingestionRunId, "chunking");
       this.notify();
       const chunkRepository = createChunkRepository(pool);
+      // Replacing the chunks deletes the old notes by cascade, and their placements with them
+      // (D32): the repair jobs are enqueued in the replacing transaction.
+      const replacement = this.chunkReplacementOptions();
       persistedChunks = catalogMetadataOnly
-        ? await persistCatalogMetadataChunk(chunkRepository, documentId, sourceItemId, markdown)
+        ? await persistCatalogMetadataChunk(
+            chunkRepository,
+            documentId,
+            sourceItemId,
+            markdown,
+            replacement
+          )
         : await chunkRepository.replaceDocumentChunks(
             documentId,
             sourceItemId,
-            await this.createContentChunks(job, markdown, signal)
+            await this.createContentChunks(job, markdown, signal),
+            replacement
           );
       await runs.completeStage(ingestionRunId, "chunking", { chunkCount: persistedChunks.length });
       this.notify();
@@ -717,6 +748,7 @@ export class JobSupervisor {
               embedding: sourceEmbedding
             });
             sourceEmbedded = true;
+            await this.options.topicHooks?.sourcesChanged([sourceItemId]);
           }
         }
       }
@@ -1208,7 +1240,8 @@ export async function persistCatalogMetadataChunk(
   >,
   documentId: string,
   sourceItemId: string,
-  content: string
+  content: string,
+  replacement?: ReplaceDocumentChunksOptions
 ) {
   const chunk = createCatalogMetadataChunk(content);
   const existing = await repository.listByDocument(documentId);
@@ -1222,7 +1255,9 @@ export async function persistCatalogMetadataChunk(
     existing[0]!.metadata.processingMode === "catalog_metadata"
   )
     return existing;
-  return repository.replaceDocumentChunks(documentId, sourceItemId, [chunk]);
+  return replacement
+    ? repository.replaceDocumentChunks(documentId, sourceItemId, [chunk], replacement)
+    : repository.replaceDocumentChunks(documentId, sourceItemId, [chunk]);
 }
 
 export function createCatalogMetadataChunk(content: string) {

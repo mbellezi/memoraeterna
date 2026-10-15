@@ -1,8 +1,9 @@
 // The trigger API of the topic engine: the calls the rest of the main process makes when notes or
-// sources change (T15b wires the call sites). Each call enqueues deduped, debounced light-lane jobs
-// (spec 3.5): `topic-place` per root source (or per note without one) and `topic-sweep` for the
-// whole tree. A trigger may run inside the caller's transaction (pass its client); the job then
-// exists exactly when the change commits. Nothing here decides a placement.
+// sources change (the call sites reach it through `topic-hooks.ts`, T15b). Each call enqueues
+// deduped, debounced light-lane jobs (spec 3.5): `topic-place` per root source (or per note without
+// one), `topic-sweep` for the whole tree and, after a deletion, `topic-rebalance`. A trigger may run
+// inside the caller's transaction (pass its client); the job then exists exactly when the change
+// commits. Nothing here decides a placement.
 import {
   createJobRepository,
   createTopicTreeLoadRepository,
@@ -34,6 +35,18 @@ export interface TopicTriggersOptions {
   onEnqueued?: (job: EnqueuedTopicJob) => void;
   /** Wakes the light lane after an enqueue outside a transaction. */
   wake?: () => void;
+}
+
+/** True when a topic of the tree has inexact statistics: a cascade removed items under them. */
+async function hasDirtyStats(db: Queryable, treeId: string): Promise<boolean> {
+  const result = await db.query<{ dirty: boolean }>(
+    `select exists (
+       select 1 from topic_stats s join topics t on t.id = s.topic_id
+        where t.tree_id = $1 and s.dirty
+     ) as dirty`,
+    [treeId]
+  );
+  return result.rows[0]?.dirty === true;
 }
 
 /** Runs a job as soon as possible (a sweep at startup, places a sweep found). */
@@ -86,6 +99,25 @@ export class TopicTriggers {
       if (owner.rootSourceId) scopes.push({ rootSourceId: owner.rootSourceId });
     }
     return this.placeScopes(db, treeId, scopes, options);
+  }
+
+  /**
+   * Notes or sources were deleted and their placements left by cascade (D32): when that left
+   * statistics inexact, enqueue the sweep that restores them and the rebalance that follows. A
+   * deletion that touched no placed item enqueues nothing. The dirty flag is the durable record:
+   * a lost job here is found again by the startup sweep and by every cache load.
+   */
+  public async repair(options: TopicTriggerOptions = {}): Promise<EnqueuedTopicJob[]> {
+    const db = this.database(options);
+    if (!db) return [];
+    const treeId = await this.activeTreeId(db);
+    if (!treeId || !(await hasDirtyStats(db, treeId))) return [];
+    return [
+      ...(await this.enqueue(db, topicJobTypes.sweep, treeId, null, options, {
+        reason: "dirty_stats"
+      })),
+      ...(await this.enqueue(db, topicJobTypes.rebalance, treeId, null, options))
+    ];
   }
 
   /** PLACE of known scopes of a tree (the sweep's fan-out). */

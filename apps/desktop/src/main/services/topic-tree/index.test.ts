@@ -179,4 +179,26 @@ describe("the topic services factory", () => {
       expect(created.service.isHeld()).toBe(false);
     });
   });
+
+  describe("the change hooks (T15b)", () => {
+    it("sit on the service's own triggers: their jobs are tracked by the barrier like its own", async () => {
+      const created = create();
+      const notesChanged = vi.spyOn(created.triggers, "notesChanged").mockResolvedValue([]);
+      const sourcesChanged = vi.spyOn(created.triggers, "sourcesChanged").mockResolvedValue([]);
+      const repair = vi.spyOn(created.triggers, "repair").mockResolvedValue([]);
+      await created.hooks.notesChanged([id(1)]);
+      await created.hooks.sourcesChanged([id(2)]);
+      await created.hooks.itemsRemoved();
+      expect(notesChanged).toHaveBeenCalledWith([id(1)], {});
+      expect(sourcesChanged).toHaveBeenCalledWith([id(2)], {});
+      expect(repair).toHaveBeenCalledWith({});
+    });
+
+    it("never throw, even when the database is not ready", async () => {
+      const created = create();
+      await expect(created.hooks.notesChanged([id(1)])).resolves.toBeUndefined();
+      await expect(created.hooks.sourcesChanged([id(2)])).resolves.toBeUndefined();
+      await expect(created.hooks.itemsRemoved()).resolves.toBeUndefined();
+    });
+  });
 });

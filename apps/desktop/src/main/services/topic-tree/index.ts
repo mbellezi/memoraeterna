@@ -12,6 +12,8 @@ import type { LightJobRegistry } from "../job-lanes.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
 import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
 import { TopicChangeCoalescer } from "./topic-changes.js";
+import { createTopicChangeHooks } from "./topic-hooks.js";
+import type { TopicChangeHooks } from "./topic-hooks.js";
 import { registerTopicTreeIpc } from "./topic-ipc.js";
 import type { TopicsChangedTarget } from "./topic-ipc.js";
 import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
@@ -50,6 +52,8 @@ export interface TopicTreeServicesOptions {
 export interface TopicTreeServices {
   service: TopicTreeService;
   triggers: TopicTriggers;
+  /** What note, source and deletion call sites call (T15b); a hook never fails its caller. */
+  hooks: TopicChangeHooks;
   /** `topicsChanged` (D15): the topic IPC forwards its events to the renderer channel. */
   changes: TopicChangeCoalescer;
   /** The read side of the topic screens; null without `options.ipc`. */
@@ -96,6 +100,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     onEnqueued: (job) => service?.trackEnqueued(job),
     ...(options.wake ? { wake: options.wake } : {})
   });
+  const hooks = createTopicChangeHooks(triggers, logger);
   const budget = new TopicAiBudget({
     store: options.budgetStore ?? settingsAiBudgetStore(getPool),
     cap: () => service!.config().ai.maxBackgroundCallsPerDay,
@@ -155,6 +160,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   return {
     service: topicService,
     triggers,
+    hooks,
     changes,
     read,
     budget,

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { QueryResult, QueryResultRow } from "pg";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PgPool } from "@app/db";
 
 import { SourceDeletionService } from "./source-deletion-service.js";
@@ -111,9 +111,68 @@ describe("SourceDeletionService", () => {
     expect(pool.queries.at(-1)).toBe("commit");
     await rm(root, { recursive: true, force: true });
   });
+
+  it("repairs the topic tree in the deleting transaction, after the delete and before the commit", async () => {
+    const root = await mkdtemp(join(tmpdir(), "memora-source-delete-topics-"));
+    const pool = new DeletionPool();
+    const repairs: Array<{ client: unknown }> = [];
+    const service = new SourceDeletionService({
+      getPool: () => pool as unknown as PgPool,
+      getStorageSettings: async () => ({
+        obsidianVaultPath: null,
+        managedRoot: "Memora",
+        obsidianSyncEnabled: false,
+        obsidianSyncPaused: false,
+        deletionPolicy: "tombstone",
+        uploadCopiesEnabled: false,
+        uploadCopiesFolderPath: null,
+        updatedAt: new Date(0).toISOString()
+      }),
+      userDataPath: root,
+      removeGraphProjections: async () => undefined,
+      topicHooks: {
+        notesChanged: async () => undefined,
+        sourcesChanged: async () => undefined,
+        itemsRemoved: async (options) => {
+          repairs.push({ client: options?.client });
+          // The caller's statements and the hook's share one transaction: the hook's go through
+          // the client it was given.
+          await options?.client?.query("-- topic repair");
+        }
+      }
+    });
+
+    await service.delete(rootSourceId);
+
+    expect(repairs).toHaveLength(1);
+    expect(repairs[0]!.client).toBeDefined();
+    const repairIndex = pool.queries.indexOf("-- topic repair");
+    expect(repairIndex).toBeGreaterThan(
+      pool.queries.findIndex((query) => query.startsWith("delete from source_items"))
+    );
+    expect(repairIndex).toBe(pool.queries.length - 2);
+    expect(pool.queries.at(-1)).toBe("commit");
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("does not repair the tree when the source does not exist", async () => {
+    const pool = new DeletionPool();
+    pool.noSources = true;
+    const itemsRemoved = vi.fn(async () => undefined);
+    const service = new SourceDeletionService({
+      getPool: () => pool as unknown as PgPool,
+      getStorageSettings: async () => ({}) as never,
+      userDataPath: tmpdir(),
+      topicHooks: { notesChanged: vi.fn(), sourcesChanged: vi.fn(), itemsRemoved }
+    });
+    await expect(service.delete(rootSourceId)).resolves.toMatchObject({ deletedSources: 0 });
+    expect(itemsRemoved).not.toHaveBeenCalled();
+  });
 });
 
 class DeletionPool {
+  /** The source tree query finds nothing: the source is already gone. */
+  noSources = false;
   readonly queries: string[] = [];
   /** The parameters of each query, in the same order as `queries`. */
   readonly values: Array<readonly unknown[] | undefined> = [];
@@ -134,7 +193,9 @@ class DeletionPool {
     this.values.push(values);
     let rows: QueryResultRow[] = [];
     if (normalized.startsWith("with recursive source_tree")) {
-      rows = [{ id: rootSourceId }, { id: childSourceId }, { id: sectionSourceId }];
+      rows = this.noSources
+        ? []
+        : [{ id: rootSourceId }, { id: childSourceId }, { id: sectionSourceId }];
     } else if (normalized.startsWith("select id from documents")) {
       rows = [{ id: documentId }];
     } else if (normalized.startsWith("select id from atomic_notes")) {

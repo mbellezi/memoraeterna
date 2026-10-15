@@ -70,6 +70,15 @@ function mapChunk(row: ChunkRow): ChunkRecord {
   };
 }
 
+export interface ReplaceDocumentChunksOptions {
+  /**
+   * Runs inside the replacing transaction, once the new chunks are in and before the commit. The
+   * old chunks and everything that cascades from them (notes, and the topic placements of those
+   * notes) are already gone, so work enqueued here commits together with the replacement.
+   */
+  afterReplace?: (transaction: Queryable) => Promise<void>;
+}
+
 export function createChunkRepository(db: Queryable) {
   return {
     async findById(id: string): Promise<ChunkRecord | null> {
@@ -81,7 +90,8 @@ export function createChunkRepository(db: Queryable) {
     async replaceDocumentChunks(
       documentId: string,
       sourceItemId: string,
-      chunks: PersistedChunkInput[]
+      chunks: PersistedChunkInput[],
+      options: ReplaceDocumentChunksOptions = {}
     ): Promise<ChunkRecord[]> {
       const payload = sanitizeStoredValue(chunks).map((chunk) => ({
         id: chunk.id,
@@ -137,6 +147,7 @@ export function createChunkRepository(db: Queryable) {
            returning ${chunkReturning}`,
           [documentId, sourceItemId, JSON.stringify(payload)]
         );
+        await options.afterReplace?.(connection);
         await connection.query("commit");
         return result.rows.map(mapChunk).sort((left, right) => left.chunkIndex - right.chunkIndex);
       } catch (error) {

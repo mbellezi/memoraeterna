@@ -4,6 +4,7 @@ import type { PgPool } from "@app/db";
 import type { AiService } from "./ai-service.js";
 import { KnowledgeService } from "./knowledge-service.js";
 import { renderPrompt } from "./prompt-runtime.js";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
 const mocks = vi.hoisted(() => ({
   sources: { findById: vi.fn() },
@@ -58,14 +59,15 @@ const embedded = {
   aiTaskRunId: "embedding-run"
 };
 const embeddingCalls = () => mocks.run.mock.calls.filter(([task]) => task === "embedding");
-const service = (logger?: Pick<Console, "error" | "warn">) =>
+const service = (logger?: Pick<Console, "error" | "warn">, topicHooks?: TopicChangeHooks) =>
   new KnowledgeService({
     getPool: () => ({}) as PgPool,
     aiService: { runDefaultTask: mocks.run } as unknown as AiService,
     userDataPath: "/tmp/test",
     getStorageSettings: async () => ({}) as never,
     getUploadedFilesBasePath: async () => null,
-    ...(logger ? { logger } : {})
+    ...(logger ? { logger } : {}),
+    ...(topicHooks ? { topicHooks } : {})
   });
 const textOf = (note: { title: string; ideaStatement: string; bodyMarkdown: string }) =>
   renderPrompt("embedding.content.note", {
@@ -230,5 +232,57 @@ describe("embedding notes when they are created", () => {
       noteIds: []
     });
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+});
+
+describe("handing embedded notes to the topic tree", () => {
+  const topicHooks = () => ({
+    notesChanged: vi.fn(async () => undefined),
+    sourcesChanged: vi.fn(async () => undefined),
+    itemsRemoved: vi.fn(async () => undefined)
+  });
+
+  it("enqueues the notes it embedded in one call, after every vector is stored", async () => {
+    const hooks = topicHooks();
+    await service(undefined, hooks).generateAtomicNotes(sourceId, documentId);
+    expect(hooks.notesChanged).toHaveBeenCalledOnce();
+    expect(hooks.notesChanged).toHaveBeenCalledWith(["note-1", "note-2"]);
+    expect(hooks.notesChanged.mock.invocationCallOrder[0]).toBeGreaterThan(
+      Math.max(...mocks.embedding.upsert.mock.invocationCallOrder)
+    );
+    expect(hooks.sourcesChanged).not.toHaveBeenCalled();
+    expect(hooks.itemsRemoved).not.toHaveBeenCalled();
+  });
+
+  it("leaves out a note that already had its vector: it was handed over when it was embedded", async () => {
+    mocks.embedding.findCurrentNoteVectors.mockResolvedValue(
+      new Map([
+        [
+          "note-1",
+          {
+            targetId: "note-1",
+            embedding: vector,
+            model: "embedding-model",
+            provider: "local",
+            runtime: "mlx",
+            strategy: "native-v2:space-1"
+          }
+        ]
+      ])
+    );
+    const hooks = topicHooks();
+    await service(undefined, hooks).generateAtomicNotes(sourceId, documentId);
+    expect(hooks.notesChanged).toHaveBeenCalledOnce();
+    expect(hooks.notesChanged).toHaveBeenCalledWith(["note-2"]);
+  });
+
+  it("enqueues nothing while no note has a vector", async () => {
+    mocks.run.mockImplementation(async (task) => {
+      if (task === "embedding") throw new Error("provider_unavailable");
+      return generation;
+    });
+    const hooks = topicHooks();
+    await service(undefined, hooks).generateAtomicNotes(sourceId, documentId);
+    expect(hooks.notesChanged).not.toHaveBeenCalled();
   });
 });

@@ -55,6 +55,7 @@ import {
 
 import type { AiService, AiTaskLogContext, DefaultAiTaskResult } from "./ai-service.js";
 import { SourceDeletionService } from "./source-deletion-service.js";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 import { logStructuredError } from "./structured-logging.js";
 import type { LibraryBrowseInput, StorageSettings } from "../../shared/ipc.js";
 import {
@@ -144,6 +145,8 @@ export interface KnowledgeServiceOptions {
   getUploadedFilesBasePath: () => Promise<string | null>;
   isDebugEnabled?: () => Promise<boolean>;
   logger?: Pick<Console, "error" | "warn">;
+  /** The topic engine's hooks (T15b): notes placed once embedded, unplaced when discarded. */
+  topicHooks?: TopicChangeHooks;
 }
 
 export interface AtomicNoteGenerationLogContext {
@@ -182,7 +185,8 @@ export class KnowledgeService {
       getPool: options.getPool,
       getStorageSettings: options.getStorageSettings,
       userDataPath: options.userDataPath,
-      ...(options.logger ? { logger: options.logger } : {})
+      ...(options.logger ? { logger: options.logger } : {}),
+      ...(options.topicHooks ? { topicHooks: options.topicHooks } : {})
     });
   }
 
@@ -461,6 +465,9 @@ export class KnowledgeService {
     ideaStatement?: string | undefined;
   }) {
     const note = await createAtomicNoteRepository(this.requirePool()).review(input);
+    // A discarded note leaves the topic tree; an edited one is placed again once its new vector
+    // exists (the `note-embedding` job).
+    if (note && input.action === "discard") await this.options.topicHooks?.notesChanged([note.id]);
     return note ? serializeNote(note) : null;
   }
 
@@ -1427,6 +1434,8 @@ export class KnowledgeService {
       vectors.set(note.id, vector);
       embedded.push(note.id);
     }
+    // One enqueue for the batch: a note that has its vector is ready for the topic tree.
+    if (embedded.length > 0) await this.options.topicHooks?.notesChanged(embedded);
     return { vectors, embedded };
   }
 

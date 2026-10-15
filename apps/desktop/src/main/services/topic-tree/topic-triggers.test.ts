@@ -11,6 +11,9 @@ const rootB = uuid(11);
 /** The repositories a trigger reads and writes, recorded by the database they were given. */
 const db = vi.hoisted(() => ({
   activeTree: null as string | null,
+  /** Whether a cascade left inexact statistics, as `topic_stats.dirty` reports it. */
+  dirtyStats: false,
+  dirtyChecks: [] as Array<{ text: string; values: unknown[] | undefined; db: unknown }>,
   owners: new Map<string, { kind: "note" | "source"; rootSourceId: string | null }>(),
   enqueued: [] as Array<{ input: EnqueueDedupedInput; db: unknown }>,
   queued: new Map<string, string>()
@@ -54,7 +57,17 @@ vi.mock("@app/db", async (original) => ({
   })
 }));
 
-const pool = { query: vi.fn() } as unknown as PgPool;
+/** Both the pool and a caller's transaction answer the dirty-statistics read the same way. */
+function fakeDatabase(): Queryable {
+  const self: { query: ReturnType<typeof vi.fn> } = {
+    query: vi.fn(async (text: string, values?: unknown[]) => {
+      db.dirtyChecks.push({ text, values, db: self });
+      return { rows: [{ dirty: db.dirtyStats }] };
+    })
+  };
+  return self as unknown as Queryable;
+}
+const pool = fakeDatabase() as unknown as PgPool;
 const debounce = { delayMs: 10_000, maxDelayMs: 60_000 };
 
 function triggers(registered = ["topic-place", "topic-sweep"]) {
@@ -84,6 +97,8 @@ beforeEach(() => {
   ]);
   db.enqueued = [];
   db.queued = new Map();
+  db.dirtyStats = false;
+  db.dirtyChecks = [];
 });
 
 describe("topic triggers", () => {
@@ -162,6 +177,75 @@ describe("topic triggers", () => {
       dedupeKey: `topic-sweep:${tree}`,
       payload: { treeId: tree, reason: "startup" },
       debounce: immediateDebounce
+    });
+  });
+
+  describe("repair after a cascade (D32)", () => {
+    const withRebalance = ["topic-place", "topic-sweep", "topic-rebalance"];
+
+    it("enqueues the sweep and the rebalance of the tree while statistics are dirty", async () => {
+      db.dirtyStats = true;
+      const { triggers: api } = triggers(withRebalance);
+      const jobs = await api.repair();
+      expect(jobs.map((entry) => entry.type)).toEqual(["topic-sweep", "topic-rebalance"]);
+      expect(db.enqueued.map((entry) => entry.input)).toMatchObject([
+        {
+          type: "topic-sweep",
+          lane: "light",
+          dedupeKey: `topic-sweep:${tree}`,
+          payload: { treeId: tree, reason: "dirty_stats" },
+          debounce
+        },
+        {
+          type: "topic-rebalance",
+          lane: "light",
+          dedupeKey: `topic-rebalance:${tree}`,
+          payload: { treeId: tree },
+          debounce
+        }
+      ]);
+      // The read is scoped to the active tree.
+      expect(db.dirtyChecks[0]?.values).toEqual([tree]);
+    });
+
+    it("enqueues nothing when no placed item was removed", async () => {
+      const { triggers: api } = triggers(withRebalance);
+      await expect(api.repair()).resolves.toEqual([]);
+      expect(db.enqueued).toEqual([]);
+      expect(db.dirtyChecks).toHaveLength(1);
+    });
+
+    it("enqueues nothing without an active tree, and skips a rebalance nobody executes", async () => {
+      db.dirtyStats = true;
+      db.activeTree = null;
+      const { triggers: api } = triggers(withRebalance);
+      await expect(api.repair()).resolves.toEqual([]);
+      expect(db.dirtyChecks).toEqual([]);
+      db.activeTree = tree;
+      const only = triggers();
+      const jobs = await only.triggers.repair();
+      expect(jobs.map((entry) => entry.type)).toEqual(["topic-sweep"]);
+    });
+
+    it("reads and enqueues in the caller's transaction, where the cascade is visible", async () => {
+      db.dirtyStats = true;
+      const { triggers: api, wake } = triggers(withRebalance);
+      const client = fakeDatabase();
+      await api.repair({ client });
+      expect(db.dirtyChecks[0]?.db).toBe(client);
+      expect(db.enqueued.map((entry) => entry.db)).toEqual([client, client]);
+      expect(wake).not.toHaveBeenCalled();
+    });
+
+    it("joins the repair already queued instead of adding another", async () => {
+      db.dirtyStats = true;
+      const { triggers: api } = triggers(withRebalance);
+      await api.repair();
+      await api.repair();
+      expect([...db.queued.keys()].sort()).toEqual([
+        `topic-rebalance:${tree}`,
+        `topic-sweep:${tree}`
+      ]);
     });
   });
 });

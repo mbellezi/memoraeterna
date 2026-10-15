@@ -4,6 +4,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { createKnowledgeGraphRepository, createViewHistoryRepository, type PgPool } from "@app/db";
 import type { StorageSettings } from "../../shared/ipc.js";
 import { parseManagedMarkdown } from "./obsidian-projection.js";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
 interface IdRow {
   id: string;
@@ -35,6 +36,8 @@ export class SourceDeletionService {
       userDataPath: string;
       removeGraphProjections?: (sourceItemIds: string[], entityIds: string[]) => Promise<void>;
       logger?: Pick<Console, "warn">;
+      /** The topic engine (T15b): the tree is repaired in the deleting transaction (D32). */
+      topicHooks?: TopicChangeHooks;
     }
   ) {}
 
@@ -287,6 +290,9 @@ export class SourceDeletionService {
         noteIds: atomicNoteIds,
         entityIds: deletedEntityIds
       });
+      // The placements of the deleted notes and sources left by cascade and marked their topics
+      // dirty (D32): the repair jobs exist exactly when the deletion commits.
+      await this.options.topicHooks?.itemsRemoved({ client });
       await client.query("commit");
 
       const graphCleanupFailed = await this.removeGraphProjections(

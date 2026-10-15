@@ -285,7 +285,8 @@ void app.whenReady().then(() => {
     userDataPath: app.getPath("userData")
   });
   hierarchicalIngestionService = new HierarchicalIngestionService({
-    getPool: () => databaseService?.getPool() ?? null
+    getPool: () => databaseService?.getPool() ?? null,
+    topicHooks: topicTreeServices.hooks
   });
   ingestionService = new IngestionService({
     traceOperation: (operation, context, run) =>
@@ -369,6 +370,7 @@ void app.whenReady().then(() => {
       };
     },
     logger: console,
+    topicHooks: topicTreeServices.hooks,
     ...(relationThreshold !== undefined ? { relationThreshold } : {})
   });
   obsidianSyncService = new ObsidianSyncService({
@@ -420,7 +422,8 @@ void app.whenReady().then(() => {
         false,
         (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
       ),
-    lightJobs: topicTreeServices.jobs
+    lightJobs: topicTreeServices.jobs,
+    topicHooks: topicTreeServices.hooks
   });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({

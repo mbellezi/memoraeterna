@@ -26,6 +26,7 @@ import {
   type PgPool
 } from "@app/db";
 import { sha256, type StructureDetectionResult } from "@app/conversion";
+import type { TopicChangeHooks } from "./topic-tree/topic-hooks.js";
 
 const executableStages = [
   "chunking",
@@ -42,6 +43,8 @@ const catalogMetadataProcessingMode = "catalog_metadata";
 
 export interface HierarchicalIngestionServiceOptions {
   getPool: () => PgPool | null;
+  /** The topic engine (T15b): notes a reingestion archives leave the topic tree. */
+  topicHooks?: TopicChangeHooks;
 }
 
 export class HierarchicalIngestionService {
@@ -217,11 +220,14 @@ export class HierarchicalIngestionService {
         runKind === "reingestion" &&
         plan.previousArtifactPolicy === "preserve_reviewed_archive_pending"
       ) {
-        await pool.query(
+        const archived = await pool.query<{ id: string }>(
           `update atomic_notes set status = 'archived', supersession_status = 'superseded', updated_at = now()
-           where created_from_source_item_id = $1 and ownership='source' and status in ('active', 'pending_review') and metadata->>'humanProtected' is distinct from 'true'`,
+           where created_from_source_item_id = $1 and ownership='source' and status in ('active', 'pending_review') and metadata->>'humanProtected' is distinct from 'true'
+           returning id`,
           [sourceItemId]
         );
+        // Archived and superseded notes are no longer current: PLACE takes them out of the tree.
+        await this.options.topicHooks?.notesChanged(archived.rows.map((row) => row.id));
       }
       const previousRun =
         runKind === "reingestion" ? (await runs.listBySourceItem(sourceItemId))[0] : undefined;
