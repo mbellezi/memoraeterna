@@ -65,11 +65,12 @@ concurrency and automatic correction.
     relations without a call and discovery judges only each source's nearest source, per source, with no batch
     barrier (~-81% simulated, quality 27-28/28, 0/35), after a spike on unjudged pairs. Analysis:
     `docs/spikes/source-relations-plan.md`.
-18. **F2 decisions** (2026-10-15): the Topic Tree Engine decisions D1-D36, the owner-question defaults Q1-Q12,
+18. **F2 decisions** (2026-10-15): the Topic Tree Engine decisions D1-D40, the owner-question defaults Q1-Q13,
     the gates and the measurement rules are recorded in `docs/f2-decisions.md` and bind F2; where section 4
     differs, they win. Work proceeds on each question's default until the owner answers. Two defaults pull
     later-phase work into F2: minimal model residency (Q11, from F3) and the removal of maintenance v1, the
-    calendar routines and the Automation screen (Q12, from F4).
+    calendar routines and the Automation screen (Q12, from F4). The owner authorized wiping the legacy wiki
+    early (D37-D40): it is wiped at gate W, before its replacement exists, and there is no switch.
 
 ## 3. The five swaps
 
@@ -145,8 +146,8 @@ repository in `packages/db`, service in desktop main, clustering in a `worker_th
   with citations and a support check.
 - **Ownership:** topic identity lives in a new `topics` table whose `parent_id` is the only parent pointer;
   the engine is the single writer of AI-managed topics and placements (enforced by a database guard and a
-  static test), and human operations go through it. `wiki_pages` stays legacy: emptied at the switch,
-  dropped in F4.
+  static test), and human operations go through it. `wiki_pages` stays legacy: emptied by the legacy
+  wipe, dropped in F4.
 - **Data:** new tables for trees, topics (management ai|human|pinned, redirects), stats (dirty flags),
   placements, change-sets and structure events, gate decisions, daily metrics, calibrations and overviews;
   topic label vectors (and later centroids) reuse the per-dimension embedding tables.
@@ -315,9 +316,10 @@ decided by a spike in F6. Avoid `@cosmograph/*` while it is licensed CC-BY-NC-4.
 ## 7. Phases
 
 Phases are sequential (strangler: each engine runs in shadow mode first, new components are hosted in old
-screens, legacy code goes only after its replacement passes); each durable change ships with its rule
-update. Exit numbers marked *(cal.)* are calibration targets from literature or estimates, to be confirmed
-or revised on measured data, not facts.
+screens, legacy code goes only after its replacement passes; exception, F2: the owner had the legacy wiki
+wiped before its replacement passed, 2026-10-15); each durable change ships with its rule update. Exit
+numbers marked *(cal.)* are calibration targets from literature or estimates, to be confirmed or revised on
+measured data, not facts.
 
 ### F0 Foundation and go/no-go bets (weeks 1-2)
 
@@ -418,16 +420,18 @@ v8 range (0/35 forbidden, ≥27/28 on notes or sources); source matching ≤16.2
 
 ### F2 Topic Tree Engine (weeks 7-11)
 
-Decisions D1-D36, the owner-question defaults Q1-Q12, the gates and the measurement rules:
-`docs/f2-decisions.md` (decision 18). Tasks run in waves: the tasks of a wave run in parallel in separate
-worktrees, a shared file has one owner at a time in task order, and a proof that starts the DEV app or a local
-model takes that slot (one holder at a time). Gates stop the line: A engine parity (end of wave 3), B
-persistence parity (wave 5), P owner preview (non-blocking, after wave 5), C quality (end of wave 7; no wipe
-before it passes), D switch safety (wave 8).
+Decisions D1-D40, the owner-question defaults Q1-Q13, the gates and the measurement rules:
+`docs/f2-decisions.md` (decision 18). The legacy wiki is wiped early, at gate W, under the owner's
+authorization of 2026-10-15 (D37). Tasks run in waves: the tasks of a wave run in parallel in separate
+worktrees, a shared file has one owner at a time in task order, removal tasks yield to engine tasks on shared
+files, and a proof that starts the DEV app or a local model takes that slot (one holder at a time). Gates stop
+the line: W wipe safety (end of wave 1b), A engine parity (end of wave 3), B persistence parity (wave 5), P
+owner preview (non-blocking, after wave 5), C quality (end of wave 7; closes F2).
 
 Wave 0:
 - [x] T00 Decision record: D1-D36 and Q1-Q12 (`docs/f2-decisions.md`), the re-based ambiguity bar and rating
       rule, these task boxes.
+- [x] T00b Early legacy wipe recorded (owner, 2026-10-15): D37-D40, Q13, gate W and these task boxes.
 
 Wave 1:
 - [ ] T01 MLX helper `embed` and `score` protocol in one shared helper process, with memory limits.
@@ -438,26 +442,45 @@ Wave 1:
 - [ ] T04 Legacy wiki state is never created on a library without legacy content (D3).
 - [ ] T05 Restore-verified backups with snapshot-consistent counts.
 
+Wave 1b (the legacy wipe; gate W at the end):
+- [ ] T10 Ask answers from notes and chunks only, without the legacy wiki or organization domains; its save
+      and investigation writes are fenced (D13).
+- [ ] T35b Legacy automation unwired (startup and reset defaults, ticks, legacy job executors, the golden
+      pause) and its IPC writers fenced (D3).
+- [ ] T35a Legacy detach (migration 0052): impact triggers dropped (D5), the legacy insert fence (D40),
+      `organizeKnowledge` leaves ingestion (D14).
+- [ ] T36w Verified, recount-guarded legacy wipe service and its one-shot DEV knob (D4), with
+      `rules/data.md`.
+- [ ] T21w Wiki empty state hosting Ask; the Automation and Organization entry points hidden (D38).
+- [ ] T34a Old wiki projection files retired through the managed recovery flow.
+- [ ] T37w Wipe rehearsal on a clone of the DEV profile, then the DEV wipe (D37): verified `pg_dump` backup
+      and a cold copy of the database, then the wipe of the wiki, organization, curator and maintenance data
+      (decision 4).
+
 Wave 2:
 - [ ] T06 Dedicated MLX and GGUF ranker adapters with artifact validation; generative models lose the
       `reranking` tag (D17).
 - [ ] T07 Deterministic PLACE, gate rule, secondaries, root vector, human operations and exact undo (pure).
 - [ ] T08 REBALANCE, stability controls, audit and Hungarian rebuild mapping (pure).
 - [ ] T09 Offline replay (chronological, shuffled, by domain), Louvain detector and calibration harness.
-- [ ] T10 Ask answers from notes and chunks only, without the legacy wiki or organization domains (D13).
+- [ ] T38r Remove the legacy wiki, Automation and Organization screens (Q12); the Wiki screen becomes the
+      shell that hosts the empty state.
 
 Wave 3 (gate A at the end):
 - [ ] T11 Qwen3-Reranker catalog entries, MLX and GGUF (revision, size, license, SHA-256), validated for
       `decide` on install.
-- [ ] T12 Topic tables (migration 0052) and the engine write repository: guarded single writer, minimal
+- [ ] T12 Topic tables (migration 0053) and the engine write repository: guarded single writer, minimal
       change-sets, exact undo, deletion by cascade (D9, D32).
 - [ ] T12b Paged topic skeleton and vector loading.
 - [ ] T13 Clustering worker with transferred vectors.
+- [ ] T39r Remove curator placement and its "Index of X" pages, route continuation, the organization and
+      maintenance services, legacy IPC and job types, and T35b's IPC fences.
 
 Wave 4:
 - [ ] T14 AiService ranker execution, explicit workload-class routes (`decide`, `write-fast`), minimal model
       residency (Q11) and the embedding-space key, with `rules/ai.md`.
-- [ ] T15 Topic service: modes and shadow tree (D2), PLACE and sweep on the light lane, `topicsChanged` push.
+- [ ] T15 Topic service: ensures an active tree (D39), PLACE and sweep on the light lane, `topicsChanged`
+      push.
 - [ ] T16 Topic read repository, IPC contracts and push channel.
 - [ ] T17 KPI and audit scripts on topics (`topics:audit`).
 - [ ] T22a Measurement profiles, `topics:export`, G1 and the topic barrier for golden runs (D23).
@@ -465,9 +488,10 @@ Wave 4:
 Wave 5 (gate B after T15b and T19; owner preview P at the end):
 - [ ] T15b Place, unplace and repair on every note and source change.
 - [ ] T18 Naming in the content language (LLM; content-language TF-IDF fallback) and topic label vectors.
-- [ ] T19 Bootstrap with the Louvain-kNN builder (Spike B winner), rebalance and audit jobs, rebuilds.
+- [ ] T19 Bootstrap of any library with the Louvain-kNN builder (Spike B winner), rebalance and audit jobs,
+      structural rebuilds (D39).
 - [ ] T20 Navigator v2 (counts, notes and sources as leaves, pins, recents, Unsorted, status line) in the
-      current Wiki screen.
+      Wiki screen, replacing its empty state and keeping the Ask entry.
 - [ ] T21 Topic page with a deterministic map of content.
 - [ ] T22b Corpus environment and developer comparison report (`topics:report`, D21).
 
@@ -477,8 +501,8 @@ Wave 6:
 - [ ] T25 Shape icicle with a table alternative; warnings with Apply and Dismiss (D29).
 - [ ] T26 Human structure operations (rename, move, create, pin) with undo and review.
 - [ ] T27 `objects.locate` on the topic tree (D24).
-- [ ] T33 Obsidian topic projection (migration 0053): folder-note MOCs, aliases from redirects, paged delivery
-      on the light lane replacing the fixed caps, with `rules/integrations.md`.
+- [ ] T33 Obsidian topic projection replacing the wiki page branch: folder-note MOCs, aliases from redirects,
+      paged delivery on the light lane replacing the fixed caps, with `rules/integrations.md`.
 
 Wave 7 (gate C at the end):
 - [ ] T28 Ask about a topic.
@@ -488,23 +512,11 @@ Wave 7 (gate C at the end):
 - [ ] T30 Owner blind rating (D20).
 - [ ] T31 Lazy topic overview (migration 0054) written on open, with verified citations.
 - [ ] T32 Zero-config end-to-end test (`topics:e2e`).
-- [ ] T36 Verified, resumable switch service (D4), with `rules/data.md`.
-
-Wave 8 (the switch; gate D):
-- [ ] T34 Old wiki projection files retired through the managed recovery flow; `memora://topic/<id>` links.
-- [ ] T35 Legacy detach (migration 0055): impact triggers dropped (D5), `organizeKnowledge` leaves ingestion
-      (D14), legacy writers unwired.
-- [ ] T36b Switch card with a verified-backup preview; legacy Wiki screen read-only.
-- [ ] T37 Switch rehearsal on a restored copy, then the owner's switch: verified `pg_dump` backup, wipe of the
-      wiki, organization and maintenance data (decision 4), a fresh tree from current notes and sources; the
-      engine becomes the single writer of AI topic parents.
-
-Wave 9 (after the switch):
 - [ ] T19b Embedding-space change with re-embedding and an ID-preserving rebuild (D26).
-- [ ] T38 Remove the legacy wiki, Automation and Organization screens (Q12).
-- [ ] T39 Remove curator placement and its "Index of X" pages, route continuation, the organization and
-      maintenance services, legacy IPC and job types.
-- [ ] T40 Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
+- [ ] T34b `memora://topic/<id>` deep links that resolve topic redirects.
+- [ ] T40r Remove legacy repositories, schemas, prompts and scripts; update `rules/knowledge.md`.
+
+Wave 8 (exit):
 - [ ] T41 Exit measurement (`docs/kpi-f2.md`) and phase close.
 
 Exit (E1-E6, on the pre-registered evaluation seeds with the calibrated configuration): reachability 100%, 0
@@ -552,8 +564,8 @@ calls per reference chapter *(cal.)*.
 - [ ] Event bus with push; Activity pill and drawer with the status sentence.
 - [ ] Inbox (view, keyboard flow, icicle diffs); 3-step onboarding; Settings › Knowledge with the three
       controls and tree shape.
-- [ ] Drop the legacy tables the F2 switch emptied, and the source-deletion and `jobRepository` guards on them
-      (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
+- [ ] Drop the legacy tables the F2 legacy wipe emptied, with their insert fence, and the source-deletion and
+      `jobRepository` guards on them (after backup). Routines, maintenance v1 and the dead Automation, Organization and Maintenance screens
       are removed in F2 (Q12).
 
 Exit: 7-day soak (start by week 17) with injected writer rejections, timeouts and a mid-run cap: 0 tasks
@@ -597,11 +609,12 @@ structure ≤5%; 200 notes related in ≤4-8 min local with fixture 27/28 and 0/
 import to notes and path ≤2 clicks; raw palette classes ≤200, pollers 0.
 
 Risks and mitigations:
-- Tree quality on short bilingual notes is unproven → Spike B, shadow mode, owner rating, pinning.
+- Tree quality on short bilingual notes is unproven → Spike B, owner rating, pinning.
 - Local reranker latency is unknown (serial `rankAll`, #30422) → Spike A gate, bge, generative decide.
 - Automatic restructuring can break spatial memory → hysteresis, freeze, churn budget, undo, Suggest.
 - Lazy prose can make topics look unfinished → complete MOC, Ask falls back to notes and chunks.
-- The wiki wipe discards existing prose → verified backup first; accepted by the owner (decision 4).
+- The wiki wipe discards existing prose → verified backup first; accepted by the owner (decision 4); done
+  early at gate W (D37), with a cold copy of the database as the rollback.
 - Rules lagging code make agents undo work → rule in the same change, line ratchet on `rules/`.
 - New concurrency races in checkpoints → per-source exclusion, stepwise concurrency, soaks.
 - Schedule: one checkout and owner reviews are the bottleneck; any KPI regression stops the line.
