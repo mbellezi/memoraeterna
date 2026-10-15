@@ -24,6 +24,7 @@ export * from "./atomicNoteRelationRepository.js";
 export * from "./relationDecisionRepository.js";
 export * from "./libraryRepository.js";
 export * from "./libraryResetRepository.js";
+export * from "./legacyStateRepository.js";
 export * from "./viewHistoryRepository.js";
 export * from "./sourceEditingRepository.js";
 export * from "./localModelRepository.js";

@@ -1,7 +1,9 @@
 import {
   createKnowledgeAutomationRepository,
+  createLegacyStateRepository,
   createSettingsRepository,
-  createWikiCuratorRepository
+  createWikiCuratorRepository,
+  hasLegacyContent
 } from "@app/db";
 import {
   AutomationDashboardSchema,
@@ -23,9 +25,17 @@ export class KnowledgeAutomation {
     if (!pool) throw new Error("wiki.errors.unavailable");
     return pool;
   }
-  async initialize() {
-    const pool = this.pool(),
-      settings = createSettingsRepository(pool),
+  /**
+   * Installs the legacy wiki areas and the curator policy, but only on a library that already holds
+   * legacy content (F2 D3). An empty library, or one a reset has just emptied, stays empty: nothing
+   * is created from nothing, so the topic tree is its only organization. Returns the policy ID, or
+   * `null` when nothing was installed.
+   */
+  async initialize(): Promise<string | null> {
+    const pool = this.pool();
+    if (!hasLegacyContent(await createLegacyStateRepository(pool).legacyContentCounts()))
+      return null;
+    const settings = createSettingsRepository(pool),
       repo = createKnowledgeAutomationRepository(pool);
     const language = await this.options.contentLanguage();
     await repo.initializeAreas({

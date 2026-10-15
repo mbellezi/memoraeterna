@@ -174,6 +174,7 @@ export class HierarchicalIngestionService {
     const documents = createDocumentRepository(pool);
     const sources = createSourceItemRepository(pool);
     const catalogStages = catalogMetadataStages(plan.effectiveStages);
+    let organizationSkipped = false;
     if (
       plan.effectiveStages.includes("organizeKnowledge") &&
       !plan.organization &&
@@ -183,11 +184,7 @@ export class HierarchicalIngestionService {
         await createSettingsRepository(pool).get<{ policyId: string }>(knowledgeAutomationPolicyKey)
       )?.policyId;
       const policy = policyId ? await createWikiCuratorRepository(pool).policy(policyId) : null;
-      if (!policy) throw new Error("organization.errors.policy");
-      plan = {
-        ...plan,
-        integrateWiki: { version: 2, policyId: policy.id, policyRevisionId: policy.revisionId }
-      };
+      ({ plan, organizationSkipped } = resolveOrganizeKnowledgeAdmission(plan, policy));
     }
     const catalogIds = catalogStages.length > 0 ? new Set(catalogParentIds) : new Set<string>();
     const uniqueSourceIds = [...new Set([...sourceItemIds, ...catalogIds])];
@@ -262,6 +259,8 @@ export class HierarchicalIngestionService {
         currentStage: "queued"
       });
       await runs.initializeStages(run.id, effectiveStages, ProcessingStages);
+      if (organizationSkipped && !catalogMetadataOnly)
+        await runs.skipStage(run.id, "organizeKnowledge", organizeKnowledgeSkipReason);
       const artifactState = catalogMetadataOnly
         ? {}
         : await hierarchy.getArtifactState(sourceItemId, document.id, {
@@ -347,6 +346,39 @@ export class HierarchicalIngestionService {
     if (!pool) throw new Error("database_not_ready");
     return pool;
   }
+}
+
+/** Why a run records `organizeKnowledge` as skipped: the library has no curator policy. */
+export const organizeKnowledgeSkipReason = "no_policy";
+
+/**
+ * Full-knowledge admission without an organization of its own (F2 D3). With a curator policy the
+ * plan integrates the wiki under it, as before. Without one (an empty library, or one a reset has
+ * just emptied) the stage cannot run and is not an error: the plan drops it from the stages that
+ * execute and the caller records it as skipped on every run, so the batch never waits for it.
+ */
+export function resolveOrganizeKnowledgeAdmission(
+  plan: EffectiveProcessingPlan,
+  policy: { id: string; revisionId: string } | null
+): { plan: EffectiveProcessingPlan; organizationSkipped: boolean } {
+  if (policy)
+    return {
+      plan: {
+        ...plan,
+        integrateWiki: { version: 2, policyId: policy.id, policyRevisionId: policy.revisionId }
+      },
+      organizationSkipped: false
+    };
+  return {
+    plan: {
+      ...plan,
+      effectiveStages: plan.effectiveStages.filter((stage) => stage !== "organizeKnowledge"),
+      automaticallyIncludedStages: plan.automaticallyIncludedStages.filter(
+        (stage) => stage !== "organizeKnowledge"
+      )
+    },
+    organizationSkipped: true
+  };
 }
 
 export function catalogMetadataStages(stages: readonly string[]) {

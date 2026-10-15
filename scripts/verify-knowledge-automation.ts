@@ -25,7 +25,9 @@ import {
   createSettingsRepository,
   createKnowledgeAutomationRepository,
   createOrganizationRepository,
-  createWikiCuratorRepository
+  createWikiCuratorRepository,
+  createLegacyStateRepository,
+  hasLegacyContent
 } from "../packages/db/src/index.js";
 import {
   SourceJourneySchema,
@@ -93,7 +95,7 @@ try {
     cancelJob: async () => {}
   };
   const automation = new KnowledgeAutomation(options);
-  const id = await automation.initialize();
+  const id = (await automation.initialize())!;
   assert.deepEqual(await createSettingsRepository(db).get(knowledgeAutomationPolicyKey), {
     policyId: id
   });
@@ -912,8 +914,13 @@ try {
     )
   ).rows[0].id;
   assert.ok(!(await reconciler.editorial(activePolicy)).includes(genuine));
-  // A complete reset must reinstall defaults before its response, without inference.
+  // A complete reset must leave no legacy content and must not reinstall it, without inference.
   configured = false;
+  const assertNoLegacyContent = async () => {
+    assert.equal(await createSettingsRepository(db!).get(knowledgeAutomationPolicyKey), null);
+    const counts = await createLegacyStateRepository(db!).legacyContentCounts();
+    assert.equal(hasLegacyContent(counts), false, JSON.stringify(counts));
+  };
   const reset = new LibraryResetService({
     getPool: () => db!,
     getStorageSettings: async () => ({
@@ -985,23 +992,14 @@ try {
     0
   );
   assert.deepEqual(await modelSnapshot(), preservedModels);
-  const restoredId = (await createSettingsRepository(db).get<{ policyId: string }>(
-    knowledgeAutomationPolicyKey
-  ))!.policyId;
-  const restored = await createAutomaticMaintenanceRepository(db).schedules(restoredId);
-  assert.deepEqual(restored.map((s) => s.policy.kind).sort(), [
-    "daily",
-    "incremental",
-    "monthly",
-    "weekly"
-  ]);
-  assert.ok(restored.every((s) => s.policy.enabled));
-  for (const area of Object.values(wikiAreaIds)) assert.ok(await wiki.get(area));
-  assert.equal((await automation.dashboard(0, "all")).ready, false);
+  // F2 D3: a reset must not create the legacy wiki again. Nothing is installed from nothing, so the
+  // library keeps no policy, no area page, no routine and no other legacy row.
+  await assertNoLegacyContent();
+  await assert.rejects(automation.dashboard(0, "all"), /wiki\.errors\.unavailable/);
   assert.equal((await db.query("select count(*)::int n from source_items")).rows[0].n, 0);
   assert.equal((await db.query("select count(*)::int n from ai_task_runs")).rows[0].n, 0);
-  assert.equal(await automation.initialize(), restoredId);
-  assert.equal((await createAutomaticMaintenanceRepository(db).schedules(restoredId)).length, 4);
+  assert.equal(await automation.initialize(), null);
+  await assertNoLegacyContent();
   // Optional AGE is absent in a normal empty installation until graph use.
   await db.query("drop extension age cascade");
   assert.equal(
@@ -1012,18 +1010,7 @@ try {
     "insert into source_items(type,title) values('PersonalNote','Missing AGE reset fixture')"
   );
   await reset.reset();
-  const noAgePolicy = (await createSettingsRepository(db).get<{ policyId: string }>(
-    knowledgeAutomationPolicyKey
-  ))!.policyId;
-  const noAgeRoutines = await createAutomaticMaintenanceRepository(db).schedules(noAgePolicy);
-  assert.deepEqual(noAgeRoutines.map((s) => s.policy.kind).sort(), [
-    "daily",
-    "incremental",
-    "monthly",
-    "weekly"
-  ]);
-  assert.ok(noAgeRoutines.every((s) => s.policy.enabled));
-  for (const area of Object.values(wikiAreaIds)) assert.ok(await wiki.get(area));
+  await assertNoLegacyContent();
   assert.equal((await db.query("select count(*)::int n from source_items")).rows[0].n, 0);
   assert.equal((await db.query("select count(*)::int n from ai_task_runs")).rows[0].n, 0);
   assert.equal(
@@ -1064,10 +1051,10 @@ try {
         "history-cleanup-retains-audits-and-budget",
         "later-completions-remain-visible",
         "source-journey-empty-imported-and-processed-enum-status",
-        "reset-restores-four-enabled-routines-and-wiki-areas",
+        "reset-leaves-no-legacy-content",
         "reset-without-model-is-idempotent-and-no-inference",
         "reset-existing-age-graph-removed",
-        "reset-without-age-restores-defaults-and-preserves-model-configuration"
+        "reset-without-age-leaves-no-legacy-content-and-preserves-model-configuration"
       ],
       actualModel: false
     })

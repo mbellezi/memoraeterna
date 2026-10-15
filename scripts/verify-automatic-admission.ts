@@ -60,10 +60,18 @@ try {
     wake: () => {},
     cancelJob: async () => {}
   };
-  const id = await new KnowledgeAutomation(options).initialize(),
+  // F2 D3: the legacy automation is installed only on a library that already holds legacy content.
+  // One legacy row lets the installation run; it is removed so the rest starts as it always did.
+  const legacyFixture = randomUUID();
+  await db.query(
+    "insert into organization_runs(id,status,snapshot,checkpoint) values($1,'applied','{}','{}')",
+    [legacyFixture]
+  );
+  const id = (await new KnowledgeAutomation(options).initialize())!,
     maintenance = createAutomaticMaintenanceRepository(db),
     curator = createWikiCuratorRepository(db),
     org = createOrganizationRepository(db);
+  await db.query("delete from organization_runs where id=$1", [legacyFixture]);
   const policy = (await curator.policy(id))!,
     schedules = await maintenance.schedules(id),
     context = { profile: sample.profile, promptPin: defaultPromptPin(), contentLanguage: "en" };
