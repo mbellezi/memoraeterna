@@ -2,6 +2,8 @@ import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderToString } from "react-dom/server";
 import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
 import { ConsultationDialog } from "./ConsultationDialog";
+import { TopicPage } from "./topic-page/TopicPage";
+import { TopicNavigator } from "./topics/TopicNavigator";
 import { WikiWorkspace, WikiWorkspaceView, type WikiWorkspaceViewProps } from "./WikiWorkspace";
 import { createLibraryHistoryState, libraryHistoryEntryFromState } from "./LibraryView";
 
@@ -9,10 +11,26 @@ import { createLibraryHistoryState, libraryHistoryEntryFromState } from "./Libra
 vi.mock("./ConsultationDialog", () => ({
   ConsultationDialog: vi.fn(() => <dialog data-testid="ask-dialog" />)
 }));
+// The navigator and the Topic page render as they are; the spies show what the Wiki hands them.
+vi.mock("./topics/TopicNavigator", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./topics/TopicNavigator")>();
+  return { ...original, TopicNavigator: vi.fn(original.TopicNavigator) };
+});
+vi.mock("./topic-page/TopicPage", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./topic-page/TopicPage")>();
+  return { ...original, TopicPage: vi.fn(original.TopicPage) };
+});
 
 afterEach(() => {
   vi.mocked(ConsultationDialog).mockClear();
+  vi.mocked(TopicNavigator).mockClear();
+  vi.mocked(TopicPage).mockClear();
 });
+
+const topicId = "00000000-0000-4000-8000-000000000001";
+const otherTopicId = "00000000-0000-4000-8000-000000000002";
+const lastProps = <Props,>(component: { mock: { calls: Props[][] } }): Props =>
+  component.mock.calls.at(-1)![0]!;
 
 const view = (
   language: (typeof supportedLanguageCodes)[number],
@@ -23,9 +41,7 @@ const view = (
       t={createTranslator(language)}
       active
       noticeToken={null}
-      selectedTopicId={null}
       askOpen={false}
-      onOpenTopic={() => undefined}
       onAsk={() => undefined}
       onCloseAsk={() => undefined}
       topicId={null}
@@ -110,11 +126,62 @@ describe("wiki workspace shell", () => {
     expect(view("en", { noticeToken: 1 })).toContain(notice);
   });
 
-  it("hosts the Topic page, with its close control, instead of the empty state when a topic is open", () => {
-    const html = view("en", { topicId: "00000000-0000-4000-8000-000000000001" });
+  it("hosts the Topic page, with its close control, in the reading surface beside the navigator", () => {
+    const html = view("en", { topicId });
+    expect(html).toContain(`aria-label="${messages.en.wiki.navigation}"`);
+    expect(html).toContain(messages.en.topics.navigator.title);
     expect(html).toContain('aria-busy="true"');
-    expect(html).toContain('aria-label="Close topic"');
-    expect(html).not.toContain("wiki-placeholder-title");
+    expect(html).toContain(`aria-label="${messages.en.topics.page.close}"`);
+    // Where to start stays mounted under the open topic, hidden.
+    expect(html).toMatch(/<div hidden="">\s*<section aria-labelledby="wiki-placeholder-title"/);
+    expect(view("en")).not.toContain('<div hidden="">');
+    expect(view("en")).not.toContain(messages.en.topics.page.close);
+    expect(TopicPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the Topic page its topic, its links and the close, live only while the Wiki is shown", () => {
+    const onNavigate = vi.fn();
+    const onCloseTopic = vi.fn();
+    view("en", { topicId, onNavigate, onCloseTopic });
+    const page = lastProps(vi.mocked(TopicPage));
+    expect(page).toMatchObject({ topicId, active: true });
+    page.onNavigate({ type: "topic", topicId: otherTopicId });
+    expect(onNavigate).toHaveBeenCalledWith({ type: "topic", topicId: otherTopicId });
+    page.onClose?.();
+    expect(onCloseTopic).toHaveBeenCalledTimes(1);
+
+    view("en", { topicId, active: false });
+    expect(lastProps(vi.mocked(TopicPage))).toMatchObject({ topicId, active: false });
+  });
+
+  it("opens a topic from the tree, Pinned or Recents the way every other link opens it", () => {
+    const onNavigate = vi.fn();
+    const onOpenSource = vi.fn();
+    const onAsk = vi.fn();
+    view("en", { topicId, onNavigate, onOpenSource, onAsk });
+    const navigator = lastProps(vi.mocked(TopicNavigator));
+    // The open topic is the navigator's selection, so it is revealed in the tree.
+    expect(navigator).toMatchObject({ active: true, selectedTopicId: topicId });
+    navigator.onOpenTopic(otherTopicId);
+    expect(onNavigate).toHaveBeenCalledWith({ type: "topic", topicId: otherTopicId });
+    navigator.onOpenSource("source-id", "note-id");
+    expect(onOpenSource).toHaveBeenCalledWith("source-id", "note-id");
+    navigator.onAsk();
+    expect(onAsk).toHaveBeenCalledTimes(1);
+
+    view("en", { topicId: null });
+    expect(lastProps(vi.mocked(TopicNavigator))).toMatchObject({ selectedTopicId: null });
+  });
+
+  it("keeps the Ask entry in the navigator while a topic is open", () => {
+    const html = view("en", { topicId });
+    const [navigatorPart] = html.split('<div hidden="">');
+    expect(navigatorPart!.match(/aria-haspopup="dialog"/g)).toHaveLength(1);
+  });
+
+  it("uses up the notice of an old link while a topic covers where to start", () => {
+    const notice = messages.en.topics.placeholder.notice;
+    expect(view("en", { noticeToken: 1, topicId })).not.toContain(notice);
   });
 
   it("lets a hidden Wiki use up the notice of an old link", () => {

@@ -10,6 +10,12 @@ import { applyMenuCommand } from "./lib/menu-commands";
 import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { WikiWorkspace } from "./components/WikiWorkspace";
+import {
+  currentWikiTopic,
+  showInWiki,
+  startWikiTopicHistory,
+  wikiNavigationStep
+} from "./components/topics/wiki-topic-history";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
@@ -150,13 +156,20 @@ export function App({
 }: AppProps) {
   // Changes each time an old link or call asks for a page of the removed wiki.
   const [wikiNoticeToken, setWikiNoticeToken] = useState<number | null>(null);
-  // The topic the Wiki shows; null shows the Wiki's empty state.
-  const [wikiTopicId, setWikiTopicId] = useState<string | null>(null);
+  // What the Wiki shows (a topic, or where to start), as the history its Back and Forward follow.
+  const [wikiHistory, setWikiHistory] = useState(startWikiTopicHistory);
+  // What Back and Forward step from: they arrive outside render, after the last commit.
+  const wikiHistoryRef = useRef(wikiHistory);
+  useEffect(() => {
+    wikiHistoryRef.current = wikiHistory;
+  }, [wikiHistory]);
   useEffect(() => {
     const open = (link: ObsidianDeepLink) => {
       const route = routeObsidianLink(link);
       if (route.type === "removedWikiPage") {
+        // The notice is shown where the Wiki starts, so an open topic gives way to it.
         setWikiNoticeToken((current) => (current ?? 0) + 1);
+        setWikiHistory((current) => showInWiki(current, null));
         setActiveView("wiki");
       } else {
         libraryTargetToken.current += 1;
@@ -241,6 +254,7 @@ export function App({
   // A legacy wiki page listed by "Where is this" no longer exists: the Wiki opens with a notice.
   const openWikiPage = useStableCallback(() => {
     setWikiNoticeToken((current) => (current ?? 0) + 1);
+    setWikiHistory((current) => showInWiki(current, null));
     setActiveView("wiki");
   });
   // A citation of an answer from Ask in the Wiki opens its source; Back returns to the Wiki.
@@ -259,9 +273,13 @@ export function App({
   );
   // A topic opens in the Wiki, which keeps showing it while the Library or another view is in front.
   const openTopic = useStableCallback((topicId: string) => {
-    setWikiTopicId(topicId);
+    setWikiHistory((current) => showInWiki(current, topicId));
     setActiveView("wiki");
   });
+  // Closing the Topic page (its button or Cmd-W) shows where to start; Back opens the topic again.
+  const closeWikiTopic = useStableCallback(() =>
+    setWikiHistory((current) => showInWiki(current, null))
+  );
   // Where a click on the Topic page leads: another topic, or a source or note in the Library.
   const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
     if (navigation.type === "topic") openTopic(navigation.topicId);
@@ -283,6 +301,17 @@ export function App({
   useEffect(
     () =>
       subscribeWindowNavigation((direction) => {
+        // The Wiki on screen steps through the topics it showed; the Library through its own history.
+        const wikiStep = wikiNavigationStep(
+          activeViewRef.current === "wiki",
+          wikiHistoryRef.current,
+          direction
+        );
+        if (wikiStep) {
+          wikiHistoryRef.current = wikiStep;
+          setWikiHistory(wikiStep);
+          return true;
+        }
         if (activeViewRef.current !== "library") return false;
         if (direction === "back") window.history.back();
         else window.history.forward();
@@ -808,9 +837,9 @@ export function App({
               t={t}
               active={activeView === "wiki"}
               noticeToken={wikiNoticeToken}
-              topicId={wikiTopicId}
+              topicId={currentWikiTopic(wikiHistory)}
               onNavigate={openWikiObject}
-              onCloseTopic={() => setWikiTopicId(null)}
+              onCloseTopic={closeWikiTopic}
               onOpenLibrary={() => goToView("library")}
               onOpenSource={openAskSource}
             />
