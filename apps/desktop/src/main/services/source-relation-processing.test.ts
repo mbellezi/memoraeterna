@@ -295,6 +295,7 @@ describe("source matching budget and recovery", () => {
           { id: "root-B", textScore: 1, vectorScore: 0, graphScore: 0, noteScore: 1 }
         ]),
       pairNotes: vi.fn().mockResolvedValue([note]),
+      pairNoteFingerprints: vi.fn().mockResolvedValue([note.fingerprint]),
       pairChunks: vi.fn().mockResolvedValue([a, b]),
       existing: vi.fn().mockResolvedValue([]),
       runState: vi.fn(async (key: string) => structuredClone(states.get(key) ?? null)),
@@ -415,6 +416,52 @@ describe("source matching budget and recovery", () => {
     expect(await run(ai)).toMatchObject({ completed: 1, total: 1, rootCount: 2 });
     expect(ai).toHaveBeenCalledTimes(1);
     expect(await run(ai)).toMatchObject({ completed: 1, total: 1 });
+  });
+  it("judges a pair once: a note-backed relation saved from one side keeps the other side's key", async () => {
+    // Saving a relation that cites a note relation removes it from both sides' prompts.
+    const cited = new Set<string>();
+    mocks.repository.pairNotes!.mockImplementation(async () => (cited.has(note.id) ? [] : [note]));
+    mocks.repository.commitDecision!.mockImplementation(
+      async (
+        key: string,
+        _a: string,
+        _b: string,
+        relations: Array<{ evidence: Array<{ note: { id: string } | null }> }>,
+        metadata: Record<string, unknown>
+      ) => {
+        for (const relation of relations)
+          for (const evidence of relation.evidence) if (evidence.note) cited.add(evidence.note.id);
+        decisions.set(key, { ...metadata, persistedCount: relations.length });
+        return relations.length;
+      }
+    );
+    mocks.repository.roots!.mockResolvedValueOnce(["root-A"]).mockResolvedValueOnce(["root-B"]);
+    mocks.repository.candidates!.mockImplementation(async (root: string) => [
+      {
+        id: root === "root-A" ? "root-B" : "root-A",
+        textScore: 1,
+        vectorScore: 0,
+        graphScore: 0,
+        noteScore: root === "root-A" ? 1 : 0
+      }
+    ]);
+    const ai = vi.fn().mockResolvedValue(
+      execution({
+        relations: [{ ...proposal(), discovery: "atomic_notes", noteRelations: ["n1"] }]
+      })
+    );
+    expect((await run(ai, "first")).persistedCount).toBe(1);
+    expect(cited.has(note.id)).toBe(true);
+    expect(await run(ai, "second")).toMatchObject({ completed: 0, total: 0, persistedCount: 0 });
+    expect(ai).toHaveBeenCalledTimes(1);
+    expect(mocks.repository.pairNoteFingerprints).toHaveBeenCalledWith("root-B", "root-A");
+  });
+  it("judges a pair again when a new note relation appears between the two roots", async () => {
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+    await run(ai);
+    mocks.repository.pairNoteFingerprints!.mockResolvedValue([note.fingerprint, "new-note"]);
+    await run(ai, "second");
+    expect(ai).toHaveBeenCalledTimes(2);
   });
   it("caches negative decisions across executions without more model calls", async () => {
     const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
@@ -865,6 +912,7 @@ describe("source relation prompts do not depend on database IDs", () => {
           }
         ]),
         pairNotes: vi.fn().mockResolvedValue([]),
+        pairNoteFingerprints: vi.fn().mockResolvedValue([]),
         // The database returns the chunks in whatever order it likes.
         pairChunks: vi.fn().mockResolvedValue([...context.chunks].reverse()),
         existing: vi.fn().mockResolvedValue([]),

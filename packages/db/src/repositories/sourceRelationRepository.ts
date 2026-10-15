@@ -81,6 +81,25 @@ const noteFacts = (alias: string) =>
 const noteFingerprint = `md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
   least(${noteFacts("a")},${noteFacts("b")}),greatest(${noteFacts("a")},${noteFacts("b")})))`;
 
+/**
+ * The note relations between two roots that source matching may use: accepted by note matching
+ * (never rejected), between current, source-owned notes whose evidence chunks are current. Legacy
+ * storage sorts UUIDs, so direction comes from the validated matching metadata. $1 and $2 are the
+ * two roots, in either order.
+ */
+const pairNoteRelationsSql = `from atomic_note_relations n
+        join atomic_notes a on a.id::text = n.metadata->>'semanticSourceAtomicNoteId'
+        join atomic_notes b on b.id::text = n.metadata->>'semanticTargetAtomicNoteId'
+        join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
+        join chunks ca on ca.id = a.evidence_chunk_id join documents da on da.id = ca.document_id
+        join chunks cb on cb.id = b.evidence_chunk_id join documents db on db.id = cb.document_id
+        where ((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))
+          and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
+          and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
+          and n.status <> 'rejected' and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
+          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
+          and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null`;
+
 // Currentness is derived at read time, so edits and review changes never leave live stale edges.
 export const sourceRelationEvidenceJoins = `left join chunks sc on sc.id = e.source_chunk_id
   left join chunks tc on tc.id = e.target_chunk_id
@@ -239,9 +258,11 @@ export function createSourceRelationRepository(pool: PgPool) {
       return [...candidates.values()];
     },
 
+    /**
+     * The note relations a pair's prompt lists: those no source relation cites yet, best first.
+     * The direction of symmetric types is decided by the prompt's content order, not by an ID order.
+     */
     async pairNotes(left: string, right: string, limit = 16): Promise<SourceRelationNote[]> {
-      // Legacy storage sorts UUIDs. Direction must come from the validated matching metadata. The
-      // direction of symmetric types is decided by the prompt's content order, not by an ID order.
       return (
         await pool.query<SourceRelationNote & QueryResultRow>(
           `${sourceRelationTreeSql}
@@ -250,23 +271,29 @@ export function createSourceRelationRepository(pool: PgPool) {
           a.evidence_chunk_id as "sourceChunkId", b.evidence_chunk_id as "targetChunkId",
           a.created_from_source_item_id as "sourceItemId", b.created_from_source_item_id as "targetSourceItemId",
           ${noteFingerprint} as fingerprint
-        from atomic_note_relations n
-        join atomic_notes a on a.id::text = n.metadata->>'semanticSourceAtomicNoteId'
-        join atomic_notes b on b.id::text = n.metadata->>'semanticTargetAtomicNoteId'
-        join tree ta on ta.id = a.created_from_source_item_id join tree tb on tb.id = b.created_from_source_item_id
-        join chunks ca on ca.id = a.evidence_chunk_id join documents da on da.id = ca.document_id
-        join chunks cb on cb.id = b.evidence_chunk_id join documents db on db.id = cb.document_id
-        where ((ta.root_id = $1 and tb.root_id = $2) or (ta.root_id = $2 and tb.root_id = $1))
+        ${pairNoteRelationsSql}
           and not exists (select 1 from source_relation_evidence existing_evidence where existing_evidence.note_relation_id = n.id)
-          and a.id in (n.source_atomic_note_id,n.target_atomic_note_id) and b.id in (n.source_atomic_note_id,n.target_atomic_note_id) and a.id <> b.id
-          and ca.source_item_id = a.created_from_source_item_id and cb.source_item_id = b.created_from_source_item_id
-          and n.status <> 'rejected' and a.status not in ('rejected','archived') and b.status not in ('rejected','archived')
-          and coalesce(to_jsonb(a)->>'ownership','source')='source' and coalesce(to_jsonb(b)->>'ownership','source')='source' and a.supersession_status = 'current' and b.supersession_status = 'current'
-          and da.metadata->>'supersededByDocumentId' is null and db.metadata->>'supersededByDocumentId' is null
         order by n.final_score desc, a.idea_statement, b.idea_statement, n.id limit $3`,
           [left, right, limit]
         )
       ).rows;
+    },
+
+    /**
+     * Fingerprints of every note relation between two roots, cited as evidence or not, sorted. A
+     * pair's decision key uses these, so a relation persisted from one side (which removes its note
+     * relations from the prompt) never makes the other side judge the same pair again.
+     */
+    async pairNoteFingerprints(left: string, right: string): Promise<string[]> {
+      return (
+        await pool.query<{ fingerprint: string } & QueryResultRow>(
+          `${sourceRelationTreeSql}
+        select distinct ${noteFingerprint} as fingerprint
+        ${pairNoteRelationsSql}
+        order by fingerprint`,
+          [left, right]
+        )
+      ).rows.map((row) => row.fingerprint);
     },
 
     async pairChunks(

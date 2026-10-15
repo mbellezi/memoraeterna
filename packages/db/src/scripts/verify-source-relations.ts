@@ -289,6 +289,17 @@ try {
   await pool.query("update atomic_note_relations set relation_type = 'supports' where id = $1", [
     noteRelation.id
   ]);
+  const pairKeyNotes = await repository.pairNoteFingerprints(book.id, b.id);
+  assert.deepEqual(
+    pairKeyNotes,
+    notes.map((note) => note.fingerprint),
+    "The pair key reads the same note relations the prompt lists while none is cited"
+  );
+  assert.deepEqual(
+    await repository.pairNoteFingerprints(b.id, book.id),
+    pairKeyNotes,
+    "Both sides of a pair key on the same note relations"
+  );
   const relation: SourceRelationWrite = {
     existingId: null,
     sourceItemId: a.id,
@@ -310,6 +321,15 @@ try {
     [],
     "Already represented note relationships are excluded before reranking"
   );
+  for (const [left, right] of [
+    [book.id, b.id],
+    [b.id, book.id]
+  ])
+    assert.deepEqual(
+      await repository.pairNoteFingerprints(left!, right!),
+      pairKeyNotes,
+      "A cited note relation stays in the pair key, so the other side does not judge the pair again"
+    );
   assert.equal(
     (await repository.candidates(book.id, 40)).find((item) => item.id === b.id)?.noteScore,
     0,
@@ -535,7 +555,7 @@ try {
   ]);
   assert.equal((await pool.query("select count(*)::int as n from source_relations")).rows[0].n, 0);
   console.log(
-    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup and per-root evidence caps."
+    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup, pair keys that keep cited note relations from both sides and per-root evidence caps."
   );
 } finally {
   if (emptyPool) await closePgPool(emptyPool);

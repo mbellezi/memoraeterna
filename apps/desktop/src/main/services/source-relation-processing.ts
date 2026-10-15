@@ -524,13 +524,16 @@ export async function matchSources(options: {
       for (const candidate of candidates) {
         signal?.throwIfAborted();
         const notes = await repository.pairNotes(root, candidate.id, settings.noteRelationsPerPair);
+        // The key holds every note relation between the two roots, cited or not: a relation saved
+        // from one side removes its note relations from the prompt, never the pair from the cache,
+        // so the other side does not judge the same pair again.
         const key = hash({
           roots: [root, candidate.id].sort(),
           configuration,
           inputs: await Promise.all(
             [root, candidate.id].sort().map((id) => repository.fingerprint(id))
           ),
-          notes: notes.map((note) => note.fingerprint).sort(),
+          notes: (await repository.pairNoteFingerprints(root, candidate.id)).toSorted(),
           regeneration: options.regenerate ? options.runKey : null
         });
         if (
