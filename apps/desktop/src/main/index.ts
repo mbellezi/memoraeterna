@@ -58,6 +58,7 @@ import { ObsidianSyncService } from "./services/obsidian-sync-service.js";
 import { IntegrationGateway } from "./services/integration-gateway.js";
 import { LocalModelService } from "./services/local-model-service.js";
 import { BackupService } from "./services/backup-service.js";
+import { runLegacyWipeStartup } from "./services/legacy-wipe-service.js";
 import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
@@ -527,6 +528,22 @@ void app.whenReady().then(() => {
       if (status.state === "ready") {
         await initializeKnowledgeDefaults();
         await monitoringService.recover();
+        // The LEGACY_RECREATED check, then the DEV-only one-shot legacy wipe
+        // (MEMORA_LEGACY_WIPE=preview|<token>): a preview, a wipe or a refusal quits here, before
+        // the local models, job supervisor, gateway and vault reconcile start.
+        const legacyWipe = await runLegacyWipeStartup({
+          env: process.env,
+          isPackaged: app.isPackaged,
+          pool: databaseService!.getPool()!,
+          workspaceRoot,
+          getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
+          getStorageSettings: () => settingsService!.get(),
+          logger: console
+        });
+        if (legacyWipe === "quit") {
+          app.quit();
+          return;
+        }
         // DEV-only golden run: prepared before the job supervisor starts, so nothing runs before
         // the checks and the backup have passed.
         // MEMORA_GOLDEN_SOURCE_PAIRS alone is refused by the same path, not silently ignored.

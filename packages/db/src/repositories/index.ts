@@ -25,6 +25,7 @@ export * from "./relationDecisionRepository.js";
 export * from "./libraryRepository.js";
 export * from "./libraryResetRepository.js";
 export * from "./legacyStateRepository.js";
+export * from "./legacyWipeRepository.js";
 export * from "./viewHistoryRepository.js";
 export * from "./sourceEditingRepository.js";
 export * from "./localModelRepository.js";

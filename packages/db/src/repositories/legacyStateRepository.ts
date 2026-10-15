@@ -4,9 +4,11 @@ import type { Queryable } from "./types.js";
 
 /**
  * The tables whose rows mean a profile still holds the legacy wiki, curator and maintenance state.
- * A profile with none of them has no legacy content: nothing may create it from nothing, and the
- * topic tree runs as the only organization. The trigger-fed `knowledge_impact_*` rows are
- * deliberately not listed, because every ingestion writes them.
+ * A profile with none of them has no legacy content, and nothing may create it from nothing. The
+ * counts are read by the legacy wipe, by the `LEGACY_RECREATED` startup check on a wiped profile
+ * and by developer status; no mode or switch depends on them. The trigger-fed `knowledge_impact_*`
+ * rows are deliberately not listed, because every ingestion wrote them; the wipe empties them with
+ * the other legacy tables (`legacyWipeTables`).
  */
 export const legacyContentTables = [
   "wiki_pages",

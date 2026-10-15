@@ -53,7 +53,8 @@ pgvector, AGE, projection views, provenance storage or data wipes.
 - Apply and verify every migration on a real PostgreSQL instance: history,
   columns, types, indexes, constraints and migrated data. Report what was
   verified; command success alone is not verification.
-- Take a verified backup before any destructive migration or data wipe.
+- Take a verified backup (restored into a scratch database with matching key-table counts) before any
+  destructive migration or data wipe.
 
 ## PostgreSQL sidecar
 
@@ -80,8 +81,6 @@ pgvector, AGE, projection views, provenance storage or data wipes.
 
 ## Legacy data
 
-- Pre-refactoring wiki, organization, curator and maintenance tables are legacy.
-  When the Topic Tree Engine lands, their data is wiped after a verified backup;
-  no adoption, migration or compatibility reader is written for them.
-- Until then they receive minimal fixes only. Remove legacy tables only after a
-  backup and after their replacement passes its phase exit criteria.
+- Pre-refactoring wiki, organization, curator and maintenance tables are legacy: no product code writes them
+  and the database refuses new legacy content. The legacy wipe empties them in one transaction after a
+  verified backup; nothing adopts or migrates them. Drop the empty tables only after F2's exit criteria pass.
