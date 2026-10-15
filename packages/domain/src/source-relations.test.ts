@@ -41,12 +41,12 @@ describe("source decisions without prose", () => {
 
   it("applies the preset floors to the raw scores divided by 100, weak types excluded", () => {
     const floors = recommendedMatchingConfiguration.sourceRelationSettings;
-    expect([floors.minImportance, floors.minConfidence]).toEqual([0.85, 0.8]);
+    expect([floors.minImportance, floors.minConfidence]).toEqual([0.75, 0.85]);
     const passes = (type: string, importance: number, confidence: number) =>
       sourceDecisionPassesFloors({ type: type as "supports", importance, confidence }, floors);
-    expect(passes("supports", 85, 80)).toBe(true);
-    expect(passes("supports", 84, 100)).toBe(false);
-    expect(passes("supports", 100, 79)).toBe(false);
+    expect(passes("supports", 75, 85)).toBe(true);
+    expect(passes("supports", 74, 100)).toBe(false);
+    expect(passes("supports", 100, 84)).toBe(false);
     expect(passes("related", 100, 100)).toBe(false);
     expect(passes("mentions", 100, 100)).toBe(false);
     expect(

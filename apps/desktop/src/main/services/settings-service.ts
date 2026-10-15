@@ -6,7 +6,9 @@ import {
   MatchingConfigurationSchema,
   matchingConfigurationsEqual,
   recommendedMatchingConfiguration,
-  recommendedMatchingPresetId
+  recommendedMatchingPresetId,
+  retiredRecommendedMatchingConfiguration,
+  retiredRecommendedMatchingPresetId
 } from "@app/domain";
 import {
   closePgPool,
@@ -60,21 +62,35 @@ function createDefaultAppSettings(locale: string | null | undefined): AppSetting
   });
 }
 
+/** The retired id is no valid selection: the stored values decide whether it upgrades or is preserved. */
+function withoutRetiredPresetId(value: unknown): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const { activeMatchingPresetId, ...rest } = value as Record<string, unknown>;
+  return activeMatchingPresetId === retiredRecommendedMatchingPresetId ? rest : value;
+}
+
 export function parseSavedAppSettings(value: unknown): AppSettings {
-  const saved = appSettingsSchema.parse(value);
-  const configuration = MatchingConfigurationSchema.parse(saved);
+  const saved = appSettingsSchema.parse(withoutRetiredPresetId(value));
+  let configuration = MatchingConfigurationSchema.parse(saved);
   const active = saved.matchingPresets.find((preset) => preset.id === saved.activeMatchingPresetId);
   if (active) {
     // The effective fields remain authoritative for compatibility with older writers.
     active.settings = configuration;
-  } else if (matchingConfigurationsEqual(configuration, recommendedMatchingConfiguration)) {
-    saved.activeMatchingPresetId = recommendedMatchingPresetId;
   } else {
-    const id = "00000000-0000-4000-8000-000000000001";
-    const previous = saved.matchingPresets.find((preset) => preset.id === id);
-    if (previous) previous.settings = configuration;
-    else saved.matchingPresets.push({ id, name: null, settings: configuration });
-    saved.activeMatchingPresetId = id;
+    // Values still equal to the retired recommendation follow the recommendation; any other are the owner's.
+    if (matchingConfigurationsEqual(configuration, retiredRecommendedMatchingConfiguration)) {
+      configuration = structuredClone(recommendedMatchingConfiguration);
+      Object.assign(saved, structuredClone(configuration));
+    }
+    if (matchingConfigurationsEqual(configuration, recommendedMatchingConfiguration)) {
+      saved.activeMatchingPresetId = recommendedMatchingPresetId;
+    } else {
+      const id = "00000000-0000-4000-8000-000000000001";
+      const previous = saved.matchingPresets.find((preset) => preset.id === id);
+      if (previous) previous.settings = configuration;
+      else saved.matchingPresets.push({ id, name: null, settings: configuration });
+      saved.activeMatchingPresetId = id;
+    }
   }
   if (typeof value === "object" && value !== null && !("contentLanguage" in value)) {
     return { ...saved, contentLanguage: normalizeLanguageCode(saved.language) };

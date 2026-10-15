@@ -15,7 +15,7 @@ export const SourceRelationSettingsSchema = z
     maxRelationsPerPair: z.number().int().min(1).max(20).default(4),
     maxInputTokens: z.number().int().min(2_000).max(200_000).default(20_000),
     minImportance: z.number().min(0).max(1).default(0.75),
-    minConfidence: z.number().min(0).max(1).default(0.8),
+    minConfidence: z.number().min(0).max(1).default(0.85),
     includeWeakTypes: z.boolean().default(false)
   })
   .strict();

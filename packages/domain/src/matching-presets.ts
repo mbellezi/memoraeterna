@@ -5,7 +5,9 @@ import {
 } from "./matching-settings.js";
 import { SourceRelationSettingsSchema } from "./source-relations.js";
 
-export const recommendedMatchingPresetId = "recommended-v1";
+export const recommendedMatchingPresetId = "recommended-v2";
+// Retired id of the first recommendation; stored settings that still carry it are upgraded on read.
+export const retiredRecommendedMatchingPresetId = "recommended-v1";
 export const MatchingConfigurationSchema = z.object({
   atomicNoteRelationThreshold: z.number().min(0).max(1),
   entityIdentitySimilarityThreshold: z.number().min(0).max(1),
@@ -17,7 +19,10 @@ export const MatchingConfigurationSchema = z.object({
 export type MatchingConfiguration = z.infer<typeof MatchingConfigurationSchema>;
 
 // Versioned values frozen before held-out validation; independent of legacy fallbacks.
-export const recommendedMatchingConfiguration: MatchingConfiguration =
+// v2 is v1 with its source floors re-tuned on the tuning partition for `source-relations-v5`
+// (docs/kpi-f1b.md). v1 stays frozen only to recognize and upgrade older installs; add a version
+// instead of editing either set.
+export const retiredRecommendedMatchingConfiguration: MatchingConfiguration =
   MatchingConfigurationSchema.parse({
     atomicNoteRelationThreshold: 0.6,
     entityIdentitySimilarityThreshold: 0.92,
@@ -61,6 +66,15 @@ export const recommendedMatchingConfiguration: MatchingConfiguration =
       minImportance: 0.85,
       minConfidence: 0.8,
       includeWeakTypes: false
+    }
+  });
+export const recommendedMatchingConfiguration: MatchingConfiguration =
+  MatchingConfigurationSchema.parse({
+    ...retiredRecommendedMatchingConfiguration,
+    sourceRelationSettings: {
+      ...retiredRecommendedMatchingConfiguration.sourceRelationSettings,
+      minImportance: 0.75,
+      minConfidence: 0.85
     }
   });
 

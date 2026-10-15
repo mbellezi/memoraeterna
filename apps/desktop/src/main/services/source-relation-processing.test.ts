@@ -853,7 +853,8 @@ describe("source matching budget and recovery", () => {
       ...defaultSourceRelationSettings,
       maxInputTokens: 200000,
       maxRelationsPerPair: 4,
-      minImportance: 0.85
+      minImportance: 0.85,
+      minConfidence: 0.8
     };
     await run(ai, "raw", settings);
     expect(ai.mock.calls[0]![1]).toContain("Return ZERO to 2 items");

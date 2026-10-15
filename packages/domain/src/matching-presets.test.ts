@@ -4,20 +4,38 @@ import {
   MatchingConfigurationSchema,
   MatchingPresetsSchema,
   recommendedMatchingConfiguration,
-  recommendedMatchingPresetId
+  recommendedMatchingPresetId,
+  retiredRecommendedMatchingConfiguration,
+  retiredRecommendedMatchingPresetId
 } from "./matching-presets.js";
 
 describe("matching presets", () => {
-  it("uses exactly the frozen, validated benchmark values", () => {
+  it("keeps recommended-v1 frozen at the validated benchmark values", () => {
     const benchmark = JSON.parse(
       readFileSync(
         new URL("../../../docs/matching-benchmark-settings.json", import.meta.url),
         "utf8"
       )
     );
-    expect(recommendedMatchingConfiguration).toEqual(
+    expect(retiredRecommendedMatchingConfiguration).toEqual(
       MatchingConfigurationSchema.parse(benchmark.settings)
     );
+    expect(retiredRecommendedMatchingPresetId).toBe("recommended-v1");
+  });
+  it("defines recommended-v2 as v1 with only the two source floors re-tuned", () => {
+    expect(recommendedMatchingPresetId).toBe("recommended-v2");
+    expect(recommendedMatchingConfiguration).toEqual({
+      ...retiredRecommendedMatchingConfiguration,
+      sourceRelationSettings: {
+        ...retiredRecommendedMatchingConfiguration.sourceRelationSettings,
+        minImportance: 0.75,
+        minConfidence: 0.85
+      }
+    });
+    expect(retiredRecommendedMatchingConfiguration.sourceRelationSettings).toMatchObject({
+      minImportance: 0.85,
+      minConfidence: 0.8
+    });
   });
   it("rejects duplicate identities, invalid snapshots and attempts to replace the built-in preset", () => {
     const preset = {
@@ -26,9 +44,8 @@ describe("matching presets", () => {
       settings: recommendedMatchingConfiguration
     };
     expect(MatchingPresetsSchema.safeParse([preset, preset]).success).toBe(false);
-    expect(
-      MatchingPresetsSchema.safeParse([{ ...preset, id: recommendedMatchingPresetId }]).success
-    ).toBe(false);
+    for (const id of [recommendedMatchingPresetId, retiredRecommendedMatchingPresetId])
+      expect(MatchingPresetsSchema.safeParse([{ ...preset, id }]).success).toBe(false);
     expect(
       MatchingPresetsSchema.safeParse([
         {

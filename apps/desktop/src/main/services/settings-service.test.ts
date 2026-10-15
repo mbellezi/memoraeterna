@@ -7,7 +7,9 @@ import { defaultAppSettings } from "../../shared/ipc";
 import {
   MatchingConfigurationSchema,
   recommendedMatchingConfiguration,
-  recommendedMatchingPresetId
+  recommendedMatchingPresetId,
+  retiredRecommendedMatchingConfiguration,
+  retiredRecommendedMatchingPresetId
 } from "@app/domain";
 const paths: string[] = [];
 afterEach(async () => {
@@ -214,6 +216,144 @@ describe("matching preset persistence", () => {
       atomicNoteRelationThreshold: 0.77,
       matchingPresets: [{ settings: { atomicNoteRelationThreshold: 0.77 } }]
     });
+  });
+});
+
+describe("recommended matching preset upgrade", () => {
+  const customId = "afbec711-07cd-43b1-8088-153df3dc5f73";
+  const preservedId = "00000000-0000-4000-8000-000000000001";
+  const unversioned = Object.fromEntries(
+    Object.entries(defaultAppSettings).filter(
+      ([key]) => key !== "matchingPresets" && key !== "activeMatchingPresetId"
+    )
+  );
+  const stored = (overrides: Record<string, unknown>) => ({
+    ...unversioned,
+    language: "en",
+    updatedAt: new Date().toISOString(),
+    ...overrides
+  });
+  const retired = retiredRecommendedMatchingConfiguration;
+
+  it("starts a new install on recommended-v2", async () => {
+    expect(recommendedMatchingPresetId).toBe("recommended-v2");
+    expect(defaultAppSettings.activeMatchingPresetId).toBe("recommended-v2");
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-recommended-new-"));
+    paths.push(path);
+    const initial = await new SettingsService(path).getApp();
+    expect(initial.activeMatchingPresetId).toBe("recommended-v2");
+    expect(initial.sourceRelationSettings).toMatchObject({
+      minImportance: 0.75,
+      minConfidence: 0.85
+    });
+    expect(initial.matchingPresets).toEqual([]);
+  });
+
+  it("upgrades an active recommended-v1 whose values are untouched", () => {
+    const upgraded = parseSavedAppSettings(
+      stored({
+        ...retired,
+        matchingPresets: [],
+        activeMatchingPresetId: retiredRecommendedMatchingPresetId
+      })
+    );
+    expect(upgraded.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+    expect(upgraded.matchingPresets).toEqual([]);
+    expect(MatchingConfigurationSchema.parse(upgraded)).toEqual(recommendedMatchingConfiguration);
+    expect(parseSavedAppSettings(upgraded)).toEqual(upgraded);
+  });
+
+  it("upgrades values equal to recommended-v1 that name no custom preset", () => {
+    for (const activeMatchingPresetId of [undefined, customId]) {
+      const upgraded = parseSavedAppSettings(
+        stored({ ...retired, matchingPresets: [], activeMatchingPresetId })
+      );
+      expect(upgraded.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+      expect(upgraded.matchingPresets).toEqual([]);
+      expect(MatchingConfigurationSchema.parse(upgraded)).toEqual(recommendedMatchingConfiguration);
+    }
+  });
+
+  it("never changes a custom preset, even one that equals recommended-v1", () => {
+    const custom = { id: customId, name: "My matching", settings: retired };
+    const unchanged = parseSavedAppSettings(
+      stored({ ...retired, matchingPresets: [custom], activeMatchingPresetId: customId })
+    );
+    expect(unchanged.activeMatchingPresetId).toBe(customId);
+    expect(unchanged.matchingPresets).toEqual([custom]);
+    expect(MatchingConfigurationSchema.parse(unchanged)).toEqual(retired);
+    // An inactive custom preset survives the upgrade of the recommendation next to it.
+    const beside = parseSavedAppSettings(
+      stored({
+        ...retired,
+        matchingPresets: [custom],
+        activeMatchingPresetId: retiredRecommendedMatchingPresetId
+      })
+    );
+    expect(beside.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+    expect(beside.matchingPresets).toEqual([custom]);
+  });
+
+  it("preserves customized v1 values as a custom preset instead of upgrading them", () => {
+    const customized = {
+      ...retired,
+      sourceRelationSettings: { ...retired.sourceRelationSettings, minImportance: 0.9 }
+    };
+    for (const activeMatchingPresetId of [retiredRecommendedMatchingPresetId, undefined]) {
+      const saved = parseSavedAppSettings(
+        stored({ ...customized, matchingPresets: [], activeMatchingPresetId })
+      );
+      expect(saved.activeMatchingPresetId).toBe(preservedId);
+      expect(saved.matchingPresets).toEqual([
+        { id: preservedId, name: null, settings: customized }
+      ]);
+      expect(saved.sourceRelationSettings).toMatchObject({
+        minImportance: 0.9,
+        minConfidence: 0.8
+      });
+      expect(parseSavedAppSettings(saved)).toEqual(saved);
+    }
+  });
+
+  it("keeps recommended-v2 as it is and persists the upgrade with the next update", async () => {
+    const v2 = parseSavedAppSettings(
+      stored({
+        ...recommendedMatchingConfiguration,
+        matchingPresets: [],
+        activeMatchingPresetId: recommendedMatchingPresetId
+      })
+    );
+    expect(v2.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+    expect(v2.matchingPresets).toEqual([]);
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), "memora-recommended-upgrade-"));
+    paths.push(path);
+    await writeFile(
+      join(path, "app-settings.json"),
+      JSON.stringify(
+        stored({
+          ...retired,
+          matchingPresets: [],
+          activeMatchingPresetId: retiredRecommendedMatchingPresetId
+        })
+      )
+    );
+    const service = new SettingsService(path);
+    expect(await service.getApp()).toMatchObject({
+      activeMatchingPresetId: recommendedMatchingPresetId,
+      sourceRelationSettings: { minImportance: 0.75, minConfidence: 0.85 }
+    });
+    await service.updateApp({ themeMode: "light" });
+    const restarted = await new SettingsService(path).getApp();
+    expect(restarted).toMatchObject({ themeMode: "light", matchingPresets: [] });
+    expect(restarted.activeMatchingPresetId).toBe(recommendedMatchingPresetId);
+    await expect(
+      service.updateApp({
+        activeMatchingPresetId:
+          retiredRecommendedMatchingPresetId as typeof recommendedMatchingPresetId
+      })
+    ).rejects.toThrow();
   });
 });
 
