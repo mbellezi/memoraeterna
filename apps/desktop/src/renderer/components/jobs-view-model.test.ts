@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { createTranslator, supportedLanguageCodes } from "@app/i18n";
 import type { JobRecord } from "../../shared/ipc";
 import {
   collapsePreparationStages,
   groupJobs,
   listActivityJobs,
+  sourceRelationCoverageNotice,
   type JobCardModel
 } from "./jobs-view-model";
 import { jobRecordSchema } from "../../shared/ipc";
@@ -110,6 +112,88 @@ describe("jobs view model", () => {
     const card = { mainJob: download, jobs: [download] } as JobCardModel;
 
     expect(listActivityJobs(card)).toEqual([download]);
+  });
+
+  describe("source relation coverage notice", () => {
+    const coverage = {
+      judgedPairs: 6,
+      candidatePairs: 18,
+      capReached: false,
+      relationLimitReached: false,
+      budgetExhausted: false
+    };
+    const checkpoint = (
+      overrides: Record<string, unknown>,
+      extra: Record<string, unknown> = {}
+    ) => ({
+      status: "completed",
+      metadata: { coverage: { ...coverage, ...overrides }, ...extra }
+    });
+
+    it("reads the pair cap as a neutral count of analysed candidates", () => {
+      expect(sourceRelationCoverageNotice(checkpoint({ capReached: true }))).toEqual({
+        tone: "neutral",
+        messageKey: "sourceRelations.coverage.analysed",
+        values: { judged: 6, candidates: 18 }
+      });
+    });
+
+    it("reads the relation limit as neutral", () => {
+      expect(sourceRelationCoverageNotice(checkpoint({ relationLimitReached: true }))).toEqual({
+        tone: "neutral",
+        messageKey: "sourceRelations.coverage.relationLimit",
+        values: { judged: 6, candidates: 18 }
+      });
+    });
+
+    it("warns only for an exhausted input budget, whatever else was reached", () => {
+      expect(
+        sourceRelationCoverageNotice(
+          checkpoint({ budgetExhausted: true, capReached: true, relationLimitReached: true })
+        )
+      ).toEqual({
+        tone: "warning",
+        messageKey: "sourceRelations.coverage.incomplete",
+        values: { judged: 6, candidates: 18 }
+      });
+    });
+
+    it("shows nothing when every candidate was judged", () => {
+      expect(sourceRelationCoverageNotice(checkpoint({ judgedPairs: 18 }))).toBeNull();
+    });
+
+    it.each([
+      undefined,
+      null,
+      "completed",
+      {},
+      { status: "completed" },
+      { status: "completed", metadata: null },
+      { status: "completed", metadata: { partial: true } },
+      { status: "completed", metadata: { coverage: { capReached: true } } },
+      { status: "completed", metadata: { coverage: { ...coverage, judgedPairs: -1 } } },
+      { status: "completed", metadata: { coverage: { ...coverage, extra: true } } }
+    ])("shows nothing for a checkpoint without valid coverage: %j", (value) => {
+      expect(sourceRelationCoverageNotice(value)).toBeNull();
+    });
+
+    it("has a message in every locale for each notice, with both counts filled in", () => {
+      const keys = [
+        "sourceRelations.coverage.analysed",
+        "sourceRelations.coverage.relationLimit",
+        "sourceRelations.coverage.incomplete"
+      ] as const;
+      for (const locale of supportedLanguageCodes)
+        for (const key of keys) {
+          const text = createTranslator(locale)(key, {
+            values: { judged: 6, candidates: 18 },
+            missingKeyBehavior: "throw"
+          });
+          expect(text).toContain("6");
+          expect(text).toContain("18");
+          expect(text).not.toContain("{");
+        }
+    });
   });
 
   it("collapses the completed import preparation stages into one timeline step", () => {

@@ -23,6 +23,26 @@ export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsSchema
 export const defaultSourceRelationSettings = SourceRelationSettingsSchema.parse({});
 
 /**
+ * How far source matching got for a work, stored in the stage checkpoint metadata: the candidate
+ * works it considered, how many it judged, and why any was left unjudged. The per-run pair cap and
+ * the relation limit are limits of the design, not failures; only `budgetExhausted` means a pair
+ * could not be completed.
+ */
+export const SourceRelationCoverageSchema = z
+  .object({
+    judgedPairs: z.number().int().nonnegative(),
+    candidatePairs: z.number().int().nonnegative(),
+    /** The per-run pair cap (`maxPairs`) left candidates unjudged. */
+    capReached: z.boolean(),
+    /** The relation limit (`maxRelations`) left candidates unjudged. */
+    relationLimitReached: z.boolean(),
+    /** A pair could not be completed because the input token budget was exhausted. */
+    budgetExhausted: z.boolean()
+  })
+  .strict();
+export type SourceRelationCoverage = z.infer<typeof SourceRelationCoverageSchema>;
+
+/**
  * The compact, score-only source verdict (`source-relations-v5`, docs/plan.md decision 17): a pair
  * of works answers at most `maxItemsPerPair` items `[from, to, type, importance, confidence, [from
  * chunks], [to chunks]]`, with integer scores from 0 to 100 and no prose.

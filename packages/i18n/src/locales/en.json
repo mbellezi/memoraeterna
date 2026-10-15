@@ -1993,7 +1993,11 @@
     "restore": "Restore as suggestion",
     "previous": "Previous",
     "next": "Next",
-    "partial": "Partial coverage: analysis budget reached. Process again to continue."
+    "coverage": {
+      "analysed": "{judged} of {candidates} candidate sources analysed",
+      "relationLimit": "{judged} of {candidates} candidate sources analysed; relationship limit reached",
+      "incomplete": "Analysis stopped after {judged} of {candidates} candidate sources: the input token budget was exhausted"
+    }
   },
   "wiki": {
     "remainingReferences": "References",

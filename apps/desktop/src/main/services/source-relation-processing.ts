@@ -4,11 +4,13 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   AtomicNoteRelationTypeSchema,
+  SourceRelationCoverageSchema,
   SourceRelationSettingsSchema,
   sourceDecisionLimits,
   sourceDecisionPassesFloors,
   symmetricSourceRelationTypes,
   type SourceDecisionItem,
+  type SourceRelationCoverage,
   type SourceRelationSettings
 } from "@app/domain";
 import {
@@ -62,7 +64,10 @@ const stateSchema = z.object({
   proposals: z.number().nonnegative(),
   persistedCount: z.number().nonnegative(),
   attempts: z.record(z.string(), z.number()),
+  /** True only when a pair could not be completed (`coverage.budgetExhausted`); older runs set it for any limit. */
   partial: z.boolean(),
+  /** Written when the root finishes; absent on runs that finished before coverage was recorded. */
+  coverage: SourceRelationCoverageSchema.optional(),
   finished: z.boolean(),
   totalPairs: z.number().int().nonnegative().default(0)
 });
@@ -442,6 +447,26 @@ export function sourceRelationWrites(
   return { proposals, relations, records };
 }
 
+/** What one root's planning and judging found out about its coverage, before it is stored. */
+interface CoverageTally extends SourceRelationCoverage {
+  /** Keys another root of the same run judges; they count as judged once that root has done so. */
+  sharedKeys: string[];
+}
+/** Adds up the roots of one run; unknown (a root finished before coverage was recorded) stays unknown. */
+export function combineSourceRelationCoverage(
+  parts: ReadonlyArray<SourceRelationCoverage | undefined>
+): SourceRelationCoverage | undefined {
+  const known = parts.filter((part): part is SourceRelationCoverage => part !== undefined);
+  if (known.length !== parts.length) return undefined;
+  return {
+    judgedPairs: known.reduce((sum, part) => sum + part.judgedPairs, 0),
+    candidatePairs: known.reduce((sum, part) => sum + part.candidatePairs, 0),
+    capReached: known.some((part) => part.capReached),
+    relationLimitReached: known.some((part) => part.relationLimitReached),
+    budgetExhausted: known.some((part) => part.budgetExhausted)
+  };
+}
+
 function hash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -501,11 +526,14 @@ export async function matchSources(options: {
   let persistedCount = 0,
     partial = false,
     inputTokens = 0;
+  const coverages: Array<SourceRelationCoverage | undefined> = [];
   const plans: Array<{
     root: string;
     state: z.infer<typeof stateSchema>;
     save: () => Promise<void>;
     pairs: Array<{ candidate: SourceRelationCandidate; notes: SourceRelationNote[]; key: string }>;
+    /** Null when the root had finished before this run: its saved coverage stands. */
+    tally: CoverageTally | null;
   }> = [];
   const plannedKeys = new Set<string>(),
     completedKeys = new Set<string>();
@@ -545,6 +573,7 @@ export async function matchSources(options: {
     await save();
     state.completed.forEach((key) => completedKeys.add(key));
     const pairs: (typeof plans)[number]["pairs"] = [];
+    let tally: CoverageTally | null = null;
     if (!state.finished) {
       const candidates = rankSourceCandidates(
         (await repository.candidates(root, settings.maxCandidates)).filter(
@@ -553,10 +582,18 @@ export async function matchSources(options: {
         settings.maxCandidates,
         settings.reciprocalRankConstant
       );
-      let reservedPairs = state.pairs.length;
+      tally = {
+        candidatePairs: candidates.length,
+        judgedPairs: 0,
+        sharedKeys: [],
+        capReached: false,
+        relationLimitReached: false,
+        budgetExhausted: false
+      };
+      let reservedPairs = state.pairs.length,
+        halted = false;
       for (const candidate of candidates) {
         signal?.throwIfAborted();
-        const notes = await repository.pairNotes(root, candidate.id, settings.noteRelationsPerPair);
         // The key holds every note relation between the two roots, cited or not: a relation saved
         // from one side removes its note relations from the prompt, never the pair from the cache,
         // so the other side does not judge the same pair again.
@@ -569,29 +606,45 @@ export async function matchSources(options: {
           notes: (await repository.pairNoteFingerprints(root, candidate.id)).toSorted(),
           regeneration: options.regenerate ? options.runKey : null
         });
-        if (
-          state.completed.includes(key) ||
-          plannedKeys.has(key) ||
-          (await repository.decision(key))
-        )
+        if (state.completed.includes(key)) {
+          tally.judgedPairs++;
           continue;
-        if (
-          (!state.pairs.includes(key) && reservedPairs >= settings.maxPairs) ||
-          state.proposals >= settings.maxRelations
-        ) {
-          state.partial = true;
-          break;
         }
+        if (plannedKeys.has(key)) {
+          // Another root of this run judges it: counted once that root has done so.
+          tally.sharedKeys.push(key);
+          continue;
+        }
+        if (await repository.decision(key)) {
+          tally.judgedPairs++;
+          continue;
+        }
+        // Once a limit stops the plan nothing more is planned, but the candidates after it are still
+        // counted when an earlier run already judged them.
+        if (!halted) {
+          const capHit = !state.pairs.includes(key) && reservedPairs >= settings.maxPairs,
+            relationLimitHit = state.proposals >= settings.maxRelations;
+          if (capHit || relationLimitHit) {
+            halted = true;
+            tally.capReached = capHit;
+            tally.relationLimitReached = relationLimitHit;
+          }
+        }
+        if (halted) continue;
         if (!state.pairs.includes(key)) reservedPairs++;
         plannedKeys.add(key);
-        pairs.push({ candidate, notes, key });
+        pairs.push({
+          candidate,
+          notes: await repository.pairNotes(root, candidate.id, settings.noteRelationsPerPair),
+          key
+        });
       }
     }
     if (!state.finished) {
       state.totalPairs = state.completed.length + pairs.length;
       await save();
     }
-    plans.push({ root, state, save, pairs });
+    plans.push({ root, state, save, pairs, tally });
   }
   let total = plans.reduce(
     (sum, plan) => sum + Math.max(plan.state.totalPairs, plan.state.completed.length),
@@ -603,14 +656,14 @@ export async function matchSources(options: {
       total
     });
   await report();
-  for (const { root, state, save, pairs } of plans) {
+  for (const { root, state, save, pairs, tally } of plans) {
     signal?.throwIfAborted();
     const settings = state.settings;
-    if (!state.finished) {
+    if (!state.finished && tally) {
       for (const { candidate, notes, key } of pairs) {
         signal?.throwIfAborted();
         if (state.proposals >= settings.maxRelations) {
-          state.partial = true;
+          tally.relationLimitReached = true;
           break;
         }
         const chunks = orderSourceRelationChunks(
@@ -627,6 +680,8 @@ export async function matchSources(options: {
           }))
         );
         if (chunks.length < 2) {
+          // Without evidence on both sides the pair cannot be judged, so it is no candidate.
+          tally.candidatePairs--;
           total--;
           state.totalPairs--;
           await save();
@@ -781,23 +836,35 @@ export async function matchSources(options: {
           await save();
         }
         if (!completed) {
+          // Only a pair the input budget left incomplete is a failure to cover; the caps are not.
           state.partial = true;
+          tally.budgetExhausted = true;
           break;
         }
         completedKeys.add(key);
+        tally.judgedPairs++;
         await report();
       }
       state.finished = true;
+      const { sharedKeys, ...coverage } = tally;
+      state.coverage = {
+        ...coverage,
+        judgedPairs:
+          coverage.judgedPairs + sharedKeys.filter((key) => completedKeys.has(key)).length
+      };
       await save();
     }
     persistedCount += state.persistedCount;
     inputTokens += state.inputTokens;
     partial ||= state.partial;
+    coverages.push(state.coverage);
     await report();
   }
+  const coverage = combineSourceRelationCoverage(coverages);
   return {
     persistedCount,
     partial,
+    ...(coverage ? { coverage } : {}),
     inputTokens,
     rootCount: roots.length,
     completed: completedKeys.size,

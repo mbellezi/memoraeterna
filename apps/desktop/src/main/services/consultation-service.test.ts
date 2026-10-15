@@ -310,6 +310,29 @@ describe("organization checkpoint barrier", () => {
         .ready
     ).toBe(false);
   });
+  it("treats source matching limited by the pair cap as complete and an exhausted budget as partial", () => {
+    const matching = (metadata: Record<string, unknown>) => {
+      const item = run({ sourceMatching: "completed" });
+      item.stagesCheckpoint.sourceMatching = { status: "completed", metadata } as never;
+      return item;
+    };
+    const coverage = {
+      judgedPairs: 6,
+      candidatePairs: 18,
+      capReached: true,
+      relationLimitReached: false,
+      budgetExhausted: false
+    };
+    const capped = matching({ partial: false, coverage });
+    expect(organizationReadiness([capped], false).omissions).toEqual([]);
+    const exhausted = matching({
+      partial: true,
+      coverage: { ...coverage, capReached: false, budgetExhausted: true }
+    });
+    expect(organizationReadiness([exhausted], false).omissions).toEqual([
+      { sourceItemId: exhausted.sourceItemId, stage: "sourceMatching", status: "partial" }
+    ]);
+  });
   it("admits terminal partial inputs after both matching barriers and the final catalog job settle", () => {
     const successful = run({
         chunking: "completed",

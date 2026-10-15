@@ -708,6 +708,88 @@ describe("phase 2 renderer views", () => {
     }
   );
 
+  describe("source matching coverage line", () => {
+    const render = (metadata: Record<string, unknown>) => {
+      const job = jobRecordSchema.parse({
+        id: "00000000-0000-4000-8000-000000000001",
+        type: "ingestion",
+        status: "succeeded",
+        progress: 1,
+        attempts: 1,
+        maxAttempts: 3,
+        canCancel: false,
+        canRetry: false,
+        error: null,
+        errorHistory: [],
+        aiExecution: null,
+        createdAt: "2026-07-18T20:12:52.308Z",
+        updatedAt: "2026-07-18T20:12:52.560Z",
+        ingestionRun: {
+          id: "00000000-0000-4000-8000-000000000010",
+          status: "succeeded",
+          currentStage: "sourceMatching",
+          effectiveStages: ["sourceMatching"],
+          stagesCheckpoint: { sourceMatching: { status: "completed", metadata } }
+        }
+      });
+      return renderToString(
+        <JobCard
+          card={groupJobs([job])[0]!}
+          expanded={false}
+          busy={false}
+          t={t}
+          onToggle={() => undefined}
+          onAction={() => undefined}
+          onSelectAttempt={() => undefined}
+        />
+      );
+    };
+    const coverage = {
+      judgedPairs: 6,
+      candidatePairs: 18,
+      capReached: true,
+      relationLimitReached: false,
+      budgetExhausted: false
+    };
+
+    it("says how many candidates were analysed under the pair cap, muted and without a call to action", () => {
+      const html = render({ completed: 6, total: 6, partial: false, coverage });
+      expect(html).toContain("6 of 18 candidate sources analysed");
+      expect(html).toContain("text-muted-foreground");
+      expect(html).not.toContain("text-warning");
+      expect(html).not.toContain("amber");
+      expect(html).not.toMatch(/Process again|Partial coverage/);
+    });
+
+    it("keeps the relation limit neutral too", () => {
+      const html = render({
+        coverage: { ...coverage, capReached: false, relationLimitReached: true }
+      });
+      expect(html).toContain("relationship limit reached");
+      expect(html).not.toContain("text-warning");
+    });
+
+    it("warns, factually, only when the input budget left a pair incomplete", () => {
+      const html = render({ partial: true, coverage: { ...coverage, budgetExhausted: true } });
+      expect(html).toContain(
+        "Analysis stopped after 6 of 18 candidate sources: the input token budget was exhausted"
+      );
+      expect(html).toContain("text-warning");
+      expect(html).not.toMatch(/Process again|again to continue/);
+    });
+
+    it("shows nothing for a fully judged shortlist or a checkpoint from before coverage", () => {
+      for (const metadata of [
+        { coverage: { ...coverage, judgedPairs: 18, capReached: false } },
+        { completed: 6, total: 6, partial: true }
+      ]) {
+        const html = render(metadata);
+        expect(html).not.toContain("candidate sources");
+        expect(html).not.toContain("text-warning");
+      }
+    });
+  });
+
   it("places Delete beside Retry for a user-canceled incomplete job", () => {
     const job = jobRecordSchema.parse({
       id: "00000000-0000-4000-8000-000000000001",

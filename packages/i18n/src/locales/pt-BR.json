@@ -1996,7 +1996,11 @@
     "restore": "Restaurar como sugestão",
     "previous": "Anterior",
     "next": "Próxima",
-    "partial": "Cobertura parcial: orçamento de análise atingido. Processe novamente para continuar."
+    "coverage": {
+      "analysed": "{judged} de {candidates} fontes candidatas analisadas",
+      "relationLimit": "{judged} de {candidates} fontes candidatas analisadas; limite de relações atingido",
+      "incomplete": "Análise interrompida após {judged} de {candidates} fontes candidatas: o orçamento de tokens de entrada se esgotou"
+    }
   },
   "wiki": {
     "remainingReferences": "Referências",

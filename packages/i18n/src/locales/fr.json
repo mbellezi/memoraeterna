@@ -1998,7 +1998,11 @@
     "restore": "Rétablir comme suggestion",
     "previous": "Précédente",
     "next": "Suivante",
-    "partial": "Couverture partielle : budget atteint. Relancez le traitement pour continuer."
+    "coverage": {
+      "analysed": "{judged} sources candidates analysées sur {candidates}",
+      "relationLimit": "{judged} sources candidates analysées sur {candidates} ; limite de relations atteinte",
+      "incomplete": "Analyse interrompue après {judged} sources candidates sur {candidates} : le budget de jetons d'entrée est épuisé"
+    }
   },
   "wiki": {
     "remainingReferences": "Références",

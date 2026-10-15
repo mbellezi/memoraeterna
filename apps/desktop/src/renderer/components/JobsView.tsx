@@ -31,6 +31,7 @@ import {
   listActivityJobs,
   matchesFilter,
   preparationStages,
+  sourceRelationCoverageNotice,
   type JobCardModel,
   type JobFilter
 } from "./jobs-view-model";
@@ -600,23 +601,32 @@ function PipelineTimeline({ run, t }: { run: IngestionRun; t: Translator }) {
                   {checkpointSummary(stage, checkpoint)}
                 </span>
               ) : null}
-              {stage === "sourceMatching" &&
-              typeof checkpoint === "object" &&
-              checkpoint !== null &&
-              "metadata" in checkpoint &&
-              (checkpoint.metadata as Record<string, unknown> | undefined)?.partial === true ? (
-                <span
-                  className="mt-1 text-[10px] text-amber-600"
-                  title={t("sourceRelations.partial")}
-                >
-                  {t("sourceRelations.partial")}
-                </span>
+              {stage === "sourceMatching" ? (
+                <SourceRelationCoverageLine checkpoint={checkpoint} t={t} />
               ) : null}
             </div>
           </li>
         );
       })}
     </ol>
+  );
+}
+
+/** How many candidate sources matching analysed: muted, except when a pair could not be finished. */
+function SourceRelationCoverageLine({ checkpoint, t }: { checkpoint: unknown; t: Translator }) {
+  const notice = sourceRelationCoverageNotice(checkpoint);
+  if (!notice) return null;
+  const text = t(notice.messageKey, { values: notice.values });
+  return (
+    <span
+      className={cn(
+        "mt-1 text-xs",
+        notice.tone === "warning" ? "text-warning" : "text-muted-foreground"
+      )}
+      title={text}
+    >
+      {text}
+    </span>
   );
 }
 

@@ -1991,7 +1991,11 @@
     "restore": "Ripristina come suggerimento",
     "previous": "Precedente",
     "next": "Successiva",
-    "partial": "Copertura parziale: budget di analisi raggiunto. Elabora di nuovo per continuare."
+    "coverage": {
+      "analysed": "{judged} di {candidates} fonti candidate analizzate",
+      "relationLimit": "{judged} di {candidates} fonti candidate analizzate; limite di relazioni raggiunto",
+      "incomplete": "Analisi interrotta dopo {judged} di {candidates} fonti candidate: il budget di token in ingresso è esaurito"
+    }
   },
   "wiki": {
     "remainingReferences": "Riferimenti",

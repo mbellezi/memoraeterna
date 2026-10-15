@@ -5,6 +5,7 @@ import { defaultSourceRelationSettings, sourceDecisionPassesFloors } from "@app/
 import type { SourceRelationChunk, SourceRelationNote, PgPool } from "@app/db";
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import {
+  combineSourceRelationCoverage,
   matchSources,
   orderSourceRelationChunks,
   orientSymmetricNotes,
@@ -586,6 +587,179 @@ describe("source matching budget and recovery", () => {
       await run(ai, "repair", { ...defaultSourceRelationSettings, maxInputTokens: 2000 })
     ).toMatchObject({ completed: 0, total: 1, inputTokens: 2500, partial: true });
     expect(ai).toHaveBeenCalledTimes(1);
+  });
+  describe("coverage in the stage checkpoint metadata", () => {
+    const candidatesNamed = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({
+        id: `candidate-${index}`,
+        title: `Work ${String(index).padStart(2, "0")}`,
+        textScore: 1 - index / 100,
+        vectorScore: 0,
+        graphScore: 0,
+        noteScore: 0
+      }));
+    const settingsWith = (overrides: Partial<typeof defaultSourceRelationSettings>) => ({
+      ...defaultSourceRelationSettings,
+      maxInputTokens: 200000,
+      ...overrides
+    });
+
+    it("records the per-run pair cap as coverage, not as a partial run", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(8));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const result = await run(ai, "cap", settingsWith({ maxPairs: 3 }));
+      expect(ai).toHaveBeenCalledTimes(3);
+      expect(result).toMatchObject({ partial: false, completed: 3, total: 3 });
+      expect(result.coverage).toEqual({
+        judgedPairs: 3,
+        candidatePairs: 8,
+        capReached: true,
+        relationLimitReached: false,
+        budgetExhausted: false
+      });
+      expect(states.get("cap:root-A")).toMatchObject({
+        partial: false,
+        finished: true,
+        coverage: result.coverage
+      });
+    });
+
+    it("reports a fully judged shortlist without any limit", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(2));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const result = await run(ai, "full", settingsWith({ maxPairs: 3 }));
+      expect(result.coverage).toEqual({
+        judgedPairs: 2,
+        candidatePairs: 2,
+        capReached: false,
+        relationLimitReached: false,
+        budgetExhausted: false
+      });
+    });
+
+    it("records the relation limit apart from the cap", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(4));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
+      const result = await run(ai, "limit", settingsWith({ maxRelations: 1, maxPairs: 4 }));
+      expect(ai).toHaveBeenCalledTimes(1);
+      expect(result).toMatchObject({ partial: false, persistedCount: 1 });
+      expect(result.coverage).toEqual({
+        judgedPairs: 1,
+        candidatePairs: 4,
+        capReached: false,
+        relationLimitReached: true,
+        budgetExhausted: false
+      });
+    });
+
+    it("records an exhausted input budget as the only partial reason", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(3));
+      const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens: 2500 });
+      const result = await run(ai, "budget", settingsWith({ maxInputTokens: 2000 }));
+      expect(result.partial).toBe(true);
+      expect(result.coverage).toEqual({
+        judgedPairs: 1,
+        candidatePairs: 3,
+        capReached: false,
+        relationLimitReached: false,
+        budgetExhausted: true
+      });
+    });
+
+    it("counts the candidates an earlier run already judged and advances with each run", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(5));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const settings = settingsWith({ maxPairs: 2 });
+      const judged = async (key: string) => (await run(ai, key, settings)).coverage;
+      expect(await judged("first")).toMatchObject({ judgedPairs: 2, capReached: true });
+      expect(await judged("second")).toMatchObject({ judgedPairs: 4, capReached: true });
+      expect(await judged("third")).toMatchObject({
+        judgedPairs: 5,
+        candidatePairs: 5,
+        capReached: false
+      });
+      expect(ai).toHaveBeenCalledTimes(5);
+    });
+
+    it("counts already judged candidates that rank after the cap without judging more", async () => {
+      const candidates = candidatesNamed(5);
+      mocks.repository.candidates!.mockResolvedValue(candidates);
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const settings = settingsWith({ maxPairs: 2 });
+      await run(ai, "before", settings);
+      expect(ai).toHaveBeenCalledTimes(2);
+      // The two judged works now rank last: the cap stops the plan before them, and they still count.
+      mocks.repository.candidates!.mockResolvedValue(
+        candidates.map((candidate, index) => ({ ...candidate, textScore: index / 10 + 0.1 }))
+      );
+      const after = await run(ai, "after", settings);
+      expect(ai).toHaveBeenCalledTimes(4);
+      expect(after.coverage).toEqual({
+        judgedPairs: 4,
+        candidatePairs: 5,
+        capReached: true,
+        relationLimitReached: false,
+        budgetExhausted: false
+      });
+    });
+
+    it("keeps the stored coverage when a finished run is resumed", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(8));
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const first = await run(ai, "again", settingsWith({ maxPairs: 3 }));
+      expect((await run(ai, "again", settingsWith({ maxPairs: 3 }))).coverage).toEqual(
+        first.coverage
+      );
+      expect(ai).toHaveBeenCalledTimes(3);
+    });
+
+    it("does not count a candidate without evidence on both sides", async () => {
+      mocks.repository.candidates!.mockResolvedValue(candidatesNamed(2));
+      mocks.repository.pairChunks!.mockResolvedValueOnce([a]).mockResolvedValue([a, b]);
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const result = await run(ai, "thin", settingsWith({ maxPairs: 3 }));
+      expect(result.coverage).toMatchObject({ judgedPairs: 1, candidatePairs: 1 });
+    });
+
+    it("counts a reciprocal pair as judged for both roots of a collective run", async () => {
+      mocks.repository.roots!.mockResolvedValue(["root-A", "root-B"]);
+      mocks.repository.candidates!.mockImplementation(async (root: string) => [
+        {
+          id: root === "root-A" ? "root-B" : "root-A",
+          textScore: 1,
+          vectorScore: 0,
+          graphScore: 0,
+          noteScore: 1
+        }
+      ]);
+      const ai = vi.fn().mockResolvedValue(execution({ relations: [] }));
+      const result = await run(ai, "collective");
+      expect(ai).toHaveBeenCalledTimes(1);
+      expect(result.coverage).toMatchObject({ judgedPairs: 2, candidatePairs: 2 });
+    });
+
+    it("adds up the roots of a run and leaves coverage unknown when any root predates it", () => {
+      const part = {
+        judgedPairs: 2,
+        candidatePairs: 5,
+        capReached: true,
+        relationLimitReached: false,
+        budgetExhausted: false
+      };
+      expect(
+        combineSourceRelationCoverage([
+          part,
+          { ...part, judgedPairs: 1, candidatePairs: 1, capReached: false, budgetExhausted: true }
+        ])
+      ).toEqual({
+        judgedPairs: 3,
+        candidatePairs: 6,
+        capReached: true,
+        relationLimitReached: false,
+        budgetExhausted: true
+      });
+      expect(combineSourceRelationCoverage([part, undefined])).toBeUndefined();
+    });
   });
   it("recovers a committed decision before a checkpoint write without exceeding the proposal cap", async () => {
     const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));

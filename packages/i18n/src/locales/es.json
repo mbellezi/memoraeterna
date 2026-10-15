@@ -2000,7 +2000,11 @@
     "restore": "Restaurar como sugerencia",
     "previous": "Anterior",
     "next": "Siguiente",
-    "partial": "Cobertura parcial: presupuesto de análisis alcanzado. Procesa de nuevo para continuar."
+    "coverage": {
+      "analysed": "{judged} de {candidates} fuentes candidatas analizadas",
+      "relationLimit": "{judged} de {candidates} fuentes candidatas analizadas; límite de relaciones alcanzado",
+      "incomplete": "Análisis detenido tras {judged} de {candidates} fuentes candidatas: se agotó el presupuesto de tokens de entrada"
+    }
   },
   "wiki": {
     "remainingReferences": "Referencias",

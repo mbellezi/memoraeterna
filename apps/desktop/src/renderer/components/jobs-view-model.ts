@@ -1,3 +1,4 @@
+import { SourceRelationCoverageSchema } from "@app/domain";
 import type { JobRecord } from "../../shared/ipc";
 
 export type JobFilter = "all" | "active" | "completed" | "attention";
@@ -138,6 +139,42 @@ export function matchesFilter(card: JobCardModel, filter: JobFilter): boolean {
 export function listActivityJobs(card: JobCardModel): JobRecord[] {
   if (card.mainJob.type !== "ingestion") return card.jobs;
   return card.jobs.filter((job) => job.id !== card.mainJob.id);
+}
+
+export interface SourceRelationCoverageNotice {
+  /** Neutral lines state how far matching went; only a warning reports work that could not finish. */
+  tone: "neutral" | "warning";
+  messageKey:
+    | "sourceRelations.coverage.analysed"
+    | "sourceRelations.coverage.relationLimit"
+    | "sourceRelations.coverage.incomplete";
+  values: { judged: number; candidates: number };
+}
+
+/**
+ * What the source-matching stage checkpoint says about coverage. The per-run pair cap and the
+ * relation limit are normal limits and read neutrally; an exhausted input budget (a pair that could
+ * not be completed) is the only warning. Checkpoints written before coverage was recorded, and
+ * runs that judged every candidate, show nothing.
+ */
+export function sourceRelationCoverageNotice(
+  checkpoint: unknown
+): SourceRelationCoverageNotice | null {
+  if (typeof checkpoint !== "object" || checkpoint === null || !("metadata" in checkpoint))
+    return null;
+  const metadata = checkpoint.metadata;
+  if (typeof metadata !== "object" || metadata === null || !("coverage" in metadata)) return null;
+  const parsed = SourceRelationCoverageSchema.safeParse(metadata.coverage);
+  if (!parsed.success) return null;
+  const { judgedPairs: judged, candidatePairs: candidates } = parsed.data;
+  const values = { judged, candidates };
+  if (parsed.data.budgetExhausted)
+    return { tone: "warning", messageKey: "sourceRelations.coverage.incomplete", values };
+  if (parsed.data.relationLimitReached)
+    return { tone: "neutral", messageKey: "sourceRelations.coverage.relationLimit", values };
+  if (parsed.data.capReached)
+    return { tone: "neutral", messageKey: "sourceRelations.coverage.analysed", values };
+  return null;
 }
 
 function deduplicateErrors(errors: JobRecord["errorHistory"]): JobRecord["errorHistory"] {
