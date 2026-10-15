@@ -1,5 +1,5 @@
 import type { AiGroup, MatchingGroup, StageKpi } from "./aggregate.js";
-import type { KpiReport, Section } from "./report.js";
+import type { KpiReport, Section, TopicsKpi } from "./report.js";
 import type { Distribution } from "./stats.js";
 
 /** Renders the KPI report as Markdown. Numbers are formatted in en-US so output is stable. */
@@ -133,6 +133,101 @@ function matchingRows(group: MatchingGroup | null, target: string): string {
       ]
     ]
   );
+}
+
+const percent2 = (value: number | null | undefined): string =>
+  value === null || value === undefined ? "n/a" : `${(value * 100).toFixed(2)}%`;
+
+const yesNo = (value: boolean | null): string => (value === null ? "n/a" : value ? "yes" : "no");
+
+const spread = (
+  distribution: { count: number; mean: number; p50: number; p95: number; max: number } | null
+): string =>
+  distribution
+    ? `${fmtInt(distribution.count)}: mean ${distribution.mean.toFixed(2)}, p50 ${distribution.p50}, p95 ${distribution.p95}, max ${distribution.max}`
+    : "n/a";
+
+/** The topic tree audit's aggregates (F2 T17); `npm run topics:audit` adds the identifiers. */
+export function renderTopicsKpi(topics: TopicsKpi): string {
+  const { items, orphans, violations, shape, unsorted, undo, e1 } = topics;
+  return [
+    table(
+      ["Measure", "Value"],
+      [
+        [
+          "Tree",
+          `${topics.tree.status}, generation ${fmtInt(topics.tree.generation)}, Areas ${yesNo(topics.tree.areasActive)}${topics.tree.consistent ? "" : " (changed while read)"}`
+        ],
+        [
+          "Live topics (retired)",
+          `${fmtInt(topics.topics.live)} (${fmtInt(topics.topics.retired)}): ${fmtInt(topics.topics.internal)} internal, ${fmtInt(topics.topics.leaves)} leaves, deepest ${fmtInt(topics.topics.maxDepth)}`
+        ],
+        [
+          "Expected items (notes, root sources)",
+          `${fmtInt(items.expected)} (${fmtInt(items.notes)}, ${fmtInt(items.sources)})`
+        ],
+        [
+          "Reachable from the root (E1)",
+          `${fmtInt(items.reachable)} of ${fmtInt(items.expected)} (${percent2(items.reachability)})`
+        ],
+        ["Placed items that are no longer current", fmtInt(items.placedNotCurrent)],
+        ["Live topics the root does not reach", fmtInt(orphans.unreachableTopics)],
+        ["Placements on retired topics", fmtInt(orphans.placementsOnRetiredTopics)],
+        ["Placements on unreachable topics", fmtInt(orphans.placementsOnUnreachableTopics)],
+        ["Expected items without a primary placement", fmtInt(orphans.itemsWithoutPrimary)],
+        [
+          "Hard violations (E1), soft, awaiting approval",
+          `${fmtInt(violations.hard)}, ${fmtInt(violations.soft)}, ${fmtInt(violations.awaitingApproval)}`
+        ],
+        ["Item depth, root = 0 (E2: mean ≤4.5)", spread(shape.itemDepth)],
+        [
+          "Fan-out of internal topics below the root",
+          shape.fanOut
+            ? `${spread(shape.fanOut)}; in target band ${fmtPercent(shape.fanOut.inTarget)}, in range ${fmtPercent(shape.fanOut.inRange)}`
+            : "n/a"
+        ],
+        [
+          "Root fan-out",
+          `${fmtInt(shape.rootFanOut)} (${shape.rootInBand ? "inside" : "outside"} its band)`
+        ],
+        [
+          "Leaf size",
+          shape.leafSize
+            ? `${spread(shape.leafSize)}; in range ${fmtPercent(shape.leafSize.inRange)}`
+            : "n/a"
+        ],
+        ["Topics with a single child", fmtInt(shape.singleChildTopics)],
+        [
+          `Unsorted share (target ≤ ${fmtPercent(unsorted.shareTarget)} from ${fmtInt(unsorted.minItems)} items)`,
+          `${fmtPercent(unsorted.share)}: ${fmtInt(unsorted.rootItems)} at the root, ${fmtInt(unsorted.waitingAtAncestor)} waiting at a topic; target met ${yesNo(unsorted.meetsTarget)}`
+        ],
+        [
+          "Waiting for a vector, apart from Unsorted (notes, root sources)",
+          `${fmtInt(topics.needsVector.notes)}, ${fmtInt(topics.needsVector.sources)}`
+        ],
+        [
+          `Undo rate of automatic change-sets, last ${fmtInt(undo.windowDays)} days (target ≤ ${fmtPercent(undo.target)})`,
+          `${fmtPercent(undo.rate)}: ${fmtInt(undo.undone)} undone of ${fmtInt(undo.automatic)}; target met ${yesNo(undo.meetsTarget)}`
+        ],
+        [
+          "E1 (reachability, orphans, hard violations)",
+          e1.passes ? "pass" : `fail: ${e1.failures.join(", ")}`
+        ]
+      ]
+    ),
+    "Violations by reason (counts only):",
+    "",
+    table(
+      ["Invariant", "Severity", "Reason", "Awaiting approval", "Count"],
+      violations.byReason.map((entry) => [
+        entry.code,
+        entry.severity,
+        entry.reason,
+        entry.awaitingApproval ? "yes" : "no",
+        fmtInt(entry.count)
+      ])
+    )
+  ].join("\n");
 }
 
 export function renderMarkdown(report: KpiReport): string {
@@ -305,6 +400,9 @@ export function renderMarkdown(report: KpiReport): string {
       ].join("\n")
     )
   );
+
+  out.push("## Topic tree", "");
+  out.push(when(report.topics, renderTopicsKpi));
 
   out.push("## Wiki structure", "");
   out.push(

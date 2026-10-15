@@ -21,7 +21,8 @@ import type {
   KpiReport,
   LibraryKpi,
   Section,
-  StuckJobsKpi
+  StuckJobsKpi,
+  TopicsKpi
 } from "./report.js";
 
 /**
@@ -434,6 +435,32 @@ class Collector {
     });
   }
 
+  // --- Topic tree ----------------------------------------------------------------------------
+
+  private static readonly topicRequirements: readonly Requirement[] = [
+    ["topic_trees", "status", "generation", "config"],
+    ["topics", "tree_id", "parent_id", "role", "management", "retired_at", "redirect_to"],
+    ["topic_placements", "tree_id", "topic_id", "rank", "needs_gate", "needs_vector"],
+    ["topic_change_sets", "tree_id", "origin", "status", "applied_at"],
+    ["atomic_notes", "status", "supersession_status"],
+    ["source_items", "parent_source_item_id"]
+  ];
+
+  /** The active tree, judged by the same audit as `npm run topics:audit`; aggregates only. */
+  public async topics(asOf: Date): Promise<Section<TopicsKpi>> {
+    const hasTree = await this.part("topics", Collector.topicRequirements, async () => {
+      const found = await this.rows(`select 1 as found from topic_trees where status = 'active'`);
+      return found.length > 0;
+    });
+    if (hasTree === false) return this.unavailable("topics", "no active topic tree");
+    return this.section("topics", Collector.topicRequirements, async () => {
+      // Loaded here, not at the top: the audit needs the built domain package, and the rest of
+      // the report must still work on a checkout that has not built it.
+      const { auditDatabase } = await import("../topics/audit-db.js");
+      return (await auditDatabase(this.db, { asOf })).summary;
+    });
+  }
+
   // --- Wiki structure ------------------------------------------------------------------------
 
   public wiki() {
@@ -676,6 +703,7 @@ export async function collectKpi(db: Db, options: CollectOptions): Promise<KpiRe
   const processing = await collector.processing();
   const ai = await collector.ai();
   const matching = await collector.matching();
+  const topics = await collector.topics(asOf.date ?? now);
   const wiki = await collector.wiki();
   const organization = await collector.automation("organization_runs");
   const maintenance = await collector.automation("maintenance_runs");
@@ -692,6 +720,7 @@ export async function collectKpi(db: Db, options: CollectOptions): Promise<KpiRe
     processing,
     ai,
     matching,
+    topics,
     wiki,
     organization,
     maintenance,

@@ -7,11 +7,13 @@ import { join, resolve } from "node:path";
 import {
   closePgPool,
   createPgPool,
+  createTopicTreeRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool
 } from "@app/db";
+import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { collectKpi, SchemaInfo, type CollectOptions, type Db } from "./collect.js";
@@ -71,6 +73,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
       seedFolder: join(root, "packages/db/seed")
     });
     await seed(pool);
+    await seedTopicTree(pool);
     report = await collectKpi(pool, options());
   }, 120_000);
 
@@ -154,6 +157,37 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     expect(matching.operationSeconds["atomic-note-matching"]).toMatchObject({ n: 1, p50: 30 });
   });
 
+  it("audits the active topic tree: reachability, orphans, shape and the undo rate", () => {
+    const topics = data(report.topics);
+    // Current items: notes 11, 12 and 15 and the root sources 1 and 2. Source 2 has no placement.
+    expect(topics.items).toMatchObject({
+      expected: 5,
+      notes: 3,
+      sources: 2,
+      reachable: 4,
+      placedNotCurrent: 0
+    });
+    expect(topics.items.reachability).toBe(0.8);
+    expect(topics.orphans).toEqual({
+      unreachableTopics: 0,
+      placementsOnRetiredTopics: 0,
+      placementsOnUnreachableTopics: 0,
+      itemsWithoutPrimary: 1
+    });
+    expect(topics.topics).toEqual({ live: 3, retired: 0, internal: 1, leaves: 2, maxDepth: 1 });
+    expect(topics.violations.hard).toBe(1);
+    expect(topics.e1).toEqual({
+      passes: false,
+      failures: ["reachability", "itemsWithoutPrimary", "hardViolations"]
+    });
+    // Three applied and one undone automatic change-set in the week before the as-of time;
+    // the human one and the one from a month before do not count.
+    expect(topics.undo).toMatchObject({ automatic: 4, undone: 1, rate: 0.25 });
+    const markdown = renderMarkdown(report);
+    expect(markdown).toContain("## Topic tree");
+    expect(markdown).toContain("fail: reachability, itemsWithoutPrimary, hardViolations");
+  });
+
   it("measures the wiki tree, note reachability and source TOCs", () => {
     const wiki = data(report.wiki);
     expect(wiki).toMatchObject({ pages: 6, archivedPages: 1, aiOrphanRoots: 1, humanRoots: 2 });
@@ -211,7 +245,15 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
   it("renders aggregates without identifiers, titles or note text", () => {
     const markdown = renderMarkdown(report);
     const json = JSON.stringify(report);
-    for (const secret of ["SECRET-TITLE", "SECRET-BODY", "SECRET-FREE-TEXT", uid(1), uid(101)]) {
+    for (const secret of [
+      "SECRET-TITLE",
+      "SECRET-BODY",
+      "SECRET-FREE-TEXT",
+      uid(1),
+      uid(101),
+      uid(301),
+      "SECRET-TOPIC"
+    ]) {
       expect(markdown).not.toContain(secret);
       expect(json).not.toContain(secret);
     }
@@ -268,6 +310,7 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
         reason: "missing table ingestion_run_stages"
       });
       expect(old.wiki.available).toBe(false);
+      expect(old.topics).toEqual({ available: false, reason: "missing table topic_trees" });
       expect(old.organization.available).toBe(false);
       const jobs = data(old.jobs);
       expect(jobs.stuck).toBeNull();
@@ -275,11 +318,13 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
         expect.arrayContaining([
           "processing: missing table ingestion_run_stages",
           "wiki: missing table wiki_pages",
+          "topics: missing table topic_trees",
           "jobs.stuck: jobs lacks locked_at, updated_at, run_after"
         ])
       );
       expect(() => renderMarkdown(old)).not.toThrow();
       expect(renderMarkdown(old)).toContain("_Not available: missing table wiki_pages._");
+      expect(renderMarkdown(old)).toContain("_Not available: missing table topic_trees._");
     } finally {
       await closePgPool(oldPool);
     }
@@ -313,6 +358,29 @@ describe("collectKpi failure handling", () => {
     expect(result.gaps).toContain("jobs: query failed (XX000: unexpected error)");
   });
 
+  it("says there is no active topic tree when the tables exist but hold none", async () => {
+    const topicTables: Record<string, string[]> = {
+      topic_trees: ["status", "generation", "config"],
+      topics: ["tree_id", "parent_id", "role", "management", "retired_at", "redirect_to"],
+      topic_placements: ["tree_id", "topic_id", "rank", "needs_gate", "needs_vector"],
+      topic_change_sets: ["tree_id", "origin", "status", "applied_at"],
+      atomic_notes: ["status", "supersession_status"],
+      source_items: ["parent_source_item_id"]
+    };
+    const db: Db = {
+      query: async (text) => ({
+        rows: (text.includes("information_schema")
+          ? Object.entries(topicTables).flatMap(([table, columns]) =>
+              columns.map((column) => ({ table_name: table, column_name: column }))
+            )
+          : []) as never[]
+      })
+    };
+    const result = await collectKpi(db, options({ asOf: "now" }));
+    expect(result.topics).toEqual({ available: false, reason: "no active topic tree" });
+    expect(result.gaps).toContain("topics: no active topic tree");
+  });
+
   it("describes missing tables and columns", async () => {
     const schema = new SchemaInfo(new Map([["jobs", new Set(["type"])]]));
     expect(schema.missing("jobs", "type")).toBeNull();
@@ -322,6 +390,63 @@ describe("collectKpi failure handling", () => {
     expect(schema.hasColumns("jobs", "type", "status")).toBe(false);
   });
 });
+
+/** An active tree: two leaves under the root, holding every current item but root source 2. */
+async function seedTopicTree(pool: PgPool): Promise<void> {
+  const repository = createTopicTreeRepository(pool);
+  const tree = await repository.createTree({
+    rootId: uid(301),
+    spaceKey: "local:test:256",
+    embeddingProvider: "test",
+    embeddingModel: "test",
+    embeddingRuntime: "none",
+    dimensions: 256,
+    config: {},
+    configHash: "hash",
+    seed: 1
+  });
+  const leaf = (n: number, position: number) =>
+    topicRecord(uid(n), uid(301), {
+      title: "SECRET-TOPIC",
+      nameState: "named",
+      nameSource: "llm",
+      nameLanguage: "en",
+      position
+    });
+  // The sibling titles are unique (I7), so the second leaf gets its own.
+  const built = await repository.bootstrapSnapshot({
+    treeId: tree.id,
+    expectedGeneration: 0,
+    titleKey: "topics.changeSets.build",
+    topics: [leaf(302, 1), { ...leaf(303, 2), title: "SECRET-TOPIC two" }],
+    placements: [
+      { item: itemKey("note", uid(11)), placement: placementRecord(uid(302)) },
+      { item: itemKey("note", uid(12)), placement: placementRecord(uid(302)) },
+      { item: itemKey("note", uid(15)), placement: placementRecord(uid(303)) },
+      { item: itemKey("source", uid(1)), placement: placementRecord(uid(303)) }
+    ]
+  });
+  if (built.kind !== "applied") throw new Error(`The topic tree did not apply: ${built.kind}`);
+  // Automatic change-sets: three applied and one undone inside the week before the as-of time
+  // (2026-03-11T10:00:00Z), a human one and one a month earlier outside what counts.
+  const rows: Array<[string, string, string]> = [
+    ["place", "applied", "2026-03-10T09:00:00Z"],
+    ["place", "applied", "2026-03-09T09:00:00Z"],
+    ["rebalance", "applied", "2026-03-08T09:00:00Z"],
+    ["rebalance", "undone", "2026-03-10T08:00:00Z"],
+    ["human", "applied", "2026-03-10T07:00:00Z"],
+    ["place", "applied", "2026-02-01T09:00:00Z"]
+  ];
+  let generation = 100;
+  for (const [origin, status, appliedAt] of rows) {
+    generation += 1;
+    await pool.query(
+      `insert into topic_change_sets (tree_id, origin, status, title_key, generation, applied_at, undone_at)
+       values ($1, $2, $3, 'topics.test', $4, $5, case when $3 = 'undone' then $5::timestamptz else null end)`,
+      [tree.id, origin, status, generation, appliedAt]
+    );
+  }
+}
 
 async function seed(pool: PgPool): Promise<void> {
   const q = (text: string, values: unknown[] = []) => pool.query(text, values);

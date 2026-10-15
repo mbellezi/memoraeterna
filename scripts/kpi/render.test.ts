@@ -66,6 +66,7 @@ describe("renderMarkdown", () => {
     processing: unavailable("missing table ingestion_run_stages"),
     ai: unavailable("missing table ai_task_runs"),
     matching: unavailable("missing table ai_task_runs"),
+    topics: unavailable("missing table topic_trees"),
     wiki: unavailable("missing table wiki_pages"),
     organization: unavailable("missing table organization_runs"),
     maintenance: unavailable("missing table maintenance_runs"),
@@ -80,6 +81,7 @@ describe("renderMarkdown", () => {
       "## Processing",
       "## AI usage",
       "## Matching",
+      "## Topic tree",
       "## Wiki structure",
       "## Organization runs",
       "## Maintenance runs",
@@ -88,6 +90,7 @@ describe("renderMarkdown", () => {
     ])
       expect(markdown).toContain(heading);
     expect(markdown).toContain("_Not available: missing table wiki_pages._");
+    expect(markdown).toContain("_Not available: missing table topic_trees._");
     expect(markdown).toContain("- wiki: missing table wiki_pages");
     expect(markdown).toContain("owner (127.0.0.1:61108/memora_app)");
     expect(markdown).toContain("sha256 0123456789ab");

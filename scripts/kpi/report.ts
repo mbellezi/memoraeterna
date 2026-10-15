@@ -7,6 +7,7 @@ import type {
   StageKpi,
   WikiKpi
 } from "./aggregate.js";
+import type { TopicAuditSummary } from "../topics/audit-core.js";
 
 /** Shape of the KPI report. It carries aggregates only: no identifiers, titles or note text. */
 
@@ -88,6 +89,9 @@ export interface DatabaseInfo {
   };
 }
 
+/** The topic tree section: the audit's aggregates (F2 T17), without identifiers. */
+export type TopicsKpi = TopicAuditSummary;
+
 export interface KpiReport {
   readonly schemaVersion: 1;
   readonly generatedAt: string;
@@ -100,6 +104,7 @@ export interface KpiReport {
   readonly processing: Section<ProcessingKpi>;
   readonly ai: Section<AiKpi>;
   readonly matching: Section<MatchingKpi>;
+  readonly topics: Section<TopicsKpi>;
   readonly wiki: Section<WikiKpi>;
   readonly organization: Section<AutomationKpi>;
   readonly maintenance: Section<AutomationKpi>;
