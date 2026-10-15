@@ -13,6 +13,7 @@ import { PostgresSidecarManager, resolvePostgresSidecarPaths } from "../sidecar/
 import {
   createJobRepository,
   defaultJobDebounce,
+  immediateJobDebounce,
   jobDedupeKeyMaxLength,
   type EnqueueDedupedInput
 } from "./jobRepository.js";
@@ -71,6 +72,11 @@ describe("job lanes and dedupe keys", () => {
     expect(jobDedupeKeyMaxLength).toBe(200);
   });
 
+  it("names an immediate request: no delay and no cap", () => {
+    expect(immediateJobDebounce).toEqual({ delayMs: 0, maxDelayMs: 0 });
+    expect(Object.isFrozen(immediateJobDebounce)).toBe(true);
+  });
+
   it("claims one lane and type set, and drops the claimed job's dedupe key", async () => {
     const db = new FakeQueryable([[jobRow({ status: "running", dedupeKey: null })]]);
     const job = await createJobRepository(db).claimNext(
@@ -119,6 +125,18 @@ describe("job lanes and dedupe keys", () => {
       2.5,
       30
     ]);
+  });
+
+  it("merges by one rule: immediate pulls to now, a due job is kept, a debounce moves forward", async () => {
+    const db = new FakeQueryable([[{ ...jobRow(), created: false }]]);
+    await createJobRepository(db).enqueueDeduped(deduped({ debounce: immediateJobDebounce }));
+    const [query] = db.queries;
+    // The three cases, in this order, read the clock after the row is locked.
+    expect(query?.text).toMatch(
+      /when \$7::double precision <= 0 then least\(j\.run_after, clock_timestamp\(\)\)\s+when j\.run_after <= clock_timestamp\(\) then j\.run_after\s+else greatest\(/
+    );
+    // An immediate request carries a zero delay, which is how the statement tells it apart.
+    expect(query?.values.slice(6)).toEqual([0, 0]);
   });
 
   it("refuses a key that is queued for another type or lane", async () => {
@@ -242,8 +260,8 @@ describe.skipIf(!sidecarInstalled)("job lanes on a real PostgreSQL database", ()
     const jobs = createJobRepository(db());
     const { job } = await jobs.enqueueDeduped(deduped());
     expect(await seconds(job.id, "run_after - created_at")).toBe(10);
-    // A request with no delay never pulls the start earlier.
-    await jobs.enqueueDeduped(deduped({ debounce: { delayMs: 0, maxDelayMs: 60_000 } }));
+    // A debounced request with a shorter delay never pulls the start earlier.
+    await jobs.enqueueDeduped(deduped({ debounce: { delayMs: 1_000, maxDelayMs: 60_000 } }));
     expect(await seconds(job.id, "run_after - created_at")).toBe(10);
     // A later request pushes it.
     await jobs.enqueueDeduped(deduped({ debounce: { delayMs: 30_000, maxDelayMs: 60_000 } }));
@@ -265,6 +283,104 @@ describe.skipIf(!sidecarInstalled)("job lanes on a real PostgreSQL database", ()
     await jobs.enqueueDeduped(deduped());
     expect(await seconds(job.id, "run_after - created_at")).toBe(140);
     expect((await jobs.findById(job.id))?.status).toBe("queued");
+  });
+
+  const isDue = async (id: string) =>
+    (
+      await db().query<{ due: boolean }>(
+        "select run_after <= clock_timestamp() as due from jobs where id = $1",
+        [id]
+      )
+    ).rows[0]?.due;
+  const runAfterOf = async (id: string) => (await createJobRepository(db()).findById(id))?.runAfter;
+  const debounced = { debounce: { delayMs: 30_000, maxDelayMs: 60_000 } };
+  const immediate = { debounce: immediateJobDebounce };
+
+  it("makes a queued job due now when an immediate request merges into it", async () => {
+    const jobs = createJobRepository(db());
+    const { job } = await jobs.enqueueDeduped(deduped());
+    expect(await isDue(job.id)).toBe(false);
+    const merged = await jobs.enqueueDeduped(deduped(immediate));
+    expect(merged).toMatchObject({ created: false, job: { id: job.id, status: "queued" } });
+    expect(await isDue(job.id)).toBe(true);
+    // Pulled from 10 s after the first request to now, never to a time before the job existed.
+    expect(await seconds(job.id, "run_after - created_at")).toBeGreaterThanOrEqual(0);
+    expect(await seconds(job.id, "run_after - created_at")).toBeLessThan(10);
+    // The light lane can claim it at once.
+    expect((await jobs.claimNext("light-compute", ["topic-place"], "light"))?.id).toBe(job.id);
+  });
+
+  it("never moves an immediate job later when a debounced request follows", async () => {
+    const jobs = createJobRepository(db());
+    const first = await jobs.enqueueDeduped(deduped(immediate));
+    expect(first.created).toBe(true);
+    expect(await isDue(first.job.id)).toBe(true);
+    const runAfter = await runAfterOf(first.job.id);
+    for (const request of [
+      deduped(),
+      deduped(debounced),
+      deduped({ debounce: defaultJobDebounce })
+    ]) {
+      const merged = await jobs.enqueueDeduped(request);
+      expect(merged).toMatchObject({ created: false, job: { id: first.job.id } });
+    }
+    expect(await runAfterOf(first.job.id)).toEqual(runAfter);
+    expect(await isDue(first.job.id)).toBe(true);
+    // The same after an immediate request pulled an existing debounced job to now.
+    await db().query("delete from jobs");
+    const queued = await jobs.enqueueDeduped(deduped(debounced));
+    await jobs.enqueueDeduped(deduped(immediate));
+    const pulled = await runAfterOf(queued.job.id);
+    await jobs.enqueueDeduped(deduped(debounced));
+    await jobs.enqueueDeduped(deduped());
+    expect(await runAfterOf(queued.job.id)).toEqual(pulled);
+    expect(await isDue(queued.job.id)).toBe(true);
+  });
+
+  it("does not postpone a job that is already due, however it became due", async () => {
+    const jobs = createJobRepository(db());
+    const { job } = await jobs.enqueueDeduped(deduped());
+    // The debounce elapsed while the lane's worker was busy with other work.
+    await db().query("update jobs set run_after = now() - interval '2 seconds' where id = $1", [
+      job.id
+    ]);
+    const due = await runAfterOf(job.id);
+    await jobs.enqueueDeduped(deduped(debounced));
+    expect(await runAfterOf(job.id)).toEqual(due);
+    // An immediate request does not pull a due job earlier than it was due, either.
+    await jobs.enqueueDeduped(deduped(immediate));
+    expect(await runAfterOf(job.id)).toEqual(due);
+    // A job that is not due yet still moves forward.
+    await db().query("update jobs set run_after = now() + interval '5 seconds' where id = $1", [
+      job.id
+    ]);
+    await jobs.enqueueDeduped(deduped(debounced));
+    expect(await seconds(job.id, "run_after - clock_timestamp()")).toBeGreaterThan(20);
+  });
+
+  it("merges a mix of 100 concurrent immediate and debounced requests into one due job", async () => {
+    const jobs = createJobRepository(db());
+    const requests = Array.from({ length: 100 }, (_, index) =>
+      index % 4 === 0 ? deduped(immediate) : deduped(index % 2 === 0 ? debounced : {})
+    );
+    const results = await Promise.all(requests.map((request) => jobs.enqueueDeduped(request)));
+    expect(results.filter((result) => result.created)).toHaveLength(1);
+    expect(new Set(results.map((result) => result.job.id)).size).toBe(1);
+    const rows = await db().query<{ id: string; status: string; due: boolean }>(
+      `select id, status, run_after <= clock_timestamp() as due from jobs where dedupe_key = $1`,
+      ["topic-place:tree:root"]
+    );
+    // One queued row, due now: the 25 immediate requests won whatever order the rest arrived in.
+    expect(rows.rows).toEqual([{ id: results[0]?.job.id, status: "queued", due: true }]);
+    // Debounced requests alone leave the start debounce-forward, inside the cap.
+    await db().query("delete from jobs");
+    const only = await Promise.all(
+      requests.filter((_, index) => index % 4 !== 0).map((request) => jobs.enqueueDeduped(request))
+    );
+    const id = only[0]!.job.id;
+    expect(await seconds(id, "run_after - created_at")).toBeGreaterThanOrEqual(30);
+    expect(await seconds(id, "run_after - created_at")).toBeLessThanOrEqual(60);
+    expect(await isDue(id)).toBe(false);
   });
 
   it("never lets a running job absorb a new request", async () => {

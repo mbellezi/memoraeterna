@@ -9,6 +9,7 @@ import {
   closePgPool,
   createJobRepository,
   createPgPool,
+  immediateJobDebounce,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
@@ -21,9 +22,10 @@ import { JobSupervisor } from "./job-supervisor.js";
 /**
  * Real-database proof of the job lanes (migration 0051_job_lanes): applied as a pending migration
  * on a database with jobs and through the baseline seed; columns, defaults, checks and indexes on
- * both; the light claim's plan; 100 concurrent requests for one key; and the light lane's
- * enqueue-to-done latency while a 2 s heavy job, or a light model job holding a fake AI slot for
- * 2 s, is running. It starts its own temporary PostgreSQL sidecar and touches no other database.
+ * both; the light claim's plan; 100 concurrent requests for one key, also a mix of immediate and
+ * debounced ones; and the light lane's enqueue-to-done latency while a 2 s heavy job, or a light
+ * model job holding a fake AI slot for 2 s, is running. It starts its own temporary PostgreSQL
+ * sidecar and touches no other database.
  *
  *   npx tsx apps/desktop/src/main/services/verify-job-lanes.ts
  */
@@ -224,6 +226,42 @@ try {
   assert.equal(burstRows.rowCount, 1, "one queued job per key");
   assert.equal(burst.filter((result) => result.created).length, 1, "one request created it");
   report.concurrentEnqueues = { requests: 100, queuedRows: burstRows.rowCount };
+  await db.query("delete from jobs");
+
+  // 4b. An immediate request is never deferred by a debounced one on the same key, whatever the
+  // order or concurrency: the one queued row ends up due now and the lane claims it at once.
+  const mixed = await Promise.all(
+    Array.from({ length: 100 }, (_, n) =>
+      jobs.enqueueDeduped({
+        type: "verify-light",
+        lane: "light",
+        dedupeKey: "verify:mixed",
+        payload: { n },
+        debounce: n % 4 === 0 ? immediateJobDebounce : { delayMs: 30_000, maxDelayMs: 60_000 }
+      })
+    )
+  );
+  const mixedRows = await db.query<{ due: boolean }>(
+    "select run_after <= clock_timestamp() as due from jobs where dedupe_key = 'verify:mixed'"
+  );
+  assert.equal(mixedRows.rowCount, 1, "one queued job per key under mixed requests");
+  assert.equal(mixed.filter((result) => result.created).length, 1, "one request created it");
+  assert.equal(mixedRows.rows[0]?.due, true, "an immediate request made the job due now");
+  await jobs.enqueueDeduped({
+    type: "verify-light",
+    lane: "light",
+    dedupeKey: "verify:mixed",
+    debounce: { delayMs: 30_000, maxDelayMs: 60_000 }
+  });
+  const stillDue = await db.query<{ due: boolean }>(
+    "select run_after <= clock_timestamp() as due from jobs where dedupe_key = 'verify:mixed'"
+  );
+  assert.equal(stillDue.rows[0]?.due, true, "a later debounced request does not postpone it");
+  assert.ok(
+    await jobs.claimNext("verify-mixed", ["verify-light"], "light"),
+    "the light lane claims the immediate job at once"
+  );
+  report.mixedRequests = { requests: 100, queuedRows: mixedRows.rowCount, due: true };
   await db.query("delete from jobs");
 
   // 5. The light claim reads jobs_lane_queue_idx, on a table the size of a long-lived library.

@@ -47,8 +47,11 @@ export interface CreateJobInput {
 }
 
 /**
- * Debounce of a deduped job: each request moves its start to `delayMs` from now, never earlier
- * than it was and never later than `maxDelayMs` after the first request (unless it already was).
+ * Debounce of a deduped job. A request with a delay moves the start of the queued job to `delayMs`
+ * from now, never earlier than it was and never later than `maxDelayMs` after the first request
+ * (unless it already was), and not at all once the job is due (`run_after` has passed). A request
+ * with `delayMs` 0 is immediate: it makes the job due now and nothing a debounced request does
+ * later moves it back.
  */
 export interface JobDebounce {
   delayMs: number;
@@ -58,6 +61,12 @@ export interface JobDebounce {
 export const defaultJobDebounce: Readonly<JobDebounce> = Object.freeze({
   delayMs: 10_000,
   maxDelayMs: 60_000
+});
+
+/** An immediate request: the job runs as soon as a worker is free. */
+export const immediateJobDebounce: Readonly<JobDebounce> = Object.freeze({
+  delayMs: 0,
+  maxDelayMs: 0
 });
 
 /** Same bound as the `jobs_dedupe_key` check, in code points like `char_length`. */
@@ -202,9 +211,16 @@ export function createJobRepository(db: Queryable) {
 
     /**
      * Queues a job unless one with the same key is already queued; then that job absorbs the
-     * request and its start moves by the debounce. A running job never absorbs a request: it may
-     * have read its inputs already, so a new queued job is created next to it. Safe under any
-     * number of concurrent callers (one insert-or-update on the partial unique index).
+     * request and its start moves by the merge rule, which depends on the order of requests only
+     * through whether the job is due (`run_after <= now`, exactly what `claimNext` claims):
+     * - an immediate request (`delayMs` 0) sets `run_after = least(run_after, now)`, so the job is
+     *   due now;
+     * - a debounced request leaves a due job as it is, so nothing postpones a job that is due,
+     *   and otherwise moves `run_after` forward by the debounce, up to the cap after `created_at`.
+     * "Due" is derived from `run_after`, not stored: a second marker could disagree with it.
+     * A running job never absorbs a request: it may have read its inputs already, so a new queued
+     * job is created next to it. Safe under any number of concurrent callers (one insert-or-update
+     * on the partial unique index; the merge reads the clock after it holds the row).
      */
     async enqueueDeduped(
       input: EnqueueDedupedInput
@@ -216,10 +232,14 @@ export function createJobRepository(db: Queryable) {
          values ($1, $2, $3, $4, $5, $6, now() + make_interval(secs => $7::double precision))
          on conflict (dedupe_key) where dedupe_key is not null and status = 'queued'
          do update set
-           run_after = greatest(
-             j.run_after,
-             least(excluded.run_after, j.created_at + make_interval(secs => $8::double precision))
-           ),
+           run_after = case
+             when $7::double precision <= 0 then least(j.run_after, clock_timestamp())
+             when j.run_after <= clock_timestamp() then j.run_after
+             else greatest(
+               j.run_after,
+               least(excluded.run_after, j.created_at + make_interval(secs => $8::double precision))
+             )
+           end,
            updated_at = now()
          where j.type = excluded.type and j.lane = excluded.lane
          returning ${returning}, (j.xmax = 0) as created`,

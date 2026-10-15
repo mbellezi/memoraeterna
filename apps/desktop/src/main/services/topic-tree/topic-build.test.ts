@@ -7,6 +7,7 @@ import type { TopicStructureJobsOptions } from "./topic-build.js";
 import type { TopicChangeCoalescer } from "./topic-changes.js";
 import { topicJobTypes } from "./topic-jobs.js";
 import type { TopicTreeService } from "./topic-tree-service.js";
+import { immediateDebounce } from "./topic-triggers.js";
 import type { TopicTriggers } from "./topic-triggers.js";
 
 const treeId = "00000000-0000-4000-8000-000000000001";
@@ -79,6 +80,18 @@ describe("the structure jobs' follow-ups", () => {
     await jobs.startup(null);
     await jobs.startup(treeId);
     expect(requested()).toEqual([topicJobTypes.audit, topicJobTypes.audit]);
+  });
+
+  it("asks for the sweep's audit at once and for PLACE's follow-ups debounced", async () => {
+    const { jobs, request } = structure();
+    await jobs.afterSweep({ status: "swept", treeId, recomputedTopics: 2 });
+    await jobs.afterPlace(placeJob, { status: "applied", generation: 3, changeSetId });
+    // (type, tree, scope, options): the options of an immediate request name the debounce.
+    expect(request.mock.calls.map((call) => (call as unknown[]).slice(0, 4))).toEqual([
+      [topicJobTypes.audit, treeId, null, { debounce: immediateDebounce }],
+      [topicJobTypes.rebalance, treeId, null, {}],
+      [topicJobTypes.audit, treeId, null, {}]
+    ]);
   });
 
   it("skips types without an executor and never fails the job that asked", async () => {

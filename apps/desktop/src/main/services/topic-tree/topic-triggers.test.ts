@@ -180,6 +180,20 @@ describe("topic triggers", () => {
     });
   });
 
+  it("pass an immediate request's debounce on, so the queue makes the queued job due", async () => {
+    const { triggers: api } = triggers(["topic-place", "topic-sweep", "topic-audit"]);
+    await api.request("topic-audit", tree, null, { debounce: immediateDebounce });
+    await api.request("topic-audit", tree);
+    await api.place(tree, [{ rootSourceId: rootA }], { debounce: immediateDebounce });
+    expect(db.enqueued.map((entry) => entry.input.debounce)).toEqual([
+      immediateDebounce,
+      debounce,
+      immediateDebounce
+    ]);
+    // Both audit requests are for one key, which the queue merges into one job.
+    expect([...db.queued.keys()]).toEqual([`topic-audit:${tree}`, `topic-place:${tree}:${rootA}`]);
+  });
+
   describe("repair after a cascade (D32)", () => {
     const withRebalance = ["topic-place", "topic-sweep", "topic-rebalance"];
 

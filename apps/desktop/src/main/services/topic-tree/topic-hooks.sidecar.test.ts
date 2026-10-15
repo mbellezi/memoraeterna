@@ -716,10 +716,11 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     await hooks.notesChanged(created);
     expect(await queued("topic-place")).toBe(1);
     const ran = await drain();
-    // The repair's sweep and REBALANCE (T19's executor) are due at once and run before PLACE; the
-    // follow-ups PLACE asks for are debounced and wait.
+    // The repair's sweep and REBALANCE (T19's executor) are due at once and run before PLACE. The
+    // sweep restored statistics, so it asked for an audit at once, and the debounced audit that
+    // PLACE asks for afterwards does not defer it; PLACE's other follow-ups are debounced and wait.
     expect(new Set(ran.map((entry) => entry.type))).toEqual(
-      new Set(["topic-place", "topic-sweep", "topic-rebalance"])
+      new Set(["topic-place", "topic-sweep", "topic-rebalance", "topic-audit"])
     );
     expect(ran.map((entry) => entry.id)).toEqual(
       expect.arrayContaining(repair.map((job) => job.id))

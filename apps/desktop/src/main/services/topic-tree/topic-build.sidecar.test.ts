@@ -815,4 +815,44 @@ describe.skipIf(!sidecarAvailable)("the topic structure jobs on the PostgreSQL s
     }
     expect((await activeTree()).generation).toBe(generation);
   });
+
+  it("never lets PLACE's debounced audit request defer the immediate one a sweep made", async () => {
+    const tree = await activeTree();
+    const placeJob = { id: randomUUID(), payload: { treeId: tree.id } } as unknown as JobRecord;
+    const swept = { status: "swept", treeId: tree.id, recomputedTopics: 2 };
+    // A generation far ahead of the last audit: this PLACE asks for an audit too.
+    const placed = { status: "applied", generation: 1_000_000, changeSetId: randomUUID() };
+    const sweep = () => services.structure.afterSweep(swept);
+    const place = () => services.structure.afterPlace(placeJob, placed);
+    const queuedJobs = async (type: string) =>
+      (
+        await pool.query<{ id: string; due: boolean; seconds: number }>(
+          `select id, run_after <= clock_timestamp() as due,
+                  extract(epoch from run_after - clock_timestamp())::float8 as seconds
+             from jobs where type = $1 and status = 'queued'`,
+          [type]
+        )
+      ).rows;
+    for (const order of [
+      [sweep, place],
+      [place, sweep],
+      [place, sweep, place]
+    ]) {
+      await pool.query(
+        "update jobs set status = 'canceled' where status = 'queued' and type = any($1)",
+        [[topicJobTypes.audit, topicJobTypes.rebalance]]
+      );
+      for (const step of order) await step();
+      // One audit, due now, and the debounce (an hour here) only left on the REBALANCE.
+      const audits = await queuedJobs(topicJobTypes.audit);
+      expect(audits).toMatchObject([{ due: true }]);
+      const rebalances = await queuedJobs(topicJobTypes.rebalance);
+      expect(rebalances).toHaveLength(1);
+      expect(rebalances[0]?.seconds).toBeGreaterThan(3_000);
+    }
+    await pool.query(
+      "update jobs set status = 'canceled' where status = 'queued' and type = any($1)",
+      [[topicJobTypes.audit, topicJobTypes.rebalance]]
+    );
+  });
 });

@@ -7,7 +7,8 @@
 import {
   createJobRepository,
   createTopicTreeLoadRepository,
-  createTopicTreeRepository
+  createTopicTreeRepository,
+  immediateJobDebounce
 } from "@app/db";
 import type { JobDebounce, JobRecord, JsonObject, PgPool, Queryable } from "@app/db";
 
@@ -49,11 +50,11 @@ async function hasDirtyStats(db: Queryable, treeId: string): Promise<boolean> {
   return result.rows[0]?.dirty === true;
 }
 
-/** Runs a job as soon as possible (a sweep at startup, places a sweep found). */
-export const immediateDebounce: Readonly<JobDebounce> = Object.freeze({
-  delayMs: 0,
-  maxDelayMs: 0
-});
+/**
+ * Runs a job as soon as possible (a sweep at startup, places a sweep found). Merged into a queued
+ * job of its key it makes that job due now, and no debounced request moves it back.
+ */
+export const immediateDebounce: Readonly<JobDebounce> = immediateJobDebounce;
 
 export class TopicTriggers {
   public constructor(private readonly options: TopicTriggersOptions) {}
