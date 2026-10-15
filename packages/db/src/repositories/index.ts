@@ -39,3 +39,4 @@ export * from "./objectLocateRepository.js";
 export * from "./notePageRepository.js";
 export * from "./relationExplanationRepository.js";
 export * from "./sourceRelationExplanationRepository.js";
+export * from "./topicTreeRepository.js";

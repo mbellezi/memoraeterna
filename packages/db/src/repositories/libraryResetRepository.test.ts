@@ -95,4 +95,19 @@ describe("full application reset", () => {
     ])
       expect(resetClearedTables).toContain(table);
   });
+
+  it("empties the topic tree (a reset leaves no tree; the service creates one, D39)", () => {
+    for (const table of [
+      "topic_trees",
+      "topics",
+      "topic_stats",
+      "topic_placements",
+      "topic_change_sets",
+      "topic_structure_events",
+      "topic_gate_decisions",
+      "topic_daily_metrics",
+      "topic_calibrations"
+    ])
+      expect(resetClearedTables).toContain(table);
+  });
 });

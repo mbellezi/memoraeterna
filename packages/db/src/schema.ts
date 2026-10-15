@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  date,
   doublePrecision,
   index,
   integer,
@@ -11,6 +12,8 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  real,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -29,6 +32,10 @@ const vector768 = customType<{ data: string }>({
 
 const vector1024 = customType<{ data: string }>({
   dataType: () => "vector(1024)"
+});
+
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => "bytea"
 });
 
 export const sourceItemType = pgEnum("source_item_type", [
@@ -2682,4 +2689,449 @@ export const atomicNoteEvolution = pgTable(
     primaryKey({ columns: [t.previousId, t.nextId] }),
     index("atomic_note_evolution_run_idx").on(t.runId)
   ]
+);
+
+// ---------------------------------------------------------------------------
+// Topic Tree Engine (F2, migration 0053). One active tree per library (D2: `active|retired`); a
+// topic and its index are one node. The engine is the single writer of these tables (D9): only
+// `topicTreeRepository.ts` writes them, a guard trigger refuses AI-managed parent and management
+// writes outside an engine transaction, and placements leave with their items by cascade (D32).
+// Check lists mirror `@app/domain` `topics.ts` (topicTreeRepository.test.ts compares them).
+
+export const topicTrees = pgTable(
+  "topic_trees",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    status: text("status").notNull().default("active"),
+    /** Embedding space of every vector the tree compares (D26); spaces are never mixed. */
+    spaceKey: text("space_key").notNull(),
+    embeddingProvider: text("embedding_provider").notNull(),
+    embeddingModel: text("embedding_model").notNull(),
+    embeddingRuntime: text("embedding_runtime").notNull(),
+    dimensions: smallint("dimensions").notNull(),
+    config: jsonb("config").notNull(),
+    /** Hash of the structural configuration (D39). */
+    configHash: text("config_hash").notNull(),
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    /** Applied change-sets; every write checks the generation it was computed from. */
+    generation: bigint("generation", { mode: "number" }).notNull().default(0),
+    /** The engine's logical clock (repair cooldowns). */
+    clock: bigint("clock", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+    retiredAt: timestamp("retired_at", { withTimezone: true })
+  },
+  (table) => ({
+    activeUidx: uniqueIndex("topic_trees_active_uidx")
+      .on(table.status)
+      .where(sql`${table.status} = 'active'`),
+    statusCheck: check("topic_trees_status", sql`${table.status} in ('active','retired')`),
+    lifeCheck: check(
+      "topic_trees_life",
+      sql`(${table.status} = 'retired') = (${table.retiredAt} is not null)
+        and (${table.status} <> 'active' or ${table.activatedAt} is not null)`
+    ),
+    dimensionsCheck: check("topic_trees_dimensions", sql`${table.dimensions} in (256,768,1024)`),
+    countersCheck: check(
+      "topic_trees_counters",
+      sql`${table.generation} >= 0 and ${table.clock} >= 0`
+    ),
+    textCheck: check(
+      "topic_trees_text",
+      sql`char_length(${table.spaceKey}) between 1 and 300 and char_length(${table.configHash}) between 1 and 200`
+    )
+  })
+);
+
+export const topics = pgTable(
+  "topics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => topicTrees.id, { onDelete: "restrict" }),
+    /** The only parent pointer (D1); null exactly for the root. */
+    parentId: uuid("parent_id").references((): AnyPgColumn => topics.id, { onDelete: "restrict" }),
+    role: text("role").notNull().default("topic"),
+    /** Null exactly when the topic is unnamed (the interface renders "Unnamed topic"). */
+    title: text("title"),
+    nameState: text("name_state").notNull().default("unnamed"),
+    nameSource: text("name_source"),
+    nameLanguage: varchar("name_language", { length: 16 }),
+    namedChangeSetId: uuid("named_change_set_id"),
+    description: text("description"),
+    aliases: jsonb("aliases")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** `human` and `pinned` topics are protected from automation. */
+    management: text("management").notNull().default("ai"),
+    position: integer("position").notNull().default(0),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    /** A retired topic redirects to its successor; IDs are never reused. */
+    redirectTo: uuid("redirect_to").references((): AnyPgColumn => topics.id, {
+      onDelete: "restrict"
+    }),
+    createdChangeSetId: uuid("created_change_set_id"),
+    ...timestamps
+  },
+  (table) => ({
+    childrenIdx: index("topics_children_idx")
+      .on(table.treeId, table.parentId, table.position)
+      .where(sql`${table.retiredAt} is null`),
+    rootUidx: uniqueIndex("topics_tree_root_uidx")
+      .on(table.treeId)
+      .where(sql`${table.role} = 'root' and ${table.retiredAt} is null`),
+    // I7 backstop: live siblings never share a title, ignoring case and accents.
+    siblingTitleUidx: uniqueIndex("topics_sibling_title_uidx")
+      .on(table.parentId, sql`f_unaccent(lower(${table.title}))`)
+      .where(sql`${table.retiredAt} is null and ${table.title} is not null`),
+    roleCheck: check("topics_role", sql`${table.role} in ('root','topic')`),
+    parentCheck: check(
+      "topics_parent",
+      sql`${table.parentId} is distinct from ${table.id} and (${table.role} = 'root') = (${table.parentId} is null)`
+    ),
+    nameStateCheck: check(
+      "topics_name_state",
+      sql`${table.nameState} in ('named','provisional','unnamed')
+        and (${table.nameSource} is null or ${table.nameSource} in ('llm','human','tfidf'))
+        and (${table.role} = 'root' or (${table.nameState} = 'unnamed') = (${table.title} is null))`
+    ),
+    textCheck: check(
+      "topics_text",
+      sql`(${table.title} is null or char_length(${table.title}) between 1 and 120)
+        and (${table.description} is null or char_length(${table.description}) between 1 and 400)
+        and (${table.nameLanguage} is null or char_length(${table.nameLanguage}) >= 1)
+        and jsonb_typeof(${table.aliases}) = 'array' and jsonb_array_length(${table.aliases}) <= 10`
+    ),
+    managementCheck: check(
+      "topics_management",
+      sql`${table.management} in ('ai','human','pinned')`
+    ),
+    positionCheck: check("topics_position", sql`${table.position} >= 0`),
+    redirectCheck: check(
+      "topics_redirect",
+      sql`(${table.redirectTo} is null or ${table.retiredAt} is not null) and ${table.redirectTo} is distinct from ${table.id}`
+    )
+  })
+);
+
+export const topicStats = pgTable(
+  "topic_stats",
+  {
+    topicId: uuid("topic_id")
+      .primaryKey()
+      .references(() => topics.id, { onDelete: "cascade" }),
+    spaceKey: text("space_key").notNull(),
+    /** Items of the subtree that count (D8). */
+    n: integer("n").notNull().default(0),
+    /** Sum of their unit vectors: Float64, little-endian (D7); null until first computed. */
+    ls: bytea("ls"),
+    cosSqSum: doublePrecision("cos_sq_sum").notNull().default(0),
+    lowCosPercentiles: real("low_cos_percentiles")
+      .array()
+      .notNull()
+      .default(sql`'{}'::real[]`),
+    coherence: real("coherence"),
+    directItems: integer("direct_items").notNull().default(0),
+    children: integer("children").notNull().default(0),
+    health: text("health").notNull().default("good"),
+    violations: jsonb("violations")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    /** The statistics need an exact recompute (a change or a cascade touched the subtree). */
+    dirty: boolean("dirty").notNull().default(true),
+    lastRepairAt: timestamp("last_repair_at", { withTimezone: true }),
+    /** Tree clock of the last repair (cooldown); null when never repaired. */
+    repairClock: bigint("repair_clock", { mode: "number" }),
+    computedAt: timestamp("computed_at", { withTimezone: true })
+  },
+  (table) => ({
+    dirtyIdx: index("topic_stats_dirty_idx")
+      .on(table.topicId)
+      .where(sql`${table.dirty}`),
+    countsCheck: check(
+      "topic_stats_counts",
+      sql`${table.n} >= 0 and ${table.directItems} >= 0 and ${table.children} >= 0`
+    ),
+    healthCheck: check(
+      "topic_stats_health",
+      sql`${table.health} in ('good','attention','violation') and jsonb_typeof(${table.violations}) = 'array'`
+    )
+  })
+);
+
+export const topicChangeSets = pgTable(
+  "topic_change_sets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => topicTrees.id, { onDelete: "restrict" }),
+    origin: text("origin").notNull(),
+    status: text("status").notNull(),
+    /** Localized, deterministic title: an i18n key and its parameters. */
+    titleKey: text("title_key").notNull(),
+    titleParams: jsonb("title_params")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    risk: text("risk").notNull().default("low"),
+    undoOf: uuid("undo_of").references((): AnyPgColumn => topicChangeSets.id, {
+      onDelete: "restrict"
+    }),
+    jobId: uuid("job_id").references(() => jobs.id, { onDelete: "set null" }),
+    aiTaskRunIds: jsonb("ai_task_run_ids")
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    summary: jsonb("summary")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    /** The tree generation this change-set produced; null until applied (apply order). */
+    generation: bigint("generation", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
+    undoneAt: timestamp("undone_at", { withTimezone: true })
+  },
+  (table) => ({
+    treeCreatedIdx: index("topic_change_sets_tree_created_idx").on(
+      table.treeId,
+      table.createdAt.desc()
+    ),
+    generationUidx: uniqueIndex("topic_change_sets_generation_uidx")
+      .on(table.treeId, table.generation)
+      .where(sql`${table.generation} is not null`),
+    originCheck: check(
+      "topic_change_sets_origin",
+      sql`${table.origin} in ('build','place','gate','rebalance','audit','naming','areas','human','undo','rebuild')
+        and (${table.origin} = 'undo') = (${table.undoOf} is not null)`
+    ),
+    statusCheck: check(
+      "topic_change_sets_status",
+      sql`${table.status} in ('applied','undone','pending_review','dismissed')
+        and (${table.status} in ('applied','undone')) = (${table.generation} is not null)
+        and (${table.status} in ('applied','undone')) = (${table.appliedAt} is not null)
+        and (${table.status} = 'undone') = (${table.undoneAt} is not null)`
+    ),
+    riskCheck: check("topic_change_sets_risk", sql`${table.risk} in ('low','medium','high')`),
+    jsonCheck: check(
+      "topic_change_sets_json",
+      sql`char_length(${table.titleKey}) between 1 and 200 and jsonb_typeof(${table.titleParams}) = 'object'
+        and jsonb_typeof(${table.aiTaskRunIds}) = 'array' and jsonb_typeof(${table.summary}) = 'object'`
+    )
+  })
+);
+
+export const topicStructureEvents = pgTable(
+  "topic_structure_events",
+  {
+    changeSetId: uuid("change_set_id")
+      .notNull()
+      .references(() => topicChangeSets.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    op: text("op").notNull(),
+    // Events keep topic and item IDs without foreign keys (D32): history outlives deleted items.
+    topicId: uuid("topic_id"),
+    itemKind: text("item_kind"),
+    itemId: uuid("item_id"),
+    before: jsonb("before"),
+    after: jsonb("after"),
+    /** Every topic the event reads or writes (undo dependency lookups). */
+    refTopicIds: uuid("ref_topic_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`)
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.changeSetId, table.seq] }),
+    topicIdx: index("topic_structure_events_topic_idx")
+      .on(table.topicId)
+      .where(sql`${table.topicId} is not null`),
+    itemIdx: index("topic_structure_events_item_idx")
+      .on(table.itemKind, table.itemId)
+      .where(sql`${table.itemId} is not null`),
+    refsIdx: index("topic_structure_events_refs_idx").using("gin", table.refTopicIds),
+    opCheck: check(
+      "topic_structure_events_op",
+      sql`${table.op} in ('topic.create','topic.retire','topic.restore','topic.move','topic.rename',
+        'topic.describe','topic.manage','item.place','item.unplace','item.move') and ${table.seq} >= 0`
+    ),
+    itemCheck: check(
+      "topic_structure_events_item",
+      sql`(${table.itemKind} is null) = (${table.itemId} is null)
+        and (${table.itemKind} is null or ${table.itemKind} in ('note','source'))`
+    )
+  })
+);
+
+export const topicPlacements = pgTable(
+  "topic_placements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => topicTrees.id, { onDelete: "restrict" }),
+    itemKind: text("item_kind").notNull(),
+    // Placements leave with their item (D32); a statement trigger marks the paths dirty.
+    noteId: uuid("note_id").references(() => atomicNotes.id, { onDelete: "cascade" }),
+    sourceItemId: uuid("source_item_id").references(() => sourceItems.id, {
+      onDelete: "cascade"
+    }),
+    /** A placed note's root source when it was placed (D8 dirty marking); derived, no FK. */
+    rootSourceItemId: uuid("root_source_item_id"),
+    topicId: uuid("topic_id")
+      .notNull()
+      .references(() => topics.id, { onDelete: "restrict" }),
+    role: text("role").notNull(),
+    rank: smallint("rank").notNull(),
+    management: text("management").notNull().default("ai"),
+    decidedBy: text("decided_by").notNull(),
+    /** Identity of the vector the placement was decided with. */
+    itemFingerprint: text("item_fingerprint"),
+    score: doublePrecision("score"),
+    margin: doublePrecision("margin"),
+    /** Cosine to the topic centroid at the last exact recompute. */
+    centrality: real("centrality"),
+    needsGate: boolean("needs_gate").notNull().default(false),
+    needsSplitCheck: boolean("needs_split_check").notNull().default(false),
+    needsVector: boolean("needs_vector").notNull().default(false),
+    movedFromTopicId: uuid("moved_from_topic_id"),
+    movedAt: timestamp("moved_at", { withTimezone: true }),
+    changeSetId: uuid("change_set_id").references(() => topicChangeSets.id, {
+      onDelete: "set null"
+    }),
+    placedAt: timestamp("placed_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    rankUidx: uniqueIndex("topic_placements_item_rank_uidx").on(
+      table.treeId,
+      table.itemKind,
+      sql`coalesce(${table.noteId}, ${table.sourceItemId})`,
+      table.rank
+    ),
+    topicUidx: uniqueIndex("topic_placements_item_topic_uidx").on(
+      table.treeId,
+      table.itemKind,
+      sql`coalesce(${table.noteId}, ${table.sourceItemId})`,
+      table.topicId
+    ),
+    topicRoleIdx: index("topic_placements_topic_role_idx").on(
+      table.topicId,
+      table.role,
+      table.centrality.desc()
+    ),
+    noteIdx: index("topic_placements_note_idx")
+      .on(table.noteId)
+      .where(sql`${table.noteId} is not null`),
+    sourceIdx: index("topic_placements_source_idx")
+      .on(table.sourceItemId)
+      .where(sql`${table.sourceItemId} is not null`),
+    flaggedIdx: index("topic_placements_flagged_idx")
+      .on(table.treeId)
+      .where(sql`${table.needsGate} or ${table.needsSplitCheck} or ${table.needsVector}`),
+    itemCheck: check(
+      "topic_placements_item",
+      sql`(${table.itemKind} = 'note' and ${table.noteId} is not null and ${table.sourceItemId} is null)
+        or (${table.itemKind} = 'source' and ${table.sourceItemId} is not null and ${table.noteId} is null
+            and ${table.rootSourceItemId} is null)`
+    ),
+    rankCheck: check(
+      "topic_placements_rank",
+      sql`${table.rank} between 0 and 2 and ${table.role} in ('primary','secondary')
+        and (${table.role} = 'primary') = (${table.rank} = 0)`
+    ),
+    decisionCheck: check(
+      "topic_placements_decision",
+      sql`${table.management} in ('ai','human')
+        and ${table.decidedBy} in ('build','auto','gate','fallback','human','rebuild')
+        and (${table.itemFingerprint} is null or char_length(${table.itemFingerprint}) between 1 and 200)`
+    )
+  })
+);
+
+export const topicGateDecisions = pgTable(
+  "topic_gate_decisions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => topicTrees.id, { onDelete: "restrict" }),
+    itemKind: text("item_kind").notNull(),
+    itemId: uuid("item_id").notNull(),
+    itemHash: text("item_hash").notNull(),
+    descriptorSetHash: text("descriptor_set_hash").notNull(),
+    deciderKey: text("decider_key").notNull(),
+    /** Candidates in gate order: topicId, descriptorHash, cosine, labelCosine, logOdds. */
+    candidates: jsonb("candidates").notNull(),
+    chosenTopicId: uuid("chosen_topic_id"),
+    noneOfThese: boolean("none_of_these").notNull().default(false),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    cacheUidx: uniqueIndex("topic_gate_decisions_cache_uidx").on(
+      table.itemHash,
+      table.descriptorSetHash,
+      table.deciderKey
+    ),
+    itemIdx: index("topic_gate_decisions_item_idx").on(table.itemKind, table.itemId),
+    decisionCheck: check(
+      "topic_gate_decisions_decision",
+      sql`${table.itemKind} in ('note','source') and ${table.noneOfThese} = (${table.chosenTopicId} is null)
+        and jsonb_typeof(${table.candidates}) = 'array'`
+    )
+  })
+);
+
+export const topicDailyMetrics = pgTable(
+  "topic_daily_metrics",
+  {
+    treeId: uuid("tree_id")
+      .notNull()
+      .references(() => topicTrees.id, { onDelete: "restrict" }),
+    day: date("day").notNull(),
+    opsApplied: integer("ops_applied").notNull().default(0),
+    itemsMoved: integer("items_moved").notNull().default(0),
+    primaryPathChanges: integer("primary_path_changes").notNull().default(0),
+    unsortedShare: real("unsorted_share"),
+    meanDepth: real("mean_depth"),
+    fanoutInTarget: real("fanout_in_target"),
+    hardViolations: integer("hard_violations"),
+    softViolations: integer("soft_violations"),
+    gateCalls: integer("gate_calls").notNull().default(0),
+    namingCalls: integer("naming_calls").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.treeId, table.day] }),
+    countsCheck: check(
+      "topic_daily_metrics_counts",
+      sql`${table.opsApplied} >= 0 and ${table.itemsMoved} >= 0 and ${table.primaryPathChanges} >= 0
+        and ${table.gateCalls} >= 0 and ${table.namingCalls} >= 0`
+    )
+  })
+);
+
+export const topicCalibrations = pgTable(
+  "topic_calibrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    spaceKey: text("space_key").notNull(),
+    /** Null for decider-independent parameters (stability, growth, structure). */
+    deciderKey: text("decider_key"),
+    params: jsonb("params").notNull(),
+    metrics: jsonb("metrics")
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    dataset: text("dataset").notNull(),
+    active: boolean("active").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    activeUidx: uniqueIndex("topic_calibrations_active_uidx")
+      .on(table.spaceKey, sql`coalesce(${table.deciderKey}, '')`)
+      .where(sql`${table.active}`),
+    jsonCheck: check(
+      "topic_calibrations_json",
+      sql`jsonb_typeof(${table.params}) = 'object' and jsonb_typeof(${table.metrics}) = 'object'`
+    )
+  })
 );
