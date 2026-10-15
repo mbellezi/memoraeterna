@@ -19,6 +19,7 @@ export const promptCategoryLabels = Object.fromEntries(
     "notes",
     "graph",
     "sources",
+    "relations",
     "embedding",
     "organization",
     "consultation",
@@ -82,6 +83,21 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
           content: "Feedback improved delayed recall."
         }
       ]
+    }
+  ],
+  relation_type: "supports",
+  relation_direction: "n1_to_n2",
+  max_characters: 300,
+  relation_notes: [
+    {
+      note: "n1",
+      idea: "Feedback improved delayed recall in a fictional trial.",
+      passage: "In a fictional study, retrieval with feedback improved recall."
+    },
+    {
+      note: "n2",
+      idea: "Retrieval practice strengthens long-term memory.",
+      passage: "Practice that recalls studied material strengthened later recall."
     }
   ],
   note_relations: [
@@ -182,7 +198,15 @@ function variable(key: string, id: string): PromptVariable {
       key === "guidance"
         ? "user_guidance"
         : numeric ||
-            ["output_contract", "content_language", "input_kind", "input_heading"].includes(key)
+            [
+              "output_contract",
+              "content_language",
+              "input_kind",
+              "input_heading",
+              "relation_type",
+              "relation_direction",
+              "max_characters"
+            ].includes(key)
           ? "public"
           : "source_content",
     serialization: "text",
@@ -204,15 +228,17 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
           ? "knowledge-graph-generation"
           : family === "sources"
             ? "reranking"
-            : family === "embedding"
-              ? "embedding"
-              : family === "diagnostics"
-                ? parts[1] === "local_embedding"
-                  ? "embedding"
-                  : "text-generation"
-                : family === "shared"
-                  ? "fragment"
-                  : "structured-output";
+            : family === "relations"
+              ? "text-generation"
+              : family === "embedding"
+                ? "embedding"
+                : family === "diagnostics"
+                  ? parts[1] === "local_embedding"
+                    ? "embedding"
+                    : "text-generation"
+                  : family === "shared"
+                    ? "fragment"
+                    : "structured-output";
   const title = promptLabel(parts.at(-1)!);
   return PromptDefinitionSchema.parse({
     version: "prompt-catalog-v1",

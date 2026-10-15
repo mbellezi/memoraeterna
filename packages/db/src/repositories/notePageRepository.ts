@@ -16,6 +16,7 @@ import {
 
 import type { PgPool } from "../client.js";
 import { createObjectLocateRepository } from "./objectLocateRepository.js";
+import { relationExplanationPlan } from "./relationExplanationRepository.js";
 import { mapNullableTimestamp, mapTimestamp } from "./sql.js";
 
 /**
@@ -62,14 +63,30 @@ interface RelationItem {
   id: string;
   type: string;
   direction: NotePageRelation["direction"];
+  semanticSourceId: string | null;
   matchingModel: string | null;
   decisionSource: string | null;
   explanation: string | null;
-  other: Omit<NotePageRelation["other"], "authorship"> & { edited: boolean; evolution: boolean };
+  /** An explanation written on demand, with the hash of the inputs it was written from. */
+  written: { text: string; inputHash: string; model: string } | null;
+  other: Omit<NotePageRelation["other"], "authorship"> & {
+    edited: boolean;
+    evolution: boolean;
+    passageHash: string | null;
+  };
+}
+
+/** The page's own note, as an explanation sees it. */
+interface SelfFacts {
+  id: string;
+  title: string;
+  ideaStatement: string;
+  passageHash: string | null;
 }
 
 interface RelationsRow extends QueryResultRow {
   total: number | string;
+  self: SelfFacts | null;
   items: RelationItem[];
 }
 
@@ -170,6 +187,7 @@ const relationsSql = `
 with rel as (
   select r.id, r.relation_type as type, r.final_score, r.explanation, r.matching_model,
          r.metadata->>'decisionSource' as decision_source,
+         r.metadata->>'semanticSourceAtomicNoteId' as semantic_source_id,
          case r.metadata->>'semanticSourceAtomicNoteId'
               when $1::uuid::text then 'outgoing'
               when o.id::text then 'incoming'
@@ -192,11 +210,18 @@ page as (
    limit $2::int offset $3::int
 )
 select (select count(*)::int from rel) as total,
+       (select jsonb_build_object('id', n.id, 'title', n.title, 'ideaStatement', n.idea_statement,
+                                  'passageHash', c.content_hash)
+          from atomic_notes n left join chunks c on c.id = n.evidence_chunk_id
+         where n.id = $1::uuid) as self,
        coalesce((select jsonb_agg(item.value order by item.ord) from (
          select page.ord, jsonb_build_object(
                   'id', page.id, 'type', page.type, 'direction', page.direction,
+                  'semanticSourceId', page.semantic_source_id,
                   'matchingModel', page.matching_model, 'decisionSource', page.decision_source,
                   'explanation', page.explanation,
+                  'written', case when x.relation_id is null then null else jsonb_build_object(
+                    'text', x.text, 'inputHash', x.input_hash, 'model', x.model) end,
                   'other', jsonb_build_object(
                     'id', o.id, 'title', o.title, 'ideaStatement', o.idea_statement,
                     'language', nullif(o.language, 'und'), 'status', o.status,
@@ -204,14 +229,15 @@ select (select count(*)::int from rel) as total,
                     'edited', exists (select 1 from atomic_note_review_events ev
                                        where ev.atomic_note_id = o.id and ev.action = 'edit'),
                     'evolution', o.metadata ? 'evolutionRunId',
-                    'sourceItemId', os.id, 'sourceTitle', os.title,
+                    'sourceItemId', os.id, 'sourceTitle', os.title, 'passageHash', oc.content_hash,
                     'passage', case when oc.id is null then null else jsonb_build_object(
                       'chunkId', oc.id, 'sourceSpanId', oc.source_span_id, 'chunkIndex', oc.chunk_index,
                       'excerpt', left(oc.content, $4::int), 'language', nullif(oc.language, 'und')) end)) as value
            from page
            join atomic_notes o on o.id = page.other_id
            join source_items os on os.id = o.created_from_source_item_id
-           left join chunks oc on oc.id = o.evidence_chunk_id) item), '[]'::jsonb) as items`;
+           left join chunks oc on oc.id = o.evidence_chunk_id
+           left join atomic_note_relation_explanations x on x.relation_id = page.id) item), '[]'::jsonb) as items`;
 
 const iso = (value: Date | string) => mapTimestamp(value).toISOString();
 const isoOrNull = (value: Date | string | null) =>
@@ -240,24 +266,73 @@ function mapNote(row: NoteRow): NotePageNote {
   };
 }
 
-function mapRelation(item: RelationItem): NotePageRelation {
-  const { edited, evolution, ...other } = item.other;
+/**
+ * An explanation written on demand counts only while its inputs are unchanged: a stale one reads as
+ * none, so it is written again when the relation is opened. Without one, the explanation the decider
+ * stored (when it is real text) still counts.
+ */
+function explanationOf(
+  item: RelationItem,
+  self: SelfFacts | null
+): NotePageRelation["explanation"] {
+  if (item.written) {
+    if (!self) return null;
+    const fact = (
+      note: { id: string; title: string; ideaStatement: string },
+      hash: string | null
+    ) => ({
+      ...note,
+      passage: hash === null ? null : { contentHash: hash }
+    });
+    const plan = relationExplanationPlan({
+      type: item.type,
+      semanticSourceId: item.semanticSourceId,
+      a: fact(self, self.passageHash),
+      b: fact(item.other, item.other.passageHash)
+    });
+    return plan.inputHash === item.written.inputHash
+      ? {
+          text: item.written.text.slice(0, notePageLimits.explanationCharacters),
+          writtenBy: knownModel(item.written.model)
+        }
+      : null;
+  }
+  return relationExplanation({
+    text: item.explanation,
+    decisionSource: item.decisionSource,
+    matchingModel: item.matchingModel
+  });
+}
+
+function mapRelation(item: RelationItem, self: SelfFacts | null): NotePageRelation {
+  const { other } = item;
   return {
     id: item.id,
     type: item.type,
     direction: item.direction,
     decidedBy: knownModel(item.matchingModel),
-    explanation: relationExplanation({
-      text: item.explanation,
-      decisionSource: item.decisionSource,
-      matchingModel: item.matchingModel
-    }),
-    other: { ...other, authorship: noteAuthorship({ edited, evolution }) }
+    explanation: explanationOf(item, self),
+    other: {
+      id: other.id,
+      title: other.title,
+      ideaStatement: other.ideaStatement,
+      language: other.language,
+      status: other.status,
+      superseded: other.superseded,
+      authorship: noteAuthorship({ edited: other.edited, evolution: other.evolution }),
+      sourceItemId: other.sourceItemId,
+      sourceTitle: other.sourceTitle,
+      passage: other.passage
+    }
   };
 }
 
 function mapRelations(row: RelationsRow | undefined): NotePageRelations {
-  return { total: Number(row?.total ?? 0), items: (row?.items ?? []).map(mapRelation) };
+  const self = row?.self ?? null;
+  return {
+    total: Number(row?.total ?? 0),
+    items: (row?.items ?? []).map((item) => mapRelation(item, self))
+  };
 }
 
 export function createNotePageRepository(pool: PgPool) {

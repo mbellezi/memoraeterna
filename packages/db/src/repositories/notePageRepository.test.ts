@@ -4,6 +4,7 @@ import type { QueryResult, QueryResultRow } from "pg";
 import { NotePageRelationsSchema, notePageLimits, objectLocatePathLimit } from "@app/domain";
 import type { PgPool } from "../client.js";
 import { createNotePageRepository } from "./notePageRepository.js";
+import { relationExplanationPlan } from "./relationExplanationRepository.js";
 
 // The SQL runs against a real database in `npm run db:note-page:verify` (answers) and
 // `scripts/objects/note-page-benchmark.ts` (latency); these tests pin the transaction, how rows
@@ -57,9 +58,11 @@ const relationItem = (overrides: Record<string, unknown> = {}) => ({
   id: id(20),
   type: "supports",
   direction: "incoming",
+  semanticSourceId: id(2),
   matchingModel: "decider",
   decisionSource: "model",
   explanation: 'Both describe recall in <note-ref id="00000000-0000-4000-8000-000000000001" />.',
+  written: null,
   other: {
     id: id(2),
     title: "Other",
@@ -71,10 +74,32 @@ const relationItem = (overrides: Record<string, unknown> = {}) => ({
     evolution: false,
     sourceItemId: id(8),
     sourceTitle: "Paper",
+    passageHash: "other-passage",
     passage: null
   },
   ...overrides
 });
+
+/** The page's own note as an explanation sees it. */
+const self = {
+  id: id(1),
+  title: "Retrieval",
+  ideaStatement: "Retrieval strengthens memory.",
+  passageHash: "own-passage"
+};
+/** The input hash of `relationItem()` with `self`, as the explanation service computes it. */
+const currentHash = (type = "supports") =>
+  relationExplanationPlan({
+    type,
+    semanticSourceId: id(2),
+    a: { ...self, passage: { contentHash: self.passageHash } },
+    b: {
+      id: id(2),
+      title: "Other",
+      ideaStatement: "Spacing helps.",
+      passage: { contentHash: "other-passage" }
+    }
+  }).inputHash;
 
 const located = {
   title: "Retrieval",
@@ -88,7 +113,9 @@ const located = {
   children: 0
 };
 
-function setup(answers: { note?: QueryResultRow[]; fail?: "evidence" } = {}) {
+function setup(
+  answers: { note?: QueryResultRow[]; fail?: "evidence"; relations?: QueryResultRow[] } = {}
+) {
   const statements: Array<{ text: string; values: readonly unknown[] | undefined }> = [];
   const answer = (text: string): QueryResultRow[] => {
     if (/^\s*(begin|commit|rollback)/i.test(text)) return [];
@@ -97,7 +124,8 @@ function setup(answers: { note?: QueryResultRow[]; fail?: "evidence" } = {}) {
       if (answers.fail === "evidence") throw new Error("boom");
       return [evidenceRow];
     }
-    if (text.includes("with rel as")) return [{ total: 1, items: [relationItem()] }];
+    if (text.includes("with rel as"))
+      return answers.relations ?? [{ total: 1, self, items: [relationItem()] }];
     return [located];
   };
   const query = vi.fn(
@@ -194,6 +222,25 @@ describe("note page repository", () => {
     expect(NotePageRelationsSchema.parse(page.relations)).toEqual(page.relations);
   });
 
+  it("shows an explanation written on demand while its inputs are unchanged", async () => {
+    const written = { text: "Written on open.", inputHash: currentHash(), model: "writer" };
+    const { repository } = setup({
+      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+    });
+    const [relation] = (await repository.readPage(id(1), { relationLimit: 20 }))!.relations.items;
+    expect(relation?.explanation).toEqual({ text: "Written on open.", writtenBy: "writer" });
+  });
+
+  it("reads a stale explanation as none, so it is written again when opened", async () => {
+    // Written for another type: the idea, the passage or the direction changing works the same way.
+    const written = { text: "Old.", inputHash: currentHash("extends"), model: "writer" };
+    const { repository } = setup({
+      relations: [{ total: 1, self, items: [relationItem({ written })] }]
+    });
+    const [relation] = (await repository.readPage(id(1), { relationLimit: 20 }))!.relations.items;
+    expect(relation?.explanation).toBeNull();
+  });
+
   it("an evolution note is the AI's reviewed evolution until a person edits it", async () => {
     const { repository } = setup({ note: [noteRow({ evolution: true, ownership: "knowledge" })] });
     const page = (await repository.readPage(id(1), { relationLimit: 20 }))!;
@@ -224,6 +271,13 @@ describe("note page repository", () => {
     const { relations } = setup().repository.statements;
     expect(relations).toContain("order by rel.final_score desc");
     expect(relations).not.toMatch(/'finalScore'|'score'/);
+  });
+
+  it("reads an explanation written on demand beside the relation, for the page rows only", () => {
+    const { relations } = setup().repository.statements;
+    expect(relations).toContain(
+      "left join atomic_note_relation_explanations x on x.relation_id = page.id"
+    );
   });
 
   it("hides discarded relations and discarded or archived notes", () => {

@@ -14,7 +14,9 @@ import {
   createNotePageRepository,
   createObjectLocateRepository,
   createPgPool,
+  createRelationExplanationRepository,
   createSourceItemRepository,
+  relationExplanationPlan,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
@@ -395,6 +397,80 @@ try {
   const fromOther = (await read(incoming))!.relations.items.find((item) => item.other.id === note);
   assert.equal(fromOther?.direction, "outgoing", "the direction is relative to the page's note");
 
+  // 4b. Explanations written on demand: stored beside the relation, current while the inputs hold.
+  const explanations = createRelationExplanationRepository(db);
+  const explained = byOther.get(unknown)!.id;
+  const relationRow = async () =>
+    (
+      await db.query(
+        "select updated_at::text as at, explanation from atomic_note_relations where id = $1",
+        [explained]
+      )
+    ).rows[0];
+  const impacts = async () =>
+    Number((await db.query("select count(*)::int as n from knowledge_impact_events")).rows[0].n);
+  const [relationBefore, impactsBefore] = [await relationRow(), await impacts()];
+  const explainContext = (await explanations.readContext(explained))!;
+  assert.equal(explainContext.stored, null);
+  const plan = relationExplanationPlan(explainContext);
+  const saved = await explanations.save({
+    relationId: explained,
+    text: `Written on open about <note-ref id="${note}" />.`,
+    inputHash: plan.inputHash,
+    promptVersion: "relation-explanation-v1",
+    provider: "verify",
+    model: "writer-x",
+    runtime: "remote",
+    aiTaskRunId: null,
+    language: "en"
+  });
+  assert.ok(saved?.writtenAt instanceof Date);
+  assert.deepEqual(await relationRow(), relationBefore, "the relation row is not written");
+  assert.equal(await impacts(), impactsBefore, "writing an explanation records no legacy impact");
+  let explainedRelation = (await read(note))!.relations.items.find((item) => item.id === explained);
+  assert.deepEqual(explainedRelation?.explanation, {
+    text: `Written on open about <note-ref id="${note}" />.`,
+    writtenBy: "writer-x"
+  });
+  assert.equal(
+    (await explanations.readContext(explained))!.stored?.inputHash,
+    plan.inputHash,
+    "the cache keeps the inputs it was written for"
+  );
+  await notes.review({ id: unknown, action: "edit", ideaStatement: "Unknown idea, edited." });
+  explainedRelation = (await read(note))!.relations.items.find((item) => item.id === explained);
+  assert.equal(explainedRelation?.explanation, null, "an edited idea makes the explanation stale");
+  assert.notEqual(
+    relationExplanationPlan((await explanations.readContext(explained))!).inputHash,
+    plan.inputHash
+  );
+  assert.equal(
+    await explanations.save({
+      relationId: randomUUID(),
+      text: "Nothing to explain.",
+      inputHash: "x",
+      promptVersion: "relation-explanation-v1",
+      provider: "verify",
+      model: "writer-x",
+      runtime: "remote",
+      aiTaskRunId: null,
+      language: "en"
+    }),
+    null,
+    "a removed relation stores nothing"
+  );
+  await db.query("delete from atomic_note_relations where id = $1", [explained]);
+  assert.equal(
+    (
+      await db.query(
+        "select count(*)::int as n from atomic_note_relation_explanations where relation_id = $1",
+        [explained]
+      )
+    ).rows[0].n,
+    0,
+    "the explanation goes with its relation"
+  );
+
   // 5. Successors.
   await db.query(
     "insert into atomic_note_evolution (previous_id, next_id, run_id, kind, reason) values ($1, $2, $3, 'merge', 'verify')",
@@ -430,6 +506,7 @@ try {
         "relations: outgoing, incoming and unknown direction, hidden rejected relations and notes, superseded other",
         "relations: explanation writer, message keys, blank decider, dangling passage, clipped excerpt",
         "relations: score order, disjoint paging, stable totals",
+        "explanations written on demand: shown with their writer, stale after an edit, no relation write or legacy impact, removed with the relation",
         "successors, placement equal to objects.locate, every statement read-only"
       ]
     })

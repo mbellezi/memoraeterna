@@ -38,6 +38,11 @@ import {
 } from "./knowledge-processing.js";
 import { buildRelationMatchPrompt, parseRelationMatches } from "./relation-type-resolution.js";
 import { buildRelationLabelPrompt, parseRelationLabels } from "./relation-label-processing.js";
+import {
+  buildRelationExplanationPrompt,
+  buildRelationExplanationRepairPrompt,
+  parseRelationExplanation
+} from "./relation-explanation.js";
 import { sourceRelationPrompt, parseSourceRelations } from "./source-relation-processing.js";
 import { consultationPrompt, parseConsultationAnswer } from "./consultation-service.js";
 import {
@@ -579,6 +584,24 @@ export function promptSampleCall(
         input: promptId.endsWith(".repair") ? joinPrompts(base, renderPrompt(promptId)) : base,
         task: "knowledge-graph-generation",
         validate: (o) => parseRelationLabels(o, [id(1)])
+      };
+    }
+    if (promptId === "relations.explain" || promptId === "relations.explain.repair") {
+      const base = buildRelationExplanationPrompt({
+        type: "supports",
+        direction: "n1_to_n2",
+        first: { ideaStatement: notes[0]!.ideaStatement, passage: chunks[0]!.content },
+        second: {
+          ideaStatement: "Beginners gained nothing from retrieval without feedback.",
+          passage: chunks[1]!.content
+        }
+      });
+      return {
+        input: promptId.endsWith(".repair") ? buildRelationExplanationRepairPrompt(base) : base,
+        task: "text-generation",
+        validate: (o) => {
+          if (parseRelationExplanation(o) === null) throw new Error("prompts.errors.sample");
+        }
       };
     }
     if (promptId === "sources.match" || promptId === "sources.repair") {

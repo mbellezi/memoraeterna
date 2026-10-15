@@ -41,7 +41,9 @@ import {
   NotePageInputSchema,
   NotePageRelationsSchema,
   NotePageSchema,
-  NoteRelationsInputSchema
+  NoteRelationsInputSchema,
+  RelationExplainInputSchema,
+  RelationExplanationResultSchema
 } from "@app/domain";
 import {
   WikiCollectionCommandSchema,
@@ -275,6 +277,24 @@ const api: DesktopApi = {
       NotePageRelationsSchema.parse(
         await ipcRenderer.invoke(ipcChannels.notesRelations, NoteRelationsInputSchema.parse(input))
       )
+  },
+  relations: {
+    explain: async (input) =>
+      RelationExplanationResultSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.relationsExplain,
+          RelationExplainInputSchema.parse(input)
+        )
+      ),
+    cancelExplain: async (input) =>
+      z
+        .boolean()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.relationsCancelExplain,
+            RelationExplainInputSchema.parse(input)
+          )
+        )
   },
   wiki: {
     collection: async (input) =>

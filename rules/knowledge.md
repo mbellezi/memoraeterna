@@ -82,6 +82,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Source relations come from accepted note relations plus decider-confirmed
   discovery pairs, never same-root pairs. Matching runs per source as soon as its
   notes exist, with no batch barrier (target F3).
+- A relation's explanation is written only when the owner opens it, never in bulk or in the
+  background, and is cached for what it was written from (ideas, passages, type, direction).
 
 ## Topic tree (target F2)
 
@@ -91,9 +93,8 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 - Every current note and root source is reachable from the root with one primary
   parent and a few secondary placements, and no cycles. Shape targets (fan-out,
   leaf size, depth) live in typed config and are enforced by rebalancing.
-- Every structural operation is recorded in a reversible change-set. Stability
-  controls (hysteresis, cooldown, churn budget) prevent thrashing. Human-created,
-  pinned and protected nodes never move automatically.
+- Every structural operation is recorded in a reversible change-set. Stability controls (hysteresis,
+  cooldown, churn budget) prevent thrashing. Human-created, pinned and protected nodes never move automatically.
 - A topic and its index are one node. Its page is a deterministic map of content;
   prose overviews are written on demand with citations and a support check.
 
@@ -109,8 +110,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 - Maintenance runs as event- and threshold-driven tasks on the jobs table, never
   as calendar routines. One failed, rejected or waiting item never blocks others.
-- Freshness depends only on content hashes. Saving settings or changing a model
-  never invalidates coverage.
+- Freshness depends only on content hashes. Saving settings or changing a model never invalidates coverage.
 - Every applied change is a change-set with undo. Changes that touch human,
   pinned or protected content go to the Inbox for approval.
 

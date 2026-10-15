@@ -474,9 +474,11 @@ describe("desktop IPC contracts", () => {
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 
-  it("registers the note page channels", () => {
+  it("registers the note page and relation explanation channels", () => {
     expect(ipcChannels.notesPage).toBe("app:notes:page");
     expect(ipcChannels.notesRelations).toBe("app:notes:relations");
+    expect(ipcChannels.relationsExplain).toBe("app:relations:explain");
+    expect(ipcChannels.relationsCancelExplain).toBe("app:relations:cancel-explain");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 });

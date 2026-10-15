@@ -16,6 +16,8 @@ import { registerObjectsIpc } from "./services/objects-ipc.js";
 import { ObjectsService } from "./services/objects-service.js";
 import { registerNotePageIpc } from "./services/note-page-ipc.js";
 import { NotePageService } from "./services/note-page-service.js";
+import { registerRelationExplanationIpc } from "./services/relation-explanation-ipc.js";
+import { RelationExplanationService } from "./services/relation-explanation-service.js";
 import { ViewHistoryService } from "./services/view-history-service.js";
 import { registerViewHistoryIpc } from "./services/view-history-ipc.js";
 import { createApplicationMenuController, registerApplicationMenuIpc } from "./application-menu.js";
@@ -297,6 +299,14 @@ void app.whenReady().then(() => {
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
   registerObjectsIpc(ipcMain, new ObjectsService(() => databaseService?.getPool() ?? null));
   registerNotePageIpc(ipcMain, new NotePageService(() => databaseService?.getPool() ?? null));
+  registerRelationExplanationIpc(
+    ipcMain,
+    new RelationExplanationService({
+      getPool: () => databaseService?.getPool() ?? null,
+      ai: aiService,
+      getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
+    })
+  );
   const relationThreshold = readRelationThreshold(
     process.env.MEMORA_ATOMIC_NOTE_RELATION_THRESHOLD
   );

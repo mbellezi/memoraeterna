@@ -32,6 +32,8 @@ import type {
   NotePageRelations,
   NoteRelationsInputSchema,
   ObjectLocateInput,
+  RelationExplainInput,
+  RelationExplanationResult,
   ObjectLocateResult,
   OrganizationRun
 } from "@app/domain";
@@ -104,6 +106,8 @@ export const ipcChannels = {
   objectsLocate: "app:objects:locate",
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
+  relationsExplain: "app:relations:explain",
+  relationsCancelExplain: "app:relations:cancel-explain",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -1669,6 +1673,13 @@ export interface DesktopApi {
   notes: {
     page: (input: z.input<typeof NotePageInputSchema>) => Promise<NotePage | null>;
     relations: (input: z.input<typeof NoteRelationsInputSchema>) => Promise<NotePageRelations>;
+  };
+  /** Relations between notes: their explanation, written when the owner opens one. */
+  relations: {
+    /** The current explanation, written now when there is none; null when the relation is gone. */
+    explain: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
+    /** Stops the explanation being written; resolves true when one was stopped. */
+    cancelExplain: (input: RelationExplainInput) => Promise<boolean>;
   };
   wiki: {
     collection: (

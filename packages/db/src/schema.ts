@@ -1690,6 +1690,34 @@ export const relationDecisions = pgTable(
   })
 );
 
+// The explanation of a note relation, written on demand when the owner opens the relation and cached
+// for the inputs it was written from (`input_hash`: both notes' idea statements and evidence
+// passages, the type and the direction). It is a derived annotation kept beside the relation row, so
+// writing it never changes the relation (its fingerprint or the legacy wiki impacts of an update).
+export const atomicNoteRelationExplanations = pgTable(
+  "atomic_note_relation_explanations",
+  {
+    relationId: uuid("relation_id")
+      .primaryKey()
+      .references(() => atomicNoteRelations.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    inputHash: text("input_hash").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    runtime: text("runtime").notNull(),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    language: varchar("language", { length: 16 }).notNull(),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    text: check(
+      "atomic_note_relation_explanations_text",
+      sql`char_length(${table.text}) between 1 and 4000`
+    )
+  })
+);
+
 export const sourceRelations = pgTable(
   "source_relations",
   {

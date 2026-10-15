@@ -1,0 +1,201 @@
+import { createHash } from "node:crypto";
+import type { QueryResultRow } from "pg";
+
+import {
+  relationExplanationOrder,
+  type AtomicNoteStatus,
+  type RelationExplanationDirection
+} from "@app/domain";
+
+import { mapTimestamp } from "./sql.js";
+import type { Queryable } from "./types.js";
+
+/**
+ * Explanations of note relations written on demand (docs/plan.md decision 16), cached beside the
+ * relation with their provenance and the hash of the inputs they were written from. A cached
+ * explanation whose inputs changed is stale: it is rewritten the next time the relation is opened.
+ */
+export const relationExplanationInputVersion = "relation-explanation-input-v1";
+
+export interface RelationExplanationInputs {
+  type: string;
+  direction: RelationExplanationDirection;
+  first: { ideaStatement: string; passageHash: string | null };
+  second: { ideaStatement: string; passageHash: string | null };
+}
+
+/** What an explanation depends on: both ideas and evidence passages, the type and the direction. */
+export function relationExplanationInputHash(input: RelationExplanationInputs): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        relationExplanationInputVersion,
+        input.type,
+        input.direction,
+        input.first.ideaStatement,
+        input.first.passageHash,
+        input.second.ideaStatement,
+        input.second.passageHash
+      ])
+    )
+    .digest("hex");
+}
+
+export interface RelationExplanationNote {
+  id: string;
+  title: string;
+  ideaStatement: string;
+  status: AtomicNoteStatus;
+  language: string | null;
+  homeSourceId: string;
+  /** The note's primary evidence passage; null when its chunk is gone. */
+  passage: { chunkId: string; content: string; contentHash: string } | null;
+}
+
+export interface StoredRelationExplanation {
+  text: string;
+  inputHash: string;
+  model: string;
+  writtenAt: Date;
+}
+
+export interface RelationExplanationContext {
+  relationId: string;
+  type: string;
+  status: string;
+  semanticSourceId: string | null;
+  a: RelationExplanationNote;
+  b: RelationExplanationNote;
+  stored: StoredRelationExplanation | null;
+}
+
+/** The notes in prompt order with the direction, and the hash of what the explanation depends on. */
+export function relationExplanationPlan<
+  T extends {
+    id: string;
+    title: string;
+    ideaStatement: string;
+    passage: { contentHash: string } | null;
+  }
+>(context: { type: string; semanticSourceId: string | null | undefined; a: T; b: T }) {
+  const order = relationExplanationOrder(context);
+  return {
+    ...order,
+    inputHash: relationExplanationInputHash({
+      type: context.type,
+      direction: order.direction,
+      first: {
+        ideaStatement: order.first.ideaStatement,
+        passageHash: order.first.passage?.contentHash ?? null
+      },
+      second: {
+        ideaStatement: order.second.ideaStatement,
+        passageHash: order.second.passage?.contentHash ?? null
+      }
+    })
+  };
+}
+
+interface ContextRow extends QueryResultRow {
+  relationId: string;
+  type: string;
+  status: string;
+  semanticSourceId: string | null;
+  a: RelationExplanationNote;
+  b: RelationExplanationNote;
+  stored: { text: string; inputHash: string; model: string; writtenAt: string } | null;
+}
+
+const noteJson = (alias: string, chunk: string) => `jsonb_build_object(
+    'id', ${alias}.id, 'title', ${alias}.title, 'ideaStatement', ${alias}.idea_statement,
+    'status', ${alias}.status, 'language', nullif(${alias}.language, 'und'),
+    'homeSourceId', ${alias}.created_from_source_item_id,
+    'passage', case when ${chunk}.id is null then null else jsonb_build_object(
+      'chunkId', ${chunk}.id, 'content', ${chunk}.content, 'contentHash', ${chunk}.content_hash) end)`;
+
+/** $1 relation ID. One row by primary keys: the relation, both notes, their passages and the cache. */
+const contextSql = `
+select r.id as "relationId", r.relation_type as type, r.status::text as status,
+       r.metadata->>'semanticSourceAtomicNoteId' as "semanticSourceId",
+       ${noteJson("a", "ac")} as a, ${noteJson("b", "bc")} as b,
+       case when x.relation_id is null then null else jsonb_build_object(
+         'text', x.text, 'inputHash', x.input_hash, 'model', x.model, 'writtenAt', x.written_at) end as stored
+  from atomic_note_relations r
+  join atomic_notes a on a.id = r.source_atomic_note_id
+  join atomic_notes b on b.id = r.target_atomic_note_id
+  left join chunks ac on ac.id = a.evidence_chunk_id
+  left join chunks bc on bc.id = b.evidence_chunk_id
+  left join atomic_note_relation_explanations x on x.relation_id = r.id
+ where r.id = $1::uuid`;
+
+const saveSql = `
+insert into atomic_note_relation_explanations
+  (relation_id, text, input_hash, prompt_version, provider, model, runtime, ai_task_run_id, language, written_at)
+select $1::uuid, $2, $3, $4, $5, $6, $7, $8::uuid, $9, clock_timestamp()
+ where exists (select 1 from atomic_note_relations where id = $1::uuid)
+on conflict (relation_id) do update set
+  text = excluded.text, input_hash = excluded.input_hash, prompt_version = excluded.prompt_version,
+  provider = excluded.provider, model = excluded.model, runtime = excluded.runtime,
+  ai_task_run_id = excluded.ai_task_run_id, language = excluded.language, written_at = excluded.written_at
+returning written_at as "writtenAt"`;
+
+export interface SaveRelationExplanationInput {
+  relationId: string;
+  text: string;
+  inputHash: string;
+  promptVersion: string;
+  provider: string;
+  model: string;
+  runtime: string;
+  aiTaskRunId: string | null;
+  language: string;
+}
+
+export function createRelationExplanationRepository(db: Queryable) {
+  return {
+    /** Everything an explanation is written from; null when the relation does not exist. */
+    async readContext(relationId: string): Promise<RelationExplanationContext | null> {
+      const row = (await db.query<ContextRow>(contextSql, [relationId])).rows[0];
+      if (!row) return null;
+      return {
+        relationId: row.relationId,
+        type: row.type,
+        status: row.status,
+        semanticSourceId: row.semanticSourceId,
+        a: row.a,
+        b: row.b,
+        stored: row.stored
+          ? {
+              text: row.stored.text,
+              inputHash: row.stored.inputHash,
+              model: row.stored.model,
+              writtenAt: mapTimestamp(row.stored.writtenAt)
+            }
+          : null
+      };
+    },
+
+    /**
+     * Caches an explanation for the inputs it was written from, replacing an earlier one. Resolves
+     * to null when the relation was removed meanwhile (nothing is stored).
+     */
+    async save(input: SaveRelationExplanationInput): Promise<{ writtenAt: Date } | null> {
+      const row = (
+        await db.query<{ writtenAt: Date | string }>(saveSql, [
+          input.relationId,
+          input.text,
+          input.inputHash,
+          input.promptVersion,
+          input.provider,
+          input.model,
+          input.runtime,
+          input.aiTaskRunId,
+          input.language
+        ])
+      ).rows[0];
+      return row ? { writtenAt: mapTimestamp(row.writtenAt) } : null;
+    },
+
+    statements: { context: contextSql, save: saveSql }
+  };
+}

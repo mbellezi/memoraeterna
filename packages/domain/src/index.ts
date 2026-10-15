@@ -38,3 +38,4 @@ export * from "./wiki-hierarchy.js";
 export * from "./wiki-hierarchy-runtime.js";
 export * from "./object-address.js";
 export * from "./note-page.js";
+export * from "./relation-explanation.js";

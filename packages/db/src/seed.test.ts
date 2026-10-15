@@ -95,7 +95,8 @@ describe("baseline seed", () => {
       "0045_notes_active_at_birth",
       "0046_relation_decision_audit",
       "0047_view_history",
-      "0048_note_fingerprint_without_review_status"
+      "0048_note_fingerprint_without_review_status",
+      "0049_relation_explanations"
     ]);
   });
 
@@ -162,7 +163,8 @@ describe("baseline seed", () => {
         "0045_notes_active_at_birth",
         "0046_relation_decision_audit",
         "0047_view_history",
-        "0048_note_fingerprint_without_review_status"
+        "0048_note_fingerprint_without_review_status",
+        "0049_relation_explanations"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
