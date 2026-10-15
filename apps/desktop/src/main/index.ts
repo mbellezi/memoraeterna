@@ -270,7 +270,9 @@ void app.whenReady().then(() => {
     env: process.env,
     isPackaged: app.isPackaged,
     wake: () => jobSupervisor?.wake("light"),
-    logger: console
+    logger: console,
+    // The topic IPC (T16) is registered once by the factory; `topicsChanged` reaches every window.
+    ipc: { main: ipcMain, targets: () => webContents.getAllWebContents() }
   });
   libraryResetService = new LibraryResetService({
     // A reset leaves an empty active tree (D39).
@@ -557,6 +559,8 @@ void app.whenReady().then(() => {
                     hierarchy: hierarchicalIngestionService!,
                     jobs: jobSupervisor!,
                     settings: settingsService!,
+                    // MEMORA_GOLDEN_TOPICS=full (G1, D23): the topic service's hold and release.
+                    topicBarrier: topicTreeServices!.goldenBarrier,
                     // MEMORA_GOLDEN_SOURCE_PAIRS only: the source decider runs through the normal AI service.
                     ai: aiService!,
                     quit: () => app.quit()

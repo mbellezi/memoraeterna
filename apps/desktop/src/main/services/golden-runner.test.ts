@@ -33,6 +33,7 @@ import {
   type GoldenManifest,
   type GoldenRunOptions
 } from "./golden-runner.js";
+import { createTopicTreeServices } from "./topic-tree/index.js";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const bytes = (text: string) => Buffer.byteLength(text);
@@ -1705,6 +1706,40 @@ describe("golden topics: G1 and the topic barrier (D23)", () => {
       )
     ).rejects.toThrow("needs an idle job queue, but 2 jobs are queued or running (ingestion 2)");
     expect([services.calls, busy.calls]).toEqual([[], []]);
+  });
+
+  it("accepts full once the topic service supplies its barrier, and that barrier is the service's hold", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const topics = createTopicTreeServices({
+      getPool: () => null,
+      spaceResolver: {
+        resolve: async () => ({ kind: "blocked", reason: "waiting_for_embeddings" })
+      },
+      env: { MEMORA_GOLDEN_RUN: manifestPath, MEMORA_GOLDEN_TOPICS: "full" },
+      isPackaged: false,
+      logger: { info: () => undefined, warn: () => undefined, error: () => undefined }
+    });
+    try {
+      const services = fakeServices();
+      const run = await prepareGoldenRun(
+        prepareInput(manifestPath, services, {
+          env: {
+            MEMORA_GOLDEN_RUN: manifestPath,
+            MEMORA_GOLDEN_MAX_TOKENS: "1000000",
+            MEMORA_GOLDEN_TOPICS: "full"
+          },
+          topicBarrier: topics.goldenBarrier
+        })
+      );
+      expect(run).toBeDefined();
+      expect(services.calls.length).toBeGreaterThan(0);
+      await topics.goldenBarrier.hold();
+      expect(topics.service.isHeld()).toBe(true);
+      await topics.goldenBarrier.release();
+      expect(topics.service.isHeld()).toBe(false);
+    } finally {
+      topics.dispose();
+    }
   });
 
   /**

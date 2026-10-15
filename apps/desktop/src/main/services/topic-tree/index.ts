@@ -2,18 +2,24 @@
 // builds them without Electron (injected pool, space resolver and wake-up), so scripts and tests
 // can drive the same services. Later tasks register their light-lane executors in the registry
 // below, one line each, in merge order: T16, T22a, T18, T19, T22b, T23, T24, T31, T19b.
+import type { IpcMain } from "electron";
+
 import type { PgPool } from "@app/db";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
+import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
 import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
 import { TopicChangeCoalescer } from "./topic-changes.js";
+import { registerTopicTreeIpc } from "./topic-ipc.js";
+import type { TopicsChangedTarget } from "./topic-ipc.js";
 import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobExecutor } from "./topic-jobs.js";
+import type { TopicEngineStatus, TopicReadService } from "./topic-read-service.js";
 import type { SpaceResolver } from "./topic-space.js";
 import { TopicTreeService } from "./topic-tree-service.js";
-import type { EnsureTreeResult } from "./topic-tree-service.js";
+import type { EnsureTreeResult, TopicServiceStatus } from "./topic-tree-service.js";
 import { TopicTriggers, immediateDebounce } from "./topic-triggers.js";
 
 export interface TopicTreeServicesOptions {
@@ -33,13 +39,21 @@ export interface TopicTreeServicesOptions {
   changesDelayMs?: number;
   /** The configuration of a new tree (default: the engine's start values); tests shrink it. */
   newTreeConfig?: () => TopicTreeConfig;
+  /**
+   * The topic IPC (T16): `ipcMain` and the windows that hear `topicsChanged`. The factory registers
+   * the channels once and subscribes the push to `changes`; absent, nothing is registered (scripts
+   * and tests that drive the services without Electron).
+   */
+  ipc?: { main: IpcMain; targets: () => Iterable<TopicsChangedTarget> };
 }
 
 export interface TopicTreeServices {
   service: TopicTreeService;
   triggers: TopicTriggers;
-  /** `topicsChanged` (D15): T16 forwards its events to the renderer channel. */
+  /** `topicsChanged` (D15): the topic IPC forwards its events to the renderer channel. */
   changes: TopicChangeCoalescer;
+  /** The read side of the topic screens; null without `options.ipc`. */
+  read: TopicReadService | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -50,7 +64,18 @@ export interface TopicTreeServices {
   ensureActiveTree(): Promise<EnsureTreeResult | null>;
   holdTopicJobs(): void;
   releaseTopicJobs(): Promise<void>;
+  /** The golden runner's topic barrier (D23): the two calls above, as `MEMORA_GOLDEN_TOPICS=full` needs. */
+  goldenBarrier: GoldenTopicBarrier;
   dispose(): void;
+}
+
+/** What `topics.status` takes from the engine: its phase, what blocks it and the daily cap. */
+export function engineStatusOf(status: TopicServiceStatus): TopicEngineStatus {
+  return {
+    phase: status.phase,
+    ...(status.blocked ? { blocked: status.blocked } : {}),
+    dailyCapReached: status.dailyCapReached
+  };
 }
 
 export function createTopicTreeServices(options: TopicTreeServicesOptions): TopicTreeServices {
@@ -91,6 +116,20 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   });
   service = topicService;
 
+  // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
+  let read: TopicReadService | null = null;
+  if (options.ipc) {
+    const registeredIpc = registerTopicTreeIpc(options.ipc.main, {
+      getPool,
+      targets: options.ipc.targets,
+      engineStatus: async () => engineStatusOf(await topicService.status()),
+      ...(options.now ? { now: options.now } : {}),
+      ...(logger ? { onInvalidEvent: (error: Error) => logger.error(error.message) } : {})
+    });
+    read = registeredIpc.read;
+    changes.subscribe(registeredIpc.emitChanged);
+  }
+
   const executors: Record<string, TopicJobExecutor> = {
     [topicJobTypes.place]: {
       needsModel: false,
@@ -117,6 +156,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     service: topicService,
     triggers,
     changes,
+    read,
     budget,
     aiMode,
     jobs,
@@ -134,6 +174,10 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ensureActiveTree,
     holdTopicJobs: () => topicService.holdTopicJobs(),
     releaseTopicJobs: () => topicService.releaseTopicJobs(),
+    goldenBarrier: {
+      hold: () => topicService.holdTopicJobs(),
+      release: () => topicService.releaseTopicJobs()
+    },
     dispose: () => changes.dispose()
   };
 }
