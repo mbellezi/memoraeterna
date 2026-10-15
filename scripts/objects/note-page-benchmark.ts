@@ -243,7 +243,8 @@ try {
   const measure = async (sample: Sample): Promise<number> => {
     const start = performance.now();
     const page = await repository.readPage(sample.id, {
-      relationLimit: notePageLimits.relationPage
+      relationLimit: notePageLimits.relationPage,
+      contentLanguage: "en"
     });
     NotePageSchema.parse(page);
     return performance.now() - start;

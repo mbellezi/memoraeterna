@@ -15,16 +15,21 @@ import type { Queryable } from "./types.js";
  * relation with their provenance and the hash of the inputs they were written from. A cached
  * explanation whose inputs changed is stale: it is rewritten the next time the relation is opened.
  */
-export const relationExplanationInputVersion = "relation-explanation-input-v1";
+export const relationExplanationInputVersion = "relation-explanation-input-v2";
 
 export interface RelationExplanationInputs {
   type: string;
   direction: RelationExplanationDirection;
+  /** The content language the text is written in: another language is another explanation. */
+  language: string;
   first: { ideaStatement: string; passageHash: string | null };
   second: { ideaStatement: string; passageHash: string | null };
 }
 
-/** What an explanation depends on: both ideas and evidence passages, the type and the direction. */
+/**
+ * What an explanation depends on: both ideas and evidence passages, the type, the direction and the
+ * content language it is written in.
+ */
 export function relationExplanationInputHash(input: RelationExplanationInputs): string {
   return createHash("sha256")
     .update(
@@ -32,6 +37,7 @@ export function relationExplanationInputHash(input: RelationExplanationInputs): 
         relationExplanationInputVersion,
         input.type,
         input.direction,
+        input.language,
         input.first.ideaStatement,
         input.first.passageHash,
         input.second.ideaStatement,
@@ -47,7 +53,8 @@ export interface RelationExplanationNote {
   ideaStatement: string;
   status: AtomicNoteStatus;
   language: string | null;
-  homeSourceId: string;
+  /** The source the note was generated from; null when that source was deleted. */
+  homeSourceId: string | null;
   /** The note's primary evidence passage; null when its chunk is gone. */
   passage: { chunkId: string; content: string; contentHash: string } | null;
 }
@@ -77,13 +84,21 @@ export function relationExplanationPlan<
     ideaStatement: string;
     passage: { contentHash: string } | null;
   }
->(context: { type: string; semanticSourceId: string | null | undefined; a: T; b: T }) {
+>(context: {
+  type: string;
+  semanticSourceId: string | null | undefined;
+  /** The content language the explanation is (to be) written in. */
+  language: string;
+  a: T;
+  b: T;
+}) {
   const order = relationExplanationOrder(context);
   return {
     ...order,
     inputHash: relationExplanationInputHash({
       type: context.type,
       direction: order.direction,
+      language: context.language,
       first: {
         ideaStatement: order.first.ideaStatement,
         passageHash: order.first.passage?.contentHash ?? null
@@ -109,7 +124,7 @@ interface ContextRow extends QueryResultRow {
 const noteJson = (alias: string, chunk: string) => `jsonb_build_object(
     'id', ${alias}.id, 'title', ${alias}.title, 'ideaStatement', ${alias}.idea_statement,
     'status', ${alias}.status, 'language', nullif(${alias}.language, 'und'),
-    'homeSourceId', ${alias}.created_from_source_item_id,
+    'homeSourceId', (select s.id from source_items s where s.id = ${alias}.created_from_source_item_id),
     'passage', case when ${chunk}.id is null then null else jsonb_build_object(
       'chunkId', ${chunk}.id, 'content', ${chunk}.content, 'contentHash', ${chunk}.content_hash) end)`;
 

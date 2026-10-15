@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  NotePageEvidenceSchema,
   NotePageInputSchema,
   NotePageRelationSchema,
   NotePageSchema,
   NoteRelationsInputSchema,
+  clipCharacters,
   isRealRelationExplanation,
   knownModel,
   noteAuthorship,
   notePageLimits,
   relationExplanation,
+  withinCharacters,
   type NotePage,
   type NotePageRelation
 } from "./note-page.js";
@@ -123,6 +126,83 @@ describe("notes.page contract", () => {
   });
 });
 
+describe("excerpt bounds count characters, as SQL cuts them", () => {
+  const emoji = "\u{1F600}";
+  const withPassage = (excerpt: string): NotePageRelation => {
+    const value = relation();
+    value.other.passage!.excerpt = excerpt;
+    return value;
+  };
+
+  it("accepts an excerpt of exactly the bound in code points although it has more UTF-16 units", () => {
+    // `left(content, 600)` returns 600 code points: 601 UTF-16 units with one emoji.
+    const excerpt = emoji + "a".repeat(notePageLimits.excerptCharacters - 1);
+    expect(excerpt.length).toBe(notePageLimits.excerptCharacters + 1);
+    expect(NotePageRelationSchema.parse(withPassage(excerpt)).other.passage?.excerpt).toBe(excerpt);
+    const allEmoji = emoji.repeat(notePageLimits.excerptCharacters);
+    expect(NotePageRelationSchema.safeParse(withPassage(allEmoji)).success).toBe(true);
+  });
+
+  it("still refuses an excerpt of more characters than the bound", () => {
+    const excerpt = emoji + "a".repeat(notePageLimits.excerptCharacters);
+    expect(NotePageRelationSchema.safeParse(withPassage(excerpt)).success).toBe(false);
+    expect(
+      NotePageRelationSchema.safeParse(
+        withPassage(emoji.repeat(notePageLimits.excerptCharacters + 1))
+      ).success
+    ).toBe(false);
+  });
+
+  it("applies the same unit to evidence excerpts and explanations", () => {
+    const evidence = {
+      chunkId: id(4),
+      sourceItemId: id(5),
+      documentId: null,
+      sourceSpanId: null,
+      sourceTitle: "Chapter",
+      workTitle: null,
+      chunkIndex: 0,
+      range: null,
+      page: null,
+      language: null,
+      primary: true,
+      current: true,
+      sourceAvailable: true
+    };
+    const bound = notePageLimits.evidenceExcerptCharacters;
+    expect(
+      NotePageEvidenceSchema.safeParse({ ...evidence, excerpt: emoji.repeat(bound) }).success
+    ).toBe(true);
+    expect(
+      NotePageEvidenceSchema.safeParse({ ...evidence, excerpt: emoji.repeat(bound + 1) }).success
+    ).toBe(false);
+    const stored = relation({
+      explanation: { text: emoji.repeat(notePageLimits.explanationCharacters), writtenBy: "m" }
+    });
+    expect(NotePageRelationSchema.safeParse(stored).success).toBe(true);
+    const empty = relation({ explanation: { text: "", writtenBy: "m" } });
+    expect(NotePageRelationSchema.safeParse(empty).success).toBe(false);
+  });
+
+  it("counts and clips characters without splitting a surrogate pair", () => {
+    expect(withinCharacters(emoji.repeat(3), 3)).toBe(true);
+    expect(withinCharacters(emoji.repeat(4), 3)).toBe(false);
+    expect(clipCharacters("abc", 5)).toBe("abc");
+    expect(clipCharacters(emoji.repeat(4), 3)).toBe(emoji.repeat(3));
+    expect(clipCharacters(`ab${emoji}cd`, 3)).toBe(`ab${emoji}`);
+  });
+
+  it("lists a note whose home source was deleted, without a source", () => {
+    const orphan = relation();
+    orphan.other.sourceItemId = null;
+    orphan.other.sourceTitle = "";
+    expect(NotePageRelationSchema.parse(orphan).other.sourceItemId).toBeNull();
+    expect(
+      NotePageSchema.parse(page({ relations: { items: [orphan], total: 1 } })).relations.items
+    ).toHaveLength(1);
+  });
+});
+
 describe("note authorship", () => {
   it("prefers an edit over an evolution, else the AI", () => {
     expect(noteAuthorship({ edited: true, evolution: true })).toBe("edited");
@@ -170,6 +250,14 @@ describe("relation explanation", () => {
     expect(
       relationExplanation({ text, decisionSource: "model", matchingModel: "m" })?.text
     ).toHaveLength(notePageLimits.explanationCharacters);
+    // The clipped text still passes the contract, even when it is made of emoji.
+    const emoji = relationExplanation({
+      text: "\u{1F600}".repeat(notePageLimits.explanationCharacters + 10),
+      decisionSource: "model",
+      matchingModel: "m"
+    });
+    expect(Array.from(emoji!.text)).toHaveLength(notePageLimits.explanationCharacters);
+    expect(NotePageRelationSchema.safeParse(relation({ explanation: emoji })).success).toBe(true);
   });
 
   it("maps a blank model name to unknown", () => {

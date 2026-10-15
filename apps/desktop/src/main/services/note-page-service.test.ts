@@ -50,6 +50,7 @@ const page: NotePage = {
   relations
 };
 const pool = {} as PgPool;
+const language = async () => "pt-BR";
 
 beforeEach(() => {
   repository.readPage.mockReset();
@@ -59,18 +60,22 @@ beforeEach(() => {
 describe("NotePageService", () => {
   it("reads a page with the default relation page size", async () => {
     repository.readPage.mockResolvedValue(page);
-    const service = new NotePageService(() => pool);
+    const service = new NotePageService(() => pool, language);
     expect(await service.page({ noteId: id(1) })).toEqual(page);
-    expect(repository.readPage).toHaveBeenCalledWith(id(1), { relationLimit: 20 });
+    // The content language decides which written explanations are current.
+    expect(repository.readPage).toHaveBeenCalledWith(id(1), {
+      relationLimit: 20,
+      contentLanguage: "pt-BR"
+    });
   });
 
   it("passes a missing note through as null", async () => {
     repository.readPage.mockResolvedValue(null);
-    expect(await new NotePageService(() => pool).page({ noteId: id(1) })).toBeNull();
+    expect(await new NotePageService(() => pool, language).page({ noteId: id(1) })).toBeNull();
   });
 
   it("refuses malformed requests and an unavailable database without reading", async () => {
-    const service = new NotePageService(() => pool);
+    const service = new NotePageService(() => pool, language);
     for (const input of [
       undefined,
       {},
@@ -83,27 +88,56 @@ describe("NotePageService", () => {
     await expect(service.relations({ noteId: id(1), offset: -1 })).rejects.toThrow();
     expect(repository.readPage).not.toHaveBeenCalled();
     expect(repository.listRelations).not.toHaveBeenCalled();
-    await expect(new NotePageService(() => null).page({ noteId: id(1) })).rejects.toThrow(
+    await expect(new NotePageService(() => null, language).page({ noteId: id(1) })).rejects.toThrow(
       "objects.errors.unavailable"
     );
   });
 
   it("never passes an answer that breaks the contract to the renderer", async () => {
     repository.readPage.mockResolvedValue({ ...page, note: { ...page.note, metadata: {} } });
-    await expect(new NotePageService(() => pool).page({ noteId: id(1) })).rejects.toThrow();
+    await expect(
+      new NotePageService(() => pool, language).page({ noteId: id(1) })
+    ).rejects.toThrow();
     repository.listRelations.mockResolvedValue({ items: [], total: -1 });
     await expect(
-      new NotePageService(() => pool).relations({ noteId: id(1), offset: 0 })
+      new NotePageService(() => pool, language).relations({ noteId: id(1), offset: 0 })
     ).rejects.toThrow();
   });
 
   it("pages relations with the default size", async () => {
     repository.listRelations.mockResolvedValue({ items: [], total: 7 });
-    expect(await new NotePageService(() => pool).relations({ noteId: id(1), offset: 20 })).toEqual({
+    expect(
+      await new NotePageService(() => pool, language).relations({ noteId: id(1), offset: 20 })
+    ).toEqual({
       items: [],
       total: 7
     });
-    expect(repository.listRelations).toHaveBeenCalledWith(id(1), { offset: 20, limit: 20 });
+    expect(repository.listRelations).toHaveBeenCalledWith(id(1), {
+      offset: 20,
+      limit: 20,
+      contentLanguage: "pt-BR"
+    });
+  });
+});
+
+describe("NotePageService content language", () => {
+  it("reads the language of every read, so a change shows on the next page", async () => {
+    repository.readPage.mockResolvedValue(page);
+    repository.listRelations.mockResolvedValue({ items: [], total: 0 });
+    let current = "en";
+    const service = new NotePageService(
+      () => pool,
+      async () => current
+    );
+    await service.page({ noteId: id(1) });
+    current = "pt-BR";
+    await service.page({ noteId: id(1) });
+    await service.relations({ noteId: id(1), offset: 0 });
+    expect(repository.readPage.mock.calls.map((call) => call[1].contentLanguage)).toEqual([
+      "en",
+      "pt-BR"
+    ]);
+    expect(repository.listRelations.mock.calls[0]![1].contentLanguage).toBe("pt-BR");
   });
 });
 

@@ -4,6 +4,7 @@ import {
   RelationExplainInputSchema,
   RelationExplanationResultSchema,
   isDirectedRelationType,
+  relationExplanationLimits,
   relationExplanationOrder
 } from "./relation-explanation.js";
 
@@ -73,5 +74,26 @@ describe("relation explanation contract", () => {
     };
     expect(RelationExplanationResultSchema.parse(result)).toEqual(result);
     expect(() => RelationExplanationResultSchema.parse({ ...result, writtenBy: "" })).toThrow();
+  });
+
+  it("bounds the stored text in characters, like the database check, not in UTF-16 units", () => {
+    const base = {
+      relationId: low,
+      writtenBy: "writer",
+      writtenAt: "2026-10-15T10:00:00.000Z"
+    };
+    const bound = relationExplanationLimits.storedCharacters;
+    expect(bound).toBe(4_000);
+    const at = (text: string) => RelationExplanationResultSchema.safeParse({ ...base, text });
+    expect(at("a".repeat(bound)).success).toBe(true);
+    expect(at("a".repeat(bound + 1)).success).toBe(false);
+    expect(at("\u{1F600}".repeat(bound)).success).toBe(true);
+    expect(at("\u{1F600}".repeat(bound + 1)).success).toBe(false);
+    expect(at("").success).toBe(false);
+  });
+
+  it("leaves room to think: the output cap is far above the answer it asks for", () => {
+    // About 100 tokens of answer; a route that counts reasoning inside the cap needs the rest.
+    expect(relationExplanationLimits.maxOutputTokens).toBeGreaterThanOrEqual(2_048);
   });
 });

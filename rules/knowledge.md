@@ -51,11 +51,11 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 - Summaries are versioned and traceable to source revision, model, prompt and
   input hashes; long sources use map-reduce over chunks.
-- Atomic notes use validated structured output and link to their source, chunks
-  and SourceSpans. They are active at birth with an AI-provenance badge (review
-  is optional) and are embedded when created, so matching never meets a note
-  without a vector. Human edits protect a note and invalidate its embedding and
-  dependents; one embedding job rebuilds it, never generative AI; approval invalidates nothing.
+- Atomic notes use validated structured output and link to their source, chunks and SourceSpans.
+  They are active at birth with an AI-provenance badge (review is optional) and are embedded when
+  created, so matching never meets a note without a vector. Human edits protect a note and
+  invalidate its embedding and dependents; one embedding job rebuilds it, never generative AI.
+  Approval invalidates no embedding, decision, explanation or evidence; only the frozen legacy wiki reads status.
 - Repeated derivations of the same passage are not independent corroboration.
 - Entities and semantic relations are canonical in SQL with evidence. Names are
   retrieval signals, never identity; identity reuse needs conservative
@@ -83,7 +83,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   discovery pairs, never same-root pairs. Matching runs per source as soon as its
   notes exist, with no batch barrier (target F3).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
-  background, and is cached for what it was written from (ideas, passages, type, direction).
+  background, and cached for what it was written from (ideas, passages, type, direction, language).
 
 ## Topic tree (target F2)
 

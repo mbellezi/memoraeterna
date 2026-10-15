@@ -17,6 +17,8 @@ export const notePageLimits = {
   evidence: 100,
   /** The other note's passage shown in a relation card. */
   excerptCharacters: 600,
+  /** The longest evidence excerpt the page reads (a chunk is at most 2,400 characters). */
+  evidenceExcerptCharacters: 20_000,
   successors: 10,
   /** A relation explanation longer than this is clipped when read. */
   explanationCharacters: 4_000
@@ -50,6 +52,27 @@ export const NoteRelationsInputSchema = z
 export type NoteRelationsInput = z.infer<typeof NoteRelationsInputSchema>;
 
 const isoSchema = z.string().datetime();
+
+/** True when `value` has at most `max` characters, counted as code points like PostgreSQL does. */
+export function withinCharacters(value: string, max: number): boolean {
+  return value.length <= max || Array.from(value).length <= max;
+}
+
+/** `value` cut to `max` characters (code points), never inside a surrogate pair. */
+export function clipCharacters(value: string, max: number): string {
+  return value.length <= max ? value : Array.from(value).slice(0, max).join("");
+}
+
+/**
+ * A string bounded in characters, the unit `left()`, `char_length` and the checks of the database
+ * count. Zod's `max` counts UTF-16 units, so one emoji at the bound would fail a page that the
+ * database cut correctly: every bound that SQL cuts or checks uses this.
+ */
+const boundedCharacters = (max: number, min = 0) =>
+  z
+    .string()
+    .min(min)
+    .refine((value) => withinCharacters(value, max));
 
 /** Who the note's text belongs to: the AI, the person (an edit) or a reviewed note evolution. */
 export const NoteAuthorshipSchema = z.enum(["ai", "edited", "evolution"]);
@@ -100,7 +123,7 @@ export const NotePageEvidenceSchema = z
       .strict()
       .nullable(),
     page: z.number().int().positive().nullable(),
-    excerpt: z.string().max(20_000),
+    excerpt: boundedCharacters(notePageLimits.evidenceExcerptCharacters),
     language: z.string().min(1).nullable(),
     /** The passage the note was generated from first. */
     primary: z.boolean(),
@@ -114,7 +137,7 @@ export type NotePageEvidence = z.infer<typeof NotePageEvidenceSchema>;
 
 export const NotePageRelationExplanationSchema = z
   .object({
-    text: z.string().min(1).max(notePageLimits.explanationCharacters),
+    text: boundedCharacters(notePageLimits.explanationCharacters, 1),
     /** The model that wrote the text; null when nobody known wrote it. */
     writtenBy: z.string().min(1).nullable()
   })
@@ -141,7 +164,12 @@ export const NotePageRelationSchema = z
         status: AtomicNoteStatusSchema,
         superseded: z.boolean(),
         authorship: NoteAuthorshipSchema,
-        sourceItemId: z.string().uuid(),
+        /**
+         * The source the note was generated from; null when that source was deleted. A knowledge-owned
+         * note outlives its home source, and its relations are still listed.
+         */
+        sourceItemId: z.string().uuid().nullable(),
+        /** Empty when the home source is gone. */
         sourceTitle: z.string(),
         /** The other note's primary passage; null when its chunk is gone. */
         passage: z
@@ -149,7 +177,7 @@ export const NotePageRelationSchema = z
             chunkId: z.string().uuid(),
             sourceSpanId: z.string().uuid().nullable(),
             chunkIndex: z.number().int().nonnegative(),
-            excerpt: z.string().max(notePageLimits.excerptCharacters),
+            excerpt: boundedCharacters(notePageLimits.excerptCharacters),
             language: z.string().min(1).nullable()
           })
           .strict()
@@ -216,7 +244,7 @@ export function relationExplanation(input: {
 }): NotePageRelationExplanation | null {
   if (!isRealRelationExplanation(input.text)) return null;
   return {
-    text: input.text.slice(0, notePageLimits.explanationCharacters),
+    text: clipCharacters(input.text, notePageLimits.explanationCharacters),
     writtenBy: input.decisionSource === "model" ? knownModel(input.matchingModel) : null
   };
 }

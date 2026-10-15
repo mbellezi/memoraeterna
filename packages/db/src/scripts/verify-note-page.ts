@@ -57,8 +57,12 @@ try {
   const notes = createAtomicNoteRepository(db);
   const relations = createAtomicNoteRelationRepository(db);
   const repository = createNotePageRepository(db);
-  const read = async (noteId: string, relationLimit: number = notePageLimits.relationPage) => {
-    const page = await repository.readPage(noteId, { relationLimit });
+  const read = async (
+    noteId: string,
+    relationLimit: number = notePageLimits.relationPage,
+    contentLanguage = "en"
+  ) => {
+    const page = await repository.readPage(noteId, { relationLimit, contentLanguage });
     return page ? NotePageSchema.parse(page) : null;
   };
 
@@ -380,7 +384,9 @@ try {
   const pages = [];
   for (const offset of [0, 2, 4])
     pages.push(
-      NotePageRelationsSchema.parse(await repository.listRelations(note, { offset, limit: 2 }))
+      NotePageRelationsSchema.parse(
+        await repository.listRelations(note, { offset, limit: 2, contentLanguage: "en" })
+      )
     );
   assert.ok(
     pages.every((relationPage) => relationPage.total === 5),
@@ -391,7 +397,11 @@ try {
     [outgoing, incoming, unknown, superseded, dangling],
     "pages are disjoint and complete"
   );
-  const past = await repository.listRelations(note, { offset: 10, limit: 2 });
+  const past = await repository.listRelations(note, {
+    offset: 10,
+    limit: 2,
+    contentLanguage: "en"
+  });
   assert.deepEqual(past, { items: [], total: 5 }, "an offset past the end is empty");
   assert.equal((await read(note, 2))!.relations.items.length, 2, "the first page is bounded");
   const fromOther = (await read(incoming))!.relations.items.find((item) => item.other.id === note);
@@ -412,7 +422,7 @@ try {
   const [relationBefore, impactsBefore] = [await relationRow(), await impacts()];
   const explainContext = (await explanations.readContext(explained))!;
   assert.equal(explainContext.stored, null);
-  const plan = relationExplanationPlan(explainContext);
+  const plan = relationExplanationPlan({ ...explainContext, language: "en" });
   const saved = await explanations.save({
     relationId: explained,
     text: `Written on open about <note-ref id="${note}" />.`,
@@ -437,11 +447,24 @@ try {
     plan.inputHash,
     "the cache keeps the inputs it was written for"
   );
+  assert.equal(
+    (await read(note, notePageLimits.relationPage, "pt-BR"))!.relations.items.find(
+      (item) => item.id === explained
+    )?.explanation,
+    null,
+    "an explanation written in another content language is stale"
+  );
+  assert.notEqual(
+    relationExplanationPlan({ ...explainContext, language: "pt-BR" }).inputHash,
+    plan.inputHash,
+    "the content language is part of what the explanation is cached for"
+  );
   await notes.review({ id: unknown, action: "edit", ideaStatement: "Unknown idea, edited." });
   explainedRelation = (await read(note))!.relations.items.find((item) => item.id === explained);
   assert.equal(explainedRelation?.explanation, null, "an edited idea makes the explanation stale");
   assert.notEqual(
-    relationExplanationPlan((await explanations.readContext(explained))!).inputHash,
+    relationExplanationPlan({ ...(await explanations.readContext(explained))!, language: "en" })
+      .inputHash,
     plan.inputHash
   );
   assert.equal(
@@ -469,6 +492,94 @@ try {
     ).rows[0].n,
     0,
     "the explanation goes with its relation"
+  );
+
+  // 4c. Characters, not UTF-16 units, bound an excerpt; a relation outlives the home source of a
+  // knowledge-owned note, and its audit never links a source that is gone.
+  const hub = await addNote({ title: "Hub", createdFrom: book.id, chunk: bookChunks.chunkIds[0]! });
+  const emojiChunks = await addChunks(paper.id, [`${"Spacing \u{1F600} ".repeat(120)}end.`]);
+  const emojiNote = await addNote({
+    title: "Emoji",
+    createdFrom: paper.id,
+    chunk: emojiChunks.chunkIds[0]!
+  });
+  const homeless = await sources.create({ type: "StandaloneArticle", title: "A Source To Delete" });
+  const homelessChunks = await addChunks(homeless.id, ["A passage that goes with its source."]);
+  const orphan = await addNote({
+    title: "Orphan",
+    createdFrom: homeless.id,
+    chunk: homelessChunks.chunkIds[0]!,
+    ownership: "knowledge"
+  });
+  await db.query("delete from source_items where id = $1", [homeless.id]);
+  assert.equal(
+    (await db.query("select count(*)::int as n from atomic_notes where id = $1", [orphan])).rows[0]
+      .n,
+    1,
+    "a knowledge-owned note outlives its home source"
+  );
+  for (const [target, finalScore] of [
+    [emojiNote, 0.9],
+    [orphan, 0.8]
+  ] as const)
+    await relations.upsert({
+      sourceAtomicNoteId: hub,
+      targetAtomicNoteId: target,
+      relationType: "supports",
+      finalScore,
+      explanation: "knowledge.relations.explanations.reranked"
+    });
+  await db.query(
+    "insert into atomic_note_evidence (note_id, chunk_id, source_id, snapshot) values ($1, $2, $3, $4)",
+    [
+      hub,
+      randomUUID(),
+      randomUUID(),
+      {
+        excerpt: "\u{1F600}".repeat(notePageLimits.evidenceExcerptCharacters + 5),
+        sourceTitle: "A long preserved passage"
+      }
+    ]
+  );
+  const hubPage = (await read(hub))!; // the contract parses it: no excerpt fails on its UTF-16 length
+  const emojiExcerpt = hubPage.relations.items.find((item) => item.other.id === emojiNote)?.other
+    .passage?.excerpt;
+  assert.equal(Array.from(emojiExcerpt ?? "").length, notePageLimits.excerptCharacters);
+  assert.ok(
+    (emojiExcerpt?.length ?? 0) > notePageLimits.excerptCharacters,
+    "the excerpt has more UTF-16 units than characters, and still loads"
+  );
+  const preservedExcerpt = hubPage.evidence.items.find(
+    (item) => item.sourceTitle === "A long preserved passage"
+  )?.excerpt;
+  assert.equal(Array.from(preservedExcerpt ?? "").length, notePageLimits.evidenceExcerptCharacters);
+  assert.equal(hubPage.relations.total, 2);
+  assert.equal(hubPage.relations.items.length, 2, "every counted relation is listed");
+  const orphanRelation = hubPage.relations.items.find((item) => item.other.id === orphan)!;
+  assert.equal(orphanRelation.other.sourceItemId, null, "the note has no source any more");
+  assert.equal(orphanRelation.other.sourceTitle, "");
+  const orphanPages = [];
+  for (const offset of [0, 1])
+    orphanPages.push(
+      NotePageRelationsSchema.parse(
+        await repository.listRelations(hub, { offset, limit: 1, contentLanguage: "en" })
+      )
+    );
+  assert.deepEqual(
+    orphanPages.flatMap((relationPage) => relationPage.items.map((item) => item.other.id)),
+    [emojiNote, orphan],
+    "paging by what was listed reaches the relation to the orphaned note"
+  );
+  const orphanContext = (await explanations.readContext(orphanRelation.id))!;
+  assert.equal(
+    [orphanContext.a, orphanContext.b].find((n) => n.id === orphan)?.homeSourceId,
+    null,
+    "an explanation links no source that is gone"
+  );
+  assert.equal(
+    [orphanContext.a, orphanContext.b].find((n) => n.id === hub)?.homeSourceId,
+    book.id,
+    "a source that exists is still linked"
   );
 
   // 5. Successors.
@@ -505,8 +616,9 @@ try {
         "evidence: primary first, section and work titles, chunk index, range and page, superseded and preserved passages, exact total past the limit",
         "relations: outgoing, incoming and unknown direction, hidden rejected relations and notes, superseded other",
         "relations: explanation writer, message keys, blank decider, dangling passage, clipped excerpt",
+        "excerpts: cut and validated in characters (emoji at the bound), relations to a knowledge note whose home source was deleted listed and counted, no deleted source in an explanation's audit",
         "relations: score order, disjoint paging, stable totals",
-        "explanations written on demand: shown with their writer, stale after an edit, no relation write or legacy impact, removed with the relation",
+        "explanations written on demand: shown with their writer, stale after an edit or in another content language, no relation write or legacy impact, removed with the relation",
         "successors, placement equal to objects.locate, every statement read-only"
       ]
     })

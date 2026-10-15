@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { withinCharacters } from "./note-page.js";
+
 /**
  * Explanations of note relations are written on demand (docs/plan.md decision 16): never in bulk or
  * in the background, only when the owner opens a relation, then cached on the relation for the
@@ -8,10 +10,19 @@ import { z } from "zod";
 export const relationExplanationLimits = {
   /** The model writes at most this many characters (note references count as their alias). */
   modelCharacters: 300,
+  /**
+   * The longest stored text, note references expanded (the database check counts characters).
+   * An answer that expands beyond it is invalid output, not a failure at the insert.
+   */
+  storedCharacters: 4_000,
   /** Active time an explanation may take once it runs (waiting for the AI queue does not count). */
   timeoutMs: 120_000,
-  /** Output tokens asked for; an explanation is one or two sentences. */
-  maxOutputTokens: 512
+  /**
+   * Output tokens asked for. An explanation is one or two sentences (about 100 tokens), but a
+   * route that cannot turn reasoning off counts its reasoning inside the cap, so the rest is room
+   * to think: a cap of the answer alone would come back empty.
+   */
+  maxOutputTokens: 2_048
 } as const;
 
 /** Relation types that read in one direction (the others read the same both ways). */
@@ -35,7 +46,10 @@ export const RelationExplanationResultSchema = z
   .object({
     relationId: z.string().uuid(),
     /** Safe text whose note references are `<note-ref id="..." />` tags. */
-    text: z.string().min(1).max(4_000),
+    text: z
+      .string()
+      .min(1)
+      .refine((value) => withinCharacters(value, relationExplanationLimits.storedCharacters)),
     /** The model that wrote it. */
     writtenBy: z.string().min(1),
     writtenAt: z.string().datetime()

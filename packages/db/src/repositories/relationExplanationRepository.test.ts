@@ -20,6 +20,7 @@ describe("relation explanation inputs", () => {
   const inputs = {
     type: "supports",
     direction: "n1_to_n2" as const,
+    language: "en",
     first: { ideaStatement: "First idea", passageHash: "p1" },
     second: { ideaStatement: "Second idea", passageHash: "p2" }
   };
@@ -31,6 +32,7 @@ describe("relation explanation inputs", () => {
     for (const changed of [
       { ...inputs, type: "extends" },
       { ...inputs, direction: "unknown" as const },
+      { ...inputs, language: "pt-BR" },
       { ...inputs, first: { ...inputs.first, ideaStatement: "Edited idea" } },
       { ...inputs, second: { ...inputs.second, passageHash: "p3" } },
       { ...inputs, second: { ...inputs.second, passageHash: null } },
@@ -42,13 +44,26 @@ describe("relation explanation inputs", () => {
   it("does not depend on IDs or on the stored endpoint order of a symmetric relation", () => {
     const a = note(low, "Alpha", "pa"),
       b = note(high, "Beta", "pb");
-    const plan = relationExplanationPlan({ type: "contrasts", semanticSourceId: null, a, b });
+    const plan = relationExplanationPlan({
+      type: "contrasts",
+      semanticSourceId: null,
+      language: "en",
+      a,
+      b
+    });
     expect(
-      relationExplanationPlan({ type: "contrasts", semanticSourceId: null, a: b, b: a })
+      relationExplanationPlan({
+        type: "contrasts",
+        semanticSourceId: null,
+        language: "en",
+        a: b,
+        b: a
+      })
     ).toEqual(plan);
     const renamed = relationExplanationPlan({
       type: "contrasts",
       semanticSourceId: null,
+      language: "en",
       a: { ...a, id: "00000000-0000-4000-8000-000000000009" },
       b
     });
@@ -58,11 +73,19 @@ describe("relation explanation inputs", () => {
   it("changes when a directed relation is turned around", () => {
     const a = note(low, "Alpha"),
       b = note(high, "Beta");
-    expect(
-      relationExplanationPlan({ type: "supports", semanticSourceId: low, a, b }).inputHash
-    ).not.toBe(
-      relationExplanationPlan({ type: "supports", semanticSourceId: high, a, b }).inputHash
-    );
+    const plan = (semanticSourceId: string, language = "en") =>
+      relationExplanationPlan({ type: "supports", semanticSourceId, language, a, b }).inputHash;
+    expect(plan(low)).not.toBe(plan(high));
+  });
+
+  it("is another explanation in another content language, and the same one in the same language", () => {
+    const a = note(low, "Alpha"),
+      b = note(high, "Beta");
+    const plan = (language: string) =>
+      relationExplanationPlan({ type: "supports", semanticSourceId: low, language, a, b })
+        .inputHash;
+    expect(plan("en")).toBe(plan("en"));
+    expect(plan("pt-BR")).not.toBe(plan("en"));
   });
 });
 
@@ -100,6 +123,29 @@ describe("relation explanation repository", () => {
       writtenAt: new Date("2026-10-15T10:00:00Z")
     });
     expect(await setup([]).repository.readContext(low)).toBeNull();
+  });
+
+  it("names a home source only while it exists, so an audit never links a deleted one", async () => {
+    const orphan = { ...note(low, "A"), homeSourceId: null };
+    const { repository } = setup([
+      {
+        relationId: low,
+        type: "supports",
+        status: "pending_review",
+        semanticSourceId: null,
+        a: orphan,
+        b: note(high, "B"),
+        stored: null
+      }
+    ]);
+    expect((await repository.readContext(low))?.a.homeSourceId).toBeNull();
+    // The statement takes the id from `source_items`, not from the dangling column.
+    expect(repository.statements.context).toContain(
+      "(select s.id from source_items s where s.id = a.created_from_source_item_id)"
+    );
+    expect(repository.statements.context).toContain(
+      "(select s.id from source_items s where s.id = b.created_from_source_item_id)"
+    );
   });
 
   it("stores beside the relation and never updates the relation or a note", async () => {

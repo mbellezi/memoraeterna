@@ -1,8 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IpcMain } from "electron";
 import type { PgPool, RelationExplanationContext } from "@app/db";
 
+import { relationExplanationLimits } from "@app/domain";
+
 import { ipcChannels } from "../../shared/ipc.js";
+import { ActiveDeadline } from "./ai-execution-queue.js";
 
 const repository = vi.hoisted(() => ({ readContext: vi.fn(), save: vi.fn() }));
 vi.mock("@app/db", async (importOriginal) => ({
@@ -66,7 +69,10 @@ const execution = (output: unknown) => ({
   outputLanguage: "pt-BR"
 });
 
-function setup(outputs: unknown[] = ["n1 qualifies the recall benefit n2 reports."]) {
+function setup(
+  outputs: unknown[] = ["n1 qualifies the recall benefit n2 reports."],
+  getContentLanguage: () => Promise<string> = async () => "pt-BR"
+) {
   const runDefaultTask = vi.fn<
     (...args: unknown[]) => Promise<ReturnType<typeof execution> | null>
   >(async () => {
@@ -76,7 +82,7 @@ function setup(outputs: unknown[] = ["n1 qualifies the recall benefit n2 reports
   const service = new RelationExplanationService({
     getPool: () => ({}) as PgPool,
     ai: { runDefaultTask } as never,
-    getContentLanguage: async () => "pt-BR"
+    getContentLanguage
   });
   return { service, runDefaultTask };
 }
@@ -102,10 +108,11 @@ describe("RelationExplanationService", () => {
       contentLanguage: "pt-BR",
       promptVersion: relationExplanationPromptVersion,
       stage: "relation_explanation",
+      operation: "relation_explanation",
       sourceItemIds: [ids.sourceB, ids.sourceA]
     });
     expect(signal).toBeInstanceOf(AbortSignal);
-    expect(limits).toEqual({ maxOutputTokens: 512 });
+    expect(limits).toEqual({ maxOutputTokens: relationExplanationLimits.maxOutputTokens });
     // The decided subject (b) is n1.
     const text = `<note-ref id="${ids.b}" /> qualifies the recall benefit <note-ref id="${ids.a}" /> reports.`;
     expect(result).toEqual({
@@ -117,7 +124,7 @@ describe("RelationExplanationService", () => {
     expect(repository.save).toHaveBeenCalledWith({
       relationId: ids.relation,
       text,
-      inputHash: relationExplanationPlan(context()).inputHash,
+      inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash,
       promptVersion: relationExplanationPromptVersion,
       provider: "openai-codex",
       model: "writer-model",
@@ -132,7 +139,7 @@ describe("RelationExplanationService", () => {
       context({
         stored: {
           text: "Cached.",
-          inputHash: relationExplanationPlan(context()).inputHash,
+          inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash,
           model: "earlier-model",
           writtenAt
         }
@@ -159,7 +166,7 @@ describe("RelationExplanationService", () => {
   });
 
   it("repairs invalid output once, then fails visibly", async () => {
-    const repaired = setup(["n3 is not allowed.", "n1 and n2 agree."]);
+    const repaired = setup(["n1 supports <b>n2</b>.", "n1 and n2 agree."]);
     expect((await repaired.service.explain({ relationId: ids.relation }))?.text).toContain("agree");
     expect(repaired.runDefaultTask).toHaveBeenCalledTimes(2);
     expect(repaired.runDefaultTask.mock.calls[1]![1]).toContain(
@@ -233,6 +240,198 @@ describe("RelationExplanationService", () => {
     expect(received?.aborted).toBe(true);
     expect(service.cancel({ relationId: ids.relation })).toBe(false);
     expect((await service.explain({ relationId: ids.relation }))?.text).toContain("qualifies");
+  });
+
+  it("rewrites an explanation cached in another content language, and stores the new one", async () => {
+    repository.readContext.mockResolvedValue(
+      context({
+        stored: {
+          text: "Cached in English.",
+          inputHash: relationExplanationPlan({ ...context(), language: "en" }).inputHash,
+          model: "earlier-model",
+          writtenAt
+        }
+      })
+    );
+    const { service, runDefaultTask } = setup();
+    const result = await service.explain({ relationId: ids.relation });
+    expect(result?.text).toContain("qualifies");
+    expect(runDefaultTask).toHaveBeenCalledTimes(1);
+    expect(repository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        language: "pt-BR",
+        inputHash: relationExplanationPlan({ ...context(), language: "pt-BR" }).inputHash
+      })
+    );
+    // The same cached text counts again where it was written: English reads it without AI.
+    const english = setup(undefined, async () => "en");
+    expect((await english.service.explain({ relationId: ids.relation }))?.text).toBe(
+      "Cached in English."
+    );
+    expect(english.runDefaultTask).not.toHaveBeenCalled();
+  });
+
+  it("asks the audit for the sources that exist: a deleted home source is not linked", async () => {
+    repository.readContext.mockResolvedValue(
+      context({ a: { ...context().a, homeSourceId: null } })
+    );
+    const { service, runDefaultTask } = setup(["n1 and n2 agree.", "n1 and n2 agree."]);
+    await service.explain({ relationId: ids.relation });
+    expect(runDefaultTask.mock.calls[0]![2]).toMatchObject({ sourceItemIds: [ids.sourceB] });
+    repository.readContext.mockResolvedValue(
+      context({
+        a: { ...context().a, homeSourceId: null },
+        b: { ...context().b, homeSourceId: null }
+      })
+    );
+    await service.explain({ relationId: ids.relation });
+    expect(runDefaultTask.mock.calls[1]![2]).toMatchObject({ sourceItemIds: [] });
+  });
+
+  it("keeps content tokens like N400 and repairs an answer too long once its references are stored", async () => {
+    const content = setup(["n1 reports the N400 effect that n2 extends."]);
+    const result = await content.service.explain({ relationId: ids.relation });
+    expect(content.runDefaultTask).toHaveBeenCalledTimes(1);
+    expect(result?.text).toBe(
+      `<note-ref id="${ids.b}" /> reports the N400 effect that <note-ref id="${ids.a}" /> extends.`
+    );
+    // 299 characters of aliases pass the model's limit and expand past the 4000 of the column.
+    const long = setup([Array(100).fill("n1").join(" "), "n1 and n2 agree."]);
+    expect((await long.service.explain({ relationId: ids.relation }))?.text).toContain("agree");
+    expect(long.runDefaultTask).toHaveBeenCalledTimes(2);
+    const text = repository.save.mock.calls.at(-1)![0].text as string;
+    expect(text.length).toBeLessThanOrEqual(relationExplanationLimits.storedCharacters);
+    const never = setup([Array(100).fill("n1").join(" "), Array(100).fill("n2").join(" ")]);
+    repository.save.mockClear();
+    await expect(never.service.explain({ relationId: ids.relation })).rejects.toThrow(
+      "notePage.explain.errors.invalid"
+    );
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  describe("the active deadline", () => {
+    afterEach(() => vi.useRealTimers());
+
+    /** A model call that waits for its signal, as a provider call does. */
+    const hang = (seen: { signal?: AbortSignal }) =>
+      ((...args: unknown[]) =>
+        new Promise((_resolve, reject) => {
+          const signal = args[3] as AbortSignal;
+          seen.signal = signal;
+          signal.addEventListener("abort", () => reject(signal.reason));
+        })) as never;
+
+    it("runs the model under an active deadline: the queue pauses the clock, then the time is up", async () => {
+      vi.useFakeTimers();
+      const { service, runDefaultTask } = setup();
+      const seen: { signal?: AbortSignal } = {};
+      runDefaultTask.mockImplementationOnce(hang(seen));
+      const pending = service.explain({ relationId: ids.relation });
+      const outcome = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+      await vi.advanceTimersByTimeAsync(1);
+      // The raw controller signal would have no deadline: the queue could not stop the clock.
+      const deadline = ActiveDeadline.of(seen.signal);
+      expect(deadline).toBeInstanceOf(ActiveDeadline);
+      deadline!.pause();
+      await vi.advanceTimersByTimeAsync(relationExplanationLimits.timeoutMs * 2);
+      expect(seen.signal?.aborted).toBe(false);
+      deadline!.resume();
+      await vi.advanceTimersByTimeAsync(relationExplanationLimits.timeoutMs - 1_000);
+      expect(seen.signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_001);
+      await outcome;
+      expect(seen.signal?.aborted).toBe(true);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+
+    it("shares one deadline between the first call and the repair, and clears its timer", async () => {
+      vi.useFakeTimers();
+      const { service, runDefaultTask } = setup();
+      const seen: { signal?: AbortSignal } = {};
+      let answerFirst!: () => void;
+      runDefaultTask.mockImplementationOnce(
+        (() =>
+          new Promise((resolve) => {
+            answerFirst = () => resolve(execution("n1 supports <b>n2</b>."));
+          })) as never
+      );
+      runDefaultTask.mockImplementationOnce(hang(seen));
+      const pending = service.explain({ relationId: ids.relation });
+      const outcome = expect(pending).rejects.toMatchObject({ name: "TimeoutError" });
+      await vi.advanceTimersByTimeAsync(relationExplanationLimits.timeoutMs - 1_000);
+      answerFirst();
+      await vi.advanceTimersByTimeAsync(1);
+      // The repair runs under the deadline of the first call: about a second of the 120 is left.
+      const first = ActiveDeadline.of(runDefaultTask.mock.calls[0]![3] as AbortSignal);
+      expect(first).toBeInstanceOf(ActiveDeadline);
+      expect(ActiveDeadline.of(seen.signal)).toBe(first);
+      await vi.advanceTimersByTimeAsync(990);
+      expect(seen.signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(20);
+      await outcome;
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("releases the deadline timer once the explanation is stored", async () => {
+      vi.useFakeTimers();
+      const { service } = setup();
+      await service.explain({ relationId: ids.relation });
+      expect(repository.save).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  it("cancels during the repair call: nothing is stored and both calls shared the signal", async () => {
+    const { service, runDefaultTask } = setup();
+    const seen: { signal?: AbortSignal } = {};
+    runDefaultTask.mockResolvedValueOnce(execution("n1 supports <b>n2</b>.") as never);
+    runDefaultTask.mockImplementationOnce(
+      ((...args: unknown[]) =>
+        new Promise((_resolve, reject) => {
+          seen.signal = args[3] as AbortSignal;
+          seen.signal.addEventListener("abort", () => reject(seen.signal!.reason));
+        })) as never
+    );
+    const pending = service.explain({ relationId: ids.relation });
+    const outcome = expect(pending).rejects.toThrow("canceled");
+    await vi.waitFor(() => expect(seen.signal).toBeDefined());
+    expect(runDefaultTask).toHaveBeenCalledTimes(2);
+    expect(runDefaultTask.mock.calls[1]![2]).toMatchObject({ attempt: 1 });
+    expect(runDefaultTask.mock.calls[0]![3]).toBe(seen.signal);
+    expect(service.cancel({ relationId: ids.relation })).toBe(true);
+    await outcome;
+    expect(seen.signal?.aborted).toBe(true);
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("stores nothing when the card closes after the model answered, before the save", async () => {
+    const { service, runDefaultTask } = setup();
+    runDefaultTask.mockImplementationOnce((async () => {
+      service.cancel({ relationId: ids.relation });
+      return execution("n1 and n2 agree.");
+    }) as never);
+    await expect(service.explain({ relationId: ids.relation })).rejects.toThrow("canceled");
+    expect(repository.save).not.toHaveBeenCalled();
+    // The next open starts again and stores.
+    expect((await service.explain({ relationId: ids.relation }))?.text).toContain("qualifies");
+    expect(repository.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("never calls the model for a card closed while the context was being read", async () => {
+    let release!: (language: string) => void;
+    const { service, runDefaultTask } = setup(
+      undefined,
+      () => new Promise<string>((resolve) => (release = resolve))
+    );
+    const pending = service.explain({ relationId: ids.relation });
+    const outcome = expect(pending).rejects.toThrow("canceled");
+    await vi.waitFor(() => expect(release).toBeDefined());
+    expect(service.cancel({ relationId: ids.relation })).toBe(true);
+    release("pt-BR");
+    await outcome;
+    expect(runDefaultTask).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("refuses malformed requests and an unavailable database", async () => {

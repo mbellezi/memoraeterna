@@ -45,32 +45,75 @@ export function buildRelationExplanationRepairPrompt(prompt: string): string {
   );
 }
 
-const wrappingQuotes = /^(["'“”«»`]+)([\s\S]*?)(["'“”«»`]+)$/;
+/** The quotes a model may wrap its whole answer in, by opening character. */
+const quotePairs: Record<string, string> = {
+  '"': '"',
+  "'": "'",
+  "`": "`",
+  "“": "”",
+  "‘": "’",
+  "„": "“",
+  "”": "”",
+  "«": "»"
+};
+const intraWordApostrophe = /(?<=[\p{L}\p{N}])['’](?=[\p{L}\p{N}])/gu;
 
 /**
- * A valid explanation is plain text of at most `modelCharacters` characters that names the notes
- * only as n1 and n2. Model output never carries canonical references: a tag is refused, and so is
- * any other alias. Returns null when the output is not valid.
+ * Removes the quotes that wrap the whole answer, and only those: the first and last characters
+ * must be a matching pair that appears nowhere inside, so an answer that merely begins and ends
+ * with quoted phrases ("Yes" n1 says "yes") keeps its quotes. An apostrophe inside a word is not a
+ * quote.
+ */
+function unwrapQuotes(text: string): string {
+  const open = text[0] ?? "";
+  const close = quotePairs[open];
+  if (close === undefined || text.length < 2 || text.at(-1) !== close) return text;
+  const inner = text.slice(1, -1);
+  const probe = inner.replace(intraWordApostrophe, "");
+  return probe.includes(open) || probe.includes(close) ? text : inner.trim();
+}
+
+/**
+ * A valid explanation is plain text of at most `modelCharacters` characters without tags. The notes
+ * are named n1 and n2, but every other token is content: N400, N95 or "N2 sleep" are words of the
+ * notes, never references. Model output never carries canonical references, so a tag is refused.
+ * Returns null when the output is not valid.
  */
 export function parseRelationExplanation(output: unknown): string | null {
   if (typeof output !== "string") return null;
-  let text = output.trim();
-  const quoted = wrappingQuotes.exec(text);
-  if (quoted) text = quoted[2]!.trim();
-  text = text.replace(/\s+/g, " ");
+  const text = unwrapQuotes(output.trim()).replace(/\s+/g, " ");
   if (!text || text.length > relationExplanationLimits.modelCharacters) return null;
   if (/<\/?[a-z][a-z-]*\b/i.test(text)) return null;
-  for (const [alias] of text.matchAll(/\b[nN][0-9]+\b/g))
-    if (alias !== "n1" && alias !== "n2") return null;
   return text;
 }
+
+/**
+ * The aliases the prompt defines: exactly the lowercase tokens n1 and n2, standing alone. A longer
+ * token (n12, an1, n1_to_n2) or a number (n1.5, n2-3) is content.
+ */
+const aliasToken = /(?<![\p{L}\p{N}_])n([12])(?![\p{L}\p{N}_])(?![-.]\p{N})/gu;
 
 /** The backend alone turns the aliases into canonical, safe note references. */
 export function resolveRelationExplanationReferences(
   text: string,
   ids: { first: string; second: string }
 ): string {
-  return text.replace(/\bn([12])\b/g, (_alias, which: string) =>
+  return text.replace(aliasToken, (_alias, which: string) =>
     which === "1" ? `<note-ref id="${ids.first}" />` : `<note-ref id="${ids.second}" />`
   );
+}
+
+/**
+ * The text to store for a model answer, or null when the answer is not valid. The length is checked
+ * after the aliases became references, against the bound of the stored column: a reference is far
+ * longer than its alias, so an answer short in the model's terms can still be too long to store.
+ */
+export function acceptRelationExplanation(
+  output: unknown,
+  ids: { first: string; second: string }
+): string | null {
+  const text = parseRelationExplanation(output);
+  if (text === null) return null;
+  const resolved = resolveRelationExplanationReferences(text, ids);
+  return resolved.length <= relationExplanationLimits.storedCharacters ? resolved : null;
 }

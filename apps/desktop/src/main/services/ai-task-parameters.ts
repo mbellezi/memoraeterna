@@ -14,6 +14,12 @@ export const noteMatchDecisionOperations = {
 } as const;
 
 /**
+ * The operation that writes the explanation of a relation when the owner opens it. It is a sentence
+ * or two of prose, so it runs on the writer route with reasoning off by default.
+ */
+export const relationExplanationOperation = "relation_explanation";
+
+/**
  * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
  * Any default here changes the effective parameters, so a run fingerprint must include it.
  */
@@ -25,10 +31,11 @@ export function aiTaskBehaviorDefaults(
   const decision =
     operation === noteMatchDecisionOperations.decide ||
     operation === noteMatchDecisionOperations.repair;
+  const explanation = taskType === "text-generation" && operation === relationExplanationOperation;
   return {
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
     // Adapters map "off" to the lowest reasoning level a model supports.
-    ...(taskType === "reranking" && decision ? { reasoningLevel: "off" } : {})
+    ...((taskType === "reranking" && decision) || explanation ? { reasoningLevel: "off" } : {})
   };
 }
 

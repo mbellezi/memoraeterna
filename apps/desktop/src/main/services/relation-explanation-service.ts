@@ -13,12 +13,12 @@ import {
 
 import { ActiveDeadline } from "./ai-execution-queue.js";
 import type { AiService } from "./ai-service.js";
+import { relationExplanationOperation } from "./ai-task-parameters.js";
 import {
+  acceptRelationExplanation,
   buildRelationExplanationPrompt,
   buildRelationExplanationRepairPrompt,
-  parseRelationExplanation,
-  relationExplanationPromptVersion,
-  resolveRelationExplanationReferences
+  relationExplanationPromptVersion
 } from "./relation-explanation.js";
 
 export interface RelationExplanationServiceOptions {
@@ -35,9 +35,9 @@ const unavailableStatuses = new Set(["rejected", "archived"]);
  * opens a relation asks for one: nothing here runs in bulk or in the background. The writer route
  * (`text-generation`, never the decision route) writes it at interactive priority; it is cached on
  * the relation for the inputs it was written from, so opening the relation again reuses it until
- * either note's idea or evidence, the type or the direction changes. One request per relation runs
- * at a time, and closing the card cancels it. An explanation is a derived annotation: it changes
- * neither note, so human-protected notes are explained like any other.
+ * either note's idea or evidence, the type, the direction or the content language changes. One
+ * request per relation runs at a time, and closing the card cancels it. An explanation is a derived
+ * annotation: it changes neither note, so human-protected notes are explained like any other.
  */
 export class RelationExplanationService {
   private readonly running = new Map<
@@ -79,7 +79,8 @@ export class RelationExplanationService {
     const repository = createRelationExplanationRepository(pool);
     const context = await repository.readContext(relationId);
     if (!context || !explainable(context)) return null;
-    const plan = relationExplanationPlan(context);
+    const contentLanguage = await this.options.getContentLanguage();
+    const plan = relationExplanationPlan({ ...context, language: contentLanguage });
     if (context.stored && context.stored.inputHash === plan.inputHash)
       return RelationExplanationResultSchema.parse({
         relationId,
@@ -87,7 +88,6 @@ export class RelationExplanationService {
         writtenBy: context.stored.model,
         writtenAt: context.stored.writtenAt.toISOString()
       });
-    const contentLanguage = await this.options.getContentLanguage();
     const prompt = buildRelationExplanationPrompt({
       type: context.type,
       direction: plan.direction,
@@ -102,14 +102,25 @@ export class RelationExplanationService {
     });
     const logContext = {
       stage: "relation_explanation",
-      operation: "relation_explanation",
+      operation: relationExplanationOperation,
       priority: "interactive" as const,
       contentLanguage,
       promptVersion: relationExplanationPromptVersion,
-      sourceItemIds: [...new Set([plan.first.homeSourceId, plan.second.homeSourceId])],
+      // Only sources that still exist: a knowledge note outlives its home source, and the audit of
+      // the run links its sources by foreign key.
+      sourceItemIds: [
+        ...new Set(
+          [plan.first.homeSourceId, plan.second.homeSourceId].filter(
+            (id): id is string => id !== null
+          )
+        )
+      ],
       attempt: 0
     };
     const limits = { maxOutputTokens: relationExplanationLimits.maxOutputTokens };
+    const ids = { first: plan.first.id, second: plan.second.id };
+    // A card closed while the context was read never starts a model call.
+    signal.throwIfAborted();
     const deadline = new ActiveDeadline(relationExplanationLimits.timeoutMs, signal);
     try {
       let execution = await this.options.ai.runDefaultTask(
@@ -120,8 +131,8 @@ export class RelationExplanationService {
         limits
       );
       if (!execution) throw new Error("errors.ai.noCompatibleModel");
-      let text = parseRelationExplanation(execution.output);
-      if (text === null) {
+      let resolved = acceptRelationExplanation(execution.output, ids);
+      if (resolved === null) {
         execution = await this.options.ai.runDefaultTask(
           "text-generation",
           buildRelationExplanationRepairPrompt(prompt),
@@ -130,14 +141,10 @@ export class RelationExplanationService {
           limits
         );
         if (!execution) throw new Error("errors.ai.noCompatibleModel");
-        text = parseRelationExplanation(execution.output);
-        if (text === null) throw new Error("notePage.explain.errors.invalid");
+        resolved = acceptRelationExplanation(execution.output, ids);
+        if (resolved === null) throw new Error("notePage.explain.errors.invalid");
       }
       deadline.signal.throwIfAborted();
-      const resolved = resolveRelationExplanationReferences(text, {
-        first: plan.first.id,
-        second: plan.second.id
-      });
       const saved = await repository.save({
         relationId,
         text: resolved,

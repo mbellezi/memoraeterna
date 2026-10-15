@@ -1,6 +1,7 @@
 import type { QueryResultRow } from "pg";
 
 import {
+  clipCharacters,
   knownModel,
   noteAuthorship,
   notePageLimits,
@@ -168,7 +169,8 @@ select (select count(*)::int from items) as total,
       'range', case when page.start_offset is not null and page.end_offset > page.start_offset
                     then jsonb_build_object('start', page.start_offset, 'end', page.end_offset) end,
       'page', case when page.page > 0 then page.page end,
-      'excerpt', left(page.excerpt, 20000), 'language', page.language, 'primary', page.is_primary,
+      'excerpt', left(page.excerpt, ${notePageLimits.evidenceExcerptCharacters}), 'language', page.language,
+      'primary', page.is_primary,
       'current', page.current, 'sourceAvailable', page.source_available)
       order by page.is_primary desc, coalesce(page.work_title, page.source_title), page.source_title,
                page.chunk_index nulls last, page.chunk_id)
@@ -181,7 +183,9 @@ select (select count(*)::int from items) as total,
  * $1 note ID, $2 limit, $3 offset, $4 excerpt characters. One row with the exact total and one page
  * of relations to notes that are neither discarded nor archived, ordered by the stored score (which
  * never leaves this statement's ordering). The direction comes from the decided metadata: the stored
- * endpoints are sorted by ID.
+ * endpoints are sorted by ID. Every counted relation is listed: a knowledge-owned note outlives its
+ * home source (it has no foreign key to it), so that source is a left join. `left()` counts
+ * characters (code points) and the contract bounds the excerpt in the same unit.
  */
 const relationsSql = `
 with rel as (
@@ -229,13 +233,13 @@ select (select count(*)::int from rel) as total,
                     'edited', exists (select 1 from atomic_note_review_events ev
                                        where ev.atomic_note_id = o.id and ev.action = 'edit'),
                     'evolution', o.metadata ? 'evolutionRunId',
-                    'sourceItemId', os.id, 'sourceTitle', os.title, 'passageHash', oc.content_hash,
+                    'sourceItemId', os.id, 'sourceTitle', coalesce(os.title, ''), 'passageHash', oc.content_hash,
                     'passage', case when oc.id is null then null else jsonb_build_object(
                       'chunkId', oc.id, 'sourceSpanId', oc.source_span_id, 'chunkIndex', oc.chunk_index,
                       'excerpt', left(oc.content, $4::int), 'language', nullif(oc.language, 'und')) end)) as value
            from page
            join atomic_notes o on o.id = page.other_id
-           join source_items os on os.id = o.created_from_source_item_id
+           left join source_items os on os.id = o.created_from_source_item_id
            left join chunks oc on oc.id = o.evidence_chunk_id
            left join atomic_note_relation_explanations x on x.relation_id = page.id) item), '[]'::jsonb) as items`;
 
@@ -267,13 +271,14 @@ function mapNote(row: NoteRow): NotePageNote {
 }
 
 /**
- * An explanation written on demand counts only while its inputs are unchanged: a stale one reads as
- * none, so it is written again when the relation is opened. Without one, the explanation the decider
- * stored (when it is real text) still counts.
+ * An explanation written on demand counts only while its inputs are unchanged, the content language
+ * it was written in included: a stale one reads as none, so it is written again when the relation is
+ * opened. Without one, the explanation the decider stored (when it is real text) still counts.
  */
 function explanationOf(
   item: RelationItem,
-  self: SelfFacts | null
+  self: SelfFacts | null,
+  language: string
 ): NotePageRelation["explanation"] {
   if (item.written) {
     if (!self) return null;
@@ -287,12 +292,13 @@ function explanationOf(
     const plan = relationExplanationPlan({
       type: item.type,
       semanticSourceId: item.semanticSourceId,
+      language,
       a: fact(self, self.passageHash),
       b: fact(item.other, item.other.passageHash)
     });
     return plan.inputHash === item.written.inputHash
       ? {
-          text: item.written.text.slice(0, notePageLimits.explanationCharacters),
+          text: clipCharacters(item.written.text, notePageLimits.explanationCharacters),
           writtenBy: knownModel(item.written.model)
         }
       : null;
@@ -304,14 +310,18 @@ function explanationOf(
   });
 }
 
-function mapRelation(item: RelationItem, self: SelfFacts | null): NotePageRelation {
+function mapRelation(
+  item: RelationItem,
+  self: SelfFacts | null,
+  language: string
+): NotePageRelation {
   const { other } = item;
   return {
     id: item.id,
     type: item.type,
     direction: item.direction,
     decidedBy: knownModel(item.matchingModel),
-    explanation: explanationOf(item, self),
+    explanation: explanationOf(item, self, language),
     other: {
       id: other.id,
       title: other.title,
@@ -327,20 +337,23 @@ function mapRelation(item: RelationItem, self: SelfFacts | null): NotePageRelati
   };
 }
 
-function mapRelations(row: RelationsRow | undefined): NotePageRelations {
+function mapRelations(row: RelationsRow | undefined, language: string): NotePageRelations {
   const self = row?.self ?? null;
   return {
     total: Number(row?.total ?? 0),
-    items: (row?.items ?? []).map((item) => mapRelation(item, self))
+    items: (row?.items ?? []).map((item) => mapRelation(item, self, language))
   };
 }
 
 export function createNotePageRepository(pool: PgPool) {
   return {
-    /** Null when the note does not exist. One consistent snapshot: repeatable read, read only. */
+    /**
+     * Null when the note does not exist. One consistent snapshot: repeatable read, read only. The
+     * content language decides which written explanations are current.
+     */
     async readPage(
       noteId: string,
-      options: { relationLimit: number }
+      options: { relationLimit: number; contentLanguage: string }
     ): Promise<NotePageRows | null> {
       const client = await pool.connect();
       try {
@@ -375,7 +388,7 @@ export function createNotePageRepository(pool: PgPool) {
           successors: note.successors,
           evidence: { total: Number(evidence?.total ?? 0), items: evidence?.items ?? [] },
           placement,
-          relations: mapRelations(relations)
+          relations: mapRelations(relations, options.contentLanguage)
         };
       } catch (error) {
         await client.query("rollback").catch(() => undefined);
@@ -388,7 +401,7 @@ export function createNotePageRepository(pool: PgPool) {
     /** A further page of the note's relations; the total is exact on every page. */
     async listRelations(
       noteId: string,
-      options: { offset: number; limit: number }
+      options: { offset: number; limit: number; contentLanguage: string }
     ): Promise<NotePageRelations> {
       const result = await pool.query<RelationsRow>(relationsSql, [
         noteId,
@@ -396,7 +409,7 @@ export function createNotePageRepository(pool: PgPool) {
         options.offset,
         notePageLimits.excerptCharacters
       ]);
-      return mapRelations(result.rows[0]);
+      return mapRelations(result.rows[0], options.contentLanguage);
     },
 
     /** The statements behind `readPage`, for EXPLAIN in verification and the benchmark. */

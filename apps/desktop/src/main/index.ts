@@ -298,7 +298,13 @@ void app.whenReady().then(() => {
   );
   registerWikiIpc(ipcMain, new WikiService(() => databaseService?.getPool() ?? null));
   registerObjectsIpc(ipcMain, new ObjectsService(() => databaseService?.getPool() ?? null));
-  registerNotePageIpc(ipcMain, new NotePageService(() => databaseService?.getPool() ?? null));
+  registerNotePageIpc(
+    ipcMain,
+    new NotePageService(
+      () => databaseService?.getPool() ?? null,
+      async () => (await settingsService!.getApp()).contentLanguage
+    )
+  );
   registerRelationExplanationIpc(
     ipcMain,
     new RelationExplanationService({

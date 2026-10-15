@@ -4,6 +4,7 @@ import {
   aiTaskBehaviorDefaults,
   noteMatchDecisionOperations,
   profileGenerationMaxTokens,
+  relationExplanationOperation,
   withAiTaskParameterDefaults
 } from "./ai-task-parameters.js";
 
@@ -43,6 +44,32 @@ describe("AI task parameter defaults", () => {
           operation: noteMatchDecisionOperations.decide
         })
       ).not.toHaveProperty("reasoningLevel");
+  });
+
+  it("turns reasoning off for the relation explanation unless the profile asks for it", () => {
+    const options = { operation: relationExplanationOperation };
+    for (const local of [false, true])
+      expect(withAiTaskParameterDefaults("text-generation", {}, local, options)).toMatchObject({
+        reasoningLevel: "off"
+      });
+    expect(
+      withAiTaskParameterDefaults("text-generation", { reasoningLevel: "medium" }, false, options)
+    ).toMatchObject({ reasoningLevel: "medium" });
+    // Only that operation of that route: other writer calls and other routes keep the profile's.
+    expect(withAiTaskParameterDefaults("text-generation", {}, false)).not.toHaveProperty(
+      "reasoningLevel"
+    );
+    expect(
+      withAiTaskParameterDefaults("text-generation", {}, false, { operation: "ask" })
+    ).not.toHaveProperty("reasoningLevel");
+    for (const task of ["summarization", "reranking", "structured-output"])
+      expect(withAiTaskParameterDefaults(task, {}, false, options)).not.toHaveProperty(
+        "reasoningLevel"
+      );
+    // A run fingerprint covers whatever a task adds beyond sizing.
+    expect(aiTaskBehaviorDefaults("text-generation", false, relationExplanationOperation)).toEqual({
+      reasoningLevel: "off"
+    });
   });
 
   it("leaves other uses of the reranking route, such as source matching, on the profile's parameters", () => {
