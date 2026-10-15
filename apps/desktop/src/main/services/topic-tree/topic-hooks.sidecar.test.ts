@@ -21,6 +21,7 @@ import {
   type JobRecord,
   type PgPool,
   type PostgresSidecarConnection,
+  type Queryable,
   type TopicLoadSpace
 } from "@app/db";
 import { ProcessingPlanRequestSchema, ProcessingStages } from "@app/domain";
@@ -243,6 +244,14 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
   const activeTree = async () => (await createTopicTreeRepository(pool).activeTree())!;
   const queued = (type: string) =>
     count("select count(*) from jobs where type = $1 and status = 'queued'", [type]);
+  /** The queued jobs as a transaction sees them, with the columns a deduped request touches. */
+  const queuedJobs = async (db: Queryable = pool) =>
+    (
+      await db.query<{ id: string; type: string; runAfter: string; updatedAt: string }>(
+        `select id, type, run_after::text as "runAfter", updated_at::text as "updatedAt"
+           from jobs where status = 'queued' order by type, id`
+      )
+    ).rows;
   const placements = (noteIds: string[]) =>
     count("select count(*) from topic_placements where note_id = any($1::uuid[])", [noteIds]);
 
@@ -405,8 +414,8 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
       newTreeConfig: () => config,
       budgetStore: { read: async () => null, write: async () => undefined }
     });
-    // The hooks the call sites receive: due at once, and with a rebalance that is registered
-    // here (T19 registers the real executor), so the jobs the hooks enqueue can be observed.
+    // The hooks the call sites receive: due at once, so the jobs they enqueue can be observed and
+    // run (T19 registers the rebalance executor; its own follow-ups keep the hour's debounce).
     const triggers = new TopicTriggers({
       getPool: () => pool,
       isRegistered: (type) => executableTopicJobs.includes(type),
@@ -546,20 +555,35 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     await services.triggers.place(tree.id, [{ rootSourceId: source }], { debounce: immediate });
     await drain();
     expect(await placements(noteIds)).toBe(3);
+    // The applied PLACE asked for its follow-ups (T19): a debounced REBALANCE of the topics it
+    // touched and, when one is due, the audit. They are queued before the deletion: not its jobs.
+    const followUps = await queuedJobs();
+    expect(followUps.filter((job) => job.type === "topic-rebalance")).toHaveLength(1);
+    expect(followUps.filter((job) => job.type === "topic-sweep")).toHaveLength(0);
     // A deletion that fails after the repair was enqueued leaves the source, its placements and
-    // no job behind: the jobs lived and died in the deleting transaction.
+    // the queue as they were: the repair lived and died in the deleting transaction.
+    let seenInTransaction: Awaited<ReturnType<typeof queuedJobs>> = [];
     const failing = deletionService({
       ...hooks,
       itemsRemoved: async (options) => {
         await hooks.itemsRemoved(options);
+        seenInTransaction = await queuedJobs(options?.client);
         throw new Error("deletion_failed_after_repair");
       }
     });
     await expect(failing.delete(source)).rejects.toThrow("deletion_failed_after_repair");
+    // Inside the transaction the repair existed: a new sweep, and the rebalance request merged into
+    // the queued follow-up (deduped, so its row was touched rather than a second one created).
+    expect(seenInTransaction.filter((job) => job.type === "topic-sweep")).toHaveLength(1);
+    const rebalance = followUps.find((job) => job.type === "topic-rebalance")!;
+    const merged = seenInTransaction.filter((job) => job.type === "topic-rebalance");
+    expect(merged.map((job) => job.id)).toEqual([rebalance.id]);
+    expect(merged[0]!.updatedAt).not.toBe(rebalance.updatedAt);
+    // After the rollback: no sweep, and the follow-ups exactly as they were before the deletion.
     expect(await count("select count(*) from source_items where id = $1", [source])).toBe(1);
     expect(await placements(noteIds)).toBe(3);
     expect(await queued("topic-sweep")).toBe(0);
-    expect(await queued("topic-rebalance")).toBe(0);
+    expect(await queuedJobs()).toEqual(followUps);
     expect(await count("select count(*) from topic_stats where dirty")).toBe(0);
     // Kept for the next test: the source stays in the library, placed.
   });
@@ -676,6 +700,7 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     expect(await queued("topic-sweep")).toBe(1);
     expect(await queued("topic-rebalance")).toBe(1);
     expect(await queued("topic-place")).toBe(1);
+    const repair = (await queuedJobs()).filter((job) => job.type !== "topic-place");
     expect(await count("select count(*) from topic_stats where dirty")).toBeGreaterThan(0);
     expect(
       await count(
@@ -691,8 +716,13 @@ describe.skipIf(!sidecarAvailable)("the topic hooks on the PostgreSQL sidecar", 
     await hooks.notesChanged(created);
     expect(await queued("topic-place")).toBe(1);
     const ran = await drain();
+    // The repair's sweep and REBALANCE (T19's executor) are due at once and run before PLACE; the
+    // follow-ups PLACE asks for are debounced and wait.
     expect(new Set(ran.map((entry) => entry.type))).toEqual(
-      new Set(["topic-place", "topic-sweep"])
+      new Set(["topic-place", "topic-sweep", "topic-rebalance"])
+    );
+    expect(ran.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining(repair.map((job) => job.id))
     );
     expect(ran.every((entry) => entry.status === "succeeded")).toBe(true);
     expect(await placements(created)).toBe(5);
