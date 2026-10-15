@@ -9,6 +9,8 @@ export * from "./parameter-capabilities.js";
 export * from "./google.js";
 export * from "./local-model-catalog.js";
 export * from "./local-runtime-protocol.js";
+export * from "./runtime-config.js";
+export * from "./mlx-helper-host.js";
 export * from "./local-model-downloader.js";
 export * from "./local-adapters.js";
 export * from "./cassette.js";

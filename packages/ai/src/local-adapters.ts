@@ -1,6 +1,3 @@
-import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-
 import type { AiCapability, AiModelParameterCapabilities } from "@app/domain";
 
 import {
@@ -11,12 +8,10 @@ import {
   type AiTaskRequest,
   type AiTaskResult
 } from "./contracts.js";
-import {
-  mlxHelperRequestSchema,
-  parseMlxHelperOutput,
-  type MlxHelperRequest
-} from "./local-runtime-protocol.js";
+import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
+import { MlxHelperHost } from "./mlx-helper-host.js";
 import { localParameterCapabilities } from "./parameter-capabilities.js";
+import { resolveMlxRuntimeConfig, type MlxRuntimeConfigInput } from "./runtime-config.js";
 
 const supportedLocalTasks = new Set([
   "text-generation",
@@ -151,16 +146,36 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
   }
 }
 
+export interface MlxAdapterOptions extends LocalAdapterOptions {
+  helperPath: string;
+  timeoutMs?: number;
+  /** Memory bounds and deadlines of the helper process this adapter owns. */
+  runtimeConfig?: MlxRuntimeConfigInput;
+  /**
+   * A helper host shared with other adapters, so generation, embeddings and ranking use one
+   * helper process. The adapter never disposes a host it did not create.
+   */
+  host?: MlxHelperHost;
+}
+
 export class MlxAdapter implements AiModelAdapter {
-  private readonly runtime: MlxHelperRuntime | null;
+  private readonly host: MlxHelperHost | null;
+  private readonly ownsHost: boolean;
   private readonly execute: (input: MlxExecutionInput) => Promise<LocalExecutionResult>;
 
   public constructor(
-    private readonly options: LocalAdapterOptions & { helperPath: string; timeoutMs?: number },
+    private readonly options: MlxAdapterOptions,
     execute?: (input: MlxExecutionInput) => Promise<LocalExecutionResult>
   ) {
-    this.runtime = execute ? null : new MlxHelperRuntime(options.helperPath);
-    this.execute = execute ?? ((input) => this.runtime!.execute(input));
+    this.ownsHost = !execute && !options.host;
+    this.host = execute
+      ? null
+      : (options.host ??
+        new MlxHelperHost({
+          helperPath: options.helperPath,
+          ...(options.runtimeConfig ? { config: options.runtimeConfig } : {})
+        }));
+    this.execute = execute ?? ((input) => this.generate(input));
   }
 
   public describe(): AiModelDescriptor {
@@ -181,7 +196,9 @@ export class MlxAdapter implements AiModelAdapter {
       modelPath: this.options.modelPath,
       prompt: promptFromInput(input.input),
       parameters: input.parameters,
-      timeoutMs: this.options.timeoutMs ?? 10 * 60_000,
+      timeoutMs:
+        this.options.timeoutMs ??
+        (this.host?.config ?? resolveMlxRuntimeConfig(this.options.runtimeConfig)).requestTimeoutMs,
       ...(signal ? { signal } : {})
     });
     return taskResult(input, "local-mlx", this.options.modelId, {
@@ -191,7 +208,24 @@ export class MlxAdapter implements AiModelAdapter {
   }
 
   public async dispose(): Promise<void> {
-    await this.runtime?.dispose();
+    if (this.ownsHost) await this.host?.dispose();
+  }
+
+  private async generate(input: MlxExecutionInput): Promise<LocalExecutionResult> {
+    const result = await this.host!.generate(
+      {
+        modelPath: input.modelPath,
+        prompt: input.prompt,
+        parameters: mlxGenerationParameters(input.parameters)
+      },
+      { timeoutMs: input.timeoutMs, ...(input.signal ? { signal: input.signal } : {}) }
+    );
+    return {
+      output: result.output,
+      durationMs: result.durationMs,
+      ...(result.inputTokens !== undefined ? { inputTokens: result.inputTokens } : {}),
+      ...(result.outputTokens !== undefined ? { outputTokens: result.outputTokens } : {})
+    };
   }
 }
 
@@ -222,144 +256,20 @@ interface MlxExecutionInput {
   signal?: AbortSignal;
 }
 
-class MlxHelperRuntime {
-  private child: ChildProcessWithoutNullStreams | null = null;
-  private stdout = "";
-  private stderr = "";
-  private persistenceConfirmed = false;
-
-  public constructor(private readonly helperPath: string) {}
-
-  public async execute(input: MlxExecutionInput): Promise<LocalExecutionResult> {
-    const child = this.ensureChild();
-    const request = createMlxGenerateRequest(input);
-    const abort = () => {
-      void this.dispose();
-    };
-    input.signal?.addEventListener("abort", abort, { once: true });
-    const timeout = setTimeout(abort, input.timeoutMs);
-    child.stdin.write(`${JSON.stringify(request)}\n`);
-    try {
-      return await this.waitForResult(child, request, input.signal);
-    } finally {
-      clearTimeout(timeout);
-      input.signal?.removeEventListener("abort", abort);
-    }
-  }
-
-  public async dispose(): Promise<void> {
-    const child = this.child;
-    this.child = null;
-    this.stdout = "";
-    this.stderr = "";
-    if (!child || child.killed) return;
-    child.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      const timeout = setTimeout(resolve, 1_000);
-      child.once("exit", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-  }
-
-  private ensureChild(): ChildProcessWithoutNullStreams {
-    if (this.child && !this.child.killed && this.child.exitCode === null) return this.child;
-    this.persistenceConfirmed = false;
-    const child = spawn(this.helperPath, [], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: minimalRuntimeEnvironment()
-    });
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      this.stdout += chunk;
-    });
-    child.stderr.on("data", (chunk: string) => {
-      this.stderr = `${this.stderr}${chunk}`.slice(-2_000);
-    });
-    child.once("error", () => {
-      if (this.child === child) this.child = null;
-    });
-    child.once("exit", () => {
-      if (this.child === child) this.child = null;
-    });
-    this.child = child;
-    return child;
-  }
-
-  private async waitForResult(
-    child: ChildProcessWithoutNullStreams,
-    request: MlxHelperRequest,
-    signal?: AbortSignal
-  ): Promise<LocalExecutionResult> {
-    let exitedAt: number | null = null;
-    while (exitedAt === null || Date.now() - exitedAt < 50) {
-      if (signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
-      const messages = parseMlxHelperOutput(this.stdout);
-      const response = messages
-        .filter((message) => message.kind === "result")
-        .findLast((message) => message.requestId === request.requestId);
-      if (response) {
-        this.stdout = "";
-        if (!response.ok) throw new Error(response.error.messageKey);
-        const result = {
-          output: response.output,
-          durationMs: response.durationMs,
-          ...(response.inputTokens !== undefined ? { inputTokens: response.inputTokens } : {}),
-          ...(response.outputTokens !== undefined ? { outputTokens: response.outputTokens } : {})
-        };
-        await this.detectPersistence(child);
-        return result;
-      }
-      if (this.child !== child || child.exitCode !== null || child.killed) exitedAt ??= Date.now();
-      await new Promise((resolve) => setTimeout(resolve, exitedAt === null ? 10 : 5));
-    }
-    if (signal?.aborted) throw new DOMException("Local inference canceled.", "AbortError");
-    throw new Error("errors.localModels.runtimeFailed");
-  }
-
-  private async detectPersistence(child: ChildProcessWithoutNullStreams): Promise<void> {
-    if (this.persistenceConfirmed || child.exitCode !== null || child.killed) return;
-    const exited = await new Promise<boolean>((resolve) => {
-      const onExit = () => {
-        clearTimeout(timeout);
-        resolve(true);
-      };
-      const timeout = setTimeout(() => {
-        child.removeListener("exit", onExit);
-        resolve(false);
-      }, 50);
-      child.once("exit", onExit);
-    });
-    if (!exited && this.child === child) this.persistenceConfirmed = true;
-  }
-}
-
-function createMlxGenerateRequest(input: MlxExecutionInput): MlxHelperRequest {
-  const request = mlxHelperRequestSchema.parse({
-    protocolVersion: 1,
-    requestId: randomUUID(),
-    command: "generate",
-    modelPath: input.modelPath,
-    prompt: input.prompt,
-    parameters: {
-      maxTokens: numberParameter(input.parameters.maxTokens, 1_024),
-      temperature: numberParameter(input.parameters.temperature, 0.2),
-      ...(typeof input.parameters.topP === "number" ? { topP: input.parameters.topP } : {}),
-      ...(typeof input.parameters.topK === "number" ? { topK: input.parameters.topK } : {}),
-      ...(typeof input.parameters.presencePenalty === "number"
-        ? { presencePenalty: input.parameters.presencePenalty }
-        : {}),
-      enableThinking:
-        typeof input.parameters.reasoningLevel === "string"
-          ? input.parameters.reasoningLevel !== "off"
-          : false,
-      ...(typeof input.parameters.seed === "number" ? { seed: input.parameters.seed } : {})
-    }
-  });
-  return request;
+/** Maps the canonical task parameters to the helper's generation parameters. */
+function mlxGenerationParameters(parameters: Record<string, unknown>): MlxGenerationParameters {
+  return {
+    maxTokens: numberParameter(parameters.maxTokens, 1_024),
+    temperature: numberParameter(parameters.temperature, 0.2),
+    ...(typeof parameters.topP === "number" ? { topP: parameters.topP } : {}),
+    ...(typeof parameters.topK === "number" ? { topK: parameters.topK } : {}),
+    ...(typeof parameters.presencePenalty === "number"
+      ? { presencePenalty: parameters.presencePenalty }
+      : {}),
+    enableThinking:
+      typeof parameters.reasoningLevel === "string" ? parameters.reasoningLevel !== "off" : false,
+    ...(typeof parameters.seed === "number" ? { seed: parameters.seed } : {})
+  };
 }
 
 export function stripThinkingOutput(output: string): string {
@@ -578,14 +488,4 @@ function contextSizeParameter(value: unknown): "auto" | number {
 function normalizeVector(vector: readonly number[]): number[] {
   const magnitude = Math.sqrt(vector.reduce((total, value) => total + value * value, 0));
   return magnitude === 0 ? [...vector] : vector.map((value) => value / magnitude);
-}
-
-function minimalRuntimeEnvironment(): NodeJS.ProcessEnv {
-  return {
-    PATH: process.env.PATH,
-    HOME: process.env.HOME,
-    TMPDIR: process.env.TMPDIR,
-    LANG: process.env.LANG ?? "en_US.UTF-8",
-    LC_ALL: process.env.LC_ALL
-  };
 }
