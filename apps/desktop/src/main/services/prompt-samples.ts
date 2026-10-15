@@ -33,6 +33,17 @@ import {
   buildSourceRelationExplanationRepairPrompt
 } from "./source-relation-explanation.js";
 import { consultationPrompt, parseConsultationAnswer } from "./consultation-service.js";
+import {
+  defaultTopicTreeConfig,
+  packNamingCalls,
+  validateNamingOutput
+} from "@app/domain/topic-tree";
+import {
+  buildTopicAreasPrompt,
+  buildTopicNamePrompt,
+  buildTopicNameRepairPrompt,
+  parseTopicAreasOutput
+} from "./topic-tree/topic-prompts.js";
 import { withPromptPin, renderPrompt, joinPrompts, promptFingerprint } from "./prompt-runtime.js";
 import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -349,6 +360,84 @@ export function promptSampleCall(
         validate: (o) => parseConsultationAnswer(o, snapshot)
       };
     }
+    if (promptId === "topic.name" || promptId === "topic.name.repair") {
+      const naming = defaultTopicTreeConfig.naming;
+      const call = packNamingCalls(
+        [
+          {
+            parentId: id(40),
+            parentTitle: "Learning",
+            namedSiblings: ["Spaced practice"],
+            topics: [
+              {
+                topicId: id(41),
+                members: [
+                  {
+                    key: `note:${id(1)}`,
+                    kind: "note",
+                    title: "Retrieval with feedback",
+                    idea: "Feedback improved delayed recall in a fictional trial.",
+                    rootSource: null
+                  }
+                ],
+                currentTitle: null
+              },
+              {
+                topicId: id(42),
+                members: [
+                  {
+                    key: `note:${id(2)}`,
+                    kind: "note",
+                    title: "Beginners without feedback",
+                    idea: "Beginners gained nothing without feedback.",
+                    rootSource: null
+                  }
+                ],
+                currentTitle: null
+              }
+            ]
+          }
+        ],
+        naming.maxTopicsPerCall
+      )[0]!;
+      const promptInput = { contentLanguage: "en", config: naming };
+      return {
+        input:
+          promptId === "topic.name"
+            ? buildTopicNamePrompt(call, promptInput)
+            : buildTopicNameRepairPrompt(
+                call,
+                promptInput,
+                'T1: the title "Learning" repeats the parent title "Learning"'
+              ),
+        task: "structured-output",
+        validate: (o) => {
+          const result = validateNamingOutput(o, call, { contentLanguage: "en", config: naming });
+          if (result.accepted.length !== 2 || result.rejected.length > 0)
+            throw new Error("prompts.errors.sample");
+        }
+      };
+    }
+    if (promptId === "topic.areas") {
+      const areas = defaultTopicTreeConfig.areas;
+      return {
+        input: buildTopicAreasPrompt({
+          contentLanguage: "en",
+          areas: { target: areas.target, min: areas.min, max: areas.max },
+          pinned: [{ alias: "A1", title: "Learning", description: "How people learn." }],
+          topics: [
+            { alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] },
+            { alias: "T2", titles: ["Ocean currents", "Tides"] }
+          ]
+        }),
+        task: "structured-output",
+        validate: (o) => {
+          const members = parseTopicAreasOutput(o).areas.flatMap((area) => area.members);
+          if (members.length !== 2 || new Set(members).size !== 2)
+            throw new Error("prompts.errors.sample");
+        }
+      };
+    }
     if (promptId.startsWith("diagnostics.") || promptId.startsWith("embedding.")) {
       const d = promptDefinition(promptId),
         values = Object.fromEntries(d.variables.map((v) => [v.key, v.example]));
@@ -383,6 +472,11 @@ interface SampleCase {
   root: string;
   variant?: string;
 }
+/** Prompts only a dedicated ranker can run: the decide validation and the placement gate. */
+const rankerInstructionIds: ReadonlySet<string> = new Set([
+  "diagnostics.local_ranking",
+  "topic.gate.instruction"
+]);
 /**
  * The curator, organization and maintenance prompts have no caller since the legacy wiki was
  * removed (F2 T39r): nothing samples them. The catalog entries stay until the prompt catalog drops
@@ -411,9 +505,9 @@ export function promptSampleCases(ids: string[]): SampleCase[] {
         id: prefix === "consultation" ? "consultation.answer" : prefix,
         root: prefix === "consultation" ? "consultation.answer" : prefix
       });
-    } else if (!id.startsWith("shared.") && id !== "diagnostics.local_ranking")
-      // A dedicated ranker's instruction runs only in its decide validation: the sample routes
-      // send text to generative models, which can neither score nor validate it.
+    } else if (!id.startsWith("shared.") && !rankerInstructionIds.has(id))
+      // A dedicated ranker's instruction runs only in its decide validation or its gate: the
+      // sample routes send text to generative models, which can neither score nor validate it.
       add({ id, root: id });
   }
   if (!cases.size) throw new Error("prompts.errors.sample");

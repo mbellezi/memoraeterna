@@ -482,7 +482,9 @@
       "topicSweep": "Verificação da árvore de tópicos",
       "topicBuild": "Construção da árvore de tópicos",
       "topicRebalance": "Reequilíbrio da árvore de tópicos",
-      "topicAudit": "Auditoria da árvore de tópicos"
+      "topicAudit": "Auditoria da árvore de tópicos",
+      "topicName": "Nomeação de tópicos",
+      "topicLabelEmbed": "Rótulos de tópicos"
     },
     "progress": {
       "processingSource": "Processando {title}",
@@ -1784,6 +1786,19 @@
       "ask": "Perguntar",
       "notice": "Esse link apontava para uma página da wiki antiga, que não existe mais.",
       "dismiss": "Dispensar"
+    },
+    "unnamed": "Tópico sem nome",
+    "errors": {
+      "stale": "Este tópico mudou desde que você o abriu. Recarregue e tente de novo.",
+      "cycle": "Um tópico não pode ser movido para dentro de si mesmo.",
+      "duplicateTitle": "Já existe aqui um tópico com este nome.",
+      "notFound": "Este tópico não existe mais.",
+      "protected": "Este tópico é protegido, então a mudança precisa da sua aprovação.",
+      "unavailable": "Esta ação ainda não está disponível.",
+      "canceled": "A tarefa de tópicos foi cancelada."
+    },
+    "changeSets": {
+      "naming": "Nomes de tópicos atualizados: {topics}"
     }
   },
   "wiki": {
@@ -1945,7 +1960,8 @@
       "organization": "Organização da wiki",
       "consultation": "Consulta fundamentada",
       "maintenance": "Manutenção automática",
-      "diagnostics": "Diagnóstico de modelos"
+      "diagnostics": "Diagnóstico de modelos",
+      "topic": "Nomes de tópicos e Áreas"
     },
     "labels": {
       "knowledge": "Resposta com conhecimento compilado",
@@ -2000,7 +2016,11 @@
       "temporal": "Interpretar datas e mudanças",
       "procedure": "Aprender um procedimento",
       "consolidation": "Permitir evolução revisada de notas",
-      "evolution": "Interpretação e evolução das notas"
+      "evolution": "Interpretação e evolução das notas",
+      "name": "Nomear tópicos",
+      "areas": "Agrupar em Áreas",
+      "gate": "Decisão de posicionamento",
+      "instruction": "Instrução do ranker"
     },
     "variables": {
       "source_title": "Título da fonte",
@@ -2059,7 +2079,16 @@
       "group_id": "Identidade da proposta coerente fornecida pelo aplicativo.",
       "reference_guide": "Referências de navegação para fontes, notas, páginas e entidades existentes. Identificadores eN servem apenas para citações.",
       "required_notes": "Notas existentes selecionadas que devem aparecer em um índice sem copiar seu conteúdo.",
-      "candidate_knowledge": "Proposta completa, incluindo títulos, finalidades, texto e atribuição dos índices, verificada contra as evidências originais."
+      "candidate_knowledge": "Proposta completa, incluindo títulos, finalidades, texto e atribuição dos índices, verificada contra as evidências originais.",
+      "title_max_chars": "Tamanho máximo do título",
+      "description_max_chars": "Tamanho máximo da descrição",
+      "max_aliases": "Máximo de nomes alternativos",
+      "topics": "Grupos de tópicos a nomear, com suas notas centrais",
+      "areas_target": "Número desejado de Áreas",
+      "areas_min": "Número mínimo de Áreas",
+      "areas_max": "Número máximo de Áreas",
+      "pinned_areas": "Áreas fixadas que permanecem como estão",
+      "area_topics": "Tópicos do segundo nível com seus títulos centrais"
     },
     "purposes": {
       "shared": "Texto reutilizável incluído nas solicitações indicadas ao modelo.",
@@ -2072,7 +2101,8 @@
       "organization": "Orienta o fluxo limitado de leitura de evidências e proposta de página.",
       "consultation": "Responde à pergunta usando apenas o escopo admitido e citações originais.",
       "maintenance": "Revisa alterações limitadas de navegação para a rotina selecionada.",
-      "diagnostics": "Executa somente quando um diagnóstico de modelo é solicitado explicitamente."
+      "diagnostics": "Executa somente quando um diagnóstico de modelo é solicitado explicitamente.",
+      "topic": "Nomeia tópicos, agrupa-os em Áreas e diz ao ranker de posicionamento o que é um tópico. Os nomes usam sempre o idioma do conteúdo."
     }
   },
   "prompts": {

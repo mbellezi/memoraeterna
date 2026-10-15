@@ -32,6 +32,32 @@ function model() {
         output = { labels: [{ key: "r1", displayLabel: "Improves recall" }] };
       else if (id.startsWith("graph.")) output = { entities: [], relations: [] };
       else if (id === "sources.decide") output = { relations: [] };
+      else if (id === "topic.name")
+        output = {
+          topics: [
+            {
+              alias: "T1",
+              title: "Feedback and recall",
+              description: "How feedback changes what people remember.",
+              aliases: ["Retrieval feedback"],
+              language: "en"
+            },
+            {
+              alias: "T2",
+              title: "Beginners and feedback",
+              description: "What beginners learn when feedback is missing.",
+              aliases: [],
+              language: "en"
+            }
+          ]
+        };
+      else if (id === "topic.areas")
+        output = {
+          areas: [
+            { alias: "A1", members: ["T1"] },
+            { new: { title: "Oceans", description: "Seas, tides and currents." }, members: ["T2"] }
+          ]
+        };
       else if (id.startsWith("consultation."))
         output = {
           change: { meaningful: false, explanation: [] },
@@ -65,6 +91,21 @@ describe("bounded catalog sample runner", () => {
       promptSampleCases(["summary.short", "diagnostics.local_ranking"]).map((entry) => entry.id)
     ).toEqual(["summary.short"]);
     expect(() => promptSampleCases(["diagnostics.local_ranking"])).toThrow("prompts.errors.sample");
+  });
+  it("leaves the placement gate's ranker instruction out too, and samples the other topic prompts", () => {
+    expect(promptDefinitions.find((d) => d.id === "topic.gate.instruction")).toMatchObject({
+      task: "reranking",
+      variables: []
+    });
+    expect(
+      promptSampleCases([
+        "topic.name",
+        "topic.name.repair",
+        "topic.areas",
+        "topic.gate.instruction"
+      ]).map((entry) => entry.id)
+    ).toEqual(["topic.name", "topic.name.repair", "topic.areas"]);
+    expect(() => promptSampleCases(["topic.gate.instruction"])).toThrow("prompts.errors.sample");
   });
   it("executes every registered required variant with real builders and validators, including exact same-root repair and local diagnostics", async () => {
     const ai = model(),

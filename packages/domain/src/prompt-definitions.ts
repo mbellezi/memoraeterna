@@ -24,7 +24,8 @@ export const promptCategoryLabels = Object.fromEntries(
     "organization",
     "consultation",
     "maintenance",
-    "diagnostics"
+    "diagnostics",
+    "topic"
   ].map((key) => [key, promptMetadataLabels("categories", key)])
 );
 export function promptLabel(key: string) {
@@ -176,14 +177,45 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
     type: "Book",
     title: "Fictional recall study",
     language: "en"
-  }
+  },
+  title_max_chars: 80,
+  description_max_chars: 200,
+  max_aliases: 5,
+  topics: [
+    {
+      parent: "Learning",
+      named_siblings: ["Spaced practice"],
+      topics: [
+        {
+          alias: "T1",
+          notes: [
+            {
+              title: "Retrieval with feedback",
+              idea: "Feedback improved delayed recall in a fictional trial."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  areas_target: 10,
+  areas_min: 7,
+  areas_max: 16,
+  pinned_areas: [{ alias: "A1", title: "Learning", description: "How people learn and remember." }],
+  area_topics: [{ alias: "T1", titles: ["Retrieval with feedback", "Spaced practice"] }]
 };
 function variable(key: string, id: string): PromptVariable {
   const numeric = [
     "max_entities",
     "max_relations",
     "remaining_tools",
-    "remaining_repairs"
+    "remaining_repairs",
+    "title_max_chars",
+    "description_max_chars",
+    "max_aliases",
+    "areas_target",
+    "areas_min",
+    "areas_max"
   ].includes(key);
   return {
     key,
@@ -252,9 +284,11 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
                     : parts[1] === "local_ranking"
                       ? "reranking"
                       : "text-generation"
-                  : family === "shared"
-                    ? "fragment"
-                    : "structured-output";
+                  : family === "topic" && parts[1] === "gate"
+                    ? "reranking"
+                    : family === "shared"
+                      ? "fragment"
+                      : "structured-output";
   const title = promptLabel(parts.at(-1)!);
   return PromptDefinitionSchema.parse({
     version: "prompt-catalog-v1",
@@ -415,6 +449,8 @@ for (const definition of promptDefinitions) {
     !id.startsWith("shared.") &&
     !id.startsWith("embedding.") &&
     !id.startsWith("diagnostics.") &&
+    // A ranker instruction is plain English text: rankers get no language instruction.
+    id !== "topic.gate.instruction" &&
     !id.endsWith(".guidance") &&
     !id.endsWith(".advanced") &&
     !id.includes(".state.") &&

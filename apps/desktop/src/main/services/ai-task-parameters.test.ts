@@ -6,6 +6,7 @@ import {
   profileGenerationMaxTokens,
   relationExplanationOperation,
   sourceRelationExplanationOperation,
+  topicNameOperation,
   withAiTaskParameterDefaults
 } from "./ai-task-parameters.js";
 
@@ -45,6 +46,25 @@ describe("AI task parameter defaults", () => {
           operation: noteMatchDecisionOperations.decide
         })
       ).not.toHaveProperty("reasoningLevel");
+  });
+
+  it("turns reasoning off for topic naming unless the profile asks for it, and for no other call", () => {
+    const options = { operation: topicNameOperation };
+    expect(withAiTaskParameterDefaults("structured-output", {}, false, options)).toMatchObject({
+      reasoningLevel: "off"
+    });
+    expect(
+      withAiTaskParameterDefaults("structured-output", { reasoningLevel: "high" }, false, options)
+    ).toMatchObject({ reasoningLevel: "high" });
+    expect(withAiTaskParameterDefaults("structured-output", {}, false)).not.toHaveProperty(
+      "reasoningLevel"
+    );
+    expect(withAiTaskParameterDefaults("text-generation", {}, false, options)).not.toHaveProperty(
+      "reasoningLevel"
+    );
+    expect(aiTaskBehaviorDefaults("structured-output", true, topicNameOperation)).toEqual({
+      reasoningLevel: "off"
+    });
   });
 
   it("turns reasoning off for the relation explanation unless the profile asks for it", () => {

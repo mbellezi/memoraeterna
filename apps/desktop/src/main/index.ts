@@ -272,7 +272,10 @@ void app.whenReady().then(() => {
     wake: () => jobSupervisor?.wake("light"),
     logger: console,
     // The topic IPC (T16) is registered once by the factory; `topicsChanged` reaches every window.
-    ipc: { main: ipcMain, targets: () => webContents.getAllWebContents() }
+    ipc: { main: ipcMain, targets: () => webContents.getAllWebContents() },
+    // Topic names and label vectors (T18) call the AI service in the library's content language.
+    ai: aiService,
+    getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
   });
   libraryResetService = new LibraryResetService({
     // A reset leaves an empty active tree (D39).

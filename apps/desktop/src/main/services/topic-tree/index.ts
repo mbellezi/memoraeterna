@@ -8,6 +8,7 @@ import type { PgPool } from "@app/db";
 import { defaultTopicTreeConfig } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
+import type { AiService } from "../ai-service.js";
 import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
@@ -21,6 +22,8 @@ import { registerTopicTreeIpc } from "./topic-ipc.js";
 import type { TopicsChangedTarget } from "./topic-ipc.js";
 import { createTopicJobRegistry, topicJobTypes } from "./topic-jobs.js";
 import type { TopicJobExecutor } from "./topic-jobs.js";
+import { TopicLabelService } from "./topic-labels.js";
+import { TopicNamingService } from "./topic-naming.js";
 import type { TopicEngineStatus, TopicReadService } from "./topic-read-service.js";
 import type { SpaceResolver } from "./topic-space.js";
 import { TopicTreeService } from "./topic-tree-service.js";
@@ -52,6 +55,12 @@ export interface TopicTreeServicesOptions {
    * and tests that drive the services without Electron).
    */
   ipc?: { main: IpcMain; targets: () => Iterable<TopicsChangedTarget> };
+  /**
+   * The AI service the naming and label jobs call (T18) and the library's content language. Both
+   * are needed to register those jobs; scripts and tests that drive placement alone leave them out.
+   */
+  ai?: Pick<AiService, "runDefaultTask" | "activeEmbeddingSpace">;
+  getContentLanguage?: () => Promise<string>;
 }
 
 export interface TopicTreeServices {
@@ -63,6 +72,9 @@ export interface TopicTreeServices {
   changes: TopicChangeCoalescer;
   /** The read side of the topic screens; null without `options.ipc`. */
   read: TopicReadService | null;
+  /** Topic names (D11) and label vectors; null without `options.ai` and `getContentLanguage`. */
+  naming: TopicNamingService | null;
+  labels: TopicLabelService | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -186,6 +198,44 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       execute: (job) => structure.runAudit(job)
     }
   };
+
+  // Naming and label vectors (T18) run on the `model` worker, and every committed change may have
+  // created topics that wait for a name.
+  let naming: TopicNamingService | null = null;
+  let labels: TopicLabelService | null = null;
+  if (options.ai && options.getContentLanguage) {
+    const namingService = new TopicNamingService({
+      getPool,
+      ai: options.ai,
+      getContentLanguage: options.getContentLanguage,
+      budget,
+      aiMode,
+      triggers,
+      changes,
+      isRegistered,
+      ...(logger ? { logger } : {}),
+      ...(options.now ? { now: options.now } : {})
+    });
+    const labelService = new TopicLabelService({
+      getPool,
+      ai: options.ai,
+      budget,
+      aiMode,
+      triggers,
+      ...(logger ? { logger } : {})
+    });
+    naming = namingService;
+    labels = labelService;
+    executors[topicJobTypes.name] = {
+      needsModel: true,
+      execute: (job, signal) => namingService.runName(job, signal)
+    };
+    executors[topicJobTypes.labelEmbed] = {
+      needsModel: true,
+      execute: (job, signal) => labelService.runLabelEmbed(job, signal)
+    };
+    changes.subscribe(namingService.onTopicsChanged);
+  }
   registered = new Set(Object.keys(executors));
   const jobs = createTopicJobRegistry(executors, () => topicService.isHeld());
 
@@ -204,6 +254,8 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     hooks,
     changes,
     read,
+    naming,
+    labels,
     budget,
     aiMode,
     jobs,
@@ -218,6 +270,8 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       }
       // The day's audit: metrics, the structural configuration (D39) and rebuild triggers.
       await structure.startup(treeId);
+      // Topics an earlier run left without a name (never throws).
+      await naming?.requestIfNeeded(treeId);
     },
     ensureActiveTree,
     holdTopicJobs: () => topicService.holdTopicJobs(),

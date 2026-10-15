@@ -480,7 +480,9 @@
       "topicSweep": "Controllo dell’albero degli argomenti",
       "topicBuild": "Costruzione dell’albero degli argomenti",
       "topicRebalance": "Ribilanciamento dell’albero degli argomenti",
-      "topicAudit": "Verifica dell’albero degli argomenti"
+      "topicAudit": "Verifica dell’albero degli argomenti",
+      "topicName": "Denominazione degli argomenti",
+      "topicLabelEmbed": "Etichette degli argomenti"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
@@ -1779,6 +1781,19 @@
       "ask": "Chiedi",
       "notice": "Quel link puntava a una pagina della vecchia wiki, che non esiste più.",
       "dismiss": "Chiudi"
+    },
+    "unnamed": "Argomento senza nome",
+    "errors": {
+      "stale": "Questo argomento è cambiato da quando lo hai aperto. Ricarica e riprova.",
+      "cycle": "Un argomento non può essere spostato dentro se stesso.",
+      "duplicateTitle": "Qui esiste già un argomento con questo nome.",
+      "notFound": "Questo argomento non esiste più.",
+      "protected": "Questo argomento è protetto, quindi la modifica richiede la tua approvazione.",
+      "unavailable": "Questa azione non è ancora disponibile.",
+      "canceled": "L’attività sugli argomenti è stata annullata."
+    },
+    "changeSets": {
+      "naming": "Nomi degli argomenti aggiornati: {topics}"
     }
   },
   "wiki": {
@@ -1940,7 +1955,8 @@
       "organization": "Organizzazione della wiki",
       "consultation": "Consultazione con fonti",
       "maintenance": "Manutenzione automatica",
-      "diagnostics": "Diagnostica dei modelli"
+      "diagnostics": "Diagnostica dei modelli",
+      "topic": "Nomi di argomenti e Aree"
     },
     "labels": {
       "knowledge": "Risposta dal sapere compilato",
@@ -1995,7 +2011,11 @@
       "temporal": "Interpretare date e cambiamenti",
       "procedure": "Apprendere una procedura",
       "consolidation": "Consentire evoluzione delle note con revisione",
-      "evolution": "Interpretazione ed evoluzione delle note"
+      "evolution": "Interpretazione ed evoluzione delle note",
+      "name": "Nominare gli argomenti",
+      "areas": "Raggruppare in Aree",
+      "gate": "Decisione di collocazione",
+      "instruction": "Istruzione del ranker"
     },
     "variables": {
       "source_title": "Titolo della fonte",
@@ -2054,7 +2074,16 @@
       "group_id": "Identità della proposta coerente fornita dall’applicazione.",
       "reference_guide": "Riferimenti di navigazione a fonti, note, pagine ed entità esistenti. I riferimenti eN sono solo citazioni.",
       "required_notes": "Note esistenti selezionate da includere in un indice senza copiarne il contenuto.",
-      "candidate_knowledge": "Proposta completa, inclusi titoli, finalità, testo e attribuzione degli indici, verificata rispetto alle prove originali."
+      "candidate_knowledge": "Proposta completa, inclusi titoli, finalità, testo e attribuzione degli indici, verificata rispetto alle prove originali.",
+      "title_max_chars": "Lunghezza massima del titolo",
+      "description_max_chars": "Lunghezza massima della descrizione",
+      "max_aliases": "Numero massimo di nomi alternativi",
+      "topics": "Gruppi di argomenti da nominare, con le note centrali",
+      "areas_target": "Numero desiderato di Aree",
+      "areas_min": "Numero minimo di Aree",
+      "areas_max": "Numero massimo di Aree",
+      "pinned_areas": "Aree fissate che restano come sono",
+      "area_topics": "Argomenti di secondo livello con i titoli centrali"
     },
     "purposes": {
       "shared": "Testo riutilizzabile incluso nelle richieste al modello indicate.",
@@ -2067,7 +2096,8 @@
       "organization": "Guida il flusso limitato di lettura delle prove e proposta di pagina.",
       "consultation": "Risponde alla domanda usando solo l’ambito ammesso e citazioni originali.",
       "maintenance": "Esamina modifiche limitate alla navigazione per la routine selezionata.",
-      "diagnostics": "Si esegue solo quando viene richiesto esplicitamente un test del modello."
+      "diagnostics": "Si esegue solo quando viene richiesto esplicitamente un test del modello.",
+      "topic": "Dà un nome agli argomenti, li raggruppa in Aree e spiega al ranker di collocazione che cos’è un argomento. I nomi usano sempre la lingua dei contenuti."
     }
   },
   "prompts": {

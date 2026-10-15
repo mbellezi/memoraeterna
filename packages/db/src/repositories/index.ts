@@ -42,3 +42,4 @@ export * from "./relationExplanationRepository.js";
 export * from "./sourceRelationExplanationRepository.js";
 export * from "./topicTreeRepository.js";
 export * from "./topicReadRepository.js";
+export * from "./topicNamingRepository.js";

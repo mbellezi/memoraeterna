@@ -480,7 +480,9 @@
       "topicSweep": "Vérification de l’arbre des sujets",
       "topicBuild": "Construction de l’arbre des sujets",
       "topicRebalance": "Rééquilibrage de l’arbre des sujets",
-      "topicAudit": "Audit de l’arbre des sujets"
+      "topicAudit": "Audit de l’arbre des sujets",
+      "topicName": "Nommage des sujets",
+      "topicLabelEmbed": "Étiquettes des sujets"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
@@ -1786,6 +1788,19 @@
       "ask": "Poser une question",
       "notice": "Ce lien pointait vers une page de l'ancien wiki, qui n'existe plus.",
       "dismiss": "Fermer"
+    },
+    "unnamed": "Sujet sans nom",
+    "errors": {
+      "stale": "Ce sujet a changé depuis que vous l’avez ouvert. Rechargez et réessayez.",
+      "cycle": "Un sujet ne peut pas être déplacé dans lui-même.",
+      "duplicateTitle": "Un sujet portant ce nom existe déjà ici.",
+      "notFound": "Ce sujet n’existe plus.",
+      "protected": "Ce sujet est protégé : la modification demande votre approbation.",
+      "unavailable": "Cette action n’est pas encore disponible.",
+      "canceled": "La tâche sur les sujets a été annulée."
+    },
+    "changeSets": {
+      "naming": "Noms de sujets mis à jour : {topics}"
     }
   },
   "wiki": {
@@ -1947,7 +1962,8 @@
       "organization": "Organisation du wiki",
       "consultation": "Consultation sourcée",
       "maintenance": "Maintenance automatique",
-      "diagnostics": "Diagnostic des modèles"
+      "diagnostics": "Diagnostic des modèles",
+      "topic": "Noms de sujets et Domaines"
     },
     "labels": {
       "knowledge": "Réponse à partir des connaissances",
@@ -2002,7 +2018,11 @@
       "temporal": "Interpréter dates et changements",
       "procedure": "Apprendre une procédure",
       "consolidation": "Autoriser l’évolution révisée des notes",
-      "evolution": "Interprétation et évolution des notes"
+      "evolution": "Interprétation et évolution des notes",
+      "name": "Nommer les sujets",
+      "areas": "Regrouper en Domaines",
+      "gate": "Décision de classement",
+      "instruction": "Instruction du ranker"
     },
     "variables": {
       "source_title": "Titre de la source",
@@ -2061,7 +2081,16 @@
       "group_id": "Identité de la proposition cohérente fournie par l’application.",
       "reference_guide": "Références de navigation vers les sources, notes, pages et entités existantes. Les références eN servent uniquement aux citations.",
       "required_notes": "Notes existantes sélectionnées à inclure dans un index sans copier leur contenu.",
-      "candidate_knowledge": "Proposition complète, incluant titres, objectifs, texte et attribution des index, vérifiée contre les preuves originales."
+      "candidate_knowledge": "Proposition complète, incluant titres, objectifs, texte et attribution des index, vérifiée contre les preuves originales.",
+      "title_max_chars": "Longueur maximale du titre",
+      "description_max_chars": "Longueur maximale de la description",
+      "max_aliases": "Nombre maximal de noms alternatifs",
+      "topics": "Groupes de sujets à nommer, avec leurs notes centrales",
+      "areas_target": "Nombre visé de Domaines",
+      "areas_min": "Nombre minimal de Domaines",
+      "areas_max": "Nombre maximal de Domaines",
+      "pinned_areas": "Domaines épinglés qui restent en place",
+      "area_topics": "Sujets de deuxième niveau avec leurs titres centraux"
     },
     "purposes": {
       "shared": "Texte réutilisable inclus dans les requêtes au modèle indiquées.",
@@ -2074,7 +2103,8 @@
       "organization": "Guide le processus limité de lecture des preuves et de proposition de page.",
       "consultation": "Répond à une question uniquement dans le périmètre admis avec des citations originales.",
       "maintenance": "Examine les modifications limitées de navigation pour la routine sélectionnée.",
-      "diagnostics": "Exécuté uniquement lors d’une demande explicite de diagnostic du modèle."
+      "diagnostics": "Exécuté uniquement lors d’une demande explicite de diagnostic du modèle.",
+      "topic": "Nomme les sujets, les regroupe en Domaines et explique au ranker de classement ce qu’est un sujet. Les noms utilisent toujours la langue du contenu."
     }
   },
   "prompts": {

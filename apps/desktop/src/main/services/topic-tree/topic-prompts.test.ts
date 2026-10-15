@@ -1,0 +1,164 @@
+import { promptDefinition } from "@app/domain";
+import { defaultTopicTreeConfig, packNamingCalls } from "@app/domain/topic-tree";
+import type { NamingCall, NamingMember, UnaliasedTopic } from "@app/domain/topic-tree";
+import { describe, expect, it } from "vitest";
+
+import { renderPrompt } from "../prompt-runtime.js";
+import {
+  TopicAreasOutputSchema,
+  buildTopicAreasPrompt,
+  buildTopicNamePrompt,
+  buildTopicNameRepairPrompt,
+  parseTopicAreasOutput,
+  topicGateInstruction
+} from "./topic-prompts.js";
+
+const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
+const config = defaultTopicTreeConfig.naming;
+const input = { contentLanguage: "pt-BR", config };
+
+function member(title: string, idea: string | null = `${title}: ideia`): NamingMember {
+  return { key: `note:${uuid(title.length)}`, kind: "note", title, idea, rootSource: null };
+}
+function topic(id: number, title: string, currentTitle: string | null = null): UnaliasedTopic {
+  return { topicId: uuid(id), members: [member(title)], currentTitle };
+}
+function call(base: number): NamingCall {
+  return packNamingCalls(
+    [
+      {
+        parentId: uuid(base + 100),
+        parentTitle: "Aprendizagem",
+        namedSiblings: ["Prática espaçada"],
+        topics: [topic(base + 1, "Recuperação com feedback"), topic(base + 2, "Atenção seletiva")]
+      },
+      {
+        parentId: uuid(base + 101),
+        parentTitle: null,
+        namedSiblings: [],
+        topics: [topic(base + 3, "Marés e correntes", "Oceanografia")]
+      }
+    ],
+    24
+  )[0]!;
+}
+
+describe("the topic naming prompt", () => {
+  it("renders the content language, the limits from configuration and the groups", () => {
+    const text = buildTopicNamePrompt(call(0), input);
+    expect(text).toContain("Brazilian Portuguese");
+    expect(text).toContain(`at most ${config.titleMaxChars} characters`);
+    expect(text).toContain(`at most ${config.descriptionMaxChars} characters`);
+    expect(text).toContain(`up to ${config.maxAliases} other names`);
+    expect(text).toContain('"parent":"Aprendizagem"');
+    expect(text).toContain('"named_siblings":["Prática espaçada"]');
+    expect(text).toContain('"alias":"T1"');
+    expect(text).toContain('"alias":"T3","current_title":"Oceanografia"');
+    expect(text).toContain('"parent":null');
+    expect(text).toContain(
+      '"title":"Recuperação com feedback","idea":"Recuperação com feedback: ideia"'
+    );
+    // The output contract is part of the prompt and names every field.
+    for (const field of ["alias", "title", "description", "aliases", "language"]) {
+      expect(text).toContain(`"${field}"`);
+    }
+    expect(text).not.toMatch(/%[a-z_]+%/u);
+  });
+
+  it("is a function of content: other IDs, same prompt", () => {
+    expect(buildTopicNamePrompt(call(0), input)).toBe(buildTopicNamePrompt(call(5000), input));
+    expect(buildTopicNamePrompt(call(0), input)).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/u);
+  });
+
+  it("asks again only for the rejected topics and says what was wrong", () => {
+    const retry = call(0);
+    retry.groups = [
+      {
+        ...retry.groups[0]!,
+        topics: retry.groups[0]!.topics.filter((item) => item.alias === "T2")
+      }
+    ];
+    const text = buildTopicNameRepairPrompt(
+      retry,
+      input,
+      'T2: the title "Mente" repeats the parent title "Mente"'
+    );
+    expect(text).toContain('{"alias":"T2","notes":');
+    expect(text).not.toContain('{"alias":"T1","notes":');
+    expect(text).not.toContain("Recuperação com feedback");
+    expect(text).toContain("was rejected");
+    expect(text).toContain('T2: the title "Mente" repeats the parent title "Mente"');
+  });
+
+  it("is declared in the catalog with typed variables and no hand-written numbers", () => {
+    const definition = promptDefinition("topic.name");
+    expect(definition.task).toBe("structured-output");
+    const types = Object.fromEntries(definition.variables.map((v) => [v.key, v.valueType]));
+    expect(types).toEqual({
+      content_language: "text",
+      title_max_chars: "integer",
+      description_max_chars: "integer",
+      max_aliases: "integer",
+      topics: "list",
+      output_contract: "text"
+    });
+    expect(definition.fragmentIds).toContain("shared.output_language");
+    expect(promptDefinition("topic.name.repair").fragmentIds).toContain("topic.name");
+    for (const variable of definition.variables) {
+      for (const locale of Object.values(variable.description)) {
+        expect(locale).not.toContain("[[missing");
+      }
+    }
+    // The template carries no copy of the limits: they come from configuration.
+    expect(definition.fields[0]!.template).not.toMatch(/\b(80|200)\b/u);
+  });
+});
+
+describe("the Areas prompt", () => {
+  const areas = {
+    contentLanguage: "es",
+    areas: { target: 10, min: 7, max: 16 },
+    pinned: [{ alias: "A1", title: "Memoria", description: null }],
+    topics: [
+      { alias: "T1", titles: ["Repaso espaciado", "Recuperación"] },
+      { alias: "T2", titles: ["Mareas"] }
+    ]
+  };
+
+  it("renders the bounds, the pinned Areas and the aliased topics", () => {
+    const text = buildTopicAreasPrompt(areas);
+    expect(text).toContain("Spanish");
+    expect(text).toContain("about 10 Areas, never fewer than 7 and never more than 16");
+    expect(text).toContain('[{"alias":"A1","title":"Memoria"}]');
+    expect(text).toContain('{"alias":"T1","titles":["Repaso espaciado","Recuperación"]}');
+    expect(text).not.toMatch(/%[a-z_]+%/u);
+  });
+
+  it("parses both shapes of an Areas answer and rejects anything else", () => {
+    const answer = {
+      areas: [
+        { alias: "A1", members: ["T1"] },
+        { new: { title: "Océanos", description: "Mares y corrientes." }, members: ["T2"] }
+      ]
+    };
+    expect(parseTopicAreasOutput(answer).areas).toHaveLength(2);
+    expect(
+      parseTopicAreasOutput(`\`\`\`json\n${JSON.stringify(answer)}\n\`\`\``).areas
+    ).toHaveLength(2);
+    expect(TopicAreasOutputSchema.safeParse({ areas: [{ members: ["T1"] }] }).success).toBe(false);
+    expect(() => parseTopicAreasOutput("not json")).toThrow();
+  });
+});
+
+describe("the gate instruction", () => {
+  it("is plain text for a dedicated ranker, with no language fragment", () => {
+    const text = topicGateInstruction();
+    expect(text).toMatch(/^Given a note, retrieve the topic it belongs to/u);
+    expect(text).not.toContain("%");
+    const definition = promptDefinition("topic.gate.instruction");
+    expect(definition.task).toBe("reranking");
+    expect(definition.variables).toEqual([]);
+    expect(definition.fragmentIds).not.toContain("shared.output_language");
+    expect(renderPrompt("topic.gate.instruction")).toBe(text);
+  });
+});

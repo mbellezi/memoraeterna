@@ -1135,7 +1135,9 @@ function jobTypeMessageKey(type: string): MessageKey {
         "topic-sweep": "jobs.types.topicSweep",
         "topic-build": "jobs.types.topicBuild",
         "topic-rebalance": "jobs.types.topicRebalance",
-        "topic-audit": "jobs.types.topicAudit"
+        "topic-audit": "jobs.types.topicAudit",
+        "topic-name": "jobs.types.topicName",
+        "topic-label-embed": "jobs.types.topicLabelEmbed"
       } as Record<string, MessageKey>
     )[type] ?? "jobs.types.ingestion"
   );

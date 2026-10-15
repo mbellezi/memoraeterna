@@ -152,6 +152,58 @@ describe("the topic services factory", () => {
     });
   });
 
+  describe("naming and label vectors (T18)", () => {
+    const ai = {
+      runDefaultTask: vi.fn(async () => null),
+      activeEmbeddingSpace: vi.fn(async () => null)
+    } as unknown as NonNullable<TopicTreeServicesOptions["ai"]>;
+
+    it("registers the naming and label jobs on the model worker only with an AI service", () => {
+      const bare = create();
+      expect(bare.naming).toBeNull();
+      expect(bare.labels).toBeNull();
+      expect(Object.keys(bare.jobs).sort()).toEqual(
+        [
+          topicJobTypes.place,
+          topicJobTypes.sweep,
+          topicJobTypes.build,
+          topicJobTypes.rebalance,
+          topicJobTypes.audit
+        ].sort()
+      );
+      bare.dispose();
+
+      const full = create({ ai, getContentLanguage: async () => "pt-BR" });
+      expect(full.naming).not.toBeNull();
+      expect(full.labels).not.toBeNull();
+      expect(full.jobs[topicJobTypes.name]?.needsModel).toBe(true);
+      expect(full.jobs[topicJobTypes.labelEmbed]?.needsModel).toBe(true);
+      expect(full.jobs[topicJobTypes.place]?.needsModel).toBe(false);
+      // An AI service without a content language cannot name in it: nothing is registered.
+      full.dispose();
+      const noLanguage = create({ ai });
+      expect(noLanguage.jobs[topicJobTypes.name]).toBeUndefined();
+    });
+
+    it("holds the naming jobs with the rest of the topic jobs while the barrier is on", async () => {
+      const created = create({ ai, getContentLanguage: async () => "en" });
+      const types = [topicJobTypes.name, topicJobTypes.labelEmbed];
+      created.holdTopicJobs();
+      expect(types.map((type) => created.jobs[type]?.held?.())).toEqual([true, true]);
+      await created.releaseTopicJobs();
+      expect(types.map((type) => created.jobs[type]?.held?.())).toEqual([false, false]);
+    });
+
+    it("asks for naming after a commit only when a pool exists; nothing is queued without one", async () => {
+      const created = create({ ai, getContentLanguage: async () => "en" });
+      await expect(created.naming!.requestIfNeeded(id(1))).resolves.toBeUndefined();
+      await expect(created.naming!.requestIfNeeded(null)).resolves.toBeUndefined();
+      created.changes.record({ treeId: id(1), generation: 1, topicIds: null, changeSetId: null });
+      vi.advanceTimersByTime(topicsChangedCoalesceMs);
+      expect(quiet.error).not.toHaveBeenCalled();
+    });
+  });
+
   describe("the topic barrier (D23)", () => {
     it("holds every topic job type, and the release resumes them and wakes the light lane", async () => {
       const wake = vi.fn();

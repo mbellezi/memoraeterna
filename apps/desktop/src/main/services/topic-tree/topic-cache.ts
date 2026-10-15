@@ -43,6 +43,7 @@ import type {
   TopicTreeState
 } from "@app/domain/topic-tree";
 
+import { attachTopicLabels } from "./topic-labels.js";
 import { treeSpace } from "./topic-space.js";
 import type { TopicEmbeddingSpace } from "./topic-space.js";
 
@@ -278,6 +279,8 @@ export async function loadTopicTreeCache(
       }
     }
     recomputeSubtree(state, vectors);
+    // Label vectors (T18) are optional bookkeeping for label mixing; a failed read keeps none.
+    await attachTopicLabels(pool, space, state, logger);
     const stored = new Map(skeleton.topics.map((topic) => [topic.id, topic.stats]));
     const staleStoredStats: string[] = [];
     for (const node of state.topics.values()) {

@@ -20,6 +20,11 @@ export const noteMatchDecisionOperations = {
 export const relationExplanationOperation = "relation_explanation";
 /** The same, for a relation between two sources. */
 export const sourceRelationExplanationOperation = "source_relation_explanation";
+/**
+ * The call that names topics in the content language (F2 D11): a title, a sentence and a few
+ * aliases per topic, written fast on the `write-fast` class, so reasoning is off by default.
+ */
+export const topicNameOperation = "topic_name";
 
 /**
  * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
@@ -37,10 +42,13 @@ export function aiTaskBehaviorDefaults(
     taskType === "text-generation" &&
     (operation === relationExplanationOperation ||
       operation === sourceRelationExplanationOperation);
+  const naming = taskType === "structured-output" && operation === topicNameOperation;
   return {
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
     // Adapters map "off" to the lowest reasoning level a model supports.
-    ...((taskType === "reranking" && decision) || explanation ? { reasoningLevel: "off" } : {})
+    ...((taskType === "reranking" && decision) || explanation || naming
+      ? { reasoningLevel: "off" }
+      : {})
   };
 }
 
