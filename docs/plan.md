@@ -1,6 +1,6 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F1b (weeks 5-6).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+**Current phase: F2 (weeks 7-11).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
 target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
 starting points unless marked measured.
 
@@ -365,7 +365,7 @@ most one in-flight call.
 - [x] Note page v1 as the definitive object-page component, hosted in the Library.
 - [x] Decide-only compact matching contract v9 and on-demand, cached relation explanations (decision 16);
       decide calls without the reasoning summary if the backend accepts it.
-- [ ] Source matching per decision 17: each source pair judged once; compact score-only `source-relations-v5`
+- [x] Source matching per decision 17: each source pair judged once; compact score-only `source-relations-v5`
       with raw scores stored and explanations written on open; spike of the F3 discovery design on unjudged pairs.
 - [x] Citations open the exact chunk and SourceSpan.
 - [x] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
@@ -382,7 +382,10 @@ table); a note shows its location with 0 clicks on its page and 1 click from a c
 recents or the wiki. Relation explanations are written on open and cached per inputs
 (`relations.explain`, migration 0049). Matching v9 without the reasoning summary: golden library 2.75 s/note
 (26% of v6); fixture samples 24/28 and 23/28 on the note layer, 27/28 on notes or sources, 0/35 forbidden,
-2.08-2.34 s/note (`docs/kpi-f1b.md`).
+2.08-2.34 s/note (`docs/kpi-f1b.md`). Source matching v5 with `recommended-v2` floors (0.75/0.85, re-tuned on
+tuning): golden 10.85 s per source (−29%), fixture 16.21-16.51 (−20%, the bar was 16.2), source layer
+held-out 26 and 27 of 28, tuning 26/26, 0 forbidden; accepted by the owner on 2026-10-15 with no margin left;
+the F3 spike rejected all 13 untested forbidden pairs and recovered Q3/Q5.
 
 Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
 passes AA in both themes; mockups approved; golden note matching ≤3.47 s/note with fixture quality within the
