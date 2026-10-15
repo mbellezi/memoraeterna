@@ -675,11 +675,10 @@ try {
       [batch.batchId]
     )
   ).rows;
+  // organizeKnowledge left the processing plan with the legacy detach (D14): no run has the stage.
   check(
-    organizeStages.length === 1 &&
-      organizeStages[0]?.status === "skipped" &&
-      organizeStages[0].skip_reason === "no_policy",
-    `organizeKnowledge is recorded as skipped (no_policy): ${JSON.stringify(organizeStages)}`
+    organizeStages.length === 0,
+    `organizeKnowledge is no longer a stage of the plan: ${JSON.stringify(organizeStages)}`
   );
   check(
     (await noLegacyContent()) &&
