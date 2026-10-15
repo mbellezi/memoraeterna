@@ -221,7 +221,8 @@ function fakeServices(
       return {
         path,
         createdAt: "2026-10-14T00:00:00.000Z",
-        included: ["database"] as Array<"database">
+        included: ["database"] as Array<"database">,
+        verified: true
       };
     }
   };

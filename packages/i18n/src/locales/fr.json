@@ -585,6 +585,10 @@
     "database": {
       "notReady": "La base locale n'est pas encore prete."
     },
+    "backup": {
+      "verificationFailed": "La sauvegarde n'a pas pu être vérifiée ; ne vous y fiez pas. Ses fichiers restent dans le dossier choisi, marqués comme non vérifiés. Réessayez.",
+      "insufficientDisk": "L'espace disque libre est insuffisant pour vérifier la sauvegarde. Libérez de l'espace et réessayez ; les fichiers non vérifiés restent dans le dossier choisi."
+    },
     "conversion": {
       "emptyResult": "Le convertisseur n'a renvoye aucun texte utilisable.",
       "doclingUnavailable": "Le convertisseur local de documents n'est pas installe.",
@@ -1690,9 +1694,10 @@
   },
   "backup": {
     "title": "Sauvegarde",
-    "description": "Creez un dump PostgreSQL et copiez les fichiers geres configures dans un dossier date.",
+    "description": "Créez un dump PostgreSQL, prouvez qu'il se restaure grâce à une restauration de test, et copiez les fichiers gérés configurés dans un dossier daté.",
     "action": "Creer une sauvegarde",
     "completed": "Sauvegarde terminee :",
+    "verified": "Vérifiée par une restauration de test",
     "failed": "La sauvegarde n'a pas pu etre creee."
   },
   "obsidianSync": {

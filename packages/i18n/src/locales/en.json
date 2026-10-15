@@ -583,6 +583,10 @@
     "database": {
       "notReady": "The local database is not ready yet."
     },
+    "backup": {
+      "verificationFailed": "The backup could not be verified, so do not rely on it. Its files stay in the chosen folder, marked as unverified. Try again.",
+      "insufficientDisk": "There is not enough free disk space to verify the backup. Free up space and try again; the unverified files stay in the chosen folder."
+    },
     "conversion": {
       "emptyResult": "The converter returned no usable text.",
       "doclingUnavailable": "The local document converter is not installed.",
@@ -1685,9 +1689,10 @@
   },
   "backup": {
     "title": "Backup",
-    "description": "Create a PostgreSQL dump and copy the configured managed files into a dated folder.",
+    "description": "Create a PostgreSQL dump, prove it restorable with a test restore, and copy the configured managed files into a dated folder.",
     "action": "Create backup",
     "completed": "Backup completed:",
+    "verified": "Verified by a test restore",
     "failed": "The backup could not be created."
   },
   "obsidianSync": {

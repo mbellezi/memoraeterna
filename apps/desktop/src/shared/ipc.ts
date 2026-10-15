@@ -1476,7 +1476,9 @@ export const backupResultSchema = z
   .object({
     path: z.string().min(1),
     createdAt: z.string().datetime(),
-    included: z.array(z.enum(["database", "obsidian", "uploadedFiles"]))
+    included: z.array(z.enum(["database", "obsidian", "uploadedFiles"])),
+    /** True when a test restore of the dump matched the snapshot counts (see `BackupVerifier`). */
+    verified: z.boolean()
   })
   .strict();
 

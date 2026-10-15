@@ -1,14 +1,28 @@
 import { useState } from "react";
-import { ArchiveRestore } from "lucide-react";
+import { ArchiveRestore, Check } from "lucide-react";
 
 import type { MessageKey } from "@app/i18n";
 import { Button } from "./ui/button";
 
+/** The localized reason a backup failed: a main-process error key when it sent one. */
+export function backupFailureKey(error: unknown): MessageKey {
+  const match =
+    error instanceof Error ? error.message.match(/errors\.backup\.[a-zA-Z0-9_]+/) : null;
+  return (match?.[0] as MessageKey | undefined) ?? "backup.failed";
+}
+
 export function BackupView({ t }: { t: (key: MessageKey) => string }) {
   const [status, setStatus] = useState<MessageKey>("shell.states.ready");
   const [path, setPath] = useState("");
+  const [verified, setVerified] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   async function createBackup() {
+    setBusy(true);
+    setFailed(false);
+    setVerified(false);
+    setPath("");
     setStatus("shell.states.loading");
     try {
       const result = await window.app.backup.create();
@@ -17,9 +31,13 @@ export function BackupView({ t }: { t: (key: MessageKey) => string }) {
         return;
       }
       setPath(result.path);
+      setVerified(result.verified);
       setStatus("backup.completed");
-    } catch {
-      setStatus("backup.failed");
+    } catch (error) {
+      setFailed(true);
+      setStatus(backupFailureKey(error));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -33,14 +51,44 @@ export function BackupView({ t }: { t: (key: MessageKey) => string }) {
       </div>
       <p className="text-sm text-slate-600 dark:text-slate-300">{t("backup.description")}</p>
       <div className="flex justify-end">
-        <Button type="button" onClick={() => void createBackup()}>
+        <Button type="button" disabled={busy} onClick={() => void createBackup()}>
           {t("backup.action")}
         </Button>
       </div>
-      <p className="break-all text-sm text-slate-600 dark:text-slate-300" role="status">
+      <BackupOutcome t={t} status={status} path={path} verified={verified} failed={failed} />
+    </section>
+  );
+}
+
+/** What the last backup attempt did: running, failed, cancelled or finished (verified or not). */
+export function BackupOutcome({
+  t,
+  status,
+  path,
+  verified,
+  failed
+}: {
+  t: (key: MessageKey) => string;
+  status: MessageKey;
+  path: string;
+  verified: boolean;
+  failed: boolean;
+}) {
+  return (
+    <>
+      <p
+        className={`break-all text-sm ${failed ? "text-danger" : "text-slate-600 dark:text-slate-300"}`}
+        role={failed ? "alert" : "status"}
+      >
         {t(status)}
         {path ? ` ${path}` : ""}
       </p>
-    </section>
+      {verified ? (
+        <p className="inline-flex items-center gap-1 text-xs font-medium text-success">
+          <Check className="size-3" aria-hidden="true" />
+          {t("backup.verified")}
+        </p>
+      ) : null}
+    </>
   );
 }

@@ -50,6 +50,55 @@ databases skip the baseline and run pending migrations only.
 
 Packaged resources include both the Drizzle migrations and the baseline.
 
+## Verified backups
+
+The Settings backup button (`BackupService.create`) writes a dated folder with
+`database.dump`, the managed Obsidian and upload folders when configured, and a
+`manifest.json`. A backup is reported as done only after the dump has been
+restored once.
+
+1. The service opens a `REPEATABLE READ` transaction, exports its snapshot
+   (`pg_export_snapshot()`) and counts the key tables in it: `source_items`,
+   `documents`, `chunks`, `atomic_notes`, `embeddings_256/768/1024`,
+   `wiki_pages`, `settings` and `ai_profile_sets`.
+2. `pg_dump --snapshot` dumps that same snapshot, so the counts and the dump
+   agree even while ingestion keeps writing. The snapshot is released as soon as
+   the dump is written.
+3. `BackupVerifier.verify(dump, expectedCounts)` then checks, in order:
+   - `pg_restore --list` (the shipped sidecar binary) reads the archive and
+     lists TABLE DATA for every key table;
+   - the volume that holds the data directory has at least twice the live
+     database size free;
+   - the archive restores completely (`--single-transaction --exit-on-error`)
+     into `memora_verify_<UTC timestamp>` on the running sidecar;
+   - the key-table counts in that scratch database equal the snapshot counts;
+   - the scratch database is dropped on every path. A verification that was
+     killed mid-way leaves one behind; the next verification drops any
+     `memora_verify_*` database first.
+4. `manifest.json` (version 2) records `verifiedAt` and the snapshot `counts`.
+
+A failed check throws a localized error (`errors.backup.verificationFailed`, or
+`errors.backup.insufficientDisk` for the disk check) and the Settings view shows
+it. The folder is kept so nothing is deleted behind the user's back, but its
+manifest says `"verifiedAt": null` and names the failure in
+`verificationFailure`; do not restore from it. Retrying creates a new folder.
+
+Cost to plan for: one extra restore of the library into the sidecar. A
+synthetic library of 609 MB (3,000 sources, 30,000 notes with 1024-d vectors,
+2,000 legacy pages) took 67 s end to end (43 s of it the restore); the disk
+check required twice its size (about 1.3 GB) to be free.
+
+Callers that need the counts before the dump (the topic switch) call
+`openSnapshot()`, pass the result to `create(destination, { snapshot })`, and
+release it afterwards. `create(destination, { verify: false })` skips the
+verification for a caller that runs `BackupVerifier.verify` itself.
+
+To read an old backup, restore it into a scratch cluster:
+
+```bash
+npm run db:restore -- --from <backup folder> --name <slug> --keep-running
+```
+
 ## Validation
 
 ```bash

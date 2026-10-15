@@ -583,6 +583,10 @@
     "database": {
       "notReady": "La base de datos local aun no esta lista."
     },
+    "backup": {
+      "verificationFailed": "No se pudo verificar la copia, así que no confíes en ella. Los archivos siguen en la carpeta elegida, marcados como no verificados. Inténtalo de nuevo.",
+      "insufficientDisk": "No hay espacio libre en disco suficiente para verificar la copia. Libera espacio e inténtalo de nuevo; los archivos no verificados siguen en la carpeta elegida."
+    },
     "conversion": {
       "emptyResult": "El conversor no devolvio texto utilizable.",
       "doclingUnavailable": "El conversor local de documentos no esta instalado.",
@@ -1692,9 +1696,10 @@
   },
   "backup": {
     "title": "Copia de seguridad",
-    "description": "Crea un dump de PostgreSQL y copia los archivos gestionados configurados en una carpeta con fecha.",
+    "description": "Crea un dump de PostgreSQL, comprueba que se puede restaurar con una restauración de prueba y copia los archivos gestionados configurados en una carpeta con fecha.",
     "action": "Crear copia",
     "completed": "Copia completada:",
+    "verified": "Verificada con una restauración de prueba",
     "failed": "No se pudo crear la copia."
   },
   "obsidianSync": {

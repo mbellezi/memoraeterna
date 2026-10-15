@@ -583,6 +583,10 @@
     "database": {
       "notReady": "O banco local ainda nao esta pronto."
     },
+    "backup": {
+      "verificationFailed": "Não foi possível verificar o backup, então não confie nele. Os arquivos continuam na pasta escolhida, marcados como não verificados. Tente novamente.",
+      "insufficientDisk": "Não há espaço livre em disco suficiente para verificar o backup. Libere espaço e tente novamente; os arquivos não verificados continuam na pasta escolhida."
+    },
     "conversion": {
       "emptyResult": "O conversor nao retornou texto utilizavel.",
       "doclingUnavailable": "O conversor local de documentos nao esta instalado.",
@@ -1688,9 +1692,10 @@
   },
   "backup": {
     "title": "Backup",
-    "description": "Crie um dump do PostgreSQL e copie os arquivos gerenciados configurados para uma pasta datada.",
+    "description": "Crie um dump do PostgreSQL, comprove que ele pode ser restaurado com uma restauração de teste e copie os arquivos gerenciados configurados para uma pasta datada.",
     "action": "Criar backup",
     "completed": "Backup concluido:",
+    "verified": "Verificado por uma restauração de teste",
     "failed": "Nao foi possivel criar o backup."
   },
   "obsidianSync": {
