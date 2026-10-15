@@ -22,6 +22,57 @@ export const SourceRelationSettingsSchema = z
 export type SourceRelationSettings = z.infer<typeof SourceRelationSettingsSchema>;
 export const defaultSourceRelationSettings = SourceRelationSettingsSchema.parse({});
 
+/**
+ * The compact, score-only source verdict (`source-relations-v5`, docs/plan.md decision 17): a pair
+ * of works answers at most `maxItemsPerPair` items `[from, to, type, importance, confidence, [from
+ * chunks], [to chunks]]`, with integer scores from 0 to 100 and no prose.
+ */
+export const sourceDecisionLimits = {
+  maxItemsPerPair: 2,
+  maxChunksPerSide: 3,
+  maxScore: 100
+} as const;
+
+/** Types that read the same both ways: stored from the lower prompt alias to the higher one. */
+export const symmetricSourceRelationTypes: ReadonlyArray<string> = ["contrasts", "similar_to"];
+/** Types kept only when the settings include weak types. */
+export const weakSourceRelationTypes: ReadonlyArray<string> = ["mentions", "related"];
+
+/**
+ * One item of a source verdict as the decider answered it, endpoints and chunks resolved to IDs. It
+ * is stored with every decision, raw scores apart from the floors, so the floors can be tuned again
+ * on stored verdicts without new calls.
+ */
+export const SourceDecisionItemSchema = z
+  .object({
+    from: z.string().uuid(),
+    to: z.string().uuid(),
+    type: AtomicNoteRelationTypeSchema,
+    importance: z.number().int().min(0).max(sourceDecisionLimits.maxScore),
+    confidence: z.number().int().min(0).max(sourceDecisionLimits.maxScore),
+    fromChunks: z.array(z.string().uuid()).min(1).max(sourceDecisionLimits.maxChunksPerSide),
+    toChunks: z.array(z.string().uuid()).min(1).max(sourceDecisionLimits.maxChunksPerSide),
+    /** 0 for the first answer, 1 for the repair. */
+    attempt: z.number().int().min(0).max(1)
+  })
+  .strict();
+export type SourceDecisionItem = z.infer<typeof SourceDecisionItemSchema>;
+
+/** Whether a raw verdict passes the floors of the given settings (scores are integer / 100). */
+export function sourceDecisionPassesFloors(
+  item: Pick<SourceDecisionItem, "type" | "importance" | "confidence">,
+  settings: Pick<SourceRelationSettings, "minImportance" | "minConfidence" | "includeWeakTypes">
+): boolean {
+  return (
+    item.importance / sourceDecisionLimits.maxScore >= settings.minImportance &&
+    item.confidence / sourceDecisionLimits.maxScore >= settings.minConfidence &&
+    (settings.includeWeakTypes || !weakSourceRelationTypes.includes(item.type))
+  );
+}
+
+/** What source-relation explanations are written from: up to this many passages per source. */
+export const sourceRelationExplanationLimits = { passagesPerSource: 2 } as const;
+
 export const SourceRelationEvidenceSchema = z
   .object({
     id: z.string().uuid(),
@@ -47,9 +98,18 @@ export const SourceRelationViewSchema = z
     sourceTitle: z.string(),
     targetTitle: z.string(),
     relationType: AtomicNoteRelationTypeSchema,
-    sourceIdea: z.string(),
-    targetIdea: z.string(),
-    explanation: z.string(),
+    /** Prose stored by the earlier matcher; null for relations decided without prose. */
+    sourceIdea: z.string().nullable(),
+    targetIdea: z.string().nullable(),
+    explanation: z.string().nullable(),
+    /**
+     * The explanation written when the owner opened the relation, while its inputs still hold; its
+     * source references are `<source-ref id="..." />` tags. Null when none is written or current.
+     */
+    writtenExplanation: z
+      .object({ text: z.string().min(1), writtenBy: z.string().min(1) })
+      .strict()
+      .nullable(),
     importance: z.number().min(0).max(1),
     confidence: z.number().min(0).max(1),
     status: AtomicNoteRelationStatusSchema,

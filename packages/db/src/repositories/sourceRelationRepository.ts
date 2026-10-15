@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
+import { symmetricSourceRelationTypes } from "@app/domain";
 import type { PgPool } from "../client.js";
 import type { JsonObject, Queryable } from "./types.js";
 
@@ -40,14 +41,20 @@ export interface SourceRelationCandidate {
   graphScore: number;
   noteScore: number;
 }
+/**
+ * A relation to persist. A verdict decided without prose (source-relations-v5) has null ideas and
+ * explanation: its identity is (source, target, type), its evidence merges into an existing relation
+ * with that identity, and a relation the owner rejected is never brought back. Prose is only written
+ * for relations saved by the earlier contract (fixtures of older rows); their identity includes it.
+ */
 export interface SourceRelationWrite {
   existingId: string | null;
   sourceItemId: string;
   targetSourceItemId: string;
   relationType: string;
-  sourceIdea: string;
-  targetIdea: string;
-  explanation: string;
+  sourceIdea: string | null;
+  targetIdea: string | null;
+  explanation: string | null;
   importance: number;
   confidence: number;
   evidence: Array<{
@@ -454,13 +461,15 @@ export function createSourceRelationRepository(pool: PgPool) {
           await client.query("commit");
           return 0;
         }
-        for (const relation of relations) await persistRelation(client, relation, metadata);
+        let persisted = 0;
+        for (const relation of relations)
+          if (await persistRelation(client, relation, relationMetadata(metadata))) persisted++;
         await client.query(
           "insert into source_matching_decisions (key,source_root_id,target_root_id,metadata) values ($1,$2,$3,$4)",
-          [key, left, right, { ...metadata, persistedCount: relations.length }]
+          [key, left, right, { ...metadata, persistedCount: persisted }]
         );
         await client.query("commit");
-        return relations.length;
+        return persisted;
       } catch (error) {
         await client.query("rollback");
         throw error;
@@ -502,16 +511,105 @@ async function orderRootsByTitle(
   ).rows;
   return rows.length === 2 ? [rows[0]!.id, rows[1]!.id] : [left, right];
 }
-async function persistRelation(db: Queryable, relation: SourceRelationWrite, metadata: JsonObject) {
-  const identity = hash(
-    JSON.stringify([
+/** The raw verdicts belong to the decision row; relation and evidence rows keep its provenance. */
+function relationMetadata(metadata: JsonObject): JsonObject {
+  return Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== "items"));
+}
+
+/**
+ * The identity of a relation decided without prose: its endpoints and type. A symmetric type reads
+ * the same both ways, so its identity does not depend on which endpoint is stored first.
+ */
+export function sourceRelationIdentityKey(
+  sourceItemId: string,
+  targetSourceItemId: string,
+  relationType: string
+): string {
+  const endpoints = symmetricSourceRelationTypes.includes(relationType)
+    ? [sourceItemId, targetSourceItemId].sort()
+    : [sourceItemId, targetSourceItemId];
+  return hash(JSON.stringify(["source-relation", ...endpoints, relationType]));
+}
+
+/**
+ * Where a verdict without prose goes: the existing relation with the same endpoints and type (its
+ * own identity first, then an accepted one, then the strongest), a new relation, or nowhere when
+ * the owner rejected one. Runs inside the decision's transaction and pair lock.
+ */
+async function resolveDecidedRelation(
+  db: Queryable,
+  relation: SourceRelationWrite,
+  metadata: JsonObject
+): Promise<{ id: string; reversed: boolean } | null> {
+  const identity = sourceRelationIdentityKey(
+    relation.sourceItemId,
+    relation.targetSourceItemId,
+    relation.relationType
+  );
+  const equivalent = (
+    await db.query<{ id: string; status: string; reversed: boolean } & QueryResultRow>(
+      `select id, status::text as status, source_item_id <> $1 as reversed from source_relations
+      where relation_type = $3 and ((source_item_id = $1 and target_source_item_id = $2)
+        or ($4 and source_item_id = $2 and target_source_item_id = $1))
+      order by (identity_key = $5) desc, (status = 'accepted') desc, importance desc, created_at, id`,
+      [
+        relation.sourceItemId,
+        relation.targetSourceItemId,
+        relation.relationType,
+        symmetricSourceRelationTypes.includes(relation.relationType),
+        identity
+      ]
+    )
+  ).rows;
+  if (equivalent.some((row) => row.status === "rejected")) return null;
+  if (equivalent[0]) return { id: equivalent[0].id, reversed: equivalent[0].reversed };
+  const result = await db.query(
+    `insert into source_relations (identity_key,source_item_id,target_source_item_id,relation_type,importance,confidence,metadata)
+    values ($1,$2,$3,$4,$5,$6,$7) on conflict (identity_key) do update set identity_key = excluded.identity_key returning id`,
+    [
+      identity,
       relation.sourceItemId,
       relation.targetSourceItemId,
       relation.relationType,
-      relation.sourceIdea.toLowerCase().trim(),
-      relation.targetIdea.toLowerCase().trim()
-    ])
+      relation.importance,
+      relation.confidence,
+      metadata
+    ]
   );
+  return { id: String(result.rows[0]!.id), reversed: false };
+}
+
+/** A symmetric relation stored the other way round receives its evidence turned to match. */
+function reverseEvidence(
+  evidence: SourceRelationWrite["evidence"][number]
+): SourceRelationWrite["evidence"][number] {
+  const { source, target, note } = evidence;
+  return {
+    source: target,
+    target: source,
+    note: note
+      ? {
+          ...note,
+          sourceNoteId: note.targetNoteId,
+          targetNoteId: note.sourceNoteId,
+          sourceChunkId: note.targetChunkId,
+          targetChunkId: note.sourceChunkId,
+          sourceIdea: note.targetIdea,
+          targetIdea: note.sourceIdea,
+          sourceItemId: note.targetSourceItemId,
+          targetSourceItemId: note.sourceItemId
+        }
+      : null
+  };
+}
+
+/** Persists one relation and its evidence; false when it was not written (owner-rejected). */
+async function persistRelation(
+  db: Queryable,
+  write: SourceRelationWrite,
+  metadata: JsonObject
+): Promise<boolean> {
+  let relation = write;
   let id = relation.existingId;
   if (id) {
     const current = await db.query(
@@ -519,7 +617,27 @@ async function persistRelation(db: Queryable, relation: SourceRelationWrite, met
       [id, relation.sourceItemId, relation.targetSourceItemId, relation.relationType]
     );
     if (!current.rows.length) throw new Error("errors.sourceRelations.invalidOutput");
+  } else if (relation.sourceIdea === null || relation.targetIdea === null) {
+    const decided = await resolveDecidedRelation(db, relation, metadata);
+    if (decided === null) return false;
+    id = decided.id;
+    if (decided.reversed)
+      relation = {
+        ...relation,
+        sourceItemId: relation.targetSourceItemId,
+        targetSourceItemId: relation.sourceItemId,
+        evidence: relation.evidence.map(reverseEvidence)
+      };
   } else {
+    const identity = hash(
+      JSON.stringify([
+        relation.sourceItemId,
+        relation.targetSourceItemId,
+        relation.relationType,
+        relation.sourceIdea.toLowerCase().trim(),
+        relation.targetIdea.toLowerCase().trim()
+      ])
+    );
     const result = await db.query(
       `insert into source_relations (identity_key,source_item_id,target_source_item_id,relation_type,source_idea,target_idea,explanation,importance,confidence,metadata)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) on conflict (identity_key) do update set identity_key = excluded.identity_key returning id`,
@@ -592,6 +710,7 @@ async function persistRelation(db: Queryable, relation: SourceRelationWrite, met
       ]
     );
   }
+  return true;
 }
 
 export async function listSourceRelations(

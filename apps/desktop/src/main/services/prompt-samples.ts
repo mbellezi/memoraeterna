@@ -18,7 +18,6 @@ import {
   MaintenancePolicySchema,
   MaintenanceProposalSchema,
   WikiPageContentSchema,
-  SourceRelationSettingsSchema,
   type PromptPin,
   type OrganizationCheckpoint
 } from "@app/domain";
@@ -43,7 +42,11 @@ import {
   buildRelationExplanationRepairPrompt,
   parseRelationExplanation
 } from "./relation-explanation.js";
-import { sourceRelationPrompt, parseSourceRelations } from "./source-relation-processing.js";
+import { sourceDecisionPrompt, parseSourceDecision } from "./source-relation-processing.js";
+import {
+  buildSourceRelationExplanationPrompt,
+  buildSourceRelationExplanationRepairPrompt
+} from "./source-relation-explanation.js";
 import { consultationPrompt, parseConsultationAnswer } from "./consultation-service.js";
 import {
   organizationPrompt,
@@ -604,7 +607,27 @@ export function promptSampleCall(
         }
       };
     }
-    if (promptId === "sources.match" || promptId === "sources.repair") {
+    if (
+      promptId === "relations.sources.explain" ||
+      promptId === "relations.sources.explain.repair"
+    ) {
+      const base = buildSourceRelationExplanationPrompt({
+        type: "supports",
+        direction: "s1_to_s2",
+        first: { title: source.title, passages: [chunks[0]!.content] },
+        second: { title: "Synthetic feedback review", passages: [chunks[1]!.content] }
+      });
+      return {
+        input: promptId.endsWith(".repair")
+          ? buildSourceRelationExplanationRepairPrompt(base)
+          : base,
+        task: "text-generation",
+        validate: (o) => {
+          if (parseRelationExplanation(o) === null) throw new Error("prompts.errors.sample");
+        }
+      };
+    }
+    if (promptId === "sources.decide" || promptId === "sources.decide.repair") {
       const context = {
         chunks: chunks.map((c, i) => ({
           ...c,
@@ -618,13 +641,12 @@ export function promptSampleCall(
           sourceSpanId: null,
           contentHash: "synthetic"
         })),
-        notes: [],
-        existing: []
+        notes: []
       };
-      const base = sourceRelationPrompt(context, 2, false);
+      const base = sourceDecisionPrompt(context, 2, false);
       return {
         input:
-          promptId === "sources.repair"
+          promptId === "sources.decide.repair"
             ? joinPrompts(
                 base,
                 renderPrompt(promptId, {
@@ -637,7 +659,10 @@ export function promptSampleCall(
               )
             : base,
         task: "reranking",
-        validate: (o) => parseSourceRelations(o, context, SourceRelationSettingsSchema.parse({}), 2)
+        validate: (o) => {
+          const parsed = parseSourceDecision(o, context, 0);
+          if (!parsed.answered || parsed.invalid > 0) throw new Error("prompts.errors.sample");
+        }
       };
     }
     if (
@@ -789,10 +814,14 @@ export function promptSampleCases(ids: string[]): SampleCase[] {
     else if (id.startsWith("organization."))
       add({ id: "organization.workflow", root: "organization.legacy_synthesis" });
     else if (id === "sources.validation.same_root")
-      add({ id: "sources.repair.same_root", root: "sources.repair", variant: "same_root" });
+      add({
+        id: "sources.decide.repair.same_root",
+        root: "sources.decide.repair",
+        variant: "same_root"
+      });
     else if (id === "sources.validation.default")
-      add({ id: "sources.repair.default", root: "sources.repair" });
-    else if (id === "sources.repair") add({ id: "sources.repair.default", root: id });
+      add({ id: "sources.decide.repair.default", root: "sources.decide.repair" });
+    else if (id === "sources.decide.repair") add({ id: "sources.decide.repair.default", root: id });
     else if (id.endsWith(".guidance") || id.endsWith(".advanced")) {
       const prefix = id.replace(/\.(guidance|advanced)$/, "");
       add({

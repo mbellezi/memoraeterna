@@ -100,14 +100,28 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
       passage: "Practice that recalls studied material strengthened later recall."
     }
   ],
-  note_relations: [
+  relation_sources: [
     {
-      source: "n1",
-      target: "n2",
-      type: "supports"
+      source: "s1",
+      title: "Fictional feedback study",
+      passages: ["In a fictional study, retrieval with feedback improved recall."]
+    },
+    {
+      source: "s2",
+      title: "Fictional retrieval review",
+      passages: ["Practice that recalls studied material strengthened later recall."]
     }
   ],
-  existing_connections: [],
+  note_relations: [
+    {
+      source: "s1",
+      target: "s2",
+      type: "supports",
+      sourceIdea: "Feedback improved delayed recall in a fictional trial.",
+      targetIdea: "Retrieval practice strengthens long-term memory.",
+      evidence: ["c1", "c2"]
+    }
+  ],
   guidance: {
     guidance: "Explain the conditions under which retrieval helped.",
     advanced: "Use only the supplied evidence."
@@ -438,7 +452,7 @@ for (const definition of promptDefinitions) {
     "maintenance.weekly": ["maintenance.weekly.guidance", "maintenance.weekly.advanced"],
     "maintenance.monthly": ["maintenance.monthly.guidance", "maintenance.monthly.advanced"],
     "maintenance.cleanup": ["maintenance.cleanup.guidance", "maintenance.cleanup.advanced"],
-    "sources.match": ["sources.validation.default", "sources.validation.same_root"]
+    "sources.decide": ["sources.validation.default", "sources.validation.same_root"]
   };
   definition.fragmentIds.push(...(additional[id] ?? []));
   if (
@@ -448,10 +462,6 @@ for (const definition of promptDefinitions) {
     id !== "organization.evolution.repair"
   )
     definition.fragmentIds.push(
-      id === "sources.repair"
-        ? "sources.match"
-        : id === "consultation.repair"
-          ? "consultation.answer"
-          : id.slice(0, -7)
+      id === "consultation.repair" ? "consultation.answer" : id.slice(0, -7)
     );
 }

@@ -18,6 +18,8 @@ import { registerNotePageIpc } from "./services/note-page-ipc.js";
 import { NotePageService } from "./services/note-page-service.js";
 import { registerRelationExplanationIpc } from "./services/relation-explanation-ipc.js";
 import { RelationExplanationService } from "./services/relation-explanation-service.js";
+import { registerSourceRelationExplanationIpc } from "./services/source-relation-explanation-ipc.js";
+import { SourceRelationExplanationService } from "./services/source-relation-explanation-service.js";
 import { ViewHistoryService } from "./services/view-history-service.js";
 import { registerViewHistoryIpc } from "./services/view-history-ipc.js";
 import { createApplicationMenuController, registerApplicationMenuIpc } from "./application-menu.js";
@@ -308,6 +310,14 @@ void app.whenReady().then(() => {
   registerRelationExplanationIpc(
     ipcMain,
     new RelationExplanationService({
+      getPool: () => databaseService?.getPool() ?? null,
+      ai: aiService,
+      getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage
+    })
+  );
+  registerSourceRelationExplanationIpc(
+    ipcMain,
+    new SourceRelationExplanationService({
       getPool: () => databaseService?.getPool() ?? null,
       ai: aiService,
       getContentLanguage: async () => (await settingsService!.getApp()).contentLanguage

@@ -294,6 +294,22 @@ const api: DesktopApi = {
             ipcChannels.relationsCancelExplain,
             RelationExplainInputSchema.parse(input)
           )
+        ),
+    explainSource: async (input) =>
+      RelationExplanationResultSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.relationsExplainSource,
+          RelationExplainInputSchema.parse(input)
+        )
+      ),
+    cancelExplainSource: async (input) =>
+      z
+        .boolean()
+        .parse(
+          await ipcRenderer.invoke(
+            ipcChannels.relationsCancelExplainSource,
+            RelationExplainInputSchema.parse(input)
+          )
         )
   },
   wiki: {

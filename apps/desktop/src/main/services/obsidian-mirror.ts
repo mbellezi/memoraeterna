@@ -647,9 +647,10 @@ export async function buildObsidianMirror(
         link(r.source_item_id, r.sourceTitle) +
           " → " +
           link(r.target_source_item_id, r.targetTitle),
-        references(r.source_idea),
-        references(r.target_idea),
-        references(r.explanation),
+        // Relations decided without prose have none stored: their explanation is written on open.
+        ...[r.source_idea, r.target_idea, r.explanation]
+          .filter((text): text is string => typeof text === "string")
+          .map(references),
         ...r.evidence.map(
           (e: Record<string, any>) =>
             `${e.id} · ${e.sourceDocumentId ?? ""} · ${e.targetDocumentId ?? ""} · ${e.current ? t("obsidianWiki.current") : t("obsidianWiki.historical")}\n\n${quote(e.snapshot.sourceExcerpt ?? "")}\n\n${quote(e.snapshot.targetExcerpt ?? "")}`

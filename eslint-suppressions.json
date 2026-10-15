@@ -248,14 +248,6 @@
       "count": 4
     }
   },
-  "apps/desktop/src/main/services/source-relation-processing.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "preserve-caught-error": {
-      "count": 1
-    }
-  },
   "apps/desktop/src/main/services/source-url-preview.ts": {
     "preserve-caught-error": {
       "count": 1

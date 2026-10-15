@@ -108,6 +108,8 @@ export const ipcChannels = {
   notesRelations: "app:notes:relations",
   relationsExplain: "app:relations:explain",
   relationsCancelExplain: "app:relations:cancel-explain",
+  relationsExplainSource: "app:relations:explain-source",
+  relationsCancelExplainSource: "app:relations:cancel-explain-source",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -1674,12 +1676,19 @@ export interface DesktopApi {
     page: (input: z.input<typeof NotePageInputSchema>) => Promise<NotePage | null>;
     relations: (input: z.input<typeof NoteRelationsInputSchema>) => Promise<NotePageRelations>;
   };
-  /** Relations between notes: their explanation, written when the owner opens one. */
+  /** Relations between notes or sources: their explanation, written when the owner opens one. */
   relations: {
     /** The current explanation, written now when there is none; null when the relation is gone. */
     explain: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
     /** Stops the explanation being written; resolves true when one was stopped. */
     cancelExplain: (input: RelationExplainInput) => Promise<boolean>;
+    /**
+     * The current explanation of a source relation, written now when there is none; null when
+     * there is none to write (rejected, gone, without current evidence or with stored prose).
+     */
+    explainSource: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
+    /** Stops the source relation's explanation being written; true when one was stopped. */
+    cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
   };
   wiki: {
     collection: (

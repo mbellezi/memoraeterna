@@ -1730,9 +1730,11 @@ export const sourceRelations = pgTable(
       .references(() => sourceItems.id, { onDelete: "cascade" }),
     identityKey: text("identity_key").notNull(),
     relationType: text("relation_type").notNull(),
-    sourceIdea: text("source_idea").notNull(),
-    targetIdea: text("target_idea").notNull(),
-    explanation: text("explanation").notNull(),
+    // Prose written by the earlier matcher. Relations decided without prose (source-relations-v5)
+    // leave it null; their explanation is written on open (source_relation_explanations).
+    sourceIdea: text("source_idea"),
+    targetIdea: text("target_idea"),
+    explanation: text("explanation"),
     importance: doublePrecision("importance").notNull(),
     confidence: doublePrecision("confidence").notNull(),
     status: atomicNoteRelationStatus("status").notNull().default("pending_review"),
@@ -1789,6 +1791,34 @@ export const sourceRelationEvidence = pgTable(
     origin: check(
       "source_relation_evidence_origin",
       sql`${table.origin} in ('atomic_notes', 'source_analysis')`
+    )
+  })
+);
+
+// The explanation of a source relation, written on demand when the owner opens the relation and
+// cached for the inputs it was written from (`input_hash`: both sources' titles and evidence
+// passages, the type, the direction and the content language). Like note relation explanations, it
+// is kept beside the relation row, so writing it never changes the relation.
+export const sourceRelationExplanations = pgTable(
+  "source_relation_explanations",
+  {
+    relationId: uuid("relation_id")
+      .primaryKey()
+      .references(() => sourceRelations.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    inputHash: text("input_hash").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    runtime: text("runtime").notNull(),
+    aiTaskRunId: uuid("ai_task_run_id").references(() => aiTaskRuns.id, { onDelete: "set null" }),
+    language: varchar("language", { length: 16 }).notNull(),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => ({
+    text: check(
+      "source_relation_explanations_text",
+      sql`char_length(${table.text}) between 1 and 4000`
     )
   })
 );

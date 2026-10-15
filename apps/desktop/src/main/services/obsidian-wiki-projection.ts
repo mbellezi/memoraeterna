@@ -767,8 +767,9 @@ export class ObsidianWikiProjection {
       add(page.id, "wiki_page", page.revisionId, page.title, editorial, generated);
     }
     for (const r of relations) {
-      const replace = (text: string) =>
-        text
+      // Relations decided without prose have none stored: their explanation is written on open.
+      const replace = (text: string | null) =>
+        (text ?? "")
           .replace(
             /<source-ref\b[^>]*\bid=["']([^"']+)["'][^>]*\/?>(?:<\/source-ref>)?/g,
             (_m, id: string) =>

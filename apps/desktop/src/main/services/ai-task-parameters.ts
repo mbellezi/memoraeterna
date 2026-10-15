@@ -18,6 +18,8 @@ export const noteMatchDecisionOperations = {
  * or two of prose, so it runs on the writer route with reasoning off by default.
  */
 export const relationExplanationOperation = "relation_explanation";
+/** The same, for a relation between two sources. */
+export const sourceRelationExplanationOperation = "source_relation_explanation";
 
 /**
  * What a task adds beneath the profile's parameters, beyond sizing (`maxTokens`, `contextWindow`).
@@ -31,7 +33,10 @@ export function aiTaskBehaviorDefaults(
   const decision =
     operation === noteMatchDecisionOperations.decide ||
     operation === noteMatchDecisionOperations.repair;
-  const explanation = taskType === "text-generation" && operation === relationExplanationOperation;
+  const explanation =
+    taskType === "text-generation" &&
+    (operation === relationExplanationOperation ||
+      operation === sourceRelationExplanationOperation);
   return {
     ...(localModel && taskType === "atomic-note-generation" ? { temperature: 0 } : {}),
     // Adapters map "off" to the lowest reasoning level a model supports.

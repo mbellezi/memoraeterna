@@ -19,7 +19,11 @@ import {
   createAtomicNoteRepository,
   createKnowledgeGraphDashboardRepository,
   createEmbeddingRepository,
+  createSourceRelationExplanationRepository,
   listSourceRelations,
+  sourceRelationExplainable,
+  sourceRelationExplanationPlan,
+  sourceRelationIdentityKey,
   type SourceRelationChunk,
   type SourceRelationWrite
 } from "../index.js";
@@ -526,6 +530,281 @@ try {
     assert.equal((await typeCatalog.candidates(vector, 0.5, 1)).length, 1);
     assert.equal((await typeCatalog.candidates(vector, 0.5, 5)).length, 5);
   }
+  // Verdicts without prose (source-relations-v5): identity (source, target, type), evidence merges
+  // on upsert, an owner-rejected relation is never brought back, raw verdicts stay in the decision.
+  const decidedA = await sources.create({ type: "Book", title: "Decided work A" });
+  const decidedB = await sources.create({ type: "Book", title: "Decided work B" });
+  const decidedChunk = async (
+    source: typeof decidedA,
+    content: string,
+    chunkIndex = 0
+  ): Promise<SourceRelationChunk> => {
+    const doc = await createDocumentRepository(pool!).create({
+      sourceItemId: source.id,
+      title: `${source.title} ${chunkIndex}`,
+      canonicalMarkdown: content,
+      contentHash: `${source.id}-${chunkIndex}`
+    });
+    const id = randomUUID(),
+      span = randomUUID();
+    await createChunkRepository(pool!).replaceDocumentChunks(doc.id, source.id, [
+      {
+        id,
+        sourceSpanId: span,
+        chunkIndex,
+        content,
+        contentHash: content,
+        span: { id: span, startOffset: 0, endOffset: content.length }
+      }
+    ]);
+    return {
+      id,
+      sourceItemId: source.id,
+      documentId: doc.id,
+      sourceSpanId: span,
+      content,
+      contentHash: content,
+      title: source.title,
+      summary: null,
+      rootId: source.id,
+      rootTitle: source.title,
+      chunkIndex
+    };
+  };
+  const xa = await decidedChunk(decidedA, "Spaced retrieval improves retention over weeks.");
+  const xb = await decidedChunk(decidedB, "Distributed practice strengthens long-term memory.");
+  const decided = (
+    relationType: string,
+    evidence: Array<[SourceRelationChunk, SourceRelationChunk]>,
+    from = decidedA.id,
+    to = decidedB.id
+  ): SourceRelationWrite => ({
+    existingId: null,
+    sourceItemId: from,
+    targetSourceItemId: to,
+    relationType,
+    sourceIdea: null,
+    targetIdea: null,
+    explanation: null,
+    importance: 0.9,
+    confidence: 0.85,
+    evidence: evidence.map(([source, target]) => ({ source, target, note: null }))
+  });
+  const rawItems = [{ from: decidedA.id, to: decidedB.id, type: "supports", importance: 90 }];
+  assert.equal(
+    await repository.commitDecision(
+      "v5-first",
+      decidedA.id,
+      decidedB.id,
+      [decided("supports", [[xa, xb]])],
+      {
+        promptVersion: "source-relations-v5",
+        items: rawItems,
+        proposals: 1
+      }
+    ),
+    1
+  );
+  const decidedRows = async (relationType: string) =>
+    (
+      await pool!.query(
+        `select r.id, r.identity_key, r.source_item_id, r.source_idea, r.target_idea, r.explanation, r.status::text as status,
+          r.metadata, (select count(*)::int from source_relation_evidence e where e.relation_id = r.id) as evidence
+        from source_relations r where r.relation_type = $1 and $2::uuid in (r.source_item_id, r.target_source_item_id)
+        order by r.created_at, r.id`,
+        [relationType, decidedA.id]
+      )
+    ).rows;
+  let supports = await decidedRows("supports");
+  assert.equal(supports.length, 1);
+  assert.equal(
+    supports[0].identity_key,
+    sourceRelationIdentityKey(decidedA.id, decidedB.id, "supports"),
+    "A verdict without prose is identified by its endpoints and type"
+  );
+  assert.deepEqual(
+    [supports[0].source_idea, supports[0].target_idea, supports[0].explanation],
+    [null, null, null],
+    "No prose is stored"
+  );
+  assert.equal(supports[0].metadata.items, undefined, "Raw verdicts stay in the decision row");
+  assert.deepEqual(
+    (await repository.decision("v5-first"))?.items,
+    rawItems,
+    "The decision keeps every raw verdict"
+  );
+  const xa2 = await decidedChunk(
+    decidedA,
+    "Retrieval spaced across days outlasts massed study.",
+    1
+  );
+  assert.equal(
+    await repository.commitDecision(
+      "v5-second",
+      decidedA.id,
+      decidedB.id,
+      [decided("supports", [[xa2, xb]])],
+      {
+        proposals: 0
+      }
+    ),
+    1
+  );
+  supports = await decidedRows("supports");
+  assert.equal(supports.length, 1, "The same endpoints and type are one relation");
+  assert.equal(supports[0].evidence, 2, "Evidence merges on upsert");
+  // A symmetric verdict answered the other way round is the same relation, its evidence turned.
+  await repository.commitDecision(
+    "v5-sym",
+    decidedA.id,
+    decidedB.id,
+    [decided("similar_to", [[xa, xb]])],
+    {}
+  );
+  await repository.commitDecision(
+    "v5-sym-reversed",
+    decidedA.id,
+    decidedB.id,
+    [decided("similar_to", [[xb, xa]], decidedB.id, decidedA.id)],
+    {}
+  );
+  const similar = await decidedRows("similar_to");
+  assert.equal(similar.length, 1);
+  assert.equal(similar[0].evidence, 1, "The reversed evidence is the same evidence");
+  assert.equal(
+    (
+      await pool.query(
+        "select count(*)::int as n from source_relation_evidence where relation_id = $1 and source_chunk_id = $2",
+        [similar[0].id, xa.id]
+      )
+    ).rows[0].n,
+    1,
+    "Evidence is stored in the relation's orientation"
+  );
+  // The owner rejects: no verdict brings the relation back, nor adds evidence to it.
+  const supportsView = (await listSourceRelations(pool, decidedA.id, decidedB.id)).relations.find(
+    (item: { relationType: string }) => item.relationType === "supports"
+  )!;
+  assert.equal(supportsView.sourceIdea, null, "Relations without prose list with null prose");
+  assert.equal(
+    await repository.review(String(supportsView.id), "rejected", supportsView.updatedAt),
+    true
+  );
+  const xb2 = await decidedChunk(decidedB, "Spacing effects hold across ages and materials.", 1);
+  assert.equal(
+    await repository.commitDecision(
+      "v5-after-rejection",
+      decidedA.id,
+      decidedB.id,
+      [decided("supports", [[xa, xb2]])],
+      {}
+    ),
+    0,
+    "An owner-rejected relation is never brought back"
+  );
+  supports = await decidedRows("supports");
+  assert.deepEqual(
+    supports.map((row: { status: string; evidence: number }) => [row.status, row.evidence]),
+    [["rejected", 2]]
+  );
+  assert.ok(await repository.decision("v5-after-rejection"), "The verdict is still recorded");
+  // An older relation with prose and the owner's acceptance receives the evidence and keeps both.
+  const older: SourceRelationWrite = {
+    ...decided("extends", [[xa, xb]]),
+    sourceIdea: "Spacing retrieval extends retention.",
+    targetIdea: "Distributed practice and memory.",
+    explanation: "Older prose."
+  };
+  await repository.commitDecision("v4-older", decidedA.id, decidedB.id, [older], {});
+  const olderView = (await listSourceRelations(pool, decidedA.id, decidedB.id)).relations.find(
+    (item: { relationType: string }) => item.relationType === "extends"
+  )!;
+  assert.equal(
+    await repository.review(String(olderView.id), "accepted", olderView.updatedAt),
+    true
+  );
+  assert.equal(
+    await repository.commitDecision(
+      "v5-older",
+      decidedA.id,
+      decidedB.id,
+      [decided("extends", [[xa2, xb2]])],
+      {}
+    ),
+    1
+  );
+  const extendsRows = await decidedRows("extends");
+  assert.equal(extendsRows.length, 1, "A verdict merges into the older relation of that type");
+  assert.deepEqual(
+    [extendsRows[0].status, extendsRows[0].explanation, extendsRows[0].evidence],
+    ["accepted", "Older prose.", 2],
+    "The older relation keeps its prose and the owner's acceptance"
+  );
+  // Explanations written on open: cached per inputs and language, gone with their relation.
+  const explanations = createSourceRelationExplanationRepository(pool);
+  const similarContext = (await explanations.readContext(String(similar[0].id)))!;
+  assert.ok(sourceRelationExplainable(similarContext));
+  assert.deepEqual(
+    [similarContext.source.passages.length, similarContext.target.passages.length],
+    [1, 1]
+  );
+  assert.equal(
+    sourceRelationExplainable((await explanations.readContext(String(supports[0].id)))!),
+    false
+  );
+  assert.equal(
+    sourceRelationExplainable((await explanations.readContext(String(olderView.id)))!),
+    false
+  );
+  const plan = sourceRelationExplanationPlan(similarContext, "pt-BR");
+  assert.equal(plan.direction, "symmetric");
+  assert.ok(
+    await explanations.save({
+      relationId: String(similar[0].id),
+      text: `<source-ref id="${decidedA.id}" /> e <source-ref id="${decidedB.id}" /> concordam.`,
+      inputHash: plan.inputHash,
+      promptVersion: "source-relation-explanation-v1",
+      provider: "test",
+      model: "writer",
+      runtime: "local",
+      aiTaskRunId: null,
+      language: "pt-BR"
+    })
+  );
+  assert.equal(
+    (await explanations.currentExplanations([String(similar[0].id)], "pt-BR")).get(
+      String(similar[0].id)
+    )?.writtenBy,
+    "writer"
+  );
+  assert.equal((await explanations.currentExplanations([String(similar[0].id)], "en")).size, 0);
+  await assert.rejects(
+    pool.query("update source_relation_explanations set text = '' where relation_id = $1", [
+      similar[0].id
+    ]),
+    "An empty explanation is refused"
+  );
+  assert.equal(
+    await explanations.save({
+      relationId: randomUUID(),
+      text: "Nothing to explain.",
+      inputHash: "x",
+      promptVersion: "source-relation-explanation-v1",
+      provider: "test",
+      model: "writer",
+      runtime: "local",
+      aiTaskRunId: null,
+      language: "en"
+    }),
+    null,
+    "No explanation is stored for a relation that does not exist"
+  );
+  await pool.query("delete from source_relations where id = $1", [similar[0].id]);
+  assert.equal(
+    (await pool.query("select count(*)::int as n from source_relation_explanations")).rows[0].n,
+    0,
+    "An explanation is deleted with its relation"
+  );
   // Equal scores order by content: the same eight works get random IDs, yet always rank by title.
   const tieText = "Spacing practice distributes study sessions across time.";
   const tieQuery = await sources.create({ type: "Book", title: "Tie query" });
@@ -551,11 +830,11 @@ try {
     journal.entries.length
   );
   await pool.query("delete from source_items where id = any($1::uuid[])", [
-    [book.id, a.id, sibling.id]
+    [book.id, a.id, sibling.id, decidedA.id]
   ]);
   assert.equal((await pool.query("select count(*)::int as n from source_relations")).rows[0].n, 0);
   console.log(
-    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup, pair keys that keep cited note relations from both sides and per-root evidence caps."
+    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup, pair keys that keep cited note relations from both sides and per-root evidence caps; verdicts without prose identified by endpoints and type, evidence merged on upsert (symmetric turned), owner rejection never undone, older prose and acceptance kept, raw verdicts in the decision row, and explanations cached per inputs and language, refused when empty and deleted with their relation."
   );
 } finally {
   if (emptyPool) await closePgPool(emptyPool);

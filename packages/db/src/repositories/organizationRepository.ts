@@ -202,12 +202,15 @@ export function createOrganizationRepository(pool: PgPool) {
       )
         throw new Error("organization.errors.evidence");
     },
+    // The frozen organization workflow reads relation prose: relations decided without prose
+    // (source-relations-v5) are not part of its snapshot.
     async relations(sourceIds: string[]) {
       return (
         await pool.query(
           `select * from (select distinct on(r.id) r.id,e.id as "evidenceId",md5(e.snapshot::text) as fingerprint,r.source_item_id as "sourceItemId",r.target_source_item_id as "targetSourceItemId",r.status as review,r.updated_at as "updatedAt",r.source_idea as "sourceIdea",r.target_idea as "targetIdea",r.explanation,e.source_chunk_id as "sourceChunkId",e.target_chunk_id as "targetChunkId"
         from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins}
         where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and ${currentSourceRelationEvidenceSql}
+          and r.source_idea is not null and r.target_idea is not null and r.explanation is not null
         order by r.id,e.snapshot->>'sourceHash',e.snapshot->>'targetHash',e.id) picked
         order by picked."sourceIdea",picked."targetIdea",picked."evidenceId" limit 20`,
           [sourceIds]

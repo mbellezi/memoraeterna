@@ -32,6 +32,7 @@ import {
   createAtomicNoteRelationRepository,
   createRelationDecisionRepository,
   createSourceRelationRepository,
+  createSourceRelationExplanationRepository,
   listSourceRelations,
   createAtomicNoteRepository,
   createChunkRepository,
@@ -246,14 +247,27 @@ export class KnowledgeService {
     limit: number;
     relationId?: string | undefined;
   }) {
-    return listSourceRelations(
-      this.requirePool(),
+    const pool = this.requirePool();
+    const page = await listSourceRelations(
+      pool,
       input.sourceItemId,
       input.targetSourceItemId,
       input.offset,
       input.limit,
       input.relationId
     );
+    // An explanation written on open shows while its inputs and the content language still hold.
+    const written = await createSourceRelationExplanationRepository(pool).currentExplanations(
+      page.relations.map((relation) => String(relation.id)),
+      (await this.options.getContentLanguage?.()) ?? "en"
+    );
+    return {
+      ...page,
+      relations: page.relations.map((relation) => ({
+        ...relation,
+        writtenExplanation: written.get(String(relation.id)) ?? null
+      }))
+    };
   }
 
   public async reviewSourceRelation(input: {

@@ -17,7 +17,7 @@ import { buildRelationMatchPrompt, embeddingText } from "./relation-type-resolut
 import { identityText } from "./entity-identity-resolution.js";
 import { buildRelationLabelPrompt } from "./relation-label-processing.js";
 import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.js";
-import { sourceRelationPrompt } from "./source-relation-processing.js";
+import { sourceDecisionPrompt } from "./source-relation-processing.js";
 import { withEmbeddingInputInstruction, withOutputLanguageInstruction } from "./ai-service.js";
 import { consultationPrompt } from "./consultation-service.js";
 import { OrganizationService } from "./organization-service.js";
@@ -177,7 +177,7 @@ describe("A0 legacy rendered prompt goldens (no model or database)", () => {
           }
         }
       }),
-      "source.match": sourceRelationPrompt({ chunks: [], notes: [], existing: [] }, 3, false),
+      "source.decide": sourceDecisionPrompt({ chunks: [], notes: [] }, 2, false),
       "embedding.qwen_query": withEmbeddingInputInstruction(
         "recall %question%",
         "Qwen3-Embedding",
@@ -311,8 +311,8 @@ it("registers the former inline families and removes their old prose authority",
     "graph.relation_identity.repair",
     "graph.relation_labels",
     "graph.relation_labels.repair",
-    "sources.match",
-    "sources.repair",
+    "sources.decide",
+    "sources.decide.repair",
     "sources.validation.default",
     "sources.validation.same_root",
     "organization.legacy_synthesis",

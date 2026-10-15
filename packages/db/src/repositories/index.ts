@@ -36,3 +36,4 @@ export * from "./wikiRepository.js";
 export * from "./objectLocateRepository.js";
 export * from "./notePageRepository.js";
 export * from "./relationExplanationRepository.js";
+export * from "./sourceRelationExplanationRepository.js";

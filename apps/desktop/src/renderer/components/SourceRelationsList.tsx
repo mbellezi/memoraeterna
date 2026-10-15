@@ -1,5 +1,5 @@
 import { SourceReferenceBadge, SourceRelationReferenceText } from "./SourceRelationReferenceText";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronDown, LoaderCircle, RefreshCw, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
 import type { SourceRelationView } from "@app/domain";
@@ -8,7 +8,33 @@ import {
   atomicRelationColor,
   formatEdgeLabel
 } from "./knowledge-relation-icons";
+import {
+  explanationAfter,
+  explanationErrorKind,
+  type ExplanationState
+} from "./note-page/note-page-model";
+import { SourceRelationExplanation } from "./SourceRelationExplanation";
+import {
+  asksForSourceExplanation,
+  initialSourceRelationOpenState,
+  sourceRelationExcerpt,
+  sourceRelationExplanationView,
+  sourceRelationOpenReducer,
+  type WrittenSourceExplanation
+} from "./source-relation-explanation-state";
 
+function without<T>(record: Readonly<Record<string, T>>, key: string): Record<string, T> {
+  if (!(key in record)) return record as Record<string, T>;
+  const next = { ...record };
+  delete next[key];
+  return next;
+}
+
+/**
+ * Relations between sources: titles, type, origin and evidence excerpts. A relation decided without
+ * prose gets its explanation when the owner opens its evidence and keeps it open for a moment;
+ * closing it first cancels the request. Older relations show the prose they stored.
+ */
 export function SourceRelationsList({
   sourceItemId,
   targetSourceItemId = null,
@@ -34,12 +60,32 @@ export function SourceRelationsList({
     [hasMore, setHasMore] = useState(false),
     [total, setTotal] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
+  const [opened, dispatchOpen] = useReducer(
+    sourceRelationOpenReducer,
+    initialSourceRelationOpenState
+  );
+  const [explanations, setExplanations] = useState<Record<string, ExplanationState>>({});
+  const [written, setWritten] = useState<Record<string, WrittenSourceExplanation>>({});
+  const [explainRetry, setExplainRetry] = useState(0);
+  const relationsNow = useRef<SourceRelationView[]>([]);
+  const explanationsNow = useRef<Readonly<Record<string, ExplanationState>>>({});
+  const writtenNow = useRef<Readonly<Record<string, WrittenSourceExplanation>>>({});
   useLayoutEffect(() => {
     onReadyChange?.(!loading);
   }, [loading, onReadyChange]);
   useEffect(() => {
+    relationsNow.current = relations;
+  }, [relations]);
+  useEffect(() => {
+    explanationsNow.current = explanations;
+  }, [explanations]);
+  useEffect(() => {
+    writtenNow.current = written;
+  }, [written]);
+  useEffect(() => {
     setOffset(0);
     setRelations([]);
+    dispatchOpen({ type: "reset" });
   }, [sourceItemId, targetSourceItemId]);
   useEffect(() => {
     let active = true;
@@ -70,6 +116,53 @@ export function SourceRelationsList({
       active = false;
     };
   }, [sourceItemId, targetSourceItemId, offset, retry, compact, relationId]);
+
+  useEffect(() => {
+    const dwell = opened.dwell;
+    if (!dwell) return;
+    const timer = setTimeout(() => dispatchOpen({ type: "dwell" }), dwell.delayMs);
+    return () => clearTimeout(timer);
+  }, [opened.dwell]);
+
+  // A relation that stayed open asks for the explanation it lacks; closing it first cancels the
+  // request. A relation found without one to write ends in a terminal state: it is not asked again.
+  useEffect(() => {
+    const id = opened.explain;
+    if (id === null) return;
+    const relation = relationsNow.current.find((item) => item.id === id);
+    if (!asksForSourceExplanation(relation, writtenNow.current[id], explanationsNow.current[id]))
+      return;
+    let settled = false;
+    let canceled = false;
+    setExplanations((current) => ({ ...current, [id]: { status: "writing" } }));
+    window.app.relations
+      .explainSource({ relationId: id })
+      .then((result) => {
+        settled = true;
+        if (result)
+          setWritten((current) => ({
+            ...current,
+            [id]: { text: result.text, writtenBy: result.writtenBy }
+          }));
+        const after = explanationAfter(result);
+        setExplanations((current) => (after ? { ...current, [id]: after } : without(current, id)));
+      })
+      .catch((error: unknown) => {
+        settled = true;
+        if (canceled) return;
+        setExplanations((current) => ({
+          ...current,
+          [id]: { status: "failed", kind: explanationErrorKind(error) }
+        }));
+      });
+    return () => {
+      if (settled) return;
+      canceled = true;
+      void window.app.relations.cancelExplainSource({ relationId: id }).catch(() => undefined);
+      setExplanations((current) => without(current, id));
+    };
+  }, [opened.explain, explainRetry]);
+
   async function review(
     relation: SourceRelationView,
     status: "accepted" | "rejected" | "pending_review"
@@ -123,6 +216,14 @@ export function SourceRelationsList({
           const origins = new Set(
             relation.evidence.filter((item) => item.current).map((item) => item.origin)
           );
+          const view = sourceRelationExplanationView(
+            relation,
+            written[relation.id],
+            explanations[relation.id]
+          );
+          // A written or stored explanation reads in the row; otherwise the row reads its evidence.
+          const shownInRow = view.kind === "stored" || view.kind === "written";
+          const excerpt = shownInRow ? null : sourceRelationExcerpt(relation);
           return (
             <article
               key={relation.id}
@@ -153,9 +254,15 @@ export function SourceRelationsList({
                   {relation.targetTitle}
                 </span>
               </p>
-              <p className="whitespace-pre-wrap break-words font-medium">
-                <SourceRelationReferenceText text={relation.explanation} relation={relation} />
-              </p>
+              {shownInRow ? (
+                <SourceRelationExplanation t={t} relation={relation} view={view} />
+              ) : excerpt ? (
+                <p className="line-clamp-2 break-words text-xs text-muted-foreground">
+                  <SourceReferenceBadge number={1} title={relation.sourceTitle} />
+                  {excerpt.source} <SourceReferenceBadge number={2} title={relation.targetTitle} />
+                  {excerpt.target}
+                </p>
+              ) : null}
               <p className="text-[11px] opacity-70">
                 {t(
                   origins.size === 2
@@ -170,22 +277,44 @@ export function SourceRelationsList({
               ) : null}
               {!compact ? (
                 <>
-                  <details className="min-w-0">
+                  <details
+                    className="min-w-0"
+                    open={opened.open === relation.id}
+                    onToggle={(event) =>
+                      dispatchOpen({
+                        type: event.currentTarget.open ? "open" : "close",
+                        id: relation.id
+                      })
+                    }
+                  >
                     <summary className="cursor-pointer text-xs font-medium">
                       {t("sourceRelations.evidence")}
                     </summary>
                     <div className="mt-2 grid gap-3">
-                      <p className="break-words text-xs">
-                        <SourceRelationReferenceText
-                          text={relation.sourceIdea}
+                      {shownInRow ? null : (
+                        <SourceRelationExplanation
+                          t={t}
                           relation={relation}
-                        />{" "}
-                        →{" "}
-                        <SourceRelationReferenceText
-                          text={relation.targetIdea}
-                          relation={relation}
+                          view={view}
+                          onRetry={() => {
+                            dispatchOpen({ type: "explainNow", id: relation.id });
+                            setExplainRetry((current) => current + 1);
+                          }}
                         />
-                      </p>
+                      )}
+                      {relation.sourceIdea && relation.targetIdea ? (
+                        <p className="break-words text-xs">
+                          <SourceRelationReferenceText
+                            text={relation.sourceIdea}
+                            relation={relation}
+                          />{" "}
+                          →{" "}
+                          <SourceRelationReferenceText
+                            text={relation.targetIdea}
+                            relation={relation}
+                          />
+                        </p>
+                      ) : null}
                       {relation.evidence.map((evidence) => (
                         <div key={evidence.id} className="grid gap-2 rounded-lg bg-current/5 p-3">
                           <p className="text-[11px] opacity-70">

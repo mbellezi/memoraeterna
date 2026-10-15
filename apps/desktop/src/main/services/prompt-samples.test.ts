@@ -26,7 +26,7 @@ function model() {
       else if (id === "graph.relation_labels")
         output = { labels: [{ key: "r1", displayLabel: "Improves recall" }] };
       else if (id.startsWith("graph.")) output = { entities: [], relations: [] };
-      else if (id === "sources.match") output = { relations: [] };
+      else if (id === "sources.decide") output = { relations: [] };
       else if (id.startsWith("consultation."))
         output = {
           change: { meaningful: false, explanation: [] },
@@ -225,9 +225,9 @@ describe("bounded catalog sample runner", () => {
     expect(progress.calls).toBe(ai.calls.length);
     expect(progress.auditIds).toHaveLength(ai.calls.length);
     expect(progress.completedKeys.some((key) => key.startsWith("organization.repair:"))).toBe(true);
-    expect(progress.completedKeys.some((key) => key.startsWith("sources.repair.same_root:"))).toBe(
-      true
-    );
+    expect(
+      progress.completedKeys.some((key) => key.startsWith("sources.decide.repair.same_root:"))
+    ).toBe(true);
     expect(ai.calls.some((c) => c.input.includes("SAME root/work"))).toBe(true);
     for (const id of ["diagnostics.local_generation", "diagnostics.local_embedding"])
       expect(ai.calls.some((c) => c.id === id)).toBe(true);

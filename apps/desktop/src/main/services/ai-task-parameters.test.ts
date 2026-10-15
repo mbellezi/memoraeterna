@@ -5,6 +5,7 @@ import {
   noteMatchDecisionOperations,
   profileGenerationMaxTokens,
   relationExplanationOperation,
+  sourceRelationExplanationOperation,
   withAiTaskParameterDefaults
 } from "./ai-task-parameters.js";
 
@@ -70,6 +71,15 @@ describe("AI task parameter defaults", () => {
     expect(aiTaskBehaviorDefaults("text-generation", false, relationExplanationOperation)).toEqual({
       reasoningLevel: "off"
     });
+    // A source relation's explanation is written the same way.
+    expect(
+      aiTaskBehaviorDefaults("text-generation", false, sourceRelationExplanationOperation)
+    ).toEqual({ reasoningLevel: "off" });
+    expect(
+      withAiTaskParameterDefaults("reranking", {}, false, {
+        operation: sourceRelationExplanationOperation
+      })
+    ).not.toHaveProperty("reasoningLevel");
   });
 
   it("leaves other uses of the reranking route, such as source matching, on the profile's parameters", () => {

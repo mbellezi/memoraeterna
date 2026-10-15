@@ -1,17 +1,18 @@
 import { changedPromptIdentity, defaultPromptPin, withPromptPin } from "./prompt-runtime.js";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { createHash } from "node:crypto";
-import { defaultSourceRelationSettings } from "@app/domain";
+import { defaultSourceRelationSettings, sourceDecisionPassesFloors } from "@app/domain";
 import type { SourceRelationChunk, SourceRelationNote, PgPool } from "@app/db";
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import {
   matchSources,
   orderSourceRelationChunks,
   orientSymmetricNotes,
-  parseSourceRelations,
+  parseSourceDecision,
   rankSourceCandidates,
-  sourceRelationPrompt,
+  sourceDecisionPrompt,
   sourceRelationPromptVersion,
+  sourceRelationWrites,
   type SourceRelationContext
 } from "./source-relation-processing.js";
 
@@ -70,171 +71,243 @@ const note: SourceRelationNote = {
   fingerprint: "n1"
 };
 const context: SourceRelationContext = { chunks: [a, b], notes: [note], existing: [] };
-const proposal = () => ({
-  source: "s1",
-  target: "s2",
-  type: "supports",
-  sourceIdea: a.content,
-  targetIdea: b.content,
-  explanation: "The explanation connects mechanisms of retention.",
-  importance: 0.9,
-  confidence: 0.9,
-  durable: true,
-  grounded: true,
-  sourceEvidence: ["c1"],
-  targetEvidence: ["c2"],
-  noteRelations: [],
-  discovery: "source_analysis",
-  existing: null
-});
-const parse = (relations: unknown[], ctx = context) =>
-  parseSourceRelations({ relations }, ctx, defaultSourceRelationSettings, 4);
+/** A v5 verdict item: [from, to, type, importance, confidence, [from chunks], [to chunks]]. */
+const item = (overrides: Partial<Record<number, unknown>> = {}): unknown[] =>
+  Object.assign(["s1", "s2", "supports", 90, 90, ["c1"], ["c2"]], overrides);
+const floors = { minImportance: 0.85, minConfidence: 0.8, includeWeakTypes: false };
+const parse = (relations: unknown[], ctx = context) => parseSourceDecision({ relations }, ctx, 0);
+const writes = (relations: unknown[], ctx = context, allowance = 2, settings = floors) =>
+  sourceRelationWrites(parse(relations, ctx).items, ctx, settings, allowance);
 
-describe("source relation semantics", () => {
-  it("resolves textual aliases to stable source-reference tags in semantic endpoint order", () => {
-    const result = parse([
-      {
-        ...proposal(),
-        source: "s2",
-        target: "s1",
-        sourceEvidence: ["c2"],
-        targetEvidence: ["c1"],
-        sourceIdea: "s2 gives evidence.",
-        explanation: "s2 supports s1; s1 remains qualified."
-      }
-    ]);
-    expect(result.relations[0]).toMatchObject({
+describe("source verdicts without prose", () => {
+  it("resolves compact items to sources and their own chunks, with null prose and scores / 100", () => {
+    const parsed = parse([item({ 0: "s2", 1: "s1", 5: ["c2"], 6: ["c1"] })]);
+    expect(parsed).toMatchObject({ answered: true, invalid: 0, sameRoot: false });
+    expect(parsed.items[0]).toMatchObject({
       sourceItemId: "B",
       targetSourceItemId: "A",
-      sourceIdea: '<source-ref id="B" /> gives evidence.',
-      explanation:
-        '<source-ref id="B" /> supports <source-ref id="A" />; <source-ref id="A" /> remains qualified.'
+      importance: 90,
+      confidence: 90,
+      attempt: 0
     });
-    expect(() => parse([{ ...proposal(), explanation: "s30 supports s1." }])).toThrow();
-    expect(() =>
-      parse([{ ...proposal(), explanation: '<source-ref id="unknown" /> supports s1.' }])
-    ).toThrow();
-  });
-  it("allows zero output and rejects event-only, ungrounded, weak and low-importance proposals", () => {
-    expect(parse([]).relations).toEqual([]);
-    for (const fields of [
-      { durable: false },
-      { grounded: false },
-      { importance: 0.1 },
-      { confidence: 0.1 },
-      { type: "related" },
-      { type: "mentions" }
-    ]) {
-      expect(parse([{ ...proposal(), ...fields }]).relations).toEqual([]);
-    }
-  });
-  it("retains distinct ideas and types between the same sources", () => {
-    const result = parse([
-      proposal(),
-      { ...proposal(), sourceIdea: "Feedback corrects retrieval errors." },
-      { ...proposal(), type: "extends" }
+    const result = writes([item({ 0: "s2", 1: "s1", 3: 92, 4: 81, 5: ["c2"], 6: ["c1"] })]);
+    expect(result.relations).toEqual([
+      expect.objectContaining({
+        existingId: null,
+        sourceItemId: "B",
+        targetSourceItemId: "A",
+        relationType: "supports",
+        sourceIdea: null,
+        targetIdea: null,
+        explanation: null,
+        importance: 0.92,
+        confidence: 0.81
+      })
     ]);
-    expect(result.relations).toHaveLength(3);
+    expect(result.relations[0]!.evidence).toEqual([{ source: b, target: a, note: null }]);
   });
-  it("consolidates the same connection from both routes without boosting confidence", () => {
-    const result = parse([
-      proposal(),
-      { ...proposal(), discovery: "atomic_notes", noteRelations: ["n1"] }
-    ]);
-    expect(result.relations).toHaveLength(1);
-    expect(result.relations[0]?.evidence).toHaveLength(2);
-    expect(result.relations[0]?.confidence).toBe(0.9);
-  });
-  it("requires evidence from the correct owners and known aliases on both sides", () => {
-    for (const fields of [
-      { sourceEvidence: ["c2"] },
-      { targetEvidence: ["unknown"] },
-      { source: "unknown" },
-      { source: "s2", target: "s2" },
-      { discovery: "atomic_notes" },
-      { discovery: "atomic_notes", noteRelations: ["n9"] },
-      { noteRelations: ["n1"] }
-    ]) {
-      expect(() => parse([{ ...proposal(), ...fields }])).toThrow();
+
+  it("allows zero items and applies the floors and weak types to the raw scores", () => {
+    expect(parse([])).toEqual({ answered: true, items: [], invalid: 0, sameRoot: false });
+    expect(writes([item({ 3: 85, 4: 80 })]).relations).toHaveLength(1);
+    for (const overrides of [{ 3: 84 }, { 4: 79 }, { 2: "related" }, { 2: "mentions" }]) {
+      const result = writes([item(overrides)]);
+      expect(result.relations).toEqual([]);
+      expect(result.records[0]).toMatchObject({ outcome: "below_floors" });
     }
-    expect(() =>
-      parse([proposal()], { ...context, chunks: [a, { ...b, rootId: a.rootId }] })
-    ).toThrow();
-  });
-  it("does not reverse directional note relationships or change their type", () => {
-    expect(() =>
-      parse([{ ...proposal(), discovery: "atomic_notes", noteRelations: ["n1"], type: "extends" }])
-    ).toThrow();
-    expect(() =>
-      parse([
-        {
-          ...proposal(),
-          discovery: "atomic_notes",
-          noteRelations: ["n1"],
-          source: "s2",
-          target: "s1",
-          sourceEvidence: ["c2"],
-          targetEvidence: ["c1"]
-        }
-      ])
-    ).toThrow();
-  });
-  it("preserves reviewed propositions and never resurrects rejected matches", () => {
-    const existing = {
-      id: "existing",
-      sourceItemId: "A",
-      targetSourceItemId: "B",
-      relationType: "supports",
-      sourceIdea: "Reviewed idea",
-      targetIdea: b.content,
-      status: "accepted"
-    };
-    const result = parse([{ ...proposal(), existing: "r1" }], { ...context, existing: [existing] });
-    expect(result).toEqual({ proposals: 0, relations: [] });
     expect(
-      parse([{ ...proposal(), existing: "r1" }], {
+      writes([item({ 2: "related" })], context, 2, { ...floors, includeWeakTypes: true }).relations
+    ).toHaveLength(1);
+    expect(
+      sourceDecisionPassesFloors({ type: "supports", importance: 85, confidence: 80 }, floors)
+    ).toBe(true);
+  });
+
+  it("keeps valid items and drops malformed ones one by one", () => {
+    const parsed = parse([
+      item(),
+      [...item(), "A prose explanation."],
+      item({ 3: 0.9 }),
+      item({ 3: 101 }),
+      item({ 1: "s9" }),
+      item({ 1: "s1" }),
+      item({ 5: ["c2"], 6: ["c1"] }),
+      item({ 5: [] }),
+      item({ 5: ["c1", "c1", "c1", "c1"] }),
+      item({ 2: "same_as" }),
+      { source: "s1", target: "s2" }
+    ]);
+    expect(parsed.items).toHaveLength(1);
+    expect(parsed.invalid).toBe(10);
+    expect(parsed.sameRoot).toBe(false);
+  });
+
+  it("reads output without the envelope as not answered", () => {
+    for (const output of ["invalid", { results: [] }, { relations: "none" }, null])
+      expect(parseSourceDecision(output, context, 0).answered).toBe(false);
+    expect(
+      parseSourceDecision(
+        '```json\n{"relations":[["s1","s2","extends",90,90,["c1"],["c2"]]]}\n```',
+        context,
+        1
+      ).items[0]
+    ).toMatchObject({ type: "extends", attempt: 1 });
+  });
+
+  it("turns a symmetric item answered from the higher alias instead of refusing it", () => {
+    const parsed = parse([item({ 0: "s2", 1: "s1", 2: "similar_to", 5: ["c2"], 6: ["c1"] })]);
+    expect(parsed.invalid).toBe(0);
+    expect(parsed.items[0]).toMatchObject({ sourceItemId: "A", targetSourceItemId: "B" });
+    expect(parsed.items[0]!.sourceChunks).toEqual([a]);
+  });
+
+  it("flags items joining two chapters of the same work for the same-root feedback", () => {
+    const sibling = { ...a, id: "c", sourceItemId: "C", title: "Another chapter" };
+    const ctx = { ...context, chunks: [a, b, sibling] };
+    const prompt = sourceDecisionPrompt(ctx, 2, false);
+    expect(prompt).toContain('"key":"s1","root":"w1"');
+    expect(prompt).toContain('"key":"s2","root":"w2"');
+    expect(prompt).toContain('"key":"s3","root":"w1"');
+    expect(prompt).toContain("DIFFERENT roots");
+    const parsed = parse([item({ 1: "s3", 6: ["c3"] }), item()], ctx);
+    expect(parsed).toMatchObject({ invalid: 1, sameRoot: true });
+    expect(parsed.items).toHaveLength(1);
+  });
+
+  it("merges items of the same endpoints and type and keeps the allowance by importance", () => {
+    const second = { ...b, id: "b2", chunkIndex: 1, contentHash: "b2h" };
+    const ctx = { ...context, notes: [], chunks: [a, b, second] };
+    const result = writes(
+      [
+        item({ 3: 88 }),
+        item({ 3: 95, 4: 82, 6: ["c3"] }),
+        item({ 2: "extends", 3: 90 }),
+        item({ 0: "s2", 1: "s1", 2: "clarifies", 3: 86, 5: ["c2"], 6: ["c1"] })
+      ],
+      ctx
+    );
+    expect(
+      result.relations.map((relation) => [relation.relationType, relation.importance])
+    ).toEqual([
+      ["supports", 0.95],
+      ["extends", 0.9]
+    ]);
+    expect(result.relations[0]!.confidence).toBe(0.9);
+    expect(result.relations[0]!.evidence.map((evidence) => evidence.target.id)).toEqual([
+      "b",
+      "b2"
+    ]);
+    expect(result.proposals).toBe(2);
+    expect(result.records.map((record) => record.outcome)).toEqual([
+      "persisted",
+      "persisted",
+      "persisted",
+      "over_allowance"
+    ]);
+  });
+
+  it("never brings back a relation the owner rejected and does not count a saved one again", () => {
+    const saved = (status: string, from = "A", to = "B", relationType = "supports") => ({
+      id: `saved-${status}`,
+      sourceItemId: from,
+      targetSourceItemId: to,
+      relationType,
+      sourceIdea: "Older stored idea",
+      targetIdea: "Older stored target",
+      status
+    });
+    const rejected = writes([item()], { ...context, existing: [saved("rejected")] });
+    expect(rejected).toMatchObject({ proposals: 0, relations: [] });
+    expect(rejected.records[0]).toMatchObject({ outcome: "owner_rejected" });
+    // A symmetric relation rejected the other way round is the same relation.
+    expect(
+      writes([item({ 2: "similar_to" })], {
         ...context,
-        existing: [{ ...existing, status: "rejected" }]
+        existing: [saved("rejected", "B", "A", "similar_to")]
       }).relations
     ).toEqual([]);
-    expect(() =>
-      parse([{ ...proposal(), existing: "r2" }], { ...context, existing: [existing] })
-    ).toThrow();
-  });
-  it("excludes exact saved connections without an alias but keeps new ideas between the same sources", () => {
-    for (const status of ["pending_review", "accepted", "rejected"]) {
-      const existing = {
-        id: "existing",
-        sourceItemId: "A",
-        targetSourceItemId: "B",
-        relationType: "supports",
-        sourceIdea: a.content,
-        targetIdea: b.content,
-        status
-      };
-      const ctx = { ...context, existing: [existing] };
-      const result = parse(
-        [proposal(), { ...proposal(), sourceIdea: "A different mechanism." }],
-        ctx
-      );
-      expect(result.proposals).toBe(1);
-      expect(result.relations).toHaveLength(1);
-      expect(result.relations[0]?.sourceIdea).toBe("A different mechanism.");
-      expect(sourceRelationPrompt(ctx, 4, false)).toContain(
-        "EXCLUSION LIST, never candidates for ranking or enrichment"
-      );
+    // Saved and not rejected: the evidence merges into it on persistence; it is no new proposal.
+    for (const status of ["accepted", "pending_review"]) {
+      const known = writes([item()], { ...context, existing: [saved(status)] });
+      expect(known.proposals).toBe(0);
+      expect(known.relations).toHaveLength(1);
     }
+    // A different type between the same sources is a new relation.
+    expect(
+      writes([item({ 2: "extends" })], { ...context, existing: [saved("rejected")] }).proposals
+    ).toBe(1);
   });
-  it("enforces the remaining global allowance before persistence", () => {
-    expect(() =>
-      parseSourceRelations(
-        { relations: [proposal(), proposal()] },
-        context,
-        defaultSourceRelationSettings,
-        1
-      )
-    ).toThrow();
+
+  it("backs a relation with the note connection whose passages it cites", () => {
+    const backed = writes([item()]);
+    expect(backed.relations[0]!.evidence).toEqual([{ source: a, target: b, note }]);
+    // Another type or direction than the note's is source analysis only.
+    expect(writes([item({ 2: "extends" })]).relations[0]!.evidence).toEqual([
+      { source: a, target: b, note: null }
+    ]);
+    expect(
+      writes([item({ 0: "s2", 1: "s1", 5: ["c2"], 6: ["c1"] })]).relations[0]!.evidence[0]!.note
+    ).toBeNull();
   });
+
+  it("stores every item with its raw scores and resolved chunks", () => {
+    expect(writes([item({ 3: 70, 4: 60 })]).records).toEqual([
+      {
+        from: "A",
+        to: "B",
+        type: "supports",
+        importance: 70,
+        confidence: 60,
+        fromChunks: ["a"],
+        toChunks: ["b"],
+        attempt: 0,
+        outcome: "below_floors"
+      }
+    ]);
+  });
+
+  it("asks for compact items, states durable and grounded as instructions and lists no saved relations", () => {
+    const prompt = sourceDecisionPrompt(
+      {
+        ...context,
+        existing: [
+          {
+            id: "saved",
+            sourceItemId: "A",
+            targetSourceItemId: "B",
+            relationType: "supports",
+            sourceIdea: "A saved idea that must not be listed",
+            targetIdea: "Its target",
+            status: "accepted"
+          }
+        ]
+      } as SourceRelationContext,
+      2,
+      false
+    );
+    expect(prompt).toContain('{"relations":[["s1","s2","supports",90,85,["c1"],["c3"]]]}');
+    expect(prompt).toContain("Return ZERO to 2 items");
+    expect(prompt).toContain("integers from 0 to 100");
+    expect(prompt).toContain("Write no ideas, explanations or other text");
+    expect(prompt).toContain("durable relationship");
+    expect(prompt).toContain("grounded in supplied original chunks on BOTH sides");
+    expect(prompt).toContain("Summaries are navigation aids, NEVER evidence");
+    expect(prompt).toContain("hypotheses, NOT proof");
+    expect(prompt).toContain("beyond a specific event");
+    expect(prompt).toContain(
+      '"source":"s1","target":"s2","type":"supports","sourceIdea":"Retrieval strengthens durable learning.","targetIdea":"Retrieval strengthens durable learning.","evidence":["c1","c2"]'
+    );
+    for (const absent of [
+      "EXCLUSION LIST",
+      "A saved idea",
+      'sourceIdea":"Specific',
+      'durable":',
+      'explanation":',
+      "note-relation"
+    ])
+      expect(prompt).not.toContain(absent);
+  });
+
   it("keeps note reuse and direct discovery in every shortlist prefix", () => {
     const candidates = Array.from({ length: 40 }, (_, i) => ({
       id: String(i),
@@ -247,27 +320,6 @@ describe("source relation semantics", () => {
     const selected = rankSourceCandidates(candidates, 40).slice(0, 8);
     expect(selected.filter((candidate) => candidate.noteScore > 0)).toHaveLength(4);
     expect(selected.filter((candidate) => candidate.noteScore === 0)).toHaveLength(4);
-  });
-  it("uses compact aliases and explicitly treats summaries and old note links as hypotheses", () => {
-    const prompt = sourceRelationPrompt(context, 4, false);
-    expect(prompt).toContain("Summaries are navigation aids, NEVER evidence");
-    expect(prompt).toContain("hypotheses, NOT proof");
-    expect(prompt).toContain("Return ZERO to 4");
-    expect(prompt).not.toContain("note-relation");
-    expect(prompt).toContain("beyond a specific event");
-  });
-  it("exposes shared roots while retaining chapter endpoints and rejecting same-work relations", () => {
-    const sibling = { ...a, id: "c", sourceItemId: "C", title: "Another chapter" };
-    const ctx = { ...context, chunks: [a, b, sibling] };
-    const prompt = sourceRelationPrompt(ctx, 4, false);
-    expect(prompt).toContain('"key":"s1","root":"w1"');
-    expect(prompt).toContain('"key":"s2","root":"w2"');
-    expect(prompt).toContain('"key":"s3","root":"w1"');
-    expect(prompt).toContain("DIFFERENT roots");
-    expect(() => parse([{ ...proposal(), target: "s3", targetEvidence: ["c3"] }], ctx)).toThrow(
-      "source_relation_same_root"
-    );
-    expect(parse([proposal()], ctx).relations).toHaveLength(1);
   });
 });
 
@@ -342,19 +394,19 @@ describe("source matching budget and recovery", () => {
   });
   it("real same-root recovery composes the exact active validation suffix", async () => {
     const pin = defaultPromptPin();
-    for (const id of ["sources.match", "sources.repair", "sources.validation.same_root"]) {
+    for (const id of ["sources.decide", "sources.decide.repair", "sources.validation.same_root"]) {
       const entry = pin.entries.find((e) => e.id === id)!;
       entry.fields.body = "CATALOG:" + id + "\n" + entry.fields.body;
     }
     mocks.repository.pairChunks!.mockResolvedValue([a, { ...b, rootId: a.rootId }]);
     const ai = vi
       .fn()
-      .mockResolvedValueOnce(execution({ relations: [proposal()] }))
+      .mockResolvedValueOnce(execution({ relations: [item()] }))
       .mockResolvedValue(execution({ relations: [] }));
     await withPromptPin(pin, () => run(ai));
     expect(ai).toHaveBeenCalledTimes(2);
-    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.match");
-    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.repair");
+    expect(ai.mock.calls[0]![1]).toContain("CATALOG:sources.decide");
+    expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.decide.repair");
     expect(ai.mock.calls[1]![1]).toContain("CATALOG:sources.validation.same_root");
   });
   it("reports planned and completed pair counts, counting a repair only once", async () => {
@@ -445,11 +497,7 @@ describe("source matching budget and recovery", () => {
         noteScore: root === "root-A" ? 1 : 0
       }
     ]);
-    const ai = vi.fn().mockResolvedValue(
-      execution({
-        relations: [{ ...proposal(), discovery: "atomic_notes", noteRelations: ["n1"] }]
-      })
-    );
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
     expect((await run(ai, "first")).persistedCount).toBe(1);
     expect(cited.has(note.id)).toBe(true);
     expect(await run(ai, "second")).toMatchObject({ completed: 0, total: 0, persistedCount: 0 });
@@ -476,12 +524,12 @@ describe("source matching budget and recovery", () => {
         expect((states.get("run:root-A") as { inputTokens: number }).inputTokens).toBe(0);
         return execution("invalid");
       })
-      .mockResolvedValue(execution({ relations: [proposal()] }));
+      .mockResolvedValue(execution({ relations: [item()] }));
     const result = await run(ai);
     expect(ai).toHaveBeenCalledTimes(2);
     expect(result.persistedCount).toBe(1);
     expect(result.inputTokens).toBe(200);
-    expect(ai.mock.calls[0]?.[4]).toEqual({ maxOutputTokens: 3300 });
+    expect(ai.mock.calls[0]?.[4]).toEqual({ maxOutputTokens: 1900 });
   });
   it.each([0, 100, 15000])("records actual input usage %s", async (inputTokens) => {
     const ai = vi.fn().mockResolvedValue({ ...execution({ relations: [] }), inputTokens });
@@ -540,7 +588,7 @@ describe("source matching budget and recovery", () => {
     expect(ai).toHaveBeenCalledTimes(1);
   });
   it("recovers a committed decision before a checkpoint write without exceeding the proposal cap", async () => {
-    const ai = vi.fn().mockResolvedValue(execution({ relations: [proposal()] }));
+    const ai = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
     const original = mocks.repository.saveRun!;
     mocks.repository.saveRun = vi.fn(
       async (key: string, root: string, state: { completed: string[] }) => {
@@ -562,14 +610,79 @@ describe("source matching budget and recovery", () => {
     expect(ai).toHaveBeenCalledTimes(2);
     expect(mocks.repository.commitDecision).not.toHaveBeenCalled();
   });
+  it("keeps the valid items of the first answer when one repair cannot fix the rest", async () => {
+    const ai = vi
+      .fn()
+      .mockResolvedValueOnce(execution({ relations: [item(), item({ 3: 0.9 })] }))
+      .mockResolvedValueOnce(execution("invalid"));
+    const result = await run(ai);
+    expect(ai).toHaveBeenCalledTimes(2);
+    expect(ai.mock.calls[1]![1]).toContain("Use only supplied aliases");
+    expect(result).toMatchObject({ persistedCount: 1, completed: 1 });
+    const [, , , relations, metadata] = mocks.repository.commitDecision!.mock.calls[0]!;
+    expect(relations).toHaveLength(1);
+    expect(metadata).toMatchObject({ invalidItems: 1, aiTaskRunIds: ["execution", "execution"] });
+  });
+  it("asks no repair once the valid items fill the pair's two relations", async () => {
+    const ai = vi
+      .fn()
+      .mockResolvedValue(
+        execution({ relations: [item(), item({ 2: "extends" }), item({ 1: "s9" })] })
+      );
+    expect((await run(ai)).persistedCount).toBe(2);
+    expect(ai).toHaveBeenCalledTimes(1);
+  });
+  it("asks for at most two items and stores every returned item with its raw scores apart from the floors", async () => {
+    const ai = vi
+      .fn()
+      .mockResolvedValue(
+        execution({ relations: [item({ 3: 95 }), item({ 2: "extends", 3: 70, 4: 99 })] })
+      );
+    const settings = {
+      ...defaultSourceRelationSettings,
+      maxInputTokens: 200000,
+      maxRelationsPerPair: 4,
+      minImportance: 0.85
+    };
+    await run(ai, "raw", settings);
+    expect(ai.mock.calls[0]![1]).toContain("Return ZERO to 2 items");
+    expect(ai.mock.calls[0]![2]).toMatchObject({
+      operation: "source_relation_matching",
+      promptVersion: "source-relations-v5"
+    });
+    const [, , , relations, metadata] = mocks.repository.commitDecision!.mock.calls[0]!;
+    expect(relations).toEqual([expect.objectContaining({ relationType: "supports" })]);
+    expect(metadata).toMatchObject({
+      promptVersion: sourceRelationPromptVersion,
+      proposals: 2,
+      floors: { minImportance: 0.85, minConfidence: 0.8, includeWeakTypes: false },
+      items: [
+        {
+          from: "A",
+          to: "B",
+          type: "supports",
+          importance: 95,
+          confidence: 90,
+          fromChunks: ["a"],
+          toChunks: ["b"],
+          attempt: 0,
+          outcome: "persisted"
+        },
+        expect.objectContaining({
+          type: "extends",
+          importance: 70,
+          confidence: 99,
+          outcome: "below_floors"
+        })
+      ]
+    });
+  });
   it("explains same-root rejection in the bounded repair and accepts a negative decision", async () => {
     // Chunks are ordered by work, so the sibling chapter of root A follows A and precedes root B.
     mocks.repository.pairChunks!.mockResolvedValue([b, a, { ...a, id: "c", sourceItemId: "C" }]);
     const ai = vi
       .fn()
-      .mockResolvedValueOnce(
-        execution({ relations: [{ ...proposal(), target: "s2", targetEvidence: ["c2"] }] })
-      )
+      .mockResolvedValueOnce(execution({ relations: [item()] }))
       .mockResolvedValueOnce(execution({ relations: [] }));
     const result = await run(ai);
     expect(ai).toHaveBeenCalledTimes(2);
@@ -638,8 +751,8 @@ describe("source matching budget and recovery", () => {
     // The reasoning-off default belongs to the note decision call only: source matching hashes
     // exactly the profile, model and parameters, as before the default existed.
     const prompts = changedPromptIdentity([
-      "sources.match",
-      "sources.repair",
+      "sources.decide",
+      "sources.decide.repair",
       "sources.validation.default",
       "sources.validation.same_root"
     ]);
@@ -754,7 +867,7 @@ const worksFor = (ids: string[], rotation = 0) => {
 describe("source relation prompts do not depend on database IDs", () => {
   it("number sources, roots, chunks and notes by content under any UUID assignment", () => {
     const prompts = uuidAssignments(9).map((ids, index) =>
-      sourceRelationPrompt(worksFor(ids, index).context, 4, false)
+      sourceDecisionPrompt(worksFor(ids, index).context, 2, false)
     );
     expect(prompts.length).toBeGreaterThan(1);
     expect(new Set(prompts).size).toBe(1);
@@ -773,99 +886,61 @@ describe("source relation prompts do not depend on database IDs", () => {
       prompt.indexOf("Memory consolidates.")
     );
     // The stored pair runs from the paper to the retrieval chapter; the prompt reads lower alias first.
-    expect(prompt).toContain('"key":"n1","source":"s1","target":"s3","type":"similar_to"');
+    expect(prompt).toContain('"source":"s1","target":"s3","type":"similar_to"');
+    expect(prompt).toContain('"evidence":["c1","c4"]');
   });
 
   it("reads a symmetric relation from the lower alias and writes it in that direction", () => {
     for (const [index, ids] of uuidAssignments(9).entries()) {
       const { context, ids: works } = worksFor(ids, index);
-      const proposal = {
-        source: "s1",
-        target: "s3",
-        type: "similar_to",
-        sourceIdea: "Retrieval strengthens.",
-        targetIdea: "Memory consolidates.",
-        explanation: "Both describe how practice stabilizes memory.",
-        importance: 0.9,
-        confidence: 0.9,
-        durable: true,
-        grounded: true,
-        sourceEvidence: ["c1"],
-        targetEvidence: ["c4"],
-        noteRelations: ["n1"],
-        discovery: "atomic_notes",
-        existing: null
-      };
-      const parsed = parseSourceRelations(
-        { relations: [proposal] },
-        context,
-        defaultSourceRelationSettings,
-        4
-      );
-      expect(parsed.relations[0]).toMatchObject({
-        sourceItemId: works.retrieval,
-        targetSourceItemId: works.paper
-      });
-      expect(parsed.relations[0]?.evidence[0]?.note?.sourceChunkId).toBe(works.c1);
-      expect(() =>
-        parseSourceRelations(
-          {
-            relations: [
-              {
-                ...proposal,
-                source: "s3",
-                target: "s1",
-                sourceEvidence: ["c4"],
-                targetEvidence: ["c1"]
-              }
-            ]
-          },
+      for (const answer of [
+        ["s1", "s3", "similar_to", 90, 90, ["c1"], ["c4"]],
+        ["s3", "s1", "similar_to", 90, 90, ["c4"], ["c1"]]
+      ]) {
+        const parsed = parseSourceDecision({ relations: [answer] }, context, 0);
+        const result = sourceRelationWrites(
+          parsed.items,
           context,
           defaultSourceRelationSettings,
-          4
-        )
-      ).toThrow("errors.sourceRelations.invalidOutput");
+          2
+        );
+        expect(result.relations[0]).toMatchObject({
+          sourceItemId: works.retrieval,
+          targetSourceItemId: works.paper
+        });
+        expect(result.relations[0]?.evidence[0]?.note?.sourceChunkId).toBe(works.c1);
+      }
     }
   });
 
-  it("treats a symmetric relation saved in the reverse direction as already known", () => {
+  it("treats a symmetric relation saved in the reverse direction as the same relation", () => {
     const { context, ids: works } = worksFor(uuidAssignments(9)[0]!);
-    const saved = {
+    const saved = (status: string) => ({
       id: "saved",
       sourceItemId: works.paper,
       targetSourceItemId: works.retrieval,
       relationType: "similar_to",
       sourceIdea: "Memory consolidates.",
       targetIdea: "Retrieval strengthens.",
-      status: "accepted"
-    };
-    const result = parseSourceRelations(
-      {
-        relations: [
-          {
-            source: "s1",
-            target: "s3",
-            type: "similar_to",
-            sourceIdea: "Retrieval strengthens.",
-            targetIdea: "Memory consolidates.",
-            explanation: "Both describe how practice stabilizes memory.",
-            importance: 0.9,
-            confidence: 0.9,
-            durable: true,
-            grounded: true,
-            sourceEvidence: ["c1"],
-            targetEvidence: ["c4"],
-            noteRelations: [],
-            discovery: "source_analysis",
-            existing: null
-          }
-        ]
-      },
-      { ...context, existing: [saved] },
+      status
+    });
+    const answer = { relations: [["s1", "s3", "similar_to", 90, 90, ["c1"], ["c4"]]] };
+    const known = sourceRelationWrites(
+      parseSourceDecision(answer, context, 0).items,
+      { ...context, existing: [saved("accepted")] },
       defaultSourceRelationSettings,
-      4
+      2
     );
-    expect(result).toEqual({ proposals: 0, relations: [] });
+    expect(known.proposals).toBe(0);
+    expect(known.relations).toHaveLength(1);
+    expect(
+      sourceRelationWrites(
+        parseSourceDecision(answer, context, 0).items,
+        { ...context, existing: [saved("rejected")] },
+        defaultSourceRelationSettings,
+        2
+      )
+    ).toMatchObject({ proposals: 0, relations: [] });
   });
 
   it("breaks candidate ties on the work title, never on the candidate ID", () => {
@@ -951,7 +1026,7 @@ describe("source relation prompts do not depend on database IDs", () => {
 });
 
 it("forbids lexical disambiguation and proper-name reinterpretation as conceptual clarification", () => {
-  const prompt = sourceRelationPrompt(context, 4, false);
+  const prompt = sourceDecisionPrompt(context, 2, false);
   expect(prompt).toContain("Merely distinguishing homonyms or unrelated senses");
   expect(prompt).toContain("must never be reinterpreted as an abstract definition");
 });

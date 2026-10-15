@@ -65,10 +65,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Relations
 
-- The decider writes no prose; explanations are written on demand for a relation
-  the owner opens, and cached. Filters before it are lossless (they drop only
-  candidates no decider score could accept). A required decider that fails or
-  decides nothing fails the note visibly, before its checkpoint.
+- Deciders of note and source relations write no prose; explanations are written
+  on demand for a relation the owner opens, and cached. Filters before a decider are
+  lossless (they drop only candidates no decider score could accept). A required
+  decider that fails or decides nothing fails visibly, before its checkpoint.
 - Decisions keep each direction's raw score, AI run and time apart from
   calibration, keyed by both notes' content hashes and the decider; a decided
   direction is reused with the decider that decided it. A generative decider
@@ -83,7 +83,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   discovery pairs, never same-root pairs. Matching runs per source as soon as its
   notes exist, with no batch barrier (target F3).
 - A relation's explanation is written only when the owner opens it, never in bulk or in the
-  background, and cached for what it was written from (ideas, passages, type, direction, language).
+  background, and cached for its inputs (ideas or titles, passages, type, direction, language).
 
 ## Topic tree (target F2)
 

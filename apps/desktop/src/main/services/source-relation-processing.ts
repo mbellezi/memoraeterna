@@ -1,15 +1,14 @@
 import { compareContent } from "./content-order.js";
-import {
-  renderPrompt,
-  joinPrompts,
-  promptFingerprint,
-  changedPromptIdentity
-} from "./prompt-runtime.js";
+import { renderPrompt, joinPrompts, changedPromptIdentity } from "./prompt-runtime.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   AtomicNoteRelationTypeSchema,
   SourceRelationSettingsSchema,
+  sourceDecisionLimits,
+  sourceDecisionPassesFloors,
+  symmetricSourceRelationTypes,
+  type SourceDecisionItem,
   type SourceRelationSettings
 } from "@app/domain";
 import {
@@ -23,29 +22,37 @@ import {
 } from "@app/db";
 import type { AiService, AiTaskLogContext } from "./ai-service.js";
 import { aiTaskBehaviorDefaults } from "./ai-task-parameters.js";
+import { parseJsonOutput } from "./knowledge-processing.js";
 
-export const sourceRelationPromptVersion = "source-relations-v4";
+/**
+ * Compact, score-only source verdicts (docs/plan.md decision 17): the decider answers at most two
+ * `[from, to, type, importance, confidence, [from chunks], [to chunks]]` items per pair of works and
+ * writes no prose. Explanations are written when the owner opens a relation.
+ */
+export const sourceRelationPromptVersion = "source-relations-v5";
 const sourceMatchingOperation = "source_relation_matching";
-const proposalSchema = z
-  .object({
-    source: z.string(),
-    target: z.string(),
-    type: AtomicNoteRelationTypeSchema,
-    sourceIdea: z.string().trim().min(1).max(500),
-    targetIdea: z.string().trim().min(1).max(500),
-    explanation: z.string().trim().min(1).max(700),
-    importance: z.number().min(0).max(1),
-    confidence: z.number().min(0).max(1),
-    durable: z.boolean(),
-    grounded: z.boolean(),
-    sourceEvidence: z.array(z.string()).min(1).max(3),
-    targetEvidence: z.array(z.string()).min(1).max(3),
-    noteRelations: z.array(z.string()).max(16),
-    discovery: z.enum(["atomic_notes", "source_analysis", "both"]),
-    existing: z.string().nullable()
-  })
-  .strict();
-const outputSchema = z.object({ relations: z.array(proposalSchema).max(20) }).strict();
+/** Every catalog prompt the source decision is composed of: its identity is in the run fingerprint. */
+const sourceDecisionPromptIds = [
+  "sources.decide",
+  "sources.decide.repair",
+  "sources.validation.default",
+  "sources.validation.same_root"
+] as const;
+
+/** One verdict item; anything else (more members, prose, fractional scores) is malformed. */
+const decisionItemSchema = z.tuple([
+  z.string(),
+  z.string(),
+  AtomicNoteRelationTypeSchema,
+  z.number().int().min(0).max(sourceDecisionLimits.maxScore),
+  z.number().int().min(0).max(sourceDecisionLimits.maxScore),
+  z.array(z.string()).min(1).max(sourceDecisionLimits.maxChunksPerSide),
+  z.array(z.string()).min(1).max(sourceDecisionLimits.maxChunksPerSide)
+]);
+// The envelope has no length cap: the answer is bounded by the output token limit, and items beyond
+// the allowance are dropped after ranking, so a surplus item can never discard the valid ones.
+const decisionEnvelopeSchema = z.object({ relations: z.array(z.unknown()) });
+
 const stateSchema = z.object({
   settings: SourceRelationSettingsSchema,
   configuration: z.string(),
@@ -64,13 +71,14 @@ type ExistingRelation = {
   sourceItemId: string;
   targetSourceItemId: string;
   relationType: string;
-  sourceIdea: string;
-  targetIdea: string;
+  sourceIdea: string | null;
+  targetIdea: string | null;
   status: string;
 };
 export interface SourceRelationContext {
   chunks: SourceRelationChunk[];
   notes: SourceRelationNote[];
+  /** Saved relations between the two works: they never reach the prompt. */
   existing: ExistingRelation[];
 }
 /** Equal scores break on the work title: candidate IDs are random on every import. */
@@ -110,8 +118,6 @@ export function rankSourceCandidates(
   }
   return selected;
 }
-
-const symmetricRelationTypes: ReadonlyArray<string> = ["contrasts", "similar_to"];
 
 /**
  * Chunks in document order across the pair: work title, source title, then chunk position. The
@@ -153,7 +159,7 @@ export function orientSymmetricNotes(
   sources: ReadonlyArray<string>
 ): SourceRelationNote[] {
   return notes.map((note) =>
-    symmetricRelationTypes.includes(note.type) &&
+    symmetricSourceRelationTypes.includes(note.type) &&
     sources.indexOf(note.sourceItemId) > sources.indexOf(note.targetSourceItemId)
       ? {
           ...note,
@@ -170,223 +176,270 @@ export function orientSymmetricNotes(
   );
 }
 
-export function sourceRelationPrompt(
-  context: SourceRelationContext,
-  maxRelations: number,
+/**
+ * The decision prompt: sources (s), roots (w) and chunks (c) by content order, the uncited note
+ * connections as hypotheses with the chunks they rest on, and nothing else. Saved relations are not
+ * listed: the decider judges the pair, and persistence merges what it already knows.
+ */
+export function sourceDecisionPrompt(
+  context: Pick<SourceRelationContext, "chunks" | "notes">,
+  maxItems: number,
   includeWeakTypes: boolean,
   summaryMaxCharacters = 1200
 ) {
   const { sources, roots } = aliasOrder(context.chunks);
-  return renderPrompt("sources.match", {
-    max_relations: maxRelations,
+  const sourceAlias = (id: string) => `s${sources.indexOf(id) + 1}`;
+  const chunkAlias = (id: string) => `c${context.chunks.findIndex((chunk) => chunk.id === id) + 1}`;
+  return renderPrompt("sources.decide", {
+    max_relations: maxItems,
     weak_types: includeWeakTypes ? ", mentions, related" : "",
-    sources: sources.map((id, i) => ({
-      key: `s${i + 1}`,
-      root: `w${roots.indexOf(context.chunks.find((chunk) => chunk.sourceItemId === id)!.rootId) + 1}`,
-      title: context.chunks.find((chunk) => chunk.sourceItemId === id)!.title,
-      summary:
-        context.chunks
-          .find((chunk) => chunk.sourceItemId === id)
-          ?.summary?.slice(0, summaryMaxCharacters) ?? null
-    })),
+    sources: sources.map((id) => {
+      const first = context.chunks.find((chunk) => chunk.sourceItemId === id)!;
+      return {
+        key: sourceAlias(id),
+        root: `w${roots.indexOf(first.rootId) + 1}`,
+        title: first.title,
+        summary: first.summary?.slice(0, summaryMaxCharacters) ?? null
+      };
+    }),
     chunks: context.chunks.map((chunk, i) => ({
       key: `c${i + 1}`,
-      source: `s${sources.indexOf(chunk.sourceItemId) + 1}`,
+      source: sourceAlias(chunk.sourceItemId),
       text: chunk.content
     })),
-    note_relations: context.notes.map((note, i) => ({
-      key: `n${i + 1}`,
-      source: `s${sources.indexOf(note.sourceItemId) + 1}`,
-      target: `s${sources.indexOf(note.targetSourceItemId) + 1}`,
+    note_relations: context.notes.map((note) => ({
+      source: sourceAlias(note.sourceItemId),
+      target: sourceAlias(note.targetSourceItemId),
       type: note.type,
       sourceIdea: note.sourceIdea,
-      targetIdea: note.targetIdea
-    })),
-    existing_connections: context.existing.map((relation, i) => ({
-      key: `r${i + 1}`,
-      source: `s${sources.indexOf(relation.sourceItemId) + 1}`,
-      target: `s${sources.indexOf(relation.targetSourceItemId) + 1}`,
-      type: relation.relationType,
-      sourceIdea: relation.sourceIdea,
-      targetIdea: relation.targetIdea,
-      status: relation.status
+      targetIdea: note.targetIdea,
+      evidence: [chunkAlias(note.sourceChunkId), chunkAlias(note.targetChunkId)]
     }))
   });
 }
 
-export function parseSourceRelations(
-  output: unknown,
-  context: SourceRelationContext,
-  settings: SourceRelationSettings,
-  allowance: number
-): { proposals: number; relations: SourceRelationWrite[] } {
-  const parsed = outputSchema.parse(
-    typeof output === "string"
-      ? JSON.parse(output.replace(/^```(?:json)?\s*/, " ").replace(/\s*```$/, ""))
-      : output
-  );
-  if (parsed.relations.length > allowance) throw new Error("errors.sourceRelations.invalidOutput");
-  const { sources } = aliasOrder(context.chunks);
-  const chunkByAlias = new Map(context.chunks.map((chunk, i) => [`c${i + 1}`, chunk]));
-  const relations: SourceRelationWrite[] = [];
-  const identities = new Set<string>();
-  let proposals = 0;
-  for (const proposal of parsed.relations) {
-    const aliasSource = sources.find((_, i) => `s${i + 1}` === proposal.source),
-      aliasTarget = sources.find((_, i) => `s${i + 1}` === proposal.target);
-    if (!aliasSource || !aliasTarget || aliasSource === aliasTarget)
-      throw new Error("errors.sourceRelations.invalidOutput");
-    if (
-      symmetricRelationTypes.includes(proposal.type) &&
-      sources.indexOf(aliasSource) > sources.indexOf(aliasTarget)
-    )
-      throw new Error("errors.sourceRelations.invalidOutput");
-    if (
-      context.chunks.find((chunk) => chunk.sourceItemId === aliasSource)?.rootId ===
-      context.chunks.find((chunk) => chunk.sourceItemId === aliasTarget)?.rootId
-    )
-      throw new Error("source_relation_same_root");
-    const sourceChunks = proposal.sourceEvidence.map((alias) => chunkByAlias.get(alias));
-    const targetChunks = proposal.targetEvidence.map((alias) => chunkByAlias.get(alias));
-    if (
-      sourceChunks.some((chunk) => !chunk || chunk.sourceItemId !== aliasSource) ||
-      targetChunks.some((chunk) => !chunk || chunk.sourceItemId !== aliasTarget)
-    )
-      throw new Error("errors.sourceRelations.invalidOutput");
-    const notes = proposal.noteRelations.map((alias) =>
-      context.notes.find((_, i) => `n${i + 1}` === alias)
-    );
-    if (
-      new Set(proposal.noteRelations).size !== notes.length ||
-      notes.some(
-        (note) =>
-          !note ||
-          note.sourceItemId !== aliasSource ||
-          note.targetSourceItemId !== aliasTarget ||
-          note.type !== proposal.type ||
-          !sourceChunks.some((chunk) => chunk?.id === note.sourceChunkId) ||
-          !targetChunks.some((chunk) => chunk?.id === note.targetChunkId)
-      ) ||
-      (proposal.discovery === "source_analysis" ? notes.length !== 0 : notes.length === 0)
-    )
-      throw new Error("errors.sourceRelations.invalidOutput");
-    const existing =
-      proposal.existing === null
-        ? null
-        : context.existing.find((_, i) => `r${i + 1}` === proposal.existing);
-    if (
-      proposal.existing !== null &&
-      (!existing ||
-        existing.sourceItemId !== aliasSource ||
-        existing.targetSourceItemId !== aliasTarget ||
-        existing.relationType !== proposal.type)
-    )
-      throw new Error("errors.sourceRelations.invalidOutput");
-    const references = new Map([
-      [proposal.source, aliasSource],
-      [proposal.target, aliasTarget]
-    ]);
-    const sourceIdea = resolveSourceRelationReferences(proposal.sourceIdea, references);
-    const targetIdea = resolveSourceRelationReferences(proposal.targetIdea, references);
-    const explanation = resolveSourceRelationReferences(proposal.explanation, references);
-    // A symmetric relation saved before the alias order was content-based may be stored reversed.
-    const sameIdeas = (relation: ExistingRelation, reversed: boolean) =>
-      relation.sourceIdea.trim().toLowerCase() ===
-        (reversed ? targetIdea : sourceIdea).toLowerCase() &&
-      relation.targetIdea.trim().toLowerCase() ===
-        (reversed ? sourceIdea : targetIdea).toLowerCase();
-    if (
-      existing ||
-      context.existing.some(
-        (relation) =>
-          relation.relationType === proposal.type &&
-          ((relation.sourceItemId === aliasSource &&
-            relation.targetSourceItemId === aliasTarget &&
-            sameIdeas(relation, false)) ||
-            (symmetricRelationTypes.includes(proposal.type) &&
-              relation.sourceItemId === aliasTarget &&
-              relation.targetSourceItemId === aliasSource &&
-              sameIdeas(relation, true)))
-      )
-    )
-      continue;
-    proposals++;
-    if (
-      !proposal.durable ||
-      !proposal.grounded ||
-      proposal.importance < settings.minImportance ||
-      proposal.confidence < settings.minConfidence ||
-      (!settings.includeWeakTypes && ["mentions", "related"].includes(proposal.type))
-    )
-      continue;
-    const relation: SourceRelationWrite = {
-      existingId: null,
-      sourceItemId: aliasSource,
-      targetSourceItemId: aliasTarget,
-      relationType: proposal.type,
-      sourceIdea,
-      targetIdea,
-      explanation,
-      importance: proposal.importance,
-      confidence: proposal.confidence,
-      evidence: []
-    };
-    if (proposal.discovery !== "atomic_notes")
-      for (const source of sourceChunks)
-        for (const target of targetChunks)
-          relation.evidence.push({ source: source!, target: target!, note: null });
-    for (const note of notes)
-      relation.evidence.push({
-        source: context.chunks.find((chunk) => chunk.id === note!.sourceChunkId)!,
-        target: context.chunks.find((chunk) => chunk.id === note!.targetChunkId)!,
-        note: note!
-      });
-    const identity = JSON.stringify([
-      aliasSource,
-      aliasTarget,
-      proposal.type,
-      relation.sourceIdea.toLowerCase(),
-      relation.targetIdea.toLowerCase()
-    ]);
-    if (identities.has(identity)) {
-      const previous = relations.find(
-        (value) =>
-          (value.existingId ??
-            JSON.stringify([
-              value.sourceItemId,
-              value.targetSourceItemId,
-              value.relationType,
-              value.sourceIdea.toLowerCase(),
-              value.targetIdea.toLowerCase()
-            ])) === identity
-      )!;
-      previous.evidence.push(...relation.evidence);
-    } else {
-      identities.add(identity);
-      relations.push(relation);
-    }
-  }
-  return {
-    proposals,
-    relations: relations.toSorted(
-      (a, b) => b.importance - a.importance || b.confidence - a.confidence
-    )
-  };
+/** A valid verdict item, aliases resolved: endpoints are sources, evidence their own chunks. */
+export interface SourceDecisionVerdict {
+  sourceItemId: string;
+  targetSourceItemId: string;
+  type: SourceDecisionItem["type"];
+  /** Raw integer scores from 0 to 100, as answered. */
+  importance: number;
+  confidence: number;
+  sourceChunks: SourceRelationChunk[];
+  targetChunks: SourceRelationChunk[];
+  attempt: 0 | 1;
 }
 
-export function resolveSourceRelationReferences(
-  text: string,
-  aliases: ReadonlyMap<string, string>
-): string {
-  for (const match of text.matchAll(/<source-ref id="([^"]+)" \/>/g)) {
-    if (![...aliases.values()].includes(match[1]!))
-      throw new Error("errors.sourceRelations.invalidOutput");
+export interface SourceDecisionParse {
+  /** The answer had the `{"relations":[...]}` envelope. */
+  answered: boolean;
+  /** Valid items in answer order; nothing in one item can invalidate another. */
+  items: SourceDecisionVerdict[];
+  /** Malformed items: wrong shape, unknown aliases, evidence of another source, or one work. */
+  invalid: number;
+  /** One of the malformed items joined two sources of the same work. */
+  sameRoot: boolean;
+}
+
+/**
+ * Reads a source verdict. Valid items are kept; a malformed one is counted and dropped. A symmetric
+ * type answered from the higher alias reads the same from the lower one, so it is turned, never
+ * refused.
+ */
+export function parseSourceDecision(
+  output: unknown,
+  context: Pick<SourceRelationContext, "chunks">,
+  attempt: 0 | 1
+): SourceDecisionParse {
+  let raw: unknown[];
+  try {
+    raw = decisionEnvelopeSchema.parse(parseJsonOutput(output)).relations;
+  } catch {
+    return { answered: false, items: [], invalid: 0, sameRoot: false };
   }
-  return text.replace(/\bs[1-9]\d*\b/g, (alias) => {
-    const id = aliases.get(alias);
-    if (!id) throw new Error("errors.sourceRelations.invalidOutput");
-    return `<source-ref id="${id}" />`;
-  });
+  const { sources } = aliasOrder(context.chunks);
+  const chunkByAlias = new Map(context.chunks.map((chunk, i) => [`c${i + 1}`, chunk]));
+  const sourceByAlias = new Map(sources.map((id, i) => [`s${i + 1}`, id]));
+  const rootOf = (id: string) => context.chunks.find((chunk) => chunk.sourceItemId === id)?.rootId;
+  const items: SourceDecisionVerdict[] = [];
+  let invalid = 0,
+    sameRoot = false;
+  for (const entry of raw) {
+    const parsed = decisionItemSchema.safeParse(entry);
+    if (!parsed.success) {
+      invalid++;
+      continue;
+    }
+    const [fromAlias, toAlias, type, importance, confidence, fromChunks, toChunks] = parsed.data;
+    let from = sourceByAlias.get(fromAlias),
+      to = sourceByAlias.get(toAlias);
+    if (!from || !to || from === to) {
+      invalid++;
+      continue;
+    }
+    if (rootOf(from) === rootOf(to)) {
+      invalid++;
+      sameRoot = true;
+      continue;
+    }
+    let fromEvidence = [...new Set(fromChunks)].map((alias) => chunkByAlias.get(alias));
+    let toEvidence = [...new Set(toChunks)].map((alias) => chunkByAlias.get(alias));
+    if (
+      fromEvidence.some((chunk) => chunk?.sourceItemId !== from) ||
+      toEvidence.some((chunk) => chunk?.sourceItemId !== to)
+    ) {
+      invalid++;
+      continue;
+    }
+    if (
+      symmetricSourceRelationTypes.includes(type) &&
+      sources.indexOf(from) > sources.indexOf(to)
+    ) {
+      [from, to] = [to, from];
+      [fromEvidence, toEvidence] = [toEvidence, fromEvidence];
+    }
+    items.push({
+      sourceItemId: from,
+      targetSourceItemId: to,
+      type,
+      importance,
+      confidence,
+      sourceChunks: fromEvidence as SourceRelationChunk[],
+      targetChunks: toEvidence as SourceRelationChunk[],
+      attempt
+    });
+  }
+  return { answered: true, items, invalid, sameRoot };
+}
+
+const verdictIdentity = (
+  item: Pick<SourceDecisionVerdict, "sourceItemId" | "targetSourceItemId" | "type">
+) => JSON.stringify([item.sourceItemId, item.targetSourceItemId, item.type]);
+
+/** The number of distinct relations (endpoints and type) among verdict items. */
+export function distinctSourceVerdicts(items: ReadonlyArray<SourceDecisionVerdict>): number {
+  return new Set(items.map(verdictIdentity)).size;
+}
+
+export type SourceDecisionOutcome =
+  "persisted" | "below_floors" | "owner_rejected" | "over_allowance";
+
+/** A stored raw verdict: what the decider answered and what became of it under the floors. */
+export type SourceDecisionRecord = SourceDecisionItem & { outcome: SourceDecisionOutcome };
+
+/**
+ * Turns verdict items into relation writes. Items with the same endpoints and type are one relation
+ * (scores the highest answered, evidence the union); relations rank by importance, then confidence,
+ * and only the allowance is kept. A relation the owner rejected is never brought back; one already
+ * saved is not a new proposal, and its evidence merges on persistence. Floors apply to the raw
+ * scores divided by 100. A note connection whose passages the item cites is note-backed evidence.
+ */
+export function sourceRelationWrites(
+  items: ReadonlyArray<SourceDecisionVerdict>,
+  context: SourceRelationContext,
+  settings: Pick<SourceRelationSettings, "minImportance" | "minConfidence" | "includeWeakTypes">,
+  allowance: number
+): { proposals: number; relations: SourceRelationWrite[]; records: SourceDecisionRecord[] } {
+  const groups = new Map<string, SourceDecisionVerdict>();
+  for (const item of items) {
+    const key = verdictIdentity(item);
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, {
+        ...item,
+        sourceChunks: [...item.sourceChunks],
+        targetChunks: [...item.targetChunks]
+      });
+      continue;
+    }
+    group.importance = Math.max(group.importance, item.importance);
+    group.confidence = Math.max(group.confidence, item.confidence);
+    for (const chunk of item.sourceChunks)
+      if (!group.sourceChunks.some((known) => known.id === chunk.id))
+        group.sourceChunks.push(chunk);
+    for (const chunk of item.targetChunks)
+      if (!group.targetChunks.some((known) => known.id === chunk.id))
+        group.targetChunks.push(chunk);
+  }
+  const ranked = [...groups.entries()].toSorted(
+    ([, a], [, b]) => b.importance - a.importance || b.confidence - a.confidence
+  );
+  const outcomes = new Map<string, SourceDecisionOutcome>();
+  const relations: SourceRelationWrite[] = [];
+  let proposals = 0;
+  for (const [index, [key, verdict]] of ranked.entries()) {
+    if (index >= allowance) {
+      outcomes.set(key, "over_allowance");
+      continue;
+    }
+    const symmetric = symmetricSourceRelationTypes.includes(verdict.type);
+    const equivalent = context.existing.filter(
+      (relation) =>
+        relation.relationType === verdict.type &&
+        ((relation.sourceItemId === verdict.sourceItemId &&
+          relation.targetSourceItemId === verdict.targetSourceItemId) ||
+          (symmetric &&
+            relation.sourceItemId === verdict.targetSourceItemId &&
+            relation.targetSourceItemId === verdict.sourceItemId))
+    );
+    if (equivalent.some((relation) => relation.status === "rejected")) {
+      outcomes.set(key, "owner_rejected");
+      continue;
+    }
+    if (!equivalent.length) proposals++;
+    if (!sourceDecisionPassesFloors(verdict, settings)) {
+      outcomes.set(key, "below_floors");
+      continue;
+    }
+    outcomes.set(key, "persisted");
+    const notes = context.notes.filter(
+      (note) =>
+        note.type === verdict.type &&
+        note.sourceItemId === verdict.sourceItemId &&
+        note.targetSourceItemId === verdict.targetSourceItemId &&
+        verdict.sourceChunks.some((chunk) => chunk.id === note.sourceChunkId) &&
+        verdict.targetChunks.some((chunk) => chunk.id === note.targetChunkId)
+    );
+    const chunk = (id: string) => context.chunks.find((candidate) => candidate.id === id)!;
+    const evidence: SourceRelationWrite["evidence"] = notes.map((note) => ({
+      source: chunk(note.sourceChunkId),
+      target: chunk(note.targetChunkId),
+      note
+    }));
+    for (const source of verdict.sourceChunks)
+      for (const target of verdict.targetChunks)
+        if (
+          !notes.some(
+            (note) => note.sourceChunkId === source.id && note.targetChunkId === target.id
+          )
+        )
+          evidence.push({ source, target, note: null });
+    relations.push({
+      existingId: null,
+      sourceItemId: verdict.sourceItemId,
+      targetSourceItemId: verdict.targetSourceItemId,
+      relationType: verdict.type,
+      sourceIdea: null,
+      targetIdea: null,
+      explanation: null,
+      importance: verdict.importance / sourceDecisionLimits.maxScore,
+      confidence: verdict.confidence / sourceDecisionLimits.maxScore,
+      evidence
+    });
+  }
+  const records = items.map((item) => ({
+    from: item.sourceItemId,
+    to: item.targetSourceItemId,
+    type: item.type,
+    importance: item.importance,
+    confidence: item.confidence,
+    fromChunks: item.sourceChunks.map((chunk) => chunk.id),
+    toChunks: item.targetChunks.map((chunk) => chunk.id),
+    attempt: item.attempt,
+    outcome: outcomes.get(verdictIdentity(item))!
+  }));
+  return { proposals, relations, records };
 }
 
 function hash(value: unknown) {
@@ -421,28 +474,12 @@ export async function matchSources(options: {
     );
     return Object.keys(taskDefaults).length ? { taskDefaults } : {};
   };
-  const fingerprintConfiguration = (
-    model: typeof selection,
-    version = sourceRelationPromptVersion
-  ) =>
-    hash({
-      version,
+  const fingerprintConfiguration = (model: typeof selection) => {
+    const prompts = changedPromptIdentity(sourceDecisionPromptIds);
+    return hash({
+      version: sourceRelationPromptVersion,
       ...taskDefaultsIdentity(model),
-      ...(changedPromptIdentity([
-        "sources.match",
-        "sources.repair",
-        "sources.validation.default",
-        "sources.validation.same_root"
-      ])
-        ? {
-            prompts: changedPromptIdentity([
-              "sources.match",
-              "sources.repair",
-              "sources.validation.default",
-              "sources.validation.same_root"
-            ])
-          }
-        : {}),
+      ...(prompts ? { prompts } : {}),
       language: options.contentLanguage,
       settings: options.settings,
       profile: model.profileId,
@@ -458,6 +495,7 @@ export async function matchSources(options: {
       parameters: model.parameters,
       defaults: model.modelDefaultParameters
     });
+  };
   const configuration = fingerprintConfiguration(selection);
   const roots = await repository.roots(options.sourceIds);
   let persistedCount = 0,
@@ -489,13 +527,8 @@ export async function matchSources(options: {
         finished: false
       }
     );
-    // Upgrade only the known previous prompt, retaining all spent budgets and completed work.
-    if (
-      ["source-relations-v1", "source-relations-v2", "source-relations-v3"].some(
-        (version) => state.configuration === fingerprintConfiguration(selection, version)
-      )
-    )
-      state.configuration = configuration;
+    // A run started under another contract, route or setting stops visibly: its budgets and
+    // completed pairs belong to that configuration.
     if (state.configuration !== configuration)
       throw new Error("errors.sourceRelations.configurationChanged");
     const save = () => repository.saveRun(runKey, root, state);
@@ -600,12 +633,14 @@ export async function matchSources(options: {
           await report();
           continue;
         }
+        // A pair answers at most two items, within what is left of the root's proposal budget.
         const allowance = Math.min(
+          sourceDecisionLimits.maxItemsPerPair,
           settings.maxRelationsPerPair,
           settings.maxRelations - state.proposals
         );
         const existing = (await repository.existing(root, candidate.id)) as ExistingRelation[];
-        const makeContext = (): SourceRelationContext => ({
+        const context: SourceRelationContext = {
           chunks,
           notes: orientSymmetricNotes(
             notes.filter(
@@ -620,27 +655,32 @@ export async function matchSources(options: {
               chunks.some((chunk) => chunk.sourceItemId === relation.sourceItemId) &&
               chunks.some((chunk) => chunk.sourceItemId === relation.targetSourceItemId)
           )
-        });
-        const context = makeContext(),
-          prompt = sourceRelationPrompt(
-            context,
-            allowance,
-            settings.includeWeakTypes,
-            settings.summaryMaxCharacters
-          );
+        };
+        const prompt = sourceDecisionPrompt(
+          context,
+          allowance,
+          settings.includeWeakTypes,
+          settings.summaryMaxCharacters
+        );
         let completed = false;
         let validationFeedback = renderPrompt("sources.validation.default");
         if ((state.attempts[key] ?? 0) >= 2)
           throw new Error("errors.sourceRelations.invalidOutput");
+        const answers: SourceDecisionParse[] = [];
+        let finalExecution: Awaited<ReturnType<typeof ai.runDefaultTask>> = null;
+        const aiTaskRunIds: string[] = [];
+        let budgetStopped = false;
         while ((state.attempts[key] ?? 0) < 2) {
-          const attempt = state.attempts[key] ?? 0;
+          const attempt = (state.attempts[key] ?? 0) as 0 | 1;
           const input = joinPrompts(
             prompt,
-            attempt ? renderPrompt("sources.repair", { validation_errors: validationFeedback }) : ""
+            attempt
+              ? renderPrompt("sources.decide.repair", { validation_errors: validationFeedback })
+              : ""
           );
           // Allow the current call to exceed the budget; stop only subsequent calls.
           if (state.inputTokens > settings.maxInputTokens) {
-            state.partial = true;
+            budgetStopped = true;
             break;
           }
           const currentSelection = await createAiConfigRepository(pool).getDefaultTask("reranking");
@@ -677,18 +717,28 @@ export async function matchSources(options: {
           }
           // Persist reported usage even if validation, cancellation or persistence fails next.
           await save();
-          let output: ReturnType<typeof parseSourceRelations>;
-          try {
-            output = parseSourceRelations(execution.output, context, settings, allowance);
-          } catch (error) {
-            if (error instanceof Error && error.message === "source_relation_same_root") {
-              validationFeedback = renderPrompt("sources.validation.same_root");
-            }
-            await save();
-            if (attempt === 1) throw new Error("errors.sourceRelations.invalidOutput");
-            continue;
-          }
+          const parsed = parseSourceDecision(execution.output, context, attempt);
+          answers.push(parsed);
+          finalExecution = execution;
+          if (execution.aiTaskRunId) aiTaskRunIds.push(execution.aiTaskRunId);
+          // A clean answer, or one already holding all the relations the pair may keep, is final.
+          // Otherwise one repair asks again; the valid items of the first answer are kept.
+          if (
+            (parsed.answered && parsed.invalid === 0) ||
+            distinctSourceVerdicts(answers.flatMap((answer) => answer.items)) >= allowance
+          )
+            break;
+          if (parsed.sameRoot) validationFeedback = renderPrompt("sources.validation.same_root");
+        }
+        const items = answers.flatMap((answer) => answer.items);
+        const last = answers.at(-1);
+        if (!budgetStopped && last && finalExecution) {
+          // Answers that keep nothing valid and never settle fail the pair visibly: committing them
+          // would cache "no relation" for a pair the decider did not decide.
+          if (!items.length && !(last.answered && last.invalid === 0))
+            throw new Error("errors.sourceRelations.invalidOutput");
           signal?.throwIfAborted();
+          const output = sourceRelationWrites(items, context, settings, allowance);
           const created = await repository.commitDecision(
             key,
             root,
@@ -696,14 +746,15 @@ export async function matchSources(options: {
             output.relations,
             {
               promptVersion: sourceRelationPromptVersion,
-              profileId: execution.profileId,
-              model: execution.modelId,
-              provider: execution.providerId,
-              runtime: execution.runtime,
-              aiTaskRunId: execution.aiTaskRunId,
+              profileId: finalExecution.profileId,
+              model: finalExecution.modelId,
+              provider: finalExecution.providerId,
+              runtime: finalExecution.runtime,
+              aiTaskRunId: finalExecution.aiTaskRunId,
+              aiTaskRunIds,
               configuration,
-              inputTokens: execution.inputTokens ?? null,
-              outputTokens: execution.outputTokens ?? null,
+              inputTokens: finalExecution.inputTokens ?? null,
+              outputTokens: finalExecution.outputTokens ?? null,
               candidateSignals: {
                 id: candidate.id,
                 textScore: candidate.textScore,
@@ -712,7 +763,15 @@ export async function matchSources(options: {
                 noteScore: candidate.noteScore
               },
               contentLanguage: options.contentLanguage,
-              proposals: output.proposals
+              proposals: output.proposals,
+              // Raw verdicts apart from the floors: the floors can be tuned again without calls.
+              items: output.records,
+              floors: {
+                minImportance: settings.minImportance,
+                minConfidence: settings.minConfidence,
+                includeWeakTypes: settings.includeWeakTypes
+              },
+              invalidItems: answers.reduce((sum, answer) => sum + answer.invalid, 0)
             }
           );
           state.proposals += output.proposals;
@@ -720,7 +779,6 @@ export async function matchSources(options: {
           state.completed.push(key);
           completed = true;
           await save();
-          break;
         }
         if (!completed) {
           state.partial = true;

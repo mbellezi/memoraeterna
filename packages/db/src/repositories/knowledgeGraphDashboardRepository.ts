@@ -254,10 +254,11 @@ async function listSourceGraph(
         target: row.target,
         kind: "source_relation",
         label: row.label,
-        description: row.description,
+        // Relations decided without prose have no stored explanation (it is written on open).
+        description: row.description ?? null,
         confidence: Number(row.confidence),
         weight: 1,
-        details: [row.description]
+        details: row.description ? [row.description] : []
       })),
       truncated: hasMoreNodes || result.rows.length > maxEdges
     };

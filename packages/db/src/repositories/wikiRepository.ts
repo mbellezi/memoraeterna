@@ -946,10 +946,10 @@ export function createWikiRepository(pool: PgPool) {
           from atomic_notes n left join source_tree t on t.id=n.created_from_source_item_id left join chunks nc on nc.id=n.evidence_chunk_id left join documents nd on nd.id=nc.document_id where (($4::uuid is null and cardinality($2::uuid[])=0) or n.created_from_source_item_id in(select id from scoped))
           and (($4::uuid is null and cardinality($2::uuid[])=0) or not exists(select 1 from atomic_note_evidence retained where retained.note_id=n.id and retained.source_id not in(select id from scoped)))
           and not exists(select 1 from atomic_note_source_links l where l.atomic_note_id=n.id and l.source_item_id not in(select id from scoped)) and n.status not in('rejected','archived') and (not $5 or n.status='approved') and (not $6 or ${currentNoteEvidence}) and ${textMatch("n.idea_statement || ' ' || n.body_markdown")}
-        union all select r.id,'source_relation',a.title || ' → ' || b.title,r.explanation,r.source_item_id,r.target_source_item_id,r.status::text,${currentSourceRelationSql},a.title || ' / ' || b.title,false
+        union all select r.id,'source_relation',a.title || ' → ' || b.title,coalesce(r.explanation,''),r.source_item_id,r.target_source_item_id,r.status::text,${currentSourceRelationSql},a.title || ' / ' || b.title,false
           from source_relations r join source_items a on a.id=r.source_item_id join source_items b on b.id=r.target_source_item_id
           where r.source_item_id in(select id from scoped) and r.target_source_item_id in(select id from scoped)
-          and (not $5 or r.status='accepted') and (not $6 or (${currentSourceRelationSql} and r.status<>'rejected')) and ${textMatch("r.source_idea || ' ' || r.target_idea || ' ' || r.explanation || ' ' || a.title || ' ' || b.title")}
+          and (not $5 or r.status='accepted') and (not $6 or (${currentSourceRelationSql} and r.status<>'rejected')) and ${textMatch("concat_ws(' ', r.source_idea, r.target_idea, r.explanation, a.title, b.title)")}
         union all select e.id,'entity',e.canonical_name,''::text,min(m.source_item_id::text)::uuid,null::uuid,null,true,min(t.path),unaccent(lower(e.canonical_name))=unaccent(lower($1))
           from entities e join entity_mentions m on m.entity_id=e.id join source_tree t on t.id=m.source_item_id join chunks c on c.id=m.chunk_id join documents d on d.id=c.document_id
           where m.source_item_id in(select id from scoped) and (not $6 or d.metadata->>'supersededByDocumentId' is null) and not $5

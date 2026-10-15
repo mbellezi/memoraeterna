@@ -1307,7 +1307,7 @@ function knowledgeGraphValidationCode(error: unknown): string {
   return "unknown_validation_error";
 }
 
-function parseJsonOutput(output: unknown): unknown {
+export function parseJsonOutput(output: unknown): unknown {
   if (typeof output !== "string") return output;
   const trimmed = output.trim();
   const withoutFence = trimmed.startsWith("```")

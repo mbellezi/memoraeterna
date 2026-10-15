@@ -96,7 +96,8 @@ describe("baseline seed", () => {
       "0046_relation_decision_audit",
       "0047_view_history",
       "0048_note_fingerprint_without_review_status",
-      "0049_relation_explanations"
+      "0049_relation_explanations",
+      "0050_source_relation_explanations"
     ]);
   });
 
@@ -164,7 +165,8 @@ describe("baseline seed", () => {
         "0046_relation_decision_audit",
         "0047_view_history",
         "0048_note_fingerprint_without_review_status",
-        "0049_relation_explanations"
+        "0049_relation_explanations",
+        "0050_source_relation_explanations"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
