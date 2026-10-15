@@ -12,7 +12,8 @@ import {
   noteActions,
   noteHeaderState,
   provenanceMessage,
-  type NoteDraft
+  type NoteDraft,
+  type NoteEditBase
 } from "./note-page-model";
 
 const pill =
@@ -20,6 +21,8 @@ const pill =
 const linkClass = "text-left text-accent hover:underline";
 
 export interface NoteEditing {
+  /** The version the draft started from: changes and the write token are taken against it. */
+  base: NoteEditBase;
   draft: NoteDraft;
   canSave: boolean;
   saving: boolean;

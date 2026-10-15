@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import type { NotePage } from "@app/domain";
 import { createTranslator, supportedLanguageCodes, type Translator } from "@app/i18n";
 
+import { NoteLeaveDialog } from "./NoteLeaveDialog";
 import { NotePageView, type NotePageLoad, type NotePageViewProps } from "./NotePageView";
 import type { ExplanationState } from "./RelationEvidenceCard";
 import { evidenceItem, fixtureId, notePage, relationItem } from "./note-page-fixtures";
+import { editBase } from "./note-page-model";
 
 const en = createTranslator("en");
 const noop = () => undefined;
@@ -190,7 +192,7 @@ describe("Note page header", () => {
       bodyMarkdown: note.bodyMarkdown
     };
     const html = render(ready(), {
-      editing: { draft, canSave: false, saving: false, error: "conflict" }
+      editing: { base: editBase(note), draft, canSave: false, saving: false, error: "conflict" }
     });
     expect(html).not.toContain("<h1");
     expect(html).toMatch(/<label[^>]*>Title<\/label>/);
@@ -202,6 +204,23 @@ describe("Note page header", () => {
     expect(render(ready(), { review: { pending: false, failed: true } })).toContain(
       "The note could not be marked as reviewed."
     );
+  });
+
+  it("asks before leaving an unsaved edit: keep editing or discard, as a labelled alert dialog", () => {
+    const html = plain(
+      renderToString(<NoteLeaveDialog t={en} onKeepEditing={noop} onDiscard={noop} />)
+    );
+    expect(html).toMatch(/^<dialog[^>]*role="alertdialog"/);
+    const labelledBy = /aria-labelledby="([^"]+)"/.exec(html)?.[1];
+    const describedBy = /aria-describedby="([^"]+)"/.exec(html)?.[1];
+    expect(html).toMatch(
+      new RegExp(`<h2 id="${labelledBy}"[^>]*>Discard your unsaved edit\\?</h2>`)
+    );
+    expect(html).toMatch(new RegExp(`<p id="${describedBy}"[^>]*>You changed this note`));
+    expect(html).toContain(">Keep editing<");
+    expect(html).toContain(">Discard changes<");
+    // Keeping the edit comes last, as the default action of the dialog.
+    expect(html.indexOf(">Discard changes<")).toBeLessThan(html.indexOf(">Keep editing<"));
   });
 });
 
@@ -302,9 +321,16 @@ describe("Note page relations", () => {
     expect(html).toContain(">Decided<");
   });
 
-  it("writes a missing explanation when the card opens, and shows who wrote it", () => {
-    const writing = render(ready(), { openCard: fixtureId(60) });
+  it("says it writes a missing explanation only once it was asked for, and shows who wrote it", () => {
+    // Before the dwell nothing is being written, so nothing says so.
+    const opened = render(ready(), { openCard: fixtureId(60) });
+    expect(opened).not.toContain("Writing an explanation");
+    const writing = render(ready(), {
+      openCard: fixtureId(60),
+      explanations: { [fixtureId(60)]: { status: "writing" } }
+    });
     expect(writing).toContain("Writing an explanation…");
+    expect(writing).toContain('aria-busy="true"');
     const explained = render(
       ready(
         notePage({
@@ -339,6 +365,17 @@ describe("Note page relations", () => {
     expect(failed({ status: "failed", kind: "noModel" })).toContain(
       "No model is set up to write explanations."
     );
+  });
+
+  it("ends the writing state when the relation is gone, with no Retry to loop on", () => {
+    const html = render(ready(), {
+      openCard: fixtureId(60),
+      explanations: { [fixtureId(60)]: { status: "unavailable" } }
+    });
+    expect(html).toContain("This relation is no longer available, so it cannot be explained.");
+    expect(html).not.toContain("Writing an explanation");
+    expect(html).not.toContain('aria-busy="true"');
+    expect(html).not.toContain(">Retry<");
   });
 
   it("states an unknown direction neutrally and a contrast without claiming a contradiction", () => {
@@ -380,6 +417,21 @@ describe("Note page translations", () => {
         const html = render(load, { openCard: fixtureId(60) }, t);
         expect(html, `${locale} ${load.status}`).not.toContain("[[missing");
         expect(html).not.toContain("notePage.");
+      }
+      const unavailable = render(
+        ready(),
+        {
+          openCard: fixtureId(60),
+          explanations: { [fixtureId(60)]: { status: "unavailable" } }
+        },
+        t
+      );
+      const dialog = renderToString(
+        <NoteLeaveDialog t={t} onKeepEditing={noop} onDiscard={noop} />
+      );
+      for (const html of [unavailable, dialog]) {
+        expect(html, locale).not.toContain("[[missing");
+        expect(html, locale).not.toContain("notePage.");
       }
     }
   });

@@ -1,17 +1,26 @@
 import { Fragment, createElement, type ReactNode } from "react";
-import type {
-  NotePage,
-  NotePageEvidence,
-  NotePageNote,
-  NotePageRelation,
-  NotePageRelationExplanation
+import {
+  notePageLimits,
+  type NotePage,
+  type NotePageEvidence,
+  type NotePageNote,
+  type NotePageRelation,
+  type NotePageRelationExplanation
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 
 import { relationTypeView } from "../../lib/relation-stance";
+import type { NavigationDirection } from "../../lib/window-navigation";
 
-/** Hover timing of the relation evidence card. */
-export const notePageTiming = { cardOpenDelayMs: 300, cardCloseDelayMs: 150 } as const;
+/**
+ * Timing of the relation evidence card: the hover delays, and how long a card must stay open on
+ * the same row before its explanation is asked for (a pass-through hover or a tab past never asks).
+ */
+export const notePageTiming = {
+  cardOpenDelayMs: 300,
+  cardCloseDelayMs: 150,
+  explainDwellMs: 600
+} as const;
 
 /** What the header says about the note, in precedence order; `superseded` is reported apart. */
 export type NoteHeaderState =
@@ -215,7 +224,7 @@ export interface CardContent {
 
 /**
  * What the evidence card of a relation shows. Every relation has a card: when no explanation is
- * stored, opening the card asks for one (docs/plan.md decision 16).
+ * stored, a card that stays open asks for one (docs/plan.md decision 16).
  */
 export function cardContent(
   relation: NotePageRelation,
@@ -236,6 +245,31 @@ export function cardContent(
     explanation: relation.explanation,
     decidedBy: relation.decidedBy
   };
+}
+
+/**
+ * The explanation of an open card while it is being written, why it could not be, or that the
+ * relation can no longer be explained (it, or one of its notes, is no longer current).
+ */
+export type ExplanationState =
+  | { status: "writing" }
+  | { status: "unavailable" }
+  | { status: "failed"; kind: "noModel" | "failed" };
+
+/** Whether a card asks for an explanation: none is stored and the relation was not found gone. */
+export function asksForExplanation(
+  relation: Pick<NotePageRelation, "explanation"> | undefined,
+  state: ExplanationState | undefined
+): boolean {
+  return relation !== undefined && relation.explanation === null && state?.status !== "unavailable";
+}
+
+/**
+ * What the card holds once the request answered: nothing when the explanation was written (the
+ * relation carries it), a terminal "unavailable" when there was nothing to explain.
+ */
+export function explanationAfter(result: { text: string } | null): ExplanationState | null {
+  return result ? null : { status: "unavailable" };
 }
 
 /** A stale write token shows as a conflict; everything else is a plain failure. */
@@ -272,6 +306,33 @@ export function editChanges(
   return Object.keys(changes).length > 0 ? changes : null;
 }
 
+/** The version an edit started from: its fields and its write token. */
+export type NoteEditBase = NoteDraft & { updatedAt: string };
+
+export function editBase(
+  note: Pick<NotePageNote, "title" | "ideaStatement" | "bodyMarkdown" | "updatedAt">
+): NoteEditBase {
+  return {
+    title: note.title,
+    ideaStatement: note.ideaStatement,
+    bodyMarkdown: note.bodyMarkdown,
+    updatedAt: note.updatedAt
+  };
+}
+
+/**
+ * The edit to send: the fields changed since the version the draft started from, with that
+ * version's write token, so a note changed meanwhile is a conflict, never silently overwritten.
+ */
+export function editRequest(
+  noteId: string,
+  edit: { base: NoteEditBase; draft: NoteDraft }
+): ({ id: string; action: "edit"; expectedUpdatedAt: string } & Partial<NoteDraft>) | null {
+  const changes = editChanges(edit.base, edit.draft);
+  if (changes === null || changes === "invalid") return null;
+  return { id: noteId, action: "edit", expectedUpdatedAt: edit.base.updatedAt, ...changes };
+}
+
 /** Whether the draft still equals the note: Escape cancels only a pristine edit. */
 export function isPristineDraft(
   note: Pick<NotePageNote, "title" | "ideaStatement" | "bodyMarkdown">,
@@ -284,7 +345,50 @@ export function isPristineDraft(
   );
 }
 
-/** Relations asked for when the page is read again: the rows already shown stay on screen. */
+/** Whether leaving the page now would lose typed text: an open edit that is not pristine. */
+export function hasUnsavedEdit(edit: { base: NoteDraft; draft: NoteDraft } | null): boolean {
+  return edit !== null && !isPristineDraft(edit.base, edit.draft);
+}
+
+/**
+ * A history listener (Back, Forward, Cmd-[ and Cmd-], mouse buttons) that holds the move while an
+ * unsaved edit is open and asks instead; with nothing unsaved it lets the move through.
+ */
+export function unsavedEditNavigationGuard(
+  hasUnsaved: () => boolean,
+  ask: (direction: NavigationDirection) => void
+): (direction: NavigationDirection) => boolean {
+  return (direction) => {
+    if (!hasUnsaved()) return false;
+    ask(direction);
+    return true;
+  };
+}
+
+/**
+ * The next text of the polite live region. It speaks only when its text changes, so the same
+ * outcome twice in a row alternates a trailing no-break space and is announced again.
+ */
+export function nextAnnouncement(previous: string, text: string): string {
+  return previous === text ? `${text}\u00a0` : text;
+}
+
+/**
+ * Relations asked for when the page is read again: as many rows as are shown, within the page
+ * size the schema allows. Rows shown past it are kept by `keepShownRelations`.
+ */
 export function refreshRelationLimit(shown: number): number {
-  return Math.min(Math.max(shown, 20), 50);
+  return Math.min(Math.max(shown, notePageLimits.relationPage), notePageLimits.relationPageMax);
+}
+
+/**
+ * The page read again, keeping the rows that were shown past its first page ("Show more"), so a
+ * refresh never shortens the list. The refreshed rows and total win; kept rows are not re-read.
+ */
+export function keepShownRelations(shown: NotePage | null, refreshed: NotePage): NotePage {
+  const fresh = refreshed.relations.items;
+  if (!shown || shown.relations.items.length <= fresh.length) return refreshed;
+  const known = new Set(fresh.map((item) => item.id));
+  const tail = shown.relations.items.slice(fresh.length).filter((item) => !known.has(item.id));
+  return { ...refreshed, relations: { ...refreshed.relations, items: [...fresh, ...tail] } };
 }

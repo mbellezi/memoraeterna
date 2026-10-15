@@ -2802,6 +2802,12 @@
       "conflict": "Cette note a changé depuis le début de votre modification. Votre modification n’a pas été enregistrée.",
       "discardAndReload": "Abandonner ma modification et recharger"
     },
+    "leave": {
+      "title": "Abandonner votre modification non enregistrée ?",
+      "description": "Vous avez modifié cette note sans l’enregistrer. Continuez la modification pour l’enregistrer, ou abandonnez les changements et poursuivez.",
+      "keepEditing": "Continuer la modification",
+      "discard": "Abandonner les changements"
+    },
     "review": {
       "failed": "La note n’a pas pu être marquée comme relue. Réessayez."
     },
@@ -2890,7 +2896,8 @@
       "writing": "Rédaction d’une explication…",
       "explainedBy": "Expliquée par {model}",
       "explainFailed": "L’explication n’a pas pu être rédigée.",
-      "explainNoModel": "Aucun modèle n’est configuré pour rédiger des explications."
+      "explainNoModel": "Aucun modèle n’est configuré pour rédiger des explications.",
+      "explainUnavailable": "Cette relation n’est plus disponible, elle ne peut donc pas être expliquée."
     }
   }
 }

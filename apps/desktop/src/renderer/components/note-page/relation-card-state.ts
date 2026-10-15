@@ -3,8 +3,10 @@ import { notePageTiming } from "./note-page-model";
 /**
  * The relation evidence card, as a pure reducer: it opens at once on keyboard focus and after a
  * short delay on hover, stays open while the pointer or focus is on its row, closes with Escape
- * (until both pointer and focus have left the row) and only one card is open at a time. The
- * component owns the timers; `pending` says which one to run.
+ * (until both pointer and focus have left the row) and only one card is open at a time. A card
+ * asks for its explanation only once it has stayed open on the same row for a dwell, so a
+ * pass-through hover or a tab past asks for nothing. The component owns the timers; `pending` and
+ * `dwell` say which ones to run.
  */
 export interface CardState {
   open: string | null;
@@ -12,6 +14,9 @@ export interface CardState {
   pointerOver: string | null;
   focusWithin: string | null;
   suppressed: string | null;
+  /** The open card that stayed open for the dwell: its explanation may be asked for. */
+  explain: string | null;
+  dwell: { id: string; delayMs: number } | null;
 }
 
 export type CardEvent =
@@ -21,6 +26,9 @@ export type CardEvent =
   | { type: "focusOut"; id: string }
   | { type: "escape" }
   | { type: "timer" }
+  | { type: "dwell" }
+  /** A deliberate request on the open card (Retry) asks at once, without the dwell. */
+  | { type: "explainNow"; id: string }
   | { type: "reset" };
 
 export const initialCardState: CardState = {
@@ -28,8 +36,45 @@ export const initialCardState: CardState = {
   pending: null,
   pointerOver: null,
   focusWithin: null,
-  suppressed: null
+  suppressed: null,
+  explain: null,
+  dwell: null
 };
+
+/**
+ * Escape closes an open card wherever focus is (a card opened by hover holds none), except while
+ * typing or when something closer already handled the key.
+ */
+export function escapeClosesCard(event: {
+  key: string;
+  defaultPrevented: boolean;
+  target: unknown;
+}): boolean {
+  if (event.key !== "Escape" || event.defaultPrevented) return false;
+  const target = event.target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  if (typeof target !== "object" || target === null) return true;
+  if (target.isContentEditable === true) return false;
+  return !["INPUT", "TEXTAREA", "SELECT"].includes(String(target.tagName).toUpperCase());
+}
+
+/** Every change of the open card restarts the dwell; closing it forgets the explanation request. */
+export function cardReducer(state: CardState, event: CardEvent): CardState {
+  if (event.type === "dwell")
+    return state.dwell !== null && state.dwell.id === state.open
+      ? { ...state, dwell: null, explain: state.open }
+      : state;
+  if (event.type === "explainNow")
+    return state.open === event.id && state.explain !== event.id
+      ? { ...state, dwell: null, explain: event.id }
+      : state;
+  const next = transition(state, event);
+  if (next.open === state.open) return next;
+  return {
+    ...next,
+    explain: null,
+    dwell: next.open === null ? null : { id: next.open, delayMs: notePageTiming.explainDwellMs }
+  };
+}
 
 /** A suppressed row is released once neither the pointer nor focus is on it. */
 function release(state: CardState): CardState {
@@ -39,7 +84,10 @@ function release(state: CardState): CardState {
     : state;
 }
 
-export function cardReducer(state: CardState, event: CardEvent): CardState {
+function transition(
+  state: CardState,
+  event: Exclude<CardEvent, { type: "dwell" | "explainNow" }>
+): CardState {
   switch (event.type) {
     case "focusIn": {
       const next = { ...state, focusWithin: event.id };

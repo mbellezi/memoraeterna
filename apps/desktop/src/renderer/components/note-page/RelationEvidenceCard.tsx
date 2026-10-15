@@ -8,11 +8,14 @@ import { relationTypeView, stanceTextClass } from "../../lib/relation-stance";
 import { StanceGlyph } from "../glyphs";
 import { Button } from "../ui/button";
 import { NoteRefText } from "./NoteRefText";
-import { interpolateNodes, relationSentence, type CardContent } from "./note-page-model";
+import {
+  interpolateNodes,
+  relationSentence,
+  type CardContent,
+  type ExplanationState
+} from "./note-page-model";
 
-/** The explanation of an open card while it is being written, or why it could not be. */
-export type ExplanationState =
-  { status: "writing" } | { status: "failed"; kind: "noModel" | "failed" };
+export type { ExplanationState } from "./note-page-model";
 
 function scrollContainerBottom(element: HTMLElement): number {
   for (let parent = element.parentElement; parent; parent = parent.parentElement) {
@@ -25,7 +28,8 @@ function scrollContainerBottom(element: HTMLElement): number {
 
 /**
  * The evidence of a relation, shown beside its row on hover or focus: what the relation says, the
- * two passages, the explanation (written when the card opens if none is stored) and who decided.
+ * two passages, the explanation (written once the card stayed open, if none is stored) and who
+ * decided.
  * It is non-modal (a group, never a dialog), holds no focus of its own and never answers Cmd-W.
  */
 export function RelationEvidenceCard({
@@ -40,7 +44,10 @@ export function RelationEvidenceCard({
   thisId: string;
   relation: NotePageRelation;
   content: CardContent;
-  /** Set while an explanation is written or after it failed; absent once one is shown. */
+  /**
+   * Set while an explanation is written, after it failed or when there is none to write; absent
+   * before the card asked for one (the dwell) and once one is shown.
+   */
   explanation: ExplanationState | null;
   onRetryExplanation: () => void;
 }) {
@@ -73,8 +80,7 @@ export function RelationEvidenceCard({
         }
       : null
   ].filter((passage) => passage !== null);
-  const writing =
-    !content.explanation && (explanation === null || explanation.status === "writing");
+  const writing = !content.explanation && explanation?.status === "writing";
   return (
     <div
       ref={ref}
@@ -158,6 +164,8 @@ export function RelationEvidenceCard({
         <p role="status" aria-busy="true" className="text-sm text-muted-foreground">
           {t("notePage.card.writing")}
         </p>
+      ) : explanation?.status === "unavailable" ? (
+        <p className="text-sm text-muted-foreground">{t("notePage.card.explainUnavailable")}</p>
       ) : explanation?.status === "failed" ? (
         <div role="alert" className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-foreground">

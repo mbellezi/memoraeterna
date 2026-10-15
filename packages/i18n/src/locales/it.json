@@ -2795,6 +2795,12 @@
       "conflict": "Questa nota è cambiata dopo che hai iniziato a modificarla. La tua modifica non è stata salvata.",
       "discardAndReload": "Scarta la mia modifica e ricarica"
     },
+    "leave": {
+      "title": "Scartare la modifica non salvata?",
+      "description": "Hai modificato questa nota senza salvarla. Continua a modificare per salvarla, oppure scarta le modifiche e prosegui.",
+      "keepEditing": "Continua a modificare",
+      "discard": "Scarta le modifiche"
+    },
     "review": {
       "failed": "Impossibile segnare la nota come rivista. Riprova."
     },
@@ -2883,7 +2889,8 @@
       "writing": "Sto scrivendo una spiegazione…",
       "explainedBy": "Spiegata da {model}",
       "explainFailed": "Impossibile scrivere la spiegazione.",
-      "explainNoModel": "Nessun modello è configurato per scrivere spiegazioni."
+      "explainNoModel": "Nessun modello è configurato per scrivere spiegazioni.",
+      "explainUnavailable": "Questa relazione non è più disponibile, quindi non può essere spiegata."
     }
   }
 }

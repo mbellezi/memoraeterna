@@ -1,25 +1,34 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTranslator } from "@app/i18n";
 
+import { createNavigationRouter } from "../../lib/window-navigation";
 import { notePageLoadDecision, notePageOpenedObject } from "./NotePage";
 import {
+  asksForExplanation,
   cardContent,
+  editBase,
   editChanges,
+  editRequest,
   evidenceLinkState,
   evidenceLocator,
   evidenceSummary,
+  explanationAfter,
   explanationErrorKind,
   formatNoteDate,
+  hasUnsavedEdit,
   interpolateNodes,
   isPristineDraft,
+  keepShownRelations,
+  nextAnnouncement,
   noteActions,
   noteHeaderState,
   noteRefSegments,
   provenanceMessage,
   refreshRelationLimit,
   relationSentence,
-  reviewErrorKind
+  reviewErrorKind,
+  unsavedEditNavigationGuard
 } from "./note-page-model";
 import { evidenceItem, fixtureAt, fixtureId, notePage, relationItem } from "./note-page-fixtures";
 
@@ -227,10 +236,106 @@ describe("actions", () => {
     expect(isPristineDraft(note, { ...draft, title: "x" })).toBe(false);
   });
 
-  it("keeps the rows already shown when the page is read again", () => {
+  it("asks for as many rows as are shown on a refresh, within the schema's page cap", () => {
     expect(refreshRelationLimit(0)).toBe(20);
     expect(refreshRelationLimit(35)).toBe(35);
     expect(refreshRelationLimit(80)).toBe(50);
+  });
+
+  it("keeps the rows shown past the first page when the page is read again", () => {
+    const rows = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, index) =>
+        relationItem({ id: fixtureId(1000 + from + index) })
+      );
+    const shown = notePage({ relations: { items: rows(0, 80), total: 80 } });
+    const refreshed = notePage({ relations: { items: rows(0, 50), total: 80 } });
+    const kept = keepShownRelations(shown, refreshed);
+    expect(kept.relations.items).toHaveLength(80);
+    expect(kept.relations.items.map((item) => item.id)).toEqual(
+      shown.relations.items.map((item) => item.id)
+    );
+    // A row that moved into the first page is not listed twice; the refreshed total wins.
+    const moved = notePage({ relations: { items: [...rows(1, 50), rows(60, 61)[0]!], total: 79 } });
+    const merged = keepShownRelations(shown, moved);
+    expect(new Set(merged.relations.items.map((item) => item.id)).size).toBe(
+      merged.relations.items.length
+    );
+    expect(merged.relations.total).toBe(79);
+    expect(keepShownRelations(null, refreshed)).toBe(refreshed);
+    expect(keepShownRelations(refreshed, shown)).toBe(shown);
+  });
+
+  it("takes an edit against the version it started from, not a page refreshed meanwhile", () => {
+    const v1 = notePage().note;
+    const v2 = { ...v1, title: "Changed elsewhere", updatedAt: "2026-10-15T10:00:00.000Z" };
+    const base = editBase(v1);
+    const draft = { title: v1.title, ideaStatement: v1.ideaStatement, bodyMarkdown: "Mine." };
+    // The page now shows v2; the request still names v1, so the server answers with a conflict.
+    expect(editRequest(v2.id, { base, draft })).toEqual({
+      id: v1.id,
+      action: "edit",
+      expectedUpdatedAt: v1.updatedAt,
+      bodyMarkdown: "Mine."
+    });
+    expect(editRequest(v1.id, { base, draft: { ...draft, bodyMarkdown: v1.bodyMarkdown } })).toBe(
+      null
+    );
+    expect(editRequest(v1.id, { base, draft: { ...draft, title: " " } })).toBe(null);
+  });
+
+  it("holds Back and Forward while an unsaved edit is open and asks first", () => {
+    const base = editBase(note);
+    const pristine = { base, draft: { ...base } };
+    const changed = { base, draft: { ...base, title: "Typed" } };
+    expect(hasUnsavedEdit(null)).toBe(false);
+    expect(hasUnsavedEdit(pristine)).toBe(false);
+    expect(hasUnsavedEdit(changed)).toBe(true);
+
+    let editing: typeof changed | null = changed;
+    const router = createNavigationRouter(() => 1_000);
+    const library = vi.fn(() => true);
+    const ask = vi.fn();
+    router.subscribe(library);
+    router.subscribe(
+      unsavedEditNavigationGuard(() => hasUnsavedEdit(editing), ask),
+      5
+    );
+    expect(router.dispatch("back", "native")).toBe(true);
+    expect(ask).toHaveBeenCalledWith("back");
+    expect(library).not.toHaveBeenCalled();
+    // Discarded: the same move goes through to the Library's history.
+    editing = null;
+    router.dispatch("forward", "native");
+    expect(library).toHaveBeenCalledWith("forward");
+    expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it("announces the same outcome twice by changing the live region's text", () => {
+    const first = nextAnnouncement("", "Saved.");
+    const second = nextAnnouncement(first, "Saved.");
+    const third = nextAnnouncement(second, "Saved.");
+    expect(first).toBe("Saved.");
+    expect(second).not.toBe(first);
+    expect(second.trim()).toBe("Saved.");
+    expect(third).not.toBe(second);
+    expect(nextAnnouncement(second, "Reviewed.")).toBe("Reviewed.");
+  });
+});
+
+describe("explanations on demand", () => {
+  it("ends the writing state for a relation found gone and never asks for it again", () => {
+    const relation = relationItem();
+    expect(asksForExplanation(relation, undefined)).toBe(true);
+    const gone = explanationAfter(null);
+    expect(gone).toEqual({ status: "unavailable" });
+    expect(asksForExplanation(relation, gone!)).toBe(false);
+    expect(explanationAfter({ text: "Both describe recall." })).toBeNull();
+    // A failure is asked for again on the next deliberate open; a stored one never is.
+    expect(asksForExplanation(relation, { status: "failed", kind: "failed" })).toBe(true);
+    expect(
+      asksForExplanation(relationItem({ explanation: { text: "x", writtenBy: "w" } }), undefined)
+    ).toBe(false);
+    expect(asksForExplanation(undefined, undefined)).toBe(false);
   });
 });
 

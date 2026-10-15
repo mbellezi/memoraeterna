@@ -2804,6 +2804,12 @@
       "conflict": "Esta nota cambió después de que empezaras a editarla. Tu edición no se guardó.",
       "discardAndReload": "Descartar mi edición y recargar"
     },
+    "leave": {
+      "title": "¿Descartar tu edición sin guardar?",
+      "description": "Cambiaste esta nota y no la guardaste. Sigue editando para guardarla o descarta los cambios y continúa.",
+      "keepEditing": "Seguir editando",
+      "discard": "Descartar cambios"
+    },
     "review": {
       "failed": "No se pudo marcar la nota como revisada. Inténtalo de nuevo."
     },
@@ -2892,7 +2898,8 @@
       "writing": "Escribiendo una explicación…",
       "explainedBy": "Explicada por {model}",
       "explainFailed": "No se pudo escribir la explicación.",
-      "explainNoModel": "No hay ningún modelo configurado para escribir explicaciones."
+      "explainNoModel": "No hay ningún modelo configurado para escribir explicaciones.",
+      "explainUnavailable": "Esta relación ya no está disponible, así que no se puede explicar."
     }
   }
 }

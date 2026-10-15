@@ -58,7 +58,7 @@ import {
   type RecentTarget
 } from "../lib/view-history";
 import { RecentObjects } from "./RecentObjects";
-import { NotePage } from "./note-page/NotePage";
+import { NotePage, type NoteLeaveGuard } from "./note-page/NotePage";
 import { ImportView, childSourceType } from "./ImportView";
 import { AiNoteBadge } from "./AiNoteBadge";
 import { Tabs } from "./ui/tabs";
@@ -366,6 +366,11 @@ export function LibraryView({
   const passageToken = useRef(0);
   // A note open as a page covers the source path (or the list), which stays mounted underneath.
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  // The open note page's guard: it asks before a move drops its unsaved edit.
+  const noteLeaveGuard = useRef<NoteLeaveGuard | null>(null);
+  const registerNoteLeaveGuard = useStableCallback((guard: NoteLeaveGuard | null) => {
+    noteLeaveGuard.current = guard;
+  });
   // The control that opened the note page from the covered surface, focused again when it closes.
   const noteOpener = useRef<HTMLElement | null>(null);
   const shownNoteId = useRef<string | null>(null);
@@ -530,45 +535,53 @@ export function LibraryView({
   useEffect(() => {
     if (!externalTarget || consumedTargetToken.current === externalTarget.token) return;
     consumedTargetToken.current = externalTarget.token;
-    const cameFromSearch =
-      externalTarget.origin !== "knowledgeGraph" &&
-      externalTarget.origin !== "wiki" &&
-      externalTarget.origin !== "import" &&
-      externalTarget.origin !== "recents";
-    // Opened from another view while hidden: describe where Back leads before adding the source.
-    if (!wasActive.current) {
-      const opening = libraryHistoryEntryForOpening(
-        externalTarget.origin,
-        libraryHistoryEntryFromState(window.history.state)
-      );
-      if (opening) replaceLibraryHistory(opening);
-    }
+    const target = externalTarget;
+    const openedWhileHidden = !wasActive.current;
     // A note target opens the note as a page over its source; a passage target opens the reader.
-    const noteId = externalTarget.passage ? null : (externalTarget.atomicNoteId ?? null);
-    pushLibraryHistory({
-      view: "library",
-      path: [externalTarget.sourceItemId],
-      fromSearch: cameFromSearch,
-      ...(noteId ? { noteId } : {})
-    });
-    onNavigate?.();
-    setFromSearch(cameFromSearch);
-    setStack([externalTarget.sourceItemId]);
-    setOpenedTarget(externalTarget);
-    noteOpener.current = null;
-    setOpenNoteId(noteId);
-    passageToken.current += 1;
-    setPassageTarget(
-      externalTarget.passage
-        ? {
-            sourceItemId: externalTarget.sourceItemId,
-            passage: externalTarget.passage,
-            token: passageToken.current
-          }
-        : null
-    );
-    onTargetConsumed?.(externalTarget.token);
-  }, [externalTarget, onNavigate, onTargetConsumed]);
+    const noteId = target.passage ? null : (target.atomicNoteId ?? null);
+    const open = () => {
+      const cameFromSearch =
+        target.origin !== "knowledgeGraph" &&
+        target.origin !== "wiki" &&
+        target.origin !== "import" &&
+        target.origin !== "recents";
+      // Opened from another view while hidden: describe where Back leads before adding the source.
+      if (openedWhileHidden) {
+        const opening = libraryHistoryEntryForOpening(
+          target.origin,
+          libraryHistoryEntryFromState(window.history.state)
+        );
+        if (opening) replaceLibraryHistory(opening);
+      }
+      pushLibraryHistory({
+        view: "library",
+        path: [target.sourceItemId],
+        fromSearch: cameFromSearch,
+        ...(noteId ? { noteId } : {})
+      });
+      onNavigate?.();
+      setFromSearch(cameFromSearch);
+      setStack([target.sourceItemId]);
+      setOpenedTarget(target);
+      noteOpener.current = null;
+      setOpenNoteId(noteId);
+      passageToken.current += 1;
+      setPassageTarget(
+        target.passage
+          ? {
+              sourceItemId: target.sourceItemId,
+              passage: target.passage,
+              token: passageToken.current
+            }
+          : null
+      );
+    };
+    // A target that replaces the open note page waits until its unsaved edit is discarded.
+    const guard = noteId === openNoteId ? null : noteLeaveGuard.current;
+    if (guard) guard(open);
+    else open();
+    onTargetConsumed?.(target.token);
+  }, [externalTarget, onNavigate, onTargetConsumed, openNoteId]);
 
   // Leaving the source that the target opened ends the target: Back and focus no longer apply.
   if (openedTarget && stack[0] !== openedTarget.sourceItemId) setOpenedTarget(null);
@@ -792,6 +805,7 @@ export function LibraryView({
       onOpenPassage={openPassageFromNote}
       onNavigate={navigateObject}
       onChanged={() => setRefreshKey((key) => key + 1)}
+      onLeaveGuard={registerNoteLeaveGuard}
     />
   ) : null;
   // The surface a note page covers stays mounted in the same place of the tree (its tab, editor

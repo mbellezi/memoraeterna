@@ -6,20 +6,37 @@ import { closePanelPriority, subscribeClosePanel } from "../../lib/close-panel";
 import { isSilentRefresh, type LoadOutcome } from "../../lib/hidden-view";
 import type { PassageAnchor } from "../../lib/object-navigation";
 import { recordView, viewsToRecord, type OpenedObject } from "../../lib/view-history";
+import { dispatchWindowNavigation, subscribeWindowNavigation } from "../../lib/window-navigation";
 import { useObjectOpener, type OpenableNavigation } from "../WhereIsThis";
 import type { NoteEditing } from "./NoteHeader";
+import { NoteLeaveDialog } from "./NoteLeaveDialog";
 import { NotePageView, type NotePageLoad } from "./NotePageView";
 import type { RelationsMore } from "./NoteRelations";
-import type { ExplanationState } from "./RelationEvidenceCard";
 import {
+  asksForExplanation,
+  editBase,
   editChanges,
+  editRequest,
+  explanationAfter,
   explanationErrorKind,
+  hasUnsavedEdit,
   isPristineDraft,
+  keepShownRelations,
+  nextAnnouncement,
   refreshRelationLimit,
   reviewErrorKind,
-  type NoteDraft
+  unsavedEditNavigationGuard,
+  type ExplanationState,
+  type NoteDraft,
+  type NoteEditBase
 } from "./note-page-model";
-import { cardReducer, initialCardState } from "./relation-card-state";
+import { cardReducer, escapeClosesCard, initialCardState } from "./relation-card-state";
+
+/** Above the Library's history listener (0), below dialogs and overlays that claim Back (10+). */
+const unsavedEditNavigationPriority = 5;
+
+/** Runs `go` at once, or once the owner chose to discard the unsaved edit of the page. */
+export type NoteLeaveGuard = (go: () => void) => void;
 
 export interface NotePageProps {
   noteId: string;
@@ -34,6 +51,8 @@ export interface NotePageProps {
   onNavigate(navigation: OpenableNavigation): void;
   /** After a review or an edit, so the host can refresh what it keeps of the note. */
   onChanged?(): void;
+  /** Receives the page's guard for moves the host makes itself (an object opened elsewhere). */
+  onLeaveGuard?(guard: NoteLeaveGuard | null): void;
 }
 
 /**
@@ -83,7 +102,10 @@ function without<T>(record: Readonly<Record<string, T>>, key: string): Record<st
   return next;
 }
 
-/** The Note page container: loading, actions, explanations on open, Cmd-W, history and focus. */
+/**
+ * The Note page container: loading, actions, explanations on a deliberate open, Cmd-W, history,
+ * the guard of unsaved edits and focus.
+ */
 export function NotePage({
   noteId,
   active,
@@ -93,31 +115,52 @@ export function NotePage({
   onOpenNote,
   onOpenPassage,
   onNavigate,
-  onChanged
+  onChanged,
+  onLeaveGuard
 }: NotePageProps) {
   const [load, setLoad] = useState<NotePageLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [editing, setEditing] = useState<NoteEditing | null>(null);
+  const [leaving, setLeaving] = useState<{ go: () => void } | null>(null);
   const [review, setReview] = useState({ pending: false, failed: false });
   const [more, setMore] = useState<RelationsMore>({ status: "idle" });
   const [explanations, setExplanations] = useState<Record<string, ExplanationState>>({});
   const [explainRetry, setExplainRetry] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const [card, dispatchCard] = useReducer(cardReducer, initialCardState);
-  const opener = useObjectOpener(onNavigate);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const editRef = useRef<HTMLButtonElement>(null);
   const outcome = useRef<LoadOutcome | null>(null);
   const wasHidden = useRef(false);
   const shown = useRef<NotePageData | null>(null);
+  const editingNow = useRef<NoteEditing | null>(null);
+  const explanationsNow = useRef<Readonly<Record<string, ExplanationState>>>({});
   const recorded = useRef<ReadonlySet<string>>(new Set());
   const focusedHeading = useRef(false);
   const focusEdit = useRef(false);
   const key = `${noteId}|${attempt}`;
 
+  // Every move off the page (or onto another note) asks first when it would drop an unsaved edit.
+  const leave = (go: () => void) => {
+    if (hasUnsavedEdit(editing)) setLeaving({ go });
+    else go();
+  };
+  // A legacy wiki page opens in the Wiki and keeps this page, and its draft, mounted underneath.
+  const opener = useObjectOpener((navigation) =>
+    navigation.type === "legacyPage" ? onNavigate(navigation) : leave(() => onNavigate(navigation))
+  );
+
   useEffect(() => {
     shown.current = load.status === "ready" ? load.page : null;
   }, [load]);
+
+  useEffect(() => {
+    editingNow.current = editing;
+  }, [editing]);
+
+  useEffect(() => {
+    explanationsNow.current = explanations;
+  }, [explanations]);
 
   useEffect(() => {
     const decision = notePageLoadDecision({
@@ -149,11 +192,12 @@ export function NotePage({
           setLoad({ status: "missing" });
           return;
         }
-        setLoad((current) =>
-          current.status === "ready" && JSON.stringify(current.page) === JSON.stringify(page)
+        setLoad((current) => {
+          const next = keepShownRelations(current.status === "ready" ? current.page : null, page);
+          return current.status === "ready" && JSON.stringify(current.page) === JSON.stringify(next)
             ? current
-            : { status: "ready", page }
-        );
+            : { status: "ready", page: next };
+        });
       })
       .catch(() => {
         if (!live) return;
@@ -166,9 +210,11 @@ export function NotePage({
     };
   }, [active, key, noteId]);
 
-  // A hidden page closes its card; the editor draft is kept.
+  // A hidden page closes its card and its question about leaving; the editor draft is kept.
   useEffect(() => {
-    if (!active) dispatchCard({ type: "reset" });
+    if (active) return;
+    dispatchCard({ type: "reset" });
+    setLeaving(null);
   }, [active]);
 
   useEffect(() => {
@@ -178,12 +224,30 @@ export function NotePage({
     return () => clearTimeout(timer);
   }, [card.pending]);
 
-  // Opening a relation without a current explanation asks for one; closing the card cancels it.
   useEffect(() => {
-    const relationId = card.open;
+    const dwell = card.dwell;
+    if (!dwell) return;
+    const timer = setTimeout(() => dispatchCard({ type: "dwell" }), dwell.delayMs);
+    return () => clearTimeout(timer);
+  }, [card.dwell]);
+
+  // Escape closes a card opened by hover too, wherever focus is (never while typing).
+  useEffect(() => {
+    if (!active || card.open === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (escapeClosesCard(event)) dispatchCard({ type: "escape" });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [active, card.open]);
+
+  // A card that stayed open asks for the explanation it lacks; closing it first cancels the request.
+  // A relation found gone ends in a terminal state: it is not asked for again.
+  useEffect(() => {
+    const relationId = card.explain;
     if (!active || relationId === null) return;
     const relation = shown.current?.relations.items.find((item) => item.id === relationId);
-    if (!relation || relation.explanation) return;
+    if (!asksForExplanation(relation, explanationsNow.current[relationId])) return;
     let settled = false;
     let canceled = false;
     setExplanations((current) => ({ ...current, [relationId]: { status: "writing" } }));
@@ -195,7 +259,10 @@ export function NotePage({
           setLoad((current) =>
             withExplanation(current, relationId, { text: result.text, writtenBy: result.writtenBy })
           );
-        setExplanations((current) => without(current, relationId));
+        const after = explanationAfter(result);
+        setExplanations((current) =>
+          after ? { ...current, [relationId]: after } : without(current, relationId)
+        );
       })
       .catch((error: unknown) => {
         settled = true;
@@ -211,7 +278,7 @@ export function NotePage({
       void window.app.relations.cancelExplain({ relationId }).catch(() => undefined);
       setExplanations((current) => without(current, relationId));
     };
-  }, [active, card.open, explainRetry]);
+  }, [active, card.explain, explainRetry]);
 
   // Cmd-W closes the page; while editing it keeps the editor (an edit is never discarded).
   const close = useEffectEvent(() => onBack());
@@ -224,6 +291,28 @@ export function NotePage({
       return true;
     }, closePanelPriority.panel);
   }, [active, isEditing]);
+
+  // Back, Forward and their shortcuts and mouse buttons ask before an unsaved edit is dropped.
+  useEffect(() => {
+    if (!active || !isEditing) return;
+    return subscribeWindowNavigation(
+      unsavedEditNavigationGuard(
+        () => hasUnsavedEdit(editingNow.current),
+        (direction) => setLeaving({ go: () => dispatchWindowNavigation(direction) })
+      ),
+      unsavedEditNavigationPriority
+    );
+  }, [active, isEditing]);
+
+  // The host asks the same way before it moves on its own.
+  useEffect(() => {
+    if (!onLeaveGuard) return;
+    onLeaveGuard((go) => {
+      if (hasUnsavedEdit(editingNow.current)) setLeaving({ go });
+      else go();
+    });
+    return () => onLeaveGuard(null);
+  }, [onLeaveGuard]);
 
   // One recorded open per showing of the page; nothing while hidden.
   useEffect(() => {
@@ -257,7 +346,9 @@ export function NotePage({
 
   const page = load.status === "ready" ? load.page : null;
   const reload = () => setAttempt((current) => current + 1);
-  const announce = (text: string) => setAnnouncement(text);
+  // The same outcome twice in a row is announced twice.
+  const announce = (text: string) =>
+    setAnnouncement((previous) => nextAnnouncement(previous, text));
 
   const markReviewed = async () => {
     if (!page || review.pending) return;
@@ -283,16 +374,12 @@ export function NotePage({
 
   const save = async () => {
     if (!page || !editing || editing.saving) return;
-    const changes = editChanges(page.note, editing.draft);
-    if (changes === null || changes === "invalid") return;
+    // Taken against the version the draft started from, never a page refreshed meanwhile.
+    const request = editRequest(page.note.id, editing);
+    if (!request) return;
     setEditing({ ...editing, saving: true, error: null });
     try {
-      await window.app.knowledge.reviewNote({
-        id: page.note.id,
-        action: "edit",
-        expectedUpdatedAt: page.note.updatedAt,
-        ...changes
-      });
+      await window.app.knowledge.reviewNote(request);
       setEditing(null);
       focusEdit.current = true;
       reload();
@@ -305,9 +392,10 @@ export function NotePage({
     }
   };
 
-  const draftState = (draft: NoteDraft): NoteEditing => {
-    const changes = page ? editChanges(page.note, draft) : null;
+  const draftState = (base: NoteEditBase, draft: NoteDraft): NoteEditing => {
+    const changes = editChanges(base, draft);
     return {
+      base,
       draft,
       canSave: changes !== null && changes !== "invalid",
       saving: false,
@@ -320,77 +408,95 @@ export function NotePage({
     focusEdit.current = true;
   };
 
+  const discardAndLeave = () => {
+    if (!leaving) return;
+    // The move below is no longer held by the unsaved edit.
+    editingNow.current = null;
+    setLeaving(null);
+    setEditing(null);
+    leaving.go();
+  };
+
   return (
-    <NotePageView
-      t={t}
-      backLabel={backLabel}
-      load={load}
-      headingRef={headingRef}
-      editRef={editRef}
-      editing={editing}
-      review={review}
-      openCard={card.open}
-      explanations={explanations}
-      more={more}
-      openFailed={opener.openFailed}
-      announcement={announcement}
-      onBack={onBack}
-      onRetry={reload}
-      onMarkReviewed={() => void markReviewed()}
-      onStartEdit={() => {
-        if (!page) return;
-        setEditing(
-          draftState({
-            title: page.note.title,
-            ideaStatement: page.note.ideaStatement,
-            bodyMarkdown: page.note.bodyMarkdown
-          })
-        );
-      }}
-      onDraftChange={(draft) => setEditing(draftState(draft))}
-      onSave={() => void save()}
-      onCancelEdit={cancelEdit}
-      onDiscardAndReload={() => {
-        cancelEdit();
-        reload();
-      }}
-      onEscapeEdit={() => {
-        if (page && editing && isPristineDraft(page.note, editing.draft)) cancelEdit();
-      }}
-      onOpenNote={onOpenNote}
-      onOpenPassage={onOpenPassage}
-      onOpenPlacement={opener.open}
-      onCardEvent={dispatchCard}
-      onRetryExplanation={(relationId) => {
-        setExplanations((current) => without(current, relationId));
-        setExplainRetry((current) => current + 1);
-      }}
-      onShowMore={() => {
-        if (!page || more.status === "loading") return;
-        setMore({ status: "loading" });
-        window.app.notes
-          .relations({
-            noteId,
-            offset: page.relations.items.length,
-            limit: notePageLimits.relationPage
-          })
-          .then((next) => {
-            setLoad((current) => {
-              if (current.status !== "ready") return current;
-              const known = new Set(current.page.relations.items.map((item) => item.id));
-              const items = [
-                ...current.page.relations.items,
-                ...next.items.filter((item) => !known.has(item.id))
-              ];
-              return {
-                status: "ready",
-                page: { ...current.page, relations: { total: next.total, items } }
-              };
-            });
-            setMore({ status: "idle" });
-          })
-          .catch(() => setMore({ status: "error" }));
-      }}
-    />
+    <>
+      <NotePageView
+        t={t}
+        backLabel={backLabel}
+        load={load}
+        headingRef={headingRef}
+        editRef={editRef}
+        editing={editing}
+        review={review}
+        openCard={card.open}
+        explanations={explanations}
+        more={more}
+        openFailed={opener.openFailed}
+        announcement={announcement}
+        onBack={() => leave(onBack)}
+        onRetry={reload}
+        onMarkReviewed={() => void markReviewed()}
+        onStartEdit={() => {
+          if (!page) return;
+          const base = editBase(page.note);
+          setEditing(
+            draftState(base, {
+              title: base.title,
+              ideaStatement: base.ideaStatement,
+              bodyMarkdown: base.bodyMarkdown
+            })
+          );
+        }}
+        onDraftChange={(draft) =>
+          setEditing((current) => current && draftState(current.base, draft))
+        }
+        onSave={() => void save()}
+        onCancelEdit={cancelEdit}
+        onDiscardAndReload={() => {
+          cancelEdit();
+          reload();
+        }}
+        onEscapeEdit={() => {
+          if (editing && isPristineDraft(editing.base, editing.draft)) cancelEdit();
+        }}
+        onOpenNote={(id) => leave(() => onOpenNote(id))}
+        onOpenPassage={(sourceItemId, passage) => leave(() => onOpenPassage(sourceItemId, passage))}
+        onOpenPlacement={opener.open}
+        onCardEvent={dispatchCard}
+        onRetryExplanation={(relationId) => {
+          setExplanations((current) => without(current, relationId));
+          dispatchCard({ type: "explainNow", id: relationId });
+          setExplainRetry((current) => current + 1);
+        }}
+        onShowMore={() => {
+          if (!page || more.status === "loading") return;
+          setMore({ status: "loading" });
+          window.app.notes
+            .relations({
+              noteId,
+              offset: page.relations.items.length,
+              limit: notePageLimits.relationPage
+            })
+            .then((next) => {
+              setLoad((current) => {
+                if (current.status !== "ready") return current;
+                const known = new Set(current.page.relations.items.map((item) => item.id));
+                const items = [
+                  ...current.page.relations.items,
+                  ...next.items.filter((item) => !known.has(item.id))
+                ];
+                return {
+                  status: "ready",
+                  page: { ...current.page, relations: { total: next.total, items } }
+                };
+              });
+              setMore({ status: "idle" });
+            })
+            .catch(() => setMore({ status: "error" }));
+        }}
+      />
+      {leaving ? (
+        <NoteLeaveDialog t={t} onKeepEditing={() => setLeaving(null)} onDiscard={discardAndLeave} />
+      ) : null}
+    </>
   );
 }

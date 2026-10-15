@@ -2800,6 +2800,12 @@
       "conflict": "Esta nota mudou depois que você começou a editar. Sua edição não foi salva.",
       "discardAndReload": "Descartar minha edição e recarregar"
     },
+    "leave": {
+      "title": "Descartar sua edição não salva?",
+      "description": "Você alterou esta nota e não a salvou. Continue editando para salvá-la ou descarte as alterações e siga em frente.",
+      "keepEditing": "Continuar editando",
+      "discard": "Descartar alterações"
+    },
     "review": {
       "failed": "Não foi possível marcar a nota como revisada. Tente de novo."
     },
@@ -2888,7 +2894,8 @@
       "writing": "Escrevendo uma explicação…",
       "explainedBy": "Explicada por {model}",
       "explainFailed": "Não foi possível escrever a explicação.",
-      "explainNoModel": "Nenhum modelo está configurado para escrever explicações."
+      "explainNoModel": "Nenhum modelo está configurado para escrever explicações.",
+      "explainUnavailable": "Esta relação não está mais disponível, então não pode ser explicada."
     }
   }
 }

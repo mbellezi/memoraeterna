@@ -2797,6 +2797,12 @@
       "conflict": "This note changed after you started editing. Your edit was not saved.",
       "discardAndReload": "Discard my edit and reload"
     },
+    "leave": {
+      "title": "Discard your unsaved edit?",
+      "description": "You changed this note and did not save it. Keep editing to save it, or discard the changes and go on.",
+      "keepEditing": "Keep editing",
+      "discard": "Discard changes"
+    },
     "review": {
       "failed": "The note could not be marked as reviewed. Try again."
     },
@@ -2885,7 +2891,8 @@
       "writing": "Writing an explanation…",
       "explainedBy": "Explained by {model}",
       "explainFailed": "The explanation could not be written.",
-      "explainNoModel": "No model is set up to write explanations."
+      "explainNoModel": "No model is set up to write explanations.",
+      "explainUnavailable": "This relation is no longer available, so it cannot be explained."
     }
   }
 }
