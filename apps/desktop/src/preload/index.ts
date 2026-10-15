@@ -36,6 +36,30 @@ import {
 } from "@app/domain";
 import { WikiPageListSchema, WikiQuerySchema, WikiResultsSchema } from "@app/domain";
 import {
+  TopicChangeSetInputSchema,
+  TopicChangeSetSchema,
+  TopicMutationResultSchema,
+  TopicMutationSchema,
+  TopicNotesInputSchema,
+  TopicNotesSchema,
+  TopicPageInputSchema,
+  TopicPageSchema,
+  TopicPathInputSchema,
+  TopicPathSchema,
+  TopicReembedInputSchema,
+  TopicReembedResultSchema,
+  TopicReviewInputSchema,
+  TopicReviewResultSchema,
+  TopicShapeInputSchema,
+  TopicShapeSchema,
+  TopicTreeInputSchema,
+  TopicTreeSchema,
+  TopicUndoInputSchema,
+  TopicUndoResultSchema,
+  TopicsChangedEventSchema,
+  TopicsStatusSchema
+} from "@app/domain";
+import {
   monitoringQuerySchema,
   monitoringPageSchema,
   monitoringDetailSchema,
@@ -230,6 +254,61 @@ const api: DesktopApi = {
             RelationExplainInputSchema.parse(input)
           )
         )
+  },
+  topics: {
+    tree: async (input) =>
+      TopicTreeSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.topicsTree, TopicTreeInputSchema.parse(input ?? {}))
+      ),
+    path: async (input) =>
+      TopicPathSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.topicsPath, TopicPathInputSchema.parse(input))
+      ),
+    page: async (input) =>
+      TopicPageSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.topicsPage, TopicPageInputSchema.parse(input))
+      ),
+    notes: async (input) =>
+      TopicNotesSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.topicsNotes, TopicNotesInputSchema.parse(input))
+      ),
+    shape: async (input) =>
+      TopicShapeSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.topicsShape, TopicShapeInputSchema.parse(input ?? {}))
+      ),
+    changeSet: async (input) =>
+      TopicChangeSetSchema.nullable().parse(
+        await ipcRenderer.invoke(
+          ipcChannels.topicsChangeSet,
+          TopicChangeSetInputSchema.parse(input)
+        )
+      ),
+    mutate: async (input) =>
+      TopicMutationResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.topicsMutate, TopicMutationSchema.parse(input))
+      ),
+    undo: async (input) =>
+      TopicUndoResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.topicsUndo, TopicUndoInputSchema.parse(input))
+      ),
+    review: async (input) =>
+      TopicReviewResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.topicsReview, TopicReviewInputSchema.parse(input))
+      ),
+    status: async () =>
+      TopicsStatusSchema.parse(await ipcRenderer.invoke(ipcChannels.topicsStatus)),
+    reembed: async (input) =>
+      TopicReembedResultSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.topicsReembed, TopicReembedInputSchema.parse(input))
+      ),
+    subscribeChanged(listener) {
+      const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+        const event = TopicsChangedEventSchema.safeParse(payload);
+        if (event.success) listener(event.data);
+      };
+      ipcRenderer.on(ipcChannels.topicsChanged, handler);
+      return () => ipcRenderer.removeListener(ipcChannels.topicsChanged, handler);
+    }
   },
   wiki: {
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),

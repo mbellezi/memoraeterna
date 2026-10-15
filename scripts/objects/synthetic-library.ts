@@ -1,7 +1,23 @@
+import { randomUUID } from "node:crypto";
+
+import { createTopicTreeRepository } from "@app/db";
+import type { PgPool, TopicStatsWrite } from "@app/db";
+import {
+  createRng,
+  deriveSeed,
+  itemKey,
+  placementRecord,
+  topicRecord
+} from "@app/domain/topic-tree";
+import type { ItemKey, PlacementRecord, StructureEvent } from "@app/domain/topic-tree";
+
 /**
  * Synthetic libraries at scale for the latency benchmarks of the objects layer
- * (`locate-benchmark.ts`, `note-page-benchmark.ts`). Each step is one SQL statement for a single
- * session on a throwaway database migrated from scratch; temporary tables carry IDs between steps.
+ * (`locate-benchmark.ts`, `note-page-benchmark.ts`) and of the topic reads
+ * (`scripts/topics/read-benchmark.ts`). Each SQL step is one statement for a single session on a
+ * throwaway database migrated from scratch; temporary tables carry IDs between steps.
+ * `seedTopicTree` then places the notes of such a library in a topic tree through
+ * `topicTreeRepository` (D9: no raw SQL on the topic tables).
  */
 
 /**
@@ -157,3 +173,339 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
     `analyze`
   ];
 };
+
+export interface TopicTreeSeedOptions {
+  /** Topics to create, the root included (default 2,500). */
+  topics?: number;
+  /** Areas under the root (default 10). */
+  areas?: number;
+  /** Subtopics per Area (default 12); the rest of the topics are leaves under them. */
+  subtopicsPerArea?: number;
+  /** Notes left out of the first build and placed by a later "place" change-set (default 400). */
+  heldBack?: number;
+  /** Rename change-sets applied after the build, each one a structural change "today" (default 25). */
+  renames?: number;
+  /** Proposals that wait for the owner (default 3). */
+  proposals?: number;
+  seed?: number;
+}
+
+export interface TopicTreeSeed {
+  treeId: string;
+  rootId: string;
+  areaIds: string[];
+  subtopicIds: string[];
+  leafIds: string[];
+  /** Placed primary items: notes and root sources. */
+  placedItems: number;
+  heldBack: number;
+  changeSetIds: string[];
+  generation: number;
+}
+
+const treeDimensions = 256;
+
+/**
+ * Places the notes and root sources of a seeded library in a topic tree of about `topics` topics:
+ * the root, Areas, subtopics and leaves of 12 to 13 notes, with statistics, centralities, secondary
+ * placements, a few waiting items and health findings, then a "place" change-set for the held-back
+ * notes, rename change-sets and proposals, so that "new this week", "changed today" and the
+ * warnings have rows to read. The library has no vectors, so the statistics are plausible, not
+ * computed from embeddings (the reads never look at the vectors).
+ */
+export async function seedTopicTree(
+  pool: PgPool,
+  options: TopicTreeSeedOptions = {}
+): Promise<TopicTreeSeed> {
+  const areaCount = options.areas ?? 10;
+  const perArea = options.subtopicsPerArea ?? 12;
+  const total = options.topics ?? 2_500;
+  const seed = options.seed ?? 20261015;
+  const rng = createRng(deriveSeed(seed, "topic-tree-seed"));
+  const noteIds = (
+    await pool.query<{ id: string }>("select id from atomic_notes order by id")
+  ).rows.map((row) => row.id);
+  const rootSources = (
+    await pool.query<{ id: string }>(
+      "select id from source_items where parent_source_item_id is null order by id"
+    )
+  ).rows.map((row) => row.id);
+  if (noteIds.length === 0) throw new Error("The library holds no notes to place.");
+
+  const heldBack = Math.min(options.heldBack ?? 400, Math.floor(noteIds.length / 10));
+  const placedNotes = noteIds.slice(0, noteIds.length - heldBack);
+  const laterNotes = noteIds.slice(noteIds.length - heldBack);
+
+  // Structure: the root, the Areas, their subtopics, then leaves spread over the subtopics.
+  const treeId = randomUUID();
+  const rootId = randomUUID();
+  const topics: Array<ReturnType<typeof topicRecord>> = [];
+  const parentOf = new Map<string, string>();
+  const addTopic = (
+    parentId: string,
+    title: string,
+    position: number,
+    extra: Partial<Omit<ReturnType<typeof topicRecord>, "id" | "parentId">> = {}
+  ): string => {
+    const id = randomUUID();
+    topics.push(
+      topicRecord(id, parentId, {
+        role: "topic",
+        title,
+        nameState: "named",
+        nameSource: "llm",
+        nameLanguage: "en",
+        position,
+        ...extra
+      })
+    );
+    parentOf.set(id, parentId);
+    return id;
+  };
+  const areaIds = Array.from({ length: areaCount }, (_, area) =>
+    addTopic(rootId, `Area ${area + 1}`, area, { description: `Area ${area + 1} of the library.` })
+  );
+  const subtopicIds = areaIds.flatMap((area, a) =>
+    Array.from({ length: perArea }, (_, sub) =>
+      addTopic(
+        area,
+        `Subject ${a + 1}.${sub + 1}`,
+        sub,
+        rng.next() < 0.5 ? { description: "A subject." } : {}
+      )
+    )
+  );
+  const leafBudget = Math.max(subtopicIds.length, total - 1 - areaIds.length - subtopicIds.length);
+  const leafIds: string[] = [];
+  const perSubtopic = Math.floor(leafBudget / subtopicIds.length);
+  const spare = leafBudget - perSubtopic * subtopicIds.length;
+  subtopicIds.forEach((subtopic, index) => {
+    const count = perSubtopic + (index < spare ? 1 : 0);
+    for (let leaf = 0; leaf < count; leaf += 1) {
+      leafIds.push(
+        addTopic(
+          subtopic,
+          `Topic ${index + 1}.${leaf + 1}`,
+          leaf,
+          rng.next() < 0.3 ? { aliases: ["Also called"] } : {}
+        )
+      );
+    }
+  });
+
+  // Placements: each note on one leaf (a few also on a second), each root source on a leaf.
+  const placements: Array<{ item: ItemKey; placement: PlacementRecord }> = [];
+  const central = new Map<string, Array<{ item: ItemKey; centrality: number }>>();
+  const members = new Map<string, number>();
+  const remember = (topic: string, item: ItemKey) => {
+    const list = central.get(topic) ?? [];
+    list.push({ item, centrality: 0.3 + 0.7 * rng.next() });
+    central.set(topic, list);
+    members.set(topic, (members.get(topic) ?? 0) + 1);
+  };
+  placedNotes.forEach((id, index) => {
+    const item = itemKey("note", id);
+    if (index < 5) {
+      // A few notes wait at the root.
+      placements.push({ item, placement: placementRecord(rootId) });
+      members.set(rootId, (members.get(rootId) ?? 0) + 1);
+      return;
+    }
+    const leaf = leafIds[(index * 7919) % leafIds.length] as string;
+    const waiting = rng.next() < 0.005;
+    placements.push({
+      item,
+      placement: placementRecord(leaf, {
+        needsGate: waiting && index % 2 === 0,
+        needsSplitCheck: waiting && index % 2 === 1
+      })
+    });
+    remember(leaf, item);
+    if (rng.next() < 0.03) {
+      const other = leafIds[rng.int(leafIds.length)] as string;
+      if (other !== leaf) placements.push({ item, placement: placementRecord(other, { rank: 1 }) });
+    }
+  });
+  rootSources.forEach((id, index) => {
+    const item = itemKey("source", id);
+    if (index < 3) {
+      placements.push({ item, placement: placementRecord(rootId, { needsVector: true }) });
+      return;
+    }
+    const leaf = leafIds[rng.int(leafIds.length)] as string;
+    placements.push({ item, placement: placementRecord(leaf) });
+    remember(leaf, item);
+  });
+
+  // Subtree sums, children before parents (a topic is created after its parent).
+  const subtree = new Map<string, number>(
+    [rootId, ...topics.map((topic) => topic.id)].map((id) => [id, members.get(id) ?? 0])
+  );
+  for (let index = topics.length - 1; index >= 0; index -= 1) {
+    const topic = topics[index] as ReturnType<typeof topicRecord>;
+    const parent = topic.parentId as string;
+    subtree.set(parent, (subtree.get(parent) ?? 0) + (subtree.get(topic.id) ?? 0));
+  }
+  const finding = (severity: "soft" | "hard", reason: string, awaiting: boolean) => ({
+    code: severity === "hard" ? "I3" : "I4",
+    severity,
+    reason,
+    topicId: null,
+    item: null,
+    awaitingApproval: awaiting,
+    value: 1
+  });
+  const stats: TopicStatsWrite[] = [rootId, ...topics.map((topic) => topic.id)].map((topicId) => {
+    const n = subtree.get(topicId) ?? 0;
+    const ls = new Float64Array(treeDimensions);
+    ls[0] = n * 0.8;
+    const roll = rng.next();
+    const write: TopicStatsWrite = {
+      topicId,
+      n,
+      ls,
+      cosSqSum: n * 0.64,
+      lowCosPercentiles: [],
+      centralities: central.get(topicId) ?? []
+    };
+    if (topicId !== rootId && roll < 0.03) {
+      write.health = "attention";
+      write.violations = [finding("soft", "leaf-size-outside-range", roll < 0.005)];
+    } else if (topicId !== rootId && roll > 0.995) {
+      write.health = "violation";
+      write.violations = [finding("hard", "fan-out-above-hard-max", false)];
+    }
+    return write;
+  });
+
+  const repository = createTopicTreeRepository(pool);
+  const tree = await repository.createTree({
+    id: treeId,
+    rootId,
+    spaceKey: "local:synthetic:256",
+    embeddingProvider: "synthetic",
+    embeddingModel: "synthetic",
+    embeddingRuntime: "none",
+    dimensions: treeDimensions,
+    config: {},
+    configHash: "synthetic",
+    seed
+  });
+  const built = await repository.bootstrapSnapshot({
+    treeId: tree.id,
+    expectedGeneration: tree.generation,
+    titleKey: "topics.changeSets.build",
+    topics,
+    placements,
+    stats
+  });
+  if (built.kind !== "applied") {
+    throw new Error(`The synthetic tree was refused: ${JSON.stringify(built)}`);
+  }
+  let generation = built.generation;
+  const changeSetIds = [built.changeSetId];
+
+  // Arrivals this week: the held-back notes, placed by one "place" change-set.
+  if (laterNotes.length > 0) {
+    const events: StructureEvent[] = laterNotes.map((id, index) => {
+      const leaf = leafIds[(index * 104729) % leafIds.length] as string;
+      return {
+        op: "item.place",
+        item: itemKey("note", id),
+        topicId: leaf,
+        before: null,
+        after: placementRecord(leaf)
+      };
+    });
+    const placed = await repository.applyChangeSet({
+      treeId: tree.id,
+      expectedGeneration: generation,
+      origin: "place",
+      titleKey: "topics.changeSets.place",
+      events
+    });
+    if (placed.kind !== "applied") {
+      throw new Error(`The held-back notes were refused: ${JSON.stringify(placed)}`);
+    }
+    generation = placed.generation;
+    changeSetIds.push(placed.changeSetId);
+  }
+
+  // Structural changes today: renames of leaves, then proposals that wait for the owner.
+  const titles = new Map(topics.map((topic) => [topic.id, topic.title as string]));
+  const aliases = new Map(topics.map((topic) => [topic.id, [...topic.aliases]]));
+  for (let n = 0; n < (options.renames ?? 25); n += 1) {
+    const topicId = leafIds[(n * 61) % leafIds.length] as string;
+    const named = {
+      nameState: "named" as const,
+      nameSource: "llm" as const,
+      nameLanguage: "en",
+      namedChangeSetId: null,
+      aliases: aliases.get(topicId) ?? []
+    };
+    const before = titles.get(topicId) as string;
+    const after = `${before} renamed ${n}`;
+    const applied = await repository.applyChangeSet({
+      treeId: tree.id,
+      expectedGeneration: generation,
+      origin: "rebalance",
+      titleKey: "topics.changeSets.rename",
+      titleParams: { title: after },
+      events: [
+        {
+          op: "topic.rename",
+          topicId,
+          before: { ...named, title: before },
+          after: { ...named, title: after }
+        }
+      ]
+    });
+    if (applied.kind !== "applied") {
+      throw new Error(`A rename was refused: ${JSON.stringify(applied)}`);
+    }
+    generation = applied.generation;
+    changeSetIds.push(applied.changeSetId);
+    titles.set(topicId, after);
+  }
+  for (let n = 0; n < (options.proposals ?? 3); n += 1) {
+    const topicId = subtopicIds[n] as string;
+    const target = areaIds[(n + 1) % areaIds.length] as string;
+    const pending = await repository.applyChangeSet({
+      treeId: tree.id,
+      expectedGeneration: generation,
+      origin: "areas",
+      titleKey: "topics.changeSets.areas",
+      status: "pending_review",
+      risk: "medium",
+      events: [
+        {
+          op: "topic.move",
+          topicId,
+          before: { parentId: parentOf.get(topicId) as string, position: n },
+          after: { parentId: target, position: 99 }
+        }
+      ]
+    });
+    if (pending.kind !== "pending") {
+      throw new Error(`A proposal was refused: ${JSON.stringify(pending)}`);
+    }
+    generation = pending.generation;
+    changeSetIds.push(pending.changeSetId);
+  }
+  // A bulk build leaves the planner without statistics until autovacuum runs; the topic service
+  // does the same after its own bootstrap, so the reads are measured the way they run afterwards.
+  await pool.query(
+    "analyze topics, topic_stats, topic_placements, topic_change_sets, topic_structure_events"
+  );
+  return {
+    treeId: tree.id,
+    rootId,
+    areaIds,
+    subtopicIds,
+    leafIds,
+    placedItems: placedNotes.length + rootSources.length + laterNotes.length,
+    heldBack: laterNotes.length,
+    changeSetIds,
+    generation
+  };
+}

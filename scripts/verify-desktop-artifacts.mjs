@@ -47,6 +47,20 @@ for (const [owner, methods] of Object.entries({
   prompts: ["command"],
   consultation: ["ask", "cancel"],
   wiki: ["list", "search"],
+  topics: [
+    "tree",
+    "path",
+    "page",
+    "notes",
+    "shape",
+    "changeSet",
+    "mutate",
+    "undo",
+    "review",
+    "status",
+    "reembed",
+    "subscribeChanged"
+  ],
   system: ["subscribeNavigation"]
 })) {
   for (const method of methods)

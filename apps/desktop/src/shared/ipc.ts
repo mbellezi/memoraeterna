@@ -32,6 +32,30 @@ import type {
 } from "@app/domain";
 import type { WikiPageListSchema, WikiResultsSchema } from "@app/domain";
 import type {
+  TopicChangeSet,
+  TopicChangeSetInput,
+  TopicMutation,
+  TopicMutationResult,
+  TopicNotes,
+  TopicNotesInput,
+  TopicPage,
+  TopicPageInput,
+  TopicPath,
+  TopicPathInput,
+  TopicReembedInput,
+  TopicReembedResult,
+  TopicReviewInput,
+  TopicReviewResult,
+  TopicShape,
+  TopicShapeInput,
+  TopicTree,
+  TopicTreeInput,
+  TopicUndoInput,
+  TopicUndoResult,
+  TopicsChangedEvent,
+  TopicsStatus
+} from "@app/domain";
+import type {
   MonitoringQuery,
   MonitoringPage,
   MonitoringDetail,
@@ -77,6 +101,18 @@ export const ipcChannels = {
   relationsCancelExplain: "app:relations:cancel-explain",
   relationsExplainSource: "app:relations:explain-source",
   relationsCancelExplainSource: "app:relations:cancel-explain-source",
+  topicsTree: "app:topics:tree",
+  topicsPath: "app:topics:path",
+  topicsPage: "app:topics:page",
+  topicsNotes: "app:topics:notes",
+  topicsShape: "app:topics:shape",
+  topicsChangeSet: "app:topics:change-set",
+  topicsMutate: "app:topics:mutate",
+  topicsUndo: "app:topics:undo",
+  topicsReview: "app:topics:review",
+  topicsStatus: "app:topics:status",
+  topicsReembed: "app:topics:reembed",
+  topicsChanged: "app:topics:changed",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -1639,6 +1675,34 @@ export interface DesktopApi {
     explainSource: (input: RelationExplainInput) => Promise<RelationExplanationResult | null>;
     /** Stops the source relation's explanation being written; true when one was stopped. */
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
+  };
+  /**
+   * The topic tree (docs/plan.md F2): reads without AI, human operations through the engine, and a
+   * push after each committed change. A read answers null when the object is gone.
+   */
+  topics: {
+    /** The children of a topic (the root's when `parentId` is null), with its own leaves on request. */
+    tree: (input?: TopicTreeInput) => Promise<TopicTree | null>;
+    /** The root-to-topic path; a retired topic resolves to its successor. */
+    path: (input: TopicPathInput) => Promise<TopicPath | null>;
+    /** The Topic page: a deterministic map of content. */
+    page: (input: TopicPageInput) => Promise<TopicPage | null>;
+    /** Pages of a topic's leaves, directly on it or in its whole subtree. */
+    notes: (input: TopicNotesInput) => Promise<TopicNotes | null>;
+    /** The cells of the tree (or one branch) with the shape verdict. */
+    shape: (input?: TopicShapeInput) => Promise<TopicShape | null>;
+    /** A textual before and after of one change-set. */
+    changeSet: (input: TopicChangeSetInput) => Promise<TopicChangeSet | null>;
+    /** One human operation, applied as one change-set (errors: `topics.errors.*`). */
+    mutate: (input: TopicMutation) => Promise<TopicMutationResult>;
+    undo: (input: TopicUndoInput) => Promise<TopicUndoResult>;
+    /** Applies or dismisses a proposal that waits for the owner. */
+    review: (input: TopicReviewInput) => Promise<TopicReviewResult>;
+    status: () => Promise<TopicsStatus>;
+    /** Re-embeds the library after the embedding space changed. */
+    reembed: (input: TopicReembedInput) => Promise<TopicReembedResult>;
+    /** Pushed after a change-set commits, coalesced; never polled. */
+    subscribeChanged: (listener: (event: TopicsChangedEvent) => void) => () => void;
   };
   /** The page list and source search of the Ask and Obsidian scope pickers (kept until T20 and T33). */
   wiki: {

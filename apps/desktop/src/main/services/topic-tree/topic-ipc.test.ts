@@ -1,0 +1,276 @@
+import { describe, expect, it, vi } from "vitest";
+import type { IpcMain } from "electron";
+
+import { ipcChannels } from "../../../shared/ipc.js";
+import {
+  createTopicsChangedPublisher,
+  registerTopicIpc,
+  registerTopicTreeIpc,
+  type TopicReadPort,
+  type TopicsChangedTarget
+} from "./topic-ipc.js";
+
+const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const at = "2026-10-15T12:00:00.000Z";
+
+type Handler = (event: unknown, payload?: unknown) => unknown;
+
+function fakeIpc() {
+  const handlers = new Map<string, Handler>();
+  const ipc = { handle: (channel: string, handler: Handler) => handlers.set(channel, handler) };
+  const call = async (channel: string, payload?: unknown) => {
+    const handler = handlers.get(channel);
+    if (!handler) throw new Error(`No handler registered for '${channel}'`);
+    return handler({}, payload);
+  };
+  return { ipc: ipc as unknown as IpcMain, handlers, call };
+}
+
+function readPort() {
+  return {
+    tree: vi.fn<TopicReadPort["tree"]>(async () => null),
+    path: vi.fn<TopicReadPort["path"]>(async () => null),
+    page: vi.fn<TopicReadPort["page"]>(async () => null),
+    notes: vi.fn<TopicReadPort["notes"]>(async () => null),
+    shape: vi.fn<TopicReadPort["shape"]>(async () => null),
+    changeSet: vi.fn<TopicReadPort["changeSet"]>(async () => null),
+    status: vi.fn<TopicReadPort["status"]>(async () => ({
+      phase: "active" as const,
+      counts: { items: 0, placed: 0, pending: 0, needsGate: 0 }
+    }))
+  };
+}
+
+const readChannels = [
+  ipcChannels.topicsTree,
+  ipcChannels.topicsPath,
+  ipcChannels.topicsPage,
+  ipcChannels.topicsNotes,
+  ipcChannels.topicsShape,
+  ipcChannels.topicsChangeSet,
+  ipcChannels.topicsStatus
+];
+const operationChannels = [
+  ipcChannels.topicsMutate,
+  ipcChannels.topicsUndo,
+  ipcChannels.topicsReview,
+  ipcChannels.topicsReembed
+];
+
+describe("topic IPC channels", () => {
+  it("registers every contract of the spec once, and no channel for the overview or the switch", () => {
+    const topicChannels = Object.entries(ipcChannels).filter(([name]) => name.startsWith("topics"));
+    expect(topicChannels.map(([name]) => name).sort()).toEqual(
+      [
+        "topicsChanged",
+        "topicsChangeSet",
+        "topicsMutate",
+        "topicsNotes",
+        "topicsPage",
+        "topicsPath",
+        "topicsReembed",
+        "topicsReview",
+        "topicsShape",
+        "topicsStatus",
+        "topicsTree",
+        "topicsUndo"
+      ].sort()
+    );
+    expect(topicChannels.every(([, channel]) => /^app:topics:[a-z-]+$/u.test(channel))).toBe(true);
+    expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
+    const { handlers, ipc } = fakeIpc();
+    registerTopicIpc(ipc, { read: readPort() });
+    expect([...handlers.keys()].sort()).toEqual([...readChannels, ...operationChannels].sort());
+  });
+});
+
+describe("registerTopicIpc", () => {
+  it("validates each request before the service sees it and hands over the parsed defaults", async () => {
+    const { ipc, call } = fakeIpc();
+    const read = readPort();
+    registerTopicIpc(ipc, { read });
+
+    await call(ipcChannels.topicsTree);
+    expect(read.tree).toHaveBeenLastCalledWith({
+      parentId: null,
+      limit: 100,
+      includeItems: false,
+      itemLimit: 5
+    });
+    await call(ipcChannels.topicsPage, { id: id(1) });
+    expect(read.page).toHaveBeenLastCalledWith({ id: id(1), noteLimit: 6 });
+    await call(ipcChannels.topicsShape, undefined);
+    expect(read.shape).toHaveBeenLastCalledWith({ rootId: null, depth: 4, nodeLimit: 2000 });
+    await call(ipcChannels.topicsNotes, { id: id(1), scope: "subtree" });
+    expect(read.notes).toHaveBeenLastCalledWith({
+      id: id(1),
+      limit: 50,
+      scope: "subtree",
+      kind: "all"
+    });
+    await call(ipcChannels.topicsPath, { id: id(2) });
+    await call(ipcChannels.topicsChangeSet, { id: id(3) });
+    await call(ipcChannels.topicsStatus);
+    expect(read.path).toHaveBeenCalledWith({ id: id(2) });
+    expect(read.changeSet).toHaveBeenCalledWith({ id: id(3) });
+    expect(read.status).toHaveBeenCalledTimes(1);
+
+    for (const [channel, bad] of [
+      [ipcChannels.topicsTree, { limit: 500 }],
+      [ipcChannels.topicsTree, "root"],
+      [ipcChannels.topicsPath, {}],
+      [ipcChannels.topicsPage, { id: "x" }],
+      [ipcChannels.topicsNotes, { id: id(1), kind: "source" }],
+      [ipcChannels.topicsShape, { depth: 9 }],
+      [ipcChannels.topicsChangeSet, { id: 5 }]
+    ] as const) {
+      await expect(call(channel, bad), channel).rejects.toThrow();
+    }
+    expect(read.tree).toHaveBeenCalledTimes(1);
+    expect(read.path).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers the unwired operations with topics.errors.unavailable after validating them", async () => {
+    const { ipc, call } = fakeIpc();
+    registerTopicIpc(ipc, { read: readPort() });
+    const requests: Array<[string, unknown]> = [
+      [ipcChannels.topicsMutate, { op: "pin", id: id(1) }],
+      [ipcChannels.topicsUndo, { changeSetId: id(2) }],
+      [ipcChannels.topicsReview, { changeSetId: id(2), decision: "apply" }],
+      [ipcChannels.topicsReembed, { confirm: true }]
+    ];
+    for (const [channel, payload] of requests) {
+      await expect(call(channel, payload), channel).rejects.toThrow("topics.errors.unavailable");
+    }
+    // An invalid request is refused as such, not as unavailable.
+    await expect(call(ipcChannels.topicsMutate, { op: "delete" })).rejects.not.toThrow(
+      "topics.errors.unavailable"
+    );
+    await expect(call(ipcChannels.topicsReembed, { confirm: false })).rejects.not.toThrow(
+      "topics.errors.unavailable"
+    );
+  });
+
+  it("runs the handler a task installs on the parsed request and validates its answer", async () => {
+    const { ipc, call } = fakeIpc();
+    const mutate = vi.fn(async () => ({ changeSetId: id(5), generation: 8 }));
+    const undo = vi.fn(async () => ({ status: "blocked" as const, blockers: [] }));
+    const review = vi.fn(async () => ({ status: "dismissed" as const }));
+    const reembed = vi.fn(async () => ({ queued: 12 }));
+    registerTopicIpc(ipc, { read: readPort(), mutate, undo, review, reembed });
+
+    expect(
+      await call(ipcChannels.topicsMutate, {
+        op: "rename",
+        id: id(1),
+        title: "  New  ",
+        expectedUpdatedAt: at
+      })
+    ).toEqual({ changeSetId: id(5), generation: 8 });
+    expect(mutate).toHaveBeenCalledWith({
+      op: "rename",
+      id: id(1),
+      title: "New",
+      expectedUpdatedAt: at
+    });
+    expect(await call(ipcChannels.topicsUndo, { changeSetId: id(2) })).toEqual({
+      status: "blocked",
+      blockers: []
+    });
+    expect(
+      await call(ipcChannels.topicsReview, { changeSetId: id(2), decision: "dismiss" })
+    ).toEqual({
+      status: "dismissed"
+    });
+    expect(await call(ipcChannels.topicsReembed, { confirm: true })).toEqual({ queued: 12 });
+
+    mutate.mockResolvedValueOnce({ changeSetId: "x", generation: 1 } as never);
+    await expect(call(ipcChannels.topicsMutate, { op: "pin", id: id(1) })).rejects.toThrow();
+    mutate.mockRejectedValueOnce(new Error("topics.errors.protected"));
+    await expect(call(ipcChannels.topicsMutate, { op: "unpin", id: id(1) })).rejects.toThrow(
+      "topics.errors.protected"
+    );
+  });
+
+  it("lets a failure of the read service reach the caller untouched", async () => {
+    const { ipc, call } = fakeIpc();
+    const read = readPort();
+    read.tree.mockRejectedValue(new Error("topics.errors.stale"));
+    registerTopicIpc(ipc, { read });
+    await expect(call(ipcChannels.topicsTree, {})).rejects.toThrow("topics.errors.stale");
+  });
+});
+
+describe("createTopicsChangedPublisher", () => {
+  const target = (destroyed = false) => {
+    const send = vi.fn();
+    return { isDestroyed: () => destroyed, send, contents: { isDestroyed: () => destroyed, send } };
+  };
+  const event = { treeId: id(1), generation: 4, topicIds: [id(2)], changeSetId: id(3) };
+
+  it("sends a valid event once to every live window and skips destroyed ones", () => {
+    const live = target();
+    const other = target();
+    const gone = target(true);
+    const publish = createTopicsChangedPublisher(() => [
+      live.contents,
+      gone.contents,
+      other.contents
+    ]);
+    publish(event);
+    expect(live.send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
+    expect(other.send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
+    expect(gone.send).not.toHaveBeenCalled();
+    publish({ ...event, topicIds: null, changeSetId: null });
+    expect(live.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports an event that breaks the contract instead of sending it", () => {
+    const window = target();
+    const onInvalid = vi.fn();
+    const publish = createTopicsChangedPublisher(() => [window.contents], onInvalid);
+    publish({ ...event, generation: -1 });
+    publish({ ...event, topicIds: Array.from({ length: 201 }, (_, n) => id(n + 10)) });
+    publish({ ...event, stray: true } as never);
+    expect(window.send).not.toHaveBeenCalled();
+    expect(onInvalid).toHaveBeenCalledTimes(3);
+  });
+
+  it("asks for the windows when it publishes, so a window opened later still hears it", () => {
+    const windows: TopicsChangedTarget[] = [];
+    const publish = createTopicsChangedPublisher(() => windows);
+    publish(event);
+    const late = target();
+    windows.push(late.contents);
+    publish(event);
+    expect(late.send).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("registerTopicTreeIpc", () => {
+  it("wires the read service, every handler and the push channel with one call", async () => {
+    const { ipc, call, handlers } = fakeIpc();
+    const send = vi.fn();
+    const mutate = vi.fn(async () => ({ changeSetId: id(5), generation: 2 }));
+    const wired = registerTopicTreeIpc(ipc, {
+      getPool: () => null,
+      targets: () => [{ isDestroyed: () => false, send }],
+      mutate
+    });
+    expect(handlers.size).toBe(11);
+    // The database is not ready, so every read says so; the operation that was installed runs.
+    await expect(call(ipcChannels.topicsTree, {})).rejects.toThrow("topics.errors.unavailable");
+    await expect(call(ipcChannels.topicsStatus)).rejects.toThrow("topics.errors.unavailable");
+    await expect(call(ipcChannels.topicsUndo, { changeSetId: id(2) })).rejects.toThrow(
+      "topics.errors.unavailable"
+    );
+    expect(await call(ipcChannels.topicsMutate, { op: "pin", id: id(1) })).toEqual({
+      changeSetId: id(5),
+      generation: 2
+    });
+    const event = { treeId: id(1), generation: 2, topicIds: null, changeSetId: id(5) };
+    wired.emitChanged(event);
+    expect(send).toHaveBeenCalledExactlyOnceWith(ipcChannels.topicsChanged, event);
+    expect(wired.read).toBeDefined();
+  });
+});

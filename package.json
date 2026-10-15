@@ -52,6 +52,7 @@
     "db:restore": "tsx scripts/db/restore-backup.ts",
     "kpi": "tsx scripts/kpi/kpi.ts",
     "topics:replay": "tsx scripts/topics/replay.ts",
+    "topics:bench": "tsx scripts/topics/read-benchmark.ts",
     "ratchet": "node scripts/quality-ratchet.mjs",
     "contrast": "tsx scripts/contrast/check-contrast.ts",
     "check": "npm run typecheck && npm test && npm run format:check && npm run lint && npm run ratchet && npm run contrast"
