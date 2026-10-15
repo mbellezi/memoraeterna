@@ -58,6 +58,13 @@ concurrency and automatic correction.
     items only (`atomic-note-matching-v9`); a relation's explanation is written when the owner opens it and
     is cached on the relation (the F3 `relation.explain` task, pulled into F1b with the Note page). Analysis:
     `docs/kpi-f1a.md`.
+17. **Source matching decides without prose too** (2026-10-15): it cost ~20 s per source on the fixture (6.2
+    calls, 72% fixed cost and reasoning) and wrote prose in the background, against decision 16. F1b: each source
+    pair is judged once and `sources.match` becomes a compact score-only verdict (`source-relations-v5`) with
+    explanations written on open (~-26% predicted, same quality). F3: accepted note relations become source
+    relations without a call and discovery judges only each source's nearest source, per source, with no batch
+    barrier (~-81% simulated, quality 27-28/28, 0/35), after a spike on unjudged pairs. Analysis:
+    `docs/spikes/source-relations-plan.md`.
 
 ## 3. The five swaps
 
@@ -358,6 +365,8 @@ most one in-flight call.
 - [x] Note page v1 as the definitive object-page component, hosted in the Library.
 - [x] Decide-only compact matching contract v9 and on-demand, cached relation explanations (decision 16);
       decide calls without the reasoning summary if the backend accepts it.
+- [ ] Source matching per decision 17: each source pair judged once; compact score-only `source-relations-v5`
+      with raw scores stored and explanations written on open; spike of the F3 discovery design on unjudged pairs.
 - [x] Citations open the exact chunk and SourceSpan.
 - [x] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
       menu (⌘W closes a panel); local view-history store.
@@ -377,7 +386,8 @@ recents or the wiki. Relation explanations are written on open and cached per in
 
 Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
 passes AA in both themes; mockups approved; golden note matching ≤3.47 s/note with fixture quality within the
-v8 range (0/35 forbidden, ≥27/28 on notes or sources).
+v8 range (0/35 forbidden, ≥27/28 on notes or sources); source matching ≤16.2 s per source on the fixture and
+≤13.8 on the golden library with 0 prose tokens and the source layer at ≥27/28 held-out, 0/35 forbidden.
 
 ### F2 Topic Tree Engine (weeks 7-11)
 
@@ -421,7 +431,9 @@ rating ≥80% of 30 topics coherent and well named; undo restores exact placemen
 - [ ] Decide → type (batched per source) → explain later; isotonic calibration and bands; streaming
       `relation.explain` with cache; NOT_RELATED veto.
 - [ ] Incremental per-source matching; source aggregation and discovery pairs; SQL fixes (search_tsv,
-      raw-distance HNSW, no Cartesian join).
+      raw-distance HNSW, no Cartesian join). Design E of `docs/spikes/source-relations-plan.md` (decision 17):
+      promote every accepted note relation, discovery on each source's nearest source (2 as fallback), per source
+      with no barrier, F1b's compact verdict as the generative judge; exit ≤5 s per source.
 - [ ] Note-layer coverage on pinned notes (decision 15): measure with several decider samples; missing
       metadata (always-empty entities/tags/concepts) counts as an absent signal, not 0, re-frozen on tuning.
 - [ ] Bake-off on the held-out fixture plus ~300 owner-labeled pairs (1.5-2.5 h): decision-only generative,

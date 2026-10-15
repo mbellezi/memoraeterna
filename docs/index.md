@@ -36,6 +36,8 @@ dated measurements, not rules.
   topic tree built on real embeddings.
 - [spikes/f1a-matching-latency.md](spikes/f1a-matching-latency.md) — where note-matching time goes on
   the golden library and the ranked fixes behind decision 16.
+- [spikes/source-relations-plan.md](spikes/source-relations-plan.md) — source matching cost, what the
+  source layer adds to quality, and the options behind decision 17.
 - [kpi-golden.md](kpi-golden.md) — the golden library baseline: pipeline time, AI calls, first v6
   matching measurement and replay determinism.
 - [kpi-f1a.md](kpi-f1a.md) — F1a measurements: matching fixture on pinned notes, why the note layer reads
