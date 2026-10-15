@@ -36,7 +36,7 @@ export function rebaseQueuedContent(
   if (!before || !after || !local) return next;
   let body = local.bodyMarkdown;
   const parseRegions =
-    before.frontmatter.memoraLayout === 2 || accepted.targetType === "wiki_page"
+    before.frontmatter.memoraLayout === 2
       ? parseWikiRegions
       : accepted.targetType === "atomic_note"
         ? atomicEditorial

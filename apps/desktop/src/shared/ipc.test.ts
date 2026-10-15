@@ -476,6 +476,34 @@ describe("desktop IPC contracts", () => {
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 
+  it("has no channel for the removed legacy wiki, curator, organization and maintenance surface", () => {
+    const names = Object.keys(ipcChannels);
+    for (const removed of [
+      "investigationList",
+      "investigationGet",
+      "investigationFollow",
+      "investigationState",
+      "consultationSave",
+      "maintenanceCommand",
+      "curatorCommand",
+      "organizationCommand",
+      "wikiCollection",
+      "wikiTree",
+      "wikiContext",
+      "wikiMove",
+      "wikiLinkedTarget",
+      "wikiResolveLinks",
+      "wikiGet",
+      "wikiSave",
+      "wikiHistory",
+      "jobsCancelBatch"
+    ])
+      expect(names, removed).not.toContain(removed);
+    // The two reads the Ask and Obsidian scope pickers still use.
+    expect(ipcChannels.wikiList).toBe("app:wiki:list");
+    expect(ipcChannels.wikiSearch).toBe("app:wiki:search");
+  });
+
   it("reports the retired old wiki files in the Obsidian wiki status", () => {
     const status = {
       active: true,

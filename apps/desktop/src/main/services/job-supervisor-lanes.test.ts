@@ -13,7 +13,6 @@ const queue = vi.hoisted(() => {
     find,
     repository: {
       recoverInterrupted: async () => 0,
-      nextQueuedOfType: async () => null,
       findById: async (id: string) => find(id),
       reportProgress: async () => null,
       claimNext: async (workerId: string, types?: readonly string[], lane?: JobLane) => {
@@ -192,6 +191,7 @@ describe("heavy and light lanes", () => {
     const model = claims.filter((claim) => claim.workerId.endsWith(":light-model"));
     expect(heavy).toHaveLength(1);
     expect(heavy[0]!.types).toContain("ingestion");
+    expect(heavy[0]!.types).not.toContain("organization");
     expect(heavy[0]!.types).not.toContain("maintenance");
     expect(heavy[0]!.types!.some((type) => type.startsWith("topic-"))).toBe(false);
     expect(compute).toEqual([
@@ -201,6 +201,15 @@ describe("heavy and light lanes", () => {
       expect.objectContaining({ lane: "light", types: ["topic-gate", "topic-name"] })
     ]);
     expect(claims).toHaveLength(3);
+  });
+
+  it("never claims the retired organization and maintenance job types", async () => {
+    supervisor = new JobSupervisor({ getPool: pool, lightJobs: topicJobs() });
+    const organization = enqueue("organization", "heavy", { organizationRunId: "run" });
+    const maintenance = enqueue("maintenance", "heavy", { maintenanceRunId: "run" });
+    await expect(supervisor.runOnce()).resolves.toBeNull();
+    expect(statusOf(organization)).toBe("queued");
+    expect(statusOf(maintenance)).toBe("queued");
   });
 
   it("keeps runOnce a heavy pass that never takes light work", async () => {

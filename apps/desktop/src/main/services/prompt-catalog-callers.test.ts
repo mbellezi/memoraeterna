@@ -1,23 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
-import {
-  OrganizationCheckpointSchema,
-  MaintenanceSnapshotSchema,
-  MaintenanceCheckpointSchema,
-  MaintenancePolicySchema,
-  WikiPageContentSchema,
-  type PromptPin
-} from "@app/domain";
+import type { PromptPin } from "@app/domain";
 import { defaultPromptPin, withPromptPin, installPromptPin } from "./prompt-runtime.js";
 import {
   generateSummaryFromChunks,
   generateAtomicNoteCandidates,
   generateKnowledgeGraphFromAtomicNotes
 } from "./knowledge-processing.js";
-import { promptSampleSnapshot, promptSampleCheckpoint } from "./prompt-samples.js";
+import { promptSampleSnapshot } from "./prompt-samples.js";
 import { ConsultationService } from "./consultation-service.js";
-import { OrganizationService } from "./organization-service.js";
-import { MaintenanceService, maintenanceDiagnostic } from "./maintenance-service.js";
 const id = randomUUID(),
   source = { title: "Fictional feedback study", language: "en" },
   chunks = [
@@ -150,158 +141,4 @@ describe("actual catalog family callers with deterministic model doubles", () =>
     expect(calls[0]![1]).toContain("CATALOG:consultation.answer");
     expect(calls[1]![1]).toContain("CATALOG:consultation.repair");
   });
-  it("executes all three organization states plus repair from a restarted persisted snapshot", async () => {
-    const pin = marked([
-      "organization.legacy_synthesis",
-      "organization.state.discover",
-      "organization.state.read",
-      "organization.state.propose",
-      "organization.repair"
-    ]);
-    const snapshot = JSON.parse(JSON.stringify(promptSampleSnapshot(pin)));
-    const checkpoint = promptSampleCheckpoint();
-    const run: any = { id, status: "queued", snapshot, checkpoint, receiptRevisionId: null };
-    const actions = [
-      "{",
-      { tool: "searchEvidence", query: "", limit: 20 },
-      { tool: "readRevision", handle: "e1", selector: "full" },
-      { tool: "readRevision", handle: "e2", selector: "full" },
-      {
-        tool: "proposePageChange",
-        target: "page",
-        expectedRevisionId: null,
-        explanation: "A bounded comparison",
-        sections: [
-          {
-            sectionId: null,
-            title: "Feedback",
-            markdown: "The two studies qualify the role of feedback.",
-            citations: ["e1", "e2"],
-            contextIds: []
-          }
-        ]
-      }
-    ];
-    const runOrganizationTask = vi.fn(async () => {
-      installPromptPin(defaultPromptPin());
-      return execution(actions.shift());
-    });
-    const service = new OrganizationService({
-      getPool: () => null,
-      ai: { runOrganizationTask },
-      contentLanguage: async () => "en",
-      wake: () => {},
-      cancelJob: async () => null
-    } as any) as any;
-    service.get = async () => run;
-    service.repo = () => ({
-      get: async () => run,
-      checkpoint: async (_id: string, status: string, c: unknown) => {
-        run.status = status;
-        run.checkpoint = structuredClone(c);
-      },
-      step: async () => {},
-      propose: async () => {
-        run.status = "succeeded";
-      }
-    });
-    await service.execute(
-      { id: randomUUID(), payload: { organizationRunId: id } },
-      new AbortController().signal
-    );
-    expect(run.status).toBe("succeeded");
-    expect(runOrganizationTask).toHaveBeenCalledTimes(5);
-    const inputs = (runOrganizationTask.mock.calls as unknown as Array<[unknown, string]>).map(
-      (c) => c[1]
-    );
-    for (const id of [
-      "organization.legacy_synthesis",
-      "organization.state.discover",
-      "organization.state.read",
-      "organization.state.propose",
-      "organization.repair"
-    ])
-      expect(inputs.some((t) => t.includes("CATALOG:" + id))).toBe(true);
-  });
-  it.each(["weekly", "monthly", "cleanup"] as const)(
-    "executes the admitted %s maintenance catalog from a stored run",
-    async (routine) => {
-      const pin = marked(["maintenance." + routine]),
-        profile = promptSampleSnapshot(pin).profile;
-      const snapshot = MaintenanceSnapshotSchema.parse({
-        promptPin: pin,
-        version: "wiki-maintenance-v1",
-        policy: MaintenancePolicySchema.parse({
-          name: "Synthetic",
-          routine,
-          modelEnabled: true,
-          scope: { wholeLibrary: true },
-          categories: ["navigation", "knowledge", "evidence"],
-          cadence: { timezone: "UTC" }
-        }),
-        profile,
-        configurationId: null,
-        configurationHash: "fixture",
-        instructions: promptSampleSnapshot(pin).instructions,
-        language: "en",
-        scopeKey: "sample",
-        period: "sample",
-        cutoff: new Date().toISOString(),
-        sample: true
-      });
-      const candidates = ["Learning", "Recall"].map((title, i) =>
-        maintenanceDiagnostic(
-          {
-            id: randomUUID(),
-            title,
-            revisionId: randomUUID(),
-            fingerprint: "fixture",
-            manual: !!i,
-            children: 0,
-            path: [],
-            content: WikiPageContentSchema.parse({ title, kind: i ? "collection" : "topic" })
-          },
-          "page"
-        )
-      );
-      const run: any = {
-        id,
-        status: "queued",
-        snapshot,
-        checkpoint: MaintenanceCheckpointSchema.parse({
-          cursor: { kind: "done", id: null },
-          total: 2,
-          inspected: 2,
-          findings: 1,
-          candidates
-        })
-      };
-      const runOrganizationTask = vi.fn(async () =>
-        execution({ operations: [], explanation: "No structural improvement is warranted." })
-      );
-      const service = new MaintenanceService({
-        getPool: () => null,
-        ai: { runOrganizationTask },
-        contentLanguage: async () => "en",
-        wake: () => {},
-        cancelJob: async () => null
-      } as any) as any;
-      service.get = async () => run;
-      service.repo = () => ({
-        reservePeriod: async () => {},
-        blockers: async () => null,
-        decisions: async () => [],
-        checkpoint: async () => {},
-        settle: async () => {}
-      });
-      await service.execute(
-        { id: randomUUID(), payload: { maintenanceRunId: id } },
-        new AbortController().signal
-      );
-      expect(runOrganizationTask).toHaveBeenCalledTimes(1);
-      expect(
-        (runOrganizationTask.mock.calls as unknown as Array<[unknown, string]>)[0]![1]
-      ).toContain("CATALOG:maintenance." + routine);
-    }
-  );
 });

@@ -44,8 +44,8 @@ export interface JobCardModel {
 export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
   const groups = new Map<string, JobRecord[]>();
   for (const job of jobs) {
-    // Organization and maintenance are shown through their canonical runs in
-    // Knowledge Automation, including work that outlives its dispatch job.
+    // Organization and maintenance jobs belong to the retired legacy wiki (F2 D2): nothing runs or
+    // shows them, so one left in an old library stays an inert row.
     if (job.type === "organization" || job.type === "maintenance") continue;
     const key = job.ingestionRun?.id ?? job.id;
     groups.set(key, [...(groups.get(key) ?? []), job]);

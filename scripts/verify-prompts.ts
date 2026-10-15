@@ -37,7 +37,6 @@ import {
   resolveOrganizationInstructions,
   OrganizationConfigurationSchema
 } from "@app/domain";
-import { OrganizationService } from "../apps/desktop/src/main/services/organization-service.js";
 import { PromptService } from "../apps/desktop/src/main/services/prompt-service.js";
 import {
   capturePromptPin,
@@ -740,13 +739,7 @@ try {
     await createSettingsRepository(rollback).set("organization.active", { revisionId: original });
     const migrated = new PromptService({ getPool: () => rollback });
     await migrated.initialize();
-    await new OrganizationService({
-      getPool: () => rollback,
-      ai: {} as never,
-      contentLanguage: async () => "en",
-      wake: () => {},
-      cancelJob: async () => null
-    }).settings();
+    await orgRollback.settings();
     assert.equal(
       renderPrompt("organization.guidance", { page_title: "Recall", content_language: "en" }),
       "Original 50% Recall",

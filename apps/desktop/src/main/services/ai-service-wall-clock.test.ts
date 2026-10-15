@@ -141,10 +141,7 @@ describe("reportedRetryIndex", () => {
     expect(reportedRetryIndex({ attempt: 1.5 })).toBeUndefined();
   });
 
-  it("ignores the call counters of organization, maintenance and Ask calls", () => {
-    expect(reportedRetryIndex({ attempt: 2, organizationRunId: "run" })).toBeUndefined();
-    expect(reportedRetryIndex({ attempt: 2, maintenanceRunId: "run" })).toBeUndefined();
-    expect(reportedRetryIndex({ attempt: 2, origin: "organization" })).toBeUndefined();
+  it("ignores the call counter of Ask calls", () => {
     expect(reportedRetryIndex({ attempt: 1, origin: "consultation" })).toBeUndefined();
   });
 });

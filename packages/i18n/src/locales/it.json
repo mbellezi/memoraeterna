@@ -11,25 +11,11 @@
     }
   },
   "automation": {
-    "areas": {
-      "people": "Persone",
-      "organizations": "Organizzazioni",
-      "places": "Luoghi",
-      "works": "Opere",
-      "themes": "Temi",
-      "entities": "Entità",
-      "syntheses": "Sintesi",
-      "investigations": "Indagini",
-      "maps": "Mappe"
-    },
     "clearHistory": "Pulisci cronologia delle attività",
     "clearHistoryHint": "Rimuove dagli elenchi le esecuzioni completate, fallite o annullate. Conserva attività in corso, pianificazioni, problemi in sospeso, audit e consumo del budget.",
     "clearingHistory": "Pulizia della cronologia…",
     "historyCleared": "Cronologia delle esecuzioni terminate pulita. Gli elementi in sospeso sono conservati.",
     "clearHistoryFailed": "Impossibile completare la pulizia. Riprova."
-  },
-  "investigation": {
-    "updated": "Una risposta seguita è cambiata"
   },
   "consultation": {
     "errors": {
@@ -44,7 +30,6 @@
       "deadline": "Il tempo limite è scaduto. Restringi l’ambito o scegli un modello più veloce.",
       "model": "Nessun profilo generativo configurato disponibile.",
       "unavailable": "Il database non è ancora pronto.",
-      "retired": "Questa funzione è stata rimossa. Le risposte non possono più essere salvate come pagine né seguite.",
       "sources": "Non è stato possibile caricare le fonti."
     },
     "contextCoverage": "Contesto facoltativo: {included} di {available} elementi rientrano nel budget del modello. I passaggi originali restano disponibili.",
@@ -1785,7 +1770,6 @@
     }
   },
   "wiki": {
-    "remainingReferences": "Riferimenti",
     "treeWidth": "Larghezza dell’albero: {width} pixel",
     "resizeTreeHint": "Trascina per regolare. Usa le frecce sinistra/destra, Home o Fine. Fai doppio clic per ripristinare.",
     "resizeTree": "Regola la larghezza dell’albero della wiki",
@@ -1923,9 +1907,7 @@
     "keepApp": "Mantieni applicazione",
     "manual": "Salva unione manuale",
     "stale": "Il file o l’applicazione è cambiato. Aggiorna il confronto prima di risolvere.",
-    "addSection": "Aggiungi sezione umana",
-    "sectionTitle": "Introduzione",
-    "scopeHint": "Il plugin abbinato può salvare revisioni di fonti, note e pagine wiki. Prove e relazioni generate restano di sola lettura. Il salvataggio non esegue IA.",
+    "scopeHint": "Il plugin abbinato può salvare revisioni di fonti e note. Prove e relazioni generate restano di sola lettura. Il salvataggio non esegue IA.",
     "paused": "In pausa · riprendi la sincronizzazione in Memora",
     "rePair": "Abbinamento revocato o senza permesso di scrittura. Crea un nuovo abbinamento Obsidian in Memora e riconnetti.",
     "unsupported": "Versione di sincronizzazione non supportata. Aggiorna Memora e il plugin.",
@@ -2224,49 +2206,6 @@
     "knowledgeOwned": "Nota di conoscenza conservata",
     "supersededNote": "Sostituita · cronologia conservata",
     "openRevision": "Apri questa revisione"
-  },
-  "budget": {
-    "title": "Budget e limiti",
-    "description": "Il tetto mensile è condiviso. Ogni esecuzione rispetta anche i limiti della routine e del gruppo di curatela; vale il limite più restrittivo.",
-    "routines": "Limiti per routine",
-    "monthly": "Budget mensile condiviso",
-    "monthlyHint": "Consumo registrato di tutte le routine di questa policy. Il mese UTC ricomincia il primo giorno. Stime e prenotazioni non bloccano la generazione.",
-    "monthCalls": "Chiamate al mese",
-    "monthTokens": "Token al mese",
-    "used": "{used} di {limit} consumati",
-    "remaining": "Disponibile: {count}",
-    "range": "Intervallo consentito: da {min} a {max}.",
-    "invalid": "Compila tutti i campi con numeri interi entro l’intervallo consentito.",
-    "exhausted": "Il consumo registrato supera questo limite. La prossima generazione sarà bloccata; quella in corso potrà terminare.",
-    "monthlyEffect": "Il salvataggio modifica il limite verificato prima delle prossime generazioni. Consumo e cronologia restano invariati. I dati mancanti vengono segnalati senza sostituirli con prenotazioni.",
-    "saveMonth": "Salva budget mensile",
-    "saveCurator": "Salva limiti di curatela",
-    "saving": "Salvataggio…",
-    "saved": "Modifiche salvate.",
-    "reload": "Ricarica valori salvati",
-    "curator": "Limiti per gruppo di curatela",
-    "curatorHint": "Un gruppo genera modifiche alla Wiki e ne verifica il supporto nelle fonti. Questi limiti controllano dimensione e durata entro il budget della routine.",
-    "curatorInvalid": "Controlla gli intervalli consentiti. Servono almeno 2 chiamate senza riparazione o 4 con riparazione attiva.",
-    "curatorEffect": "Il salvataggio crea una nuova configurazione per i prossimi gruppi. I lavori della configurazione precedente perdono l’autorizzazione a continuare; proposte e cronologia vengono conservate. Una politica in pausa resta in pausa.",
-    "routineHint": "Questi limiti valgono per ogni esecuzione. Il tetto mensile condiviso, modificabile in Budget, può fermare il lavoro prima di questi valori.",
-    "fields": {
-      "modelCalls": "Chiamate per gruppo",
-      "repairs": "Cicli di riparazione",
-      "deadlineMs": "Durata massima (secondi)",
-      "targets": "Pagine per gruppo",
-      "sectionPatchesPerPage": "Sezioni per pagina",
-      "originalPassages": "Passaggi originali",
-      "tools": "Operazioni di consultazione"
-    },
-    "hints": {
-      "modelCalls": "Include generazione, verifiche del supporto e riparazioni.",
-      "repairs": "Ogni ciclo riserva margine per riparare e verificare di nuovo.",
-      "deadlineMs": "Limite di tempo per un gruppo di curatela.",
-      "targets": "Massimo di pagine modificate insieme.",
-      "sectionPatchesPerPage": "Massimo di sezioni modificate in ogni pagina.",
-      "originalPassages": "Massimo di passaggi completi ammessi come prove.",
-      "tools": "Massimo di operazioni di ricerca e lettura del gruppo."
-    }
   },
   "objects": {
     "kinds": {

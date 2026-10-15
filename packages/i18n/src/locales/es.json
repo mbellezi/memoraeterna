@@ -11,25 +11,11 @@
     }
   },
   "automation": {
-    "areas": {
-      "people": "Personas",
-      "organizations": "Organizaciones",
-      "places": "Lugares",
-      "works": "Obras",
-      "themes": "Temas",
-      "entities": "Entidades",
-      "syntheses": "Síntesis",
-      "investigations": "Investigaciones",
-      "maps": "Mapas"
-    },
     "clearHistory": "Limpiar historial de tareas",
     "clearHistoryHint": "Retira de las listas las ejecuciones completadas, fallidas o canceladas. Conserva tareas activas, programaciones, pendientes, auditoría y consumo de presupuesto.",
     "clearingHistory": "Limpiando historial…",
     "historyCleared": "Historial de ejecuciones terminadas limpiado. Se conservaron los pendientes.",
     "clearHistoryFailed": "No se pudo completar la limpieza. Inténtelo de nuevo."
-  },
-  "investigation": {
-    "updated": "Una respuesta seguida ha cambiado"
   },
   "consultation": {
     "errors": {
@@ -44,7 +30,6 @@
       "deadline": "Venció el tiempo límite. Reduce el alcance o elige un modelo más rápido.",
       "model": "No hay un perfil generativo configurado disponible.",
       "unavailable": "La base de datos aún no está lista.",
-      "retired": "Esta función se eliminó. Las respuestas ya no se pueden guardar como páginas ni seguir.",
       "sources": "No se pudieron cargar las fuentes."
     },
     "contextCoverage": "Contexto opcional: {included} de {available} elementos caben en el presupuesto del modelo. Los pasajes originales siguen disponibles.",
@@ -1794,7 +1779,6 @@
     }
   },
   "wiki": {
-    "remainingReferences": "Referencias",
     "treeWidth": "Ancho del árbol: {width} píxeles",
     "resizeTreeHint": "Arrastra para ajustar. Usa las flechas izquierda/derecha, Inicio o Fin. Haz doble clic para restablecer.",
     "resizeTree": "Ajustar ancho del árbol de la wiki",
@@ -1932,9 +1916,7 @@
     "keepApp": "Conservar aplicación",
     "manual": "Guardar combinación manual",
     "stale": "El archivo o la aplicación cambió. Actualiza la comparación antes de resolver.",
-    "addSection": "Añadir sección humana",
-    "sectionTitle": "Introducción",
-    "scopeHint": "El plugin emparejado puede guardar revisiones de fuentes, notas y páginas wiki. Las pruebas y relaciones generadas siguen siendo de solo lectura. Guardar no ejecuta IA.",
+    "scopeHint": "El plugin emparejado puede guardar revisiones de fuentes y notas. Las pruebas y relaciones generadas siguen siendo de solo lectura. Guardar no ejecuta IA.",
     "paused": "En pausa · reanuda la sincronización en Memora",
     "rePair": "Emparejamiento revocado o sin permiso de escritura. Crea un nuevo emparejamiento Obsidian en Memora y reconecta.",
     "unsupported": "Versión de sincronización incompatible. Actualiza Memora y el plugin.",
@@ -2233,49 +2215,6 @@
     "knowledgeOwned": "Nota de conocimiento conservada",
     "supersededNote": "Sustituida · historial conservado",
     "openRevision": "Abrir esta revisión"
-  },
-  "budget": {
-    "title": "Presupuesto y límites",
-    "description": "El tope mensual es compartido. Cada ejecución también respeta los límites de su rutina y del grupo de curaduría; se aplica el más restrictivo.",
-    "routines": "Límites por rutina",
-    "monthly": "Presupuesto mensual compartido",
-    "monthlyHint": "Consumo registrado por todas las rutinas de esta política. El mes UTC se reinicia el primer día. Las estimaciones y reservas no bloquean la generación.",
-    "monthCalls": "Llamadas por mes",
-    "monthTokens": "Tokens por mes",
-    "used": "{used} de {limit} consumidos",
-    "remaining": "Disponible: {count}",
-    "range": "Rango permitido: {min} a {max}.",
-    "invalid": "Complete todos los campos con números enteros dentro del rango permitido.",
-    "exhausted": "El consumo registrado supera este límite. Se bloqueará la próxima generación; la que esté en curso podrá terminar.",
-    "monthlyEffect": "Guardar cambia el límite comprobado antes de futuras generaciones. Se conservan el consumo y el historial. El uso no informado se indica y no se sustituye por reservas.",
-    "saveMonth": "Guardar presupuesto mensual",
-    "saveCurator": "Guardar límites de curaduría",
-    "saving": "Guardando…",
-    "saved": "Cambios guardados.",
-    "reload": "Recargar valores guardados",
-    "curator": "Límites por grupo de curaduría",
-    "curatorHint": "Un grupo genera cambios en la Wiki y verifica su respaldo en las fuentes. Estos límites controlan su tamaño y duración dentro del presupuesto de la rutina.",
-    "curatorInvalid": "Revise los rangos permitidos. Se necesitan al menos 2 llamadas sin reparación o 4 con reparación activada.",
-    "curatorEffect": "Guardar crea una nueva configuración para los próximos grupos. Los trabajos de la configuración anterior pierden la autorización para continuar; se conservan las propuestas y el historial. Una política pausada sigue pausada.",
-    "routineHint": "Estos límites se aplican por ejecución. El tope mensual compartido, editable en Presupuesto, puede detener el trabajo antes de alcanzar estos valores.",
-    "fields": {
-      "modelCalls": "Llamadas por grupo",
-      "repairs": "Ciclos de reparación",
-      "deadlineMs": "Duración máxima (segundos)",
-      "targets": "Páginas por grupo",
-      "sectionPatchesPerPage": "Secciones por página",
-      "originalPassages": "Pasajes originales",
-      "tools": "Operaciones de consulta"
-    },
-    "hints": {
-      "modelCalls": "Incluye generación, verificación de respaldo y reparaciones.",
-      "repairs": "Cada ciclo reserva margen para reparar y verificar de nuevo.",
-      "deadlineMs": "Límite de tiempo para un grupo de curaduría.",
-      "targets": "Máximo de páginas modificadas en conjunto.",
-      "sectionPatchesPerPage": "Máximo de secciones modificadas en cada página.",
-      "originalPassages": "Máximo de pasajes completos admitidos como evidencia.",
-      "tools": "Máximo de operaciones de búsqueda y lectura del grupo."
-    }
   },
   "objects": {
     "kinds": {

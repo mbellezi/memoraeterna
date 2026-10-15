@@ -9,7 +9,6 @@ import {
   consultationPrompt
 } from "./consultation-service.js";
 import { consultationEvidence, consultationSnapshot } from "./consultation-fixture.js";
-import { organizationReadiness } from "./organization-participation.js";
 const fixture = () =>
   consultationSnapshot({
     evidence: [consultationEvidence(1), consultationEvidence(2)],
@@ -180,75 +179,5 @@ describe("bounded cited consultation", () => {
         "consultation"
       ).slots
     ).toEqual({ guidance: "Answer only", advanced: "Write page Topic" });
-  });
-});
-describe("organization checkpoint barrier", () => {
-  const run = (stages: Record<string, string>, status = "succeeded") => ({
-    id: randomUUID(),
-    sourceItemId: randomUUID(),
-    status: status as "succeeded",
-    effectiveStages: [...Object.keys(stages), "organizeKnowledge"],
-    stagesCheckpoint: Object.fromEntries(
-      Object.entries(stages).map(([k, status]) => [k, { status }])
-    )
-  });
-  it("never equates an ended parent with selected matching completion", () => {
-    expect(
-      organizationReadiness(
-        [
-          run({
-            chunking: "completed",
-            atomicNotes: "completed",
-            atomicNoteMatching: "waiting_for_batch",
-            sourceMatching: "pending"
-          })
-        ],
-        false
-      ).ready
-    ).toBe(false);
-    expect(
-      organizationReadiness([run({ chunking: "completed", sourceMatching: "completed" })], true)
-        .ready
-    ).toBe(false);
-  });
-  it("treats source matching limited by the pair cap as complete and an exhausted budget as partial", () => {
-    const matching = (metadata: Record<string, unknown>) => {
-      const item = run({ sourceMatching: "completed" });
-      item.stagesCheckpoint.sourceMatching = { status: "completed", metadata } as never;
-      return item;
-    };
-    const coverage = {
-      judgedPairs: 6,
-      candidatePairs: 18,
-      capReached: true,
-      relationLimitReached: false,
-      budgetExhausted: false
-    };
-    const capped = matching({ partial: false, coverage });
-    expect(organizationReadiness([capped], false).omissions).toEqual([]);
-    const exhausted = matching({
-      partial: true,
-      coverage: { ...coverage, capReached: false, budgetExhausted: true }
-    });
-    expect(organizationReadiness([exhausted], false).omissions).toEqual([
-      { sourceItemId: exhausted.sourceItemId, stage: "sourceMatching", status: "partial" }
-    ]);
-  });
-  it("admits terminal partial inputs after both matching barriers and the final catalog job settle", () => {
-    const successful = run({
-        chunking: "completed",
-        atomicNotes: "completed",
-        atomicNoteMatching: "completed",
-        sourceMatching: "completed"
-      }),
-      failed = run({ chunking: "completed", knowledgeGraph: "failed" }, "failed");
-    const before = structuredClone(successful),
-      state = organizationReadiness([successful, failed], false);
-    expect(state.ready).toBe(true);
-    expect(state.omissions).toEqual([
-      { sourceItemId: failed.sourceItemId, stage: "knowledgeGraph", status: "failed" }
-    ]);
-    expect(successful).toEqual(before);
-    expect(organizationReadiness([successful, failed], true).ready).toBe(false);
   });
 });

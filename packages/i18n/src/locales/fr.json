@@ -11,25 +11,11 @@
     }
   },
   "automation": {
-    "areas": {
-      "people": "Personnes",
-      "organizations": "Organisations",
-      "places": "Lieux",
-      "works": "Œuvres",
-      "themes": "Thèmes",
-      "entities": "Entités",
-      "syntheses": "Synthèses",
-      "investigations": "Investigations",
-      "maps": "Cartes"
-    },
     "clearHistory": "Nettoyer l’historique des tâches",
     "clearHistoryHint": "Retire des listes les exécutions terminées, échouées ou annulées. Les tâches actives, planifications, problèmes en attente, audits et réservations de budget sont conservés.",
     "clearingHistory": "Nettoyage de l’historique…",
     "historyCleared": "Historique des exécutions terminées nettoyé. Les éléments en attente sont conservés.",
     "clearHistoryFailed": "Le nettoyage n’a pas abouti. Réessayez."
-  },
-  "investigation": {
-    "updated": "Une réponse suivie a changé"
   },
   "consultation": {
     "errors": {
@@ -44,7 +30,6 @@
       "deadline": "Le délai a expiré. Réduisez le périmètre ou choisissez un modèle plus rapide.",
       "model": "Aucun profil génératif configuré n’est disponible.",
       "unavailable": "La base de données n’est pas encore prête.",
-      "retired": "Cette fonction a été supprimée. Les réponses ne peuvent plus être enregistrées comme pages ni suivies.",
       "sources": "Les sources n’ont pas pu être chargées."
     },
     "contextCoverage": "Contexte facultatif : {included} éléments sur {available} tiennent dans le budget du modèle. Les passages originaux restent disponibles.",
@@ -1792,7 +1777,6 @@
     }
   },
   "wiki": {
-    "remainingReferences": "Références",
     "treeWidth": "Largeur de l’arborescence : {width} pixels",
     "resizeTreeHint": "Faites glisser pour ajuster. Utilisez les flèches gauche/droite, Début ou Fin. Double-cliquez pour rétablir.",
     "resizeTree": "Ajuster la largeur de l’arborescence du wiki",
@@ -1930,9 +1914,7 @@
     "keepApp": "Conserver application",
     "manual": "Enregistrer la fusion manuelle",
     "stale": "Le fichier ou l’application a changé. Actualisez la comparaison avant de résoudre.",
-    "addSection": "Ajouter une section humaine",
-    "sectionTitle": "Introduction",
-    "scopeHint": "Le plugin associé peut enregistrer des révisions des sources, notes et pages wiki. Les preuves et relations générées restent en lecture seule. Enregistrer ne lance pas l’IA.",
+    "scopeHint": "Le plugin associé peut enregistrer des révisions des sources et des notes. Les preuves et relations générées restent en lecture seule. Enregistrer ne lance pas l’IA.",
     "paused": "En pause · reprenez la synchronisation dans Memora",
     "rePair": "Association révoquée ou sans droit d’écriture. Créez une nouvelle association Obsidian dans Memora et reconnectez.",
     "unsupported": "Version de synchronisation incompatible. Mettez Memora et le plugin à jour.",
@@ -2231,49 +2213,6 @@
     "knowledgeOwned": "Note de connaissance conservée",
     "supersededNote": "Remplacée · historique conservé",
     "openRevision": "Ouvrir cette révision"
-  },
-  "budget": {
-    "title": "Budget et limites",
-    "description": "Le plafond mensuel est partagé. Chaque exécution respecte aussi les limites de sa routine et du groupe de curation ; la limite la plus stricte prévaut.",
-    "routines": "Limites par routine",
-    "monthly": "Budget mensuel partagé",
-    "monthlyHint": "Consommation enregistrée pour toutes les routines de cette politique. Le mois UTC recommence le premier jour. Les estimations et réservations ne bloquent pas la génération.",
-    "monthCalls": "Appels par mois",
-    "monthTokens": "Tokens par mois",
-    "used": "{used} sur {limit} consommés",
-    "remaining": "Disponible : {count}",
-    "range": "Plage autorisée : {min} à {max}.",
-    "invalid": "Renseignez tous les champs avec des nombres entiers dans la plage autorisée.",
-    "exhausted": "La consommation enregistrée dépasse ce plafond. La prochaine génération sera bloquée ; celle en cours pourra se terminer.",
-    "monthlyEffect": "Enregistrer modifie le plafond vérifié avant les prochaines générations. La consommation et l’historique sont conservés. Les données manquantes sont signalées sans estimation de remplacement.",
-    "saveMonth": "Enregistrer le budget mensuel",
-    "saveCurator": "Enregistrer les limites de curation",
-    "saving": "Enregistrement…",
-    "saved": "Modifications enregistrées.",
-    "reload": "Recharger les valeurs enregistrées",
-    "curator": "Limites par groupe de curation",
-    "curatorHint": "Un groupe génère des modifications de la Wiki et vérifie leur appui dans les sources. Ces limites contrôlent sa taille et sa durée dans le budget de la routine.",
-    "curatorInvalid": "Vérifiez les plages autorisées. Il faut au moins 2 appels sans réparation ou 4 avec réparation activée.",
-    "curatorEffect": "Enregistrer crée une nouvelle configuration pour les prochains groupes. Les travaux de la configuration précédente perdent leur autorisation de continuer ; les propositions et l’historique sont conservés. Une politique en pause reste en pause.",
-    "routineHint": "Ces limites s’appliquent par exécution. Le plafond mensuel partagé, modifiable dans Budget, peut arrêter le travail avant ces valeurs.",
-    "fields": {
-      "modelCalls": "Appels par groupe",
-      "repairs": "Cycles de réparation",
-      "deadlineMs": "Durée maximale (secondes)",
-      "targets": "Pages par groupe",
-      "sectionPatchesPerPage": "Sections par page",
-      "originalPassages": "Passages originaux",
-      "tools": "Opérations de consultation"
-    },
-    "hints": {
-      "modelCalls": "Comprend la génération, les vérifications et les réparations.",
-      "repairs": "Chaque cycle réserve une marge pour réparer et vérifier à nouveau.",
-      "deadlineMs": "Durée limite d’un groupe de curation.",
-      "targets": "Nombre maximal de pages modifiées ensemble.",
-      "sectionPatchesPerPage": "Nombre maximal de sections modifiées par page.",
-      "originalPassages": "Nombre maximal de passages complets admis comme preuves.",
-      "tools": "Nombre maximal de recherches et de lectures du groupe."
-    }
   },
   "objects": {
     "kinds": {

@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import { promptDefinitions, PromptSampleProgressSchema } from "@app/domain";
 import { defaultPromptPin, promptAudit } from "./prompt-runtime.js";
-import { runPromptSamples, promptSampleLimits, promptSampleCases } from "./prompt-samples.js";
+import {
+  isRetiredPromptFamily,
+  runPromptSamples,
+  promptSampleLimits,
+  promptSampleCases
+} from "./prompt-samples.js";
 function model() {
   const calls: Array<{ id: string; input: string }> = [];
   return {
@@ -35,166 +40,7 @@ function model() {
           ],
           gaps: []
         };
-      else if (id.startsWith("maintenance."))
-        output = { operations: [], explanation: "No structural improvement is warranted." };
-      else if (id === "organization.evolution.support")
-        output = { supported: true, checkedTargets: ["new_topic", "new_index"], issues: [] };
-      else if (
-        ["organization.temporal", "organization.procedure", "organization.consolidation"].includes(
-          id
-        )
-      ) {
-        const policy = JSON.parse(input.split("POLICY: ")[1]!.split("\nGROUP:")[0]!);
-        const interpretation = {
-          statement: "In2024 I preferred short study sessions.",
-          perspective: "user_statement",
-          context: "historical",
-          eventTime: { precision: "year", value: "2024" },
-          validFrom: null,
-          validUntil: null,
-          publicationTime: null,
-          relationships: [],
-          procedure:
-            id === "organization.procedure"
-              ? {
-                  steps: ["Try three short sessions"],
-                  workedWhen: "The supplied author felt less tired",
-                  assumptions: ["Self report"],
-                  limits: ["Retention was not measured"],
-                  corrections: []
-                }
-              : null,
-          originalHandles: ["e1", "e2"]
-        };
-        output = {
-          explanation: "Read original experience with qualifications",
-          topics: [
-            {
-              handle: "new_topic",
-              title: "Experience",
-              purpose: "Read original experience",
-              sections: [
-                {
-                  id: null,
-                  title: "Experience",
-                  markdown: "In2024 I preferred short sessions. [e1]",
-                  originalHandles: ["e1", "e2"],
-                  ...(id === "organization.consolidation" ? {} : { interpretation })
-                }
-              ],
-              links: ["new_index"]
-            }
-          ],
-          indexes: [
-            {
-              handle: "new_index",
-              title: "Originals",
-              purpose: "Read exact originals",
-              owner: { topic: "new_topic" },
-              groups: [
-                {
-                  id: null,
-                  title: "Sources",
-                  explanation: null,
-                  originalHandles: [],
-                  targets: (id === "organization.consolidation"
-                    ? ["r1", "r2", "r3", "r4"]
-                    : ["r1", "r2"]
-                  ).map((target) => ({ target, purpose: "reading" }))
-                }
-              ]
-            }
-          ],
-          ...(id === "organization.consolidation"
-            ? {
-                noteEvolution: {
-                  version: "note-evolution-v1",
-                  kind: "cross_source",
-                  noteIds: policy.selectedNotes.map((n: any) => n.id),
-                  reason: "Preserve distinct attributed originals",
-                  notes: [
-                    {
-                      title: "Experience",
-                      ideaStatement: "Two supplied observations",
-                      bodyMarkdown: "Short sessions were preferred; retention was not measured.",
-                      originalHandles: ["e1", "e2"]
-                    }
-                  ]
-                }
-              }
-            : {})
-        };
-      } else if (id === "organization.curator.support")
-        output = { supported: true, checkedTargets: ["new_topic", "new_index"], issues: [] };
-      else if (id === "organization.curator")
-        output = {
-          explanation: "Read complementary materials",
-          topics: [
-            {
-              handle: "new_topic",
-              title: "Recall with feedback",
-              purpose: "Explain specific conditions for recall",
-              sections: [
-                {
-                  id: null,
-                  title: "Conditions",
-                  markdown: "Feedback qualifies recall [e1].",
-                  originalHandles: ["e1"]
-                }
-              ],
-              links: ["new_index"]
-            }
-          ],
-          indexes: [
-            {
-              handle: "new_index",
-              title: "Original materials",
-              purpose: "Read sources supporting this topic",
-              owner: { topic: "new_topic" },
-              groups: [
-                {
-                  id: null,
-                  title: "Sources",
-                  explanation: null,
-                  originalHandles: [],
-                  targets: [
-                    { target: "r1", purpose: "source" },
-                    { target: "r2", purpose: "source" }
-                  ]
-                }
-              ]
-            }
-          ]
-        };
-      else if (id === "organization.legacy_synthesis") {
-        const transcript = JSON.parse(
-          input.split("PREVIOUS TOOLS: ")[1]!.split("\nRemaining tools:")[0]!
-        ) as Array<{ action: { tool: string; handle?: string } | null }>;
-        const read = transcript
-          .filter((row) => row.action?.tool === "readRevision")
-          .map((row) => row.action!.handle);
-        output = !transcript.some((row) => row.action?.tool === "searchEvidence")
-          ? { tool: "searchEvidence", query: "", limit: 20 }
-          : !read.includes("e1")
-            ? { tool: "readRevision", handle: "e1", selector: "full" }
-            : !read.includes("e2")
-              ? { tool: "readRevision", handle: "e2", selector: "full" }
-              : {
-                  tool: "proposePageChange",
-                  target: "page",
-                  expectedRevisionId: null,
-                  explanation: "A qualified comparison",
-                  sections: [
-                    {
-                      sectionId: null,
-                      title: "Feedback",
-                      markdown: "The studies qualify the effect of feedback.",
-                      citations: ["e1", "e2"],
-                      contextIds: []
-                    }
-                  ]
-                };
-      } else throw new Error("Untested sample " + id);
+      else throw new Error("Untested sample " + id);
       return {
         taskType: task as any,
         output,
@@ -234,7 +80,10 @@ describe("bounded catalog sample runner", () => {
     expect(progress.inapplicable).toEqual({});
     expect(progress.calls).toBe(ai.calls.length);
     expect(progress.auditIds).toHaveLength(ai.calls.length);
-    expect(progress.completedKeys.some((key) => key.startsWith("organization.repair:"))).toBe(true);
+    // The retired curator, organization and maintenance prompts have no sampler (T39r).
+    expect(ids.some(isRetiredPromptFamily)).toBe(true);
+    expect(promptSampleCases(ids).some((entry) => isRetiredPromptFamily(entry.id))).toBe(false);
+    expect(ai.calls.some((c) => isRetiredPromptFamily(c.id))).toBe(false);
     expect(
       progress.completedKeys.some((key) => key.startsWith("sources.decide.repair.same_root:"))
     ).toBe(true);

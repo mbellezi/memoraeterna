@@ -5,49 +5,22 @@ import type { IpcMain } from "electron";
 import { ipcChannels } from "../../shared/ipc.js";
 import { registerConsultationIpc } from "./consultation-ipc.js";
 import type { ConsultationService } from "./consultation-service.js";
-import type { InvestigationService } from "./investigation-service.js";
 
 function register() {
   const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
   const ipc = { handle: (channel: string, handler: never) => handlers.set(channel, handler) };
   const service = { ask: vi.fn(async () => "answer"), cancel: vi.fn(() => null) };
-  const investigations = {
-    list: vi.fn(async () => []),
-    get: vi.fn(async () => null),
-    follow: vi.fn(),
-    state: vi.fn()
-  };
-  registerConsultationIpc(
-    ipc as unknown as IpcMain,
-    service as unknown as ConsultationService,
-    investigations as unknown as InvestigationService
-  );
+  registerConsultationIpc(ipc as unknown as IpcMain, service as unknown as ConsultationService);
   const call = async (channel: string, ...args: unknown[]) => handlers.get(channel)!({}, ...args);
-  return { call, service, investigations };
+  return { call, service, channels: [...handlers.keys()] };
 }
 
 describe("Ask over IPC", () => {
-  it("answers consultation.errors.retired to saving an answer and to following a question", async () => {
-    const { call, service, investigations } = register();
-    for (const channel of [
-      ipcChannels.consultationSave,
-      ipcChannels.investigationFollow,
-      ipcChannels.investigationState
-    ])
-      await expect(call(channel, { anything: true })).rejects.toThrow(
-        "consultation.errors.retired"
-      );
-    expect(investigations.follow).not.toHaveBeenCalled();
-    expect(investigations.state).not.toHaveBeenCalled();
-    expect(service.ask).not.toHaveBeenCalled();
-  });
-  it("keeps the stored followed questions readable", async () => {
-    const { call, investigations } = register();
-    await call(ipcChannels.investigationList);
-    await call(ipcChannels.investigationGet, randomUUID());
-    expect(investigations.list).toHaveBeenCalledOnce();
-    expect(investigations.get).toHaveBeenCalledOnce();
-    await expect(call(ipcChannels.investigationGet, "not-an-id")).rejects.toThrow();
+  it("registers only asking and canceling: saving, following and the followed questions are gone", () => {
+    const { channels } = register();
+    expect(channels.sort()).toEqual(
+      [ipcChannels.consultationAsk, ipcChannels.consultationCancel].sort()
+    );
   });
   it("validates a question before asking and cancels by request id", async () => {
     const { call, service } = register();

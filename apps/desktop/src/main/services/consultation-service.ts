@@ -525,8 +525,4 @@ export class ConsultationService {
     }
     return { answer: answer!, auditIds, inputTokens, outputTokens, costEstimate };
   }
-  /** Retired with the organization settings it sampled; the main wiring still calls it. */
-  readonly sample: (...request: unknown[]) => Promise<never> = async () => {
-    throw new Error("consultation.errors.retired");
-  };
 }

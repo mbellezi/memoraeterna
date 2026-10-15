@@ -11,25 +11,11 @@
     }
   },
   "automation": {
-    "areas": {
-      "people": "People",
-      "organizations": "Organizations",
-      "places": "Places",
-      "works": "Works",
-      "themes": "Themes",
-      "entities": "Entities",
-      "syntheses": "Syntheses",
-      "investigations": "Investigations",
-      "maps": "Maps"
-    },
     "clearHistory": "Clear task history",
     "clearHistoryHint": "Removes completed, failed or canceled runs from the lists. Active tasks, schedules, unresolved work, audit and budget usage are preserved.",
     "clearingHistory": "Clearing history…",
     "historyCleared": "Finished-run history cleared. Unresolved work was preserved.",
     "clearHistoryFailed": "Could not complete cleanup. Try again."
-  },
-  "investigation": {
-    "updated": "A followed answer changed"
   },
   "consultation": {
     "errors": {
@@ -44,7 +30,6 @@
       "deadline": "The time limit expired. Narrow the scope or choose a faster model.",
       "model": "No eligible configured generative profile is available.",
       "unavailable": "The database is not ready.",
-      "retired": "This feature was removed. Answers can no longer be saved as pages or followed.",
       "sources": "The sources could not be loaded."
     },
     "contextCoverage": "Optional context: {included} of {available} items fit the model budget. Original passages remain available.",
@@ -1787,7 +1772,6 @@
     }
   },
   "wiki": {
-    "remainingReferences": "References",
     "treeWidth": "Tree width: {width} pixels",
     "resizeTreeHint": "Drag to resize. Use Left/Right arrows, Home or End. Double-click to reset.",
     "resizeTree": "Resize wiki navigation",
@@ -1925,9 +1909,7 @@
     "keepApp": "Keep application",
     "manual": "Save manual merge",
     "stale": "The file or application changed again. Refresh the comparison before resolving.",
-    "addSection": "Add human section",
-    "sectionTitle": "Introduction",
-    "scopeHint": "The paired plugin can save source, note and wiki prose revisions. Generated evidence and relations stay read only. Saving does not process AI.",
+    "scopeHint": "The paired plugin can save source and note prose revisions. Generated evidence and relations stay read only. Saving does not process AI.",
     "paused": "Paused · resume sync in Memora",
     "rePair": "Pairing revoked or missing write permission. Create a new Obsidian pairing in Memora and reconnect.",
     "unsupported": "Unsupported sync version. Update Memora and the plugin.",
@@ -2226,49 +2208,6 @@
     "knowledgeOwned": "Retained knowledge note",
     "supersededNote": "Superseded · history retained",
     "openRevision": "Open this revision"
-  },
-  "budget": {
-    "title": "Budget and limits",
-    "description": "The monthly ceiling is shared. Each run also obeys its routine and curator-group limits; the tightest limit applies.",
-    "routines": "Limits by routine",
-    "monthly": "Shared monthly budget",
-    "monthlyHint": "Recorded usage across all routines of this policy. The UTC calendar month resets on its first day. Estimates and reservations do not block generation.",
-    "monthCalls": "Calls per month",
-    "monthTokens": "Tokens per month",
-    "used": "{used} of {limit} used",
-    "remaining": "Available: {count}",
-    "range": "Allowed range: {min} to {max}.",
-    "invalid": "Enter whole numbers within the allowed range in every field.",
-    "exhausted": "Recorded usage exceeds this limit. The next generation will be blocked; a generation already running may finish.",
-    "monthlyEffect": "Saving changes the limit checked before future generations. Recorded usage and history are preserved. Missing usage is disclosed, never replaced with a reservation.",
-    "saveMonth": "Save monthly budget",
-    "saveCurator": "Save curator limits",
-    "saving": "Saving…",
-    "saved": "Changes saved.",
-    "reload": "Reload saved values",
-    "curator": "Limits per curator group",
-    "curatorHint": "A group generates Wiki changes and verifies their support in the sources. These limits control its size and duration within the routine budget.",
-    "curatorInvalid": "Check the allowed ranges. At least 2 calls are required without repair, or 4 with repair enabled.",
-    "curatorEffect": "Saving creates new configuration for future groups. Work admitted under the previous configuration loses authority to continue; proposals and history remain. A paused policy stays paused.",
-    "routineHint": "These limits apply per run. The shared monthly ceiling, editable in Budget, may stop work before these values.",
-    "fields": {
-      "modelCalls": "Calls per group",
-      "repairs": "Repair cycles",
-      "deadlineMs": "Maximum duration (seconds)",
-      "targets": "Pages per group",
-      "sectionPatchesPerPage": "Sections per page",
-      "originalPassages": "Original passages",
-      "tools": "Retrieval operations"
-    },
-    "hints": {
-      "modelCalls": "Includes generation, support checks and repairs.",
-      "repairs": "Each cycle reserves room for repair and a new support check.",
-      "deadlineMs": "Time limit for one curator group.",
-      "targets": "Maximum pages changed together.",
-      "sectionPatchesPerPage": "Maximum sections changed in each page.",
-      "originalPassages": "Maximum complete passages admitted as evidence.",
-      "tools": "Maximum search and read operations for the group."
-    }
   },
   "objects": {
     "kinds": {

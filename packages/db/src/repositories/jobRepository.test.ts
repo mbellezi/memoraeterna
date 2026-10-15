@@ -164,6 +164,18 @@ describe("job lanes and dedupe keys", () => {
     await createJobRepository(db).retry("job-1");
     expect(db.queries[0]?.text).toContain("dedupe_key = null");
   });
+
+  it("lists the queued and running jobs of a batch by its runs and by the job payload", async () => {
+    const db = new FakeQueryable([[{ id: "job-1" }, { id: "job-2" }]]);
+    await expect(createJobRepository(db).activeIdsForBatch("batch-1")).resolves.toEqual([
+      "job-1",
+      "job-2"
+    ]);
+    const [query] = db.queries;
+    expect(query?.text).toContain("r.batch_id = $1 or j.payload->>'batchId' = $1::text");
+    expect(query?.text).toContain("j.status in ('queued', 'running')");
+    expect(query?.values).toEqual(["batch-1"]);
+  });
 });
 
 const workspace = resolve(import.meta.dirname, "../../../..");
@@ -315,6 +327,19 @@ describe.skipIf(!sidecarInstalled)("job lanes on a real PostgreSQL database", ()
       type: "topic-place",
       runAfter: job.runAfter
     });
+  });
+
+  it("lists only the queued and running jobs of the batch that a payload names", async () => {
+    const jobs = createJobRepository(db());
+    const [batchA, batchB, batchC] = [randomUUID(), randomUUID(), randomUUID()];
+    const queued = await jobs.create({ type: "ingestion", payload: { batchId: batchA } });
+    const running = await jobs.create({ type: "chunking", payload: { batchId: batchA } });
+    await db().query("update jobs set status = 'running' where id = $1", [running.id]);
+    const done = await jobs.create({ type: "embedding", payload: { batchId: batchA } });
+    await db().query("update jobs set status = 'succeeded' where id = $1", [done.id]);
+    await jobs.create({ type: "ingestion", payload: { batchId: batchB } });
+    expect((await jobs.activeIdsForBatch(batchA)).sort()).toEqual([queued.id, running.id].sort());
+    expect(await jobs.activeIdsForBatch(batchC)).toEqual([]);
   });
 
   it("enforces the lane and key checks in the database", async () => {

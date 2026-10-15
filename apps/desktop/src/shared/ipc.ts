@@ -4,11 +4,6 @@ import {
   obsidianLayoutApplyInputSchema
 } from "@app/integration-contracts";
 export { obsidianLayoutStatusSchema, obsidianLayoutConfigSchema, obsidianLayoutApplyInputSchema };
-import type {
-  FollowedInvestigation,
-  FollowInvestigationInputSchema,
-  InvestigationStateInputSchema
-} from "@app/domain";
 import type { PromptCommand } from "@app/domain";
 import {
   obsidianEditorialConflictsSchema,
@@ -23,7 +18,6 @@ import type {
   ViewHistoryListInput,
   ViewHistoryRecordInput
 } from "./view-history.js";
-import type { MaintenanceCommand } from "@app/domain";
 import type {
   ConsultationInput,
   ConsultationResult,
@@ -34,18 +28,9 @@ import type {
   ObjectLocateInput,
   RelationExplainInput,
   RelationExplanationResult,
-  ObjectLocateResult,
-  OrganizationRun
+  ObjectLocateResult
 } from "@app/domain";
-import type { OrganizationCommand } from "@app/domain";
-import type {
-  WikiPage,
-  WikiSaveInput,
-  WikiQuery,
-  WikiPageListSchema,
-  WikiResultsSchema,
-  WikiHistorySchema
-} from "@app/domain";
+import type { WikiPageListSchema, WikiResultsSchema } from "@app/domain";
 import type {
   MonitoringQuery,
   MonitoringPage,
@@ -64,7 +49,6 @@ import {
   MetadataEnrichmentQuerySchema,
   ProcessingPlanRequestSchema,
   SearchResultSchema,
-  WikiLinkedTargetSchema,
   SourceDescriptorDraftSchema,
   SourceDescriptorSchema,
   SourceItemTypeSchema,
@@ -81,28 +65,11 @@ import {
 } from "@app/domain";
 
 export const ipcChannels = {
-  investigationList: "app:investigation:list",
-  investigationGet: "app:investigation:get",
-  investigationFollow: "app:investigation:follow",
-  investigationState: "app:investigation:state",
   consultationAsk: "app:consultation:ask",
   consultationCancel: "app:consultation:cancel",
-  consultationSave: "app:consultation:save",
-  maintenanceCommand: "app:maintenance:command",
   promptCommand: "app:prompts:command",
-  curatorCommand: "app:curator:command",
-  organizationCommand: "app:organization:command",
-  wikiCollection: "app:wiki:collection",
-  wikiTree: "app:wiki:tree",
-  wikiContext: "app:wiki:context",
-  wikiMove: "app:wiki:move",
-  wikiLinkedTarget: "app:wiki:linked-target",
-  wikiResolveLinks: "app:wiki:resolve-links",
   wikiList: "app:wiki:list",
-  wikiGet: "app:wiki:get",
-  wikiSave: "app:wiki:save",
   wikiSearch: "app:wiki:search",
-  wikiHistory: "app:wiki:history",
   objectsLocate: "app:objects:locate",
   notesPage: "app:notes:page",
   notesRelations: "app:notes:relations",
@@ -171,7 +138,6 @@ export const ipcChannels = {
   relationLabelsStatus: "app:knowledge:relation-labels:status",
   jobsList: "app:jobs:list",
   jobsChanged: "app:jobs:changed",
-  jobsCancelBatch: "app:jobs:cancel-batch",
   jobsCancel: "app:jobs:cancel",
   jobsRetry: "app:jobs:retry",
   jobsDelete: "app:jobs:delete",
@@ -1616,32 +1582,6 @@ export type IntegrationClient = z.infer<typeof integrationClientSchema>;
 export type ObsidianSyncStatus = z.infer<typeof obsidianSyncStatusSchema>;
 export type WindowNavigationDirection = z.infer<typeof windowNavigationDirectionSchema>;
 
-export const wikiResolveLinksInputSchema = z
-  .object({ pageId: z.string().uuid(), revisionId: z.string().uuid().optional() })
-  .strict();
-
-const wikiLinkReferenceSchema = z
-  .object({
-    kind: z.enum(["page", "source", "atomic_note", "entity"]),
-    id: z.string().uuid()
-  })
-  .strict();
-
-/**
- * Every link of one page revision in a single response. Links that do not exist are `unresolved`;
- * links whose read failed are `failed`, so one bad link never fails the page and can be retried.
- */
-export const wikiResolvedLinksSchema = z
-  .object({
-    pageId: z.string().uuid(),
-    revisionId: z.string().uuid(),
-    targets: z.array(WikiLinkedTargetSchema),
-    unresolved: z.array(wikiLinkReferenceSchema),
-    failed: z.array(wikiLinkReferenceSchema)
-  })
-  .strict();
-export type WikiResolvedLinks = z.infer<typeof wikiResolvedLinksSchema>;
-
 export const defaultAppSettings = {
   contentLanguage: "en",
   themeMode: "system",
@@ -1672,25 +1612,11 @@ export const defaultStorageSettings = {
 } satisfies StorageSettingsUpdate;
 
 export interface DesktopApi {
-  investigations: {
-    list: () => Promise<FollowedInvestigation[]>;
-    get: (id: string) => Promise<FollowedInvestigation | null>;
-    follow: (
-      input: z.infer<typeof FollowInvestigationInputSchema>
-    ) => Promise<FollowedInvestigation | null>;
-    state: (
-      input: z.infer<typeof InvestigationStateInputSchema>
-    ) => Promise<FollowedInvestigation | null>;
-  };
   consultation: {
     ask: (input: ConsultationInput) => Promise<ConsultationResult>;
     cancel: (id: string) => Promise<null>;
-    save: (id: string) => Promise<OrganizationRun>;
   };
-  maintenance: { command: (input: MaintenanceCommand) => Promise<unknown> };
   prompts: { command: (input: PromptCommand) => Promise<unknown> };
-  curator: { command: (input: import("@app/domain").CuratorCommand) => Promise<unknown> };
-  organization: { command: (input: OrganizationCommand) => Promise<unknown> };
   objects: {
     /** Where an object is (primary path, other placements, citations); null when it does not exist. */
     locate: (input: ObjectLocateInput) => Promise<ObjectLocateResult | null>;
@@ -1714,28 +1640,12 @@ export interface DesktopApi {
     /** Stops the source relation's explanation being written; true when one was stopped. */
     cancelExplainSource: (input: RelationExplainInput) => Promise<boolean>;
   };
+  /** The page list and source search of the Ask and Obsidian scope pickers (kept until T20 and T33). */
   wiki: {
-    collection: (
-      input: z.input<typeof import("@app/domain").WikiCollectionCommandSchema>
-    ) => Promise<z.infer<typeof import("@app/domain").WikiCollectionResponseSchema>>;
-    tree: (
-      input: z.input<typeof import("@app/domain").WikiTreeInputSchema>
-    ) => Promise<z.infer<typeof import("@app/domain").WikiTreeSchema>>;
-    context: (
-      input: z.input<typeof import("@app/domain").WikiContextInputSchema>
-    ) => Promise<z.infer<typeof import("@app/domain").WikiContextSchema>>;
-    move: (input: z.input<typeof import("@app/domain").WikiMoveInputSchema>) => Promise<WikiPage>;
-    linkedTarget: (
-      input: z.infer<typeof import("@app/domain").WikiLinkedTargetInputSchema>
-    ) => Promise<z.infer<typeof import("@app/domain").WikiLinkedTargetSchema> | null>;
-    resolveLinks: (pageId: string, revisionId?: string) => Promise<WikiResolvedLinks | null>;
     list: () => Promise<z.infer<typeof WikiPageListSchema>>;
-    get: (id: string, revisionId?: string) => Promise<WikiPage | null>;
-    save: (input: WikiSaveInput) => Promise<WikiPage>;
     search: (
       input: z.input<typeof import("@app/domain").WikiQuerySchema>
     ) => Promise<z.infer<typeof WikiResultsSchema>>;
-    history: (id: string) => Promise<z.infer<typeof WikiHistorySchema>>;
   };
   system: {
     getInfo: () => Promise<SystemInfo>;
@@ -1835,7 +1745,6 @@ export interface DesktopApi {
     listBatches: () => Promise<ProcessingBatch[]>;
   };
   jobs: {
-    cancelBatch: (id: string) => Promise<null>;
     list: () => Promise<JobRecord[]>;
     subscribe: (listener: () => void) => () => void;
     cancel: (jobId: string) => Promise<JobRecord | null>;

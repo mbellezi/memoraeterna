@@ -118,12 +118,3 @@ export function estimateAiPlanningTokens(
     1024
   );
 }
-
-export function organizationAiFailure(
-  error: unknown,
-  fallback = "organization.errors.failed"
-): string {
-  return String(error).includes("errors.ai.contextWindowLimit")
-    ? "organization.errors.context"
-    : (String(error).match(/(?:organization|maintenance)\.errors\.[A-Za-z]+/)?.[0] ?? fallback);
-}

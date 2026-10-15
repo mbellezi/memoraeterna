@@ -118,10 +118,6 @@ export interface AiServiceOptions {
 }
 
 export interface AiTaskLogContext {
-  maintenanceRunId?: string;
-  maintenanceStep?: number;
-  organizationRunId?: string;
-  organizationStep?: number;
   jobId?: string;
   ingestionRunId?: string;
   sourceItemId?: string;
@@ -169,16 +165,14 @@ interface PromptAdmission {
 
 /**
  * Zero-based retry index (0 = first try) that pipeline callers report in `AiTaskLogContext.attempt`.
- * Organization, maintenance and Ask calls reuse that field as a 1-based call counter, so they report
- * no retry index; unknown stays unknown.
+ * Ask calls reuse that field as a 1-based call counter, so they report no retry index; unknown
+ * stays unknown.
  */
 export function reportedRetryIndex(
-  context: Pick<AiTaskLogContext, "attempt" | "origin" | "organizationRunId" | "maintenanceRunId">
+  context: Pick<AiTaskLogContext, "attempt" | "origin">
 ): number | undefined {
   const { attempt, origin } = context;
-  if (context.organizationRunId || context.maintenanceRunId) return undefined;
-  if (origin === "organization" || origin === "maintenance" || origin === "consultation")
-    return undefined;
+  if (origin === "consultation") return undefined;
   return typeof attempt === "number" && Number.isInteger(attempt) && attempt >= 0
     ? attempt
     : undefined;
@@ -880,16 +874,7 @@ export class AiService {
         ...queueAndAttempt(completed, context),
         status: signal?.aborted ? "canceled" : "failed",
         error: redactSensitiveText(error),
-        sourceItemIds: taskSourceItemIds(context),
-        ...(context.organizationRunId
-          ? {
-              organizationRunId: context.organizationRunId,
-              organizationStep: context.organizationStep
-            }
-          : {}),
-        ...(context.maintenanceRunId
-          ? { maintenanceRunId: context.maintenanceRunId, maintenanceStep: context.maintenanceStep }
-          : {})
+        sourceItemIds: taskSourceItemIds(context)
       });
       if (error instanceof Error) Object.assign(error, { aiTaskRunId });
       throw error;
@@ -1103,18 +1088,6 @@ export class AiService {
         : await run();
       progress({ progress: 1 });
       const aiTaskRunId = await repository.recordTaskRun({
-        ...(logContext.maintenanceRunId
-          ? {
-              maintenanceRunId: logContext.maintenanceRunId,
-              maintenanceStep: logContext.maintenanceStep
-            }
-          : {}),
-        ...(logContext.organizationRunId
-          ? {
-              organizationRunId: logContext.organizationRunId,
-              organizationStep: logContext.organizationStep
-            }
-          : {}),
         profileId: selection.profileId,
         taskType,
         provider: result.providerId,
@@ -1183,18 +1156,6 @@ export class AiService {
       // What the failed call cost and the wire options of its last request, which may be a fallback.
       const failedReport = remoteCallReport(error);
       const aiTaskRunId = await repository.recordTaskRun({
-        ...(logContext.maintenanceRunId
-          ? {
-              maintenanceRunId: logContext.maintenanceRunId,
-              maintenanceStep: logContext.maintenanceStep
-            }
-          : {}),
-        ...(logContext.organizationRunId
-          ? {
-              organizationRunId: logContext.organizationRunId,
-              organizationStep: logContext.organizationStep
-            }
-          : {}),
         profileId: selection.profileId,
         taskType,
         provider: selection.provider,

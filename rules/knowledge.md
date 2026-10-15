@@ -55,7 +55,7 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
   They are active at birth with an AI-provenance badge (review is optional) and are embedded when
   created, so matching never meets a note without a vector. Human edits protect a note and
   invalidate its embedding and dependents; one embedding job rebuilds it, never generative AI.
-  Approval invalidates no embedding, decision, explanation or evidence; only the frozen legacy wiki reads status.
+  Approval invalidates no embedding, decision, explanation or evidence.
 - Repeated derivations of the same passage are not independent corroboration.
 - Entities and semantic relations are canonical in SQL with evidence. Names are
   retrieval signals, never identity; identity reuse needs conservative

@@ -300,14 +300,17 @@ export function createJobRepository(db: Queryable) {
       return result.rows.map(mapJob);
     },
 
-    async nextQueuedOfType(type: string): Promise<JobRecord | null> {
-      const row = (
-        await db.query<JobRow>(
-          `select ${returning} from jobs where type=$1 and status='queued' and run_after<=now() order by priority desc,run_after asc limit 1`,
-          [type]
-        )
-      ).rows[0];
-      return row ? mapJob(row) : null;
+    /** The queued and running jobs of a processing batch: its runs' ingestion jobs and batch jobs. */
+    async activeIdsForBatch(batchId: string): Promise<string[]> {
+      const result = await db.query<{ id: string }>(
+        `select distinct j.id
+         from jobs j
+         left join ingestion_runs r on j.id = r.job_id or j.payload->>'ingestionRunId' = r.id::text
+         where (r.batch_id = $1 or j.payload->>'batchId' = $1::text)
+           and j.status in ('queued', 'running')`,
+        [batchId]
+      );
+      return result.rows.map((row) => row.id);
     },
     /**
      * Claims the next due job, optionally of one lane and of the given types. The order matches

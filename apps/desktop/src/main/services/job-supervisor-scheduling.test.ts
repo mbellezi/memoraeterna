@@ -10,14 +10,17 @@ const mocks = vi.hoisted(() => ({
     findById: vi.fn(),
     retry: vi.fn(),
     claimNext: vi.fn(),
-    nextQueuedOfType: vi.fn(),
-    update: vi.fn()
+    update: vi.fn(),
+    activeIdsForBatch: vi.fn(),
+    requestCancel: vi.fn()
   },
   runs: {
     recoverInterrupted: vi.fn(),
     findById: vi.fn(),
     fail: vi.fn(),
-    findReleasableBatchRun: vi.fn()
+    findReleasableBatchRun: vi.fn(),
+    listByBatch: vi.fn(),
+    cancel: vi.fn()
   },
   hierarchy: { refreshBatch: vi.fn() }
 }));
@@ -78,21 +81,17 @@ describe("ingestion queue scheduling", () => {
     expect(release).toHaveBeenCalledTimes(2);
   });
 
-  it("attempts foreground claims even when wiki and maintenance admission fail", async () => {
+  it("attempts foreground claims even when the vault projection admission fails", async () => {
     const enqueue = vi.fn().mockRejectedValue(new Error("missing projection clock"));
-    const maintenanceTick = vi.fn().mockRejectedValue(new Error("maintenance unavailable"));
     supervisor = new JobSupervisor({
       getPool: () => ({}) as PgPool,
-      maintenanceTick,
       obsidianSyncService: { projectSource: vi.fn(), wiki: { enqueue } } as unknown as NonNullable<
         ConstructorParameters<typeof JobSupervisor>[0]["obsidianSyncService"]
       >
     });
     mocks.jobs.claimNext.mockResolvedValue(null);
-    mocks.jobs.nextQueuedOfType.mockResolvedValue(null);
     await expect(supervisor.runOnce()).resolves.toBeNull();
     expect(enqueue).toHaveBeenCalledOnce();
-    expect(maintenanceTick).toHaveBeenCalledOnce();
     expect(mocks.jobs.claimNext).toHaveBeenCalledOnce();
     // The heavy pass claims heavy work only; light jobs belong to the light workers.
     expect(mocks.jobs.claimNext).toHaveBeenCalledWith(
@@ -100,6 +99,26 @@ describe("ingestion queue scheduling", () => {
       expect.arrayContaining(["ingestion"]),
       "heavy"
     );
+  });
+  it("cancels the active jobs of a batch and its pending and running runs", async () => {
+    supervisor = new JobSupervisor({ getPool: () => ({}) as PgPool });
+    mocks.jobs.activeIdsForBatch.mockResolvedValue(["job-a", "job-b"]);
+    mocks.jobs.requestCancel.mockImplementation(async (id: string) => ({
+      id,
+      type: "ingestion",
+      status: "canceled",
+      payload: {}
+    }));
+    mocks.runs.listByBatch.mockResolvedValue([
+      { id: "run-1", status: "running" },
+      { id: "run-2", status: "succeeded" },
+      { id: "run-3", status: "pending" }
+    ]);
+    await expect(supervisor.cancelBatch("batch")).resolves.toBeNull();
+    expect(mocks.jobs.activeIdsForBatch).toHaveBeenCalledWith("batch");
+    expect(mocks.jobs.requestCancel.mock.calls.map(([id]) => id)).toEqual(["job-a", "job-b"]);
+    expect(mocks.runs.cancel.mock.calls.map(([id]) => id)).toEqual(["run-1", "run-3"]);
+    expect(mocks.hierarchy.refreshBatch).toHaveBeenCalledWith("batch");
   });
   it("fails a document without text with a localized error and does not retry it", async () => {
     // A web capture whose Defuddle result was empty used to fail here as "missing_markdown".

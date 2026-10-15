@@ -3,12 +3,6 @@ import {
   obsidianLayoutConfigSchema,
   obsidianLayoutApplyInputSchema
 } from "@app/integration-contracts";
-import {
-  FollowedInvestigationSchema,
-  FollowInvestigationInputSchema,
-  InvestigationStateInputSchema
-} from "@app/domain";
-import { CuratorCommandSchema, CuratorResponseSchema } from "@app/domain";
 import { PromptCommandSchema, PromptResponseSchema } from "@app/domain";
 import {
   obsidianEditorialConflictsSchema,
@@ -30,13 +24,7 @@ import {
   obsidianWikiRecoverSchema,
   obsidianWikiRetiredMoveSchema
 } from "../shared/ipc.js";
-import { MaintenanceCommandSchema, MaintenanceResponseSchema } from "@app/domain";
-import {
-  ConsultationInputSchema,
-  ConsultationResultSchema,
-  OrganizationRunSchema
-} from "@app/domain";
-import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
+import { ConsultationInputSchema, ConsultationResultSchema } from "@app/domain";
 import { ObjectLocateInputSchema, ObjectLocateResultSchema } from "@app/domain";
 import {
   NotePageInputSchema,
@@ -46,23 +34,7 @@ import {
   RelationExplainInputSchema,
   RelationExplanationResultSchema
 } from "@app/domain";
-import {
-  WikiCollectionCommandSchema,
-  WikiCollectionResponseSchema,
-  WikiTreeInputSchema,
-  WikiTreeSchema,
-  WikiContextInputSchema,
-  WikiContextSchema,
-  WikiMoveInputSchema,
-  WikiLinkedTargetSchema,
-  WikiLinkedTargetInputSchema,
-  WikiPageSchema,
-  WikiSaveInputSchema,
-  WikiQuerySchema,
-  WikiPageListSchema,
-  WikiResultsSchema,
-  WikiHistorySchema
-} from "@app/domain";
+import { WikiPageListSchema, WikiQuerySchema, WikiResultsSchema } from "@app/domain";
 import {
   monitoringQuerySchema,
   monitoringPageSchema,
@@ -186,37 +158,11 @@ import {
   obsidianSyncStatusSchema,
   similarityDebugRunSchema,
   similarityDebugClearResultSchema,
-  wikiResolveLinksInputSchema,
-  wikiResolvedLinksSchema,
   windowNavigationDirectionSchema,
   languageCodeSchema
 } from "../shared/ipc";
 
 const api: DesktopApi = {
-  investigations: {
-    list: async () =>
-      z
-        .array(FollowedInvestigationSchema)
-        .parse(await ipcRenderer.invoke(ipcChannels.investigationList)),
-    get: async (id) =>
-      FollowedInvestigationSchema.nullable().parse(
-        await ipcRenderer.invoke(ipcChannels.investigationGet, z.string().uuid().parse(id))
-      ),
-    follow: async (input) =>
-      FollowedInvestigationSchema.nullable().parse(
-        await ipcRenderer.invoke(
-          ipcChannels.investigationFollow,
-          FollowInvestigationInputSchema.parse(input)
-        )
-      ),
-    state: async (input) =>
-      FollowedInvestigationSchema.nullable().parse(
-        await ipcRenderer.invoke(
-          ipcChannels.investigationState,
-          InvestigationStateInputSchema.parse(input)
-        )
-      )
-  },
   consultation: {
     ask: async (input) =>
       ConsultationResultSchema.parse(
@@ -227,40 +173,12 @@ const api: DesktopApi = {
         .null()
         .parse(
           await ipcRenderer.invoke(ipcChannels.consultationCancel, z.string().uuid().parse(id))
-        ),
-    save: async (id) =>
-      OrganizationRunSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.consultationSave, z.string().uuid().parse(id))
-      )
-  },
-  maintenance: {
-    command: async (input) =>
-      MaintenanceResponseSchema.parse(
-        await ipcRenderer.invoke(
-          ipcChannels.maintenanceCommand,
-          MaintenanceCommandSchema.parse(input)
         )
-      )
   },
   prompts: {
     command: async (input) =>
       PromptResponseSchema.parse(
         await ipcRenderer.invoke(ipcChannels.promptCommand, PromptCommandSchema.parse(input))
-      )
-  },
-  curator: {
-    command: async (input) =>
-      CuratorResponseSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.curatorCommand, CuratorCommandSchema.parse(input))
-      )
-  },
-  organization: {
-    command: async (input) =>
-      OrganizationResponseSchema.parse(
-        await ipcRenderer.invoke(
-          ipcChannels.organizationCommand,
-          OrganizationCommandSchema.parse(input)
-        )
       )
   },
   objects: {
@@ -314,56 +232,11 @@ const api: DesktopApi = {
         )
   },
   wiki: {
-    collection: async (input) =>
-      WikiCollectionResponseSchema.parse(
-        await ipcRenderer.invoke(
-          ipcChannels.wikiCollection,
-          WikiCollectionCommandSchema.parse(input)
-        )
-      ),
-    tree: async (input) =>
-      WikiTreeSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.wikiTree, WikiTreeInputSchema.parse(input))
-      ),
-    context: async (input) =>
-      WikiContextSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.wikiContext, WikiContextInputSchema.parse(input))
-      ),
-    move: async (input) =>
-      WikiPageSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.wikiMove, WikiMoveInputSchema.parse(input))
-      ),
-    linkedTarget: async (input) =>
-      WikiLinkedTargetSchema.nullable().parse(
-        await ipcRenderer.invoke(
-          ipcChannels.wikiLinkedTarget,
-          WikiLinkedTargetInputSchema.parse(input)
-        )
-      ),
-    resolveLinks: async (pageId, revisionId) =>
-      wikiResolvedLinksSchema
-        .nullable()
-        .parse(
-          await ipcRenderer.invoke(
-            ipcChannels.wikiResolveLinks,
-            wikiResolveLinksInputSchema.parse({ pageId, revisionId })
-          )
-        ),
     list: async () => WikiPageListSchema.parse(await ipcRenderer.invoke(ipcChannels.wikiList)),
-    get: async (id, revisionId) =>
-      WikiPageSchema.nullable().parse(
-        await ipcRenderer.invoke(ipcChannels.wikiGet, { id, revisionId })
-      ),
-    save: async (input) =>
-      WikiPageSchema.parse(
-        await ipcRenderer.invoke(ipcChannels.wikiSave, WikiSaveInputSchema.parse(input))
-      ),
     search: async (input) =>
       WikiResultsSchema.parse(
         await ipcRenderer.invoke(ipcChannels.wikiSearch, WikiQuerySchema.parse(input))
-      ),
-    history: async (id) =>
-      WikiHistorySchema.parse(await ipcRenderer.invoke(ipcChannels.wikiHistory, id))
+      )
   },
   system: {
     async getInfo() {
@@ -751,10 +624,6 @@ const api: DesktopApi = {
     }
   },
   jobs: {
-    cancelBatch: async (id) =>
-      z
-        .null()
-        .parse(await ipcRenderer.invoke(ipcChannels.jobsCancelBatch, z.string().uuid().parse(id))),
     async list() {
       return jobRecordSchema.array().parse(await ipcRenderer.invoke(ipcChannels.jobsList));
     },

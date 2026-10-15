@@ -18,8 +18,6 @@ import {
   readAtomicNoteMatchingCheckpoint
 } from "./atomic-note-matching-checkpoint.js";
 import {
-  createOrganizationRepository,
-  createMaintenanceRepository,
   createChunkRepository,
   createDocumentRepository,
   createAtomicNoteRepository,
@@ -61,11 +59,6 @@ export interface JobSupervisorOptions {
     run: () => Promise<T>
   ) => Promise<T>;
   getPool: () => PgPool | null;
-  maintenanceTick?: () => Promise<void>;
-  maintenanceReady?: (job: JobRecord) => Promise<boolean>;
-  processMaintenance?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
-  reconcileOrganization?: () => Promise<void>;
-  processOrganization?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   processRelationLabels?: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
   pollIntervalMs?: number;
   logger?: Pick<Console, "error" | "warn">;
@@ -102,8 +95,6 @@ const emptyDocumentError = "errors.conversion.emptyResult";
 
 const supportedJobTypes = new Set<string>([
   "obsidian-wiki",
-  "maintenance",
-  "organization",
   "relation-labels",
   "ingestion",
   "markdown-conversion",
@@ -116,7 +107,7 @@ const supportedJobTypes = new Set<string>([
 ]);
 
 /**
- * Runs persisted jobs in two lanes: one heavy loop (ingestion and the legacy admissions) and the
+ * Runs persisted jobs in two lanes: one heavy loop (ingestion and the vault projection) and the
  * light lane's `compute` and `model` workers, which claim disjoint light job types. Each loop runs
  * one job at a time and never waits for another loop.
  */
@@ -167,34 +158,15 @@ export class JobSupervisor {
     this.controllers.clear();
   }
 
-  /** One heavy pass: the legacy admissions, then at most one heavy job. */
+  /** One heavy pass: the vault projection admission, then at most one heavy job. */
   public async runOnce(): Promise<JobRecord | null> {
-    try {
-      await this.options.reconcileOrganization?.();
-    } catch {
-      this.options.logger?.warn("Organization reconciliation is temporarily unavailable");
-    }
     const repository = createJobRepository(this.requirePool());
     try {
       await this.options.obsidianSyncService?.wiki?.enqueue();
     } catch {
       this.options.logger?.warn("Wiki synchronization admission is temporarily unavailable");
     }
-    try {
-      await this.options.maintenanceTick?.();
-    } catch {
-      this.options.logger?.warn("Maintenance admission is temporarily unavailable");
-    }
-    let job = await repository.claimNext(
-      this.workerId,
-      [...supportedJobTypes].filter((t) => t !== "maintenance"),
-      "heavy"
-    );
-    if (!job) {
-      const pending = await repository.nextQueuedOfType("maintenance");
-      if (pending && (await this.options.maintenanceReady?.(pending)))
-        job = await repository.claimNext(this.workerId, ["maintenance"], "heavy");
-    }
+    const job = await repository.claimNext(this.workerId, [...supportedJobTypes], "heavy");
     if (!job) return null;
     this.notify();
     const controller = new AbortController();
@@ -209,25 +181,17 @@ export class JobSupervisor {
           async () =>
             job.type === "obsidian-wiki"
               ? await this.options.obsidianSyncService!.wiki!.execute(taskJob, controller.signal)
-              : job.type === "maintenance"
-                ? await this.options.processMaintenance!(taskJob, controller.signal)
-                : job.type === "organization"
-                  ? await this.options.processOrganization!(taskJob, controller.signal)
-                  : job.type === "relation-labels"
-                    ? await this.options.processRelationLabels!(taskJob, controller.signal)
-                    : job.type === "ingestion"
-                      ? await this.executeIngestion(taskJob, controller)
-                      : job.type === "note-embedding"
-                        ? await this.executeNoteEmbedding(taskJob, controller.signal)
-                        : await this.workers.execute(
-                            job.type as WorkerTask["type"],
-                            taskJob.payload,
-                            {
-                              signal: controller.signal,
-                              onProgress: (progress) =>
-                                this.trackProgress(repository.reportProgress(job.id, progress))
-                            }
-                          )
+              : job.type === "relation-labels"
+                ? await this.options.processRelationLabels!(taskJob, controller.signal)
+                : job.type === "ingestion"
+                  ? await this.executeIngestion(taskJob, controller)
+                  : job.type === "note-embedding"
+                    ? await this.executeNoteEmbedding(taskJob, controller.signal)
+                    : await this.workers.execute(job.type as WorkerTask["type"], taskJob.payload, {
+                        signal: controller.signal,
+                        onProgress: (progress) =>
+                          this.trackProgress(repository.reportProgress(job.id, progress))
+                      })
         );
       const result = await (this.options.traceOperation?.(
         job.type,
@@ -250,12 +214,7 @@ export class JobSupervisor {
     } catch (error) {
       const wasCanceled = controller.signal.aborted;
       const shouldRetry =
-        job.type !== "maintenance" &&
-        !wasCanceled &&
-        job.attempts < job.maxAttempts &&
-        (job.type === "organization"
-          ? /organization\.errors\.(failed|uncertain)/.test(normalizeWorkerError(error))
-          : isTransientJobFailure(error));
+        !wasCanceled && job.attempts < job.maxAttempts && isTransientJobFailure(error);
       if (job.type === "ingestion" && typeof job.payload.ingestionRunId === "string") {
         const runs = createIngestionRunRepository(this.requirePool());
         if (wasCanceled) {
@@ -369,36 +328,19 @@ export class JobSupervisor {
 
   public async cancelBatch(batchId: string): Promise<null> {
     const pool = this.requirePool(),
-      ids = await createOrganizationRepository(pool).cancelBatch(batchId);
-    for (const id of ids) await this.requestCancel(id);
-    const runs = createIngestionRunRepository(pool);
-    for (const run of await runs.listByBatch(batchId)) {
+      runs = createIngestionRunRepository(pool);
+    for (const id of await createJobRepository(pool).activeIdsForBatch(batchId))
+      await this.requestCancel(id);
+    for (const run of await runs.listByBatch(batchId))
       if (["pending", "running"].includes(run.status)) await runs.cancel(run.id);
-      if (
-        run.effectiveStages.includes("organizeKnowledge") &&
-        (run.stagesCheckpoint.organizeKnowledge as { status?: string } | undefined)?.status !==
-          "completed"
-      )
-        await runs.failStage(run.id, "organizeKnowledge", "organization.errors.canceled", true);
-    }
     await createHierarchicalIngestionRepository(pool).refreshBatch(batchId);
     this.notify();
     return null;
   }
 
   public async requestCancel(jobId: string): Promise<JobRecord | null> {
-    const before = await createJobRepository(this.requirePool()).findById(jobId);
-    if (before?.type === "ingestion" && typeof before.payload.ingestionRunId === "string")
-      for (const linked of await createOrganizationRepository(this.requirePool()).jobsForIngestion(
-        before.payload.ingestionRunId
-      ))
-        await this.requestCancel(linked);
     const job = await createJobRepository(this.requirePool()).requestCancel(jobId);
     this.controllers.get(jobId)?.abort();
-    if (job?.type === "maintenance" && typeof job.payload.maintenanceRunId === "string")
-      await createMaintenanceRepository(this.requirePool()).cancel(job.payload.maintenanceRunId);
-    if (job?.type === "organization" && typeof job.payload.organizationRunId === "string")
-      await createOrganizationRepository(this.requirePool()).cancel(job.payload.organizationRunId);
     this.notify();
     return job;
   }
@@ -407,7 +349,7 @@ export class JobSupervisor {
     const pool = this.requirePool();
     const repository = createJobRepository(pool);
     const current = await repository.findById(jobId);
-    if (!current || ["organization", "maintenance"].includes(current.type)) return null;
+    if (!current) return null;
     const ingestionRunId = optionalString(current.payload.ingestionRunId);
     const ingestionRun = ingestionRunId
       ? await createIngestionRunRepository(pool).findById(ingestionRunId)
@@ -1095,8 +1037,6 @@ export class JobSupervisor {
       this.notify();
     }
     await createJobRepository(pool).reportProgress(job.id, 0.98);
-    if (effectiveStages.has("organizeKnowledge"))
-      await runs.waitForBatchStage(ingestionRunId, "organizeKnowledge");
     await runs.complete(ingestionRunId);
     this.notify();
     return { ingestionRunId, documentId, sourceItemId };

@@ -311,17 +311,21 @@ describe("generated region rebase", () => {
     const original = edit();
     const wikiBody =
       "# Wiki\n\n<!-- memora:generated:start -->\nOld generated\n<!-- memora:generated:end -->\n";
-    const a = {
-      ...original,
-      targetType: "wiki_page" as const,
-      content: original.content.replace("Initial", wikiBody)
-    };
-    const updated = result(
-      a,
-      a.content
-        .replace("Old generated", "New generated")
-        .replace("memora_sync_version: 1", "memora_sync_version: 2")
-    );
+    const layoutTwo = (body: string, version = 1) =>
+      serializeManagedFrontmatter({
+        memoraId: targetId,
+        memoraType: "source_item",
+        memoraManaged: true,
+        memoraSyncVersion: version,
+        memoraContentHash: "a".repeat(64),
+        memoraLayout: 2,
+        memoraWikiSchema: 2,
+        memoraLayoutLanguage: "en"
+      }) +
+      "\n" +
+      body;
+    const a = { ...original, content: layoutTwo(wikiBody) };
+    const updated = result(a, layoutTwo(wikiBody.replace("Old generated", "New generated"), 2));
     const newerProse = a.content.replace("# Wiki", "# Human title");
     const rebased = rebaseQueuedContent(a, updated, newerProse);
     expect(rebased).toContain("# Human title");

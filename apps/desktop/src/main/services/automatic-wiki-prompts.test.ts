@@ -20,16 +20,7 @@ import { buildCatalogMetadataMarkdown } from "./hierarchical-ingestion-service.j
 import { sourceDecisionPrompt } from "./source-relation-processing.js";
 import { withEmbeddingInputInstruction, withOutputLanguageInstruction } from "./ai-service.js";
 import { consultationPrompt } from "./consultation-service.js";
-import { OrganizationService } from "./organization-service.js";
-import { maintenancePrompt } from "./maintenance-service.js";
-import {
-  OrganizationSnapshotSchema,
-  OrganizationCheckpointSchema,
-  MaintenanceSnapshotSchema,
-  MaintenanceCheckpointSchema,
-  MaintenancePolicySchema,
-  resolveOrganizationInstructions
-} from "@app/domain";
+import { OrganizationSnapshotSchema, resolveOrganizationInstructions } from "@app/domain";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const chunks = [
   {
@@ -97,22 +88,6 @@ const snapshot = OrganizationSnapshotSchema.parse({
   ],
   relations: []
 });
-const checkpoint = OrganizationCheckpointSchema.parse({
-  tools: 0,
-  calls: 0,
-  repairs: 0,
-  startedAt: null,
-  readHandles: [],
-  discoveredHandles: [],
-  transcript: [],
-  reportedInputTokens: 0,
-  reportedOutputTokens: 0,
-  costEstimate: 0,
-  usageIncomplete: false,
-  callPending: false,
-  error: null
-});
-
 describe("A0 legacy rendered prompt goldens (no model or database)", () => {
   it("captures actual summary, extraction, matching, query and language builder outputs", () => {
     const rows = [
@@ -210,51 +185,10 @@ describe("A0 legacy rendered prompt goldens (no model or database)", () => {
     }
     expect(output).toMatchSnapshot();
   });
-  it("captures actual legacy organization state, consultation and routine compositions", () => {
-    const service = Object.create(OrganizationService.prototype) as {
-      prompt: (s: typeof snapshot, c: typeof checkpoint) => string;
-    };
-    const output: Record<string, unknown> = {
+  it("captures the actual consultation composition", () => {
+    expect({
       "consultation.answer": consultationPrompt(snapshot, "What helped recall?", [])
-    };
-    for (const [stage, c] of Object.entries({
-      discover: checkpoint,
-      read: { ...checkpoint, discoveredHandles: ["e1"] },
-      propose: { ...checkpoint, discoveredHandles: ["e1"], readHandles: ["e1"] }
-    }))
-      output[`organization.${stage}`] = service.prompt(snapshot, c);
-    for (const routine of ["weekly", "monthly", "cleanup"] as const) {
-      const policy = MaintenancePolicySchema.parse({
-        name: "Synthetic routine",
-        routine,
-        cadence: { timezone: "Europe/London" },
-        scope: { wholeLibrary: true },
-        categories: ["navigation", "evidence"]
-      });
-      const s = MaintenanceSnapshotSchema.parse({
-        version: "wiki-maintenance-v1",
-        policy,
-        configurationId: null,
-        configurationHash: "synthetic",
-        instructions: resolveOrganizationInstructions(
-          { global: {}, pageSynthesis: {}, domains: [] },
-          null,
-          "Synthetic routine",
-          "en",
-          routine
-        ),
-        profile: null,
-        language: "en",
-        scopeKey: "synthetic",
-        period: "2026-09",
-        cutoff: "2026-09-01T00:00:00Z"
-      });
-      output[`maintenance.${routine}`] = maintenancePrompt({
-        snapshot: s,
-        checkpoint: MaintenanceCheckpointSchema.parse({})
-      });
-    }
-    expect(output).toMatchSnapshot();
+    }).toMatchSnapshot();
   });
   it("spies on the real map/reduce caller and freezes complete admitted input", async () => {
     const calls: string[] = [];
@@ -340,10 +274,6 @@ it("registers the former inline families and removes their old prose authority",
   ])
     expect(ids.has(id), id).toBe(true);
   for (const [path, phrase] of [
-    [
-      "apps/desktop/src/main/services/organization-service.ts",
-      "You are the bounded wiki page synthesis workflow"
-    ],
     [
       "apps/desktop/src/main/services/knowledge-processing.ts",
       "Evaluate whether the source atomic note"

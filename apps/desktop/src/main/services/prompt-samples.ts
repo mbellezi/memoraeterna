@@ -1,25 +1,10 @@
-import {
-  curatorSupportPrompt,
-  parseCuratorSupport,
-  curatorPrompt,
-  parseCuratorProposal,
-  validateCuratorProposal
-} from "./wiki-curator.js";
-import { CuratorSnapshotSchema, CuratorCheckpointSchema, initialCuratorLimits } from "@app/domain";
 import { z } from "zod";
 import {
   promptDefinition,
   PromptSampleProgressSchema,
   type PromptSampleProgress,
   OrganizationSnapshotSchema,
-  OrganizationCheckpointSchema,
-  MaintenanceSnapshotSchema,
-  MaintenanceCheckpointSchema,
-  MaintenancePolicySchema,
-  MaintenanceProposalSchema,
-  WikiPageContentSchema,
-  type PromptPin,
-  type OrganizationCheckpoint
+  type PromptPin
 } from "@app/domain";
 import {
   summaryPrompt,
@@ -48,16 +33,6 @@ import {
   buildSourceRelationExplanationRepairPrompt
 } from "./source-relation-explanation.js";
 import { consultationPrompt, parseConsultationAnswer } from "./consultation-service.js";
-import {
-  organizationPrompt,
-  parseOrganizationAction,
-  validateOrganizationProposal
-} from "./organization-service.js";
-import {
-  maintenancePrompt,
-  validateMaintenanceProposal,
-  maintenanceDiagnostic
-} from "./maintenance-service.js";
 import { withPromptPin, renderPrompt, joinPrompts, promptFingerprint } from "./prompt-runtime.js";
 import type { AiService, DefaultAiTaskResult } from "./ai-service.js";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -166,138 +141,6 @@ export function promptSampleSnapshot(
     })
   );
 }
-export function curatorSampleSnapshot(pin: PromptPin) {
-  const legacy = promptSampleSnapshot(pin);
-  return CuratorSnapshotSchema.parse({
-    version: "wiki-curator-v2",
-    placement: {
-      version: "automatic-wiki-v1",
-      fingerprint: "synthetic",
-      scopeFingerprint: "synthetic",
-      pages: [],
-      nextCursor: null
-    },
-    resources: { maxInventoryBytes: 256000, maxProposalBytes: 90000 },
-    supportCompositionHash: promptFingerprint(["organization.curator.support"], pin, false),
-    policy: {
-      version: "automatic-wiki-v1",
-      id: id(70),
-      revisionId: id(71),
-      state: "enabled",
-      scope: {
-        wholeLibrary: false,
-        sourceIds: legacy.sourceIds,
-        includeDescendants: false,
-        excludedSourceIds: [],
-        domainId: null
-      },
-      triggers: ["processing_settled"],
-      operations: [
-        "repair_navigation",
-        "create_grounded",
-        "update_unprotected",
-        "initial_placement",
-        "use_scoped_destinations",
-        "reviewed_reparent"
-      ],
-      profileOverrideId: null,
-      limits: initialCuratorLimits,
-      allowancePreset: null
-    },
-    sourceIds: legacy.sourceIds,
-    profile: legacy.profile,
-    promptPin: pin,
-    contentLanguage: "en",
-    evidence: legacy.evidence,
-    references: legacy.evidence.map((e) => ({
-      kind: "source",
-      id: e.sourceItemId,
-      fingerprint: "synthetic",
-      title: e.sourceTitle,
-      sourceIds: [e.sourceItemId],
-      chunkIds: [],
-      text: ""
-    })),
-    pages: [],
-    inputFingerprint: "synthetic",
-    groupId: id(72),
-    outputTokens: 4096,
-    limits: initialCuratorLimits,
-    admittedAt: "2026-09-12T00:00:00.000Z"
-  });
-}
-export function evolutionSampleSnapshot(
-  pin: PromptPin,
-  intent: "temporal" | "procedure" | "consolidation" = "temporal"
-) {
-  const snapshot = curatorSampleSnapshot(pin);
-  snapshot.intent = intent;
-  snapshot.supportCompositionHash = promptFingerprint(
-    ["organization.evolution.support"],
-    pin,
-    false
-  );
-  snapshot.personalSourceIds = snapshot.sourceIds;
-  snapshot.policy.operations.push("interpret_memory", "evolve_notes");
-  snapshot.evidence[0]!.excerpt = "In2024 I preferred short study sessions.";
-  snapshot.evidence[1]!.excerpt =
-    "Today I tried three short sessions and felt less tired. I did not measure retention.";
-  snapshot.evidence.forEach(
-    (e, i) => (e.sourceTitle = i ? "Supplied daily experience" : "Supplied preference")
-  );
-  snapshot.sourceDates = [
-    { sourceItemId: snapshot.sourceIds[1]!, noteDate: "2026-09-01", publicationDate: null }
-  ];
-  snapshot.references.forEach((r, i) => (r.title = snapshot.evidence[i]!.sourceTitle));
-  if (intent === "consolidation")
-    snapshot.references.push(
-      ...snapshot.evidence.map((e, i) => ({
-        kind: "atomic_note" as const,
-        id: id(80 + i),
-        fingerprint: "synthetic",
-        title: e.sourceTitle,
-        text: e.excerpt,
-        sourceIds: [e.sourceItemId],
-        chunkIds: [e.chunkId]
-      }))
-    );
-  return snapshot;
-}
-export function curatorSampleCheckpoint(repair = false) {
-  return CuratorCheckpointSchema.parse({
-    version: "wiki-curator-v2",
-    calls: 0,
-    tools: 3,
-    repairs: repair ? 1 : 0,
-    startedAt: "2026-09-12T00:00:00.000Z",
-    callPending: false,
-    waitingForModel: false,
-    proposal: null,
-    previousOutput: repair ? "{" : "",
-    error: repair ? "invalid_json" : null,
-    reportedInputTokens: 0,
-    reportedOutputTokens: 0,
-    costEstimate: 0,
-    usageCounts: { input: 0, output: 0, cost: 0 },
-    usageIncomplete: false
-  });
-}
-export const promptSampleCheckpoint = () =>
-  OrganizationCheckpointSchema.parse({
-    tools: 0,
-    calls: 0,
-    repairs: 0,
-    startedAt: null,
-    readHandles: [],
-    discoveredHandles: [],
-    transcript: [],
-    reportedInputTokens: 0,
-    reportedOutputTokens: 0,
-    costEstimate: 0,
-    usageIncomplete: false,
-    callPending: false,
-    error: null
-  });
 export interface PromptSampleCall {
   input: string;
   task:
@@ -317,192 +160,6 @@ export function promptSampleCall(
 ): PromptSampleCall | null {
   return withPromptPin(pin, () => {
     const ids = new Set(chunks.map((c) => c.id));
-    if (
-      [
-        "organization.temporal",
-        "organization.procedure",
-        "organization.consolidation",
-        "organization.evolution.repair",
-        "organization.evolution.support"
-      ].includes(promptId)
-    ) {
-      const intent =
-          variant === "procedure" || promptId === "organization.procedure"
-            ? "procedure"
-            : variant === "consolidation" || promptId === "organization.consolidation"
-              ? "consolidation"
-              : "temporal",
-        snapshot = evolutionSampleSnapshot(pin, intent),
-        checkpoint = curatorSampleCheckpoint(promptId.endsWith(".repair"));
-      if (promptId.endsWith(".support")) {
-        const interpretation = {
-          statement: snapshot.evidence[0]!.excerpt,
-          perspective: "user_statement",
-          context: "historical",
-          eventTime: { precision: "year", value: "2024" },
-          validFrom: null,
-          validUntil: null,
-          publicationTime: null,
-          relationships: [],
-          procedure: null,
-          originalHandles: ["e1"]
-        };
-        checkpoint.proposal = parseCuratorProposal(
-          {
-            explanation: "Read the supplied experience with its limits",
-            topics: [
-              {
-                handle: "new_topic",
-                title: "Supplied study experience",
-                purpose: "Read the original observations",
-                sections: [
-                  {
-                    id: null,
-                    title: "Past preference",
-                    markdown: snapshot.evidence[0]!.excerpt + " [e1]",
-                    originalHandles: ["e1"],
-                    ...(intent !== "consolidation" ? { interpretation } : {})
-                  }
-                ],
-                links: []
-              }
-            ],
-            indexes: [
-              {
-                handle: "new_index",
-                title: "Original experience",
-                purpose: "Read the selected originals",
-                owner: { topic: "new_topic" },
-                groups: [
-                  {
-                    id: null,
-                    title: "Originals",
-                    explanation: null,
-                    originalHandles: [],
-                    targets: snapshot.references.map((_, i) => ({
-                      target: "r" + (i + 1),
-                      purpose: "reading"
-                    }))
-                  }
-                ]
-              }
-            ],
-            ...(intent === "consolidation"
-              ? {
-                  noteEvolution: {
-                    version: "note-evolution-v1",
-                    kind: "cross_source",
-                    noteIds: [id(80), id(81)],
-                    reason: "Retain separately attributed preference and observation",
-                    notes: [
-                      {
-                        title: "Supplied preference and experience",
-                        ideaStatement: "Preference and experience are distinct",
-                        bodyMarkdown: snapshot.evidence.map((e) => e.excerpt).join(" "),
-                        originalHandles: ["e1", "e2"]
-                      }
-                    ]
-                  }
-                }
-              : {})
-          },
-          snapshot
-        );
-        return {
-          input: curatorSupportPrompt(snapshot, checkpoint),
-          task: "structured-output",
-          validate: (output) => {
-            const verdict = parseCuratorSupport(output, checkpoint.proposal!);
-            if (!verdict.supported) throw new Error("prompts.errors.sample");
-            return verdict;
-          }
-        };
-      }
-      return {
-        input: curatorPrompt(snapshot, checkpoint),
-        task: "structured-output",
-        validate: (output) => {
-          const proposal = parseCuratorProposal(output, snapshot);
-          validateCuratorProposal(snapshot, proposal);
-          if (
-            intent === "consolidation"
-              ? !proposal.noteEvolution
-              : !proposal.targets.some((t) =>
-                  t.sections.some(
-                    (s) =>
-                      s.interpretation && (intent !== "procedure" || s.interpretation.procedure)
-                  )
-                )
-          )
-            throw new Error("prompts.errors.sample");
-          return proposal;
-        }
-      };
-    }
-    if (promptId === "organization.curator.support") {
-      const snapshot = curatorSampleSnapshot(pin),
-        checkpoint = curatorSampleCheckpoint();
-      checkpoint.proposal = parseCuratorProposal(
-        {
-          explanation: "Read scoped findings",
-          topics: [
-            {
-              handle: "new_topic",
-              title: "Recall findings",
-              purpose: "Read the supplied fictional findings and their sources",
-              sections: [
-                {
-                  id: null,
-                  title: "First finding",
-                  markdown: snapshot.evidence[0]!.excerpt + " [e1]",
-                  originalHandles: ["e1"]
-                }
-              ],
-              links: ["new_index"]
-            }
-          ],
-          indexes: [
-            {
-              handle: "new_index",
-              title: "Original materials",
-              purpose: "Read the supporting sources",
-              owner: { topic: "new_topic" },
-              groups: [
-                {
-                  id: null,
-                  title: "Sources",
-                  explanation: null,
-                  originalHandles: [],
-                  targets: [
-                    { target: "r1", purpose: "source" },
-                    { target: "r2", purpose: "source" }
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        snapshot
-      );
-      return {
-        input: curatorSupportPrompt(snapshot, checkpoint),
-        task: "structured-output",
-        validate: (output) => {
-          const verdict = parseCuratorSupport(output, checkpoint.proposal!);
-          if (!verdict.supported) throw new Error("prompts.errors.sample");
-          return verdict;
-        }
-      };
-    }
-    if (promptId === "organization.curator" || promptId === "organization.curator.repair") {
-      const snapshot = curatorSampleSnapshot(pin);
-      return {
-        input: curatorPrompt(snapshot, curatorSampleCheckpoint(promptId.endsWith(".repair"))),
-        task: "structured-output",
-        validate: (output) =>
-          validateCuratorProposal(snapshot, parseCuratorProposal(output, snapshot))
-      };
-    }
     if (promptId.startsWith("summary."))
       return {
         input:
@@ -692,72 +349,6 @@ export function promptSampleCall(
         validate: (o) => parseConsultationAnswer(o, snapshot)
       };
     }
-    if (/^maintenance\.(weekly|monthly|cleanup)$/.test(promptId)) {
-      const routine = promptId.split(".")[1] as "weekly" | "monthly" | "cleanup",
-        policy = MaintenancePolicySchema.parse({
-          name: "Synthetic sample",
-          routine,
-          modelEnabled: true,
-          scope: { wholeLibrary: true },
-          categories: ["navigation", "knowledge", "evidence"],
-          cadence: { timezone: "UTC" },
-          budget: { changes: 3 }
-        });
-      const snapshot = MaintenanceSnapshotSchema.parse({
-        promptPin: pin,
-        version: "wiki-maintenance-v1",
-        policy,
-        profile: promptSampleSnapshot(pin).profile,
-        configurationId: null,
-        configurationHash: "synthetic",
-        instructions: instructions(promptId),
-        language: "en",
-        scopeKey: "sample",
-        period: "sample",
-        cutoff: "2026-01-01T00:00:00.000Z",
-        sample: true
-      });
-      const candidates = [
-        {
-          id: id(50),
-          title: "Learning",
-          content: WikiPageContentSchema.parse({ title: "Learning", kind: "collection" }),
-          manual: true
-        },
-        {
-          id: id(51),
-          title: "Recall",
-          content: WikiPageContentSchema.parse({ title: "Recall", kind: "topic" }),
-          manual: false
-        }
-      ].map((r) =>
-        maintenanceDiagnostic(
-          {
-            ...r,
-            revisionId: id(r.id === id(50) ? 52 : 53),
-            fingerprint: "synthetic",
-            path: [{ id: r.id, title: r.title }],
-            sourceIds: [],
-            relatedIds: [],
-            children: 0
-          },
-          "page"
-        )
-      );
-      return {
-        input: maintenancePrompt({
-          snapshot,
-          checkpoint: MaintenanceCheckpointSchema.parse({ candidates })
-        }),
-        task: "structured-output",
-        validate: (o) =>
-          validateMaintenanceProposal(
-            MaintenanceProposalSchema.parse(typeof o === "string" ? JSON.parse(o) : o),
-            candidates,
-            policy
-          )
-      };
-    }
     if (promptId.startsWith("diagnostics.") || promptId.startsWith("embedding.")) {
       const d = promptDefinition(promptId),
         values = Object.fromEntries(d.variables.map((v) => [v.key, v.example]));
@@ -792,28 +383,20 @@ interface SampleCase {
   root: string;
   variant?: string;
 }
+/**
+ * The curator, organization and maintenance prompts have no caller since the legacy wiki was
+ * removed (F2 T39r): nothing samples them. The catalog entries stay until the prompt catalog drops
+ * them (T40r), and they are inert until then.
+ */
+const retiredPromptFamilies = ["organization.", "maintenance."] as const;
+export const isRetiredPromptFamily = (id: string) =>
+  retiredPromptFamilies.some((prefix) => id.startsWith(prefix));
 export function promptSampleCases(ids: string[]): SampleCase[] {
   const cases = new Map<string, SampleCase>();
   const add = (entry: SampleCase) => cases.set(entry.id, entry);
   for (const id of ids) {
-    if (id === "organization.evolution.repair" || id === "organization.evolution.support") {
-      for (const variant of ["temporal", "procedure", "consolidation"])
-        add({ id: id + "." + variant, root: id, variant });
-    } else if (
-      ["organization.temporal", "organization.procedure", "organization.consolidation"].includes(id)
-    )
-      add({ id, root: id });
-    else if (
-      id === "organization.curator" ||
-      id === "organization.curator.repair" ||
-      id === "organization.curator.support"
-    )
-      add({ id, root: id });
-    else if (id === "organization.repair")
-      add({ id: "organization.repair", root: "organization.legacy_synthesis", variant: "repair" });
-    else if (id.startsWith("organization."))
-      add({ id: "organization.workflow", root: "organization.legacy_synthesis" });
-    else if (id === "sources.validation.same_root")
+    if (isRetiredPromptFamily(id)) continue;
+    if (id === "sources.validation.same_root")
       add({
         id: "sources.decide.repair.same_root",
         root: "sources.decide.repair",
@@ -919,10 +502,7 @@ export async function runPromptSamples(
     for (const [key, { entry, pin, codexOnly }] of cases) {
       if (progress.completedKeys.includes(key)) continue;
       await withPromptPin(pin, async () => {
-        const task =
-          entry.root === "organization.legacy_synthesis"
-            ? "structured-output"
-            : promptDefinition(entry.root).task;
+        const task = promptDefinition(entry.root).task;
         const route = await ai.describePromptRoute(task);
         if (!route) throw new Error("prompts.errors.model");
         if (codexOnly && route.provider !== "openai-codex") {
@@ -936,65 +516,9 @@ export async function runPromptSamples(
           !(route.modelId + " " + route.repository).toLowerCase().includes("qwen3-embedding")
         )
           throw new Error("prompts.errors.model");
-        if (entry.root === "organization.legacy_synthesis") {
-          const snapshot = promptSampleSnapshot(pin),
-            state = progress.checkpoints[key]
-              ? OrganizationCheckpointSchema.parse(progress.checkpoints[key])
-              : promptSampleCheckpoint();
-          let proposed = false;
-          if (entry.variant === "repair" && !state.transcript.length) {
-            state.repairs = 1;
-            state.transcript.push({
-              action: null,
-              result: {
-                error: renderPrompt("organization.repair"),
-                issues: [{ code: "invalid_json", path: "" }]
-              }
-            });
-          }
-          for (let i = state.calls; i < 5 && !proposed; i++) {
-            const result = await call({
-                input: organizationPrompt(snapshot, state),
-                task: "structured-output",
-                validate: parseOrganizationAction
-              }),
-              action = parseOrganizationAction(result.output);
-            state.calls++;
-            state.tools++;
-            if (action.tool === "searchEvidence") {
-              state.discoveredHandles = ["e1", "e2"];
-              state.transcript.push({
-                action,
-                result: {
-                  items: snapshot.evidence.map((e) => ({
-                    handle: e.handle,
-                    title: e.sourceTitle,
-                    excerpt: e.excerpt
-                  })),
-                  hasMore: false
-                }
-              });
-            } else if (action.tool === "readRevision") {
-              const evidence = snapshot.evidence.find((e) => e.handle === action.handle);
-              if (!evidence || !state.discoveredHandles.includes(action.handle))
-                throw new Error("prompts.errors.sample");
-              state.readHandles.push(action.handle);
-              state.transcript.push({ action, result: evidence });
-            } else {
-              validateOrganizationProposal(snapshot, state, action);
-              proposed = true;
-            }
-            progress.checkpoints[key] = JSON.parse(JSON.stringify(state)) as z.infer<
-              ReturnType<typeof z.json>
-            >;
-            await save();
-          }
-          if (!proposed) throw new Error("prompts.errors.sample");
-        } else {
-          const sample = promptSampleCall(entry.root, pin, entry.variant);
-          if (!sample) throw new Error("prompts.errors.sample");
-          await call(sample);
-        }
+        const sample = promptSampleCall(entry.root, pin, entry.variant);
+        if (!sample) throw new Error("prompts.errors.sample");
+        await call(sample);
         progress.completedKeys.push(key);
         await save();
       });

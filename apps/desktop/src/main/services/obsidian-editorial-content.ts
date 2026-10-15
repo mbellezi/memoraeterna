@@ -1,65 +1,14 @@
 import { sourceOriginal, replaceSourceOriginal } from "@app/integration-contracts";
 import {
-  markdownHeading,
   normalizeProjectionText,
   parseObsidianMarkdown,
   parseWikiRegions,
-  sectionEnd,
-  sectionStart,
-  atomicEditorial,
-  mergeWikiEditorial
+  atomicEditorial
 } from "@app/integration-contracts";
 export function wikiTitle(text: string): string {
   const match = /^# ([^\n]+)\n/.exec(text);
   if (!match) throw new Error("obsidianWiki.errors.format");
   return match[1]!.replace(/\\([\\[\]#<>*_])/g, "$1");
-}
-export function wikiSections(body: string) {
-  const regions = parseWikiRegions(body);
-  if (!regions) throw new Error("obsidianWiki.errors.format");
-  let remainder = regions.editorial;
-  for (const s of [...regions.sections].reverse())
-    remainder = remainder.slice(0, s.start) + remainder.slice(s.end);
-  remainder = remainder.replace(/^# [^\n]+\n/, "");
-  const sections = regions.sections.map((s) => {
-    const heading = /^## ([^\n]+)\n\n([\s\S]*)$/.exec(s.markdown);
-    if (!heading) throw new Error("obsidianWiki.errors.format");
-    remainder = remainder.replace("^memora-section-" + s.id, "");
-    return {
-      id: s.id,
-      title: heading[1]!.replace(/\\([\\[\]#<>*_])/g, "$1"),
-      markdown: heading[2]!
-    };
-  });
-  if (remainder.trim()) throw new Error("obsidianWiki.errors.format");
-  return { title: wikiTitle(regions.editorial), sections, generated: regions.generated };
-}
-export function renderWikiCurrent(
-  baseBody: string,
-  content: {
-    title: string;
-    sections: Array<{
-      id: string;
-      title: string;
-      markdown: string;
-    }>;
-  }
-) {
-  const regions = parseWikiRegions(baseBody);
-  if (!regions) throw new Error("obsidianWiki.errors.format");
-  return (
-    "# " +
-    markdownHeading(content.title) +
-    "\n\n" +
-    content.sections
-      .map(
-        (s) =>
-          `${sectionStart(s.id)}\n## ${markdownHeading(s.title)}\n\n${s.markdown}\n${sectionEnd(s.id)}\n\n^memora-section-${s.id}\n`
-      )
-      .join("\n") +
-    "\n" +
-    regions.generated
-  );
 }
 export function validateEditorialChange(
   base: string,
@@ -96,28 +45,6 @@ export function validateEditorialChange(
     if (!bs || !ls || !cs || bs.generated !== ls.generated) return null;
     if (!force && bs.editorial !== cs.editorial && ls.editorial !== cs.editorial) return null;
     return ls.editorial + cs.generated;
-  }
-  if (type === "wiki_page") {
-    try {
-      const bs = wikiSections(b.bodyMarkdown),
-        ls = wikiSections(l.bodyMarkdown);
-      if (
-        bs.generated !== ls.generated ||
-        bs.sections.map((s) => s.id).join() !==
-          ls.sections
-            .filter((s) => bs.sections.some((b) => b.id === s.id))
-            .map((s) => s.id)
-            .join()
-      )
-        return null;
-      if (bs.sections.length !== ls.sections.length)
-        return force || b.bodyMarkdown === c.bodyMarkdown ? l.bodyMarkdown : null;
-      return force
-        ? l.bodyMarkdown
-        : mergeWikiEditorial(b.bodyMarkdown, l.bodyMarkdown, c.bodyMarkdown);
-    } catch {
-      return null;
-    }
   }
   if (type === "source_reference") {
     const bs = parseWikiRegions(b.bodyMarkdown),

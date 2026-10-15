@@ -1,9 +1,4 @@
-import {
-  promptSampleCall,
-  promptSampleSnapshot,
-  promptSampleCheckpoint
-} from "./prompt-samples.js";
-import { organizationPrompt } from "./organization-service.js";
+import { promptSampleCall } from "./prompt-samples.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createPromptRepository, createSettingsRepository, type PgPool } from "@app/db";
@@ -311,11 +306,7 @@ export class PromptService {
     if (!errors.length)
       withPromptPin(effective, () => {
         const sample = promptSampleCall(id, effective);
-        text =
-          sample?.input ??
-          (id === "organization.legacy_synthesis"
-            ? organizationPrompt(promptSampleSnapshot(effective), promptSampleCheckpoint())
-            : renderPrompt(id, values));
+        text = sample?.input ?? renderPrompt(id, values);
         if (definition.fragmentIds.includes("shared.output_language"))
           text += "\n\n" + renderPrompt("shared.output_language", { content_language: "English" });
         const seen = new Set<string>();

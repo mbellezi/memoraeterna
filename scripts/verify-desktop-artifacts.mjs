@@ -45,17 +45,25 @@ new Script(packagedPreload.toString("utf8"), { filename: "packaged-preload.cjs" 
 });
 for (const [owner, methods] of Object.entries({
   prompts: ["command"],
-  curator: ["command"],
-  organization: ["command"],
-  maintenance: ["command"],
-  investigations: ["list", "get", "follow", "state"],
-  consultation: ["ask", "save", "cancel"],
-  wiki: ["tree", "context", "get", "history", "linkedTarget", "collection"],
+  consultation: ["ask", "cancel"],
+  wiki: ["list", "search"],
   system: ["subscribeNavigation"]
 })) {
   for (const method of methods)
     assert.equal(typeof exposed.get("app")?.[owner]?.[method], "function", `${owner}.${method}`);
 }
+// The legacy wiki, curator, organization and maintenance surface was removed (F2 T39r): the
+// packaged preload must not expose any of it.
+const app = exposed.get("app");
+for (const owner of ["curator", "organization", "maintenance", "investigations"])
+  assert.equal(app?.[owner], undefined, `${owner} was removed from the preload`);
+for (const [owner, methods] of Object.entries({
+  consultation: ["save"],
+  wiki: ["tree", "context", "get", "history", "linkedTarget", "resolveLinks", "collection", "save"],
+  jobs: ["cancelBatch"]
+}))
+  for (const method of methods)
+    assert.equal(app?.[owner]?.[method], undefined, `${owner}.${method} was removed`);
 const manifest = JSON.parse(await readFile(join(resources, "runtime-manifest.json"), "utf8"));
 assert.equal(manifest.platform, "darwin-arm64");
 const required = [

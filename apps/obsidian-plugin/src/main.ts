@@ -13,10 +13,6 @@ import { createTranslator, type LanguageCode, type MessageKey, type Translator }
 import {
   normalizeProjectionText,
   parseObsidianMarkdown,
-  parseWikiRegions,
-  sectionStart,
-  sectionEnd,
-  serializeManagedFrontmatter,
   type ObsidianEditOperation,
   type ObsidianEditReceipt
 } from "@app/integration-contracts";
@@ -126,11 +122,6 @@ export default class MemoraObsidianPlugin extends Plugin {
       id: "memora-reconcile",
       name: this.t("integrations.commands.reconcile"),
       callback: () => void this.synchronize().catch((error) => this.noticeError(error))
-    });
-    this.addCommand({
-      id: "memora-add-human-section",
-      name: this.t("obsidianEditing.addSection"),
-      callback: () => void this.addHumanSection().catch((error) => this.noticeError(error))
     });
     this.addCommand({
       id: "memora-sync-review",
@@ -556,41 +547,6 @@ export default class MemoraObsidianPlugin extends Plugin {
       row.operation.operationId,
       await this.client.compare(row.operation.operationId, content)
     );
-  }
-  private async addHumanSection() {
-    const file = this.app.workspace.getActiveFile();
-    if (!file) return;
-    const raw = await this.app.vault.read(file),
-      frame = parseObsidianMarkdown(raw);
-    if (frame?.frontmatter.memoraType !== "wiki_page") throw new Error("unsupported");
-    const regions = parseWikiRegions(frame.bodyMarkdown);
-    if (!regions) throw new Error("invalid_anchors");
-    const id = crypto.randomUUID(),
-      intro = regions.sections.length
-        ? ""
-        : regions.editorial.replace(/^# [^\n]+\n/, "").replace(/^\n/, "");
-    const editorial = regions.sections.length
-      ? regions.editorial
-      : regions.editorial.match(/^# [^\n]+\n/)![0] + "\n";
-    const body =
-      editorial +
-      sectionStart(id) +
-      "\n## " +
-      this.t("obsidianEditing.sectionTitle") +
-      "\n\n" +
-      intro +
-      "\n" +
-      sectionEnd(id) +
-      "\n\n^memora-section-" +
-      id +
-      "\n\n" +
-      regions.generated;
-    await this.app.vault.modify(
-      file,
-      serializeManagedFrontmatter(frame.frontmatter, frame.userFrontmatter) + "\n" + body
-    );
-    await this.capture(file);
-    await this.flush();
   }
   private async importCurrent() {
     const file = this.app.workspace.getActiveFile();

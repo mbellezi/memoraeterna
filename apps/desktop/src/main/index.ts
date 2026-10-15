@@ -1,17 +1,9 @@
-import { InvestigationService } from "./services/investigation-service.js";
 import { runPromptSamples } from "./services/prompt-samples.js";
 import { PromptService } from "./services/prompt-service.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
 import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
-import { MaintenanceService } from "./services/maintenance-service.js";
-import {
-  createMaintenanceCommandHandler,
-  createRetiredJobExecutor
-} from "./services/legacy-fence.js";
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
-import { OrganizationService } from "./services/organization-service.js";
-import { registerOrganizationIpc } from "./services/organization-ipc.js";
 import { WikiService } from "./services/wiki-service.js";
 import { registerWikiIpc } from "./services/wiki-ipc.js";
 import { registerObjectsIpc } from "./services/objects-ipc.js";
@@ -31,8 +23,6 @@ import { CredentialService } from "./services/credential-service";
 import { join, resolve } from "node:path";
 import {
   app,
-  powerMonitor,
-  Notification,
   BrowserWindow,
   ipcMain,
   Menu,
@@ -384,59 +374,8 @@ void app.whenReady().then(() => {
     contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
     wake: () => jobSupervisor?.wake()
   });
-  const investigationService = new InvestigationService({
-    getPool: () => databaseService?.getPool() ?? null,
-    consultation: consultationService,
-    wake: () => jobSupervisor?.wake(),
-    notify: ({ question }) => {
-      void settingsService!
-        .getApp()
-        .then((settings) => {
-          if (Notification.isSupported())
-            new Notification({
-              title: createTranslator(settings.language)("investigation.updated"),
-              body: question
-            }).show();
-        })
-        .catch(() => {});
-    }
-  });
-  app.once("before-quit", () => investigationService.shutdown());
-  const maintenanceService = new MaintenanceService({
-    getPool: () => databaseService?.getPool() ?? null,
-    ai: aiService,
-    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
-    wake: () => jobSupervisor?.wake(),
-    cancelJob: (id) => jobSupervisor!.requestCancel(id),
-    idleSeconds: () => powerMonitor.getSystemIdleTime(),
-    aiBusy: () => aiService!.isBusy(),
-    investigations: investigationService
-  });
-  // Legacy maintenance is fenced: only the dashboard read answers, every other command is retired.
-  ipcMain.handle(
-    ipcChannels.maintenanceCommand,
-    createMaintenanceCommandHandler(maintenanceService)
-  );
-  const organizationService = new OrganizationService({
-    sampleMaintenance: (...args) => maintenanceService.sample(...args),
-    validateMaintenanceActivation: (...args) => maintenanceService.validateActivation(...args),
-    sampleConsultation: (revisionId, profileId, privacy, domainId) =>
-      consultationService.sample(revisionId, profileId, privacy, domainId),
-    getPool: () => databaseService?.getPool() ?? null,
-    ai: aiService,
-    contentLanguage: async () => (await settingsService!.getApp()).contentLanguage,
-    wake: () => jobSupervisor?.wake(),
-    cancelJob: (id) => jobSupervisor!.requestCancel(id)
-  });
-  registerOrganizationIpc(ipcMain, organizationService);
-  registerConsultationIpc(ipcMain, consultationService, investigationService);
-  // The legacy ticks (maintenance admission and readiness, organization reconciliation) are not
-  // passed, so nothing admits or claims legacy work. A job of those types that was admitted earlier
-  // is canceled by the retired executor without running the retired code.
-  const retiredJob = createRetiredJobExecutor((id) => jobSupervisor!.requestCancel(id));
+  registerConsultationIpc(ipcMain, consultationService);
   jobSupervisor = new JobSupervisor({
-    processMaintenance: retiredJob,
-    processOrganization: retiredJob,
     traceOperation: (operation, context, run) =>
       monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) =>
