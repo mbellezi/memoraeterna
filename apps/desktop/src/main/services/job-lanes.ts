@@ -11,6 +11,8 @@ export const lightWorkers: readonly LightWorker[] = ["compute", "model"];
 export interface LightJobExecutor {
   /** True when the job calls a model; it then runs on the `model` worker, else on `compute`. */
   needsModel: boolean;
+  /** While true the type is not claimed: its queued jobs wait, none is dropped (D23 barrier). */
+  held?: () => boolean;
   execute: (job: JobRecord, signal: AbortSignal) => Promise<JsonObject>;
 }
 

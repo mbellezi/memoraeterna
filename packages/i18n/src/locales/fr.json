@@ -475,7 +475,9 @@
       "sourceMatching": "Relations entre sources",
       "obsidianSync": "Synchronisation Obsidian",
       "assetStorage": "Stockage des assets",
-      "localModelDownload": "Telechargement de modele local"
+      "localModelDownload": "Telechargement de modele local",
+      "topicPlace": "Classement dans les sujets",
+      "topicSweep": "Vérification de l’arbre des sujets"
     },
     "progress": {
       "processingSource": "Traitement de {title}",

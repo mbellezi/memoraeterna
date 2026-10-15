@@ -340,4 +340,33 @@ describe("heavy and light lanes", () => {
         })
     ).toThrow("job_lane_conflict:ingestion");
   });
+
+  it("leaves a held light type queued while its worker runs the others, then claims it", async () => {
+    let held = true;
+    supervisor = new JobSupervisor({
+      getPool: pool,
+      lightJobs: topicJobs({
+        "topic-place": {
+          needsModel: false,
+          held: () => held,
+          execute: async () => ({ placed: 1 })
+        },
+        "topic-sweep": { needsModel: false, execute: async () => ({ swept: true }) }
+      })
+    });
+    const place = enqueue("topic-place", "light");
+    const sweep = enqueue("topic-sweep", "light");
+    await expect(supervisor.runLightOnce("compute")).resolves.toMatchObject({
+      id: sweep.id,
+      status: "succeeded"
+    });
+    await expect(supervisor.runLightOnce("compute")).resolves.toBeNull();
+    expect(statusOf(place)).toBe("queued");
+    expect(claims.at(-1)).toMatchObject({ lane: "light", types: ["topic-sweep"] });
+    held = false;
+    await expect(supervisor.runLightOnce("compute")).resolves.toMatchObject({
+      id: place.id,
+      status: "succeeded"
+    });
+  });
 });

@@ -250,6 +250,12 @@ describe("loadSkeleton", () => {
     expect(skeleton?.placements).toEqual([]);
   });
 
+  it("keeps a repair clock that was never set null, not 0", async () => {
+    const { db } = skeletonStub({ placements: [], topics: [topicRow(10, { repairClock: null })] });
+    const skeleton = await createTopicTreeLoadRepository(db).loadSkeleton(id(1));
+    expect(skeleton?.topics[0]?.stats?.repairClock).toBeNull();
+  });
+
   it("pages placements by keyset and topics by id", async () => {
     const placements = [1, 2, 3, 4, 5].map((n) => placementRow(n));
     const topics = [10, 11, 12, 13, 14].map((n) => topicRow(n));
@@ -720,6 +726,97 @@ describe("pendingItems", () => {
   });
 });
 
+describe("itemOwners", () => {
+  it("reads notes and sources in pages and reports only the ids that exist", async () => {
+    const { db, calls } = stub(
+      new Map<string, Handler>([
+        [
+          topicLoadSql.noteOwners,
+          (values) =>
+            (values[0] as string[])
+              .filter((noteId) => noteId !== id(3))
+              .map((noteId) => ({
+                id: noteId,
+                current: noteId !== id(2),
+                rootSourceId: noteId === id(4) ? null : id(30)
+              }))
+        ],
+        [
+          topicLoadSql.sourceOwners,
+          (values) =>
+            (values[0] as string[]).map((sourceId) => ({
+              id: sourceId,
+              contentHash: sourceId === id(31) ? null : "hash-30",
+              rootSourceId: id(30)
+            }))
+        ]
+      ])
+    );
+    const owners = await createTopicTreeLoadRepository(db).itemOwners(
+      { noteIds: [id(1), id(2), id(3), id(4), id(1)], sourceIds: [id(30), id(31)] },
+      { pageSize: 2 }
+    );
+    expect([...owners.notes.values()]).toEqual([
+      { id: id(1), current: true, rootSourceId: id(30) },
+      { id: id(2), current: false, rootSourceId: id(30) },
+      { id: id(4), current: true, rootSourceId: null }
+    ]);
+    expect(owners.sources.get(id(31))).toEqual({
+      id: id(31),
+      rootSourceId: id(30),
+      contentHash: null
+    });
+    // Duplicates are read once; four notes make two pages, two sources one.
+    expect(calls.map((call) => (call.values[0] as string[]).length)).toEqual([2, 2, 2]);
+  });
+
+  it("issues no statement for no ids", async () => {
+    const { db, query } = stub(new Map());
+    const owners = await createTopicTreeLoadRepository(db).itemOwners({});
+    expect(owners.notes.size + owners.sources.size).toBe(0);
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("walks a note's owning source and a source's parents up to their root, bounded", () => {
+    expect(topicLoadSql.noteOwners).toContain("h.id = a.owning_source_item_id");
+    expect(topicLoadSql.sourceOwners).toContain("h.id = s.id");
+    expect(topicLoadSql.noteOwners).toContain("up.depth < 64");
+  });
+});
+
+describe("newestNoteVectorSpace", () => {
+  it("reads the space key from the newest note vector's strategy", async () => {
+    const { db } = stub(
+      new Map<string, Handler>([
+        [
+          topicLoadSql.newestNoteSpace,
+          () => [
+            {
+              provider: "local",
+              model: "embed-4",
+              runtime: "mlx",
+              strategy: `${noteVectorStrategyPrefix}space-a`,
+              dimensions: 256
+            }
+          ]
+        ]
+      ])
+    );
+    await expect(createTopicTreeLoadRepository(db).newestNoteVectorSpace()).resolves.toEqual(space);
+  });
+
+  it("returns null without a note vector that names its space", async () => {
+    const { db } = stub(new Map<string, Handler>([[topicLoadSql.newestNoteSpace, () => []]]));
+    await expect(createTopicTreeLoadRepository(db).newestNoteVectorSpace()).resolves.toBeNull();
+    expect(topicLoadSql.newestNoteSpace).toContain(
+      `starts_with(strategy, '${noteVectorStrategyPrefix}')`
+    );
+    for (const table of ["embeddings_256", "embeddings_768", "embeddings_1024"]) {
+      expect(topicLoadSql.newestNoteSpace).toContain(table);
+    }
+  });
+});
+
 describe("statements", () => {
   const statements = [
     topicLoadSql.tree,
@@ -727,6 +824,9 @@ describe("statements", () => {
     topicLoadSql.generation,
     topicLoadSql.placements,
     topicLoadSql.topics,
+    topicLoadSql.noteOwners,
+    topicLoadSql.sourceOwners,
+    topicLoadSql.newestNoteSpace,
     ...[256, 768, 1024].flatMap((dimensions) => [
       topicLoadSql.itemVectors(dimensions),
       ...(["library", "root", "ids"] as const).map((scope) =>

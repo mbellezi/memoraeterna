@@ -473,7 +473,9 @@
       "sourceMatching": "Relationships between sources",
       "obsidianSync": "Obsidian sync",
       "assetStorage": "Asset storage",
-      "localModelDownload": "Local model download"
+      "localModelDownload": "Local model download",
+      "topicPlace": "Topic placement",
+      "topicSweep": "Topic tree check"
     },
     "progress": {
       "processingSource": "Processing {title}",

@@ -240,9 +240,12 @@ export class JobSupervisor {
     }
   }
 
-  /** One pass of a light worker: at most one light job of its types, never a heavy one. */
+  /**
+   * One pass of a light worker: at most one light job of its types, never a heavy one. A held
+   * type is skipped while held: its jobs stay queued (the topic barrier, D23).
+   */
   public async runLightOnce(worker: LightWorker): Promise<JobRecord | null> {
-    const types = this.lightTypes[worker];
+    const types = this.lightTypes[worker].filter((type) => !this.lightJobs[type]!.held?.());
     if (types.length === 0) return null;
     const repository = createJobRepository(this.requirePool());
     const job = await repository.claimNext(`${this.workerId}:light-${worker}`, types, "light");

@@ -23,14 +23,16 @@ import type {
 
 import type { Queryable } from "./types.js";
 
-// Read-only bulk loading for the topic service (F2, T12b): the tree skeleton, the vectors of a
-// set of items and the items that still need a placement. Everything here only reads: the engine
+// Read-only bulk loading for the topic service (F2, T12b, T15): the tree skeleton, the vectors of
+// a set of items, the items that still need a placement, the owners of items (status and root
+// source) and the newest note vector's space. Everything here only reads: the engine
 // writes the structure tables through `topicTreeRepository` alone (D9), and nothing here may ever
 // issue an INSERT, UPDATE or DELETE.
 //
 // Every statement is bounded: the skeleton comes in keyset pages, vectors in pages of ids that hit
-// the `(target_type, target_id, model)` index, and pending items in pages of at most `limit` rows.
-// Vectors are read through pgvector's binary `vector_send` (a quarter of the time of parsing the
+// the `(target_type, target_id, model)` index, pending items in pages of at most `limit` rows and
+// owners in pages of primary keys. The newest-space read is the one scan (each embedding table's
+// note rows, newest first); the service runs it only when it resolves the space. Vectors are read through pgvector's binary `vector_send` (a quarter of the time of parsing the
 // text form, measured by `db:topic-load:verify`) and arrive as one Float32 matrix.
 
 /** Storage identity of note vectors: `native-v2:<space key>` (`knowledge-service.ts`). */
@@ -104,7 +106,8 @@ export interface TopicSkeletonStats {
   /** A cascade deleted members (D32) or a write flagged the path: recompute before trusting it. */
   dirty: boolean;
   lastRepairAt: string | null;
-  repairClock: number;
+  /** Tree clock of the last repair; null when the topic was never repaired. */
+  repairClock: number | null;
   computedAt: string;
 }
 
@@ -198,6 +201,35 @@ export interface TopicPendingOptions {
   noteIds?: readonly string[];
   /** Reasons to report (default all). */
   reasons?: readonly TopicPendingReason[];
+}
+
+/** A note's root source (through its owning source, as `pendingItems` reads it) and its status. */
+export interface TopicNoteOwner {
+  id: string;
+  /** Not rejected, not archived and not superseded. */
+  current: boolean;
+  /** The root of the note's owning source; null for a knowledge-owned note. */
+  rootSourceId: string | null;
+}
+
+/** A source's hierarchy root and its content hash (part of its content key, D22). */
+export interface TopicSourceOwner {
+  id: string;
+  /** The top of its source hierarchy (its own id for a root source); null on a broken chain. */
+  rootSourceId: string | null;
+  contentHash: string | null;
+}
+
+export interface TopicItemOwners {
+  /** The requested notes that exist; a requested note missing here was deleted. */
+  notes: Map<string, TopicNoteOwner>;
+  /** The requested sources that exist. */
+  sources: Map<string, TopicSourceOwner>;
+}
+
+export interface TopicItemOwnersOptions {
+  /** Item ids per statement (default `vectorPageSize`). */
+  pageSize?: number;
 }
 
 export interface TopicSkeletonOptions {
@@ -319,6 +351,22 @@ const pendingTail = (
       (select count(*)::int from win)
     order by 1 desc, 2`;
 
+// A hierarchy walk up from one source, bounded so that a broken chain can never loop.
+const rootOf = (start: string): string => `left join lateral (
+      with recursive up(id, parent_id, depth) as (
+        select h.id, h.parent_source_item_id, 0 from source_items h where h.id = ${start}
+        union all select h.id, h.parent_source_item_id, up.depth + 1 from source_items h
+          join up on h.id = up.parent_id where up.depth < 64)
+      select up.id from up where up.parent_id is null limit 1) root on true`;
+
+/** The newest note vector of one embedding table that names its space (`native-v2:<space key>`). */
+const newestNoteVector = (
+  dimensions: number
+): string => `(select provider, model, runtime, strategy,
+      ${dimensions} as dimensions, created_at from ${embeddingTable(dimensions)}
+     where target_type = 'atomic_note' and starts_with(strategy, '${noteVectorStrategyPrefix}')
+     order by created_at desc limit 1)`;
+
 export const topicLoadSql = {
   tree: `select id, status, space_key as "spaceKey", embedding_provider as provider,
       embedding_model as model, embedding_runtime as runtime, dimensions, config,
@@ -359,6 +407,20 @@ export const topicLoadSql = {
       vector_send(e.embedding) as vector
     from ${embeddingTable(dimensions)} e
     where e.target_type = $1 and e.target_id = any($2::uuid[]) and e.model = $3 and e.strategy = $4`,
+  // The owners of a page of note ids: the note's status and the root of its owning source.
+  noteOwners: `select a.id, (${currentNote}) as current, root.id as "rootSourceId"
+    from atomic_notes a
+    ${rootOf("a.owning_source_item_id")}
+    where a.id = any($1::uuid[])`,
+  sourceOwners: `select s.id, s.content_hash as "contentHash", root.id as "rootSourceId"
+    from source_items s
+    ${rootOf("s.id")}
+    where s.id = any($1::uuid[])`,
+  // The space of the newest note vector that names one: the topic service's interim space
+  // resolver reads it until the AI service computes the route's space without a call (D26, T14).
+  newestNoteSpace: `select provider, model, runtime, strategy, dimensions from (
+      ${[256, 768, 1024].map(newestNoteVector).join("\n      union all ")}
+    ) v order by created_at desc limit 1`,
   pendingNotes: (dimensions: number, scope: TopicPendingNoteScope): string =>
     `${noteWindows[scope]}, pending as (
       select win.id, p.topic_id, root.id as root_id,
@@ -481,6 +543,26 @@ interface PendingRow extends QueryResultRow {
   examined: number | null;
 }
 
+interface NoteOwnerRow extends QueryResultRow {
+  id: string;
+  current: boolean;
+  rootSourceId: string | null;
+}
+
+interface SourceOwnerRow extends QueryResultRow {
+  id: string;
+  contentHash: string | null;
+  rootSourceId: string | null;
+}
+
+interface StoredSpaceRow extends QueryResultRow {
+  provider: string;
+  model: string;
+  runtime: string;
+  strategy: string;
+  dimensions: number;
+}
+
 function toSpace(row: TreeRow): TopicLoadSpace {
   const dimensions = Number(row.dimensions);
   if (dimensions !== 256 && dimensions !== 768 && dimensions !== 1024) {
@@ -551,7 +633,7 @@ function toTopic(row: TopicRow, dim: number): TopicSkeletonTopic {
           violations: row.violations ?? [],
           dirty: row.dirty === true,
           lastRepairAt: iso(row.lastRepairAt),
-          repairClock: Number(row.repairClock),
+          repairClock: row.repairClock === null ? null : Number(row.repairClock),
           computedAt: new Date(row.computedAt ?? 0).toISOString()
         };
   return {
@@ -635,6 +717,68 @@ export function createTopicTreeLoadRepository(db: Queryable) {
   }
 
   return {
+    /**
+     * Who owns a set of items: for each note that exists, whether it is current and the root of its
+     * owning source (null for a knowledge-owned note, as `pendingItems` reports it); for each source,
+     * its hierarchy root and content hash. Ids are read in pages through the primary keys; a
+     * requested id that is missing from the answer no longer exists.
+     */
+    async itemOwners(
+      input: { noteIds?: readonly string[]; sourceIds?: readonly string[] },
+      options: TopicItemOwnersOptions = {}
+    ): Promise<TopicItemOwners> {
+      const pageSize = positiveInteger(options.pageSize, topicLoadDefaults.vectorPageSize, 10_000);
+      const owners: TopicItemOwners = { notes: new Map(), sources: new Map() };
+      const noteIds = [...new Set((input.noteIds ?? []).map((id) => id.toLowerCase()))];
+      const sourceIds = [...new Set((input.sourceIds ?? []).map((id) => id.toLowerCase()))];
+      for (let start = 0; start < noteIds.length; start += pageSize) {
+        const result = await db.query<NoteOwnerRow>(topicLoadSql.noteOwners, [
+          noteIds.slice(start, start + pageSize)
+        ]);
+        for (const row of result.rows) {
+          owners.notes.set(row.id, {
+            id: row.id,
+            current: row.current === true,
+            rootSourceId: row.rootSourceId
+          });
+        }
+      }
+      for (let start = 0; start < sourceIds.length; start += pageSize) {
+        const result = await db.query<SourceOwnerRow>(topicLoadSql.sourceOwners, [
+          sourceIds.slice(start, start + pageSize)
+        ]);
+        for (const row of result.rows) {
+          owners.sources.set(row.id, {
+            id: row.id,
+            rootSourceId: row.rootSourceId,
+            contentHash: row.contentHash
+          });
+        }
+      }
+      return owners;
+    },
+
+    /**
+     * The embedding space of the newest stored note vector that names its space, or null when no
+     * note has one. Vectors without a space identity (`native-unidentified`) are never guessed.
+     */
+    async newestNoteVectorSpace(): Promise<TopicLoadSpace | null> {
+      const result = await db.query<StoredSpaceRow>(topicLoadSql.newestNoteSpace);
+      const row = result.rows[0];
+      if (!row) return null;
+      const dimensions = Number(row.dimensions);
+      if (dimensions !== 256 && dimensions !== 768 && dimensions !== 1024) return null;
+      const spaceKey = row.strategy.slice(noteVectorStrategyPrefix.length);
+      if (!spaceKey) return null;
+      return {
+        spaceKey,
+        provider: row.provider,
+        model: row.model,
+        runtime: row.runtime,
+        dimensions
+      };
+    },
+
     /** The id of the active tree, or null when none exists yet (D39 creates it). */
     async activeTreeId(): Promise<string | null> {
       const result = await db.query<QueryResultRow & { id: string }>(topicLoadSql.activeTree);

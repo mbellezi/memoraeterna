@@ -1130,7 +1130,9 @@ function jobTypeMessageKey(type: string): MessageKey {
         "obsidian-sync": "jobs.types.obsidianSync",
         "obsidian-wiki": "obsidianWiki.title",
         "asset-storage": "jobs.types.assetStorage",
-        "local-model-download": "jobs.types.localModelDownload"
+        "local-model-download": "jobs.types.localModelDownload",
+        "topic-place": "jobs.types.topicPlace",
+        "topic-sweep": "jobs.types.topicSweep"
       } as Record<string, MessageKey>
     )[type] ?? "jobs.types.ingestion"
   );

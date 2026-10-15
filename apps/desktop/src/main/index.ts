@@ -53,6 +53,8 @@ import { resolveWorkspaceRoot } from "./services/workspace-paths.js";
 import { LibraryResetService } from "./services/library-reset-service.js";
 import { SimilarityDebugService } from "./services/similarity-debug-service.js";
 import { MetadataEnrichmentService } from "./services/metadata-enrichment-service.js";
+import { createTopicTreeServices, type TopicTreeServices } from "./services/topic-tree/index.js";
+import { createStoredVectorSpaceResolver } from "./services/topic-tree/topic-space.js";
 import {
   navigationDirectionFromAppCommand,
   navigationDirectionFromInput,
@@ -164,6 +166,7 @@ let localModelService: LocalModelService | null = null;
 let backupService: BackupService | null = null;
 let libraryResetService: LibraryResetService | null = null;
 let similarityDebugService: SimilarityDebugService | null = null;
+let topicTreeServices: TopicTreeServices | null = null;
 let activeMainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let serviceStartupPromise: Promise<void> | null = null;
@@ -258,8 +261,22 @@ void app.whenReady().then(() => {
   async function initializeKnowledgeDefaults() {
     await promptService.initialize();
   }
+  // The Topic Tree Engine (F2): the topic jobs run on the job supervisor's light lane. The space
+  // resolver reads the newest stored note vector until the AI service resolves the route's space.
+  topicTreeServices = createTopicTreeServices({
+    getPool: () => databaseService?.getPool() ?? null,
+    spaceResolver: createStoredVectorSpaceResolver(() => databaseService?.getPool() ?? null),
+    env: process.env,
+    isPackaged: app.isPackaged,
+    wake: () => jobSupervisor?.wake("light"),
+    logger: console
+  });
   libraryResetService = new LibraryResetService({
-    restoreDefaults: initializeKnowledgeDefaults,
+    // A reset leaves an empty active tree (D39).
+    restoreDefaults: async () => {
+      await initializeKnowledgeDefaults();
+      await topicTreeServices?.ensureActiveTree();
+    },
     getPool: () => databaseService?.getPool() ?? null,
     getStorageSettings: () => settingsService!.get(),
     userDataPath: app.getPath("userData")
@@ -399,7 +416,8 @@ void app.whenReady().then(() => {
       aiService!.releaseLocalRuntime(
         false,
         (await settingsService!.getApp()).keepLocalEmbeddingModelsLoaded
-      )
+      ),
+    lightJobs: topicTreeServices.jobs
   });
   const gatewayPort = readGatewayPort(process.env.MEMORA_INTEGRATION_GATEWAY_PORT);
   integrationGateway = new IntegrationGateway({
@@ -535,6 +553,8 @@ void app.whenReady().then(() => {
         // A verdict-only source pair run leaves the library alone: only the local models (the decider
         // may be one) start, so no job, capture or vault sync can change it meanwhile.
         const verdictOnly = goldenRun?.sourcePairs?.mode === "verdict_only";
+        // The active topic tree exists (D39) and its sweep is queued before the light lane starts.
+        if (!verdictOnly) await topicTreeServices?.start();
         await Promise.all([
           localModelService?.start(),
           verdictOnly ? undefined : jobSupervisor?.start(),
@@ -632,6 +652,8 @@ async function shutdownServices(): Promise<void> {
   integrationGateway = null;
   await jobSupervisor?.stop();
   jobSupervisor = null;
+  topicTreeServices?.dispose();
+  topicTreeServices = null;
   await localModelService?.shutdown();
   localModelService = null;
   backupService = null;

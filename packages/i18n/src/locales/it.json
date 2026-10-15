@@ -475,7 +475,9 @@
       "sourceMatching": "Relazioni tra fonti",
       "obsidianSync": "Sincronizzazione Obsidian",
       "assetStorage": "Archiviazione asset",
-      "localModelDownload": "Download modello locale"
+      "localModelDownload": "Download modello locale",
+      "topicPlace": "Collocazione negli argomenti",
+      "topicSweep": "Controllo dell’albero degli argomenti"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
