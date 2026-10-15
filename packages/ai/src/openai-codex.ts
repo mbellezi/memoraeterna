@@ -12,9 +12,10 @@ import { readServerSentEvents, readText, streamedProgress } from "./openai-compa
 import { openAiCodexParameterCapabilities } from "./parameter-capabilities.js";
 import { providerHttpError, providerStreamError, type AiProviderError } from "./provider-error.js";
 import {
-  aiWorkloadClass,
   monotonicProgress,
   resolveAiRuntimeConfig,
+  remoteCallTask,
+  requestWorkloadClass,
   runRemoteCall,
   withCallReport,
   type AiRuntimeConfig,
@@ -177,7 +178,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     const startedAt = performance.now();
     const progress = onProgress ? monotonicProgress(onProgress) : undefined;
     const modelId = request.modelId ?? this.options.modelId;
-    const decide = aiWorkloadClass(request.taskType) === "decide";
+    const decide = requestWorkloadClass(request) === "decide";
     const shapeKey = `${this.baseUrl}\u0000${modelId}`;
     let report: RemoteCallReport | undefined;
     // This call met a refusal of the lean shape; its later attempts go straight to the full shape.
@@ -294,13 +295,15 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
   }
 
   private remoteCall<T>(
-    options: Omit<RemoteCallOptions, "taskType" | "parameters"> & { request?: AiTaskRequest },
+    options: Omit<RemoteCallOptions, "taskType" | "parameters" | "workloadClass"> & {
+      request?: AiTaskRequest;
+    },
     attempt: (call: RemoteAttempt) => Promise<T>
   ): Promise<T> {
     const { request, ...call } = options;
     return runRemoteCall(
       { config: this.runtime, random: this.options.random },
-      { ...call, taskType: request?.taskType, parameters: request?.parameters },
+      { ...call, ...remoteCallTask(request) },
       attempt
     );
   }

@@ -36,6 +36,19 @@ export interface StoredNoteVector extends StoredEmbedding {
   strategy: string;
 }
 
+/** The space a stored note vector lives in, read from its `native-v2:<space key>` strategy. */
+export interface NoteVectorSpace {
+  spaceKey: string;
+  provider: string;
+  model: string;
+  runtime: string;
+  dimensions: SupportedEmbeddingDimension;
+  createdAt: Date;
+}
+
+/** Strategy prefix of note and chunk vectors that carry their embedding space key. */
+const noteSpaceStrategyPrefix = "native-v2:";
+
 function embeddingTable(dimensions: number): string {
   if (dimensions === 256 || dimensions === 768 || dimensions === 1_024) {
     return `embeddings_${dimensions}`;
@@ -132,6 +145,45 @@ export function createEmbeddingRepository(db: Queryable) {
         }
       }
       return found;
+    },
+
+    /**
+     * The embedding space of the newest stored note vector: the key of its `native-v2:` strategy
+     * and the provider, model and runtime that made it. Null when no note has such a vector.
+     */
+    async newestNoteVectorSpace(): Promise<NoteVectorSpace | null> {
+      let newest: NoteVectorSpace | null = null;
+      for (const dimensions of [256, 768, 1024] as const) {
+        const result = await db.query<
+          QueryResultRow & {
+            strategy: string;
+            provider: string;
+            model: string;
+            runtime: string;
+            createdAt: Date | string;
+          }
+        >(
+          `select strategy, provider, model, runtime, created_at as "createdAt"
+             from embeddings_${dimensions}
+            where target_type = 'atomic_note' and strategy like $1
+            order by created_at desc, id desc
+            limit 1`,
+          [`${noteSpaceStrategyPrefix}%`]
+        );
+        const row = result.rows[0];
+        if (!row) continue;
+        const createdAt = new Date(row.createdAt);
+        if (newest && newest.createdAt.getTime() >= createdAt.getTime()) continue;
+        newest = {
+          spaceKey: row.strategy.slice(noteSpaceStrategyPrefix.length),
+          provider: row.provider,
+          model: row.model,
+          runtime: row.runtime,
+          dimensions,
+          createdAt
+        };
+      }
+      return newest;
     },
 
     async upsert(input: UpsertEmbeddingInput): Promise<string> {

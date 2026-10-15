@@ -71,6 +71,37 @@ const profileReturning = `id, name, description, is_default as "isDefault", priv
   local_model_id as "localModelId", model_id as "modelId", runtime, capabilities,
   status, created_at as "createdAt", updated_at as "updatedAt"`;
 
+/**
+ * Route keys of `ai_task_profile_routes.task` (D18). A task route is keyed by the task itself; an
+ * operation override by `op:<operation>`; a workload-class route by `class:<class>`. Each route
+ * has the profile task of the same key, which holds its parameters.
+ */
+export const operationRoutePrefix = "op:";
+export const workloadClassRoutePrefix = "class:";
+
+export function operationRouteKey(operation: string): string {
+  return `${operationRoutePrefix}${operation}`;
+}
+
+export function workloadClassRouteKey(workloadClass: string): string {
+  return `${workloadClassRoutePrefix}${workloadClass}`;
+}
+
+/**
+ * The route keys a call resolves, in order: its operation override, then the class route of a
+ * class the caller stated (never a class derived from the task type), then the task route.
+ */
+export function aiRouteKeys(
+  task: string,
+  options: { operation?: string | undefined; workloadClass?: string | undefined } = {}
+): string[] {
+  return [
+    ...(options.operation ? [operationRouteKey(options.operation)] : []),
+    ...(options.workloadClass ? [workloadClassRouteKey(options.workloadClass)] : []),
+    task
+  ];
+}
+
 /** Instrumentation counters stay null (unknown) unless they are finite and non-negative. */
 function nonNegativeInteger(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -358,10 +389,21 @@ export function createAiConfigRepository(db: Queryable) {
       );
     },
 
+    /**
+     * The model a task runs on. Without an explicit profile, the first of `routeKeys` (in order)
+     * that has a route chooses the profile, and that route key's profile task supplies the
+     * parameters; with no route for any key, the default profile serves the task with its own
+     * profile task. `routeKeys` defaults to the task alone, and the AI service passes the
+     * operation override and a stated class route before it (`op:<operation>`, `class:<class>`).
+     * A route whose profile cannot serve it yields null: it never falls through to another
+     * route or to the default profile. `routeKey` names the key that chose the profile.
+     */
     async getDefaultTask(
       task: string,
-      explicitProfileId?: string
+      explicitProfileId?: string,
+      routeKeys: readonly string[] = [task]
     ): Promise<{
+      routeKey: string;
       profileId: string;
       privacyMode: string;
       providerConfigId: string | null;
@@ -382,14 +424,23 @@ export function createAiConfigRepository(db: Queryable) {
       outputLanguage: string;
     } | null> {
       const result = await db.query<QueryResultRow & Record<string, unknown>>(
-        `with chosen_profile as (
+        `with route as (
+           select r.profile_id, r.task
+           from unnest($3::text[]) with ordinality as wanted(key, position)
+           join ai_task_profile_routes r on r.task = wanted.key
+           order by wanted.position
+           limit 1
+         ), chosen_profile as (
            select coalesce(
              $2::uuid,
-             (select profile_id from ai_task_profile_routes where task = $1),
+             (select profile_id from route),
              (select id from ai_profile_sets where is_default = true and status = 'active' limit 1)
-           ) as id
+           ) as id,
+           case when $2::uuid is null then coalesce((select task from route), $1) else $1 end
+             as route_key
          )
-         select p.id as "profileId", p.privacy_mode as "privacyMode", p.provider_config_id as "providerConfigId",
+         select selected.route_key as "routeKey",
+                p.id as "profileId", p.privacy_mode as "privacyMode", p.provider_config_id as "providerConfigId",
                 p.local_model_id as "localModelId", coalesce(c.provider, 'local-' || lm.runtime) as provider,
                 c.credential_ref as "credentialRef", c.base_url as "baseUrl",
                 p.model_id as "modelId", p.runtime, p.capabilities as "requiredCapabilities", t.parameters,
@@ -398,17 +449,18 @@ export function createAiConfigRepository(db: Queryable) {
                 lm.managed_path as "managedPath", lm.repository, lm.revision, lm.quantization
          from ai_profile_sets p
          join chosen_profile selected on selected.id = p.id
-         left join ai_profile_tasks t on t.profile_id = p.id and t.task = $1
+         left join ai_profile_tasks t on t.profile_id = p.id and t.task = selected.route_key
          left join ai_provider_configs c on c.id = p.provider_config_id
          left join local_models lm on lm.id = p.local_model_id and lm.status = 'ready'
-         where p.status = 'active' and (($2::uuid is not null and (t.status is null or t.status='active')) or (t.status = 'active' and t.task = $1))
+         where p.status = 'active' and (($2::uuid is not null and (t.status is null or t.status='active')) or (t.status = 'active' and t.task = selected.route_key))
            and (c.id is not null or lm.id is not null)
          limit 1`,
-        [task, explicitProfileId ?? null]
+        [task, explicitProfileId ?? null, routeKeys.length > 0 ? [...routeKeys] : [task]]
       );
       const row = result.rows[0];
       if (!row) return null;
       return {
+        routeKey: String(row.routeKey),
         profileId: String(row.profileId),
         privacyMode: String(row.privacyMode),
         providerConfigId: row.providerConfigId === null ? null : String(row.providerConfigId),

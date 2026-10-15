@@ -18,6 +18,7 @@ import {
   isLocalEndpoint,
   monotonicProgress,
   resolveAiRuntimeConfig,
+  remoteCallTask,
   runRemoteCall,
   withCallReport,
   type AiRuntimeConfig,
@@ -325,13 +326,15 @@ export class OpenAiCompatibleAdapter implements AiModelAdapter {
   }
 
   private remoteCall<T>(
-    options: Omit<RemoteCallOptions, "taskType" | "parameters"> & { request?: AiTaskRequest },
+    options: Omit<RemoteCallOptions, "taskType" | "parameters" | "workloadClass"> & {
+      request?: AiTaskRequest;
+    },
     attempt: (call: RemoteAttempt) => Promise<T>
   ): Promise<T> {
     const { request, ...call } = options;
     return runRemoteCall(
       { config: this.runtime, random: this.options.random, local: this.local },
-      { ...call, taskType: request?.taskType, parameters: request?.parameters },
+      { ...call, ...remoteCallTask(request) },
       attempt
     );
   }

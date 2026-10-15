@@ -76,10 +76,28 @@ A ranker is *validated for decide* on install, and only then does it expose `rer
 4. A failed test, a changed revision or artifact, and a removal void the validation and close the
    capability. The validation also carries the runtime build; the routed path that loads the ranker
    compares it (`isDecideValidationCurrent`) and asks for a new test when the build changed. A test
-   that cannot run (the single local slot is busy) reaches no verdict and changes nothing.
+   that cannot run (another ranker in the ranker slot is running a call) reaches no verdict and
+   changes nothing.
 
 Every rank call of the test is audited as a `reranking` task run with the evaluated tokens and no
 cost. The models screen filters by purpose (text generation, embedding, reranking).
+
+### Routing and residency (F2 D18)
+
+Rank calls (`AiService.rank`) resolve the operation's `op:<operation>` route, else the
+`class:decide` route; they never use the `reranking` task route, which carries the prompts of note
+and source matching, and note matching never resolves `class:decide`. A profile that holds a
+validated ranker seeds `class:decide` (the MLX ranker first on macOS arm64, else the GGUF one);
+`class:write-fast` is seeded from the writer (summarization) route when it writes structured
+output. No route, a model that is not a dedicated ranker, or a validation that does not hold for the
+artifact and runtime build fails visibly, never with a generative fallback. `decideRouteStatus`
+answers the same question without loading the ranker.
+
+`AiService` keeps one generative, one embedding and one ranker model resident, so a gate call
+between two embedding calls reloads neither; loading another generative model releases the first.
+The job supervisor's idle release never releases the ranker. Every MLX adapter shares one helper
+process; the helper has no unload command, so releasing an idle MLX model stops it once no MLX call
+runs, and a resident MLX ranker loads again on its next call.
 
 ### DEV seed
 

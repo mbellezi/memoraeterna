@@ -25,6 +25,21 @@ export const aiModelDescriptorSchema = z
   .strict();
 export type AiModelDescriptor = z.infer<typeof aiModelDescriptorSchema>;
 
+/**
+ * Workload classes of the AI runtime. Each has its own total deadline, and a class a caller states
+ * explicitly also selects its class route (`class:<class>`, D18). A class derived from the task
+ * type only sets deadlines: note matching runs the `reranking` task, whose derived class is
+ * `decide`, but it never resolves the `class:decide` route of the dedicated rankers.
+ */
+export const aiWorkloadClassSchema = z.enum([
+  "embed",
+  "decide",
+  "write-fast",
+  "write-quality",
+  "answer"
+]);
+export type AiWorkloadClass = z.infer<typeof aiWorkloadClassSchema>;
+
 export const aiTaskRequestSchema = z
   .object({
     taskType: AiTaskTypeSchema,
@@ -33,7 +48,11 @@ export const aiTaskRequestSchema = z
     modelId: z.string().min(1).optional(),
     requiredCapabilities: z.array(AiCapabilitySchema).default([]),
     parameters: z.record(z.string(), z.unknown()).default({}),
-    metadata: z.record(z.string(), z.unknown()).default({})
+    metadata: z.record(z.string(), z.unknown()).default({}),
+    /** The class the caller stated; absent, the task type's class applies (deadlines only). */
+    workloadClass: aiWorkloadClassSchema.optional(),
+    /** The calling operation, which may have its own route (`op:<operation>`). */
+    operation: z.string().min(1).max(200).optional()
   })
   .strict();
 export type AiTaskRequest = z.infer<typeof aiTaskRequestSchema>;

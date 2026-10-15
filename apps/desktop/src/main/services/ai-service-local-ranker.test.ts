@@ -118,14 +118,13 @@ function service(adapter: ReturnType<typeof fakeRanker>["adapter"] | Error) {
     monitoring: monitoring as never
   });
   const internals = ai as unknown as {
-    createRankerAdapter: () => Promise<unknown>;
-    registerAdapter: (adapter: unknown) => unknown;
-    residentLocalAdapter: unknown;
+    buildRankerAdapter: () => unknown;
+    resident: Record<string, unknown>;
+    activeLocalModels: Set<string>;
   };
-  const create = vi.spyOn(internals, "createRankerAdapter").mockImplementation(async () => {
+  const create = vi.spyOn(internals, "buildRankerAdapter").mockImplementation(() => {
     if (adapter instanceof Error) throw adapter;
-    internals.residentLocalAdapter = { localModelId: modelId, adapter };
-    return internals.registerAdapter(adapter);
+    return adapter;
   });
   return { ai, monitoring, create, internals };
 }
@@ -335,14 +334,22 @@ describe("testing a dedicated ranker", () => {
     expect(ranker.dispose).toHaveBeenCalledTimes(1);
   });
 
-  it("reaches no verdict while the single local slot is busy", async () => {
+  it("reaches no verdict while another ranker in the ranker slot is running a call", async () => {
     state.model = rankerModel({
       metadata: { catalogVersion: "test", decideValidation: { version: 1 } }
     });
-    const { ai } = service(new Error("errors.localModels.modelBusy"));
+    const { ai, create, internals } = service(fakeRanker().adapter);
+    const otherId = "00000000-0000-4000-8000-000000000009";
+    internals.resident.rank = {
+      localModelId: otherId,
+      runtime: "gguf",
+      adapter: fakeRanker().adapter
+    };
+    internals.activeLocalModels.add(otherId);
 
     await expect(ai.testLocalModel(modelId)).rejects.toThrow("errors.localModels.modelBusy");
 
+    expect(create).not.toHaveBeenCalled();
     expect(state.updateModel).not.toHaveBeenCalled();
   });
 

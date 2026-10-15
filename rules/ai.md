@@ -14,19 +14,18 @@ Load for providers, routing, parameters, local models, prompts or AI audit.
 - A model declares only capabilities its adapter and runtime validated. Never
   infer a capability from the provider: a generative model is not a reranker,
   though the decision route (`reranking`) may take it as an explicit decider.
-- A reranker or decider gets `decide` only after its artifact is validated (GGUF
-  header, or MLX config and architecture) and a smoke test scores a relevant
-  pair clearly above an irrelevant one (target F1a-F2).
+- A dedicated reranker serves the `decide` class only after this install validated its artifact (GGUF
+  header, or MLX config and architecture) and a smoke test scored a relevant pair clearly above an
+  irrelevant one; the result is stored with the model and re-checked when the artifact or runtime changes.
 - Canonical parameter names are owned by the domain; adapters translate them and
   never forward unknown keys. The model's parameter descriptor drives both the
   settings UI and runtime normalization.
 
 ## Routing
 
-- Every AI task resolves its model through its route (explicit operation
-  override first, then the task or workload-class route), and that model decides
-  where execution happens. An unavailable or incompatible model fails visibly;
-  never fall back silently to another model.
+- Every AI task resolves its model through its route: an operation override first, then the
+  workload-class route the caller states, then the task route; that model decides where execution
+  happens. An unavailable or incompatible model fails visibly; never fall back silently to another model.
 - Missing routes are seeded only from profiles no less private than the default.
 - Profile, model identity and parameters are pinned when work is admitted;
   later settings edits affect new work only.

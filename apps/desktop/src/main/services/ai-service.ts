@@ -13,17 +13,24 @@ import { createTranslator } from "@app/i18n";
 import {
   AiModelRegistry,
   createDecideValidation,
+  decideValidationForCatalogEntry,
   findLocalModelCatalogEntry,
   GoogleGeminiAdapter,
+  hasGeneration,
+  isDecideValidationCurrent,
+  isDedicatedRanker,
   isRankerCatalogEntry,
   localParameterCapabilities,
   MlxAdapter,
+  MlxHelperHost,
   MlxRerankerAdapter,
   NodeLlamaCppAdapter,
   NodeLlamaRankerAdapter,
   OpenAiCompatibleAdapter,
   OpenAiCodexAdapter,
+  parseRankRequest,
   providerParameterCapabilities,
+  rankerCatalogArtifactSha256,
   rankTaskRequest,
   readRankResult,
   redactSensitiveText,
@@ -36,6 +43,7 @@ import {
   type AiRuntimeConfigInput,
   type AiTaskRequest,
   type AiTaskResult,
+  type AiWorkloadClass,
   type LocalModelCatalogEntry,
   type RankerSmokeReport,
   type RankRequest,
@@ -43,9 +51,13 @@ import {
   aiCassetteReplayedUsageKey
 } from "@app/ai";
 import {
+  aiRouteKeys,
   createAiConfigRepository,
+  createEmbeddingRepository,
   createJobRepository,
   createLocalModelRepository,
+  operationRouteKey,
+  workloadClassRouteKey,
   type AiProfileRecord,
   type AiProviderConfigRecord,
   type LocalModelRecord,
@@ -115,6 +127,131 @@ export interface AiServiceOptions {
   openExternal?: (url: string) => Promise<void>;
   /** Deadline and retry overrides of the remote adapters; the defaults apply to what is left out. */
   runtime?: AiRuntimeConfigInput;
+  /**
+   * The MLX helper every MLX adapter shares: one helper process holds at most one generative, one
+   * embedding and one ranker model (D18). Created on first use when left out; proofs inject one.
+   */
+  mlxHost?: MlxHelperHost;
+  /** The machine; it decides whether an MLX ranker can be seeded (D18). Defaults to this one. */
+  machine?: { platform: string; arch: string };
+}
+
+/** The `class:decide` route: a validated dedicated ranker (D17, D18). */
+export const decideRouteKey = workloadClassRouteKey("decide");
+/** The `class:write-fast` route: short structured writing such as topic names (D11, D18). */
+export const writeFastRouteKey = workloadClassRouteKey("write-fast");
+
+/** One rank call: a query against at most 32 documents under an instruction (D10). */
+export interface AiRankInput {
+  /** The calling operation, which may have its own route (`op:<operation>`) before `class:decide`. */
+  operation: string;
+  /** The ranker instruction, rendered from the prompt catalog by the caller. */
+  instruction: string;
+  query: string;
+  documents: string[];
+  /** Queue class; background unless the user waits for the answer (D18). */
+  priority?: AiQueuePriority;
+  /** Sources whose content takes part in the call, for the audit. */
+  sourceIds?: string[];
+  jobId?: string;
+  stage?: string;
+  /** The audit of the instruction; read from the prompt runtime when left out. */
+  promptCompositions?: PromptCompositionSnapshot[];
+}
+
+export interface AiRankResult extends RankResult {
+  aiTaskRunId: string;
+  profileId: string;
+  localModelId: string;
+  provider: string;
+  modelId: string;
+  runtime: string;
+  durationMs: number;
+  queueMs: number;
+}
+
+/**
+ * Whether rank calls of an operation have a ranker to run on, without loading it: `missing` (no
+ * usable `op:` or `class:decide` route: none, an inactive one, or one whose model is not
+ * installed), `incompatible` (the route's model is not a dedicated ranker), `not_ready` (its files
+ * are gone) or `not_validated` (no current decide validation). The runtime build is checked when
+ * the ranker is loaded, by `rank` itself.
+ */
+export type DecideRouteStatus =
+  "ready" | "missing" | "incompatible" | "not_ready" | "not_validated";
+
+/** What an embedding call's space key is computed from, besides the adapter (D26). */
+export interface EmbeddingSpaceSelection {
+  providerConfigId: string | null;
+  baseUrl: string | null;
+  localModelId: string | null;
+  repository: string | null;
+  quantization: string | null;
+  revision: string | null;
+  /** The effective parameters of the call, after defaults and normalization. */
+  parameters: JsonObject;
+  /** The embedding prompt identity, set only when the wording differs from the shipped one. */
+  promptStrategy: string | null;
+}
+
+/** The adapter identity an embedding result reports. */
+export interface EmbeddingAdapterIdentity {
+  providerId: string;
+  modelId: string;
+  runtime: string;
+}
+
+/**
+ * The embedding space of a route (D26): the identity a vector's `native-v2:` strategy carries.
+ * Pure, so the space can be known without an AI call; any change of model, endpoint, revision,
+ * effective parameters or embedding wording is a new space.
+ */
+export function embeddingSpaceKey(
+  selection: EmbeddingSpaceSelection,
+  adapter: EmbeddingAdapterIdentity
+): string {
+  return sha256(
+    JSON.stringify({
+      providerConfigId: selection.providerConfigId,
+      baseUrl: selection.baseUrl,
+      localModelId: selection.localModelId,
+      repository: selection.repository,
+      quantization: selection.quantization,
+      model: adapter.modelId,
+      provider: adapter.providerId,
+      runtime: adapter.runtime,
+      revision: selection.revision,
+      parameters: selection.parameters,
+      ...(selection.promptStrategy ? { promptStrategy: selection.promptStrategy } : {})
+    })
+  );
+}
+
+/** The embedding space of the routed embedding model, computed without a call (D26). */
+export interface ActiveEmbeddingSpace {
+  spaceKey: string;
+  profileId: string;
+  provider: string;
+  modelId: string;
+  /** The model runs on this machine, so a re-embed costs nothing (Q8). */
+  local: boolean;
+  dimensions: number | null;
+  /** The space of the newest stored note vector; null when no note has a vector yet. */
+  newestNoteSpaceKey: string | null;
+  /** The newest stored note vector lives in this space. */
+  confirmed: boolean;
+}
+
+/** Residency slots (D18): one generative, one embedding and one ranker model stay loaded. */
+type ResidencySlot = "generate" | "embed" | "rank";
+const residencySlots: readonly ResidencySlot[] = ["generate", "embed", "rank"];
+
+interface ResidentLocalAdapter {
+  localModelId: string;
+  runtime: string;
+  adapter: AiModelAdapter;
+  /** A ranker's runtime build, read once while it stays resident. */
+  runtimeBuild?: Promise<string> | undefined;
 }
 
 export interface AiTaskLogContext {
@@ -134,6 +271,11 @@ export interface AiTaskLogContext {
   batchIndex?: number;
   attempt?: number;
   contentLanguage?: string;
+  /**
+   * The workload class the caller states. It selects the class route (`class:<class>`) before the
+   * task route and sets the deadlines; a class derived from the task type never selects a route.
+   */
+  workloadClass?: AiWorkloadClass;
   embeddingInputType?: "query" | "document";
   /** Overrides the priority derived from the context; see {@link aiTaskPriority}. */
   priority?: AiQueuePriority;
@@ -224,10 +366,18 @@ export class AiService {
   private readonly registry = new AiModelRegistry();
   private readonly oauthRefreshes = new Map<string, Promise<OpenAiCodexCredential>>();
   private pendingOpenAiCodexCredential: OpenAiCodexCredential | null = null;
-  private residentLocalAdapter: { localModelId: string; adapter: AiModelAdapter } | null = null;
+  /** Local models kept loaded, one per slot, so no two generative models are ever resident (D18). */
+  private readonly resident: Partial<Record<ResidencySlot, ResidentLocalAdapter>> = {};
+  private mlxHost: MlxHelperHost | null;
+  /**
+   * An MLX adapter was released while the shared helper still holds its weights: the helper has
+   * no unload command, so the next idle release stops it (the next MLX call starts a fresh one).
+   */
+  private mlxHoldsReleasedModel = false;
 
   public constructor(private readonly options: AiServiceOptions) {
     this.credentials = new CredentialService(options.userDataPath);
+    this.mlxHost = options.mlxHost ?? null;
   }
 
   public async listProviders(): Promise<AiProviderConfig[]> {
@@ -525,13 +675,21 @@ export class AiService {
    * profile first, then the oldest. Existing routes and task parameters are never changed. When the
    * default profile runs on this machine, only profiles that run on this machine are candidates: a
    * remote model never inherits a task the user kept local by choosing a local default.
+   *
+   * The class routes follow (D18): `class:write-fast` takes the writer route's profile (the one that
+   * summarizes) when it can write structured output, and `class:decide` takes a profile whose model
+   * is a validated dedicated ranker, the MLX one first when this machine runs MLX, else the GGUF
+   * one. A dedicated ranker serves only `class:decide`: the task routes carry prompts.
    */
   private async seedTaskRoutes(
     repository: ReturnType<typeof createAiConfigRepository>
   ): Promise<string[]> {
-    const routed = new Set((await repository.listTaskRoutes()).map((route) => route.task));
-    const missing = aiConfigurableTaskSchema.options.filter((task) => !routed.has(task));
-    if (missing.length === 0) return [];
+    const routes = new Map(
+      (await repository.listTaskRoutes()).map((route) => [route.task, route.profileId])
+    );
+    const missing = aiConfigurableTaskSchema.options.filter((task) => !routes.has(task));
+    if (missing.length === 0 && routes.has(writeFastRouteKey) && routes.has(decideRouteKey))
+      return [];
     const configured = (await repository.listProfiles())
       .filter(
         (profile) =>
@@ -549,12 +707,58 @@ export class AiService {
     const profiles = configured[0]?.localModelId
       ? configured.filter((profile) => profile.localModelId)
       : configured;
+    const promptProfiles = profiles.filter(
+      (profile) => !isDedicatedRanker(parseCapabilities(profile.capabilities))
+    );
     const seeded: string[] = [];
     for (const task of missing) {
-      const profile = profiles.find((candidate) => supportsTask(task, candidate.capabilities));
-      if (profile && (await repository.seedTaskRoute(task, profile.id))) seeded.push(task);
+      const profile = promptProfiles.find((candidate) =>
+        supportsTask(task, candidate.capabilities)
+      );
+      if (profile && (await repository.seedTaskRoute(task, profile.id))) {
+        seeded.push(task);
+        routes.set(task, profile.id);
+      }
+    }
+    if (!routes.has(writeFastRouteKey)) {
+      const writerId = routes.get("summarization");
+      const writer = promptProfiles.find(
+        (profile) =>
+          profile.id === writerId && supportsTask("structured-output", profile.capabilities)
+      );
+      if (writer && (await repository.seedTaskRoute(writeFastRouteKey, writer.id)))
+        seeded.push(writeFastRouteKey);
+    }
+    if (!routes.has(decideRouteKey)) {
+      const ranker = await this.preferredValidatedRanker(profiles);
+      if (ranker && (await repository.seedTaskRoute(decideRouteKey, ranker.id)))
+        seeded.push(decideRouteKey);
     }
     return seeded;
+  }
+
+  /** The profile whose model is a validated ranker this machine can run: MLX first, else GGUF. */
+  private async preferredValidatedRanker(
+    profiles: readonly AiProfileRecord[]
+  ): Promise<AiProfileRecord | null> {
+    const machine = this.options.machine ?? { platform: process.platform, arch: process.arch };
+    const runsMlx = machine.platform === "darwin" && machine.arch === "arm64";
+    const models = createLocalModelRepository(this.requirePool());
+    const validated: Array<{ profile: AiProfileRecord; runtime: string }> = [];
+    for (const profile of profiles) {
+      if (!profile.localModelId || !isDedicatedRanker(parseCapabilities(profile.capabilities)))
+        continue;
+      const model = await models.findById(profile.localModelId);
+      const entry = model ? findLocalModelCatalogEntry(model.catalogId) : undefined;
+      if (!model || !entry || !rankerReadyForDecide(model, entry)) continue;
+      if (model.runtime === "mlx" && !runsMlx) continue;
+      validated.push({ profile, runtime: model.runtime });
+    }
+    return (
+      validated.find((candidate) => candidate.runtime === "mlx")?.profile ??
+      validated.find((candidate) => candidate.runtime === "gguf")?.profile ??
+      null
+    );
   }
 
   public async cloneProfile(profileId: string, name: string): Promise<AiProfile> {
@@ -567,21 +771,25 @@ export class AiService {
     return createAiConfigRepository(this.requirePool()).deleteProfile(profileId);
   }
 
+  /** Profile tasks of the configurable tasks; class and operation routes are not settings yet. */
   public async listProfileTasks(profileId?: string): Promise<AiProfileTask[]> {
-    return (await createAiConfigRepository(this.requirePool()).listProfileTasks(profileId)).map(
-      (task) => ({
+    return (await createAiConfigRepository(this.requirePool()).listProfileTasks(profileId))
+      .filter((task) => isConfigurableTask(task.task))
+      .map((task) => ({
         ...task,
         task: task.task as AiProfileTask["task"],
         parameters: aiModelParametersSchema.parse(task.parameters)
-      })
-    );
+      }));
   }
 
+  /** Routes of the configurable tasks; class and operation routes are not settings yet. */
   public async listTaskRoutes(): Promise<AiTaskRoute[]> {
-    return (await createAiConfigRepository(this.requirePool()).listTaskRoutes()).map((route) => ({
-      task: route.task as AiTaskRoute["task"],
-      profileId: route.profileId
-    }));
+    return (await createAiConfigRepository(this.requirePool()).listTaskRoutes())
+      .filter((route) => isConfigurableTask(route.task))
+      .map((route) => ({
+        task: route.task as AiTaskRoute["task"],
+        profileId: route.profileId
+      }));
   }
 
   public async setTaskRoute(input: AiTaskRoute): Promise<void> {
@@ -751,12 +959,13 @@ export class AiService {
     pinned?: OrganizationProfile
   ): Promise<PromptAdmission | null> {
     const repository = createAiConfigRepository(this.requirePool());
-    let found = await repository.getDefaultTask(task, pinned?.profileId);
+    const routeKeys = taskRouteKeys(task, context);
+    let found = await repository.getDefaultTask(task, pinned?.profileId, routeKeys);
     // A task without a route is routed to the first configured profile that can serve it. A concurrent
     // call may have created the route first, so the task is looked up again whatever this call seeded.
     if (!found && !pinned) {
       await this.seedTaskRoutes(repository);
-      found = await repository.getDefaultTask(task);
+      found = await repository.getDefaultTask(task, undefined, routeKeys);
     }
     const selection = found ? structuredClone(found) : null;
     if (!selection) {
@@ -904,7 +1113,12 @@ export class AiService {
     const sourceItemIds = taskSourceItemIds(structuredLogContext);
     const repository = createAiConfigRepository(this.requirePool());
     const selection =
-      admission?.selection ?? (await repository.getDefaultTask(taskType, pinned?.profileId));
+      admission?.selection ??
+      (await repository.getDefaultTask(
+        taskType,
+        pinned?.profileId,
+        taskRouteKeys(taskType, logContext)
+      ));
     if (!selection) {
       if (pinned) throw new Error("organization.errors.model");
       return null;
@@ -1004,7 +1218,11 @@ export class AiService {
         if (plannedTokens > parameters.contextWindow)
           throw new Error("errors.ai.contextWindowLimit");
       }
-      const currentSelection = await repository.getDefaultTask(taskType, selection.profileId);
+      // The route key that chose the profile names the profile task to compare with.
+      const currentSelection = await repository.getDefaultTask(
+        selection.routeKey ?? taskType,
+        selection.profileId
+      );
       if (!currentSelection || selectionIdentity(currentSelection) !== selectionIdentity(selection))
         throw new Error("organization.errors.modelChanged");
       const configuredAdapter = selection.localModelId
@@ -1040,7 +1258,10 @@ export class AiService {
         metadata: {
           applicationInstruction:
             admission?.instruction ?? renderPrompt("shared.codex_adapter_instruction")
-        }
+        },
+        // A stated class sets the remote deadlines; the operation names the caller.
+        ...(logContext.workloadClass ? { workloadClass: logContext.workloadClass } : {}),
+        ...requestOperation(logContext.operation)
       };
       const progress = createProgressReporter(onProgress);
       const run = async () => {
@@ -1127,7 +1348,7 @@ export class AiService {
         ...(result.costEstimate !== undefined ? { costEstimate: result.costEstimate } : {})
       });
       if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
-        await this.releaseLocalRuntime().catch((error) => {
+        await this.releaseLocalModel(selection.localModelId).catch((error) => {
           this.options.logger?.error("Failed to release local embedding runtime", error);
         });
       }
@@ -1136,20 +1357,9 @@ export class AiService {
         profileId: selection.profileId,
         aiTaskRunId,
         outputLanguage,
-        embeddingSpaceKey: sha256(
-          JSON.stringify({
-            providerConfigId: selection.providerConfigId,
-            baseUrl: selection.baseUrl,
-            localModelId: selection.localModelId,
-            repository: selection.repository,
-            quantization: selection.quantization,
-            model: result.modelId,
-            provider: result.providerId,
-            runtime: result.runtime,
-            revision: selection.revision,
-            parameters,
-            ...(embeddingPromptIdentity() ? { promptStrategy: embeddingPromptIdentity() } : {})
-          })
+        embeddingSpaceKey: embeddingSpaceKey(
+          { ...selection, parameters, promptStrategy: embeddingPromptIdentity() },
+          result
         )
       };
     } catch (error) {
@@ -1207,7 +1417,7 @@ export class AiService {
         );
       }
       if (selection.localModelId && taskType === "embedding" && !keepLocalEmbeddingModelLoaded) {
-        await this.releaseLocalRuntime().catch((releaseError) => {
+        await this.releaseLocalModel(selection.localModelId).catch((releaseError) => {
           this.options.logger?.error("Failed to release local embedding runtime", releaseError);
         });
       }
@@ -1232,20 +1442,348 @@ export class AiService {
     return this.activeLocalModels.has(localModelId);
   }
 
+  /**
+   * Releases the resident local models that are not running a call (all of them with `force`).
+   * The ranker stays loaded (D18), and so does an embedding model when `keepEmbedding` is set, so a
+   * gate call between two embedding calls reloads neither. A released MLX model leaves the shared
+   * helper, which is stopped once no MLX call runs.
+   */
   public async releaseLocalRuntime(force = false, keepEmbedding = false): Promise<void> {
-    const resident = this.residentLocalAdapter;
-    if (!resident) return;
-    if (!force && this.activeLocalModels.has(resident.localModelId)) return;
-    if (!force && keepEmbedding && resident.adapter.describe().capabilities.includes("embedding"))
-      return;
-    this.residentLocalAdapter = null;
-    const descriptor = resident.adapter.describe();
-    this.registry.unregister(descriptor.providerId, descriptor.modelId);
-    await resident.adapter.dispose?.();
+    for (const slot of residencySlots) {
+      const occupant = this.resident[slot];
+      if (!occupant) continue;
+      if (!force) {
+        if (this.activeLocalModels.has(occupant.localModelId)) continue;
+        if (slot === "rank") continue;
+        if (keepEmbedding && occupant.adapter.describe().capabilities.includes("embedding"))
+          continue;
+      }
+      await this.releaseSlot(slot);
+    }
+    await this.stopIdleMlxHelper(force);
   }
 
   public async dispose(): Promise<void> {
     await this.releaseLocalRuntime(true);
+  }
+
+  /**
+   * Ranks documents against a query on the validated dedicated ranker of the operation's route:
+   * its operation override, else `class:decide`, never the prompt route of the `reranking` task
+   * and never a generative model (D17, D18). It fails visibly when no such ranker is routed, when
+   * the route's model is not one, or when its decide validation does not hold for the installed
+   * artifact and the runtime build it is about to run on. The call runs in the AI queue like any
+   * other (background unless stated) with no language instruction, generation defaults or context
+   * check, and is audited with the evaluated tokens and cost 0.
+   */
+  public async rank(input: AiRankInput, signal?: AbortSignal): Promise<AiRankResult> {
+    const request = parseRankRequest({
+      instruction: input.instruction,
+      query: input.query,
+      documents: input.documents
+    });
+    const pin = capturePromptPin();
+    const compositions = input.promptCompositions ?? promptAudit(input.instruction);
+    const deadline = ActiveDeadline.of(signal);
+    deadline?.pause();
+    let waiting = true;
+    const stopWaiting = () => {
+      if (!waiting) return;
+      waiting = false;
+      deadline?.resume();
+    };
+    try {
+      return await aiExecutionQueue.run(
+        (timing) =>
+          withPromptPin(pin, () => {
+            stopWaiting();
+            return this.executeRank(input, request, compositions, timing.queueMs, signal);
+          }),
+        signal,
+        { priority: input.priority ?? "background" }
+      );
+    } finally {
+      stopWaiting();
+    }
+  }
+
+  /** Whether rank calls of an operation have a ranker to run on (see {@link DecideRouteStatus}). */
+  public async decideRouteStatus(operation?: string): Promise<DecideRouteStatus> {
+    try {
+      await this.resolveDecideRoute(createAiConfigRepository(this.requirePool()), operation);
+      return "ready";
+    } catch (error) {
+      const key = error instanceof Error ? error.message : "";
+      if (key === "errors.ai.noCompatibleModel") return "missing";
+      if (key === "errors.ai.unsupportedTask") return "incompatible";
+      if (key === "errors.localModels.notReady") return "not_ready";
+      if (key === "errors.localModels.rankerNotValidated") return "not_validated";
+      throw error;
+    }
+  }
+
+  /**
+   * The embedding space the routed embedding model writes to, computed without an AI call (D26)
+   * the way an embedding call computes it, and compared with the newest stored note vector. Null
+   * when no embedding model is routed.
+   */
+  public async activeEmbeddingSpace(): Promise<ActiveEmbeddingSpace | null> {
+    const pool = this.requirePool();
+    const repository = createAiConfigRepository(pool);
+    let selection = await repository.getDefaultTask("embedding");
+    if (!selection) {
+      await this.seedTaskRoutes(repository);
+      selection = await repository.getDefaultTask("embedding");
+    }
+    if (!selection) return null;
+    const parameters = await this.embeddingCallParameters(selection);
+    const spaceKey = embeddingSpaceKey(
+      { ...selection, parameters, promptStrategy: embeddingPromptIdentity() },
+      {
+        // What the embedding adapters report: the routed model, `local-<runtime>` or the provider.
+        providerId: selection.provider,
+        modelId: selection.modelId,
+        runtime: selection.localModelId ? "local" : "remote"
+      }
+    );
+    const newest = await createEmbeddingRepository(pool).newestNoteVectorSpace();
+    return {
+      spaceKey,
+      profileId: selection.profileId,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      local: Boolean(selection.localModelId),
+      dimensions: typeof parameters.dimensions === "number" ? parameters.dimensions : null,
+      newestNoteSpaceKey: newest?.spaceKey ?? null,
+      confirmed: newest?.spaceKey === spaceKey
+    };
+  }
+
+  /** The effective parameters of an embedding call on this route, as `executeDefaultTask` sets them. */
+  private async embeddingCallParameters(selection: TaskSelection): Promise<JsonObject> {
+    let parameters = aiModelParametersSchema.parse(
+      withAiTaskParameterDefaults(
+        "embedding",
+        { ...selection.modelDefaultParameters, ...selection.parameters },
+        Boolean(selection.localModelId),
+        { contextWindowLimit: discoveredContextWindow(selection.providerMetadata) }
+      )
+    );
+    if (selection.localModelId) {
+      const model = await createLocalModelRepository(this.requirePool()).findById(
+        selection.localModelId
+      );
+      if (!model) throw new Error("errors.localModels.notReady");
+      return normalizeAiModelParameters(
+        parameters,
+        localModelParameterCapabilities(model, parseCapabilities(model.capabilities))
+      );
+    }
+    const provider = selection.provider as AiProviderConfig["provider"];
+    parameters = normalizeAiModelParameters(
+      parameters,
+      providerParameterCapabilities({
+        provider,
+        modelId: selection.modelId,
+        baseUrl: selection.baseUrl,
+        capabilities: parseCapabilities(
+          selection.providerMetadata?.capabilities ?? selection.requiredCapabilities
+        )
+      })
+    );
+    // The adapter's own descriptor, built from the provider configuration (`createAdapter`).
+    return normalizeAiModelParameters(
+      parameters,
+      providerParameterCapabilities({
+        provider,
+        modelId:
+          typeof selection.providerMetadata.modelId === "string"
+            ? selection.providerMetadata.modelId
+            : "",
+        baseUrl: selection.baseUrl,
+        capabilities: parseCapabilities(selection.providerMetadata.capabilities)
+      })
+    );
+  }
+
+  /**
+   * The validated ranker that serves rank calls of an operation: the `op:<operation>` route, else
+   * `class:decide`, seeded on first use like any route. Throws the localized reason otherwise.
+   */
+  private async resolveDecideRoute(
+    repository: ReturnType<typeof createAiConfigRepository>,
+    operation: string | undefined
+  ): Promise<{ selection: TaskSelection; model: LocalModelRecord; entry: LocalModelCatalogEntry }> {
+    const keys = [...(operation ? [operationRouteKey(operation)] : []), decideRouteKey];
+    let found = await repository.getDefaultTask(decideRouteKey, undefined, keys);
+    if (!found) {
+      await this.seedTaskRoutes(repository);
+      found = await repository.getDefaultTask(decideRouteKey, undefined, keys);
+    }
+    if (!found) throw new Error("errors.ai.noCompatibleModel");
+    // A remote or generative model never ranks: there is no generative fallback (D10, D17).
+    if (!found.localModelId) throw new Error("errors.ai.unsupportedTask");
+    const model = await createLocalModelRepository(this.requirePool()).findById(found.localModelId);
+    if (!model || model.status !== "ready" || !model.managedPath)
+      throw new Error("errors.localModels.notReady");
+    const entry = findLocalModelCatalogEntry(model.catalogId);
+    if (!entry || !isRankerCatalogEntry(entry)) throw new Error("errors.ai.unsupportedTask");
+    if (!rankerReadyForDecide(model, entry))
+      throw new Error("errors.localModels.rankerNotValidated");
+    return { selection: structuredClone(found), model, entry };
+  }
+
+  private async executeRank(
+    input: AiRankInput,
+    request: RankRequest,
+    compositions: PromptCompositionSnapshot[],
+    queueMs: number,
+    signal: AbortSignal | undefined
+  ): Promise<AiRankResult> {
+    signal?.throwIfAborted();
+    const repository = createAiConfigRepository(this.requirePool());
+    const { selection, model, entry } = await this.resolveDecideRoute(repository, input.operation);
+    const sourceItemIds = [...new Set(input.sourceIds ?? [])];
+    const taskRequest: AiTaskRequest = {
+      ...rankTaskRequest(request),
+      profileId: selection.profileId,
+      modelId: selection.modelId,
+      workloadClass: "decide",
+      ...requestOperation(input.operation)
+    };
+    const taskInput = String(taskRequest.input);
+    const adapterName = localAdapterName(model.runtime);
+    const audit = {
+      profileId: selection.profileId,
+      taskType: "reranking",
+      provider: selection.provider,
+      modelId: selection.modelId,
+      runtime: model.runtime,
+      adapter: adapterName,
+      repository: model.repository,
+      revision: model.revision,
+      quantization: model.quantization,
+      capabilitiesUsed: ["reranking", "offline"],
+      parameters: {},
+      promptCompositions: compositions,
+      inputHash: sha256(taskInput),
+      queueMs,
+      sourceItemIds
+    };
+    if (input.jobId) {
+      try {
+        await createJobRepository(this.requirePool()).setAiExecution(input.jobId, {
+          provider: selection.provider,
+          modelId: selection.modelId,
+          reasoningLevel: null
+        });
+      } catch (error) {
+        this.options.logger?.error("Failed to attach AI execution metadata to job", error);
+      }
+    }
+    const started = Date.now();
+    const capture = await this.options.monitoring?.start({
+      kind: "ai",
+      operation: input.operation,
+      taskType: "reranking",
+      stage: input.stage ?? input.operation,
+      context: {
+        origin:
+          input.priority === "interactive" ? "interactive" : input.jobId ? "job" : "background",
+        ...(input.jobId ? { jobId: input.jobId } : {}),
+        workloadClass: "decide",
+        routeKey: selection.routeKey,
+        sourceItemIds,
+        localModelId: model.id,
+        repository: model.repository,
+        revision: model.revision,
+        quantization: model.quantization
+      },
+      sourceItemIds,
+      provider: selection.provider,
+      modelId: selection.modelId,
+      runtime: model.runtime,
+      profileId: selection.profileId,
+      parameters: {},
+      input: taskInput
+    });
+    try {
+      const { result, output } = await this.withLocalModelUsage(model.id, async () => {
+        const ranker = await this.residentRanker(model);
+        // The validation holds only for the runtime build it ran on (T11): checked before any call.
+        // The build is read once per resident ranker; a failed read is retried by the next call.
+        ranker.runtimeBuild ??= (ranker.adapter as RankerAdapter).runtimeBuild().catch((error) => {
+          ranker.runtimeBuild = undefined;
+          throw error;
+        });
+        const runtimeBuild = await ranker.runtimeBuild;
+        if (
+          !isDecideValidationCurrent(model.metadata.decideValidation, {
+            runtime: entry.runtime,
+            revision: entry.revision,
+            artifactSha256: rankerCatalogArtifactSha256(entry),
+            runtimeBuild
+          })
+        )
+          throw new Error("errors.localModels.rankerNotValidated");
+        const descriptor = ranker.adapter.describe();
+        const adapter = this.registry.resolve({
+          providerId: descriptor.providerId,
+          modelId: descriptor.modelId,
+          requiredCapabilities: ["reranking"],
+          offlineOnly: true
+        });
+        signal?.throwIfAborted();
+        const ran = await adapter.run(taskRequest, signal);
+        return { result: ran, output: readRankResult(ran, request.documents.length) };
+      });
+      const inputTokens = output.tokenCounts.reduce((total, count) => total + count, 0);
+      const aiTaskRunId = await repository.recordTaskRun({
+        ...audit,
+        outputHash: sha256(JSON.stringify(result.output)),
+        inputTokens,
+        outputTokens: 0,
+        costEstimate: 0,
+        durationMs: result.durationMs,
+        status: "succeeded"
+      });
+      await this.options.monitoring?.finish(capture, {
+        status: "succeeded",
+        aiTaskRunId,
+        durationMs: Date.now() - started,
+        tokenUsage: { inputTokens, outputTokens: 0, totalTokens: inputTokens },
+        costEstimate: 0,
+        parameters: {},
+        output
+      });
+      return {
+        ...output,
+        aiTaskRunId,
+        profileId: selection.profileId,
+        localModelId: model.id,
+        provider: selection.provider,
+        modelId: selection.modelId,
+        runtime: model.runtime,
+        durationMs: result.durationMs,
+        queueMs
+      };
+    } catch (error) {
+      const aiTaskRunId = await repository.recordTaskRun({
+        ...audit,
+        durationMs: Date.now() - started,
+        status: signal?.aborted ? "canceled" : "failed",
+        error: redactSensitiveText(error)
+      });
+      await this.options.monitoring?.finish(capture, {
+        status: signal?.aborted ? "canceled" : "failed",
+        aiTaskRunId,
+        durationMs: Date.now() - started,
+        error: redactSensitiveText(error),
+        parameters: {}
+      });
+      if (error instanceof Error) Object.assign(error, { aiTaskRunId });
+      throw error;
+    }
   }
 
   public async testLocalModel(localModelId: string): Promise<string> {
@@ -1502,37 +2040,143 @@ export class AiService {
       throw error;
     } finally {
       // The ranker is not kept resident by the test; routed use manages its own residency.
-      await this.releaseLocalRuntime().catch(() => undefined);
+      if (this.resident.rank?.localModelId === model.id && !this.activeLocalModels.has(model.id))
+        await this.releaseSlot("rank").catch(() => undefined);
+      await this.stopIdleMlxHelper(false).catch(() => undefined);
     }
   }
 
   /**
-   * A dedicated ranker adapter for the model, resident in the single local slot like any local
-   * model. It is built with the catalog's declared capabilities, because the stored ones lack
-   * `reranking` until the ranker is validated, which is what this adapter is for.
+   * A dedicated ranker adapter for the model in the ranker slot. It is built with the catalog's
+   * declared capabilities, because the stored ones lack `reranking` until the ranker is
+   * validated, which is what this adapter is for.
    */
   private async createRankerAdapter(
     model: LocalModelRecord,
     entry: LocalModelCatalogEntry
   ): Promise<RankerAdapter> {
-    await this.releaseLocalRuntime();
-    if (this.residentLocalAdapter) throw new Error("errors.localModels.modelBusy");
-    const options = {
-      modelId: model.modelId,
-      modelPath: resolveLocalModelPath(model),
-      capabilities: [...entry.capabilities],
-      catalogId: model.catalogId,
-      parameterCapabilities: {},
-      repository: model.repository,
-      revision: model.revision,
-      quantization: model.quantization
+    return (await this.makeResident("rank", model, [...entry.capabilities]))
+      .adapter as RankerAdapter;
+  }
+
+  /** The routed ranker, resident in the ranker slot with its stored (validated) capabilities. */
+  private async residentRanker(model: LocalModelRecord): Promise<ResidentLocalAdapter> {
+    const resident = this.resident.rank;
+    if (resident?.localModelId === model.id) return resident;
+    return this.makeResident("rank", model, parseCapabilities(model.capabilities));
+  }
+
+  /** The slot a local model is kept in: rankers, embedding-only models, everything else. */
+  private residencySlot(model: LocalModelRecord, capabilities: AiCapability[]): ResidencySlot {
+    const entry = findLocalModelCatalogEntry(model.catalogId);
+    if (entry ? isRankerCatalogEntry(entry) : isDedicatedRanker(capabilities)) return "rank";
+    return !hasGeneration(capabilities) && capabilities.includes("embedding")
+      ? "embed"
+      : "generate";
+  }
+
+  /**
+   * Loads a model into its slot, releasing the slot's current model first: a second generative
+   * model therefore never joins the first one (`rules/ai.md`). A model running a call is never
+   * released; the new one is refused instead.
+   */
+  private async makeResident(
+    slot: ResidencySlot,
+    model: LocalModelRecord,
+    capabilities: AiCapability[]
+  ): Promise<ResidentLocalAdapter> {
+    const occupant = this.resident[slot];
+    if (occupant) {
+      if (this.activeLocalModels.has(occupant.localModelId))
+        throw new Error("errors.localModels.modelBusy");
+      await this.releaseSlot(slot);
+    }
+    const adapter =
+      slot === "rank"
+        ? this.buildRankerAdapter(model, capabilities)
+        : this.buildLocalAdapter(model, capabilities);
+    const resident: ResidentLocalAdapter = {
+      localModelId: model.id,
+      runtime: model.runtime,
+      adapter
     };
-    const adapter: RankerAdapter =
-      model.runtime === "mlx"
-        ? new MlxRerankerAdapter({ ...options, helperPath: this.resolveMlxHelperPath() })
-        : new NodeLlamaRankerAdapter(options);
-    this.residentLocalAdapter = { localModelId: model.id, adapter };
-    return this.registerAdapter(adapter);
+    this.resident[slot] = resident;
+    this.registerAdapter(adapter);
+    return resident;
+  }
+
+  private async releaseSlot(slot: ResidencySlot): Promise<void> {
+    const occupant = this.resident[slot];
+    if (!occupant) return;
+    delete this.resident[slot];
+    const descriptor = occupant.adapter.describe();
+    this.registry.unregister(descriptor.providerId, descriptor.modelId);
+    await occupant.adapter.dispose?.();
+    // The shared helper keeps the weights of a released MLX adapter until it stops.
+    if (occupant.runtime === "mlx") this.mlxHoldsReleasedModel = true;
+  }
+
+  /** Releases one local model unless it is running a call. */
+  private async releaseLocalModel(localModelId: string): Promise<void> {
+    if (this.activeLocalModels.has(localModelId)) return;
+    const slot = residencySlots.find((candidate) => {
+      return this.resident[candidate]?.localModelId === localModelId;
+    });
+    if (slot) await this.releaseSlot(slot);
+    await this.stopIdleMlxHelper(false);
+  }
+
+  /**
+   * Stops the shared MLX helper once it holds a released model and no MLX call runs, or always
+   * with `force`. A resident MLX ranker then loads again on its next call.
+   */
+  private async stopIdleMlxHelper(force: boolean): Promise<void> {
+    const host = this.mlxHost;
+    if (!host) return;
+    if (!force) {
+      if (!this.mlxHoldsReleasedModel) return;
+      const mlxRunning = residencySlots.some((slot) => {
+        const occupant = this.resident[slot];
+        return occupant?.runtime === "mlx" && this.activeLocalModels.has(occupant.localModelId);
+      });
+      if (mlxRunning) return;
+    }
+    this.mlxHoldsReleasedModel = false;
+    await host.dispose();
+  }
+
+  /** The one MLX helper of this service (D18). */
+  private mlxHelper(): MlxHelperHost {
+    this.mlxHost ??= new MlxHelperHost({ helperPath: this.resolveMlxHelperPath() });
+    return this.mlxHost;
+  }
+
+  private buildRankerAdapter(model: LocalModelRecord, capabilities: AiCapability[]): RankerAdapter {
+    const options = {
+      ...localAdapterOptions(model, capabilities),
+      parameterCapabilities: {}
+    };
+    return model.runtime === "mlx"
+      ? new MlxRerankerAdapter({
+          ...options,
+          helperPath: this.resolveMlxHelperPath(),
+          host: this.mlxHelper()
+        })
+      : new NodeLlamaRankerAdapter(options);
+  }
+
+  private buildLocalAdapter(model: LocalModelRecord, capabilities: AiCapability[]): AiModelAdapter {
+    const options = {
+      ...localAdapterOptions(model, capabilities),
+      parameterCapabilities: localModelParameterCapabilities(model, capabilities)
+    };
+    return model.runtime === "mlx"
+      ? new MlxAdapter({
+          ...options,
+          helperPath: this.resolveMlxHelperPath(),
+          host: this.mlxHelper()
+        })
+      : new NodeLlamaCppAdapter(options);
   }
 
   private async parameterCapabilitiesForProfile(
@@ -1543,15 +2187,7 @@ export class AiService {
         profile.localModelId
       );
       if (!model) throw new Error("errors.common.notFound");
-      return (
-        findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities ??
-        localParameterCapabilities({
-          runtime: model.runtime,
-          modelId: model.modelId,
-          catalogId: model.catalogId,
-          capabilities: parseCapabilities(model.capabilities)
-        })
-      );
+      return localModelParameterCapabilities(model, parseCapabilities(model.capabilities));
     }
     const provider = (await createAiConfigRepository(this.requirePool()).listProviders()).find(
       (candidate) => candidate.id === profile.providerConfigId
@@ -1661,39 +2297,18 @@ export class AiService {
     }
   }
 
+  /** The resident adapter of a local model, loading it into its slot when it is not resident. */
   private async createLocalAdapter(localModelId: string): Promise<AiModelAdapter> {
-    if (this.residentLocalAdapter?.localModelId === localModelId)
-      return this.residentLocalAdapter.adapter;
-    await this.releaseLocalRuntime();
-    if (this.residentLocalAdapter) throw new Error("errors.localModels.modelBusy");
+    const resident = residencySlots
+      .map((slot) => this.resident[slot])
+      .find((occupant) => occupant?.localModelId === localModelId);
+    if (resident) return resident.adapter;
     const model = await createLocalModelRepository(this.requirePool()).findById(localModelId);
     if (!model || model.status !== "ready" || !model.managedPath)
       throw new Error("errors.localModels.notReady");
     const capabilities = parseCapabilities(model.capabilities);
-    const parameterCapabilities =
-      findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities ??
-      localParameterCapabilities({
-        runtime: model.runtime,
-        modelId: model.modelId,
-        catalogId: model.catalogId,
-        capabilities
-      });
-    const options = {
-      modelId: model.modelId,
-      modelPath: resolveLocalModelPath(model),
-      capabilities,
-      catalogId: model.catalogId,
-      parameterCapabilities,
-      repository: model.repository,
-      revision: model.revision,
-      quantization: model.quantization
-    };
-    const adapter =
-      model.runtime === "mlx"
-        ? new MlxAdapter({ ...options, helperPath: this.resolveMlxHelperPath() })
-        : new NodeLlamaCppAdapter(options);
-    this.residentLocalAdapter = { localModelId, adapter };
-    return this.registerAdapter(adapter);
+    return (await this.makeResident(this.residencySlot(model, capabilities), model, capabilities))
+      .adapter;
   }
 
   private registerAdapter<T extends AiModelAdapter>(adapter: T): T {
@@ -1759,6 +2374,70 @@ function defaultBaseUrl(provider: AiProviderConfigInput["provider"]): string {
 }
 
 type RankerAdapter = AiModelAdapter & { runtimeBuild(): Promise<string> };
+
+/**
+ * The route keys of a call (D18): its operation override, the class route of a class it states,
+ * then its task route. A class is never derived here: note matching runs the `reranking` task
+ * without a stated class, so it never reaches `class:decide`.
+ */
+function taskRouteKeys(
+  task: string,
+  context: Pick<AiTaskLogContext, "operation" | "workloadClass">
+): string[] {
+  return aiRouteKeys(task, {
+    operation: requestOperation(context.operation).operation,
+    workloadClass: context.workloadClass
+  });
+}
+
+/** The operation a request carries, when it has one the request contract accepts. */
+function requestOperation(operation: string | undefined): { operation?: string } {
+  return operation && operation.length <= 200 ? { operation } : {};
+}
+
+/** Tasks the settings show; class and operation routes are internal until F3. */
+function isConfigurableTask(task: string): boolean {
+  return aiConfigurableTaskSchema.safeParse(task).success;
+}
+
+/** An installed catalog ranker whose decide validation names this revision and artifact. */
+function rankerReadyForDecide(model: LocalModelRecord, entry: LocalModelCatalogEntry): boolean {
+  return (
+    model.status === "ready" &&
+    Boolean(model.managedPath) &&
+    isRankerCatalogEntry(entry) &&
+    isDedicatedRanker(parseCapabilities(model.capabilities)) &&
+    decideValidationForCatalogEntry(model.metadata.decideValidation, entry) !== null
+  );
+}
+
+function localAdapterOptions(model: LocalModelRecord, capabilities: AiCapability[]) {
+  return {
+    modelId: model.modelId,
+    modelPath: resolveLocalModelPath(model),
+    capabilities,
+    catalogId: model.catalogId,
+    repository: model.repository,
+    revision: model.revision,
+    quantization: model.quantization
+  };
+}
+
+/** The parameter descriptor a local adapter carries: the catalog's, else the runtime's. */
+function localModelParameterCapabilities(
+  model: LocalModelRecord,
+  capabilities: AiCapability[]
+): AiModelParameterCapabilities {
+  return (
+    findLocalModelCatalogEntry(model.catalogId)?.parameterCapabilities ??
+    localParameterCapabilities({
+      runtime: model.runtime,
+      modelId: model.modelId,
+      catalogId: model.catalogId,
+      capabilities
+    })
+  );
+}
 
 /** Errors that say the test could not run, not that the ranker failed it. */
 const rankerValidationInconclusive = new Set([

@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { aiTaskRequestSchema } from "./contracts.js";
+import { OpenAiCompatibleAdapter } from "./openai-compatible.js";
 import { AiProviderError } from "./provider-error.js";
 import {
   aiWorkloadClass,
+  remoteCallTask,
+  requestWorkloadClass,
   defaultAiRuntimeConfig,
   isLocalEndpoint,
   monotonicProgress,
@@ -744,6 +748,85 @@ describe("runRemoteCall deadlines", () => {
     const high = first({ reasoningLevel: "high" });
     await vi.advanceTimersByTimeAsync(61_000);
     await expect(high).resolves.toBeUndefined();
+  });
+});
+
+describe("a workload class the caller states", () => {
+  const hang = () => new Promise<Response>(() => undefined);
+
+  it("travels on the request and replaces the task type's class", () => {
+    const request = aiTaskRequestSchema.parse({
+      taskType: "structured-output",
+      input: "Name these topics.",
+      workloadClass: "write-fast",
+      operation: "topic_name"
+    });
+    expect(requestWorkloadClass(request)).toBe("write-fast");
+    expect(requestWorkloadClass({ taskType: "structured-output" })).toBe("answer");
+    // Note matching states no class: its derived class only sets the decide deadlines.
+    expect(requestWorkloadClass({ taskType: "reranking" })).toBe("decide");
+    expect(remoteCallTask(request)).toEqual({
+      taskType: "structured-output",
+      parameters: {},
+      workloadClass: "write-fast"
+    });
+    expect(() =>
+      aiTaskRequestSchema.parse({ taskType: "summarization", input: "", workloadClass: "fast" })
+    ).toThrow();
+  });
+
+  it("sets the total deadline of the call", async () => {
+    const runtime = context({ deadlines: { totalMs: { "write-fast": 15_000, answer: 60_000 } } });
+    const stated = runRemoteCall(
+      runtime,
+      { streaming: false, taskType: "structured-output", workloadClass: "write-fast" },
+      (call) => call.fetch(vi.fn<typeof fetch>(hang), "https://example.test", {})
+    );
+    const derived = runRemoteCall(
+      runtime,
+      { streaming: false, taskType: "structured-output" },
+      (call) => call.fetch(vi.fn<typeof fetch>(hang), "https://example.test", {})
+    );
+    let derivedEnded = false;
+    void derived.catch(() => {
+      derivedEnded = true;
+    });
+    const settled = expect(stated).rejects.toMatchObject({
+      kind: "timeout",
+      message: "AI provider request exceeded its 15000 ms deadline."
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await settled;
+    expect(derivedEnded).toBe(false);
+    const derivedSettled = expect(derived).rejects.toMatchObject({
+      message: "AI provider request exceeded its 60000 ms deadline."
+    });
+    await vi.advanceTimersByTimeAsync(45_000);
+    await derivedSettled;
+  });
+
+  it("reaches the remote deadline through an adapter", async () => {
+    const adapter = new OpenAiCompatibleAdapter({
+      apiKey: "test-key",
+      modelId: "writer",
+      capabilities: ["structured-output"],
+      baseUrl: "https://example.test/v1",
+      fetch: vi.fn<typeof fetch>(hang),
+      runtime: { deadlines: { totalMs: { "write-fast": 15_000 } }, retry: { maxAttempts: 1 } }
+    });
+    const result = adapter.run({
+      taskType: "structured-output",
+      input: "Name these topics.",
+      requiredCapabilities: [],
+      parameters: {},
+      metadata: {},
+      workloadClass: "write-fast"
+    });
+    const settled = expect(result).rejects.toMatchObject({
+      message: "AI provider request exceeded its 15000 ms deadline."
+    });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await settled;
   });
 });
 

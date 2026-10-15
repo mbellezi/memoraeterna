@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 import { z } from "zod";
 import type { AiTaskType } from "@app/domain";
 
-import type { AiTaskResult } from "./contracts.js";
+import type { AiTaskRequest, AiTaskResult, AiWorkloadClass } from "./contracts.js";
 import {
   AiProviderError,
   aiErrorRetryAfterMs,
@@ -11,9 +11,7 @@ import {
   toProviderNetworkError
 } from "./provider-error.js";
 
-/** Workload classes of the AI runtime; each has its own total deadline. */
-export type AiWorkloadClass = "embed" | "decide" | "write-fast" | "write-quality" | "answer";
-
+/** The class a task type falls in when its caller states none; it sets the total deadline only. */
 export function aiWorkloadClass(taskType: AiTaskType): AiWorkloadClass {
   switch (taskType) {
     case "embedding":
@@ -32,6 +30,24 @@ export function aiWorkloadClass(taskType: AiTaskType): AiWorkloadClass {
     default:
       return "answer";
   }
+}
+
+/** The class a request runs in: the one its caller stated, else its task type's. */
+export function requestWorkloadClass(
+  request: Pick<AiTaskRequest, "taskType" | "workloadClass">
+): AiWorkloadClass {
+  return request.workloadClass ?? aiWorkloadClass(request.taskType);
+}
+
+/** What a remote call takes from its task request: the task type, parameters and stated class. */
+export function remoteCallTask(
+  request: AiTaskRequest | undefined
+): Pick<RemoteCallOptions, "taskType" | "parameters" | "workloadClass"> {
+  return {
+    taskType: request?.taskType,
+    parameters: request?.parameters,
+    workloadClass: request?.workloadClass
+  };
 }
 
 const milliseconds = z.number().int().positive();
@@ -247,6 +263,8 @@ export interface RemoteCallOptions {
   signal?: AbortSignal | undefined;
   /** Absent for probes (model listing, connection tests), which use the shortest total deadline. */
   taskType?: AiTaskType | undefined;
+  /** The class the caller stated; it replaces the task type's class for the deadlines. */
+  workloadClass?: AiWorkloadClass | undefined;
   parameters?: Record<string, unknown> | undefined;
   /** The response is a stream, so the connect, first-byte and stall deadlines apply. */
   streaming: boolean;
@@ -314,9 +332,10 @@ export async function runRemoteCall<T>(
   attempt: (call: RemoteAttempt) => Promise<T>
 ): Promise<T> {
   const { config } = context;
+  const workload =
+    options.workloadClass ?? (options.taskType ? aiWorkloadClass(options.taskType) : "embed");
   const totalMs = Math.round(
-    config.deadlines.totalMs[options.taskType ? aiWorkloadClass(options.taskType) : "embed"] *
-      (context.local ? config.deadlines.localTotalFactor : 1)
+    config.deadlines.totalMs[workload] * (context.local ? config.deadlines.localTotalFactor : 1)
   );
   const maxAttempts = options.retry === false ? 1 : config.retry.maxAttempts;
   const startedAt = Date.now();
@@ -336,7 +355,7 @@ export async function runRemoteCall<T>(
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
   // A decide call asks for no reasoning summary, so it thinks in silence before its answer text.
-  const decide = options.taskType !== undefined && aiWorkloadClass(options.taskType) === "decide";
+  const decide = options.taskType !== undefined && workload === "decide";
   // Requests of the attempts that already ended.
   let requestsMade = 0;
   const countRequests = (call: RemoteAttempt) => {
