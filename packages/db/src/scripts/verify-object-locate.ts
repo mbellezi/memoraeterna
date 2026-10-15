@@ -374,6 +374,10 @@ try {
   ]);
   const cyclic = await locate.locateSource(section.id);
   assert.ok(cyclic && cyclic.primaryPath.length <= 32, "the path walk is bounded");
+  // A note takes one slot of the path itself, so even on the deepest chain it fits the contract.
+  const cyclicNote = await locate.locateNote(own);
+  assert.equal(cyclicNote?.primaryPath.length, 32, "the note's walk stops one ancestor earlier");
+  ObjectLocateResultSchema.parse(cyclicNote);
   await db.query("update source_items set parent_source_item_id = null where id = $1", [book.id]);
 
   // Both statements are valid for EXPLAIN (the plans are compared at scale by the benchmark).

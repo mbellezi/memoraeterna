@@ -2186,7 +2186,7 @@ function atomicNoteEmbeddingText(note: AtomicNoteRecord): string {
   });
 }
 
-function serializeNote(note: AtomicNoteRecord) {
+export function serializeNote(note: AtomicNoteRecord) {
   return {
     ownership: note.ownership ?? "source",
     supersessionStatus: note.supersessionStatus,
@@ -2201,6 +2201,7 @@ function serializeNote(note: AtomicNoteRecord) {
     evidenceChunkId: note.evidenceChunkId,
     generationModel: note.generationModel,
     generationPromptVersion: note.generationPromptVersion,
+    humanProtected: note.metadata.humanProtected === true,
     createdAt: note.createdAt.toISOString(),
     updatedAt: note.updatedAt.toISOString()
   };

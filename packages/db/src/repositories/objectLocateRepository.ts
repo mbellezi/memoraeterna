@@ -177,17 +177,24 @@ function toResult(
 }
 
 export function createObjectLocateRepository(db: Queryable) {
-  const parameters = (id: string) => [id, objectLocateListLimit, objectLocatePathLimit - 1];
+  // The walk stops at depth `pathLimit - 1`, so the chain holds at most `pathLimit` sources.
+  const parameters = (id: string, pathLimit: number) => [id, objectLocateListLimit, pathLimit - 1];
   return {
     /** Where a source is; null when no such source exists. */
     async locateSource(id: string): Promise<ObjectLocateResult | null> {
-      const result = await db.query<LocateRow>(sourceLocateSql, parameters(id));
+      const result = await db.query<LocateRow>(
+        sourceLocateSql,
+        parameters(id, objectLocatePathLimit)
+      );
       return toResult("source", id, result.rows[0]);
     },
 
-    /** Where a note is; null when no such note exists. */
+    /** Where a note is; null when no such note exists. The note itself takes one slot of the path. */
     async locateNote(id: string): Promise<ObjectLocateResult | null> {
-      const result = await db.query<LocateRow>(noteLocateSql, parameters(id));
+      const result = await db.query<LocateRow>(
+        noteLocateSql,
+        parameters(id, objectLocatePathLimit - 1)
+      );
       return toResult("note", id, result.rows[0]);
     },
 

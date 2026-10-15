@@ -3,7 +3,8 @@ import type { PgPool } from "@app/db";
 
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
 import type { AiService } from "./ai-service.js";
-import { KnowledgeService } from "./knowledge-service.js";
+import { KnowledgeService, serializeNote } from "./knowledge-service.js";
+import { atomicNoteViewSchema } from "../../shared/ipc.js";
 
 describe("hierarchical aggregate summaries", () => {
   it("adds the configured embedding to library queries for composite ranking", async () => {
@@ -236,6 +237,37 @@ describe("hierarchical aggregate summaries", () => {
     expect(prompts[0]!.indexOf("[Subpart 1: Retrieval]")).toBeGreaterThan(-1);
     expect(prompts[0]!.indexOf("[Subpart 2: Spacing]")).toBeGreaterThan(
       prompts[0]!.indexOf("[Subpart 1: Retrieval]")
+    );
+  });
+});
+
+describe("note views", () => {
+  const record = (metadata: Record<string, unknown>) =>
+    ({
+      id: "00000000-0000-4000-8000-000000000001",
+      title: "Title",
+      bodyMarkdown: "Body",
+      ideaStatement: "Idea",
+      language: "en",
+      status: "active",
+      ownership: "source",
+      supersessionStatus: "current",
+      createdFromSourceItemId: "00000000-0000-4000-8000-000000000002",
+      sourceSpanId: null,
+      evidenceChunkId: "00000000-0000-4000-8000-000000000003",
+      generationModel: "model",
+      generationPromptVersion: "atomic-note-v4",
+      metadata,
+      createdAt: new Date("2026-10-14T10:00:00.000Z"),
+      updatedAt: new Date("2026-10-14T10:00:00.000Z")
+    }) as unknown as Parameters<typeof serializeNote>[0];
+
+  it("tells lists whether a person edited the note", () => {
+    expect(serializeNote(record({ humanProtected: true })).humanProtected).toBe(true);
+    for (const metadata of [{}, { humanProtected: "true" }, { humanProtected: false }])
+      expect(serializeNote(record(metadata)).humanProtected).toBe(false);
+    expect(atomicNoteViewSchema.parse(serializeNote(record({})))).toEqual(
+      serializeNote(record({}))
     );
   });
 });

@@ -263,12 +263,22 @@ describe("desktop IPC contracts", () => {
       evidenceChunkId: "00000000-0000-4000-8000-000000000003",
       generationModel: "model",
       generationPromptVersion: "atomic-note-v4",
+      humanProtected: false,
       createdAt: "2026-10-14T10:00:00.000Z",
       updatedAt: "2026-10-14T10:00:00.000Z"
     };
     for (const status of ["active", "pending_review", "approved", "rejected", "archived"])
       expect(atomicNoteViewSchema.parse({ ...view, status }).status).toBe(status);
     expect(atomicNoteViewSchema.safeParse({ ...view, status: "draft" }).success).toBe(false);
+    // Lists show the AI badge only on notes nobody edited, so the flag is part of every view.
+    const withoutFlag: Partial<typeof view> = { ...view };
+    delete withoutFlag.humanProtected;
+    expect(atomicNoteViewSchema.safeParse({ ...withoutFlag, status: "active" }).success).toBe(
+      false
+    );
+    expect(
+      atomicNoteViewSchema.parse({ ...view, status: "active", humanProtected: true }).humanProtected
+    ).toBe(true);
     const node = {
       id: view.id,
       kind: "atomic_note",
@@ -461,6 +471,12 @@ describe("desktop IPC contracts", () => {
 
   it("registers the objects.locate channel", () => {
     expect(ipcChannels.objectsLocate).toBe("app:objects:locate");
+    expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
+  });
+
+  it("registers the note page channels", () => {
+    expect(ipcChannels.notesPage).toBe("app:notes:page");
+    expect(ipcChannels.notesRelations).toBe("app:notes:relations");
     expect(new Set(Object.values(ipcChannels)).size).toBe(Object.values(ipcChannels).length);
   });
 });

@@ -27,6 +27,10 @@ import type { MaintenanceCommand } from "@app/domain";
 import type {
   ConsultationInput,
   ConsultationResult,
+  NotePage,
+  NotePageInputSchema,
+  NotePageRelations,
+  NoteRelationsInputSchema,
   ObjectLocateInput,
   ObjectLocateResult,
   OrganizationRun
@@ -98,6 +102,8 @@ export const ipcChannels = {
   wikiSearch: "app:wiki:search",
   wikiHistory: "app:wiki:history",
   objectsLocate: "app:objects:locate",
+  notesPage: "app:notes:page",
+  notesRelations: "app:notes:relations",
   systemGetInfo: "app:system:get-info",
   windowNavigation: "app:window:navigation",
   menuCommand: "app:menu:command",
@@ -873,6 +879,8 @@ export const atomicNoteViewSchema = z
     evidenceChunkId: z.string().uuid(),
     generationModel: z.string().min(1),
     generationPromptVersion: z.string().min(1),
+    /** A person edited the note: it is theirs and automation leaves it alone. */
+    humanProtected: z.boolean(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime()
   })
@@ -1656,6 +1664,11 @@ export interface DesktopApi {
   objects: {
     /** Where an object is (primary path, other placements, citations); null when it does not exist. */
     locate: (input: ObjectLocateInput) => Promise<ObjectLocateResult | null>;
+  };
+  /** Note pages: one read-only read of everything a page shows, and further pages of relations. */
+  notes: {
+    page: (input: z.input<typeof NotePageInputSchema>) => Promise<NotePage | null>;
+    relations: (input: z.input<typeof NoteRelationsInputSchema>) => Promise<NotePageRelations>;
   };
   wiki: {
     collection: (

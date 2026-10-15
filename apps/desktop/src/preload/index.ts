@@ -38,6 +38,12 @@ import {
 import { OrganizationCommandSchema, OrganizationResponseSchema } from "@app/domain";
 import { ObjectLocateInputSchema, ObjectLocateResultSchema } from "@app/domain";
 import {
+  NotePageInputSchema,
+  NotePageRelationsSchema,
+  NotePageSchema,
+  NoteRelationsInputSchema
+} from "@app/domain";
+import {
   WikiCollectionCommandSchema,
   WikiCollectionResponseSchema,
   WikiTreeInputSchema,
@@ -258,6 +264,16 @@ const api: DesktopApi = {
     locate: async (input) =>
       ObjectLocateResultSchema.nullable().parse(
         await ipcRenderer.invoke(ipcChannels.objectsLocate, ObjectLocateInputSchema.parse(input))
+      )
+  },
+  notes: {
+    page: async (input) =>
+      NotePageSchema.nullable().parse(
+        await ipcRenderer.invoke(ipcChannels.notesPage, NotePageInputSchema.parse(input))
+      ),
+    relations: async (input) =>
+      NotePageRelationsSchema.parse(
+        await ipcRenderer.invoke(ipcChannels.notesRelations, NoteRelationsInputSchema.parse(input))
       )
   },
   wiki: {

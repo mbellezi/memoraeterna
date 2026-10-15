@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { QueryResult, QueryResultRow } from "pg";
 
-import { objectLocateListLimit, objectLocatePathLimit } from "@app/domain";
+import {
+  ObjectLocateResultSchema,
+  objectLocateListLimit,
+  objectLocatePathLimit
+} from "@app/domain";
 import { createObjectLocateRepository } from "./objectLocateRepository.js";
 import type { Queryable } from "./types.js";
 
@@ -45,6 +49,30 @@ describe("object locate repository", () => {
       objectLocateListLimit,
       objectLocatePathLimit - 1
     ]);
+  });
+
+  it("walks one ancestor less for a note, which takes the last slot of the path itself", async () => {
+    // The stub honours the depth bound the statement applies ($3), over a 40-deep chain.
+    const chain = Array.from({ length: 40 }, (_, n) => ({ id: id(100 + n), title: `Level ${n}` }));
+    const query = vi.fn(
+      async <T extends QueryResultRow>(_text: string, values?: readonly unknown[]) =>
+        ({
+          rows: [row({ title: "Deep", path: chain.slice(0, Number(values?.[2]) + 1) })]
+        }) as unknown as QueryResult<T>
+    );
+    const repository = createObjectLocateRepository({ query });
+    const note = await repository.locateNote(id(9));
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      id(9),
+      objectLocateListLimit,
+      objectLocatePathLimit - 2
+    ]);
+    expect(note?.primaryPath).toHaveLength(objectLocatePathLimit);
+    expect(note?.primaryPath.at(-1)).toEqual({ kind: "note", id: id(9), title: "Deep" });
+    expect(ObjectLocateResultSchema.safeParse(note).success).toBe(true);
+    const source = await repository.locateSource(id(9));
+    expect(source?.primaryPath).toHaveLength(objectLocatePathLimit);
+    expect(ObjectLocateResultSchema.safeParse(source).success).toBe(true);
   });
 
   it("turns a source row into the contract: its chain ends with the source", async () => {

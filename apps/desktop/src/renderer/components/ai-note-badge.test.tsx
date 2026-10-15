@@ -27,6 +27,7 @@ const note = (status: string) =>
     evidenceChunkId: chunkId,
     generationModel: "model",
     generationPromptVersion: "atomic-note-v4",
+    humanProtected: false,
     createdAt: "2026-10-14T10:00:00.000Z",
     updatedAt: "2026-10-14T10:00:00.000Z"
   }) as Parameters<typeof AtomicNoteCard>[0]["note"];

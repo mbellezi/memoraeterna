@@ -37,7 +37,8 @@
     "db:relation-decisions:verify": "tsx src/scripts/verify-relation-decisions.ts",
     "db:notes-active:verify": "tsx src/scripts/verify-notes-active.ts",
     "db:object-locate:verify": "tsx src/scripts/verify-object-locate.ts",
-    "db:view-history:verify": "tsx src/scripts/verify-view-history.ts"
+    "db:view-history:verify": "tsx src/scripts/verify-view-history.ts",
+    "db:note-page:verify": "tsx src/scripts/verify-note-page.ts"
   },
   "dependencies": {
     "@app/domain": "^0.0.0",
