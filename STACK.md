@@ -53,7 +53,7 @@ files executed directly by Node.
 | `@types/react` / `@types/react-dom` | `19.2.17` / `19.2.3` |
 | Tailwind CSS / `@tailwindcss/vite` | `4.3.2` |
 | shadcn/ui | Vendored components; CLI baseline `4.13.0` |
-| Icons | `lucide-react` `1.23.0` |
+| Icons | `lucide-react` `1.23.0` for interface icons; object-kind and relation-stance glyphs are first-party inline SVG (`apps/desktop/src/renderer/components/glyphs.tsx`) |
 | Fonts (OFL-1.1, bundled offline) | `@fontsource-variable/inter` `5.3.0` (interface) and `@fontsource-variable/source-serif-4` `5.3.0` (reading), imported through `wght.css` only |
 | Interactive graph rendering | `sigma` `3.0.3` with `graphology` `0.26.0` |
 | Graph communities and layout | `graphology-communities-louvain` `2.0.2`; `d3-force` `3.0.0` in a renderer Web Worker; `@types/d3-force` `3.0.10` |

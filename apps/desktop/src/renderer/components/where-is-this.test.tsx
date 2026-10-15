@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import { createTranslator, supportedLanguageCodes, type MessageKey } from "@app/i18n";
 import type { ObjectLocateResult } from "@app/domain";
 
-import { WhereIsThisView, type WhereIsThisState } from "./WhereIsThis";
+import {
+  WhereIsThisView,
+  locateLoadDecision,
+  primaryPathAncestors,
+  type WhereIsThisState
+} from "./WhereIsThis";
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const t = createTranslator("en");
@@ -32,7 +37,10 @@ const ready = (result = located()): WhereIsThisState => ({
 
 // React separates adjacent text nodes with comment markers; the person never sees them.
 const plain = (html: string) => html.replaceAll("<!-- -->", "");
-const render = (state: WhereIsThisState, extra: { openFailed?: boolean } = {}) =>
+const render = (
+  state: WhereIsThisState,
+  extra: { openFailed?: boolean; variant?: "panel" | "page" } = {}
+) =>
   plain(
     renderToString(
       <WhereIsThisView
@@ -170,5 +178,140 @@ describe("Where is this panel", () => {
       expect(html).toContain(escaped(translate("objects.whereIsThis.title")));
       expect(html).toContain(escaped(translate("objects.whereIsThis.alsoIn")));
     }
+  });
+});
+
+const noteLocated = (overrides: Partial<ObjectLocateResult> = {}): ObjectLocateResult =>
+  located({
+    object: { kind: "note", id: id(20), title: "Spacing helps" },
+    primaryPath: [
+      { kind: "source", id: id(1), title: "The Book" },
+      { kind: "source", id: id(2), title: "Chapter One" },
+      { kind: "note", id: id(20), title: "Spacing helps" }
+    ],
+    ...overrides
+  });
+
+describe("Where is this as a section of an object page", () => {
+  const page = (result: ObjectLocateResult, extra: { openFailed?: boolean } = {}) =>
+    render(
+      { status: "ready", address: `memora://note/${result.object.id}`, result },
+      { ...extra, variant: "page" }
+    );
+
+  it("lists the ancestors as links and leaves out the object the page is about", () => {
+    const html = page(noteLocated());
+    expect(html).toContain("<h2");
+    expect(html).toContain(">Where is this<");
+    expect(html).toContain(">Main path<");
+    expect(html).toMatch(/<button[^>]*>The Book<\/button>/);
+    expect(html).toMatch(/<button[^>]*>Chapter One<\/button>/);
+    expect(html).not.toContain("Spacing helps");
+    expect(primaryPathAncestors(noteLocated()).map((item) => item.title)).toEqual([
+      "The Book",
+      "Chapter One"
+    ]);
+  });
+
+  it("shows placements as chips with their kind glyph and the legacy marker", () => {
+    const html = page(noteLocated());
+    expect(html).toContain(">Also in<");
+    expect(html).toContain(">Cited in<");
+    expect(html).toContain("text-object-topic");
+    expect(html).toContain("text-object-question");
+    expect(html).toContain('<span class="sr-only"> · Topic</span>');
+    expect(html.match(/Legacy wiki/g)).toHaveLength(2);
+    expect(html).toContain(escaped(t("objects.whereIsThis.legacyHint")));
+    expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it("leaves out rows without entries and never shows counts or empty sentences", () => {
+    const html = page(
+      noteLocated({
+        primaryPath: [{ kind: "note", id: id(20), title: "Spacing helps" }],
+        alsoIn: [],
+        citedBy: [],
+        counts: { alsoIn: 0, citedBy: 0, notes: 0, passages: 3, children: 0 }
+      })
+    );
+    expect(html).not.toContain("<dl");
+    expect(html).not.toContain("Main path");
+    expect(html).not.toContain("It is not placed anywhere else.");
+    expect(html).not.toContain("Nothing cites it yet.");
+    expect(html).not.toContain("Chunks");
+    const onlyCited = page(noteLocated({ alsoIn: [], counts: { ...located().counts, alsoIn: 0 } }));
+    expect(onlyCited).not.toContain(">Also in<");
+    expect(onlyCited).toContain(">Cited in<");
+  });
+
+  it("says how many entries are not shown", () => {
+    const html = page(noteLocated({ counts: { ...located().counts, citedBy: 30 } }));
+    expect(html).toContain("28 more not shown");
+  });
+
+  it("keeps the loading, missing, failed and open-failed states", () => {
+    const state = (status: "loading" | "missing" | "error") =>
+      render({ status } as WhereIsThisState, { variant: "page" });
+    expect(state("loading")).toContain('aria-busy="true"');
+    expect(state("missing")).toContain("This item is no longer in the library.");
+    expect(state("error")).toContain('role="alert"');
+    expect(state("error")).toContain(">Retry<");
+    expect(page(noteLocated(), { openFailed: true })).toContain("That item could not be opened.");
+  });
+
+  it("is translated in every locale", () => {
+    for (const locale of supportedLanguageCodes) {
+      const translate = createTranslator(locale);
+      const html = renderToString(
+        <WhereIsThisView
+          t={translate}
+          variant="page"
+          state={{ status: "ready", address: "memora://note/x", result: noteLocated() }}
+          onOpen={() => undefined}
+          onRetry={() => undefined}
+        />
+      );
+      expect(html).not.toContain("[[missing");
+      expect(html).toContain(escaped(translate("notePage.where.primaryPath")));
+      expect(html).toContain(escaped(translate("notePage.where.citedIn")));
+    }
+  });
+});
+
+describe("Where is this loading while the view is hidden and shown again", () => {
+  const ok = { key: "a|0|0", ok: true, hasData: true };
+  it("loads nothing while hidden", () => {
+    expect(
+      locateLoadDecision({ active: false, wasHidden: false, outcome: null, key: "a|0|0" })
+    ).toBe("skip");
+  });
+
+  it("loads on first show and when the key changes", () => {
+    expect(
+      locateLoadDecision({ active: true, wasHidden: false, outcome: null, key: "a|0|0" })
+    ).toBe("load");
+    expect(locateLoadDecision({ active: true, wasHidden: true, outcome: ok, key: "a|1|0" })).toBe(
+      "load"
+    );
+  });
+
+  it("refreshes in place when shown again with the same key after a successful load", () => {
+    expect(locateLoadDecision({ active: true, wasHidden: true, outcome: ok, key: "a|0|0" })).toBe(
+      "silent"
+    );
+    // Without having been hidden, a finished key is not asked again.
+    expect(locateLoadDecision({ active: true, wasHidden: false, outcome: ok, key: "a|0|0" })).toBe(
+      "skip"
+    );
+  });
+
+  it("keeps a failure visible until Retry, even when shown again", () => {
+    const failed = { key: "a|0|0", ok: false, hasData: false };
+    expect(
+      locateLoadDecision({ active: true, wasHidden: true, outcome: failed, key: "a|0|0" })
+    ).toBe("skip");
+    expect(
+      locateLoadDecision({ active: true, wasHidden: true, outcome: failed, key: "a|0|1" })
+    ).toBe("load");
   });
 });

@@ -2763,5 +2763,39 @@
       "unavailable": "Os objetos ainda não estão disponíveis.",
       "unsupportedKind": "Este tipo de objeto ainda não tem página."
     }
+  },
+  "notePage": {
+    "where": {
+      "primaryPath": "Caminho principal",
+      "citedIn": "Citada em"
+    },
+    "stance": {
+      "supports": "apoia",
+      "contradicts": "contradiz",
+      "contrasts": "contrasta",
+      "extends": "estende",
+      "depends_on": "depende de",
+      "example_of": "exemplo de",
+      "similar_to": "semelhante a",
+      "clarifies": "esclarece",
+      "mentions": "menciona",
+      "related": "relacionada",
+      "same_as": "igual a"
+    },
+    "card": {
+      "verbs": {
+        "supports": "apoia",
+        "contradicts": "contradiz",
+        "contrasts": "contrasta com",
+        "extends": "estende",
+        "depends_on": "depende de",
+        "example_of": "é um exemplo de",
+        "similar_to": "é semelhante a",
+        "clarifies": "esclarece",
+        "mentions": "menciona",
+        "related": "está relacionada a",
+        "same_as": "é igual a"
+      }
+    }
   }
 }

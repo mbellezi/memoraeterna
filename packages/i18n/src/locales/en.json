@@ -2760,5 +2760,39 @@
       "unavailable": "Objects are not available yet.",
       "unsupportedKind": "This kind of object has no page yet."
     }
+  },
+  "notePage": {
+    "where": {
+      "primaryPath": "Main path",
+      "citedIn": "Cited in"
+    },
+    "stance": {
+      "supports": "supports",
+      "contradicts": "contradicts",
+      "contrasts": "contrasts",
+      "extends": "extends",
+      "depends_on": "depends on",
+      "example_of": "example of",
+      "similar_to": "similar to",
+      "clarifies": "clarifies",
+      "mentions": "mentions",
+      "related": "related",
+      "same_as": "same as"
+    },
+    "card": {
+      "verbs": {
+        "supports": "supports",
+        "contradicts": "contradicts",
+        "contrasts": "contrasts with",
+        "extends": "extends",
+        "depends_on": "depends on",
+        "example_of": "is an example of",
+        "similar_to": "is similar to",
+        "clarifies": "clarifies",
+        "mentions": "mentions",
+        "related": "is related to",
+        "same_as": "is the same as"
+      }
+    }
   }
 }

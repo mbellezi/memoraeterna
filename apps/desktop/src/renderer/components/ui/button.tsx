@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "../../lib/cn";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost" | "danger";
+  variant?: "primary" | "secondary" | "ghost" | "link" | "danger";
 };
 
 const variants = {
@@ -11,6 +11,8 @@ const variants = {
     "border-border-strong bg-surface text-foreground hover:bg-soft aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:border-accent/40",
   ghost:
     "border-transparent bg-transparent text-muted-foreground hover:bg-soft hover:text-foreground",
+  // An action that reads as a link (accent text); `cn` does not merge classes, so variants own colour.
+  link: "border-transparent bg-transparent text-accent hover:bg-soft hover:text-accent-hover",
   danger: "border-rose-700 bg-rose-700 text-white hover:bg-rose-800"
 };
 

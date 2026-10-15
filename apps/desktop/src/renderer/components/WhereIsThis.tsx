@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ChevronRight, MapPin, RefreshCw } from "lucide-react";
-import type { ObjectLocateResult, ObjectPlacement } from "@app/domain";
+import type { ObjectLocateResult, ObjectPlacement, ObjectRef } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
+import { isSilentRefresh, showsLoadError, type LoadOutcome } from "../lib/hidden-view";
 import {
   navigationForLocated,
   navigationForPathSegment,
   navigationForPlacement,
   type ObjectNavigation
 } from "../lib/object-navigation";
+import { ObjectKindGlyph, objectKindTextClass } from "./glyphs";
 import { Button } from "./ui/button";
 
 /** A navigation the owner of the view can carry out; the panel resolves the rest by locating. */
@@ -80,25 +82,252 @@ function PlacementList({
   );
 }
 
+const pageLinkClass = "max-w-56 truncate text-left text-accent hover:underline";
+
+/** The ancestors of the object on its primary path: the object itself is the page it is shown on. */
+export function primaryPathAncestors(result: ObjectLocateResult): ObjectRef[] {
+  const last = result.primaryPath.at(-1);
+  return last && last.kind === result.object.kind && last.id === result.object.id
+    ? result.primaryPath.slice(0, -1)
+    : [...result.primaryPath];
+}
+
+function PlacementChips({
+  t,
+  items,
+  total,
+  stacked,
+  onOpen
+}: {
+  t: Translator;
+  items: readonly ObjectPlacement[];
+  total: number;
+  stacked: boolean;
+  onOpen: (navigation: ObjectNavigation) => void;
+}) {
+  return (
+    <>
+      <ul className={stacked ? "flex flex-col items-start gap-1.5" : "flex flex-wrap gap-1.5"}>
+        {items.map((item) => (
+          <li key={`${item.kind}:${item.id}`} className="flex max-w-full items-center gap-1.5">
+            <button
+              type="button"
+              className="inline-flex h-6 max-w-full items-center gap-1.5 rounded-md border border-border px-2 text-sm hover:bg-surface-hover"
+              onClick={() => onOpen(navigationForPlacement(item))}
+            >
+              <ObjectKindGlyph kind={item.kind} className={objectKindTextClass[item.kind]} />
+              <span className="truncate">
+                {item.title || t(`objects.kinds.${item.kind}` as MessageKey)}
+              </span>
+              <span className="sr-only"> · {t(`objects.kinds.${item.kind}` as MessageKey)}</span>
+            </button>
+            {item.legacy ? (
+              <span
+                title={t("objects.whereIsThis.legacyHint")}
+                className="rounded-full border border-border bg-soft px-1.5 text-xs text-muted-foreground"
+              >
+                {t("objects.whereIsThis.legacy")}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {total > items.length ? (
+        <p className="pt-1 text-xs text-muted-foreground">
+          {t("objects.whereIsThis.more", { values: { count: total - items.length } })}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/** Where an object is, laid out as a section of its page: only the rows that have entries. */
+function WhereIsThisPage({
+  t,
+  headingId,
+  state,
+  openFailed,
+  onOpen,
+  onRetry
+}: {
+  t: Translator;
+  headingId: string;
+  state: WhereIsThisState;
+  openFailed: boolean;
+  onOpen: (navigation: ObjectNavigation) => void;
+  onRetry: () => void;
+}) {
+  const result = state.status === "ready" ? state.result : null;
+  const ancestors = result ? primaryPathAncestors(result) : [];
+  const rows = result
+    ? [ancestors.length > 0, result.alsoIn.length > 0, result.citedBy.length > 0]
+    : [false, false, false];
+  return (
+    <section
+      aria-labelledby={headingId}
+      aria-busy={state.status === "loading"}
+      data-testid="where-is-this"
+      className="flex flex-col gap-3 rounded-lg border border-border p-4"
+    >
+      <h2 id={headingId} className="text-lg font-semibold">
+        {t("objects.whereIsThis.title")}
+      </h2>
+      <WhereIsThisStates t={t} state={state} onRetry={onRetry} />
+      {result && rows.some(Boolean) ? (
+        <dl className="grid grid-cols-[8.25rem_minmax(0,1fr)] gap-x-4 gap-y-3 text-sm">
+          {rows[0] ? (
+            <>
+              <dt className="pt-0.5 text-xs text-muted-foreground">
+                {t("notePage.where.primaryPath")}
+              </dt>
+              <dd className="min-w-0">
+                <ol className="flex flex-wrap items-center gap-1">
+                  {ancestors.map((segment, index) => {
+                    const navigation = navigationForPathSegment(result.primaryPath, index);
+                    const title = segment.title || t(`objects.kinds.${segment.kind}` as MessageKey);
+                    return (
+                      <li
+                        key={`${segment.kind}:${segment.id}`}
+                        className="flex min-w-0 items-center gap-1"
+                      >
+                        {index > 0 ? (
+                          <ChevronRight
+                            className="size-3 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                        ) : null}
+                        {navigation.type === "none" ? (
+                          <span className="max-w-56 truncate">{title}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={pageLinkClass}
+                            onClick={() => onOpen(navigation)}
+                          >
+                            {title}
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ol>
+              </dd>
+            </>
+          ) : null}
+          {rows[1] ? (
+            <>
+              <dt className="pt-0.5 text-xs text-muted-foreground">
+                {t("objects.whereIsThis.alsoIn")}
+              </dt>
+              <dd className="min-w-0">
+                <PlacementChips
+                  t={t}
+                  items={result.alsoIn}
+                  total={result.counts.alsoIn}
+                  stacked={false}
+                  onOpen={onOpen}
+                />
+              </dd>
+            </>
+          ) : null}
+          {rows[2] ? (
+            <>
+              <dt className="pt-0.5 text-xs text-muted-foreground">
+                {t("notePage.where.citedIn")}
+              </dt>
+              <dd className="min-w-0">
+                <PlacementChips
+                  t={t}
+                  items={result.citedBy}
+                  total={result.counts.citedBy}
+                  stacked
+                  onOpen={onOpen}
+                />
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      ) : null}
+      {openFailed ? (
+        <p role="alert" className="text-sm text-foreground">
+          {t("objects.whereIsThis.openFailed")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/** Loading, missing and failed states, shared by both layouts. */
+function WhereIsThisStates({
+  t,
+  state,
+  onRetry
+}: {
+  t: Translator;
+  state: WhereIsThisState;
+  onRetry: () => void;
+}) {
+  return (
+    <>
+      {state.status === "loading" ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("objects.whereIsThis.loading")}
+        </p>
+      ) : null}
+      {state.status === "missing" ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("objects.whereIsThis.missing")}
+        </p>
+      ) : null}
+      {state.status === "error" ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm text-foreground">
+            {t("objects.whereIsThis.error")}
+          </p>
+          <Button type="button" onClick={onRetry}>
+            <RefreshCw aria-hidden="true" />
+            {t("shell.actions.retry")}
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * The "Where is this" panel: the path of an object from the library root (each segment opens),
  * the other places it appears in and the objects that cite it. It is an inline section, never a
- * dialog, and covers its loading, error, missing and ready states.
+ * dialog, and covers its loading, error, missing and ready states. The `page` variant is the
+ * section of an object page: the object itself is the page, so its path lists only ancestors, and
+ * rows without entries are left out.
  */
 export function WhereIsThisView({
   t,
   state,
   openFailed = false,
+  variant = "panel",
   onOpen,
   onRetry
 }: {
   t: Translator;
   state: WhereIsThisState;
   openFailed?: boolean;
+  variant?: "panel" | "page";
   onOpen: (navigation: ObjectNavigation) => void;
   onRetry: () => void;
 }) {
   const headingId = useId();
+  if (variant === "page")
+    return (
+      <WhereIsThisPage
+        t={t}
+        headingId={headingId}
+        state={state}
+        openFailed={openFailed}
+        onOpen={onOpen}
+        onRetry={onRetry}
+      />
+    );
   const result = state.status === "ready" ? state.result : null;
   const counts = result
     ? (["passages", "notes", "children"] as const).filter((name) => result.counts[name] > 0)
@@ -131,27 +360,7 @@ export function WhereIsThisView({
           </dl>
         ) : null}
       </div>
-      {state.status === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("objects.whereIsThis.loading")}
-        </p>
-      ) : null}
-      {state.status === "missing" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t("objects.whereIsThis.missing")}
-        </p>
-      ) : null}
-      {state.status === "error" ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <p role="alert" className="text-sm text-foreground">
-            {t("objects.whereIsThis.error")}
-          </p>
-          <Button type="button" onClick={onRetry}>
-            <RefreshCw aria-hidden="true" />
-            {t("shell.actions.retry")}
-          </Button>
-        </div>
-      ) : null}
+      <WhereIsThisStates t={t} state={state} onRetry={onRetry} />
       {result ? (
         <>
           <nav aria-label={t("objects.whereIsThis.path")}>
@@ -221,55 +430,11 @@ export function WhereIsThisView({
 }
 
 /**
- * Locates `address` (one read, no AI) and shows the answer. A hidden view loads nothing; showing it
- * again re-requests only when the address or `refreshKey` changed, and a refresh keeps the previous
- * answer on screen instead of blinking back to loading. A failure stays visible and retryable.
+ * Opens what a "Where is this" entry points at: sources, notes and legacy pages go straight to the
+ * owner; anything else is located first. `openFailed` reports an entry that could not be opened.
  */
-export function WhereIsThis({
-  t,
-  address,
-  active = true,
-  refreshKey = 0,
-  onNavigate
-}: {
-  t: Translator;
-  address: string;
-  active?: boolean;
-  /** Changes when what the answer depends on changed (for example after the source was reloaded). */
-  refreshKey?: number | string;
-  onNavigate: (navigation: OpenableNavigation) => void;
-}) {
-  const [state, setState] = useState<WhereIsThisState>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
+export function useObjectOpener(onNavigate: (navigation: OpenableNavigation) => void) {
   const [openFailed, setOpenFailed] = useState(false);
-  // The key of the last finished request, successful or not: a failed load stays visible until
-  // the person retries, and showing the view again does not repeat a request that already ran.
-  const finishedKey = useRef<string | null>(null);
-  const key = `${address}|${refreshKey}|${attempt}`;
-
-  useEffect(() => {
-    if (!active || finishedKey.current === key) return;
-    let live = true;
-    setState((current) =>
-      current.status === "ready" && current.address === address ? current : { status: "loading" }
-    );
-    window.app.objects
-      .locate({ address })
-      .then((result) => {
-        if (!live) return;
-        finishedKey.current = key;
-        setState(result ? { status: "ready", address, result } : { status: "missing" });
-      })
-      .catch(() => {
-        if (!live) return;
-        finishedKey.current = key;
-        setState({ status: "error" });
-      });
-    return () => {
-      live = false;
-    };
-  }, [active, address, key]);
-
   const open = useCallback(
     async (navigation: ObjectNavigation) => {
       setOpenFailed(false);
@@ -290,13 +455,96 @@ export function WhereIsThis({
     },
     [onNavigate]
   );
+  return { open: (navigation: ObjectNavigation) => void open(navigation), openFailed };
+}
+
+/**
+ * What the panel does when it renders: nothing while hidden or when the key already finished
+ * (a failure stays visible until Retry), a silent refresh when it is shown again with the same
+ * key after a successful load, otherwise a load.
+ */
+export function locateLoadDecision(input: {
+  active: boolean;
+  wasHidden: boolean;
+  outcome: LoadOutcome | null;
+  key: string;
+}): "skip" | "silent" | "load" {
+  if (!input.active) return "skip";
+  if (isSilentRefresh(input.wasHidden, input.outcome, input.key)) return "silent";
+  return input.outcome?.key === input.key ? "skip" : "load";
+}
+
+/**
+ * Locates `address` (one read, no AI) and shows the answer. A hidden view loads nothing; shown again
+ * it refreshes in place when its key is unchanged and the last load succeeded (citations and the
+ * path may have changed meanwhile), and re-requests when the address or `refreshKey` changed; a
+ * refresh keeps the previous answer on screen instead of blinking back to loading. A failure stays
+ * visible and retryable.
+ */
+export function WhereIsThis({
+  t,
+  address,
+  active = true,
+  refreshKey = 0,
+  onNavigate
+}: {
+  t: Translator;
+  address: string;
+  active?: boolean;
+  /** Changes when what the answer depends on changed (for example after the source was reloaded). */
+  refreshKey?: number | string;
+  onNavigate: (navigation: OpenableNavigation) => void;
+}) {
+  const [state, setState] = useState<WhereIsThisState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const opener = useObjectOpener(onNavigate);
+  const outcome = useRef<LoadOutcome | null>(null);
+  const wasHidden = useRef(false);
+  const key = `${address}|${refreshKey}|${attempt}`;
+
+  useEffect(() => {
+    const decision = locateLoadDecision({
+      active,
+      wasHidden: wasHidden.current,
+      outcome: outcome.current,
+      key
+    });
+    if (!active) {
+      wasHidden.current = true;
+      return;
+    }
+    wasHidden.current = false;
+    if (decision === "skip") return;
+    const silent = decision === "silent";
+    let live = true;
+    if (!silent)
+      setState((current) =>
+        current.status === "ready" && current.address === address ? current : { status: "loading" }
+      );
+    window.app.objects
+      .locate({ address })
+      .then((result) => {
+        if (!live) return;
+        outcome.current = { key, ok: true, hasData: Boolean(result) };
+        setState(result ? { status: "ready", address, result } : { status: "missing" });
+      })
+      .catch(() => {
+        if (!live) return;
+        const previous = outcome.current;
+        outcome.current = { key, ok: false, hasData: false };
+        if (showsLoadError({ silent, previous, key })) setState({ status: "error" });
+      });
+    return () => {
+      live = false;
+    };
+  }, [active, address, key]);
 
   return (
     <WhereIsThisView
       t={t}
       state={state}
-      openFailed={openFailed}
-      onOpen={(navigation) => void open(navigation)}
+      openFailed={opener.openFailed}
+      onOpen={opener.open}
       onRetry={() => setAttempt((current) => current + 1)}
     />
   );
