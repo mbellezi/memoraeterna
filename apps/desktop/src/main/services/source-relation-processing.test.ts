@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { defaultSourceRelationSettings, sourceDecisionPassesFloors } from "@app/domain";
 import type { SourceRelationChunk, SourceRelationNote, PgPool } from "@app/db";
 import { uuidAssignments } from "./__fixtures__/uuid-assignments.js";
+import { runSourcePairVerdicts } from "./golden-source-pairs.js";
 import {
   combineSourceRelationCoverage,
   matchSources,
@@ -517,6 +518,42 @@ describe("source matching budget and recovery", () => {
     await run(ai);
     expect(await run(ai, "second")).toMatchObject({ completed: 0, total: 0 });
     expect(ai).toHaveBeenCalledTimes(1);
+  });
+  it("sends the decider the request a golden source pair verdict sends, and persists nothing", async () => {
+    const matcherAi = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
+    await run(matcherAi);
+    const [, matcherInput, matcherContext, , matcherLimits] = matcherAi.mock.calls[0]!;
+    // The whole repository is handed over (every write function included) and must stay untouched.
+    for (const fn of Object.values(mocks.repository)) fn.mockClear();
+    const verdictAi = vi.fn().mockResolvedValue(execution({ relations: [item()] }));
+    const report = await runSourcePairVerdicts({
+      mode: "verdict_only",
+      file: {
+        path: "/pairs.json",
+        sha256: "0".repeat(64),
+        pairs: [{ left: "Root A", right: "Root B" }]
+      },
+      manifest: { name: "test", sources: [] },
+      roots: [
+        { id: "root-A", title: "Root A", type: "StandaloneArticle" },
+        { id: "root-B", title: "Root B", type: "StandaloneArticle" }
+      ],
+      reader: mocks.repository as never,
+      ai: { runDefaultTask: verdictAi },
+      settings: { ...defaultSourceRelationSettings, maxInputTokens: 200000 },
+      contentLanguage: "en",
+      cassette: null
+    });
+    const [task, input, callContext, signal, limits] = verdictAi.mock.calls[0]!;
+    expect(task).toBe("reranking");
+    expect(input).toBe(matcherInput);
+    expect(limits).toEqual(matcherLimits);
+    expect(signal).toBeUndefined();
+    expect(callContext).toEqual({ ...matcherContext, origin: "golden_source_pairs" });
+    expect(report.pairs[0]).toMatchObject({ status: "judged", verdict: "related" });
+    for (const [name, fn] of Object.entries(mocks.repository))
+      if (!["pairNotes", "pairChunks", "existing"].includes(name))
+        expect(fn, name).not.toHaveBeenCalled();
   });
   it("counts actual usage from the original call and its repair", async () => {
     const ai = vi

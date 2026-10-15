@@ -1,0 +1,72 @@
+[
+  {
+    "left": "machado-a-cartomante",
+    "right": "machado-o-alienista",
+    "label": "gold:G01/G06"
+  },
+  {
+    "left": "machado-a-cartomante",
+    "right": "o-henry-the-gift-of-the-magi",
+    "label": "gold:G01/G09"
+  },
+  {
+    "left": "machado-a-cartomante",
+    "right": "poe-the-tell-tale-heart",
+    "label": "gold:G01/G10"
+  },
+  {
+    "left": "wikipedia-pt-curva-do-esquecimento",
+    "right": "wikipedia-en-forgetting-curve",
+    "label": "gold:G02/G04"
+  },
+  {
+    "left": "wikipedia-pt-curva-do-esquecimento",
+    "right": "wikibooks-en-memory-and-language",
+    "label": "gold:G02/G05"
+  },
+  {
+    "left": "wikipedia-pt-curva-do-esquecimento",
+    "right": "transinformacao-esquecimento-destruicao-2025",
+    "label": "gold:G02/G07"
+  },
+  {
+    "left": "wikipedia-pt-curva-do-esquecimento",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G02/G08"
+  },
+  {
+    "left": "turing-way-fair-principles",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G03/G08"
+  },
+  {
+    "left": "wikipedia-en-forgetting-curve",
+    "right": "wikibooks-en-memory-and-language",
+    "label": "gold:G04/G05"
+  },
+  {
+    "left": "wikipedia-en-forgetting-curve",
+    "right": "transinformacao-esquecimento-destruicao-2025",
+    "label": "gold:G04/G07"
+  },
+  {
+    "left": "wikipedia-en-forgetting-curve",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G04/G08"
+  },
+  {
+    "left": "wikibooks-en-memory-and-language",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G05/G08"
+  },
+  {
+    "left": "machado-o-alienista",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G06/G08"
+  },
+  {
+    "left": "transinformacao-esquecimento-destruicao-2025",
+    "right": "plos-one-murre-dros-2015",
+    "label": "gold:G07/G08"
+  }
+]

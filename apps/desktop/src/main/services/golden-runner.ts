@@ -8,6 +8,7 @@ import {
   DocumentDivisionCandidateSchema,
   ProcessingPlanRequestSchema,
   SourceDescriptorSchema,
+  SourceRelationSettingsSchema,
   processingPresetStages,
   type ProcessingStage,
   type SourceDescriptor
@@ -17,7 +18,13 @@ import type { AiCassette } from "@app/ai";
 import type { PgPool } from "@app/db";
 
 import type { AppSettings, IngestionResult } from "../../shared/ipc.js";
+import type { AiService } from "./ai-service.js";
 import type { BackupService } from "./backup-service.js";
+import type {
+  SourcePairReader,
+  SourcePairVerdictsReport,
+  SourcePairsFile
+} from "./golden-source-pairs.js";
 import type { HierarchicalIngestionService } from "./hierarchical-ingestion-service.js";
 import type { IngestionService } from "./ingestion-service.js";
 import type { JobSupervisor } from "./job-supervisor.js";
@@ -33,6 +40,8 @@ import type { OrganizationService } from "./organization-service.js";
  * (record or replay), which is required. Before it changes anything it takes a database backup.
  * Packaged builds refuse it. With MEMORA_GOLDEN_RESET=1 it first resets a library that holds nothing
  * but golden sources (proven against the manifest), through the same service as the Settings reset.
+ * With MEMORA_GOLDEN_SOURCE_PAIRS=<pair list> it also asks the live source decider about given pairs of
+ * works and writes the raw verdicts, persisting nothing (see `golden-source-pairs.ts`).
  */
 
 /** Full knowledge processing without the legacy wiki stage. */
@@ -295,6 +304,11 @@ export interface GoldenRunEnvironment {
   maxLiveTokens: number | null;
   /** Top-level source keys to run (a dry run on a subset), or null for the whole manifest. */
   only: string[] | null;
+  /**
+   * MEMORA_GOLDEN_SOURCE_PAIRS: a JSON list of pairs of works to ask the source decider about (DEV
+   * only, with MEMORA_GOLDEN_RUN). The verdicts are written; no relation is persisted.
+   */
+  sourcePairsPath: string | null;
 }
 
 /** Reads MEMORA_GOLDEN_*; null when no golden run is requested. Packaged builds refuse it. */
@@ -303,9 +317,13 @@ export function readGoldenRunEnvironment(
   options: { isPackaged: boolean; workspaceRoot: string }
 ): GoldenRunEnvironment | null {
   const manifest = env.MEMORA_GOLDEN_RUN?.trim();
+  const rawSourcePairs = env.MEMORA_GOLDEN_SOURCE_PAIRS?.trim();
   if (!manifest) {
     if (options.isPackaged && env.MEMORA_GOLDEN_RESET?.trim() === "1")
       throw new Error("MEMORA_GOLDEN_RESET is refused in packaged builds");
+    if (options.isPackaged && rawSourcePairs)
+      throw new Error("MEMORA_GOLDEN_SOURCE_PAIRS is refused in packaged builds");
+    if (rawSourcePairs) throw new Error("MEMORA_GOLDEN_SOURCE_PAIRS needs MEMORA_GOLDEN_RUN");
     return null;
   }
   if (options.isPackaged) throw new Error("MEMORA_GOLDEN_RUN is refused in packaged builds");
@@ -343,7 +361,8 @@ export function readGoldenRunEnvironment(
     resetAlsoManifestPaths: resetAlso.map((path) => resolve(options.workspaceRoot, path)),
     exitWhenDone: env.MEMORA_GOLDEN_EXIT === "1",
     maxLiveTokens: limit,
-    only: only.length ? only : null
+    only: only.length ? only : null,
+    sourcePairsPath: rawSourcePairs ? resolve(options.workspaceRoot, rawSourcePairs) : null
   };
 }
 
@@ -369,6 +388,10 @@ export interface GoldenRunOptions {
   organization: Pick<OrganizationService, "automaticCommand">;
   maintenance: Pick<MaintenanceService, "command">;
   settings: { getApp(): Promise<AppSettings> };
+  /** Runs the source decider for MEMORA_GOLDEN_SOURCE_PAIRS (the normal AI service: the cassette records it). */
+  ai?: Pick<AiService, "runDefaultTask">;
+  /** The read queries behind a pair verdict; tests replace them. */
+  sourcePairReader?: SourcePairReader;
   quit: () => void;
   log?: (event: string, data?: Record<string, unknown>) => void;
   now?: () => Date;
@@ -384,9 +407,17 @@ export interface GoldenRun {
   automation: GoldenAutomationPause;
   /** Present only with MEMORA_GOLDEN_RESET=1. */
   reset?: GoldenReset;
+  /**
+   * Present only with MEMORA_GOLDEN_SOURCE_PAIRS. `verdict_only`: the library already holds the
+   * manifest's roots, so nothing is imported or processed; `after_batch`: the pairs are judged once
+   * the batch has settled.
+   */
+  sourcePairs?: { mode: SourcePairsMode; pairs: number };
   /** Imports, processes, waits and writes the summary; never rejects. */
   start(): Promise<GoldenRunSummary>;
 }
+
+export type SourcePairsMode = "verdict_only" | "after_batch";
 
 export interface GoldenAutomationPause {
   pausedPolicies: string[];
@@ -456,6 +487,14 @@ export async function prepareGoldenRun(
     throw new Error(
       `Golden sources are not ready (run npx tsx scripts/golden/fetch.ts): ${problems.join(", ")}`
     );
+  // The pair list is validated with the rest, before anything is changed.
+  const pairsFile = environment.sourcePairsPath
+    ? await (
+        await import("./golden-source-pairs.js")
+      ).readSourcePairsFile(environment.sourcePairsPath)
+    : null;
+  if (pairsFile && !options.ai)
+    throw new Error("MEMORA_GOLDEN_SOURCE_PAIRS needs the AI service; nothing was changed");
   let library = await countLibrary(options.pool);
   let pendingJobs = await countPendingJobs(options.pool);
   let routes: unknown[] | undefined;
@@ -483,11 +522,21 @@ export async function prepareGoldenRun(
     }
   }
   const pending = pendingJobs.reduce((sum, job) => sum + job.count, 0);
+  // With a pair list, a library that already holds the manifest's roots (and the explicit
+  // MEMORA_GOLDEN_ALLOW_NONEMPTY=1) is not processed again: the run only judges the pairs.
+  const sourcePairsMode: SourcePairsMode | null = !pairsFile
+    ? null
+    : environment.allowNonEmpty && (library.sources > 0 || library.notes > 0)
+      ? "verdict_only"
+      : "after_batch";
+  if (sourcePairsMode === "verdict_only") await requireVerdictOnlyLibrary(options, fullManifest);
   if (!options.environment.allowNonEmpty) {
     if (library.sources > 0 || library.notes > 0)
       throw new Error(
         `The library is not empty (${library.sources} sources, ${library.notes} notes); reset it, ` +
-          "set MEMORA_GOLDEN_RESET=1 or set MEMORA_GOLDEN_ALLOW_NONEMPTY=1. Nothing was changed."
+          "set MEMORA_GOLDEN_RESET=1 or set MEMORA_GOLDEN_ALLOW_NONEMPTY=1" +
+          `${pairsFile ? " (with MEMORA_GOLDEN_SOURCE_PAIRS that only judges the pairs)" : ""}. ` +
+          "Nothing was changed."
       );
     if (pending > 0)
       throw new Error(
@@ -509,23 +558,63 @@ export async function prepareGoldenRun(
     pendingJobs,
     backup: backup.path,
     ...(reset ? { reset } : {}),
+    ...(pairsFile && sourcePairsMode
+      ? { sourcePairs: { mode: sourcePairsMode, pairs: pairsFile.pairs.length } }
+      : {}),
     ...automation
   });
   const preparedBackup = backup;
   const preparedRoutes = routes;
+  const sourcePairs =
+    pairsFile && sourcePairsMode
+      ? { file: pairsFile, mode: sourcePairsMode, manifest: fullManifest }
+      : null;
   return {
     manifest,
     backup: preparedBackup,
     automation,
     ...(reset ? { reset } : {}),
+    ...(sourcePairs
+      ? { sourcePairs: { mode: sourcePairs.mode, pairs: sourcePairs.file.pairs.length } }
+      : {}),
     start: () =>
-      runGolden(options, manifest, automation, preparedRoutes, {
-        backup: preparedBackup,
-        pendingJobs,
-        only: environment.only,
-        ...(reset ? { reset } : {})
-      })
+      runGolden(
+        options,
+        manifest,
+        automation,
+        preparedRoutes,
+        {
+          backup: preparedBackup,
+          pendingJobs,
+          only: environment.only,
+          ...(reset ? { reset } : {})
+        },
+        sourcePairs
+      )
   };
+}
+
+/**
+ * The verdict-only mode (MEMORA_GOLDEN_SOURCE_PAIRS on a non-empty library with
+ * MEMORA_GOLDEN_ALLOW_NONEMPTY=1) judges pairs of an existing library. It needs the whole manifest in
+ * the library, found by root title, so MEMORA_GOLDEN_ONLY must be empty. Jobs left in the library are
+ * harmless: the app does not start the job supervisor in this mode. Changes nothing.
+ */
+async function requireVerdictOnlyLibrary(options: GoldenRunOptions, manifest: GoldenManifest) {
+  if (options.environment.only)
+    throw new Error(
+      "MEMORA_GOLDEN_ONLY cannot be set when MEMORA_GOLDEN_SOURCE_PAIRS runs on a library that " +
+        "already holds the manifest's roots (it judges pairs of that library without importing). " +
+        "Nothing was changed."
+    );
+  const { listLibraryRoots, missingManifestRoots } = await import("./golden-source-pairs.js");
+  const missing = missingManifestRoots(manifest, await listLibraryRoots(options.pool));
+  if (missing.length)
+    throw new Error(
+      `The library does not hold ${missing.length} of the manifest's ${manifest.sources.length} roots ` +
+        `(${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ", ..." : ""}): a verdict-only ` +
+        "run needs the library the pair list was made for, found by root title. Nothing was changed."
+    );
 }
 
 async function countLibrary(pool: Query) {
@@ -892,7 +981,8 @@ async function runGolden(
   manifest: GoldenManifest,
   automation: GoldenAutomationPause,
   routes: unknown[],
-  preparation: Record<string, unknown>
+  preparation: Record<string, unknown>,
+  sourcePairs: SourcePairsRequest | null = null
 ): Promise<GoldenRunSummary> {
   const now = options.now ?? (() => new Date());
   const startedAt = now();
@@ -911,33 +1001,65 @@ async function runGolden(
     context.atomicNoteMatchingVersion = (
       await import("./knowledge-processing.js")
     ).atomicNoteMatchingVersion;
-    const imported = await importSources(options, manifest);
-    const importedAt = now();
-    const rootIds = imported.map((source) => source.sourceItemId);
-    const batch = await options.hierarchy.process({
-      runKind: "initial",
-      trigger: "library_action",
-      plan: ProcessingPlanRequestSchema.parse({
-        preset: "custom",
-        requestedStages: goldenRunStages,
-        scope: "source_and_children",
-        targetSourceItemIds: rootIds
-      })
-    });
-    log(options, "queued", { batchId: batch.batchId, runs: batch.queued.length });
-    options.jobs.wake();
-    const outcome = await waitForBatch(options, batch.batchId, runDirectory);
-    const finishedAt = now();
-    summary = await buildGoldenSummary(options, {
-      manifest,
-      imported,
-      batchId: batch.batchId,
-      startedAt,
-      importedAt,
-      finishedAt,
-      outcome,
-      context
-    });
+    if (sourcePairs?.mode === "verdict_only") {
+      // The library already holds the manifest's roots: nothing is imported, queued or processed.
+      const pairRun = await runSourcePairs(options, sourcePairs, runDirectory);
+      summary = {
+        format: "memora-golden-run",
+        version: 1,
+        status: pairRun.report.status ?? "failed",
+        mode: "source_pair_verdicts",
+        startedAt: startedAt.toISOString(),
+        finishedAt: now().toISOString(),
+        manifest: { name: manifest.name, path: options.environment.manifestPath },
+        cassette: options.cassette?.stats() ?? null,
+        sourcePairs: pairRun.summary,
+        ...context
+      };
+    } else {
+      const imported = await importSources(options, manifest);
+      const importedAt = now();
+      const rootIds = imported.map((source) => source.sourceItemId);
+      const batch = await options.hierarchy.process({
+        runKind: "initial",
+        trigger: "library_action",
+        plan: ProcessingPlanRequestSchema.parse({
+          preset: "custom",
+          requestedStages: goldenRunStages,
+          scope: "source_and_children",
+          targetSourceItemIds: rootIds
+        })
+      });
+      log(options, "queued", { batchId: batch.batchId, runs: batch.queued.length });
+      options.jobs.wake();
+      const outcome = await waitForBatch(options, batch.batchId, runDirectory);
+      const finishedAt = now();
+      summary = await buildGoldenSummary(options, {
+        manifest,
+        imported,
+        batchId: batch.batchId,
+        startedAt,
+        importedAt,
+        finishedAt,
+        outcome,
+        context
+      });
+      // The pair verdicts follow the batch and stay out of its summary figures; a failure here
+      // never discards the batch's results.
+      if (sourcePairs) {
+        if (outcome !== "settled")
+          summary.sourcePairs = { status: "skipped", reason: `the batch ended with ${outcome}` };
+        else
+          summary.sourcePairs = await runSourcePairs(options, sourcePairs, runDirectory).then(
+            (run) => run.summary,
+            (error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              log(options, "source_pairs_failed", { error: message });
+              return { status: "failed", error: message };
+            }
+          );
+      }
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log(options, "failed", { error: message });
@@ -965,6 +1087,64 @@ async function runGolden(
   if (options.environment.exitWhenDone) options.quit();
   else log(options, "left_running", { reason: "MEMORA_GOLDEN_EXIT is not 1" });
   return summary;
+}
+
+interface SourcePairsRequest {
+  file: SourcePairsFile;
+  mode: SourcePairsMode;
+  /** The whole manifest: a pair names a root by its manifest key, imported or not. */
+  manifest: GoldenManifest;
+}
+
+/**
+ * MEMORA_GOLDEN_SOURCE_PAIRS: asks the live source decider about the listed pairs and writes
+ * `source-pair-verdicts.json` into the run directory. Persists nothing (golden-source-pairs.ts).
+ */
+async function runSourcePairs(
+  options: GoldenRunOptions,
+  request: SourcePairsRequest,
+  runDirectory: string
+): Promise<{ report: SourcePairVerdictsReport; summary: Record<string, unknown> }> {
+  const pairs = await import("./golden-source-pairs.js");
+  const app = await options.settings.getApp();
+  const report = await pairs.runSourcePairVerdicts({
+    mode: request.mode,
+    file: request.file,
+    manifest: request.manifest,
+    roots: await pairs.listLibraryRoots(options.pool),
+    reader: options.sourcePairReader ?? pairs.createSourcePairReader(options.pool),
+    ai: options.ai!,
+    settings: SourceRelationSettingsSchema.parse(app.sourceRelationSettings ?? {}),
+    contentLanguage: app.contentLanguage ?? "en",
+    cassette: options.cassette,
+    ...(options.now ? { now: options.now } : {}),
+    onUpdate: async (current) => {
+      await pairs.writeSourcePairVerdicts(runDirectory, current);
+    },
+    onPair: (pair, total) =>
+      log(options, "source_pair", {
+        pair: `${pair.index + 1}/${total}`,
+        ...(pair.label ? { label: pair.label } : {}),
+        status: pair.status,
+        verdict: pair.verdict,
+        calls: pair.attempts.length,
+        wallMs: pair.wallMs,
+        ...(pair.reason ? { reason: pair.reason } : {})
+      })
+  });
+  const path = join(runDirectory, pairs.sourcePairVerdictsFile);
+  log(options, "source_pairs", { status: report.status, path, ...report.totals });
+  return {
+    report,
+    summary: {
+      mode: request.mode,
+      status: report.status,
+      ...(report.stopReason ? { stopReason: report.stopReason } : {}),
+      file: report.pairsFile,
+      verdicts: path,
+      totals: report.totals
+    }
+  };
 }
 
 const settingsKeys = [

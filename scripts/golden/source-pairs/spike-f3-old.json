@@ -1,0 +1,87 @@
+[
+  {
+    "left": "mf-a2",
+    "right": "mf-w3",
+    "label": "old:A2/W3"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-m2",
+    "label": "old:F2/M2"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-q2",
+    "label": "old:F2/Q2"
+  },
+  {
+    "left": "mf-f3",
+    "right": "mf-q3",
+    "label": "old:F3/Q3"
+  },
+  {
+    "left": "mf-l2",
+    "right": "mf-q2",
+    "label": "old:L2/Q2"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-q2",
+    "label": "old:L3/Q2"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-r3",
+    "label": "old:L3/R3"
+  },
+  {
+    "left": "mf-p01",
+    "right": "mf-p09",
+    "label": "old:P01/P09"
+  },
+  {
+    "left": "mf-a4",
+    "right": "mf-v06",
+    "label": "old:A4/V06"
+  },
+  {
+    "left": "mf-a5",
+    "right": "mf-p09",
+    "label": "old:A5/P09"
+  },
+  {
+    "left": "mf-a5",
+    "right": "mf-w2",
+    "label": "old:A5/W2"
+  },
+  {
+    "left": "mf-a5",
+    "right": "mf-w5",
+    "label": "old:A5/W5"
+  },
+  {
+    "left": "mf-f5",
+    "right": "mf-l5",
+    "label": "old:F5/L5"
+  },
+  {
+    "left": "mf-f5",
+    "right": "mf-m3",
+    "label": "old:F5/M3"
+  },
+  {
+    "left": "mf-l5",
+    "right": "mf-r2",
+    "label": "old:L5/R2"
+  },
+  {
+    "left": "mf-p08",
+    "right": "mf-w5",
+    "label": "old:P08/W5"
+  },
+  {
+    "left": "mf-v03",
+    "right": "mf-w5",
+    "label": "old:V03/W5"
+  }
+]

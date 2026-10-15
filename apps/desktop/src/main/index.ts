@@ -527,8 +527,10 @@ void app.whenReady().then(() => {
         await monitoringService.recover();
         // DEV-only golden run: prepared before the job supervisor starts so that the legacy wiki
         // automation is paused before it can admit any work.
+        // MEMORA_GOLDEN_SOURCE_PAIRS alone is refused by the same path, not silently ignored.
         const goldenRun =
-          !app.isPackaged && process.env.MEMORA_GOLDEN_RUN
+          !app.isPackaged &&
+          (process.env.MEMORA_GOLDEN_RUN || process.env.MEMORA_GOLDEN_SOURCE_PAIRS)
             ? await import("./services/golden-runner.js")
                 .then(({ prepareGoldenRun }) =>
                   prepareGoldenRun({
@@ -555,6 +557,8 @@ void app.whenReady().then(() => {
                     organization: organizationService,
                     maintenance: maintenanceService,
                     settings: settingsService!,
+                    // MEMORA_GOLDEN_SOURCE_PAIRS only: the source decider runs through the normal AI service.
+                    ai: aiService!,
                     quit: () => app.quit()
                   })
                 )
@@ -570,11 +574,14 @@ void app.whenReady().then(() => {
           app.quit();
           return;
         }
+        // A verdict-only source pair run leaves the library alone: only the local models (the decider
+        // may be one) start, so no job, capture or vault sync can change it meanwhile.
+        const verdictOnly = goldenRun?.sourcePairs?.mode === "verdict_only";
         await Promise.all([
           localModelService?.start(),
-          jobSupervisor?.start(),
-          integrationGateway?.start(),
-          obsidianSyncService?.reconcileVault()
+          verdictOnly ? undefined : jobSupervisor?.start(),
+          verdictOnly ? undefined : integrationGateway?.start(),
+          verdictOnly ? undefined : obsidianSyncService?.reconcileVault()
         ]);
         if (!app.isPackaged && process.env.MEMORA_MATCHING_PILOT) {
           void import("./services/matching-pilot.js")

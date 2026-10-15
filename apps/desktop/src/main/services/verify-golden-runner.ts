@@ -49,6 +49,9 @@ import { LibraryResetService } from "./library-reset-service.js";
  * covers the import failing at its document insert (a database trigger rejects it): nothing is left
  * behind, no source row and no stored file, and the bare source row an earlier version of the
  * import could leave counts as golden for the reset only when its type and title are in the manifest.
+ * Finally it covers MEMORA_GOLDEN_SOURCE_PAIRS on the complete library (verdict-only, a fake decider):
+ * the real read queries build the requests, the verdicts are written and no relation, decision or
+ * run state is persisted.
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -345,6 +348,111 @@ try {
     /web is already in the library/,
     "a repeated web capture"
   );
+  // 5b. MEMORA_GOLDEN_SOURCE_PAIRS on this complete library (ALLOW_NONEMPTY, no MEMORA_GOLDEN_ONLY):
+  //     a verdict-only run through the real read queries and a fake decider. It judges the pairs of
+  //     the library, writes the raw verdicts and persists no relation, decision or run state.
+  const persistedTables = [
+    "source_items",
+    "chunks",
+    "atomic_notes",
+    "source_relations",
+    "source_relation_evidence",
+    "source_matching_decisions",
+    "source_matching_runs"
+  ];
+  const persisted = async () =>
+    JSON.stringify(
+      await Promise.all(
+        persistedTables.map(async (table) => [
+          table,
+          Number(
+            (await pool!.query<{ n: number }>(`select count(*)::int as n from ${table}`)).rows[0]?.n
+          )
+        ])
+      )
+    );
+  const pairsPath = join(workDir, "pairs.json");
+  await writeFile(
+    pairsPath,
+    JSON.stringify([
+      { left: "web", right: "paper", label: "web/paper" },
+      { left: "A story", right: "book" },
+      { left: "web", right: "Forgetting curve" },
+      { left: "web", right: "no such work" }
+    ])
+  );
+  const requests: string[] = [];
+  const fakeDecider = {
+    // Relates a source of each of the two works (a book answers with its chapters), citing its first
+    // passage; sources and passages are read from the prompt the matcher builds.
+    runDefaultTask: async (_task: string, text: string) => {
+      requests.push(text);
+      const listed = <T>(heading: string) =>
+        JSON.parse(new RegExp(`${heading}:\n(\\[.*\\])\n`).exec(text)![1]!) as T[];
+      const sources = listed<{ key: string; root: string }>("Sources");
+      const chunks = listed<{ key: string; source: string }>("Original chunks");
+      const from = sources.find((source) => source.root === "w1")!.key;
+      const to = sources.find((source) => source.root === "w2")!.key;
+      const first = (source: string) => chunks.find((chunk) => chunk.source === source)!.key;
+      return {
+        taskType: "reranking",
+        output: {
+          relations: [[from, to, "supports", 90, 85, [first(from)], [first(to)]]]
+        },
+        providerId: "verify-remote",
+        modelId: "verify-1",
+        runtime: "remote",
+        durationMs: 1,
+        inputTokens: 100,
+        outputTokens: 20,
+        profileId: "verify",
+        aiTaskRunId: "verify-run",
+        outputLanguage: "en"
+      };
+    }
+  };
+  const tablesBeforePairs = await persisted();
+  const pairRun = await prepareGoldenRun(
+    input({
+      ...withRoutes,
+      cassette: replay,
+      ai: fakeDecider as never,
+      env: {
+        MEMORA_GOLDEN_RUN: manifestPath,
+        MEMORA_GOLDEN_SOURCE_PAIRS: pairsPath,
+        MEMORA_GOLDEN_ALLOW_NONEMPTY: "1"
+      }
+    })
+  );
+  check(
+    pairRun.sourcePairs?.mode === "verdict_only" && pairRun.sourcePairs.pairs === 4,
+    "a complete library with the pair list is a verdict-only run"
+  );
+  const pairSummary = await withTimeout(pairRun.start(), 60_000, "the pair verdict run");
+  check(pairSummary.status === "completed", `the pair run completed: ${pairSummary.status}`);
+  const verdictsPath = (pairSummary.sourcePairs as { verdicts: string }).verdicts;
+  const verdicts = JSON.parse(await readFile(verdictsPath, "utf8")) as {
+    state: string;
+    pairs: Array<{ status: string; verdict: string | null; kept: unknown[] }>;
+  };
+  check(
+    verdicts.state === "finished" &&
+      JSON.stringify(verdicts.pairs.map((pair) => pair.status)) ===
+        JSON.stringify(["judged", "judged", "same_root", "unresolved"]),
+    `the verdicts file reports each pair: ${verdicts.pairs.map((pair) => pair.status).join(", ")}`
+  );
+  check(
+    requests.length === 2 &&
+      verdicts.pairs
+        .slice(0, 2)
+        .every((pair) => pair.verdict === "related" && pair.kept.length === 1),
+    "the decider was asked about the two resolvable pairs and its items passed the floors"
+  );
+  check(
+    (await persisted()) === tablesBeforePairs,
+    "the verdict run persisted no source, chunk, note, relation, decision or run state"
+  );
+
   // 6. MEMORA_GOLDEN_RESET=1 with the real LibraryResetService. The app resets before the job
   //    supervisor starts, so it is stopped here too.
   await jobs.stop();

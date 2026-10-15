@@ -1,0 +1,152 @@
+[
+  {
+    "left": "mf-f1",
+    "right": "mf-q1",
+    "label": "fix3:F1/Q1"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-f4",
+    "label": "fix3:F2/F4"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-m2",
+    "label": "fix3:F2/M2"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-m3",
+    "label": "fix3:F2/M3"
+  },
+  {
+    "left": "mf-f2",
+    "right": "mf-q2",
+    "label": "fix3:F2/Q2"
+  },
+  {
+    "left": "mf-f3",
+    "right": "mf-q1",
+    "label": "fix3:F3/Q1"
+  },
+  {
+    "left": "mf-f4",
+    "right": "mf-p05",
+    "label": "fix3:F4/P05"
+  },
+  {
+    "left": "mf-l1",
+    "right": "mf-p06",
+    "label": "fix3:L1/P06"
+  },
+  {
+    "left": "mf-l2",
+    "right": "mf-l4",
+    "label": "fix3:L2/L4"
+  },
+  {
+    "left": "mf-l2",
+    "right": "mf-q2",
+    "label": "fix3:L2/Q2"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-l4",
+    "label": "fix3:L3/L4"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-q2",
+    "label": "fix3:L3/Q2"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-r1",
+    "label": "fix3:L3/R1"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-r2",
+    "label": "fix3:L3/R2"
+  },
+  {
+    "left": "mf-l3",
+    "right": "mf-r3",
+    "label": "fix3:L3/R3"
+  },
+  {
+    "left": "mf-m2",
+    "right": "mf-m4",
+    "label": "fix3:M2/M4"
+  },
+  {
+    "left": "mf-m2",
+    "right": "mf-p09",
+    "label": "fix3:M2/P09"
+  },
+  {
+    "left": "mf-m3",
+    "right": "mf-p09",
+    "label": "fix3:M3/P09"
+  },
+  {
+    "left": "mf-p01",
+    "right": "mf-p09",
+    "label": "fix3:P01/P09"
+  },
+  {
+    "left": "mf-q2",
+    "right": "mf-q4",
+    "label": "fix3:Q2/Q4"
+  },
+  {
+    "left": "mf-q3",
+    "right": "mf-q4",
+    "label": "fix3:Q3/Q4"
+  },
+  {
+    "left": "mf-r2",
+    "right": "mf-r4",
+    "label": "fix3:R2/R4"
+  },
+  {
+    "left": "mf-w2",
+    "right": "mf-w4",
+    "label": "fix3:W2/W4"
+  },
+  {
+    "left": "mf-w3",
+    "right": "mf-w4",
+    "label": "fix3:W3/W4"
+  },
+  {
+    "left": "mf-a5",
+    "right": "mf-m1",
+    "label": "fix3:A5/M1"
+  },
+  {
+    "left": "mf-p09",
+    "right": "mf-v06",
+    "label": "fix3:P09/V06"
+  },
+  {
+    "left": "mf-q2",
+    "right": "mf-q6",
+    "label": "fix3:Q2/Q6"
+  },
+  {
+    "left": "mf-q3",
+    "right": "mf-q5",
+    "label": "fix3:Q3/Q5"
+  },
+  {
+    "left": "mf-q3",
+    "right": "mf-q6",
+    "label": "fix3:Q3/Q6"
+  },
+  {
+    "left": "mf-q5",
+    "right": "mf-q6",
+    "label": "fix3:Q5/Q6"
+  }
+]

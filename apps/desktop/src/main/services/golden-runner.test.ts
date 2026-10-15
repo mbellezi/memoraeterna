@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { processingPresetStages } from "@app/domain";
+import type { SourceRelationChunk } from "@app/db";
 import type { AiCassetteStats } from "@app/ai";
 
 import {
@@ -168,8 +169,11 @@ function fakeServices(
     dump?: boolean;
     /** What the reset does: empty the library (default), throw, or leave the rows behind. */
     reset?: "empties" | "fails" | "keeps";
+    /** The root sources the pair verdicts resolve against. */
+    roots?: Array<{ id: string; title: string; type: string }>;
   } = {}
 ) {
+  const queries: string[] = [];
   const calls: Array<[string, unknown]> = [];
   const policies = (input.policyStates ?? ["enabled", "paused"]).map((state, index) => ({
     id: `policy-${index}`,
@@ -187,6 +191,8 @@ function fakeServices(
   };
   const pool = {
     query: async (sql: string) => {
+      queries.push(sql);
+      if (sql.includes("parent_source_item_id is null")) return { rows: input.roots ?? [] };
       if (sql.includes("as sources")) return { rows: [{ sources: library.sources, notes: 0 }] };
       if (sql.includes("from jobs")) return { rows: library.pendingJobs };
       if (sql.includes("originalSha256")) return { rows: library.rows };
@@ -244,7 +250,17 @@ function fakeServices(
       return command.command === "dashboard" ? { schedules, runs: [] } : {};
     }
   };
-  return { calls, pool, organization, maintenance, backup, cassette, limits, libraryReset };
+  return {
+    calls,
+    pool,
+    organization,
+    maintenance,
+    backup,
+    cassette,
+    limits,
+    libraryReset,
+    queries
+  };
 }
 
 function prepareInput(
@@ -341,7 +357,8 @@ describe("golden run environment", () => {
       resetAlsoManifestPaths: [],
       exitWhenDone: true,
       maxLiveTokens: 500000,
-      only: null
+      only: null,
+      sourcePairsPath: null
     });
     expect(
       readGoldenRunEnvironment(
@@ -361,6 +378,51 @@ describe("golden run environment", () => {
         { isPackaged: false, workspaceRoot: "/repo" }
       )
     ).toThrow("MEMORA_GOLDEN_MAX_TOKENS");
+  });
+});
+
+describe("golden source pair environment (MEMORA_GOLDEN_SOURCE_PAIRS)", () => {
+  const options = { isPackaged: false, workspaceRoot: "/repo" };
+
+  it("is off by default and resolves the pair list against the repository", () => {
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_RUN: "m.json" }, options)).toMatchObject({
+      sourcePairsPath: null
+    });
+    expect(
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_SOURCE_PAIRS: "  " },
+        options
+      )
+    ).toMatchObject({ sourcePairsPath: null });
+    expect(
+      readGoldenRunEnvironment(
+        {
+          MEMORA_GOLDEN_RUN: "m.json",
+          MEMORA_GOLDEN_SOURCE_PAIRS: " scripts/golden/source-pairs/spike-f3-gold.json "
+        },
+        options
+      )
+    ).toMatchObject({ sourcePairsPath: "/repo/scripts/golden/source-pairs/spike-f3-gold.json" });
+  });
+
+  it("is accepted only with a golden run, and never in a packaged build", () => {
+    expect(() =>
+      readGoldenRunEnvironment({ MEMORA_GOLDEN_SOURCE_PAIRS: "pairs.json" }, options)
+    ).toThrow("MEMORA_GOLDEN_SOURCE_PAIRS needs MEMORA_GOLDEN_RUN");
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_SOURCE_PAIRS: "pairs.json" },
+        { ...options, isPackaged: true }
+      )
+    ).toThrow("MEMORA_GOLDEN_SOURCE_PAIRS is refused in packaged builds");
+    expect(() =>
+      readGoldenRunEnvironment(
+        { MEMORA_GOLDEN_RUN: "m.json", MEMORA_GOLDEN_SOURCE_PAIRS: "pairs.json" },
+        { ...options, isPackaged: true }
+      )
+    ).toThrow("packaged");
+    // Without either variable a build that is not asked for it stays off.
+    expect(readGoldenRunEnvironment({ MEMORA_GOLDEN_SOURCE_PAIRS: "" }, options)).toBeNull();
   });
 });
 
@@ -1388,5 +1450,243 @@ describe("golden summaries", () => {
     expect(contentDigest(["b", "a"])).toEqual(contentDigest(["a", "b"]));
     expect(contentDigest(["a"]).sha256).not.toBe(contentDigest(["a", "a"]).sha256);
     expect(contentDigest([])).toMatchObject({ count: 0 });
+  });
+});
+
+describe("golden source pair verdicts", () => {
+  const libraryRoots = [
+    { id: "root-web", title: "Forgetting curve", type: "WebArticle" },
+    { id: "root-paper", title: "A paper", type: "AcademicPaper" },
+    { id: "root-book", title: "O Alienista", type: "Book" }
+  ];
+  const chunk = (id: string, rootId: string, title: string): SourceRelationChunk => ({
+    id,
+    sourceItemId: `src-${id}`,
+    documentId: `doc-${id}`,
+    sourceSpanId: null,
+    content: `Passage ${id}.`,
+    contentHash: `hash-${id}`,
+    title,
+    summary: null,
+    rootId,
+    rootTitle: title,
+    chunkIndex: 0
+  });
+  const reader = () => ({
+    pairNotes: async () => [],
+    pairChunks: async () => [
+      chunk("w", "root-web", "Forgetting curve"),
+      chunk("p", "root-paper", "A paper")
+    ],
+    existing: async () => []
+  });
+  const decider = () => {
+    const calls: unknown[][] = [];
+    return {
+      calls,
+      ai: {
+        runDefaultTask: async (...args: unknown[]) => {
+          calls.push(args);
+          return {
+            taskType: "reranking",
+            output: { relations: [["s1", "s2", "supports", 90, 85, ["c1"], ["c2"]]] },
+            providerId: "openai-codex",
+            modelId: "gpt-test",
+            runtime: "remote",
+            durationMs: 1200,
+            inputTokens: 900,
+            outputTokens: 40,
+            profileId: "profile",
+            aiTaskRunId: "run-1",
+            outputLanguage: "en"
+          };
+        }
+      } as unknown as NonNullable<GoldenRunOptions["ai"]>
+    };
+  };
+  const writePairs = async (pairs: unknown) => {
+    const path = join(workspace, "pairs.json");
+    await writeFile(path, JSON.stringify(pairs));
+    return path;
+  };
+  const pairs = [
+    { left: "web", right: "paper", label: "web/paper" },
+    { left: "book", right: "No such work" }
+  ];
+  const environment = (manifestPath: string, pairsPath: string, extra = {}) => ({
+    MEMORA_GOLDEN_RUN: manifestPath,
+    MEMORA_GOLDEN_SOURCE_PAIRS: pairsPath,
+    MEMORA_GOLDEN_MAX_TOKENS: "1000",
+    ...extra
+  });
+  const nonEmpty = { MEMORA_GOLDEN_ALLOW_NONEMPTY: "1" };
+
+  it("judges the pairs of a library that already holds the roots, without importing, processing or writing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const pairsPath = await writePairs(pairs);
+    const services = fakeServices({ sources: 3, roots: libraryRoots });
+    const asked = decider();
+    let quit = 0;
+    const run = await prepareGoldenRun(
+      prepareInput(manifestPath, services, {
+        env: environment(manifestPath, pairsPath, { ...nonEmpty, MEMORA_GOLDEN_EXIT: "1" }),
+        ai: asked.ai,
+        sourcePairReader: reader() as never,
+        now: () => new Date("2026-10-15T12:00:00.000Z"),
+        quit: () => {
+          quit++;
+        }
+      })
+    );
+    expect(run.sourcePairs).toEqual({ mode: "verdict_only", pairs: 2 });
+    // Nothing is imported or queued: the ingestion and hierarchy fakes would fail the run if called.
+    const summary = await run.start();
+    expect(summary).toMatchObject({
+      status: "completed",
+      mode: "source_pair_verdicts",
+      sourcePairs: {
+        mode: "verdict_only",
+        status: "completed",
+        totals: { pairs: 2, judged: 1, related: 1, unresolved: 1, calls: 1 }
+      }
+    });
+    expect(asked.calls).toHaveLength(1);
+    const directory = join(workspace, ".cache", "golden", "runs", "2026-10-15T12-00-00-000Z");
+    const verdicts = JSON.parse(
+      await readFile(join(directory, "source-pair-verdicts.json"), "utf8")
+    );
+    expect(verdicts).toMatchObject({
+      format: "memora-golden-source-pair-verdicts",
+      state: "finished",
+      mode: "verdict_only",
+      contract: "source-relations-v5"
+    });
+    expect(verdicts.pairs.map((pair: { status: string }) => pair.status)).toEqual([
+      "judged",
+      "unresolved"
+    ]);
+    expect(verdicts.pairs[0]).toMatchObject({
+      label: "web/paper",
+      verdict: "related",
+      kept: [{ type: "supports", importance: 90, confidence: 85 }]
+    });
+    expect(JSON.parse(await readFile(join(directory, "summary.json"), "utf8"))).toMatchObject({
+      sourcePairs: { verdicts: join(directory, "source-pair-verdicts.json") }
+    });
+    // The library is only read: every statement the run issued is a select.
+    for (const sql of services.queries) expect(sql.trim()).toMatch(/^(select|with)\b/i);
+    expect(quit).toBe(1);
+  });
+
+  it("judges the pairs after the batch on an empty library, and only on one", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const pairsPath = await writePairs(pairs);
+    const empty = await prepareGoldenRun(
+      prepareInput(manifestPath, fakeServices(), {
+        env: environment(manifestPath, pairsPath),
+        ai: decider().ai
+      })
+    );
+    expect(empty.sourcePairs).toEqual({ mode: "after_batch", pairs: 2 });
+    // ALLOW_NONEMPTY on an empty library is no reason to skip the import.
+    const allowed = await prepareGoldenRun(
+      prepareInput(manifestPath, fakeServices(), {
+        env: environment(manifestPath, pairsPath, nonEmpty),
+        ai: decider().ai
+      })
+    );
+    expect(allowed.sourcePairs).toEqual({ mode: "after_batch", pairs: 2 });
+    const plain = await prepareGoldenRun(prepareInput(manifestPath, fakeServices()));
+    expect(plain.sourcePairs).toBeUndefined();
+  });
+
+  it("refuses a non-empty library without ALLOW_NONEMPTY, changing nothing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const services = fakeServices({ sources: 3, roots: libraryRoots });
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, {
+          env: environment(manifestPath, await writePairs(pairs)),
+          ai: decider().ai
+        })
+      )
+    ).rejects.toThrow("not empty");
+    expect(services.calls).toEqual([]);
+  });
+
+  it("refuses MEMORA_GOLDEN_ONLY, missing roots and a missing AI service, changing nothing", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const pairsPath = await writePairs(pairs);
+    const refusal = async (
+      services: ReturnType<typeof fakeServices>,
+      pattern: RegExp,
+      extra: Record<string, string> = {},
+      overrides: Partial<Parameters<typeof prepareGoldenRun>[0]> = { ai: decider().ai }
+    ) => {
+      await expect(
+        prepareGoldenRun(
+          prepareInput(manifestPath, services, {
+            env: environment(manifestPath, pairsPath, { ...nonEmpty, ...extra }),
+            ...overrides
+          })
+        )
+      ).rejects.toThrow(pattern);
+      expect(services.calls).toEqual([]);
+    };
+    await refusal(
+      fakeServices({ sources: 3, roots: libraryRoots }),
+      /MEMORA_GOLDEN_ONLY cannot be set/,
+      { MEMORA_GOLDEN_ONLY: "web" }
+    );
+    await refusal(
+      fakeServices({ sources: 2, roots: libraryRoots.slice(0, 2) }),
+      /does not hold 1 of the manifest's 3 roots \(book\)/
+    );
+    await refusal(fakeServices(), /needs the AI service/, {}, {});
+  });
+
+  it("does not mind jobs left in the library: the app starts no job supervisor for it", async () => {
+    const manifestPath = await writeSources(testManifest());
+    const run = await prepareGoldenRun(
+      prepareInput(
+        manifestPath,
+        fakeServices({
+          sources: 3,
+          roots: libraryRoots,
+          pendingJobs: [{ type: "maintenance", count: 2 }]
+        }),
+        {
+          env: environment(manifestPath, await writePairs(pairs), nonEmpty),
+          ai: decider().ai
+        }
+      )
+    );
+    expect(run.sourcePairs).toEqual({ mode: "verdict_only", pairs: 2 });
+  });
+
+  it("refuses an unreadable pair list before anything is changed", async () => {
+    const manifestPath = await writeSources(testManifest());
+    for (const bad of [{ left: "web", right: "paper" }, []]) {
+      const services = fakeServices();
+      await expect(
+        prepareGoldenRun(
+          prepareInput(manifestPath, services, {
+            env: environment(manifestPath, await writePairs(bad)),
+            ai: decider().ai
+          })
+        )
+      ).rejects.toThrow("MEMORA_GOLDEN_SOURCE_PAIRS");
+      expect(services.calls).toEqual([]);
+    }
+    const services = fakeServices();
+    await expect(
+      prepareGoldenRun(
+        prepareInput(manifestPath, services, {
+          env: environment(manifestPath, join(workspace, "absent.json")),
+          ai: decider().ai
+        })
+      )
+    ).rejects.toThrow("cannot read");
+    expect(services.calls).toEqual([]);
   });
 });

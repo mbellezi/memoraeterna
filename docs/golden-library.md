@@ -89,7 +89,8 @@ profile (`MEMORA_USER_DATA_DIR=<folder>`, with its own routes, for example a loc
 model) keeps the owner's profile out of it. `apps/desktop/src/main/services/verify-golden-runner.ts`
 checks the runner against the real ingestion, hierarchy and job services, a real `pg_dump`, the real
 library reset behind `MEMORA_GOLDEN_RESET` and a throwaway PostgreSQL, without AI or network (`cd
-apps/desktop && npx tsx src/main/services/verify-golden-runner.ts`). It does not cover a PDF through
+apps/desktop && npx tsx src/main/services/verify-golden-runner.ts`). It also runs the verdict-only source
+pair mode (section 6) with a fake decider and proves it persists nothing. It does not cover a PDF through
 Docling or any real AI call.
 
 ## 3. Replay (no provider call, no local model)
@@ -272,6 +273,77 @@ The same figures come out by title and by `--ids`. Windowed to the benchmark's v
 note-matching calls, one per held-out note, at 11.9 s per note (the 11.9 s of `docs/plan.md`; contract
 `atomic-note-matching-v5`), and 121 source-matching calls, as the report says. Without a window the
 library reads 46.8 s per note, because the benchmark matched it in four passes.
+
+## 6. Source pair verdicts (the F3 discovery spike)
+
+`MEMORA_GOLDEN_SOURCE_PAIRS=<file>` asks the live source decider (`sources.decide`, contract
+`source-relations-v5`) about a list of pairs of works and writes every raw verdict. It is DEV only (a
+packaged build refuses it) and needs `MEMORA_GOLDEN_RUN`; alone it stops the app with `GOLDEN_RUN refused`.
+It persists nothing: no source relation, decision row, run state or explanation, and no library data
+changes. The only rows written are the AI audit of the calls themselves, by the AI service; the run
+still takes the `pg_dump` backup and pauses the legacy wiki automation like any run (section 2).
+
+The file is a JSON list of `{"left": ..., "right": ..., "label": ...}`; `label` is optional. A side is a
+top-level manifest key (`mf-f1`, `machado-a-cartomante`; a book is its container key) or the exact title of
+a root source. A pair that cannot be resolved (no such root, two roots with one title, a chapter key) is
+reported, not fatal; a pair of one root with itself is refused (`same_root`).
+
+Two ways to run it, chosen by the library:
+
+- **Verdict-only** (`MEMORA_GOLDEN_ALLOW_NONEMPTY=1`, a library that already holds every root of the manifest,
+  `MEMORA_GOLDEN_ONLY` empty): nothing is imported or processed; the pairs are judged at once. The runner
+  refuses it when a manifest root is missing from the library (found by title) or when `MEMORA_GOLDEN_ONLY` is
+  set. The app starts only the local-model service in this mode: no job supervisor (jobs left in the library
+  stay untouched), integration gateway or vault sync, so nothing else can change the library.
+- **After the batch** (an empty library, or `MEMORA_GOLDEN_RESET=1`): the normal run imports and processes the
+  manifest; once the batch has settled, the pairs are judged. A batch that ends `diverged` or `token_limit`
+  skips them, a failure in this step never discards the batch's summary, and one token cap covers both.
+
+For each pair the request is the one the matcher builds: its uncited note relations, the evidence passages,
+`sourceDecisionPrompt`, the same call context (operation `source_relation_matching`, stage `sourceMatching`)
+and output budget, and the same single repair when an answer holds malformed items. The answer is read by the
+production v5 parser. Calls go through the normal AI service one at a time, so the cassette records them. Use a
+fresh cassette directory so the calls are live: a request identical to a recorded one is served from the
+cassette (`replayed: true`, its timing is no measurement). Recording needs `MEMORA_GOLDEN_MAX_TOKENS`.
+Replaying the same directory against the same library and prompts regenerates the file at no cost. The run
+stops calling at a replay miss, at the live token cap, or after three failed calls in a row; the pairs left
+are `skipped`.
+
+`.cache/golden/runs/<ts>/source-pair-verdicts.json` (rewritten after every pair, `state: running` then
+`finished`) holds `status`, the settings and floors used, the cassette counters, `totals` and one entry per
+pair: `status` (`judged`, `invalid_output`, `unresolved`, `same_root`, `no_evidence`, `error`, `skipped`),
+the two roots, the request (allowance, output budget, the prompt's source and chunk aliases with their IDs, no
+text), each attempt (wall and provider time, input, output and reasoning tokens, run ID, the raw output),
+every raw item (type, importance and confidence 0 to 100, evidence aliases, `passesFloors`, `outcome`: `kept`,
+`below_floors` or `over_allowance`), the relations the matcher would keep, `verdict` (`related` or
+`not_related`) and the relations the library already holds (never shown to the decider). `summary.json` gets
+`sourcePairs` with the totals and the path. `outcome` ignores saved relations, so it shows what the decider
+said, not what the library holds.
+
+The spike's 79 must-run pairs are in `scripts/golden/source-pairs/` (manifest keys and a join label only, no
+fixture text, no expected or forbidden labels). Each file is for the library state it was made from, loaded in
+the DEV profile that runs the command (loading a backup into a profile is not part of this mode; `npm run
+db:restore` makes a scratch cluster):
+
+| File | Pairs | Library state | `MEMORA_GOLDEN_RUN` | Backup it comes from | Cap (estimate) |
+| --- | ---: | --- | --- | --- | ---: |
+| `spike-f3-fix3.json` | 30 | FIX3, fixture after the v8 final run | `.cache/golden/matching-fixture/manifest.json` | `.cache/f0/backups/memora-backup-2026-10-15T00-47-37-770Z` | 120000 |
+| `spike-f3-fix1.json` | 18 | FIX1, fixture after the v8 first run | the same | `.cache/f1a/backups/memora-backup-2026-10-14T23-17-41-000Z` | 70000 |
+| `spike-f3-old.json` | 17 | OLD, the September benchmark library | the same | `.cache/matching-benchmark/memora-backup-2026-09-09T01-46-23-785Z` | 70000 |
+| `spike-f3-gold.json` | 14 | GOLD, golden library after `golden-small-v9-a` | `scripts/golden/manifest.json` | `.cache/f0/backups/memora-backup-2026-10-15T04-15-46-285Z` | 80000 |
+
+A pair's request depends on the library's notes and chunks, so a file run against another state of the library
+judges a different request. The label (`fix3:F1/Q1`) is the pair ID of the spike analysis. The caps are twice the
+plan's per-call figures (about 1.5k input tokens on the fixture, 2.1k on golden, about 0.4k output with
+reasoning). One run, for example the golden library (repeat per file with its manifest and cassette folder):
+
+```sh
+MEMORA_AI_CASSETTE=record MEMORA_AI_CASSETTE_DIR=.cache/golden/cassettes/source-spike-gold \
+MEMORA_GOLDEN_RUN=scripts/golden/manifest.json MEMORA_GOLDEN_ALLOW_NONEMPTY=1 \
+MEMORA_GOLDEN_SOURCE_PAIRS=scripts/golden/source-pairs/spike-f3-gold.json \
+MEMORA_GOLDEN_MAX_TOKENS=80000 MEMORA_GOLDEN_EXIT=1 MEMORA_DEV_BACKGROUND=1 \
+npm run dev -w @app/desktop
+```
 
 ## After a run
 

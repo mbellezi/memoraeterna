@@ -32,7 +32,7 @@ import { parseJsonOutput } from "./knowledge-processing.js";
  * writes no prose. Explanations are written when the owner opens a relation.
  */
 export const sourceRelationPromptVersion = "source-relations-v5";
-const sourceMatchingOperation = "source_relation_matching";
+export const sourceMatchingOperation = "source_relation_matching";
 /** Every catalog prompt the source decision is composed of: its identity is in the run fingerprint. */
 const sourceDecisionPromptIds = [
   "sources.decide",
@@ -86,6 +86,70 @@ export interface SourceRelationContext {
   /** Saved relations between the two works: they never reach the prompt. */
   existing: ExistingRelation[];
 }
+type SourceRelationReader = ReturnType<typeof createSourceRelationRepository>;
+
+/**
+ * What a pair of works is judged on, read-only: the evidence passages in content order (cut to the
+ * settings' length) and the saved relations between the two works. Null when the pair has fewer than
+ * two passages, which the matcher skips. `notes` are the pair's uncited note relations.
+ */
+export async function sourcePairContext(
+  repository: Pick<SourceRelationReader, "pairChunks" | "existing">,
+  rootId: string,
+  candidateId: string,
+  notes: SourceRelationNote[],
+  settings: Pick<SourceRelationSettings, "evidenceChunksPerSource" | "evidenceMaxCharacters">
+): Promise<SourceRelationContext | null> {
+  const chunks = orderSourceRelationChunks(
+    (
+      await repository.pairChunks(
+        rootId,
+        candidateId,
+        notes.flatMap((note) => [note.sourceChunkId, note.targetChunkId]),
+        settings.evidenceChunksPerSource
+      )
+    ).map((chunk) => ({
+      ...chunk,
+      content: chunk.content.slice(0, settings.evidenceMaxCharacters)
+    }))
+  );
+  if (chunks.length < 2) return null;
+  const existing = (await repository.existing(rootId, candidateId)) as ExistingRelation[];
+  return {
+    chunks,
+    notes: orientSymmetricNotes(
+      notes.filter(
+        (note) =>
+          chunks.some((chunk) => chunk.id === note.sourceChunkId) &&
+          chunks.some((chunk) => chunk.id === note.targetChunkId)
+      ),
+      aliasOrder(chunks).sources
+    ),
+    existing: existing.filter(
+      (relation) =>
+        chunks.some((chunk) => chunk.sourceItemId === relation.sourceItemId) &&
+        chunks.some((chunk) => chunk.sourceItemId === relation.targetSourceItemId)
+    )
+  };
+}
+
+/** A pair answers at most two items, within what is left of the root's proposal budget. */
+export const sourceDecisionAllowance = (
+  settings: Pick<SourceRelationSettings, "maxRelationsPerPair" | "maxRelations">,
+  proposals: number
+) =>
+  Math.min(
+    sourceDecisionLimits.maxItemsPerPair,
+    settings.maxRelationsPerPair,
+    settings.maxRelations - proposals
+  );
+
+/** The output budget of one decision call for the pair's allowance. */
+export const sourceDecisionMaxOutputTokens = (
+  settings: Pick<SourceRelationSettings, "maxOutputTokens">,
+  allowance: number
+) => Math.min(settings.maxOutputTokens, 500 + allowance * 700);
+
 /** Equal scores break on the work title: candidate IDs are random on every import. */
 const compareCandidateIdentity = (a: SourceRelationCandidate, b: SourceRelationCandidate) =>
   compareContent(a.title, b.title) || a.id.localeCompare(b.id);
@@ -148,7 +212,7 @@ export function orderSourceRelationChunks<
 }
 
 /** Source and root aliases (s1.., w1..) number the sources and roots in order of first appearance. */
-function aliasOrder(chunks: ReadonlyArray<SourceRelationChunk>) {
+export function aliasOrder(chunks: ReadonlyArray<SourceRelationChunk>) {
   return {
     sources: [...new Set(chunks.map((chunk) => chunk.sourceItemId))],
     roots: [...new Set(chunks.map((chunk) => chunk.rootId))]
@@ -666,20 +730,8 @@ export async function matchSources(options: {
           tally.relationLimitReached = true;
           break;
         }
-        const chunks = orderSourceRelationChunks(
-          (
-            await repository.pairChunks(
-              root,
-              candidate.id,
-              notes.flatMap((note) => [note.sourceChunkId, note.targetChunkId]),
-              settings.evidenceChunksPerSource
-            )
-          ).map((chunk) => ({
-            ...chunk,
-            content: chunk.content.slice(0, settings.evidenceMaxCharacters)
-          }))
-        );
-        if (chunks.length < 2) {
+        const context = await sourcePairContext(repository, root, candidate.id, notes, settings);
+        if (!context) {
           // Without evidence on both sides the pair cannot be judged, so it is no candidate.
           tally.candidatePairs--;
           total--;
@@ -688,29 +740,8 @@ export async function matchSources(options: {
           await report();
           continue;
         }
-        // A pair answers at most two items, within what is left of the root's proposal budget.
-        const allowance = Math.min(
-          sourceDecisionLimits.maxItemsPerPair,
-          settings.maxRelationsPerPair,
-          settings.maxRelations - state.proposals
-        );
-        const existing = (await repository.existing(root, candidate.id)) as ExistingRelation[];
-        const context: SourceRelationContext = {
-          chunks,
-          notes: orientSymmetricNotes(
-            notes.filter(
-              (note) =>
-                chunks.some((chunk) => chunk.id === note.sourceChunkId) &&
-                chunks.some((chunk) => chunk.id === note.targetChunkId)
-            ),
-            aliasOrder(chunks).sources
-          ),
-          existing: existing.filter(
-            (relation) =>
-              chunks.some((chunk) => chunk.sourceItemId === relation.sourceItemId) &&
-              chunks.some((chunk) => chunk.sourceItemId === relation.targetSourceItemId)
-          )
-        };
+        const { chunks } = context;
+        const allowance = sourceDecisionAllowance(settings, state.proposals);
         const prompt = sourceDecisionPrompt(
           context,
           allowance,
@@ -759,7 +790,7 @@ export async function matchSources(options: {
               attempt
             },
             signal,
-            { maxOutputTokens: Math.min(settings.maxOutputTokens, 500 + allowance * 700) }
+            { maxOutputTokens: sourceDecisionMaxOutputTokens(settings, allowance) }
           );
           if (!execution) throw new Error("errors.ai.noCompatibleModel");
           const reportedInputTokens = execution.inputTokens;
