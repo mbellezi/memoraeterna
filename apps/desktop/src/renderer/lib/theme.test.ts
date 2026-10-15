@@ -118,6 +118,44 @@ describe("applyTheme", () => {
   });
 });
 
+describe("the System theme", () => {
+  /** What the hook does: resolve the preference against the OS, apply it, and again on a change. */
+  function follow(preference: ThemePreference, scheme: ReturnType<typeof fakeScheme>) {
+    const { root, classes } = fakeRoot();
+    const apply = () =>
+      applyTheme(root, resolveTheme(preference, readSystemPrefersDark(scheme.matchMedia)));
+    apply();
+    const stop = subscribeSystemTheme(apply, scheme.matchMedia);
+    return { classes, stop };
+  }
+
+  it("follows the OS appearance live while it is chosen", () => {
+    const scheme = fakeScheme(false);
+    const { classes, stop } = follow("system", scheme);
+    expect([...classes]).toEqual(["light"]);
+    scheme.setDark(true);
+    expect([...classes]).toEqual(["dark"]);
+    scheme.setDark(false);
+    expect([...classes]).toEqual(["light"]);
+    stop();
+    scheme.setDark(true);
+    expect([...classes]).toEqual(["light"]);
+  });
+
+  it("is overridden by an explicit Light or Dark choice, whatever the OS does", () => {
+    const light = fakeScheme(true);
+    const explicitLight = follow("light", light);
+    expect([...explicitLight.classes]).toEqual(["light"]);
+    light.setDark(false);
+    light.setDark(true);
+    expect([...explicitLight.classes]).toEqual(["light"]);
+    const dark = fakeScheme(false);
+    const explicitDark = follow("dark", dark);
+    dark.setDark(false);
+    expect([...explicitDark.classes]).toEqual(["dark"]);
+  });
+});
+
 describe("useResolvedTheme", () => {
   function themeOf(preference: ThemePreference) {
     function Probe() {

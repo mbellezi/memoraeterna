@@ -1,7 +1,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { createKnowledgeGraphRepository, type PgPool } from "@app/db";
+import { createKnowledgeGraphRepository, createViewHistoryRepository, type PgPool } from "@app/db";
 import type { StorageSettings } from "../../shared/ipc.js";
 import { parseManagedMarkdown } from "./obsidian-projection.js";
 
@@ -280,6 +280,13 @@ export class SourceDeletionService {
           [entityIds]
         )
       ).rows.map((row) => row.id);
+      // The view history has no foreign keys: a deleted object's title snapshot goes with it, pinned
+      // or not, in the same transaction as the other derived rows.
+      await createViewHistoryRepository(client).forgetObjects({
+        sourceIds: sourceItemIds,
+        noteIds: atomicNoteIds,
+        entityIds: deletedEntityIds
+      });
       await client.query("commit");
 
       const graphCleanupFailed = await this.removeGraphProjections(

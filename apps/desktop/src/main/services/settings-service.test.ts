@@ -243,3 +243,48 @@ describe("navigation layout preferences", () => {
     expect((await service.getApp()).wikiTreeWidth).toBe(460);
   });
 });
+
+describe("theme preference", () => {
+  const settingsDirectory = async (prefix: string) => {
+    vi.stubEnv("MEMORA_DATABASE_URL", "");
+    const path = await mkdtemp(join(tmpdir(), prefix));
+    paths.push(path);
+    return path;
+  };
+
+  it("follows the system appearance on a new install", async () => {
+    expect(defaultAppSettings.themeMode).toBe("system");
+    const service = new SettingsService(await settingsDirectory("memora-theme-new-"));
+    expect((await service.getApp()).themeMode).toBe("system");
+  });
+
+  it.each(["dark", "light"] as const)(
+    "keeps the %s theme an existing install already stored",
+    async (themeMode) => {
+      const path = await settingsDirectory("memora-theme-stored-");
+      await writeFile(
+        join(path, "app-settings.json"),
+        JSON.stringify({
+          ...defaultAppSettings,
+          themeMode,
+          language: "en",
+          updatedAt: new Date().toISOString()
+        })
+      );
+      expect((await new SettingsService(path).getApp()).themeMode).toBe(themeMode);
+      // Saving something else does not reset it to the new default.
+      const service = new SettingsService(path);
+      await service.updateApp({ navigationCollapsed: true });
+      expect((await new SettingsService(path).getApp()).themeMode).toBe(themeMode);
+    }
+  );
+
+  it("remembers a return to the system appearance across restart", async () => {
+    const path = await settingsDirectory("memora-theme-system-");
+    const service = new SettingsService(path);
+    await service.updateApp({ themeMode: "dark" });
+    await service.updateApp({ themeMode: "system" });
+    expect((await new SettingsService(path).getApp()).themeMode).toBe("system");
+    await expect(service.updateApp({ themeMode: "auto" as never })).rejects.toThrow();
+  });
+});

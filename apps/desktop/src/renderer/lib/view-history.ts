@@ -1,7 +1,6 @@
+import { formatObjectAddress, parseObjectAddress, type ObjectKind } from "@app/domain";
 import {
-  formatObjectAddress,
-  parseObjectAddress,
-  type ObjectKind,
+  viewHistoryBounds,
   type ViewHistoryEntry,
   type ViewHistoryRecordInput
 } from "../../shared/view-history";
@@ -20,6 +19,7 @@ export function recordView(input: ViewHistoryRecordInput): void {
 
 /** The kinds the Library can open today; the recents list asks for these only. */
 export const recentKinds: readonly ObjectKind[] = ["source", "note"];
+/** Recent (unpinned) entries the list asks for; every pin (at most `pinMax`) comes besides them. */
 export const recentsListSize = 10;
 
 export interface OpenedObject {
@@ -29,7 +29,7 @@ export interface OpenedObject {
   parentAddress?: string;
 }
 
-const openKey = (object: OpenedObject) => formatObjectAddress(object.kind, object.id);
+const openKey = (object: OpenedObject) => formatObjectAddress({ kind: object.kind, id: object.id });
 
 /**
  * Which of the objects on screen are new opens. A view that stays on screen (or is only hidden and
@@ -83,7 +83,54 @@ export function openedLibraryObjects(
       kind: "note",
       id: note.id,
       title: note.title,
-      parentAddress: formatObjectAddress("source", source.id)
+      parentAddress: formatObjectAddress({ kind: "source", id: source.id })
     });
   return objects;
+}
+
+/** Where keyboard focus goes in the Recents list when an action removes the control that had it. */
+export type RecentsFocus =
+  | { target: "clear-confirmation" }
+  | { target: "clear-button" }
+  | { target: "title" }
+  | { target: "pin"; address: string };
+
+export interface Focusable {
+  focus(): void;
+}
+
+/**
+ * Moves focus to the requested control, or to the list title when that control is gone (the Clear
+ * button once nothing is left to clear, a pin whose entry left the list). Resolves with whether
+ * anything took focus. `find` looks a control up in the rendered list.
+ */
+export function applyRecentsFocus(
+  request: RecentsFocus,
+  find: (target: RecentsFocus) => Focusable | null
+): boolean {
+  const candidates: RecentsFocus[] =
+    request.target === "pin" || request.target === "clear-button"
+      ? [request, { target: "title" }]
+      : [request];
+  for (const candidate of candidates) {
+    const element = find(candidate);
+    if (element) {
+      element.focus();
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The list in two groups. Pins and recents have slots of their own, so a full set of pins never
+ * hides the recents; once every pin slot is taken no other entry can be pinned until one is freed.
+ */
+export function groupRecents(entries: readonly ViewHistoryEntry[]) {
+  const pinned = entries.filter((entry) => entry.pinned);
+  return {
+    pinned,
+    recent: entries.filter((entry) => !entry.pinned),
+    pinsFull: pinned.length >= viewHistoryBounds.pinMax
+  };
 }

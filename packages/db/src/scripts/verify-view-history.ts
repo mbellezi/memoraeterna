@@ -18,7 +18,8 @@ import {
   resolvePostgresSidecarPaths,
   runMigrations,
   viewHistoryAddress,
-  viewHistoryLimits
+  viewHistoryLimits,
+  viewHistoryPinLimitMessage
 } from "../index.js";
 
 /**
@@ -365,6 +366,180 @@ try {
   await db.query("delete from view_history");
   assert.equal((await history.list()).length, 0);
 
+  // Pins and recents have slots of their own: ten pins never push the recents off the list, and an
+  // eleventh pin is refused instead of being hidden where it could not be unpinned.
+  const pinCap = viewHistoryLimits.pinnedEntries;
+  const pinCandidates = Array.from({ length: pinCap + 1 }, () => randomUUID());
+  for (const [index, topic] of pinCandidates.entries())
+    await history.record({ kind: "topic", objectId: topic, title: `Pin candidate ${index}` });
+  for (const topic of pinCandidates.slice(0, pinCap))
+    assert.equal((await history.setPinned(viewHistoryAddress("topic", topic), true))?.pinned, true);
+  await assert.rejects(
+    history.setPinned(viewHistoryAddress("topic", pinCandidates[pinCap]!), true),
+    (error: Error) => error.message === viewHistoryPinLimitMessage,
+    "a pin past the cap is refused"
+  );
+  assert.equal(
+    (await history.setPinned(viewHistoryAddress("topic", pinCandidates[0]!), true))?.pinned,
+    true,
+    "pinning what is already pinned passes at the cap"
+  );
+  assert.equal(
+    await history.setPinned(viewHistoryAddress("topic", randomUUID()), true),
+    null,
+    "an address that was never opened is not a refused pin"
+  );
+  const recentTopics = Array.from({ length: 15 }, () => randomUUID());
+  await db.query(
+    `insert into view_history (kind, object_id, address, title, opened_at)
+     select 'topic', t, 'memora://topic/' || t, 'Recent ' || n, now() - make_interval(secs => n)
+     from unnest($1::uuid[]) with ordinality as x(t, n)`,
+    [recentTopics]
+  );
+  const page = await history.list({ limit: 10 });
+  assert.deepEqual(
+    page.map((entry) => entry.pinned),
+    [...Array(pinCap).fill(true), ...Array(10).fill(false)],
+    "every pin on top, and ten recents besides them"
+  );
+  assert.deepEqual(
+    page.slice(pinCap).map((entry) => entry.title),
+    ["Pin candidate 10", ...Array.from({ length: 9 }, (_, index) => `Recent ${index + 1}`)],
+    "the recents are the ten most recently opened that are not pinned"
+  );
+  assert.equal((await history.list({ limit: 1 })).length, pinCap + 1, "pins do not count in limit");
+  await history.setPinned(viewHistoryAddress("topic", pinCandidates[0]!), false);
+  assert.equal(
+    (await history.setPinned(viewHistoryAddress("topic", pinCandidates[pinCap]!), true))?.pinned,
+    true,
+    "unpinning frees a slot"
+  );
+  // A pin of an object that is gone is not listed, so it must not use up a slot either.
+  const ghost = await sources.create({ type: "StandaloneArticle", title: "Ghost source" });
+  await history.record({ kind: "source", objectId: ghost.id, title: "Ghost source" });
+  await history.setPinned(viewHistoryAddress("topic", pinCandidates[1]!), false);
+  assert.equal(
+    (await history.setPinned(viewHistoryAddress("source", ghost.id), true))?.pinned,
+    true
+  );
+  await db.query("delete from source_items where id = $1", [ghost.id]);
+  assert.equal(
+    (await history.setPinned(viewHistoryAddress("topic", pinCandidates[1]!), true))?.pinned,
+    true,
+    "a pin of a deleted object does not count against the cap"
+  );
+  assert.equal(
+    (await history.list({ limit: 1 })).filter((entry) => entry.pinned).length,
+    pinCap,
+    "ten visible pins, and the hidden one is not among them"
+  );
+  await db.query("delete from view_history");
+
+  // A title that fills the bound with characters outside the basic plane is stored whole.
+  const astral = await history.record({
+    kind: "topic",
+    objectId: randomUUID(),
+    title: `📚${"a".repeat(400)}`
+  });
+  assert.equal(
+    Array.from(astral.title).length,
+    viewHistoryLimits.titleCharacters,
+    "300 characters"
+  );
+  assert.equal(astral.title.length, viewHistoryLimits.titleCharacters + 1, "301 UTF-16 units");
+  await db.query("delete from view_history");
+
+  // Deleting an object forgets its history, pinned or not, and the entries it hosted: no title
+  // snapshot outlives the source it names.
+  const doomed = await sources.create({ type: "StandaloneArticle", title: "Doomed source" });
+  const survivor = await sources.create({ type: "StandaloneArticle", title: "Surviving source" });
+  const doomedEntity = randomUUID();
+  await entities(doomedEntity, "Doomed entity");
+  const survivingEntity = randomUUID();
+  await entities(survivingEntity, "Surviving entity");
+  const doomedNote = randomUUID();
+  const survivingNote = randomUUID();
+  const doomedAddress = viewHistoryAddress("source", doomed.id);
+  const survivorAddress = viewHistoryAddress("source", survivor.id);
+  await history.record({ kind: "source", objectId: doomed.id, title: "Doomed source" });
+  await history.setPinned(doomedAddress, true);
+  await history.record({
+    kind: "note",
+    objectId: doomedNote,
+    title: "A doomed note",
+    parentAddress: doomedAddress
+  });
+  await history.record({ kind: "entity", objectId: doomedEntity, title: "Doomed entity" });
+  await history.setPinned(viewHistoryAddress("entity", doomedEntity), true);
+  // An entry that survives as an object but could only be opened through the deleted host.
+  await history.record({
+    kind: "topic",
+    objectId: randomUUID(),
+    title: "Hosted topic",
+    parentAddress: doomedAddress
+  });
+  await history.record({ kind: "source", objectId: survivor.id, title: "Surviving source" });
+  await history.setPinned(survivorAddress, true);
+  await history.record({
+    kind: "note",
+    objectId: survivingNote,
+    title: "A surviving note",
+    parentAddress: survivorAddress
+  });
+  await history.record({ kind: "entity", objectId: survivingEntity, title: "Surviving entity" });
+  assert.equal(
+    (await db.query("select count(*)::int as count from view_history")).rows[0]?.count,
+    7
+  );
+  // The deletion service runs this in its transaction, with the ids of what it deleted.
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const forgotten = await createViewHistoryRepository(client).forgetObjects({
+      sourceIds: [doomed.id],
+      noteIds: [doomedNote],
+      entityIds: [doomedEntity]
+    });
+    assert.equal(forgotten, 4, "the source, its note, the entity and the entry it hosted");
+    await client.query("delete from source_items where id = $1", [doomed.id]);
+    await client.query("delete from entities where id = $1", [doomedEntity]);
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  assert.deepEqual(
+    (await db.query<{ title: string }>("select title from view_history order by title")).rows.map(
+      (row) => row.title
+    ),
+    ["A surviving note", "Surviving entity", "Surviving source"],
+    "the deleted objects left no row behind, even the pinned ones; the others stay"
+  );
+  assert.equal(await history.forgetObjects({}), 0, "nothing to forget");
+  assert.equal(
+    await history.forgetObjects({ sourceIds: [randomUUID()] }),
+    0,
+    "an object with no history forgets nothing"
+  );
+
+  // Clear is a backstop: a pin of an object deleted by a path that bypassed the deletion service
+  // goes, the pins of existing objects stay.
+  const orphan = await sources.create({ type: "StandaloneArticle", title: "Orphan source" });
+  await history.record({ kind: "source", objectId: orphan.id, title: "Orphan source" });
+  await history.setPinned(viewHistoryAddress("source", orphan.id), true);
+  await db.query("delete from source_items where id = $1", [orphan.id]);
+  assert.equal(await history.clear(), 3, "the orphan pin, the unpinned note and entity");
+  assert.deepEqual(
+    (await db.query<{ title: string }>("select title from view_history")).rows.map(
+      (row) => row.title
+    ),
+    ["Surviving source"],
+    "the pin of an existing source stays"
+  );
+  await db.query("delete from view_history");
+
   // 5. The library reset clears the view history with every other cleared table.
   await history.record({ kind: "source", objectId: source.id, title: "Kept source" });
   await history.setPinned(viewHistoryAddress("source", source.id), true);
@@ -385,6 +560,10 @@ try {
         "recents list newest first with pins on top; kind filter and page bound",
         "objects that no longer exist (source, entity, note) are left out of a read",
         "unpinned entries are bounded to the retention limit and pins are kept",
+        "pins are capped, refused past the cap, never push the recents off the list, and a pin of a deleted object uses no slot",
+        "a title of 300 characters beyond the basic plane is stored whole",
+        "deleting a source, note or entity forgets its history, pinned or not, and what it hosted",
+        "clear also forgets pins of objects that no longer exist",
         "constraints refuse a wrong kind, address, title, count, pin or parent",
         "clear keeps the pins; the library reset clears the table"
       ],

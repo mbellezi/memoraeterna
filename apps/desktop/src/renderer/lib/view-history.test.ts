@@ -1,12 +1,17 @@
+import { formatObjectAddress } from "@app/domain";
 import { describe, expect, it, vi } from "vitest";
-import { formatObjectAddress } from "../../shared/view-history";
+import { viewHistoryBounds, type ViewHistoryEntry } from "../../shared/view-history";
 import {
+  applyRecentsFocus,
+  groupRecents,
   openedLibraryObjects,
   recentKinds,
   recentOpenTarget,
   recordView,
   viewsToRecord,
-  type OpenedObject
+  type Focusable,
+  type OpenedObject,
+  type RecentsFocus
 } from "./view-history";
 
 const sourceId = "00000000-0000-4000-8000-0000000000a1";
@@ -18,7 +23,7 @@ const note: OpenedObject = {
   kind: "note",
   id: noteId,
   title: "A note",
-  parentAddress: formatObjectAddress("source", sourceId)
+  parentAddress: formatObjectAddress({ kind: "source", id: sourceId })
 };
 
 describe("which opens are recorded", () => {
@@ -82,7 +87,7 @@ describe("where a recent entry leads", () => {
       recentOpenTarget({
         kind: "note",
         id: noteId,
-        parentAddress: formatObjectAddress("source", sourceId)
+        parentAddress: formatObjectAddress({ kind: "source", id: sourceId })
       })
     ).toEqual({ sourceItemId: sourceId, atomicNoteId: noteId });
   });
@@ -93,7 +98,7 @@ describe("where a recent entry leads", () => {
       recentOpenTarget({
         kind: "note",
         id: noteId,
-        parentAddress: formatObjectAddress("entity", sourceId)
+        parentAddress: formatObjectAddress({ kind: "entity", id: sourceId })
       })
     ).toBeNull();
     for (const kind of ["topic", "question", "entity"] as const)
@@ -117,5 +122,88 @@ describe("recording an open", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("the Recents list in two groups", () => {
+  const entry = (index: number, pinned: boolean): ViewHistoryEntry => ({
+    address: `memora://source/00000000-0000-4000-8000-00000000${String(index).padStart(4, "0")}`,
+    kind: "source",
+    id: `00000000-0000-4000-8000-00000000${String(index).padStart(4, "0")}`,
+    title: `Source ${index}`,
+    parentAddress: null,
+    openedAt: "2026-10-15T10:00:00.000Z",
+    openCount: 1,
+    pinned
+  });
+
+  it("separates the pins from the recents and keeps the order inside each group", () => {
+    const groups = groupRecents([entry(1, true), entry(2, true), entry(3, false), entry(4, false)]);
+    expect(groups.pinned.map((item) => item.title)).toEqual(["Source 1", "Source 2"]);
+    expect(groups.recent.map((item) => item.title)).toEqual(["Source 3", "Source 4"]);
+    expect(groups.pinsFull).toBe(false);
+  });
+
+  it("says when every pin slot is taken, while the recents stay on the list", () => {
+    const pins = Array.from({ length: viewHistoryBounds.pinMax }, (_, index) => entry(index, true));
+    const groups = groupRecents([...pins, entry(99, false)]);
+    expect(groups.pinsFull).toBe(true);
+    expect(groups.recent.map((item) => item.title)).toEqual(["Source 99"]);
+    expect(groupRecents(pins.slice(1)).pinsFull).toBe(false);
+    expect(groupRecents([])).toEqual({ pinned: [], recent: [], pinsFull: false });
+  });
+});
+
+describe("moving focus in the Recents list", () => {
+  function controls(present: Array<RecentsFocus["target"]>, address = "memora://source/a") {
+    const focused: string[] = [];
+    const element = (name: string): Focusable => ({ focus: () => void focused.push(name) });
+    const find = (request: RecentsFocus) =>
+      present.includes(request.target) && (request.target !== "pin" || request.address === address)
+        ? element(request.target)
+        : null;
+    return { find, focused };
+  }
+
+  it("moves into the confirmation when it opens, and to the title when it is confirmed", () => {
+    const all = controls(["clear-confirmation", "clear-button", "title", "pin"]);
+    expect(applyRecentsFocus({ target: "clear-confirmation" }, all.find)).toBe(true);
+    expect(applyRecentsFocus({ target: "title" }, all.find)).toBe(true);
+    expect(all.focused).toEqual(["clear-confirmation", "title"]);
+  });
+
+  it("returns to the Clear button when the confirmation is cancelled", () => {
+    const all = controls(["clear-button", "title"]);
+    expect(applyRecentsFocus({ target: "clear-button" }, all.find)).toBe(true);
+    expect(all.focused).toEqual(["clear-button"]);
+  });
+
+  it("falls back to the title when the control is gone, instead of leaving focus on the page", () => {
+    const noButton = controls(["title"]);
+    expect(applyRecentsFocus({ target: "clear-button" }, noButton.find)).toBe(true);
+    expect(noButton.focused).toEqual(["title"]);
+    const noPin = controls(["title"]);
+    expect(applyRecentsFocus({ target: "pin", address: "memora://source/a" }, noPin.find)).toBe(
+      true
+    );
+    expect(noPin.focused).toEqual(["title"]);
+  });
+
+  it("follows a pin to its new place by address, not to a pin of another entry", () => {
+    const list = controls(["pin", "title"], "memora://source/a");
+    expect(applyRecentsFocus({ target: "pin", address: "memora://source/a" }, list.find)).toBe(
+      true
+    );
+    expect(list.focused).toEqual(["pin"]);
+    const other = controls(["pin", "title"], "memora://source/b");
+    applyRecentsFocus({ target: "pin", address: "memora://source/a" }, other.find);
+    expect(other.focused).toEqual(["title"]);
+  });
+
+  it("does nothing, and says so, when there is nowhere to move focus", () => {
+    const empty = controls([]);
+    expect(applyRecentsFocus({ target: "clear-confirmation" }, empty.find)).toBe(false);
+    expect(applyRecentsFocus({ target: "clear-button" }, empty.find)).toBe(false);
+    expect(empty.focused).toEqual([]);
   });
 });

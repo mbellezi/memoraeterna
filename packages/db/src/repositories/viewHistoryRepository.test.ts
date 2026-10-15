@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { objectKinds, parseObjectAddress } from "@app/domain";
 import { describe, expect, it, vi } from "vitest";
 import type { QueryResult, QueryResultRow } from "pg";
 
@@ -10,7 +11,8 @@ import {
   normalizeViewHistoryTitle,
   viewHistoryAddress,
   viewHistoryKinds,
-  viewHistoryLimits
+  viewHistoryLimits,
+  viewHistoryPinLimitMessage
 } from "./viewHistoryRepository.js";
 import type { Queryable } from "./types.js";
 
@@ -42,7 +44,16 @@ function setup(rows: QueryResultRow[] = [], rowCount = rows.length) {
 describe("view history repository", () => {
   it("addresses an object by kind and ID, never by title", () => {
     expect(viewHistoryAddress("note", noteId)).toBe(`memora://note/${noteId}`);
+    // The one parser and kind list are the domain's, so the table check and the address grammar
+    // cannot drift from the router, links and Cmd-K.
+    expect(viewHistoryKinds).toBe(objectKinds);
     expect(viewHistoryKinds).toEqual(["source", "note", "topic", "question", "entity"]);
+    for (const kind of objectKinds)
+      expect(parseObjectAddress(viewHistoryAddress(kind, noteId))).toEqual({ kind, id: noteId });
+    expect(viewHistoryAddress("source", sourceId.toUpperCase())).toBe(
+      `memora://source/${sourceId}`
+    );
+    expect(() => viewHistoryAddress("source", "My Source")).toThrow();
   });
 
   it("keeps the kinds and the address shape in the migration that creates the table", () => {
@@ -104,7 +115,7 @@ describe("view history repository", () => {
     expect(values[4]).toBe(`memora://source/${sourceId}`);
   });
 
-  it("lists pinned entries first and bounds the page", async () => {
+  it("gives pins and recents slots of their own, and bounds both", async () => {
     const { repository, query } = setup([storedRow({ pinned: true })]);
     expect(await repository.list()).toHaveLength(1);
     await repository.list({ limit: 1000, kinds: ["source", "note"] });
@@ -112,9 +123,15 @@ describe("view history repository", () => {
     const calls = query.mock.calls as unknown as Array<[string, unknown[]]>;
     expect(calls[0]![0]).toContain("order by h.pinned desc, h.opened_at desc");
     expect(calls[0]![0]).toContain("from source_items s where s.id = h.object_id");
-    expect(calls[0]![1]).toEqual([null, viewHistoryLimits.listDefault]);
-    expect(calls[1]![1]).toEqual([["source", "note"], viewHistoryLimits.listMax]);
-    expect(calls[2]![1]).toEqual([null, 1]);
+    // Pins are numbered apart from recents, so many pins never push the recents off the page.
+    expect(calls[0]![0]).toContain("partition by h.pinned order by h.opened_at desc");
+    expect(calls[0]![0]).toContain(
+      "(h.pinned and h.slot <= $3) or (not h.pinned and h.slot <= $2)"
+    );
+    const pins = viewHistoryLimits.pinnedEntries;
+    expect(calls[0]![1]).toEqual([null, viewHistoryLimits.listDefault, pins]);
+    expect(calls[1]![1]).toEqual([["source", "note"], viewHistoryLimits.listMax, pins]);
+    expect(calls[2]![1]).toEqual([null, 1, pins]);
   });
 
   it("pins and unpins by address, and reports an address that was never opened", async () => {
@@ -122,14 +139,64 @@ describe("view history repository", () => {
     expect((await found.repository.setPinned(`memora://source/${sourceId}`, true))?.pinned).toBe(
       true
     );
-    expect(found.query.mock.calls[0]![1]).toEqual([`memora://source/${sourceId}`, true]);
+    expect(found.query.mock.calls[0]![1]).toEqual([
+      `memora://source/${sourceId}`,
+      true,
+      viewHistoryLimits.pinnedEntries
+    ]);
     const missing = setup([]);
     expect(await missing.repository.setPinned(`memora://source/${sourceId}`, false)).toBeNull();
+    expect(missing.query).toHaveBeenCalledTimes(1);
+    expect(await missing.repository.setPinned(`memora://source/${sourceId}`, true)).toBeNull();
   });
 
-  it("clears the unpinned entries and keeps the pins", async () => {
+  it("refuses a new pin past the cap, but still unpins and re-pins a pinned entry", async () => {
+    expect(viewHistoryLimits.pinnedEntries).toBe(10);
+    const address = `memora://source/${sourceId}`;
+    // The update touches nothing at the cap; the entry exists, so the pin is refused.
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      .mockResolvedValueOnce({ rows: [{ "?column?": 1 }], rowCount: 1 });
+    const repository = createViewHistoryRepository({ query } as unknown as Queryable);
+    await expect(repository.setPinned(address, true)).rejects.toThrow(viewHistoryPinLimitMessage);
+    const [update] = query.mock.calls[0] as unknown as [string];
+    // Only a new pin counts: unpinning, and pinning what is already pinned, always pass.
+    expect(update).toContain("not $2::boolean or h.pinned");
+    // A pin of an object that is gone is not listed, so it does not use up a slot either.
+    expect(update).toContain("from view_history p");
+    expect(update).toContain("p.pinned and");
+    expect(update).toContain("from source_items s where s.id = p.object_id");
+    expect(update).toContain(") < $3");
+    expect(query.mock.calls[1]![1]).toEqual([address]);
+  });
+
+  it("forgets the entries of deleted objects, pinned or not, and those they hosted", async () => {
+    const { repository, query } = setup([], 3);
+    expect(
+      await repository.forgetObjects({
+        sourceIds: [sourceId],
+        noteIds: [noteId],
+        entityIds: []
+      })
+    ).toBe(3);
+    const [sql, values] = query.mock.calls[0] as unknown as [string, unknown[]];
+    expect(sql).toContain("delete from view_history");
+    expect(sql).not.toContain("pinned");
+    expect(values).toEqual([[sourceId], [noteId], [], [`memora://source/${sourceId}`]]);
+    // Nothing deleted, nothing asked.
+    expect(await repository.forgetObjects({})).toBe(0);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the unpinned entries and the pins of objects that no longer exist", async () => {
     const { repository, query } = setup([], 4);
     expect(await repository.clear()).toBe(4);
-    expect(query.mock.calls[0]![0]).toBe("delete from view_history where pinned = false");
+    const sql = query.mock.calls[0]![0] as string;
+    expect(sql).toContain("delete from view_history h where h.pinned = false or not (");
+    // Pins of existing objects are not matched; a pin of a vanished object is.
+    expect(sql).toContain("from source_items s where s.id = h.object_id");
+    expect(sql).toContain("from atomic_notes n where n.id = h.object_id");
+    expect(sql).toContain("from entities e where e.id = h.object_id");
   });
 });

@@ -431,6 +431,8 @@
     "pin": "Pin {title}",
     "unpin": "Unpin {title}",
     "pinned": "Pinned",
+    "recentSection": "Recent",
+    "pinLimit": "You can pin up to {count} items. Unpin one to pin another.",
     "changeFailed": "The change could not be saved.",
     "clear": "Clear recents",
     "clearQuestion": "Clear recent items? Pinned items stay.",
@@ -1371,7 +1373,8 @@
       "zoomSensitivityFaster": "Faster",
       "themeModes": {
         "dark": "Dark",
-        "light": "Light"
+        "light": "Light",
+        "system": "System"
       }
     },
     "storage": {

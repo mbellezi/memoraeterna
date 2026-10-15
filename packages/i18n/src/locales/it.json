@@ -431,6 +431,8 @@
     "pin": "Fissa {title}",
     "unpin": "Rimuovi {title} dai fissati",
     "pinned": "Fissato",
+    "recentSection": "Recenti",
+    "pinLimit": "Puoi fissare fino a {count} elementi. Rimuovine uno dai fissati per fissarne un altro.",
     "changeFailed": "Non è stato possibile salvare la modifica.",
     "clear": "Cancella recenti",
     "clearQuestion": "Cancellare gli elementi recenti? Quelli fissati restano.",
@@ -1369,7 +1371,8 @@
       "zoomSensitivityFaster": "Piu veloce",
       "themeModes": {
         "dark": "Scuro",
-        "light": "Chiaro"
+        "light": "Chiaro",
+        "system": "Sistema"
       }
     },
     "storage": {

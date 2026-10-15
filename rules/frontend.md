@@ -5,14 +5,12 @@ accessibility, visualizations or user-visible backend messages.
 
 ## Stack and structure
 
-- Build the working knowledge tool, not marketing pages (stack: `STACK.md`).
 - The target information architecture (destinations, workspace zones, object
   pages) is described in `docs/plan.md`. Objects are addressed by stable
   UUID-based `memora://` references, never by titles (target F5).
 - New code receives live updates through pushed events, not polling. Large lists
-  and trees use bounded pages or virtualization.
-- Background state is shown quietly (status indicators, drawers), not by
-  blocking the reading surface.
+  and trees use bounded pages or virtualization. Background state is shown
+  quietly (status indicators, drawers), never by blocking the reading surface.
 - Views that hold navigation, filters or scroll (Library, Wiki) stay mounted while hidden. A hidden view loads nothing, holds no open modal and ignores history events; shown again it refreshes in place only when its key is unchanged and its last load succeeded, otherwise a failed load stays visible and retryable.
 - A page resolves its links in one batch per revision and evidence-currency change; an opened note is read again. A refresh that found no change neither re-renders nor re-requests, and a failed resolution backs off.
 
@@ -23,14 +21,16 @@ accessibility, visualizations or user-visible backend messages.
   colours or arbitrary font sizes (the quality ratchet only lets them decrease).
 - Colour carries meaning (object type, relation stance, state) and is never the
   only signal: pair it with a glyph, icon or label.
-- Text meets WCAG AA contrast (4.5:1, glyphs and large text 3:1) in light and
-  dark themes; `npm run contrast` (part of `npm run check`) enforces it for
-  every token pair. The graph and canvases read colours from tokens.
+- Text meets WCAG AA contrast (4.5:1, glyphs, boundaries and large text 3:1) in
+  light and dark; `npm run contrast` (part of `npm run check`) enforces it for
+  every token pair. Fields and buttons bound themselves with `--border-strong`,
+  never `--border-subtle`. The graph and canvases read colours from tokens.
 - Inter (interface) and Source Serif 4 (reading surfaces) are bundled offline; no
   remote font or stylesheet is used. Motion is short and functional; durations
   are tokens, zero under `prefers-reduced-motion`.
-- Check UI in the DEV app at the normal opening window size (never full screen),
-  at the minimum supported window size, and in both themes.
+- Themes: System (the default, follows the OS live), Light and Dark. Check UI in
+  the DEV app at the normal opening window size (never full screen), at the
+  minimum supported window size, and in both light and dark.
 
 ## Accessibility
 
@@ -38,10 +38,10 @@ accessibility, visualizations or user-visible backend messages.
 - Everything is keyboard-operable with visible focus. Trees use one roving tab
   stop (arrows, Home, End); dialogs trap and restore focus and close with Escape.
 - Single-key shortcuts never fire while typing in inputs or editors, and app
-  shortcuts do not collide with platform conventions (no Cmd-. Cmd-E Cmd-I).
-  The localized application menu owns them: Cmd-W closes the topmost dialog or
-  panel, never discards unsaved edits, does nothing when nothing is open and
-  never closes the window; Cmd-[ and Cmd-] follow the view history.
+  shortcuts do not collide with platform or editing conventions (no Cmd-. Cmd-E
+  Cmd-I or Option-Arrow). The localized application menu owns them: Cmd-W closes
+  the topmost dialog or panel, never discards unsaved edits, does nothing when
+  nothing is open and never closes the window; Cmd-[ and Cmd-] follow the history.
 - Canvas and WebGL views (graphs, icicles, maps) offer a text or table
   alternative. Live updates that matter are announced through live regions.
 - Undo affordances stay visible long enough to use and are reachable by keyboard.
@@ -52,9 +52,8 @@ accessibility, visualizations or user-visible backend messages.
 
 - Every important view covers loading, empty, error and success states (plus
   partial or waiting states). Failures stay visible and retryable.
-- Product copy is written from the user's side: say what is happening and what
-  the user can do. Internal state-machine terms, raw IDs and UUIDs never appear
-  in normal UI; they belong in Diagnostics.
+- Product copy speaks from the user's side: what is happening and what they can
+  do. State-machine terms, raw IDs and UUIDs never appear in normal UI (Diagnostics).
 - Cancelable work offers cancellation (destructive actions: `security-privacy.md`).
 - Model-generated text is rendered as safe React nodes, never raw HTML.
   Reference tags resolve by canonical ID and render as safe links or badges;
@@ -67,7 +66,8 @@ accessibility, visualizations or user-visible backend messages.
 - Supported locales are `en` (fallback), `pt-BR`, `it`, `fr` and `es`. Add or
   update every locale in the same change and keep typed key parity.
 - The content-generation language is separate from the interface language; both
-  initially follow the supported OS locale with English fallback.
+  initially follow the supported OS locale with English fallback. `<html lang>`
+  follows the interface language.
 - Technical identifiers (protocol names, enum values, table names, routes) are
   not product copy unless displayed.
 - The Obsidian plugin and the Chrome extension follow their host conventions.

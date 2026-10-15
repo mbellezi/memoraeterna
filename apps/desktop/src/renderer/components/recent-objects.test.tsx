@@ -1,7 +1,7 @@
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { createTranslator, supportedLanguageCodes } from "@app/i18n";
-import type { ViewHistoryEntry } from "../../shared/view-history";
+import { viewHistoryBounds, type ViewHistoryEntry } from "../../shared/view-history";
 import {
   LibraryView,
   libraryBackLabelKey,
@@ -95,9 +95,91 @@ describe("the Recents list", () => {
     expect(html).toContain('aria-label="Unpin Memory and attention"');
     expect(html).toContain('aria-label="Pin A note about sleep"');
     expect(html).toContain("Clear recents");
-    // No raw ID or address reaches the screen.
-    expect(html).not.toContain(sourceId);
-    expect(html).not.toContain("memora://");
+    // No raw ID or address reaches the screen (markers for focus are attributes, never text).
+    const visible = html.replace(/<[^>]*>/gu, "");
+    expect(visible).not.toContain(sourceId);
+    expect(visible).not.toContain("memora://");
+  });
+
+  it("groups pinned entries before the recent ones, naming each group", () => {
+    const both = render({
+      status: "ready",
+      entries: [
+        entry({ pinned: true }),
+        entry({
+          address: `memora://note/${noteId}`,
+          kind: "note",
+          id: noteId,
+          title: "Recent note"
+        })
+      ]
+    });
+    expect(both.indexOf(">Pinned<")).toBeGreaterThan(-1);
+    expect(both.indexOf(">Recent<")).toBeGreaterThan(both.indexOf(">Pinned<"));
+    expect(both.indexOf("Recent note")).toBeGreaterThan(both.indexOf(">Recent<"));
+    expect(both).toContain('aria-labelledby="library-recents-pinned"');
+    expect(both).toContain('aria-labelledby="library-recents-recent"');
+    // A list of recents alone needs no sub-heading under the Recents title.
+    const recentsOnly = render({ status: "ready", entries: [entry()] });
+    expect(recentsOnly).not.toContain("<h3");
+    // Pins alone keep their group heading and offer nothing to clear.
+    const pinsOnly = render({ status: "ready", entries: [entry({ pinned: true })] });
+    expect(pinsOnly).toContain(">Pinned<");
+    expect(pinsOnly).not.toContain(">Recent<");
+  });
+
+  it("keeps the recents on the list and offers clearing when every pin slot is taken", () => {
+    const pins = Array.from({ length: viewHistoryBounds.pinMax }, (_, index) =>
+      entry({
+        address: `memora://source/00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+        id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+        title: `Pinned source ${index}`,
+        pinned: true
+      })
+    );
+    const html = render({ status: "ready", entries: [...pins, entry({ title: "Fresh recent" })] });
+    expect(html).toContain("Fresh recent");
+    expect(html).toContain("Clear recents");
+    // No more pins: the note says why, and only the entries that are not pinned lose their control.
+    expect(html).toContain("You can pin up to 10 items. Unpin one to pin another.");
+    const control = (title: string) => {
+      const tag = html.match(new RegExp(`<button[^>]*aria-label="${title}"[^>]*>`, "u"))?.[0];
+      expect(tag, title).toBeDefined();
+      return tag!;
+    };
+    expect(control("Pin Fresh recent")).toContain('disabled=""');
+    expect(control("Unpin Pinned source 0")).not.toContain('disabled=""');
+    // With a free slot the control is enabled and no note is shown.
+    const free = render({
+      status: "ready",
+      entries: [...pins.slice(1), entry({ title: "Fresh recent" })]
+    });
+    expect(free).not.toContain("You can pin up to");
+    expect(free.match(/<button[^>]*aria-label="Pin Fresh recent"[^>]*>/u)?.[0]).not.toContain(
+      'disabled=""'
+    );
+  });
+
+  it("names the clear confirmation so focus can move into it, and the title so it can come back", () => {
+    const html = render({ status: "ready", entries: [entry()] }, { confirmingClear: true });
+    const group = html.match(/<div[^>]*role="group"[^>]*>/u)?.[0] ?? "";
+    expect(group).toContain('tabindex="-1"');
+    expect(group).toContain('data-recents-focus="clear-confirmation"');
+    // The group is labelled by the question, which is announced when focus enters it.
+    const labelledBy = /aria-labelledby="([^"]+)"/u.exec(group)?.[1];
+    expect(labelledBy).toBe("library-recents-clear-question");
+    expect(html).toContain(`id="${labelledBy}"`);
+    expect(html.match(/<h2[^>]*>/u)?.[0]).toContain('data-recents-focus="title"');
+    expect(html.match(/<h2[^>]*>/u)?.[0]).toContain('tabindex="-1"');
+    // The Clear button that the confirmation replaces is the place Cancel returns to.
+    const idle = render({ status: "ready", entries: [entry()] });
+    expect(idle).toContain('data-recents-focus="clear-button"');
+    expect(idle).not.toContain('role="group"');
+  });
+
+  it("marks each pin control with its address, so focus can follow it between the groups", () => {
+    const html = render({ status: "ready", entries: [entry()] });
+    expect(html).toContain(`data-recents-pin="memora://source/${sourceId}"`);
   });
 
   it("offers clearing only when there is something to clear, and says what stays", () => {

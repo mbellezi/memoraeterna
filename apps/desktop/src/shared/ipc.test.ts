@@ -9,6 +9,7 @@ import {
   storageSettingsSchema,
   storageSettingsUpdateSchema,
   systemInfoSchema,
+  themeModeSchema,
   windowNavigationDirectionSchema
 } from "./ipc";
 import {
@@ -102,7 +103,8 @@ describe("desktop IPC contracts", () => {
       })
     ).toMatchObject({
       language: "pt-BR",
-      themeMode: "dark",
+      // A new install follows the OS appearance until the owner picks a theme.
+      themeMode: "system",
       graphWheelZoomSensitivity: 1,
       keepLocalEmbeddingModelsLoaded: true,
       summaryMinimumWordCount: 40,
@@ -113,6 +115,20 @@ describe("desktop IPC contracts", () => {
     expect(appSettingsUpdateSchema.parse({ themeMode: "light" })).toEqual({
       themeMode: "light"
     });
+    // System, Light and Dark are the three choices; a stored explicit choice stays valid.
+    expect(themeModeSchema.options).toEqual(["system", "light", "dark"]);
+    for (const themeMode of themeModeSchema.options) {
+      expect(appSettingsUpdateSchema.parse({ themeMode })).toEqual({ themeMode });
+      expect(
+        appSettingsSchema.parse({
+          ...defaultAppSettings,
+          themeMode,
+          language: "en",
+          updatedAt: new Date(0).toISOString()
+        }).themeMode
+      ).toBe(themeMode);
+    }
+    expect(() => appSettingsUpdateSchema.parse({ themeMode: "auto" })).toThrow();
     expect(appSettingsUpdateSchema.parse({ graphWheelZoomSensitivity: 1.25 })).toEqual({
       graphWheelZoomSensitivity: 1.25
     });

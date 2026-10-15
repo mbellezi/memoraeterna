@@ -58,6 +58,7 @@ export class ViewHistoryService {
     return (await this.repository().list(input)).map(toEntry);
   }
 
+  /** Pins or unpins; a pin past the cap is refused with `viewHistoryPinLimitMessage`. */
   async setPinned(address: string, pinned: boolean): Promise<ViewHistoryEntry | null> {
     const stored = await this.repository().setPinned(address, pinned);
     if (!stored) return null;
@@ -65,7 +66,7 @@ export class ViewHistoryService {
     return toEntry(stored);
   }
 
-  /** Forgets every unpinned entry; pins stay. */
+  /** Forgets every unpinned entry and any pin of an object that is gone; other pins stay. */
   async clear(): Promise<number> {
     const removed = await this.repository().clear();
     if (removed > 0) this.options.onChanged?.();

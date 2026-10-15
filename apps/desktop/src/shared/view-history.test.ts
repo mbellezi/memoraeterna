@@ -1,10 +1,8 @@
+import { formatObjectAddress, objectKinds, parseObjectAddress } from "@app/domain";
 import { describe, expect, it } from "vitest";
 import { appMenuCommandSchema, appViewIds } from "./app-menu";
 import {
-  formatObjectAddress,
   objectAddressSchema,
-  objectKinds,
-  parseObjectAddress,
   viewHistoryBounds,
   viewHistoryEntrySchema,
   viewHistoryListInputSchema,
@@ -14,17 +12,24 @@ import {
 
 const id = "00000000-0000-4000-8000-000000000001";
 const other = "00000000-0000-4000-8000-000000000002";
+const mixed = "00000aa0-0000-4000-8000-00000000abcd";
 
 describe("object addresses", () => {
   it("are memora://<kind>/<uuid> and round-trip", () => {
     for (const kind of objectKinds) {
-      const address = formatObjectAddress(kind, id);
+      const address = formatObjectAddress({ kind, id });
       expect(address).toBe(`memora://${kind}/${id}`);
       expect(parseObjectAddress(address)).toEqual({ kind, id });
     }
   });
 
-  it("refuse titles, paths and other schemes, and normalize case", () => {
+  it("are the domain's: one parser and one kind list, with no anchors in a history address", () => {
+    for (const kind of objectKinds)
+      expect(objectAddressSchema.parse(`memora://${kind}/${id}`)).toBe(`memora://${kind}/${id}`);
+    expect(objectKinds).toEqual(["source", "note", "topic", "question", "entity"]);
+  });
+
+  it("refuse titles, paths and other schemes, and normalize the case of the id", () => {
     for (const bad of [
       "",
       `memora://page/${id}`,
@@ -33,11 +38,14 @@ describe("object addresses", () => {
       `memora://source/${id}#passage=${other}`,
       "memora://source/My Source",
       `https://example.com/source/${id}`,
-      `memora://open/source/${id}`
+      `memora://open/source/${id}`,
+      `MEMORA://Note/${id}`,
+      `memora://source/${id}#span=${other}`,
+      `memora://source/${id}${"a".repeat(400)}`
     ])
       expect(objectAddressSchema.safeParse(bad).success, bad).toBe(false);
-    expect(objectAddressSchema.parse(`MEMORA://Note/${id.toUpperCase()}`)).toBe(
-      `memora://note/${id}`
+    expect(objectAddressSchema.parse(`memora://note/${mixed.toUpperCase()}`)).toBe(
+      `memora://note/${mixed}`
     );
   });
 });
@@ -48,7 +56,7 @@ describe("view history requests", () => {
       kind: "note",
       id,
       title: `  Line one\n  line two ${"x".repeat(400)}`,
-      parentAddress: formatObjectAddress("source", other)
+      parentAddress: formatObjectAddress({ kind: "source", id: other })
     });
     expect(parsed.title.startsWith("Line one line two xxx")).toBe(true);
     expect(Array.from(parsed.title)).toHaveLength(viewHistoryBounds.titleCharacters);
@@ -65,7 +73,19 @@ describe("view history requests", () => {
       { kind: "source", id, title: "x", unexpected: 1 },
       { kind: "page", id, title: "x" },
       { kind: "source", id, title: "x", parentAddress: "not an address" },
-      { kind: "source", id, title: "x", parentAddress: formatObjectAddress("source", id) }
+      {
+        kind: "source",
+        id,
+        title: "x",
+        parentAddress: formatObjectAddress({ kind: "source", id })
+      },
+      // The same object in another case is still the object itself.
+      {
+        kind: "source",
+        id: mixed,
+        title: "x",
+        parentAddress: `memora://source/${mixed.toUpperCase()}`
+      }
     ])
       expect(viewHistoryRecordInputSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
   });
@@ -82,7 +102,10 @@ describe("view history requests", () => {
 
   it("pins by address with a real boolean", () => {
     expect(
-      viewHistoryPinInputSchema.parse({ address: formatObjectAddress("source", id), pinned: false })
+      viewHistoryPinInputSchema.parse({
+        address: formatObjectAddress({ kind: "source", id }),
+        pinned: false
+      })
     ).toEqual({ address: `memora://source/${id}`, pinned: false });
     expect(viewHistoryPinInputSchema.safeParse({ address: `memora://source/${id}` }).success).toBe(
       false
@@ -91,7 +114,7 @@ describe("view history requests", () => {
 
   it("reads back what the service sends", () => {
     const entry = {
-      address: formatObjectAddress("source", id),
+      address: formatObjectAddress({ kind: "source", id }),
       kind: "source",
       id,
       title: "A source",
@@ -105,6 +128,38 @@ describe("view history requests", () => {
     expect(viewHistoryEntrySchema.safeParse({ ...entry, openedAt: "yesterday" }).success).toBe(
       false
     );
+  });
+
+  it("counts a stored title in characters, like the database, not in UTF-16 units", () => {
+    const entry = (title: string) => ({
+      address: formatObjectAddress({ kind: "source", id }),
+      kind: "source",
+      id,
+      title,
+      parentAddress: null,
+      openedAt: "2026-10-15T10:00:00.000Z",
+      openCount: 1,
+      pinned: false
+    });
+    // The input is cut to 300 characters; such a title has more than 300 UTF-16 units.
+    for (const title of ["📚" + "a".repeat(400), "😀".repeat(400)]) {
+      const stored = viewHistoryRecordInputSchema.parse({ kind: "source", id, title }).title;
+      expect(Array.from(stored)).toHaveLength(viewHistoryBounds.titleCharacters);
+      expect(stored.length).toBeGreaterThan(viewHistoryBounds.titleCharacters);
+      expect(viewHistoryEntrySchema.safeParse(entry(stored)).success, stored.slice(0, 4)).toBe(
+        true
+      );
+    }
+    // One character beyond the bound, or nothing at all, is still refused.
+    expect(
+      viewHistoryEntrySchema.safeParse(entry("📚".repeat(viewHistoryBounds.titleCharacters + 1)))
+        .success
+    ).toBe(false);
+    expect(viewHistoryEntrySchema.safeParse(entry("")).success).toBe(false);
+  });
+
+  it("caps the pins at ten, so every pin fits on the Recents list", () => {
+    expect(viewHistoryBounds.pinMax).toBe(10);
   });
 });
 

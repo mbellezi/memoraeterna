@@ -431,6 +431,8 @@
     "pin": "Fijar {title}",
     "unpin": "Dejar de fijar {title}",
     "pinned": "Fijado",
+    "recentSection": "Recientes",
+    "pinLimit": "Puedes fijar hasta {count} elementos. Deja de fijar uno para fijar otro.",
     "changeFailed": "No se pudo guardar el cambio.",
     "clear": "Borrar recientes",
     "clearQuestion": "¿Borrar los elementos recientes? Los fijados se conservan.",
@@ -1375,7 +1377,8 @@
       "zoomSensitivityFaster": "Mas rapido",
       "themeModes": {
         "dark": "Oscuro",
-        "light": "Claro"
+        "light": "Claro",
+        "system": "Sistema"
       }
     },
     "storage": {

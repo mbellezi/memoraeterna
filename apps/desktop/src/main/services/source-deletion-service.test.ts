@@ -89,6 +89,25 @@ describe("SourceDeletionService", () => {
       pool.queries.some((query) => query.includes("not exists (select 1 from ai_task_run_sources"))
     ).toBe(true);
     expect(pool.queries.some((query) => query.includes("delete from source_items"))).toBe(true);
+    // The view history keeps title snapshots without foreign keys: they go in the same transaction,
+    // after the entities are known and before the commit.
+    const historyIndex = pool.queries.findIndex((query) =>
+      query.startsWith("delete from view_history")
+    );
+    expect(historyIndex).toBeGreaterThan(
+      pool.queries.findIndex((query) => query.startsWith("delete from entities"))
+    );
+    expect(historyIndex).toBe(pool.queries.length - 2);
+    expect(pool.values[historyIndex]).toEqual([
+      [rootSourceId, childSourceId, sectionSourceId],
+      [noteId],
+      ["ffffffff-ffff-4fff-8fff-ffffffffffff"],
+      [
+        `memora://source/${rootSourceId}`,
+        `memora://source/${childSourceId}`,
+        `memora://source/${sectionSourceId}`
+      ]
+    ]);
     expect(pool.queries.at(-1)).toBe("commit");
     await rm(root, { recursive: true, force: true });
   });
@@ -96,6 +115,8 @@ describe("SourceDeletionService", () => {
 
 class DeletionPool {
   readonly queries: string[] = [];
+  /** The parameters of each query, in the same order as `queries`. */
+  readonly values: Array<readonly unknown[] | undefined> = [];
 
   async connect() {
     return {
@@ -104,9 +125,13 @@ class DeletionPool {
     };
   }
 
-  async query<T extends QueryResultRow = QueryResultRow>(text: string): Promise<QueryResult<T>> {
+  async query<T extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: readonly unknown[]
+  ): Promise<QueryResult<T>> {
     const normalized = text.trim();
     this.queries.push(normalized);
+    this.values.push(values);
     let rows: QueryResultRow[] = [];
     if (normalized.startsWith("with recursive source_tree")) {
       rows = [{ id: rootSourceId }, { id: childSourceId }, { id: sectionSourceId }];

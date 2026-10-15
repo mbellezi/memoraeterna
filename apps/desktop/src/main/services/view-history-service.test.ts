@@ -1,9 +1,13 @@
 import type { IpcMain } from "electron";
 import type { PgPool } from "@app/db";
-import { viewHistoryKinds, viewHistoryLimits } from "@app/db";
+import { viewHistoryKinds, viewHistoryLimits, viewHistoryPinLimitMessage } from "@app/db";
 import { describe, expect, it, vi } from "vitest";
 import { ipcChannels } from "../../shared/ipc.js";
-import { objectKinds, viewHistoryBounds } from "../../shared/view-history.js";
+import { objectKinds } from "@app/domain";
+import {
+  viewHistoryBounds,
+  viewHistoryPinLimitMessage as sharedPinLimit
+} from "../../shared/view-history.js";
 import { registerViewHistoryIpc } from "./view-history-ipc.js";
 import { ViewHistoryService } from "./view-history-service.js";
 
@@ -47,6 +51,28 @@ describe("view history service", () => {
     expect(viewHistoryBounds.titleCharacters).toBe(viewHistoryLimits.titleCharacters);
     expect(viewHistoryBounds.listDefault).toBe(viewHistoryLimits.listDefault);
     expect(viewHistoryBounds.listMax).toBe(viewHistoryLimits.listMax);
+    expect(viewHistoryBounds.pinMax).toBe(viewHistoryLimits.pinnedEntries);
+    expect(sharedPinLimit).toBe(viewHistoryPinLimitMessage);
+  });
+
+  it("does not announce a pin that was refused at the cap", async () => {
+    const { service, onChanged, query } = setup();
+    query.mockRejectedValueOnce(new Error(viewHistoryPinLimitMessage));
+    await expect(service.setPinned(`memora://source/${sourceId}`, true)).rejects.toThrow(
+      viewHistoryPinLimitMessage
+    );
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
+  it("reads back a stored title that fills the bound with astral characters", async () => {
+    const title = "📚" + "a".repeat(viewHistoryBounds.titleCharacters - 1);
+    expect(title.length).toBe(viewHistoryBounds.titleCharacters + 1);
+    const { service } = setup([storedRow({ title })]);
+    expect((await service.list({}))[0]?.title).toBe(title);
+    const record = setup([storedRow({ title })]);
+    await expect(
+      record.service.record({ kind: "source", id: sourceId, title: "x" })
+    ).resolves.toMatchObject({ title });
   });
 
   it("records an open, answers with the stored entry and tells the renderer once", async () => {
@@ -161,7 +187,7 @@ describe("view history requests", () => {
       kind: "note",
       id: noteId,
       title: `  A\nvery ${"long ".repeat(100)}`,
-      parentAddress: `MEMORA://Source/${sourceId}`
+      parentAddress: `memora://source/${sourceId.toUpperCase()}`
     })) as { parentAddress: string };
     expect(entry.parentAddress).toBe(`memora://source/${sourceId}`);
     const calls = query.mock.calls as unknown as Array<[string, unknown[]]>;
@@ -187,8 +213,16 @@ describe("view history requests", () => {
     ).toMatchObject({ pinned: true });
     expect(await call(ipcChannels.viewHistoryClear)).toBe(1);
     const calls = query.mock.calls as unknown as Array<[string, unknown[]]>;
-    expect(calls[0]![1]).toEqual([null, viewHistoryLimits.listDefault]);
-    expect(calls[1]![1]).toEqual([["source", "note"], 10]);
-    expect(calls[2]![1]).toEqual([`memora://source/${sourceId}`, true]);
+    expect(calls[0]![1]).toEqual([
+      null,
+      viewHistoryLimits.listDefault,
+      viewHistoryLimits.pinnedEntries
+    ]);
+    expect(calls[1]![1]).toEqual([["source", "note"], 10, viewHistoryLimits.pinnedEntries]);
+    expect(calls[2]![1]).toEqual([
+      `memora://source/${sourceId}`,
+      true,
+      viewHistoryLimits.pinnedEntries
+    ]);
   });
 });

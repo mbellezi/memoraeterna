@@ -135,7 +135,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   mainWindow.webContents.on("before-input-event", (event, input) => {
-    const direction = navigationDirectionFromInput(input);
+    const direction = navigationDirectionFromInput(input, process.platform);
     if (!direction) return;
     event.preventDefault();
     sendNavigation(direction);

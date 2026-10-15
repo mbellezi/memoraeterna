@@ -241,7 +241,8 @@ export const databaseStatusSchema = z.object({
 });
 
 export const deletionPolicySchema = z.enum(["tombstone", "archive", "delete"]);
-export const themeModeSchema = z.enum(["dark", "light"]);
+/** "system" follows the OS appearance live; "light" and "dark" are explicit choices that always win. */
+export const themeModeSchema = z.enum(["system", "light", "dark"]);
 export const appLanguageCodes = ["en", "pt-BR", "it", "fr", "es"] as const;
 export const languageCodeSchema = z.enum(appLanguageCodes);
 export const windowNavigationDirectionSchema = z.enum(["back", "forward"]);
@@ -1605,7 +1606,7 @@ export type WikiResolvedLinks = z.infer<typeof wikiResolvedLinksSchema>;
 
 export const defaultAppSettings = {
   contentLanguage: "en",
-  themeMode: "dark",
+  themeMode: "system",
   graphWheelZoomSensitivity: 1,
   navigationCollapsed: false,
   wikiTreeWidth: 320,

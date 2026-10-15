@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkTokens,
   contrastRatio,
+  decorativeTokens,
   formatReport,
   parseCssBlocks,
   parseHexColour,
@@ -88,6 +89,49 @@ describe("colour tokens", () => {
     for (const name of stances)
       expect(sets.light.get(`--graph-stance-${name}`)).toBe(sets.dark.get(`--stance-${name}`));
     expect(sets.dark.has("--graph-canvas-center")).toBe(false);
+  });
+});
+
+describe("control boundaries", () => {
+  const ui = (file: string) => read(`${renderer}/components/ui/${file}`);
+  /** Whether a class list holds the utility itself, not a longer one such as `border-border-strong`. */
+  const uses = (classes: string, utility: string) =>
+    new RegExp(`(^|[\\s"'\`:])${utility}(?=[\\s"'\`/]|$)`, "u").test(classes);
+  const secondaryButton = /secondary:\s*"([^"]*)"/u.exec(ui("button.tsx"))?.[1] ?? "";
+
+  it("exempt only the decorative separator token from the contrast check", () => {
+    expect([...decorativeTokens]).toEqual(["--border-subtle"]);
+  });
+
+  it("are drawn by Input and the secondary Button with the checked token, never the exempt one", () => {
+    expect(secondaryButton).toContain("bg-surface");
+    for (const [name, classes] of [
+      ["Input", ui("input.tsx")],
+      ["secondary Button", secondaryButton]
+    ] as const) {
+      expect(uses(classes, "border-border-strong"), name).toBe(true);
+      expect(uses(classes, "border-border"), name).toBe(false);
+    }
+    // The utility is the token: border-border-strong is --border-strong, border-border is --border-subtle.
+    expect(stylesCss).toContain("--color-border-strong: var(--border-strong);");
+    expect(stylesCss).toContain("--color-border: var(--border-subtle);");
+  });
+
+  it("meet 3:1 against the fill and the host surface of those controls in both themes", () => {
+    const result = checkTokens(tokensCss);
+    for (const theme of ["light", "dark"] as const) {
+      const pairs = result.pairs.filter(
+        (pair) => pair.theme === theme && pair.foreground === "--border-strong"
+      );
+      // bg-surface (raised) and disabled/hover bg-soft are the fills; the canvas and cards host them.
+      expect(pairs.map((pair) => pair.background).sort()).toEqual([
+        "--surface-canvas",
+        "--surface-raised",
+        "--surface-soft"
+      ]);
+      for (const pair of pairs)
+        expect(pair.ratio, `${theme} ${pair.background}`).toBeGreaterThanOrEqual(3);
+    }
   });
 });
 

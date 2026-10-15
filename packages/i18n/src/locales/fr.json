@@ -431,6 +431,8 @@
     "pin": "Épingler {title}",
     "unpin": "Désépingler {title}",
     "pinned": "Épinglé",
+    "recentSection": "Récents",
+    "pinLimit": "Vous pouvez épingler jusqu’à {count} éléments. Désépinglez-en un pour en épingler un autre.",
     "changeFailed": "Impossible d’enregistrer la modification.",
     "clear": "Effacer les récents",
     "clearQuestion": "Effacer les éléments récents ? Les éléments épinglés restent.",
@@ -1373,7 +1375,8 @@
       "zoomSensitivityFaster": "Plus rapide",
       "themeModes": {
         "dark": "Sombre",
-        "light": "Clair"
+        "light": "Clair",
+        "system": "Système"
       }
     },
     "storage": {

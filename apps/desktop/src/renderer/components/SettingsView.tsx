@@ -19,6 +19,7 @@ import {
   FolderOpen,
   Globe,
   Languages,
+  Monitor,
   Moon,
   Network,
   Paintbrush,
@@ -103,8 +104,9 @@ const themeModes: Array<{
   icon: typeof Moon;
   label: MessageKey;
 }> = [
+  { mode: "light", icon: Sun, label: "settings.appearance.themeModes.light" },
   { mode: "dark", icon: Moon, label: "settings.appearance.themeModes.dark" },
-  { mode: "light", icon: Sun, label: "settings.appearance.themeModes.light" }
+  { mode: "system", icon: Monitor, label: "settings.appearance.themeModes.system" }
 ];
 
 const scopes: Array<{
@@ -698,7 +700,7 @@ function AppearanceCard({
       <div className="grid gap-2">
         <ContentLanguageSelect appSettings={appSettings} onChange={onChange} t={t} />
         <Label>{t("settings.appearance.themeMode")}</Label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {themeModes.map(({ mode, icon: Icon, label }) => (
             <button
               key={mode}

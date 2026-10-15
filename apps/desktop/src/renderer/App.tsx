@@ -53,6 +53,7 @@ import {
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
 import { useStableCallback } from "./lib/stable-callback";
+import { useDocumentLanguage } from "./lib/document-language";
 import { useResolvedTheme } from "./lib/theme";
 import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
@@ -207,6 +208,8 @@ export function App({
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
+  // Assistive technology and the browser read the interface language from the document.
+  useDocumentLanguage(appSettings.language);
   const preserveKnowledgeGraphViewState = useCallback(
     (mode: KnowledgeGraphDashboardMode, state: KnowledgeGraphViewState) => {
       knowledgeGraphViewStates.current[mode] = state;

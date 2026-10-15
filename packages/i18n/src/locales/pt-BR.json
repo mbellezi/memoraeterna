@@ -431,6 +431,8 @@
     "pin": "Fixar {title}",
     "unpin": "Desafixar {title}",
     "pinned": "Fixado",
+    "recentSection": "Recentes",
+    "pinLimit": "Você pode fixar até {count} itens. Desafixe um para fixar outro.",
     "changeFailed": "Não foi possível salvar a alteração.",
     "clear": "Limpar recentes",
     "clearQuestion": "Limpar os itens recentes? Os itens fixados permanecem.",
@@ -1371,7 +1373,8 @@
       "zoomSensitivityFaster": "Mais rapido",
       "themeModes": {
         "dark": "Escuro",
-        "light": "Claro"
+        "light": "Claro",
+        "system": "Sistema"
       }
     },
     "storage": {
