@@ -748,6 +748,11 @@
       "clearCompletedOrFailedConfirm": "Rimuovere tutte le attivita completate e non riuscite?"
     }
   },
+  "legacy": {
+    "errors": {
+      "retired": "Le funzioni della vecchia wiki, del curatore e della manutenzione sono state ritirate. Le tue fonti e le tue note non sono interessate."
+    }
+  },
   "tagInput": {
     "placeholder": "Aggiungi tag",
     "hint": "Premi Tab o Invio per aggiungere.",

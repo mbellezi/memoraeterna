@@ -750,6 +750,11 @@
       "clearCompletedOrFailedConfirm": "Remover todas as tarefas concluidas e que falharam?"
     }
   },
+  "legacy": {
+    "errors": {
+      "retired": "Os recursos da wiki antiga, do curador e da manutenção foram aposentados. Suas fontes e notas não foram afetadas."
+    }
+  },
   "tagInput": {
     "placeholder": "Adicionar tag",
     "hint": "Pressione Tab ou Enter para adicionar.",

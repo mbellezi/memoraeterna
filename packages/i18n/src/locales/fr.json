@@ -748,6 +748,11 @@
       "clearCompletedOrFailedConfirm": "Supprimer toutes les taches terminees et echouees ?"
     }
   },
+  "legacy": {
+    "errors": {
+      "retired": "Les fonctions de l’ancien wiki, du curateur et de la maintenance ont été retirées. Vos sources et vos notes ne sont pas affectées."
+    }
+  },
   "tagInput": {
     "placeholder": "Ajouter une étiquette",
     "hint": "Appuyez sur Tab ou Entrée pour ajouter.",

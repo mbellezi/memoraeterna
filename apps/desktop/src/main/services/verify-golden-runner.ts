@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 
 import {
   closePgPool,
+  createLegacyStateRepository,
   createPgPool,
+  hasLegacyContent,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
@@ -51,7 +53,8 @@ import { LibraryResetService } from "./library-reset-service.js";
  * import could leave counts as golden for the reset only when its type and title are in the manifest.
  * Finally it covers MEMORA_GOLDEN_SOURCE_PAIRS on the complete library (verdict-only, a fake decider):
  * the real read queries build the requests, the verdicts are written and no relation, decision or
- * run state is persisted.
+ * run state is persisted. The legacy wiki, organization and maintenance tables stay empty through
+ * every run and reset (the runner no longer pauses legacy automation: none can exist).
  *
  *   tsx src/main/services/verify-golden-runner.ts   (from apps/desktop; MEMORA_VERIFY_DIR picks the
  *   folder that holds the throwaway database and fixtures, default: the system temp folder;
@@ -123,30 +126,11 @@ try {
     getStorageSettings: storageSettings
   });
 
-  // The legacy automation the runner must pause: one enabled curator policy and one schedule.
-  const policy = { id: "11111111-1111-4111-8111-111111111111", state: "enabled" };
-  const schedule = {
-    id: "22222222-2222-4222-8222-222222222222",
-    revision: 4,
-    policy: { enabled: true }
-  };
-  const automationCalls: string[] = [];
-  const organization = {
-    automaticCommand: async (command: { command: string }) => {
-      automationCalls.push(`organization:${command.command}`);
-      if (command.command === "pause") policy.state = "paused";
-      return command.command === "pause" ? policy : [policy];
-    }
-  };
-  const maintenance = {
-    command: async (command: { command: string }) => {
-      automationCalls.push(`maintenance:${command.command}`);
-      if (command.command === "pause") schedule.policy.enabled = false;
-      return command.command === "dashboard" ? { schedules: [schedule], runs: [] } : {};
-    }
-  };
-  // The real Settings reset; restoring the defaults re-creates the (enabled) legacy automation,
-  // which the runner must pause again after the reset.
+  // The legacy-content tables (wiki pages, organization and maintenance runs and settings, curator
+  // policy revisions, investigations) must stay empty: nothing creates legacy state any more.
+  const legacyCounts = () => createLegacyStateRepository(pool!).legacyContentCounts();
+  const noLegacyContent = async () => !hasLegacyContent(await legacyCounts());
+  // The real Settings reset; restoring the defaults is the prompt catalog only (a counter here).
   let defaultsRestored = 0;
   const libraryReset = new LibraryResetService({
     getPool: () => pool,
@@ -154,8 +138,6 @@ try {
     userDataPath: userData,
     restoreDefaults: async () => {
       defaultsRestored += 1;
-      policy.state = "enabled";
-      schedule.policy.enabled = true;
     }
   });
   const events: string[] = [];
@@ -174,8 +156,6 @@ try {
       ingestion,
       hierarchy,
       jobs: jobs!,
-      organization: organization as unknown as GoldenRunOptions["organization"],
-      maintenance: maintenance as unknown as GoldenRunOptions["maintenance"],
       settings: { getApp: async () => ({ contentLanguage: "en" }) as never },
       quit: () => undefined,
       log: (event: string) => {
@@ -191,8 +171,6 @@ try {
       : [];
   const resetLibrary = async () => {
     await pool!.query(`truncate table source_items, jobs, processing_batches cascade`);
-    policy.state = "enabled";
-    schedule.policy.enabled = true;
     events.length = 0;
   };
   // A canceled run's jobs stop asynchronously: wait for the queue to drain before moving on.
@@ -217,7 +195,7 @@ try {
     /needs a configured embedding route/,
     "an unconfigured route"
   );
-  check(automationCalls.length === 0, "a refused run must not touch the automation");
+  check(await noLegacyContent(), "a refused run must not create legacy state");
   check((await backupFolders()).length === 0, "a refused run must not take a backup");
   await pool.query(
     `insert into jobs (type, status, payload) values ('maintenance', 'queued', '{}')`
@@ -269,7 +247,7 @@ try {
   );
   await noJobsLeft("no job is left after the divergence");
 
-  // 4. A complete run with the supervisor: backup first, automation paused, whole manifest processed.
+  // 4. A complete run with the supervisor: backup first, whole manifest processed, no legacy state.
   await resetLibrary();
   const run = await prepareGoldenRun(
     input({
@@ -284,15 +262,16 @@ try {
     join(run.backup.path, "database.dump")
   ]);
   check(/TABLE DATA public source_items/.test(stdout), "the backup dump lists the library tables");
-  check(policy.state === "paused" && !schedule.policy.enabled, "the legacy automation is paused");
-  check(
-    run.automation.pausedPolicies.length === 1 && run.automation.pausedSchedules.length === 1,
-    "the paused automation is recorded"
-  );
+  check(await noLegacyContent(), "the prepared run created no legacy state");
 
   const summary = await withTimeout(run.start(), 180_000, "the golden run");
   report(summary);
   check(summary.status !== "failed", `the run did not fail: ${String(summary.error ?? "")}`);
+  check(!("automation" in summary), "summary.json lists no paused legacy automation");
+  check(
+    await noLegacyContent(),
+    `the full-knowledge import wrote no legacy state: ${JSON.stringify(await legacyCounts())}`
+  );
   const sources = summary.sources as Array<{
     key: string;
     chunks: number;
@@ -509,11 +488,8 @@ try {
     "the pre-reset backup holds a dump of the library"
   );
   check(
-    defaultsRestored === restoredBefore + 1 &&
-      policy.state === "paused" &&
-      !schedule.policy.enabled &&
-      fullReset.automation.pausedPolicies.length === 1,
-    "the defaults came back with the reset and the legacy automation is paused again"
+    defaultsRestored === restoredBefore + 1 && (await noLegacyContent()),
+    "the defaults came back with the reset and the reset created no legacy state"
   );
 
   // 6b. A record-style import of two golden sources, then a reset and a run in the same database.
@@ -570,7 +546,6 @@ try {
   const mixedSources = await rowCount("source_items");
   check(mixedSources > 2, "the owner's note sits next to the golden sources");
   const backupsBeforeRefusal = (await backupFolders()).length;
-  const callsBeforeRefusal = automationCalls.length;
   await expectRejection(
     prepareGoldenRun(input({ ...withReset, env: resetEnv() })),
     /library holds non-golden sources \(1\).*My own note/,
@@ -579,8 +554,8 @@ try {
   check(
     (await rowCount("source_items")) === mixedSources &&
       (await backupFolders()).length === backupsBeforeRefusal &&
-      automationCalls.length === callsBeforeRefusal,
-    "the refusal deleted nothing, took no backup and touched no automation"
+      (await noLegacyContent()),
+    "the refusal deleted nothing, took no backup and created no legacy state"
   );
   await expectRejection(
     prepareGoldenRun(input({ ...withRoutes, env: resetEnv({ MEMORA_GOLDEN_RESET: "yes" }) })),
@@ -667,6 +642,50 @@ try {
       noop.reset.removedSources === 0 &&
       noop.reset.backupPath === null,
     "an empty library is a no-op"
+  );
+
+  // 7. A real full_knowledge plan, organizeKnowledge included as the Library and the gateway admit
+  //    it, on a library with no curator policy (nothing creates one any more): the stage is
+  //    recorded as skipped and the legacy-content tables stay empty (F2 D3).
+  await resetLibrary();
+  const [story] = await importSources(
+    { workspaceRoot: workspace, ingestion, hierarchy },
+    selectGoldenSources(manifest, ["story"])
+  );
+  check(story !== undefined, "one source was imported for the full-knowledge plan");
+  const batch = await hierarchy.process({
+    runKind: "initial",
+    trigger: "library_action",
+    plan: ProcessingPlanRequestSchema.parse({
+      preset: "full_knowledge",
+      requestedStages: [],
+      scope: "source_and_children",
+      targetSourceItemIds: [story!.sourceItemId]
+    })
+  });
+  check(batch.queued.length === 1, "the full-knowledge plan queued one run");
+  await jobs.start();
+  jobs.wake();
+  await noJobsLeft("the full-knowledge batch left no queued or running job");
+  const organizeStages = (
+    await pool.query<{ status: string; skip_reason: string | null }>(
+      `select s.status::text, s.skip_reason
+       from ingestion_run_stages s join ingestion_runs r on r.id = s.ingestion_run_id
+       where s.stage = 'organizeKnowledge' and r.batch_id = $1`,
+      [batch.batchId]
+    )
+  ).rows;
+  check(
+    organizeStages.length === 1 &&
+      organizeStages[0]?.status === "skipped" &&
+      organizeStages[0].skip_reason === "no_policy",
+    `organizeKnowledge is recorded as skipped (no_policy): ${JSON.stringify(organizeStages)}`
+  );
+  check(
+    (await noLegacyContent()) &&
+      (await rowCount("organization_runs")) === 0 &&
+      (await rowCount("maintenance_runs")) === 0,
+    `the full-knowledge import wrote no legacy state: ${JSON.stringify(await legacyCounts())}`
   );
 
   console.log("GOLDEN_RUNNER_VERIFY ok");

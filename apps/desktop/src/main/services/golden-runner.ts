@@ -29,8 +29,6 @@ import type { HierarchicalIngestionService } from "./hierarchical-ingestion-serv
 import type { IngestionService } from "./ingestion-service.js";
 import type { JobSupervisor } from "./job-supervisor.js";
 import type { LibraryResetService } from "./library-reset-service.js";
-import type { MaintenanceService } from "./maintenance-service.js";
-import type { OrganizationService } from "./organization-service.js";
 
 /**
  * DEV-only golden library runner (MEMORA_GOLDEN_RUN=<manifest>). It imports the pinned public
@@ -385,8 +383,6 @@ export interface GoldenRunOptions {
   ingestion: Pick<IngestionService, "importFile" | "captureWebPage" | "createContainerSource">;
   hierarchy: Pick<HierarchicalIngestionService, "process" | "getStructure" | "confirmStructure">;
   jobs: Pick<JobSupervisor, "wake" | "cancelBatch">;
-  organization: Pick<OrganizationService, "automaticCommand">;
-  maintenance: Pick<MaintenanceService, "command">;
   settings: { getApp(): Promise<AppSettings> };
   /** Runs the source decider for MEMORA_GOLDEN_SOURCE_PAIRS (the normal AI service: the cassette records it). */
   ai?: Pick<AiService, "runDefaultTask">;
@@ -404,7 +400,6 @@ export interface GoldenRunOptions {
 export interface GoldenRun {
   manifest: GoldenManifest;
   backup: GoldenBackup;
-  automation: GoldenAutomationPause;
   /** Present only with MEMORA_GOLDEN_RESET=1. */
   reset?: GoldenReset;
   /**
@@ -418,11 +413,6 @@ export interface GoldenRun {
 }
 
 export type SourcePairsMode = "verdict_only" | "after_batch";
-
-export interface GoldenAutomationPause {
-  pausedPolicies: string[];
-  pausedSchedules: string[];
-}
 
 export interface GoldenBackup {
   path: string;
@@ -441,9 +431,8 @@ export interface GoldenReset {
 }
 
 /**
- * Runs before the job supervisor starts: validates the request, the files and the library, takes
- * the database backup and pauses the legacy wiki automation so that no curator or maintenance call
- * runs. Nothing is written before every check passed and the backup exists.
+ * Runs before the job supervisor starts: validates the request, the files and the library and takes
+ * the database backup. Nothing is written before every check passed and the backup exists.
  */
 export async function prepareGoldenRun(
   input: Omit<GoldenRunOptions, "environment"> & {
@@ -549,7 +538,6 @@ export async function prepareGoldenRun(
   backup ??= await backUpBeforeWriting(options);
   // A recording may spend the remote route: past the cap the cassette makes no further provider call.
   if (cassette.mode === "record") options.cassette.limitLiveTokens(environment.maxLiveTokens);
-  const automation = await pauseLegacyAutomation(options);
   log(options, "prepared", {
     manifest: manifest.name,
     files: goldenManifestFiles(manifest).length,
@@ -560,8 +548,7 @@ export async function prepareGoldenRun(
     ...(reset ? { reset } : {}),
     ...(pairsFile && sourcePairsMode
       ? { sourcePairs: { mode: sourcePairsMode, pairs: pairsFile.pairs.length } }
-      : {}),
-    ...automation
+      : {})
   });
   const preparedBackup = backup;
   const preparedRoutes = routes;
@@ -572,7 +559,6 @@ export async function prepareGoldenRun(
   return {
     manifest,
     backup: preparedBackup,
-    automation,
     ...(reset ? { reset } : {}),
     ...(sourcePairs
       ? { sourcePairs: { mode: sourcePairs.mode, pairs: sourcePairs.file.pairs.length } }
@@ -581,7 +567,6 @@ export async function prepareGoldenRun(
       runGolden(
         options,
         manifest,
-        automation,
         preparedRoutes,
         {
           backup: preparedBackup,
@@ -913,50 +898,6 @@ async function readRoutes(pool: Query): Promise<unknown[]> {
   return routes;
 }
 
-const policyListSchema = z.array(z.object({ id: z.string(), state: z.string() }).passthrough());
-const maintenanceDashboardSchema = z
-  .object({
-    schedules: z.array(
-      z
-        .object({
-          id: z.string(),
-          revision: z.number().int(),
-          policy: z.object({ enabled: z.boolean() }).passthrough()
-        })
-        .passthrough()
-    )
-  })
-  .passthrough();
-
-async function pauseLegacyAutomation(options: GoldenRunOptions): Promise<GoldenAutomationPause> {
-  const pausedPolicies: string[] = [];
-  for (const policy of policyListSchema.parse(
-    await options.organization.automaticCommand({ command: "policies" })
-  ))
-    if (policy.state === "enabled") {
-      await options.organization.automaticCommand({ command: "pause", policyId: policy.id });
-      pausedPolicies.push(policy.id);
-    }
-  const pausedSchedules: string[] = [];
-  for (const schedule of maintenanceDashboardSchema.parse(
-    await options.maintenance.command({ command: "dashboard" })
-  ).schedules)
-    if (schedule.policy.enabled) {
-      await options.maintenance.command({
-        command: "pause",
-        id: schedule.id,
-        expectedRevision: schedule.revision
-      });
-      pausedSchedules.push(schedule.id);
-    }
-  const stillEnabled = policyListSchema
-    .parse(await options.organization.automaticCommand({ command: "policies" }))
-    .filter((policy) => policy.state === "enabled");
-  if (stillEnabled.length)
-    throw new Error("The legacy wiki automation could not be paused; the golden run stopped");
-  return { pausedPolicies, pausedSchedules };
-}
-
 interface ImportedSource {
   key: string;
   kind: "document" | "container";
@@ -979,7 +920,6 @@ export interface GoldenRunSummary {
 async function runGolden(
   options: GoldenRunOptions,
   manifest: GoldenManifest,
-  automation: GoldenAutomationPause,
   routes: unknown[],
   preparation: Record<string, unknown>,
   sourcePairs: SourcePairsRequest | null = null
@@ -993,7 +933,7 @@ async function runGolden(
     "runs",
     startedAt.toISOString().replace(/[:.]/g, "-")
   );
-  const context: Record<string, unknown> = { automation, routes, ...preparation };
+  const context: Record<string, unknown> = { routes, ...preparation };
   let summary: GoldenRunSummary;
   try {
     await mkdir(runDirectory, { recursive: true });

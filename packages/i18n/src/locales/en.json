@@ -746,6 +746,11 @@
       "clearCompletedOrFailedConfirm": "Remove all completed and failed jobs?"
     }
   },
+  "legacy": {
+    "errors": {
+      "retired": "The legacy wiki, curator and maintenance features were retired. Your sources and notes are unaffected."
+    }
+  },
   "tagInput": {
     "placeholder": "Add a tag",
     "hint": "Press Tab or Enter to add.",

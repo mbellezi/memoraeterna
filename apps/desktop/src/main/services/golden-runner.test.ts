@@ -163,8 +163,6 @@ function fakeServices(
     sources?: number;
     /** The sources the reset guard reads; when set they also make up the library count. */
     librarySources?: GoldenLibrarySource[];
-    policyStates?: string[];
-    scheduleEnabled?: boolean[];
     pendingJobs?: Array<{ type: string; count: number }>;
     dump?: boolean;
     /** What the reset does: empty the library (default), throw, or leave the rows behind. */
@@ -175,15 +173,6 @@ function fakeServices(
 ) {
   const queries: string[] = [];
   const calls: Array<[string, unknown]> = [];
-  const policies = (input.policyStates ?? ["enabled", "paused"]).map((state, index) => ({
-    id: `policy-${index}`,
-    state
-  }));
-  const schedules = (input.scheduleEnabled ?? [true, false]).map((enabled, index) => ({
-    id: `schedule-${index}`,
-    revision: index + 3,
-    policy: { enabled }
-  }));
   const library = {
     rows: input.librarySources ?? [],
     sources: input.sources ?? input.librarySources?.length ?? 0,
@@ -234,28 +223,9 @@ function fakeServices(
       limits.push(max);
     }
   };
-  const organization = {
-    automaticCommand: async (command: { command: string; policyId?: string }) => {
-      calls.push(["organization", command]);
-      if (command.command === "pause") {
-        const policy = policies.find((item) => item.id === command.policyId)!;
-        policy.state = "paused";
-        return policy;
-      }
-      return policies;
-    }
-  };
-  const maintenance = {
-    command: async (command: { command: string }) => {
-      calls.push(["maintenance", command]);
-      return command.command === "dashboard" ? { schedules, runs: [] } : {};
-    }
-  };
   return {
     calls,
     pool,
-    organization,
-    maintenance,
     backup,
     cassette,
     limits,
@@ -281,8 +251,6 @@ function prepareInput(
     ingestion: {} as GoldenRunOptions["ingestion"],
     hierarchy: {} as GoldenRunOptions["hierarchy"],
     jobs: {} as GoldenRunOptions["jobs"],
-    organization: services.organization as unknown as GoldenRunOptions["organization"],
-    maintenance: services.maintenance as unknown as GoldenRunOptions["maintenance"],
     settings: { getApp: async () => ({}) as never },
     quit: () => undefined,
     log: () => undefined,
@@ -521,36 +489,28 @@ describe("golden source files", () => {
 });
 
 describe("golden run preparation", () => {
-  it("backs up first, then pauses only enabled legacy policies and schedules", async () => {
+  it("backs up first, arms the live token cap and touches no legacy automation", async () => {
     const manifest = testManifest();
-    const services = fakeServices({
-      policyStates: ["enabled", "paused"],
-      scheduleEnabled: [true, false]
-    });
-    const run = await prepareGoldenRun(prepareInput(await writeSources(manifest), services));
-    expect(run.automation).toEqual({
-      pausedPolicies: ["policy-0"],
-      pausedSchedules: ["schedule-0"]
-    });
+    const services = fakeServices();
+    const events: Array<[string, Record<string, unknown> | undefined]> = [];
+    const run = await prepareGoldenRun(
+      prepareInput(await writeSources(manifest), services, {
+        log: (event, data) => events.push([event, data])
+      })
+    );
     expect(run.backup).toEqual({
       path: join(workspace, ".cache", "f0", "backups", "memora-backup-test"),
       createdAt: "2026-10-14T00:00:00.000Z",
       bytes: 5
     });
-    expect(services.calls).toContainEqual([
-      "organization",
-      { command: "pause", policyId: "policy-0" }
-    ]);
-    expect(services.calls).toContainEqual([
-      "maintenance",
-      { command: "pause", id: "schedule-0", expectedRevision: 3 }
-    ]);
-    expect(
-      services.calls.filter(([, command]) => JSON.stringify(command).includes("pause"))
-    ).toHaveLength(2);
-    // The backup is the first change and the live token cap is armed before any pause.
-    expect(services.calls.map(([name]) => name).slice(0, 2)).toEqual(["backup", "limitLiveTokens"]);
+    // The backup is the first change and the live token cap the second: nothing else is called,
+    // and neither the run nor its log carries a legacy automation pause.
+    expect(services.calls.map(([name]) => name)).toEqual(["backup", "limitLiveTokens"]);
     expect(services.limits).toEqual([1000000]);
+    expect(run).not.toHaveProperty("automation");
+    const prepared = events.find(([event]) => event === "prepared")?.[1] ?? {};
+    expect(prepared).not.toHaveProperty("pausedPolicies");
+    expect(prepared).not.toHaveProperty("pausedSchedules");
   });
 
   it("refuses a non-empty library unless explicitly allowed, changing nothing", async () => {
@@ -635,7 +595,7 @@ describe("golden run preparation", () => {
     expect(selectGoldenSources(manifest, null)).toBe(manifest);
   });
 
-  it("needs a cassette, the DEV database, verified files and a pausable automation", async () => {
+  it("needs a cassette, the DEV database, verified files and a configured route", async () => {
     const manifestPath = await writeSources(testManifest());
     await expect(
       prepareGoldenRun(prepareInput(manifestPath, fakeServices(), { cassette: null }))
@@ -668,15 +628,9 @@ describe("golden run preparation", () => {
       )
     ).rejects.toThrow("reranking route");
     expect(noRoute.calls).toEqual([]);
-
-    const stuck = fakeServices();
-    stuck.organization.automaticCommand = async () => [{ id: "p", state: "enabled" }];
-    await expect(prepareGoldenRun(prepareInput(manifestPath, stuck))).rejects.toThrow(
-      "could not be paused"
-    );
   });
 
-  it("stops before pausing anything when the backup holds no dump", async () => {
+  it("stops before arming the token cap when the backup holds no dump", async () => {
     const manifestPath = await writeSources(testManifest());
     const services = fakeServices({ dump: false });
     await expect(prepareGoldenRun(prepareInput(manifestPath, services))).rejects.toThrow(
@@ -914,17 +868,9 @@ describe("golden library reset (MEMORA_GOLDEN_RESET=1)", () => {
     );
     const backupPath = join(workspace, ".cache", "f0", "backups", "memora-backup-test");
     expect(run.reset).toEqual({ performed: true, removedSources: 4, backupPath });
-    // One backup, taken before the reset; then the cap and the pauses as in any other run.
-    expect(names(services).slice(0, 4)).toEqual([
-      "backup",
-      "reset",
-      "limitLiveTokens",
-      "organization"
-    ]);
-    expect(names(services).filter((name) => name === "backup")).toHaveLength(1);
+    // One backup, taken before the reset; then the cap, as in any other run, and nothing else.
+    expect(names(services)).toEqual(["backup", "reset", "limitLiveTokens"]);
     expect(run.backup.path).toBe(backupPath);
-    // The automation is paused after the reset (the real reset restores its defaults first).
-    expect(run.automation.pausedPolicies).toEqual(["policy-0"]);
     expect(events.find(([event]) => event === "reset")?.[1]).toEqual({
       performed: true,
       removedSources: 4,
@@ -1571,9 +1517,12 @@ describe("golden source pair verdicts", () => {
       verdict: "related",
       kept: [{ type: "supports", importance: 90, confidence: 85 }]
     });
-    expect(JSON.parse(await readFile(join(directory, "summary.json"), "utf8"))).toMatchObject({
+    const written = JSON.parse(await readFile(join(directory, "summary.json"), "utf8"));
+    expect(written).toMatchObject({
       sourcePairs: { verdicts: join(directory, "source-pair-verdicts.json") }
     });
+    // The summary no longer lists a paused legacy automation: the runner never pauses one.
+    expect(written).not.toHaveProperty("automation");
     // The library is only read: every statement the run issued is a select.
     for (const sql of services.queries) expect(sql.trim()).toMatch(/^(select|with)\b/i);
     expect(quit).toBe(1);

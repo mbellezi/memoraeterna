@@ -4,8 +4,10 @@ import { PromptService } from "./services/prompt-service.js";
 import { registerPromptIpc } from "./services/prompt-ipc.js";
 import { parseObsidianDeepLink, type ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
 import { MaintenanceService } from "./services/maintenance-service.js";
-import { MaintenanceCommandSchema } from "@app/domain";
-import { reconcileOrganizationParticipation } from "./services/organization-participation.js";
+import {
+  createMaintenanceCommandHandler,
+  createRetiredJobExecutor
+} from "./services/legacy-fence.js";
 import { ConsultationService } from "./services/consultation-service.js";
 import { registerConsultationIpc } from "./services/consultation-ipc.js";
 import { OrganizationService } from "./services/organization-service.js";
@@ -258,10 +260,10 @@ void app.whenReady().then(() => {
     getDatabaseContext: () => databaseService?.getBackupContext() ?? null,
     getStorageSettings: () => settingsService!.get()
   });
+  // A start and a library reset restore the prompt catalog only. The legacy wiki areas, curator
+  // policy and followed questions are never created again (F2 D3).
   async function initializeKnowledgeDefaults() {
     await promptService.initialize();
-    await investigationService.initialize();
-    await organizationService.initializeAutomation();
   }
   libraryResetService = new LibraryResetService({
     restoreDefaults: initializeKnowledgeDefaults,
@@ -407,8 +409,10 @@ void app.whenReady().then(() => {
     aiBusy: () => aiService!.isBusy(),
     investigations: investigationService
   });
-  ipcMain.handle(ipcChannels.maintenanceCommand, (_event, input: unknown) =>
-    maintenanceService.command(MaintenanceCommandSchema.parse(input))
+  // Legacy maintenance is fenced: only the dashboard read answers, every other command is retired.
+  ipcMain.handle(
+    ipcChannels.maintenanceCommand,
+    createMaintenanceCommandHandler(maintenanceService)
   );
   const organizationService = new OrganizationService({
     sampleMaintenance: (...args) => maintenanceService.sample(...args),
@@ -423,15 +427,13 @@ void app.whenReady().then(() => {
   });
   registerOrganizationIpc(ipcMain, organizationService);
   registerConsultationIpc(ipcMain, consultationService, investigationService);
+  // The legacy ticks (maintenance admission and readiness, organization reconciliation) are not
+  // passed, so nothing admits or claims legacy work. A job of those types that was admitted earlier
+  // is canceled by the retired executor without running the retired code.
+  const retiredJob = createRetiredJobExecutor((id) => jobSupervisor!.requestCancel(id));
   jobSupervisor = new JobSupervisor({
-    maintenanceTick: () => maintenanceService.tick(),
-    maintenanceReady: (job) => maintenanceService.ready(job),
-    processMaintenance: (job, signal) => maintenanceService.execute(job, signal),
-    reconcileOrganization: async () => {
-      await reconcileOrganizationParticipation(databaseService!.getPool()!, organizationService);
-      await organizationService.automaticTick();
-    },
-    processOrganization: (job, signal) => organizationService.execute(job, signal),
+    processMaintenance: retiredJob,
+    processOrganization: retiredJob,
     traceOperation: (operation, context, run) =>
       monitoringService.operation(operation, context, run),
     processRelationLabels: (job, signal) =>
@@ -525,8 +527,8 @@ void app.whenReady().then(() => {
       if (status.state === "ready") {
         await initializeKnowledgeDefaults();
         await monitoringService.recover();
-        // DEV-only golden run: prepared before the job supervisor starts so that the legacy wiki
-        // automation is paused before it can admit any work.
+        // DEV-only golden run: prepared before the job supervisor starts, so nothing runs before
+        // the checks and the backup have passed.
         // MEMORA_GOLDEN_SOURCE_PAIRS alone is refused by the same path, not silently ignored.
         const goldenRun =
           !app.isPackaged &&
@@ -554,8 +556,6 @@ void app.whenReady().then(() => {
                     ingestion: ingestionService!,
                     hierarchy: hierarchicalIngestionService!,
                     jobs: jobSupervisor!,
-                    organization: organizationService,
-                    maintenance: maintenanceService,
                     settings: settingsService!,
                     // MEMORA_GOLDEN_SOURCE_PAIRS only: the source decider runs through the normal AI service.
                     ai: aiService!,

@@ -53,8 +53,7 @@ reported; `MEMORA_GOLDEN_RESET=1` in section 3 empties a library of golden sourc
 it change anything, in this order: a `pg_dump` backup of the live database in
 `.cache/f0/backups/memora-backup-<timestamp>/` (the run stops if it holds no dump; prove it restores
 with `npm run db:restore -- --from <backup> --name <slug>` before the first recording), the live token
-cap, and the pause of the legacy wiki automation (policies and maintenance schedules). A refusal logs
-`GOLDEN_RUN refused` and quits before any job runs.
+cap. A refusal logs `GOLDEN_RUN refused` and quits before any job runs.
 
 It then imports the sources in manifest order (import only; detected structures confirmed as detected;
 a source that is already in the library fails the import, so a run always processes new sources),
@@ -281,7 +280,7 @@ library reads 46.8 s per note, because the benchmark matched it in four passes.
 packaged build refuses it) and needs `MEMORA_GOLDEN_RUN`; alone it stops the app with `GOLDEN_RUN refused`.
 It persists nothing: no source relation, decision row, run state or explanation, and no library data
 changes. The only rows written are the AI audit of the calls themselves, by the AI service; the run
-still takes the `pg_dump` backup and pauses the legacy wiki automation like any run (section 2).
+still takes the `pg_dump` backup like any run (section 2).
 
 The file is a JSON list of `{"left": ..., "right": ..., "label": ...}`; `label` is optional. A side is a
 top-level manifest key (`mf-f1`, `machado-a-cartomante`; a book is its container key) or the exact title of
@@ -347,10 +346,9 @@ npm run dev -w @app/desktop
 
 ## After a run
 
-The runner leaves the legacy wiki automation paused on purpose (that code is frozen until it is
-replaced) and never resumes it. `summary.json` lists what it paused (`automation.pausedPolicies`,
-`automation.pausedSchedules`). To restore it, use Resume on those policies in the Automation screen and
-re-enable those schedules in Maintenance. The pre-run backup is in `summary.json` (`backup.path`).
+The runner pauses nothing and `summary.json` has no `automation` entry: the legacy wiki automation is
+unwired and nothing creates its policies or schedules (F2 D3), so a run leaves no legacy state behind.
+The pre-run backup is in `summary.json` (`backup.path`).
 
 ## Cassette key and offline guarantee
 

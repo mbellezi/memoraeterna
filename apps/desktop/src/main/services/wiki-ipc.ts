@@ -4,13 +4,16 @@ import { z } from "zod";
 import {
   WikiTreeInputSchema,
   WikiContextInputSchema,
-  WikiMoveInputSchema,
   WikiLinkedTargetInputSchema,
-  WikiSaveInputSchema,
   WikiQuerySchema
 } from "@app/domain";
+import { legacyRetiredError } from "./legacy-fence.js";
 import type { WikiService } from "./wiki-service.js";
 
+/**
+ * The legacy wiki is read-only: the reads below still serve the Obsidian scope picker and the
+ * remaining readers, while `save` and `move` are retired (F2 D3) and write nothing.
+ */
 export function registerWikiIpc(ipc: IpcMain, service: WikiService) {
   ipc.handle(ipcChannels.wikiTree, (_event, input: unknown) =>
     service.tree(WikiTreeInputSchema.parse(input))
@@ -18,9 +21,9 @@ export function registerWikiIpc(ipc: IpcMain, service: WikiService) {
   ipc.handle(ipcChannels.wikiContext, (_event, input: unknown) =>
     service.context(WikiContextInputSchema.parse(input))
   );
-  ipc.handle(ipcChannels.wikiMove, (_event, input: unknown) =>
-    service.move(WikiMoveInputSchema.parse(input))
-  );
+  ipc.handle(ipcChannels.wikiMove, () => {
+    throw legacyRetiredError();
+  });
   ipc.handle(ipcChannels.wikiLinkedTarget, (_event, payload: unknown) =>
     service.linkedTarget(WikiLinkedTargetInputSchema.parse(payload))
   );
@@ -35,9 +38,9 @@ export function registerWikiIpc(ipc: IpcMain, service: WikiService) {
       .parse(payload);
     return service.get(input.id, input.revisionId);
   });
-  ipc.handle(ipcChannels.wikiSave, (_event, payload: unknown) =>
-    service.save(WikiSaveInputSchema.parse(payload))
-  );
+  ipc.handle(ipcChannels.wikiSave, () => {
+    throw legacyRetiredError();
+  });
   ipc.handle(ipcChannels.wikiSearch, (_event, payload: unknown) =>
     service.search(WikiQuerySchema.parse(payload))
   );
