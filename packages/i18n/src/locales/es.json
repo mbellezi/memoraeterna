@@ -1925,6 +1925,166 @@
         "stances": "Relaciones de las notas de este tema"
       }
     },
+    "shape": {
+      "tabs": {
+        "label": "Vista de la wiki",
+        "topic": "Tema",
+        "map": "Mapa"
+      },
+      "title": "Mapa",
+      "lens": {
+        "label": "Lente",
+        "shape": "Forma",
+        "atlas": "Atlas",
+        "later": "más adelante"
+      },
+      "intro": "Forma muestra el tamaño, la profundidad y la salud del árbol de temas. Selecciona un bloque para ver sus detalles. Atlas, todas las notas ordenadas por significado, llegará en una fase posterior.",
+      "loading": "Cargando el árbol de temas...",
+      "error": "No se pudo cargar el árbol de temas.",
+      "missing": "Esta rama ya no existe. Puede que se haya unido a otra o se haya eliminado.",
+      "backToTree": "Volver al árbol completo",
+      "empty": "Todavía no hay nada organizado. El mapa aparece a medida que se crean temas a partir de tus notas.",
+      "summary": {
+        "label": "Forma del árbol",
+        "items": "Elementos",
+        "topics": "Temas",
+        "meanDepth": "Profundidad media",
+        "reachable": "Alcanzables",
+        "warnings": "Avisos",
+        "warningsValue": "{soft} leves · {hard} graves"
+      },
+      "display": {
+        "label": "Gráfico o tabla",
+        "chart": "Gráfico",
+        "table": "Tabla"
+      },
+      "zoom": {
+        "out": "Reducir",
+        "in": "Ampliar",
+        "fit": "Ajustar",
+        "level": "Zoom {percent}"
+      },
+      "branch": {
+        "label": "Rama ampliada",
+        "zoomedIn": "Ampliado en",
+        "wholeTree": "· el árbol completo"
+      },
+      "chart": {
+        "label": "Icicle del árbol de temas. Cada bloque es un botón que selecciona un tema.",
+        "level": "Nivel {level}",
+        "cell": "{title}, {items}, nivel {level}, salud: {health}",
+        "cellPlain": "{title}, {items}, nivel {level}",
+        "legendWidth": "Ancho = elementos · fila = nivel",
+        "legendAttention": "necesita atención",
+        "legendSelected": "seleccionado",
+        "legendDirect": "elementos colocados directamente en el tema",
+        "legendNew": "+n = elementos nuevos esta semana",
+        "truncated": "Los niveles más profundos no se dibujan. Amplía una rama para verlos.",
+        "pruned": "Los bloques muy estrechos no se dibujan aquí. La tabla lista todos los temas."
+      },
+      "table": {
+        "caption": "El árbol de temas como tabla, una fila por tema, de arriba abajo",
+        "topic": "Tema",
+        "level": "Nivel",
+        "items": "Elementos",
+        "direct": "Directos",
+        "subtopics": "Subtemas",
+        "week": "Esta semana",
+        "coherence": "Coherencia",
+        "health": "Salud"
+      },
+      "panel": {
+        "label": "Tema seleccionado",
+        "selected": "Tema seleccionado",
+        "selectedUnsorted": "Elementos esperando un lugar",
+        "items": "Elementos",
+        "level": "Nivel",
+        "children": "Hijos",
+        "childrenMixed": "{subtopics} + {direct} directos",
+        "childrenDirect": "{direct} directos",
+        "week": "Esta semana",
+        "coherence": "Coherencia",
+        "health": "Salud",
+        "open": "Abrir tema",
+        "zoomIn": "Ampliar esta rama",
+        "unsortedNote": "Estos elementos están directamente bajo la raíz y esperan un tema."
+      },
+      "health": {
+        "good": "Buena",
+        "attention": "Necesita atención",
+        "violation": "Problema de estructura"
+      },
+      "warnings": {
+        "title": "Avisos en el árbol · {count}",
+        "none": "Sin avisos. El árbol está en buen estado.",
+        "deeper": "Un tema por debajo de los niveles mostrados",
+        "awaiting": "Creaste o fijaste este tema, así que la app solo lo señala.",
+        "pending": {
+          "rebalance": "Se propone reorganizar esta rama. Afecta a temas que creaste o fijaste, así que espera tu decisión.",
+          "areas": "Se propone una nueva agrupación de las áreas principales. Espera tu decisión.",
+          "rebuild": "Se propone reconstruir los temas. Espera tu decisión.",
+          "other": "Se propone un cambio en la estructura. Espera tu decisión."
+        },
+        "risk": {
+          "high": "Impacto alto",
+          "medium": "Impacto medio",
+          "low": "Impacto bajo"
+        },
+        "reasons": {
+          "singleChild": "Cadena de uno: contiene un solo subtema.",
+          "fanOutOutside": "Contiene {value} subtemas, fuera del rango fácil de recorrer.",
+          "fanOutAbove": "Contiene {value} subtemas, demasiados para recorrer.",
+          "leafOutside": "Contiene {value} elementos directamente, fuera del tamaño habitual de una hoja.",
+          "leafAbove": "Contiene {value} elementos directamente, muchos más de los que debería tener una hoja.",
+          "depthAbove": "Está a {value} niveles de profundidad, más abajo de lo que busca el árbol.",
+          "depthCap": "Está a {value} niveles de profundidad, más allá del límite.",
+          "coherence": "Sus elementos no están muy relacionados entre sí (coherencia {value}).",
+          "duplicateTitle": "Otro tema a su lado tiene el mismo nombre.",
+          "structure": "La estructura tiene un problema que la app repara sola.",
+          "other": "Este tema necesita atención."
+        },
+        "apply": "Aplicar",
+        "dismiss": "Descartar",
+        "working": "Un momento...",
+        "applied": "Cambio aplicado.",
+        "dismissed": "Propuesta descartada.",
+        "failed": "No funcionó. Inténtalo de nuevo."
+      },
+      "changed": {
+        "title": "Cambió hoy",
+        "none": "Hoy no cambió nada.",
+        "undo": "Deshacer",
+        "undoing": "Deshaciendo...",
+        "undone": "Cambio deshecho.",
+        "blocked": "No se puede deshacer ahora: un cambio posterior depende de él.",
+        "failed": "No se pudo deshacer el cambio. Inténtalo de nuevo.",
+        "titles": {
+          "build": "Los temas se crearon a partir de tus notas.",
+          "rebalance": "La estructura se reequilibró.",
+          "rebalanceItems": "La estructura se reequilibró. Elementos movidos: {count}.",
+          "audit": "Se movieron elementos mal colocados.",
+          "areas": "Las áreas se reagruparon.",
+          "naming": "Los temas recibieron un nombre.",
+          "namingCount": "Temas que recibieron un nombre: {count}.",
+          "human": "Cambiaste la estructura.",
+          "rebuild": "Los temas se rehicieron.",
+          "other": "La estructura cambió."
+        }
+      },
+      "compare": {
+        "show": "Ver antes y después",
+        "hide": "Ocultar antes y después",
+        "loading": "Cargando...",
+        "error": "No se pudieron cargar los detalles.",
+        "missing": "Este cambio ya no existe.",
+        "before": "Antes",
+        "after": "Después",
+        "none": "Nada que mostrar.",
+        "topic": "{title}, bajo {parent}",
+        "item": "{title}, en {topic}",
+        "partial": "Solo se lista una parte de este cambio."
+      }
+    },
     "placeholder": {
       "title": "Explora tus temas",
       "body": "Elige un tema en el árbol para ver qué dicen tus notas sobre él. Todo lo que agregas se coloca en el árbol por ti, y Preguntar responde a partir de tus notas y fuentes.",

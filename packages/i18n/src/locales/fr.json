@@ -1923,6 +1923,166 @@
         "stances": "Relations des notes de ce sujet"
       }
     },
+    "shape": {
+      "tabs": {
+        "label": "Vue du wiki",
+        "topic": "Sujet",
+        "map": "Carte"
+      },
+      "title": "Carte",
+      "lens": {
+        "label": "Angle",
+        "shape": "Forme",
+        "atlas": "Atlas",
+        "later": "plus tard"
+      },
+      "intro": "Forme montre la taille, la profondeur et l’état de l’arbre des sujets. Sélectionnez un bloc pour voir ses détails. Atlas, toutes les notes disposées par sens, arrivera dans une phase ultérieure.",
+      "loading": "Chargement de l’arbre des sujets...",
+      "error": "Impossible de charger l’arbre des sujets.",
+      "missing": "Cette branche n’existe plus. Elle a peut-être été fusionnée ou supprimée.",
+      "backToTree": "Revenir à l’arbre entier",
+      "empty": "Rien n’est encore organisé. La carte apparaît à mesure que les sujets sont créés à partir de vos notes.",
+      "summary": {
+        "label": "Forme de l’arbre",
+        "items": "Éléments",
+        "topics": "Sujets",
+        "meanDepth": "Profondeur moyenne",
+        "reachable": "Atteignables",
+        "warnings": "Avertissements",
+        "warningsValue": "{soft} mineurs · {hard} graves"
+      },
+      "display": {
+        "label": "Graphique ou tableau",
+        "chart": "Graphique",
+        "table": "Tableau"
+      },
+      "zoom": {
+        "out": "Réduire",
+        "in": "Agrandir",
+        "fit": "Ajuster",
+        "level": "Zoom {percent}"
+      },
+      "branch": {
+        "label": "Branche agrandie",
+        "zoomedIn": "Agrandi sur",
+        "wholeTree": "· l’arbre entier"
+      },
+      "chart": {
+        "label": "Icicle de l’arbre des sujets. Chaque bloc est un bouton qui sélectionne un sujet.",
+        "level": "Niveau {level}",
+        "cell": "{title}, {items}, niveau {level}, état : {health}",
+        "cellPlain": "{title}, {items}, niveau {level}",
+        "legendWidth": "Largeur = éléments · ligne = niveau",
+        "legendAttention": "demande de l’attention",
+        "legendSelected": "sélectionné",
+        "legendDirect": "éléments placés directement dans le sujet",
+        "legendNew": "+n = nouveaux éléments cette semaine",
+        "truncated": "Les niveaux plus profonds ne sont pas dessinés. Agrandissez une branche pour les voir.",
+        "pruned": "Les blocs très étroits ne sont pas dessinés ici. Le tableau liste tous les sujets."
+      },
+      "table": {
+        "caption": "L’arbre des sujets sous forme de tableau, une ligne par sujet, de haut en bas",
+        "topic": "Sujet",
+        "level": "Niveau",
+        "items": "Éléments",
+        "direct": "Directs",
+        "subtopics": "Sous-sujets",
+        "week": "Cette semaine",
+        "coherence": "Cohérence",
+        "health": "État"
+      },
+      "panel": {
+        "label": "Sujet sélectionné",
+        "selected": "Sujet sélectionné",
+        "selectedUnsorted": "Éléments en attente d’une place",
+        "items": "Éléments",
+        "level": "Niveau",
+        "children": "Enfants",
+        "childrenMixed": "{subtopics} + {direct} directs",
+        "childrenDirect": "{direct} directs",
+        "week": "Cette semaine",
+        "coherence": "Cohérence",
+        "health": "État",
+        "open": "Ouvrir le sujet",
+        "zoomIn": "Agrandir cette branche",
+        "unsortedNote": "Ces éléments sont directement sous la racine et attendent un sujet."
+      },
+      "health": {
+        "good": "Bon",
+        "attention": "Demande de l’attention",
+        "violation": "Problème de structure"
+      },
+      "warnings": {
+        "title": "Avertissements dans l’arbre · {count}",
+        "none": "Aucun avertissement. L’arbre est en bon état.",
+        "deeper": "Un sujet sous les niveaux affichés",
+        "awaiting": "Vous avez créé ou épinglé ce sujet, l’application se contente donc de le signaler.",
+        "pending": {
+          "rebalance": "Une réorganisation de cette branche est proposée. Elle touche des sujets que vous avez créés ou épinglés, elle attend donc votre décision.",
+          "areas": "Un nouveau regroupement des domaines principaux est proposé. Il attend votre décision.",
+          "rebuild": "Une reconstruction des sujets est proposée. Elle attend votre décision.",
+          "other": "Une modification de la structure est proposée. Elle attend votre décision."
+        },
+        "risk": {
+          "high": "Impact élevé",
+          "medium": "Impact moyen",
+          "low": "Impact faible"
+        },
+        "reasons": {
+          "singleChild": "Chaîne d’un seul : il ne contient qu’un sous-sujet.",
+          "fanOutOutside": "Il contient {value} sous-sujets, hors de la plage facile à parcourir.",
+          "fanOutAbove": "Il contient {value} sous-sujets, beaucoup trop à parcourir.",
+          "leafOutside": "Il contient {value} éléments directement, hors de la taille habituelle d’une feuille.",
+          "leafAbove": "Il contient {value} éléments directement, bien plus qu’une feuille ne devrait.",
+          "depthAbove": "Il se trouve à {value} niveaux de profondeur, plus bas que ce que vise l’arbre.",
+          "depthCap": "Il se trouve à {value} niveaux de profondeur, au-delà de la limite.",
+          "coherence": "Ses éléments ne sont pas très proches les uns des autres (cohérence {value}).",
+          "duplicateTitle": "Un autre sujet voisin porte le même nom.",
+          "structure": "La structure a un problème que l’application répare d’elle-même.",
+          "other": "Ce sujet demande de l’attention."
+        },
+        "apply": "Appliquer",
+        "dismiss": "Écarter",
+        "working": "Un instant...",
+        "applied": "Modification appliquée.",
+        "dismissed": "Proposition écartée.",
+        "failed": "Cela n’a pas fonctionné. Réessayez."
+      },
+      "changed": {
+        "title": "Modifié aujourd’hui",
+        "none": "Rien n’a changé aujourd’hui.",
+        "undo": "Annuler",
+        "undoing": "Annulation...",
+        "undone": "Modification annulée.",
+        "blocked": "Impossible de l’annuler maintenant : une modification ultérieure en dépend.",
+        "failed": "La modification n’a pas pu être annulée. Réessayez.",
+        "titles": {
+          "build": "Les sujets ont été créés à partir de vos notes.",
+          "rebalance": "La structure a été rééquilibrée.",
+          "rebalanceItems": "La structure a été rééquilibrée. Éléments déplacés : {count}.",
+          "audit": "Des éléments mal placés ont été déplacés.",
+          "areas": "Les domaines ont été regroupés de nouveau.",
+          "naming": "Les sujets ont reçu un nom.",
+          "namingCount": "Sujets ayant reçu un nom : {count}.",
+          "human": "Vous avez modifié la structure.",
+          "rebuild": "Les sujets ont été reconstruits.",
+          "other": "La structure a changé."
+        }
+      },
+      "compare": {
+        "show": "Voir avant et après",
+        "hide": "Masquer avant et après",
+        "loading": "Chargement...",
+        "error": "Impossible de charger les détails.",
+        "missing": "Cette modification n’existe plus.",
+        "before": "Avant",
+        "after": "Après",
+        "none": "Rien à afficher.",
+        "topic": "{title}, sous {parent}",
+        "item": "{title}, dans {topic}",
+        "partial": "Seule une partie de cette modification est listée."
+      }
+    },
     "placeholder": {
       "title": "Explorez vos sujets",
       "body": "Choisissez un sujet dans l’arbre pour voir ce que disent vos notes. Tout ce que vous ajoutez est placé dans l’arbre pour vous, et Poser une question répond à partir de vos notes et de vos sources.",

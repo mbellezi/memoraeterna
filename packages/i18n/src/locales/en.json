@@ -1918,6 +1918,166 @@
         "stances": "Relations of this topic's notes"
       }
     },
+    "shape": {
+      "tabs": {
+        "label": "Wiki view",
+        "topic": "Topic",
+        "map": "Map"
+      },
+      "title": "Map",
+      "lens": {
+        "label": "Lens",
+        "shape": "Shape",
+        "atlas": "Atlas",
+        "later": "later"
+      },
+      "intro": "Shape shows the size, depth and health of the topic tree. Select a block to see its details. Atlas, every note arranged by meaning, arrives in a later phase.",
+      "loading": "Loading the topic tree...",
+      "error": "The topic tree could not be loaded.",
+      "missing": "This branch no longer exists. It may have been merged or removed.",
+      "backToTree": "Back to the whole tree",
+      "empty": "Nothing is organized yet. The map appears as topics are built from your notes.",
+      "summary": {
+        "label": "Shape of the tree",
+        "items": "Items",
+        "topics": "Topics",
+        "meanDepth": "Average depth",
+        "reachable": "Reachable",
+        "warnings": "Warnings",
+        "warningsValue": "{soft} minor · {hard} serious"
+      },
+      "display": {
+        "label": "Chart or table",
+        "chart": "Chart",
+        "table": "Table"
+      },
+      "zoom": {
+        "out": "Zoom out",
+        "in": "Zoom in",
+        "fit": "Fit",
+        "level": "Zoom {percent}"
+      },
+      "branch": {
+        "label": "Zoomed branch",
+        "zoomedIn": "Zoomed into",
+        "wholeTree": "· the whole tree"
+      },
+      "chart": {
+        "label": "Icicle of the topic tree. Each block is a button that selects a topic.",
+        "level": "Level {level}",
+        "cell": "{title}, {items}, level {level}, health: {health}",
+        "cellPlain": "{title}, {items}, level {level}",
+        "legendWidth": "Width = items · row = level",
+        "legendAttention": "needs attention",
+        "legendSelected": "selected",
+        "legendDirect": "items placed directly in the topic",
+        "legendNew": "+n = new items this week",
+        "truncated": "Deeper levels are not drawn. Zoom into a branch to see them.",
+        "pruned": "Very narrow blocks are not drawn here. The table lists every topic."
+      },
+      "table": {
+        "caption": "The topic tree as a table, one row per topic, from the top down",
+        "topic": "Topic",
+        "level": "Level",
+        "items": "Items",
+        "direct": "Direct",
+        "subtopics": "Subtopics",
+        "week": "This week",
+        "coherence": "Coherence",
+        "health": "Health"
+      },
+      "panel": {
+        "label": "Selected topic",
+        "selected": "Selected topic",
+        "selectedUnsorted": "Items waiting for a place",
+        "items": "Items",
+        "level": "Level",
+        "children": "Children",
+        "childrenMixed": "{subtopics} + {direct} direct",
+        "childrenDirect": "{direct} direct",
+        "week": "This week",
+        "coherence": "Coherence",
+        "health": "Health",
+        "open": "Open topic",
+        "zoomIn": "Zoom into this branch",
+        "unsortedNote": "These items sit directly under the root and wait for a topic."
+      },
+      "health": {
+        "good": "Good",
+        "attention": "Needs attention",
+        "violation": "Structure problem"
+      },
+      "warnings": {
+        "title": "Warnings in the tree · {count}",
+        "none": "No warnings. The tree is in good shape.",
+        "deeper": "A topic below the levels shown",
+        "awaiting": "You created or pinned this topic, so the app only reports it.",
+        "pending": {
+          "rebalance": "A reorganization of this branch is proposed. It touches topics you created or pinned, so it waits for your decision.",
+          "areas": "A new grouping of the top-level areas is proposed. It waits for your decision.",
+          "rebuild": "A rebuild of the topics is proposed. It waits for your decision.",
+          "other": "A change to the structure is proposed. It waits for your decision."
+        },
+        "risk": {
+          "high": "High impact",
+          "medium": "Medium impact",
+          "low": "Low impact"
+        },
+        "reasons": {
+          "singleChild": "Chain of one: it holds only one subtopic.",
+          "fanOutOutside": "It holds {value} subtopics, outside the range that is easy to scan.",
+          "fanOutAbove": "It holds {value} subtopics, far too many to scan.",
+          "leafOutside": "It holds {value} items directly, outside the usual size of a leaf.",
+          "leafAbove": "It holds {value} items directly, far more than a leaf should.",
+          "depthAbove": "It sits {value} levels deep, deeper than the tree aims for.",
+          "depthCap": "It sits {value} levels deep, beyond the limit.",
+          "coherence": "Its items are not closely related to each other (coherence {value}).",
+          "duplicateTitle": "Another topic beside it has the same name.",
+          "structure": "The structure has a problem that the app repairs by itself.",
+          "other": "This topic needs attention."
+        },
+        "apply": "Apply",
+        "dismiss": "Dismiss",
+        "working": "Working...",
+        "applied": "Change applied.",
+        "dismissed": "Proposal dismissed.",
+        "failed": "That did not work. Try again."
+      },
+      "changed": {
+        "title": "Changed today",
+        "none": "Nothing changed today.",
+        "undo": "Undo",
+        "undoing": "Undoing...",
+        "undone": "Change undone.",
+        "blocked": "It cannot be undone now: a later change depends on it.",
+        "failed": "The change could not be undone. Try again.",
+        "titles": {
+          "build": "Topics were built from your notes.",
+          "rebalance": "The structure was rebalanced.",
+          "rebalanceItems": "The structure was rebalanced. Items moved: {count}.",
+          "audit": "Misplaced items were moved.",
+          "areas": "Areas were regrouped.",
+          "naming": "Topics were named.",
+          "namingCount": "Topics named: {count}.",
+          "human": "You changed the structure.",
+          "rebuild": "Topics were rebuilt.",
+          "other": "The structure changed."
+        }
+      },
+      "compare": {
+        "show": "See before and after",
+        "hide": "Hide before and after",
+        "loading": "Loading...",
+        "error": "The details could not be loaded.",
+        "missing": "This change no longer exists.",
+        "before": "Before",
+        "after": "After",
+        "none": "Nothing to show.",
+        "topic": "{title}, under {parent}",
+        "item": "{title}, in {topic}",
+        "partial": "Only part of this change is listed."
+      }
+    },
     "placeholder": {
       "title": "Explore your topics",
       "body": "Choose a topic in the tree to see what your notes say about it. Everything you add is placed in the tree for you, and Ask answers from your notes and sources.",

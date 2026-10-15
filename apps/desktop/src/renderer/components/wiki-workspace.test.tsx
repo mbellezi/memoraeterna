@@ -3,6 +3,7 @@ import { renderToString } from "react-dom/server";
 import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
 import { ConsultationDialog } from "./ConsultationDialog";
 import { TopicPage } from "./topic-page/TopicPage";
+import { ShapeScreen } from "./topic-shape/ShapeScreen";
 import { TopicNavigator } from "./topics/TopicNavigator";
 import { WikiWorkspace, WikiWorkspaceView, type WikiWorkspaceViewProps } from "./WikiWorkspace";
 import { createLibraryHistoryState, libraryHistoryEntryFromState } from "./LibraryView";
@@ -21,7 +22,13 @@ vi.mock("./topic-page/TopicPage", async (importOriginal) => {
   return { ...original, TopicPage: vi.fn(original.TopicPage) };
 });
 
+// The Map is the Shape view's; here only whether and how the Wiki mounts it matters.
+vi.mock("./topic-shape/ShapeScreen", () => ({
+  ShapeScreen: vi.fn(() => <div data-testid="shape-screen" />)
+}));
+
 afterEach(() => {
+  vi.mocked(ShapeScreen).mockClear();
   vi.mocked(ConsultationDialog).mockClear();
   vi.mocked(TopicNavigator).mockClear();
   vi.mocked(TopicPage).mockClear();
@@ -44,6 +51,8 @@ const view = (
       askOpen={false}
       onAsk={() => undefined}
       onCloseAsk={() => undefined}
+      lens="topic"
+      onLens={() => undefined}
       topicId={null}
       onNavigate={() => undefined}
       onCloseTopic={() => undefined}
@@ -198,6 +207,48 @@ describe("wiki workspace shell", () => {
       />
     );
     expect(html).not.toContain(messages.en.topics.placeholder.notice);
+  });
+
+  it("offers the Topic and Map lenses as tabs, the Topic first, each controlling its panel", () => {
+    for (const language of supportedLanguageCodes) {
+      const html = view(language);
+      const copy = messages[language].topics.shape.tabs;
+      expect(html, language).toContain('role="tablist"');
+      expect(html, language).toContain(`aria-label="${copy.label}"`);
+      expect(html, language).toContain(copy.topic);
+      expect(html, language).toContain(copy.map);
+      expect(html, language).not.toContain("[[missing:");
+    }
+    const html = view("en");
+    expect(html.match(/role="tab"/g)).toHaveLength(2);
+    expect(html.match(/role="tabpanel"/g)).toHaveLength(2);
+    expect(html).toMatch(/id="[^"]*-tab-topic"[^>]*aria-selected="true"/);
+    expect(html).toMatch(/id="[^"]*-tab-map"[^>]*aria-selected="false"/);
+    // The Map is mounted from the start, hidden, so it keeps its branch and selection.
+    expect(html).toMatch(/hidden=""[^>]*><div data-testid="shape-screen"/);
+  });
+
+  it("shows the Map instead of the Topic lens, each live only while it shows", () => {
+    view("en", { lens: "topic", topicId });
+    expect(lastProps(vi.mocked(ShapeScreen))).toMatchObject({ active: false });
+    expect(lastProps(vi.mocked(TopicPage))).toMatchObject({ active: true });
+    vi.mocked(TopicPage).mockClear();
+
+    const html = view("en", { lens: "map", topicId });
+    expect(lastProps(vi.mocked(ShapeScreen))).toMatchObject({ active: true });
+    expect(lastProps(vi.mocked(TopicPage))).toMatchObject({ topicId, active: false });
+    expect(html).toMatch(/id="[^"]*-tab-map"[^>]*aria-selected="true"/);
+    expect(html).not.toMatch(/hidden=""[^>]*><div data-testid="shape-screen"/);
+    // A hidden Wiki loads nothing, whatever lens it was left on.
+    view("en", { lens: "map", active: false });
+    expect(lastProps(vi.mocked(ShapeScreen))).toMatchObject({ active: false });
+  });
+
+  it("opens a topic from the Map the way every other link opens it", () => {
+    const onNavigate = vi.fn();
+    view("en", { lens: "map", onNavigate });
+    lastProps(vi.mocked(ShapeScreen)).onNavigate({ type: "topic", topicId: otherTopicId });
+    expect(onNavigate).toHaveBeenCalledWith({ type: "topic", topicId: otherTopicId });
   });
 
   it("preserves the wiki origin in native source-history navigation", () => {

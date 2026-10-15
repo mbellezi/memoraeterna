@@ -57,6 +57,7 @@ files executed directly by Node.
 | Fonts (OFL-1.1, bundled offline) | `@fontsource-variable/inter` `5.3.0` (interface) and `@fontsource-variable/source-serif-4` `5.3.0` (reading), imported through `wght.css` only |
 | Interactive graph rendering | `sigma` `3.0.3` with `graphology` `0.26.0` |
 | Graph communities and layout | `graphology-communities-louvain` `2.0.2`; `d3-force` `3.0.0` in a renderer Web Worker; `@types/d3-force` `3.0.10` |
+| Shape icicle layout | `d3-hierarchy` `3.1.2` (ISC) with `@types/d3-hierarchy` `3.1.7` (MIT); the layout only, rendered as DOM controls |
 | Desktop packaging | `electron-builder` `26.15.3` |
 
 The product is an Electron desktop application. Do not introduce Next.js or a
@@ -119,7 +120,6 @@ for files, sizes and checksums):
 
 Add exact versions here when the owning phase adopts them (see `docs/plan.md`).
 
-- `d3-hierarchy` for the Shape icicle and mind maps (F2).
 - MLX weights for Qwen3-Embedding-0.6B (Apache-2.0; Qwen safetensors or
   mlx-community conversions), pinned revision plus SHA-256, run on MLXEmbedders
   (F0 spike, F3 adapter).

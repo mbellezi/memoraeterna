@@ -1921,6 +1921,166 @@
         "stances": "Relações das notas deste tópico"
       }
     },
+    "shape": {
+      "tabs": {
+        "label": "Visão da Wiki",
+        "topic": "Tópico",
+        "map": "Mapa"
+      },
+      "title": "Mapa",
+      "lens": {
+        "label": "Lente",
+        "shape": "Forma",
+        "atlas": "Atlas",
+        "later": "mais tarde"
+      },
+      "intro": "Forma mostra o tamanho, a profundidade e a saúde da árvore de tópicos. Selecione um bloco para ver os detalhes. Atlas, todas as notas organizadas por significado, chega numa fase posterior.",
+      "loading": "Carregando a árvore de tópicos...",
+      "error": "Não foi possível carregar a árvore de tópicos.",
+      "missing": "Este ramo não existe mais. Ele pode ter sido unido a outro ou removido.",
+      "backToTree": "Voltar para a árvore inteira",
+      "empty": "Nada foi organizado ainda. O mapa aparece conforme os tópicos são criados a partir das suas notas.",
+      "summary": {
+        "label": "Forma da árvore",
+        "items": "Itens",
+        "topics": "Tópicos",
+        "meanDepth": "Profundidade média",
+        "reachable": "Alcançáveis",
+        "warnings": "Avisos",
+        "warningsValue": "{soft} leves · {hard} graves"
+      },
+      "display": {
+        "label": "Gráfico ou tabela",
+        "chart": "Gráfico",
+        "table": "Tabela"
+      },
+      "zoom": {
+        "out": "Reduzir",
+        "in": "Ampliar",
+        "fit": "Ajustar",
+        "level": "Zoom {percent}"
+      },
+      "branch": {
+        "label": "Ramo ampliado",
+        "zoomedIn": "Ampliado em",
+        "wholeTree": "· a árvore inteira"
+      },
+      "chart": {
+        "label": "Icicle da árvore de tópicos. Cada bloco é um botão que seleciona um tópico.",
+        "level": "Nível {level}",
+        "cell": "{title}, {items}, nível {level}, saúde: {health}",
+        "cellPlain": "{title}, {items}, nível {level}",
+        "legendWidth": "Largura = itens · linha = nível",
+        "legendAttention": "precisa de atenção",
+        "legendSelected": "selecionado",
+        "legendDirect": "itens colocados diretamente no tópico",
+        "legendNew": "+n = itens novos nesta semana",
+        "truncated": "Os níveis mais profundos não são desenhados. Amplie um ramo para vê-los.",
+        "pruned": "Blocos muito estreitos não são desenhados aqui. A tabela lista todos os tópicos."
+      },
+      "table": {
+        "caption": "A árvore de tópicos como tabela, uma linha por tópico, de cima para baixo",
+        "topic": "Tópico",
+        "level": "Nível",
+        "items": "Itens",
+        "direct": "Diretos",
+        "subtopics": "Subtópicos",
+        "week": "Na semana",
+        "coherence": "Coerência",
+        "health": "Saúde"
+      },
+      "panel": {
+        "label": "Tópico selecionado",
+        "selected": "Tópico selecionado",
+        "selectedUnsorted": "Itens esperando um lugar",
+        "items": "Itens",
+        "level": "Nível",
+        "children": "Filhos",
+        "childrenMixed": "{subtopics} + {direct} diretos",
+        "childrenDirect": "{direct} diretos",
+        "week": "Na semana",
+        "coherence": "Coerência",
+        "health": "Saúde",
+        "open": "Abrir tópico",
+        "zoomIn": "Ampliar este ramo",
+        "unsortedNote": "Estes itens estão diretamente na raiz e esperam um tópico."
+      },
+      "health": {
+        "good": "Boa",
+        "attention": "Precisa de atenção",
+        "violation": "Problema na estrutura"
+      },
+      "warnings": {
+        "title": "Avisos na árvore · {count}",
+        "none": "Nenhum aviso. A árvore está em boa forma.",
+        "deeper": "Um tópico abaixo dos níveis mostrados",
+        "awaiting": "Você criou ou fixou este tópico, então o app apenas avisa.",
+        "pending": {
+          "rebalance": "Foi proposta uma reorganização deste ramo. Ela mexe em tópicos que você criou ou fixou, então espera a sua decisão.",
+          "areas": "Foi proposto um novo agrupamento das áreas de topo. Ele espera a sua decisão.",
+          "rebuild": "Foi proposta uma reconstrução dos tópicos. Ela espera a sua decisão.",
+          "other": "Foi proposta uma mudança na estrutura. Ela espera a sua decisão."
+        },
+        "risk": {
+          "high": "Impacto alto",
+          "medium": "Impacto médio",
+          "low": "Impacto baixo"
+        },
+        "reasons": {
+          "singleChild": "Cadeia de um filho: contém só um subtópico.",
+          "fanOutOutside": "Contém {value} subtópicos, fora da faixa fácil de percorrer.",
+          "fanOutAbove": "Contém {value} subtópicos, demais para percorrer.",
+          "leafOutside": "Contém {value} itens diretamente, fora do tamanho usual de uma folha.",
+          "leafAbove": "Contém {value} itens diretamente, muito mais do que uma folha deveria.",
+          "depthAbove": "Está {value} níveis abaixo, mais fundo do que a árvore procura.",
+          "depthCap": "Está {value} níveis abaixo, além do limite.",
+          "coherence": "Os itens não são muito parecidos entre si (coerência {value}).",
+          "duplicateTitle": "Outro tópico ao lado tem o mesmo nome.",
+          "structure": "A estrutura tem um problema que o app repara sozinho.",
+          "other": "Este tópico precisa de atenção."
+        },
+        "apply": "Aplicar",
+        "dismiss": "Descartar",
+        "working": "Aguarde...",
+        "applied": "Mudança aplicada.",
+        "dismissed": "Proposta descartada.",
+        "failed": "Não deu certo. Tente novamente."
+      },
+      "changed": {
+        "title": "Mudou hoje",
+        "none": "Nada mudou hoje.",
+        "undo": "Desfazer",
+        "undoing": "Desfazendo...",
+        "undone": "Mudança desfeita.",
+        "blocked": "Não dá para desfazer agora: uma mudança posterior depende dela.",
+        "failed": "Não foi possível desfazer a mudança. Tente novamente.",
+        "titles": {
+          "build": "Os tópicos foram criados a partir das suas notas.",
+          "rebalance": "A estrutura foi reequilibrada.",
+          "rebalanceItems": "A estrutura foi reequilibrada. Itens movidos: {count}.",
+          "audit": "Itens fora do lugar foram movidos.",
+          "areas": "As áreas foram reagrupadas.",
+          "naming": "Os tópicos receberam nomes.",
+          "namingCount": "Tópicos nomeados: {count}.",
+          "human": "Você mudou a estrutura.",
+          "rebuild": "Os tópicos foram refeitos.",
+          "other": "A estrutura mudou."
+        }
+      },
+      "compare": {
+        "show": "Ver antes e depois",
+        "hide": "Ocultar antes e depois",
+        "loading": "Carregando...",
+        "error": "Não foi possível carregar os detalhes.",
+        "missing": "Esta mudança não existe mais.",
+        "before": "Antes",
+        "after": "Depois",
+        "none": "Nada para mostrar.",
+        "topic": "{title}, em {parent}",
+        "item": "{title}, em {topic}",
+        "partial": "Só uma parte desta mudança está listada."
+      }
+    },
     "placeholder": {
       "title": "Explore seus tópicos",
       "body": "Escolha um tópico na árvore para ver o que suas notas dizem sobre ele. Tudo o que você adiciona é colocado na árvore para você, e o botão Perguntar responde com base nas suas notas e fontes.",

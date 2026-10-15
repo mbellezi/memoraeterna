@@ -1916,6 +1916,166 @@
         "stances": "Relazioni delle note di questo argomento"
       }
     },
+    "shape": {
+      "tabs": {
+        "label": "Vista della wiki",
+        "topic": "Argomento",
+        "map": "Mappa"
+      },
+      "title": "Mappa",
+      "lens": {
+        "label": "Lente",
+        "shape": "Forma",
+        "atlas": "Atlas",
+        "later": "più avanti"
+      },
+      "intro": "Forma mostra la dimensione, la profondità e lo stato dell’albero degli argomenti. Seleziona un blocco per vederne i dettagli. Atlas, tutte le note disposte per significato, arriverà in una fase successiva.",
+      "loading": "Caricamento dell’albero degli argomenti...",
+      "error": "Non è stato possibile caricare l’albero degli argomenti.",
+      "missing": "Questo ramo non esiste più. Potrebbe essere stato unito a un altro o rimosso.",
+      "backToTree": "Torna all’albero intero",
+      "empty": "Non c’è ancora nulla di organizzato. La mappa compare man mano che gli argomenti vengono creati dalle tue note.",
+      "summary": {
+        "label": "Forma dell’albero",
+        "items": "Elementi",
+        "topics": "Argomenti",
+        "meanDepth": "Profondità media",
+        "reachable": "Raggiungibili",
+        "warnings": "Avvisi",
+        "warningsValue": "{soft} lievi · {hard} gravi"
+      },
+      "display": {
+        "label": "Grafico o tabella",
+        "chart": "Grafico",
+        "table": "Tabella"
+      },
+      "zoom": {
+        "out": "Riduci",
+        "in": "Ingrandisci",
+        "fit": "Adatta",
+        "level": "Zoom {percent}"
+      },
+      "branch": {
+        "label": "Ramo ingrandito",
+        "zoomedIn": "Ingrandito su",
+        "wholeTree": "· l’albero intero"
+      },
+      "chart": {
+        "label": "Icicle dell’albero degli argomenti. Ogni blocco è un pulsante che seleziona un argomento.",
+        "level": "Livello {level}",
+        "cell": "{title}, {items}, livello {level}, stato: {health}",
+        "cellPlain": "{title}, {items}, livello {level}",
+        "legendWidth": "Larghezza = elementi · riga = livello",
+        "legendAttention": "richiede attenzione",
+        "legendSelected": "selezionato",
+        "legendDirect": "elementi collocati direttamente nell’argomento",
+        "legendNew": "+n = elementi nuovi questa settimana",
+        "truncated": "I livelli più profondi non sono disegnati. Ingrandisci un ramo per vederli.",
+        "pruned": "I blocchi molto stretti non sono disegnati qui. La tabella elenca ogni argomento."
+      },
+      "table": {
+        "caption": "L’albero degli argomenti come tabella, una riga per argomento, dall’alto in basso",
+        "topic": "Argomento",
+        "level": "Livello",
+        "items": "Elementi",
+        "direct": "Diretti",
+        "subtopics": "Sottoargomenti",
+        "week": "Questa settimana",
+        "coherence": "Coerenza",
+        "health": "Stato"
+      },
+      "panel": {
+        "label": "Argomento selezionato",
+        "selected": "Argomento selezionato",
+        "selectedUnsorted": "Elementi in attesa di un posto",
+        "items": "Elementi",
+        "level": "Livello",
+        "children": "Figli",
+        "childrenMixed": "{subtopics} + {direct} diretti",
+        "childrenDirect": "{direct} diretti",
+        "week": "Questa settimana",
+        "coherence": "Coerenza",
+        "health": "Stato",
+        "open": "Apri argomento",
+        "zoomIn": "Ingrandisci questo ramo",
+        "unsortedNote": "Questi elementi stanno direttamente sotto la radice e attendono un argomento."
+      },
+      "health": {
+        "good": "Buono",
+        "attention": "Richiede attenzione",
+        "violation": "Problema di struttura"
+      },
+      "warnings": {
+        "title": "Avvisi nell’albero · {count}",
+        "none": "Nessun avviso. L’albero è in buone condizioni.",
+        "deeper": "Un argomento sotto i livelli mostrati",
+        "awaiting": "Hai creato o fissato tu questo argomento, quindi l’app si limita a segnalarlo.",
+        "pending": {
+          "rebalance": "È proposta una riorganizzazione di questo ramo. Tocca argomenti che hai creato o fissato, quindi attende la tua decisione.",
+          "areas": "È proposto un nuovo raggruppamento delle aree principali. Attende la tua decisione.",
+          "rebuild": "È proposta una ricostruzione degli argomenti. Attende la tua decisione.",
+          "other": "È proposta una modifica alla struttura. Attende la tua decisione."
+        },
+        "risk": {
+          "high": "Impatto alto",
+          "medium": "Impatto medio",
+          "low": "Impatto basso"
+        },
+        "reasons": {
+          "singleChild": "Catena di uno: contiene un solo sottoargomento.",
+          "fanOutOutside": "Contiene {value} sottoargomenti, fuori dall’intervallo facile da scorrere.",
+          "fanOutAbove": "Contiene {value} sottoargomenti, troppi da scorrere.",
+          "leafOutside": "Contiene {value} elementi direttamente, fuori dalla dimensione usuale di una foglia.",
+          "leafAbove": "Contiene {value} elementi direttamente, molti più di quanti dovrebbe una foglia.",
+          "depthAbove": "Si trova a {value} livelli di profondità, più in basso di quanto l’albero cerchi.",
+          "depthCap": "Si trova a {value} livelli di profondità, oltre il limite.",
+          "coherence": "I suoi elementi non sono molto affini tra loro (coerenza {value}).",
+          "duplicateTitle": "Un altro argomento accanto ha lo stesso nome.",
+          "structure": "La struttura ha un problema che l’app ripara da sola.",
+          "other": "Questo argomento richiede attenzione."
+        },
+        "apply": "Applica",
+        "dismiss": "Scarta",
+        "working": "Attendi...",
+        "applied": "Modifica applicata.",
+        "dismissed": "Proposta scartata.",
+        "failed": "Non ha funzionato. Riprova."
+      },
+      "changed": {
+        "title": "Cambiato oggi",
+        "none": "Oggi non è cambiato nulla.",
+        "undo": "Annulla",
+        "undoing": "Annullamento...",
+        "undone": "Modifica annullata.",
+        "blocked": "Non si può annullare ora: una modifica successiva ne dipende.",
+        "failed": "Non è stato possibile annullare la modifica. Riprova.",
+        "titles": {
+          "build": "Gli argomenti sono stati creati dalle tue note.",
+          "rebalance": "La struttura è stata riequilibrata.",
+          "rebalanceItems": "La struttura è stata riequilibrata. Elementi spostati: {count}.",
+          "audit": "Gli elementi fuori posto sono stati spostati.",
+          "areas": "Le aree sono state raggruppate di nuovo.",
+          "naming": "Gli argomenti hanno ricevuto un nome.",
+          "namingCount": "Argomenti con un nuovo nome: {count}.",
+          "human": "Hai modificato la struttura.",
+          "rebuild": "Gli argomenti sono stati ricostruiti.",
+          "other": "La struttura è cambiata."
+        }
+      },
+      "compare": {
+        "show": "Vedi prima e dopo",
+        "hide": "Nascondi prima e dopo",
+        "loading": "Caricamento...",
+        "error": "Non è stato possibile caricare i dettagli.",
+        "missing": "Questa modifica non esiste più.",
+        "before": "Prima",
+        "after": "Dopo",
+        "none": "Niente da mostrare.",
+        "topic": "{title}, sotto {parent}",
+        "item": "{title}, in {topic}",
+        "partial": "È elencata solo una parte di questa modifica."
+      }
+    },
     "placeholder": {
       "title": "Esplora i tuoi argomenti",
       "body": "Scegli un argomento nell’albero per vedere cosa dicono le tue note. Tutto ciò che aggiungi viene collocato nell’albero per te, e Chiedi risponde a partire dalle tue note e dalle tue fonti.",
