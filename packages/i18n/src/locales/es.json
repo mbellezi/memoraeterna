@@ -479,7 +479,10 @@
       "assetStorage": "Almacenamiento de assets",
       "localModelDownload": "Descarga de modelo local",
       "topicPlace": "Ubicación en temas",
-      "topicSweep": "Revisión del árbol de temas"
+      "topicSweep": "Revisión del árbol de temas",
+      "topicBuild": "Construcción del árbol de temas",
+      "topicRebalance": "Reequilibrio del árbol de temas",
+      "topicAudit": "Auditoría del árbol de temas"
     },
     "progress": {
       "processingSource": "Procesando {title}",
@@ -1771,6 +1774,13 @@
     }
   },
   "topics": {
+    "changeSets": {
+      "place": "{items} elementos ubicados en temas",
+      "build": "Árbol de temas creado: {topics} temas, {items} elementos",
+      "rebuild": "Árbol de temas reconstruido ({items} elementos movidos)",
+      "rebalance": "Temas reorganizados: {operations} cambios, {items} elementos movidos",
+      "proposal": "Reorganización de temas propuesta ({items} elementos)"
+    },
     "placeholder": {
       "title": "Tus temas están en camino",
       "body": "La wiki anterior se eliminó y el nuevo árbol de temas llegará en una próxima actualización. Tus fuentes y notas están en la Biblioteca, y Preguntar responde a partir de ellas.",

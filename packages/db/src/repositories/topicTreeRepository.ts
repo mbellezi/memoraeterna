@@ -263,7 +263,37 @@ export interface BootstrapSnapshotInput extends Omit<TopicChangeSetMeta, "origin
   placements: readonly { item: ItemKey; placement: PlacementRecord }[];
   stats?: readonly TopicStatsWrite[];
   clock?: number;
+  /** The configuration the build used, when it differs from the tree's (D39). */
+  treeConfig?: { config: Record<string, unknown>; configHash: string };
 }
+
+/** The latest build or rebuild of a tree (any status): the baseline of its rebuild triggers. */
+export interface TopicStructureBuild {
+  changeSetId: string;
+  origin: "build" | "rebuild";
+  status: TopicChangeSetStatus;
+  summary: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/** A proposal that waits for the owner or that the owner dismissed (D29). */
+export interface TopicProposal {
+  changeSetId: string;
+  origin: TopicChangeSetOrigin;
+  status: "pending_review" | "dismissed";
+  summary: Record<string, unknown>;
+  createdAt: Date;
+}
+
+/** The topic tables whose planner statistics a bulk build or rebuild leaves stale. */
+export const topicAnalyzedTables = [
+  "topic_trees",
+  "topics",
+  "topic_stats",
+  "topic_placements",
+  "topic_change_sets",
+  "topic_structure_events"
+] as const;
 
 export interface UndoChangeSetInput {
   treeId: string;
@@ -1771,6 +1801,68 @@ export function createTopicTreeRepository(pool: PgPool) {
       return (await readEvents(db, [changeSetId])).get(changeSetId) ?? [];
     },
 
+    /** The latest build or rebuild change-set of a tree, whatever its status; null before any. */
+    async latestStructureBuild(
+      treeId: string,
+      db: Queryable = pool
+    ): Promise<TopicStructureBuild | null> {
+      const result = await db.query<{
+        id: string;
+        origin: "build" | "rebuild";
+        status: TopicChangeSetStatus;
+        summary: Record<string, unknown> | null;
+        createdAt: Date | string;
+      }>(
+        `select id, origin, status, summary, created_at as "createdAt" from topic_change_sets
+          where tree_id = $1 and origin in ('build', 'rebuild')
+          order by created_at desc, id desc limit 1`,
+        [treeId]
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        changeSetId: row.id,
+        origin: row.origin,
+        status: row.status,
+        summary: row.summary ?? {},
+        createdAt: new Date(row.createdAt)
+      };
+    },
+
+    /**
+     * The proposals of a tree that wait for review or were dismissed (D29), oldest first, so the
+     * engine neither repeats a waiting proposal nor brings back a dismissed one.
+     */
+    async reviewedProposals(treeId: string, db: Queryable = pool): Promise<TopicProposal[]> {
+      const result = await db.query<{
+        id: string;
+        origin: TopicChangeSetOrigin;
+        status: "pending_review" | "dismissed";
+        summary: Record<string, unknown> | null;
+        createdAt: Date | string;
+      }>(
+        `select id, origin, status, summary, created_at as "createdAt" from topic_change_sets
+          where tree_id = $1 and status in ('pending_review', 'dismissed') order by created_at, id`,
+        [treeId]
+      );
+      return result.rows.map((row) => ({
+        changeSetId: row.id,
+        origin: row.origin,
+        status: row.status,
+        summary: row.summary ?? {},
+        createdAt: new Date(row.createdAt)
+      }));
+    },
+
+    /**
+     * Refreshes the planner statistics of the topic tables (ANALYZE takes no lock that blocks
+     * readers or writers). A bulk build or rebuild changes most of their rows at once, and until
+     * autovacuum catches up the pending-item reads plan as if the tables were empty.
+     */
+    async analyzeTopicTables(): Promise<void> {
+      await pool.query(`analyze ${topicAnalyzedTables.join(", ")}`);
+    },
+
     /**
      * Applies one change-set (or records it for review). Events that change nothing are dropped;
      * an empty change-set writes nothing (`no_change`). A stale generation, a retired tree or an
@@ -1793,7 +1885,8 @@ export function createTopicTreeRepository(pool: PgPool) {
           const pending = input.status === "pending_review";
           const conflict = treeConflict(tree, pending ? undefined : input.expectedGeneration);
           if (conflict) return conflict;
-          if (events.length === 0)
+          // A structural configuration change is recorded even when its rebuild moves nothing.
+          if (events.length === 0 && (pending || !input.treeConfig))
             return { kind: "no_change", generation: tree.generation } as const;
           if (pending) {
             const changeSetId = await insertChangeSet(
@@ -1910,7 +2003,8 @@ export function createTopicTreeRepository(pool: PgPool) {
             changeSet: { meta, undoOf: null },
             events,
             stats: input.stats ?? [],
-            clock: input.clock
+            clock: input.clock,
+            treeConfig: input.treeConfig
           });
         })
       );

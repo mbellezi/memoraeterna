@@ -220,6 +220,13 @@ export interface TopicSourceOwner {
   contentHash: string | null;
 }
 
+/** Where a note sits in its source hierarchy (chapter seeding). */
+export interface TopicNoteChapter {
+  rootSourceId: string | null;
+  /** The child of the root the note descends from; null for a note of the root itself. */
+  chapterId: string | null;
+}
+
 export interface TopicItemOwners {
   /** The requested notes that exist; a requested note missing here was deleted. */
   notes: Map<string, TopicNoteOwner>;
@@ -416,6 +423,22 @@ export const topicLoadSql = {
     from source_items s
     ${rootOf("s.id")}
     where s.id = any($1::uuid[])`,
+  // The chapter of a page of notes: the child of the root on the way up from the owning source
+  // (null when the owning source is the root itself or for a knowledge-owned note).
+  noteChapters: `select a.id, chain.root_id as "rootSourceId", chain.chapter_id as "chapterId"
+    from atomic_notes a
+    left join lateral (
+      with recursive up(id, parent_id, below, depth) as (
+        select h.id, h.parent_source_item_id, null::uuid, 0 from source_items h
+         where h.id = a.owning_source_item_id
+        union all select h.id, h.parent_source_item_id, up.id, up.depth + 1 from source_items h
+          join up on h.id = up.parent_id where up.depth < 64)
+      select up.id as root_id, up.below as chapter_id from up where up.parent_id is null limit 1
+    ) chain on true
+    where a.id = any($1::uuid[])`,
+  childSourceCounts: `select s.parent_source_item_id as id, count(*)::int as children
+    from source_items s where s.parent_source_item_id = any($1::uuid[])
+    group by s.parent_source_item_id`,
   // The space of the newest note vector that names one: the topic service's interim space
   // resolver reads it until the AI service computes the route's space without a call (D26, T14).
   newestNoteSpace: `select provider, model, runtime, strategy, dimensions from (
@@ -553,6 +576,12 @@ interface SourceOwnerRow extends QueryResultRow {
   id: string;
   contentHash: string | null;
   rootSourceId: string | null;
+}
+
+interface NoteChapterRow extends QueryResultRow {
+  id: string;
+  rootSourceId: string | null;
+  chapterId: string | null;
 }
 
 interface StoredSpaceRow extends QueryResultRow {
@@ -756,6 +785,42 @@ export function createTopicTreeLoadRepository(db: Queryable) {
         }
       }
       return owners;
+    },
+
+    /**
+     * The chapter of each requested note that exists (chapter seeding, T19): its root source and
+     * the root's child source item it descends from (null when the note belongs to the root
+     * itself, or for a knowledge-owned note, which has no root either).
+     */
+    async noteChapters(
+      noteIds: readonly string[],
+      options: TopicItemOwnersOptions = {}
+    ): Promise<Map<string, TopicNoteChapter>> {
+      const pageSize = positiveInteger(options.pageSize, topicLoadDefaults.vectorPageSize, 10_000);
+      const ids = [...new Set(noteIds.map((id) => id.toLowerCase()))];
+      const chapters = new Map<string, TopicNoteChapter>();
+      for (let start = 0; start < ids.length; start += pageSize) {
+        const result = await db.query<NoteChapterRow>(topicLoadSql.noteChapters, [
+          ids.slice(start, start + pageSize)
+        ]);
+        for (const row of result.rows) {
+          chapters.set(row.id, { rootSourceId: row.rootSourceId, chapterId: row.chapterId });
+        }
+      }
+      return chapters;
+    },
+
+    /** How many child source items each requested source has (absent: none). */
+    async childSourceCounts(sourceIds: readonly string[]): Promise<Map<string, number>> {
+      const ids = [...new Set(sourceIds.map((id) => id.toLowerCase()))];
+      const counts = new Map<string, number>();
+      if (ids.length === 0) return counts;
+      const result = await db.query<QueryResultRow & { id: string; children: number }>(
+        topicLoadSql.childSourceCounts,
+        [ids]
+      );
+      for (const row of result.rows) counts.set(row.id, Number(row.children));
+      return counts;
     },
 
     /**

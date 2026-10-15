@@ -475,7 +475,10 @@
       "assetStorage": "Asset storage",
       "localModelDownload": "Local model download",
       "topicPlace": "Topic placement",
-      "topicSweep": "Topic tree check"
+      "topicSweep": "Topic tree check",
+      "topicBuild": "Topic tree build",
+      "topicRebalance": "Topic tree rebalancing",
+      "topicAudit": "Topic tree audit"
     },
     "progress": {
       "processingSource": "Processing {title}",
@@ -1764,6 +1767,13 @@
     }
   },
   "topics": {
+    "changeSets": {
+      "place": "Placed {items} items in topics",
+      "build": "Built the topic tree: {topics} topics, {items} items",
+      "rebuild": "Rebuilt the topic tree ({items} items moved)",
+      "rebalance": "Reorganized topics: {operations} changes, {items} items moved",
+      "proposal": "Proposed topic reorganization ({items} items)"
+    },
     "placeholder": {
       "title": "Your topics are on the way",
       "body": "The old wiki was removed, and the new topic tree arrives in a coming update. Your sources and notes are in the Library, and Ask answers from them.",

@@ -198,6 +198,28 @@ export class TopicTreeService {
   }
 
   /**
+   * Runs an engine job (the build, REBALANCE and audit of `topic-build.ts`) on the cache of an
+   * active tree at its current generation, in turn with PLACE and the sweep. Null when the tree is
+   * not active. A run that throws drops the cache; a run that commits keeps the cache in step
+   * itself, or drops it.
+   */
+  public runOnTree<T>(
+    treeId: string,
+    run: (cache: TopicTreeCache) => Promise<T>
+  ): Promise<T | null> {
+    return this.exclusive(async () => {
+      const cache = await this.currentCache(treeId);
+      if (!cache) return null;
+      try {
+        return await run(cache);
+      } catch (error) {
+        this.cache = null;
+        throw error;
+      }
+    });
+  }
+
+  /**
    * The cached tree's canonical structure and statistics dumps (developer checks and exports):
    * equal dumps of the cache and of a fresh load mean the cache follows the database exactly.
    */

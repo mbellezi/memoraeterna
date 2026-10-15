@@ -136,22 +136,44 @@ describe("the topic services factory", () => {
     });
   });
 
+  describe("the light-lane registry (D33)", () => {
+    it("runs PLACE, the sweep, the build, REBALANCE and the audit on the compute worker (T19)", () => {
+      const created = create();
+      for (const type of [
+        topicJobTypes.place,
+        topicJobTypes.sweep,
+        topicJobTypes.build,
+        topicJobTypes.rebalance,
+        topicJobTypes.audit
+      ]) {
+        expect(created.jobs[type]?.needsModel, type).toBe(false);
+      }
+      expect(created.structure).toBeDefined();
+    });
+  });
+
   describe("the topic barrier (D23)", () => {
     it("holds every topic job type, and the release resumes them and wakes the light lane", async () => {
       const wake = vi.fn();
       const created = create({ wake });
-      const types = [topicJobTypes.place, topicJobTypes.sweep];
+      const types = [
+        topicJobTypes.place,
+        topicJobTypes.sweep,
+        topicJobTypes.build,
+        topicJobTypes.rebalance,
+        topicJobTypes.audit
+      ];
       const heldTypes = () => types.map((type) => created.jobs[type]?.held?.());
-      expect(heldTypes()).toEqual([false, false]);
+      expect(heldTypes()).toEqual(types.map(() => false));
 
       created.holdTopicJobs();
       expect(created.service.isHeld()).toBe(true);
-      expect(heldTypes()).toEqual([true, true]);
+      expect(heldTypes()).toEqual(types.map(() => true));
       expect(wake).not.toHaveBeenCalled();
 
       await created.releaseTopicJobs();
       expect(created.service.isHeld()).toBe(false);
-      expect(heldTypes()).toEqual([false, false]);
+      expect(heldTypes()).toEqual(types.map(() => false));
       expect(wake).toHaveBeenCalledTimes(1);
     });
 

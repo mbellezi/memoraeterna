@@ -1132,7 +1132,10 @@ function jobTypeMessageKey(type: string): MessageKey {
         "asset-storage": "jobs.types.assetStorage",
         "local-model-download": "jobs.types.localModelDownload",
         "topic-place": "jobs.types.topicPlace",
-        "topic-sweep": "jobs.types.topicSweep"
+        "topic-sweep": "jobs.types.topicSweep",
+        "topic-build": "jobs.types.topicBuild",
+        "topic-rebalance": "jobs.types.topicRebalance",
+        "topic-audit": "jobs.types.topicAudit"
       } as Record<string, MessageKey>
     )[type] ?? "jobs.types.ingestion"
   );

@@ -1,0 +1,1457 @@
+// The structure jobs of the Topic Tree Engine (F2 T19; D12, D39): `topic-build` (the cold start
+// of any library and ID-preserving rebuilds), `topic-rebalance` (REBALANCE of the topics that
+// changed) and `topic-audit` (invariants, the mis-parent audit, daily metrics and the rebuild
+// triggers). They run on the light lane's `compute` worker (D33). A build reads its inputs and
+// applies its result in the engine's turn (`TopicTreeService.runOnTree`); clustering above
+// `bootstrap.singleTopicMaxItems` notes runs in the clustering worker thread between the two, so
+// the cache is held only for the short parts. Every change is one change-set through the single
+// writer (D9), and after a bulk build or rebuild the planner statistics of the topic tables are
+// refreshed (ANALYZE), so the pending-item reads keep their index plans.
+import { randomUUID } from "node:crypto";
+
+import {
+  createTopicTreeLoadRepository,
+  createTopicTreeRepository,
+  createViewHistoryRepository,
+  topicStatsWrites,
+  viewHistoryLimits
+} from "@app/db";
+import type {
+  ApplyChangeSetResult,
+  JobRecord,
+  JsonObject,
+  PgPool,
+  TopicItemInfo,
+  TopicItemVectors
+} from "@app/db";
+import { topicLimits } from "@app/domain";
+import {
+  applyRebuild,
+  areasActive,
+  areasGroupingDue,
+  auditTopicTree,
+  changeSetRisk,
+  chapterSeedGroups,
+  coldStartKind,
+  compareContentKeys,
+  createTopicTreeEditor,
+  createTopicTreeState,
+  decidePlacement,
+  dominantRootSource,
+  eventsTopics,
+  frozenSubtrees,
+  getTopic,
+  hasTopics,
+  isLive,
+  itemKey,
+  level2TopicCount,
+  liveTopicIds,
+  parseItemKey,
+  pathOf,
+  placeItem,
+  placementRecord,
+  primaryPlacement,
+  rebalanceTree,
+  rebuildNeedsReview,
+  rebuildPartitionOf,
+  rebuildTrigger,
+  recentlyOpenedTopics,
+  recomputePaths,
+  recomputeSubtree,
+  registerItem,
+  rootSourceVectorFromState,
+  rowView,
+  setFrozenTopics,
+  shapeReport,
+  smallLibraryPartition,
+  smallPartitionNodes,
+  structureSignals,
+  topicClusteringMaxSeedGroups,
+  topicClusteringRowOrder,
+  topicRecordOf,
+  topicsWithStaleStats
+} from "@app/domain/topic-tree";
+import type {
+  BuildBaseline,
+  ChapterSeedItem,
+  ChapterSeeding,
+  FrozenSubtree,
+  ItemKey,
+  PlacementContext,
+  RebuildReason,
+  RowPartitionNode,
+  TopicClusteringRequest,
+  TopicClusteringResult,
+  TopicTreeConfig,
+  TopicTreeState
+} from "@app/domain/topic-tree";
+
+import { jobTaskPayload } from "../../job-task-payload.js";
+import { detectCommunitiesLouvain } from "../../workers/topic-communities.js";
+import { WorkerSupervisor } from "../worker-supervisor.js";
+import { localDay } from "./topic-ai.js";
+import type { TopicAiMode } from "./topic-ai.js";
+import { ItemVectorStore, noteEntries, rootVectorFingerprint } from "./topic-cache.js";
+import type { TopicTreeCache } from "./topic-cache.js";
+import type { TopicChangeCoalescer } from "./topic-changes.js";
+import { TopicTreePayloadSchema, topicJobTypes } from "./topic-jobs.js";
+import type { TopicJobType, TopicScope } from "./topic-jobs.js";
+import { compareTreeSpace } from "./topic-space.js";
+import type { SpaceResolver } from "./topic-space.js";
+import { structuralConfigHash } from "./topic-tree-service.js";
+import type { TopicTreeService } from "./topic-tree-service.js";
+import { immediateDebounce } from "./topic-triggers.js";
+import type { TopicTriggers } from "./topic-triggers.js";
+
+/** Bounds of the structure jobs' own work (engine parameters live in the tree's configuration). */
+export const topicStructureLimits = {
+  /** Plans of one build whose inputs went stale before the apply (then it is enqueued again). */
+  buildAttempts: 2,
+  /** Items examined per pending-item read while a cold start gathers the library. */
+  pendingPage: 2_000
+} as const;
+
+/** Clusters a build request (the clustering worker thread in the app, spec 3.4). */
+export type ClusterTopics = (
+  request: TopicClusteringRequest,
+  signal: AbortSignal
+) => Promise<TopicClusteringResult>;
+
+export interface TopicStructureJobsOptions {
+  getPool: () => PgPool | null;
+  service: TopicTreeService;
+  triggers: TopicTriggers;
+  changes: TopicChangeCoalescer;
+  spaceResolver: SpaceResolver;
+  aiMode: TopicAiMode;
+  /** Job types with an executor: follow-ups of unregistered types are not requested. */
+  isRegistered: (type: string) => boolean;
+  /** The configuration the active tree should have now; a new structural hash rebuilds it (D39). */
+  effectiveConfig: () => TopicTreeConfig;
+  /** Default: the clustering worker thread of a supervisor of its own. */
+  clusterTopics?: ClusterTopics;
+  logger?: Pick<Console, "info" | "warn" | "error">;
+  now?: () => Date;
+}
+
+/** The inputs of one build, read in the engine's turn. */
+interface BuildPlan {
+  kind: "cold" | "rebuild";
+  reason: "cold-start" | RebuildReason;
+  generation: number;
+  config: TopicTreeConfig;
+  configHash: string;
+  /** The tree's configuration changes with this build (D39). */
+  configChanged: boolean;
+  seed: number;
+  dim: 256 | 768 | 1024;
+  /** Clusterable notes in content-key order (D22) and their unit vectors, row by row. */
+  keys: ItemKey[];
+  contentHashes: string[];
+  vectors: Float32Array;
+  seeding: ChapterSeeding | null;
+  seedRows: number[][];
+  frozen: FrozenSubtree[];
+  /** Cold start: every current note (with or without a vector) and every root source. */
+  notes: Map<ItemKey, TopicItemInfo>;
+  /** Cold start: every item the plan read, current or not (the rest was placed meanwhile). */
+  seen: Set<ItemKey>;
+  sources: { key: ItemKey; contentHash: string; composite: Float32Array | null }[];
+  loadMs: number;
+}
+
+type PlanOutcome = { kind: "plan"; plan: BuildPlan } | { kind: "done"; result: JsonObject };
+
+interface Partition {
+  nodes: RowPartitionNode[];
+  frozenNodes: number[];
+  method: "small" | "louvain";
+  modularity: number | null;
+  clusterMs: number;
+}
+
+/** REBALANCE checks that were deferred, not refused: they are checked again on the next run. */
+const deferredReasons: ReadonlySet<string> = new Set(["cooldown", "frozen", "budget"]);
+
+/** Rows of a clustering result that hold more than the root. */
+function isTree(nodes: readonly RowPartitionNode[]): boolean {
+  return nodes.some((node) => node.parent !== null);
+}
+
+const round = (value: number): number => Math.round(value * 10) / 10;
+
+/** A job result with the time its whole run took (`ms`). */
+async function timed(run: () => Promise<JsonObject>): Promise<JsonObject> {
+  const started = performance.now();
+  const result = await run();
+  return { ...result, ms: round(performance.now() - started) };
+}
+
+/** Every live topic on the paths from `ids` to the root. */
+function pathsOf(state: TopicTreeState, ids: Iterable<string>): string[] {
+  const output = new Set<string>();
+  for (const id of ids) {
+    const node = state.topics.get(id);
+    if (!node || !isLive(node)) continue;
+    for (const pathId of pathOf(state, id)) output.add(pathId);
+  }
+  return [...output].sort();
+}
+
+function baselineOf(summary: Record<string, unknown> | undefined): BuildBaseline | null {
+  const notes = summary?.notes;
+  if (typeof notes !== "number" || !Number.isFinite(notes)) return null;
+  const coherence = summary?.leafCoherence;
+  return { notes, leafCoherence: typeof coherence === "number" ? coherence : null };
+}
+
+/** Where REBALANCE re-admits a direct item below `from`: the decision's topic, if deeper. */
+function readmitter(
+  state: TopicTreeState,
+  vectors: ItemVectorStore,
+  config: TopicTreeConfig
+): (item: ItemKey, from: string) => string | null {
+  return (item, from) => {
+    const row = vectors.rowOf(item);
+    if (row === undefined) return null;
+    const decision = decidePlacement(state, config, rowView(vectors.matrix, row), { from });
+    return decision.topicId === from ? null : decision.topicId;
+  };
+}
+
+export class TopicStructureJobs {
+  private readonly workers: WorkerSupervisor | null;
+  private readonly cluster: ClusterTopics;
+  private lastAudit: { treeId: string; generation: number; day: string } | null = null;
+  /**
+   * Topics REBALANCE checks next, per tree: those the change-sets since its last run touched, the
+   * ones the audit found out of their bands, and the checks it deferred (cooldown, freeze, budget,
+   * protected hard violations), as in the replay. A whole-tree pass costs seconds at 18k notes.
+   */
+  private readonly dirty = new Map<string, Set<string>>();
+
+  public constructor(private readonly options: TopicStructureJobsOptions) {
+    if (options.clusterTopics) {
+      this.workers = null;
+      this.cluster = options.clusterTopics;
+    } else {
+      const workers = new WorkerSupervisor();
+      this.workers = workers;
+      this.cluster = (request, signal) => workers.clusterTopics(request, { signal });
+    }
+  }
+
+  public async dispose(): Promise<void> {
+    await this.workers?.shutdown();
+  }
+
+  // -------------------------------------------------------------------------
+  // Follow-ups other jobs ask for
+
+  /**
+   * After an applied PLACE change-set: the topics it touched (read from its stored events) wait
+   * for REBALANCE, which is asked for (debounced), and an audit when one is due.
+   */
+  public async afterPlace(job: JobRecord, result: JsonObject): Promise<void> {
+    if (result.status !== "applied" || typeof result.changeSetId !== "string") return;
+    const treeId = typeof job.payload.treeId === "string" ? job.payload.treeId : null;
+    if (!treeId) return;
+    const changeSetId = result.changeSetId;
+    await this.guard(async () => {
+      const events = await createTopicTreeRepository(this.requirePool()).changeSetEvents(
+        changeSetId
+      );
+      this.markDirty(treeId, eventsTopics(events));
+      await this.request(topicJobTypes.rebalance, treeId);
+      await this.auditIfDue(treeId, Number(result.generation));
+    });
+  }
+
+  /**
+   * After a sweep that restored statistics a cascade left inexact (D32): an audit, which finds the
+   * topics the deletions left out of their bands and asks REBALANCE to check them.
+   */
+  public async afterSweep(result: JsonObject): Promise<void> {
+    if (Number(result.recomputedTopics ?? 0) === 0 || typeof result.treeId !== "string") return;
+    const treeId = result.treeId;
+    await this.guard(() =>
+      this.request(topicJobTypes.audit, treeId, { immediate: true }).then(() => undefined)
+    );
+  }
+
+  private markDirty(treeId: string, topicIds: Iterable<string>): void {
+    const set = this.dirty.get(treeId) ?? new Set<string>();
+    for (const id of topicIds) set.add(id);
+    this.dirty.set(treeId, set);
+  }
+
+  /** The topics waiting for REBALANCE in a tree (taken: the run puts back what it defers). */
+  private takeDirty(treeId: string): string[] {
+    const set = this.dirty.get(treeId);
+    this.dirty.delete(treeId);
+    return set ? [...set].sort() : [];
+  }
+
+  /** Startup: an audit (daily metrics, the structural configuration hash, rebuild triggers). */
+  public async startup(treeId: string | null): Promise<void> {
+    if (!treeId) return;
+    await this.guard(() => this.request(topicJobTypes.audit, treeId).then(() => undefined));
+  }
+
+  private async guard(run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (error) {
+      this.options.logger?.error("Topic structure follow-up could not be enqueued", error);
+    }
+  }
+
+  private async auditIfDue(treeId: string, generation: number): Promise<void> {
+    const last = this.lastAudit;
+    const every = this.options.service.config().audit.everyChangeSets;
+    const due =
+      last === null ||
+      last.treeId !== treeId ||
+      last.day !== localDay(this.now()) ||
+      (Number.isFinite(generation) && generation - last.generation >= every);
+    if (due) await this.request(topicJobTypes.audit, treeId);
+  }
+
+  /** Requests a tree-wide job (or a gate scope); model jobs only when topic AI is on (D23). */
+  private async request(
+    type: Exclude<TopicJobType, "topic-place" | "topic-sweep">,
+    treeId: string,
+    options: { scope?: TopicScope; immediate?: boolean } = {}
+  ): Promise<number> {
+    const model =
+      type === topicJobTypes.gate ||
+      type === topicJobTypes.name ||
+      type === topicJobTypes.areas ||
+      type === topicJobTypes.labelEmbed;
+    if (model && this.options.aiMode !== "full") return 0;
+    if (!this.options.isRegistered(type)) return 0;
+    const jobs = await this.options.triggers.request(
+      type,
+      treeId,
+      options.scope ?? null,
+      options.immediate ? { debounce: immediateDebounce } : {}
+    );
+    return jobs.length;
+  }
+
+  // -------------------------------------------------------------------------
+  // `topic-build`
+
+  public runBuild(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
+    const { treeId } = TopicTreePayloadSchema.parse(jobTaskPayload(job.payload));
+    return timed(async () => {
+      for (let attempt = 0; attempt < topicStructureLimits.buildAttempts; attempt += 1) {
+        const resolution = await this.options.spaceResolver.resolve();
+        const planned = await this.options.service.runOnTree(treeId, async (cache) => {
+          if (compareTreeSpace(cache.tree, resolution).kind === "space_changed") {
+            return { kind: "done", result: { status: "space_changed" } } satisfies PlanOutcome;
+          }
+          return this.planBuild(cache);
+        });
+        if (planned === null) return { status: "tree_inactive" };
+        if (planned.kind === "done") return planned.result;
+        const { plan } = planned;
+        if (signal.aborted) throw new Error("topics.errors.canceled");
+        const partition = await this.partition(plan, signal);
+        if (signal.aborted) throw new Error("topics.errors.canceled");
+        const applied = await this.options.service.runOnTree(treeId, (cache) =>
+          plan.kind === "cold"
+            ? this.applyColdStart(cache, plan, partition, job)
+            : this.applyRebuildPlan(cache, plan, partition, job)
+        );
+        if (applied === null) return { status: "tree_inactive" };
+        if (applied.status !== "stale") return applied;
+      }
+      // Other writers kept changing the tree: build again later instead of failing the job.
+      await this.request(topicJobTypes.build, treeId);
+      return { status: "deferred" };
+    });
+  }
+
+  /** What a build of this tree does now, and its inputs. */
+  private async planBuild(cache: TopicTreeCache): Promise<PlanOutcome> {
+    const effective = this.options.effectiveConfig();
+    const hash = structuralConfigHash(effective);
+    if (!hasTopics(cache.state)) return this.planColdStart(cache, effective, hash);
+    const decision = await this.rebuildDecision(cache, effective, hash);
+    if ("skip" in decision) return { kind: "done", result: { status: decision.skip } };
+    const plan = this.planRebuild(cache, decision);
+    // A library that shrank below a first topic keeps its tree; PLACE and REBALANCE tend it.
+    if (plan.keys.length < decision.config.bootstrap.minItems) {
+      return { kind: "done", result: { status: "too_few_items", rows: plan.keys.length } };
+    }
+    return { kind: "plan", plan };
+  }
+
+  /**
+   * Whether a tree with topics is rebuilt now: a new structural configuration (D39), else one of
+   * the rebuild triggers against the last build. A proposal that waits for review blocks both; a
+   * dismissed configuration rebuild is not proposed again for the same configuration.
+   */
+  private async rebuildDecision(
+    cache: TopicTreeCache,
+    effective: TopicTreeConfig,
+    hash: string
+  ): Promise<
+    | { reason: RebuildReason; config: TopicTreeConfig; configHash: string; changed: boolean }
+    | { skip: string }
+  > {
+    const repository = createTopicTreeRepository(this.requirePool());
+    const latest = await repository.latestStructureBuild(cache.tree.id);
+    if (latest?.status === "pending_review") return { skip: "review_pending" };
+    if (hash !== cache.tree.configHash) {
+      if (latest?.status === "dismissed" && latest.summary.configHash === hash) {
+        return { skip: "dismissed" };
+      }
+      return { reason: "config", config: effective, configHash: hash, changed: true };
+    }
+    const baseline = baselineOf(latest?.summary);
+    if (!baseline) return { skip: "no_change" };
+    const trigger = rebuildTrigger(structureSignals(cache.state), baseline, cache.config);
+    if (!trigger) return { skip: "no_change" };
+    return {
+      reason: trigger,
+      config: cache.config,
+      configHash: cache.tree.configHash,
+      changed: false
+    };
+  }
+
+  /** The cold start: every current note and root source of the library (D39). */
+  private async planColdStart(
+    cache: TopicTreeCache,
+    config: TopicTreeConfig,
+    hash: string
+  ): Promise<PlanOutcome> {
+    const started = performance.now();
+    const pool = this.requirePool();
+    const loader = createTopicTreeLoadRepository(pool);
+    const noteIds = new Set<string>();
+    const sourceIds = new Set<string>();
+    for (const entry of cache.state.items.values()) {
+      const parsed = parseItemKey(entry.key);
+      if (parsed) (parsed.kind === "note" ? noteIds : sourceIds).add(parsed.id);
+    }
+    let after: ItemKey | null = null;
+    do {
+      const page = await loader.pendingItems(cache.tree.id, cache.space, {
+        limit: topicStructureLimits.pendingPage,
+        after
+      });
+      for (const item of page.items) (item.kind === "note" ? noteIds : sourceIds).add(item.id);
+      after = page.next;
+    } while (after !== null);
+    const owners = await loader.itemOwners({ noteIds: [...noteIds], sourceIds: [...sourceIds] });
+    const current = [...owners.notes.values()].filter((owner) => owner.current);
+    const vectors = await loader.loadItemVectors(
+      cache.space,
+      current.map((owner) => ({ kind: "note" as const, id: owner.id }))
+    );
+    const entries = noteEntries(vectors, owners.notes);
+    const notes = new Map<ItemKey, TopicItemInfo>();
+    for (const [key, entry] of entries) notes.set(key, entry.info);
+    const roots = [...owners.sources.values()].filter((owner) => owner.rootSourceId === owner.id);
+    const composites = await loader.loadItemVectors(
+      cache.space,
+      roots.map((owner) => ({ kind: "source" as const, id: owner.id }))
+    );
+    const compositeRow = new Map(composites.keys.map((key, row) => [key, row]));
+    const sources = roots.map((owner) => {
+      const key = itemKey("source", owner.id);
+      const row = compositeRow.get(key);
+      return {
+        key,
+        contentHash: owner.contentHash ?? "",
+        composite:
+          row === undefined
+            ? null
+            : composites.matrix.data.slice(row * composites.dim, (row + 1) * composites.dim)
+      };
+    });
+    const clusterable = vectors.keys.map((key, row) => ({
+      key,
+      contentHash: vectors.contentHashes[row] as string,
+      row
+    }));
+    const kind = coldStartKind(clusterable.length, config);
+    if (kind === "wait") {
+      // Fewer notes than a first topic needs: the items wait in Unsorted, placed as PLACE would.
+      return {
+        kind: "done",
+        result: await this.placeInUnsorted(cache, notes, vectors, sources, clusterable.length)
+      };
+    }
+    const order = topicClusteringRowOrder(clusterable);
+    const rowOf = new Map(clusterable.map((item) => [item.key, item.row]));
+    const matrix = this.orderedVectors(
+      order.keys,
+      (key) => {
+        const row = rowOf.get(key) as number;
+        return vectors.matrix.data.subarray(row * vectors.dim, (row + 1) * vectors.dim);
+      },
+      cache.space.dimensions
+    );
+    const hashes = new Map(clusterable.map((item) => [item.key, item.contentHash]));
+    const seeding = await this.chapterSeeding(
+      order.keys.map((key) => ({
+        key,
+        contentHash: hashes.get(key) as string,
+        rootSource: owners.notes.get(parseItemKey(key)!.id)?.rootSourceId ?? null,
+        chapter: null
+      })),
+      config
+    );
+    return {
+      kind: "plan",
+      plan: {
+        kind: "cold",
+        reason: "cold-start",
+        generation: cache.tree.generation,
+        config,
+        configHash: hash,
+        configChanged: hash !== cache.tree.configHash,
+        seed: cache.tree.seed,
+        dim: cache.space.dimensions,
+        keys: order.keys.slice(),
+        contentHashes: order.keys.map((key) => hashes.get(key) as string),
+        vectors: matrix,
+        seeding,
+        seedRows: seeding ? order.rowsOf(seeding.groups) : [],
+        frozen: [],
+        notes,
+        seen: new Set([
+          ...[...noteIds].map((id) => itemKey("note", id)),
+          ...[...sourceIds].map((id) => itemKey("source", id))
+        ]),
+        sources,
+        loadMs: round(performance.now() - started)
+      }
+    };
+  }
+
+  /** A rebuild over the placed notes with vectors, protected subtrees kept whole. */
+  private planRebuild(
+    cache: TopicTreeCache,
+    decision: {
+      reason: RebuildReason;
+      config: TopicTreeConfig;
+      configHash: string;
+      changed: boolean;
+    }
+  ): BuildPlan {
+    const started = performance.now();
+    const { state, vectors } = cache;
+    const items: { key: ItemKey; contentHash: string }[] = [];
+    for (const entry of state.items.values()) {
+      if (entry.kind !== "note" || vectors.rowOf(entry.key) === undefined) continue;
+      if (!primaryPlacement(state, entry.key)) continue;
+      items.push({ key: entry.key, contentHash: entry.contentHash });
+    }
+    const order = topicClusteringRowOrder(items);
+    const matrix = this.orderedVectors(
+      order.keys,
+      (key) => vectors.get(key) as Float32Array,
+      cache.space.dimensions
+    );
+    const rowOf = new Map(order.keys.map((key, row) => [key, row]));
+    const frozen = frozenSubtrees(state, rowOf);
+    return {
+      kind: "rebuild",
+      reason: decision.reason,
+      generation: cache.tree.generation,
+      config: decision.config,
+      configHash: decision.configHash,
+      configChanged: decision.changed,
+      seed: cache.tree.seed,
+      dim: cache.space.dimensions,
+      keys: order.keys.slice(),
+      contentHashes: order.keys.map((key) => state.items.get(key)?.contentHash ?? ""),
+      vectors: matrix,
+      seeding: null,
+      seedRows: [],
+      frozen,
+      notes: new Map(),
+      seen: new Set(),
+      sources: [],
+      loadMs: round(performance.now() - started)
+    };
+  }
+
+  /** One Float32Array holding the rows of `keys` in order (it owns its buffer: it is transferred). */
+  private orderedVectors(
+    keys: readonly ItemKey[],
+    vectorOf: (key: ItemKey) => ArrayLike<number>,
+    dim: number
+  ): Float32Array {
+    const data = new Float32Array(keys.length * dim);
+    keys.forEach((key, row) => data.set(vectorOf(key), row * dim));
+    return data;
+  }
+
+  /** Chapter seeding (bootstrap.ts) for the clusterable notes of a cold start. */
+  private async chapterSeeding(
+    items: ChapterSeedItem[],
+    config: TopicTreeConfig
+  ): Promise<ChapterSeeding | null> {
+    const dominant = dominantRootSource(items);
+    if (!dominant || dominant.share < config.bootstrap.chapterSeedShare) return null;
+    const loader = createTopicTreeLoadRepository(this.requirePool());
+    const children =
+      (await loader.childSourceCounts([dominant.rootSource])).get(dominant.rootSource) ?? 0;
+    if (children < config.bootstrap.chapterMinChildren) return null;
+    const own = items.filter((item) => item.rootSource === dominant.rootSource);
+    const chapters = await loader.noteChapters(own.map((item) => parseItemKey(item.key)!.id));
+    const withChapters = items.map((item) => ({
+      ...item,
+      chapter:
+        item.rootSource === dominant.rootSource
+          ? (chapters.get(parseItemKey(item.key)!.id)?.chapterId ?? null)
+          : null
+    }));
+    return chapterSeedGroups(withChapters, () => children, config, topicClusteringMaxSeedGroups);
+  }
+
+  /** The partition of a plan: in process for a small library, else the clustering worker. */
+  private async partition(plan: BuildPlan, signal: AbortSignal): Promise<Partition> {
+    const started = performance.now();
+    const rows = plan.keys.length;
+    const frozenRows = new Set(plan.frozen.flatMap((group) => group.rows));
+    const small = (): Partition => {
+      const matrix = { dim: plan.dim, count: rows, data: plan.vectors };
+      const loose = Array.from({ length: rows }, (_, row) => row).filter(
+        (row) => !frozenRows.has(row)
+      );
+      const result =
+        loose.length > 0
+          ? smallLibraryPartition(matrix, loose, plan.config, plan.seed, detectCommunitiesLouvain)
+          : { groups: [], modularity: 0 };
+      const nodes = smallPartitionNodes(result.groups);
+      const frozenNodes = plan.frozen.map((group) => {
+        const key = nodes.length;
+        nodes.push({ key, parent: 0, items: [...group.rows] });
+        return key;
+      });
+      return {
+        nodes,
+        frozenNodes,
+        method: "small",
+        modularity: result.modularity,
+        clusterMs: round(performance.now() - started)
+      };
+    };
+    if (rows - frozenRows.size <= plan.config.bootstrap.singleTopicMaxItems) return small();
+    const seedGroups = plan.seedRows
+      .map((group) => group.filter((row) => !frozenRows.has(row)))
+      .filter((group) => group.length > 0);
+    const result = await this.cluster(
+      {
+        kind: plan.kind === "rebuild" ? "rebuild" : "build",
+        rows,
+        dimensions: plan.dim,
+        // The worker takes this buffer; the plan keeps its own rows for the apply.
+        vectors: plan.vectors.slice(),
+        ...(seedGroups.length > 0 ? { seedGroups } : {}),
+        ...(plan.kind === "rebuild" && plan.frozen.length > 0
+          ? { frozenGroups: plan.frozen.map((group) => group.rows) }
+          : {}),
+        config: plan.config,
+        seed: plan.seed
+      },
+      signal
+    );
+    // A builder that keeps every row in the root (a library a leaf can hold) makes no first topic.
+    if (!isTree(result.nodes)) return small();
+    return {
+      nodes: result.nodes,
+      frozenNodes: result.frozenNodes ?? [],
+      method: "louvain",
+      modularity: null,
+      clusterMs: round(performance.now() - started)
+    };
+  }
+
+  /**
+   * Places what waits in a tree without topics at the root, as PLACE would (notes without a
+   * vector flagged `needs_vector`, root sources by their D8 vector): one `place` change-set.
+   */
+  private async placeInUnsorted(
+    cache: TopicTreeCache,
+    notes: Map<ItemKey, TopicItemInfo>,
+    vectors: TopicItemVectors,
+    sources: BuildPlan["sources"],
+    clusterable: number
+  ): Promise<JsonObject> {
+    const { state, config } = cache;
+    const store = cache.vectors;
+    const editor = createTopicTreeEditor(state);
+    const context: PlacementContext = {
+      state,
+      vectors: store,
+      config,
+      editor,
+      now: this.now().toISOString()
+    };
+    const rowOf = new Map(vectors.keys.map((key, row) => [key, row]));
+    const pendingNotes = [...notes]
+      .filter(([key]) => !primaryPlacement(state, key))
+      .map(([key, info]) => ({ key, ...info }))
+      .sort(compareContentKeys);
+    let placed = 0;
+    for (const note of pendingNotes) {
+      registerItem(state, note);
+      const row = rowOf.get(note.key);
+      if (row !== undefined) {
+        store.set(
+          note.key,
+          vectors.matrix.data.subarray(row * vectors.dim, (row + 1) * vectors.dim)
+        );
+      }
+      const outcome = placeItem(context, note.key, {
+        fingerprint: row === undefined ? null : note.contentHash
+      });
+      if (outcome.kind === "placed") {
+        state.clock += 1;
+        placed += 1;
+      }
+    }
+    placed += this.placeSources(context, store, sources, { onlyUnplaced: true }).placed;
+    if (editor.events.length === 0) {
+      return { status: "waiting_for_items", clusterable, minItems: config.bootstrap.minItems };
+    }
+    recomputePaths(state, store, [state.rootId]);
+    const result = await createTopicTreeRepository(this.requirePool()).applyChangeSet({
+      treeId: cache.tree.id,
+      expectedGeneration: cache.tree.generation,
+      origin: "place",
+      titleKey: "topics.changeSets.place",
+      titleParams: { items: placed },
+      summary: { placed, clusterable },
+      events: [...editor.events],
+      stats: topicStatsWrites(state, store, [state.rootId]),
+      clock: state.clock
+    });
+    this.options.service.invalidate();
+    if (result.kind !== "applied") return { status: "deferred", reason: result.kind };
+    this.options.changes.record({
+      treeId: cache.tree.id,
+      generation: result.generation,
+      topicIds: [state.rootId],
+      changeSetId: result.changeSetId
+    });
+    return {
+      status: "waiting_for_items",
+      clusterable,
+      minItems: config.bootstrap.minItems,
+      placed,
+      changeSetId: result.changeSetId
+    };
+  }
+
+  /**
+   * PLACE of root sources on a built tree, in content-key order, by their D8 vector (D8): a root
+   * counts in the statistics only while none of its notes is placed. Returns the scopes left
+   * waiting for the gate.
+   */
+  private placeSources(
+    context: PlacementContext,
+    store: ItemVectorStore,
+    sources: BuildPlan["sources"],
+    options: { onlyUnplaced: boolean }
+  ): { placed: number; gated: TopicScope[] } {
+    const { state, config } = context;
+    const gated: TopicScope[] = [];
+    let placed = 0;
+    const ordered = [...sources].sort(compareContentKeys);
+    for (const source of ordered) {
+      if (options.onlyUnplaced && primaryPlacement(state, source.key)) continue;
+      registerItem(state, {
+        key: source.key,
+        kind: "source",
+        contentHash: source.contentHash,
+        rootSource: null
+      });
+      const vector = rootSourceVectorFromState(state, store, source.key, source.composite, config);
+      if (vector.vector) store.set(source.key, vector.vector);
+      else store.delete(source.key);
+      const outcome = placeItem(context, source.key, {
+        fingerprint: rootVectorFingerprint(vector)
+      });
+      if (outcome.kind === "placed") {
+        state.clock += 1;
+        placed += 1;
+      }
+      if (outcome.needsGate) gated.push({ rootSourceId: parseItemKey(source.key)!.id });
+    }
+    return { placed, gated };
+  }
+
+  /**
+   * Applies a cold start: the built topics, the notes in them, then notes without a vector and
+   * root sources by PLACE on the built tree, written as one `build` snapshot. Items the plan did
+   * not see (placed meanwhile) keep their placement.
+   */
+  private async applyColdStart(
+    cache: TopicTreeCache,
+    plan: BuildPlan,
+    partition: Partition,
+    job: JobRecord
+  ): Promise<JsonObject> {
+    if (hasTopics(cache.state)) return { status: "stale" };
+    const started = performance.now();
+    const { tree } = cache;
+    const { dim, config } = plan;
+    const state = createTopicTreeState({ dim, rootId: tree.rootId });
+    const store = new ItemVectorStore(dim, plan.keys.length + plan.sources.length + 16);
+    const editor = createTopicTreeEditor(state, { record: false });
+    for (const [key, info] of plan.notes) registerItem(state, { key, ...info });
+    plan.keys.forEach((key, row) =>
+      store.set(key, plan.vectors.subarray(row * dim, (row + 1) * dim))
+    );
+    const topicOf = new Map<number, string>();
+    for (const node of partition.nodes) {
+      if (node.parent === null) {
+        topicOf.set(node.key, tree.rootId);
+        continue;
+      }
+      const id = randomUUID();
+      topicOf.set(node.key, id);
+      editor.createTopic(id, topicOf.get(node.parent) as string);
+    }
+    for (const node of partition.nodes) {
+      const topicId = topicOf.get(node.key) as string;
+      for (const row of node.items) {
+        editor.placeItem(
+          plan.keys[row] as ItemKey,
+          placementRecord(topicId, {
+            decidedBy: "build",
+            itemFingerprint: plan.contentHashes[row] as string
+          })
+        );
+      }
+    }
+    recomputeSubtree(state, store);
+    const context: PlacementContext = {
+      state,
+      vectors: store,
+      config,
+      editor,
+      now: this.now().toISOString()
+    };
+    const vectorless = [...plan.notes]
+      .filter(([key]) => !primaryPlacement(state, key))
+      .map(([key, info]) => ({ key, ...info }))
+      .sort(compareContentKeys);
+    for (const note of vectorless) placeItem(context, note.key, { fingerprint: null });
+    const sources = this.placeSources(context, store, plan.sources, { onlyUnplaced: false });
+    // Items placed after the plan was read keep their place in Unsorted; items the plan read and
+    // left out (a note no longer current) leave the tree with this build.
+    for (const [item, placements] of cache.state.placements) {
+      if (state.items.has(item) || plan.seen.has(item)) continue;
+      const entry = cache.state.items.get(item);
+      if (!entry) continue;
+      registerItem(state, entry);
+      const vector = cache.vectors.get(item);
+      if (vector) store.set(item, vector);
+      for (const placement of placements) editor.placeItem(item, { ...placement });
+    }
+    recomputeSubtree(state, store);
+    const topics = liveTopicIds(state)
+      .filter((id) => id !== tree.rootId)
+      .map((id) => topicRecordOf(getTopic(state, id)));
+    const placements = [...state.placements].flatMap(([item, list]) =>
+      list.map((placement) => ({ item, placement }))
+    );
+    const report = shapeReport(state, config, { areasActive: areasActive(state) });
+    const summary = this.buildSummary(plan, partition, state, report);
+    const result = await createTopicTreeRepository(this.requirePool()).bootstrapSnapshot({
+      treeId: tree.id,
+      expectedGeneration: tree.generation,
+      origin: "build",
+      titleKey: "topics.changeSets.build",
+      titleParams: { topics: topics.length, items: placements.length },
+      jobId: job.id,
+      summary,
+      topics,
+      placements,
+      stats: topicStatsWrites(state, store, liveTopicIds(state)),
+      clock: cache.state.clock,
+      ...(plan.configChanged
+        ? {
+            treeConfig: {
+              config: JSON.parse(JSON.stringify(config)) as Record<string, unknown>,
+              configHash: plan.configHash
+            }
+          }
+        : {})
+    });
+    return this.finishBuild(cache, plan, partition, result, {
+      state,
+      created: topics.map((topic) => topic.id),
+      gated: sources.gated,
+      summary,
+      applyMs: round(performance.now() - started)
+    });
+  }
+
+  /**
+   * Applies a rebuild: the new partition mapped onto the live tree by Hungarian matching on member
+   * Jaccard so topic IDs survive (rebuild-map.ts), then root sources re-placed by PLACE on the
+   * result. One `rebuild` change-set, `pending_review` when it touches protected structure (and,
+   * for a trigger rebuild, when it re-paths a large share of the items).
+   */
+  private async applyRebuildPlan(
+    cache: TopicTreeCache,
+    plan: BuildPlan,
+    partition: Partition,
+    job: JobRecord
+  ): Promise<JsonObject> {
+    const started = performance.now();
+    const { state, vectors, tree } = cache;
+    const reason = plan.reason;
+    if (!hasTopics(state) || reason === "cold-start") return { status: "stale" };
+    const nodes = rebuildPartitionOf(partition.nodes, plan.keys, {
+      state,
+      frozen: plan.frozen,
+      frozenNodes: partition.frozenNodes
+    }).map((node) => ({
+      ...node,
+      // Notes that left the tree since the plan (a cascade, a status change) are not mapped.
+      items: node.items.filter((item) => primaryPlacement(state, item) !== undefined)
+    }));
+    const now = this.now().toISOString();
+    const recent = await this.frozenTopics(state, plan.config, now);
+    const recentItems = new Set<ItemKey>();
+    for (const id of recent) for (const item of getTopic(state, id).items) recentItems.add(item);
+    const rebuilt = applyRebuild({
+      state,
+      vectors,
+      config: plan.config,
+      partition: nodes,
+      newTopicId: () => randomUUID(),
+      now,
+      recentItems
+    });
+    // Root sources follow their notes: each is decided again on the rebuilt tree (D8).
+    const editor = createTopicTreeEditor(state);
+    const context: PlacementContext = { state, vectors, config: plan.config, editor, now };
+    const gated: TopicScope[] = [];
+    const roots = [...state.items.values()]
+      .filter((entry) => entry.kind === "source")
+      .sort(compareContentKeys);
+    for (const root of roots) {
+      const primary = primaryPlacement(state, root.key);
+      if (!primary || primary.management === "human" || vectors.rowOf(root.key) === undefined) {
+        continue;
+      }
+      const outcome = placeItem(context, root.key, {
+        fingerprint: primary.itemFingerprint,
+        force: true
+      });
+      if (outcome.needsGate) gated.push({ rootSourceId: parseItemKey(root.key)!.id });
+    }
+    recomputeSubtree(state, vectors);
+    const events = [...rebuilt.events, ...editor.events];
+    const review = rebuildNeedsReview(reason, rebuilt.review);
+    const report = shapeReport(state, plan.config, { areasActive: areasActive(state) });
+    const summary = {
+      ...this.buildSummary(plan, partition, state, report),
+      matched: rebuilt.plan.matched.length,
+      created: rebuilt.plan.createdKeys.length,
+      retired: rebuilt.retired.length,
+      kept: rebuilt.kept.length,
+      unnamed: rebuilt.unnamed.length,
+      movedShare: rebuilt.movedShare,
+      exactMatching: rebuilt.plan.exact,
+      review: { ...rebuilt.review, required: review }
+    };
+    const repository = createTopicTreeRepository(this.requirePool());
+    const meta = {
+      treeId: tree.id,
+      expectedGeneration: tree.generation,
+      origin: "rebuild" as const,
+      titleKey: "topics.changeSets.rebuild",
+      titleParams: { items: rebuilt.churn.items.length },
+      risk: changeSetRisk(rebuilt.movedShare, plan.config),
+      jobId: job.id,
+      summary,
+      events
+    };
+    if (review) {
+      const pending = await repository.applyChangeSet({ ...meta, status: "pending_review" });
+      // The cache holds the proposal's result, not the stored tree.
+      this.options.service.invalidate();
+      return {
+        status: pending.kind === "pending" ? "pending_review" : "no_change",
+        reason: plan.reason,
+        ...(pending.kind === "pending" ? { changeSetId: pending.changeSetId } : {}),
+        movedShare: rebuilt.movedShare,
+        protectedTouched: rebuilt.review.protectedTouched
+      };
+    }
+    const result = await repository.applyChangeSet({
+      ...meta,
+      stats: topicStatsWrites(state, vectors, liveTopicIds(state)),
+      clock: state.clock,
+      ...(plan.configChanged
+        ? {
+            treeConfig: {
+              config: JSON.parse(JSON.stringify(plan.config)) as Record<string, unknown>,
+              configHash: plan.configHash
+            }
+          }
+        : {})
+    });
+    const created = rebuilt.plan.createdKeys.map(
+      (key) => rebuilt.plan.topicIdOfKey.get(key) as string
+    );
+    return this.finishBuild(cache, plan, partition, result, {
+      state,
+      created: [...created, ...rebuilt.unnamed],
+      gated,
+      summary,
+      applyMs: round(performance.now() - started)
+    });
+  }
+
+  private buildSummary(
+    plan: BuildPlan,
+    partition: Partition,
+    state: TopicTreeState,
+    report: ReturnType<typeof shapeReport>
+  ): Record<string, unknown> {
+    const signals = structureSignals(state);
+    return {
+      reason: plan.reason,
+      method: partition.method,
+      rows: plan.keys.length,
+      notes: signals.notes,
+      leafCoherence: signals.leafCoherence,
+      configHash: plan.configHash,
+      seeded: plan.seeding
+        ? { rootSource: plan.seeding.rootSource, chapters: plan.seeding.groups.length }
+        : null,
+      modularity: partition.modularity,
+      topics: report.topics - 1,
+      leaves: report.leaves,
+      meanDepth: report.itemDepth.mean,
+      fanOutInTarget: report.fanOut.inTarget,
+      hardViolations: report.violations.hardCount
+    };
+  }
+
+  /** After a build or rebuild change-set: statistics, push, follow-up jobs. */
+  private async finishBuild(
+    cache: TopicTreeCache,
+    plan: BuildPlan,
+    partition: Partition,
+    result: ApplyChangeSetResult,
+    built: {
+      state: TopicTreeState;
+      created: string[];
+      gated: TopicScope[];
+      summary: Record<string, unknown>;
+      applyMs: number;
+    }
+  ): Promise<JsonObject> {
+    const treeId = cache.tree.id;
+    // The cache holds the built state, not the stored tree: the next run loads it again.
+    this.options.service.invalidate();
+    if (result.kind === "conflict") {
+      return result.reason === "treeRetired"
+        ? { status: "tree_inactive" }
+        : { status: "stale", reason: result.reason };
+    }
+    if (result.kind !== "applied") return { status: "no_change", reason: plan.reason };
+    // The builder's forced repair settled the new structure: nothing waits for REBALANCE.
+    this.dirty.delete(treeId);
+    const analyzeStarted = performance.now();
+    await createTopicTreeRepository(this.requirePool()).analyzeTopicTables();
+    const analyzeMs = round(performance.now() - analyzeStarted);
+    this.options.changes.record({
+      treeId,
+      generation: result.generation,
+      topicIds: null,
+      changeSetId: result.changeSetId
+    });
+    // Follow-ups: the sweep places what arrived meanwhile, naming names the new topics, the Areas
+    // grouping regroups the level-2 topics (T24), the gate decides ambiguous roots, an audit checks.
+    await this.options.triggers.sweep("requested", { treeId, debounce: immediateDebounce });
+    const follow: Record<string, number> = {};
+    if (built.created.length > 0) follow.naming = await this.request(topicJobTypes.name, treeId);
+    if (areasGroupingDue(built.state, plan.config)) {
+      follow.areas = await this.request(topicJobTypes.areas, treeId, { immediate: true });
+    }
+    for (const scope of built.gated) {
+      follow.gate =
+        (follow.gate ?? 0) + (await this.request(topicJobTypes.gate, treeId, { scope }));
+    }
+    follow.audit = await this.request(topicJobTypes.audit, treeId);
+    return {
+      status: "applied",
+      kind: plan.kind,
+      reason: plan.reason,
+      changeSetId: result.changeSetId,
+      generation: result.generation,
+      events: result.events,
+      ...built.summary,
+      level2Topics: level2TopicCount(built.state),
+      followUps: follow,
+      timings: {
+        loadMs: plan.loadMs,
+        clusterMs: partition.clusterMs,
+        applyMs: built.applyMs,
+        analyzeMs
+      }
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // `topic-rebalance`
+
+  public runRebalance(job: JobRecord, signal: AbortSignal): Promise<JsonObject> {
+    const { treeId } = TopicTreePayloadSchema.parse(jobTaskPayload(job.payload));
+    return timed(async () => {
+      const resolution = await this.options.spaceResolver.resolve();
+      const result = await this.options.service.runOnTree(treeId, async (cache) => {
+        if (compareTreeSpace(cache.tree, resolution).kind === "space_changed") {
+          return { status: "space_changed" };
+        }
+        return this.rebalanceNow(cache, job, signal);
+      });
+      return result ?? { status: "tree_inactive" };
+    });
+  }
+
+  /**
+   * REBALANCE (repair.ts) of the topics waiting for it: those the change-sets since the last run
+   * touched, those the audit flagged and the checks deferred before (a pass over the whole tree
+   * costs seconds at 18k notes, the dirty topics milliseconds). Hard violations first, then soft
+   * operations accepted by dQ - lambda * churn > 0 within the cooldown, the freeze on recently
+   * opened topics and the day's budgets (seeded from `topic_daily_metrics`, so a reload does not
+   * reset them).
+   * The root's band is the Areas band once Areas exist, and Area-level or protected operations
+   * become proposals (D12, D29); a proposal waiting for review or dismissed is not repeated.
+   */
+  private async rebalanceNow(
+    cache: TopicTreeCache,
+    job: JobRecord,
+    signal: AbortSignal
+  ): Promise<JsonObject> {
+    const { state, vectors, config, tree } = cache;
+    if (!hasTopics(state)) return { status: "cold_start" };
+    const repository = createTopicTreeRepository(this.requirePool());
+    const now = this.now();
+    const iso = now.toISOString();
+    const day = localDay(now);
+    if (state.budget.day !== day) {
+      const today = await repository.upsertDailyMetrics({ treeId: tree.id, day });
+      state.budget = { day, operations: today.opsApplied, movedItems: today.itemsMoved };
+    }
+    const frozen = await this.frozenTopics(state, config, iso);
+    setFrozenTopics(state, frozen);
+    const recentItems = new Set<ItemKey>();
+    for (const id of frozen) for (const item of getTopic(state, id).items) recentItems.add(item);
+    const areas = areasActive(state);
+    const topics = this.takeDirty(tree.id);
+    if (topics.length === 0) return { status: "no_change", checked: 0, areasActive: areas };
+    const started = performance.now();
+    const result = rebalanceTree({
+      state,
+      vectors,
+      config,
+      seed: tree.seed,
+      now: iso,
+      day,
+      newTopicId: () => randomUUID(),
+      topics,
+      recentItems,
+      areasActive: areas,
+      readmit: readmitter(state, vectors, config)
+    });
+    const engineMs = round(performance.now() - started);
+    // What REBALANCE deferred stays dirty for the next run.
+    this.markDirty(tree.id, [
+      ...result.skipped
+        .filter((skip) => deferredReasons.has(skip.reason))
+        .map((skip) => skip.topicId),
+      ...result.unresolvedHard.map((hard) => hard.topicId)
+    ]);
+    if (signal.aborted) {
+      this.options.service.invalidate();
+      throw new Error("topics.errors.canceled");
+    }
+    const created = result.applied.flatMap((operation) => operation.created);
+    const base: JsonObject = {
+      checked: topics.length,
+      areasActive: areas,
+      frozenTopics: frozen.size,
+      trials: result.trials,
+      exhausted: result.exhausted,
+      unresolvedHard: result.unresolvedHard.length,
+      engineMs
+    };
+    let status = "no_change";
+    let generation = tree.generation;
+    let changeSetId: string | null = null;
+    if (result.events.length > 0) {
+      // Exact statistics of every touched path (D7): REBALANCE refreshes the spreads of the topics
+      // it changed only, and an ancestor's sum may change bits when its children change order.
+      const paths = pathsOf(state, [
+        ...result.touchedTopics,
+        ...topicsWithStaleStats(state, result.events)
+      ]);
+      recomputePaths(state, vectors, paths);
+      const outcome = await repository.applyChangeSet({
+        treeId: tree.id,
+        expectedGeneration: tree.generation,
+        origin: "rebalance",
+        titleKey: "topics.changeSets.rebalance",
+        titleParams: { operations: result.applied.length, items: result.churn.items },
+        risk: changeSetRisk(result.churn.share, config),
+        jobId: job.id,
+        summary: {
+          operations: result.applied.map((operation) => ({
+            kind: operation.kind,
+            condition: operation.condition,
+            trigger: operation.trigger,
+            topicId: operation.topicId,
+            moved: operation.churn.items.length,
+            netGain: operation.netGain
+          })),
+          movedItems: result.churn.items,
+          movedShare: result.churn.share
+        },
+        events: result.events,
+        stats: topicStatsWrites(state, vectors, paths),
+        clock: state.clock
+      });
+      if (outcome.kind !== "applied") {
+        this.options.service.invalidate();
+        if (outcome.kind === "conflict" && outcome.reason !== "treeRetired") {
+          this.markDirty(tree.id, topics);
+          await this.request(topicJobTypes.rebalance, tree.id);
+          return { ...base, status: "deferred", reason: outcome.reason };
+        }
+        return { ...base, status: outcome.kind === "conflict" ? "tree_inactive" : outcome.kind };
+      }
+      status = "applied";
+      generation = outcome.generation;
+      changeSetId = outcome.changeSetId;
+      cache.tree = { ...cache.tree, generation: outcome.generation, clock: state.clock };
+      state.generation = outcome.generation;
+      this.options.changes.record({
+        treeId: tree.id,
+        generation: outcome.generation,
+        topicIds:
+          result.touchedTopics.length > topicLimits.changedTopicIdsMax
+            ? null
+            : result.touchedTopics,
+        changeSetId: outcome.changeSetId
+      });
+      await repository.upsertDailyMetrics({
+        treeId: tree.id,
+        day,
+        increments: {
+          opsApplied: result.applied.length,
+          itemsMoved: result.churn.items,
+          primaryPathChanges: result.churn.items
+        }
+      });
+      if (outcome.dirtyTopicIds.length > 0) {
+        // A cascade removed items under this run (D32): reload, and let the sweep restore them.
+        this.options.service.invalidate();
+        await this.options.triggers.sweep("dirty_stats", { treeId: tree.id });
+      }
+      if (created.length > 0) await this.request(topicJobTypes.name, tree.id);
+      await this.auditIfDue(tree.id, generation);
+    }
+    const proposed = await this.recordProposals(tree.id, generation, result.proposals, job);
+    return {
+      ...base,
+      status,
+      generation,
+      ...(changeSetId ? { changeSetId } : {}),
+      operations: result.applied.length,
+      movedItems: result.churn.items,
+      proposals: result.proposals.length,
+      proposed
+    };
+  }
+
+  /** Records new REBALANCE proposals as `pending_review` change-sets (D29), one per key. */
+  private async recordProposals(
+    treeId: string,
+    generation: number,
+    proposals: ReturnType<typeof rebalanceTree>["proposals"],
+    job: JobRecord
+  ): Promise<number> {
+    if (proposals.length === 0) return 0;
+    const repository = createTopicTreeRepository(this.requirePool());
+    const known = new Set(
+      (await repository.reviewedProposals(treeId)).flatMap((proposal) =>
+        typeof proposal.summary.proposal === "string" ? [proposal.summary.proposal] : []
+      )
+    );
+    let recorded = 0;
+    for (const proposal of proposals) {
+      if (known.has(proposal.key)) continue;
+      known.add(proposal.key);
+      const outcome = await repository.applyChangeSet({
+        treeId,
+        expectedGeneration: generation,
+        status: "pending_review",
+        origin: "rebalance",
+        titleKey: "topics.changeSets.proposal",
+        titleParams: { items: proposal.churn.items.length },
+        risk: proposal.reason === "area-level" ? "high" : "medium",
+        jobId: job.id,
+        summary: {
+          proposal: proposal.key,
+          reason: proposal.reason,
+          kind: proposal.kind,
+          condition: proposal.condition,
+          topicId: proposal.topicId,
+          netGain: proposal.netGain,
+          moved: proposal.churn.items.length
+        },
+        events: proposal.events
+      });
+      if (outcome.kind === "pending") recorded += 1;
+    }
+    return recorded;
+  }
+
+  /** Topics opened within `stability.freezeHours` (the view history), live in this tree. */
+  private async frozenTopics(
+    state: TopicTreeState,
+    config: TopicTreeConfig,
+    now: string
+  ): Promise<Set<string>> {
+    const entries = await createViewHistoryRepository(this.requirePool()).list({
+      limit: viewHistoryLimits.listMax,
+      kinds: ["topic"]
+    });
+    const opened = recentlyOpenedTopics(
+      entries.map((entry) => ({ topicId: entry.objectId, at: entry.openedAt.toISOString() })),
+      now,
+      config
+    );
+    return new Set(
+      [...opened].filter((id) => {
+        const node = state.topics.get(id);
+        return node !== undefined && isLive(node);
+      })
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // `topic-audit`
+
+  public runAudit(job: JobRecord): Promise<JsonObject> {
+    const { treeId } = TopicTreePayloadSchema.parse(jobTaskPayload(job.payload));
+    return timed(async () => {
+      const result = await this.options.service.runOnTree(treeId, (cache) => this.auditNow(cache));
+      return result ?? { status: "tree_inactive" };
+    });
+  }
+
+  /**
+   * The audit (spec 3.5): invariants, the mis-parent audit and an exact-recompute sample on the
+   * cached tree, the day's gauges in `topic_daily_metrics`, then what it asks for: a sweep when
+   * statistics drifted, REBALANCE for hard violations and re-parent candidates (D12: they go
+   * through its acceptance), and a build for a new structural configuration or a rebuild trigger.
+   */
+  private async auditNow(cache: TopicTreeCache): Promise<JsonObject> {
+    const { state, vectors, config, tree } = cache;
+    const areas = areasActive(state);
+    const started = performance.now();
+    const audit = auditTopicTree(state, vectors, config, { seed: tree.seed, areasActive: areas });
+    const report = shapeReport(state, config, { areasActive: areas });
+    const engineMs = round(performance.now() - started);
+    const repository = createTopicTreeRepository(this.requirePool());
+    const day = localDay(this.now());
+    const soft = Object.values(report.violations.soft).reduce((total, count) => total + count, 0);
+    await repository.upsertDailyMetrics({
+      treeId: tree.id,
+      day,
+      gauges: {
+        unsortedShare: report.unsortedShare,
+        meanDepth: report.itemDepth.mean,
+        fanoutInTarget: report.fanOut.inTarget,
+        hardViolations: report.violations.hardCount,
+        softViolations: soft
+      }
+    });
+    this.lastAudit = { treeId: tree.id, generation: tree.generation, day };
+    const requested: Record<string, number> = {};
+    if (audit.recomputeTopics.length > 0) {
+      this.options.service.invalidate();
+      requested.sweep = (
+        await this.options.triggers.sweep("dirty_stats", { treeId: tree.id })
+      ).length;
+    }
+    const reparent = audit.reparentCandidates.filter((finding) => !finding.protected).length;
+    // Topics out of their bands (hard or soft, protected ones to be proposed) and the re-parent
+    // candidates (D12: they go through REBALANCE acceptance) wait for REBALANCE.
+    const flagged = new Set<string>([
+      ...audit.invariants.violations.flatMap((violation) =>
+        violation.topicId === null || violation.topicId === state.rootId ? [] : [violation.topicId]
+      ),
+      ...audit.reparentCandidates
+        .filter((finding) => !finding.protected)
+        .map((finding) => finding.topicId)
+    ]);
+    if (hasTopics(state) && flagged.size > 0) {
+      this.markDirty(tree.id, flagged);
+      requested.rebalance = await this.request(topicJobTypes.rebalance, tree.id);
+    }
+    let rebuild: string | null = null;
+    if (hasTopics(state)) {
+      const effective = this.options.effectiveConfig();
+      const decision = await this.rebuildDecision(
+        cache,
+        effective,
+        structuralConfigHash(effective)
+      );
+      if ("reason" in decision) {
+        rebuild = decision.reason;
+        requested.build = await this.request(topicJobTypes.build, tree.id, { immediate: true });
+      }
+    }
+    return {
+      status: "audited",
+      generation: tree.generation,
+      areasActive: areas,
+      reachability: report.reachability,
+      hardViolations: report.violations.hardCount,
+      awaitingApproval: report.violations.awaitingApproval,
+      softViolations: soft,
+      misParented: audit.misParent.findings.length,
+      reparentCandidates: reparent,
+      flaggedTopics: flagged.size,
+      driftedTopics: audit.recomputeTopics.length,
+      flagged: { ...audit.flaggedItems },
+      unsortedShare: report.unsortedShare,
+      meanDepth: report.itemDepth.mean,
+      fanOutInTarget: report.fanOut.inTarget,
+      rebuild,
+      requested,
+      engineMs
+    };
+  }
+
+  private now(): Date {
+    return this.options.now?.() ?? new Date();
+  }
+
+  private requirePool(): PgPool {
+    const pool = this.options.getPool();
+    if (!pool) throw new Error("errors.database.notReady");
+    return pool;
+  }
+}

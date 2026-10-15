@@ -10,13 +10,11 @@ import {
   createJobRepository,
   createLibraryResetRepository,
   createPgPool,
-  createTopicTreeLoadRepository,
   createTopicTreeRepository,
   noteVectorStrategyPrefix,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
-  topicStatsWrites,
   type JobRecord,
   type PgPool,
   type PostgresSidecarConnection,
@@ -24,28 +22,21 @@ import {
 } from "@app/db";
 import {
   canonicalStateDump,
-  createTopicTreeEditor,
-  createTopicTreeState,
-  deleteTopic,
+  checkTopicClusteringResult,
   gaussianClusters,
-  itemKey,
-  liveTopicIds,
-  getTopic,
-  placementRecord,
-  recomputeSubtree,
-  registerItem,
-  repairAll,
   statsDump,
-  topicRecordOf,
+  TopicClusteringRequestSchema,
   topicTreeConfigWith
 } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { clusterTopics } from "../../workers/topic-clustering.worker.js";
 import { JobSupervisor } from "../job-supervisor.js";
 import { createTopicTreeServices } from "./index.js";
 import type { TopicTreeServices } from "./index.js";
-import { ItemVectorStore, loadTopicTreeCache } from "./topic-cache.js";
+import type { ClusterTopics } from "./topic-build.js";
+import { loadTopicTreeCache } from "./topic-cache.js";
 import { createStoredVectorSpaceResolver, treeSpace } from "./topic-space.js";
 import type { SpaceResolution } from "./topic-space.js";
 import { immediateDebounce } from "./topic-triggers.js";
@@ -53,7 +44,7 @@ import { immediateDebounce } from "./topic-triggers.js";
 /**
  * The topic service against the real schema on a throwaway PostgreSQL sidecar: synthetic notes
  * with 256-d vectors, the tree created from the newest vector's space, PLACE through the
- * repository, a build written the way T19 will write it, the sweep after a cascade, the barrier
+ * repository, the cold-start build PLACE waits for (T19), the sweep after a cascade, the barrier
  * through the real job supervisor, and a library reset.
  */
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../../../..");
@@ -94,6 +85,23 @@ const clusters = gaussianClusters({
 });
 const pointsPerGroup = 18;
 const vectorOf = (row: number) => clusters.matrix.data.slice(row * dim, (row + 1) * dim);
+
+/** A note close to fixture row `row`: a small deterministic perturbation, normalized. */
+function nearbyVector(row: number, variant: number): Float32Array {
+  const vector = vectorOf(row);
+  const at = (row + variant * 7) % dim;
+  vector[at] = (vector[at] as number) + 0.08;
+  const scale = 1 / Math.hypot(...vector);
+  return vector.map((value) => value * scale);
+}
+
+/** The clustering worker's own code, run in process (no built worker host under vitest). */
+const clusterInProcess: ClusterTopics = async (request) => {
+  const parsed = TopicClusteringRequestSchema.parse(request);
+  const result = clusterTopics(parsed);
+  checkTopicClusteringResult(result, parsed);
+  return result;
+};
 
 async function startSidecar(workDir: string) {
   for (let attempt = 1; ; attempt += 1) {
@@ -142,8 +150,11 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     return id;
   }
 
-  /** Notes with their stored 256-d vectors (strategy `native-v2:<space>`, content hash per note). */
-  async function insertNotes(sourceId: string, rows: number[]): Promise<string[]> {
+  /**
+   * Notes with their stored 256-d vectors (strategy `native-v2:<space>`, content hash per note);
+   * with `variant`, a nearby vector and content instead of the fixture row's own.
+   */
+  async function insertNotes(sourceId: string, rows: number[], variant = 0): Promise<string[]> {
     const ids: string[] = [];
     for (const row of rows) {
       const id = randomUUID();
@@ -171,8 +182,8 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
           space.model,
           space.runtime,
           `${noteVectorStrategyPrefix}${space.spaceKey}`,
-          sha(`note-${row}`),
-          `[${Array.from(vectorOf(row)).join(",")}]`
+          sha(variant === 0 ? `note-${row}` : `note-${row}-near-${variant}`),
+          `[${Array.from(variant === 0 ? vectorOf(row) : nearbyVector(row, variant)).join(",")}]`
         ]
       );
       ids.push(id);
@@ -223,83 +234,6 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     expect(digest?.stats).toBe(statsDump(fresh.state));
   }
 
-  /** Writes a built tree into the empty active tree, the way the cold-start build (T19) will. */
-  async function bootstrapBuild(exclude: ReadonlySet<string>): Promise<void> {
-    const repository = createTopicTreeRepository(pool);
-    const loader = createTopicTreeLoadRepository(pool);
-    const tree = await activeTree();
-    const noteIds = [...notesBySource.values()].flat().filter((id) => !exclude.has(id));
-    const owners = await loader.itemOwners({ noteIds });
-    const vectors = await loader.loadItemVectors(
-      treeSpace(tree),
-      noteIds.map((id) => ({ kind: "note" as const, id }))
-    );
-    const state = createTopicTreeState({ dim, rootId: tree.rootId });
-    const store = new ItemVectorStore(dim);
-    const editor = createTopicTreeEditor(state, { record: false });
-    vectors.keys.forEach((key, row) => {
-      const id = key.slice("note:".length);
-      registerItem(state, {
-        key,
-        kind: "note",
-        contentHash: vectors.contentHashes[row]!,
-        rootSource: itemKey("source", owners.notes.get(id)!.rootSourceId!)
-      });
-      store.set(key, vectors.matrix.data.subarray(row * dim, (row + 1) * dim));
-      editor.placeItem(
-        key,
-        placementRecord(tree.rootId, {
-          decidedBy: "build",
-          itemFingerprint: vectors.contentHashes[row]!
-        })
-      );
-    });
-    recomputeSubtree(state, store);
-    let topicNumber = 0;
-    repairAll(
-      {
-        state,
-        vectors: store,
-        config,
-        seed: 20261014,
-        editor,
-        newTopicId: () =>
-          `00000000-0000-4000-9000-${(++topicNumber).toString(16).padStart(12, "0")}`,
-        now: new Date().toISOString()
-      },
-      { force: true }
-    );
-    for (let removed = true; removed;) {
-      removed = false;
-      for (const node of [...state.topics.values()]) {
-        if (node.retiredAt === null) continue;
-        const referenced = [...state.topics.values()].some(
-          (other) =>
-            other.id !== node.id && (other.parentId === node.id || other.redirectTo === node.id)
-        );
-        if (!referenced) {
-          deleteTopic(state, node.id);
-          removed = true;
-        }
-      }
-    }
-    recomputeSubtree(state, store);
-    const result = await repository.bootstrapSnapshot({
-      treeId: tree.id,
-      expectedGeneration: tree.generation,
-      titleKey: "topics.changeSets.build",
-      topics: liveTopicIds(state)
-        .filter((id) => id !== tree.rootId)
-        .map((id) => topicRecordOf(getTopic(state, id))),
-      placements: [...state.placements].flatMap(([item, list]) =>
-        list.map((placement) => ({ item, placement }))
-      ),
-      stats: topicStatsWrites(state, store, liveTopicIds(state)),
-      clock: state.clock
-    });
-    expect(result.kind).toBe("applied");
-  }
-
   beforeAll(async () => {
     workDir = await mkdtemp(join(tmpdir(), "memora-topic-service-"));
     ({ manager, connection } = await startSidecar(workDir));
@@ -315,6 +249,7 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
       isPackaged: false,
       logger: quiet,
       newTreeConfig: () => config,
+      clusterTopics: clusterInProcess,
       budgetStore: { read: async () => null, write: async () => undefined }
     });
     supervisor = new JobSupervisor({
@@ -367,7 +302,7 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     await expectCacheExact();
   });
 
-  it("leaves an empty tree's items pending for one build once bootstrap.minItems wait (D39)", async () => {
+  it("waits for one build once bootstrap.minItems items wait, which places them all (D39)", async () => {
     const others = [
       await insertSource("Source alpha", "hash-a"),
       await insertSource("Source mu", "hash-m"),
@@ -379,19 +314,27 @@ describe.skipIf(!sidecarAvailable)("the topic service on the PostgreSQL sidecar"
     }
     const before = await changeSets();
     const jobs = await place(others);
-    expect(jobs.map((job) => job.result?.status)).toEqual([
-      "awaiting_build",
-      "awaiting_build",
-      "awaiting_build"
+    // No item-by-item PLACE into an empty tree: every root waits, then one cold-start build
+    // (T19) places every note and root, and the sweep after it finds nothing pending.
+    expect(jobs.map((job) => [job.type, job.result?.status])).toEqual([
+      ["topic-place", "awaiting_build"],
+      ["topic-place", "awaiting_build"],
+      ["topic-place", "awaiting_build"],
+      ["topic-build", "applied"],
+      ["topic-sweep", "swept"]
     ]);
-    expect(await changeSets()).toBe(before);
-    expect(await count("select count(*) from topic_placements")).toBe(6);
+    expect(await changeSets()).toBe(before + 1);
+    expect(await count("select count(*) from topic_placements where rank = 0")).toBe(
+      4 * pointsPerGroup + 4
+    );
+    await expectCacheExact();
   });
 
   it("places new notes and roots into a built tree in one change-set per root", async () => {
     // Two notes per source arrive after the build.
-    const later = new Set([...notesBySource.values()].flatMap((ids) => ids.slice(-2)));
-    await bootstrapBuild(later);
+    for (const [index, source] of sources.entries()) {
+      await insertNotes(source, groupRows(index, 0, 2), 1);
+    }
     const before = await changeSets();
     const jobs = await place(sources);
     expect(jobs.map((job) => job.result?.status)).toEqual([

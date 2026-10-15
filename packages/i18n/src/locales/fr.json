@@ -477,7 +477,10 @@
       "assetStorage": "Stockage des assets",
       "localModelDownload": "Telechargement de modele local",
       "topicPlace": "Classement dans les sujets",
-      "topicSweep": "Vérification de l’arbre des sujets"
+      "topicSweep": "Vérification de l’arbre des sujets",
+      "topicBuild": "Construction de l’arbre des sujets",
+      "topicRebalance": "Rééquilibrage de l’arbre des sujets",
+      "topicAudit": "Audit de l’arbre des sujets"
     },
     "progress": {
       "processingSource": "Traitement de {title}",
@@ -1769,6 +1772,13 @@
     }
   },
   "topics": {
+    "changeSets": {
+      "place": "{items} éléments classés dans les sujets",
+      "build": "Arbre des sujets construit : {topics} sujets, {items} éléments",
+      "rebuild": "Arbre des sujets reconstruit ({items} éléments déplacés)",
+      "rebalance": "Sujets réorganisés : {operations} modifications, {items} éléments déplacés",
+      "proposal": "Réorganisation des sujets proposée ({items} éléments)"
+    },
     "placeholder": {
       "title": "Vos sujets arrivent bientôt",
       "body": "L'ancien wiki a été supprimé et le nouvel arbre de sujets arrivera dans une prochaine mise à jour. Vos sources et vos notes sont dans la Bibliothèque, et le bouton Poser une question répond à partir d'elles.",

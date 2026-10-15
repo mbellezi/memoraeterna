@@ -477,7 +477,10 @@
       "assetStorage": "Archiviazione asset",
       "localModelDownload": "Download modello locale",
       "topicPlace": "Collocazione negli argomenti",
-      "topicSweep": "Controllo dell’albero degli argomenti"
+      "topicSweep": "Controllo dell’albero degli argomenti",
+      "topicBuild": "Costruzione dell’albero degli argomenti",
+      "topicRebalance": "Ribilanciamento dell’albero degli argomenti",
+      "topicAudit": "Verifica dell’albero degli argomenti"
     },
     "progress": {
       "processingSource": "Elaborazione di {title}",
@@ -1762,6 +1765,13 @@
     }
   },
   "topics": {
+    "changeSets": {
+      "place": "{items} elementi collocati negli argomenti",
+      "build": "Albero degli argomenti creato: {topics} argomenti, {items} elementi",
+      "rebuild": "Albero degli argomenti ricostruito ({items} elementi spostati)",
+      "rebalance": "Argomenti riorganizzati: {operations} modifiche, {items} elementi spostati",
+      "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)"
+    },
     "placeholder": {
       "title": "I tuoi argomenti stanno arrivando",
       "body": "La vecchia wiki è stata rimossa e il nuovo albero degli argomenti arriverà in un prossimo aggiornamento. Le tue fonti e le tue note sono nella Libreria, e Chiedi risponde a partire da esse.",

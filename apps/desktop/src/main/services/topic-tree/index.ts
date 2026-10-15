@@ -5,11 +5,14 @@
 import type { IpcMain } from "electron";
 
 import type { PgPool } from "@app/db";
+import { defaultTopicTreeConfig } from "@app/domain/topic-tree";
 import type { TopicTreeConfig } from "@app/domain/topic-tree";
 
 import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
+import { TopicStructureJobs } from "./topic-build.js";
+import type { ClusterTopics } from "./topic-build.js";
 import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
 import { TopicChangeCoalescer } from "./topic-changes.js";
 import { createTopicChangeHooks } from "./topic-hooks.js";
@@ -41,6 +44,8 @@ export interface TopicTreeServicesOptions {
   changesDelayMs?: number;
   /** The configuration of a new tree (default: the engine's start values); tests shrink it. */
   newTreeConfig?: () => TopicTreeConfig;
+  /** Clusters builds (default: the clustering worker thread); scripts and tests run it in process. */
+  clusterTopics?: ClusterTopics;
   /**
    * The topic IPC (T16): `ipcMain` and the windows that hear `topicsChanged`. The factory registers
    * the channels once and subscribes the push to `changes`; absent, nothing is registered (scripts
@@ -62,6 +67,8 @@ export interface TopicTreeServices {
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
   jobs: LightJobRegistry;
+  /** The build, REBALANCE and audit jobs (T19). */
+  structure: TopicStructureJobs;
   /** Startup: ensures the active tree (D39) and enqueues the sweep. Never throws. */
   start(): Promise<void>;
   /** After a library reset's defaults: an empty active tree again (D39). Never throws. */
@@ -120,6 +127,20 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     ...(options.now ? { now: options.now } : {})
   });
   service = topicService;
+  // T19: the cold start of any library, rebuilds, REBALANCE and the audit (D39).
+  const structure = new TopicStructureJobs({
+    getPool,
+    service: topicService,
+    triggers,
+    changes,
+    spaceResolver: options.spaceResolver,
+    aiMode,
+    isRegistered,
+    effectiveConfig: () => options.newTreeConfig?.() ?? defaultTopicTreeConfig,
+    ...(options.clusterTopics ? { clusterTopics: options.clusterTopics } : {}),
+    ...(logger ? { logger } : {}),
+    ...(options.now ? { now: options.now } : {})
+  });
 
   // The topic IPC is registered here and nowhere else; the coalescer's single listener is the push.
   let read: TopicReadService | null = null;
@@ -138,11 +159,31 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   const executors: Record<string, TopicJobExecutor> = {
     [topicJobTypes.place]: {
       needsModel: false,
-      execute: (job, signal) => topicService.runPlace(job, signal)
+      execute: async (job, signal) => {
+        const result = await topicService.runPlace(job, signal);
+        await structure.afterPlace(job, result);
+        return result;
+      }
     },
     [topicJobTypes.sweep]: {
       needsModel: false,
-      execute: (job, signal) => topicService.runSweep(job, signal)
+      execute: async (job, signal) => {
+        const result = await topicService.runSweep(job, signal);
+        await structure.afterSweep(result);
+        return result;
+      }
+    },
+    [topicJobTypes.build]: {
+      needsModel: false,
+      execute: (job, signal) => structure.runBuild(job, signal)
+    },
+    [topicJobTypes.rebalance]: {
+      needsModel: false,
+      execute: (job, signal) => structure.runRebalance(job, signal)
+    },
+    [topicJobTypes.audit]: {
+      needsModel: false,
+      execute: (job) => structure.runAudit(job)
     }
   };
   registered = new Set(Object.keys(executors));
@@ -166,16 +207,17 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     budget,
     aiMode,
     jobs,
+    structure,
     async start() {
       const ensured = await ensureActiveTree();
+      const treeId = ensured?.kind === "ready" ? ensured.tree.id : null;
       try {
-        await triggers.sweep("startup", {
-          treeId: ensured?.kind === "ready" ? ensured.tree.id : null,
-          debounce: immediateDebounce
-        });
+        await triggers.sweep("startup", { treeId, debounce: immediateDebounce });
       } catch (error) {
         logger?.error("Topic sweep could not be enqueued", error);
       }
+      // The day's audit: metrics, the structural configuration (D39) and rebuild triggers.
+      await structure.startup(treeId);
     },
     ensureActiveTree,
     holdTopicJobs: () => topicService.holdTopicJobs(),
@@ -184,7 +226,10 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       hold: () => topicService.holdTopicJobs(),
       release: () => topicService.releaseTopicJobs()
     },
-    dispose: () => changes.dispose()
+    dispose: () => {
+      changes.dispose();
+      void structure.dispose();
+    }
   };
 }
 
