@@ -12,7 +12,8 @@ import {
   runRemoteCall,
   withCallReport,
   type AiRuntimeConfigInput,
-  type RemoteAttempt
+  type RemoteAttempt,
+  type RemoteCallReport
 } from "./remote-execution.js";
 
 beforeEach(() => {
@@ -632,8 +633,91 @@ describe("runRemoteCall deadlines", () => {
       });
       await vi.advanceTimersByTimeAsync(45_000);
       await settled;
-      // Stalled at 20 s and again at 40.25 s; the third attempt was cut by the total deadline.
-      expect(attempts()).toBe(3);
+      // Stalled at 30 s, the answer-start bound; the second attempt was cut by the total deadline.
+      expect(attempts()).toBe(2);
+    });
+
+    describe("a decide call, which asks for no reasoning summary and so thinks in silence", () => {
+      it("may stay silent until the answer-start bound, past the stall window", async () => {
+        const { result } = play([{ steps: [[0], [25_000, "answer"]], endAt: 26_000 }], {
+          runtime: { retry: { maxAttempts: 1 } },
+          taskType: "reranking"
+        });
+        await vi.advanceTimersByTimeAsync(26_000);
+        await expect(result).resolves.toBe("done");
+      });
+
+      it("is cut at the answer-start bound when no answer text arrives", async () => {
+        const { result } = play([{ steps: heartbeats(20) }], {
+          runtime: { retry: { maxAttempts: 1 } },
+          taskType: "reranking"
+        });
+        let ended = false;
+        const settled = expect(result).rejects.toMatchObject({ kind: "stalled", transient: true });
+        void result.catch(() => {
+          ended = true;
+        });
+        await vi.advanceTimersByTimeAsync(29_999);
+        expect(ended).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        await settled;
+      });
+
+      it("takes the bound from the configured answer-start window", async () => {
+        const shorter = play([{ steps: [[0]] }], {
+          runtime: { retry: { maxAttempts: 1 }, deadlines: { answerStartMs: 12_000 } },
+          taskType: "reranking"
+        });
+        const shorterSettled = expect(shorter.result).rejects.toMatchObject({
+          message: "AI provider produced no answer text within 12000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(12_000);
+        await shorterSettled;
+        const longer = play([{ steps: [[0]] }], {
+          runtime: { retry: { maxAttempts: 1 }, deadlines: { answerStartMs: 40_000 } },
+          taskType: "reranking"
+        });
+        const longerSettled = expect(longer.result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 40000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(40_000);
+        await longerSettled;
+      });
+
+      it("keeps the stall window for the answer text once it started", async () => {
+        const { result } = play([{ steps: [[0], [10_000, "answer"]] }], {
+          runtime: { retry: { maxAttempts: 1 } },
+          taskType: "reranking"
+        });
+        const settled = expect(result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        // 10 s of silence, then the answer text, then 20 s of silence: not the 30 s of the first phase.
+        await vi.advanceTimersByTimeAsync(30_000);
+        await settled;
+      });
+
+      it("does not change the window of the other task classes or of a server on this machine", async () => {
+        const write = play([{ steps: [[0]] }], {
+          runtime: { retry: { maxAttempts: 1 } },
+          taskType: "structured-output"
+        });
+        const writeSettled = expect(write.result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(20_000);
+        await writeSettled;
+        const local = play([{ steps: [[0]] }], {
+          runtime: { retry: { maxAttempts: 1 } },
+          taskType: "reranking",
+          local: true
+        });
+        const localSettled = expect(local.result).rejects.toMatchObject({
+          message: "AI provider stream stalled for 20000 ms."
+        });
+        await vi.advanceTimersByTimeAsync(20_000);
+        await localSettled;
+      });
     });
   });
 
@@ -704,6 +788,64 @@ describe("what a call cost beyond its answer", () => {
     expect(remoteCallReport(error)).toEqual({ attempts: 1, failedUsage: {} });
     expect(remoteCallReport(new Error("other"))).toBeUndefined();
     expect(remoteCallReport("text")).toBeUndefined();
+  });
+
+  it("counts the requests an attempt sent, not only the attempts", async () => {
+    const lean = { include: [] as string[], shape: "lean" };
+    const full = { include: ["reasoning.encrypted_content"], shape: "full" };
+    const fetchOk = async () => new Response("{}");
+    const reported: RemoteCallReport[] = [];
+    const attempt = vi
+      .fn<(call: RemoteAttempt) => Promise<string>>()
+      // Two requests inside one attempt (a fallback to another shape), then a transient failure.
+      .mockImplementationOnce(async (call) => {
+        await call.fetch(fetchOk, "https://example.test", {}, lean);
+        await call.fetch(fetchOk, "https://example.test", {}, full);
+        throw transient();
+      })
+      // An attempt that failed before it reached the network still counts as one.
+      .mockImplementationOnce(async () => {
+        throw transient();
+      })
+      .mockImplementation(async (call) => {
+        await call.fetch(fetchOk, "https://example.test", {}, full);
+        return "done";
+      });
+    const result = runRemoteCall(
+      context(),
+      { streaming: false, report: (report) => reported.push(report) },
+      attempt
+    );
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(result).resolves.toBe("done");
+    expect(reported).toEqual([{ attempts: 4, failedUsage: {}, requestOptions: full }]);
+  });
+
+  it("attaches the request count and the last wire options to the error of a failed call", async () => {
+    const lean = { reasoningSummary: null };
+    const error = permanent();
+    const failure = runRemoteCall(context(), { streaming: false }, async (call) => {
+      await call.fetch(async () => new Response("{}"), "https://example.test", {}, lean);
+      await call.fetch(async () => new Response("{}"), "https://example.test", {});
+      throw error;
+    });
+    await expect(failure).rejects.toBe(error);
+    // The second request stated no options, so those of the last one that did are kept.
+    expect(remoteCallReport(error)).toEqual({
+      attempts: 2,
+      failedUsage: {},
+      requestOptions: lean
+    });
+    // A call whose adapter states no wire options has none.
+    const plain = permanent();
+    await expect(
+      runRemoteCall(context(), { streaming: false }, async (call) => {
+        await call.fetch(async () => new Response("{}"), "https://example.test", {});
+        throw plain;
+      })
+    ).rejects.toBe(plain);
+    expect(remoteCallReport(plain)).toEqual({ attempts: 1, failedUsage: {} });
+    expect(remoteCallReport(plain)).not.toHaveProperty("requestOptions");
   });
 
   it("keeps the usage of every attempt of a call that never succeeded", async () => {

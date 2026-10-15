@@ -3,15 +3,21 @@ import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  applyRememberedTheme,
   applyTheme,
+  parseThemePreference,
+  readRememberedTheme,
   readSystemPrefersDark,
+  rememberedThemeKey,
+  rememberTheme,
   resolveTheme,
   subscribeSystemTheme,
   useResolvedTheme,
   type MatchMedia,
   type SchemeQuery,
   type ThemePreference,
-  type ThemeRoot
+  type ThemeRoot,
+  type ThemeStorage
 } from "./theme";
 
 function fakeScheme(initialDark: boolean) {
@@ -169,5 +175,90 @@ describe("useResolvedTheme", () => {
     expect(themeOf("light")).toContain(">light<");
     // Server rendering has no matchMedia: system resolves to light until the client subscribes.
     expect(themeOf("system")).toContain(">light<");
+  });
+});
+
+describe("the remembered theme", () => {
+  function fakeStorage(initial: Record<string, string> = {}) {
+    const values = new Map(Object.entries(initial));
+    const storage: ThemeStorage = {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => void values.set(key, value)
+    };
+    return { storage, values };
+  }
+  const throwing: ThemeStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("full");
+    }
+  };
+
+  it("reads only a valid preference", () => {
+    for (const preference of ["system", "light", "dark"] as const)
+      expect(readRememberedTheme(fakeStorage({ [rememberedThemeKey]: preference }).storage)).toBe(
+        preference
+      );
+    for (const value of ["", "blue", "DARK", "null"])
+      expect(readRememberedTheme(fakeStorage({ [rememberedThemeKey]: value }).storage)).toBe(
+        undefined
+      );
+    expect(readRememberedTheme(fakeStorage().storage)).toBeUndefined();
+    expect(parseThemePreference(undefined)).toBeUndefined();
+    expect(parseThemePreference(1)).toBeUndefined();
+  });
+
+  it("falls back quietly where storage is missing, blocked or full", () => {
+    expect(readRememberedTheme(null)).toBeUndefined();
+    expect(readRememberedTheme(throwing)).toBeUndefined();
+    expect(() => rememberTheme("dark", null)).not.toThrow();
+    expect(() => rememberTheme("dark", throwing)).not.toThrow();
+  });
+
+  it("remembers the preference, not the theme it resolved to", () => {
+    const { storage, values } = fakeStorage();
+    rememberTheme("system", storage);
+    expect(values.get(rememberedThemeKey)).toBe("system");
+    rememberTheme("dark", storage);
+    expect(readRememberedTheme(storage)).toBe("dark");
+  });
+
+  it("draws the stored explicit theme from the first frame, whatever the OS is", () => {
+    // An existing install stored Dark; the OS is light and the database is not ready yet.
+    const dark = fakeRoot();
+    applyRememberedTheme(
+      dark.root,
+      fakeStorage({ [rememberedThemeKey]: "dark" }).storage,
+      fakeScheme(false).matchMedia
+    );
+    expect([...dark.classes]).toEqual(["dark"]);
+    expect(dark.root.style.colorScheme).toBe("dark");
+    // The mirror image: Light chosen on a dark OS.
+    const light = fakeRoot();
+    applyRememberedTheme(
+      light.root,
+      fakeStorage({ [rememberedThemeKey]: "light" }).storage,
+      fakeScheme(true).matchMedia
+    );
+    expect([...light.classes]).toEqual(["light"]);
+    // System still follows the OS.
+    const system = fakeRoot();
+    applyRememberedTheme(
+      system.root,
+      fakeStorage({ [rememberedThemeKey]: "system" }).storage,
+      fakeScheme(true).matchMedia
+    );
+    expect([...system.classes]).toEqual(["dark"]);
+  });
+
+  it("leaves the root alone when nothing is remembered or storage fails", () => {
+    for (const storage of [fakeStorage().storage, throwing, null]) {
+      const { root, classes } = fakeRoot();
+      applyRememberedTheme(root, storage, fakeScheme(true).matchMedia);
+      expect([...classes]).toEqual([]);
+      expect(root.style.colorScheme).toBe("");
+    }
   });
 });

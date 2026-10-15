@@ -6,10 +6,12 @@ type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "ghost" | "link" | "danger";
 };
 
+// The pressed secondary button keeps a boundary of 3:1 or more: it swaps `--border-strong` for the
+// solid accent (never a translucent one), which `npm run contrast` checks on every surface.
 const variants = {
   primary: "border-accent bg-accent text-accent-foreground hover:brightness-95",
   secondary:
-    "border-border-strong bg-surface text-foreground hover:bg-soft aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:border-accent/40",
+    "border-border-strong bg-surface text-foreground hover:bg-soft aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:border-accent",
   ghost:
     "border-transparent bg-transparent text-muted-foreground hover:bg-soft hover:text-foreground",
   // An action that reads as a link (accent text); `cn` does not merge classes, so variants own colour.

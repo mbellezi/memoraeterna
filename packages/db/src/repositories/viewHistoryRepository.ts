@@ -189,8 +189,10 @@ export function createViewHistoryRepository(db: Queryable) {
 
     /**
      * Forgets the entries of objects that were deleted, pinned or not: the title snapshot of a
-     * deleted source must not outlive it. Entries hosted by a deleted source go with it, since they
-     * could only be opened through it. Resolves with the number of entries removed.
+     * deleted source must not outlive it. A deleted source also takes the entries it hosted of kinds
+     * with no table to say whether the object lives on (topics, questions). A note or entity that
+     * survives its host (a knowledge note outlives its home source) keeps its entry: only the IDs
+     * passed here remove it. Resolves with the number of entries removed.
      */
     async forgetObjects(objects: ForgottenObjects): Promise<number> {
       const sourceIds = [...(objects.sourceIds ?? [])];
@@ -202,7 +204,7 @@ export function createViewHistoryRepository(db: Queryable) {
          where (kind = 'source' and object_id = any($1::uuid[]))
             or (kind = 'note' and object_id = any($2::uuid[]))
             or (kind = 'entity' and object_id = any($3::uuid[]))
-            or parent_address = any($4::text[])`,
+            or (parent_address = any($4::text[]) and kind not in ('source', 'note', 'entity'))`,
         [sourceIds, noteIds, entityIds, sourceIds.map((id) => viewHistoryAddress("source", id))]
       );
       return result.rowCount ?? 0;

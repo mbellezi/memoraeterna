@@ -1,5 +1,5 @@
 import { renderToString } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { useDocumentLanguage } from "./lib/document-language";
 import {
@@ -53,6 +53,47 @@ describe("App", () => {
     expect(html).toContain("h-screen overflow-hidden");
     expect(html).toContain("overflow-y-auto overscroll-contain");
     expect(html).toContain("overflow-auto overscroll-contain");
+  });
+});
+
+describe("startup theme", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+  /** The startup screen markup when the OS is in the given scheme and `stored` was remembered. */
+  const startup = (stored: string | null, osDark: boolean, storage: "ok" | "blocked" = "ok") => {
+    vi.stubGlobal("window", {
+      get localStorage() {
+        if (storage === "blocked") throw new Error("blocked");
+        return {
+          getItem: (key: string) => (key === "memora.themeMode" ? stored : null),
+          setItem: () => undefined
+        };
+      },
+      matchMedia: () => ({
+        matches: osDark,
+        addEventListener: () => undefined,
+        removeEventListener: () => undefined
+      })
+    });
+    return renderToString(<App />);
+  };
+  const bootScreen = (html: string) => html.slice(0, html.indexOf(">"));
+
+  it("draws the remembered Dark theme on a light OS, as an existing install expects", () => {
+    expect(bootScreen(startup("dark", false))).toContain("dark");
+  });
+
+  it("draws the remembered Light theme on a dark OS", () => {
+    expect(bootScreen(startup("light", true))).not.toContain("dark");
+  });
+
+  it("starts from the System default where nothing usable is remembered or storage fails", () => {
+    // A server render has no live OS scheme, so System draws light; what matters is that none of
+    // these cases invents Dark.
+    for (const stored of [null, "system", "sepia"])
+      expect(bootScreen(startup(stored, true)), String(stored)).not.toContain("dark");
+    expect(bootScreen(startup("dark", true, "blocked"))).not.toContain("dark");
   });
 });
 

@@ -117,6 +117,39 @@ describe("control boundaries", () => {
     expect(stylesCss).toContain("--color-border: var(--border-subtle);");
   });
 
+  it("keep a solid accent boundary on the pressed secondary Button, checked on every surface", () => {
+    const pressed = secondaryButton
+      .split(/\s+/u)
+      .filter((name) => name.startsWith("aria-pressed:"));
+    // The pressed state replaces the border colour, so it must not fall below the unpressed one.
+    expect(pressed).toContain("aria-pressed:border-accent");
+    expect(pressed.filter((name) => name.startsWith("aria-pressed:border-"))).toEqual([
+      "aria-pressed:border-accent"
+    ]);
+    // No border colour of the secondary Button is translucent: a fraction of a token is not the token.
+    expect(secondaryButton).not.toMatch(/(?:^|[\s:])border-[\w-]+\/\d+/u);
+    // The pressed fill is the selected surface, and the accent border meets 3:1 on it and on every
+    // surface that can host the button, in both themes (the accent-on-surface rule demands 4.5:1).
+    expect(pressed).toContain("aria-pressed:bg-accent-soft");
+    expect(stylesCss).toContain("--color-accent-soft: var(--surface-selected);");
+    const result = checkTokens(tokensCss);
+    for (const theme of ["light", "dark"] as const) {
+      const accent = result.pairs.filter(
+        (pair) => pair.theme === theme && pair.foreground === "--accent"
+      );
+      expect(accent.map((pair) => pair.background)).toEqual(
+        expect.arrayContaining([
+          "--surface-selected",
+          "--surface-raised",
+          "--surface-canvas",
+          "--surface-soft"
+        ])
+      );
+      for (const pair of accent)
+        expect(pair.ratio, `${theme} accent on ${pair.background}`).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("meet 3:1 against the fill and the host surface of those controls in both themes", () => {
     const result = checkTokens(tokensCss);
     for (const theme of ["light", "dark"] as const) {

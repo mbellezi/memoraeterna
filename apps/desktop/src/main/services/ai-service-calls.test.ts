@@ -234,6 +234,77 @@ describe("the requests a call needed", () => {
     });
   });
 
+  it("records the wire options and every request of a decide call that failed after a fallback", async () => {
+    const watch = monitoring();
+    const lean = { reasoningEffort: "low", reasoningSummary: null, include: [] };
+    const full = {
+      reasoningEffort: "low",
+      reasoningSummary: "auto",
+      include: ["reasoning.encrypted_content"],
+      leanDecideShape: "refused"
+    };
+    const ai = service(
+      {
+        run: () =>
+          runRemoteCall(
+            { config: resolveAiRuntimeConfig({ retry: { maxAttempts: 1 } }) },
+            { streaming: true, taskType: "reranking" },
+            async (call) => {
+              // One attempt that sent the lean request, was refused and sent the previous shape.
+              await call.fetch(async () => new Response("{}"), "https://fixture.invalid", {}, lean);
+              await call.fetch(async () => new Response("{}"), "https://fixture.invalid", {}, full);
+              throw new AiProviderError("refused", { kind: "http", transient: false, status: 400 });
+            }
+          )
+      },
+      watch
+    );
+    await expect(ai.runDefaultTask("reranking", "text")).rejects.toThrow("refused");
+    expect(state.record.mock.calls[0]?.[0]).toMatchObject({
+      status: "failed",
+      parameters: { requestOptions: full }
+    });
+    expect(watch.finish.mock.calls[0]?.[1]).toMatchObject({
+      status: "failed",
+      parameters: { requestOptions: full },
+      // Both requests reached the provider, so both count.
+      details: { attempts: 2 }
+    });
+  });
+
+  it("records the wire options of a decide call that was canceled", async () => {
+    const watch = monitoring();
+    const lean = { reasoningEffort: "low", reasoningSummary: null, include: [] };
+    const controller = new AbortController();
+    const ai = service(
+      {
+        run: (_request, signal) =>
+          runRemoteCall(
+            { config: resolveAiRuntimeConfig({ retry: { maxAttempts: 1 } }) },
+            { streaming: true, taskType: "reranking", signal },
+            async (call) => {
+              await call.fetch(async () => new Response("{}"), "https://fixture.invalid", {}, lean);
+              controller.abort(new Error("canceled by the caller"));
+              return call.guard(new Promise<string>(() => undefined));
+            }
+          )
+      },
+      watch
+    );
+    await expect(ai.runDefaultTask("reranking", "text", {}, controller.signal)).rejects.toThrow(
+      "canceled by the caller"
+    );
+    expect(state.record.mock.calls[0]?.[0]).toMatchObject({
+      status: "canceled",
+      parameters: { requestOptions: lean }
+    });
+    expect(watch.finish.mock.calls[0]?.[1]).toMatchObject({
+      status: "canceled",
+      parameters: { requestOptions: lean },
+      details: { attempts: 1 }
+    });
+  });
+
   it("records no tokens for a failed call whose provider reported none", async () => {
     const ai = service({
       run: () =>

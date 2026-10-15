@@ -171,7 +171,7 @@ describe("view history repository", () => {
     expect(query.mock.calls[1]![1]).toEqual([address]);
   });
 
-  it("forgets the entries of deleted objects, pinned or not, and those they hosted", async () => {
+  it("forgets the entries of deleted objects, pinned or not, and what only their host can open", async () => {
     const { repository, query } = setup([], 3);
     expect(
       await repository.forgetObjects({
@@ -184,6 +184,12 @@ describe("view history repository", () => {
     expect(sql).toContain("delete from view_history");
     expect(sql).not.toContain("pinned");
     expect(values).toEqual([[sourceId], [noteId], [], [`memora://source/${sourceId}`]]);
+    // A note, entity or source that survives its host keeps its entry: the host clause leaves the
+    // kinds that have a table to the explicit IDs above.
+    expect(sql).toContain(
+      "or (parent_address = any($4::text[]) and kind not in ('source', 'note', 'entity'))"
+    );
+    expect(sql).not.toMatch(/\n\s*or parent_address/);
     // Nothing deleted, nothing asked.
     expect(await repository.forgetObjects({})).toBe(0);
     expect(query).toHaveBeenCalledTimes(1);

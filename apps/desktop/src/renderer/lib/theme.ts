@@ -61,6 +61,68 @@ export function applyTheme(root: ThemeRoot, theme: ResolvedTheme): void {
   root.style.colorScheme = theme;
 }
 
+/**
+ * The stored theme preference lives in the database, which is not ready while the startup screen is
+ * drawn. The renderer therefore keeps a copy of the preference it last saw, so an existing install
+ * opens in its own theme instead of flashing the OS one until the settings load.
+ */
+export const rememberedThemeKey = "memora.themeMode";
+
+/** The part of Storage the remembered preference uses, so tests need no DOM. */
+export interface ThemeStorage {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+function browserStorage(): ThemeStorage | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage;
+  } catch {
+    // Storage can be blocked or unavailable; the interface then starts from the default.
+    return null;
+  }
+}
+
+export function parseThemePreference(value: unknown): ThemePreference | undefined {
+  return value === "system" || value === "light" || value === "dark" ? value : undefined;
+}
+
+/** The preference remembered from the last session, or `undefined` when none is usable. */
+export function readRememberedTheme(
+  storage: ThemeStorage | null = browserStorage()
+): ThemePreference | undefined {
+  try {
+    return parseThemePreference(storage?.getItem(rememberedThemeKey));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Remembers the preference (not the resolved theme, so "system" keeps following the OS). */
+export function rememberTheme(
+  preference: ThemePreference,
+  storage: ThemeStorage | null = browserStorage()
+): void {
+  try {
+    storage?.setItem(rememberedThemeKey, preference);
+  } catch {
+    // A full or blocked store only costs the startup theme of the next launch.
+  }
+}
+
+/**
+ * Applies the remembered preference to the root before the first render, so the window is drawn in
+ * its theme from the first frame. Without a remembered preference the stylesheet follows the OS.
+ */
+export function applyRememberedTheme(
+  root: ThemeRoot = document.documentElement,
+  storage: ThemeStorage | null = browserStorage(),
+  matchMedia: MatchMedia | null = browserMatchMedia()
+): void {
+  const preference = readRememberedTheme(storage);
+  if (preference) applyTheme(root, resolveTheme(preference, readSystemPrefersDark(matchMedia)));
+}
+
 const subscribeToSystemTheme = (notify: () => void) => subscribeSystemTheme(notify);
 const readSystemOnClient = () => readSystemPrefersDark();
 const readSystemOnServer = () => false;

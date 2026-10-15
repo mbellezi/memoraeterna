@@ -1109,7 +1109,7 @@ export class AiService {
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters: auditedParameters(parameters, result),
+        parameters: auditedParameters(parameters, result.requestOptions),
         promptCompositions: admission?.compositions ?? promptAudit(taskInput),
         inputHash: sha256(taskInput),
         outputHash: sha256(JSON.stringify(result.output)),
@@ -1126,7 +1126,7 @@ export class AiService {
         aiTaskRunId,
         durationMs: Date.now() - started,
         tokenUsage: monitoringUsage(result),
-        parameters: auditedParameters(parameters, result),
+        parameters: auditedParameters(parameters, result.requestOptions),
         output: result.output,
         ...(result.attempts !== undefined
           ? { details: callDetails(result.attempts, result.retriedUsage) }
@@ -1160,6 +1160,8 @@ export class AiService {
         )
       };
     } catch (error) {
+      // What the failed call cost and the wire options of its last request, which may be a fallback.
+      const failedReport = remoteCallReport(error);
       const aiTaskRunId = await repository.recordTaskRun({
         ...(logContext.maintenanceRunId
           ? {
@@ -1182,7 +1184,7 @@ export class AiService {
         repository: selection.repository,
         revision: selection.revision,
         quantization: selection.quantization,
-        parameters,
+        parameters: auditedParameters(parameters, failedReport?.requestOptions),
         promptCompositions: admission?.compositions ?? promptAudit(taskInput),
         inputHash: sha256(taskInput),
         durationMs: Date.now() - started,
@@ -1192,13 +1194,12 @@ export class AiService {
         error: redactSensitiveText(error),
         sourceItemIds
       });
-      const failedReport = remoteCallReport(error);
       await this.options.monitoring?.finish(capture, {
         status: signal?.aborted ? "canceled" : "failed",
         aiTaskRunId,
         durationMs: Date.now() - started,
         error: redactSensitiveText(error),
-        parameters,
+        parameters: auditedParameters(parameters, failedReport?.requestOptions),
         ...(failedReport
           ? {
               tokenUsage: failedMonitoringUsage(failedReport.failedUsage),
@@ -1738,10 +1739,16 @@ function failedMonitoringUsage(usage: CallTokens): Record<string, number> {
   };
 }
 
-/** The effective parameters plus the wire options the adapter chose itself, as the provider received them. */
-function auditedParameters(parameters: JsonObject, result: AiTaskResult): JsonObject {
-  return result.requestOptions
-    ? { ...parameters, requestOptions: result.requestOptions as JsonObject }
+/**
+ * The effective parameters plus the wire options the adapter chose itself, as the provider received
+ * them: of the successful request, or of the last one a failed or canceled call started.
+ */
+function auditedParameters(
+  parameters: JsonObject,
+  requestOptions: AiTaskResult["requestOptions"] | undefined
+): JsonObject {
+  return requestOptions
+    ? { ...parameters, requestOptions: requestOptions as JsonObject }
     : parameters;
 }
 

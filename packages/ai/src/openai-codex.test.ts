@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OpenAiCodexAdapter } from "./openai-codex.js";
+import { remoteCallReport } from "./remote-execution.js";
 
 describe("OpenAI Codex adapter", () => {
   it("lists visible subscription models with OAuth account headers", async () => {
@@ -232,14 +233,17 @@ describe("decide calls without the reasoning summary", () => {
     const codex = adapter(fetch);
     await expect(codex.run(decide)).resolves.toMatchObject({
       output: "first",
-      requestOptions: { ...fullOptions, leanDecideShape: "refused" }
+      requestOptions: { ...fullOptions, leanDecideShape: "refused" },
+      // The provider received both requests of that one call.
+      attempts: 2
     });
     expect(payloads[0]).not.toHaveProperty("include");
     expect(payloads[1]).toMatchObject(fullShape);
     // The next decide call of this process goes straight to the shape the backend accepts.
     await expect(codex.run(decide)).resolves.toMatchObject({
       output: "second",
-      requestOptions: { ...fullOptions, leanDecideShape: "refused_earlier" }
+      requestOptions: { ...fullOptions, leanDecideShape: "refused_earlier" },
+      attempts: 1
     });
     expect(payloads[2]).toMatchObject(fullShape);
     expect(fetch).toHaveBeenCalledTimes(3);
@@ -251,17 +255,57 @@ describe("decide calls without the reasoning summary", () => {
     expect(payloads[3]).not.toHaveProperty("include");
   });
 
-  it("surfaces a refusal of the previous shape too, without a third request", async () => {
-    const fetch = vi
-      .fn<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(refusal("Reasoning summary is required for this model."))
-      .mockResolvedValueOnce(refusal("Reasoning summary is not available."));
-    const error = await adapter(fetch)
-      .run(decide)
-      .catch((caught: unknown) => caught);
+  it("surfaces a refusal of the previous shape too, without a third request or a memory", async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const responses = [
+      refusal("Missing required parameter: 'reasoning.summary'."),
+      refusal("Unsupported parameter: 'reasoning.summary' is not available."),
+      sse(answer("lean again"))
+    ];
+    const fetch = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+      payloads.push(payloadOf(init));
+      return responses.shift()!;
+    });
+    const codex = adapter(fetch);
+    const error = await codex.run(decide).catch((caught: unknown) => caught);
     expect(error).toMatchObject({ status: 400, transient: false });
-    expect((error as Error).message).toContain("Reasoning summary is not available.");
+    expect((error as Error).message).toContain("'reasoning.summary' is not available");
     expect(fetch).toHaveBeenCalledTimes(2);
+    // The audit of the failed call has both requests and the wire options of the last one.
+    expect(remoteCallReport(error)).toMatchObject({
+      attempts: 2,
+      requestOptions: { ...fullOptions, leanDecideShape: "refused" }
+    });
+    // Nothing proved the lean shape wrong: the next decide call still sends it.
+    await expect(codex.run(decide)).resolves.toMatchObject({
+      output: "lean again",
+      requestOptions: leanOptions,
+      attempts: 1
+    });
+    expect(payloads[2]).not.toHaveProperty("include");
+    expect(payloads[2]!.reasoning).not.toHaveProperty("summary");
+  });
+
+  it("falls back for a 422 that names the parameter, in several wordings", async () => {
+    const wordings = [
+      "Unsupported parameter: 'reasoning.summary' is not supported with this model.",
+      'Invalid value: "reasoning.encrypted_content". Supported values are: none.',
+      '{"error":{"message":"Unknown parameter.","param":"include[0]"}}',
+      "Unknown parameter: include",
+      "encrypted_content is not accepted when store is false"
+    ];
+    for (const message of wordings) {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValueOnce(
+          Response.json({ error: { message, type: "invalid_request_error" } }, { status: 422 })
+        )
+        .mockResolvedValueOnce(sse(answer("full")));
+      await expect(adapter(fetch).run(decide), message).resolves.toMatchObject({
+        output: "full",
+        attempts: 2
+      });
+    }
   });
 
   it("never falls back for a refusal that is not about the request shape", async () => {
@@ -275,6 +319,66 @@ describe("decide calls without the reasoning summary", () => {
     expect(payloads).toHaveLength(1);
     await expect(codex.run(decide)).resolves.toMatchObject({ requestOptions: leanOptions });
     expect(payloads[1]).not.toHaveProperty("include");
+  });
+
+  it("does not take a plain word or another status for a refusal of the shape", async () => {
+    const cases: Array<[status: number, body: string]> = [
+      // A WAF or auth page says "include" in prose; only an invalid request (400, 422) can be one.
+      [403, "Please include the Ray ID in your report. Your summary was blocked."],
+      [401, '{"error":{"message":"Token expired; include a fresh token.","code":"token_expired"}}'],
+      [404, "Not found: 'include' route"],
+      // An invalid request that mentions the words without naming a parameter.
+      [400, "Please include a valid session. A summary of the rules is on our site."]
+    ];
+    for (const [status, body] of cases) {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValueOnce(new Response(body, { status }))
+        .mockResolvedValue(sse(answer("fallback")));
+      const codex = adapter(fetch);
+      const error = await codex.run(decide).catch((caught: unknown) => caught);
+      expect(error, body).toMatchObject({ status });
+      expect(fetch, body).toHaveBeenCalledTimes(1);
+      // The failure remembered nothing: the next call is still lean.
+      await expect(codex.run(decide), body).resolves.toMatchObject({
+        requestOptions: leanOptions
+      });
+    }
+  });
+
+  it("keeps the full shape for the next attempt of a call whose fallback failed transiently", async () => {
+    const payloads: Array<Record<string, unknown>> = [];
+    const responses = [
+      refusal("Unsupported parameter: 'reasoning.summary'."),
+      new Response("busy", { status: 503 }),
+      sse(answer("full")),
+      sse(answer("again"))
+    ];
+    const codex = adapter(async (_input, init) => {
+      payloads.push(payloadOf(init));
+      return responses.shift()!;
+    });
+    await expect(codex.run(decide)).resolves.toMatchObject({
+      output: "full",
+      requestOptions: { ...fullOptions, leanDecideShape: "refused" },
+      // Lean, the fallback that failed, and the retry: three requests.
+      attempts: 3
+    });
+    expect(payloads[0]).not.toHaveProperty("include");
+    expect(payloads[1]).toMatchObject(fullShape);
+    expect(payloads[2]).toMatchObject(fullShape);
+    // The full shape was accepted in the end, so the next call starts with it.
+    await expect(codex.run(decide)).resolves.toMatchObject({
+      requestOptions: { ...fullOptions, leanDecideShape: "refused_earlier" }
+    });
+  });
+
+  it("records the wire options of a lean request that failed before an answer", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("down", { status: 500 }));
+    const error = await adapter(fetch, 1)
+      .run(decide)
+      .catch((caught: unknown) => caught);
+    expect(remoteCallReport(error)).toMatchObject({ attempts: 1, requestOptions: leanOptions });
   });
 
   describe("watchdog", () => {
@@ -312,7 +416,9 @@ describe("decide calls without the reasoning summary", () => {
         scheduled(
           [
             [0, lifecycle],
-            [15_000, events({ type: "response.output_text.delta", delta: '{"results":' })],
+            // 25 s of silent reasoning: longer than the 20 s stall window, inside the 30 s bound of
+            // a decide call, which sends no reasoning summary to show it is thinking.
+            [25_000, events({ type: "response.output_text.delta", delta: '{"results":' })],
             [30_000, answer("[]}")]
           ],
           30_000
@@ -323,15 +429,52 @@ describe("decide calls without the reasoning summary", () => {
       await expect(result).resolves.toMatchObject({ output: '{"results":[]}', attempts: 1 });
     });
 
-    it("still bounds the silence before the answer of a decide call", async () => {
+    it("keeps a medium-effort decide call alive through the same silent phase", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        scheduled(
+          [
+            [0, lifecycle],
+            [28_000, answer('{"results":[]}')]
+          ],
+          28_000
+        )
+      );
+      const result = adapter(fetch, 1).run({ ...decide, parameters: { reasoningLevel: "medium" } });
+      await vi.advanceTimersByTimeAsync(28_001);
+      await expect(result).resolves.toMatchObject({ output: '{"results":[]}', attempts: 1 });
+    });
+
+    it("still bounds the silence before the answer of a decide call at 30 s", async () => {
       const fetch = vi.fn<typeof globalThis.fetch>(async () => scheduled([[0, lifecycle]]));
       const result = adapter(fetch, 1).run(decide);
+      let ended = false;
       const settled = expect(result).rejects.toMatchObject({ kind: "stalled", transient: true });
-      // Lifecycle events are not progress: the stall limit ends the call before the
-      // answer-start limit would.
-      await vi.advanceTimersByTimeAsync(20_000);
+      void result.catch(() => {
+        ended = true;
+      });
+      // Lifecycle events are not progress: only the answer text ends the silence, and the bound
+      // is the answer-start window, not the 20 s stall window.
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
       await settled;
       expect(fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the short stall window once the answer text of a decide call started", async () => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+        scheduled([
+          [0, lifecycle],
+          [10_000, events({ type: "response.output_text.delta", delta: '{"results":' })]
+        ])
+      );
+      const result = adapter(fetch, 1).run(decide);
+      const settled = expect(result).rejects.toMatchObject({
+        kind: "stalled",
+        message: "AI provider stream stalled for 20000 ms."
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+      await settled;
     });
   });
 });

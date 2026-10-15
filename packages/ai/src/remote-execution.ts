@@ -65,7 +65,9 @@ export const aiRuntimeConfigSchema = z
         /**
          * Longest time from the first body chunk to the first answer text of a request that is not
          * high-reasoning and not served from this machine, whatever reasoning text arrives meanwhile. A
-         * stream that exceeds it stalls (a transient failure, retried inside the total deadline).
+         * stream that exceeds it stalls (a transient failure, retried inside the total deadline). A
+         * decide call asks for no reasoning summary and so is silent while it thinks: this is also the
+         * longest silence it is given before its first answer text, in place of `stallMs`.
          */
         answerStartMs: milliseconds,
         /** Multiplies the total deadline of servers on this machine, which are slower to answer. */
@@ -223,12 +225,21 @@ export interface PartialTokenUsage {
   outputTokens?: number;
 }
 
+/** Wire options an adapter chose itself for a request (for example a lean shape), as the provider received them. */
+export type RemoteRequestOptions = NonNullable<AiTaskResult["requestOptions"]>;
+
 /** What a remote call cost beyond its answer: how many requests it made and what the failed ones used. */
 export interface RemoteCallReport {
-  /** Requests started, the first included. */
+  /**
+   * Requests started, the first included: a retried attempt counts, and so does every extra request an
+   * adapter sends inside one attempt (a fallback to another request shape), because the provider
+   * received and may have billed each of them.
+   */
   attempts: number;
   /** Tokens the provider reported for requests that failed before the answer (its last report each). */
   failedUsage: PartialTokenUsage;
+  /** The wire options of the last request started, when the adapter stated them; they also describe a failed call. */
+  requestOptions?: RemoteRequestOptions;
 }
 
 export interface RemoteCallOptions {
@@ -324,17 +335,33 @@ export async function runRemoteCall<T>(
   const highReasoning = options.parameters !== undefined && isHighReasoning(options.parameters);
   const { stallMs, firstByteHighReasoningMs } = config.deadlines;
   const report: RemoteCallReport = { attempts: 0, failedUsage: {} };
+  // A decide call asks for no reasoning summary, so it thinks in silence before its answer text.
+  const decide = options.taskType !== undefined && aiWorkloadClass(options.taskType) === "decide";
+  // Requests of the attempts that already ended.
+  let requestsMade = 0;
+  const countRequests = (call: RemoteAttempt) => {
+    // An attempt that never reached the network still counts as one.
+    report.attempts = requestsMade + Math.max(1, call.requests);
+    if (call.wireOptions) report.requestOptions = call.wireOptions;
+  };
   try {
     for (let number = 1; ; number++) {
       caller?.throwIfAborted();
-      report.attempts = number;
+      report.attempts = requestsMade + 1;
       const call = new RemoteAttempt({
         streaming: options.streaming,
         local: context.local === true,
         connectMs: config.deadlines.connectMs,
         firstByteMs: highReasoning ? firstByteHighReasoningMs : config.deadlines.firstByteMs,
-        // A reasoning model sends early events and then thinks in silence before its first output.
-        preOutputStallMs: highReasoning ? Math.max(stallMs, firstByteHighReasoningMs) : stallMs,
+        // A reasoning model sends early events and then thinks in silence before its first output. A
+        // high-reasoning request may do so for its long window. A remote decide call, which has no
+        // reasoning text to show, may do so for the answer-start bound and not longer: the same bound
+        // that limits every other ordinary request, whatever reasoning text it streams.
+        preOutputStallMs: highReasoning
+          ? Math.max(stallMs, firstByteHighReasoningMs)
+          : decide && !context.local
+            ? Math.max(stallMs, config.deadlines.answerStartMs)
+            : stallMs,
         stallMs,
         // A server on this machine may take long to load a model and to think, so it has no such bound.
         answerStartMs: highReasoning || context.local ? undefined : config.deadlines.answerStartMs,
@@ -343,9 +370,16 @@ export async function runRemoteCall<T>(
       let failure: unknown;
       try {
         const value = await attempt(call);
-        options.report?.({ attempts: report.attempts, failedUsage: { ...report.failedUsage } });
+        countRequests(call);
+        options.report?.({
+          attempts: report.attempts,
+          failedUsage: { ...report.failedUsage },
+          ...(report.requestOptions ? { requestOptions: report.requestOptions } : {})
+        });
         return value;
       } catch (caught) {
+        countRequests(call);
+        requestsMade = report.attempts;
         failure = caller?.aborted
           ? caller.reason
           : total.signal.aborted
@@ -366,7 +400,11 @@ export async function runRemoteCall<T>(
     }
   } catch (error) {
     if (typeof error === "object" && error !== null)
-      failedCallReports.set(error, { attempts: report.attempts, failedUsage: report.failedUsage });
+      failedCallReports.set(error, {
+        attempts: report.attempts,
+        failedUsage: report.failedUsage,
+        ...(report.requestOptions ? { requestOptions: report.requestOptions } : {})
+      });
     throw error;
   } finally {
     clearTimeout(totalTimer);
@@ -404,6 +442,10 @@ export class RemoteAttempt {
   public expired: AiProviderError | undefined;
   /** The tokens the provider has reported for this request so far (cumulative, so the last report counts). */
   public usage: PartialTokenUsage = {};
+  /** Requests this attempt started; an adapter may send more than one (a fallback to another shape). */
+  public requests = 0;
+  /** The wire options stated for the last request this attempt started. */
+  public wireOptions: RemoteRequestOptions | undefined;
   private readonly controller = new AbortController();
   private timer: ReturnType<typeof setTimeout> | undefined;
   private answerTimer: ReturnType<typeof setTimeout> | undefined;
@@ -414,12 +456,19 @@ export class RemoteAttempt {
     this.signal = AbortSignal.any([...options.signals, this.controller.signal]);
   }
 
-  /** Fetches with the connect deadline, then arms the first-byte deadline of a streamed response. */
+  /**
+   * Fetches with the connect deadline, then arms the first-byte deadline of a streamed response.
+   * `wireOptions` are the options the adapter chose for this request; they describe it in the audit
+   * even when the call fails.
+   */
   public async fetch(
     fetchImplementation: typeof fetch,
     input: string,
-    init: RequestInit
+    init: RequestInit,
+    wireOptions?: RemoteRequestOptions
   ): Promise<Response> {
+    this.requests += 1;
+    if (wireOptions) this.wireOptions = wireOptions;
     const timed = this.options.streaming && !this.options.local;
     if (timed) this.arm("connect", this.options.connectMs);
     const response = await this.guard(fetchImplementation(input, { ...init, signal: this.signal }));

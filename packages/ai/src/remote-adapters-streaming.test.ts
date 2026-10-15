@@ -337,8 +337,9 @@ describe("a stream is alive only while it makes progress", () => {
       });
       await vi.advanceTimersByTimeAsync(45_000);
       await settled;
-      // Stalled at 20 s and at 40.05 s; the third attempt was cut by the total deadline.
-      expect(fetch).toHaveBeenCalledTimes(3);
+      // A decide call is silent while it thinks: it stalls at the 30 s answer-start bound, not at the
+      // 20 s stall window, and the second attempt is cut by the total deadline.
+      expect(fetch).toHaveBeenCalledTimes(2);
     });
   });
 

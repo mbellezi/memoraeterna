@@ -792,7 +792,10 @@ const batchRerankItemSchema = z.tuple([
   AtomicNoteRelationTypeSchema
 ]);
 
-const batchRerankEnvelopeSchema = z.object({ results: z.array(z.unknown()).max(100) });
+// The envelope has no length cap: the answer is bounded by the output token limit, items for numbers
+// that were not asked are ignored and a number answered twice is not trusted, so a surplus item can
+// never discard the valid ones.
+const batchRerankEnvelopeSchema = z.object({ results: z.array(z.unknown()) });
 
 export interface BatchRerankDecision {
   /** The candidate's number in the prompt, resolved to its note by the backend. */

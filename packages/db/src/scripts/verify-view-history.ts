@@ -478,6 +478,43 @@ try {
     title: "Hosted topic",
     parentAddress: doomedAddress
   });
+  // A knowledge-owned note outlives its home source (its ownership columns are null, so the source's
+  // cascade does not reach it): its pinned entry, hosted by the doomed source, must stay.
+  const doomedContent = "Spaced repetition schedules reviews just before forgetting.";
+  const doomedDocument = await createDocumentRepository(db).create({
+    sourceItemId: doomed.id,
+    title: doomed.title,
+    canonicalMarkdown: doomedContent,
+    contentHash: doomedContent
+  });
+  const doomedChunk = randomUUID();
+  const doomedSpan = randomUUID();
+  await createChunkRepository(db).replaceDocumentChunks(doomedDocument.id, doomed.id, [
+    {
+      id: doomedChunk,
+      sourceSpanId: doomedSpan,
+      chunkIndex: 0,
+      content: doomedContent,
+      contentHash: doomedContent,
+      span: { id: doomedSpan, startOffset: 0, endOffset: doomedContent.length }
+    }
+  ]);
+  const knowledgeNote = randomUUID();
+  await db.query(
+    `insert into atomic_notes (id, title, body_markdown, idea_statement, created_from_source_item_id,
+       evidence_chunk_id, ownership, generation_provider, generation_model, generation_runtime,
+       generation_prompt_version, generation_key)
+     values ($1::uuid, 'A knowledge note', 'A knowledge note', 'A knowledge note', $2, $3,
+       'knowledge', 'verify', 'verify', 'local', 'verify', $1::uuid::text)`,
+    [knowledgeNote, doomed.id, doomedChunk]
+  );
+  await history.record({
+    kind: "note",
+    objectId: knowledgeNote,
+    title: "A knowledge note",
+    parentAddress: doomedAddress
+  });
+  await history.setPinned(viewHistoryAddress("note", knowledgeNote), true);
   await history.record({ kind: "source", objectId: survivor.id, title: "Surviving source" });
   await history.setPinned(survivorAddress, true);
   await history.record({
@@ -489,7 +526,7 @@ try {
   await history.record({ kind: "entity", objectId: survivingEntity, title: "Surviving entity" });
   assert.equal(
     (await db.query("select count(*)::int as count from view_history")).rows[0]?.count,
-    7
+    8
   );
   // The deletion service runs this in its transaction, with the ids of what it deleted.
   const client = await db.connect();
@@ -500,7 +537,11 @@ try {
       noteIds: [doomedNote],
       entityIds: [doomedEntity]
     });
-    assert.equal(forgotten, 4, "the source, its note, the entity and the entry it hosted");
+    assert.equal(
+      forgotten,
+      4,
+      "the source, its note, the entity and the topic it hosted; not the knowledge note it hosted"
+    );
     await client.query("delete from source_items where id = $1", [doomed.id]);
     await client.query("delete from entities where id = $1", [doomedEntity]);
     await client.query("commit");
@@ -514,8 +555,17 @@ try {
     (await db.query<{ title: string }>("select title from view_history order by title")).rows.map(
       (row) => row.title
     ),
-    ["A surviving note", "Surviving entity", "Surviving source"],
-    "the deleted objects left no row behind, even the pinned ones; the others stay"
+    ["A knowledge note", "A surviving note", "Surviving entity", "Surviving source"],
+    "the deleted objects left no row behind, even the pinned ones; the others stay, and so does the pinned entry of a note that outlived its host"
+  );
+  assert.equal(
+    (await db.query("select 1 from atomic_notes where id = $1", [knowledgeNote])).rowCount,
+    1,
+    "the knowledge note survived the deletion of its home source"
+  );
+  assert.ok(
+    (await history.list()).some((entry) => entry.objectId === knowledgeNote && entry.pinned),
+    "its pinned entry is still listed"
   );
   assert.equal(await history.forgetObjects({}), 0, "nothing to forget");
   assert.equal(
@@ -532,11 +582,11 @@ try {
   await db.query("delete from source_items where id = $1", [orphan.id]);
   assert.equal(await history.clear(), 3, "the orphan pin, the unpinned note and entity");
   assert.deepEqual(
-    (await db.query<{ title: string }>("select title from view_history")).rows.map(
+    (await db.query<{ title: string }>("select title from view_history order by title")).rows.map(
       (row) => row.title
     ),
-    ["Surviving source"],
-    "the pin of an existing source stays"
+    ["A knowledge note", "Surviving source"],
+    "the pins of existing objects stay"
   );
   await db.query("delete from view_history");
 
@@ -562,7 +612,7 @@ try {
         "unpinned entries are bounded to the retention limit and pins are kept",
         "pins are capped, refused past the cap, never push the recents off the list, and a pin of a deleted object uses no slot",
         "a title of 300 characters beyond the basic plane is stored whole",
-        "deleting a source, note or entity forgets its history, pinned or not, and what it hosted",
+        "deleting a source, note or entity forgets its history, pinned or not, and the topics it hosted; a note that outlives its home source keeps its pinned entry",
         "clear also forgets pins of objects that no longer exist",
         "constraints refuse a wrong kind, address, title, count, pin or parent",
         "clear keeps the pins; the library reset clears the table"

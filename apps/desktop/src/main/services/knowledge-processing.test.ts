@@ -160,6 +160,39 @@ describe("knowledge processing", () => {
     ).toEqual({ alias: 1, score: 0.7, relationType: "extends" });
   });
 
+  it("keeps the valid items when the answer holds more items than numbers were asked", () => {
+    const aliases = Array.from({ length: 100 }, (_, index) => index + 1);
+    const items = aliases.map((alias) => [alias, 50, "supports"]);
+    // One extra item, even a duplicate of an asked number, never discards the others: only the
+    // duplicated number is asked again.
+    const duplicated = parseBatchRerankOutput(
+      { results: [...items, [100, 20, "related"]] },
+      aliases
+    );
+    expect(duplicated.decisions.size).toBe(99);
+    expect(duplicated.retry).toEqual([100]);
+    // Items for numbers that were not asked are ignored, however many there are.
+    const asked = aliases.slice(0, 30);
+    const surplus = parseBatchRerankOutput(
+      {
+        results: [
+          ...items.slice(0, 30),
+          ...Array.from({ length: 71 }, (_, i) => [i + 31, 90, "related"])
+        ]
+      },
+      asked
+    );
+    expect(surplus.decisions.size).toBe(30);
+    expect(surplus.retry).toEqual([]);
+    // Several hundred items are read as well.
+    const many = parseBatchRerankOutput(
+      { results: Array.from({ length: 500 }, (_, i) => [(i % 100) + 1, 10, "related"]) },
+      aliases
+    );
+    expect(many.decisions.size).toBe(0);
+    expect(many.retry).toEqual(aliases);
+  });
+
   it("completes the first answer with one repair of only the numbers asked again", () => {
     const initial = parseBatchRerankOutput(
       {

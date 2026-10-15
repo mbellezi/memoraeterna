@@ -21,7 +21,8 @@ import {
   type AiRuntimeConfigInput,
   type RemoteAttempt,
   type RemoteCallOptions,
-  type RemoteCallReport
+  type RemoteCallReport,
+  type RemoteRequestOptions
 } from "./remote-execution.js";
 import { effectiveReasoningLevel, openAiReasoningEffort } from "./reasoning.js";
 
@@ -43,21 +44,31 @@ const encryptedReasoning = "reasoning.encrypted_content";
 
 /**
  * Backends (base URL and model) that refused a decide call without the reasoning summary and the
- * encrypted reasoning. Decide calls of this process send them the previous request shape.
+ * encrypted reasoning and then accepted the previous shape. Decide calls of this process send them
+ * that shape. A refusal is remembered only once the fallback request is accepted, so a failure that
+ * has nothing to do with the shape never costs the lean shape.
  */
 const refusedLeanDecideShapes = new Set<string>();
 
 /**
- * Whether a refused request names the reasoning summary or the `include` list: a deterministic 4xx
- * about the lean decide shape, not a transient failure or a problem with the prompt.
+ * A parameter name of the lean shape as a provider states it, not a word of prose: a path
+ * (`reasoning.summary`, `include[0]`, `encrypted_content`), a quoted name (`'include'`) or the name
+ * after "parameter".
+ */
+const leanShapeParameter =
+  /\bencrypted_content\b|\breasoning\.summary\b|\binclude\[\d+\]|(["'`])(?:summary|include)\1|\bparam(?:eter)?s?\b\W{1,3}(?:summary|include)\b/i;
+
+/**
+ * Whether a refused request is an invalid-request answer (400 or 422) that names the reasoning
+ * summary, the `include` list or the encrypted reasoning as the parameter at fault. Auth, WAF and
+ * not-found pages, transient failures and a prompt problem never qualify, however their text reads.
  */
 function refusesLeanDecideShape(error: AiProviderError): boolean {
   return (
     !error.transient &&
-    error.status !== undefined &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    /summary|include|encrypted_content/i.test(error.message)
+    error.kind === "http" &&
+    (error.status === 400 || error.status === 422) &&
+    leanShapeParameter.test(error.message)
   );
 }
 
@@ -168,8 +179,9 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     const modelId = request.modelId ?? this.options.modelId;
     const decide = aiWorkloadClass(request.taskType) === "decide";
     const shapeKey = `${this.baseUrl}\u0000${modelId}`;
-    let requestOptions: Record<string, string | string[] | null> = {};
     let report: RemoteCallReport | undefined;
+    // This call met a refusal of the lean shape; its later attempts go straight to the full shape.
+    let refusedInCall = false;
     const streamed = await this.remoteCall(
       {
         request,
@@ -184,26 +196,28 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         // being a single stateless turn (store false), without the encrypted reasoning, unless this
         // backend refused that shape before.
         const refusedBefore = decide && refusedLeanDecideShapes.has(shapeKey);
-        const send = (lean: boolean) => {
+        const known = refusedInCall ? "refused" : refusedBefore ? "refused_earlier" : undefined;
+        // The wire options go with each request, so the audit has them even when the call fails.
+        const send = (lean: boolean, leanDecideShape?: "refused" | "refused_earlier") => {
           const body = codexRequestBody(request, modelId, lean);
-          requestOptions = body.options;
-          return this.request(call, `${this.baseUrl}/responses`, {
-            method: "POST",
-            body: JSON.stringify(body.payload)
-          });
+          return this.request(
+            call,
+            `${this.baseUrl}/responses`,
+            { method: "POST", body: JSON.stringify(body.payload) },
+            leanDecideShape ? { ...body.options, leanDecideShape } : body.options
+          );
         };
-        let response = await send(decide && !refusedBefore);
+        let response = await send(decide && known === undefined, known);
         if (!response.ok) {
           const failure = await call.guard(providerHttpError(response));
-          if (!decide || refusedBefore || !refusesLeanDecideShape(failure)) throw failure;
-          // Fall back once to the previous shape and keep it for this backend from now on.
-          refusedLeanDecideShapes.add(shapeKey);
-          response = await send(false);
-          requestOptions = { ...requestOptions, leanDecideShape: "refused" };
+          if (!decide || known !== undefined || !refusesLeanDecideShape(failure)) throw failure;
+          // Fall back once to the previous shape; the next attempt of this call keeps it.
+          refusedInCall = true;
+          response = await send(false, "refused");
           if (!response.ok) throw await call.guard(providerHttpError(response));
-        } else if (refusedBefore) {
-          requestOptions = { ...requestOptions, leanDecideShape: "refused_earlier" };
         }
+        // The backend accepted the full shape after it refused the lean one: keep that from now on.
+        if (refusedInCall) refusedLeanDecideShapes.add(shapeKey);
 
         let output = "";
         let tokenUsage: Record<string, number> = {};
@@ -270,7 +284,7 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
         modelId,
         runtime: "remote",
         durationMs: Math.round(performance.now() - startedAt),
-        requestOptions,
+        requestOptions: report?.requestOptions ?? {},
         tokenUsage: streamed.tokenUsage,
         ...(streamed.inputTokens !== undefined ? { inputTokens: streamed.inputTokens } : {}),
         ...(streamed.outputTokens !== undefined ? { outputTokens: streamed.outputTokens } : {})
@@ -291,19 +305,29 @@ export class OpenAiCodexAdapter implements AiModelAdapter {
     );
   }
 
-  private request(call: RemoteAttempt, url: string, init: RequestInit): Promise<Response> {
-    return call.fetch(this.fetchImplementation, url, {
-      ...init,
-      headers: {
-        "content-type": "application/json",
-        accept: init.method === "POST" ? "text/event-stream" : "application/json",
-        authorization: `Bearer ${this.options.accessToken}`,
-        "chatgpt-account-id": this.options.accountId,
-        "openai-beta": "responses=experimental",
-        originator: "memora-eterna",
-        "user-agent": "memora-eterna"
-      }
-    });
+  private request(
+    call: RemoteAttempt,
+    url: string,
+    init: RequestInit,
+    wireOptions?: RemoteRequestOptions
+  ): Promise<Response> {
+    return call.fetch(
+      this.fetchImplementation,
+      url,
+      {
+        ...init,
+        headers: {
+          "content-type": "application/json",
+          accept: init.method === "POST" ? "text/event-stream" : "application/json",
+          authorization: `Bearer ${this.options.accessToken}`,
+          "chatgpt-account-id": this.options.accountId,
+          "openai-beta": "responses=experimental",
+          originator: "memora-eterna",
+          "user-agent": "memora-eterna"
+        }
+      },
+      wireOptions
+    );
   }
 }
 
@@ -316,7 +340,7 @@ function codexRequestBody(
   request: AiTaskRequest,
   modelId: string,
   lean: boolean
-): { payload: Record<string, unknown>; options: Record<string, string | string[] | null> } {
+): { payload: Record<string, unknown>; options: RemoteRequestOptions } {
   const reasoningLevel =
     typeof request.parameters.reasoningLevel === "string"
       ? effectiveReasoningLevel(

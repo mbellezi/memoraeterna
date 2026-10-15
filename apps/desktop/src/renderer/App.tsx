@@ -54,7 +54,7 @@ import {
 import { cn } from "./lib/cn";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
-import { useResolvedTheme } from "./lib/theme";
+import { readRememberedTheme, rememberTheme, useResolvedTheme } from "./lib/theme";
 import { SettingsScopeMenu, SettingsView, type SettingsScope } from "./components/SettingsView";
 import { ImportView } from "./components/ImportView";
 import { JobsView } from "./components/JobsView";
@@ -115,10 +115,15 @@ function createDefaultSettings(): StorageSettings {
   });
 }
 
+/**
+ * The settings the interface starts from before the stored ones load. The theme is the one the last
+ * session remembered, so the startup screen of an existing install is not drawn in the OS theme.
+ */
 function createDefaultAppSettings(locale?: string | null): AppSettings {
   return appSettingsSchema.parse({
     ...defaultAppSettings,
     language: normalizeLanguageCode(locale),
+    themeMode: readRememberedTheme() ?? defaultAppSettings.themeMode,
     updatedAt: new Date(0).toISOString()
   });
 }
@@ -176,7 +181,9 @@ export function App({
     initialDatabaseStatus ?? createInitialDatabaseStatus()
   );
   const [appSettings, setAppSettings] = useState<AppSettings>(
-    initialAppSettings ?? createDefaultAppSettings(initialSystemInfo?.locale ?? getBrowserLocale())
+    () =>
+      initialAppSettings ??
+      createDefaultAppSettings(initialSystemInfo?.locale ?? getBrowserLocale())
   );
   const [settings, setSettings] = useState<StorageSettings>(
     initialSettings ?? createDefaultSettings()
@@ -208,6 +215,10 @@ export function App({
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const t = useMemo(() => createTranslator(appSettings.language), [appSettings.language]);
   const isDarkMode = useResolvedTheme(appSettings.themeMode) === "dark";
+  // The preference the startup screen of the next launch starts from; the boot defaults are not stored.
+  useEffect(() => {
+    if (hasLoadedAppData) rememberTheme(appSettings.themeMode);
+  }, [hasLoadedAppData, appSettings.themeMode]);
   // Assistive technology and the browser read the interface language from the document.
   useDocumentLanguage(appSettings.language);
   const preserveKnowledgeGraphViewState = useCallback(
