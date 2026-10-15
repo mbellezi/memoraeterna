@@ -1,11 +1,6 @@
-import { organizationCheckpointWithUsage } from "./organization-service.js";
 import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
-  OrganizationCheckpointSchema,
-  OrganizationActionSchema,
-  OrganizationSnapshotSchema,
-  WikiPageContentSchema,
   resolveOrganizationInstructions,
   OrganizationConfigurationSchema,
   resolveProcessingPlan
@@ -14,106 +9,28 @@ import {
   parseConsultationAnswer,
   rankConsultationCandidates,
   packConsultationSnapshot,
-  consultationPrompt,
-  consultationUsage,
-  consultationSaveProposal
+  consultationFits,
+  consultationPrompt
 } from "./consultation-service.js";
+import { consultationEvidence, consultationSnapshot } from "./consultation-fixture.js";
 import { organizationReadiness } from "./organization-participation.js";
 const fixture = () =>
-  ({
-    evidence: [{ handle: "e1" }, { handle: "e2" }],
-    contexts: [{ id: randomUUID(), handles: ["e1", "e2"] }],
-    relations: []
-  }) as unknown as ReturnType<typeof OrganizationSnapshotSchema.parse>;
-describe("bounded cited consultation", () => {
-  it("preserves known query usage and unknown cost in saved/sample checkpoints and reconciles older zero snapshots from linked audits", () => {
-    const usage = consultationUsage([{ inputTokens: 3699, outputTokens: 262 }]);
-    expect(usage).toEqual({
-      reportedInputTokens: 3699,
-      reportedOutputTokens: 262,
-      costEstimate: 0,
-      usageCounts: { input: 1, output: 1, cost: 0 },
-      usageIncomplete: true
-    });
-    const old = OrganizationCheckpointSchema.parse({
-      tools: 1,
-      calls: 1,
-      repairs: 0,
-      startedAt: null,
-      readHandles: [],
-      discoveredHandles: [],
-      transcript: [],
-      reportedInputTokens: 0,
-      reportedOutputTokens: 0,
-      costEstimate: 0,
-      usageIncomplete: false,
-      callPending: false,
-      error: null
-    });
-    const restored = organizationCheckpointWithUsage(old, {
-      inputTokens: 3699,
-      outputTokens: 262,
-      costEstimate: 0,
-      knownInputCalls: 1,
-      knownOutputCalls: 1,
-      knownCostCalls: 0,
-      incomplete: true
-    });
-    expect(restored).toMatchObject(usage);
-    expect(
-      consultationUsage([
-        { inputTokens: 100, outputTokens: 20, costEstimate: 0 },
-        { outputTokens: 10 }
-      ])
-    ).toMatchObject({
-      reportedInputTokens: 100,
-      reportedOutputTokens: 30,
-      usageCounts: { input: 1, output: 2, cost: 1 },
-      usageIncomplete: true
-    });
-  });
-  it("keeps every epistemic gap with original citation/context provenance and the content-language heading within the six-section contract", () => {
-    const context = randomUUID(),
-      gap = "As passagens não estabelecem quais níveis de dificuldade produzem o maior benefício.";
-    const proposal = consultationSaveProposal(
+  consultationSnapshot({
+    evidence: [consultationEvidence(1), consultationEvidence(2)],
+    contexts: [
       {
-        question: "Limites",
-        answer: {
-          paragraphs: [
-            { markdown: "Síntese [e1] [e2]", citations: ["e1", "e2"], contextIds: [context] }
-          ],
-          gaps: [gap]
-        }
-      },
-      "pt-BR"
-    );
-    expect(proposal.sections[0]?.markdown).toContain(gap);
-    expect(proposal.sections[0]?.markdown).toContain("Lacunas e limites das evidências");
-    expect(proposal.sections[0]?.citations).toEqual(["e1", "e2"]);
-    expect(proposal.sections[0]?.contextIds).toEqual([context]);
-    expect(OrganizationActionSchema.safeParse(proposal).success).toBe(true);
-    const gaps = Array.from({ length: 8 }, (_, i) => String(i) + "x".repeat(999));
-    for (const count of [1, 6]) {
-      const bounded = consultationSaveProposal(
-        {
-          question: "Bounded",
-          answer: {
-            paragraphs: Array.from({ length: count }, () => ({
-              markdown: "x".repeat(6000),
-              citations: ["e1"],
-              contextIds: []
-            })),
-            gaps
-          }
-        },
-        "en"
-      );
-      expect(bounded.sections.length).toBeLessThanOrEqual(6);
-      expect(OrganizationActionSchema.safeParse(bounded).success).toBe(true);
-      for (const gap of gaps)
-        expect(bounded.sections.some((s) => s.markdown.includes(gap))).toBe(true);
-    }
+        id: randomUUID(),
+        kind: "atomic_note",
+        sourceItemId: consultationEvidence(1).sourceItemId,
+        text: "A note.",
+        review: "active",
+        fingerprint: "fixture",
+        handles: ["e1", "e2"],
+        dependencies: []
+      }
+    ]
   });
+describe("bounded cited consultation", () => {
   it("requires supplied original handles and two-sided context, rejecting forged tools and duplicate citations", () => {
     const snapshot = fixture(),
       answer = {
@@ -181,61 +98,73 @@ describe("bounded cited consultation", () => {
       "a2"
     ]);
   });
-  it("packs complete passages for an 8192-token profile before generation and discloses bounded coverage through a smaller manifest", () => {
+  it("packs only the complete passages the profile's context window takes before generation, in rank order and never cut", () => {
     const sources = [randomUUID(), randomUUID()],
-      snapshot = OrganizationSnapshotSchema.parse({
-        version: "wiki-three-tools-v1",
-        targetId: randomUUID(),
-        expectedRevisionId: null,
-        targetHuman: false,
-        baseContent: WikiPageContentSchema.parse({ title: "Question", kind: "synthesis" }),
+      snapshot = consultationSnapshot({
         sourceIds: sources,
-        profile: {
-          profileId: randomUUID(),
-          providerConfigId: null,
-          localModelId: randomUUID(),
-          provider: "fixture",
-          modelId: "fixture",
-          runtime: "test",
-          revision: null,
-          privacy: "offline_only",
-          parameters: {},
-          identityHash: "fixture",
-          contextWindow: 8192
-        },
-        contentLanguage: "en",
-        configurationId: null,
-        configurationHash: "fixture",
-        instructions: resolveOrganizationInstructions(
-          { global: {}, pageSynthesis: {}, domains: [] },
-          null,
-          "Question",
-          "en",
-          "consultation"
-        ),
-        limits: {},
-        policy: "human_review",
-        sample: false,
-        relations: [],
-        evidence: Array.from({ length: 12 }, (_, i) => ({
-          handle: `e${i + 1}`,
-          chunkId: randomUUID(),
-          sourceItemId: sources[i % 2],
-          documentId: randomUUID(),
-          sourceSpanId: null,
-          contentHash: "original",
-          excerpt: "x".repeat(2500),
-          sourceTitle: "Original",
-          documentCreatedAt: new Date().toISOString(),
-          locator: null
-        }))
+        profile: { ...consultationSnapshot().profile, contextWindow: 16384 },
+        evidence: Array.from({ length: 12 }, (_, i) =>
+          consultationEvidence(i + 1, {
+            sourceItemId: sources[i % 2]!,
+            contentHash: "original",
+            excerpt: "x".repeat(2500),
+            sourceTitle: "Original"
+          })
+        )
       });
     const packed = packConsultationSnapshot(snapshot, "Question");
     expect(packed.evidence.length).toBeLessThan(12);
     expect(packed.evidence.length).toBeGreaterThanOrEqual(2);
     expect(new Set(packed.evidence.map((e) => e.sourceItemId)).size).toBe(2);
     expect(packed.evidence.every((e) => e.excerpt.length === 2500)).toBe(true);
-    expect(consultationPrompt(packed, "Question").length).toBeLessThanOrEqual(12288);
+    expect(consultationFits(packed, "Question")).toBe(true);
+    // The next passage in rank order was the one that no longer fit.
+    const next = snapshot.evidence[packed.evidence.length]!;
+    expect(consultationFits({ ...packed, evidence: [...packed.evidence, next] }, "Question")).toBe(
+      false
+    );
+    expect(consultationPrompt(packed, "Question").includes("ORIGINALS: [")).toBe(true);
+  });
+  it("keeps the optional context and relations whose passages all made the cut", () => {
+    const snapshot = consultationSnapshot({
+      evidence: Array.from({ length: 14 }, (_, i) => consultationEvidence(i + 1)),
+      contexts: [
+        {
+          id: randomUUID(),
+          kind: "atomic_note",
+          sourceItemId: consultationEvidence(1).sourceItemId,
+          text: "Supported by the first passages.",
+          review: "active",
+          fingerprint: "a",
+          handles: ["e1", "e2"],
+          dependencies: []
+        },
+        {
+          id: randomUUID(),
+          kind: "atomic_note",
+          sourceItemId: consultationEvidence(1).sourceItemId,
+          text: "Needs a passage beyond the twelve kept.",
+          review: "active",
+          fingerprint: "b",
+          handles: ["e1", "e14"],
+          dependencies: []
+        }
+      ]
+    });
+    const packed = packConsultationSnapshot(snapshot, "Question");
+    expect(packed.evidence.map((e) => e.handle)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `e${i + 1}`)
+    );
+    expect(packed.contexts.map((c) => c.fingerprint)).toEqual(["a"]);
+  });
+  it("fails with the actionable context error when not even one passage fits", () => {
+    const snapshot = consultationSnapshot({
+      profile: { ...consultationSnapshot().profile, contextWindow: 3000 },
+      evidence: [consultationEvidence(1, { excerpt: "x".repeat(20000) })]
+    });
+    expect(() => packConsultationSnapshot(snapshot, "Question")).toThrow(
+      "consultation.errors.context"
+    );
   });
   it("keeps legacy advanced synthesis instructions away from consultation until a deliberate versioned activation", () => {
     const old = OrganizationConfigurationSchema.parse({

@@ -1,135 +1,270 @@
-import { FollowedQuestions } from "./FollowedQuestions";
 import { subscribeWindowNavigation } from "../lib/window-navigation";
 import { useEffect, useRef, useState } from "react";
-import { BookOpen, LoaderCircle, MessageCircle, Quote, Save, X } from "lucide-react";
-import {
-  ConsultationInputSchema,
-  OrganizationSettingsSchema,
-  organizationCitationMarkdown,
-  type ConsultationResult,
-  type WikiPage,
-  type OrganizationConfiguration
-} from "@app/domain";
+import { BookOpen, LoaderCircle, MessageCircle, Quote, X } from "lucide-react";
+import { ConsultationInputSchema, type ConsultationResult } from "@app/domain";
 import type { Translator, MessageKey } from "@app/i18n";
 import type { AiProfile } from "../../shared/ipc";
 import { citationTarget, type PassageAnchor } from "../lib/object-navigation";
 import { MarkdownPreview } from "./MarkdownEditor";
-import { EvidenceScopePicker, ProfilePicker, OrganizationRuns } from "./OrganizationView";
+import { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
+import { ProfilePicker } from "./ask/ProfilePicker";
+
 const control =
   "rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900";
+/** Replaces each `[e1]` run handle with the paragraph's displayed citation number. */
+const citationMarkdown = (section: { markdown: string; citations: string[] }) =>
+  section.markdown.replace(/\[(e\d{1,3})\]/g, (marker, handle: string) => {
+    const index = [...new Set(section.citations)].indexOf(handle);
+    return index >= 0 ? `[${index + 1}]` : marker;
+  });
+const errorKey = (e: unknown): MessageKey =>
+  (String(e).match(/consultation\.errors\.[A-Za-z]+/)?.[0] as MessageKey | undefined) ??
+  "consultation.errors.failed";
+
+/** The answer being prepared, or why there is none. */
+export function ConsultationStatus({
+  t,
+  error,
+  busy,
+  onCancel
+}: {
+  t: Translator;
+  error: MessageKey | null;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      {error && (
+        <p role="alert" className="text-sm text-red-600">
+          {t(error)}
+        </p>
+      )}
+      {busy && (
+        <div
+          role="status"
+          className="flex items-center gap-3 rounded-xl bg-cyan-500/10 p-4 text-sm"
+        >
+          <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} />
+          <span className="mr-auto">{t("consultation.answering")}</span>
+          <button className={control} onClick={onCancel}>
+            {t("organization.cancel")}
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A cited answer with its coverage, the passage behind each citation and the usage it cost. */
+export function ConsultationAnswer({
+  t,
+  result,
+  onOpenSource,
+  active = true,
+  initialHandle = null
+}: {
+  t: Translator;
+  result: ConsultationResult;
+  onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
+  active?: boolean;
+  initialHandle?: string | null;
+}) {
+  const [handle, setHandle] = useState<string | null>(initialHandle),
+    evidenceRef = useRef<HTMLElement>(null);
+  const selected = result.evidence.find((e) => e.handle === handle);
+  useEffect(() => {
+    if (selected) {
+      evidenceRef.current?.scrollIntoView({ block: "nearest" });
+      evidenceRef.current?.focus({ preventScroll: true });
+    }
+  }, [selected]);
+  // Back closes the passage before it closes the dialog.
+  useEffect(() => {
+    if (!active || !selected) return;
+    return subscribeWindowNavigation((direction) => {
+      if (direction !== "back") return false;
+      setHandle(null);
+    }, 11);
+  }, [active, selected]);
+  return (
+    <div className={`grid gap-4 ${selected ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
+      <article className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+        <h3 className="mb-2 text-xl font-semibold">{result.question}</h3>
+        <p className="mb-3 text-xs text-cyan-700 dark:text-cyan-300">
+          {t(
+            result.scope.sourceIds.length ? "organization.sourceScope" : "consultation.libraryScope"
+          )}{" "}
+          · {t("consultation.sourceCount", { values: { count: result.coverage.sourceCount } })}
+        </p>
+        <p className="mb-5 text-xs text-slate-500">
+          {t("consultation.coverage", {
+            values: {
+              selected: result.coverage.selected,
+              total: result.coverage.retrieved,
+              sources: result.coverage.sourceCount
+            }
+          })}
+        </p>
+        {result.coverage.limited && (
+          <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">
+            {t("consultation.partial")}
+          </p>
+        )}
+        {result.coverage.stale && (
+          <p role="alert" className="mb-4 text-sm text-amber-700 dark:text-amber-300">
+            {t("consultation.stale")}
+          </p>
+        )}
+        {result.answer.paragraphs.map((p, i) => (
+          <section key={i} className="mb-6">
+            <MarkdownPreview markdown={citationMarkdown(p)} emptyLabel="" />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {p.citations.map((h, index) => (
+                <button
+                  key={h}
+                  className="rounded-lg bg-cyan-500/10 px-2 py-1 text-xs text-cyan-700 focus-visible:ring-2 dark:text-cyan-300"
+                  onClick={() => setHandle(h)}
+                >
+                  <Quote size={12} className="mr-1 inline" />
+                  {index + 1}. {result.evidence.find((e) => e.handle === h)?.sourceTitle}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+        {result.answer.gaps.length > 0 && (
+          <aside className="rounded-xl bg-amber-500/10 p-4 text-sm">
+            <h3 className="mb-2 font-medium">{t("consultation.gaps")}</h3>
+            {result.answer.gaps.map((gap, i) => (
+              <p key={i} className="mt-2">
+                {gap}
+              </p>
+            ))}
+          </aside>
+        )}
+      </article>
+      {selected && (
+        <aside
+          ref={evidenceRef}
+          tabIndex={-1}
+          className="h-fit max-h-[65vh] overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:sticky lg:top-0 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5"
+        >
+          <div className="flex items-center gap-2">
+            <BookOpen size={17} />
+            <h3 className="mr-auto font-semibold">{selected.sourceTitle}</h3>
+            <button
+              className={control}
+              onClick={() => setHandle(null)}
+              aria-label={t("organization.close")}
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <blockquote className="my-4 whitespace-pre-wrap text-sm leading-6">
+            {selected.excerpt}
+          </blockquote>
+          <p className="text-xs text-slate-500">
+            {selected.documentCreatedAt} · {selected.locator} · {selected.documentId.slice(0, 8)}
+          </p>
+          <button
+            className={`${control} mt-3`}
+            onClick={() =>
+              onOpenSource(selected.sourceItemId, undefined, citationTarget(selected).passage)
+            }
+          >
+            {t("objects.citation.openPassage")}
+          </button>
+        </aside>
+      )}
+      <details className="lg:col-span-full rounded-xl border border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-800">
+        <summary className="cursor-pointer">{t("organization.usage")}</summary>
+        <p className="mt-3">
+          {result.model} · {result.promptFingerprint.slice(0, 12)}
+        </p>
+        <p>
+          {t(
+            result.coverage.vector === "available"
+              ? "consultation.vectorAvailable"
+              : result.coverage.vector === "unavailable"
+                ? "consultation.vectorUnavailable"
+                : "consultation.textOnly"
+          )}
+        </p>
+        <p>
+          {t("organization.inputTokens")}: {result.inputTokens ?? t("organization.unavailable")} ·{" "}
+          {t("organization.outputTokens")}: {result.outputTokens ?? t("organization.unavailable")} ·{" "}
+          {t("organization.estimatedCost")}: {result.costEstimate ?? t("organization.unavailable")}
+        </p>
+      </details>
+    </div>
+  );
+}
+
+/**
+ * Ask over the whole library or chosen sources. It depends on no page and no host: the caller may
+ * seed the question, the sources and the reviewed-only filter, and open a cited passage.
+ */
 export function ConsultationDialog({
   t,
-  page,
   initialQuestion,
   onClose,
   onOpenSource,
   active = true,
   initialSourceIds = [],
-  initialPageId = null,
-  initialReviewed = false
+  initialReviewed = false,
+  initialProfiles
 }: {
   initialSourceIds?: string[];
-  initialPageId?: string | null;
   initialReviewed?: boolean;
+  /** Profiles the caller already has; the dialog skips its own load. */
+  initialProfiles?: AiProfile[];
   active?: boolean;
   t: Translator;
-  page: WikiPage | null;
   initialQuestion: string;
   onClose: () => void;
   onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null),
-    request = useRef<string | null>(null),
-    evidenceRef = useRef<HTMLElement>(null);
+    request = useRef<string | null>(null);
   const [expanded, setExpanded] = useState(true),
     [intent, setIntent] = useState<"answer" | "comparison">("answer");
-  const scrollRef = useRef<HTMLDivElement>(null),
-    answerHistory = useRef<
-      Array<{ result: ConsultationResult; saved: boolean; followed: boolean; scroll: number }>
-    >([]);
   const [question, setQuestion] = useState(initialQuestion),
-    [whole, setWhole] = useState(!initialPageId && !page),
     [sources, setSources] = useState<string[]>(initialSourceIds),
     [descendants, setDescendants] = useState(false),
     [reviewed, setReviewed] = useState(initialReviewed),
     [hybrid, setHybrid] = useState(false);
-  const [profiles, setProfiles] = useState<AiProfile[]>([]),
-    [profile, setProfile] = useState(""),
-    [domains, setDomains] = useState<OrganizationConfiguration["domains"]>([]),
-    [domainId, setDomainId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true),
+  const [profiles, setProfiles] = useState<AiProfile[]>(initialProfiles ?? []),
+    [profile, setProfile] = useState("");
+  const [loading, setLoading] = useState(!initialProfiles),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<MessageKey | null>(null),
-    [result, setResult] = useState<ConsultationResult | null>(null),
-    [saved, setSaved] = useState(false),
-    [followed, setFollowed] = useState(false),
-    [saving, setSaving] = useState(false),
-    [evidence, setEvidence] = useState<string | null>(null);
+    [result, setResult] = useState<ConsultationResult | null>(null);
   useEffect(() => {
     const focus = document.activeElement as HTMLElement | null;
-    void Promise.all([
-      window.app.ai.listProfiles(),
-      window.app.organization.command({ command: "settings" })
-    ])
-      .then(([p, c]) => {
-        setProfiles(p);
-        const settings = OrganizationSettingsSchema.parse(c);
-        setDomains(
-          settings.revisions.find((r) => r.id === settings.activeId)?.configuration.domains ?? []
-        );
-      })
-      .catch(() => setError("organization.errors.failed"))
-      .finally(() => setLoading(false));
+    if (!initialProfiles)
+      void window.app.ai
+        .listProfiles()
+        .then(setProfiles)
+        .catch(() => setError("consultation.errors.failed"))
+        .finally(() => setLoading(false));
     return () => {
       dialog.current?.close();
       if (request.current) void window.app.consultation.cancel(request.current);
       focus?.focus();
     };
-  }, []);
+  }, [initialProfiles]);
   useEffect(() => {
     if (active) dialog.current?.showModal();
     else dialog.current?.close();
   }, [active]);
-  function back() {
-    if (evidence) {
-      setEvidence(null);
-      return;
-    }
-    const previous = answerHistory.current.pop();
-    if (previous) {
-      setResult(previous.result);
-      setSaved(previous.saved);
-      setFollowed(previous.followed);
-      requestAnimationFrame(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = previous.scroll;
-      });
-      return;
-    }
-    onClose();
-  }
-  function selectAnswer(answer: ConsultationResult) {
-    if (result && result.id !== answer.id) {
-      answerHistory.current.push({
-        result,
-        saved,
-        followed,
-        scroll: scrollRef.current?.scrollTop ?? 0
-      });
-      if (answerHistory.current.length > 20) answerHistory.current.shift();
-    }
-    setResult(answer);
-    setSaved(false);
-    setFollowed(true);
-    setEvidence(null);
-    setExpanded(false);
-  }
   useEffect(() => {
     if (!active) return;
     return subscribeWindowNavigation((direction) => {
       if (direction !== "back") return false;
-      back();
+      onClose();
     }, 10);
-  }, [active, evidence, onClose]);
+  }, [active, onClose]);
   async function ask() {
     const id = crypto.randomUUID();
     request.current = id;
@@ -137,34 +272,23 @@ export function ConsultationDialog({
     setExpanded(false);
     setError(null);
     setResult(null);
-    answerHistory.current = [];
-    setSaved(false);
-    setFollowed(false);
     try {
       const answer = await window.app.consultation.ask(
         ConsultationInputSchema.parse({
-          version: "knowledge-consultation-v2",
           intent,
           requestId: id,
           question,
-          pageId: whole ? null : (initialPageId ?? page?.id ?? null),
           sourceIds: sources,
           includeDescendants: descendants,
           profileId: profile || undefined,
           privacy: "allow_remote",
-          domainId,
           reviewedOnly: reviewed,
           mode: hybrid ? "hybrid" : "text"
         })
       );
       if (request.current === id) setResult(answer);
     } catch (e) {
-      if (request.current === id)
-        setError(
-          (String(e).match(
-            /(?:organization|consultation)\.errors\.[A-Za-z]+/
-          )?.[0] as MessageKey) ?? "organization.errors.failed"
-        );
+      if (request.current === id) setError(errorKey(e));
     } finally {
       if (request.current === id) {
         request.current = null;
@@ -178,16 +302,9 @@ export function ConsultationDialog({
       request.current = null;
       await window.app.consultation.cancel(id);
       setBusy(false);
-      setError("organization.errors.canceled");
+      setError("consultation.errors.canceled");
     }
   }
-  const selected = result?.evidence.find((e) => e.handle === evidence);
-  useEffect(() => {
-    if (selected) {
-      evidenceRef.current?.scrollIntoView({ block: "nearest" });
-      evidenceRef.current?.focus({ preventScroll: true });
-    }
-  }, [selected]);
   return (
     <dialog
       ref={dialog}
@@ -197,7 +314,7 @@ export function ConsultationDialog({
       }}
       onCancel={(e) => {
         e.preventDefault();
-        back();
+        onClose();
       }}
       className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-5xl overflow-hidden rounded-2xl bg-slate-50 p-0 text-slate-950 backdrop:bg-slate-950/60 dark:bg-slate-950 dark:text-slate-50"
     >
@@ -216,22 +333,17 @@ export function ConsultationDialog({
             <X size={18} />
           </button>
         </header>
-        <div ref={scrollRef} className="grid gap-5 overflow-auto p-5">
+        <div className="grid gap-5 overflow-auto p-5">
           <p className="text-sm leading-6 text-slate-500">{t("consultation.readOnly")}</p>
-          {error && (
-            <p role="alert" className="text-sm text-red-600">
-              {t(error)}
-            </p>
-          )}
           {loading ? (
             <p role="status">{t("organization.loading")}</p>
           ) : (
             <details open={expanded} onToggle={(e) => setExpanded(e.currentTarget.open)}>
               <summary className="cursor-pointer text-sm font-medium">
                 {t("consultation.question")} ·{" "}
-                {whole
-                  ? t("consultation.libraryScope")
-                  : (page?.title ?? t("consultation.pageScope"))}
+                {sources.length
+                  ? `${t("organization.sourceScope")} (${sources.length})`
+                  : t("consultation.libraryScope")}
               </summary>
               <fieldset
                 disabled={busy}
@@ -245,25 +357,6 @@ export function ConsultationDialog({
                     onChange={(e) => setQuestion(e.target.value)}
                   />
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className={`${control} ${!whole ? "border-cyan-500" : ""}`}
-                    disabled={!page && !initialPageId}
-                    aria-pressed={!whole}
-                    onClick={() => setWhole(false)}
-                  >
-                    {page?.title ?? t("consultation.pageScope")}
-                  </button>
-                  <button
-                    type="button"
-                    className={`${control} ${whole ? "border-cyan-500" : ""}`}
-                    aria-pressed={whole}
-                    onClick={() => setWhole(true)}
-                  >
-                    {t("consultation.libraryScope")}
-                  </button>
-                </div>
                 <details>
                   <summary className="cursor-pointer text-sm">
                     {t("organization.sourceScope")} {sources.length ? `(${sources.length})` : ""}
@@ -287,7 +380,7 @@ export function ConsultationDialog({
                       checked={reviewed}
                       onChange={(e) => setReviewed(e.target.checked)}
                     />{" "}
-                    {t("wiki.reviewedOnly")}
+                    {t("consultation.reviewedOnly")}
                   </label>
                   <label>
                     <input
@@ -312,21 +405,6 @@ export function ConsultationDialog({
                   </select>
                 </label>
                 <ProfilePicker profiles={profiles} value={profile} onChange={setProfile} t={t} />
-                <label className="grid gap-1 text-sm">
-                  {t("organization.domains")}
-                  <select
-                    className={control}
-                    value={domainId ?? ""}
-                    onChange={(e) => setDomainId(e.target.value || null)}
-                  >
-                    <option value="">{t("organization.global")}</option>
-                    {domains.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <button
                   className={`${control} justify-self-start border-cyan-600 bg-cyan-700 text-white dark:bg-cyan-700`}
                   disabled={question.trim().length < 3}
@@ -337,172 +415,10 @@ export function ConsultationDialog({
               </fieldset>
             </details>
           )}
-          {busy && (
-            <div
-              role="status"
-              className="flex items-center gap-3 rounded-xl bg-cyan-500/10 p-4 text-sm"
-            >
-              <LoaderCircle className="animate-spin motion-reduce:animate-none" size={18} />
-              <span className="mr-auto">{t("consultation.answering")}</span>
-              <button className={control} onClick={() => void cancel()}>
-                {t("organization.cancel")}
-              </button>
-            </div>
-          )}
+          <ConsultationStatus t={t} error={error} busy={busy} onCancel={() => void cancel()} />
           {result && (
-            <div className={`grid gap-4 ${selected ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}>
-              <article className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
-                <h3 className="mb-2 text-xl font-semibold">{result.question}</h3>
-                <p className="mb-3 text-xs text-cyan-700 dark:text-cyan-300">
-                  {t(result.scope.pageId ? "consultation.pageScope" : "consultation.libraryScope")}{" "}
-                  ·{" "}
-                  {t("consultation.sourceCount", {
-                    values: { count: result.coverage.sourceCount }
-                  })}
-                </p>
-                <p className="mb-5 text-xs text-slate-500">
-                  {t("consultation.coverage", {
-                    values: {
-                      selected: result.coverage.selected,
-                      total: result.coverage.retrieved,
-                      sources: result.coverage.sourceCount
-                    }
-                  })}
-                </p>
-                {result.coverage.limited && (
-                  <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">
-                    {t("consultation.partial")}
-                  </p>
-                )}
-                {result.coverage.stale && (
-                  <p role="alert" className="mb-4 text-sm text-amber-700 dark:text-amber-300">
-                    {t("consultation.stale")}
-                  </p>
-                )}
-                {result.answer.paragraphs.map((p, i) => (
-                  <section key={i} className="mb-6">
-                    <MarkdownPreview markdown={organizationCitationMarkdown(p)} emptyLabel="" />
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {p.citations.map((h, index) => (
-                        <button
-                          key={h}
-                          className="rounded-lg bg-cyan-500/10 px-2 py-1 text-xs text-cyan-700 focus-visible:ring-2 dark:text-cyan-300"
-                          onClick={() => setEvidence(h)}
-                        >
-                          <Quote size={12} className="mr-1 inline" />
-                          {index + 1}. {result.evidence.find((e) => e.handle === h)?.sourceTitle}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-                {result.answer.gaps.length > 0 && (
-                  <aside className="rounded-xl bg-amber-500/10 p-4 text-sm">
-                    <h3 className="mb-2 font-medium">{t("consultation.gaps")}</h3>
-                    {result.answer.gaps.map((gap, i) => (
-                      <p key={i} className="mt-2">
-                        {gap}
-                      </p>
-                    ))}
-                  </aside>
-                )}
-                {followed ? (
-                  <p className="mt-5 text-sm text-cyan-700 dark:text-cyan-300">
-                    {t("investigation.retained")}
-                  </p>
-                ) : (
-                  <button
-                    disabled={saved || saving || result.coverage.stale}
-                    className={`${control} mt-5`}
-                    onClick={() => {
-                      setSaving(true);
-                      void window.app.consultation
-                        .save(result.id)
-                        .then(() => setSaved(true))
-                        .catch((e) =>
-                          setError(
-                            (String(e).match(
-                              /(?:organization|consultation)\.errors\.[A-Za-z]+/
-                            )?.[0] as MessageKey) ?? "organization.errors.failed"
-                          )
-                        )
-                        .finally(() => setSaving(false));
-                    }}
-                  >
-                    <Save size={15} className="mr-2 inline" />
-                    {t(saved ? "consultation.saved" : "consultation.save")}
-                  </button>
-                )}
-              </article>
-              {selected && (
-                <aside
-                  ref={evidenceRef}
-                  tabIndex={-1}
-                  className="h-fit max-h-[65vh] overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:sticky lg:top-0 rounded-2xl border border-cyan-500/30 bg-cyan-500/5 p-5"
-                >
-                  <div className="flex items-center gap-2">
-                    <BookOpen size={17} />
-                    <h3 className="mr-auto font-semibold">{selected.sourceTitle}</h3>
-                    <button
-                      className={control}
-                      onClick={() => setEvidence(null)}
-                      aria-label={t("organization.close")}
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                  <blockquote className="my-4 whitespace-pre-wrap text-sm leading-6">
-                    {selected.excerpt}
-                  </blockquote>
-                  <p className="text-xs text-slate-500">
-                    {selected.documentCreatedAt} · {selected.locator} ·{" "}
-                    {selected.documentId.slice(0, 8)}
-                  </p>
-                  <button
-                    className={`${control} mt-3`}
-                    onClick={() =>
-                      onOpenSource(
-                        selected.sourceItemId,
-                        undefined,
-                        citationTarget(selected).passage
-                      )
-                    }
-                  >
-                    {t("objects.citation.openPassage")}
-                  </button>
-                </aside>
-              )}
-              <details className="lg:col-span-full rounded-xl border border-slate-200 p-4 text-xs text-slate-500 dark:border-slate-800">
-                <summary className="cursor-pointer">{t("organization.usage")}</summary>
-                <p className="mt-3">
-                  {result.model} · {result.configurationHash.slice(0, 12)}
-                </p>
-                <p>
-                  {t(
-                    result.coverage.vector === "available"
-                      ? "consultation.vectorAvailable"
-                      : result.coverage.vector === "unavailable"
-                        ? "consultation.vectorUnavailable"
-                        : "consultation.textOnly"
-                  )}
-                </p>
-                <p>
-                  {t("organization.inputTokens")}:{" "}
-                  {result.inputTokens ?? t("organization.unavailable")} ·{" "}
-                  {t("organization.outputTokens")}:{" "}
-                  {result.outputTokens ?? t("organization.unavailable")} ·{" "}
-                  {t("organization.estimatedCost")}:{" "}
-                  {result.costEstimate ?? t("organization.unavailable")}
-                </p>
-              </details>
-              {saved && !followed && (
-                <div className="lg:col-span-full">
-                  <OrganizationRuns t={t} />
-                </div>
-              )}
-            </div>
+            <ConsultationAnswer t={t} result={result} onOpenSource={onOpenSource} active={active} />
           )}
-          <FollowedQuestions t={t} result={result} active={active} onSelect={selectAnswer} />
         </div>
       </div>
     </dialog>

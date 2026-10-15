@@ -1,5 +1,5 @@
-import { Switch } from "./ui/switch";
 import { MaintenanceView } from "./MaintenanceView";
+import { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
 import { SourceRelationReferenceText } from "./SourceRelationReferenceText";
 import { SourceRelationsList } from "./SourceRelationsList";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -14,8 +14,7 @@ import {
   RotateCcw,
   Settings2,
   ShieldCheck,
-  Sparkles,
-  X
+  Sparkles
 } from "lucide-react";
 import { z } from "zod";
 import {
@@ -31,12 +30,14 @@ import {
   type OrganizationRun,
   type OrganizationRunSummary,
   type OrganizationCommand,
-  type WikiPage,
-  type WikiResult
+  type WikiPage
 } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { AiProfile } from "../../shared/ipc";
 import { MarkdownEditor, MarkdownPreview } from "./MarkdownEditor";
+/** Ask owns the pickers; these re-exports serve the legacy views until they are deleted. */
+export { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
+export { ProfilePicker } from "./ask/ProfilePicker";
 const card =
   "rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900";
 const control =
@@ -48,199 +49,6 @@ const errorKey = (e: unknown): MessageKey =>
   "organization.errors.failed";
 type Settings = z.infer<typeof OrganizationSettingsSchema>;
 type PageSummary = Omit<WikiPage, "sections" | "evidence" | "breadcrumbs">;
-export function EvidenceScopePicker({
-  selected,
-  onChange,
-  t,
-  hint = "organization.scopeHint"
-}: {
-  selected: string[];
-  onChange: (ids: string[]) => void;
-  t: (key: MessageKey) => string;
-  hint?: MessageKey;
-}) {
-  const [labels, setLabels] = useState<Record<string, string>>({});
-  const [items, setItems] = useState<WikiResult[]>([]),
-    [query, setQuery] = useState(""),
-    [offset, setOffset] = useState(0),
-    [more, setMore] = useState(false),
-    [loading, setLoading] = useState(true),
-    [failed, setFailed] = useState(false),
-    [retry, setRetry] = useState(0);
-  useEffect(() => {
-    let current = true;
-    setLoading(true);
-    setFailed(false);
-    const timer = setTimeout(
-      () =>
-        void window.app.wiki
-          .search({ kind: "source", text: query, offset, limit: 30 })
-          .then((result) => {
-            if (current) {
-              setItems(result.items);
-              setLabels((old) => ({
-                ...old,
-                ...Object.fromEntries(result.items.map((i) => [i.id, i.title]))
-              }));
-              setMore(result.hasMore);
-            }
-          })
-          .catch(() => {
-            if (current) setFailed(true);
-          })
-          .finally(() => {
-            if (current) setLoading(false);
-          }),
-      150
-    );
-    return () => {
-      current = false;
-      clearTimeout(timer);
-    };
-  }, [query, offset, retry]);
-  return (
-    <div className="grid gap-2">
-      <label className="grid gap-1 text-sm">
-        {t("organization.sourceScope")}
-        <input
-          className={control}
-          aria-label={t("wiki.search")}
-          placeholder={t("wiki.search")}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOffset(0);
-          }}
-        />
-      </label>
-      <p className="text-xs text-slate-500">
-        {t(hint)} · {selected.length}/100
-      </p>
-      <div className="flex flex-wrap gap-1">
-        {selected.map((id) => (
-          <button
-            type="button"
-            key={id}
-            className="rounded-full bg-cyan-500/10 px-2 py-1 text-xs text-cyan-700 focus-visible:ring-2 dark:text-cyan-300"
-            onClick={() => onChange(selected.filter((v) => v !== id))}
-          >
-            {labels[id] ?? id.slice(0, 8)}{" "}
-            <X size={12} className="inline" aria-label={t("organization.close")} />
-          </button>
-        ))}
-      </div>
-      {failed ? (
-        <p role="alert" className="text-sm text-red-600">
-          {t("organization.errors.failed")}{" "}
-          <button className={control} onClick={() => setRetry((v) => v + 1)}>
-            {t("organization.refresh")}
-          </button>
-        </p>
-      ) : loading ? (
-        <p role="status" className="text-sm">
-          {t("organization.loading")}
-        </p>
-      ) : (
-        <div className="grid max-h-48 gap-1 overflow-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800 sm:grid-cols-2">
-          {items.map((item) => (
-            <label
-              key={item.id}
-              className="flex min-w-0 items-center gap-2 rounded p-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(item.id)}
-                disabled={!selected.includes(item.id) && selected.length >= 100}
-                onChange={(e) =>
-                  onChange(
-                    e.target.checked
-                      ? [...selected, item.id]
-                      : selected.filter((id) => id !== item.id)
-                  )
-                }
-              />
-              <span className="truncate">{item.title}</span>
-            </label>
-          ))}
-          {!items.length && (
-            <p className="text-sm text-slate-500">{t("organization.errors.noEvidence")}</p>
-          )}
-        </div>
-      )}
-      <div className="flex gap-2">
-        <button
-          className={control}
-          disabled={loading || offset === 0}
-          onClick={() => setOffset((v) => Math.max(0, v - 30))}
-        >
-          {t("sourceRelations.previous")}
-        </button>
-        <button
-          className={control}
-          disabled={loading || !more}
-          onClick={() => setOffset((v) => v + 30)}
-        >
-          {t("sourceRelations.next")}
-        </button>
-      </div>
-    </div>
-  );
-}
-export function ProfilePicker({
-  profiles,
-  value,
-  onChange,
-  t
-}: {
-  profiles: AiProfile[];
-  value: string;
-  onChange: (s: string) => void;
-  t: Translator;
-}) {
-  const [override, setOverride] = useState(Boolean(value));
-  const available = profiles.filter(
-    (p) => p.status === "active" && p.capabilities.includes("structured-output")
-  );
-  return (
-    <div className="grid min-w-0 gap-2">
-      <label className="flex items-center gap-2 text-sm">
-        <Switch
-          role="switch"
-          checked={override}
-          onChange={(e) => {
-            setOverride(e.target.checked);
-            if (!e.target.checked) onChange("");
-          }}
-        />
-        {t("organization.forceModel")}
-      </label>
-      {override ? (
-        <label className="grid min-w-0 gap-1 text-sm">
-          {t("settings.ai.model")}
-          <select
-            className={control + " min-w-0 w-full"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-          >
-            <option value="">{t("organization.defaultModel")}</option>
-            {available.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} · {p.modelId}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <p className="text-xs leading-5 text-slate-500">{t("organization.routerHint")}</p>
-      )}
-      {!available.length && (
-        <p role="status" className="text-sm text-amber-600">
-          {t("organization.noModel")}
-        </p>
-      )}
-    </div>
-  );
-}
 export function RunCard({
   summary,
   t,

@@ -1,3 +1,4 @@
+import { ConsultationEvidenceSchema } from "./consultation.js";
 import { PromptPinSchema } from "./prompt-catalog.js";
 import { z } from "zod";
 import { WikiPageContentSchema } from "./wiki.js";
@@ -227,20 +228,8 @@ export const OrganizationProfileSchema = z
   })
   .strict();
 export type OrganizationProfile = z.infer<typeof OrganizationProfileSchema>;
-export const OrganizationEvidenceSchema = z
-  .object({
-    handle: z.string(),
-    chunkId: z.string().uuid(),
-    sourceItemId: z.string().uuid(),
-    documentId: z.string().uuid(),
-    sourceSpanId: z.string().uuid().nullable(),
-    contentHash: z.string(),
-    excerpt: z.string().max(12000),
-    sourceTitle: z.string(),
-    documentCreatedAt: z.string(),
-    locator: z.string().nullable()
-  })
-  .strict();
+/** The original-passage shape is shared with Ask, which no longer depends on this module. */
+export const OrganizationEvidenceSchema = ConsultationEvidenceSchema;
 export const OrganizationContextSchema = z
   .object({
     id: z.string().uuid(),

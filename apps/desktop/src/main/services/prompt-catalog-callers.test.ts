@@ -143,7 +143,6 @@ describe("actual catalog family callers with deterministic model doubles", () =>
     const answer = await service.generate(
       JSON.parse(JSON.stringify(snapshot)),
       "What helped?",
-      [],
       new AbortController().signal
     );
     expect(answer.auditIds).toHaveLength(2);

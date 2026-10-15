@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   FollowedInvestigationSchema,
   OrganizationCheckpointSchema,
-  type ConsultationInput,
-  type ConsultationResult,
+  type LegacyConsultationInput as ConsultationInput,
+  type LegacyConsultationResult as ConsultationResult,
   type OrganizationSnapshot,
   type WikiPageContent,
   type AutomaticWikiPolicy

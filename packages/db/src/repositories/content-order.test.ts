@@ -7,10 +7,8 @@ import { createConsultationRepository } from "./consultationRepository.js";
 import { createEntityIdentityRepository } from "./entityIdentityRepository.js";
 import { createKnowledgeConsultationRepository } from "./knowledgeConsultationRepository.js";
 import { createKnowledgeGraphRepository } from "./knowledgeGraphRepository.js";
-import { createOrganizationRepository } from "./organizationRepository.js";
 import { createRelationTypeRepository } from "./relationTypeRepository.js";
 import { createSourceRelationRepository } from "./sourceRelationRepository.js";
-import { createWikiContextRepository } from "./wikiContextRepository.js";
 
 /**
  * Every import mints new UUIDs, so a query that ends its ORDER BY on an ID (or has none) hands the
@@ -148,10 +146,10 @@ describe("content-stable query order", () => {
       runtime: "local",
       spaceKey: "k"
     });
-    await createWikiContextRepository(pool.pool).contexts(sources, sources, false);
-    await createOrganizationRepository(pool.pool).relations(sources);
-    await createKnowledgeConsultationRepository(pool.pool).originals(sources, sources);
+    await createKnowledgeConsultationRepository(pool.pool).contexts(sources, sources, false);
+    await createKnowledgeConsultationRepository(pool.pool).relations(sources);
     const candidates = pool.queries[0];
+    expect(candidates).not.toContain("wiki_");
     expect(candidates).toContain('"sourceTitle","chunkIndex","chunkId" limit 200');
     expect(candidates).toMatch(/desc,"sourceTitle","chunkIndex","chunkId"$/);
     expect(pool.queries[1]).toContain(
@@ -165,6 +163,5 @@ describe("content-stable query order", () => {
     expect(summaries).toContain("order by src.title,s.id limit 20");
     expect(entities).toContain("c.chunk_index,e.canonical_name,m.id limit 20");
     expect(pool.queries[5]).toContain('order by picked."sourceIdea",picked."targetIdea"');
-    expect(pool.queries[6]).toContain("order by s.title,c.chunk_index,c.id");
   });
 });

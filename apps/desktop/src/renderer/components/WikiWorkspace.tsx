@@ -697,11 +697,9 @@ export function WikiWorkspace({
       {consultationOpen && (
         <ConsultationDialog
           initialSourceIds={sourceScope ? [sourceScope.id] : []}
-          initialPageId={scope ?? (mode === "page" ? (page?.id ?? null) : null)}
           initialReviewed={reviewed}
           active={active}
           t={t}
-          page={mode === "page" ? page : null}
           initialQuestion={query}
           onClose={() => {
             setConsultationOpen(false);

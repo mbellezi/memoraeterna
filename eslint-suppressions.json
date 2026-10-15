@@ -47,10 +47,7 @@
   },
   "apps/desktop/src/main/services/consultation-service.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 5
+      "count": 1
     },
     "preserve-caught-error": {
       "count": 1
@@ -68,7 +65,7 @@
   },
   "apps/desktop/src/main/services/knowledge-consultation.test.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 2
     }
   },
   "apps/desktop/src/main/services/knowledge-evolution.test.ts": {
@@ -347,7 +344,7 @@
   },
   "apps/desktop/src/renderer/components/ConsultationDialog.tsx": {
     "react-hooks/exhaustive-deps": {
-      "count": 2
+      "count": 1
     }
   },
   "apps/desktop/src/renderer/components/CreatorFields.tsx": {
@@ -449,7 +446,7 @@
       "count": 15
     },
     "react-hooks/set-state-in-effect": {
-      "count": 3
+      "count": 2
     }
   },
   "apps/desktop/src/renderer/components/PromptsSettingsView.tsx": {
@@ -587,14 +584,6 @@
   },
   "packages/db/src/repositories/investigationRepository.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "packages/db/src/repositories/knowledgeConsultationRepository.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "no-empty": {
       "count": 1
     }
   },

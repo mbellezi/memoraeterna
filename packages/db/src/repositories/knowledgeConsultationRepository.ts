@@ -1,433 +1,273 @@
-import { wikiReadingPagesSql } from "./wikiReadingSql.js";
 import { retainedNoteCurrentSql } from "./noteEvidence.js";
 import {
-  canConsultSection,
-  OrganizationEvidenceSchema,
-  type OrganizationContextSchema
-} from "@app/domain";
-import type { z } from "zod";
+  currentSourceRelationEvidenceSql,
+  sourceRelationEvidenceJoins
+} from "./sourceRelationRepository.js";
 import type { PgPool } from "../client.js";
-import { validateWikiDependencies, rowFingerprint } from "./wikiContextRepository.js";
-type Dependency = { kind: string; id: string; fingerprint: string };
-export interface CompiledKnowledge {
-  context: z.infer<typeof OrganizationContextSchema>;
-  originals: z.infer<typeof OrganizationEvidenceSchema>[];
+
+export interface ConsultationContextRecord {
+  id: string;
+  kind: "summary" | "atomic_note" | "entity_mention";
+  sourceItemId: string;
+  text: string;
+  review: string | null;
+  fingerprint: string;
+  chunkIds: string[];
+  dependencies: Array<{ kind: string; id: string; fingerprint: string }>;
 }
-/** Successor retrieval. Legacy Library and original-chunk ranking remain untouched. */
+type Dependency = { kind: string; id: string; fingerprint: string };
+const stamp = (v: unknown) => new Date(v as string).toISOString();
+const noteFingerprint = (alias: string) =>
+  `md5((md5((to_jsonb(${alias})-'updated_at'-'created_at'-'ownership'-'owning_source_item_id'-'owning_chunk_id')::text))||coalesce((select string_agg((to_jsonb(l)-'created_at')::text,'|' order by l.id) from atomic_note_source_links l where l.atomic_note_id=${alias}.id),''))`;
+const rowFingerprint = (alias: string) =>
+  `md5((to_jsonb(${alias})-'updated_at'-'created_at')::text)`;
+/** Every table a context or relation can depend on. A dependency on anything else is invalid. */
+const dependencyTables: Record<string, string> = {
+  atomic_note: "atomic_notes",
+  summary: "source_summaries",
+  entity: "entities",
+  entity_mention: "entity_mentions",
+  source_relation: "source_relations",
+  relation_evidence: "source_relation_evidence",
+  note_relation: "atomic_note_relations"
+};
+
+/**
+ * What Ask grounds an answer in beyond the retrieved passages: the sources in scope, the notes,
+ * summary concepts, entity mentions and source relations tied to those passages, and the check that
+ * all of it is still current. It reads no page and no organization state.
+ */
 export function createKnowledgeConsultationRepository(pool: PgPool) {
   const api = {
-    async scope(input: {
-      sourceIds: string[];
-      includeDescendants: boolean;
-      pageId: string | null;
-    }) {
-      const allowed = (
+    /** The sources a question may read: the selected ones (all when none) and, optionally, their descendants. */
+    async scope(input: { sourceIds: string[]; includeDescendants: boolean }) {
+      return (
         await pool.query(
           `with recursive allowed as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[]) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $2) select id from allowed order by id`,
           [input.sourceIds, input.includeDescendants]
         )
       ).rows.map((r) => r.id as string);
-      if (!input.pageId) return allowed;
-      // Current canonical memberships, owned indexes and section/group evidence define page scope.
-      const rows = (
-        await pool.query(
-          `with recursive ${wikiReadingPagesSql("$1")}, pages as(select id from page_context), inputs(kind,input_id) as(
-    select d.kind,d.input_id from pages p join wiki_pages wp on wp.id=p.id join wiki_dependencies d on d.revision_id=wp.current_revision_id
-    union select d.kind,d.input_id from inputs i join wiki_pages p on not p.archived join wiki_page_revisions r on r.id=p.current_revision_id join wiki_dependencies d on d.revision_id=r.id
-      where i.kind='wiki_page' and p.id=i.input_id or i.kind='wiki_section' and d.section_id=i.input_id and exists(select 1 from jsonb_array_elements(r.content->'sections') s where s->>'id'=i.input_id::text)
-   ), notes(id) as(
-    select m.target_id from wiki_memberships m join pages p on p.id=m.page_id where m.target_kind='atomic_note'
-    union select input_id from inputs where kind='atomic_note'
-    union select n.id from inputs i join atomic_note_relations rel on i.kind='note_relation' and rel.id=i.input_id join atomic_notes n on n.id=rel.source_atomic_note_id or n.id=rel.target_atomic_note_id
-    union select n.id from inputs i join source_relation_evidence rel on i.kind='relation_evidence' and rel.id=i.input_id join atomic_notes n on n.id=rel.source_note_id or n.id=rel.target_note_id
-   ), refs as(
-    select e.source_item_id id from pages p join wiki_pages wp on wp.id=p.id join wiki_page_revisions r on r.id=wp.current_revision_id join wiki_evidence e on e.page_id=p.id where exists(select 1 from jsonb_array_elements(r.content->'sections') s where s->'evidenceIds' ? e.id::text) or exists(select 1 from wiki_toc_groups g where g.page_id=p.id and g.snapshot->'explanationEvidenceIds' ? e.id::text)
-    union select wp.toc_owner_id from pages p join wiki_pages wp on wp.id=p.id where wp.toc_owner_kind='source'
-    union select m.target_id from wiki_memberships m join pages p on p.id=m.page_id where m.target_kind='source'
-    union select n.created_from_source_item_id from notes ref join atomic_notes n on n.id=ref.id
-    union select e.source_id from notes n join atomic_note_evidence e on e.note_id=n.id
-    union select l.source_item_id from notes n join atomic_note_source_links l on l.atomic_note_id=n.id
-    union select input_id from inputs where kind='source'
-    union select d.source_item_id from inputs i join documents d on i.kind='document' and d.id=i.input_id
-    union select c.source_item_id from inputs i join chunks c on i.kind='chunk' and c.id=i.input_id
-    union select s.source_item_id from inputs i join source_summaries s on i.kind='summary' and s.id=i.input_id
-    union select m.source_item_id from inputs i join entity_mentions m on i.kind='entity' and m.entity_id=i.input_id or i.kind='entity_mention' and m.id=i.input_id
-    union select r.source_item_id from inputs i join source_relations r on i.kind='source_relation' and r.id=i.input_id
-    union select r.target_source_item_id from inputs i join source_relations r on i.kind='source_relation' and r.id=i.input_id
-    union select c.source_item_id from inputs i join source_relation_evidence e on i.kind='relation_evidence' and e.id=i.input_id join chunks c on c.id=e.source_chunk_id or c.id=e.target_chunk_id)
-    select distinct id from refs where id=any($2::uuid[]) order by id`,
-          [input.pageId, allowed]
-        )
-      ).rows;
-      return rows.map((r) => r.id as string);
     },
-    async originals(ids: string[], allowed: string[]) {
-      if (!ids.length) return [];
-      const rows = (
+    async contexts(
+      sourceIds: string[],
+      chunkIds: string[],
+      reviewedOnly: boolean
+    ): Promise<ConsultationContextRecord[]> {
+      // Optional text is admitted only with complete original provenance in this bounded scope.
+      const notes = (
         await pool.query(
-          `select c.id as "chunkId",c.source_item_id as "sourceItemId",c.document_id as "documentId",c.source_span_id as "sourceSpanId",c.content_hash as "contentHash",c.content excerpt,s.title as "sourceTitle",d.created_at as "documentCreatedAt",coalesce(sp.label,sp.selector,sp.page::text) locator from chunks c join source_items s on s.id=c.source_item_id join documents d on d.id=c.document_id left join source_spans sp on sp.id=c.source_span_id where c.id=any($1::uuid[]) and c.source_item_id=any($2::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1' order by s.title,c.chunk_index,c.id`,
-          [ids, allowed]
+          `select n.id,'atomic_note' as kind,n.created_from_source_item_id as "sourceItemId",n.idea_statement||E'\\n'||n.body_markdown as text,n.status as review,${noteFingerprint("n")} as fingerprint,
+      array(select refs.id from (select n.evidence_chunk_id as id union select l.chunk_id from atomic_note_source_links l where l.atomic_note_id=n.id union select e.chunk_id from atomic_note_evidence e where e.note_id=n.id) refs left join chunks rc on rc.id=refs.id order by (select si.title from source_items si where si.id=rc.source_item_id),rc.chunk_index,refs.id) as "chunkIds"
+      from atomic_notes n join chunks c on c.id=n.evidence_chunk_id join documents d on d.id=c.document_id
+      where n.created_from_source_item_id=any($1::uuid[]) and c.source_item_id=n.created_from_source_item_id and n.evidence_chunk_id=any($2::uuid[]) and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()}
+      and not exists(select 1 from atomic_note_evidence e where e.note_id=n.id and (e.source_id<>all($1::uuid[]) or e.chunk_id<>all($2::uuid[])))
+      and (not $3 or n.status='approved') and d.metadata->>'supersededByDocumentId' is null
+      and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (l.source_item_id<>lc.source_item_id or l.source_item_id<>all($1::uuid[]) or l.chunk_id<>all($2::uuid[]) or ld.id is null or ld.metadata->>'supersededByDocumentId' is not null))
+      order by (select si.title from source_items si where si.id=n.created_from_source_item_id),
+        c.chunk_index,n.title,n.idea_statement,n.id limit 20`,
+          [sourceIds, chunkIds, reviewedOnly]
         )
       ).rows;
-      return rows
-        .filter((r) => r.excerpt.length <= 12000)
-        .map((r) =>
-          OrganizationEvidenceSchema.parse({
-            ...r,
-            handle: "",
-            documentCreatedAt: new Date(r.documentCreatedAt).toISOString()
-          })
+      const summaries = reviewedOnly
+        ? []
+        : (
+            await pool.query(
+              `select s.id,'summary' as kind,s.source_item_id as "sourceItemId",s.metadata->'concepts' as concepts,${rowFingerprint("s")} as fingerprint
+      from source_summaries s join source_items src on src.id=s.source_item_id where s.source_item_id=any($1::uuid[]) and s.is_current and src.metadata->>'summaryStale' is distinct from 'true' and jsonb_typeof(s.metadata->'concepts')='array' order by src.title,s.id limit 20`,
+              [sourceIds]
+            )
+          ).rows;
+      const concepts = summaries.flatMap((s) => {
+        // summary-v3 concepts carry original chunk IDs; ungrounded legacy strings are navigation only.
+        const eligible = (s.concepts as Array<Record<string, unknown>>).filter(
+          (c) =>
+            Array.isArray(c.evidenceChunkIds) &&
+            c.evidenceChunkIds.length > 0 &&
+            (c.evidenceChunkIds as string[]).every((id) => chunkIds.includes(id))
         );
+        if (!eligible.length) return [];
+        return [
+          {
+            ...s,
+            text: JSON.stringify(eligible),
+            review: null,
+            chunkIds: [...new Set(eligible.flatMap((c) => c.evidenceChunkIds as string[]))]
+          }
+        ];
+      });
+      const entities = reviewedOnly
+        ? []
+        : (
+            await pool.query(
+              `select m.id,'entity_mention' as kind,m.source_item_id as "sourceItemId",e.canonical_name as text,null::text as review,${rowFingerprint("m")} as fingerprint,array[m.chunk_id] as "chunkIds",e.id as "entityId",${rowFingerprint("e")} as "entityFingerprint"
+      from entity_mentions m join entities e on e.id=m.entity_id join chunks c on c.id=m.chunk_id
+      where m.source_item_id=any($1::uuid[]) and m.source_item_id=c.source_item_id and m.chunk_id=any($2::uuid[])
+      order by (select si.title from source_items si where si.id=m.source_item_id),c.chunk_index,e.canonical_name,m.id limit 20`,
+              [sourceIds, chunkIds]
+            )
+          ).rows;
+      return [...notes, ...concepts, ...entities]
+        .filter((c) => c.text.length <= 6000)
+        .map((c) => ({
+          id: c.id,
+          kind: c.kind,
+          sourceItemId: c.sourceItemId,
+          text: c.text,
+          review: c.review,
+          fingerprint: c.fingerprint,
+          chunkIds: c.chunkIds,
+          dependencies: [
+            { kind: c.kind, id: c.id, fingerprint: c.fingerprint },
+            ...(c.entityId
+              ? [{ kind: "entity", id: c.entityId, fingerprint: c.entityFingerprint }]
+              : [])
+          ]
+        }));
     },
-    async dependencies(
-      revisionId: string,
-      consumerId: string,
-      allowed: string[],
-      visited = new Set<string>(),
-      reviewedOnly = false
-    ): Promise<Dependency[]> {
-      const key = revisionId + ":" + consumerId;
-      if (visited.has(key) || visited.size >= 60) throw new Error("organization.errors.evidence");
-      visited.add(key);
-      const rows = (
+    async relations(sourceIds: string[]) {
+      return (
         await pool.query(
-          "select kind,input_id id,fingerprint,snapshot,stale_reason from wiki_dependencies where revision_id=$1 and section_id=$2 order by kind,input_id",
-          [revisionId, consumerId]
+          `select * from (select distinct on(r.id) r.id,e.id as "evidenceId",md5(e.snapshot::text) as fingerprint,r.source_item_id as "sourceItemId",r.target_source_item_id as "targetSourceItemId",r.status as review,r.updated_at as "updatedAt",r.source_idea as "sourceIdea",r.target_idea as "targetIdea",r.explanation,e.source_chunk_id as "sourceChunkId",e.target_chunk_id as "targetChunkId"
+        from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins}
+        where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and ${currentSourceRelationEvidenceSql}
+          and r.source_idea is not null and r.target_idea is not null and r.explanation is not null
+        order by r.id,e.snapshot->>'sourceHash',e.snapshot->>'targetHash',e.id) picked
+        order by picked."sourceIdea",picked."targetIdea",picked."evidenceId" limit 20`,
+          [sourceIds]
         )
-      ).rows;
-      if (rows.some((r) => r.stale_reason)) throw new Error("organization.errors.evidence");
-      const own = (
+      ).rows.map((r) => ({ ...r, updatedAt: stamp(r.updatedAt) }));
+    },
+    async relationDependencies(evidenceId: string) {
+      const row = (
         await pool.query(
-          "select s,r.content->>'review' review from wiki_page_revisions r cross join lateral jsonb_array_elements(r.content->'sections') s where r.id=$1 and s->>'id'=$2",
-          [revisionId, consumerId]
+          `select e.*,${rowFingerprint("e")} as fingerprint,${rowFingerprint("r")} as "relationFingerprint" from source_relation_evidence e join source_relations r on r.id=e.relation_id where e.id=$1`,
+          [evidenceId]
         )
       ).rows[0];
-      if (own) {
-        if (
-          own.s.assessment
-            ? !canConsultSection(own.s.assessment, own.s.sectionRevisionId, reviewedOnly)
-            : own.s.evidenceReview !== "verified" || (reviewedOnly && own.review !== "reviewed")
-        )
-          throw new Error("organization.errors.evidence");
-        const evidence = (
-          await pool.query(
-            "select e.source_item_id,e.chunk_id,e.snapshot from wiki_evidence e join wiki_page_revisions r on r.page_id=e.page_id where r.id=$1 and e.id::text in(select jsonb_array_elements_text($2::jsonb))",
-            [revisionId, JSON.stringify(own.s.evidenceIds)]
-          )
-        ).rows;
-        if (
-          evidence.length !== own.s.evidenceIds.length ||
-          evidence.some((e) => !allowed.includes(e.source_item_id))
-        )
-          throw new Error("organization.errors.scope");
-        const originals = await api.originals(
-          evidence.map((e) => e.chunk_id),
-          allowed
-        );
-        if (
-          originals.length !== evidence.length ||
-          evidence.some(
-            (e) =>
-              originals.find((o) => o.chunkId === e.chunk_id)?.contentHash !==
-              e.snapshot.contentHash
-          )
-        )
-          throw new Error("organization.errors.evidence");
-      }
-      const result: Dependency[] = [];
-      for (const row of rows) {
-        const dep = {
-          kind: row.kind as string,
-          id: row.id as string,
-          fingerprint: row.fingerprint as string
-        };
-        if (["source", "document", "chunk"].includes(dep.kind)) {
-          const table = { source: "source_items", document: "documents", chunk: "chunks" }[
-            dep.kind
-          ]!;
+      if (!row) throw new Error("consultation.errors.evidence");
+      const deps = [
+        { kind: "relation_evidence", id: row.id, fingerprint: row.fingerprint },
+        { kind: "source_relation", id: row.relation_id, fingerprint: row.relationFingerprint }
+      ];
+      for (const [kind, id] of [
+        ["atomic_note", row.source_note_id],
+        ["atomic_note", row.target_note_id],
+        ["note_relation", row.note_relation_id]
+      ] as const)
+        if (id) {
           const current = (
             await pool.query(
-              `select r.*,${rowFingerprint("r")} as current_fingerprint from ${table} r where id=$1`,
-              [dep.id]
+              `select ${kind === "atomic_note" ? noteFingerprint("r") : rowFingerprint("r")} as fingerprint from ${dependencyTables[kind]} r where id=$1`,
+              [id]
             )
           ).rows[0];
-          if (
-            !current ||
-            (dep.kind === "document" && current.metadata?.supersededByDocumentId) ||
-            (dep.kind === "chunk" &&
-              row.snapshot?.contentHash &&
-              current.content_hash !== row.snapshot.contentHash)
-          )
-            throw new Error("organization.errors.evidence");
-          dep.fingerprint = current.current_fingerprint;
+          if (!current) throw new Error("consultation.errors.evidence");
+          deps.push({ kind, id, fingerprint: current.fingerprint });
         }
-        result.push(dep);
-        if (dep.kind === "wiki_section" || dep.kind === "wiki_page") {
-          const children = (
-            await pool.query(
-              `select r.id revision_id,s->>'id' id from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') s where not p.archived and ($1='wiki_page' and p.id=$2 or $1='wiki_section' and s->>'id'=$2::text)`,
-              [dep.kind, dep.id]
-            )
-          ).rows;
-          if (!children.length) throw new Error("organization.errors.evidence");
-          for (const child of children)
-            result.push(
-              ...(await api.dependencies(
-                child.revision_id,
-                child.id,
-                allowed,
-                new Set(visited),
-                reviewedOnly
-              ))
-            );
-        }
-        const owners = (
-          await pool.query(
-            `select id from source_items where $1='source' and id=$2 union select source_item_id from documents where $1='document' and id=$2 union select source_item_id from chunks where $1='chunk' and id=$2 union select created_from_source_item_id from atomic_notes where $1='atomic_note' and id=$2 union select source_item_id from atomic_note_source_links where $1='atomic_note' and atomic_note_id=$2 union select source_id from atomic_note_evidence where $1='atomic_note' and note_id=$2 union select source_item_id from source_summaries where $1='summary' and id=$2 union select source_item_id from entity_mentions where $1='entity_mention' and id=$2 union select source_item_id from source_relations where $1='source_relation' and id=$2 union select target_source_item_id from source_relations where $1='source_relation' and id=$2
-     union select c.source_item_id from source_relation_evidence e join chunks c on c.id=e.source_chunk_id or c.id=e.target_chunk_id where $1='relation_evidence' and e.id=$2
-     union select n.created_from_source_item_id from atomic_note_relations r join atomic_notes n on n.id=r.source_atomic_note_id or n.id=r.target_atomic_note_id where $1='note_relation' and r.id=$2
-     union select l.source_item_id from atomic_note_relations r join atomic_note_source_links l on l.atomic_note_id=r.source_atomic_note_id or l.atomic_note_id=r.target_atomic_note_id where $1='note_relation' and r.id=$2
-     union select e.source_id from atomic_note_relations r join atomic_note_evidence e on e.note_id=r.source_atomic_note_id or e.note_id=r.target_atomic_note_id where $1='note_relation' and r.id=$2
-     union select n.created_from_source_item_id from source_relation_evidence r join atomic_notes n on n.id=r.source_note_id or n.id=r.target_note_id where $1='relation_evidence' and r.id=$2
-     union select l.source_item_id from source_relation_evidence r join atomic_note_source_links l on l.atomic_note_id=r.source_note_id or l.atomic_note_id=r.target_note_id where $1='relation_evidence' and r.id=$2
-     union select e.source_id from source_relation_evidence r join atomic_note_evidence e on e.note_id=r.source_note_id or e.note_id=r.target_note_id where $1='relation_evidence' and r.id=$2
-     union select m.source_item_id from entity_mentions m where $1='entity' and m.entity_id=$2`,
-            [dep.kind, dep.id]
-          )
-        ).rows;
-        if (
-          (!["wiki_page", "wiki_section"].includes(dep.kind) && !owners.length) ||
-          owners.some((r) => !allowed.includes(r.id))
-        )
-          throw new Error("organization.errors.scope");
-        if (["atomic_note", "note_relation", "relation_evidence"].includes(dep.kind)) {
-          const invalid = (
-            await pool.query(
-              `select 1 from atomic_notes n where ( $1='atomic_note' and n.id=$2 or $1='note_relation' and n.id in(select source_atomic_note_id from atomic_note_relations where id=$2 union select target_atomic_note_id from atomic_note_relations where id=$2) or $1='relation_evidence' and n.id in(select source_note_id from source_relation_evidence where id=$2 union select target_note_id from source_relation_evidence where id=$2)) and (n.status in('rejected','archived') or n.supersession_status<>'current' or not (${retainedNoteCurrentSql()}) or $3 and n.status<>'approved' or not exists(select 1 from chunks c where c.id=n.evidence_chunk_id and c.source_item_id=n.created_from_source_item_id) or exists(select 1 from atomic_note_source_links l left join chunks c on c.id=l.chunk_id where l.atomic_note_id=n.id and (c.id is null or c.source_item_id<>l.source_item_id))) limit 1`,
-              [dep.kind, dep.id, reviewedOnly]
-            )
-          ).rows;
-          if (invalid.length) throw new Error("organization.errors.evidence");
-        }
-        const lineage = (
-          await pool.query(
-            `with notes as(select id,evidence_chunk_id from atomic_notes where $1='atomic_note' and id=$2 or $1='note_relation' and id in(select source_atomic_note_id from atomic_note_relations where id=$2 union select target_atomic_note_id from atomic_note_relations where id=$2) or $1='relation_evidence' and id in(select source_note_id from source_relation_evidence where id=$2 union select target_note_id from source_relation_evidence where id=$2)), ids as(select evidence_chunk_id id from notes union select l.chunk_id from notes n join atomic_note_source_links l on l.atomic_note_id=n.id union select e.chunk_id from notes n join atomic_note_evidence e on e.note_id=n.id union select source_chunk_id from source_relation_evidence where $1='relation_evidence' and id=$2 union select target_chunk_id from source_relation_evidence where $1='relation_evidence' and id=$2 union select chunk_id from entity_mentions where $1='entity' and entity_id=$2 or $1='entity_mention' and id=$2) select id from ids where id is not null`,
-            [dep.kind, dep.id]
-          )
-        ).rows.map((r) => r.id as string);
-        if (lineage.length) {
-          const originals = await api.originals(lineage, allowed);
-          if (originals.length !== lineage.length) throw new Error("organization.errors.evidence");
-          for (const original of originals)
-            for (const [kind, id] of [
-              ["source", original.sourceItemId],
-              ["document", original.documentId],
-              ["chunk", original.chunkId]
-            ]) {
-              const table = { source: "source_items", document: "documents", chunk: "chunks" }[
-                kind!
-              ]!;
-              const row = (
-                await pool.query(
-                  `select ${rowFingerprint("r")} fingerprint from ${table} r where id=$1`,
-                  [id]
-                )
-              ).rows[0];
-              result.push({ kind: kind!, id: id!, fingerprint: row.fingerprint });
-            }
-        }
-      }
-      await validateWikiDependencies(pool, result);
-      return result;
+      return deps;
     },
-    async compiled(
-      allowed: string[],
-      question: string,
-      pageId: string | null,
-      reviewedOnly: boolean
-    ): Promise<CompiledKnowledge[]> {
-      // Rank metadata before originals. Scope checks below run before any prose leaves this repository.
-      const rows = (
+    async validateEvidence(
+      evidence: Array<{
+        chunkId: string;
+        sourceItemId: string;
+        documentId: string;
+        sourceSpanId: string | null;
+        contentHash: string;
+      }>
+    ) {
+      const current = (
         await pool.query(
-          `with recursive ${wikiReadingPagesSql("$3")}, terms as(select to_tsquery('simple',coalesce(nullif(string_agg(quote_literal(term),' | '),''),'''__empty__''')) q from unnest(tsvector_to_array(to_tsvector('simple',unaccent($2)))) term)
-    select p.id page_id,r.id revision_id,s->>'id' id,md5(s::text) fingerprint,s, p.title,
-    array(select e.chunk_id from wiki_evidence e where e.page_id=p.id and s->'evidenceIds' ? e.id::text) chunk_ids,
-    array(select e.source_item_id from wiki_evidence e where e.page_id=p.id and s->'evidenceIds' ? e.id::text) source_ids
-    from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') s cross join terms
-    where not p.archived and p.role is distinct from 'investigation' and jsonb_array_length(s->'evidenceIds')>0
-    and not exists(select 1 from wiki_evidence e where e.page_id=p.id and s->'evidenceIds' ? e.id::text and e.source_item_id<>all($1::uuid[]))
-    and not exists(select 1 from wiki_dependencies d where d.revision_id=r.id and d.section_id=(s->>'id')::uuid and d.kind='source' and d.input_id<>all($1::uuid[]))
-    and (p.id in(select id from page_context) or ts_rank_cd(to_tsvector('simple',unaccent(p.title||' '||coalesce(r.content->>'aliases','')||' '||coalesce(s->>'title','')||' '||coalesce(s->>'markdown',''))),terms.q)>0)
-    order by (p.id in(select id from page_context)) desc,ts_rank_cd(to_tsvector('simple',unaccent(p.title||' '||coalesce(s->>'markdown',''))),terms.q) desc,p.id,s->>'id' limit 60`,
-          [allowed, question, pageId]
+          `select c.id,c.source_item_id,c.document_id,c.source_span_id,c.content_hash from chunks c join documents d on d.id=c.document_id where c.id=any($1::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.chunking_version<>'catalog-metadata-v1' and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata'`,
+          [evidence.map((e) => e.chunkId)]
         )
       ).rows;
-      const result: CompiledKnowledge[] = [];
-      for (const row of rows) {
-        if (result.length >= 6) break;
-        const sec = row.s;
-        if (
-          !row.source_ids.length ||
-          row.source_ids.some((id: string) => !allowed.includes(id)) ||
-          sec.interpretations?.some((r: any) =>
-            r.evidence.some((e: any) => !allowed.includes(e.sourceItemId))
+      if (
+        evidence.some(
+          (e) =>
+            !current.some(
+              (c) =>
+                c.id === e.chunkId &&
+                c.source_item_id === e.sourceItemId &&
+                c.document_id === e.documentId &&
+                c.source_span_id === e.sourceSpanId &&
+                c.content_hash === e.contentHash
+            )
+        )
+      )
+        throw new Error("consultation.errors.evidence");
+    },
+    async validateRelations(
+      relations: Array<{
+        id: string;
+        evidenceId: string;
+        fingerprint: string;
+        review: string;
+        updatedAt: string;
+      }>,
+      sourceIds: string[]
+    ) {
+      for (const relation of relations) {
+        const current = (
+          await pool.query(
+            `select r.status,r.updated_at,md5(e.snapshot::text) as fingerprint from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins}
+          where r.id=$1 and e.id=$2 and r.source_item_id=any($3::uuid[]) and r.target_source_item_id=any($3::uuid[]) and r.status<>'rejected' and ${currentSourceRelationEvidenceSql}`,
+            [relation.id, relation.evidenceId, sourceIds]
           )
-        )
-          continue;
+        ).rows[0];
         if (
-          sec.assessment
-            ? !canConsultSection(sec.assessment, sec.sectionRevisionId, reviewedOnly)
-            : sec.evidenceReview !== "verified"
+          !current ||
+          current.fingerprint !== relation.fingerprint ||
+          current.status !== relation.review ||
+          stamp(current.updated_at) !== relation.updatedAt
         )
-          continue;
-        if (
-          reviewedOnly &&
-          !sec.assessment &&
-          (
-            await pool.query(
-              "select content->>'review' review from wiki_page_revisions where id=$1",
-              [row.revision_id]
-            )
-          ).rows[0]?.review !== "reviewed"
-        )
-          continue;
-        try {
-          const dependencies = await api.dependencies(
-            row.revision_id,
-            row.id,
-            allowed,
-            new Set(),
-            reviewedOnly
-          );
-          const ids = [
-              ...new Set<string>([
-                ...row.chunk_ids,
-                ...dependencies.filter((d) => d.kind === "chunk").map((d) => d.id)
-              ])
-            ],
-            originals = await api.originals(ids, allowed);
-          if (originals.length !== ids.length || !originals.length) continue;
-          const exact = (
-            await pool.query(
-              "select chunk_id,snapshot from wiki_evidence where page_id=$1 and id::text in(select jsonb_array_elements_text($2::jsonb))",
-              [row.page_id, JSON.stringify(sec.evidenceIds)]
-            )
-          ).rows;
-          if (
-            exact.length !== sec.evidenceIds.length ||
-            exact.some(
-              (e) =>
-                originals.find((o) => o.chunkId === e.chunk_id)?.contentHash !==
-                e.snapshot.contentHash
-            )
-          )
-            continue;
-          const text = JSON.stringify({
-            ...(sec.interpretations ? { interpretations: sec.interpretations } : {}),
-            title: sec.title,
-            markdown: sec.markdown,
-            provenance: sec.provenance,
-            review: sec.assessment?.humanReview ?? sec.evidenceReview
-          });
-          if (text.length > 6000) continue;
-          result.push({
-            originals,
-            context: {
-              id: row.id,
-              kind: "wiki_section",
-              pageId: row.page_id,
-              revisionId: row.revision_id,
-              sourceItemId: originals[0]!.sourceItemId,
-              text,
-              review: sec.assessment?.humanReview ?? sec.evidenceReview,
-              fingerprint: row.fingerprint,
-              handles: [],
-              dependencies: [
-                { kind: "wiki_page", id: row.page_id, fingerprint: row.revision_id },
-                { kind: "wiki_section", id: row.id, fingerprint: row.fingerprint },
-                ...dependencies
-              ]
-            }
-          });
-        } catch {
-          /* Ineligible context is never sent; raw authorized originals remain usable. */
-        }
+          throw new Error("consultation.errors.evidence");
       }
-      const groups = (
-        await pool.query(
-          `with recursive ${wikiReadingPagesSql("$3")} select g.id,g.page_id,g.revision_id,g.snapshot,md5(g.snapshot::text) fingerprint,r.content->>'review' review,
-    array(select e.chunk_id from wiki_evidence e where e.page_id=g.page_id and g.snapshot->'explanationEvidenceIds' ? e.id::text) chunk_ids
-    from wiki_toc_groups g join wiki_pages p on p.id=g.page_id and p.current_revision_id=g.revision_id join wiki_page_revisions r on r.id=g.revision_id
-    where not p.archived and (not $4 or r.content->>'review'='reviewed')
-    and not exists(select 1 from wiki_dependencies d where d.revision_id=g.revision_id and d.section_id=g.id and d.kind='source' and d.input_id<>all($1::uuid[]))
-    and not exists(select 1 from wiki_evidence e where e.page_id=g.page_id and g.snapshot->'explanationEvidenceIds' ? e.id::text and e.source_item_id<>all($1::uuid[]))
-    and (p.id in(select id from page_context) or to_tsvector('simple',unaccent(p.title||' '||coalesce(g.snapshot->>'title',''))) @@ plainto_tsquery('simple',unaccent($2)))
-    and (r.content->>'review'='reviewed' or exists(select 1 from wiki_group_receipts receipt cross join lateral jsonb_array_elements(receipt.targets) target join wiki_page_revisions old on old.id=(target->>'revisionId')::uuid where target->>'pageId'=g.page_id::text and exists(select 1 from jsonb_array_elements(old.content->'automatic'->'groups') original where original=g.snapshot)))
-    order by (p.id in(select id from page_context)) desc,g.page_id,g.id limit 12`,
-          [allowed, question, pageId, reviewedOnly]
-        )
-      ).rows;
-      for (const row of groups) {
-        if (result.length >= 6) break;
-        try {
-          const dependencies = await api.dependencies(
-              row.revision_id,
-              row.id,
-              allowed,
-              new Set(),
-              reviewedOnly
-            ),
-            ids = [
-              ...new Set<string>([
-                ...row.chunk_ids,
-                ...dependencies.filter((d) => d.kind === "chunk").map((d) => d.id)
-              ])
-            ],
-            originals = await api.originals(ids, allowed);
-          if (!originals.length || originals.length !== ids.length) continue;
-          const evidence = (
-            await pool.query(
-              "select chunk_id,snapshot from wiki_evidence where page_id=$1 and id::text in(select jsonb_array_elements_text($2::jsonb))",
-              [row.page_id, JSON.stringify(row.snapshot.explanationEvidenceIds)]
-            )
-          ).rows;
-          if (
-            evidence.length !== row.snapshot.explanationEvidenceIds.length ||
-            evidence.some(
-              (e) =>
-                originals.find((o) => o.chunkId === e.chunk_id)?.contentHash !==
-                e.snapshot.contentHash
-            )
+    },
+    /**
+     * Throws `consultation.errors.evidence` unless every passage, relation and dependency of the
+     * snapshot is still current: the chunk and its document revision, the relation evidence and the
+     * fingerprints of the notes, concepts and entities the optional context was built from.
+     */
+    async validate(snapshot: {
+      sourceIds: string[];
+      evidence: Array<{
+        chunkId: string;
+        sourceItemId: string;
+        documentId: string;
+        sourceSpanId: string | null;
+        contentHash: string;
+      }>;
+      relations: Array<{
+        id: string;
+        evidenceId: string;
+        fingerprint: string;
+        review: string;
+        updatedAt: string;
+        dependencies: Dependency[];
+      }>;
+      contexts: Array<{ dependencies: Dependency[] }>;
+    }) {
+      await api.validateEvidence(snapshot.evidence);
+      await api.validateRelations(snapshot.relations, snapshot.sourceIds);
+      await api.validateDependencies(
+        [...snapshot.contexts, ...snapshot.relations].flatMap((c) => c.dependencies)
+      );
+    },
+    async validateDependencies(dependencies: Dependency[]) {
+      for (const dep of dependencies.toSorted(
+        (a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id)
+      )) {
+        const table = dependencyTables[dep.kind];
+        if (!table) throw new Error("consultation.errors.evidence");
+        const row = (
+          await pool.query(
+            `select ${dep.kind === "atomic_note" ? noteFingerprint("r") : rowFingerprint("r")} as fingerprint from ${table} r where id=$1`,
+            [dep.id]
           )
-            continue;
-          const text = JSON.stringify({
-            kind: "toc_navigation",
-            title: row.snapshot.title,
-            explanation: row.snapshot.explanation,
-            provenance: row.snapshot.origin
-          });
-          if (text.length > 6000) continue;
-          result.push({
-            originals,
-            context: {
-              id: row.id,
-              kind: "wiki_section",
-              pageId: row.page_id,
-              revisionId: row.revision_id,
-              sourceItemId: originals[0]!.sourceItemId,
-              text,
-              review: row.review === "reviewed" ? "verified" : "unreviewed",
-              fingerprint: row.fingerprint,
-              handles: [],
-              dependencies: [
-                { kind: "wiki_page", id: row.page_id, fingerprint: row.revision_id },
-                ...dependencies
-              ]
-            }
-          });
-        } catch {}
+        ).rows[0];
+        if (!row || row.fingerprint !== dep.fingerprint)
+          throw new Error("consultation.errors.evidence");
       }
-      return result;
     }
   };
   return api;

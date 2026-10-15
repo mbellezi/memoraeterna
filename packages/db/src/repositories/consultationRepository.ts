@@ -4,22 +4,9 @@ import {
   sourceRelationEvidenceJoins
 } from "./sourceRelationRepository.js";
 import type { PgPool } from "../client.js";
-export interface ConsultationScope {
-  sourceIds: string[];
-  pageId: string | null;
-  includeDescendants: boolean;
-}
+/** Original-passage retrieval for Ask: lexical candidates and compatible vector hits. */
 export function createConsultationRepository(pool: PgPool) {
   return {
-    async scope(input: ConsultationScope) {
-      return (
-        await pool.query(
-          `with recursive allowed as(select id from source_items where cardinality($1::uuid[])=0 or id=any($1::uuid[]) union select s.id from source_items s join allowed a on s.parent_source_item_id=a.id where $2)
-      select id from allowed where $3::uuid is null or id in(select e.source_item_id from wiki_evidence e join wiki_pages p on p.id=e.page_id join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where p.id=$3 and sec->'evidenceIds' ? e.id::text) order by id limit 501`,
-          [input.sourceIds, input.includeDescendants, input.pageId]
-        )
-      ).rows.map((r) => r.id as string);
-    },
     async candidates(
       sourceIds: string[],
       question: string,
@@ -36,11 +23,10 @@ export function createConsultationRepository(pool: PgPool) {
       case when $3 then 0 else coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(concept->>'idea')),terms.q)) from source_summaries summary cross join lateral jsonb_array_elements(case when jsonb_typeof(summary.metadata->'concepts')='array' then summary.metadata->'concepts' else '[]'::jsonb end) concept where summary.source_item_id=s.id and summary.is_current and s.metadata->>'summaryStale' is distinct from 'true' and jsonb_typeof(concept->'evidenceChunkIds')='array' and jsonb_array_length(concept->'evidenceChunkIds')>0 and not exists(select 1 from jsonb_array_elements_text(concept->'evidenceChunkIds') cid where not exists(select 1 from chunks cc join documents dd on dd.id=cc.document_id where cc.id::text=cid and cc.source_item_id=any($1::uuid[]) and dd.metadata->>'supersededByDocumentId' is null))),0) end as concept,
       coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(n.idea_statement||' '||n.body_markdown)),terms.q)) from atomic_notes n where n.evidence_chunk_id=c.id and n.created_from_source_item_id=c.source_item_id and n.status not in('rejected','archived') and n.supersession_status='current' and ${retainedNoteCurrentSql()} and (not $3 or n.status='approved') and not exists(select 1 from atomic_note_source_links l left join chunks lc on lc.id=l.chunk_id left join documents ld on ld.id=lc.document_id where l.atomic_note_id=n.id and (lc.id is null or lc.source_item_id<>l.source_item_id or l.source_item_id<>all($1::uuid[]) or ld.metadata->>'supersededByDocumentId' is not null))),0) as note,
       case when $3 then 0 else coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(e.canonical_name||' '||e.aliases::text)),terms.q)) from entity_mentions m join entities e on e.id=m.entity_id where m.chunk_id=c.id and m.source_item_id=c.source_item_id),0) end as entity,
-      coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(concat_ws(' ',r.source_idea,r.target_idea,r.explanation))),terms.q)) from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins} where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and (not $3 or r.status='accepted') and (e.source_chunk_id=c.id or e.target_chunk_id=c.id) and ${currentSourceRelationEvidenceSql}),0) as relation,
-      coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(p.title||' '||(r.content->'aliases')::text||' '||(sec->>'markdown'))),terms.q)) from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec where not p.archived and sec->>'evidenceReview'='verified' and (not $3 or r.content->>'review'='reviewed') and exists(select 1 from wiki_evidence we where we.page_id=p.id and we.chunk_id=c.id and sec->'evidenceIds' ? we.id::text) and not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.section_id=(sec->>'id')::uuid and dep.stale_reason is not null) and not exists(select 1 from wiki_evidence we where we.page_id=p.id and we.source_item_id<>all($1::uuid[]) and exists(select 1 from jsonb_array_elements(r.content->'sections') ss where ss->'evidenceIds' ? we.id::text))),0) as wiki
+      coalesce((select max(ts_rank_cd(to_tsvector('simple',unaccent(concat_ws(' ',r.source_idea,r.target_idea,r.explanation))),terms.q)) from source_relations r join source_relation_evidence e on e.relation_id=r.id ${sourceRelationEvidenceJoins} where r.source_item_id=any($1::uuid[]) and r.target_source_item_id=any($1::uuid[]) and r.status<>'rejected' and (not $3 or r.status='accepted') and (e.source_chunk_id=c.id or e.target_chunk_id=c.id) and ${currentSourceRelationEvidenceSql}),0) as relation
       from chunks c join roots on roots.id=c.source_item_id join documents d on d.id=c.document_id join source_items s on s.id=c.source_item_id left join source_spans sp on sp.id=c.source_span_id cross join terms
       where c.source_item_id=any($1::uuid[]) and d.metadata->>'supersededByDocumentId' is null and c.metadata->>'processingMode' is distinct from 'catalog_metadata' and d.metadata->>'processingMode' is distinct from 'catalog_metadata' and c.chunking_version<>'catalog-metadata-v1')
-      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation,wiki) desc,"sourceTitle","chunkIndex","chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation,wiki) desc,"sourceTitle","chunkIndex","chunkId"`,
+      select *,count(*) over()::int as total from candidates where "chunkId"=any($4::uuid[]) or "chunkId" in(select "chunkId" from candidates order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId" limit 200) order by greatest(text,title,concept,note,entity,relation) desc,"sourceTitle","chunkIndex","chunkId"`,
           [sourceIds, question, reviewedOnly, vectorIds]
         )
       ).rows;
@@ -48,25 +34,6 @@ export function createConsultationRepository(pool: PgPool) {
         ...r,
         documentCreatedAt: new Date(r.documentCreatedAt).toISOString()
       }));
-    },
-    async pageSections(
-      sourceIds: string[],
-      chunkIds: string[],
-      question: string,
-      pageId: string | null,
-      reviewedOnly: boolean
-    ) {
-      return (
-        await pool.query(
-          `select (sec->>'id')::uuid as id,p.id as "pageId",r.id as "revisionId",sec,md5(sec::text) as fingerprint,
-      array(select e.chunk_id from wiki_evidence e where e.page_id=p.id and sec->'evidenceIds' ? e.id::text order by e.id) as "chunkIds"
-      from wiki_pages p join wiki_page_revisions r on r.id=p.current_revision_id cross join lateral jsonb_array_elements(r.content->'sections') sec
-      where not p.archived and sec->>'evidenceReview'='verified' and (not $5 or r.content->>'review'='reviewed') and not exists(select 1 from wiki_evidence e where e.page_id=p.id and e.source_item_id<>all($1::uuid[]) and exists(select 1 from jsonb_array_elements(r.content->'sections') section where section->'evidenceIds' ? e.id::text))
-      and not exists(select 1 from wiki_dependencies dep where dep.revision_id=r.id and dep.section_id=(sec->>'id')::uuid and dep.stale_reason is not null) and jsonb_array_length(sec->'evidenceIds')>0 and not exists(select 1 from wiki_evidence e left join chunks c on c.id=e.chunk_id left join documents d on d.id=e.document_id where e.page_id=p.id and sec->'evidenceIds' ? e.id::text and (e.chunk_id<>all($2::uuid[]) or c.content_hash<>e.snapshot->>'contentHash' or d.metadata->>'supersededByDocumentId' is not null))
-      and (p.id=$4 or unaccent(lower(p.title))=unaccent(lower($3)) or exists(select 1 from jsonb_array_elements_text(r.content->'aliases') a where unaccent(lower(a))=unaccent(lower($3))) or to_tsvector('simple',unaccent(sec->>'markdown')) @@ plainto_tsquery('simple',unaccent($3))) order by (p.id=$4) desc,p.id,sec->>'id' limit 6`,
-          [sourceIds, chunkIds, question, pageId, reviewedOnly]
-        )
-      ).rows;
     },
     async vector(
       sourceIds: string[],
