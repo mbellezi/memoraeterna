@@ -257,7 +257,7 @@
   },
   "apps/desktop/src/main/services/wiki-curator.test.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 47
+      "count": 46
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 2

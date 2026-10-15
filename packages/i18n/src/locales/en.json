@@ -1016,9 +1016,6 @@
   },
   "processing": {
     "invalidPlan": "Check the processing options before continuing.",
-    "wiki": {
-      "hint": "The Wiki discovers topics and updates pages and reading indexes automatically. It uses the configured policy and waits for AI or budget when needed. No page title is required."
-    },
     "title": "Choose how far to process",
     "aiOptional": "AI is optional",
     "description": "Import first, then add only the artifacts you need. Dependencies are included automatically.",
@@ -1040,7 +1037,7 @@
       "summary": { "title": "Summary", "description": "Generate a concise summary with evidence." },
       "full_knowledge": {
         "title": "Second brain",
-        "description": "Generates summaries, notes, graph and connections, and integrates knowledge into the Wiki."
+        "description": "Generates summaries, notes, graph and connections."
       }
     }
   },

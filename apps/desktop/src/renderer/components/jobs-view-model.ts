@@ -1,4 +1,8 @@
-import { SourceRelationCoverageSchema } from "@app/domain";
+import {
+  isRetiredProcessingStage,
+  readStoredStageCheckpoint,
+  SourceRelationCoverageSchema
+} from "@app/domain";
 import type { JobRecord } from "../../shared/ipc";
 
 export type JobFilter = "all" | "active" | "completed" | "attention";
@@ -68,7 +72,13 @@ export function groupJobs(jobs: JobRecord[]): JobCardModel[] {
         source: groupedJobs.find((job) => job.source)?.source ?? null,
         status,
         progress: matching?.progress ?? mainJob.progress,
-        currentStage: matching?.stage ?? ingestionRun?.currentStage ?? mainJob.type,
+        currentStage:
+          matching?.stage ??
+          // Nothing follows a retired stage (F2 D14): a run stored at one has finished the rest.
+          (ingestionRun && isRetiredProcessingStage(ingestionRun.currentStage)
+            ? "completed"
+            : ingestionRun?.currentStage) ??
+          mainJob.type,
         stageError: matching?.status === "failed" ? matching.error : null,
         updatedAt:
           groupedJobs
@@ -86,7 +96,7 @@ function deferredStagePresentation(
   run: JobCardModel["ingestionRun"]
 ): { status: JobRecord["status"]; progress: number; stage: string; error: string | null } | null {
   if (!run || mainJob.type !== "ingestion") return null;
-  const deferredStages = ["atomicNoteMatching", "sourceMatching", "organizeKnowledge"];
+  const deferredStages = ["atomicNoteMatching", "sourceMatching"];
   const stage = deferredStages.includes(run.currentStage)
     ? run.currentStage
     : mainJob.status === "succeeded"
@@ -104,23 +114,22 @@ function deferredStagePresentation(
       ? Math.max(0, Math.min(1, state.progress))
       : 0;
   const error = typeof state.error === "string" ? state.error : null;
-  const base = stage === "organizeKnowledge" ? 0.98 : stage === "sourceMatching" ? 0.95 : 0.89;
+  const base = stage === "sourceMatching" ? 0.95 : 0.89;
   if (state.status === "waiting_for_batch" || state.status === "pending")
     return { status: "queued", progress: base, stage, error };
   if (state.status === "running" || state.status === "failed" || state.status === "canceled")
     return {
       status: state.status,
-      progress:
-        base +
-        fraction *
-          (stage === "organizeKnowledge" ? 0.02 : stage === "sourceMatching" ? 0.04 : 0.06),
+      progress: base + fraction * (stage === "sourceMatching" ? 0.04 : 0.06),
       stage,
       error
     };
   if (
     state.status === "completed" &&
     run.effectiveStages.every((key) => {
-      const other = run.stagesCheckpoint[key] as { status?: unknown } | undefined;
+      // A retired stage (F2 D14) reads as skipped (retired), whatever the run stored for it.
+      const other = readStoredStageCheckpoint(key, run.stagesCheckpoint[key]) as
+        { status?: unknown } | undefined;
       return key === stage || other?.status === "completed" || other?.status === "skipped";
     })
   )

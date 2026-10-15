@@ -42,6 +42,11 @@ const manager = new PostgresSidecarManager({
 let pool: PgPool | null = null;
 try {
   const connection = await manager.start();
+  // Migration 0052 fences new legacy content (D40) and this scratch database seeds legacy pages
+  // on purpose. The database default is set before the pool opens, so every connection inherits it.
+  const setup = createPgPool({ connectionString: connection.connectionString, max: 1 });
+  await setup.query("alter database memora_object_locate set memora.legacy_fixture = 'on'");
+  await closePgPool(setup);
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const db = pool;
   await runMigrations(db, resolve(packageRoot, "drizzle"));

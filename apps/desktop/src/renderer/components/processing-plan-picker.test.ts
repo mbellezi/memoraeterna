@@ -8,14 +8,12 @@ import {
 } from "./ProcessingPlanPicker";
 
 describe("processing plan picker", () => {
-  it("admits automatic Wiki processing without a manual title or renderer-selected policy", () => {
+  it("offers full knowledge without the retired legacy wiki stage (F2 D14)", () => {
     const plan = defaultProcessingPlan("full_knowledge");
-    expect(resolveProcessingPlan(plan).effectiveStages).toContain("organizeKnowledge");
-    expect(plan.organization).toBeUndefined();
+    expect(resolveProcessingPlan(plan).effectiveStages).not.toContain("organizeKnowledge");
+    expect(plan).not.toHaveProperty("organization");
+    expect(plan).not.toHaveProperty("integrateWiki");
     expect(processingPlanReady(plan)).toBe(true);
-    expect(
-      resolveProcessingPlan(defaultProcessingPlan("import_only")).effectiveStages
-    ).not.toContain("organizeKnowledge");
   });
   it("keeps resolved-only fields out of renderer state and IPC requests", () => {
     const resolved = resolveProcessingPlan({

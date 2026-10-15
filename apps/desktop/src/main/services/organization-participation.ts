@@ -8,8 +8,27 @@ import {
   type PgPool,
   type IngestionRunRecord
 } from "@app/db";
-import { OrganizationStartSchema, EffectiveProcessingPlanSchema } from "@app/domain";
+import { OrganizationStartSchema } from "@app/domain";
+import { z } from "zod";
 import type { OrganizationService } from "./organization-service.js";
+/**
+ * The organization fields of a batch plan stored before F2 D14. The processing plan no longer has
+ * them; only this legacy organizer reads them, and the database refuses the organization run it
+ * would start (D40), so the stage fails and the batch settles without it.
+ */
+const LegacyBatchPlanSchema = z.object({
+  integrateWiki: z
+    .object({ policyId: z.string().uuid(), policyRevisionId: z.string().uuid() })
+    .optional(),
+  organization: z
+    .object({
+      title: z.string().trim().min(1).max(300),
+      profileId: z.string().uuid().optional(),
+      privacy: z.enum(["offline_only", "allow_remote"]),
+      domainId: z.string().uuid().nullable().default(null)
+    })
+    .optional()
+});
 const derivations = [
   "chunking",
   "summarization",
@@ -135,7 +154,7 @@ export async function reconcileOrganizationParticipation(
         await runsRepo.failStage(run.id, "organizeKnowledge", "organization.errors.canceled", true);
       continue;
     }
-    const parsed = EffectiveProcessingPlanSchema.safeParse(batch.plan);
+    const parsed = LegacyBatchPlanSchema.safeParse(batch.plan);
     if (!parsed.success || (!parsed.data.organization && !parsed.data.integrateWiki)) {
       for (const run of state.selected)
         await runsRepo.failStage(run.id, "organizeKnowledge", "organization.errors.model", false);

@@ -42,10 +42,8 @@ import type { LibraryResetService } from "./library-reset-service.js";
  * works and writes the raw verdicts, persisting nothing (see `golden-source-pairs.ts`).
  */
 
-/** Full knowledge processing without the legacy wiki stage. */
-export const goldenRunStages: ProcessingStage[] = processingPresetStages.full_knowledge.filter(
-  (stage) => stage !== "organizeKnowledge"
-);
+/** Full knowledge processing, which no longer has the legacy wiki stage (F2 D14). */
+export const goldenRunStages: ProcessingStage[] = [...processingPresetStages.full_knowledge];
 
 export const goldenFormats = ["pdf", "html", "markdown", "text"] as const;
 const formatExtension = { pdf: ".pdf", html: ".html", markdown: ".md", text: ".txt" } as const;

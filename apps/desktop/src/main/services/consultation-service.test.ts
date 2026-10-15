@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   resolveOrganizationInstructions,
-  OrganizationConfigurationSchema,
-  resolveProcessingPlan
+  OrganizationConfigurationSchema
 } from "@app/domain";
 import {
   parseConsultationAnswer,
@@ -184,30 +183,6 @@ describe("bounded cited consultation", () => {
         "consultation"
       ).slots
     ).toEqual({ guidance: "Answer only", advanced: "Write page Topic" });
-  });
-  it("keeps direct organization independent and includes it in new full processing", () => {
-    const base = {
-      preset: "custom" as const,
-      requestedStages: ["organizeKnowledge" as const],
-      scope: "source_only" as const,
-      targetSourceItemIds: [],
-      forceRegeneration: false,
-      previousArtifactPolicy: "reuse_valid" as const
-    };
-    expect(resolveProcessingPlan(base).effectiveStages).toEqual([
-      "conversion",
-      "structureDetection",
-      "structureReview",
-      "materialization",
-      "chunking",
-      "organizeKnowledge"
-    ]);
-    expect(resolveProcessingPlan({ ...base, preset: "full_knowledge" }).effectiveStages).toContain(
-      "organizeKnowledge"
-    );
-    expect(resolveProcessingPlan({ ...base, preset: "import_only" }).effectiveStages).not.toContain(
-      "organizeKnowledge"
-    );
   });
 });
 describe("organization checkpoint barrier", () => {

@@ -72,7 +72,8 @@ export const obsidianSyncStatus = pgEnum("obsidian_sync_status", [
   "synced",
   "conflict",
   "deleted",
-  "ignored"
+  "ignored",
+  "retired"
 ]);
 
 export const atomicNoteStatus = pgEnum("atomic_note_status", [
@@ -2671,9 +2672,8 @@ export const atomicNoteEvolution = pgTable(
     nextId: uuid("next_id")
       .notNull()
       .references(() => atomicNotes.id, { onDelete: "restrict" }),
-    runId: uuid("run_id")
-      .notNull()
-      .references(() => organizationRuns.id, { onDelete: "restrict" }),
+    /** The legacy organization run that recorded the evolution; no FK since the detach (0052). */
+    runId: uuid("run_id").notNull(),
     kind: text("kind").notNull(),
     reason: text("reason").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()

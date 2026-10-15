@@ -75,8 +75,6 @@ export function resolveInteractivePlan(
 
 export function toProcessingPlanRequest(plan: ProcessingPlanRequest): ProcessingPlanRequest {
   return {
-    ...(plan.integrateWiki ? { integrateWiki: plan.integrateWiki } : {}),
-    ...(plan.organization ? { organization: plan.organization } : {}),
     preset: plan.preset,
     requestedStages: plan.requestedStages,
     scope: plan.scope,
@@ -342,14 +340,6 @@ export function ProcessingPlanPicker({
         </div>
       </details>
 
-      {resolved.effectiveStages.includes("organizeKnowledge") && (
-        <div
-          className="rounded-xl border border-cyan-500/30 bg-cyan-500/5 p-4 text-sm"
-          role="status"
-        >
-          {t("processing.wiki.hint")}
-        </div>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
         <span>
           {t("processing.stageCount", { values: { count: resolved.effectiveStages.length } })}
@@ -361,8 +351,7 @@ export function ProcessingPlanPicker({
             "atomicNotes",
             "knowledgeGraph",
             "atomicNoteMatching",
-            "sourceMatching",
-            "organizeKnowledge"
+            "sourceMatching"
           ].includes(stage)
         ) ? (
           <span className="inline-flex items-center gap-1.5">

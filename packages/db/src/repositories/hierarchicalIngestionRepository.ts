@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { sanitizeStoredValue } from "@app/domain";
+import { RetiredProcessingStages, sanitizeStoredValue } from "@app/domain";
 import type { PoolClient, QueryResultRow } from "pg";
 
 import type { PgClient, PgPool } from "../client.js";
@@ -549,12 +549,16 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
       return result.rows.map(mapBatch);
     },
 
+    /**
+     * Recomputes a batch from its runs. A retired stage (F2 D14) reads as skipped (retired): a run
+     * admitted with it neither waits for it nor fails on its stored checkpoint.
+     */
     async refreshBatch(batchId: string): Promise<ProcessingBatchRecord | null> {
       const result = await pool.query<BatchRow>(
         `with aggregate as (
-           select count(*) filter (where status = 'succeeded' and not exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed') and (not (effective_stages ? 'organizeKnowledge') or stages_checkpoint->'organizeKnowledge'->>'status'='completed'))::int as completed,
-                  count(*) filter (where status = 'failed' or exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed'))::int as failed,
-                  count(*) filter (where status in ('pending', 'running') or (effective_stages ? 'organizeKnowledge' and coalesce(stages_checkpoint->'organizeKnowledge'->>'status','pending') not in('completed','failed','canceled')))::int as active,
+           select count(*) filter (where status = 'succeeded' and not exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed' and cp.key <> all($2::text[])))::int as completed,
+                  count(*) filter (where status = 'failed' or exists(select 1 from jsonb_each(stages_checkpoint) cp where cp.value->>'status'='failed' and cp.key <> all($2::text[])))::int as failed,
+                  count(*) filter (where status in ('pending', 'running'))::int as active,
                   count(*)::int as total
            from ingestion_runs where batch_id = $1
          )
@@ -573,7 +577,7 @@ export function createHierarchicalIngestionRepository(pool: PgPool) {
            completed_at = case when aggregate.active = 0 and aggregate.total > 0 then now() else null end,
            updated_at = now()
          from aggregate where batch.id = $1 returning ${batchColumns}`,
-        [batchId]
+        [batchId, [...RetiredProcessingStages]]
       );
       const row = result.rows[0];
       return row ? mapBatch(row) : null;

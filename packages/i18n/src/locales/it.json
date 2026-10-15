@@ -1014,9 +1014,6 @@
   },
   "processing": {
     "invalidPlan": "Controlla le opzioni di elaborazione prima di continuare.",
-    "wiki": {
-      "hint": "La Wiki individua temi e aggiorna pagine e indici automaticamente. Usa la politica configurata e attende IA o budget quando necessario. Non richiede un titolo di pagina."
-    },
     "title": "Scegli quanto elaborare",
     "aiOptional": "L'IA e facoltativa",
     "description": "Importa prima, poi crea solo gli artefatti necessari. Le dipendenze vengono incluse automaticamente.",
@@ -1038,7 +1035,7 @@
       "summary": { "title": "Riepilogo", "description": "Genera un riepilogo conciso con prove." },
       "full_knowledge": {
         "title": "Secondo cervello",
-        "description": "Genera riassunti, note, grafo e collegamenti e integra la conoscenza nella Wiki."
+        "description": "Genera riassunti, note, grafo e collegamenti."
       }
     }
   },

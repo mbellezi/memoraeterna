@@ -8,8 +8,27 @@ import {
   type PgPool
 } from "../../packages/db/src/index.js";
 import { WikiPageContentSchema, CuratorChangeSetSchema, type CuratorSnapshot } from "@app/domain";
+/**
+ * Migration 0052 refuses new legacy content unless `memora.legacy_fixture` is on (D40). This
+ * fixture seeds legacy pages on purpose, on scratch databases only. The database default reaches
+ * every connection opened later; the connections the pool already holds get it by session. Call it
+ * while no other client of the pool is checked out.
+ */
+export async function allowLegacyFixtureInserts(pool: PgPool): Promise<void> {
+  await pool.query(
+    "do $$ begin execute format('alter database %I set memora.legacy_fixture = %L', current_database(), 'on'); end $$"
+  );
+  const clients = await Promise.all(Array.from({ length: pool.totalCount }, () => pool.connect()));
+  try {
+    for (const client of clients) await client.query("set memora.legacy_fixture = 'on'");
+  } finally {
+    for (const client of clients) client.release();
+  }
+}
+
 /** Versioned synthetic inputs only. Expected outcomes never enter inference context. */
 export async function seedAutomaticWikiFixture(pool: PgPool, withNotes: boolean) {
+  await allowLegacyFixtureInserts(pool);
   const fixture = JSON.parse(
     await readFile(new URL("./automatic-wiki/mixed-library.json", import.meta.url), "utf8")
   );

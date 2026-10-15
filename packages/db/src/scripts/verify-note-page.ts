@@ -227,11 +227,8 @@ try {
     expectedUpdatedAt: editedPage.note.updatedAt
   });
 
+  // The legacy run that recorded the evolution; its id is history only (no FK since 0052).
   const run = randomUUID();
-  await db.query(
-    "insert into organization_runs (id, status, snapshot, checkpoint) values ($1, 'applied', '{}', '{}')",
-    [run]
-  );
   const evolved = await addNote({
     title: "Evolved",
     createdFrom: book.id,

@@ -61,6 +61,11 @@ describe.skipIf(!sidecarInstalled)("collectKpi on a real PostgreSQL database", (
     });
     const connection = await manager.start();
     connectionString = connection.connectionString;
+    // Migration 0052 fences new legacy content (D40) and this scratch database seeds some on
+    // purpose. The database default is set before the pool opens, so every connection inherits it.
+    const setup = createPgPool({ connectionString, max: 1 });
+    await setup.query("alter database kpi_fixture set memora.legacy_fixture = 'on'");
+    await closePgPool(setup);
     pool = createPgPool({ connectionString, max: 2 });
     await runMigrations(pool, join(root, "packages/db/drizzle"), {
       seedFolder: join(root, "packages/db/seed")

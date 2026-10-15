@@ -17,6 +17,19 @@ describe("hierarchical ingestion repository", () => {
     expect(query.mock.calls[0]?.[0]).toContain("total_items = aggregate.total");
   });
 
+  it("never lets a retired stage hold a batch open or fail it (F2 D14)", async () => {
+    const query = vi.fn().mockResolvedValue({ rows: [] });
+    const pool = { query } as unknown as PgPool;
+
+    await createHierarchicalIngestionRepository(pool).refreshBatch("batch-1");
+
+    const [sql, values] = query.mock.calls[0]!;
+    expect(sql).not.toContain("organizeKnowledge");
+    expect(values).toEqual(["batch-1", ["organizeKnowledge"]]);
+    // Only pending or running runs keep a batch active.
+    expect(sql).toContain("filter (where status in ('pending', 'running'))::int as active");
+  });
+
   it("serializes division evidence arrays as JSON", async () => {
     const evidence = [
       {

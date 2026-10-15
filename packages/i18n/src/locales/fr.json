@@ -1018,9 +1018,6 @@
   },
   "processing": {
     "invalidPlan": "Vérifiez les options de traitement avant de continuer.",
-    "wiki": {
-      "hint": "Le Wiki découvre des thèmes et actualise pages et index automatiquement. Il utilise la politique configurée et attend l’IA ou le budget si nécessaire. Aucun titre de page n’est requis."
-    },
     "title": "Choisir le niveau de traitement",
     "aiOptional": "L'IA est facultative",
     "description": "Importez d'abord, puis creez seulement les artefacts necessaires. Les dependances sont incluses automatiquement.",
@@ -1042,7 +1039,7 @@
       "summary": { "title": "Resume", "description": "Genere un resume concis avec preuves." },
       "full_knowledge": {
         "title": "Second cerveau",
-        "description": "Génère résumés, notes, graphe et liens, puis intègre les connaissances au Wiki."
+        "description": "Génère résumés, notes, graphe et liens."
       }
     }
   },

@@ -1016,9 +1016,6 @@
   },
   "processing": {
     "invalidPlan": "Confira as opções de processamento antes de continuar.",
-    "wiki": {
-      "hint": "A Wiki descobre temas e atualiza páginas e índices de leitura automaticamente. Usa a política configurada e aguarda IA ou orçamento quando necessário. Não é preciso informar um título de página."
-    },
     "title": "Escolha ate onde processar",
     "aiOptional": "IA e opcional",
     "description": "Importe primeiro e gere apenas os artefatos de que precisa. As dependencias sao incluidas automaticamente.",
@@ -1040,7 +1037,7 @@
       "summary": { "title": "Resumo", "description": "Gera um resumo conciso com evidencias." },
       "full_knowledge": {
         "title": "Segundo cérebro",
-        "description": "Gera resumos, notas, grafo e conexões e integra o conhecimento à Wiki."
+        "description": "Gera resumos, notas, grafo e conexões."
       }
     }
   },

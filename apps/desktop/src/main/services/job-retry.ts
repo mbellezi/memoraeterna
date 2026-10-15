@@ -34,13 +34,7 @@ export function canManuallyRetryJob(
   if (job.type === "relation-labels") return job.status === "failed" || job.status === "canceled";
   if (job.type !== "ingestion" || !ingestionRun) return false;
   if (job.status === "queued" || job.status === "running") return false;
-  const organization = ingestionRun.stagesCheckpoint.organizeKnowledge as
-    { status?: string; metadata?: { organizationRunId?: string } } | undefined;
-  if (
-    organization?.metadata?.organizationRunId &&
-    ["pending", "waiting_for_batch", "running"].includes(organization.status ?? "")
-  )
-    return false;
+  // A retired stage (F2 D14) reads as skipped, so a run admitted with it never waits on it.
   return job.status !== "succeeded" || hasIncompleteIngestionStages(ingestionRun);
 }
 

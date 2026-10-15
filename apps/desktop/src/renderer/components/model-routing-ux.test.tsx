@@ -56,11 +56,7 @@ describe("router-first model controls", () => {
       OrganizationStartSchema.parse({ title: "Topic", sourceIds: [id] }).profileId
     ).toBeUndefined();
     expect(
-      ProcessingPlanRequestSchema.parse({
-        preset: "custom",
-        requestedStages: ["organizeKnowledge"],
-        organization: { title: "Topic", privacy: "allow_remote" }
-      }).organization?.profileId
-    ).toBeUndefined();
+      ProcessingPlanRequestSchema.parse({ preset: "custom", requestedStages: ["atomicNotes"] })
+    ).not.toHaveProperty("profileId");
   });
 });

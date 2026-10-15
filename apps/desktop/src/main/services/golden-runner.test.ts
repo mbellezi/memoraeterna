@@ -451,9 +451,8 @@ describe("golden manifest", () => {
   });
 
   it("processes the full knowledge plan without organizeKnowledge", () => {
-    expect(goldenRunStages).toEqual(
-      processingPresetStages.full_knowledge.filter((stage) => stage !== "organizeKnowledge")
-    );
+    expect(goldenRunStages).toEqual(processingPresetStages.full_knowledge);
+    expect(goldenRunStages).not.toContain("organizeKnowledge");
     expect(goldenRunStages).toEqual(
       expect.arrayContaining(["embedding", "summarization", "atomicNoteMatching", "sourceMatching"])
     );

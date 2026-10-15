@@ -21,7 +21,7 @@ describe("jobs view model", () => {
       expect(groupJobs(dispatchers)).toEqual([]);
     }
   );
-  it.each(["atomicNoteMatching", "sourceMatching", "organizeKnowledge"])(
+  it.each(["atomicNoteMatching", "sourceMatching"])(
     "keeps %s cards independent after ingestion jobs finish",
     (stage) => {
       const jobs = ["completed", "running", "waiting_for_batch", "failed", "canceled"].map(
@@ -64,36 +64,61 @@ describe("jobs view model", () => {
       expect(cards[2]!.progress).toBeLessThan(cards[1]!.progress);
     }
   );
-  it("shows the organization checkpoint cause instead of completed parent stage or an empty error report", () => {
-    const job = jobRecordSchema.parse({
-      id: "00000000-0000-4000-8000-000000000001",
-      type: "ingestion",
-      status: "succeeded",
-      progress: 1,
-      attempts: 1,
-      maxAttempts: 3,
-      canCancel: false,
-      canRetry: false,
-      error: null,
-      errorHistory: [],
-      aiExecution: null,
-      createdAt: "2026-09-09T18:00:00Z",
-      updatedAt: "2026-09-09T18:00:00Z",
-      ingestionRun: {
-        id: "00000000-0000-4000-8000-000000000002",
+  describe("a run stored with the retired organization stage (F2 D14)", () => {
+    const storedRun = (
+      currentStage: string,
+      organizeKnowledge: Record<string, unknown>,
+      sourceMatching: Record<string, unknown> = { status: "completed" }
+    ) =>
+      jobRecordSchema.parse({
+        id: "00000000-0000-4000-8000-000000000001",
+        type: "ingestion",
         status: "succeeded",
-        currentStage: "completed",
-        effectiveStages: ["chunking", "organizeKnowledge"],
-        stagesCheckpoint: {
-          chunking: { status: "completed" },
-          organizeKnowledge: { status: "failed", error: "organization.errors.context" }
+        progress: 1,
+        attempts: 1,
+        maxAttempts: 3,
+        canCancel: false,
+        canRetry: false,
+        error: null,
+        errorHistory: [],
+        aiExecution: null,
+        createdAt: "2026-09-09T18:00:00Z",
+        updatedAt: "2026-09-09T18:00:00Z",
+        ingestionRun: {
+          id: "00000000-0000-4000-8000-000000000002",
+          status: "succeeded",
+          currentStage,
+          effectiveStages: ["chunking", "sourceMatching", "organizeKnowledge"],
+          stagesCheckpoint: { chunking: { status: "completed" }, sourceMatching, organizeKnowledge }
         }
-      }
+      });
+
+    it.each([
+      { status: "failed", error: "organization.errors.context" },
+      { status: "waiting_for_batch" },
+      { status: "running", progress: 0.5 },
+      { status: "pending" }
+    ])("reads its $status checkpoint as skipped (retired), never as the card's state", (state) => {
+      for (const currentStage of ["completed", "organizeKnowledge"])
+        expect(groupJobs([storedRun(currentStage, state)])[0]).toMatchObject({
+          status: "succeeded",
+          currentStage: "completed",
+          stageError: null
+        });
+      // A finished matching stage completes the card even though the retired stage never ran.
+      expect(groupJobs([storedRun("sourceMatching", state)])[0]).toMatchObject({
+        status: "succeeded",
+        progress: 1,
+        currentStage: "sourceMatching"
+      });
     });
-    expect(groupJobs([job])[0]).toMatchObject({
-      status: "failed",
-      currentStage: "organizeKnowledge",
-      stageError: "organization.errors.context"
+
+    it("still shows a pending matching stage of the same run", () => {
+      expect(
+        groupJobs([
+          storedRun("completed", { status: "waiting_for_batch" }, { status: "waiting_for_batch" })
+        ])[0]
+      ).toMatchObject({ status: "queued", currentStage: "sourceMatching" });
     });
   });
   it("does not repeat the root ingestion job in processing activity", () => {

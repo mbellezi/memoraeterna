@@ -114,13 +114,45 @@ export const ProcessingStages = [
   "knowledgeGraph",
   "atomicNoteMatching",
   "sourceMatching",
-  "organizeKnowledge",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
 
 export const ProcessingStageSchema = z.enum(ProcessingStages);
 export type ProcessingStage = z.infer<typeof ProcessingStageSchema>;
+
+/**
+ * Stage IDs that left the processing DAG (F2 D14: `organizeKnowledge` fed the legacy wiki). No new
+ * plan, run or job names one. Stored plans, runs and batches still may: a stored stage list drops
+ * them when parsed, and a stored run's checkpoint for one reads as skipped (retired), so history
+ * parses and a run admitted before the change settles without it.
+ */
+export const RetiredProcessingStages = ["organizeKnowledge"] as const;
+export type RetiredProcessingStage = (typeof RetiredProcessingStages)[number];
+
+/** The skip reason a retired stage reads with. */
+export const retiredStageSkipReason = "retired";
+
+export function isRetiredProcessingStage(stage: unknown): stage is RetiredProcessingStage {
+  return (RetiredProcessingStages as readonly unknown[]).includes(stage);
+}
+
+/**
+ * A stage checkpoint as stored on an ingestion run, read under the current DAG: a retired stage is
+ * skipped (retired) whatever was stored for it; any other stage reads as stored.
+ */
+export function readStoredStageCheckpoint(stage: string, checkpoint: unknown): unknown {
+  return isRetiredProcessingStage(stage)
+    ? { status: "skipped", reason: retiredStageSkipReason }
+    : checkpoint;
+}
+
+/** A stage list as stored or requested: retired IDs are accepted and dropped, unknown IDs are not. */
+const ProcessingStageListSchema = z
+  .array(z.union([ProcessingStageSchema, z.enum(RetiredProcessingStages)]))
+  .transform((stages) =>
+    stages.filter((stage): stage is ProcessingStage => !isRetiredProcessingStage(stage))
+  );
 
 export const ProcessingPresetSchema = z.enum([
   "import_only",
@@ -146,25 +178,8 @@ export const PreviousArtifactPolicySchema = z.enum([
 
 export const ProcessingPlanRequestSchema = z
   .object({
-    integrateWiki: z
-      .object({
-        version: z.literal(2),
-        policyId: z.string().uuid(),
-        policyRevisionId: z.string().uuid()
-      })
-      .strict()
-      .optional(),
-    organization: z
-      .object({
-        title: z.string().trim().min(1).max(300),
-        profileId: z.string().uuid().optional(),
-        privacy: z.enum(["offline_only", "allow_remote"]),
-        domainId: z.string().uuid().nullable().default(null)
-      })
-      .strict()
-      .optional(),
     preset: ProcessingPresetSchema,
-    requestedStages: z.array(ProcessingStageSchema),
+    requestedStages: ProcessingStageListSchema,
     scope: ProcessingScopeSchema.default("source_only"),
     targetSourceItemIds: z.array(StableIdSchema).default([]),
     forceRegeneration: z.boolean().default(false),
@@ -179,11 +194,26 @@ export const ProcessingPlanRequestSchema = z
 
 export type ProcessingPlanRequest = z.infer<typeof ProcessingPlanRequestSchema>;
 
-export const EffectiveProcessingPlanSchema = ProcessingPlanRequestSchema.extend({
-  effectiveStages: z.array(ProcessingStageSchema),
-  automaticallyIncludedStages: z.array(ProcessingStageSchema),
-  planVersion: z.literal("1")
-}).strict();
+/** Fields of plans stored before F2 D14 (the legacy wiki organization); parsing drops them. */
+const retiredPlanFields: readonly string[] = ["integrateWiki", "organization"];
+
+/**
+ * The effective plan, as resolved and as stored on batches. A stored plan reads tolerantly: its
+ * retired stage IDs and organization fields are dropped, everything else is validated strictly.
+ */
+export const EffectiveProcessingPlanSchema = z.preprocess(
+  (value) =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.fromEntries(
+          Object.entries(value).filter(([key]) => !retiredPlanFields.includes(key))
+        )
+      : value,
+  ProcessingPlanRequestSchema.extend({
+    effectiveStages: ProcessingStageListSchema,
+    automaticallyIncludedStages: ProcessingStageListSchema,
+    planVersion: z.literal("1")
+  }).strict()
+);
 
 export type EffectiveProcessingPlan = z.infer<typeof EffectiveProcessingPlanSchema>;
 
@@ -201,7 +231,6 @@ export const processingStageDependencies: Readonly<
   knowledgeGraph: ["chunking"],
   atomicNoteMatching: ["atomicNotes"],
   sourceMatching: ["summarization", "embedding"],
-  organizeKnowledge: ["chunking"],
   obsidianProjection: ["materialization"],
   aggregateSummarization: ["summarization"]
 };
@@ -237,8 +266,7 @@ export const processingPresetStages: Readonly<
     "atomicNotes",
     "knowledgeGraph",
     "atomicNoteMatching",
-    "sourceMatching",
-    "organizeKnowledge"
+    "sourceMatching"
   ]
 };
 

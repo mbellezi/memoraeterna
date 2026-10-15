@@ -18,7 +18,7 @@ describe("automatic knowledge UX", () => {
           t={t}
         />
       );
-      expect(plan).toContain(t("processing.wiki.hint"));
+      expect(plan).not.toContain("[[missing:");
       expect(plan).not.toContain(t("wiki.pageTitle"));
       expect(plan).not.toContain(t("jobs.stages.obsidianProjection"));
       const view = renderToString(<KnowledgeAutomationView t={t} contentLanguage={locale} />);

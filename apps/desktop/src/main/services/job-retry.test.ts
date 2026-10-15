@@ -17,20 +17,26 @@ const completedStages = {
 };
 
 describe("manual job retry", () => {
-  it("does not restart a settled parent while its linked organization is active", () => {
-    for (const status of ["pending", "waiting_for_batch", "running"]) {
+  it("reads a stored retired organization stage as settled, never as work to retry or wait for", () => {
+    for (const status of ["pending", "waiting_for_batch", "running", "failed"]) {
+      const ingestionRun = {
+        status: "succeeded" as const,
+        stagesCheckpoint: {
+          ...completedStages,
+          organizeKnowledge: { status, metadata: { organizationRunId: "linked-run" } }
+        }
+      };
+      expect(hasIncompleteIngestionStages(ingestionRun)).toBe(false);
+      expect(canManuallyRetryJob({ type: "ingestion", status: "succeeded" }, ingestionRun)).toBe(
+        false
+      );
+      // A failed parent is retried as before; the retired stage does not hold it back.
       expect(
         canManuallyRetryJob(
-          { type: "ingestion", status: "succeeded" },
-          {
-            status: "succeeded",
-            stagesCheckpoint: {
-              chunking: { status: "completed" },
-              organizeKnowledge: { status, metadata: { organizationRunId: "linked-run" } }
-            }
-          }
+          { type: "ingestion", status: "failed" },
+          { ...ingestionRun, status: "failed" }
         )
-      ).toBe(false);
+      ).toBe(true);
     }
   });
   it("allows an interrupted source matching stage without adding that stage to historical runs", () => {

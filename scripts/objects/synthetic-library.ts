@@ -51,6 +51,8 @@ export const librarySeedSteps = (
   `create temp table t_source_rank as
      select row_number() over (order by id) as rn, id from source_items`,
   // Legacy wiki: pages with a revision, a TOC group, memberships, dependencies and evidence.
+  // Migration 0052 fences new legacy content (D40); this throwaway session seeds it on purpose.
+  `set memora.legacy_fixture = 'on'`,
   `create temp table t_page as
      select g, gen_random_uuid() as id, gen_random_uuid() as revision, gen_random_uuid() as grp
        from generate_series(1, ${pagesCount}) g`,
@@ -113,7 +115,7 @@ export const noteRelationSeedSteps = (options: NoteRelationSeedOptions): string[
                  else jsonb_build_object('decisionSource', 'model', 'semanticSourceAtomicNoteId', ${from}.id,
                                          'semanticTargetAtomicNoteId', ${to}.id) end`;
   return [
-    // Legacy wiki impact triggers are irrelevant to a throwaway benchmark and slow bulk writes.
+    // Write triggers (the projection clock) are irrelevant to a throwaway benchmark.
     `alter table chunks disable trigger user`,
     `alter table atomic_note_relations disable trigger user`,
     `create temp table t_span as

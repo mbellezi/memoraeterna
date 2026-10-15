@@ -22,6 +22,7 @@ import {
   Video,
   X
 } from "lucide-react";
+import { isRetiredProcessingStage } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import type { JobRecord, ProcessingBatch } from "../../shared/ipc";
 import { cn } from "../lib/cn";
@@ -51,7 +52,6 @@ const pipelineStages = [
   "knowledgeGraph",
   "atomicNoteMatching",
   "sourceMatching",
-  "organizeKnowledge",
   "obsidianProjection",
   "aggregateSummarization"
 ] as const;
@@ -631,33 +631,12 @@ function SourceRelationCoverageLine({ checkpoint, t }: { checkpoint: unknown; t:
 }
 
 function BatchHeader({ batch, t }: { batch: ProcessingBatch; t: Translator }) {
-  const [canceling, setCanceling] = useState(false),
-    [cancelError, setCancelError] = useState(false);
   const percent = Math.round(batch.progress > 1 ? batch.progress / 100 : batch.progress * 100);
   const preset =
     typeof batch.effectivePlan.preset === "string" ? batch.effectivePlan.preset : "custom";
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 dark:border-violet-900 dark:bg-violet-950/40">
       <div>
-        {batch.effectivePlan.effectiveStages instanceof Array &&
-          batch.effectivePlan.effectiveStages.includes("organizeKnowledge") && (
-            <>
-              <button
-                disabled={canceling}
-                className="mb-2 rounded-lg border px-3 py-1 text-xs focus-visible:ring-2"
-                onClick={() => {
-                  setCanceling(true);
-                  void window.app.jobs
-                    .cancelBatch(batch.id)
-                    .catch(() => setCancelError(true))
-                    .finally(() => setCanceling(false));
-                }}
-              >
-                {t("consultation.cancelBatch")}
-              </button>
-              {cancelError && <p role="alert">{t("organization.errors.failed")}</p>}
-            </>
-          )}
         <p className="text-xs font-bold uppercase tracking-[0.14em] text-violet-700 dark:text-violet-300">
           {t("jobs.batch.label")}
         </p>
@@ -1179,6 +1158,8 @@ function stageMessageKey(stage: string): MessageKey {
 function stageLabel(t: Translator, stage: string): string {
   const pipelineStage =
     pipelineStages.includes(stage as (typeof pipelineStages)[number]) ||
+    // Error history stored before F2 D14 may name a retired stage; it keeps its label.
+    isRetiredProcessingStage(stage) ||
     [
       "queued",
       "completed",

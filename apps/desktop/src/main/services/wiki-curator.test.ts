@@ -4,7 +4,6 @@ import {
   WikiPageSchema,
   CuratorChangeSetSchema,
   CuratorRunSchema,
-  resolveProcessingPlan,
   initialCuratorLimits,
   isNonReviewableValidation,
   hierarchyChangedHandles
@@ -158,30 +157,6 @@ describe("bounded automatic wiki successor", () => {
     expect(() =>
       validateCuratorProposal({ ...s, policy: { ...s.policy, operations: [] } }, valid)
     ).toThrow("Grounded creation capability required");
-  });
-  it("keeps old processing presets unchanged and selected automatic organization independent of optional derivations", () => {
-    const plan = resolveProcessingPlan({
-      preset: "custom",
-      requestedStages: ["organizeKnowledge"],
-      integrateWiki: { version: 2, policyId: randomUUID(), policyRevisionId: randomUUID() },
-      scope: "source_only",
-      targetSourceItemIds: [],
-      forceRegeneration: false,
-      previousArtifactPolicy: "reuse_valid"
-    });
-    for (const stage of [
-      "atomicNotes",
-      "embedding",
-      "summarization",
-      "knowledgeGraph",
-      "atomicNoteMatching",
-      "sourceMatching"
-    ])
-      expect(plan.effectiveStages).not.toContain(stage);
-    expect(plan.integrateWiki?.version).toBe(2);
-    expect(
-      resolveProcessingPlan({ preset: "import_only", requestedStages: [] } as any).effectiveStages
-    ).not.toContain("organizeKnowledge");
   });
   it("uses real curator builders and validators for both catalog samples, independent of legacy replay", () => {
     const pin = defaultPromptPin();

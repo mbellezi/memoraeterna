@@ -98,7 +98,8 @@ describe("baseline seed", () => {
       "0048_note_fingerprint_without_review_status",
       "0049_relation_explanations",
       "0050_source_relation_explanations",
-      "0051_job_lanes"
+      "0051_job_lanes",
+      "0052_legacy_detach"
     ]);
   });
 
@@ -168,7 +169,8 @@ describe("baseline seed", () => {
         "0048_note_fingerprint_without_review_status",
         "0049_relation_explanations",
         "0050_source_relation_explanations",
-        "0051_job_lanes"
+        "0051_job_lanes",
+        "0052_legacy_detach"
       ]
     });
     expect(pool.queries.some((query) => query.text === "begin")).toBe(true);
