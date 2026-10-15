@@ -56,6 +56,7 @@ const route = (modelId = "model") => ({
   revision: null,
   quantization: null,
   localModelId: null,
+  requiredCapabilities: ["text-generation", "structured-output"],
   parameters: {},
   modelDefaultParameters: {}
 });
@@ -929,7 +930,7 @@ describe("one decision per unordered pair with a generative decider", () => {
     expect(rerankCalls()[0]![1]).toContain("Title: c");
   });
 
-  it("scores each direction itself when the decider declares the reranking capability", async () => {
+  it("scores each direction itself when the decider is a dedicated reranker", async () => {
     mocks.aiConfig.getDefaultTask.mockResolvedValue({
       ...route(),
       requiredCapabilities: ["reranking"]
@@ -938,6 +939,17 @@ describe("one decision per unordered pair with a generative decider", () => {
     await service().matchAtomicNotes(["source"]);
     expect(mocks.decisions.findReverseVerdicts).not.toHaveBeenCalled();
     expect(rerankCalls()[0]![1]).toContain("Title: c");
+  });
+
+  it("treats a generative model with a legacy reranking tag as a generative decider", async () => {
+    mocks.aiConfig.getDefaultTask.mockResolvedValue({
+      ...route(),
+      requiredCapabilities: ["text-generation", "structured-output", "reranking"]
+    });
+    mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
+    await service().matchAtomicNotes(["source"]);
+    expect(mocks.decisions.findReverseVerdicts).toHaveBeenCalled();
+    expect(rerankCalls().every((call) => !String(call[1]).includes("Title: c"))).toBe(true);
   });
 
   it("does not reuse anything without a decider identity", async () => {

@@ -14,6 +14,7 @@ import {
   AtomicNoteRelationTypeSchema,
   type AtomicNoteRelationType,
   CanonicalMatchingSettingsSchema,
+  generativeDeciderCapabilities,
   type AtomicNoteMatchingSettings,
   type CanonicalMatchingSettings,
   SourceRelationSettingsSchema,
@@ -2093,8 +2094,12 @@ export class KnowledgeService {
         }),
         profileId: route.profileId,
         modelId: route.modelId,
-        // Only a model that declares the reranking capability scores a pair in both directions.
-        generative: !(route.requiredCapabilities ?? []).includes("reranking")
+        // A generative model is a decider whatever else it declares: old profiles still carry a
+        // `reranking` tag written for every generative model. Only a dedicated reranker (no
+        // generation) scores a pair in both directions.
+        generative: generativeDeciderCapabilities.some((capability) =>
+          (route.requiredCapabilities ?? []).includes(capability)
+        )
       };
     } catch {
       // Without a decider identity nothing is cached or recorded; matching itself goes on.
