@@ -34,6 +34,7 @@ export * from "./relationTypeRepository.js";
 export * from "./entityIdentityRepository.js";
 export * from "./sourceRelationRepository.js";
 export * from "./matchingEvaluationRepository.js";
+export * from "./topicTreeLoadRepository.js";
 export * from "./wikiRepository.js";
 export * from "./objectLocateRepository.js";
 export * from "./notePageRepository.js";
