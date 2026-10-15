@@ -997,17 +997,25 @@ async function scoreAtomicNoteGraphPaths(
     const targetFilter = candidateIds
       ? ` AND target.id IN [${candidateIds.map((id) => `'${uuid(id)}'`).join(", ")}]`
       : "";
-    const pathLimit = maxPaths ? ` LIMIT ${Math.max(1, Math.floor(maxPaths))}` : "";
+    // The cut keeps every path tied with the last one it keeps. Many paths share a score, and
+    // which of them a plain LIMIT returns depends on the graph's physical row order, so the
+    // candidates (and the matching prompt built from them) would differ between two runs on the
+    // same graph.
+    const pathCut = maxPaths
+      ? ` order by "relationConfidence" desc fetch first ${Math.max(1, Math.floor(maxPaths))} rows with ties`
+      : "";
     const sourceId = uuid(noteId);
     const direct = await readCypher<AgAtomicDirectRow>(
       client,
-      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(entity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, entity, a.confidence * b.confidence AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, entity.id, pathScore`,
-      `"targetId" agtype, "entityId" agtype, "relationConfidence" agtype`
+      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(entity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, entity, a.confidence * b.confidence AS pathScore RETURN target.id, entity.id, pathScore`,
+      `"targetId" agtype, "entityId" agtype, "relationConfidence" agtype`,
+      pathCut
     );
     const related = await readCypher<AgAtomicRelatedRow>(
       client,
-      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(sourceEntity:Entity)-[r:RELATED]-(targetEntity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, sourceEntity, targetEntity, a.confidence * r.confidence * b.confidence * 0.75 AS pathScore ORDER BY pathScore DESC${pathLimit} RETURN target.id, sourceEntity.id, targetEntity.id, pathScore`,
-      `"targetId" agtype, "sourceEntityId" agtype, "targetEntityId" agtype, "relationConfidence" agtype`
+      `MATCH (source:AtomicNote {id: '${sourceId}'})-[a:ABOUT]->(sourceEntity:Entity)-[r:RELATED]-(targetEntity:Entity)<-[b:ABOUT]-(target:AtomicNote) WHERE target.id <> '${sourceId}'${targetFilter} WITH target, sourceEntity, targetEntity, a.confidence * r.confidence * b.confidence * 0.75 AS pathScore RETURN target.id, sourceEntity.id, targetEntity.id, pathScore`,
+      `"targetId" agtype, "sourceEntityId" agtype, "targetEntityId" agtype, "relationConfidence" agtype`,
+      pathCut
     );
     const targetIds = [
       ...new Set([
@@ -1148,10 +1156,12 @@ async function writeCypher(client: PoolClient, statement: string): Promise<void>
 function readCypher<T extends QueryResultRow>(
   client: PoolClient,
   statement: string,
-  columns: string
+  columns: string,
+  /** SQL appended after the result columns, for example an order and a cut. */
+  tail = ""
 ) {
   return client.query<T>(
-    `select * from cypher('${graphName}', $$ ${statement} $$) as (${columns})`
+    `select * from cypher('${graphName}', $$ ${statement} $$) as (${columns})${tail}`
   );
 }
 

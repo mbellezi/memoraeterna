@@ -67,6 +67,39 @@ describe("knowledge graph repository", () => {
     expect(client.release).toHaveBeenCalledOnce();
   });
 
+  it("cuts candidate paths by score with every tie kept, never by row order", async () => {
+    const sourceId = "00000000-0000-4000-8000-000000000001";
+    const targetId = "00000000-0000-4000-8000-000000000002";
+    const query = vi.fn(async (text: string) =>
+      text.includes("ag_catalog.ag_graph") ? { rows: [{}], rowCount: 1 } : { rows: [], rowCount: 0 }
+    );
+    const client = { query, release: vi.fn() };
+    const pool = { connect: vi.fn().mockResolvedValue(client) } as unknown as PgPool;
+    const repository = createKnowledgeGraphRepository(pool);
+    const pathQueries = () =>
+      query.mock.calls
+        .map(([text]) => String(text))
+        .filter((text) => text.includes("AS pathScore"));
+
+    await repository.findAtomicNoteCandidates(sourceId, 20);
+    const cut = pathQueries();
+    expect(cut).toHaveLength(2);
+    for (const text of cut) {
+      // A LIMIT inside the graph query would keep an arbitrary subset of the paths tied at the cut.
+      expect(text).not.toMatch(/\bLIMIT\b/);
+      expect(text).toMatch(
+        /\) as \(.*\) order by "relationConfidence" desc fetch first 500 rows with ties$/
+      );
+    }
+
+    query.mockClear();
+    await repository.scoreAtomicNoteCandidates(sourceId, [targetId]);
+    for (const text of pathQueries()) {
+      expect(text).not.toMatch(/\bLIMIT\b|fetch first/);
+      expect(text).toContain(`target.id IN ['${targetId}']`);
+    }
+  });
+
   it("deduplicates semantic relations in atomic-note debug elements", async () => {
     const query = vi
       .fn()
