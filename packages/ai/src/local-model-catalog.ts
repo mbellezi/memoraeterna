@@ -127,13 +127,17 @@ export const localModelCatalogEntrySchema = z
 export type LocalModelCatalogEntry = z.infer<typeof localModelCatalogEntrySchema>;
 
 const gib = 1024 ** 3;
+/**
+ * Capabilities of the generative entries. They carry no `reranking` tag: a generative model is not
+ * a reranker (`rules/ai.md`, D17). The decision route still accepts it as a generative decider
+ * through `supportsTask`; only a validated dedicated ranker declares `reranking`.
+ */
 const textCapabilities = [
   "text-generation",
   "structured-output",
   "summarization",
   "knowledge-graph-generation",
   "atomic-note-generation",
-  "reranking",
   "cancellation",
   "offline",
   "local-files",
@@ -547,7 +551,7 @@ export const localModelCatalog = localModelCatalogEntrySchema.array().parse([
   }
 ]);
 
-export const localModelCatalogVersion = "2026-07-18.1";
+export const localModelCatalogVersion = "2026-10-15.1";
 
 export function findLocalModelCatalogEntry(id: string): LocalModelCatalogEntry | undefined {
   return localModelCatalog.find((entry) => entry.id === id);

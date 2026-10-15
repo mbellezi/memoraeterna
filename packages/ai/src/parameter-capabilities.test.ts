@@ -3,6 +3,8 @@ import { normalizeAiModelParameters } from "@app/domain";
 
 import {
   googleParameterCapabilities,
+  hasGeneration,
+  isDedicatedRanker,
   localParameterCapabilities,
   openAiCodexParameterCapabilities,
   openAiCompatibleParameterCapabilities
@@ -143,5 +145,61 @@ describe("model parameter capabilities", () => {
       topK: { min: 1 },
       presencePenalty: { min: -2, max: 2 }
     });
+  });
+
+  it("does not count reranking as generation", () => {
+    expect(hasGeneration(["reranking", "offline"])).toBe(false);
+    expect(hasGeneration(["structured-output", "reranking"])).toBe(true);
+    expect(isDedicatedRanker(["reranking", "offline", "local-files"])).toBe(true);
+    expect(isDedicatedRanker(["text-generation", "reranking"])).toBe(false);
+    expect(isDedicatedRanker(["embedding", "reranking"])).toBe(false);
+    expect(isDedicatedRanker(["offline"])).toBe(false);
+
+    // A local dedicated ranker has no generation parameters.
+    expect(
+      localParameterCapabilities({
+        runtime: "gguf",
+        modelId: "qwen3-reranker-0.6b-q8_0.gguf",
+        capabilities: ["reranking", "offline", "local-files"]
+      })
+    ).toEqual({});
+    // A generative model that still carries the old tag keeps its generation parameters.
+    expect(
+      localParameterCapabilities({
+        runtime: "mlx",
+        modelId: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        capabilities: [...generationCapabilities, "reranking"]
+      })
+    ).toEqual(
+      localParameterCapabilities({
+        runtime: "mlx",
+        modelId: "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+        capabilities: generationCapabilities
+      })
+    );
+  });
+
+  it("keeps generation controls for a remote model declared for the decision route only", () => {
+    // Remote paths are generative only: the settings' "reranking" purpose is a generative decider.
+    const decider = ["reranking", "requires-network", "requires-api-key"] as const;
+    expect(
+      openAiCompatibleParameterCapabilities({
+        modelId: "gpt-4.1-mini",
+        baseUrl: "https://api.openai.com/v1",
+        capabilities: decider
+      })
+    ).toEqual(
+      openAiCompatibleParameterCapabilities({
+        modelId: "gpt-4.1-mini",
+        baseUrl: "https://api.openai.com/v1",
+        capabilities: generationCapabilities
+      })
+    );
+    expect(
+      googleParameterCapabilities({ modelId: "gemini-2.5-flash", capabilities: decider })
+    ).toHaveProperty("reasoning");
+    expect(
+      openAiCodexParameterCapabilities({ modelId: "gpt-5.6-terra", capabilities: decider })
+    ).toHaveProperty("contextWindow");
   });
 });

@@ -1,0 +1,41 @@
+{
+  "source": {
+    "repository": "gpustack/bge-reranker-v2-m3-GGUF",
+    "revision": "3093af03b1a635e67b084b1d8c03c5f5e020fd05",
+    "file": "bge-reranker-v2-m3-Q8_0.gguf",
+    "license": "Apache-2.0",
+    "subset": "The header fields ranker-validation.ts reads, copied from the real file."
+  },
+  "metadata": {
+    "general": {
+      "architecture": "bert",
+      "name": "Bge M3",
+      "size_label": "568M"
+    },
+    "bert": {
+      "context_length": 8192
+    },
+    "tokenizer": {
+      "ggml": {
+        "model": "t5",
+        "pre": "default",
+        "eos_token_id": 2,
+        "bos_token_id": 0
+      }
+    }
+  },
+  "fullTensorInfo": [
+    {
+      "name": "cls.bias"
+    },
+    {
+      "name": "cls.weight"
+    },
+    {
+      "name": "cls.output.bias"
+    },
+    {
+      "name": "cls.output.weight"
+    }
+  ]
+}

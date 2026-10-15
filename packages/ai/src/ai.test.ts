@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 import { describe, expect, it } from "vitest";
+import { supportsTask } from "@app/domain";
 
 import {
   AiModelRegistry,
@@ -13,6 +14,7 @@ import {
   OpenAiCompatibleAdapter,
   detectLocalRuntimeCompatibility,
   downloadLocalModel,
+  isDedicatedRanker,
   localModelCatalog,
   localModelCatalogEntrySchema,
   localModelExpectedSize,
@@ -255,7 +257,7 @@ describe("AI adapters", () => {
     expect(progress.at(-1)).toBe(1);
   });
 
-  it("keeps the local catalog pinned, checksummed and without unvalidated multimodal capabilities", () => {
+  it("keeps the local catalog pinned, checksummed, without unvalidated multimodal capabilities and without reranking tags on generative models", () => {
     expect(localModelCatalog).toHaveLength(6);
     const embeddingModels = localModelCatalog.filter((entry) =>
       entry.capabilities.includes("embedding")
@@ -322,6 +324,25 @@ describe("AI adapters", () => {
       expect(localModelExpectedSize(entry)).toBeGreaterThan(200_000_000);
       expect(entry.files.every((file) => /^[a-f0-9]{64}$/.test(file.sha256))).toBe(true);
       expect(entry.capabilities).not.toContain("image-understanding");
+      // A generative model is not a reranker (D17): only a dedicated ranker declares `reranking`.
+      if (entry.capabilities.includes("reranking")) {
+        expect(isDedicatedRanker(entry.capabilities)).toBe(true);
+        expect(entry.parameterCapabilities).toEqual({});
+      }
+    }
+    const generative = localModelCatalog.filter((entry) =>
+      entry.capabilities.includes("text-generation")
+    );
+    expect(generative.map((entry) => entry.id)).toEqual([
+      "mlx-gemma-4-e4b-it-4bit",
+      "mlx-gemma-4-12b-it-4bit",
+      "mlx-qwen3-4b-instruct-2507-4bit",
+      "mlx-qwen3.5-9b-4bit"
+    ]);
+    for (const entry of generative) {
+      expect(entry.capabilities).not.toContain("reranking");
+      // The decision route still takes them as generative deciders.
+      expect(supportsTask("reranking", entry.capabilities)).toBe(true);
     }
   });
 
@@ -522,6 +543,7 @@ describe("AI adapters", () => {
   });
 
   it("runs GGUF and MLX adapters through injectable native executors", async () => {
+    // An old profile's capabilities: a generative model still tagged `reranking`.
     const base = {
       modelId: "local-test",
       modelPath: "/managed/model",

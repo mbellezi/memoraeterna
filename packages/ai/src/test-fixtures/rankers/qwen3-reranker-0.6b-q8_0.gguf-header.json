@@ -1,0 +1,41 @@
+{
+  "source": {
+    "repository": "ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF",
+    "revision": "a02f48bb4f057028298c21fa033da2b30d7742d5",
+    "file": "qwen3-reranker-0.6b-q8_0.gguf",
+    "license": "Apache-2.0",
+    "subset": "The header fields ranker-validation.ts reads, copied from the real file."
+  },
+  "metadata": {
+    "general": {
+      "architecture": "qwen3",
+      "name": "Qwen3 Reranker 0.6B",
+      "basename": "Qwen3-Reranker",
+      "size_label": "0.6B"
+    },
+    "qwen3": {
+      "context_length": 40960,
+      "pooling_type": 4,
+      "classifier": {
+        "output_labels": ["yes", "no"]
+      }
+    },
+    "tokenizer": {
+      "ggml": {
+        "model": "gpt2",
+        "pre": "qwen2",
+        "eos_token_id": 151645,
+        "bos_token_id": 151643
+      },
+      "chat_template.rerank": "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be \"yes\" or \"no\".<|im_end|>\n<|im_start|>user\n<Instruct>: Given a web search query, retrieve relevant passages that answer the query\n<Query>: {query}\n<Document>: {document}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+    }
+  },
+  "fullTensorInfo": [
+    {
+      "name": "cls.output.weight"
+    },
+    {
+      "name": "output_norm.weight"
+    }
+  ]
+}

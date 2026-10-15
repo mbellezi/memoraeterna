@@ -26,7 +26,7 @@ export function openAiCompatibleParameterCapabilities(input: {
   capabilities: readonly AiCapability[];
 }): AiModelParameterCapabilities {
   const common = commonRemoteCapabilities(input.capabilities);
-  if (!hasGeneration(input.capabilities)) return parseCapabilities(common);
+  if (!remoteGenerates(input.capabilities)) return parseCapabilities(common);
 
   const qwen35 = isQwen35Model(input.modelId);
   const reasoning =
@@ -48,7 +48,7 @@ export function googleParameterCapabilities(input: {
   capabilities: readonly AiCapability[];
 }): AiModelParameterCapabilities {
   const common = commonRemoteCapabilities(input.capabilities);
-  if (!hasGeneration(input.capabilities)) return parseCapabilities(common);
+  if (!remoteGenerates(input.capabilities)) return parseCapabilities(common);
   const reasoning = googleReasoningCapabilities(input.modelId);
   return parseCapabilities({
     ...common,
@@ -67,7 +67,7 @@ export function openAiCodexParameterCapabilities(input: {
 }): AiModelParameterCapabilities {
   const levels = openAiCodexSupportedReasoningLevels(input.modelId);
   return parseCapabilities({
-    ...(hasGeneration(input.capabilities)
+    ...(remoteGenerates(input.capabilities)
       ? {
           contextWindow,
           ...(levels ? { reasoning: { levels: [...levels] } } : {})
@@ -151,22 +151,44 @@ export function isQwen35Model(modelId: string): boolean {
 
 function commonRemoteCapabilities(capabilities: readonly AiCapability[]): Record<string, unknown> {
   return {
-    ...(hasGeneration(capabilities) ? { contextWindow, maxTokens } : {}),
+    ...(remoteGenerates(capabilities) ? { contextWindow, maxTokens } : {}),
     ...(capabilities.includes("embedding") ? { dimensions } : {})
   };
 }
 
-function hasGeneration(capabilities: readonly AiCapability[]): boolean {
-  return capabilities.some((capability) =>
-    [
-      "text-generation",
-      "structured-output",
-      "summarization",
-      "knowledge-graph-generation",
-      "atomic-note-generation",
-      "reranking"
-    ].includes(capability)
+const generationCapabilities: readonly AiCapability[] = [
+  "text-generation",
+  "structured-output",
+  "summarization",
+  "knowledge-graph-generation",
+  "atomic-note-generation"
+];
+
+/**
+ * Whether a model generates text. `reranking` is not generation: a dedicated ranker only scores
+ * (D17), so it gets no generation parameters. A generative model that still carries an old
+ * `reranking` tag is generative through its other capabilities.
+ */
+export function hasGeneration(capabilities: readonly AiCapability[]): boolean {
+  return capabilities.some((capability) => generationCapabilities.includes(capability));
+}
+
+/** A dedicated ranker declares `reranking` and neither generation nor embedding. */
+export function isDedicatedRanker(capabilities: readonly AiCapability[]): boolean {
+  return (
+    capabilities.includes("reranking") &&
+    !hasGeneration(capabilities) &&
+    !capabilities.includes("embedding")
   );
+}
+
+/**
+ * Remote paths are generative only (`rules/ai.md`), so a remote model declared for the decision
+ * route alone (the "reranking" purpose in settings) is a decision-only generative decider and keeps
+ * its generation controls.
+ */
+function remoteGenerates(capabilities: readonly AiCapability[]): boolean {
+  return hasGeneration(capabilities) || capabilities.includes("reranking");
 }
 
 function qwen35ReasoningCapabilities(

@@ -10,10 +10,15 @@ import {
 } from "./contracts.js";
 import type { MlxGenerationParameters } from "./local-runtime-protocol.js";
 import { MlxHelperHost } from "./mlx-helper-host.js";
-import { localParameterCapabilities } from "./parameter-capabilities.js";
+import { hasGeneration, localParameterCapabilities } from "./parameter-capabilities.js";
 import { resolveMlxRuntimeConfig, type MlxRuntimeConfigInput } from "./runtime-config.js";
 
-const supportedLocalTasks = new Set([
+/**
+ * Tasks a generative local model runs by prompting. `reranking` is here as the decision route: a
+ * generative model decides by prompt. A dedicated ranker is never prompted; it runs on the ranker
+ * adapters (`local-ranker-adapters.ts`), and the generative adapters refuse it.
+ */
+const generativeLocalTasks = new Set([
   "text-generation",
   "structured-output",
   "summarization",
@@ -21,6 +26,16 @@ const supportedLocalTasks = new Set([
   "atomic-note-generation",
   "reranking"
 ]);
+
+/** Whether a generative adapter for a model with these capabilities can run the request. */
+function generativeAdapterCanHandle(
+  request: AiTaskRequest,
+  capabilities: readonly AiCapability[]
+): boolean {
+  if (!request.requiredCapabilities.every((item) => capabilities.includes(item))) return false;
+  if (request.taskType === "embedding") return capabilities.includes("embedding");
+  return generativeLocalTasks.has(request.taskType) && hasGeneration(capabilities);
+}
 
 export interface LocalAdapterOptions {
   modelId: string;
@@ -82,10 +97,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
   }
 
   public canHandle(request: AiTaskRequest): boolean {
-    return (
-      (request.taskType === "embedding" || supportedLocalTasks.has(request.taskType)) &&
-      request.requiredCapabilities.every((item) => this.options.capabilities.includes(item))
-    );
+    return generativeAdapterCanHandle(request, this.options.capabilities);
   }
 
   public isLoaded(): boolean {
@@ -98,6 +110,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
+    if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
     const abort = () => {
       void this.dispose();
     };
@@ -130,6 +143,7 @@ export class NodeLlamaCppAdapter implements AiModelAdapter {
   ): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
     if (input.taskType === "embedding") return this.run(input, signal);
+    if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
     const result = await this.execute({
       modelPath: this.options.modelPath,
       prompt: promptFromInput(input.input),
@@ -184,13 +198,14 @@ export class MlxAdapter implements AiModelAdapter {
 
   public canHandle(request: AiTaskRequest): boolean {
     return (
-      supportedLocalTasks.has(request.taskType) &&
-      request.requiredCapabilities.every((item) => this.options.capabilities.includes(item))
+      request.taskType !== "embedding" &&
+      generativeAdapterCanHandle(request, this.options.capabilities)
     );
   }
 
   public async run(request: AiTaskRequest, signal?: AbortSignal): Promise<AiTaskResult> {
     const input = aiTaskRequestSchema.parse(request);
+    if (!this.canHandle(input)) throw new Error("errors.ai.unsupportedTask");
     const result = await this.execute({
       helperPath: this.options.helperPath,
       modelPath: this.options.modelPath,

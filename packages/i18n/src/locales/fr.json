@@ -406,7 +406,9 @@
       "modelBusy": "Le modele est actuellement utilise.",
       "profileInUse": "Remplacez ce modele dans les profils concernes avant de le supprimer.",
       "canceled": "Le telechargement du modele a ete annule.",
-      "invalidGguf": "Choisissez un fichier de modele GGUF valide."
+      "invalidGguf": "Choisissez un fichier de modele GGUF valide.",
+      "rankerInvalid": "Ce modèle n’est pas un reranker pris en charge.",
+      "rankerSmokeFailed": "Le reranker a échoué au test de validation."
     }
   },
   "jobs": {
