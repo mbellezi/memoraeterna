@@ -58,6 +58,7 @@ import {
   createTopicTreeRepository,
   decodeTopicVector,
   encodeTopicVector,
+  eventStatsRefs,
   eventTopicRefs,
   minimalEvents,
   stateFromRecords,
@@ -179,6 +180,55 @@ describe("topic tree records", () => {
       after: { retiredAt: "2026-10-15T12:00:00.000Z", redirectTo: uuidOf(4) }
     };
     expect(eventTopicRefs(retire)).toEqual([uuidOf(3), uuidOf(4)]);
+  });
+
+  it("lets only member and child changes make statistics inexact, never a name (D7)", () => {
+    const move: StructureEvent = {
+      op: "item.move",
+      item: itemKey("note", uuidOf(900)),
+      topicId: uuidOf(2),
+      before: placementRecord(uuidOf(1)),
+      after: placementRecord(uuidOf(2))
+    };
+    expect(eventStatsRefs(move)).toEqual([uuidOf(1), uuidOf(2)]);
+    const label: StructureEvent[] = [
+      {
+        op: "topic.rename",
+        topicId: uuidOf(3),
+        before: {
+          title: null,
+          nameState: "unnamed",
+          nameSource: null,
+          nameLanguage: null,
+          namedChangeSetId: null,
+          aliases: []
+        },
+        after: {
+          title: "Sono e memória",
+          nameState: "named",
+          nameSource: "llm",
+          nameLanguage: "pt-BR",
+          namedChangeSetId: uuidOf(50),
+          aliases: ["Descanso"]
+        }
+      },
+      {
+        op: "topic.describe",
+        topicId: uuidOf(3),
+        before: { description: null },
+        after: { description: "Notas." }
+      },
+      {
+        op: "topic.manage",
+        topicId: uuidOf(3),
+        before: { management: "ai" },
+        after: { management: "human" }
+      }
+    ];
+    for (const event of label) {
+      expect(eventTopicRefs(event)).toEqual([uuidOf(3)]);
+      expect(eventStatsRefs(event)).toEqual([]);
+    }
   });
 
   it("keeps only the events that change something (minimal change-sets)", () => {

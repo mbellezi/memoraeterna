@@ -268,11 +268,16 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
     dispose(): Promise<void>;
   }
 
+  /**
+   * A fresh library and tree. `build: true` stores the library only: the tree keeps its root, the
+   * test makes it with the cold-start build, and `topics` names no stored topic.
+   */
   async function world(
     options: {
       config?: TopicTreeConfig;
       env?: Record<string, string | undefined>;
       budgetCalls?: { calls: number };
+      build?: boolean;
     } = {}
   ): Promise<World> {
     await createLibraryResetRepository(pool).reset();
@@ -460,23 +465,25 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       }
       leafIndex += 1;
     }
-    recomputeSubtree(live, store);
-    const repository = createTopicTreeRepository(pool);
-    const built = await repository.bootstrapSnapshot({
-      treeId: tree.id,
-      expectedGeneration: tree.generation,
-      titleKey: "topics.changeSets.build",
-      topics: liveTopicIds(live)
-        .filter((id) => id !== rootId)
-        .map((id) => topicRecordOf(getTopic(live, id))),
-      placements: [...live.placements].flatMap(([key, list]) =>
-        list.map((placement) => ({ item: key, placement }))
-      ),
-      stats: topicStatsWrites(live, store, liveTopicIds(live)),
-      clock: live.clock
-    });
-    if (built.kind !== "applied") throw new Error(`the tree was not seeded: ${built.kind}`);
-    services.service.invalidate();
+    if (!options.build) {
+      recomputeSubtree(live, store);
+      const repository = createTopicTreeRepository(pool);
+      const built = await repository.bootstrapSnapshot({
+        treeId: tree.id,
+        expectedGeneration: tree.generation,
+        titleKey: "topics.changeSets.build",
+        topics: liveTopicIds(live)
+          .filter((id) => id !== rootId)
+          .map((id) => topicRecordOf(getTopic(live, id))),
+        placements: [...live.placements].flatMap(([key, list]) =>
+          list.map((placement) => ({ item: key, placement }))
+        ),
+        stats: topicStatsWrites(live, store, liveTopicIds(live)),
+        clock: live.clock
+      });
+      if (built.kind !== "applied") throw new Error(`the tree was not seeded: ${built.kind}`);
+      services.service.invalidate();
+    }
     // The creation of the tree was pushed too; the tests look at what naming pushes.
     services.changes.flush();
     pushed.length = 0;
@@ -539,6 +546,16 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       debounce: immediateDebounce
     });
     return runDue(w, "topic-name");
+  }
+
+  /** Runs every due job of the light lane's compute worker (PLACE, the build, the sweep). */
+  async function drainCompute(w: World): Promise<JobRecord[]> {
+    const done: JobRecord[] = [];
+    for (let job = await w.supervisor.runLightOnce("compute"); job;) {
+      done.push(job);
+      job = await w.supervisor.runLightOnce("compute");
+    }
+    return done;
   }
 
   async function runLabels(w: World): Promise<JobRecord> {
@@ -1183,6 +1200,63 @@ describe.skipIf(!sidecarAvailable)("topic naming on the PostgreSQL sidecar", () 
       expect(refreshed.result).toMatchObject({ status: "embedded", embedded: 1 });
       const fresh = (await loadTopicTreeCache(pool, w.treeId))!;
       expect(getTopic(fresh.state, w.topics.A1).label).not.toBeNull();
+    } finally {
+      await w.dispose();
+    }
+  }, 60_000);
+
+  it("keeps stored statistics exact through the cold start, its sweep and naming, so no sweep follows (D7)", async () => {
+    const w = await world({ build: true });
+    try {
+      const { treeId } = w;
+      const roots = Object.values(w.sources).map((rootSourceId) => ({ rootSourceId }));
+      const resultsOf = (jobs: JobRecord[], type: string) =>
+        jobs.filter((job) => job.type === type).map((job) => job.result ?? { error: job.error });
+      /** A fresh load finds every stored statistic exact and clean, and no sweep waits for it. */
+      const expectExact = async () => {
+        const fresh = (await loadTopicTreeCache(pool, treeId))!;
+        expect(fresh.staleStoredStats).toEqual([]);
+        expect(await count("select count(*) from topic_stats where dirty")).toBe(0);
+        expect(
+          await count("select count(*) from jobs where type = 'topic-sweep' and status = 'queued'")
+        ).toBe(0);
+      };
+
+      // The cold start: PLACE of every root waits for one build, then its sweep.
+      await w.services.triggers.place(treeId, roots, { debounce: immediateDebounce });
+      const coldStart = await drainCompute(w);
+      expect(resultsOf(coldStart, "topic-build")).toContainEqual(
+        expect.objectContaining({ status: "applied", kind: "cold" })
+      );
+      expect(resultsOf(coldStart, "topic-sweep").at(-1)).toMatchObject({
+        status: "swept",
+        recomputedTopics: 0
+      });
+      expect(await count("select count(*) from topics where role = 'topic'")).toBeGreaterThan(1);
+      await expectExact();
+
+      // Naming renames the built topics (leaf names, distinct among siblings): a name, a
+      // description and aliases change no member, so the statistics stay exact and clean.
+      w.setResponder((call) => ({
+        topics: call.groups.flatMap((group) =>
+          group.topics.map((topic) => item(topic, { ...group, parent: group.parent ?? "root" }))
+        )
+      }));
+      const named = await runNaming(w);
+      expect(named.result).toMatchObject({ status: "named" });
+      expect(Number(named.result?.llmNamed)).toBeGreaterThan(1);
+      await expectExact();
+
+      // The service loads the renamed tree for a PLACE and asks for no sweep; a sweep recomputes
+      // nothing.
+      await w.services.triggers.place(treeId, roots.slice(0, 1), { debounce: immediateDebounce });
+      expect(resultsOf(await drainCompute(w), "topic-place")).toHaveLength(1);
+      await expectExact();
+      await w.services.triggers.sweep("requested", { treeId, debounce: immediateDebounce });
+      expect(resultsOf(await drainCompute(w), "topic-sweep")).toEqual([
+        expect.objectContaining({ status: "swept", recomputedTopics: 0 })
+      ]);
+      await expectExact();
     } finally {
       await w.dispose();
     }

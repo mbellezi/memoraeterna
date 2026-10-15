@@ -341,6 +341,22 @@ export function eventTopicRefs(event: StructureEvent): string[] {
   return [...refs].sort(compareStrings);
 }
 
+/**
+ * The topics whose statistics an event can change (D7): every reference of a structure or
+ * placement event. A name, a description or a management change moves no member and no child, so
+ * it leaves the statistics exact and needs no recompute.
+ */
+export function eventStatsRefs(event: StructureEvent): string[] {
+  switch (event.op) {
+    case "topic.rename":
+    case "topic.describe":
+    case "topic.manage":
+      return [];
+    default:
+      return eventTopicRefs(event);
+  }
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;

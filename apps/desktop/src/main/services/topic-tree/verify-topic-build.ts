@@ -211,6 +211,12 @@ async function checkProfile(db: string): Promise<Record<string, unknown>> {
     const cache = await loadTopicTreeCache(pool, tree.id);
     assert.ok(cache, "the tree loads");
     const config = treeConfig(tree);
+    // Stale statistics are either flagged dirty (a cascade, D32) or differ from the recompute.
+    const dirty = await pool.query<{ count: string }>(
+      `select count(*)::text as count from topic_stats s join topics t on t.id = s.topic_id
+        where t.tree_id = $1 and t.retired_at is null and s.dirty`,
+      [tree.id]
+    );
     const unplaced = await pool.query<{ notes: string; roots: string }>(
       `select (select count(*) from atomic_notes a
                 where a.status not in ('rejected', 'archived') and a.supersession_status = 'current'
@@ -236,7 +242,8 @@ async function checkProfile(db: string): Promise<Record<string, unknown>> {
       meanDepth: round3(report.itemDepth.mean),
       fanOutInTarget: round3(report.fanOut.inTarget),
       unsortedShare: report.unsortedShare,
-      staleStoredStats: cache.staleStoredStats.length
+      staleStoredStats: cache.staleStoredStats.length,
+      dirtyStoredStats: Number(dirty.rows[0]!.count)
     };
     const build = await repository.latestStructureBuild(tree.id);
     if (!build || build.origin !== "build") {
@@ -592,6 +599,11 @@ async function scratchProof(): Promise<Record<string, unknown>> {
       "E1 after the build"
     );
     assert.equal(afterBuild.hardViolations, 0, "0 hard violations after the build");
+    assert.equal(
+      afterBuild.staleStoredStats,
+      0,
+      "stored statistics are exact after the build and its sweep (D7)"
+    );
 
     // 4. Parity: the stored partition of the notes equals the in-process build of the same rows.
     const builtNotes = early.map((row) => ({

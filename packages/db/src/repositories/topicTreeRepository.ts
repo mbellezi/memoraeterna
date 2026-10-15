@@ -7,8 +7,9 @@
 // `memora.topic_writer = 'engine'` (the database guard refuses AI-managed parent writes without
 // it), checks each event's `before` against the stored row and bumps the generation. Statistics
 // are derived (D7): the engine passes the exact values of the paths it touched, anything else on
-// those paths is marked dirty, and `recomputeStats` restores exact values bottom-up. Placements
-// leave with deleted items by cascade and a statement trigger marks their paths dirty (D32).
+// the paths whose members or children changed is marked dirty (a rename is not such a change),
+// and `recomputeStats` restores exact values bottom-up. Placements leave with deleted items by
+// cascade and a statement trigger marks their paths dirty (D32).
 import { randomUUID } from "node:crypto";
 
 import { topicChangeSetOrigins, topicChangeSetRisks, topicHealthValues } from "@app/domain";
@@ -45,6 +46,7 @@ import {
   decodeTopicVector,
   encodeTopicVector,
   eventItem,
+  eventStatsRefs,
   eventTopicRefs,
   loadStoredStats,
   minimalEvents,
@@ -75,6 +77,7 @@ import type { Queryable } from "./types.js";
 export {
   decodeTopicVector,
   encodeTopicVector,
+  eventStatsRefs,
   eventTopicRefs,
   isNoOpEvent,
   minimalEvents,
@@ -1345,12 +1348,14 @@ interface CommitInput {
 /**
  * Applies a change-set inside the writer transaction: locks the statistics rows of every path it
  * touches (root first), records it, applies the events, writes the engine's statistics, marks the
- * rest of those paths dirty and bumps the generation.
+ * rest of the paths whose members or children changed dirty and bumps the generation. Names,
+ * descriptions and management leave statistics exact (D7): they never make a topic dirty.
  */
 async function commitChangeSet(db: Queryable, input: CommitInput): Promise<AppliedChangeSet> {
   const { tree, events } = input;
   validateStats(tree, input.stats);
   const refs = [...new Set(events.flatMap(eventTopicRefs))].sort(compareStrings);
+  const statsRefs = [...new Set(events.flatMap(eventStatsRefs))].sort(compareStrings);
   const notes = primaryNoteChanges(events);
   const before = await topicClosure(db, tree.id, refs, notes);
   const preDirty = await lockStats(
@@ -1379,7 +1384,7 @@ async function commitChangeSet(db: Queryable, input: CommitInput): Promise<Appli
     await insertEventRows(db, changeSetId, events);
   }
   await applyEventsSql(db, { treeId: tree.id, changeSetId, spaceKey: tree.spaceKey }, events);
-  const after = await topicClosure(db, tree.id, refs, notes);
+  const after = await topicClosure(db, tree.id, statsRefs, notes);
   const live = after.filter((row) => row.live).map((row) => row.id);
   const supplied = new Set(input.stats.map((write) => write.topicId));
   await writeStats(db, tree, input.stats, preDirty);
