@@ -1,6 +1,8 @@
 import { renderToString } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
 import { App } from "./App";
+import { SettingsScopeMenu, type SettingsScope } from "./components/SettingsView";
 import { useDocumentLanguage } from "./lib/document-language";
 import {
   appSettingsSchema,
@@ -155,6 +157,65 @@ describe("compact main navigation", () => {
     expect(html).toContain("w-16");
     const navigation = html.slice(html.indexOf('<nav id="app-navigation"'), html.indexOf("</nav>"));
     expect(navigation).not.toContain(">Library</button>");
-    expect(navigation.match(/<button/g)).toHaveLength(10);
+    expect(navigation.match(/<button/g)).toHaveLength(9);
+  });
+});
+
+describe("entry points of the removed wiki", () => {
+  const shell = (language: (typeof supportedLanguageCodes)[number]) =>
+    renderToString(
+      <App
+        initialDatabaseStatus={{
+          state: "ready",
+          messageKey: "database.status.ready",
+          updatedAt: new Date(0).toISOString()
+        }}
+        initialSettings={storageSettingsSchema.parse({
+          ...defaultStorageSettings,
+          updatedAt: new Date(0).toISOString()
+        })}
+        initialAppSettings={appSettingsSchema.parse({
+          ...defaultAppSettings,
+          language,
+          updatedAt: new Date(0).toISOString()
+        })}
+      />
+    );
+
+  it("has no Automation destination in any language", () => {
+    for (const language of supportedLanguageCodes) {
+      const html = shell(language);
+      const navigation = html.slice(
+        html.indexOf('<nav id="app-navigation"'),
+        html.indexOf("</nav>")
+      );
+      expect(navigation, language).not.toContain(messages[language].automation.title);
+      expect(html, language).not.toContain(messages[language].automation.title);
+    }
+  });
+
+  it("shows the empty Wiki, not the old workspace, for the Wiki destination", () => {
+    const html = shell("en");
+    expect(html).toContain('aria-labelledby="wiki-placeholder-title"');
+    expect(html).toContain(messages.en.topics.placeholder.openLibrary);
+    // The old workspace's page tree and creation controls are not mounted.
+    expect(html).not.toContain(messages.en.wiki.create);
+    expect(html).not.toContain(messages.en.wiki.local);
+  });
+
+  it("has no Organization or Maintenance scope in Settings", () => {
+    const html = renderToString(
+      <SettingsScopeMenu
+        activeScope="overview"
+        t={createTranslator("en")}
+        onScopeChange={() => undefined}
+      />
+    );
+    expect(html).toContain("settings-tab-overview");
+    expect(html).not.toContain("settings-tab-organization");
+    expect(html).not.toContain("settings-tab-maintenance");
+    // A scope the Settings view no longer has cannot be asked for.
+    expectTypeOf<"organization">().not.toExtend<SettingsScope>();
+    expectTypeOf<"maintenance">().not.toExtend<SettingsScope>();
   });
 });

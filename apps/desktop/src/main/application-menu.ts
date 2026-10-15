@@ -15,9 +15,8 @@ import type { WindowNavigationDirection } from "./window-navigation.js";
  *   Single-key shortcuts are never part of a menu.
  */
 
-/** The destinations of the Go menu, in navigation order; they take Cmd-1 to Cmd-8. */
+/** The destinations of the Go menu, in navigation order; they take Cmd-1 to Cmd-7. */
 export const goDestinations: ReadonlyArray<{ view: AppViewId; label: MessageKey }> = [
-  { view: "automation", label: "automation.title" },
   { view: "wiki", label: "wiki.title" },
   { view: "library", label: "shell.navigation.library" },
   { view: "import", label: "shell.navigation.import" },

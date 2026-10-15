@@ -7,7 +7,6 @@ import { z } from "zod";
 
 /** The views the renderer can show; the menu and the navigation rail address them by these IDs. */
 export const appViewIds = [
-  "automation",
   "wiki",
   "library",
   "import",

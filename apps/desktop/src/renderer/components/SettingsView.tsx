@@ -1,6 +1,5 @@
 import { PromptsSettingsView } from "./PromptsSettingsView";
 import { ObsidianWikiCard } from "./ObsidianWikiCard";
-import { OrganizationSettingsView } from "./OrganizationView";
 import { MatchingConfigurationSchema, recommendedMatchingPresetId } from "@app/domain";
 import { MatchingPresetControls } from "./MatchingPresetControls";
 import { MatchingResetButton } from "./MatchingResetButton";
@@ -63,7 +62,6 @@ interface SettingsViewProps {
 
 export type SettingsScope =
   | "prompts"
-  | "organization"
   | "overview"
   | "personalization"
   | "matching"
@@ -279,10 +277,6 @@ export function SettingsView({
   onToast,
   onReset
 }: SettingsViewProps) {
-  const [promptTarget, setPromptTarget] = useState<{ id: string; domainId: string | null }>({
-    id: "summary.short",
-    domainId: null
-  });
   const [isResetting, setIsResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<MessageKey | null>(null);
   const activeScopeDefinition = scopes.find((scope) => scope.id === activeScope) ?? scopes[0]!;
@@ -393,22 +387,7 @@ export function SettingsView({
         ) : null}
 
         {activeScope === "prompts" ? (
-          <PromptsSettingsView
-            t={t as Translator}
-            language={appSettings.language}
-            initialId={promptTarget.id}
-            initialDomainId={promptTarget.domainId}
-          />
-        ) : null}
-        {activeScope === "organization" ? (
-          <OrganizationSettingsView
-            t={t as Translator}
-            contentLanguage={appSettings.contentLanguage}
-            onPrompts={(id = "organization.legacy_synthesis", domainId = null) => {
-              setPromptTarget({ id, domainId });
-              onScopeChange("prompts");
-            }}
-          />
+          <PromptsSettingsView t={t as Translator} language={appSettings.language} />
         ) : null}
         {activeScope === "matching" ? (
           <div className="grid gap-5">

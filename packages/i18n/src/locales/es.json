@@ -1994,6 +1994,16 @@
       "incomplete": "Análisis detenido tras {judged} de {candidates} fuentes candidatas: se agotó el presupuesto de tokens de entrada"
     }
   },
+  "topics": {
+    "placeholder": {
+      "title": "Tus temas están en camino",
+      "body": "La wiki anterior se eliminó y el nuevo árbol de temas llegará en una próxima actualización. Tus fuentes y notas están en la Biblioteca, y Preguntar responde a partir de ellas.",
+      "openLibrary": "Abrir la Biblioteca",
+      "ask": "Preguntar",
+      "notice": "Ese enlace apuntaba a una página de la wiki anterior, que ya no existe.",
+      "dismiss": "Descartar"
+    }
+  },
   "wiki": {
     "remainingReferences": "Referencias",
     "treeWidth": "Ancho del árbol: {width} píxeles",

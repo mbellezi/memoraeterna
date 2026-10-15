@@ -1987,6 +1987,16 @@
       "incomplete": "Analysis stopped after {judged} of {candidates} candidate sources: the input token budget was exhausted"
     }
   },
+  "topics": {
+    "placeholder": {
+      "title": "Your topics are on the way",
+      "body": "The old wiki was removed, and the new topic tree arrives in a coming update. Your sources and notes are in the Library, and Ask answers from them.",
+      "openLibrary": "Open Library",
+      "ask": "Ask",
+      "notice": "That link pointed to a page of the old wiki, which no longer exists.",
+      "dismiss": "Dismiss"
+    }
+  },
   "wiki": {
     "remainingReferences": "References",
     "treeWidth": "Tree width: {width} pixels",

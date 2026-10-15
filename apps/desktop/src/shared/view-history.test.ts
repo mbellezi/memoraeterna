@@ -178,6 +178,7 @@ describe("application menu commands", () => {
     for (const bad of [
       { type: "quit" },
       { type: "go-to", view: "nowhere" },
+      { type: "go-to", view: "automation" },
       { type: "go-to" },
       { type: "close-panel", force: true },
       "close-panel",

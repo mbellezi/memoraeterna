@@ -174,6 +174,15 @@ describe("application menu", () => {
     );
   });
 
+  it("has no Automation destination, in any language", () => {
+    expect(appViewIds).not.toContain("automation");
+    expect(goDestinations.map((entry) => entry.view)).not.toContain("automation");
+    for (const language of supportedLanguageCodes) {
+      const labels = flatten(build({ language }).template).map((item) => item.label);
+      expect(labels, language).not.toContain(messages[language].automation.title);
+    }
+  });
+
   it("toggles the navigation and the theme from View", () => {
     const { template, send } = build();
     const view = submenu(named(template, "View"));

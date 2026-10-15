@@ -1,5 +1,4 @@
-import { KnowledgeAutomationView } from "./components/KnowledgeAutomationView";
-import { dispatchWindowNavigation, subscribeWindowNavigation } from "./lib/window-navigation";
+import { subscribeWindowNavigation } from "./lib/window-navigation";
 import {
   closePanelPriority,
   closeTopDialog,
@@ -10,12 +9,11 @@ import {
 import { applyMenuCommand } from "./lib/menu-commands";
 import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
-import { WikiWorkspace } from "./components/WikiWorkspace";
+import { WikiPlaceholder } from "./components/topics/WikiPlaceholder";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
   Activity,
-  Sparkles,
   ClipboardCheck,
   Database,
   FilePlus2,
@@ -52,6 +50,8 @@ import {
   storageSettingsSchema
 } from "../shared/ipc";
 import { cn } from "./lib/cn";
+import { routeObsidianLink } from "./lib/obsidian-link";
+import type { PassageAnchor } from "./lib/object-navigation";
 import { useStableCallback } from "./lib/stable-callback";
 import { useDocumentLanguage } from "./lib/document-language";
 import { readRememberedTheme, rememberTheme, useResolvedTheme } from "./lib/theme";
@@ -80,7 +80,6 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { id: "automation", label: "automation.title", icon: Sparkles },
   { id: "wiki", label: "wiki.title", icon: BookOpen },
   { id: "library", label: "shell.navigation.library", icon: SquareLibrary },
   { id: "import", label: "shell.navigation.import", icon: FilePlus2 },
@@ -96,7 +95,6 @@ const emptyViews: Record<
   Exclude<ViewId, "settings" | "review" | "debug">,
   { title: MessageKey; empty: MessageKey }
 > = {
-  automation: { title: "automation.title", empty: "automation.empty" },
   wiki: { title: "wiki.title", empty: "wiki.empty" },
   library: { title: "shell.navigation.library", empty: "shell.states.empty" },
   import: { title: "shell.navigation.import", empty: "shell.states.empty" },
@@ -149,22 +147,17 @@ export function App({
   initialSettings,
   initialSystemInfo = null
 }: AppProps) {
-  const [obsidianTarget, setObsidianTarget] = useState<
-    (ObsidianDeepLink & { token: number }) | null
-  >(null);
+  // Changes each time an old link or call asks for a page of the removed wiki.
+  const [wikiNoticeToken, setWikiNoticeToken] = useState<number | null>(null);
   useEffect(() => {
-    const open = (target: ObsidianDeepLink) => {
-      if (target.kind === "wiki") {
-        setObsidianTarget({ ...target, token: Date.now() });
+    const open = (link: ObsidianDeepLink) => {
+      const route = routeObsidianLink(link);
+      if (route.type === "removedWikiPage") {
+        setWikiNoticeToken((current) => (current ?? 0) + 1);
         setActiveView("wiki");
-      } else if (target.kind === "source") {
+      } else {
         libraryTargetToken.current += 1;
-        setLibraryTarget({
-          sourceItemId: target.id,
-          origin: "wiki",
-          ...(target.relation ? { sourceRelationId: target.relation } : {}),
-          token: libraryTargetToken.current
-        });
+        setLibraryTarget({ ...route.target, token: libraryTargetToken.current });
         setActiveView("library");
       }
     };
@@ -175,7 +168,6 @@ export function App({
     return off;
   }, []);
   const [activeView, setActiveView] = useState<ViewId>("library");
-  const wikiPromptReturn = useRef(false);
   const [activeSettingsScope, setActiveSettingsScope] = useState<SettingsScope>("overview");
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus>(
     initialDatabaseStatus ?? createInitialDatabaseStatus()
@@ -243,11 +235,25 @@ export function App({
   const openGraphNote = useStableCallback((sourceItemId: string, atomicNoteId: string) =>
     openLibrarySource({ sourceItemId, atomicNoteId, origin: "knowledgeGraph" })
   );
-  // A legacy wiki page listed by "Where is this" opens in the Wiki.
-  const openWikiPage = useStableCallback((pageId: string) => {
-    setObsidianTarget({ kind: "wiki", id: pageId, token: Date.now() });
+  // A legacy wiki page listed by "Where is this" no longer exists: the Wiki opens with a notice.
+  const openWikiPage = useStableCallback(() => {
+    setWikiNoticeToken((current) => (current ?? 0) + 1);
     setActiveView("wiki");
   });
+  // A citation of an answer from Ask in the Wiki opens its source; Back returns to the Wiki.
+  const openAskSource = useStableCallback(
+    (sourceItemId: string, atomicNoteId?: string, passage?: PassageAnchor) => {
+      libraryTargetToken.current += 1;
+      setLibraryTarget({
+        sourceItemId,
+        origin: "wiki",
+        ...(atomicNoteId ? { atomicNoteId } : {}),
+        ...(passage ? { passage } : {}),
+        token: libraryTargetToken.current
+      });
+      setActiveView("library");
+    }
+  );
   // After an interactive import the new source opens in the Library with the outcome as a toast.
   function openImportedSource(sourceItemId: string, status?: MessageKey) {
     openLibrarySource({ sourceItemId, origin: "import" });
@@ -260,15 +266,6 @@ export function App({
   useEffect(
     () =>
       subscribeWindowNavigation((direction) => {
-        if (
-          activeViewRef.current === "settings" &&
-          wikiPromptReturn.current &&
-          direction === "back"
-        ) {
-          wikiPromptReturn.current = false;
-          setActiveView("wiki");
-          return true;
-        }
         if (activeViewRef.current !== "library") return false;
         if (direction === "back") window.history.back();
         else window.history.forward();
@@ -506,7 +503,6 @@ export function App({
   // the React Compiler lint from checking this component.
   // The navigation rail and the application menu open a view the same way.
   const goToView = useStableCallback((view: ViewId) => {
-    wikiPromptReturn.current = false;
     if (view === "settings") selectSettingsScope("overview");
     setActiveView(view);
   });
@@ -523,23 +519,12 @@ export function App({
 
   useEffect(() => window.app.menu.subscribeCommand(handleMenuCommand), [handleMenuCommand]);
 
-  // Cmd-W: a dialog closes first; the Wiki closes its page the way Back does. The Library and the
-  // panels inside views register their own listeners. With nothing open, nothing happens.
-  useEffect(() => {
-    const removeDialogs = subscribeClosePanel(
-      () => closeTopDialog(openDialogs()),
-      closePanelPriority.dialog
-    );
-    const removeWiki = subscribeClosePanel(() => {
-      if (activeViewRef.current !== "wiki") return false;
-      dispatchWindowNavigation("back");
-      return true;
-    }, closePanelPriority.panel);
-    return () => {
-      removeDialogs();
-      removeWiki();
-    };
-  }, []);
+  // Cmd-W: a dialog closes first. The Library and the panels inside views register their own
+  // listeners. With nothing open, nothing happens.
+  useEffect(
+    () => subscribeClosePanel(() => closeTopDialog(openDialogs()), closePanelPriority.dialog),
+    []
+  );
 
   // The application menu follows the language the interface shows.
   useEffect(() => {
@@ -801,28 +786,12 @@ export function App({
             />
           </div>
           <div hidden={activeView !== "wiki"}>
-            <WikiWorkspace
-              onPrompts={() => {
-                wikiPromptReturn.current = true;
-                setActiveSettingsScope("prompts");
-                setActiveView("settings");
-              }}
-              treeWidth={appSettings.wikiTreeWidth}
-              onTreeWidthChange={(width) => updateAppSettings({ wikiTreeWidth: width })}
-              externalTarget={obsidianTarget}
-              active={activeView === "wiki"}
+            <WikiPlaceholder
               t={t}
-              onOpenSource={(sourceItemId, atomicNoteId, passage) => {
-                libraryTargetToken.current += 1;
-                setLibraryTarget({
-                  sourceItemId,
-                  origin: "wiki",
-                  ...(atomicNoteId ? { atomicNoteId } : {}),
-                  ...(passage ? { passage } : {}),
-                  token: libraryTargetToken.current
-                });
-                setActiveView("library");
-              }}
+              active={activeView === "wiki"}
+              noticeToken={wikiNoticeToken}
+              onOpenLibrary={() => goToView("library")}
+              onOpenSource={openAskSource}
             />
           </div>
           {activeView === "settings" ? (
@@ -840,15 +809,6 @@ export function App({
               onSelectObsidianVault={selectObsidianVault}
               onScopeChange={selectSettingsScope}
               onToast={(message, tone) => pushToast(t(message), tone)}
-            />
-          ) : activeView === "automation" ? (
-            <KnowledgeAutomationView
-              t={t}
-              contentLanguage={appSettings.contentLanguage}
-              onSettings={(scope) => {
-                setActiveSettingsScope(scope);
-                setActiveView("settings");
-              }}
             />
           ) : activeView === "import" ? (
             <ImportView
@@ -875,18 +835,7 @@ export function App({
               }
             />
           ) : activeView === "jobs" ? (
-            <>
-              <KnowledgeAutomationView
-                compact
-                t={t}
-                contentLanguage={appSettings.contentLanguage}
-                onSettings={(scope) => {
-                  setActiveSettingsScope(scope);
-                  setActiveView("settings");
-                }}
-              />
-              <JobsView t={t} showHistoryCleanup={false} />
-            </>
+            <JobsView t={t} showHistoryCleanup={false} />
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
           ) : activeView === "knowledgeGraph" ? (

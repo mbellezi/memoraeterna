@@ -1985,6 +1985,16 @@
       "incomplete": "Analisi interrotta dopo {judged} di {candidates} fonti candidate: il budget di token in ingresso è esaurito"
     }
   },
+  "topics": {
+    "placeholder": {
+      "title": "I tuoi argomenti stanno arrivando",
+      "body": "La vecchia wiki è stata rimossa e il nuovo albero degli argomenti arriverà in un prossimo aggiornamento. Le tue fonti e le tue note sono nella Libreria, e Chiedi risponde a partire da esse.",
+      "openLibrary": "Apri la Libreria",
+      "ask": "Chiedi",
+      "notice": "Quel link puntava a una pagina della vecchia wiki, che non esiste più.",
+      "dismiss": "Chiudi"
+    }
+  },
   "wiki": {
     "remainingReferences": "Riferimenti",
     "treeWidth": "Larghezza dell’albero: {width} pixel",

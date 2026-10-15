@@ -1990,6 +1990,16 @@
       "incomplete": "Análise interrompida após {judged} de {candidates} fontes candidatas: o orçamento de tokens de entrada se esgotou"
     }
   },
+  "topics": {
+    "placeholder": {
+      "title": "Seus tópicos estão a caminho",
+      "body": "A wiki antiga foi removida, e a nova árvore de tópicos chega em uma próxima atualização. Suas fontes e notas estão na Biblioteca, e o botão Perguntar responde com base nelas.",
+      "openLibrary": "Abrir a Biblioteca",
+      "ask": "Perguntar",
+      "notice": "Esse link apontava para uma página da wiki antiga, que não existe mais.",
+      "dismiss": "Dispensar"
+    }
+  },
   "wiki": {
     "remainingReferences": "Referências",
     "treeWidth": "Largura da árvore: {width} pixels",
