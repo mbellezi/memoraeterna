@@ -1,6 +1,6 @@
 # Memora Eterna 2.0 refactoring plan
 
-**Current phase: F0 (weeks 1-2).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
+**Current phase: F1b (weeks 5-6).** Branch: `refactoring` (from tag `pre-strangler`). This document holds the
 target architecture and the roadmap. Durable invariants live in `RULES.md` and `rules/`; numbers here are
 starting points unless marked measured.
 
@@ -47,6 +47,11 @@ concurrency and automatic correction.
 14. **Claims are no longer extracted** (2026-10-14): knowledge-graph extraction returns only entities and
     relations. Claims cost ~25% of graph output and were never shown; the `claims` table stays read-only.
     "What sources say about X" is served by atomic notes linked to entities.
+15. **F1a exit re-based** (2026-10-15): matching quality is measured on pinned notes (extraction served from
+    the cassette) because two extraction samples differ more than two matchers do; the old 27/28 held-out was
+    at the 95th percentile of its own decider noise (~17% of samples reach it). F1a closes on ≤1/3 of the v6
+    time per note, 0/35 forbidden and ≥27/28 expected on notes or sources; note-layer coverage becomes an
+    F3 target (`docs/kpi-f1a.md`).
 
 ## 3. The five swaps
 
@@ -335,7 +340,8 @@ coherent by the owner and ambiguity ≤30% *(cal.)*, otherwise retune (Louvain o
       criteria (0 coverage changes on settings save; other routines run after an injected failure) are
       dropped by decision 4: routines are replaced in F4.
 
-Exit: matching per note ≤1/3 of the v6 baseline with fixture ≥27/28 expected and 0/35 forbidden; injected
+Exit (re-based by decision 15): matching per note ≤1/3 of the v6 baseline, fixture 0/35 forbidden and
+≥27/28 expected on notes or sources (measured: 2.96 s/note, 0/35, 27/28; note layer 22-24/28); injected
 sibling failure does not delay others; 0 new orphan roots; 100% of new interactive imports produce chunks
 and notes; a 200-link page makes ≤2 IPC calls per cycle; Ask during import has 0 timeouts and waits for at
 most one in-flight call.
@@ -396,12 +402,14 @@ rating ≥80% of 30 topics coherent and well named; undo restores exact placemen
       `relation.explain` with cache; NOT_RELATED veto.
 - [ ] Incremental per-source matching; source aggregation and discovery pairs; SQL fixes (search_tsv,
       raw-distance HNSW, no Cartesian join).
+- [ ] Note-layer coverage on pinned notes (decision 15): measure with several decider samples; missing
+      metadata (always-empty entities/tags/concepts) counts as an absent signal, not 0, re-frozen on tuning.
 - [ ] Bake-off on the held-out fixture plus ~300 owner-labeled pairs (1.5-2.5 h): decision-only generative,
       Qwen3-Reranker-0.6B, bge-reranker-v2-m3, and OpenAI Decisions if the owner provides a key and budget.
 - [ ] Evidence card and ego-graph v1 on the Note page (graph canvas extracted from the dashboard, colours
       from tokens); graph extraction once; claims stopped.
 
-Exit: fixture ≥27/28 expected, 0/35 forbidden, ≤5% loss of today's reverse-only acceptances; 200 notes end
+Exit: fixture ≥27/28 expected on the note layer over pinned notes (mean of several samples), 0/35 forbidden, ≤5% loss of today's reverse-only acceptances; 200 notes end
 to end in ≤4-8 min local depending on Spike A (today ~40 min); 0 prose tokens for rejected candidates; a
 failing source does not delay siblings; 24 h soak with 0 calls past deadline and repairs ≤2%; ≤40 generative
 calls per reference chapter *(cal.)*.

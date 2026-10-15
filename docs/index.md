@@ -36,6 +36,8 @@ dated measurements, not rules.
   topic tree built on real embeddings.
 - [kpi-golden.md](kpi-golden.md) — the golden library baseline: pipeline time, AI calls, first v6
   matching measurement and replay determinism.
+- [kpi-f1a.md](kpi-f1a.md) — F1a measurements: matching fixture on pinned notes, why the note layer reads
+  22-24/28, and the evidence for the other F1a exit criteria.
 - [golden-library.md](golden-library.md) — the public reference library, DEV-only
   AI cassettes (record/replay) and the golden runner.
 
