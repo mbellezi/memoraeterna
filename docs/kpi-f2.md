@@ -20,3 +20,17 @@ totalmente a wiki antiga"). Only the DEV profile (`~/Library/Application Support
 Not checked at B2: the Wiki screen's empty state and one Ask question in the running window (covered by
 `verify-consultation.ts` on a scratch database and the renderer tests). The verified dump and the cold copy are
 kept until the owner asks to remove them; the old wiki can be read by restoring the dump into a scratch cluster.
+
+## Wave 2: rankers and the pure engine (2026-10-15)
+
+| Measure | Result | Reference |
+| --- | --- | --- |
+| Ranker, MLX Qwen3-Reranker-0.6B: single pair p50 / p95 | 46.8 / 48.8 ms; 33.3 ms per pair in a 20-document call | bound 75 ms |
+| Ranker, GGUF Q8_0 fallback: single pair p50 / p95 | 52.8 / 67.8 ms; 56.0 ms per pair in a 20-document call | bound 150 ms |
+| Ranker model-card pair (log-odds) | MLX 7.625 / −12.277; GGUF 7.271 / −12.000 | 7.625 / −11.375 ±1 |
+| Ranker margin relevant vs irrelevant | en 19.5 / 19.9, pt-BR 19.3 / 19.2 | ≥0.5 |
+| Replay parity on corpus-notitle (18,632 notes, seed 20261014) | depth 3.689, fan-out 4-9 84.8%, leaf purity 91.6%, reachability 100%, 0 hard violations, 11 Areas, 34 s build | Spike B 3.69, 85%, 92% |
+| PLACE per note (decide + apply), mean / p95 | 0.17 / 0.21 ms; 15.5% gated, 98.1% admitted to a leaf | Spike B 13.8-16.4% gated |
+| Mis-parent audit at depths 2 / 3 / 4 | 3.13 / 1.26 / 0.71% (17 ms) | Spike B 3.1 / 1.3 / 0.7% |
+| REBALANCE settle on that build | 0.2 s, 20 operations, 1.31% of items moved, 0 hard violations | — |
+| Undo | exact (byte-equal dump, bit-equal stats) over 1,000 random sequences and a 1,500-seed stress run | — |

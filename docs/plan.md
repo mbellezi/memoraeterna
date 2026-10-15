@@ -458,12 +458,12 @@ Wave 1b (the legacy wipe; gate W at the end):
       (decision 4).
 
 Wave 2:
-- [ ] T06 Dedicated MLX and GGUF ranker adapters with artifact validation; generative models lose the
+- [x] T06 Dedicated MLX and GGUF ranker adapters with artifact validation; generative models lose the
       `reranking` tag (D17).
-- [ ] T07 Deterministic PLACE, gate rule, secondaries, root vector, human operations and exact undo (pure).
-- [ ] T08 REBALANCE, stability controls, audit and Hungarian rebuild mapping (pure).
-- [ ] T09 Offline replay (chronological, shuffled, by domain), Louvain detector and calibration harness.
-- [ ] T38r Remove the legacy wiki, Automation and Organization screens (Q12); the Wiki screen becomes the
+- [x] T07 Deterministic PLACE, gate rule, secondaries, root vector, human operations and exact undo (pure).
+- [x] T08 REBALANCE, stability controls, audit and Hungarian rebuild mapping (pure).
+- [x] T09 Offline replay (chronological, shuffled, by domain), Louvain detector and calibration harness.
+- [x] T38r Remove the legacy wiki, Automation and Organization screens (Q12); the Wiki screen becomes the
       shell that hosts the empty state.
 
 Wave 3 (gate A at the end):
