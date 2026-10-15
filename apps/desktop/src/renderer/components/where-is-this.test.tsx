@@ -6,6 +6,7 @@ import type { ObjectLocateResult } from "@app/domain";
 import {
   WhereIsThisView,
   locateLoadDecision,
+  objectLabel,
   primaryPathAncestors,
   type WhereIsThisState
 } from "./WhereIsThis";
@@ -21,10 +22,10 @@ const located = (overrides: Partial<ObjectLocateResult> = {}): ObjectLocateResul
     { kind: "source", id: id(2), title: "Chapter One" },
     { kind: "source", id: id(3), title: "Section A" }
   ],
-  alsoIn: [{ kind: "topic", id: id(7), title: "Memory", legacy: true }],
+  alsoIn: [{ kind: "topic", id: id(7), title: "Memory" }],
   citedBy: [
-    { kind: "note", id: id(8), title: "Spacing flattens forgetting", legacy: false },
-    { kind: "question", id: id(9), title: "Why does spacing work?", legacy: true }
+    { kind: "note", id: id(8), title: "Spacing flattens forgetting" },
+    { kind: "topic", id: id(9), title: "" }
   ],
   counts: { alsoIn: 1, citedBy: 2, notes: 4, passages: 12, children: 0 },
   ...overrides
@@ -67,7 +68,27 @@ describe("Where is this panel", () => {
     expect(html).toContain('Section A<span class="sr-only"> · you are here</span>');
   });
 
-  it("lists the other places and the citations, marking legacy wiki pages, in an inline section", () => {
+  it("starts the path at the root of the topic tree and goes through the topics to the sources", () => {
+    const html = render(
+      ready(
+        located({
+          primaryPath: [
+            { kind: "topic", id: id(30), title: "" },
+            { kind: "topic", id: id(31), title: "Memory" },
+            { kind: "topic", id: id(32), title: "" },
+            { kind: "source", id: id(1), title: "The Book" },
+            { kind: "source", id: id(3), title: "Section A" }
+          ]
+        })
+      )
+    );
+    // The root has no title and a topic not named yet has none: each reads in the person's language.
+    const crumbs = [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]);
+    expect(crumbs.slice(0, 4)).toEqual(["All topics", "Memory", "Unnamed topic", "The Book"]);
+    expect(html).not.toMatch(/<button[^>]*>Section A<\/button>/);
+  });
+
+  it("lists the other topics and the citations in an inline section, with no legacy marker", () => {
     const html = render(ready());
     expect(html).not.toContain("<dialog");
     expect(html).not.toContain('role="dialog"');
@@ -75,12 +96,22 @@ describe("Where is this panel", () => {
     expect(html).toContain("Cited by · 2");
     expect(html).toMatch(/<button[^>]*>Memory<\/button>/);
     expect(html).toMatch(/<button[^>]*>Spacing flattens forgetting<\/button>/);
-    expect(html).toContain("Legacy wiki");
-    expect(html).toContain(escaped(t("objects.whereIsThis.legacyHint")));
+    expect(html).toMatch(/<button[^>]*>Unnamed topic<\/button>/);
+    expect(html).not.toMatch(/legacy/i);
     // Each entry says what kind of object it is.
-    for (const kind of ["Topic", "Note", "Question"]) expect(html).toContain(`>${kind}<`);
-    // The note citing it is not marked legacy: two legacy badges (topic, question) only.
-    expect(html.match(/Legacy wiki/g)).toHaveLength(2);
+    for (const kind of ["Topic", "Note"]) expect(html).toContain(`>${kind}<`);
+  });
+
+  it("labels what has no title by what it is", () => {
+    const topic = (title: string) => ({ kind: "topic" as const, id: id(40), title });
+    expect(objectLabel(t, topic("Memory"), 0)).toBe("Memory");
+    expect(objectLabel(t, topic(""), 0)).toBe("All topics");
+    expect(objectLabel(t, topic(""), 2)).toBe("Unnamed topic");
+    expect(objectLabel(t, topic(""))).toBe("Unnamed topic");
+    expect(objectLabel(t, { kind: "note", id: id(41), title: "" }, 0)).toBe("Note");
+    expect(objectLabel(createTranslator("pt-BR"), topic(""), 0)).toBe(
+      createTranslator("pt-BR")("topics.page.rootTitle")
+    );
   });
 
   it("shows the non-zero counts and says how many entries are not shown", () => {
@@ -141,8 +172,8 @@ describe("Where is this panel", () => {
       "objects.whereIsThis.alsoInEmpty",
       "objects.whereIsThis.citedBy",
       "objects.whereIsThis.citedByEmpty",
-      "objects.whereIsThis.legacy",
-      "objects.whereIsThis.legacyHint",
+      "topics.page.rootTitle",
+      "topics.page.unnamed",
       "objects.whereIsThis.more",
       "objects.whereIsThis.counts.passages",
       "objects.whereIsThis.counts.notes",
@@ -212,15 +243,32 @@ describe("Where is this as a section of an object page", () => {
     ]);
   });
 
-  it("shows placements as chips with their kind glyph and the legacy marker", () => {
+  it("shows placements as chips with their kind glyph", () => {
     const html = page(noteLocated());
     expect(html).toContain(">Also in<");
     expect(html).toContain(">Cited in<");
     expect(html).toContain("text-object-topic");
-    expect(html).toContain("text-object-question");
+    expect(html).toContain("text-object-note");
     expect(html).toContain('<span class="sr-only"> · Topic</span>');
-    expect(html.match(/Legacy wiki/g)).toHaveLength(2);
-    expect(html).toContain(escaped(t("objects.whereIsThis.legacyHint")));
+    expect(html).not.toMatch(/legacy/i);
+    expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it("shows the topic path of a note with no click, in front of its sources", () => {
+    const html = page(
+      noteLocated({
+        primaryPath: [
+          { kind: "topic", id: id(30), title: "" },
+          { kind: "topic", id: id(31), title: "Memory" },
+          { kind: "source", id: id(1), title: "The Book" },
+          { kind: "source", id: id(2), title: "Chapter One" },
+          { kind: "note", id: id(20), title: "Spacing helps" }
+        ]
+      })
+    );
+    const crumbs = [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]);
+    expect(crumbs.slice(0, 4)).toEqual(["All topics", "Memory", "The Book", "Chapter One"]);
+    expect(html).not.toContain("Spacing helps");
     expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 

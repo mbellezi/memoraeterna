@@ -338,7 +338,6 @@ export function LibraryView({
   onExitToSearch,
   onExitToKnowledgeGraph,
   onExitToWiki,
-  onOpenWikiPage,
   onOpenTopic
 }: {
   t: Translator;
@@ -354,8 +353,6 @@ export function LibraryView({
   onExitToWiki?: () => void;
   onExitToSearch?: () => void;
   onExitToKnowledgeGraph?: () => void;
-  /** Opens a legacy wiki page (a placement or citation listed by "Where is this"). */
-  onOpenWikiPage?: (pageId: string) => void;
   /** Opens a topic of the topic tree (a placement or a path segment listed by "Where is this"). */
   onOpenTopic?: (topicId: string) => void;
 }) {
@@ -729,12 +726,8 @@ export function LibraryView({
   }
 
   // Where "Where is this" leads: a source at its place in the hierarchy, a note as its page or a
-  // legacy wiki page. The current path is not pushed again, unless a note page covers it.
+  // topic. The current path is not pushed again, unless a note page covers it.
   function navigateObject(navigation: OpenableNavigation) {
-    if (navigation.type === "legacyPage") {
-      onOpenWikiPage?.(navigation.pageId);
-      return;
-    }
     if (navigation.type === "topic") {
       onOpenTopic?.(navigation.topicId);
       return;

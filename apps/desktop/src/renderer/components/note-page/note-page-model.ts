@@ -351,6 +351,15 @@ export function hasUnsavedEdit(edit: { base: NoteDraft; draft: NoteDraft } | nul
 }
 
 /**
+ * Whether opening a "Where is this" target leaves the Note page mounted underneath: a topic opens in
+ * the Wiki over the Library, so an unsaved edit survives and nothing has to ask first. Every other
+ * target replaces the page and asks when an edit would be lost.
+ */
+export function keepsNotePageMounted(navigation: { type: string }): boolean {
+  return navigation.type === "topic";
+}
+
+/**
  * A history listener (Back, Forward, Cmd-[ and Cmd-], mouse buttons) that holds the move while an
  * unsaved edit is open and asks instead; with nothing unsaved it lets the move through.
  */

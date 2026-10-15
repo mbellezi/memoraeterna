@@ -14,11 +14,11 @@ export class ObjectsService {
   constructor(private readonly getPool: () => PgPool | null) {}
 
   /**
-   * Where an object is: its primary path from the library root, the legacy wiki pages that include
-   * it, the objects that cite it and counts, in one read. Resolves to null when the object does not
-   * exist. Sources and notes are the kinds that have pages today; the others fail until their pages
-   * exist (topics, questions and entities arrive with the Topic Tree Engine and the unified
-   * workspace).
+   * Where an object is, in one read (D24): its primary path (the topics from the root of the topic
+   * tree down to the topic it is placed in, then its source chain), its other topics, the objects
+   * that cite it and counts. Resolves to null when the object does not exist. Sources and notes are
+   * the kinds that have a location today; the others fail until they have one (topics open by their
+   * own address, questions and entities arrive with the unified workspace).
    */
   async locate(input: unknown): Promise<ObjectLocateResult | null> {
     const { address } = ObjectLocateInputSchema.parse(input);

@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { itemKey, placementRecord, topicRecord } from "@app/domain/topic-tree";
+
 import {
   closePgPool,
   createChunkRepository,
@@ -12,18 +14,27 @@ import {
   createObjectLocateRepository,
   createPgPool,
   createSourceItemRepository,
+  createTopicTreeRepository,
   PostgresSidecarManager,
   resolvePostgresSidecarPaths,
   runMigrations,
   type PgPool
 } from "../index.js";
-import { ObjectLocateResultSchema, objectLocateListLimit } from "@app/domain";
+import {
+  ObjectLocateResultSchema,
+  objectLocateListLimit,
+  objectLocatePathLimit,
+  objectLocateTopicPathLimit
+} from "@app/domain";
 
 /**
- * Real-database check of `objects.locate` (the read-only locate repository): the primary path of
- * sources and notes, the legacy wiki placements and citations, cross-source notes, counts, caps and
- * missing objects, on a throwaway PostgreSQL sidecar migrated from scratch. Latency at scale is
- * measured by `scripts/objects/locate-benchmark.ts`.
+ * Real-database check of `objects.locate` (the read-only locate repository, docs/f2-decisions.md
+ * D24): the topic path in front of the source chain for notes and sources, secondary placements as
+ * "also in", the tree root and unnamed topics, objects the tree does not hold, a retired tree, the
+ * deepest topic path, notes citing a source, counts, caps, missing objects and parent cycles, on a
+ * throwaway PostgreSQL sidecar migrated from scratch. The topic tree is written through
+ * `topicTreeRepository` (D9). Latency at scale is measured by
+ * `scripts/objects/locate-benchmark.ts`.
  */
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workspaceRoot = resolve(packageRoot, "../..");
@@ -42,11 +53,6 @@ const manager = new PostgresSidecarManager({
 let pool: PgPool | null = null;
 try {
   const connection = await manager.start();
-  // Migration 0052 fences new legacy content (D40) and this scratch database seeds legacy pages
-  // on purpose. The database default is set before the pool opens, so every connection inherits it.
-  const setup = createPgPool({ connectionString: connection.connectionString, max: 1 });
-  await setup.query("alter database memora_object_locate set memora.legacy_fixture = 'on'");
-  await closePgPool(setup);
   pool = createPgPool({ connectionString: connection.connectionString, max: 3 });
   const db = pool;
   await runMigrations(db, resolve(packageRoot, "drizzle"));
@@ -196,82 +202,76 @@ try {
   });
   await db.query("delete from source_items where id = $1", [gone.id]);
 
-  // Legacy wiki pages: membership (alsoIn) and current-revision dependencies or evidence (citedBy).
-  async function addPage(
-    title: string,
-    kind: "topic" | "entity" | "synthesis" | "collection",
-    archived = false
-  ) {
-    const id = randomUUID();
-    const revisionId = randomUUID();
-    await db.query("insert into wiki_pages (id, title, kind, archived) values ($1, $2, $3, $4)", [
-      id,
-      title,
-      kind,
-      archived
-    ]);
-    await db.query(
-      "insert into wiki_page_revisions (id, page_id, number, origin, content, content_hash) values ($1, $2, 1, 'verify', '{}'::jsonb, $3)",
-      [revisionId, id, revisionId]
-    );
-    await db.query("update wiki_pages set current_revision_id = $2 where id = $1", [
-      id,
-      revisionId
-    ]);
-    return { id, revisionId };
-  }
-  async function member(
-    page: { id: string; revisionId: string },
-    targetKind: string,
-    targetId: string
-  ) {
-    const groupId = randomUUID();
-    await db.query(
-      "insert into wiki_toc_groups (id, page_id, revision_id, snapshot) values ($1, $2, $3, '{}'::jsonb)",
-      [groupId, page.id, page.revisionId]
-    );
-    await db.query(
-      "insert into wiki_memberships (id, page_id, group_id, target_kind, target_id, position, snapshot) values ($1, $2, $3, $4, $5, 0, '{}'::jsonb)",
-      [randomUUID(), page.id, groupId, targetKind, targetId]
-    );
-  }
-  const depend = (revisionId: string, kind: string, inputId: string) =>
-    db.query(
-      "insert into wiki_dependencies (revision_id, section_id, kind, input_id, fingerprint, snapshot) values ($1, $2, $3, $4, 'f', '{}'::jsonb)",
-      [revisionId, randomUUID(), kind, inputId]
-    );
-  const evidence = (pageId: string, sourceId: string, documentId: string, chunkId: string) =>
-    db.query(
-      "insert into wiki_evidence (page_id, source_item_id, document_id, chunk_id, snapshot) values ($1, $2, $3, $4, '{}'::jsonb)",
-      [pageId, sourceId, documentId, chunkId]
-    );
-
-  const topic = await addPage("Topic page", "topic");
-  await member(topic, "source", section.id);
-  await depend(topic.revisionId, "source", section.id);
-  const entityPage = await addPage("Entity page", "entity");
-  await evidence(entityPage.id, section.id, current.documentId, chunkA);
-  await evidence(entityPage.id, section.id, current.documentId, chunkB);
-  const answer = await addPage("Saved answer", "synthesis");
-  await evidence(answer.id, section.id, current.documentId, chunkC);
-  const archivedPage = await addPage("Archived page", "topic", true);
-  await member(archivedPage, "source", section.id);
-  await evidence(archivedPage.id, section.id, current.documentId, chunkA);
-  const stale = await addPage("Older revision dependency", "topic");
-  const olderRevision = randomUUID();
-  await db.query(
-    "insert into wiki_page_revisions (id, page_id, number, origin, content, content_hash) values ($1, $2, 0, 'verify', '{}'::jsonb, 'old')",
-    [olderRevision, stale.id]
-  );
-  await depend(olderRevision, "source", section.id);
-  const noteMember = await addPage("Collection of notes", "collection");
-  await member(noteMember, "atomic_note", own);
-  const noteCiting = await addPage("Page using the note", "topic");
-  await depend(noteCiting.revisionId, "atomic_note", own);
-
   const locate = createObjectLocateRepository(db);
 
-  // A source: its chain from the root, legacy placements, citations and counts.
+  // Before any tree exists, every object has its source chain alone (no topic entries, no error).
+  const untreed = await locate.locateNote(own);
+  assert.deepEqual(
+    untreed?.primaryPath.map((item) => [item.kind, item.title]),
+    [
+      ["source", "The Book"],
+      ["source", "Chapter One"],
+      ["source", "Section A"],
+      ["note", "Own note"]
+    ],
+    "a library with no topic tree locates by its source chain"
+  );
+  assert.deepEqual(untreed?.alsoIn, []);
+
+  // The topic tree, written through the engine's repository: a root, an Area, two named topics and
+  // an unnamed one. The book is placed in "Spacing"; `own` in "Forgetting" with two secondary
+  // placements; `citing` in "Spacing"; the article waits at the root; the rest is not placed.
+  const trees = createTopicTreeRepository(db);
+  const treeInput = (id: string, rootId: string) => ({
+    id,
+    rootId,
+    spaceKey: "verify:locate:256",
+    embeddingProvider: "verify",
+    embeddingModel: "verify",
+    embeddingRuntime: "none",
+    dimensions: 256 as const,
+    config: {},
+    configHash: "verify",
+    seed: 1
+  });
+  const rootId = randomUUID();
+  const area = randomUUID();
+  const forgetting = randomUUID();
+  const spacing = randomUUID();
+  const unnamed = randomUUID();
+  const named = (title: string, position: number) =>
+    ({
+      role: "topic",
+      title,
+      nameState: "named",
+      nameSource: "llm",
+      nameLanguage: "en",
+      position
+    }) as const;
+  const tree = await trees.createTree(treeInput(randomUUID(), rootId));
+  const built = await trees.bootstrapSnapshot({
+    treeId: tree.id,
+    expectedGeneration: tree.generation,
+    titleKey: "topics.changeSets.build",
+    topics: [
+      topicRecord(area, rootId, named("Memory", 0)),
+      topicRecord(forgetting, area, named("Forgetting", 0)),
+      topicRecord(spacing, area, named("Spacing", 1)),
+      topicRecord(unnamed, area, { role: "topic", position: 2 })
+    ],
+    placements: [
+      { item: itemKey("note", own), placement: placementRecord(forgetting) },
+      { item: itemKey("note", own), placement: placementRecord(spacing, { rank: 1 }) },
+      { item: itemKey("note", own), placement: placementRecord(unnamed, { rank: 2 }) },
+      { item: itemKey("note", citing), placement: placementRecord(spacing) },
+      { item: itemKey("source", book.id), placement: placementRecord(spacing) },
+      { item: itemKey("source", article.id), placement: placementRecord(rootId) }
+    ]
+  });
+  assert.equal(built.kind, "applied", "the verification tree is written");
+  const topicRef = (id: string, title: string) => ({ kind: "topic", id, title });
+
+  // A source: the topics of its root source, then its chain, with citations and counts.
   const located = await locate.locateSource(section.id);
   assert.ok(located);
   ObjectLocateResultSchema.parse(located);
@@ -279,37 +279,38 @@ try {
   assert.deepEqual(
     located.primaryPath.map((item) => [item.kind, item.title]),
     [
+      ["topic", ""],
+      ["topic", "Memory"],
+      ["topic", "Spacing"],
       ["source", "The Book"],
       ["source", "Chapter One"],
       ["source", "Section A"]
     ],
-    "root source > chapter > section"
+    "the root, Memory, Spacing (where the book sits), then root source > chapter > section"
   );
   assert.deepEqual(
-    located.alsoIn.map((item) => [item.kind, item.title, item.legacy]),
-    [["topic", "Topic page", true]],
-    "an archived page and a page that merely cites the source are not placements"
+    located.primaryPath.slice(0, 3).map((item) => item.id),
+    [rootId, area, spacing],
+    "the path names the topics by identity, root first"
   );
+  assert.deepEqual(located.alsoIn, [], "a root source has no secondary placement");
   assert.deepEqual(
-    located.citedBy.map((item) => [item.kind, item.title, item.legacy]),
+    located.citedBy.map((item) => [item.kind, item.title]),
     [
-      ["note", "Citing note", false],
-      ["note", "Retained attribution", false],
-      ["entity", "Entity page", true],
-      ["question", "Saved answer", true],
-      ["topic", "Topic page", true]
+      ["note", "Citing note"],
+      ["note", "Retained attribution"]
     ],
-    "cross-source notes first, then current legacy pages by kind; archived, superseded and old-revision citations are left out"
+    "cross-source notes; archived and superseded notes are left out"
   );
   assert.deepEqual(
     located.counts,
-    { alsoIn: 1, citedBy: 5, notes: 5, passages: 3, children: 0 },
+    { alsoIn: 0, citedBy: 2, notes: 5, passages: 3, children: 0 },
     "notes match the source's Notes tab (rejected excluded); passages count current chunks only"
   );
   const bookResult = await locate.locateSource(book.id);
   assert.deepEqual(
     bookResult?.primaryPath.map((item) => item.title),
-    ["The Book"]
+    ["", "Memory", "Spacing", "The Book"]
   );
   assert.deepEqual(
     [bookResult?.counts.children, bookResult?.counts.passages, bookResult?.counts.notes],
@@ -317,39 +318,54 @@ try {
   );
   assert.equal((await locate.locateSource(chapter.id))?.counts.children, 1);
 
-  // A note: owning source chain, then the note itself.
+  // A note: its own topics, the owning source chain, then the note itself.
   const ownNote = await locate.locateNote(own);
   assert.ok(ownNote);
   ObjectLocateResultSchema.parse(ownNote);
   assert.deepEqual(
     ownNote.primaryPath.map((item) => [item.kind, item.title]),
     [
+      ["topic", ""],
+      ["topic", "Memory"],
+      ["topic", "Forgetting"],
       ["source", "The Book"],
       ["source", "Chapter One"],
       ["source", "Section A"],
       ["note", "Own note"]
-    ]
+    ],
+    "a note takes its own primary topic, not its book's"
   );
   assert.deepEqual(ownNote.object, { kind: "note", id: own, title: "Own note" });
   assert.deepEqual(
-    ownNote.alsoIn.map((item) => [item.kind, item.title, item.legacy]),
-    [["topic", "Collection of notes", true]]
+    ownNote.alsoIn,
+    [topicRef(spacing, "Spacing"), topicRef(unnamed, "")],
+    "secondary placements in rank order; an unnamed topic has an empty title"
   );
-  assert.deepEqual(
-    ownNote.citedBy.map((item) => item.title),
-    ["Page using the note"]
-  );
-  assert.deepEqual(ownNote.counts, { alsoIn: 1, citedBy: 1, notes: 0, passages: 2, children: 0 });
+  assert.deepEqual(ownNote.citedBy, [], "no overview cites a note before the overview tables");
+  assert.deepEqual(ownNote.counts, { alsoIn: 2, citedBy: 0, notes: 0, passages: 2, children: 0 });
   const knowledgeNote = await locate.locateNote(citing);
   assert.deepEqual(
     knowledgeNote?.primaryPath.map((item) => item.title),
-    ["Unrelated article", "Citing note"],
+    ["", "Memory", "Spacing", "Unrelated article", "Citing note"],
     "a knowledge-owned note hangs from the source it was created from"
+  );
+  assert.deepEqual(
+    (await locate.locateSource(article.id))?.primaryPath.map((item) => [item.kind, item.title]),
+    [
+      ["topic", ""],
+      ["source", "Unrelated article"]
+    ],
+    "an item waiting at the root has the root as its topic path"
   );
   assert.deepEqual(
     (await locate.locateNote(orphan))?.primaryPath.map((item) => item.title),
     ["Orphan note"],
-    "a note whose source is gone still locates"
+    "a note the tree does not hold, whose source is gone, still locates"
+  );
+  assert.deepEqual(
+    (await locate.locateNote(rejected))?.primaryPath.map((item) => item.kind),
+    ["source", "source", "source", "note"],
+    "a rejected note has no placement and keeps its source chain"
   );
   assert.equal((await locate.locateNote(rejected))?.object.title, "Rejected");
 
@@ -359,29 +375,109 @@ try {
   assert.equal(await locate.locateNote(section.id), null);
   assert.equal(await locate.locateSource(own), null);
 
-  // The lists are capped; the counts are not.
+  // The lists are capped; the counts are not. Citations are the notes that derive from a source.
   const crowded = await source("StandaloneArticle", "Crowded article");
-  for (let index = 0; index < objectLocateListLimit + 5; index += 1)
-    await member(
-      await addPage(`Page ${String(index).padStart(2, "0")}`, "topic"),
-      "source",
-      crowded.id
-    );
+  const crowdedChunks = await addChunks(crowded.id, 1);
+  for (let index = 0; index < objectLocateListLimit + 5; index += 1) {
+    const note = await addNote({
+      title: `Citation ${String(index).padStart(2, "0")}`,
+      createdFrom: article.id,
+      ownership: "knowledge",
+      chunk: articleChunks.chunkIds[0]!
+    });
+    await link(note, crowded.id, crowdedChunks.chunkIds[0]!);
+  }
   const crowdedResult = await locate.locateSource(crowded.id);
-  assert.equal(crowdedResult?.alsoIn.length, objectLocateListLimit);
-  assert.equal(crowdedResult?.counts.alsoIn, objectLocateListLimit + 5);
-  assert.equal(crowdedResult?.alsoIn[0]?.title, "Page 00", "lists are ordered by title");
+  assert.equal(crowdedResult?.citedBy.length, objectLocateListLimit);
+  assert.equal(crowdedResult?.counts.citedBy, objectLocateListLimit + 5);
+  assert.equal(crowdedResult?.citedBy[0]?.title, "Citation 00", "lists are ordered by title");
+  ObjectLocateResultSchema.parse(crowdedResult);
 
-  // A parent cycle (never written by the application) still terminates.
+  // The deepest tree the engine allows (the root and seven levels) fits the contract with the
+  // deepest source chain: the topic path and the source chain are bounded separately.
+  const deepTopics = Array.from({ length: objectLocateTopicPathLimit - 1 }, () => randomUUID());
+  const deepNote = await addNote({
+    title: "Deep note",
+    createdFrom: section.id,
+    chunk: chunkA
+  });
+  const deepRoot = randomUUID();
+  const client = await db.connect();
+  try {
+    await client.query("begin");
+    const replacement = await trees.replaceActiveTree(client, treeInput(randomUUID(), deepRoot));
+    const deepBuilt = await trees.bootstrapSnapshot(
+      {
+        treeId: replacement.id,
+        expectedGeneration: replacement.generation,
+        titleKey: "topics.changeSets.build",
+        topics: deepTopics.map((id, level) =>
+          topicRecord(
+            id,
+            level === 0 ? deepRoot : deepTopics[level - 1]!,
+            named(`Level ${level + 1}`, 0)
+          )
+        ),
+        placements: [
+          { item: itemKey("note", deepNote), placement: placementRecord(deepTopics.at(-1)!) }
+        ]
+      },
+      { client }
+    );
+    assert.equal(deepBuilt.kind, "applied", "the deep tree is written");
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+  const deepResult = await locate.locateNote(deepNote);
+  assert.ok(deepResult);
+  ObjectLocateResultSchema.parse(deepResult);
+  assert.deepEqual(
+    deepResult.primaryPath.slice(0, objectLocateTopicPathLimit).map((item) => item.title),
+    ["", ...deepTopics.map((_, level) => `Level ${level + 1}`)],
+    "the root and seven levels"
+  );
+  assert.equal(
+    deepResult.primaryPath.length,
+    objectLocateTopicPathLimit + 4,
+    "eight topics, three sources and the note"
+  );
+
+  // The first tree is retired: its placements stay in the table but no longer place anything.
+  assert.equal(
+    (await db.query("select 1 from topic_placements where note_id = $1", [own])).rowCount,
+    3,
+    "the retired tree keeps its rows"
+  );
+  const afterReplace = await locate.locateNote(own);
+  assert.deepEqual(
+    afterReplace?.primaryPath.map((item) => item.kind),
+    ["source", "source", "source", "note"],
+    "a retired tree places nothing"
+  );
+  assert.deepEqual(afterReplace?.alsoIn, []);
+  assert.equal(afterReplace?.counts.alsoIn, 0);
+
+  // A parent cycle in the sources (never written by the application) still terminates.
   await db.query("update source_items set parent_source_item_id = $2 where id = $1", [
     book.id,
     section.id
   ]);
   const cyclic = await locate.locateSource(section.id);
-  assert.ok(cyclic && cyclic.primaryPath.length <= 32, "the path walk is bounded");
+  assert.ok(
+    cyclic && cyclic.primaryPath.length <= objectLocatePathLimit,
+    "the source walk is bounded"
+  );
   // A note takes one slot of the path itself, so even on the deepest chain it fits the contract.
   const cyclicNote = await locate.locateNote(own);
-  assert.equal(cyclicNote?.primaryPath.length, 32, "the note's walk stops one ancestor earlier");
+  assert.equal(
+    cyclicNote?.primaryPath.length,
+    objectLocatePathLimit,
+    "the note's walk stops one ancestor earlier"
+  );
   ObjectLocateResultSchema.parse(cyclicNote);
   await db.query("update source_items set parent_source_item_id = null where id = $1", [book.id]);
 
@@ -392,10 +488,11 @@ try {
   console.info(
     JSON.stringify({
       verified: [
-        "source: primary path root > chapter > section, legacy placements, citations (cross-source notes, entity, question and topic pages), counts",
-        "archived pages, superseded or archived notes, non-current page revisions and superseded document chunks are excluded",
-        "note: owning source chain plus the note; knowledge-owned and orphaned notes locate; rejected notes still locate",
-        "missing objects and kind mix-ups return null; lists are capped with full counts; parent cycles terminate",
+        "no tree: the source chain alone; with a tree: root > topics > root source > chapter > section, and for a note its own topics in front of its source's chain",
+        "secondary placements are 'also in' in rank order; the tree root and an unnamed topic come back with empty titles; items at the root and items the tree does not hold locate",
+        "citations: cross-source notes; archived, superseded and rejected notes and superseded document chunks are excluded; lists capped with full counts",
+        "the deepest topic path (root and seven levels) fits the contract; a retired tree places nothing",
+        "missing objects and kind mix-ups return null; parent cycles terminate",
         "both statements EXPLAIN on the migrated schema"
       ]
     })

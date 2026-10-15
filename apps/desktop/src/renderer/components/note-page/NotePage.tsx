@@ -22,6 +22,7 @@ import {
   hasUnsavedEdit,
   isPristineDraft,
   keepShownRelations,
+  keepsNotePageMounted,
   nextAnnouncement,
   refreshRelationLimit,
   reviewErrorKind,
@@ -145,9 +146,9 @@ export function NotePage({
     if (hasUnsavedEdit(editing)) setLeaving({ go });
     else go();
   };
-  // A legacy wiki page opens in the Wiki and keeps this page, and its draft, mounted underneath.
+  // A topic opens in the Wiki and keeps this page, and its draft, mounted underneath.
   const opener = useObjectOpener((navigation) =>
-    navigation.type === "legacyPage" ? onNavigate(navigation) : leave(() => onNavigate(navigation))
+    keepsNotePageMounted(navigation) ? onNavigate(navigation) : leave(() => onNavigate(navigation))
   );
 
   useEffect(() => {

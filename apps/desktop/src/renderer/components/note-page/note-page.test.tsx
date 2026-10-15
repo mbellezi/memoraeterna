@@ -81,11 +81,20 @@ describe("Note page states", () => {
     expect(html.match(/<h2/g)!.length).toBe(4);
   });
 
-  it("shows where the note is with no click: the path of its sources", () => {
+  it("shows where the note is with no click: its topic path, then the path of its sources", () => {
     const html = render(ready());
     expect(html).toContain(">Main path<");
-    expect(html).toMatch(/<button[^>]*>Fictional classics<\/button>/);
-    expect(html).toMatch(/<button[^>]*>A fictional memory study<\/button>/);
+    const crumbs = [...html.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((match) => match[1]);
+    expect(crumbs).toEqual(
+      expect.arrayContaining([
+        "All topics",
+        "Memory",
+        "Fictional classics",
+        "A fictional memory study"
+      ])
+    );
+    expect(html.indexOf(">Memory<")).toBeLessThan(html.indexOf(">Fictional classics<"));
+    expect(html).toContain('<span class="truncate">Recall</span>');
   });
 
   it("never shows an identifier or a raw reference tag", () => {

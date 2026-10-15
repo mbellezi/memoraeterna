@@ -20,6 +20,7 @@ import {
   interpolateNodes,
   isPristineDraft,
   keepShownRelations,
+  keepsNotePageMounted,
   nextAnnouncement,
   noteActions,
   noteHeaderState,
@@ -308,6 +309,12 @@ describe("actions", () => {
     router.dispatch("forward", "native");
     expect(library).toHaveBeenCalledWith("forward");
     expect(ask).toHaveBeenCalledOnce();
+  });
+
+  it("opens a topic over the page without asking, and asks before any target that replaces it", () => {
+    expect(keepsNotePageMounted({ type: "topic" })).toBe(true);
+    for (const type of ["source", "note", "resolve", "none"])
+      expect(keepsNotePageMounted({ type }), type).toBe(false);
   });
 
   it("announces the same outcome twice by changing the live region's text", () => {

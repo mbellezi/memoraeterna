@@ -2,7 +2,6 @@ import {
   formatObjectAddress,
   parseObjectAddress,
   type ObjectLocateResult,
-  type ObjectPlacement,
   type ObjectRef
 } from "@app/domain";
 
@@ -123,8 +122,6 @@ export type ObjectNavigation =
   | { type: "source"; path: string[] }
   /** A note, shown in its owning source (the chain of source IDs from the root). */
   | { type: "note"; path: string[]; noteId: string }
-  /** A legacy wiki page, opened in the Wiki. */
-  | { type: "legacyPage"; pageId: string }
   /** A topic of the topic tree (`memora://topic/<id>`), opened in the Wiki. */
   | { type: "topic"; topicId: string }
   /** Needs `objects.locate` first: the target's own path decides where it opens. */
@@ -150,12 +147,8 @@ export function navigationForPathSegment(
   return { type: "source", path: sourceIds(path.slice(0, index + 1)) };
 }
 
-/**
- * An entry of "also in" or "cited by": legacy wiki pages open in the Wiki, a topic opens as itself
- * and the rest is located first.
- */
-export function navigationForPlacement(placement: ObjectPlacement): ObjectNavigation {
-  if (placement.legacy) return { type: "legacyPage", pageId: placement.id };
+/** An entry of "also in" or "cited by": a topic opens as itself and the rest is located first. */
+export function navigationForPlacement(placement: ObjectRef): ObjectNavigation {
   if (placement.kind === "topic") return { type: "topic", topicId: placement.id };
   return {
     type: "resolve",

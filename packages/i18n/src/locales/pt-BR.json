@@ -2640,8 +2640,6 @@
       "alsoInEmpty": "Não aparece em nenhum outro lugar.",
       "citedBy": "Citado por",
       "citedByEmpty": "Nada cita isto ainda.",
-      "legacy": "Wiki legada",
-      "legacyHint": "Uma página da wiki legada. Os tópicos vão substituí-la.",
       "more": "Mais {count} não exibidos",
       "counts": {
         "passages": "Trechos",

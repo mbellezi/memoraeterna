@@ -2635,8 +2635,6 @@
       "alsoInEmpty": "Non compare in nessun altro posto.",
       "citedBy": "Citato da",
       "citedByEmpty": "Nessuno lo cita ancora.",
-      "legacy": "Wiki precedente",
-      "legacyHint": "Una pagina della wiki precedente. Sarà sostituita dagli argomenti.",
       "more": "Altri {count} non mostrati",
       "counts": {
         "passages": "Frammenti",

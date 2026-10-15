@@ -146,16 +146,19 @@ describe("where an object leads", () => {
     expect(navigationForPathSegment(path.slice(0, 3), 2)).toEqual({ type: "none" });
   });
 
-  it("opens legacy wiki pages in the Wiki and locates everything else first", () => {
-    expect(
-      navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning", legacy: true })
-    ).toEqual({ type: "legacyPage", pageId: uuid(7) });
-    expect(
-      navigationForPlacement({ kind: "question", id: uuid(8), title: "Why?", legacy: true })
-    ).toEqual({ type: "legacyPage", pageId: uuid(8) });
-    expect(
-      navigationForPlacement({ kind: "note", id: uuid(9), title: "A note", legacy: false })
-    ).toEqual({ type: "resolve", address: `memora://note/${uuid(9)}` });
+  it("opens a topic as itself and locates everything else first", () => {
+    expect(navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning" })).toEqual({
+      type: "topic",
+      topicId: uuid(7)
+    });
+    expect(navigationForPlacement({ kind: "question", id: uuid(8), title: "Why?" })).toEqual({
+      type: "resolve",
+      address: `memora://question/${uuid(8)}`
+    });
+    expect(navigationForPlacement({ kind: "note", id: uuid(9), title: "A note" })).toEqual({
+      type: "resolve",
+      address: `memora://note/${uuid(9)}`
+    });
   });
 
   it("turns a located source into its chain and a located note into its source plus the note", () => {
@@ -177,9 +180,10 @@ describe("where an object leads", () => {
 
 describe("where a topic leads", () => {
   it("opens a topic placement, a topic segment of a path and a located topic as the topic itself", () => {
-    expect(
-      navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning", legacy: false })
-    ).toEqual({ type: "topic", topicId: uuid(7) });
+    expect(navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning" })).toEqual({
+      type: "topic",
+      topicId: uuid(7)
+    });
     const path = [ref("topic", 20), ref("topic", 21), ref("note", 22)];
     expect(navigationForPathSegment(path, 0)).toEqual({ type: "topic", topicId: uuid(20) });
     expect(navigationForPathSegment(path, 1)).toEqual({ type: "topic", topicId: uuid(21) });
@@ -191,10 +195,33 @@ describe("where a topic leads", () => {
     });
   });
 
-  it("keeps legacy wiki pages out of the topic tree", () => {
-    expect(
-      navigationForPlacement({ kind: "topic", id: uuid(7), title: "Learning", legacy: true })
-    ).toEqual({ type: "legacyPage", pageId: uuid(7) });
+  it("keeps the topics of a path out of the Library path of a source or a note", () => {
+    const path = [
+      ref("topic", 20, ""),
+      ref("topic", 21),
+      ref("source", 1),
+      ref("source", 2),
+      ref("note", 4)
+    ];
+    expect(navigationForPathSegment(path, 0)).toEqual({ type: "topic", topicId: uuid(20) });
+    expect(navigationForPathSegment(path, 2)).toEqual({ type: "source", path: [uuid(1)] });
+    expect(navigationForPathSegment(path, 3)).toEqual({
+      type: "source",
+      path: [uuid(1), uuid(2)]
+    });
+    expect(navigationForLocated(located("note", path))).toEqual({
+      type: "note",
+      path: [uuid(1), uuid(2)],
+      noteId: uuid(4)
+    });
+    expect(navigationForLocated(located("source", path.slice(0, 4)))).toEqual({
+      type: "source",
+      path: [uuid(1), uuid(2)]
+    });
+    // A note the library no longer holds a source for, but the tree does, has no Library path.
+    expect(navigationForLocated(located("note", [ref("topic", 20, ""), ref("note", 4)]))).toEqual({
+      type: "none"
+    });
   });
 
   it("opens a topic address as the topic and locates every other kind first", () => {

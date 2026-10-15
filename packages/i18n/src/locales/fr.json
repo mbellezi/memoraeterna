@@ -2642,8 +2642,6 @@
       "alsoInEmpty": "N'apparaît nulle part ailleurs.",
       "citedBy": "Cité par",
       "citedByEmpty": "Personne ne le cite encore.",
-      "legacy": "Ancien wiki",
-      "legacyHint": "Une page de l'ancien wiki. Les sujets la remplaceront.",
       "more": "{count} autres non affichés",
       "counts": {
         "passages": "Segments",

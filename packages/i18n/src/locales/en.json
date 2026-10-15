@@ -2637,8 +2637,6 @@
       "alsoInEmpty": "It is not placed anywhere else.",
       "citedBy": "Cited by",
       "citedByEmpty": "Nothing cites it yet.",
-      "legacy": "Legacy wiki",
-      "legacyHint": "A page of the legacy wiki. Topics will replace it.",
       "more": "{count} more not shown",
       "counts": {
         "passages": "Chunks",

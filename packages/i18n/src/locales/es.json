@@ -2644,8 +2644,6 @@
       "alsoInEmpty": "No aparece en ningún otro lugar.",
       "citedBy": "Citado por",
       "citedByEmpty": "Nada lo cita todavía.",
-      "legacy": "Wiki heredada",
-      "legacyHint": "Una página de la wiki heredada. Los temas la reemplazarán.",
       "more": "{count} más sin mostrar",
       "counts": {
         "passages": "Fragmentos",

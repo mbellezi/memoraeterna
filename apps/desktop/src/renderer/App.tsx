@@ -251,12 +251,6 @@ export function App({
   const openGraphNote = useStableCallback((sourceItemId: string, atomicNoteId: string) =>
     openLibrarySource({ sourceItemId, atomicNoteId, origin: "knowledgeGraph" })
   );
-  // A legacy wiki page listed by "Where is this" no longer exists: the Wiki opens with a notice.
-  const openWikiPage = useStableCallback(() => {
-    setWikiNoticeToken((current) => (current ?? 0) + 1);
-    setWikiHistory((current) => showInWiki(current, null));
-    setActiveView("wiki");
-  });
   // A citation of an answer from Ask in the Wiki opens its source; Back returns to the Wiki.
   const openAskSource = useStableCallback(
     (sourceItemId: string, atomicNoteId?: string, passage?: PassageAnchor) => {
@@ -283,7 +277,6 @@ export function App({
   // Where a click on the Topic page leads: another topic, or a source or note in the Library.
   const openWikiObject = useStableCallback((navigation: OpenableNavigation) => {
     if (navigation.type === "topic") openTopic(navigation.topicId);
-    else if (navigation.type === "legacyPage") openWikiPage();
     else {
       const target = libraryTargetForNavigation(navigation);
       if (target) openAskSource(target.sourceItemId, target.atomicNoteId);
@@ -828,7 +821,6 @@ export function App({
                 setLibraryTarget(null);
                 setActiveView("knowledgeGraph");
               }}
-              onOpenWikiPage={openWikiPage}
               onOpenTopic={openTopic}
             />
           </div>

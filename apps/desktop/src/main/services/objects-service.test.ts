@@ -14,7 +14,9 @@ const ids = {
   chapter: "00000000-0000-4000-8000-000000000002",
   note: "00000000-0000-4000-8000-000000000003",
   page: "00000000-0000-4000-8000-000000000004",
-  chunk: "00000000-0000-4000-8000-000000000005"
+  chunk: "00000000-0000-4000-8000-000000000005",
+  root: "00000000-0000-4000-8000-000000000006",
+  topic: "00000000-0000-4000-8000-000000000007"
 };
 
 const row = (overrides: Record<string, unknown> = {}) => ({
@@ -23,8 +25,12 @@ const row = (overrides: Record<string, unknown> = {}) => ({
     { id: ids.book, title: "Book" },
     { id: ids.chapter, title: "Chapter" }
   ],
-  alsoIn: [{ kind: "topic", id: ids.page, title: "Learning", legacy: true }],
-  citedBy: [{ kind: "note", id: ids.note, title: "A note", legacy: false }],
+  topicPath: [
+    { id: ids.root, title: "" },
+    { id: ids.topic, title: "Memory" }
+  ],
+  alsoIn: [{ kind: "topic", id: ids.page, title: "Learning" }],
+  citedBy: [{ kind: "note", id: ids.note, title: "A note" }],
   alsoInCount: "1",
   citedByCount: 1,
   notes: 4,
@@ -42,17 +48,19 @@ function setup(rows: unknown[] | null = [row()]) {
 }
 
 describe("ObjectsService.locate", () => {
-  it("locates a source with the stable contract: path from the root, placements, citations and counts", async () => {
+  it("locates a source with the stable contract: topics and sources from the root, placements, citations and counts", async () => {
     const { service, query } = setup();
     const result = await service.locate({ address: `memora://source/${ids.chapter}` });
     expect(result).toEqual({
       object: { kind: "source", id: ids.chapter, title: "Chapter" },
       primaryPath: [
+        { kind: "topic", id: ids.root, title: "" },
+        { kind: "topic", id: ids.topic, title: "Memory" },
         { kind: "source", id: ids.book, title: "Book" },
         { kind: "source", id: ids.chapter, title: "Chapter" }
       ],
-      alsoIn: [{ kind: "topic", id: ids.page, title: "Learning", legacy: true }],
-      citedBy: [{ kind: "note", id: ids.note, title: "A note", legacy: false }],
+      alsoIn: [{ kind: "topic", id: ids.page, title: "Learning" }],
+      citedBy: [{ kind: "note", id: ids.note, title: "A note" }],
       counts: { alsoIn: 1, citedBy: 1, notes: 4, passages: 12, children: 0 }
     });
     expect(ObjectLocateResultSchema.parse(result)).toEqual(result);
@@ -64,10 +72,12 @@ describe("ObjectsService.locate", () => {
     ]);
   });
 
-  it("ends the path of a note with the note itself", async () => {
+  it("ends the path of a note with the note itself, after its topics and its sources", async () => {
     const { service } = setup([row({ title: "A note" })]);
     const result = await service.locate({ address: `memora://note/${ids.note}` });
     expect(result?.primaryPath.map((item) => [item.kind, item.title])).toEqual([
+      ["topic", ""],
+      ["topic", "Memory"],
       ["source", "Book"],
       ["source", "Chapter"],
       ["note", "A note"]
@@ -119,10 +129,21 @@ describe("ObjectsService.locate", () => {
   });
 
   it("never passes an answer that breaks the contract to the renderer", async () => {
-    const { service } = setup([
-      row({ alsoIn: [{ kind: "wiki_page", id: ids.page, title: "x", legacy: true }] })
-    ]);
+    const { service } = setup([row({ alsoIn: [{ kind: "wiki_page", id: ids.page, title: "x" }] })]);
     await expect(service.locate({ address: `memora://source/${ids.chapter}` })).rejects.toThrow();
+  });
+
+  it("refuses a secondary placement that is not a topic, and sends no legacy flag", async () => {
+    const { service: wrongKind } = setup([
+      row({ alsoIn: [{ kind: "note", id: ids.page, title: "x" }] })
+    ]);
+    await expect(wrongKind.locate({ address: `memora://source/${ids.chapter}` })).rejects.toThrow();
+    // A stale row that still carries the removed flag loses it on the way to the renderer.
+    const { service: flagged } = setup([
+      row({ alsoIn: [{ kind: "topic", id: ids.page, title: "x", legacy: true }] })
+    ]);
+    const result = await flagged.locate({ address: `memora://source/${ids.chapter}` });
+    expect(result?.alsoIn).toEqual([{ kind: "topic", id: ids.page, title: "x" }]);
   });
 });
 

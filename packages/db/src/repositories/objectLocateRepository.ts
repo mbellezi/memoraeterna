@@ -3,28 +3,36 @@ import type { QueryResultRow } from "pg";
 import {
   objectLocateListLimit,
   objectLocatePathLimit,
+  objectLocateTopicPathLimit,
   type ObjectLocateResult,
-  type ObjectPlacement
+  type ObjectRef,
+  type ObjectTopicRef
 } from "@app/domain";
 
 import type { Queryable } from "./types.js";
 
 /**
- * Read-only location of an object (`objects.locate`): its primary path from the library root,
- * the other places it appears in (today the legacy wiki pages that include it), the objects that
- * cite it and a few counts, in one statement. Every lookup is by primary key or by an existing
- * index, so the cost does not grow with the size of the library; `npm run db:object-locate:verify`
- * and `scripts/objects/locate-benchmark.ts` check both the answers and the latency on a real
- * database. Canonical tables stay authoritative: nothing here writes.
+ * Read-only location of an object (`objects.locate`, docs/f2-decisions.md D24): its primary path
+ * (the topics from the root of the active tree down to the topic it is placed in, then the source
+ * chain from the library root), its secondary topic placements, the objects that cite it and a few
+ * counts, in one statement. Every lookup is by primary key or by an existing index, so the cost
+ * does not grow with the size of the library; `npm run db:object-locate:verify` and
+ * `scripts/objects/locate-benchmark.ts` check both the answers and the latency on a real
+ * database. Canonical tables stay authoritative: nothing here writes, and a library with no active
+ * tree, or an object the tree does not hold yet, simply has no topic entries.
  *
- * Legacy wiki pages (docs/plan.md F2 wipes them) are presented as topic, entity or question
- * placements marked `legacy`, with the wiki page ID as their ID.
+ * A note is placed on its own; a source is placed through its root source (only root sources are
+ * items of the tree). The tree root and a topic that is not named yet come back with an empty
+ * title: no placeholder is stored (D11) and the interface localizes the label.
  */
 interface LocateRow extends QueryResultRow {
   title: string | null;
+  /** The source chain, root first. */
   path: Array<{ id: string; title: string }>;
-  alsoIn: ObjectPlacement[];
-  citedBy: ObjectPlacement[];
+  /** The topics from the tree root to the primary topic, root first; empty when not placed. */
+  topicPath: Array<{ id: string; title: string }>;
+  alsoIn: ObjectTopicRef[];
+  citedBy: ObjectRef[];
   alsoInCount: number;
   citedByCount: number;
   notes: number;
@@ -42,53 +50,58 @@ const sourceChain = (start: string) => `chain as (
    where chain.depth < $3::int
 )`;
 
-/** Legacy wiki pages as placements: a saved answer is a question, an entity page an entity. */
-const pagePlacement = `jsonb_build_object(
-  'kind', case page.kind when 'entity' then 'entity' when 'synthesis' then 'question' else 'topic' end,
-  'id', page.id, 'title', page.title, 'legacy', true)`;
+/**
+ * The placements of one item in the active tree: its note, or the root source of a chain. A retired
+ * tree keeps its rows, so the active one is chosen first (a partial unique index holds it).
+ */
+const placements = (itemFilter: string) => `placed as (
+  select p.topic_id, p.rank
+    from topic_placements p
+   where ${itemFilter}
+     and p.tree_id = (select tree.id from topic_trees tree where tree.status = 'active')
+)`;
 
-const finalSelect = (objectTitle: string, citedFrom: string, counts: string) => `
+/** The primary topic and its ancestors up to the root, the primary topic first. */
+const topicChain = `topic_chain as (
+  select t.id, t.parent_id, t.title, 0 as depth
+    from placed join topics t on t.id = placed.topic_id
+   where placed.rank = 0 and t.retired_at is null
+  union all
+  select parent.id, parent.parent_id, parent.title, topic_chain.depth + 1
+    from topic_chain join topics parent on parent.id = topic_chain.parent_id
+   where topic_chain.depth < ${objectLocateTopicPathLimit - 1} and parent.retired_at is null
+)`;
+
+/** The secondary placements, in rank order. */
+const alsoInTopics = `also_in as (
+  select t.id, coalesce(t.title, '') as title, placed.rank
+    from placed join topics t on t.id = placed.topic_id
+   where placed.rank > 0 and t.retired_at is null
+)`;
+
+const finalSelect = (objectTitle: string, counts: string) => `
 select ${objectTitle} as title,
   coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'title', c.title) order by c.depth desc)
               from chain c), '[]'::jsonb) as path,
-  coalesce((select jsonb_agg(entry.placement order by entry.title, entry.id)
-              from (select page.id, page.title, ${pagePlacement} as placement
-                      from placed_pages page order by page.title, page.id limit $2::int) entry),
-           '[]'::jsonb) as "alsoIn",
-  coalesce((select jsonb_agg(entry.placement order by entry.legacy, entry.kind, entry.title, entry.id)
-              from (select * from ${citedFrom} order by legacy, kind, title, id limit $2::int) entry),
+  coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'title', coalesce(c.title, ''))
+                             order by c.depth desc)
+              from topic_chain c), '[]'::jsonb) as "topicPath",
+  coalesce((select jsonb_agg(jsonb_build_object('kind', 'topic', 'id', a.id, 'title', a.title)
+                             order by a.rank, a.id)
+              from also_in a), '[]'::jsonb) as "alsoIn",
+  coalesce((select jsonb_agg(jsonb_build_object('kind', entry.kind, 'id', entry.id, 'title', entry.title)
+                             order by entry.kind, entry.title, entry.id)
+              from (select * from cited_by order by kind, title, id limit $2::int) entry),
            '[]'::jsonb) as "citedBy",
-  (select count(*)::int from placed_pages) as "alsoInCount",
-  (select count(*)::int from ${citedFrom}) as "citedByCount",
+  (select count(*)::int from also_in) as "alsoInCount",
+  (select count(*)::int from cited_by) as "citedByCount",
   ${counts}`;
-
-const placedPages = (kind: string) => `placed_pages as (
-  select distinct page.id, page.title, page.kind
-    from wiki_memberships m join wiki_pages page on page.id = m.page_id
-   where m.target_kind = '${kind}' and m.target_id = $1::uuid and not page.archived
-)`;
-
-/** Current legacy pages that depend on, or hold evidence from, the object. */
-const citingPages = (dependency: string, evidence: string | null) => `citing_pages as (
-  select page.id, page.title, page.kind
-    from wiki_dependencies d
-    join wiki_page_revisions r on r.id = d.revision_id
-    join wiki_pages page on page.id = r.page_id and page.current_revision_id = r.id
-   where d.kind = '${dependency}' and d.input_id = $1::uuid and not page.archived
-  ${
-    evidence
-      ? `union
-  select page.id, page.title, page.kind
-    from wiki_evidence e join wiki_pages page on page.id = e.page_id
-   where e.${evidence} = $1::uuid and not page.archived`
-      : ""
-  }
-)`;
 
 const sourceLocateSql = `
 with recursive ${sourceChain("where s.id = $1::uuid")},
-${placedPages("source")},
-${citingPages("source", "source_item_id")},
+${placements(`p.source_item_id = (select c.id from chain c order by c.depth desc limit 1)`)},
+${topicChain},
+${alsoInTopics},
 linked_notes as (
   select n.id, n.title, n.created_from_source_item_id as from_id, n.status, n.supersession_status as supersession
     from atomic_notes n where n.created_from_source_item_id = $1::uuid
@@ -102,20 +115,13 @@ linked_notes as (
    where e.source_id = $1::uuid
 ),
 cited_by as (
-  select page.id, page.title, true as legacy,
-         case page.kind when 'entity' then 'entity' when 'synthesis' then 'question' else 'topic' end as kind,
-         ${pagePlacement} as placement
-    from citing_pages page
-  union all
-  select note.id, note.title, false, 'note',
-         jsonb_build_object('kind', 'note', 'id', note.id, 'title', note.title, 'legacy', false)
+  select note.id, note.title, 'note' as kind
     from linked_notes note
    where note.from_id <> $1::uuid and note.status not in ('rejected', 'archived')
      and note.supersession = 'current'
 )
 ${finalSelect(
   "(select title from chain where depth = 0)",
-  "cited_by",
   `(select count(*)::int from linked_notes where status <> 'rejected') as notes,
   (select count(*)::int from chunks c join documents d on d.id = c.document_id
     where c.source_item_id = $1::uuid and not (d.metadata ? 'supersededByDocumentId')) as passages,
@@ -128,24 +134,22 @@ with recursive note as (
     from atomic_notes n where n.id = $1::uuid
 ),
 ${sourceChain("join note on s.id = note.source_id")},
-${placedPages("atomic_note")},
-${citingPages("atomic_note", null)},
+${placements(`p.note_id = $1::uuid`)},
+${topicChain},
+${alsoInTopics},
 cited_by as (
-  select page.id, page.title, true as legacy,
-         case page.kind when 'entity' then 'entity' when 'synthesis' then 'question' else 'topic' end as kind,
-         ${pagePlacement} as placement
-    from citing_pages page
+  -- Overviews that cite a note join here with the overview tables (F2 T31).
+  select null::uuid as id, null::text as title, null::text as kind where false
 )
 ${finalSelect(
   "(select title from note)",
-  "cited_by",
   `0 as notes,
   (select count(*)::int from atomic_note_source_links where atomic_note_id = $1::uuid) as passages,
   0 as children`
 )}`;
 
-function place(items: ObjectPlacement[]): ObjectPlacement[] {
-  return items.map(({ kind, id, title, legacy }) => ({ kind, id, title, legacy }));
+function topicRefs(items: ReadonlyArray<{ id: string; title: string }>): ObjectRef[] {
+  return items.map(({ id, title }) => ({ kind: "topic" as const, id, title }));
 }
 
 function toResult(
@@ -162,10 +166,20 @@ function toResult(
   const object = { kind, id, title: row.title };
   return {
     object,
-    // A source ends its own chain; a note hangs from its owning source, when that source exists.
-    primaryPath: kind === "source" ? chain : [...chain, object],
-    alsoIn: place(row.alsoIn),
-    citedBy: place(row.citedBy),
+    // Topics first, then the source chain; a source ends its own chain and a note hangs from its
+    // owning source, when that source exists.
+    primaryPath: [...topicRefs(row.topicPath), ...chain, ...(kind === "note" ? [object] : [])],
+    // Only the contract's fields pass; the process boundary validates their values.
+    alsoIn: row.alsoIn.map(({ kind: otherKind, id: otherId, title }) => ({
+      kind: otherKind,
+      id: otherId,
+      title
+    })),
+    citedBy: row.citedBy.map(({ kind: citedKind, id: citedId, title }) => ({
+      kind: citedKind,
+      id: citedId,
+      title
+    })),
     counts: {
       alsoIn: Number(row.alsoInCount),
       citedBy: Number(row.citedByCount),

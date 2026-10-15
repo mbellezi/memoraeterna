@@ -79,11 +79,13 @@ export function notePage(overrides: Partial<NotePage> = {}): NotePage {
     placement: {
       object: { kind: "note", id: fixtureId(1), title: "Forgetting curve" },
       primaryPath: [
+        { kind: "topic", id: fixtureId(40), title: "" },
+        { kind: "topic", id: fixtureId(41), title: "Memory" },
         { kind: "source", id: fixtureId(2), title: "Fictional classics" },
         { kind: "source", id: fixtureId(3), title: "A fictional memory study" },
         { kind: "note", id: fixtureId(1), title: "Forgetting curve" }
       ],
-      alsoIn: [{ kind: "topic", id: fixtureId(7), title: "Memory", legacy: true }],
+      alsoIn: [{ kind: "topic", id: fixtureId(7), title: "Recall" }],
       citedBy: [],
       counts: { alsoIn: 1, citedBy: 0, notes: 0, passages: 1, children: 0 }
     },

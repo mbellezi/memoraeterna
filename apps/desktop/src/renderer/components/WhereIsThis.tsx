@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ChevronRight, MapPin, RefreshCw } from "lucide-react";
-import type { ObjectLocateResult, ObjectPlacement, ObjectRef } from "@app/domain";
+import type { ObjectLocateResult, ObjectRef } from "@app/domain";
 import type { MessageKey, Translator } from "@app/i18n";
 import { isSilentRefresh, showsLoadError, type LoadOutcome } from "../lib/hidden-view";
 import {
@@ -24,6 +24,19 @@ export type WhereIsThisState =
 const linkClass =
   "rounded-md px-1.5 py-0.5 text-left text-accent hover:bg-soft hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
+/**
+ * What an object reference reads as: its title or, when it has none to show, the localized label of
+ * what it is. The tree root and a topic that is not named yet come back from `objects.locate` with
+ * an empty title (D11 stores no placeholder); the root is the first segment of a path that starts
+ * with a topic, as in the breadcrumb of the Topic page.
+ */
+export function objectLabel(t: Translator, ref: ObjectRef, pathIndex?: number): string {
+  if (ref.title) return ref.title;
+  if (ref.kind === "topic")
+    return pathIndex === 0 ? t("topics.page.rootTitle") : t("topics.page.unnamed");
+  return t(`objects.kinds.${ref.kind}` as MessageKey);
+}
+
 function PlacementList({
   t,
   heading,
@@ -35,7 +48,7 @@ function PlacementList({
   t: Translator;
   heading: string;
   empty: string;
-  items: readonly ObjectPlacement[];
+  items: readonly ObjectRef[];
   total: number;
   onOpen: (navigation: ObjectNavigation) => void;
 }) {
@@ -56,19 +69,11 @@ function PlacementList({
                 className={`${linkClass} min-w-0 max-w-full truncate text-sm`}
                 onClick={() => onOpen(navigationForPlacement(item))}
               >
-                {item.title || t(`objects.kinds.${item.kind}` as MessageKey)}
+                {objectLabel(t, item)}
               </button>
               <span className="text-xs text-muted-foreground">
                 {t(`objects.kinds.${item.kind}` as MessageKey)}
               </span>
-              {item.legacy ? (
-                <span
-                  title={t("objects.whereIsThis.legacyHint")}
-                  className="rounded-full border border-border bg-soft px-1.5 py-0.5 text-xs text-muted-foreground"
-                >
-                  {t("objects.whereIsThis.legacy")}
-                </span>
-              ) : null}
             </li>
           ))}
         </ul>
@@ -100,7 +105,7 @@ function PlacementChips({
   onOpen
 }: {
   t: Translator;
-  items: readonly ObjectPlacement[];
+  items: readonly ObjectRef[];
   total: number;
   stacked: boolean;
   onOpen: (navigation: ObjectNavigation) => void;
@@ -116,19 +121,9 @@ function PlacementChips({
               onClick={() => onOpen(navigationForPlacement(item))}
             >
               <ObjectKindGlyph kind={item.kind} className={objectKindTextClass[item.kind]} />
-              <span className="truncate">
-                {item.title || t(`objects.kinds.${item.kind}` as MessageKey)}
-              </span>
+              <span className="truncate">{objectLabel(t, item)}</span>
               <span className="sr-only"> · {t(`objects.kinds.${item.kind}` as MessageKey)}</span>
             </button>
-            {item.legacy ? (
-              <span
-                title={t("objects.whereIsThis.legacyHint")}
-                className="rounded-full border border-border bg-soft px-1.5 text-xs text-muted-foreground"
-              >
-                {t("objects.whereIsThis.legacy")}
-              </span>
-            ) : null}
           </li>
         ))}
       </ul>
@@ -184,7 +179,7 @@ function WhereIsThisPage({
                 <ol className="flex flex-wrap items-center gap-1">
                   {ancestors.map((segment, index) => {
                     const navigation = navigationForPathSegment(result.primaryPath, index);
-                    const title = segment.title || t(`objects.kinds.${segment.kind}` as MessageKey);
+                    const title = objectLabel(t, segment, index);
                     return (
                       <li
                         key={`${segment.kind}:${segment.id}`}
@@ -295,8 +290,9 @@ function WhereIsThisStates({
 }
 
 /**
- * The "Where is this" panel: the path of an object from the library root (each segment opens),
- * the other places it appears in and the objects that cite it. It is an inline section, never a
+ * The "Where is this" panel: the path of an object (the topics from the root of the topic tree,
+ * then its source chain; each segment opens), the other topics it is placed in and the objects that
+ * cite it. It is an inline section, never a
  * dialog, and covers its loading, error, missing and ready states. The `page` variant is the
  * section of an object page: the object itself is the page, so its path lists only ancestors, and
  * rows without entries are left out.
@@ -381,7 +377,7 @@ export function WhereIsThisView({
                         aria-current={current ? "location" : undefined}
                         className="max-w-72 truncate px-1.5 py-0.5 font-medium text-foreground"
                       >
-                        {segment.title || t(`objects.kinds.${segment.kind}` as MessageKey)}
+                        {objectLabel(t, segment, index)}
                         {current ? (
                           <span className="sr-only"> · {t("objects.whereIsThis.here")}</span>
                         ) : null}
@@ -392,7 +388,7 @@ export function WhereIsThisView({
                         className={`${linkClass} max-w-56 truncate`}
                         onClick={() => onOpen(navigation)}
                       >
-                        {segment.title || t(`objects.kinds.${segment.kind}` as MessageKey)}
+                        {objectLabel(t, segment, index)}
                       </button>
                     )}
                   </li>
@@ -430,7 +426,7 @@ export function WhereIsThisView({
 }
 
 /**
- * Opens what a "Where is this" entry points at: sources, notes and legacy pages go straight to the
+ * Opens what a "Where is this" entry points at: sources, notes and topics go straight to the
  * owner; anything else is located first. `openFailed` reports an entry that could not be opened.
  */
 export function useObjectOpener(onNavigate: (navigation: OpenableNavigation) => void) {

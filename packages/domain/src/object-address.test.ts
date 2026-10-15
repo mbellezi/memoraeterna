@@ -5,8 +5,11 @@ import {
   ObjectLocateResultSchema,
   formatObjectAddress,
   objectKinds,
+  objectLocatePathLimit,
+  objectLocateTopicPathLimit,
   parseObjectAddress
 } from "./object-address.js";
+import { topicReadLimits } from "./topics.js";
 
 const id = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 const chunk = "11111111-2222-4333-8444-555555555555";
@@ -127,10 +130,16 @@ describe("objects.locate contract", () => {
   });
   const result = {
     object: ref("note", 3),
-    primaryPath: [ref("source", 1), ref("source", 2), ref("note", 3)],
-    alsoIn: [{ ...ref("topic", 4), legacy: true }],
-    citedBy: [],
-    counts: { alsoIn: 1, citedBy: 0, notes: 0, passages: 2, children: 0 }
+    primaryPath: [
+      { ...ref("topic", 5), title: "" },
+      ref("topic", 6),
+      ref("source", 1),
+      ref("source", 2),
+      ref("note", 3)
+    ],
+    alsoIn: [ref("topic", 4)],
+    citedBy: [ref("note", 7)],
+    counts: { alsoIn: 1, citedBy: 1, notes: 0, passages: 2, children: 0 }
   };
 
   it("accepts the stable shape and keeps it closed", () => {
@@ -138,13 +147,53 @@ describe("objects.locate contract", () => {
     expect(ObjectLocateResultSchema.safeParse({ ...result, extra: true }).success).toBe(false);
     expect(ObjectLocateResultSchema.safeParse({ ...result, primaryPath: [] }).success).toBe(false);
     expect(
-      ObjectLocateResultSchema.safeParse({ ...result, alsoIn: [ref("topic", 4)] }).success
-    ).toBe(false);
-    expect(
       ObjectLocateResultSchema.safeParse({
         ...result,
         counts: { ...result.counts, children: -1 }
       }).success
     ).toBe(false);
+  });
+
+  it("has no legacy flag: a placement or a citation is a plain object reference", () => {
+    expect(
+      ObjectLocateResultSchema.safeParse({
+        ...result,
+        alsoIn: [{ ...ref("topic", 4), legacy: true }]
+      }).success
+    ).toBe(false);
+    expect(
+      ObjectLocateResultSchema.safeParse({
+        ...result,
+        citedBy: [{ ...ref("note", 7), legacy: false }]
+      }).success
+    ).toBe(false);
+  });
+
+  it("lists only topics as other places, and any object kind as a citation", () => {
+    expect(
+      ObjectLocateResultSchema.safeParse({ ...result, alsoIn: [ref("note", 4)] }).success
+    ).toBe(false);
+    expect(
+      ObjectLocateResultSchema.safeParse({ ...result, citedBy: [ref("topic", 8)] }).success
+    ).toBe(true);
+  });
+
+  it("bounds the path by the topic path and the source chain together", () => {
+    const topics = Array.from({ length: objectLocateTopicPathLimit }, (_, n) =>
+      ref("topic", 100 + n)
+    );
+    const sources = Array.from({ length: objectLocatePathLimit }, (_, n) => ref("source", 200 + n));
+    const fits = { ...result, primaryPath: [...topics, ...sources] };
+    expect(ObjectLocateResultSchema.safeParse(fits).success).toBe(true);
+    expect(
+      ObjectLocateResultSchema.safeParse({
+        ...fits,
+        primaryPath: [...fits.primaryPath, ref("note", 3)]
+      }).success
+    ).toBe(false);
+  });
+
+  it("keeps the topic path limit equal to the longest path the topic reads return", () => {
+    expect(objectLocateTopicPathLimit).toBe(topicReadLimits.pathMax);
   });
 });

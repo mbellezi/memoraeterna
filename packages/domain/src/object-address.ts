@@ -92,33 +92,44 @@ export const ObjectLocateInputSchema = z.object({ address: ObjectAddressTextSche
 export type ObjectLocateInput = z.infer<typeof ObjectLocateInputSchema>;
 
 /**
- * `objects.locate`: where an object is, in one read-only response. The contract is shaped to survive
- * the Topic Tree Engine (F2): `primaryPath` will gain topic placements in front of the source
- * chain, and `alsoIn` will list secondary topic placements; clients render both without change.
+ * `objects.locate`: where an object is, in one read-only response (docs/f2-decisions.md D24).
+ *
+ * - `primaryPath` runs from the root of the topic tree down to the topic the object is placed in
+ *   (a note by its own placement, a source by the placement of its root source), then along the
+ *   source chain (root source to owning source); a note ends with itself. An object the tree does
+ *   not hold yet has the source chain alone. The first entry of a path that starts with a topic is
+ *   the tree root, which has no title.
+ * - `alsoIn` lists the secondary topic placements of the object.
+ * - `citedBy` lists the objects that cite it: other notes derived from a source today and, with
+ *   the overviews (F2 T31), the topics whose overview cites it.
+ *
+ * A title is empty when the object has none to show: the tree root and a topic that is not named
+ * yet. Clients render their own localized label (D11 stores no placeholder).
  */
 export const objectLocateListLimit = 25;
-/** Longest path the locator walks (a library root is never this deep). */
+/** Longest source chain the locator walks (a library root is never this deep). */
 export const objectLocatePathLimit = 32;
+/** Longest topic path: the root and the depth cap (`topicReadLimits.pathMax`, tested to match). */
+export const objectLocateTopicPathLimit = 8;
 
 export const ObjectRefSchema = z
   .object({ kind: ObjectKindSchema, id: z.string().uuid(), title: z.string() })
   .strict();
 export type ObjectRef = z.infer<typeof ObjectRefSchema>;
 
-/**
- * A reference in `alsoIn` or `citedBy`. `legacy` marks a pre-refactoring wiki page presented as a
- * topic, entity or question: its `id` is the wiki page ID and it disappears when the legacy wiki is
- * wiped (docs/plan.md F2).
- */
-export const ObjectPlacementSchema = ObjectRefSchema.extend({ legacy: z.boolean() }).strict();
-export type ObjectPlacement = z.infer<typeof ObjectPlacementSchema>;
+/** A secondary placement: always a topic. */
+export const ObjectTopicRefSchema = ObjectRefSchema.extend({ kind: z.literal("topic") }).strict();
+export type ObjectTopicRef = z.infer<typeof ObjectTopicRefSchema>;
 
 export const ObjectLocateResultSchema = z
   .object({
     object: ObjectRefSchema,
-    primaryPath: z.array(ObjectRefSchema).min(1).max(objectLocatePathLimit),
-    alsoIn: z.array(ObjectPlacementSchema).max(objectLocateListLimit),
-    citedBy: z.array(ObjectPlacementSchema).max(objectLocateListLimit),
+    primaryPath: z
+      .array(ObjectRefSchema)
+      .min(1)
+      .max(objectLocatePathLimit + objectLocateTopicPathLimit),
+    alsoIn: z.array(ObjectTopicRefSchema).max(objectLocateListLimit),
+    citedBy: z.array(ObjectRefSchema).max(objectLocateListLimit),
     counts: z
       .object({
         /** Every placement the object has besides its primary path (the lists above are capped). */

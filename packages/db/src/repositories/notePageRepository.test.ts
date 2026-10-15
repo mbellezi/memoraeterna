@@ -105,6 +105,10 @@ const currentHash = (type = "supports", language = "en") =>
 const located = {
   title: "Retrieval",
   path: [{ id: id(3), title: "Book" }],
+  topicPath: [
+    { id: id(30), title: "" },
+    { id: id(31), title: "Memory" }
+  ],
   alsoIn: [],
   citedBy: [],
   alsoInCount: 0,
