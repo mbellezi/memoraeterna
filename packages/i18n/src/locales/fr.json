@@ -1239,7 +1239,8 @@
     "notes": {
       "emptyForSource": "Cette source n'a pas encore de notes atomiques.",
       "aiBadge": "IA",
-      "aiBadgeHint": "Generee par l'IA. La note est deja utilisee ; la relire est facultatif.",
+      "aiBadgeHint": "Générée par l’IA. La note est déjà utilisée ; la relire est facultatif.",
+      "aiBadgeLong": "Générée par l’IA",
       "status": {
         "active": "Active",
         "pending_review": "En attente de revision",
@@ -2767,9 +2768,88 @@
     }
   },
   "notePage": {
+    "kind": "Note",
+    "back": "Retour",
+    "articleLabel": "Note : {title}",
+    "error": "Impossible de charger cette note.",
+    "missing": "Cette note n’est plus dans la bibliothèque.",
+    "badge": {
+      "activeSinceCreation": "active depuis sa création",
+      "reviewOptional": "relecture facultative",
+      "reviewedOn": "Relue le {date}",
+      "yours": "Votre note",
+      "evolution": "Évolution relue",
+      "protected": "protégée des modifications automatiques"
+    },
+    "status": {
+      "pending_review": "en attente de relecture",
+      "rejected": "Écartée",
+      "archived": "Archivée"
+    },
+    "superseded": "Remplacée · l’historique est conservé",
+    "openCurrent": "Ouvrir la note actuelle",
+    "openSuccessor": "Ouvrir « {title} »",
+    "actions": {
+      "markReviewed": "Marquer comme relue",
+      "edit": "Modifier"
+    },
+    "edit": {
+      "title": "Titre",
+      "idea": "Idée principale",
+      "body": "Texte de la note",
+      "hint": "En enregistrant, la note devient la vôtre : l’automatisation ne la modifiera plus.",
+      "invalid": "Le titre, l’idée principale et le texte ne peuvent pas être vides.",
+      "failed": "La modification n’a pas pu être enregistrée. Réessayez.",
+      "conflict": "Cette note a changé depuis le début de votre modification. Votre modification n’a pas été enregistrée.",
+      "discardAndReload": "Abandonner ma modification et recharger"
+    },
+    "review": {
+      "failed": "La note n’a pas pu être marquée comme relue. Réessayez."
+    },
+    "announce": {
+      "reviewed": "Note marquée comme relue.",
+      "saved": "Modification enregistrée. La note est désormais la vôtre."
+    },
+    "provenance": {
+      "onePassage": "Rédigée par {model} à partir d’un passage de {source} · {date}.",
+      "passages": "Rédigée par {model} à partir de {count} passages de {source} · {date}.",
+      "passagesOfSources": "Rédigée par {model} à partir de {count} passages de {sourceCount} sources · {date}.",
+      "noEvidence": "Rédigée par {model} · {date}.",
+      "editHint": "Si vous la modifiez, la note devient la vôtre et est protégée des modifications automatiques.",
+      "edited": "Générée par {model} · modifiée par vous le {date}.",
+      "evolution": "Créée par {model} lors d’une évolution de notes que vous avez relue · {date}."
+    },
+    "body": {
+      "title": "Texte de la note"
+    },
     "where": {
       "primaryPath": "Chemin principal",
       "citedIn": "Citée dans"
+    },
+    "evidence": {
+      "title": "Preuves",
+      "hint": "les passages et intervalles exacts qui soutiennent la note",
+      "passage": "passage {number}",
+      "page": "p. {page}",
+      "range": "intervalle {start}–{end}",
+      "open": "Ouvrir au passage",
+      "showMore": "Afficher plus",
+      "showLess": "Afficher moins",
+      "earlierVersion": "Version antérieure de la source",
+      "preserved": "Passage conservé",
+      "more": "{count} autres passages ne sont pas affichés.",
+      "moreOne": "Un autre passage n’est pas affiché."
+    },
+    "relations": {
+      "title": "Relations",
+      "hint": "survolez ou sélectionnez une relation pour voir ses preuves",
+      "empty": "Aucune relation avec d’autres notes n’a été trouvée.",
+      "decided": "a décidé",
+      "explained": "a expliqué",
+      "showMore": "Afficher {count} de plus",
+      "moreFailed": "Impossible de charger plus de relations.",
+      "superseded": "Remplacée",
+      "otherNote": "une autre note"
     },
     "stance": {
       "supports": "soutient",
@@ -2785,6 +2865,14 @@
       "same_as": "identique à"
     },
     "card": {
+      "label": "Preuves de la relation : {type}",
+      "betweenNotes": "relation entre notes",
+      "directionConfirmed": "sens confirmé",
+      "thisNoteSubject": "Cette note",
+      "thisNoteObject": "cette note",
+      "quoted": "« {text} »",
+      "sentence": "{subject} {verb} {object}",
+      "undirected": "{subject} et {object} sont liées : {word}",
       "verbs": {
         "supports": "soutient",
         "contradicts": "contredit",
@@ -2797,7 +2885,13 @@
         "mentions": "mentionne",
         "related": "est liée à",
         "same_as": "est identique à"
-      }
+      },
+      "passageLabel": "{source} · passage {number}",
+      "decided": "A décidé",
+      "writing": "Rédaction d’une explication…",
+      "explainedBy": "Expliquée par {model}",
+      "explainFailed": "L’explication n’a pas pu être rédigée.",
+      "explainNoModel": "Aucun modèle n’est configuré pour rédiger des explications."
     }
   }
 }

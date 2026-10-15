@@ -104,8 +104,7 @@ Renderer -> typed preload API (window.app) -> Zod-validated IPC
 
 ## Development application testing
 
-- Start DEV only with `npm run dev -w @app/desktop` from the repository root.
-- Manual and automated UI validation uses only that DEV app. Never open an installed or packaged
+- Manual and automated UI validation uses only the DEV app. Never open an installed or packaged
   copy unless the owner asks for release validation, and never run it alongside DEV. Run one
   Memora Eterna instance at a time and target it by repository path or `localhost` content.
 - Background relaunches use `MEMORA_DEV_BACKGROUND=1` so the DEV window does not steal focus.

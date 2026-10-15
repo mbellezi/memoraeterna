@@ -6,8 +6,7 @@ accessibility, visualizations or user-visible backend messages.
 ## Stack and structure
 
 - The target information architecture (destinations, workspace zones, object
-  pages) is described in `docs/plan.md`. Objects are addressed by stable
-  UUID-based `memora://` references, never by titles (target F5).
+  pages) is described in `docs/plan.md`; views open objects by ID or address, never by title.
 - New code receives live updates through pushed events, not polling. Large lists
   and trees use bounded pages or virtualization. Background state is shown
   quietly (status indicators, drawers), never by blocking the reading surface.
@@ -37,6 +36,8 @@ accessibility, visualizations or user-visible backend messages.
 - Icon-only or non-obvious controls have accessible names and tooltips.
 - Everything is keyboard-operable with visible focus. Trees use one roving tab
   stop (arrows, Home, End); dialogs trap and restore focus and close with Escape.
+- Hover cards and previews are non-modal: they also open on keyboard focus, close with
+  Escape, never trap focus and never answer Cmd-W.
 - Single-key shortcuts never fire while typing in inputs or editors, and app
   shortcuts do not collide with platform or editing conventions (no Cmd-. Cmd-E
   Cmd-I or Option-Arrow). The localized application menu owns them: Cmd-W closes

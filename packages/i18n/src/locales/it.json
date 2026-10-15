@@ -1235,7 +1235,8 @@
     "notes": {
       "emptyForSource": "Questa fonte non ha ancora note atomiche.",
       "aiBadge": "IA",
-      "aiBadgeHint": "Generata dall'IA. La nota e gia in uso; rivederla e facoltativo.",
+      "aiBadgeHint": "Generata dall’IA. La nota è già in uso; rivederla è facoltativo.",
+      "aiBadgeLong": "Generata dall’IA",
       "status": {
         "active": "Attiva",
         "pending_review": "In attesa di revisione",
@@ -2760,9 +2761,88 @@
     }
   },
   "notePage": {
+    "kind": "Nota",
+    "back": "Indietro",
+    "articleLabel": "Nota: {title}",
+    "error": "Impossibile caricare questa nota.",
+    "missing": "Questa nota non è più nella libreria.",
+    "badge": {
+      "activeSinceCreation": "attiva dalla creazione",
+      "reviewOptional": "revisione facoltativa",
+      "reviewedOn": "Rivista il {date}",
+      "yours": "La tua nota",
+      "evolution": "Evoluzione rivista",
+      "protected": "protetta dalle modifiche automatiche"
+    },
+    "status": {
+      "pending_review": "in attesa di revisione",
+      "rejected": "Scartata",
+      "archived": "Archiviata"
+    },
+    "superseded": "Superata · la cronologia è conservata",
+    "openCurrent": "Apri la nota attuale",
+    "openSuccessor": "Apri «{title}»",
+    "actions": {
+      "markReviewed": "Segna come rivista",
+      "edit": "Modifica"
+    },
+    "edit": {
+      "title": "Titolo",
+      "idea": "Idea principale",
+      "body": "Testo della nota",
+      "hint": "Salvando, la nota diventa tua: l’automazione non la modificherà più.",
+      "invalid": "Titolo, idea principale e testo non possono essere vuoti.",
+      "failed": "Impossibile salvare la modifica. Riprova.",
+      "conflict": "Questa nota è cambiata dopo che hai iniziato a modificarla. La tua modifica non è stata salvata.",
+      "discardAndReload": "Scarta la mia modifica e ricarica"
+    },
+    "review": {
+      "failed": "Impossibile segnare la nota come rivista. Riprova."
+    },
+    "announce": {
+      "reviewed": "Nota segnata come rivista.",
+      "saved": "Modifica salvata. Ora la nota è tua."
+    },
+    "provenance": {
+      "onePassage": "Scritta da {model} a partire da 1 passaggio di {source} · {date}.",
+      "passages": "Scritta da {model} a partire da {count} passaggi di {source} · {date}.",
+      "passagesOfSources": "Scritta da {model} a partire da {count} passaggi di {sourceCount} fonti · {date}.",
+      "noEvidence": "Scritta da {model} · {date}.",
+      "editHint": "Se la modifichi, la nota diventa tua ed è protetta dalle modifiche automatiche.",
+      "edited": "Generata da {model} · modificata da te il {date}.",
+      "evolution": "Creata da {model} in un’evoluzione di note che hai rivisto · {date}."
+    },
+    "body": {
+      "title": "Testo della nota"
+    },
     "where": {
       "primaryPath": "Percorso principale",
       "citedIn": "Citata in"
+    },
+    "evidence": {
+      "title": "Evidenze",
+      "hint": "i passaggi e gli intervalli esatti che sostengono la nota",
+      "passage": "passaggio {number}",
+      "page": "p. {page}",
+      "range": "intervallo {start}–{end}",
+      "open": "Apri al passaggio",
+      "showMore": "Mostra di più",
+      "showLess": "Mostra meno",
+      "earlierVersion": "Versione precedente della fonte",
+      "preserved": "Passaggio conservato",
+      "more": "Altri {count} passaggi non mostrati.",
+      "moreOne": "Un altro passaggio non mostrato."
+    },
+    "relations": {
+      "title": "Relazioni",
+      "hint": "passa il puntatore o metti a fuoco per vedere l’evidenza",
+      "empty": "Non sono state trovate relazioni con altre note.",
+      "decided": "ha deciso",
+      "explained": "ha spiegato",
+      "showMore": "Mostra altre {count}",
+      "moreFailed": "Impossibile caricare altre relazioni.",
+      "superseded": "Superata",
+      "otherNote": "un’altra nota"
     },
     "stance": {
       "supports": "sostiene",
@@ -2778,6 +2858,14 @@
       "same_as": "uguale a"
     },
     "card": {
+      "label": "Evidenza della relazione: {type}",
+      "betweenNotes": "relazione tra note",
+      "directionConfirmed": "direzione confermata",
+      "thisNoteSubject": "Questa nota",
+      "thisNoteObject": "questa nota",
+      "quoted": "«{text}»",
+      "sentence": "{subject} {verb} {object}",
+      "undirected": "{subject} e {object} sono collegate: {word}",
       "verbs": {
         "supports": "sostiene",
         "contradicts": "contraddice",
@@ -2790,7 +2878,13 @@
         "mentions": "menziona",
         "related": "è correlata a",
         "same_as": "è uguale a"
-      }
+      },
+      "passageLabel": "{source} · passaggio {number}",
+      "decided": "Ha deciso",
+      "writing": "Sto scrivendo una spiegazione…",
+      "explainedBy": "Spiegata da {model}",
+      "explainFailed": "Impossibile scrivere la spiegazione.",
+      "explainNoModel": "Nessun modello è configurato per scrivere spiegazioni."
     }
   }
 }

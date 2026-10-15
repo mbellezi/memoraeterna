@@ -1241,7 +1241,8 @@
     "notes": {
       "emptyForSource": "Esta fuente aun no tiene notas atomicas.",
       "aiBadge": "IA",
-      "aiBadgeHint": "Generada por IA. La nota ya esta en uso; revisarla es opcional.",
+      "aiBadgeHint": "Generada por IA. La nota ya está en uso; revisarla es opcional.",
+      "aiBadgeLong": "Generada por IA",
       "status": {
         "active": "Activa",
         "pending_review": "Pendiente de revision",
@@ -2769,9 +2770,88 @@
     }
   },
   "notePage": {
+    "kind": "Nota",
+    "back": "Volver",
+    "articleLabel": "Nota: {title}",
+    "error": "No se pudo cargar esta nota.",
+    "missing": "Esta nota ya no está en la biblioteca.",
+    "badge": {
+      "activeSinceCreation": "activa desde su creación",
+      "reviewOptional": "revisión opcional",
+      "reviewedOn": "Revisada el {date}",
+      "yours": "Tu nota",
+      "evolution": "Evolución revisada",
+      "protected": "protegida de cambios automáticos"
+    },
+    "status": {
+      "pending_review": "pendiente de revisión",
+      "rejected": "Descartada",
+      "archived": "Archivada"
+    },
+    "superseded": "Reemplazada · el historial se conserva",
+    "openCurrent": "Abrir la nota actual",
+    "openSuccessor": "Abrir «{title}»",
+    "actions": {
+      "markReviewed": "Marcar como revisada",
+      "edit": "Editar"
+    },
+    "edit": {
+      "title": "Título",
+      "idea": "Idea principal",
+      "body": "Texto de la nota",
+      "hint": "Al guardar, la nota pasa a ser tuya y la automatización ya no la cambiará.",
+      "invalid": "El título, la idea principal y el texto no pueden quedar vacíos.",
+      "failed": "No se pudo guardar la edición. Inténtalo de nuevo.",
+      "conflict": "Esta nota cambió después de que empezaras a editarla. Tu edición no se guardó.",
+      "discardAndReload": "Descartar mi edición y recargar"
+    },
+    "review": {
+      "failed": "No se pudo marcar la nota como revisada. Inténtalo de nuevo."
+    },
+    "announce": {
+      "reviewed": "Nota marcada como revisada.",
+      "saved": "Edición guardada. La nota ahora es tuya."
+    },
+    "provenance": {
+      "onePassage": "Escrita por {model} a partir de 1 fragmento de {source} · {date}.",
+      "passages": "Escrita por {model} a partir de {count} fragmentos de {source} · {date}.",
+      "passagesOfSources": "Escrita por {model} a partir de {count} fragmentos de {sourceCount} fuentes · {date}.",
+      "noEvidence": "Escrita por {model} · {date}.",
+      "editHint": "Si la editas, la nota pasa a ser tuya y queda protegida de cambios automáticos.",
+      "edited": "Generada por {model} · editada por ti el {date}.",
+      "evolution": "Creada por {model} en una evolución de notas que revisaste · {date}."
+    },
+    "body": {
+      "title": "Texto de la nota"
+    },
     "where": {
       "primaryPath": "Ruta principal",
       "citedIn": "Citada en"
+    },
+    "evidence": {
+      "title": "Evidencias",
+      "hint": "los fragmentos e intervalos exactos que sustentan la nota",
+      "passage": "fragmento {number}",
+      "page": "p. {page}",
+      "range": "intervalo {start}–{end}",
+      "open": "Abrir en el fragmento",
+      "showMore": "Mostrar más",
+      "showLess": "Mostrar menos",
+      "earlierVersion": "Versión anterior de la fuente",
+      "preserved": "Fragmento conservado",
+      "more": "{count} fragmentos más no se muestran.",
+      "moreOne": "1 fragmento más no se muestra."
+    },
+    "relations": {
+      "title": "Relaciones",
+      "hint": "pasa el cursor o enfoca para ver la evidencia",
+      "empty": "No se encontraron relaciones con otras notas.",
+      "decided": "decidió",
+      "explained": "explicó",
+      "showMore": "Mostrar {count} más",
+      "moreFailed": "No se pudieron cargar más relaciones.",
+      "superseded": "Reemplazada",
+      "otherNote": "otra nota"
     },
     "stance": {
       "supports": "apoya",
@@ -2787,6 +2867,14 @@
       "same_as": "igual a"
     },
     "card": {
+      "label": "Evidencia de la relación: {type}",
+      "betweenNotes": "relación entre notas",
+      "directionConfirmed": "dirección confirmada",
+      "thisNoteSubject": "Esta nota",
+      "thisNoteObject": "esta nota",
+      "quoted": "«{text}»",
+      "sentence": "{subject} {verb} {object}",
+      "undirected": "{subject} y {object} están relacionadas: {word}",
       "verbs": {
         "supports": "apoya",
         "contradicts": "contradice",
@@ -2799,7 +2887,13 @@
         "mentions": "menciona",
         "related": "está relacionada con",
         "same_as": "es igual a"
-      }
+      },
+      "passageLabel": "{source} · fragmento {number}",
+      "decided": "Decidió",
+      "writing": "Escribiendo una explicación…",
+      "explainedBy": "Explicada por {model}",
+      "explainFailed": "No se pudo escribir la explicación.",
+      "explainNoModel": "No hay ningún modelo configurado para escribir explicaciones."
     }
   }
 }

@@ -1,7 +1,8 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentPropsWithRef } from "react";
 import { cn } from "../../lib/cn";
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+/** A native button; `ref` reaches it (React 19 passes refs as props). */
+type ButtonProps = ComponentPropsWithRef<"button"> & {
   variant?: "primary" | "secondary" | "ghost" | "link" | "danger";
 };
 

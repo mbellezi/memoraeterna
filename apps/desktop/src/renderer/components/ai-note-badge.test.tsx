@@ -69,6 +69,25 @@ describe("AI provenance badge on notes", () => {
     }
   });
 
+  it("spells the provenance out on a note page, neutral and with the same hint", () => {
+    for (const locale of supportedLanguageCodes) {
+      const translate = createTranslator(locale);
+      const html = renderToString(<AiNoteBadge t={translate} status="active" variant="full" />);
+      expect(html).toContain(escaped(translate("knowledge.notes.aiBadgeLong")));
+      expect(html).toContain(escaped(translate("knowledge.notes.aiBadgeHint")));
+      expect(html).toContain("bg-soft");
+      expect(html).not.toContain("text-accent");
+    }
+    expect(createTranslator("pt-BR")("knowledge.notes.aiBadgeHint")).toBe(
+      "Gerada por IA. A nota já está em uso; revisá-la é opcional."
+    );
+    for (const status of ["approved", "pending_review"])
+      expect(renderToString(<AiNoteBadge t={t} status={status} variant="full" />)).toBe("");
+    expect(
+      renderToString(<AiNoteBadge t={t} status="active" humanProtected variant="full" />)
+    ).toBe("");
+  });
+
   it("shows in the Library note list next to the status, and only for active notes", () => {
     const active = renderToString(<AtomicNoteCard note={note("active")} t={t} />);
     expect(active).toContain("Active");
