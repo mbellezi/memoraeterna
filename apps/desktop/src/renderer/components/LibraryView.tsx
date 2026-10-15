@@ -51,7 +51,6 @@ import {
 import { useStableCallback } from "../lib/stable-callback";
 import { useWriterRouteReady } from "../lib/writer-route";
 import { closePanelPriority, subscribeClosePanel } from "../lib/close-panel";
-import { useStableCallback } from "../lib/stable-callback";
 import {
   openedLibraryObjects,
   recordView,

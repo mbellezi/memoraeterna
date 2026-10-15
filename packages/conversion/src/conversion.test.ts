@@ -136,11 +136,17 @@ describe("conversion", () => {
   });
 
   it("validates Docling JSONL responses and handles crash, timeout and cancellation", async () => {
+    const fakeDocling = fileURLToPath(new URL("./test-fixtures/fake-docling.mjs", import.meta.url));
+    // Starting a Node process can take longer than the 50 ms timeout under load: only the timeout case
+    // uses the short limit.
     const client = new DoclingClient({
       executablePath: process.execPath,
-      sidecarScriptPath: fileURLToPath(
-        new URL("./test-fixtures/fake-docling.mjs", import.meta.url)
-      ),
+      sidecarScriptPath: fakeDocling,
+      timeoutMs: 30_000
+    });
+    const shortClient = new DoclingClient({
+      executablePath: process.execPath,
+      sidecarScriptPath: fakeDocling,
       timeoutMs: 50
     });
     const progress: import("./types.js").ConversionProgress[] = [];
@@ -153,7 +159,7 @@ describe("conversion", () => {
       expect.objectContaining({ stage: "serializing", completedPages: 4, totalPages: 4 })
     ]);
     await expect(client.convert("crash.pdf")).rejects.toThrow("exited with code 2");
-    await expect(client.convert("timeout.pdf")).rejects.toThrow();
+    await expect(shortClient.convert("timeout.pdf")).rejects.toThrow();
 
     const controller = new AbortController();
     const canceled = client.convert("timeout.pdf", "standard", controller.signal);
