@@ -527,7 +527,7 @@ export function promptSampleCall(
       return {
         input: buildBatchRerankPrompt(notes[0]!, [
           {
-            alias: "c1",
+            alias: 1,
             title: "Spacing",
             ideaStatement:
               "Distributed practice improved recall in a separate fictional comparison."
@@ -535,8 +535,8 @@ export function promptSampleCall(
         ]),
         task: "reranking",
         validate: (o) => {
-          const parsed = parseBatchRerankOutput(o, ["c1"]);
-          if (!parsed.decisions.has("c1") || parsed.retry.length > 0)
+          const parsed = parseBatchRerankOutput(o, [1]);
+          if (!parsed.decisions.has(1) || parsed.retry.length > 0)
             throw new Error("prompts.errors.sample");
         }
       };

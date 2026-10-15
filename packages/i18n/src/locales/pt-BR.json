@@ -2396,7 +2396,6 @@
       "previous_output": "Resposta inválida anterior",
       "source_idea": "Proposição da nota de origem",
       "candidate_notes": "Notas candidatas com aliases estáveis",
-      "explanation_min_score": "Pontuação mínima que recebe uma explicação",
       "input_kind": "Tipo de evidência",
       "input_heading": "Cabeçalho da seção de evidências",
       "graph_inputs": "Evidências autorizadas com aliases",

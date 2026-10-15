@@ -16,7 +16,7 @@ import {
 export const summaryPromptVersion = "summary-v3";
 export const hierarchyAggregateSummaryPromptVersion = "hierarchy-aggregate-v2";
 export const atomicNotePromptVersion = "atomic-note-v4";
-export const atomicNoteMatchingVersion = "atomic-note-matching-v8";
+export const atomicNoteMatchingVersion = "atomic-note-matching-v9";
 export const knowledgeGraphPromptVersion = "knowledge-graph-v8";
 export const emptySummaryTag = "<NO_SUMMARY>";
 export const defaultSummaryMinimumWordCount = 40;
@@ -651,31 +651,6 @@ export function canQualifyAtomicNoteRelation(input: {
   );
 }
 
-/**
- * Whether one decider verdict could be accepted for a candidate, ignoring the per-note limit that
- * depends on the other candidates. A verdict that cannot qualify is never explained or repaired.
- */
-export function atomicNoteVerdictQualifies(input: {
-  scores: AtomicNoteRelationScoreInputs;
-  hasEmbedding: boolean;
-  threshold: number;
-  settings: AtomicNoteMatchingSettings;
-  verdict: { score: number; relationType: string };
-}): boolean {
-  return qualifiesAtomicNoteRelation({
-    finalScore: calculateRelationScore({
-      ...input.scores,
-      hasEmbedding: input.hasEmbedding,
-      rerankScore: input.verdict.score,
-      settings: input.settings
-    }),
-    threshold: input.threshold,
-    rerankScore: input.verdict.score,
-    relationType: input.verdict.relationType,
-    settings: input.settings
-  });
-}
-
 export interface AtomicNoteRelationSelectionCandidate {
   noteId: string;
   contentKey: string;
@@ -807,122 +782,76 @@ export function calculateAtomicNoteMatchingProgress(input: {
   return Math.max(0, Math.min(1, (input.noteIndex + candidateProgress) / input.noteCount));
 }
 
-/** Model-written explanations are short; longer prose is treated as an invalid item. */
-export const maxRerankExplanationCharacters = 300;
-
 /**
- * The decider is told to explain scores at or above this. A fixed part of the matching contract,
- * never derived from the relation calibration (`minRerankScore`), so a stored raw score does not
- * depend on how the thresholds were set when it was produced.
+ * One decision of the decide-only contract (`atomic-note-matching-v9`): the candidate's number, an
+ * integer score from 0 to 100 and a relation type, and nothing else. The decider writes no prose.
  */
-export const rerankExplanationMinScore = 0.5;
-
-const batchRerankDecisionSchema = z.object({
-  candidateAlias: z.string().regex(/^c[1-9][0-9]*$/),
-  score: z.number().min(0).max(1),
-  relationType: AtomicNoteRelationTypeSchema,
-  // Validated only when the score asks for an explanation; prose of a rejection is ignored.
-  explanation: z.unknown().optional()
-});
+const batchRerankItemSchema = z.tuple([
+  z.number().int().positive(),
+  z.number().int().min(0).max(100),
+  AtomicNoteRelationTypeSchema
+]);
 
 const batchRerankEnvelopeSchema = z.object({ results: z.array(z.unknown()).max(100) });
 
 export interface BatchRerankDecision {
-  candidateAlias: string;
+  /** The candidate's number in the prompt, resolved to its note by the backend. */
+  alias: number;
+  /** The decider's score scaled to 0-1 (the contract's integer divided by 100). */
   score: number;
   relationType: AtomicNoteRelationType;
-  /** A safe explanation with unresolved aliases, only for scores at or above the threshold. */
-  explanation: string | null;
 }
 
 export interface BatchRerankParseResult {
-  /** Valid decisions; a valid score without its required explanation keeps a null explanation. */
-  decisions: Map<string, BatchRerankDecision>;
-  /** Aliases to request once more, in prompt order: missing, malformed, duplicated or unexplained. */
-  retry: string[];
+  /** Valid decisions by candidate number. */
+  decisions: Map<number, BatchRerankDecision>;
+  /** Numbers to request once more, in prompt order: missing, malformed or duplicated. */
+  retry: number[];
 }
 
 /**
- * Decision-only contract: every candidate gets an alias, a score and a relation type; only a score
- * at or above `rerankExplanationMinScore` carries a short explanation. Valid items are kept;
- * nothing in one item can invalidate another, and the prose of a rejected candidate is never read.
- * A missing explanation is asked for again only when `canQualify` says the verdict could still be
- * accepted: a pair that never qualifies is not worth a paid repair.
+ * Decide-only contract: every candidate gets exactly one `[number, score, type]` item. Valid items
+ * are kept; nothing in one item can invalidate another. An item for a number that was not asked
+ * is ignored, and a number answered twice is ambiguous, so neither answer is trusted.
  */
 export function parseBatchRerankOutput(
   output: unknown,
-  allowedAliases: ReadonlyArray<string>,
-  canQualify: (
-    alias: string,
-    verdict: { score: number; relationType: AtomicNoteRelationType }
-  ) => boolean = () => true
+  allowedAliases: ReadonlyArray<number>
 ): BatchRerankParseResult {
   const allowed = new Set(allowedAliases);
-  const decisions = new Map<string, BatchRerankDecision>();
-  const invalid = new Set<string>();
-  const unexplained = new Set<string>();
+  const decisions = new Map<number, BatchRerankDecision>();
+  const invalid = new Set<number>();
   let items: unknown[];
   try {
     items = batchRerankEnvelopeSchema.parse(parseJsonOutput(output)).results;
   } catch {
-    // Unparseable output decides nothing: every alias is asked again once.
+    // Unparseable output decides nothing: every number is asked again once.
     items = [];
   }
   for (const item of items) {
-    const alias =
-      item && typeof item === "object" && "candidateAlias" in item
-        ? (item as { candidateAlias: unknown }).candidateAlias
-        : undefined;
-    if (typeof alias !== "string" || !allowed.has(alias)) continue;
-    const parsed = batchRerankDecisionSchema.safeParse(item);
+    const alias: unknown = Array.isArray(item) ? item[0] : undefined;
+    if (typeof alias !== "number" || !allowed.has(alias)) continue;
+    const parsed = batchRerankItemSchema.safeParse(item);
     if (!parsed.success || decisions.has(alias) || invalid.has(alias)) {
-      // A duplicated alias is ambiguous: neither answer is trusted.
       decisions.delete(alias);
-      unexplained.delete(alias);
       invalid.add(alias);
       continue;
     }
-    const explained = parsed.data.score >= rerankExplanationMinScore;
-    const explanation = explained ? safeRerankExplanation(parsed.data.explanation, alias) : null;
-    if (
-      explained &&
-      explanation === null &&
-      canQualify(alias, { score: parsed.data.score, relationType: parsed.data.relationType })
-    )
-      unexplained.add(alias);
-    decisions.set(alias, {
-      candidateAlias: alias,
-      score: parsed.data.score,
-      relationType: parsed.data.relationType,
-      explanation
-    });
+    const [, score, relationType] = parsed.data;
+    decisions.set(alias, { alias, score: score / 100, relationType });
   }
-  return {
-    decisions,
-    retry: allowedAliases.filter((alias) => !decisions.has(alias) || unexplained.has(alias))
-  };
+  return { decisions, retry: allowedAliases.filter((alias) => !decisions.has(alias)) };
 }
 
 /**
- * A repaired answer replaces the first one for the aliases asked again (the repair is parsed with
- * only those aliases allowed). A decision whose explanation is still missing after the repair is
- * kept without one: the score decides, the prose is optional.
+ * A repaired answer completes the first one for the numbers asked again (the repair is parsed with
+ * only those numbers allowed).
  */
 export function mergeBatchRerankRepair(
   initial: BatchRerankParseResult,
   repair: BatchRerankParseResult
-): Map<string, BatchRerankDecision> {
+): Map<number, BatchRerankDecision> {
   return new Map([...initial.decisions, ...repair.decisions]);
-}
-
-function safeRerankExplanation(value: unknown, candidateAlias: string): string | null {
-  if (typeof value !== "string") return null;
-  const text = value.trim();
-  if (!text || text.length > maxRerankExplanationCharacters) return null;
-  if (/<\/?(?:note|source)-ref\b/i.test(text)) return null;
-  for (const [alias] of text.matchAll(/\b[sc][0-9]+\b/g))
-    if (alias !== "s1" && alias !== candidateAlias) return null;
-  return text;
 }
 
 export function resolveAtomicNoteReferences(
@@ -945,14 +874,14 @@ export function resolveAtomicNoteReferences(
   });
 }
 
+/** Candidates are numbered from 1 in the content order the caller gives them. */
 export function buildBatchRerankPrompt(
   source: { title: string; ideaStatement: string },
-  candidates: ReadonlyArray<{ alias: string; title: string; ideaStatement: string }>
+  candidates: ReadonlyArray<{ alias: number; title: string; ideaStatement: string }>
 ): string {
   return renderPrompt("notes.match", {
     source_title: source.title,
     source_idea: source.ideaStatement,
-    explanation_min_score: rerankExplanationMinScore,
     candidate_notes: candidates
       .map(
         (candidate) =>

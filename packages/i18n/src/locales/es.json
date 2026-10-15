@@ -2400,7 +2400,6 @@
       "previous_output": "Respuesta inválida anterior",
       "source_idea": "Proposición de nota original",
       "candidate_notes": "Notas candidatas con alias estables",
-      "explanation_min_score": "Puntuación mínima que recibe una explicación",
       "input_kind": "Tipo de evidencia",
       "input_heading": "Encabezado de evidencias",
       "graph_inputs": "Evidencias autorizadas con alias",

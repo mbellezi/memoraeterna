@@ -293,15 +293,15 @@ describe("atomic note candidate fusion", () => {
       prompts.push(
         buildBatchRerankPrompt(
           { title: "Source", ideaStatement: "Source idea" },
-          ordered.map((note, index) => ({ ...note, alias: `c${index + 1}` }))
+          ordered.map((note, index) => ({ ...note, alias: index + 1 }))
         )
       );
       hashes.push(ordered.map(atomicNoteDecisionContentHash));
     }
     expectIdentical(prompts);
     expectIdentical(hashes.map((list) => list.join(",")));
-    expect(prompts[0]).toContain("[c1]\nTitle: Alpha");
-    expect(prompts[0]).toContain("[c2]\nTitle: Beta");
+    expect(prompts[0]).toContain("[1]\nTitle: Alpha");
+    expect(prompts[0]).toContain("[2]\nTitle: Beta");
   });
 
   it("orders content keys without relying on the locale", () => {

@@ -65,10 +65,10 @@ relations, the graph, the topic tree, search, Ask or maintenance (Gardener).
 
 ## Relations
 
-- The decider explains only candidates it scores at a fixed threshold that could
-  be accepted; filters before it are lossless (they drop only candidates no
-  decider score could accept). A required decider that fails or decides nothing
-  fails the note visibly, before its checkpoint.
+- The decider writes no prose; explanations are written on demand for a relation
+  the owner opens, and cached. Filters before it are lossless (they drop only
+  candidates no decider score could accept). A required decider that fails or
+  decides nothing fails the note visibly, before its checkpoint.
 - Decisions keep each direction's raw score, AI run and time apart from
   calibration, keyed by both notes' content hashes and the decider; a decided
   direction is reused with the decider that decided it. A generative decider

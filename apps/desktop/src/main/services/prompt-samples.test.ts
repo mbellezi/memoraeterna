@@ -21,8 +21,7 @@ function model() {
       else if (id.startsWith("summary."))
         output = { summary: "A fictional study qualified the role of feedback.", concepts: [] };
       else if (id.startsWith("notes.") && id !== "notes.match") output = { notes: [] };
-      else if (id === "notes.match")
-        output = { results: [{ candidateAlias: "c1", score: 0, relationType: "related" }] };
+      else if (id === "notes.match") output = { results: [[1, 0, "related"]] };
       else if (id.includes("_identity")) output = { matches: [["r1", "c1"]] };
       else if (id === "graph.relation_labels")
         output = { labels: [{ key: "r1", displayLabel: "Improves recall" }] };

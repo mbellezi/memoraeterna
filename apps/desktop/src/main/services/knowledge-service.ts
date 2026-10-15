@@ -61,7 +61,6 @@ import {
   atomicNoteDeciderKey,
   atomicNoteMatchingVersion,
   atomicNotePromptVersion,
-  atomicNoteVerdictQualifies,
   buildAggregateSummaryPrompt,
   buildBatchRerankPrompt,
   calculateAtomicNoteMatchingProgress,
@@ -75,7 +74,6 @@ import {
   mergeBatchRerankRepair,
   normalizeSummaryText,
   parseBatchRerankOutput,
-  resolveAtomicNoteReferences,
   scoreMetadataOverlap,
   selectAtomicNoteRelations,
   knowledgeGraphPromptVersion,
@@ -1699,13 +1697,13 @@ export class KnowledgeService {
             reusedVerdicts
           );
       }
-      // Aliases follow the content order of the fused candidates, never their IDs.
+      // Candidate numbers follow the content order of the fused candidates, never their IDs.
       const pending = feasible.filter(
         (candidate) =>
           !cachedVerdicts.has(candidate.note.id) && !reusedVerdicts.has(candidate.note.id)
       );
       const rerankAliases = new Map(
-        pending.map((candidate, index) => [candidate.note.id, `c${index + 1}`])
+        pending.map((candidate, index) => [candidate.note.id, index + 1])
       );
       const runRerank = (subset: typeof pending, attempt: number) =>
         this.options.aiService.runDefaultTask(
@@ -1736,32 +1734,11 @@ export class KnowledgeService {
           signal,
           { maxOutputTokens: matchingSettings.maxRerankOutputTokens }
         );
-      // A verdict that can never be accepted (weak type, or a final score under the threshold even
-      // with it) is neither explained nor repaired.
-      const pendingByAlias = new Map(
-        pending.map((candidate) => [rerankAliases.get(candidate.note.id)!, candidate])
-      );
-      const verdictCanQualify = (
-        alias: string,
-        verdict: { score: number; relationType: AtomicNoteRelationType }
-      ) => {
-        const candidate = pendingByAlias.get(alias);
-        return (
-          !candidate ||
-          atomicNoteVerdictQualifies({
-            scores: candidate.scores,
-            hasEmbedding: candidate.hasEmbedding,
-            threshold: relationThreshold,
-            settings: matchingSettings,
-            verdict
-          })
-        );
-      };
       let rerankExecution: DefaultAiTaskResult | null = null;
       let rerankError: string | null = null;
       let rerankCause: unknown;
-      let repairedAliases: string[] = [];
-      let undecidedAliases: string[] = [];
+      let repairedAliases: number[] = [];
+      let undecidedAliases: number[] = [];
       const modelDecisions = new Map<string, BatchRerankDecision & { aiTaskRunId: string }>();
       if (pending.length > 0) {
         try {
@@ -1774,18 +1751,14 @@ export class KnowledgeService {
         }
         if (rerankExecution) {
           const aliases = pending.map((candidate) => rerankAliases.get(candidate.note.id)!);
-          const initial = parseBatchRerankOutput(
-            rerankExecution.output,
-            aliases,
-            verdictCanQualify
-          );
+          const initial = parseBatchRerankOutput(rerankExecution.output, aliases);
           const firstRunId = rerankExecution.aiTaskRunId;
           const runIds = new Map(aliases.map((alias) => [alias, firstRunId]));
           let merged = initial.decisions;
           let repairFailed = false;
           let repairCause: unknown;
           if (initial.retry.length > 0) {
-            // One repair call asks again only for missing, invalid or unexplained items.
+            // One repair call asks again only for the missing or malformed items.
             repairedAliases = initial.retry;
             const retry = new Set(initial.retry);
             try {
@@ -1794,11 +1767,7 @@ export class KnowledgeService {
                 1
               );
               if (repairExecution) {
-                const repaired = parseBatchRerankOutput(
-                  repairExecution.output,
-                  initial.retry,
-                  verdictCanQualify
-                );
+                const repaired = parseBatchRerankOutput(repairExecution.output, initial.retry);
                 for (const alias of repaired.decisions.keys())
                   runIds.set(alias, repairExecution.aiTaskRunId);
                 merged = mergeBatchRerankRepair(initial, repaired);
@@ -1885,7 +1854,6 @@ export class KnowledgeService {
         const { metadataScore, graphScore } = candidate.scores;
         const rerankScore = candidate.decision?.score ?? null;
         const modelDecision = modelDecisions.get(candidate.note.id);
-        const alias = rerankAliases.get(candidate.note.id);
         const decisionSource = modelDecision
           ? "model"
           : cachedVerdicts.has(candidate.note.id)
@@ -1903,22 +1871,12 @@ export class KnowledgeService {
             ? [candidate.note.id, note.id]
             : [note.id, candidate.note.id];
         const existingRelation = pairStatuses.has(candidate.note.id);
-        let explanation =
+        // The decider writes no prose: a decided relation keeps the localized fallback until its
+        // explanation is written on demand.
+        const explanation =
           rerankScore === null
             ? "knowledge.relations.explanations.hybrid"
             : "knowledge.relations.explanations.reranked";
-        if (modelDecision?.explanation && alias) {
-          try {
-            explanation = resolveAtomicNoteReferences(
-              modelDecision.explanation,
-              note.id,
-              alias,
-              candidate.note.id
-            );
-          } catch {
-            // The parser already refused unsafe references; keep the localized fallback.
-          }
-        }
         debugResults.push({
           targetType: "atomic_note",
           targetId: candidate.note.id,

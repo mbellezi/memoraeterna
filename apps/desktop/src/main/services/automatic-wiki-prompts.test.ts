@@ -143,7 +143,7 @@ describe("A0 legacy rendered prompt goldens (no model or database)", () => {
       "notes.repair": buildAtomicNoteRepairPrompt('{"notes":', [id(1)], new Error("invalid JSON")),
       "notes.match": buildBatchRerankPrompt(notes[0]!, [
         {
-          alias: "c1",
+          alias: 1,
           title: "Spacing",
           ideaStatement: "Distributed practice helped in the fictional comparison."
         }

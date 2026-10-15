@@ -49,8 +49,8 @@ const variableExamples: Record<string, z.infer<ReturnType<typeof z.json>>> = {
   allowed_chunk_ids: ["00000000-0000-4000-8000-000000000001"],
   previous_output: '{"notes":',
   source_idea: "Feedback improved delayed recall in a fictional trial.",
-  candidate_notes: "c1: Spaced practice\nPractice on separate days improved recall.",
-  explanation_min_score: 0.65,
+  candidate_notes:
+    "[1]\nTitle: Spaced practice\nMain idea: Practice on separate days improved recall.",
   input_kind: "source_chunks",
   evidence_aliases: ["c1"],
   source_language: "en",
@@ -182,13 +182,7 @@ function variable(key: string, id: string): PromptVariable {
       key === "guidance"
         ? "user_guidance"
         : numeric ||
-            [
-              "output_contract",
-              "content_language",
-              "input_kind",
-              "input_heading",
-              "explanation_min_score"
-            ].includes(key)
+            ["output_contract", "content_language", "input_kind", "input_heading"].includes(key)
           ? "public"
           : "source_content",
     serialization: "text",
@@ -243,22 +237,23 @@ export const promptDefinitions: PromptDefinition[] = shippedPromptBodies.map((ro
             "organization.evolution.support"
           ].includes(row.id)
         ? "5"
-        : [
-              "consultation.knowledge",
-              "consultation.investigation",
-              "consultation.gaps",
-              // Decision-only matching contract (atomic-note-matching-v8).
-              "notes.match",
-              // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
-              "graph.atomic_notes",
-              "graph.source_chunks",
-              "graph.catalog_metadata",
-              "graph.atomic_notes.repair",
-              "graph.source_chunks.repair",
-              "graph.catalog_metadata.repair"
-            ].includes(row.id)
-          ? "2"
-          : "1",
+        : // Decide-only compact matching contract (atomic-note-matching-v9).
+          row.id === "notes.match"
+          ? "3"
+          : [
+                "consultation.knowledge",
+                "consultation.investigation",
+                "consultation.gaps",
+                // Entities and relations only: claims are no longer extracted (knowledge-graph-v8).
+                "graph.atomic_notes",
+                "graph.source_chunks",
+                "graph.catalog_metadata",
+                "graph.atomic_notes.repair",
+                "graph.source_chunks.repair",
+                "graph.catalog_metadata.repair"
+              ].includes(row.id)
+            ? "2"
+            : "1",
     fields: [
       {
         id: "body",

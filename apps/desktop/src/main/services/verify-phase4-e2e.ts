@@ -1198,19 +1198,13 @@ try {
           }
         };
       }
-      const aliases = [...input.matchAll(/^\[(c\d+)\]$/gmu)].map((match) => match[1]!);
+      const aliases = [...input.matchAll(/^\[(\d+)\]$/gmu)].map((match) => Number(match[1]));
       pairCalls.rerankAliases.push(aliases.length);
       return {
         ...execution,
         aiTaskRunId,
-        output: {
-          results: aliases.map((alias) => ({
-            candidateAlias: alias,
-            score: 0.9,
-            relationType: "supports",
-            explanation: `${alias} supports s1.`
-          }))
-        }
+        // The decide-only contract: one [number, score 0-100, type] item per candidate.
+        output: { results: aliases.map((alias) => [alias, 90, "supports"]) }
       };
     }
   };

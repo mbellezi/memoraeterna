@@ -60,15 +60,8 @@ const route = (modelId = "model") => ({
   parameters: {},
   modelDefaultParameters: {}
 });
-const result = (
-  candidateAlias: string,
-  score: number,
-  relationType: string,
-  explanation?: string
-) =>
-  explanation === undefined
-    ? { candidateAlias, score, relationType }
-    : { candidateAlias, score, relationType, explanation };
+/** One item of the decide-only contract: the candidate's number, a score 0-100 and the type. */
+const result = (alias: number, score: number, relationType: string) => [alias, score, relationType];
 function service(settings: unknown = {}) {
   return new KnowledgeService({
     getPool: () => ({}) as PgPool,
@@ -90,12 +83,7 @@ const respond = (...outputs: unknown[]) => {
   );
 };
 const defaultVerdicts = {
-  results: [
-    // A rejected candidate's prose is ignored, even when it names another candidate.
-    result("c1", 0.1, "supports", "Unlike c3, the candidate supplies only weak support."),
-    result("c2", 0.7, "supports", "c2 reinforces the central claim of s1."),
-    result("c3", 0.95, "extends", "c3 adds a further condition to s1.")
-  ]
+  results: [result(1, 10, "supports"), result(2, 70, "supports"), result(3, 95, "extends")]
 };
 const embeddingResult = () => execution(Array.from({ length: 256 }, () => 0.1));
 beforeEach(() => {
@@ -142,7 +130,9 @@ describe("atomic note matching execution", () => {
       expect.objectContaining({
         targetAtomicNoteId: "c",
         relationType: "extends",
-        explanation: '<note-ref id="c" /> adds a further condition to <note-ref id="source" />.'
+        rerankScore: 0.95,
+        // The decider writes no prose: the explanation is written later, on demand.
+        explanation: "knowledge.relations.explanations.reranked"
       })
     );
   });
@@ -230,48 +220,45 @@ describe("atomic note matching execution", () => {
         if (task === "embedding") return execution(Array.from({ length: 256 }, () => 0.1));
         if (!prompt.includes("Title: Alpha")) {
           repairPrompts.push(prompt);
-          return execution({ results: [result("c2", 0.1, "supports")] });
+          return execution({ results: [result(2, 10, "supports")] });
         }
         rerankPrompts.push(prompt);
         // c2 is missing, so a repair asks for it alone.
-        return execution({ results: ["c1", "c3"].map((alias) => result(alias, 0.1, "supports")) });
+        return execution({ results: [1, 3].map((alias) => result(alias, 10, "supports")) });
       });
       await service({ graphCandidateLimit: 5 }).matchAtomicNotes(["source"]);
     }
     expect(rerankPrompts).toHaveLength(4);
     expect(new Set(rerankPrompts).size).toBe(1);
     const prompt = rerankPrompts[0]!;
-    expect(prompt.indexOf("[c1]\nTitle: Alpha")).toBeGreaterThan(-1);
-    expect(prompt.indexOf("[c2]\nTitle: Beta")).toBeGreaterThan(prompt.indexOf("[c1]"));
-    expect(prompt.indexOf("[c3]\nTitle: Gamma")).toBeGreaterThan(prompt.indexOf("[c2]"));
+    expect(prompt.indexOf("[1]\nTitle: Alpha")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("[2]\nTitle: Beta")).toBeGreaterThan(prompt.indexOf("[1]"));
+    expect(prompt.indexOf("[3]\nTitle: Gamma")).toBeGreaterThan(prompt.indexOf("[2]"));
     expect(repairPrompts).toHaveLength(4);
     expect(new Set(repairPrompts).size).toBe(1);
-    expect(repairPrompts[0]).toContain("[c2]\nTitle: Beta");
+    expect(repairPrompts[0]).toContain("[2]\nTitle: Beta");
     expect(repairPrompts[0]).not.toContain("Title: Alpha");
   });
 
   it("keeps valid items and asks once again only for the missing ones", async () => {
     respond(
       {
-        results: [
-          result("c1", 0.1, "related", "Unlike c3, this is a different condition."),
-          result("c3", 0.95, "extends", "c3 adds a further condition to s1.")
-        ]
+        results: [result(1, 10, "related"), result(3, 95, "extends")]
       },
-      { results: [result("c2", 0.7, "supports", "s1 is reinforced by c2.")] }
+      { results: [result(2, 70, "supports")] }
     );
     const matched = await service().matchAtomicNotes(["source"]);
     const [first, repair] = rerankCalls();
     expect(rerankCalls()).toHaveLength(2);
-    expect(repair?.[1]).toContain("[c2]\nTitle: b");
-    expect(repair?.[1]).not.toContain("[c1]");
-    expect(repair?.[1]).not.toContain("[c3]");
+    expect(repair?.[1]).toContain("[2]\nTitle: b");
+    expect(repair?.[1]).not.toContain("[1]");
+    expect(repair?.[1]).not.toContain("[3]");
     expect(first?.[2]).toMatchObject({ operation: "note_matching_reranking", attempt: 0 });
     expect(repair?.[2]).toMatchObject({ operation: "note_matching_reranking_repair", attempt: 1 });
     expect(matched.persistedCount).toBe(2);
     expect(mocks.relations.upsert.mock.calls.map(([input]) => input.explanation)).toEqual([
-      '<note-ref id="c" /> adds a further condition to <note-ref id="source" />.',
-      '<note-ref id="source" /> is reinforced by <note-ref id="b" />.'
+      "knowledge.relations.explanations.reranked",
+      "knowledge.relations.explanations.reranked"
     ]);
     expect(
       mocks.decisions.record.mock.calls.map(([r]) => [r.targetAtomicNoteId, r.aiTaskRunId])
@@ -282,19 +269,21 @@ describe("atomic note matching execution", () => {
     ]);
   });
 
-  it("keeps an accepted verdict whose explanation stays unsafe, with the localized fallback", async () => {
+  it("treats an item that carries prose as malformed and asks for it once more", async () => {
     respond(
       {
         results: [
-          result("c1", 0.1, "related"),
-          result("c2", 0.2, "related"),
-          result("c3", 0.95, "extends", "c2 and c3")
+          result(1, 10, "related"),
+          result(2, 20, "related"),
+          [3, 95, "extends", "3 adds a further condition to the source."]
         ]
       },
-      { results: [result("c3", 0.9, "extends", '<note-ref id="x" /> extends s1')] }
+      { results: [result(3, 90, "extends")] }
     );
     await service().matchAtomicNotes(["source"]);
     expect(rerankCalls()).toHaveLength(2);
+    expect(rerankCalls()[1]![1]).toContain("[3]\nTitle: c");
+    expect(rerankCalls()[1]![1]).not.toContain("Title: a");
     expect(mocks.relations.upsert).toHaveBeenCalledOnce();
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -361,7 +350,7 @@ describe("atomic note matching execution", () => {
     const onNoteCompleted = (noteId: string) => void completed.push(noteId);
     // c2 is missing from the first answer, so a repair asks for it alone.
     const firstAnswer = {
-      results: [result("c1", 0.1, "related"), result("c3", 0.95, "extends", "c3 extends s1.")]
+      results: [result(1, 10, "related"), result(3, 95, "extends")]
     };
     const timeout = new Error("provider_timeout");
     for (const [repairOutcome, cause] of [
@@ -389,23 +378,19 @@ describe("atomic note matching execution", () => {
     expect(completed).toEqual([]);
   });
 
-  it("keeps the decided items when a failed repair leaves nothing undecided or reranking is optional", async () => {
+  it("keeps the decided items when nothing needs a repair, or a failed repair with optional reranking", async () => {
     const throwingRepair = (firstAnswer: unknown) =>
       mocks.run.mockImplementation(async (task, _prompt, context: { attempt?: number }) => {
         if (task === "embedding") return embeddingResult();
         if (context.attempt === 1) throw new Error("provider_timeout");
         return execution(firstAnswer);
       });
-    // Only the explanation of an accepted pair is missing: the decision stands, with the fallback.
+    // Every item is valid: nothing is repaired, and the accepted pair keeps the fallback text.
     throwingRepair({
-      results: [
-        result("c1", 0.1, "related"),
-        result("c2", 0.2, "related"),
-        result("c3", 0.95, "extends")
-      ]
+      results: [result(1, 10, "related"), result(2, 20, "related"), result(3, 95, "extends")]
     });
     const matched = await service().matchAtomicNotes(["source"]);
-    expect(rerankCalls()).toHaveLength(2);
+    expect(rerankCalls()).toHaveLength(1);
     expect(matched.persistedCount).toBe(1);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -417,7 +402,7 @@ describe("atomic note matching execution", () => {
     // With optional reranking an undecided item stays undecided and the decided ones are kept.
     vi.clearAllMocks();
     throwingRepair({
-      results: [result("c1", 0.1, "related"), result("c3", 0.95, "extends", "c3 extends s1.")]
+      results: [result(1, 10, "related"), result(3, 95, "extends")]
     });
     const optional = await service({
       requireReranking: false,
@@ -439,46 +424,23 @@ describe("atomic note matching execution", () => {
     ]);
   });
 
-  it("asks neither for an explanation nor for a repair of a verdict that can never be accepted", async () => {
+  it("asks for no repair of a valid verdict, whatever its score or type", async () => {
+    for (const settings of [{}, { includeWeakTypes: true }]) {
+      vi.clearAllMocks();
+      respond({
+        results: [result(1, 10, "related"), result(2, 20, "related"), result(3, 90, "mentions")]
+      });
+      await service(settings).matchAtomicNotes(["source"]);
+      expect(rerankCalls()).toHaveLength(1);
+      expect(mocks.decisions.record).toHaveBeenCalledTimes(3);
+    }
     // A weak type is refused with the default settings, whatever the score.
+    vi.clearAllMocks();
     respond({
-      results: [
-        result("c1", 0.1, "related"),
-        result("c2", 0.2, "related"),
-        result("c3", 0.9, "mentions")
-      ]
+      results: [result(1, 10, "related"), result(2, 20, "related"), result(3, 90, "mentions")]
     });
     expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
-    expect(rerankCalls()).toHaveLength(1);
     expect(mocks.relations.upsert).not.toHaveBeenCalled();
-    expect(mocks.decisions.record).toHaveBeenCalledTimes(3);
-
-    // The same verdict is repaired when the settings could accept it.
-    vi.clearAllMocks();
-    respond(
-      {
-        results: [
-          result("c1", 0.1, "related"),
-          result("c2", 0.2, "related"),
-          result("c3", 0.9, "mentions")
-        ]
-      },
-      { results: [result("c3", 0.9, "mentions", "c3 only mentions s1.")] }
-    );
-    await service({ includeWeakTypes: true }).matchAtomicNotes(["source"]);
-    expect(rerankCalls()).toHaveLength(2);
-
-    // A final score under the threshold even with the verdict cannot qualify either.
-    vi.clearAllMocks();
-    const faint = ["a", "b", "c"].map((id) => ({
-      note: note(id),
-      textScore: 0.42,
-      vectorScore: 0.42
-    }));
-    mocks.notes.scoreMatchingCandidates.mockResolvedValue(faint);
-    respond({ results: ["c1", "c2", "c3"].map((alias) => result(alias, 0.9, "supports")) });
-    expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
-    expect(rerankCalls()).toHaveLength(1);
   });
 
   it("keeps the prompt and the decider key independent of the relation calibration", async () => {
@@ -494,7 +456,8 @@ describe("atomic note matching execution", () => {
     }
     expect(new Set(prompts).size).toBe(1);
     expect(new Set(keys).size).toBe(1);
-    expect(prompts[0]).toContain("Add explanation only when score is 0.5 or higher");
+    expect(prompts[0]).toContain("The score is an integer from 0 to 100");
+    expect(prompts[0]).not.toContain("explanation_min_score");
   });
 
   it("runs the decision with reasoning off by default and identifies the decider by that", async () => {
@@ -543,8 +506,8 @@ describe("atomic note matching execution", () => {
     await service().matchAtomicNotes(["source"]);
     expect(rerankCalls()).toHaveLength(1);
     const prompt = rerankCalls()[0]![1] as string;
-    expect(prompt).toContain("[c1]\nTitle: b");
-    expect(prompt).not.toContain("[c2]");
+    expect(prompt).toContain("[1]\nTitle: b");
+    expect(prompt).not.toContain("[2]");
     expect(mocks.decisions.findVerdicts.mock.calls[0]![0].targets).toEqual([
       { atomicNoteId: "b", contentHash: atomicNoteDecisionContentHash(note("b")) }
     ]);
@@ -562,16 +525,12 @@ describe("atomic note matching execution", () => {
       new Map([["c", { score: 0.95, relationType: "extends" }]])
     );
     respond({
-      results: [
-        result("c1", 0.1, "related"),
-        result("c2", 0.2, "related"),
-        result("c3", 1, "supports")
-      ]
+      results: [result(1, 10, "related"), result(2, 20, "related"), result(3, 100, "supports")]
     });
     const matched = await service().matchAtomicNotes(["source"]);
     const prompt = rerankCalls()[0]![1] as string;
-    expect(prompt).toContain("[c1]\nTitle: a");
-    expect(prompt).toContain("[c2]\nTitle: b");
+    expect(prompt).toContain("[1]\nTitle: a");
+    expect(prompt).toContain("[2]\nTitle: b");
     expect(prompt).not.toContain("Title: c");
     expect(matched.persistedCount).toBe(1);
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
@@ -642,7 +601,7 @@ describe("atomic note matching execution", () => {
     mocks.decisions.findVerdicts.mockResolvedValue(
       new Map([["c", { score: 0.95, relationType: "extends" }]])
     );
-    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    respond({ results: [result(1, 10, "related"), result(2, 20, "related")] });
     await service().matchAtomicNotes(["source"]);
     // The cached verdict belongs to the decider it was looked up under, not to the new route.
     expect(mocks.relations.upsert).toHaveBeenCalledWith(
@@ -765,11 +724,7 @@ describe("note embeddings in matching", () => {
       ];
     });
     respond({
-      results: [
-        result("c1", 0.1, "related"),
-        result("c2", 0.1, "related"),
-        result("c3", 0.9, "extends", "c3 adds a condition to s1.")
-      ]
+      results: [result(1, 10, "related"), result(2, 10, "related"), result(3, 90, "extends")]
     });
     const matched = await service().matchAtomicNotes(["source"]);
     expect(scorings).toBe(2);
@@ -796,7 +751,7 @@ describe("note embeddings in matching", () => {
         ? context.atomicNoteId === "c"
           ? null
           : embeddingResult()
-        : execution({ results: [result("c1", 0.9, "extends", "c1 adds a condition to s1.")] })
+        : execution({ results: [result(1, 90, "extends")] })
     );
     const matched = await service().matchAtomicNotes(["source", "second"]);
     expect(rerankCalls()).toHaveLength(2);
@@ -818,7 +773,7 @@ describe("note embeddings in matching", () => {
         hasVector: true
       }))
     );
-    respond({ results: ["c1", "c2", "c3"].map((alias) => result(alias, 0.9, "supports")) });
+    respond({ results: [1, 2, 3].map((alias) => result(alias, 90, "supports")) });
     expect((await service().matchAtomicNotes(["source"])).persistedCount).toBe(0);
     expect(rerankCalls()).toHaveLength(1);
     expect(embeddedNoteIds()).toEqual(["source"]);
@@ -830,11 +785,11 @@ describe("one decision per unordered pair with a generative decider", () => {
 
   it("answers a direction from the verdict of the reverse direction and asks only for the rest", async () => {
     mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
-    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    respond({ results: [result(1, 10, "related"), result(2, 20, "related")] });
     const matched = await service().matchAtomicNotes(["source"]);
     const prompt = rerankCalls()[0]![1] as string;
-    expect(prompt).toContain("[c1]\nTitle: a");
-    expect(prompt).toContain("[c2]\nTitle: b");
+    expect(prompt).toContain("[1]\nTitle: a");
+    expect(prompt).toContain("[2]\nTitle: b");
     expect(prompt).not.toContain("Title: c");
     expect(mocks.decisions.findReverseVerdicts).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -890,7 +845,7 @@ describe("one decision per unordered pair with a generative decider", () => {
       new Map([["c", { score: 0.9, relationType: "supports" }]])
     );
     mocks.decisions.findReverseVerdicts.mockResolvedValue(new Map([["c", reverse]]));
-    respond({ results: [result("c1", 0.1, "related"), result("c2", 0.2, "related")] });
+    respond({ results: [result(1, 10, "related"), result(2, 20, "related")] });
     await service().matchAtomicNotes(["source"]);
     expect(
       mocks.decisions.findReverseVerdicts.mock.calls[0]![0].targets.map(
@@ -1004,7 +959,7 @@ describe("one decision per unordered pair with a generative decider", () => {
             .map((id) => [id, "pending_review"] as const)
         )
     );
-    respond({ results: [result("c1", 0.9, "supports", "c1 supports s1.")] });
+    respond({ results: [result(1, 90, "supports")] });
     const matched = await service().matchAtomicNotes(["s1", "s2"]);
     expect(rerankCalls()).toHaveLength(1);
     expect(matched.persistedCount).toBe(1);

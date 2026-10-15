@@ -2393,7 +2393,6 @@
       "previous_output": "Previous invalid output",
       "source_idea": "Source note proposition",
       "candidate_notes": "Candidate notes with stable aliases",
-      "explanation_min_score": "Lowest score that receives an explanation",
       "input_kind": "Evidence input kind",
       "input_heading": "Evidence section heading",
       "graph_inputs": "Authorized graph evidence with aliases",
