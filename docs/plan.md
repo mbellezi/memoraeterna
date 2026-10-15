@@ -52,6 +52,12 @@ concurrency and automatic correction.
     at the 95th percentile of its own decider noise (~17% of samples reach it). F1a closes on ≤1/3 of the v6
     time per note, 0/35 forbidden and ≥27/28 expected on notes or sources; note-layer coverage becomes an
     F3 target (`docs/kpi-f1a.md`).
+16. **The decider writes no prose; explanations are written on demand** (2026-10-15): on the golden library
+    note matching was 4.29 s/note (41% of v6) and explanations, half of them on verdicts that can never be
+    accepted, were the largest removable cost. The decide call returns compact `[alias, score 0-100, type]`
+    items only (`atomic-note-matching-v9`); a relation's explanation is written when the owner opens it and
+    is cached on the relation (the F3 `relation.explain` task, pulled into F1b with the Note page). Analysis:
+    `docs/kpi-f1a.md`.
 
 ## 3. The five swaps
 
@@ -350,6 +356,8 @@ most one in-flight call.
 
 - [x] `objects.locate` (stable contract) and a "Where is this" panel on sources and notes.
 - [ ] Note page v1 as the definitive object-page component, hosted in the Library.
+- [ ] Decide-only compact matching contract v9 and on-demand, cached relation explanations (decision 16);
+      decide calls without the reasoning summary if the backend accepts it.
 - [x] Citations open the exact chunk and SourceSpan.
 - [x] `tokens.css` (light, dark, system), Inter + Source Serif 4 bundled offline, AA accents; application
       menu (⌘W closes a panel); local view-history store.
@@ -361,7 +369,8 @@ library; 326 token pairs pass AA in both themes; mockups approved on 2026-10-15
 (https://claude.ai/artifact/SDrknF4YwtDLdzGF4iwmKG).
 
 Exit: `objects.locate` p95 ≤50 ms; a source or note shows its location in 0-1 click; token contrast check
-passes AA in both themes; mockups approved.
+passes AA in both themes; mockups approved; golden note matching ≤3.47 s/note with fixture quality within the
+v8 range (0/35 forbidden, ≥27/28 on notes or sources).
 
 ### F2 Topic Tree Engine (weeks 7-11)
 

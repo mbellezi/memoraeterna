@@ -34,6 +34,8 @@ dated measurements, not rules.
   Decisions API as an optional remote relation decider, on the same data.
 - [spikes/spike-b-topic-tree.md](spikes/spike-b-topic-tree.md) — a deterministic
   topic tree built on real embeddings.
+- [spikes/f1a-matching-latency.md](spikes/f1a-matching-latency.md) — where note-matching time goes on
+  the golden library and the ranked fixes behind decision 16.
 - [kpi-golden.md](kpi-golden.md) — the golden library baseline: pipeline time, AI calls, first v6
   matching measurement and replay determinism.
 - [kpi-f1a.md](kpi-f1a.md) — F1a measurements: matching fixture on pinned notes, why the note layer reads

@@ -42,6 +42,26 @@ graph and matching ran live.
   are longer and keep more feasible candidates per call. The remaining gap is being analysed.
 - 105 note relations (v6: 91), 1 source relation (v6: 2), 484 entities (v6: 565, no claims).
 
+### Where the golden 4.29 s per note goes
+
+From the recorded calls (exact token counts; robust per-call model: 1.20 s + 5.3 ms per visible token +
+8.9 ms per reasoning token, R² 0.91; input size has no measurable effect). Full analysis: `docs/spikes/f1a-matching-latency.md`.
+
+| Component | s/note | Share |
+| --- | --- | --- |
+| Fixed cost per call (151 calls) | 1.14 | 27% |
+| Reasoning tokens (164 per call, `low` is the route's floor) | 1.38 | 32% |
+| Explanation text and wrapper (562 explanations) | 0.59 | 14% |
+| JSON keys, quotes and decimal scores | 0.40 | 9% |
+| Decision values | 0.33 | 8% |
+| Backend tail (unexplained) | 0.45 | 10% |
+
+- 270 of the 562 explanations sat on verdicts that can never be accepted; at most 105 reached a persisted
+  relation.
+- Predicted for a decide-only compact contract (`[alias, score 0-100, type]`): 3.29 s/note on the golden
+  library (medium confidence) and about 2.25 on the fixture; adopted as decision 16 with explanations
+  written on demand.
+
 ## Why the note layer reads 22-24 (diagnosis)
 
 - Extraction sampling: the F1a run extracted different notes for the same roots, and the four missing
