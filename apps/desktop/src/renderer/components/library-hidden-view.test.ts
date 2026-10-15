@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createLibraryHistoryState,
+  editorClaimsClose,
   libraryBackLabelKey,
+  libraryClosesSource,
+  libraryHistoryEntryForOpening,
+  libraryHistoryEntryFromState,
   libraryPopStateAction,
+  noteBackLabelKey,
   targetOpeningSource,
   type LibraryExternalTarget
 } from "./LibraryView";
@@ -42,12 +48,22 @@ describe("a Library that is hidden", () => {
     });
     expect(
       libraryPopStateAction(true, { view: "library", path: [sourceA], fromSearch: true })
-    ).toEqual({ type: "path", path: [sourceA], fromSearch: true });
+    ).toEqual({ type: "path", path: [sourceA], fromSearch: true, noteId: null });
+    // An entry with an open note brings the Note page back.
+    expect(
+      libraryPopStateAction(true, {
+        view: "library",
+        path: [sourceA],
+        fromSearch: false,
+        noteId: noteA
+      })
+    ).toEqual({ type: "path", path: [sourceA], fromSearch: false, noteId: noteA });
     // A foreign entry returns to the Library root.
     expect(libraryPopStateAction(true, null)).toEqual({
       type: "path",
       path: [],
-      fromSearch: false
+      fromSearch: false,
+      noteId: null
     });
   });
 });
@@ -100,5 +116,82 @@ describe("what a Library target applies to", () => {
         fromSearch: false
       })
     ).toBe("library.back");
+  });
+});
+
+describe("a note open as a page in the Library history", () => {
+  it("round-trips with and without the note", () => {
+    const withNote = { view: "library" as const, path: [sourceA], fromSearch: true, noteId: noteA };
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState(withNote))).toEqual(withNote);
+    const without = { view: "library" as const, path: [sourceA], fromSearch: false };
+    expect(libraryHistoryEntryFromState(createLibraryHistoryState(without))).toEqual(without);
+  });
+
+  it("drops a note that is not an ID and keeps the path", () => {
+    for (const noteId of ["memora://note/x", 42, "", null])
+      expect(
+        libraryHistoryEntryFromState({
+          memoraEternaLibrary: {
+            version: 1,
+            view: "library",
+            path: [sourceA],
+            fromSearch: false,
+            noteId
+          }
+        })
+      ).toEqual({ view: "library", path: [sourceA], fromSearch: false });
+  });
+
+  it("opens note targets with the same Back as before", () => {
+    expect(libraryHistoryEntryForOpening("knowledgeGraph", null)).toEqual({
+      view: "knowledgeGraph"
+    });
+    expect(
+      libraryHistoryEntryForOpening("recents", { view: "library", path: [], fromSearch: false })
+    ).toBeNull();
+  });
+
+  it("labels Back with the origin of the target that opened the note, else plain Back", () => {
+    const opened = (origin?: NonNullable<LibraryExternalTarget["origin"]>) => ({
+      openedTarget: {
+        sourceItemId: sourceA,
+        atomicNoteId: noteA,
+        token: 1,
+        ...(origin ? { origin } : {})
+      } satisfies LibraryExternalTarget,
+      openNoteId: noteA,
+      stack: [sourceA],
+      fromSearch: false
+    });
+    expect(noteBackLabelKey(opened("knowledgeGraph"))).toBe("knowledgeGraph.backToGraph");
+    expect(noteBackLabelKey(opened("wiki"))).toBe("wiki.backToWiki");
+    expect(noteBackLabelKey({ ...opened(), fromSearch: true })).toBe("library.detail.backToSearch");
+    expect(noteBackLabelKey(opened("recents"))).toBe("library.back");
+    expect(noteBackLabelKey(opened("import"))).toBe("library.back");
+    // Another note opened inside the Library (a relation, a card) just goes back.
+    expect(noteBackLabelKey({ ...opened("knowledgeGraph"), openNoteId: sourceB })).toBe(
+      "notePage.back"
+    );
+    expect(noteBackLabelKey({ ...opened("knowledgeGraph"), stack: [sourceB] })).toBe(
+      "notePage.back"
+    );
+    expect(
+      noteBackLabelKey({
+        openedTarget: null,
+        openNoteId: noteA,
+        stack: [sourceA],
+        fromSearch: true
+      })
+    ).toBe("notePage.back");
+  });
+});
+
+describe("Cmd-W in a Library that is hidden or covered", () => {
+  it("lets an open source editor keep Cmd-W only while the Library is shown", () => {
+    expect(editorClaimsClose(true, "edit")).toBe(true);
+    expect(editorClaimsClose(true, "child")).toBe(true);
+    expect(editorClaimsClose(false, "edit")).toBe(false);
+    expect(editorClaimsClose(true, null)).toBe(false);
+    expect(libraryClosesSource(false, sourceA)).toBe(false);
   });
 });

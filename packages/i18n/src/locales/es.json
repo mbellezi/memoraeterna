@@ -2758,7 +2758,6 @@
     },
     "citation": {
       "openPassage": "Abrir el pasaje en la fuente",
-      "noteOrigin": "Abrir el pasaje del que procede esta nota",
       "showing": "Mostrando el pasaje citado",
       "unavailable": "Este pasaje no está en la versión actual de la fuente. Puede pertenecer a una versión anterior.",
       "earlierVersions": "Mostrar versiones anteriores",

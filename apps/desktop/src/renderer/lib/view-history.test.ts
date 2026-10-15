@@ -69,12 +69,9 @@ describe("what the Library shows for an open source", () => {
     atomicNotes: [{ id: noteId, title: "A note" }]
   };
 
-  it("is the source, and the focused note with its source as host", () => {
-    expect(openedLibraryObjects(detail, null)).toEqual([source]);
-    expect(openedLibraryObjects(detail, noteId)).toEqual([source, note]);
-    // A note that is not in this source cannot be recorded against it.
-    expect(openedLibraryObjects(detail, "00000000-0000-4000-8000-0000000000b2")).toEqual([source]);
-    expect(openedLibraryObjects(null, noteId)).toEqual([]);
+  it("is the source only: a Note page records its note itself", () => {
+    expect(openedLibraryObjects(detail)).toEqual([source]);
+    expect(openedLibraryObjects(null)).toEqual([]);
   });
 });
 

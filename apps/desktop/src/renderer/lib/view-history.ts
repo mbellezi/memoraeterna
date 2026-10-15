@@ -64,28 +64,11 @@ export function recentOpenTarget(
 }
 
 /**
- * The objects the Library shows for the source that is open: the source, and the note that is
- * focused in it (recorded with its source as host, so it can be opened again from there).
+ * The objects the Library shows for the source that is open: the source. A note opened as a page
+ * records itself, with its source as host, so it can be opened again from there.
  */
-export function openedLibraryObjects(
-  source: {
-    id: string;
-    title: string;
-    atomicNotes: ReadonlyArray<{ id: string; title: string }>;
-  } | null,
-  focusedNoteId: string | null
-): OpenedObject[] {
-  if (!source) return [];
-  const objects: OpenedObject[] = [{ kind: "source", id: source.id, title: source.title }];
-  const note = focusedNoteId ? source.atomicNotes.find((item) => item.id === focusedNoteId) : null;
-  if (note)
-    objects.push({
-      kind: "note",
-      id: note.id,
-      title: note.title,
-      parentAddress: formatObjectAddress({ kind: "source", id: source.id })
-    });
-  return objects;
+export function openedLibraryObjects(source: { id: string; title: string } | null): OpenedObject[] {
+  return source ? [{ kind: "source", id: source.id, title: source.title }] : [];
 }
 
 /** Where keyboard focus goes in the Recents list when an action removes the control that had it. */

@@ -58,6 +58,7 @@ import {
   type RecentTarget
 } from "../lib/view-history";
 import { RecentObjects } from "./RecentObjects";
+import { NotePage } from "./note-page/NotePage";
 import { ImportView, childSourceType } from "./ImportView";
 import { AiNoteBadge } from "./AiNoteBadge";
 import { Tabs } from "./ui/tabs";
@@ -86,7 +87,8 @@ export interface LibraryExternalTarget {
 }
 
 export type LibraryHistoryEntry =
-  | { view: "library"; path: string[]; fromSearch: boolean }
+  /** `noteId`: a note is open as a page over the source path. */
+  | { view: "library"; path: string[]; fromSearch: boolean; noteId?: string }
   | { view: "search" }
   | { view: "knowledgeGraph" }
   | { view: "wiki" };
@@ -111,7 +113,7 @@ export function libraryHistoryEntryForOpening(
 export type LibraryPopStateAction =
   | { type: "ignore" }
   | { type: "exit"; view: "wiki" | "search" | "knowledgeGraph" }
-  | { type: "path"; path: string[]; fromSearch: boolean };
+  | { type: "path"; path: string[]; fromSearch: boolean; noteId: string | null };
 
 export function libraryPopStateAction(
   active: boolean,
@@ -121,8 +123,8 @@ export function libraryPopStateAction(
   if (entry?.view === "wiki" || entry?.view === "search" || entry?.view === "knowledgeGraph")
     return { type: "exit", view: entry.view };
   return entry?.view === "library"
-    ? { type: "path", path: entry.path, fromSearch: entry.fromSearch }
-    : { type: "path", path: [], fromSearch: false };
+    ? { type: "path", path: entry.path, fromSearch: entry.fromSearch, noteId: entry.noteId ?? null }
+    : { type: "path", path: [], fromSearch: false, noteId: null };
 }
 
 /**
@@ -140,6 +142,42 @@ export function targetOpeningSource(
 export function libraryClosesSource(active: boolean, currentId: string | null): boolean {
   return active && currentId !== null;
 }
+
+/**
+ * An open source editor keeps Cmd-W from closing anything (an edit is never discarded), but only
+ * while the Library is shown and the editor is not covered: a hidden view claims nothing.
+ */
+export function editorClaimsClose(active: boolean, editor: "edit" | "child" | null): boolean {
+  return active && editor !== null;
+}
+
+/**
+ * What Back says on a Note page: the origin of the target that opened it (graph, wiki, search,
+ * recents or import), or plain "Back" for a note opened inside the Library.
+ */
+export function noteBackLabelKey(input: {
+  openedTarget: LibraryExternalTarget | null;
+  openNoteId: string | null;
+  stack: readonly string[];
+  fromSearch: boolean;
+}): MessageKey {
+  const target = input.openedTarget;
+  if (
+    target &&
+    input.openNoteId !== null &&
+    target.atomicNoteId === input.openNoteId &&
+    !target.passage &&
+    input.stack[0] === target.sourceItemId
+  ) {
+    if (target.origin === "knowledgeGraph") return "knowledgeGraph.backToGraph";
+    if (target.origin === "wiki") return "wiki.backToWiki";
+    if (input.fromSearch) return "library.detail.backToSearch";
+    return "library.back";
+  }
+  return "notePage.back";
+}
+
+const noteIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function libraryBackLabelKey(input: {
   stack: readonly string[];
@@ -174,7 +212,15 @@ export function libraryHistoryEntryFromState(state: unknown): LibraryHistoryEntr
     typeof entry.fromSearch !== "boolean"
   )
     return null;
-  return { view: "library", path: entry.path, fromSearch: entry.fromSearch };
+  // A note that is not an ID is dropped, not fatal: the entry still opens its path.
+  const noteId =
+    typeof entry.noteId === "string" && noteIdPattern.test(entry.noteId) ? entry.noteId : null;
+  return {
+    view: "library",
+    path: entry.path,
+    fromSearch: entry.fromSearch,
+    ...(noteId ? { noteId } : {})
+  };
 }
 
 export function navigateLibraryHistoryFromMouseButton(
@@ -318,10 +364,17 @@ export function LibraryView({
     token: number;
   } | null>(null);
   const passageToken = useRef(0);
-  const [relationNoteTarget, setRelationNoteTarget] = useState<{
-    sourceItemId: string;
-    noteId: string;
-  } | null>(null);
+  // A note open as a page covers the source path (or the list), which stays mounted underneath.
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  // The control that opened the note page from the covered surface, focused again when it closes.
+  const noteOpener = useRef<HTMLElement | null>(null);
+  const shownNoteId = useRef<string | null>(null);
+  // What the list focuses when it is shown again: the source or recent entry that was opened.
+  const listFocus = useRef<
+    { kind: "source"; id: string } | { kind: "recent"; address: string } | null
+  >(null);
+  const [recentFocus, setRecentFocus] = useState<string | null>(null);
+  const listHeadingRef = useRef<HTMLHeadingElement>(null);
   const [graphResults, setGraphResults] = useState<SearchResult[]>([]);
   const [stack, setStack] = useState<string[]>([]);
   const [detail, setDetail] = useState<SourceDetail | null>(null);
@@ -361,6 +414,9 @@ export function LibraryView({
 
   const currentId = stack.at(-1) ?? null;
   const listKey = JSON.stringify([query, filter, offset, currentId]);
+  // The surface under a note page loads nothing until it is uncovered.
+  const covered = openNoteId !== null;
+  const surfaceActive = active && !covered;
 
   /**
    * A silent load refreshes in place (after the view was hidden, with the same key and a
@@ -418,7 +474,7 @@ export function LibraryView({
   }
 
   useEffect(() => {
-    if (!active) {
+    if (!surfaceActive) {
       listWasHidden.current = true;
       return;
     }
@@ -429,7 +485,7 @@ export function LibraryView({
       window.clearTimeout(timer);
       loadGeneration.current++;
     };
-  }, [query, filter, offset, currentId, refreshKey, active]);
+  }, [query, filter, offset, currentId, refreshKey, surfaceActive]);
 
   useEffect(() => {
     if (!historyInitialized.current) {
@@ -451,6 +507,7 @@ export function LibraryView({
       if (action.type === "exit") {
         setStack([]);
         setFromSearch(false);
+        setOpenNoteId(null);
         const exit =
           action.view === "wiki"
             ? onExitToWikiRef
@@ -463,6 +520,7 @@ export function LibraryView({
       setPassageTarget(null);
       setStack(action.path);
       setFromSearch(action.fromSearch);
+      setOpenNoteId(action.noteId);
     }
 
     window.addEventListener("popstate", handlePopState);
@@ -485,15 +543,20 @@ export function LibraryView({
       );
       if (opening) replaceLibraryHistory(opening);
     }
+    // A note target opens the note as a page over its source; a passage target opens the reader.
+    const noteId = externalTarget.passage ? null : (externalTarget.atomicNoteId ?? null);
     pushLibraryHistory({
       view: "library",
       path: [externalTarget.sourceItemId],
-      fromSearch: cameFromSearch
+      fromSearch: cameFromSearch,
+      ...(noteId ? { noteId } : {})
     });
     onNavigate?.();
     setFromSearch(cameFromSearch);
     setStack([externalTarget.sourceItemId]);
     setOpenedTarget(externalTarget);
+    noteOpener.current = null;
+    setOpenNoteId(noteId);
     passageToken.current += 1;
     setPassageTarget(
       externalTarget.passage
@@ -517,8 +580,13 @@ export function LibraryView({
     if (!reopened) return;
     // A Back out of the Library leaves a foreign entry; repair it so the next Back stays inside.
     if (libraryHistoryEntryFromState(window.history.state)?.view === "library") return;
-    replaceLibraryHistory({ view: "library", path: stack, fromSearch });
-  }, [active, stack, fromSearch]);
+    replaceLibraryHistory({
+      view: "library",
+      path: stack,
+      fromSearch,
+      ...(openNoteId ? { noteId: openNoteId } : {})
+    });
+  }, [active, stack, fromSearch, openNoteId]);
 
   useEffect(() => {
     if (!currentId) {
@@ -527,7 +595,7 @@ export function LibraryView({
       detailOutcome.current = null;
       return;
     }
-    if (!active) {
+    if (!surfaceActive) {
       detailWasHidden.current = true;
       return;
     }
@@ -558,25 +626,54 @@ export function LibraryView({
     return () => {
       live = false;
     };
-  }, [currentId, refreshKey, active]);
+  }, [currentId, refreshKey, surfaceActive]);
 
   // Only the target that opened this very source may focus a note or relabel Back.
   const shownDetail = detail && detail.id === currentId ? detail : null;
   const detailTarget = detail ? targetOpeningSource(openedTarget, detail.id) : null;
+  // The card of the note a target came from, when the source shows; a passage target wins.
   const focusedNoteId =
-    detail && relationNoteTarget?.sourceItemId === detail.id
-      ? relationNoteTarget.noteId
-      : (detailTarget?.atomicNoteId ?? null);
+    detailTarget && !detailTarget.passage ? (detailTarget.atomicNoteId ?? null) : null;
 
-  // Each source or note that is opened (not one that merely stays open) goes to the local history.
+  // Each source that is opened (not one that merely stays open) goes to the local history; a Note
+  // page records its note itself.
   useEffect(() => {
     const next = viewsToRecord(
-      active ? openedLibraryObjects(shownDetail, focusedNoteId) : null,
+      surfaceActive ? openedLibraryObjects(shownDetail) : null,
       recordedViews.current
     );
     recordedViews.current = next.recorded;
     for (const view of next.record) recordView(view);
-  }, [active, shownDetail, focusedNoteId]);
+  }, [surfaceActive, shownDetail]);
+
+  // Closing a note page gives focus back to what opened it, when that is still on screen.
+  useEffect(() => {
+    const previous = shownNoteId.current;
+    shownNoteId.current = openNoteId;
+    if (previous === null || openNoteId !== null) return;
+    const opener = noteOpener.current;
+    noteOpener.current = null;
+    if (!opener?.isConnected) return;
+    const frame = window.requestAnimationFrame(() => opener.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [openNoteId]);
+
+  // Back to the list gives focus to the source or recent entry that was opened, else its heading,
+  // once the list for this key has loaded (a loading list has no entry to focus).
+  useEffect(() => {
+    const target = listFocus.current;
+    if (!surfaceActive || currentId !== null || loading || !target) return;
+    if (listOutcome.current?.key !== listKey) return;
+    listFocus.current = null;
+    if (target.kind === "recent") {
+      setRecentFocus(target.address);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() =>
+      (document.getElementById(`library-source-${target.id}`) ?? listHeadingRef.current)?.focus()
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [surfaceActive, currentId, loading, listKey]);
 
   function openSource(id: string) {
     navigateToPath([...stack, id], fromSearch);
@@ -585,6 +682,10 @@ export function LibraryView({
   function goBack() {
     if (libraryHistoryEntryFromState(window.history.state)?.view === "library") {
       window.history.back();
+      return;
+    }
+    if (openNoteId !== null) {
+      setOpenNoteId(null);
       return;
     }
 
@@ -599,30 +700,43 @@ export function LibraryView({
     navigateToPath(ids, false);
   }
 
-  // Where "Where is this" leads: a source at its place in the hierarchy, a note in its source or
-  // a legacy wiki page. The current path is not pushed again.
+  // A note opens as a page over the current surface; Back returns to it. A note opened from another
+  // note page keeps the control that opened the first one, so closing them all returns there.
+  function openNote(noteId: string) {
+    if (openNoteId === null)
+      noteOpener.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    pushLibraryHistory({ view: "library", path: stack, fromSearch, noteId });
+    setOpenNoteId(noteId);
+    setPassageTarget(null);
+    onNavigate?.();
+  }
+
+  // Where "Where is this" leads: a source at its place in the hierarchy, a note as its page or a
+  // legacy wiki page. The current path is not pushed again, unless a note page covers it.
   function navigateObject(navigation: OpenableNavigation) {
     if (navigation.type === "legacyPage") {
       onOpenWikiPage?.(navigation.pageId);
       return;
     }
-    const sourceItemId = navigation.path.at(-1);
-    if (!sourceItemId) return;
-    if (navigation.type === "note")
-      setRelationNoteTarget({ sourceItemId, noteId: navigation.noteId });
+    if (navigation.type === "note") {
+      openNote(navigation.noteId);
+      return;
+    }
     const samePath =
       navigation.path.length === stack.length && navigation.path.every((id, i) => stack[i] === id);
-    if (!samePath) openPath(navigation.path);
+    if (!samePath || openNoteId !== null) openPath(navigation.path);
   }
 
-  // A note opens the passage it came from; that passage may be in another source.
-  function openPassage(sourceItemId: string, passage: PassageAnchor) {
-    if (sourceItemId !== currentId) openSource(sourceItemId);
+  // "Open at passage" on a note page: the reader opens on it, and Back returns to the note.
+  function openPassageFromNote(sourceItemId: string, passage: PassageAnchor) {
+    navigateToPath(sourceItemId === currentId ? stack : [...stack, sourceItemId], fromSearch);
     passageToken.current += 1;
     setPassageTarget({ sourceItemId, passage, token: passageToken.current });
   }
 
   function navigateToPath(path: string[], cameFromSearch: boolean) {
+    setOpenNoteId(null);
     setPassageTarget(null);
     pushLibraryHistory({ view: "library", path, fromSearch: cameFromSearch });
     setStack(path);
@@ -646,6 +760,7 @@ export function LibraryView({
 
   function returnToLibraryAfterDeletion() {
     replaceLibraryHistory({ view: "library", path: [], fromSearch: false });
+    setOpenNoteId(null);
     setStack([]);
     setFromSearch(false);
     onNavigate?.();
@@ -665,8 +780,31 @@ export function LibraryView({
     [closeOpenSource]
   );
 
+  const notePage = openNoteId ? (
+    <NotePage
+      key={openNoteId}
+      noteId={openNoteId}
+      active={active}
+      backLabel={t(noteBackLabelKey({ openedTarget, openNoteId, stack, fromSearch }))}
+      t={t}
+      onBack={goBack}
+      onOpenNote={openNote}
+      onOpenPassage={openPassageFromNote}
+      onNavigate={navigateObject}
+      onChanged={() => setRefreshKey((key) => key + 1)}
+    />
+  ) : null;
+  // The surface a note page covers stays mounted in the same place of the tree (its tab, editor
+  // and the note's opener remain), hidden and inert.
+  const covering = (surface: ReactNode) => (
+    <>
+      {notePage}
+      <div hidden={covered}>{surface}</div>
+    </>
+  );
+
   if (currentId) {
-    return (
+    return covering(
       <>
         {detail && detail.id === currentId ? (
           <SourceDetailView
@@ -674,18 +812,14 @@ export function LibraryView({
             detail={detail}
             focusedSourceRelationId={detailTarget?.sourceRelationId}
             focusedAtomicNoteId={focusedNoteId}
-            active={active}
+            active={surfaceActive}
             metadataEnrichmentEnabled={metadataEnrichmentEnabled}
             allSources={sources}
             backLabel={t(libraryBackLabelKey({ stack, openedTarget, fromSearch }))}
             t={t}
             onOpen={openSource}
-            onOpenNote={(sourceItemId, noteId) => {
-              setRelationNoteTarget({ sourceItemId, noteId });
-              if (sourceItemId !== currentId) openSource(sourceItemId);
-            }}
+            onOpenNote={openNote}
             onNavigateObject={navigateObject}
-            onOpenPassage={openPassage}
             focusedPassage={passageTarget?.sourceItemId === detail.id ? passageTarget : null}
             onPassageShown={(token) =>
               setPassageTarget((current) => (current?.token === token ? null : current))
@@ -724,7 +858,7 @@ export function LibraryView({
         )}
         {processingIds ? (
           <ProcessingDialog
-            open={active}
+            open={surfaceActive}
             sourceIds={processingIds}
             sources={detail ? [...sources, detailAsLibrarySource(detail)] : sources}
             writerRouteReady={writerRouteReady}
@@ -739,8 +873,11 @@ export function LibraryView({
 
   const gridSources = sources;
 
-  return (
+  return covering(
     <section className="grid gap-4">
+      <h2 ref={listHeadingRef} tabIndex={-1} className="sr-only">
+        {t("shell.navigation.library")}
+      </h2>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <label className="grid min-w-64 flex-1 gap-1 text-sm font-medium">
           {t("sourceWorkspace.search")}
@@ -794,7 +931,19 @@ export function LibraryView({
         </button>
       </div>
       {onOpenRecent && !query.trim() && filter === "all" && offset === 0 ? (
-        <RecentObjects t={t} active={active} onOpen={onOpenRecent} />
+        <RecentObjects
+          t={t}
+          active={surfaceActive}
+          focusAddress={recentFocus}
+          onFocusHandled={(found) => {
+            setRecentFocus(null);
+            if (!found) listHeadingRef.current?.focus();
+          }}
+          onOpen={(target, address) => {
+            listFocus.current = { kind: "recent", address };
+            onOpenRecent(target);
+          }}
+        />
       ) : null}
       {selectedIds.size > 0 ? (
         <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-cyan-200 bg-cyan-50/95 px-4 py-3 shadow-sm backdrop-blur dark:border-cyan-900 dark:bg-cyan-950/95">
@@ -840,7 +989,10 @@ export function LibraryView({
                     return next;
                   })
                 }
-                onOpen={() => navigateToPath([source.id], false)}
+                onOpen={() => {
+                  listFocus.current = { kind: "source", id: source.id };
+                  navigateToPath([source.id], false);
+                }}
                 onProcess={() => setProcessingIds([source.id])}
               />
             </li>
@@ -872,7 +1024,7 @@ export function LibraryView({
       />
       {processingIds ? (
         <ProcessingDialog
-          open={active}
+          open={surfaceActive}
           sourceIds={processingIds}
           sources={sources}
           writerRouteReady={writerRouteReady}
@@ -905,6 +1057,7 @@ function SourceCard({
   const Icon = typeIcons[source.type];
   return (
     <article
+      id={`library-source-${source.id}`}
       role="button"
       tabIndex={0}
       aria-label={t("library.cards.openDetail", { values: { title: source.title } })}
@@ -1329,7 +1482,6 @@ export function SourceDetailView({
   metadataEnrichmentEnabled,
   onOpenNote,
   onNavigateObject,
-  onOpenPassage,
   focusedPassage,
   onPassageShown
 }: {
@@ -1337,9 +1489,9 @@ export function SourceDetailView({
   active: boolean;
   focusedAtomicNoteId: string | null;
   focusedSourceRelationId?: string | undefined;
-  onOpenNote: (sourceItemId: string, noteId: string) => void;
+  /** Opens a note as a page (note cards and source-relation evidence). */
+  onOpenNote: (noteId: string) => void;
   onNavigateObject: (navigation: OpenableNavigation) => void;
-  onOpenPassage: (sourceItemId: string, passage: PassageAnchor) => void;
   /** The passage a citation asked to show, until this view has taken it over. */
   focusedPassage: { passage: PassageAnchor; token: number } | null;
   onPassageShown: (token: number) => void;
@@ -1381,11 +1533,25 @@ export function SourceDetailView({
   const cited = passageFocus ? resolvePassage(detail.documents, passageFocus.passage) : null;
   const citedChunkId = cited?.status === "found" ? cited.chunkId : null;
 
-  // Cmd-W never discards what is being edited: it is answered here and leaves the editor open.
+  // Cmd-W never discards what is being edited: it is answered here and leaves the editor open,
+  // only while this view is shown (a hidden or covered Library claims nothing).
   useEffect(
-    () => (editor ? subscribeClosePanel(() => true, closePanelPriority.editing) : undefined),
-    [editor]
+    () =>
+      editorClaimsClose(active, editor)
+        ? subscribeClosePanel(() => true, closePanelPriority.editing)
+        : undefined,
+    [active, editor]
   );
+
+  // An opened source announces itself: its title takes focus, unless a note or a cited passage
+  // was asked for (they take focus themselves).
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusOnOpen = useRef(!focusedAtomicNoteId && !focusedPassage);
+  useEffect(() => {
+    if (!active || !focusOnOpen.current) return;
+    focusOnOpen.current = false;
+    headingRef.current?.focus({ preventScroll: true });
+  }, [active]);
 
   const chain = detail.breadcrumbs.length
     ? detail.breadcrumbs
@@ -1518,7 +1684,9 @@ export function SourceDetailView({
             />
           </div>
           <div className="min-w-0">
-            <h2 className="text-xl font-semibold leading-tight">{detail.title}</h2>
+            <h2 ref={headingRef} tabIndex={-1} className="text-xl font-semibold leading-tight">
+              {detail.title}
+            </h2>
             {detail.subtitle ? (
               <p className="mt-1 text-sm text-slate-500">{detail.subtitle}</p>
             ) : null}
@@ -1934,9 +2102,7 @@ export function SourceDetailView({
                       note={note}
                       focused={note.id === focusedAtomicNoteId}
                       t={t}
-                      active={active}
-                      onNavigate={onNavigateObject}
-                      onOpenPassage={onOpenPassage}
+                      onOpenNote={onOpenNote}
                     />
                   </li>
                 ))}
@@ -1953,7 +2119,7 @@ export function SourceDetailView({
                 sourceItemId={detail.id}
                 {...(focusedSourceRelationId ? { relationId: focusedSourceRelationId } : {})}
                 t={t}
-                onOpenNote={onOpenNote}
+                onOpenNote={(_sourceItemId, noteId) => onOpenNote(noteId)}
               />
             </section>
             <CollapsibleSection
@@ -2299,115 +2465,59 @@ export function groupRelatedSources(connections: SourceGraphConnection[]): Relat
     .toSorted((left, right) => left.sourceTitle.localeCompare(right.sourceTitle));
 }
 
+/**
+ * A note in its source's list: its title opens the Note page, which shows the text, the evidence,
+ * where the note is and its relations.
+ */
 export function AtomicNoteCard({
   note,
   focused = false,
   t,
-  active = true,
-  onNavigate,
-  onOpenPassage
+  onOpenNote
 }: {
   note: SourceDetail["atomicNotes"][number];
   focused?: boolean;
   t: Translator;
-  active?: boolean;
-  /** Shows "Where is this" inside the open card; omitted where a note cannot be navigated to. */
-  onNavigate?: ((navigation: OpenableNavigation) => void) | undefined;
-  /** Opens the passage the note came from in the source reader. */
-  onOpenPassage?: ((sourceItemId: string, passage: PassageAnchor) => void) | undefined;
+  onOpenNote?: ((noteId: string) => void) | undefined;
 }) {
-  const [expanded, setExpanded] = useState(focused);
-  // A note that becomes the focus of a navigation opens, so its place and passage are in view.
-  const [wasFocused, setWasFocused] = useState(focused);
-  if (focused !== wasFocused) {
-    setWasFocused(focused);
-    if (focused) setExpanded(true);
-  }
-  const cardRef = useExpandedCardViewport(expanded);
+  const lang = note.language === "und" ? undefined : note.language;
   return (
     <article
-      ref={cardRef}
       id={`atomic-note-${note.id}`}
       tabIndex={-1}
       className={cn(
-        "scroll-my-4",
-        "rounded-xl border bg-slate-50 outline-none transition dark:bg-slate-950",
-        focused
-          ? "border-violet-400 ring-2 ring-violet-300/50 dark:border-violet-500 dark:ring-violet-800/60"
-          : "border-slate-200 dark:border-slate-800"
+        "scroll-my-4 flex flex-col gap-2 rounded-lg border border-border bg-surface p-4 outline-none",
+        focused && "ring-2 ring-accent"
       )}
     >
-      <button
-        type="button"
-        className="flex w-full items-start justify-between gap-3 p-4 text-left"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
-      >
-        <span className="min-w-0">
-          <span className="block font-semibold">{note.title}</span>
-          <span className="mt-1 block font-reading text-sm font-medium text-slate-700 dark:text-slate-300">
-            {note.ideaStatement}
-          </span>
-        </span>
-        <span className="flex max-w-[45%] flex-wrap items-center justify-end gap-2">
-          <span className="rounded-full bg-slate-200 px-2 py-1 text-xs dark:bg-slate-800">
-            {t(noteStatusKey(note.status))}
-          </span>
-          <AiNoteBadge t={t} status={note.status} />
-          {note.supersessionStatus !== "current" && (
-            <span className="text-xs text-amber-700 dark:text-amber-300">
-              {t("knowledgeEvolution.supersededNote")}
-            </span>
+      {onOpenNote ? (
+        <button
+          type="button"
+          className="text-left font-semibold hover:underline"
+          onClick={() => onOpenNote(note.id)}
+        >
+          {note.title}
+        </button>
+      ) : (
+        <span className="font-semibold">{note.title}</span>
+      )}
+      <p lang={lang} className="font-reading text-base">
+        {note.ideaStatement}
+      </p>
+      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>{t(noteStatusKey(note.status))}</span>
+        <AiNoteBadge t={t} status={note.status} humanProtected={note.humanProtected} />
+        {note.supersessionStatus !== "current" ? (
+          <span>{t("knowledgeEvolution.supersededNote")}</span>
+        ) : null}
+        <span>
+          {t(
+            note.ownership === "knowledge"
+              ? "knowledgeEvolution.knowledgeOwned"
+              : "knowledgeEvolution.sourceOwned"
           )}
-          <span className="text-xs text-muted-foreground">
-            {t(
-              note.ownership === "knowledge"
-                ? "knowledgeEvolution.knowledgeOwned"
-                : "knowledgeEvolution.sourceOwned"
-            )}
-          </span>
-          <ChevronDown
-            className={cn("h-4 w-4 text-slate-400 transition-transform", expanded && "rotate-180")}
-            aria-hidden="true"
-          />
         </span>
-      </button>
-      <div className={cn("section-collapse", expanded && "section-collapse-open")}>
-        <div>
-          <p className="whitespace-pre-wrap px-4 pb-4 text-sm text-slate-600 dark:text-slate-300">
-            {note.bodyMarkdown}
-          </p>
-          {expanded && (onOpenPassage || onNavigate) ? (
-            <div className="grid gap-3 px-4 pb-4">
-              {onOpenPassage ? (
-                <Button
-                  type="button"
-                  className="w-fit"
-                  onClick={() =>
-                    onOpenPassage(note.sourceItemId, {
-                      chunkId: note.evidenceChunkId,
-                      sourceSpanId: note.sourceSpanId,
-                      documentId: null
-                    })
-                  }
-                >
-                  <Quote aria-hidden="true" />
-                  {t("objects.citation.noteOrigin")}
-                </Button>
-              ) : null}
-              {onNavigate ? (
-                <WhereIsThis
-                  t={t}
-                  address={formatObjectAddress({ kind: "note", id: note.id })}
-                  active={active}
-                  refreshKey={note.updatedAt}
-                  onNavigate={onNavigate}
-                />
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      </p>
     </article>
   );
 }

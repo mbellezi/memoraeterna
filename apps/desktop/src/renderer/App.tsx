@@ -859,6 +859,9 @@ export function App({
                 });
                 setActiveView("library");
               }}
+              onOpenNote={(sourceItemId, noteId) =>
+                openLibrarySource({ sourceItemId, atomicNoteId: noteId })
+              }
             />
           ) : activeView === "jobs" ? (
             <>

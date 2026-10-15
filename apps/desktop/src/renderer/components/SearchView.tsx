@@ -34,13 +34,16 @@ export function SearchView({
   t,
   state,
   onStateChange,
-  onOpenSource
+  onOpenSource,
+  onOpenNote
 }: {
   t: Translator;
   state?: SearchViewState;
   onStateChange?: (state: SearchViewState) => void;
   /** A passage result opens the source on the exact chunk it found. */
   onOpenSource?: (sourceItemId: string, passage?: PassageAnchor) => void;
+  /** A note result opens the Note page. */
+  onOpenNote?: (sourceItemId: string, noteId: string) => void;
 }) {
   const [localState, setLocalState] = useState<SearchViewState>(defaultSearchViewState);
   const current = state ?? localState;
@@ -184,14 +187,7 @@ export function SearchView({
                 <SearchResultCard
                   result={result}
                   t={t}
-                  onOpen={
-                    onOpenSource
-                      ? () =>
-                          result.kind === "chunk"
-                            ? onOpenSource(result.sourceItemId, citationTarget(result).passage)
-                            : onOpenSource(result.sourceItemId)
-                      : undefined
-                  }
+                  onOpen={searchResultOpener(result, onOpenSource, onOpenNote)}
                 />
               </li>
             ))}
@@ -200,6 +196,20 @@ export function SearchView({
       )}
     </section>
   );
+}
+
+/** Where a search result leads: a passage to its chunk, a note to its page, the rest to the source. */
+export function searchResultOpener(
+  result: SearchResult,
+  onOpenSource: ((sourceItemId: string, passage?: PassageAnchor) => void) | undefined,
+  onOpenNote: ((sourceItemId: string, noteId: string) => void) | undefined
+): (() => void) | undefined {
+  if (result.kind === "atomic_note" && onOpenNote)
+    return () => onOpenNote(result.sourceItemId, result.noteId);
+  if (!onOpenSource) return undefined;
+  return result.kind === "chunk"
+    ? () => onOpenSource(result.sourceItemId, citationTarget(result).passage)
+    : () => onOpenSource(result.sourceItemId);
 }
 
 export function SearchResultCard({

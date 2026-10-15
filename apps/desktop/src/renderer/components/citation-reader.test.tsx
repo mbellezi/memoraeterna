@@ -86,7 +86,6 @@ const view = (
       metadataEnrichmentEnabled
       onOpenNote={noop}
       onNavigateObject={noop}
-      onOpenPassage={noop}
       focusedPassage={focusedPassage}
       onPassageShown={noop}
     />
@@ -232,23 +231,23 @@ describe("note cards", () => {
     updatedAt: "2026-10-14T10:00:00.000Z"
   } as Parameters<typeof AtomicNoteCard>[0]["note"];
 
-  it("offers the passage a note came from and where it is, inside the open card", () => {
-    const html = renderToString(
-      <AtomicNoteCard note={note} focused t={t} onNavigate={noop} onOpenPassage={noop} />
-    ).replaceAll("<!-- -->", "");
-    expect(html).toContain("Open the passage this note comes from");
-    expect(html).toContain('data-testid="where-is-this"');
-    expect(html).not.toContain("<dialog");
+  it("is a summary whose title opens the Note page", () => {
+    const html = renderToString(<AtomicNoteCard note={note} focused t={t} onOpenNote={noop} />);
+    expect(html).toMatch(/<button[^>]*>Spacing flattens the curve<\/button>/);
+    expect(html).toContain("Spacing flattens forgetting.");
+    expect(html).toContain('id="atomic-note-');
+    expect(html).toContain("ring-accent");
+    // The page shows the text, the passage and where the note is: the card does not.
+    expect(html).not.toContain("Reviewing at spaced intervals");
+    expect(html).not.toContain("where-is-this");
+    expect(html).not.toContain("Open the passage this note comes from");
+    expect(html).not.toContain("aria-expanded");
   });
 
-  it("loads nothing for a closed card and shows neither without the callbacks", () => {
-    const closed = renderToString(
-      <AtomicNoteCard note={note} t={t} onNavigate={noop} onOpenPassage={noop} />
-    );
-    expect(closed).not.toContain("where-is-this");
-    expect(closed).not.toContain("Open the passage this note comes from");
-    const bare = renderToString(<AtomicNoteCard note={note} focused t={t} />);
-    expect(bare).not.toContain("where-is-this");
+  it("shows the title as text without a way to open the page", () => {
+    const bare = renderToString(<AtomicNoteCard note={note} t={t} />);
+    expect(bare).not.toContain("<button");
     expect(bare).toContain("Spacing flattens the curve");
+    expect(bare).not.toContain("ring-accent");
   });
 });

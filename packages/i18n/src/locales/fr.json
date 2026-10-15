@@ -2756,7 +2756,6 @@
     },
     "citation": {
       "openPassage": "Ouvrir le passage dans la source",
-      "noteOrigin": "Ouvrir le passage dont cette note est issue",
       "showing": "Passage cité affiché",
       "unavailable": "Ce passage n'est pas dans la version actuelle de la source. Il appartient peut-être à une version antérieure.",
       "earlierVersions": "Afficher les versions antérieures",

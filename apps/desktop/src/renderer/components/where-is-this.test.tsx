@@ -148,7 +148,6 @@ describe("Where is this panel", () => {
       "objects.whereIsThis.counts.notes",
       "objects.whereIsThis.counts.children",
       "objects.citation.openPassage",
-      "objects.citation.noteOrigin",
       "objects.citation.showing",
       "objects.citation.unavailable",
       "objects.citation.earlierVersions",

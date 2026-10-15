@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Ref } from "react";
+import { useEffect, useRef, useState, type Ref, type RefObject } from "react";
 import {
   CircleHelp,
   FileText,
@@ -19,6 +19,7 @@ import {
 } from "../../shared/view-history";
 import { cn } from "../lib/cn";
 import { showsLoadError, type LoadOutcome } from "../lib/hidden-view";
+import { useStableCallback } from "../lib/stable-callback";
 import {
   applyRecentsFocus,
   groupRecents,
@@ -66,6 +67,8 @@ function RecentEntries({
   labelledBy,
   busy,
   pinsFull,
+  focusAddress,
+  focusRef,
   onOpen,
   onTogglePin
 }: {
@@ -75,6 +78,8 @@ function RecentEntries({
   busy: boolean;
   /** Every pin slot is taken: an entry that is not pinned cannot be pinned until one is freed. */
   pinsFull: boolean;
+  focusAddress: string | null;
+  focusRef: RefObject<HTMLButtonElement | null> | undefined;
   onOpen: (entry: ViewHistoryEntry) => void;
   onTogglePin: (entry: ViewHistoryEntry) => void;
 }) {
@@ -93,6 +98,7 @@ function RecentEntries({
           >
             <button
               type="button"
+              ref={entry.address === focusAddress ? focusRef : undefined}
               title={entry.title}
               className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-soft focus-visible:outline-2 focus-visible:outline-accent"
               onClick={() => onOpen(entry)}
@@ -147,6 +153,8 @@ export function RecentObjectsView({
   busy,
   failed,
   rootRef,
+  focusAddress = null,
+  focusRef,
   onOpen,
   onTogglePin,
   onAskClear,
@@ -163,6 +171,9 @@ export function RecentObjectsView({
   failed: boolean;
   /** The list element, so the container can move focus inside it. */
   rootRef?: Ref<HTMLElement>;
+  /** The entry to focus (the one opened before coming back) and the ref that reaches it. */
+  focusAddress?: string | null;
+  focusRef?: RefObject<HTMLButtonElement | null>;
   onOpen: (entry: ViewHistoryEntry) => void;
   onTogglePin: (entry: ViewHistoryEntry) => void;
   onAskClear: () => void;
@@ -260,6 +271,8 @@ export function RecentObjectsView({
                 labelledBy="library-recents-pinned"
                 busy={busy}
                 pinsFull={pinsFull}
+                focusAddress={focusAddress}
+                focusRef={focusRef}
                 onOpen={onOpen}
                 onTogglePin={onTogglePin}
               />
@@ -286,6 +299,8 @@ export function RecentObjectsView({
                 labelledBy={pinned.length > 0 ? "library-recents-recent" : undefined}
                 busy={busy}
                 pinsFull={pinsFull}
+                focusAddress={focusAddress}
+                focusRef={focusRef}
                 onOpen={onOpen}
                 onTogglePin={onTogglePin}
               />
@@ -305,11 +320,17 @@ export function RecentObjectsView({
 export function RecentObjects({
   t,
   active,
+  focusAddress = null,
+  onFocusHandled,
   onOpen
 }: {
   t: Translator;
   active: boolean;
-  onOpen: (target: RecentTarget) => void;
+  /** An entry to focus once the list shows (the one opened before coming back). */
+  focusAddress?: string | null;
+  /** Whether the entry to focus was found; the owner focuses something else otherwise. */
+  onFocusHandled?: (found: boolean) => void;
+  onOpen: (target: RecentTarget, address: string) => void;
 }) {
   const [state, setState] = useState<RecentsState>(() =>
     remembered ? { status: "ready", entries: remembered } : { status: "loading" }
@@ -376,6 +397,17 @@ export function RecentObjects({
     applyRecentsFocus(request, (target) => findRecentsControl(container, target));
   }, [state]);
 
+  // Coming back to the list focuses the entry that was opened, once the entries are on screen;
+  // the owner is told whether it was there.
+  const focusTarget = useRef<HTMLButtonElement>(null);
+  const focusHandled = useStableCallback((found: boolean) => onFocusHandled?.(found));
+  useEffect(() => {
+    if (!active || !focusAddress || state.status === "loading") return;
+    const entry = focusTarget.current;
+    entry?.focus();
+    focusHandled(entry !== null);
+  }, [active, focusAddress, state, focusHandled]);
+
   async function change<Result>(
     request: () => Promise<Result>,
     unchanged: (result: Result) => boolean
@@ -406,9 +438,11 @@ export function RecentObjects({
       busy={busy}
       failed={failed}
       rootRef={root}
+      focusAddress={focusAddress}
+      focusRef={focusTarget}
       onOpen={(entry) => {
         const target = recentOpenTarget(entry);
-        if (target) onOpen(target);
+        if (target) onOpen(target, entry.address);
       }}
       onTogglePin={(entry) => {
         pendingFocus.current = { target: "pin", address: entry.address };

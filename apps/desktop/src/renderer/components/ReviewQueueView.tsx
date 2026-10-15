@@ -92,7 +92,7 @@ export function ReviewQueueView({ t }: { t: Translator }) {
             </p>
             <h2 className="flex flex-wrap items-center gap-2 font-semibold">
               {note.title}
-              <AiNoteBadge t={t} status={note.status} />
+              <AiNoteBadge t={t} status={note.status} humanProtected={note.humanProtected} />
             </h2>
           </div>
           {editing === note.id ? (

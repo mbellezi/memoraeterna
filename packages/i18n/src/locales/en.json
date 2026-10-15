@@ -2751,7 +2751,6 @@
     },
     "citation": {
       "openPassage": "Open the passage in the source",
-      "noteOrigin": "Open the passage this note comes from",
       "showing": "Showing the cited passage",
       "unavailable": "This passage is not in the current version of the source. It may belong to an earlier version.",
       "earlierVersions": "Show earlier versions",

@@ -51,6 +51,28 @@ function render(
 }
 
 describe("the Recents list", () => {
+  it("reaches the entry that was opened, so coming back can focus it", () => {
+    const focusRef = { current: null as HTMLButtonElement | null };
+    const html = renderToString(
+      <RecentObjectsView
+        t={createTranslator("en")}
+        state={{
+          status: "ready",
+          entries: [entry(), entry({ address: "memora://note/x", title: "Other" })]
+        }}
+        confirmingClear={false}
+        busy={false}
+        failed={false}
+        focusAddress={`memora://source/${sourceId}`}
+        focusRef={focusRef}
+        {...handlers}
+      />
+    );
+    // Server rendering attaches no refs; the address is never written into the page.
+    expect(html).not.toContain("memora://");
+    expect(html).toContain("Memory and attention");
+  });
+
   it("shows a loading state", () => {
     const html = render({ status: "loading" });
     expect(html).toContain('role="status"');

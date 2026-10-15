@@ -95,6 +95,12 @@ describe("AI provenance badge on notes", () => {
     const approved = renderToString(<AtomicNoteCard note={note("approved")} t={t} />);
     expect(approved).toContain("Approved");
     expect(approved).not.toContain("ai-note-badge");
+    // A note a person edited stays active but is theirs: no AI badge on its card.
+    const edited = renderToString(
+      <AtomicNoteCard note={{ ...note("active"), humanProtected: true }} t={t} />
+    );
+    expect(edited).toContain("Active");
+    expect(edited).not.toContain("ai-note-badge");
   });
 
   it("shows in search results for notes", () => {
