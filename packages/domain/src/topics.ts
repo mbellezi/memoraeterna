@@ -9,7 +9,8 @@ import { z } from "zod";
 
 const uuid = z.string().uuid();
 
-export const topicTreeStatuses = ["shadow", "active", "retired"] as const;
+/** One active tree per library; a replaced tree is retired (D2: no shadow tree, no topic modes). */
+export const topicTreeStatuses = ["active", "retired"] as const;
 export const TopicTreeStatusSchema = z.enum(topicTreeStatuses);
 export type TopicTreeStatus = z.infer<typeof TopicTreeStatusSchema>;
 
@@ -70,8 +71,7 @@ export const topicChangeSetOrigins = [
   "areas",
   "human",
   "undo",
-  "rebuild",
-  "switch"
+  "rebuild"
 ] as const;
 export const TopicChangeSetOriginSchema = z.enum(topicChangeSetOrigins);
 export type TopicChangeSetOrigin = z.infer<typeof TopicChangeSetOriginSchema>;
@@ -100,18 +100,8 @@ export const topicStructureEventOps = [
 export const TopicStructureEventOpSchema = z.enum(topicStructureEventOps);
 export type TopicStructureEventOp = z.infer<typeof TopicStructureEventOpSchema>;
 
-export const topicGateModes = ["shadow", "live"] as const;
-export const TopicGateModeSchema = z.enum(topicGateModes);
-export type TopicGateMode = z.infer<typeof TopicGateModeSchema>;
-
-/** `topics.status` phase (section 3.2 of the F2 spec). */
-export const topicsPhases = [
-  "legacy",
-  "ready_to_switch",
-  "switching",
-  "building",
-  "active"
-] as const;
+/** `topics.status` phase: the first build of the active tree is running, or the tree is active (D39). */
+export const topicsPhases = ["building", "active"] as const;
 export const TopicsPhaseSchema = z.enum(topicsPhases);
 export type TopicsPhase = z.infer<typeof TopicsPhaseSchema>;
 
