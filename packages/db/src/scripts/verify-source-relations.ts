@@ -16,6 +16,7 @@ import {
   createEntityIdentityRepository,
   createRelationTypeRepository,
   createAtomicNoteRelationRepository,
+  createAtomicNoteRepository,
   createKnowledgeGraphDashboardRepository,
   createEmbeddingRepository,
   listSourceRelations,
@@ -322,6 +323,47 @@ try {
   assert.equal(page.relations.length, 1);
   assert.equal(page.relations[0]!.current, true);
   const id = String(page.relations[0]!.id);
+  // Approving a note invalidates nothing; editing or discarding it does.
+  const isCurrent = async () =>
+    (await listSourceRelations(pool!, book.id, b.id)).relations[0]!.current;
+  const noteRepository = createAtomicNoteRepository(pool);
+  for (const noteId of noteIds) await noteRepository.review({ id: noteId, action: "approve" });
+  assert.equal(await isCurrent(), true, "Approving either note keeps the derived evidence current");
+  const original = (
+    await pool.query("select body_markdown as body from atomic_notes where id = $1", [noteIds[0]])
+  ).rows[0].body as string;
+  await noteRepository.review({
+    id: noteIds[0]!,
+    action: "edit",
+    bodyMarkdown: `${original} Edited.`
+  });
+  assert.equal(await isCurrent(), false, "An edit invalidates the derived evidence");
+  await noteRepository.review({ id: noteIds[0]!, action: "edit", bodyMarkdown: original });
+  assert.equal(await isCurrent(), true, "Restoring the text restores the evidence");
+  await noteRepository.review({ id: noteIds[1]!, action: "discard" });
+  assert.equal(await isCurrent(), false, "A discarded note invalidates the derived evidence");
+  await pool.query("update atomic_notes set status = 'approved' where id = $1", [noteIds[1]]);
+  assert.equal(await isCurrent(), true);
+  // Evidence written under the former formula (status in the facts) heals through migration 0048.
+  const formerFacts = (alias: string, status: string) =>
+    `concat_ws('|',${alias}.id::text,${alias}.idea_statement,${alias}.body_markdown,'${status}',${alias}.supersession_status)`;
+  await pool.query(
+    `update source_relation_evidence e set snapshot = jsonb_set(e.snapshot, '{noteFingerprint}', to_jsonb(md5(concat_ws('|',
+       n.id::text, n.relation_type, n.status::text, n.metadata::text,
+       least(${formerFacts("a", "active")}, ${formerFacts("b", "active")}),
+       greatest(${formerFacts("a", "active")}, ${formerFacts("b", "active")})))))
+     from atomic_note_relations n, atomic_notes a, atomic_notes b
+     where n.id = e.note_relation_id and a.id = e.source_note_id and b.id = e.target_note_id`
+  );
+  assert.equal(await isCurrent(), false, "A former fingerprint of a now approved note is stale");
+  const rekey = await readFile(
+    join(migrations, "0048_note_fingerprint_without_review_status.sql"),
+    "utf8"
+  );
+  assert.equal((await pool.query(rekey)).rowCount, 1);
+  assert.equal(await isCurrent(), true, "The migration re-keys evidence stale only by approval");
+  assert.equal((await pool.query(rekey)).rowCount, 0, "The migration is idempotent");
+  assert.equal(await isCurrent(), true);
   await repository.commitDecision(
     "direct",
     book.id,
@@ -493,7 +535,7 @@ try {
   ]);
   assert.equal((await pool.query("select count(*)::int as n from source_relations")).rows[0].n, 0);
   console.log(
-    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup and per-root evidence caps."
+    "Verified populated upgrade and empty baseline; all vector spaces; chapter ownership and direction; approval keeps note evidence current and migration 0048 heals former fingerprints; both origins, deduplication, pagination, review preservation, invalidation, rollback, negative cache, durable budget and deletion; configurable canonical candidate limits, saved note-pair lookup and per-root evidence caps."
   );
 } finally {
   if (emptyPool) await closePgPool(emptyPool);

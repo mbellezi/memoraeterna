@@ -337,6 +337,13 @@
       "when": 1792026486931,
       "tag": "0047_view_history",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792032602577,
+      "tag": "0048_note_fingerprint_without_review_status",
+      "breakpoints": true
     }
   ]
 }

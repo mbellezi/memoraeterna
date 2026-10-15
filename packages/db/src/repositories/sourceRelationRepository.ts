@@ -74,8 +74,10 @@ const chunkColumns = `c.id, c.source_item_id as "sourceItemId", c.document_id as
 // Ranked roots break score ties on the work title: IDs are random on every import.
 const byTitleThenId = (id: string) =>
   `(select ranked_source.title from source_items ranked_source where ranked_source.id = ${id}), ${id}`;
+// A note's review status is not a fact of the evidence: approving a note keeps what it supports current.
+// Discarded and archived notes stay non-current through the explicit status checks below.
 const noteFacts = (alias: string) =>
-  `concat_ws('|',${alias}.id::text,${alias}.idea_statement,${alias}.body_markdown,${alias}.status::text,${alias}.supersession_status)`;
+  `concat_ws('|',${alias}.id::text,${alias}.idea_statement,${alias}.body_markdown,${alias}.supersession_status)`;
 const noteFingerprint = `md5(concat_ws('|',n.id::text,n.relation_type,n.status::text,n.metadata::text,
   least(${noteFacts("a")},${noteFacts("b")}),greatest(${noteFacts("a")},${noteFacts("b")})))`;
 
