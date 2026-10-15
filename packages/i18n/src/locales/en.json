@@ -231,7 +231,7 @@
   },
   "knowledgeGraph": {
     "openSourceEntities": "Open source entity graph",
-    "backToGraph": "Back to graph",
+    "backToGraph": "Back to knowledge graph",
     "layoutError": "The graph layout could not be calculated. Retry to resume interaction.",
     "forces": {
       "title": "Graph forces",
@@ -260,7 +260,6 @@
     },
     "relayout": "Reorganize graph",
     "refresh": "Refresh graph",
-    "backToGraph": "Back to knowledge graph",
     "canvasLabel": "Interactive knowledge graph. Drag the background to pan, drag nodes to reposition them, and scroll to zoom.",
     "error": "The knowledge graph could not be loaded.",
     "empty": "There is no connected knowledge to show in this view yet.",
@@ -480,6 +479,7 @@
       "topicRebalance": "Topic tree rebalancing",
       "topicAudit": "Topic tree audit",
       "topicName": "Topic naming",
+      "topicAreas": "Topic Areas",
       "topicLabelEmbed": "Topic labels",
       "topicGate": "Topic placement decision"
     },
@@ -1775,7 +1775,9 @@
       "build": "Built the topic tree: {topics} topics, {items} items",
       "rebuild": "Rebuilt the topic tree ({items} items moved)",
       "rebalance": "Reorganized topics: {operations} changes, {items} items moved",
-      "proposal": "Proposed topic reorganization ({items} items)"
+      "proposal": "Proposed topic reorganization ({items} items)",
+      "naming": "Topic names updated: {topics}",
+      "gate": "Checked {items} uncertain placements"
     },
     "navigator": {
       "title": "Explore",
@@ -1927,10 +1929,6 @@
       "protected": "This topic is protected, so the change needs your approval.",
       "unavailable": "This action is not available yet.",
       "canceled": "The topic task was canceled."
-    },
-    "changeSets": {
-      "naming": "Topic names updated: {topics}",
-      "gate": "Checked {items} uncertain placements"
     }
   },
   "wiki": {

@@ -1137,6 +1137,7 @@ function jobTypeMessageKey(type: string): MessageKey {
         "topic-rebalance": "jobs.types.topicRebalance",
         "topic-audit": "jobs.types.topicAudit",
         "topic-name": "jobs.types.topicName",
+        "topic-areas": "jobs.types.topicAreas",
         "topic-label-embed": "jobs.types.topicLabelEmbed",
         "topic-gate": "jobs.types.topicGate"
       } as Record<string, MessageKey>

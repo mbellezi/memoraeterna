@@ -1134,8 +1134,9 @@ export class TopicStructureJobs {
    * operations accepted by dQ - lambda * churn > 0 within the cooldown, the freeze on recently
    * opened topics and the day's budgets (seeded from `topic_daily_metrics`, so a reload does not
    * reset them).
-   * The root's band is the Areas band once Areas exist, and Area-level or protected operations
-   * become proposals (D12, D29); a proposal waiting for review or dismissed is not repeated.
+   * The root's band is the Areas band once Areas exist; protected operations, and Area-level ones
+   * once the tree had its first Areas grouping (T24), become proposals (D12, D29); a proposal
+   * waiting for review or dismissed is not repeated.
    */
   private async rebalanceNow(
     cache: TopicTreeCache,
@@ -1159,6 +1160,9 @@ export class TopicStructureJobs {
     const areas = areasActive(state);
     const topics = this.takeDirty(tree.id);
     if (topics.length === 0) return { status: "no_change", checked: 0, areasActive: areas };
+    // Area-level operations wait for review once the tree had its first Areas grouping (D12, T24).
+    const grouped = areas ? await repository.changeSetStatusCounts(tree.id, "areas") : null;
+    const areaLevelReview = grouped !== null && grouped.applied + grouped.undone > 0;
     const started = performance.now();
     const result = rebalanceTree({
       state,
@@ -1171,6 +1175,7 @@ export class TopicStructureJobs {
       topics,
       recentItems,
       areasActive: areas,
+      areaLevelReview,
       readmit: readmitter(state, vectors, config)
     });
     const engineMs = round(performance.now() - started);
@@ -1189,6 +1194,7 @@ export class TopicStructureJobs {
     const base: JsonObject = {
       checked: topics.length,
       areasActive: areas,
+      areaLevelReview,
       frozenTopics: frozen.size,
       trials: result.trials,
       exhausted: result.exhausted,
@@ -1397,14 +1403,13 @@ export class TopicStructureJobs {
     }
     const reparent = audit.reparentCandidates.filter((finding) => !finding.protected).length;
     // Topics out of their bands (hard or soft, protected ones to be proposed) and the re-parent
-    // candidates (D12: they go through REBALANCE acceptance) wait for REBALANCE.
+    // candidates (D12: they go through REBALANCE acceptance, which turns protected and Area-level
+    // ones into proposals) wait for REBALANCE.
     const flagged = new Set<string>([
       ...audit.invariants.violations.flatMap((violation) =>
         violation.topicId === null || violation.topicId === state.rootId ? [] : [violation.topicId]
       ),
-      ...audit.reparentCandidates
-        .filter((finding) => !finding.protected)
-        .map((finding) => finding.topicId)
+      ...audit.reparentCandidates.map((finding) => finding.topicId)
     ]);
     if (hasTopics(state) && flagged.size > 0) {
       this.markDirty(tree.id, flagged);

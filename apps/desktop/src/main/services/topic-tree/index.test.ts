@@ -189,6 +189,20 @@ describe("the topic services factory", () => {
       expect(noLanguage.jobs[topicJobTypes.name]).toBeUndefined();
     });
 
+    it("registers the Areas job (T24) on the model worker beside naming", async () => {
+      const bare = create();
+      expect(bare.areas).toBeNull();
+      expect(bare.jobs[topicJobTypes.areas]).toBeUndefined();
+      bare.dispose();
+      const full = create({ ai, getContentLanguage: async () => "pt-BR" });
+      expect(full.areas).not.toBeNull();
+      expect(full.jobs[topicJobTypes.areas]?.needsModel).toBe(true);
+      // Without a pool, asking for the grouping again never throws and queues nothing.
+      await expect(full.areas!.requestIfNeeded(id(1))).resolves.toBeUndefined();
+      await expect(full.areas!.requestIfNeeded(null)).resolves.toBeUndefined();
+      full.dispose();
+    });
+
     it("holds the naming jobs with the rest of the topic jobs while the barrier is on", async () => {
       const created = create({ ai, getContentLanguage: async () => "en" });
       const types = [topicJobTypes.name, topicJobTypes.labelEmbed];

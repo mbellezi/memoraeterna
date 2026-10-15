@@ -13,6 +13,7 @@ import type { GoldenTopicBarrier } from "../golden-topics.js";
 import type { LightJobRegistry } from "../job-lanes.js";
 import { startCorpusRunner } from "./corpus-runner.js";
 import { TopicAiBudget, readTopicAiMode, settingsAiBudgetStore } from "./topic-ai.js";
+import { TopicAreasService } from "./topic-areas.js";
 import { TopicStructureJobs } from "./topic-build.js";
 import type { ClusterTopics } from "./topic-build.js";
 import type { TopicAiBudgetStore, TopicAiMode } from "./topic-ai.js";
@@ -80,6 +81,8 @@ export interface TopicTreeServices {
   labels: TopicLabelService | null;
   /** The placement gate (D10); null without `options.ai`. */
   gate: TopicGateService | null;
+  /** The Areas grouping (D12, T24); null without `options.ai` and `getContentLanguage`. */
+  areas: TopicAreasService | null;
   budget: TopicAiBudget;
   aiMode: TopicAiMode;
   /** The light-lane job registry for the job supervisor (D33). */
@@ -232,6 +235,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
   // created topics that wait for a name.
   let naming: TopicNamingService | null = null;
   let labels: TopicLabelService | null = null;
+  let areas: TopicAreasService | null = null;
   if (options.ai && options.getContentLanguage) {
     const namingService = new TopicNamingService({
       getPool,
@@ -264,6 +268,25 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       execute: (job, signal) => labelService.runLabelEmbed(job, signal)
     };
     changes.subscribe(namingService.onTopicsChanged);
+    // T24: the Areas grouping (D12) runs on the `model` worker after builds.
+    const areasService = new TopicAreasService({
+      getPool,
+      service: topicService,
+      ai: options.ai,
+      getContentLanguage: options.getContentLanguage,
+      budget,
+      aiMode,
+      triggers,
+      changes,
+      isRegistered,
+      ...(logger ? { logger } : {}),
+      ...(options.now ? { now: options.now } : {})
+    });
+    areas = areasService;
+    executors[topicJobTypes.areas] = {
+      needsModel: true,
+      execute: (job, signal) => areasService.runAreas(job, signal)
+    };
   }
   if (gate) {
     executors[topicJobTypes.gate] = {
@@ -302,6 +325,7 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
     naming,
     labels,
     gate,
+    areas,
     budget,
     aiMode,
     jobs,
@@ -319,8 +343,9 @@ export function createTopicTreeServices(options: TopicTreeServicesOptions): Topi
       }
       // The day's audit: metrics, the structural configuration (D39) and rebuild triggers.
       await structure.startup(treeId);
-      // Topics an earlier run left without a name (never throws).
+      // Topics an earlier run left without a name, and Areas a build left ungrouped (never throw).
       await naming?.requestIfNeeded(treeId);
+      await areas?.requestIfNeeded(treeId);
     },
     ensureActiveTree,
     holdTopicJobs: () => topicService.holdTopicJobs(),

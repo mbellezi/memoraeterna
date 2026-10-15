@@ -231,7 +231,7 @@
   },
   "knowledgeGraph": {
     "openSourceEntities": "Ouvrir le graphe des entités de la source",
-    "backToGraph": "Revenir au graphe",
+    "backToGraph": "Retour au graphe de connaissances",
     "layoutError": "Impossible de calculer la disposition du graphe. Réessayez pour reprendre l’interaction.",
     "forces": {
       "title": "Forces du graphe",
@@ -260,7 +260,6 @@
     },
     "relayout": "Réorganiser le graphe",
     "refresh": "Actualiser le graphe",
-    "backToGraph": "Retour au graphe de connaissances",
     "canvasLabel": "Graphe de connaissances interactif. Faites glisser l’arrière-plan pour vous déplacer, les nœuds pour les repositionner et utilisez la molette pour zoomer.",
     "error": "Impossible de charger le graphe de connaissances.",
     "empty": "Il n’y a pas encore de connaissances connectées à afficher dans cette vue.",
@@ -482,6 +481,7 @@
       "topicRebalance": "Rééquilibrage de l’arbre des sujets",
       "topicAudit": "Audit de l’arbre des sujets",
       "topicName": "Nommage des sujets",
+      "topicAreas": "Domaines des sujets",
       "topicLabelEmbed": "Étiquettes des sujets",
       "topicGate": "Décision de classement dans les sujets"
     },
@@ -1780,7 +1780,9 @@
       "build": "Arbre des sujets construit : {topics} sujets, {items} éléments",
       "rebuild": "Arbre des sujets reconstruit ({items} éléments déplacés)",
       "rebalance": "Sujets réorganisés : {operations} modifications, {items} éléments déplacés",
-      "proposal": "Réorganisation des sujets proposée ({items} éléments)"
+      "proposal": "Réorganisation des sujets proposée ({items} éléments)",
+      "naming": "Noms de sujets mis à jour : {topics}",
+      "gate": "{items} classements incertains vérifiés"
     },
     "navigator": {
       "title": "Explorer",
@@ -1932,10 +1934,6 @@
       "protected": "Ce sujet est protégé : la modification demande votre approbation.",
       "unavailable": "Cette action n’est pas encore disponible.",
       "canceled": "La tâche sur les sujets a été annulée."
-    },
-    "changeSets": {
-      "naming": "Noms de sujets mis à jour : {topics}",
-      "gate": "{items} classements incertains vérifiés"
     }
   },
   "wiki": {

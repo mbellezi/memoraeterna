@@ -7,10 +7,12 @@
 // - Soft conditions (quality.ts) only when dQ - lambda * churn > 0, the topic is out of its
 //   cooldown, nothing the operation touches is frozen, and the day's operation and move budgets
 //   (and repair.softMoveShare per operation) hold. `force` lifts cooldown, freeze and budgets,
-//   never acceptance or protection.
+//   never acceptance or protection. The mis-parent correction (D12) weighs its churn once
+//   instead of lambda times (churnWeightOf).
 // - No operation may add a hard violation, and an operation that touches protected structure
-//   (human or pinned topics, human placements) or, once Areas exist, the Area level (D12) comes
-//   back as a proposal (`pending_review`) instead of being applied.
+//   (human or pinned topics, human placements) or, once Areas exist and were grouped
+//   (`areaLevelReview`), the Area level (D12) comes back as a proposal (`pending_review`) instead
+//   of being applied.
 //
 // Every candidate runs as a trial on the live state through a recording editor, is measured (Q on
 // the smallest scope that contains it, churn from its events, hard violations in the scope) and
@@ -128,12 +130,19 @@ export interface RebalanceInput {
   recentItems?: ReadonlySet<ItemKey>;
   /** The root's band is the Areas band and Area-level operations are proposals (D12). */
   areasActive?: boolean;
+  /**
+   * With `areasActive`, whether Area-level operations are proposals (default true). False before a
+   * tree's first Areas grouping and inside the grouping itself: D12 makes them proposals afterwards.
+   */
+  areaLevelReview?: boolean;
   /** Re-placement below an internal topic (PLACE, T07); without it direct items only form leaves. */
   readmit?: (item: ItemKey, from: string) => string | null;
   /** Ignore cooldowns, freeze and budgets (explicit settles). Acceptance and protection hold. */
   force?: boolean;
   /** Only fix hard violations. */
   hardOnly?: boolean;
+  /** Check only these conditions (default: all of them). */
+  conditions?: ReadonlySet<RebalanceCondition>;
   /** Upper bound on trials (default max(256, 8 x live topics)). */
   maxTrials?: number;
 }
@@ -485,6 +494,19 @@ function shapeContext(env: Environment, editor: TopicTreeEditor): ShapeContext {
 }
 
 /**
+ * The factor on a check's weighted churn before acceptance multiplies it by lambda
+ * (`stability.churnWeight`): 1 for shape repairs, 1 / lambda for the mis-parent correction (D12),
+ * whose churn so counts once. Q prices a mis-parented subtree at its items x (1 + gain) and the
+ * re-parent moves exactly those items, so at lambda >= 1 + gain no correction could ever pass.
+ * Recently opened items still weigh more, and the margin (`audit.misParentMargin`), cooldown,
+ * freeze, budgets, protection and the Area-level rule bound it like any soft operation.
+ */
+export function churnWeightOf(condition: RebalanceCondition, config: TopicTreeConfig): number {
+  const lambda = config.stability.churnWeight;
+  return condition === "mis-parented" && lambda > 0 ? 1 / lambda : 1;
+}
+
+/**
  * Runs one candidate on the live state and measures it. The returned outcome leaves the state
  * changed; `rollback` restores it exactly (structure, statistics and repair clocks).
  */
@@ -538,11 +560,18 @@ function runTrial(
     retired: [...operation.retired],
     churn,
     deltaQuality,
-    netGain: netGain(deltaQuality, churn.weighted, config),
+    netGain: netGain(
+      deltaQuality,
+      churnWeightOf(candidate.condition, config) * churn.weighted,
+      config
+    ),
     hardBefore,
     hardAfter,
     protectedTouched: eventsTouchProtected(state, events),
-    areaLevel: input.areasActive === true && eventsAreAreaLevel(state, events),
+    areaLevel:
+      input.areasActive === true &&
+      input.areaLevelReview !== false &&
+      eventsAreAreaLevel(state, events),
     frozen: eventsTouchFrozen(state, events),
     clocks: changedClocks(state, clocks)
   };
@@ -727,6 +756,10 @@ export function rebalanceTree(input: RebalanceInput): RebalanceResult {
         return [];
       }
       candidates = softCandidates(env, id, depth);
+    }
+    if (input.conditions) {
+      const wanted = input.conditions;
+      candidates = candidates.filter((candidate) => wanted.has(candidate.condition));
     }
     if (candidates.length === 0) return [];
     const budget = { ...dailyBudget(state, config, input.day, total), total };

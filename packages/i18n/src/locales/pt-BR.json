@@ -231,7 +231,7 @@
   },
   "knowledgeGraph": {
     "openSourceEntities": "Abrir grafo de entidades da fonte",
-    "backToGraph": "Voltar ao grafo",
+    "backToGraph": "Voltar ao grafo do conhecimento",
     "layoutError": "Não foi possível calcular a disposição do grafo. Tente novamente para retomar a interação.",
     "forces": {
       "title": "Forças do grafo",
@@ -260,7 +260,6 @@
     },
     "relayout": "Reorganizar grafo",
     "refresh": "Atualizar grafo",
-    "backToGraph": "Voltar ao grafo do conhecimento",
     "canvasLabel": "Grafo do conhecimento interativo. Arraste o fundo para mover a vista, arraste nós para reposicioná-los e role para aplicar zoom.",
     "error": "Não foi possível carregar o grafo do conhecimento.",
     "empty": "Ainda não há conhecimento conectado para mostrar nesta visualização.",
@@ -484,6 +483,7 @@
       "topicRebalance": "Reequilíbrio da árvore de tópicos",
       "topicAudit": "Auditoria da árvore de tópicos",
       "topicName": "Nomeação de tópicos",
+      "topicAreas": "Áreas de tópicos",
       "topicLabelEmbed": "Rótulos de tópicos",
       "topicGate": "Decisão de posicionamento em tópicos"
     },
@@ -1778,7 +1778,9 @@
       "build": "Árvore de tópicos criada: {topics} tópicos, {items} itens",
       "rebuild": "Árvore de tópicos reconstruída ({items} itens movidos)",
       "rebalance": "Tópicos reorganizados: {operations} alterações, {items} itens movidos",
-      "proposal": "Reorganização de tópicos proposta ({items} itens)"
+      "proposal": "Reorganização de tópicos proposta ({items} itens)",
+      "naming": "Nomes de tópicos atualizados: {topics}",
+      "gate": "{items} posicionamentos incertos verificados"
     },
     "navigator": {
       "title": "Explorar",
@@ -1930,10 +1932,6 @@
       "protected": "Este tópico é protegido, então a mudança precisa da sua aprovação.",
       "unavailable": "Esta ação ainda não está disponível.",
       "canceled": "A tarefa de tópicos foi cancelada."
-    },
-    "changeSets": {
-      "naming": "Nomes de tópicos atualizados: {topics}",
-      "gate": "{items} posicionamentos incertos verificados"
     }
   },
   "wiki": {

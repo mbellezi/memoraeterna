@@ -231,7 +231,7 @@
   },
   "knowledgeGraph": {
     "openSourceEntities": "Abrir grafo de entidades de la fuente",
-    "backToGraph": "Volver al grafo",
+    "backToGraph": "Volver al grafo de conocimiento",
     "layoutError": "No se pudo calcular la disposición del grafo. Inténtalo de nuevo para reanudar la interacción.",
     "forces": {
       "title": "Fuerzas del grafo",
@@ -260,7 +260,6 @@
     },
     "relayout": "Reorganizar el grafo",
     "refresh": "Actualizar el grafo",
-    "backToGraph": "Volver al grafo de conocimiento",
     "canvasLabel": "Grafo de conocimiento interactivo. Arrastra el fondo para desplazarte, los nodos para reposicionarlos y usa la rueda para ampliar.",
     "error": "No se pudo cargar el grafo de conocimiento.",
     "empty": "Todavía no hay conocimiento conectado para mostrar en esta vista.",
@@ -484,6 +483,7 @@
       "topicRebalance": "Reequilibrio del árbol de temas",
       "topicAudit": "Auditoría del árbol de temas",
       "topicName": "Nombre de temas",
+      "topicAreas": "Áreas de temas",
       "topicLabelEmbed": "Etiquetas de temas",
       "topicGate": "Decisión de ubicación en temas"
     },
@@ -1782,7 +1782,9 @@
       "build": "Árbol de temas creado: {topics} temas, {items} elementos",
       "rebuild": "Árbol de temas reconstruido ({items} elementos movidos)",
       "rebalance": "Temas reorganizados: {operations} cambios, {items} elementos movidos",
-      "proposal": "Reorganización de temas propuesta ({items} elementos)"
+      "proposal": "Reorganización de temas propuesta ({items} elementos)",
+      "naming": "Nombres de temas actualizados: {topics}",
+      "gate": "{items} ubicaciones dudosas revisadas"
     },
     "navigator": {
       "title": "Explorar",
@@ -1934,10 +1936,6 @@
       "protected": "Este tema está protegido, así que el cambio necesita tu aprobación.",
       "unavailable": "Esta acción todavía no está disponible.",
       "canceled": "La tarea de temas se canceló."
-    },
-    "changeSets": {
-      "naming": "Nombres de temas actualizados: {topics}",
-      "gate": "{items} ubicaciones dudosas revisadas"
     }
   },
   "wiki": {

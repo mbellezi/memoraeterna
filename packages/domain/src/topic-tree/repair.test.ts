@@ -16,7 +16,7 @@ import type { ItemKey } from "./ids.js";
 import { checkInvariants } from "./invariants.js";
 import { refreshTopics } from "./operations.js";
 import { treeQuality } from "./quality.js";
-import { rebalanceTree, scopeHardViolations } from "./repair.js";
+import { churnWeightOf, rebalanceTree, scopeHardViolations } from "./repair.js";
 import type { RebalanceInput, RebalanceResult } from "./repair.js";
 import { createRng } from "./rng.js";
 import type { Rng } from "./rng.js";
@@ -408,12 +408,54 @@ describe("REBALANCE: mis-parent audit and direct items", () => {
       areasActive: true
     });
     expect(withAreas.proposals[0]).toMatchObject({ reason: "area-level", kind: "reparent" });
+    // Before the tree's first Areas grouping (and inside it), Area-level operations are automatic.
+    const beforeGrouping = rebalanceTree({
+      state: cloneTopicTreeState(state),
+      vectors: tree.vectors,
+      config,
+      seed: 7,
+      now: fixtureNow,
+      day: fixtureDay,
+      newTopicId: tree.newTopicId,
+      topics: [planted],
+      areasActive: true,
+      areaLevelReview: false,
+      force: true
+    });
+    expect(beforeGrouping.proposals).toEqual([]);
+    expect(beforeGrouping.applied[0]).toMatchObject({ kind: "reparent" });
     // The re-parent moves a whole subtree: on a 240-item library it exceeds the per-operation
     // share (repair.softMoveShare), so it waits for the budget; an explicit settle applies it.
     const waiting = run(tree, { topics: [planted] });
     expect(waiting.skipped[0]).toMatchObject({ kind: "reparent", reason: "budget" });
     const result = run(tree, { topics: [planted], force: true });
     expect(result.applied[0]).toMatchObject({ kind: "reparent", condition: "mis-parented" });
+    expect(getTopic(state, planted).parentId).toBe(home);
+  });
+
+  it("weighs a mis-parent correction's churn once, so it passes at the calibrated lambda", () => {
+    // The E3 calibration's lambda (6) exceeds what Q prices a mis-parent at (items x (1 + gain)):
+    // counted lambda times, no re-parent could ever pass.
+    const calibrated = topicTreeConfigWith({ audit: { misParentMargin: 0.05 } });
+    expect(calibrated.stability.churnWeight).toBe(6);
+    expect(churnWeightOf("mis-parented", calibrated)).toBeCloseTo(1 / 6, 12);
+    expect(churnWeightOf("leaf-above-max", calibrated)).toBe(1);
+    const tree = productTree(data, calibrated, { seed: 7 });
+    const { state } = tree;
+    const areas = getTopic(state, state.rootId).children.filter(
+      (id) => getTopic(state, id).children.length >= 3
+    );
+    const [home, away] = areas as [string, string];
+    const planted = getTopic(state, home).children[0] as string;
+    setupEditor(tree).moveTopic(planted, away);
+    recomputeSubtree(state, tree.vectors);
+    const onlyReparents = run(
+      tree,
+      { topics: [planted, home, away], force: true, conditions: new Set(["mis-parented"]) },
+      calibrated
+    );
+    expect(onlyReparents.applied.map((operation) => operation.condition)).toEqual(["mis-parented"]);
+    expect(onlyReparents.applied[0]?.netGain).toBeGreaterThan(0);
     expect(getTopic(state, planted).parentId).toBe(home);
   });
 

@@ -453,6 +453,11 @@ const identifierPatterns: readonly RegExp[] = [
   /^[\d\s.,;:\-_/\\#]+$/u
 ];
 
+/** True when a title is a word that names nothing ("Miscellaneous", "Outros"), as a whole. */
+export function isGenericTopicTitle(title: string): boolean {
+  return genericTitles.has(foldTerm(title));
+}
+
 /** True when a name looks like an identifier, an alias or a placeholder rather than a subject. */
 export function isIdentifierShaped(text: string): boolean {
   const trimmed = text.trim();

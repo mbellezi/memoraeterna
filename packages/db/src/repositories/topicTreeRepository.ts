@@ -1862,6 +1862,30 @@ export function createTopicTreeRepository(pool: PgPool) {
     },
 
     /**
+     * How many change-sets of one origin a tree has, by status: the Areas grouping applies on its
+     * own only while the tree has none (D12, the bootstrap).
+     */
+    async changeSetStatusCounts(
+      treeId: string,
+      origin: TopicChangeSetOrigin,
+      db: Queryable = pool
+    ): Promise<Record<TopicChangeSetStatus, number>> {
+      const result = await db.query<{ status: TopicChangeSetStatus; count: number }>(
+        `select status, count(*)::int as count from topic_change_sets
+          where tree_id = $1 and origin = $2 group by status`,
+        [treeId, origin]
+      );
+      const counts: Record<TopicChangeSetStatus, number> = {
+        applied: 0,
+        undone: 0,
+        pending_review: 0,
+        dismissed: 0
+      };
+      for (const row of result.rows) counts[row.status] = row.count;
+      return counts;
+    },
+
+    /**
      * Refreshes the planner statistics of the topic tables (ANALYZE takes no lock that blocks
      * readers or writers). A bulk build or rebuild changes most of their rows at once, and until
      * autovacuum catches up the pending-item reads plan as if the tables were empty.
