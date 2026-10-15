@@ -1783,9 +1783,63 @@
       "rebalance": "Temas reorganizados: {operations} cambios, {items} elementos movidos",
       "proposal": "Reorganización de temas propuesta ({items} elementos)"
     },
+    "navigator": {
+      "title": "Explorar",
+      "collapseAll": "Contraer todo",
+      "pinned": "Fijados",
+      "recents": "Recientes",
+      "topics": "Temas",
+      "unsorted": "Sin lugar",
+      "unnamed": "Tema sin nombre",
+      "untitled": "Sin título",
+      "loading": "Cargando temas...",
+      "loadingBranch": "Cargando...",
+      "error": "No se pudieron cargar los temas.",
+      "branchError": "No se pudo cargar. Reintentar",
+      "placesError": "No se pudieron cargar los elementos fijados y recientes.",
+      "preparing": "Tu árbol de temas se está preparando.",
+      "empty": "Todavía no hay nada organizado. Los temas aparecen aquí a medida que se colocan las notas creadas a partir de tus fuentes.",
+      "moreTopics": "Mostrar más temas",
+      "moreItems": "{count} más",
+      "moreFailed": "No se pudo cargar más. Reintentar",
+      "itemCount": "Elementos: {count}",
+      "noteCount": "Notas: {count}",
+      "openFailed": "No se pudo abrir ese elemento.",
+      "kinds": {
+        "topic": "Tema",
+        "note": "Nota",
+        "source": "Fuente"
+      },
+      "marks": {
+        "pinned": "Fijado",
+        "createdByYou": "Creado por ti",
+        "attention": "Necesita atención",
+        "violation": "Problema de estructura",
+        "alsoHere": "También colocado aquí",
+        "waiting": "Esperando un lugar"
+      }
+    },
+    "status": {
+      "label": "Estado de los temas",
+      "building": "Organizando tu biblioteca en temas ({placed} de {items} colocados).",
+      "buildingStart": "Organizando tu biblioteca en temas...",
+      "blocked": {
+        "no_embedding_route": "Los temas esperan un modelo de embeddings. Elige uno en Ajustes.",
+        "space_changed": "El modelo de embeddings cambió. Los temas continúan cuando se rehagan los embeddings de tus notas.",
+        "waiting_for_embeddings": "Las notas aún se están preparando. Los temas siguen a medida que terminan.",
+        "no_decider": "Las notas difíciles de colocar esperan hasta que haya un modelo de reranking listo."
+      },
+      "dailyCap": "El nombrado de temas nuevos está en pausa por hoy. Los temas nuevos conservan nombres provisionales hasta mañana.",
+      "reembed": "Rehacer los embeddings de la biblioteca",
+      "reembedAsk": "¿Rehacer los embeddings de {count} notas con el modelo de embeddings actual? Puede tardar y usar tu proveedor de embeddings.",
+      "reembedConfirm": "Rehacer",
+      "reembedWorking": "Iniciando...",
+      "reembedQueued": "Proceso iniciado. Los temas continúan cuando termine.",
+      "reembedFailed": "No se pudieron rehacer los embeddings de la biblioteca. Inténtalo de nuevo."
+    },
     "placeholder": {
-      "title": "Tus temas están en camino",
-      "body": "La wiki anterior se eliminó y el nuevo árbol de temas llegará en una próxima actualización. Tus fuentes y notas están en la Biblioteca, y Preguntar responde a partir de ellas.",
+      "title": "Explora tus temas",
+      "body": "Elige un tema en el árbol para ver qué dicen tus notas sobre él. Todo lo que agregas se coloca en el árbol por ti, y Preguntar responde a partir de tus notas y fuentes.",
       "openLibrary": "Abrir la Biblioteca",
       "ask": "Preguntar",
       "notice": "Ese enlace apuntaba a una página de la wiki anterior, que ya no existe.",

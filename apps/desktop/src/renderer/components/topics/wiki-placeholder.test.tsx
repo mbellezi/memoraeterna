@@ -1,41 +1,27 @@
 import { renderToString } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
-import { ConsultationDialog } from "../ConsultationDialog";
 import {
   WikiPlaceholder,
   WikiPlaceholderView,
   type WikiPlaceholderViewProps
 } from "./WikiPlaceholder";
 
-// The dialog is T10's; here only whether and how the placeholder mounts it matters.
-vi.mock("../ConsultationDialog", () => ({
-  ConsultationDialog: vi.fn(() => <dialog data-testid="ask-dialog" />)
-}));
-
 const t = createTranslator("en");
 const view = (overrides: Partial<WikiPlaceholderViewProps> = {}) =>
   renderToString(
     <WikiPlaceholderView
       t={t}
-      active
-      askOpen={false}
       notice={false}
       onAsk={() => undefined}
-      onCloseAsk={() => undefined}
       onDismissNotice={() => undefined}
       onOpenLibrary={() => undefined}
-      onOpenSource={() => undefined}
       {...overrides}
     />
   );
 
-afterEach(() => {
-  vi.mocked(ConsultationDialog).mockClear();
-});
-
-describe("the Wiki empty state", () => {
-  it("says the old wiki is gone and offers the Library and Ask, in every language", () => {
+describe("the reading surface without an open topic", () => {
+  it("says where to start and offers the Library and Ask, in every language", () => {
     for (const language of supportedLanguageCodes) {
       const text = messages[language].topics.placeholder;
       const html = view({ t: createTranslator(language) });
@@ -63,43 +49,10 @@ describe("the Wiki empty state", () => {
     expect(html).not.toContain("<textarea");
   });
 
-  it("mounts nothing of Ask, so nothing loads, until Ask is opened", () => {
-    const html = renderToString(
-      <WikiPlaceholder
-        t={t}
-        active
-        noticeToken={null}
-        onOpenLibrary={() => undefined}
-        onOpenSource={() => undefined}
-      />
-    );
-    expect(ConsultationDialog).not.toHaveBeenCalled();
+  it("asks for a dialog with its Ask button and mounts none itself", () => {
+    const html = view();
+    expect(html).toContain('aria-haspopup="dialog"');
     expect(html).not.toContain("<dialog");
-    expect(view()).not.toContain("<dialog");
-    expect(ConsultationDialog).not.toHaveBeenCalled();
-  });
-
-  it("opens Ask in place on the whole library, and Ask closes back to the empty state", () => {
-    const onCloseAsk = vi.fn();
-    const onOpenSource = vi.fn();
-    const html = view({ askOpen: true, onCloseAsk, onOpenSource });
-    expect(html).toContain("<dialog");
-    expect(ConsultationDialog).toHaveBeenCalledTimes(1);
-    const props = vi.mocked(ConsultationDialog).mock.calls[0]![0];
-    expect(props).toMatchObject({ active: true, initialQuestion: "" });
-    props.onClose();
-    expect(onCloseAsk).toHaveBeenCalledTimes(1);
-    props.onOpenSource("source-id", "note-id");
-    expect(onOpenSource).toHaveBeenCalledWith("source-id", "note-id");
-  });
-
-  it("keeps no modal open while the Wiki is hidden, and keeps Ask's state", () => {
-    view({ askOpen: true, active: false });
-    expect(vi.mocked(ConsultationDialog).mock.calls[0]![0]).toMatchObject({ active: false });
-    // Hidden with Ask closed mounts nothing either.
-    vi.mocked(ConsultationDialog).mockClear();
-    view({ askOpen: false, active: false });
-    expect(ConsultationDialog).not.toHaveBeenCalled();
   });
 });
 
@@ -111,7 +64,7 @@ describe("the notice for a link to the removed wiki", () => {
         active={active}
         noticeToken={noticeToken}
         onOpenLibrary={() => undefined}
-        onOpenSource={() => undefined}
+        onAsk={() => undefined}
       />
     );
 

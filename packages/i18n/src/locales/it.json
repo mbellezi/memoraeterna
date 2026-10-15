@@ -1774,9 +1774,63 @@
       "rebalance": "Argomenti riorganizzati: {operations} modifiche, {items} elementi spostati",
       "proposal": "Riorganizzazione degli argomenti proposta ({items} elementi)"
     },
+    "navigator": {
+      "title": "Esplora",
+      "collapseAll": "Comprimi tutto",
+      "pinned": "Fissati",
+      "recents": "Recenti",
+      "topics": "Argomenti",
+      "unsorted": "Senza posto",
+      "unnamed": "Argomento senza nome",
+      "untitled": "Senza titolo",
+      "loading": "Caricamento degli argomenti...",
+      "loadingBranch": "Caricamento...",
+      "error": "Non è stato possibile caricare gli argomenti.",
+      "branchError": "Impossibile caricare. Riprova",
+      "placesError": "Non è stato possibile caricare gli elementi fissati e recenti.",
+      "preparing": "L’albero degli argomenti è in preparazione.",
+      "empty": "Non c’è ancora nulla di organizzato. Gli argomenti compaiono qui man mano che le note create dalle tue fonti vengono collocate.",
+      "moreTopics": "Mostra altri argomenti",
+      "moreItems": "altri {count}",
+      "moreFailed": "Impossibile caricare altro. Riprova",
+      "itemCount": "Elementi: {count}",
+      "noteCount": "Note: {count}",
+      "openFailed": "Non è stato possibile aprire quell’elemento.",
+      "kinds": {
+        "topic": "Argomento",
+        "note": "Nota",
+        "source": "Fonte"
+      },
+      "marks": {
+        "pinned": "Fissato",
+        "createdByYou": "Creato da te",
+        "attention": "Richiede attenzione",
+        "violation": "Problema di struttura",
+        "alsoHere": "Collocato anche qui",
+        "waiting": "In attesa di un posto"
+      }
+    },
+    "status": {
+      "label": "Stato degli argomenti",
+      "building": "Sto organizzando la tua libreria in argomenti ({placed} di {items} collocati).",
+      "buildingStart": "Sto organizzando la tua libreria in argomenti...",
+      "blocked": {
+        "no_embedding_route": "Gli argomenti attendono un modello di embedding. Scegline uno in Impostazioni.",
+        "space_changed": "Il modello di embedding è cambiato. Gli argomenti riprendono quando gli embedding delle tue note saranno rifatti.",
+        "waiting_for_embeddings": "Le note sono ancora in preparazione. Gli argomenti seguono man mano che finiscono.",
+        "no_decider": "Le note difficili da collocare restano in attesa finché non è pronto un modello di reranking."
+      },
+      "dailyCap": "La denominazione dei nuovi argomenti è sospesa per oggi. I nuovi argomenti mantengono nomi provvisori fino a domani.",
+      "reembed": "Rifai gli embedding della libreria",
+      "reembedAsk": "Rifare gli embedding di {count} note con il modello di embedding attuale? Può richiedere del tempo e usare il tuo provider di embedding.",
+      "reembedConfirm": "Rifai",
+      "reembedWorking": "Avvio...",
+      "reembedQueued": "Operazione avviata. Gli argomenti riprendono al termine.",
+      "reembedFailed": "Non è stato possibile rifare gli embedding della libreria. Riprova."
+    },
     "placeholder": {
-      "title": "I tuoi argomenti stanno arrivando",
-      "body": "La vecchia wiki è stata rimossa e il nuovo albero degli argomenti arriverà in un prossimo aggiornamento. Le tue fonti e le tue note sono nella Libreria, e Chiedi risponde a partire da esse.",
+      "title": "Esplora i tuoi argomenti",
+      "body": "Scegli un argomento nell’albero per vedere cosa dicono le tue note. Tutto ciò che aggiungi viene collocato nell’albero per te, e Chiedi risponde a partire dalle tue note e dalle tue fonti.",
       "openLibrary": "Apri la Libreria",
       "ask": "Chiedi",
       "notice": "Quel link puntava a una pagina della vecchia wiki, che non esiste più.",

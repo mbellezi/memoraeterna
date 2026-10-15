@@ -1776,9 +1776,63 @@
       "rebalance": "Reorganized topics: {operations} changes, {items} items moved",
       "proposal": "Proposed topic reorganization ({items} items)"
     },
+    "navigator": {
+      "title": "Explore",
+      "collapseAll": "Collapse all",
+      "pinned": "Pinned",
+      "recents": "Recents",
+      "topics": "Topics",
+      "unsorted": "Unsorted",
+      "unnamed": "Unnamed topic",
+      "untitled": "Untitled",
+      "loading": "Loading topics...",
+      "loadingBranch": "Loading...",
+      "error": "The topics could not be loaded.",
+      "branchError": "Could not load. Retry",
+      "placesError": "Pinned and recent items could not be loaded.",
+      "preparing": "Your topic tree is being prepared.",
+      "empty": "Nothing is organized yet. Topics appear here as the notes made from your sources are placed.",
+      "moreTopics": "Show more topics",
+      "moreItems": "{count} more",
+      "moreFailed": "Could not load more. Retry",
+      "itemCount": "Items: {count}",
+      "noteCount": "Notes: {count}",
+      "openFailed": "That item could not be opened.",
+      "kinds": {
+        "topic": "Topic",
+        "note": "Note",
+        "source": "Source"
+      },
+      "marks": {
+        "pinned": "Pinned",
+        "createdByYou": "Created by you",
+        "attention": "Needs attention",
+        "violation": "Structure problem",
+        "alsoHere": "Also placed here",
+        "waiting": "Waiting for a place"
+      }
+    },
+    "status": {
+      "label": "Topic status",
+      "building": "Organizing your library into topics ({placed} of {items} placed).",
+      "buildingStart": "Organizing your library into topics...",
+      "blocked": {
+        "no_embedding_route": "Topics wait for an embedding model. Choose one in Settings.",
+        "space_changed": "The embedding model changed. Topics resume once your notes are re-embedded.",
+        "waiting_for_embeddings": "Notes are still being prepared. Topics follow as they finish.",
+        "no_decider": "Notes that are hard to place wait until a reranking model is ready."
+      },
+      "dailyCap": "Naming new topics is paused for today. New topics keep provisional names until tomorrow.",
+      "reembed": "Re-embed library",
+      "reembedAsk": "Re-embed {count} notes with the current embedding model? This can take a while and may use your embedding provider.",
+      "reembedConfirm": "Re-embed",
+      "reembedWorking": "Starting...",
+      "reembedQueued": "Re-embedding started. Topics resume when it finishes.",
+      "reembedFailed": "The library could not be re-embedded. Try again."
+    },
     "placeholder": {
-      "title": "Your topics are on the way",
-      "body": "The old wiki was removed, and the new topic tree arrives in a coming update. Your sources and notes are in the Library, and Ask answers from them.",
+      "title": "Explore your topics",
+      "body": "Choose a topic in the tree to see what your notes say about it. Everything you add is placed in the tree for you, and Ask answers from your notes and sources.",
       "openLibrary": "Open Library",
       "ask": "Ask",
       "notice": "That link pointed to a page of the old wiki, which no longer exists.",

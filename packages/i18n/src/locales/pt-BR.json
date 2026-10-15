@@ -1779,9 +1779,63 @@
       "rebalance": "Tópicos reorganizados: {operations} alterações, {items} itens movidos",
       "proposal": "Reorganização de tópicos proposta ({items} itens)"
     },
+    "navigator": {
+      "title": "Explorar",
+      "collapseAll": "Recolher tudo",
+      "pinned": "Fixados",
+      "recents": "Recentes",
+      "topics": "Tópicos",
+      "unsorted": "Sem lugar",
+      "unnamed": "Tópico sem nome",
+      "untitled": "Sem título",
+      "loading": "Carregando tópicos...",
+      "loadingBranch": "Carregando...",
+      "error": "Não foi possível carregar os tópicos.",
+      "branchError": "Não foi possível carregar. Tentar novamente",
+      "placesError": "Não foi possível carregar os itens fixados e recentes.",
+      "preparing": "Sua árvore de tópicos está sendo preparada.",
+      "empty": "Nada foi organizado ainda. Os tópicos aparecem aqui conforme as notas criadas a partir das suas fontes são colocadas.",
+      "moreTopics": "Mostrar mais tópicos",
+      "moreItems": "mais {count}",
+      "moreFailed": "Não foi possível carregar mais. Tentar novamente",
+      "itemCount": "Itens: {count}",
+      "noteCount": "Notas: {count}",
+      "openFailed": "Não foi possível abrir esse item.",
+      "kinds": {
+        "topic": "Tópico",
+        "note": "Nota",
+        "source": "Fonte"
+      },
+      "marks": {
+        "pinned": "Fixado",
+        "createdByYou": "Criado por você",
+        "attention": "Precisa de atenção",
+        "violation": "Problema de estrutura",
+        "alsoHere": "Também colocado aqui",
+        "waiting": "Esperando um lugar"
+      }
+    },
+    "status": {
+      "label": "Estado dos tópicos",
+      "building": "Organizando sua biblioteca em tópicos ({placed} de {items} colocados).",
+      "buildingStart": "Organizando sua biblioteca em tópicos...",
+      "blocked": {
+        "no_embedding_route": "Os tópicos esperam um modelo de embeddings. Escolha um em Configurações.",
+        "space_changed": "O modelo de embeddings mudou. Os tópicos continuam quando os embeddings das suas notas forem refeitos.",
+        "waiting_for_embeddings": "As notas ainda estão sendo preparadas. Os tópicos acompanham conforme elas terminam.",
+        "no_decider": "As notas difíceis de colocar esperam até que um modelo de reranking esteja pronto."
+      },
+      "dailyCap": "A nomeação de novos tópicos está pausada por hoje. Os novos tópicos mantêm nomes provisórios até amanhã.",
+      "reembed": "Refazer os embeddings da biblioteca",
+      "reembedAsk": "Refazer os embeddings de {count} notas com o modelo de embeddings atual? Isso pode demorar e pode usar o seu provedor de embeddings.",
+      "reembedConfirm": "Refazer",
+      "reembedWorking": "Iniciando...",
+      "reembedQueued": "Processo iniciado. Os tópicos continuam quando ele terminar.",
+      "reembedFailed": "Não foi possível refazer os embeddings da biblioteca. Tente novamente."
+    },
     "placeholder": {
-      "title": "Seus tópicos estão a caminho",
-      "body": "A wiki antiga foi removida, e a nova árvore de tópicos chega em uma próxima atualização. Suas fontes e notas estão na Biblioteca, e o botão Perguntar responde com base nelas.",
+      "title": "Explore seus tópicos",
+      "body": "Escolha um tópico na árvore para ver o que suas notas dizem sobre ele. Tudo o que você adiciona é colocado na árvore para você, e o botão Perguntar responde com base nas suas notas e fontes.",
       "openLibrary": "Abrir a Biblioteca",
       "ask": "Perguntar",
       "notice": "Esse link apontava para uma página da wiki antiga, que não existe mais.",

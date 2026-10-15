@@ -1,54 +1,120 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderToString } from "react-dom/server";
 import { createTranslator, messages, supportedLanguageCodes } from "@app/i18n";
-import { WikiWorkspace } from "./WikiWorkspace";
+import { ConsultationDialog } from "./ConsultationDialog";
+import { WikiWorkspace, WikiWorkspaceView, type WikiWorkspaceViewProps } from "./WikiWorkspace";
 import { createLibraryHistoryState, libraryHistoryEntryFromState } from "./LibraryView";
 
-const workspace = (
+// The dialog is Ask's; here only whether and how the Wiki mounts it matters.
+vi.mock("./ConsultationDialog", () => ({
+  ConsultationDialog: vi.fn(() => <dialog data-testid="ask-dialog" />)
+}));
+
+afterEach(() => {
+  vi.mocked(ConsultationDialog).mockClear();
+});
+
+const view = (
   language: (typeof supportedLanguageCodes)[number],
-  overrides: { active?: boolean; noticeToken?: number | null } = {}
+  overrides: Partial<WikiWorkspaceViewProps> = {}
 ) =>
   renderToString(
-    <WikiWorkspace
+    <WikiWorkspaceView
       t={createTranslator(language)}
-      active={overrides.active ?? true}
-      noticeToken={overrides.noticeToken ?? null}
+      active
+      noticeToken={null}
+      selectedTopicId={null}
+      askOpen={false}
+      onOpenTopic={() => undefined}
+      onAsk={() => undefined}
+      onCloseAsk={() => undefined}
       onOpenLibrary={() => undefined}
       onOpenSource={() => undefined}
+      {...overrides}
     />
   );
 
 describe("wiki workspace shell", () => {
-  it("hosts the empty state with the Library and Ask entries in every language", () => {
+  it("hosts the topic navigator beside the reading surface in every language", () => {
     for (const language of supportedLanguageCodes) {
-      const html = workspace(language);
-      const copy = messages[language].topics.placeholder;
+      const html = view(language);
+      const copy = messages[language].topics;
+      expect(html, language).toContain(`aria-label="${messages[language].wiki.navigation}"`);
+      expect(html, language).toContain(copy.navigator.title);
+      expect(html, language).toContain(copy.navigator.topics);
       expect(html, language).toContain('aria-labelledby="wiki-placeholder-title"');
-      expect(html, language).toContain(copy.title);
-      expect(html, language).toContain(copy.openLibrary);
-      expect(html, language).toContain(copy.ask);
+      expect(html, language).toContain(copy.placeholder.openLibrary);
       expect(html, language).not.toContain("[[missing:");
     }
   });
 
-  it("mounts nothing of the removed editor, tree or creation controls", () => {
-    const html = workspace("en");
-    expect(html).not.toContain('role="tree"');
+  it("keeps the Ask entry in the navigator and in the reading surface", () => {
+    const html = view("en");
+    expect(html.match(/aria-haspopup="dialog"/g)).toHaveLength(2);
+    expect(html).not.toContain("<dialog");
+    expect(ConsultationDialog).not.toHaveBeenCalled();
+  });
+
+  it("mounts nothing of the removed editor, creation controls or a modal", () => {
+    const html = view("en");
     expect(html).not.toContain("<textarea");
     expect(html).not.toContain("<select");
     expect(html).not.toContain("<dialog");
   });
 
+  it("opens Ask in place on the whole library, and Ask closes back to the Wiki", () => {
+    const onCloseAsk = vi.fn();
+    const onOpenSource = vi.fn();
+    const html = view("en", { askOpen: true, onCloseAsk, onOpenSource });
+    expect(html).toContain("<dialog");
+    expect(ConsultationDialog).toHaveBeenCalledTimes(1);
+    const props = vi.mocked(ConsultationDialog).mock.calls[0]![0];
+    expect(props).toMatchObject({ active: true, initialQuestion: "" });
+    props.onClose();
+    expect(onCloseAsk).toHaveBeenCalledTimes(1);
+    props.onOpenSource("source-id", "note-id");
+    expect(onOpenSource).toHaveBeenCalledWith("source-id", "note-id");
+  });
+
+  it("keeps no modal open while the Wiki is hidden", () => {
+    view("en", { askOpen: true, active: false });
+    expect(vi.mocked(ConsultationDialog).mock.calls[0]![0]).toMatchObject({ active: false });
+    vi.mocked(ConsultationDialog).mockClear();
+    view("en", { askOpen: false, active: false });
+    expect(ConsultationDialog).not.toHaveBeenCalled();
+  });
+
+  it("mounts Ask only after it was asked for", () => {
+    const html = renderToString(
+      <WikiWorkspace
+        t={createTranslator("en")}
+        active
+        noticeToken={null}
+        onOpenLibrary={() => undefined}
+        onOpenSource={() => undefined}
+      />
+    );
+    expect(html).not.toContain("<dialog");
+    expect(ConsultationDialog).not.toHaveBeenCalled();
+  });
+
   it("shows the removed-page notice only for a link that asked for a page", () => {
     const notice = messages.en.topics.placeholder.notice;
-    expect(workspace("en", { noticeToken: null })).not.toContain(notice);
-    expect(workspace("en", { noticeToken: 1 })).toContain(notice);
+    expect(view("en", { noticeToken: null })).not.toContain(notice);
+    expect(view("en", { noticeToken: 1 })).toContain(notice);
   });
 
   it("lets a hidden Wiki use up the notice of an old link", () => {
-    expect(workspace("en", { active: false, noticeToken: 1 })).not.toContain(
-      messages.en.topics.placeholder.notice
+    const html = renderToString(
+      <WikiWorkspace
+        t={createTranslator("en")}
+        active={false}
+        noticeToken={1}
+        onOpenLibrary={() => undefined}
+        onOpenSource={() => undefined}
+      />
     );
+    expect(html).not.toContain(messages.en.topics.placeholder.notice);
   });
 
   it("preserves the wiki origin in native source-history navigation", () => {

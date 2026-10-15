@@ -1781,9 +1781,63 @@
       "rebalance": "Sujets réorganisés : {operations} modifications, {items} éléments déplacés",
       "proposal": "Réorganisation des sujets proposée ({items} éléments)"
     },
+    "navigator": {
+      "title": "Explorer",
+      "collapseAll": "Tout réduire",
+      "pinned": "Épinglés",
+      "recents": "Récents",
+      "topics": "Sujets",
+      "unsorted": "Sans place",
+      "unnamed": "Sujet sans nom",
+      "untitled": "Sans titre",
+      "loading": "Chargement des sujets...",
+      "loadingBranch": "Chargement...",
+      "error": "Impossible de charger les sujets.",
+      "branchError": "Chargement impossible. Réessayer",
+      "placesError": "Impossible de charger les éléments épinglés et récents.",
+      "preparing": "Votre arbre de sujets est en préparation.",
+      "empty": "Rien n’est encore organisé. Les sujets apparaissent ici à mesure que les notes créées à partir de vos sources sont placées.",
+      "moreTopics": "Afficher plus de sujets",
+      "moreItems": "{count} de plus",
+      "moreFailed": "Impossible d’en charger plus. Réessayer",
+      "itemCount": "Éléments : {count}",
+      "noteCount": "Notes : {count}",
+      "openFailed": "Impossible d’ouvrir cet élément.",
+      "kinds": {
+        "topic": "Sujet",
+        "note": "Note",
+        "source": "Source"
+      },
+      "marks": {
+        "pinned": "Épinglé",
+        "createdByYou": "Créé par vous",
+        "attention": "Demande votre attention",
+        "violation": "Problème de structure",
+        "alsoHere": "Aussi placé ici",
+        "waiting": "En attente d’une place"
+      }
+    },
+    "status": {
+      "label": "État des sujets",
+      "building": "Organisation de votre bibliothèque en sujets ({placed} sur {items} placés).",
+      "buildingStart": "Organisation de votre bibliothèque en sujets...",
+      "blocked": {
+        "no_embedding_route": "Les sujets attendent un modèle d’embedding. Choisissez-en un dans Paramètres.",
+        "space_changed": "Le modèle d’embedding a changé. Les sujets reprennent une fois les embeddings de vos notes refaits.",
+        "waiting_for_embeddings": "Les notes sont encore en préparation. Les sujets suivent à mesure qu’elles se terminent.",
+        "no_decider": "Les notes difficiles à placer attendent qu’un modèle de reranking soit prêt."
+      },
+      "dailyCap": "Le nommage des nouveaux sujets est suspendu pour aujourd’hui. Les nouveaux sujets gardent des noms provisoires jusqu’à demain.",
+      "reembed": "Refaire les embeddings de la bibliothèque",
+      "reembedAsk": "Refaire les embeddings de {count} notes avec le modèle d’embedding actuel ? Cela peut prendre du temps et utiliser votre fournisseur d’embeddings.",
+      "reembedConfirm": "Refaire",
+      "reembedWorking": "Démarrage...",
+      "reembedQueued": "Opération lancée. Les sujets reprennent à la fin.",
+      "reembedFailed": "Impossible de refaire les embeddings de la bibliothèque. Réessayez."
+    },
     "placeholder": {
-      "title": "Vos sujets arrivent bientôt",
-      "body": "L'ancien wiki a été supprimé et le nouvel arbre de sujets arrivera dans une prochaine mise à jour. Vos sources et vos notes sont dans la Bibliothèque, et le bouton Poser une question répond à partir d'elles.",
+      "title": "Explorez vos sujets",
+      "body": "Choisissez un sujet dans l’arbre pour voir ce que disent vos notes. Tout ce que vous ajoutez est placé dans l’arbre pour vous, et Poser une question répond à partir de vos notes et de vos sources.",
       "openLibrary": "Ouvrir la Bibliothèque",
       "ask": "Poser une question",
       "notice": "Ce lien pointait vers une page de l'ancien wiki, qui n'existe plus.",

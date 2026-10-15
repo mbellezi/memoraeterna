@@ -1,42 +1,27 @@
 import { useState } from "react";
-import { BookOpen, MessageCircle, X } from "lucide-react";
+import { Layers, MessageCircle, X } from "lucide-react";
 import type { Translator } from "@app/i18n";
-import type { PassageAnchor } from "../../lib/object-navigation";
-import { ConsultationDialog } from "../ConsultationDialog";
 import { Button } from "../ui/button";
-
-/** Ask here always starts on the whole library, with an empty question. */
-const askStart = { page: null, initialQuestion: "" };
 
 export interface WikiPlaceholderViewProps {
   t: Translator;
-  /** Whether the Wiki is the view on screen. A hidden Wiki keeps no modal open. */
-  active: boolean;
-  /** Whether the Ask dialog is mounted; it loads when it mounts and not before. */
-  askOpen: boolean;
   /** Shown above the message when the Wiki was opened by a link to a page that no longer exists. */
   notice: boolean;
   onAsk: () => void;
-  onCloseAsk: () => void;
   onDismissNotice: () => void;
   onOpenLibrary: () => void;
-  onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
 }
 
 /**
- * What the Wiki shows until the topic navigator replaces it: the old wiki is gone, the Library and
- * Ask are the way in. Nothing here loads; the Ask dialog does its own loading once it is opened.
+ * What the reading surface of the Wiki shows while no topic is open: where to start, and the way to
+ * the Library and to Ask. The navigator beside it holds the tree; the Ask dialog is the Wiki's.
  */
 export function WikiPlaceholderView({
   t,
-  active,
-  askOpen,
   notice,
   onAsk,
-  onCloseAsk,
   onDismissNotice,
-  onOpenLibrary,
-  onOpenSource
+  onOpenLibrary
 }: WikiPlaceholderViewProps) {
   return (
     <section
@@ -60,7 +45,7 @@ export function WikiPlaceholderView({
           </Button>
         </div>
       ) : null}
-      <BookOpen className="h-6 w-6 text-accent" aria-hidden="true" />
+      <Layers className="h-6 w-6 text-accent" aria-hidden="true" />
       <h2 id="wiki-placeholder-title" className="text-xl font-semibold text-foreground">
         {t("topics.placeholder.title")}
       </h2>
@@ -74,15 +59,6 @@ export function WikiPlaceholderView({
           {t("topics.placeholder.ask")}
         </Button>
       </div>
-      {askOpen ? (
-        <ConsultationDialog
-          {...askStart}
-          t={t}
-          active={active}
-          onClose={onCloseAsk}
-          onOpenSource={onOpenSource}
-        />
-      ) : null}
     </section>
   );
 }
@@ -93,32 +69,27 @@ export interface WikiPlaceholderProps {
   /** Changes each time an old link or call asks for a wiki page; null when none did. */
   noticeToken: number | null;
   onOpenLibrary: () => void;
-  onOpenSource: (id: string, noteId?: string, passage?: PassageAnchor) => void;
+  onAsk: () => void;
 }
 
-/** The Wiki screen of the interim empty state; see {@link WikiPlaceholderView}. */
+/** The reading surface without an open topic; see {@link WikiPlaceholderView}. */
 export function WikiPlaceholder({
   t,
   active,
   noticeToken,
   onOpenLibrary,
-  onOpenSource
+  onAsk
 }: WikiPlaceholderProps) {
-  const [askOpen, setAskOpen] = useState(false);
   const [seenToken, setSeenToken] = useState<number | null>(null);
   // A notice belongs to one visit: dismissing it, or leaving the Wiki, uses it up.
   if (!active && noticeToken !== null && seenToken !== noticeToken) setSeenToken(noticeToken);
   return (
     <WikiPlaceholderView
       t={t}
-      active={active}
-      askOpen={askOpen}
       notice={noticeToken !== null && noticeToken !== seenToken}
-      onAsk={() => setAskOpen(true)}
-      onCloseAsk={() => setAskOpen(false)}
+      onAsk={onAsk}
       onDismissNotice={() => setSeenToken(noticeToken)}
       onOpenLibrary={onOpenLibrary}
-      onOpenSource={onOpenSource}
     />
   );
 }
