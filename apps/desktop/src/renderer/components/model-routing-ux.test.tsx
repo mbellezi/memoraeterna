@@ -6,7 +6,7 @@ import {
   OrganizationStartSchema,
   ProcessingPlanRequestSchema
 } from "@app/domain";
-import { ProfilePicker } from "./OrganizationView";
+import { ProfilePicker } from "./ask/ProfilePicker";
 import type { AiProfile } from "../../shared/ipc";
 
 const id = "00000000-0000-4000-8000-000000000001";

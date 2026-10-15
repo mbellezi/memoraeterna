@@ -9,7 +9,7 @@ import {
 import { applyMenuCommand } from "./lib/menu-commands";
 import type { AppMenuCommand, AppViewId } from "../shared/app-menu";
 import type { ObsidianDeepLink } from "../shared/obsidian-deep-link.js";
-import { WikiPlaceholder } from "./components/topics/WikiPlaceholder";
+import { WikiWorkspace } from "./components/WikiWorkspace";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BriefcaseBusiness,
@@ -786,7 +786,7 @@ export function App({
             />
           </div>
           <div hidden={activeView !== "wiki"}>
-            <WikiPlaceholder
+            <WikiWorkspace
               t={t}
               active={activeView === "wiki"}
               noticeToken={wikiNoticeToken}
@@ -835,7 +835,7 @@ export function App({
               }
             />
           ) : activeView === "jobs" ? (
-            <JobsView t={t} showHistoryCleanup={false} />
+            <JobsView t={t} />
           ) : activeView === "review" ? (
             <ReviewQueueView t={t} />
           ) : activeView === "knowledgeGraph" ? (

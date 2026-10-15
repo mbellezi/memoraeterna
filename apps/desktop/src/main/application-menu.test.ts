@@ -175,11 +175,19 @@ describe("application menu", () => {
   });
 
   it("has no Automation destination, in any language", () => {
+    // What the removed destination was called, by language; the copy left the locales with its screen.
+    const removedTitle = {
+      en: "Knowledge automation",
+      "pt-BR": "Conhecimento automático",
+      it: "Conoscenza automatica",
+      fr: "Connaissances automatiques",
+      es: "Conocimiento automático"
+    } as const satisfies Record<(typeof supportedLanguageCodes)[number], string>;
     expect(appViewIds).not.toContain("automation");
     expect(goDestinations.map((entry) => entry.view)).not.toContain("automation");
     for (const language of supportedLanguageCodes) {
       const labels = flatten(build({ language }).template).map((item) => item.label);
-      expect(labels, language).not.toContain(messages[language].automation.title);
+      expect(labels, language).not.toContain(removedTitle[language]);
     }
   });
 

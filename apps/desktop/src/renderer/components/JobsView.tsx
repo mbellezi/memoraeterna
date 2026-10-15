@@ -56,13 +56,7 @@ const pipelineStages = [
   "aggregateSummarization"
 ] as const;
 
-export function JobsView({
-  t,
-  showHistoryCleanup = true
-}: {
-  t: Translator;
-  showHistoryCleanup?: boolean;
-}) {
+export function JobsView({ t }: { t: Translator }) {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [batches, setBatches] = useState<ProcessingBatch[]>([]);
   const [filter, setFilter] = useState<JobFilter>("all");
@@ -169,7 +163,7 @@ export function JobsView({
                   aria-hidden="true"
                 />
               </button>
-              {showHistoryCleanup && <TaskHistoryCleanup t={t} onCleared={load} />}
+              <TaskHistoryCleanup t={t} onCleared={load} />
             </div>
           </div>
 

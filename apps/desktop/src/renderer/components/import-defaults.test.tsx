@@ -56,6 +56,20 @@ describe("interactive processing defaults", () => {
     }
   });
 
+  it("no longer offers or promises Wiki integration with the full knowledge plan, in any locale", () => {
+    for (const language of supportedLanguageCodes) {
+      const html = renderToString(
+        <ProcessingPlanPicker
+          value={interactiveProcessingPlan(true)}
+          onChange={() => undefined}
+          t={createTranslator(language)}
+        />
+      );
+      expect(html, language).not.toMatch(/wiki/i);
+      expect(html, language).not.toContain("[[missing");
+    }
+  });
+
   it("explains the searchable default only when no writer route is ready", () => {
     const render = (ready: boolean | null) =>
       renderToString(

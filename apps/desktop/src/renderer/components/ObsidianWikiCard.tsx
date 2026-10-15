@@ -3,7 +3,7 @@ import { ObsidianEditorialCard } from "./ObsidianEditorialCard";
 import { useEffect, useRef, useState } from "react";
 import { BookOpen, FileWarning, X } from "lucide-react";
 import type { MessageKey } from "@app/i18n";
-import { EvidenceScopePicker } from "./OrganizationView";
+import { EvidenceScopePicker } from "./ask/EvidenceScopePicker";
 import { ObsidianRetiredReport } from "./ObsidianRetiredReport";
 import { Button } from "./ui/button";
 type Translator = (key: MessageKey) => string;

@@ -162,6 +162,14 @@ describe("compact main navigation", () => {
 });
 
 describe("entry points of the removed wiki", () => {
+  /** What the removed Automation destination was called, by language; the copy left the locales. */
+  const removedAutomationTitle = {
+    en: "Knowledge automation",
+    "pt-BR": "Conhecimento automático",
+    it: "Conoscenza automatica",
+    fr: "Connaissances automatiques",
+    es: "Conocimiento automático"
+  } as const satisfies Record<(typeof supportedLanguageCodes)[number], string>;
   const shell = (language: (typeof supportedLanguageCodes)[number]) =>
     renderToString(
       <App
@@ -189,18 +197,18 @@ describe("entry points of the removed wiki", () => {
         html.indexOf('<nav id="app-navigation"'),
         html.indexOf("</nav>")
       );
-      expect(navigation, language).not.toContain(messages[language].automation.title);
-      expect(html, language).not.toContain(messages[language].automation.title);
+      expect(navigation, language).not.toContain(removedAutomationTitle[language]);
+      expect(html, language).not.toContain(removedAutomationTitle[language]);
     }
   });
 
-  it("shows the empty Wiki, not the old workspace, for the Wiki destination", () => {
+  it("shows the Wiki shell with the empty state, not the old workspace, for the Wiki destination", () => {
     const html = shell("en");
     expect(html).toContain('aria-labelledby="wiki-placeholder-title"');
     expect(html).toContain(messages.en.topics.placeholder.openLibrary);
     // The old workspace's page tree and creation controls are not mounted.
-    expect(html).not.toContain(messages.en.wiki.create);
-    expect(html).not.toContain(messages.en.wiki.local);
+    expect(html).not.toContain("New page");
+    expect(html).not.toContain("No AI required");
   });
 
   it("has no Organization or Maintenance scope in Settings", () => {

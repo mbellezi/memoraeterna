@@ -312,7 +312,7 @@ const typeBadgeStyles: Record<SourceItemType, string> = {
   GenericDocument: "bg-fuchsia-100 text-fuchsia-900 dark:bg-fuchsia-950 dark:text-fuchsia-200"
 };
 
-export function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translator }) {
+function SourceTypeBadge({ type, t }: { type: SourceItemType; t: Translator }) {
   const Icon = typeIcons[type];
   return (
     <span
